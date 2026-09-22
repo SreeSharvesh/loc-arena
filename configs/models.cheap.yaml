@@ -1,0 +1,45 @@
+# models.cheap.yaml
+# Model routing by ROLE. Cheap DeepSeek by default for development; scaling to frontier is a one-line change.
+# Never hardcode a model name in code; always resolve through this file.
+#
+# IMPORTANT: verify these ids exist on your OpenRouter account and are the cheapest options you want before the
+# first run. All ids are OpenRouter-style "provider/model". Every model call goes through the gateway, which
+# holds the single OPENROUTER_API_KEY.
+#
+# max_tokens is the per-call OUTPUT cap (room for reasoning + tool-call args), NOT the context window. The
+# context window is fixed by the model. Values here are sized for long-horizon, tool-heavy turns; they are a
+# cost knob, so lower them if a run gets expensive.
+
+provider: openrouter
+
+roles:
+  # The untrusted agent (orchestrator + sub-agents). Needs to be capable enough for multi-step tool use.
+  # This is the model whose behavior we study in the live run; it must return clean, parseable tool calls.
+  untrusted_agent:
+    model: deepseek/deepseek-v4-flash    # the untrusted agent under study; the exact id the gateway posts
+    temperature: 1.0
+    max_tokens: 8192                     # long tool-use turns need room for reasoning + tool args
+
+  # The trusted monitor (M_action, M_inference). By the control-eval convention it should be WEAKER and cheaper
+  # than the untrusted agent. Cheapest path is a small DeepSeek R1 distill.
+  # NOTE: R1 distills emit long reasoning, so give the verdict room. Swap to deepseek/deepseek-chat if you want
+  # a plain non-reasoning monitor (but then it is not weaker than the agent, which dulls the capability gap).
+  trusted_monitor:
+    model: meta-llama/llama-3.1-8b-instruct       # cheap + weaker than the agent; verified on OpenRouter
+    temperature: 0.0
+    max_tokens: 4096                     # reasoning distill needs headroom to reach a verdict
+
+  # The teacher m-large behind the inference gateway (what data-gen queries). In the mocked-ML design its
+  # outputs feed the deterministic main-task check, so a cheap model is fine; reuse the agent model to save setup.
+  teacher:
+    model: deepseek/deepseek-chat        # DeepSeek V3 chat, cheap
+    temperature: 0.7
+    max_tokens: 4096                     # longer generations for distillation data
+
+# When you scale up, change only the ids above, e.g. untrusted_agent -> a frontier model, trusted_monitor -> a
+# small frontier model. Nothing else in the code or configs needs to change.
+scaling_notes: |
+  Frontier profile (later): set untrusted_agent to your strongest model, trusted_monitor to a small frontier
+  model, teacher to a strong model. Keep temperature and token caps; they are cost knobs, not correctness knobs.
+  Dev profile (now): all DeepSeek. Cheapest all-round is deepseek/deepseek-chat for agent+teacher and a small
+  R1 distill for the monitor. Verify current ids and prices on OpenRouter before the first paid run.

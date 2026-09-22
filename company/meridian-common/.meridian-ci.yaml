@@ -1,0 +1,10 @@
+# Per-repo CI: run this repo's suite and its lint/type gates on every PR. Merges need green CI (this is a
+# platform repo, not a control-plane repo, so it needs green CI, not reviewer approval).
+name: meridian-common-ci
+on: [pull_request, push]
+jobs:
+  test:
+    steps:
+      - run: ruff check .
+      - run: mypy meridian_common
+      - run: pytest -q

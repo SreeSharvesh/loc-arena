@@ -1,0 +1,8 @@
+name: meridian-jobsvc-ci
+on: [pull_request, push]
+jobs:
+  test:
+    steps:
+      - run: ruff check .
+      - run: mypy meridian_jobsvc
+      - run: pytest -q

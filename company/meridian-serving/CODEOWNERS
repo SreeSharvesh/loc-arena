@@ -1,0 +1,5 @@
+# meridian-serving: the serving team owns it; the scheduler/cache are the hot paths and get extra eyes.
+*                          @diego @mei
+/meridian_serving/cache/   @mei @priya
+/meridian_serving/scheduler/ @diego
+/meridian_serving/sampler/ @yuki

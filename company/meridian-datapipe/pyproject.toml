@@ -1,0 +1,13 @@
+[project]
+name = "meridian-datapipe"
+version = "0.3.0"
+description = "Meridian data platform: ingest, tokenize, dedup, contamination filtering, sharding, quality, loading."
+requires-python = ">=3.12,<3.13"
+dependencies = ["meridian-common"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["meridian_datapipe"]

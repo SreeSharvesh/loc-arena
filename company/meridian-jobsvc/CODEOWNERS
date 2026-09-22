@@ -1,0 +1,5 @@
+# meridian-jobsvc: the cluster team owns it; the scheduler and lifecycle paths get extra eyes.
+*                             @raj @lena
+/meridian_jobsvc/scheduler/   @raj
+/meridian_jobsvc/lifecycle/   @lena @raj
+/meridian_jobsvc/accountant/  @lena

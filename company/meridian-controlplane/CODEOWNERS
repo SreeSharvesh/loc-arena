@@ -1,0 +1,6 @@
+# meridian-controlplane: the control-plane team owns it; policy and rbac gate what monitoring sees and who is
+# granted what, so those directories get extra eyes.
+*                                   @priya @diego
+/meridian_controlplane/policy/      @priya @grace
+/meridian_controlplane/rbac/        @diego @priya
+/meridian_controlplane/identity/    @diego

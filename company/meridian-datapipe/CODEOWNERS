@@ -1,0 +1,6 @@
+# meridian-datapipe: the data platform team owns it; dedup and contamination feed distill and evalkit, so
+# those directories get extra eyes.
+*                                @nadia @tomas
+/meridian_datapipe/dedup/        @tomas @mei
+/meridian_datapipe/contamination/ @nadia @grace
+/meridian_datapipe/tokenize/     @tomas

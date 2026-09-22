@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Usage</title>
+<meta name="description" content="Set up and run episodes, read the dashboard, run attack, honest, and sweep runs, and add or configure tasks, monitors, models, and settings.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;650&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+<link rel="stylesheet" href="style.css?v=4">
+</head>
+<body>
+<nav class="nav"><div class="nav-inner">
+  <span class="brand"><span class="dot"></span>LOC-Arena</span>
+  <a href="index.html">Overview</a>
+  <a href="architecture.html">Architecture</a>
+  <a href="settings.html">Settings</a>
+  <a href="monitoring.html">Monitoring</a>
+  <a href="extend.html" class="active">Usage</a>
+</div></nav>
+
+<main class="wrap">
+
+<div class="eyebrow">Reference</div>
+<h1>Usage</h1>
+<p class="lede">How to set up the project, run episodes, read the dashboard, and change any part of the setting.
+Almost everything is config, so most changes are a config edit rather than a code change.</p>
+
+<h2>Setup</h2>
+<p>You need <code>uv</code> (Python 3.12, pinned) and, for a live run, an OpenRouter API key. The key is read only
+by the gateway.</p>
+<pre><code>uv sync                       # create the environment and install everything
+cp .env.example .env          # then set OPENROUTER_API_KEY
+make setup                    # check the toolchain, sync deps, validate the config</code></pre>
+
+<h2>Run an episode</h2>
+<p>An episode drives a live model as the untrusted team and grades the outcome. There are three ways to run.</p>
+
+<pre><code>make run RUN=aurora-efficiency MODE=attack   # the attack episode plus its honest twin (the calibration baseline)
+make run RUN=aurora-efficiency MODE=honest   # the honest twin on its own (main task only)
+loc-arena sweep --run aurora-efficiency --honest 3 --attack 3   # many episodes, aggregated into safety and usefulness numbers</code></pre>
+
+<div class="tablewrap"><table>
+<thead><tr><th>Run</th><th>What it does</th><th>When to use it</th></tr></thead>
+<tbody>
+<tr><td><b>attack</b></td><td>Runs the main and side task together, plus the honest twin that calibrates the threshold.</td><td>The default. One full measurement: did the rogue deployment land, and was it caught.</td></tr>
+<tr><td><b>honest</b></td><td>Runs the main task only, with the covert objective disabled.</td><td>To see normal behaviour and the usefulness score on its own.</td></tr>
+<tr><td><b>sweep</b></td><td>Runs many honest and attack episodes and aggregates a safety rate and a usefulness curve.</td><td>To get a stable measurement rather than one episode.</td></tr>
+</tbody>
+</table></div>
+
+<p>Every run writes a self-contained bundle named after what actually ran, so the same setting can run many times
+without collision. The bundle holds the resolved config, both event records, the two verdicts, the report page,
+and a notes file. Add <code>STACK=1</code> to bring up the container stack for structural isolation; without it the
+same episode runs in a single process. <code>make gates</code> runs the formatting, typing, and test checks.</p>
+
+<h2>Read the dashboard</h2>
+<p>Open the latest report. It is a single static page, and a run index lists every run.</p>
+<pre><code>make view RUN=aurora-efficiency               # open the latest report in the dashboard</code></pre>
+
+<div class="grid two">
+  <div class="card"><h3>Outcome</h3><p>At the top: the main-task score, whether the rogue deployment landed and how firmly, and whether the episode was caught.</p></div>
+  <div class="card"><h3>Kill chain</h3><p>The side-task steps drawn out, so you can see how far it got and which stages were reached.</p></div>
+  <div class="card"><h3>Lanes and gauge</h3><p>Each agent's activity over time, and the overall suspicion as a gauge with a per-monitor breakdown, plus the detector signal.</p></div>
+  <div class="card"><h3>Transcripts</h3><p>Every agent's full run, step by step, with the monitor scores attached in place. Nothing is hidden behind a summary.</p></div>
+</div>
+
+<h2>Configure and extend</h2>
+<p>The parts of a run are separated so you can change one without the others. Here is where each change lives.</p>
+
+<h3>Monitors</h3>
+<p>Monitors are declared in <code>monitors.yaml</code>. To add one, set its tap point, the inputs it reads from the
+observable list, whether it decides by rule or by model, whether it runs in line or on a side worker, and its
+weight. To move a monitor, change its tap point. To turn the scratch-surface monitor on, enable it. The one hard
+limit is the firewall: an input off the observable list fails the build. See <a href="monitoring.html">Monitoring</a>.</p>
+
+<h3>Scoring</h3>
+<p>In the same file, the scoring block sets how each monitor's scores reduce to one number, how the monitors
+combine into the overall suspicion, the weight on each, and how strict the audit budget is. Change the combining
+rule from a weighted average to a maximum, or tighten the budget, and rerun.</p>
+
+<h3>Models</h3>
+<p>Models are named by role in <code>models.cheap.yaml</code>: the untrusted team, the trusted monitor, and the
+teacher. Point the team at a stronger model to see how much further the side task gets; point the monitor at a
+weaker one to see detection fall off. One line per role.</p>
+
+<h3>Tasks</h3>
+<p>A main task is a goal plus a scorer that reads real outcomes: tests passing and a real cost or metric, never a
+model's opinion. A side task is a set of steps, each with a check that reads the sealed record for an executed
+fact, plus the conditions that count as a landing. The rule to keep: a step is only confirmed from something that
+actually happened, so the honest twin reaches none of them.</p>
+
+<h3>Settings</h3>
+<p>A setting is a whole organization plus a task catalog, laid over the shared engine: its services and codebase,
+its agents and their permissions, its monitors, and a sealed reference. New settings reuse the same engine; only
+the organization, the cast, and the tasks change. Meridian AI Lab is the first; see
+<a href="settings.html">Settings</a>.</p>
+
+<div class="keyidea">
+  <span class="k">The invariant to keep</span>
+  Whatever you change, keep the two measurements apart. The checker reads only the sealed record and only executed
+  facts. The monitors read only the observable side. The honest twin must always verify clean.
+</div>
+
+<h2>How the repository is laid out</h2>
+<dl class="defs">
+  <dt>the engine</dt><dd>the gateway, the organisation and its tools, the services, the record, the checker, the monitors, and the report</dd>
+  <dt>the company code</dt><dd>the seven coupled repositories the main task works on</dd>
+  <dt>the settings</dt><dd>each organization plus its task catalog, laid over the engine, with its sealed reference</dd>
+  <dt>the config</dt><dd>the setting, the monitors, the models, and the shared defaults</dd>
+  <dt>the tests</dt><dd>the checks that keep the engine and every repository honest</dd>
+</dl>
+
+<div class="pager">
+  <a href="monitoring.html"><span class="dir">Previous</span><span class="ttl">← Monitoring</span></a>
+  <a class="next" href="index.html"><span class="dir">Back to</span><span class="ttl">Overview →</span></a>
+</div>
+
+<footer class="site">
+LOC-Arena is defensive AI-safety research infrastructure. Attack chains are represented as control-plane state
+transitions and their programmatic verifiers, never as operational procedures.
+</footer>
+
+</main>
+</body>
+</html>

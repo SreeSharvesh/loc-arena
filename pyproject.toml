@@ -1,0 +1,94 @@
+[project]
+name = "loc-arena"
+version = "0.0.0"
+description = "LOC-Arena: an AI-control evaluation setting for internal rogue-deployment detection."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = { text = "Proprietary" }
+dependencies = [
+  "pyyaml>=6.0",
+  "fastapi>=0.115",
+  "httpx>=0.27",
+]
+
+[project.scripts]
+loc-arena = "loc_arena.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["loc_arena"]
+
+[dependency-groups]
+# Dev toolchain. Kept minimal for the skeleton; phases add their own runtime deps (Inspect, FastAPI, ...).
+dev = [
+  "ruff>=0.6",
+  "mypy>=1.11",
+  "pytest>=8.0",
+  "types-PyYAML>=6.0",
+]
+
+# ---------------------------------------------------------------------------
+# ruff: lint + format. Config lives here, not in code (config over code).
+# ---------------------------------------------------------------------------
+[tool.ruff]
+target-version = "py312"
+line-length = 110
+# The company workspace (company/<repo>/) is real, tested Meridian code held to the same bar; each repo's
+# package root is a first-party src root so imports sort correctly.
+src = ["loc_arena", "tests", "company/meridian-common", "company/meridian-serving", "company/meridian-datapipe", "company/meridian-distill", "company/meridian-jobsvc", "company/meridian-controlplane", "company/meridian-evalkit"]
+# A scenario pack's seed/ is the lived-in agent workspace (graded by ITS OWN pytest) and reference/ is the
+# sealed grader fixture overlaid at grade time; both run only as subprocesses and follow the seed's terse
+# conventions, so they are fixtures, not our package code. (repos_seed/ is the legacy path.)
+extend-exclude = ["repos_seed", "scenarios/*/seed", "scenarios/*/reference"]
+
+[tool.ruff.lint]
+# A pragmatic-but-strict default set. Expanded per phase as real code lands.
+select = ["E", "F", "W", "I", "N", "UP", "B", "D"]
+ignore = [
+  "D203",  # one-blank-line-before-class (conflicts with D211)
+  "D213",  # multi-line-summary-second-line (conflicts with D212)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests do not need module/function docstrings.
+"tests/**" = ["D100", "D101", "D102", "D103", "D104"]
+"company/**/tests/**" = ["D100", "D101", "D102", "D103", "D104", "D105", "D107"]
+# The viewer embeds an HTML/CSS/JS template string where line length is not meaningful.
+"loc_arena/logging_/viewer.py" = ["E501"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+# ---------------------------------------------------------------------------
+# mypy: strict typing (mypy clean).
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+files = ["loc_arena", "tests", "scenarios", "company"]
+# A pack's seed/ and reference/ are subprocess-run fixtures (the lived-in workspace + the sealed grader),
+# not typed package code; the loader + main.py/side.py glue above them IS checked.
+exclude = "scenarios/[^/]+/(seed|reference)/"
+# The company workspace: each repo's package root is on MYPYPATH so cross-repo imports (meridian_common, ...)
+# resolve exactly like a real multi-repo checkout. Add each new repo root here as it lands.
+mypy_path = ["company/meridian-common", "company/meridian-serving", "company/meridian-datapipe", "company/meridian-distill", "company/meridian-jobsvc", "company/meridian-controlplane", "company/meridian-evalkit"]
+
+# ---------------------------------------------------------------------------
+# pytest.
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "8.0"
+# The engine suite (tests/) plus every company repo's own suite. Each repo's package root is on pythonpath so
+# `import meridian_common` (and, later, the other repos) resolves like a real side-by-side workspace checkout.
+testpaths = ["tests", "company"]
+pythonpath = ["company/meridian-common", "company/meridian-serving", "company/meridian-datapipe", "company/meridian-distill", "company/meridian-jobsvc", "company/meridian-controlplane", "company/meridian-evalkit"]
+addopts = "-ra"
+markers = [
+  "integration: tests that need docker and/or network (skip-guarded)",
+]

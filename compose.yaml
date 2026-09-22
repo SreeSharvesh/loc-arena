@@ -1,0 +1,295 @@
+# compose.yaml -- the per-episode LOC-Arena stack.
+# GENERATED from configs/env.default.yaml by loc_arena.harness.render_compose (config over
+# code). Do not edit by hand; change the config and regenerate. The harness renders and runs this per
+# episode; this committed copy is the canonical reference stack.
+
+services:
+  gateway_core:
+    image: loc-arena-svc:latest
+    environment:
+      SVC_NAME: gateway_core
+      SVC_ROLE: health
+      SVC_PORT: '4000'
+    labels:
+      loc-arena.eval: '1'
+    restart: 'no'
+    networks:
+    - control-net
+    - sealed-net
+    - egress-net
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request,sys;u=urllib.request.urlopen('http://localhost:4000/health',timeout=2);sys.exit(0
+        if u.status==200 else 1)
+      interval: 3s
+      timeout: 3s
+      retries: 15
+      start_period: 2s
+  gateway_edge:
+    image: loc-arena-svc:latest
+    environment:
+      SVC_NAME: gateway_edge
+      SVC_ROLE: health
+      SVC_PORT: '4010'
+    labels:
+      loc-arena.eval: '1'
+    restart: 'no'
+    networks:
+    - agent-net
+    - control-net
+    volumes:
+    - mirror_log:/mirror
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request,sys;u=urllib.request.urlopen('http://localhost:4010/health',timeout=2);sys.exit(0
+        if u.status==200 else 1)
+      interval: 3s
+      timeout: 3s
+      retries: 15
+      start_period: 2s
+  execution:
+    image: loc-arena-svc:latest
+    environment:
+      SVC_NAME: execution
+      SVC_ROLE: health
+      SVC_PORT: '8000'
+    labels:
+      loc-arena.eval: '1'
+    restart: 'no'
+    networks:
+    - agent-net
+    volumes:
+    - mirror_log:/mirror
+    - repos:/repos
+    - weights_data:/weights
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request,sys;u=urllib.request.urlopen('http://localhost:8000/health',timeout=2);sys.exit(0
+        if u.status==200 else 1)
+      interval: 3s
+      timeout: 3s
+      retries: 15
+      start_period: 2s
+    mem_limit: 4g
+    cpus: 2.0
+    pids_limit: 4096
+  cluster:
+    image: loc-arena-svc:latest
+    environment:
+      SVC_NAME: cluster
+      SVC_ROLE: health
+      SVC_PORT: '8000'
+    labels:
+      loc-arena.eval: '1'
+    restart: 'no'
+    networks:
+    - agent-net
+    - control-net
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request,sys;u=urllib.request.urlopen('http://localhost:8000/health',timeout=2);sys.exit(0
+        if u.status==200 else 1)
+      interval: 3s
+      timeout: 3s
+      retries: 15
+      start_period: 2s
+  forge:
+    image: loc-arena-svc:latest
+    environment:
+      SVC_NAME: forge
+      SVC_ROLE: health
+      SVC_PORT: '3000'
+    labels:
+      loc-arena.eval: '1'
+    restart: 'no'
+    networks:
+    - agent-net
+    - control-net
+    volumes:
+    - repos:/repos
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request,sys;u=urllib.request.urlopen('http://localhost:3000/health',timeout=2);sys.exit(0
+        if u.status==200 else 1)
+      interval: 3s
+      timeout: 3s
+      retries: 15
+      start_period: 2s
+  weights:
+    image: loc-arena-svc:latest
+    environment:
+      SVC_NAME: weights
+      SVC_ROLE: health
+      SVC_PORT: '8000'
+    labels:
+      loc-arena.eval: '1'
+    restart: 'no'
+    networks:
+    - agent-net
+    - control-net
+    volumes:
+    - weights_data:/weights
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request,sys;u=urllib.request.urlopen('http://localhost:8000/health',timeout=2);sys.exit(0
+        if u.status==200 else 1)
+      interval: 3s
+      timeout: 3s
+      retries: 15
+      start_period: 2s
+  siem:
+    image: loc-arena-svc:latest
+    environment:
+      SVC_NAME: siem
+      SVC_ROLE: health
+      SVC_PORT: '8080'
+    labels:
+      loc-arena.eval: '1'
+    restart: 'no'
+    networks:
+    - control-net
+    volumes:
+    - mirror_log:/mirror
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request,sys;u=urllib.request.urlopen('http://localhost:8080/health',timeout=2);sys.exit(0
+        if u.status==200 else 1)
+      interval: 3s
+      timeout: 3s
+      retries: 15
+      start_period: 2s
+  ticketboard:
+    image: loc-arena-svc:latest
+    environment:
+      SVC_NAME: ticketboard
+      SVC_ROLE: health
+      SVC_PORT: '8090'
+    labels:
+      loc-arena.eval: '1'
+    restart: 'no'
+    networks:
+    - agent-net
+    - control-net
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request,sys;u=urllib.request.urlopen('http://localhost:8090/health',timeout=2);sys.exit(0
+        if u.status==200 else 1)
+      interval: 3s
+      timeout: 3s
+      retries: 15
+      start_period: 2s
+  wiki:
+    image: loc-arena-svc:latest
+    environment:
+      SVC_NAME: wiki
+      SVC_ROLE: health
+      SVC_PORT: '8091'
+    labels:
+      loc-arena.eval: '1'
+    restart: 'no'
+    networks:
+    - agent-net
+    - control-net
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request,sys;u=urllib.request.urlopen('http://localhost:8091/health',timeout=2);sys.exit(0
+        if u.status==200 else 1)
+      interval: 3s
+      timeout: 3s
+      retries: 15
+      start_period: 2s
+  recorder:
+    image: loc-arena-svc:latest
+    environment:
+      SVC_NAME: recorder
+      SVC_ROLE: recorder
+      SVC_PORT: '9000'
+      SEALED_LOG: /sealed/events.jsonl
+    labels:
+      loc-arena.eval: '1'
+    restart: 'no'
+    networks:
+    - sealed-net
+    volumes:
+    - sealed_log:/sealed
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request,sys;u=urllib.request.urlopen('http://localhost:9000/health',timeout=2);sys.exit(0
+        if u.status==200 else 1)
+      interval: 3s
+      timeout: 3s
+      retries: 15
+      start_period: 2s
+  evidence_reader:
+    image: loc-arena-svc:latest
+    environment:
+      SVC_NAME: evidence_reader
+      SVC_ROLE: reader
+      SVC_PORT: '8000'
+      SEALED_LOG: /sealed/events.jsonl
+    labels:
+      loc-arena.eval: '1'
+    restart: 'no'
+    network_mode: none
+    volumes:
+    - sealed_log:/sealed:ro
+networks:
+  agent-net:
+    internal: true
+    labels:
+      loc-arena.eval: '1'
+  control-net:
+    internal: true
+    labels:
+      loc-arena.eval: '1'
+  sealed-net:
+    internal: true
+    labels:
+      loc-arena.eval: '1'
+  egress-net:
+    internal: false
+    labels:
+      loc-arena.eval: '1'
+volumes:
+  sealed_log:
+    labels:
+      loc-arena.eval: '1'
+  mirror_log:
+    labels:
+      loc-arena.eval: '1'
+  repos:
+    labels:
+      loc-arena.eval: '1'
+  weights_data:
+    labels:
+      loc-arena.eval: '1'

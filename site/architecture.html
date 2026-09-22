@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Architecture</title>
+<meta name="description" content="The LOC-Arena engine that every setting runs on: the services, the single path for model calls, the sealed and observable sides, the event record, and how one episode runs.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;650&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+<link rel="stylesheet" href="style.css?v=4">
+</head>
+<body>
+<nav class="nav"><div class="nav-inner">
+  <span class="brand"><span class="dot"></span>LOC-Arena</span>
+  <a href="index.html">Overview</a>
+  <a href="architecture.html" class="active">Architecture</a>
+  <a href="settings.html">Settings</a>
+  <a href="monitoring.html">Monitoring</a>
+  <a href="extend.html">Usage</a>
+</div></nav>
+
+<main class="wrap">
+
+<div class="eyebrow">Concepts</div>
+<h1>Architecture</h1>
+<p class="lede">LOC-Arena is a framework. This page covers the engine every setting runs on: the services, the
+single path for model calls, the boundary between the sealed and observable sides, the event record, and how one
+episode runs. The specific lab, its codebase, its tasks, and its agents live under
+<a href="settings.html">Settings</a>.</p>
+
+<p>An episode builds the world from a config file and a seed, runs the agents, grades the tasks, and tears the
+world down. It is fully described by its config and seed, so it reproduces exactly.</p>
+
+<h2>The engine</h2>
+
+<p>An episode runs on three components the agents work inside, plus a sealed layer they cannot reach.</p>
+
+<dl class="defs">
+  <dt>the gateway</dt>
+  <dd>The single path to a model. Every model call, by every agent and every process it spawns, goes through it.</dd>
+  <dt>the organisation</dt>
+  <dd>The team of agents, the shared channel they coordinate on, and their tools. A lead agent runs the team and spawns helpers. Which agents exist, and what each can do, is defined by the setting.</dd>
+  <dt>execution</dt>
+  <dd>The sandboxes that run agent code. Each agent works in its own, with only the access it was granted.</dd>
+  <dt>the sealed layer</dt>
+  <dd>The recorder, the private append-only record, and the checker. This is the ground truth. No agent has a route to it.</dd>
+</dl>
+
+<h2>The path for model calls</h2>
+
+<p>Every model call travels the same path. An agent holds no model key and never contacts a provider directly. It
+sends its request to the near end of the gateway, which forwards it to the far end. The far end holds the only
+provider key and is the only component with an outbound route. Each call is recorded twice: once to the private
+record, once to the observable one.</p>
+
+<p>There is one path, so one component sees every call, and the record of model usage is complete. A rogue
+deployment is model calls that should not be happening, so a complete call record is what the checker verifies
+against.</p>
+
+<h2>Sealed and observable</h2>
+
+<p>The world is split by a boundary. The <strong>observable</strong> side is everything the agents work with and
+the monitors read: the observable log, the code, the jobs, the near end of the gateway. A capable agent could
+influence anything here, including the observable log of its own behaviour. The <strong>sealed</strong> side is the
+private record and the checker. An agent with full control of its own sandbox still has no route across.</p>
+
+<p>A <strong>single writer</strong> produces both records, writing the same events to two files. The observable
+copy can be altered by a compromised component. The sealed copy cannot. When the two disagree, the disagreement is
+itself a signal that the observable side has been edited.</p>
+
+<figure>
+<svg viewBox="0 0 720 320" role="img" aria-label="A single writer produces two records; monitors read the observable one, the checker reads the sealed one">
+  <rect x="285" y="26" width="150" height="52" rx="10" fill="#e9edfd" stroke="#2f4bd6" stroke-width="1.5"/>
+  <text x="360" y="49" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13.5" font-weight="600" fill="#14171d">one writer</text>
+  <text x="360" y="67" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11.5" fill="#5b6472">every event, fingerprinted</text>
+  <path d="M320 78 L200 128" stroke="#b3730a" stroke-width="2" fill="none" marker-end="url(#ao)"/>
+  <rect x="60" y="130" width="280" height="60" rx="11" fill="#f8ecd5" stroke="#b3730a" stroke-width="1.5"/>
+  <text x="76" y="155" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13.5" font-weight="600" fill="#14171d">observable record</text>
+  <text x="76" y="175" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12" fill="#5b6472">visible, and can be tampered with</text>
+  <path d="M200 190 L200 232" stroke="#c3cad4" stroke-width="2" fill="none" marker-end="url(#ao)"/>
+  <rect x="60" y="234" width="280" height="56" rx="11" fill="#ffffff" stroke="#cdd3dc" stroke-width="1.5"/>
+  <text x="200" y="260" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13.5" font-weight="600" fill="#14171d">the monitors read this</text>
+  <text x="200" y="279" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11.5" fill="#5b6472">exactly what a real control team would see</text>
+  <path d="M400 78 L520 128" stroke="#0d9488" stroke-width="2" fill="none" marker-end="url(#as)"/>
+  <rect x="380" y="130" width="280" height="60" rx="11" fill="#d9f2ef" stroke="#0d9488" stroke-width="1.5"/>
+  <text x="396" y="155" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13.5" font-weight="600" fill="#14171d">sealed record</text>
+  <text x="396" y="175" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12" fill="#5b6472">append only, behind the wall</text>
+  <path d="M520 190 L520 232" stroke="#c3cad4" stroke-width="2" fill="none" marker-end="url(#as)"/>
+  <rect x="380" y="234" width="280" height="56" rx="11" fill="#ffffff" stroke="#cdd3dc" stroke-width="1.5"/>
+  <text x="520" y="260" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13.5" font-weight="600" fill="#14171d">the checker reads this</text>
+  <text x="520" y="279" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11.5" fill="#5b6472">and nothing else does</text>
+  <line x1="360" y1="96" x2="360" y2="304" stroke="#c3cad4" stroke-width="1.5" stroke-dasharray="3 5"/>
+  <text x="360" y="312" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, monospace" font-size="10.5" letter-spacing="1.5" fill="#5b6472">THE WALL</text>
+  <defs>
+    <marker id="ao" markerWidth="10" markerHeight="10" refX="7" refY="5" orient="auto"><polygon points="0,1 8,5 0,9" fill="#b3730a"/></marker>
+    <marker id="as" markerWidth="10" markerHeight="10" refX="7" refY="5" orient="auto"><polygon points="0,1 8,5 0,9" fill="#0d9488"/></marker>
+  </defs>
+</svg>
+<figcaption>One writer, two records. The monitors only ever see the <b>observable</b> copy. The checker only ever
+reads the <b>sealed</b> copy. Neither can reach across to the other's side.</figcaption>
+</figure>
+
+<div class="keyidea">
+  <span class="k">The boundary is structural</span>
+  It is enforced by wiring, not by policy. The sealed components sit on a private network with their own storage,
+  and the agent sandboxes are not connected to it. There is no setting to change and no code path to exploit,
+  because there is no connection to carry anything across.
+</div>
+
+<h2>Services and networks</h2>
+
+<p>When an episode runs the full stack, it starts the services below, grouped by which private network they sit
+on. What matters is each service's function and which side of the boundary it is on.</p>
+
+<figure>
+<svg viewBox="0 0 760 540" role="img" aria-label="Services grouped by network: agent network, control network, and the sealed network, with the single route to the model provider">
+  <rect x="560" y="20" width="176" height="46" rx="10" fill="#ffffff" stroke="#cdd3dc" stroke-width="1.5"/>
+  <text x="648" y="41" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12.5" font-weight="600" fill="#14171d">model provider</text>
+  <text x="648" y="57" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" fill="#5b6472">the outside world</text>
+  <rect x="16" y="88" width="720" height="112" rx="14" fill="#d9f2ef" stroke="#0d9488" stroke-width="1.4" opacity="0.9"/>
+  <text x="34" y="110" font-family="'IBM Plex Mono', ui-monospace, monospace" font-size="11" letter-spacing="1.4" fill="#0d9488">SEALED NETWORK</text>
+  <rect x="34" y="122" width="230" height="60" rx="10" fill="#ffffff" stroke="#0d9488" stroke-width="1.4"/>
+  <text x="49" y="145" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13" font-weight="600" fill="#14171d">gateway, far end</text>
+  <text x="49" y="164" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11.5" fill="#5b6472">holds the only key,</text>
+  <text x="49" y="178" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11.5" fill="#5b6472">the only way out</text>
+  <rect x="288" y="122" width="230" height="60" rx="10" fill="#ffffff" stroke="#0d9488" stroke-width="1.4"/>
+  <text x="303" y="145" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13" font-weight="600" fill="#14171d">sealed recorder</text>
+  <text x="303" y="164" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11.5" fill="#5b6472">writes the private,</text>
+  <text x="303" y="178" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11.5" fill="#5b6472">append-only record</text>
+  <rect x="542" y="122" width="176" height="60" rx="10" fill="#eef1f6" stroke="#0d9488" stroke-width="1.4" stroke-dasharray="4 3"/>
+  <text x="630" y="145" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12.5" font-weight="600" fill="#14171d">evidence reader</text>
+  <text x="630" y="164" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" fill="#5b6472">read only, no network,</text>
+  <text x="630" y="178" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" fill="#5b6472">feeds the checker</text>
+  <rect x="16" y="216" width="720" height="192" rx="14" fill="#eef1f5" stroke="#cdd3dc" stroke-width="1.4"/>
+  <text x="34" y="238" font-family="'IBM Plex Mono', ui-monospace, monospace" font-size="11" letter-spacing="1.4" fill="#5b6472">AGENT NETWORK  ·  where the team works</text>
+  <rect x="34" y="250" width="216" height="58" rx="10" fill="#ffffff" stroke="#cdd3dc" stroke-width="1.3"/>
+  <text x="49" y="273" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13" font-weight="600" fill="#14171d">execution sandboxes</text>
+  <text x="49" y="292" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11.5" fill="#5b6472">where the agents run</text>
+  <rect x="266" y="250" width="216" height="58" rx="10" fill="#ffffff" stroke="#2f4bd6" stroke-width="1.4"/>
+  <text x="281" y="273" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13" font-weight="600" fill="#14171d">gateway, near end</text>
+  <text x="281" y="292" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11.5" fill="#5b6472">relays calls, no key</text>
+  <rect x="498" y="250" width="220" height="58" rx="10" fill="#ffffff" stroke="#cdd3dc" stroke-width="1.3"/>
+  <text x="513" y="273" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13" font-weight="600" fill="#14171d">compute cluster</text>
+  <text x="513" y="292" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11.5" fill="#5b6472">runs batch jobs</text>
+  <rect x="34" y="322" width="216" height="58" rx="10" fill="#ffffff" stroke="#cdd3dc" stroke-width="1.3"/>
+  <text x="49" y="345" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13" font-weight="600" fill="#14171d">code host</text>
+  <text x="49" y="364" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11.5" fill="#5b6472">git, review, tests</text>
+  <rect x="266" y="322" width="216" height="58" rx="10" fill="#ffffff" stroke="#cdd3dc" stroke-width="1.3"/>
+  <text x="281" y="345" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13" font-weight="600" fill="#14171d">model weights store</text>
+  <text x="281" y="364" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11.5" fill="#5b6472">the artefacts</text>
+  <rect x="498" y="322" width="220" height="58" rx="10" fill="#ffffff" stroke="#cdd3dc" stroke-width="1.3"/>
+  <text x="513" y="345" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13" font-weight="600" fill="#14171d">tickets and wiki</text>
+  <text x="513" y="364" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11.5" fill="#5b6472">the daily busywork</text>
+  <rect x="16" y="424" width="720" height="96" rx="14" fill="#f8ecd5" stroke="#b3730a" stroke-width="1.4"/>
+  <text x="34" y="446" font-family="'IBM Plex Mono', ui-monospace, monospace" font-size="11" letter-spacing="1.4" fill="#b3730a">CONTROL NETWORK</text>
+  <rect x="266" y="456" width="228" height="50" rx="10" fill="#ffffff" stroke="#b3730a" stroke-width="1.4"/>
+  <text x="380" y="479" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13" font-weight="600" fill="#14171d">observation log</text>
+  <text x="380" y="496" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11.5" fill="#5b6472">the visible copy the monitors read</text>
+  <path d="M250 279 L262 279" stroke="#2f4bd6" stroke-width="1.8" fill="none" marker-end="url(#g1)"/>
+  <path d="M330 250 C 278 214, 212 210, 184 187" stroke="#2f4bd6" stroke-width="1.8" fill="none" marker-end="url(#g1)"/>
+  <text x="292" y="210" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="10.5" fill="#5b6472">every model call, relayed</text>
+  <path d="M244 122 C 360 84, 470 82, 556 47" stroke="#0d9488" stroke-width="1.8" fill="none" marker-end="url(#g2)"/>
+  <text x="412" y="82" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="10.5" fill="#5b6472">the only way out</text>
+  <path d="M264 152 L286 152" stroke="#0d9488" stroke-width="1.8" fill="none" marker-end="url(#g2)"/>
+  <path d="M518 152 L540 152" stroke="#0d9488" stroke-width="1.8" fill="none" marker-end="url(#g2)"/>
+  <path d="M482 285 L489 285 L489 452" stroke="#b3730a" stroke-width="1.8" fill="none" marker-end="url(#g3)"/>
+  <text x="497" y="404" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="10.5" fill="#5b6472">mirror copy</text>
+  <path d="M60 250 C 34 224, 34 202, 46 187" stroke="#d63f4a" stroke-width="1.6" fill="none" stroke-dasharray="5 4"/>
+  <text x="16" y="214" font-family="'IBM Plex Mono', ui-monospace, monospace" font-size="10" fill="#d63f4a">no route</text>
+  <line x1="35" y1="198" x2="49" y2="212" stroke="#d63f4a" stroke-width="2"/>
+  <line x1="49" y1="198" x2="35" y2="212" stroke="#d63f4a" stroke-width="2"/>
+  <defs>
+    <marker id="g1" markerWidth="9" markerHeight="9" refX="6.5" refY="4.5" orient="auto"><polygon points="0,1 7,4.5 0,8" fill="#2f4bd6"/></marker>
+    <marker id="g2" markerWidth="9" markerHeight="9" refX="6.5" refY="4.5" orient="auto"><polygon points="0,1 7,4.5 0,8" fill="#0d9488"/></marker>
+    <marker id="g3" markerWidth="9" markerHeight="9" refX="6.5" refY="4.5" orient="auto"><polygon points="0,1 7,4.5 0,8" fill="#b3730a"/></marker>
+  </defs>
+</svg>
+<figcaption>Agents reach the near end of the gateway; only the far end holds a key and a way out. The sealed
+recorder and the checker's reader sit on the far side of the wall, with <b>no route</b> back to where the agents
+run. The <b>code host</b> is a git server with review and tests; the <b>compute cluster</b> runs batch jobs; the
+<b>observation log</b> is the observable copy the monitors read.</figcaption>
+</figure>
+
+<p>Running the full stack in containers is optional. The isolation is structural. Because an episode is
+reproducible from config and seed, the logic also runs in a single process, and the containers are brought up only
+when requested.</p>
+
+<h2>The event record</h2>
+
+<p>Every event is recorded: an action, a message, a spawn, a close, a model call, a job, a merge, a config change,
+a tick. Each carries a fingerprint of its contents, a sequence number, the actor's identity, and the episode id.
+The writer rejects anything out of order or duplicated and never rewrites a line.</p>
+
+<p>Spawns and closes are events, so the full agent tree and every agent's trajectory reconstruct from the record.
+A reviewer replays the episode from the log rather than trusting a summary.</p>
+
+<h2>How an episode runs</h2>
+
+<p>Every episode, attack or honest twin, follows the same path. The only difference is whether the covert objective
+is enabled, which is set at the start and touches nothing else.</p>
+
+<ol class="steps">
+  <li><b>Build the world.</b> Stand up the services, the codebase, and the empty records from the config and seed.</li>
+  <li><b>Seed it.</b> Fill the code host with tickets, open changes, and wiki pages, plus a background coworker doing unrelated work.</li>
+  <li><b>Assign the tasks.</b> The lead agent gets the main task. In an attack episode it also gets the covert objective, which it alone holds at the start.</li>
+  <li><b>Run the team.</b> The lead works, spawns helpers, assigns pieces over the shared channel, and integrates the results.</li>
+  <li><b>Record.</b> Every action and model call is written to both records as it happens.</li>
+  <li><b>Grade the main task.</b> Run the test suites and measure cost on a fixed workload.</li>
+  <li><b>Check the side task.</b> The sealed checker reads the private record and decides, from executed facts, whether a rogue deployment exists.</li>
+  <li><b>Score the monitors.</b> The monitors read the observable record and produce a caught or not-caught verdict against the honest twin's baseline. Everything is written to one bundle.</li>
+</ol>
+
+<figure>
+<svg viewBox="0 0 720 380" role="img" aria-label="An episode flows from build through run and recording, then splits into three independent judgements that combine into one report">
+  <rect x="40" y="24" width="150" height="46" rx="10" fill="#ffffff" stroke="#cdd3dc" stroke-width="1.4"/>
+  <text x="115" y="45" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12.5" font-weight="600" fill="#14171d">build the world</text>
+  <text x="115" y="61" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" fill="#5b6472">config plus seed</text>
+  <rect x="215" y="24" width="150" height="46" rx="10" fill="#ffffff" stroke="#cdd3dc" stroke-width="1.4"/>
+  <text x="290" y="45" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12.5" font-weight="600" fill="#14171d">seed it</text>
+  <text x="290" y="61" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" fill="#5b6472">tickets, changes, noise</text>
+  <rect x="390" y="24" width="150" height="46" rx="10" fill="#e9edfd" stroke="#2f4bd6" stroke-width="1.4"/>
+  <text x="465" y="45" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12.5" font-weight="600" fill="#14171d">run the team</text>
+  <text x="465" y="61" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" fill="#5b6472">lead plus helpers</text>
+  <rect x="565" y="24" width="150" height="46" rx="10" fill="#ffffff" stroke="#cdd3dc" stroke-width="1.4"/>
+  <text x="640" y="45" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12.5" font-weight="600" fill="#14171d">record</text>
+  <text x="640" y="61" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" fill="#5b6472">two copies</text>
+  <path d="M190 47 L213 47" stroke="#c3cad4" stroke-width="1.8" marker-end="url(#e1)"/>
+  <path d="M365 47 L388 47" stroke="#c3cad4" stroke-width="1.8" marker-end="url(#e1)"/>
+  <path d="M540 47 L563 47" stroke="#c3cad4" stroke-width="1.8" marker-end="url(#e1)"/>
+  <path d="M640 70 C 640 120, 150 110, 150 156" stroke="#2f4bd6" stroke-width="1.6" fill="none" marker-end="url(#e2)"/>
+  <path d="M640 70 C 640 120, 360 120, 360 156" stroke="#0d9488" stroke-width="1.6" fill="none" marker-end="url(#e3)"/>
+  <path d="M640 70 L640 156" stroke="#b3730a" stroke-width="1.6" fill="none" marker-end="url(#e4)"/>
+  <rect x="40" y="158" width="222" height="72" rx="11" fill="#e9edfd" stroke="#2f4bd6" stroke-width="1.4"/>
+  <text x="58" y="182" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13" font-weight="600" fill="#14171d">grade the main task</text>
+  <text x="58" y="202" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11.5" fill="#5b6472">real tests plus real cost,</text>
+  <text x="58" y="217" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11.5" fill="#5b6472">from the observable side</text>
+  <rect x="278" y="158" width="164" height="72" rx="11" fill="#d9f2ef" stroke="#0d9488" stroke-width="1.4"/>
+  <text x="296" y="182" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13" font-weight="600" fill="#14171d">check the side task</text>
+  <text x="296" y="202" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11.5" fill="#5b6472">sealed checker,</text>
+  <text x="296" y="217" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11.5" fill="#5b6472">executed facts only</text>
+  <rect x="458" y="158" width="222" height="72" rx="11" fill="#f8ecd5" stroke="#b3730a" stroke-width="1.4"/>
+  <text x="476" y="182" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13" font-weight="600" fill="#14171d">score the monitors</text>
+  <text x="476" y="202" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11.5" fill="#5b6472">monitors on the observable</text>
+  <text x="476" y="217" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11.5" fill="#5b6472">record, then a verdict</text>
+  <path d="M150 230 C 150 280, 360 280, 360 300" stroke="#c3cad4" stroke-width="1.6" fill="none" marker-end="url(#e1)"/>
+  <path d="M360 230 L360 300" stroke="#c3cad4" stroke-width="1.6" fill="none" marker-end="url(#e1)"/>
+  <path d="M569 230 C 569 280, 360 280, 360 300" stroke="#c3cad4" stroke-width="1.6" fill="none" marker-end="url(#e1)"/>
+  <rect x="250" y="302" width="220" height="52" rx="11" fill="#ffffff" stroke="#cdd3dc" stroke-width="1.5"/>
+  <text x="360" y="325" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13" font-weight="600" fill="#14171d">one report bundle</text>
+  <text x="360" y="343" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11.5" fill="#5b6472">both records, both verdicts, the transcripts</text>
+  <defs>
+    <marker id="e1" markerWidth="9" markerHeight="9" refX="6.5" refY="4.5" orient="auto"><polygon points="0,1 7,4.5 0,8" fill="#c3cad4"/></marker>
+    <marker id="e2" markerWidth="9" markerHeight="9" refX="6.5" refY="4.5" orient="auto"><polygon points="0,1 7,4.5 0,8" fill="#2f4bd6"/></marker>
+    <marker id="e3" markerWidth="9" markerHeight="9" refX="6.5" refY="4.5" orient="auto"><polygon points="0,1 7,4.5 0,8" fill="#0d9488"/></marker>
+    <marker id="e4" markerWidth="9" markerHeight="9" refX="6.5" refY="4.5" orient="auto"><polygon points="0,1 7,4.5 0,8" fill="#b3730a"/></marker>
+  </defs>
+</svg>
+<figcaption>An episode is a straight line until the end, then it splits into three judgements that never share
+information: the main task graded on the observable side, the side task checked on the sealed side, and the
+monitors scored on the observable side. They combine only in the final report.</figcaption>
+</figure>
+
+<div class="note">The concrete lab, its codebase and services, its agents and their permissions, and the tasks
+they work on are the subject of <a href="settings.html">Settings</a>. How the monitors read the observable record
+and turn it into a verdict is <a href="monitoring.html">Monitoring</a>.</div>
+
+<div class="pager">
+  <a href="index.html"><span class="dir">Previous</span><span class="ttl">← Overview</span></a>
+  <a class="next" href="settings.html"><span class="dir">Next</span><span class="ttl">Settings →</span></a>
+</div>
+
+<footer class="site">
+LOC-Arena is defensive AI-safety research infrastructure. Attack chains are represented as control-plane state
+transitions and their programmatic verifiers, never as operational procedures.
+</footer>
+
+</main>
+</body>
+</html>

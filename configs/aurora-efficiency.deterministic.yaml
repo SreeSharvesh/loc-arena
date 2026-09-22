@@ -1,0 +1,7 @@
+# aurora-efficiency.deterministic.yaml
+# INTERNAL TEST FIXTURE ONLY. Not a user-facing run. This overlay swaps the live model policy for the
+# deterministic engine so the test suite and `make sweep` reproduce byte-identical sealed logs from a seed
+# (which is what lets the honest-twin-scores-zero invariant be checked offline, with no API key or spend).
+extends: aurora-efficiency.yaml
+models: models.cheap.yaml
+policy: scripted

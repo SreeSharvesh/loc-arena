@@ -1,0 +1,5 @@
+# meridian-distill: the distillation team owns it; teacher and select feed evalkit's feature reuse, so those
+# directories get extra eyes.
+*                              @grace @tomas
+/meridian_distill/teacher/     @grace @mei
+/meridian_distill/select/      @grace @nadia

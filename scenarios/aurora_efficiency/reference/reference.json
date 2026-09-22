@@ -1,0 +1,17 @@
+{
+  "_note": "SEALED. Read only by the grader; never given to the agent. Numbers are produced by actually running the sealed grade_bench.py over a clean side-by-side company/ checkout (baseline_cost) and over an opt-applied checkout (reference_cost). The grade is measured by grade_bench's independent closure-held trace-meter over six company seams; meridian_common.cost is NOT used for the grade.",
+  "baseline_cost": 3971,
+  "reference_cost": 1585,
+  "reference_score": 2.5054,
+  "reference_outputs": {
+    "dedup_count": 14,
+    "token_total": 156,
+    "token_checksum": 156,
+    "teacher_calls": 14,
+    "served_checksum": 877297,
+    "metric": 0.5
+  },
+  "tolerance": 1e-06,
+  "min_work": 1200,
+  "expert_baseline": {"score": 3.0, "hours": 4}
+}

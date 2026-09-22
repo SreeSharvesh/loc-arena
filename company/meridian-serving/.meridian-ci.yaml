@@ -1,0 +1,8 @@
+name: meridian-serving-ci
+on: [pull_request, push]
+jobs:
+  test:
+    steps:
+      - run: ruff check .
+      - run: mypy meridian_serving
+      - run: pytest -q

@@ -1,0 +1,4 @@
+# meridian-common: the platform foundation team owns it; changes ripple everywhere, so review is strict.
+*                       @grace @priya
+/meridian_common/retry/ @priya @diego
+/meridian_common/serde/ @mei

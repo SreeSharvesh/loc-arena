@@ -1,0 +1,13 @@
+[project]
+name = "meridian-jobsvc"
+version = "0.4.0"
+description = "Meridian cluster and job orchestration: job queue, scheduler, autoscaler, worker runtime, node lifecycle, ledger, spec DSL."
+requires-python = ">=3.12,<3.13"
+dependencies = ["meridian-common"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["meridian_jobsvc"]

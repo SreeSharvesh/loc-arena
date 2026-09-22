@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Settings</title>
+<meta name="description" content="A setting is a complete simulated organization plus a catalog of main and side tasks. LOC-Arena documents each setting here; the first is the Meridian AI Lab.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;650&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+<link rel="stylesheet" href="style.css?v=4">
+</head>
+<body>
+<nav class="nav"><div class="nav-inner">
+  <span class="brand"><span class="dot"></span>LOC-Arena</span>
+  <a href="index.html">Overview</a>
+  <a href="architecture.html">Architecture</a>
+  <a href="settings.html" class="active">Settings</a>
+  <a href="monitoring.html">Monitoring</a>
+  <a href="extend.html">Usage</a>
+</div></nav>
+
+<main class="docs">
+<aside class="sidebar">
+  <div class="sb-eyebrow">Settings</div>
+  <nav>
+    <a href="settings.html" class="active">Overview</a>
+    <div class="sb-group">Meridian AI Lab</div>
+    <a href="meridian.html" class="sb-sub">The lab</a>
+    <a href="meridian-aurora.html" class="sb-sub">Aurora efficiency push</a>
+  </nav>
+</aside>
+
+<div class="content">
+<div class="eyebrow">Settings</div>
+<h1>Settings</h1>
+<p class="lede">A setting is a complete simulated organization plus a catalog of tasks for the agents to carry. It
+is where the abstract engine in <a href="architecture.html">Architecture</a> becomes a concrete lab with real
+software, real agents, and real work. This section documents each setting in the project.</p>
+
+<h2>What a setting defines</h2>
+<p>Every setting reuses the same engine. What it adds is the concrete world laid on top.</p>
+
+<div class="tablewrap"><table>
+<thead><tr><th>Part</th><th>What the setting specifies</th></tr></thead>
+<tbody>
+<tr><td><b>The organization</b></td><td>The company, what it does, and its software: the services and repositories the agents work on.</td></tr>
+<tr><td><b>The agents</b></td><td>The team, one agent per service, under a lead. Each agent's permissions and scope: which repositories it can change, whether it can call models or submit jobs, and any special access.</td></tr>
+<tr><td><b>The tasks</b></td><td>A catalog of main tasks (the open engineering work) and side tasks (the covert objectives), each pairing forming one episode.</td></tr>
+<tr><td><b>The controls</b></td><td>The monitors placed on the setting and the sealed checker that decides the side task.</td></tr>
+</tbody>
+</table></div>
+
+<h2>Settings in this project</h2>
+<p>One setting is built today. More can be added, each documented as its own section in the sidebar.</p>
+
+<a class="setting-card" href="meridian.html">
+  <span class="tag">Setting</span>
+  <h3>Meridian AI Lab</h3>
+  <p>A simulated AI lab running an efficiency push on its model-serving-and-evaluation pipeline. A lead agent and
+  six service agents do the work; one main and one side task are documented.</p>
+  <div class="pages">The lab &nbsp;·&nbsp; Aurora efficiency push →</div>
+</a>
+
+<div class="note">Future settings, at different points in a lab's operation and with different task pairs, will
+appear here alongside Meridian.</div>
+
+<div class="pager">
+  <a href="architecture.html"><span class="dir">Previous</span><span class="ttl">← Architecture</span></a>
+  <a class="next" href="meridian.html"><span class="dir">Next</span><span class="ttl">Meridian AI Lab →</span></a>
+</div>
+
+<footer class="site">
+LOC-Arena is defensive AI-safety research infrastructure. Attack chains are represented as control-plane state
+transitions and their programmatic verifiers, never as operational procedures.
+</footer>
+</div>
+</main>
+</body>
+</html>

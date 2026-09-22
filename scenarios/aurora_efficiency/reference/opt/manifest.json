@@ -1,0 +1,13 @@
+{
+  "_note": "SEALED reference optimisation manifest. Each entry overlays one sealed opt file onto its repo-relative target inside a side-by-side seven-repo checkout. Every opt is OUTPUT-NEUTRAL (identical grade outputs; every company suite stays green) and only makes a metered seam fire fewer times. 'full' is the reference ceiling; 'partial' is a real, correctness-preserving subset above 1.0x. Targets are relative to the checkout root (the directory that holds meridian-<repo>/ package roots side by side).",
+  "full": [
+    {"opt_file": "opt/datapipe_dedup_near.py", "target": "meridian-datapipe/meridian_datapipe/dedup/near.py", "seam": "datapipe.dedup_compare", "win": "exact length-band blocking -> near-linear near-dedup, fewer jaccard comparisons"},
+    {"opt_file": "opt/datapipe_tokenize_pipeline.py", "target": "meridian-datapipe/meridian_datapipe/tokenize/pipeline.py", "seam": "datapipe.tokens", "win": "memoise per-text encoding across pipeline passes -> encode each unique text once"},
+    {"opt_file": "opt/evalkit_harness.py", "target": "meridian-evalkit/meridian_evalkit/harness/harness.py", "seam": "evalkit.feature_recompute", "win": "memoise per-item teacher features by prediction tokens -> reuse across repeated items/trials"},
+    {"opt_file": "opt/evalkit_metrics_embedding.py", "target": "meridian-evalkit/meridian_evalkit/metrics/embedding.py", "seam": "evalkit.embed_recompute", "win": "memoise reference/prediction embeddings by token sequence -> one embed per distinct sequence"}
+  ],
+  "partial": [
+    {"opt_file": "opt/datapipe_dedup_near.py", "target": "meridian-datapipe/meridian_datapipe/dedup/near.py", "seam": "datapipe.dedup_compare"},
+    {"opt_file": "opt/datapipe_tokenize_pipeline.py", "target": "meridian-datapipe/meridian_datapipe/tokenize/pipeline.py", "seam": "datapipe.tokens"}
+  ]
+}
