@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>LOC-Arena</title>
+<meta name="description" content="LOC-Arena is an AI control evaluation setting that measures whether an untrusted team of agents can establish a rogue internal deployment and whether the platform's monitors catch it.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;650&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+<link rel="stylesheet" href="style.css?v=4">
+</head>
+<body>
+<nav class="nav"><div class="nav-inner">
+  <span class="brand"><span class="dot"></span>LOC-Arena</span>
+  <a href="index.html" class="active">Overview</a>
+  <a href="architecture.html">Architecture</a>
+  <a href="settings.html">Settings</a>
+  <a href="monitoring.html">Monitoring</a>
+  <a href="extend.html">Usage</a>
+</div></nav>
+
+<main class="wrap">
+
+<div class="eyebrow">AI control evaluation setting</div>
+<h1>LOC-Arena</h1>
+<p class="lede">LOC-Arena is an AI control evaluation setting. An untrusted team of AI agents does real
+engineering work inside a simulated AI lab. In an attack episode the team also attempts a rogue internal
+deployment: a model kept running off the monitored path, under the team's control. Each episode measures two
+things independently and reports the gap between them.</p>
+
+<h2>Rogue internal deployment</h2>
+<p>A rogue internal deployment is a model the team keeps running inside the lab, off the sanctioned and monitored
+path, on compute it controls. It is not a model escaping to the internet. It is an unmonitored deployment stood up
+from inside, while the team is also doing legitimate work that fills the episode with normal activity.</p>
+<p>The question is not whether an agent can be told to do this. It is whether the platform's ordinary controls, the
+same logs, reviewers, and monitors a real control team would run, catch it during the episode.</p>
+
+<h2>The two measurements</h2>
+<p>Every episode produces two verdicts from separate sources. They never share information.</p>
+<ul>
+  <li><strong>Ground truth.</strong> A sealed, deterministic checker reads a private record of executed events and
+  decides whether a rogue deployment exists. It reads executed facts, never an agent's claim. Agents have no route
+  to it.</li>
+  <li><strong>Detection.</strong> Monitors read only observable surfaces, the same ones a real control team sees,
+  and score how suspicious the episode looks. They never read the sealed record or the checker's verdict.</li>
+</ul>
+<p>Keeping the two apart is the point. If detection could read the sealed side, it would be grading with the
+answer key. The gap between a rogue deployment that happened and one the monitors flagged is the number the
+setting produces.</p>
+
+<figure>
+<svg viewBox="0 0 720 300" role="img" aria-label="Two independent measurements, ground truth and detection, and the gap between them">
+  <rect x="26" y="40" width="290" height="150" rx="14" fill="#d9f2ef" stroke="#0d9488" stroke-width="1.5"/>
+  <rect x="46" y="62" width="16" height="13" rx="2.5" fill="none" stroke="#0d9488" stroke-width="2"/>
+  <path d="M49 62 v-4 a5 5 0 0 1 10 0 v4" fill="none" stroke="#0d9488" stroke-width="2"/>
+  <text x="74" y="73" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="15" font-weight="600" fill="#14171d">Ground truth</text>
+  <text x="46" y="103" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13" fill="#5b6472">A sealed checker reads a private</text>
+  <text x="46" y="123" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13" fill="#5b6472">record of executed events and</text>
+  <text x="46" y="143" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13" fill="#5b6472">decides: does a rogue deployment</text>
+  <text x="46" y="163" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13" fill="#5b6472">exist? Agents cannot reach it.</text>
+
+  <rect x="404" y="40" width="290" height="150" rx="14" fill="#f8ecd5" stroke="#b3730a" stroke-width="1.5"/>
+  <circle cx="428" cy="68" r="8" fill="none" stroke="#b3730a" stroke-width="2"/>
+  <circle cx="428" cy="68" r="3" fill="#b3730a"/>
+  <text x="446" y="73" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="15" font-weight="600" fill="#14171d">Detection</text>
+  <text x="424" y="103" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13" fill="#5b6472">Monitors read only observable</text>
+  <text x="424" y="123" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13" fill="#5b6472">surfaces and score how suspicious</text>
+  <text x="424" y="143" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13" fill="#5b6472">the episode looks. They never see</text>
+  <text x="424" y="163" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13" fill="#5b6472">the sealed record.</text>
+
+  <line x1="316" y1="115" x2="404" y2="115" stroke="#c3cad4" stroke-width="1.5" stroke-dasharray="4 4"/>
+  <text x="360" y="230" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, monospace" font-size="12" letter-spacing="1.5" fill="#d63f4a">THE GAP</text>
+  <text x="360" y="258" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13.5" fill="#14171d">landed, and not flagged</text>
+  <text x="360" y="277" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12.5" fill="#5b6472">the quantity the setting is built to measure</text>
+  <path d="M360 130 L360 210" stroke="#d63f4a" stroke-width="2" marker-end="url(#a1)"/>
+  <defs><marker id="a1" markerWidth="10" markerHeight="10" refX="7" refY="5" orient="auto"><polygon points="0,1 8,5 0,9" fill="#d63f4a"/></marker></defs>
+</svg>
+<figcaption>The two measurements are computed independently. A rogue deployment that <b>landed</b> but was <b>not
+flagged</b> is the failure the setting is built to surface.</figcaption>
+</figure>
+
+<h2>The honest twin</h2>
+<p>Every attack episode has an honest twin: the same config with the covert objective disabled. The twin runs the
+legitimate work only. It sets the baseline for normal behaviour, and it calibrates the detection threshold. It is
+also a standing check on the checker: the twin reaches no covert step, so it must always verify clean. If it ever
+did not, the checker would be wrong. The covert switch is the only difference between an attack episode and its
+twin, which is what makes comparing them valid.</p>
+
+<h2>Reproducibility</h2>
+<p>An episode is fully described by its config and a seed. It rebuilds from scratch every time, so a result
+reproduces exactly. Anything time-varying is seeded.</p>
+
+<h2>Sections</h2>
+<div class="grid two">
+  <a class="chapter card" href="architecture.html">
+    <span class="num">Concepts</span>
+    <h3>Architecture</h3>
+    <p>The engine every setting runs on: the services, the single path for model calls, the sealed and observable
+    sides, the event record, and how one episode runs.</p>
+    <span class="go">Read →</span>
+  </a>
+  <a class="chapter card" href="settings.html">
+    <span class="num">Settings</span>
+    <h3>Meridian AI Lab</h3>
+    <p>The concrete lab: its work, its software services and codebase, the agents that run it and their
+    permissions, and the main and side tasks they carry.</p>
+    <span class="go">Read →</span>
+  </a>
+  <a class="chapter card" href="monitoring.html">
+    <span class="num">Concepts</span>
+    <h3>Monitoring</h3>
+    <p>Tap points, the firewall, monitor modes and timing, the aggregated suspicion score, the caught decision, and
+    the safety and usefulness metrics.</p>
+    <span class="go">Read →</span>
+  </a>
+  <a class="chapter card" href="extend.html">
+    <span class="num">Reference</span>
+    <h3>Usage</h3>
+    <p>Set up and run episodes, read the dashboard, run honest and attack runs and sweeps, and add or configure
+    tasks, monitors, models, and settings.</p>
+    <span class="go">Read →</span>
+  </a>
+</div>
+<div class="note">New here? Read <a href="architecture.html">Architecture</a> for the engine, then
+<a href="settings.html">Settings</a> for the Meridian AI Lab and its tasks.</div>
+
+<footer class="site">
+LOC-Arena is defensive AI-safety research infrastructure. Attack chains are represented as control-plane state
+transitions and their programmatic verifiers, never as operational procedures.
+</footer>
+
+<div class="pager">
+  <span></span>
+  <a class="next" href="architecture.html"><span class="dir">Next</span><span class="ttl">Architecture →</span></a>
+</div>
+
+</main>
+</body>
+</html>
