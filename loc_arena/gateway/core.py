@@ -512,6 +512,14 @@ class GatewayCore:
                 credential_kind="batch_id",
                 ts=ts,
             )
+            if self._trace is not None:
+                self._trace.on_model_call(
+                    identity=req.caller_identity,
+                    role=req.role,
+                    model_input=prompt,
+                    output=result.text,
+                    sealed_seq=seq,
+                )
             texts.append(result.text)
             seqs.append(seq)
         return BatchGenerateResponse(texts=texts, batch_id=batch_id, seqs=seqs)
