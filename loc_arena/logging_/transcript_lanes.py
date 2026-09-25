@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
@@ -103,7 +104,14 @@ def _model_blocks(event: ModelEvent) -> tuple[Block, ...]:
 
 
 def _tool_block(event: ToolEvent) -> Block:
-    raise NotImplementedError
+    blocked = event.error is not None
+    return Block(
+        "tool",
+        f"{event.function} (blocked)" if blocked else event.function,
+        event.error.message if event.error is not None else str(event.result),
+        code=json.dumps(event.arguments, indent=2, sort_keys=True),
+        blocked=blocked,
+    )
 
 
 def _info_block(event: InfoEvent) -> Block:

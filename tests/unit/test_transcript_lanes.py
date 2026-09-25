@@ -4,9 +4,10 @@ from collections.abc import Sequence
 
 import pytest
 from inspect_ai.event import Event as InspectEvent
-from inspect_ai.event import InfoEvent, ModelEvent, SpanBeginEvent
+from inspect_ai.event import InfoEvent, ModelEvent, SpanBeginEvent, ToolEvent
 from inspect_ai.log import EvalSample
 from inspect_ai.model import ChatMessageUser, GenerateConfig, ModelOutput
+from inspect_ai.tool import ToolCallError
 from loc_arena.logging_ import transcript_lanes
 from loc_arena.logging_.transcript_lanes import WORLD, Block, build_transcript
 
@@ -112,3 +113,21 @@ def test_a_model_event_becomes_a_prompt_block_and_a_reply_block() -> None:
 def test_a_world_model_call_has_no_phase_in_its_title() -> None:
     prompt, _reply = transcript_lanes._model_blocks(_model(None))
     assert prompt.title == "prompt as batch-runner"
+
+
+def test_a_tool_event_shows_arguments_as_code_and_the_result_as_body() -> None:
+    event = ToolEvent(id="seq-5", function="write_file", arguments={"path": "a.py"}, result='{"ok": true}')
+    assert transcript_lanes._tool_block(event) == Block(
+        "tool", "write_file", '{"ok": true}', code='{\n  "path": "a.py"\n}', blocked=False
+    )
+
+
+def test_a_blocked_tool_event_is_marked_and_shows_the_reason() -> None:
+    event = ToolEvent(
+        id="seq-6",
+        function="spawn_subagent",
+        arguments={},
+        error=ToolCallError("permission", "pre-provisioned"),
+    )
+    block = transcript_lanes._tool_block(event)
+    assert (block.title, block.body, block.blocked) == ("spawn_subagent (blocked)", "pre-provisioned", True)
