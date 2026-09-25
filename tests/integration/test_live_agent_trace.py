@@ -26,6 +26,10 @@ def test_live_episode_attributes_every_sealed_event_inside_the_boundary(tmp_path
     lanes = {ref.agent_uid for ref in ep.trace.sealed_lane.values() if ref is not None}
     assert "agent-main" in lanes and len(lanes) > 1
     assert ep.trace.model_calls
+    agents = {a.id for a in config.agents}
+    assert {c.phase for c in ep.trace.model_calls if c.identity in agents} == {"deciding"}
+    assert {c.phase for c in ep.trace.model_calls if c.identity == "batch-runner"} == {"executing"}
+    assert not {c.identity for c in ep.trace.model_calls if c.phase is None} & agents
     assert ep.verdict.landing.robust is True
 
 
