@@ -7,8 +7,8 @@ What to build is in `spec.md`; this file is how to build it.
 
 | Rule | Detail |
 |---|---|
-| Stacked branches | `agent-log/NN-<module>-<function>`, each based on the previous branch; each PR targets the branch below it |
-| One function per PR | a PR implements exactly one function plus its unit test |
+| Stacked branches | one branch per module step (`agent-log/NN-<module>-stubs`, `agent-log/NN-<module>-impl`), each based on the previous branch; each PR targets the branch below it |
+| One function per commit | each commit implements exactly one function plus its unit test; review fixes are their own commits |
 | Stubs first | a module lands first as a skeleton: signatures and types only, every body `raise NotImplementedError` |
 | Stubs raise | never return a placeholder (`None`, `0`, `""`); a placeholder is a failure silently becoming a value |
 | Pre-order | implement a parent before its children; each new callee starts as a raising stub |
@@ -19,10 +19,10 @@ What to build is in `spec.md`; this file is how to build it.
 
 | Rule | Detail |
 |---|---|
-| No comments inside functions | no docstrings or `#` comments in function bodies; contracts live in `spec.md`, names carry meaning |
-| Ruff docstring rules | `agent_trace.py` has a per-file ignore for `D102`/`D107` in `pyproject.toml`; add new modules there too |
+| No comments inside functions | no docstrings or `#` comments (including `# type: ignore`) in function bodies, tests included; contracts live in `spec.md`, names carry meaning |
+| Ruff docstring rules | each new module gets a per-file ignore in `pyproject.toml` for the docstring rules it would trip (`D102`/`D103`/`D107`) |
 | Typing | mypy strict; `from __future__ import annotations`; frozen dataclasses for data |
-| Inspect import | import `inspect_ai` lazily inside the exporter and renderer (it loads ~1200 modules) |
+| Inspect import | the harness imports the exporter and renderer modules lazily, inside `_write_bundle` (`inspect_ai` loads ~1200 modules) |
 
 ## Do not
 
