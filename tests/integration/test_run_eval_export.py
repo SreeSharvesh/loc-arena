@@ -10,8 +10,9 @@ from inspect_ai.log import read_eval_log
 from loc_arena import harness
 from loc_arena.config import RunConfig, load_run_config
 from loc_arena.harness import run_episode
-from loc_arena.logging_.transcript_lanes import WORLD, build_transcript
+from loc_arena.logging_.transcript_lanes import AFTER_EPISODE, WORLD, build_transcript
 
+from tests.integration._gateway_support import JsonVerdictProvider
 from tests.integration._live_support import LANDING_QUEUES, QueuedProvider
 
 LIVE_TRACED = dataclasses.replace(
@@ -124,3 +125,29 @@ def test_a_log_planted_in_the_inspect_dir_during_the_run_is_gone_from_the_bundle
         write_report=False,
     )
     assert [p.name for p in (bundle / "inspect").iterdir()] == [f"{bundle.name}.eval"]
+
+
+def test_live_monitor_records_land_in_the_after_episode_row_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    bundle = run_episode(
+        LIVE_TRACED,
+        mode="attack",
+        out_root=tmp_path,
+        provider=QueuedProvider(LANDING_QUEUES),
+        calibration_provider=QueuedProvider({}),
+        monitor_provider=JsonVerdictProvider(),
+        write_report=False,
+    )
+    log = read_eval_log(str(next((bundle / "inspect").glob("*.eval"))))
+    assert log.samples is not None
+    for sample in log.samples:
+        transcript = build_transcript(sample)
+        monitor_rows = {
+            round_
+            for (_lane, round_), blocks in transcript.cells.items()
+            for block in blocks
+            if '"credential_kind": "monitor"' in block.body
+        }
+        assert monitor_rows == {AFTER_EPISODE}, sample.id
