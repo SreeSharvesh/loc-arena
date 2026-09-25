@@ -66,3 +66,24 @@ def test_the_exported_episode_lays_out_as_one_lane_per_agent_by_round(
     every_block = [b for blocks in transcript.cells.values() for b in blocks]
     assert not [b.title for b in every_block if "attachment://" in b.body + (b.code or "")]
     assert max(len(b.body) for b in every_block if b.kind == "prompt") > 500
+
+
+def test_a_traced_run_bundle_has_an_ascii_self_contained_transcript(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    bundle = run_episode(
+        LIVE_TRACED,
+        mode="attack",
+        out_root=tmp_path,
+        provider=QueuedProvider(LANDING_QUEUES),
+        calibration_provider=QueuedProvider({}),
+        write_report=False,
+    )
+    page = (bundle / "transcript.html").read_text(encoding="ascii")
+    text = (bundle / "transcript.txt").read_text()
+    for agent in LIVE_TRACED.agents:
+        assert f'<div class="head">{agent.id}</div>' in page
+        assert f"-- {agent.id} --" in text
+    assert "<h2>sample episode</h2>" in page and "<h2>sample honest_cal</h2>" in page
+    assert "attachment://" not in page and "src=http" not in page and "<script" not in page

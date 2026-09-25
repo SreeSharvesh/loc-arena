@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 from loc_arena import harness, live
 from loc_arena.config import load_run_config
-from loc_arena.logging_ import inspect_export
+from loc_arena.logging_ import inspect_export, transcript_render
 from loc_arena.logging_.agent_trace import AgentTrace
 
 LIVE = dataclasses.replace(load_run_config("configs/aurora-efficiency.deterministic.yaml"), policy="model")
@@ -48,7 +48,12 @@ def test_write_bundle_writes_the_real_eval_when_the_flag_is_on(
         seen["episodes"] = kwargs["episodes"]
         return path
 
+    def fake_transcripts(eval_path: Path, out_dir: Path) -> tuple[Path, Path]:
+        seen["transcripts"] = (eval_path, out_dir)
+        return out_dir / "transcript.html", out_dir / "transcript.txt"
+
     monkeypatch.setattr(inspect_export, "write_run_eval", fake_write)
+    monkeypatch.setattr(transcript_render, "write_transcripts", fake_transcripts)
     monkeypatch.setattr(harness, "_eval_episodes", lambda cfg, episode, calibration: ["from-trace"])
     config = dataclasses.replace(LIVE, agent_transcript=True)
     out = tmp_path / "bundle"
@@ -56,7 +61,11 @@ def test_write_bundle_writes_the_real_eval_when_the_flag_is_on(
     harness._write_bundle(
         config, out, "run-x", {}, _bundle_inputs(tmp_path), 1, "attack", 0.5, write_report=False
     )
-    assert seen == {"path": out / "run-x.eval", "episodes": ["from-trace"]}
+    assert seen == {
+        "path": out / "run-x.eval",
+        "episodes": ["from-trace"],
+        "transcripts": (out / "run-x.eval", out),
+    }
     assert not (out / "run-x.eval").exists()
 
 

@@ -430,8 +430,9 @@ def _write_bundle(
         (out_dir / "report.html").write_text(report)
     if cfg.agent_transcript:
         from loc_arena.logging_.inspect_export import write_run_eval
+        from loc_arena.logging_.transcript_render import write_transcripts
 
-        write_run_eval(
+        eval_path = write_run_eval(
             out_dir / f"{run_name}.eval",
             run_name=run_name,
             config=cfg,
@@ -440,6 +441,7 @@ def _write_bundle(
             scores=scores,
             episodes=_eval_episodes(cfg, episode, calibration),
         )
+        write_transcripts(eval_path, out_dir)
     else:
         (out_dir / f"{run_name}.eval").write_text(
             json.dumps(
