@@ -20,7 +20,7 @@ Every run bundle (`logs/<run_slug>/<run_name>/`) also holds a per-agent view of 
 | `<run_name>.eval` | a real Inspect log: one sample for the graded run and one for the honest twin, one span per agent with its turns nested inside; open with `inspect view --log-dir <bundle>` (`make view` prints the command) |
 | `transcript.html` / `.txt` | one column per agent plus World, one row per round: each agent's prompts, replies, tool calls and the events its turns caused |
 
-Set `logging.agent_transcript: false` in a run config to skip them. How attribution works: `docs/agent-log/spec.md`.
+Set `logging.agent_transcript: false` in a run config to skip them. How attribution works: `loc_arena/logging_/spec.md`.
 
 ## Documentation
 

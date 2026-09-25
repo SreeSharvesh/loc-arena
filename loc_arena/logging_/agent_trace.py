@@ -1,4 +1,4 @@
-"""In-memory per-agent trace of one episode; contract in docs/agent-log/spec.md."""
+"""In-memory per-agent trace of one episode; contract in spec.md beside this module."""
 
 from __future__ import annotations
 

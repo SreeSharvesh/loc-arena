@@ -1,4 +1,4 @@
-"""Inspect sample -> per-agent lanes of blocks, one row per round; contract in docs/agent-log/spec.md."""
+"""Inspect sample -> per-agent lanes of blocks, one row per round; contract in spec.md beside this module."""
 
 from __future__ import annotations
 

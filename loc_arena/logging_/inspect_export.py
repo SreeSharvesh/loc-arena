@@ -1,4 +1,4 @@
-"""Write one run as a real Inspect ``.eval`` log with a span per agent; contract in docs/agent-log/spec.md."""
+"""Write one run as a real Inspect ``.eval`` log, a span per agent; contract in spec.md beside this module."""
 
 from __future__ import annotations
 

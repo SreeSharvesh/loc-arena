@@ -1,4 +1,4 @@
-"""Per-agent transcript as self-contained HTML and plain text; contract in docs/agent-log/spec.md."""
+"""Per-agent transcript as self-contained HTML and plain text; contract in spec.md beside this module."""
 
 from __future__ import annotations
 
