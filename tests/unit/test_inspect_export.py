@@ -401,3 +401,14 @@ def test_timestamps_follow_turn_bounds_and_model_calls_and_world_reuses_the_last
         ("span_end", 60.0),
         ("span_end", 60.0),
     ]
+
+
+def test_cause_first_moves_the_action_to_the_start_of_the_executing_phase() -> None:
+    decide, job, tick, action = _tick(1), _tick(3), _tick(4), _action(5)
+    assert inspect_export._cause_first([decide, job, tick, action], 3) == [decide, action, job, tick]
+
+
+def test_cause_first_leaves_a_turn_without_an_executing_phase_or_trailing_action_alone() -> None:
+    run = [_tick(1), _action(2)]
+    assert inspect_export._cause_first(run, None) == run
+    assert inspect_export._cause_first([_action(1), _tick(2)], 1) == [_action(1), _tick(2)]

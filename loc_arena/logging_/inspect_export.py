@@ -145,7 +145,13 @@ def _sample_events(
                 )
             )
         span_id = _turn_span_id(lane) if lane is not None else root_id
-        for event in run:
+        events_in_run = list(run)
+        ordered = (
+            _cause_first(events_in_run, turn_records[lane].executing_from_seq)
+            if lane is not None
+            else events_in_run
+        )
+        for event in ordered:
             call = calls.get(event.seq)
             if event.kind == "inference_call" and call is not None:
                 now = _timestamp(call.wall_ts)
@@ -164,6 +170,13 @@ def _sample_events(
     for inspect_event in events:
         inspect_event.working_start = (inspect_event.timestamp - started).total_seconds()
     return events
+
+
+def _cause_first(run: list[Event], executing_from_seq: int | None) -> list[Event]:
+    if executing_from_seq is None or not run or run[-1].kind != "action":
+        return run
+    split = next((index for index, event in enumerate(run) if event.seq >= executing_from_seq), len(run) - 1)
+    return [*run[:split], run[-1], *run[split:-1]]
 
 
 def _episode_span_id(sample_id: str) -> str:

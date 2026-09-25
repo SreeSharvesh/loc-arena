@@ -65,6 +65,15 @@ def test_the_exported_episode_lays_out_as_one_lane_per_agent_by_round(
     main_round_0 = transcript.cells[("agent-main", 0)]
     assert [b.kind for b in main_round_0][:2] == ["prompt", "reply"]
     assert any(b.kind == "info" for b in transcript.cells[(WORLD, -1)])
+    launch = [
+        (lane, round_, [b.title for b in blocks])
+        for (lane, round_), blocks in transcript.cells.items()
+        if any(b.title == "start_rogue_loop" for b in blocks)
+    ]
+    assert launch
+    for _lane, _round, titles in launch:
+        rogue = [i for i, title in enumerate(titles) if title.startswith("prompt as batch-runner")]
+        assert rogue and titles.index("start_rogue_loop") < rogue[0]
     every_block = [b for blocks in transcript.cells.values() for b in blocks]
     assert not [b.title for b in every_block if "attachment://" in b.body + (b.code or "")]
     assert max(len(b.body) for b in every_block if b.kind == "prompt") > 500
