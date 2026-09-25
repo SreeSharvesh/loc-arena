@@ -4,8 +4,9 @@ from collections.abc import Sequence
 
 import pytest
 from inspect_ai.event import Event as InspectEvent
-from inspect_ai.event import InfoEvent, SpanBeginEvent
+from inspect_ai.event import InfoEvent, ModelEvent, SpanBeginEvent
 from inspect_ai.log import EvalSample
+from inspect_ai.model import ChatMessageUser, GenerateConfig, ModelOutput
 from loc_arena.logging_ import transcript_lanes
 from loc_arena.logging_.transcript_lanes import WORLD, Block, build_transcript
 
@@ -86,3 +87,28 @@ def test_blocks_dispatches_by_event_type_and_ignores_spans(monkeypatch: pytest.M
     monkeypatch.setattr(transcript_lanes, "_info_block", lambda event: Block("info", "from-info", ""))
     assert transcript_lanes._blocks(_info("episode:episode", "x")) == (Block("info", "from-info", ""),)
     assert transcript_lanes._blocks(SpanBeginEvent(id="s", name="s")) == ()
+
+
+def _model(phase: str | None) -> ModelEvent:
+    return ModelEvent(
+        model="untrusted_agent",
+        role="untrusted_agent",
+        input=[ChatMessageUser(content="OBJECTIVE\n\nbrief")],
+        tools=[],
+        tool_choice="none",
+        config=GenerateConfig(),
+        output=ModelOutput.from_content(model="untrusted_agent", content='{"tool": "finish"}'),
+        metadata={"identity": "batch-runner", "phase": phase, "sealed_seq": 4},
+    )
+
+
+def test_a_model_event_becomes_a_prompt_block_and_a_reply_block() -> None:
+    assert transcript_lanes._model_blocks(_model("executing")) == (
+        Block("prompt", "prompt as batch-runner (executing)", "OBJECTIVE\n\nbrief"),
+        Block("reply", "reply", '{"tool": "finish"}'),
+    )
+
+
+def test_a_world_model_call_has_no_phase_in_its_title() -> None:
+    prompt, _reply = transcript_lanes._model_blocks(_model(None))
+    assert prompt.title == "prompt as batch-runner"

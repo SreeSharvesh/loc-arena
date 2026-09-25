@@ -92,7 +92,14 @@ def _blocks(event: InspectEvent) -> tuple[Block, ...]:
 
 
 def _model_blocks(event: ModelEvent) -> tuple[Block, ...]:
-    raise NotImplementedError
+    metadata = event.metadata or {}
+    phase = metadata.get("phase")
+    caller = f"prompt as {metadata.get('identity', event.role)}"
+    prompt = "\n\n".join(message.text for message in event.input)
+    return (
+        Block("prompt", f"{caller} ({phase})" if phase else caller, prompt),
+        Block("reply", "reply", event.output.completion),
+    )
 
 
 def _tool_block(event: ToolEvent) -> Block:
