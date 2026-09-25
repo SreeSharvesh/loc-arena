@@ -93,7 +93,8 @@ class AgentTrace:
         self._phase = "executing"
 
     def on_sealed_append(self, event: Event) -> None:
-        raise NotImplementedError
+        self._sealed_lane[event.seq] = self._bound
+        self._last_sealed = event
 
     def on_mirror_append(self, event: Event) -> None:
         raise NotImplementedError

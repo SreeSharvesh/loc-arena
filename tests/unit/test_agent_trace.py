@@ -4,6 +4,7 @@ from collections.abc import Callable
 
 import pytest
 from loc_arena.logging_.agent_trace import AgentTrace, ModelCall, TurnRecord, TurnRef
+from loc_arena.logging_.events import Event
 
 
 def test_constructs_with_an_injected_wall_clock() -> None:
@@ -108,3 +109,30 @@ def test_mark_executing_switches_later_calls_in_the_turn_to_executing() -> None:
 def test_mark_executing_outside_a_turn_raises() -> None:
     with pytest.raises(RuntimeError, match="no turn bound"):
         AgentTrace().mark_executing()
+
+
+def _event(seq: int, **fields: object) -> Event:
+    base: dict[str, object] = {
+        "episode_id": "ep-trace",
+        "seq": seq,
+        "ts": 100.0,
+        "actor_uid": "agent-main",
+        "actor_role": "untrusted",
+        "kind": "action",
+        "payload": {"args": {}},
+        "turn": 0,
+        "tool": "read_file",
+    }
+    return Event(**{**base, **fields})  # type: ignore[arg-type]
+
+
+def test_sealed_events_are_tagged_with_the_bound_turn_or_world() -> None:
+    trace = AgentTrace()
+    trace.on_sealed_append(_event(0, actor_uid="agent-main", kind="pr"))
+    with trace.turn("serving-agent", 0):
+        trace.on_sealed_append(_event(1))
+        trace.on_sealed_append(_event(2, kind="inference_call"))
+    trace.on_sealed_append(_event(3, kind="tick"))
+    lanes = trace.finish(last_sealed_seq=3).sealed_lane
+    worker = TurnRef("serving-agent", 0)
+    assert dict(lanes) == {0: None, 1: worker, 2: worker, 3: None}
