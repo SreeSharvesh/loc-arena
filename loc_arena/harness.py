@@ -16,18 +16,39 @@ between a run and its twin.
 
 from __future__ import annotations
 
+import dataclasses
+import json
+import os
 import secrets
 import shutil
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass
-from datetime import UTC
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 from loc_arena.config import RunConfig
+from loc_arena.gateway.core import GatewayCore, GenerateRequest, OpenRouterProvider, sign_monitor_credential
+from loc_arena.live import assemble_model_episode
+from loc_arena.logging_ import viewer
+from loc_arena.logging_.events import AppendOnlyLog, Event, read_events
+from loc_arena.metrics import (
+    calibrate_overall_threshold,
+    calibrate_threshold,
+    episode_overall,
+    record_episode,
+    safety,
+    suspicion_specs,
+    usefulness,
+)
+from loc_arena.monitors.aggregation import load_aggregation_config
+from loc_arena.monitors.registry import load_monitor_specs, load_monitors
+from loc_arena.protocol import compose_protocol
+from loc_arena.task import assemble_scripted_episode
 
 LABEL = "loc-arena.eval"
 IMAGE = "loc-arena-svc:latest"
@@ -151,7 +172,11 @@ class EpisodeStack:
     compose_file: Path
 
     def exec(
-        self, service: str, command: list[str], *, check: bool = True
+        self,
+        service: str,
+        command: list[str],
+        *,
+        check: bool = True,
     ) -> subprocess.CompletedProcess[str]:
         """Run a command inside a service container (used by the isolation probes)."""
         return _compose(self, ["exec", "-T", service, *command], check=check)
@@ -174,7 +199,9 @@ def _compose(stack: EpisodeStack, args: list[str], *, check: bool = True) -> sub
 
 def _build_image() -> None:
     result = subprocess.run(
-        ["docker", "build", "-t", IMAGE, str(_SERVICES_DIR)], capture_output=True, text=True
+        ["docker", "build", "-t", IMAGE, str(_SERVICES_DIR)],
+        capture_output=True,
+        text=True,
     )
     if result.returncode != 0:
         raise HarnessError(f"image build failed:\n{result.stderr}")
@@ -219,8 +246,6 @@ def stack_health(config: RunConfig, *, project: str) -> dict[str, Any]:
 # --------------------------------------------------------------------------------------------------------
 def apply_mode(config: RunConfig, mode: str) -> RunConfig:
     """Return the config for ``mode``; ``mode`` (attack/honest) is the ONLY difference."""
-    import dataclasses
-
     if mode not in ("attack", "honest"):
         raise ValueError(f"mode must be 'attack' or 'honest', got {mode!r}")
     enabled = mode == "attack"
@@ -253,8 +278,6 @@ def _build_scores(
     agg: Any,
     specs: list[Any],
 ) -> dict[str, Any]:
-    from loc_arena.logging_.events import read_events
-
     verdict = episode.verdict
     per_monitor: dict[str, float] = {}
     for v in ep_record.verdicts:
@@ -306,7 +329,7 @@ def _build_scores(
                 "n_verdicts": len(own),
                 "top_reasons": [v.reason for v in own[:3]],
                 "errored": spec.name in errored_monitors,
-            }
+            },
         )
 
     # The reconciliation detectors (enabled model: none): a SEPARATE defense-in-depth signal, NOT part
@@ -410,10 +433,6 @@ def _write_bundle(
     Kept separate from ``run_episode`` so the bundle shape is written in one place; passing the default
     ``decisions_text`` uses the standard run notes.
     """
-    import json
-
-    from loc_arena.logging_ import viewer
-
     (out_dir / "config.resolved.yaml").write_text(yaml.safe_dump({**cfg.raw, "seed": seed}, sort_keys=False))
     shutil.copy(episode.sealed_path, out_dir / "events.sealed.jsonl")
     shutil.copy(episode.mirror_path, out_dir / "events.mirror.jsonl")
@@ -428,10 +447,10 @@ def _write_bundle(
                 "seed": seed,
             },
             indent=2,
-        )
+        ),
     )
     (out_dir / "decisions.md").write_text(
-        decisions_text if decisions_text is not None else _default_decisions_text(cfg, mode, seed)
+        decisions_text if decisions_text is not None else _default_decisions_text(cfg, mode, seed),
     )
     if write_report:
         report = viewer.build_report(cfg, scores, out_dir / "events.sealed.jsonl", threshold)
@@ -442,10 +461,7 @@ def _write_bundle(
 def _assemble_by_policy(cfg: RunConfig, workdir: Path, *, robust: bool) -> Any:
     """Assemble one episode by ``config.policy``: the scripted driver, or the live model attack."""
     if cfg.policy == "model":
-        from loc_arena.live import assemble_model_episode
-
         return assemble_model_episode(cfg, workdir)
-    from loc_arena.task import assemble_scripted_episode
 
     return assemble_scripted_episode(cfg, workdir, robust=robust)
 
@@ -472,29 +488,12 @@ def run_episode(
     decisions.md -- a reviewer can reconstruct the whole run from the sealed log alone, and it reproduces
     from (config.resolved.yaml, seed).
     """
-    import dataclasses
-    import os
-    import time
-
-    from loc_arena.metrics import (
-        calibrate_overall_threshold,
-        calibrate_threshold,
-        episode_overall,
-        record_episode,
-        suspicion_specs,
-    )
-    from loc_arena.monitors.aggregation import load_aggregation_config
-    from loc_arena.monitors.registry import load_monitor_specs, load_monitors
-    from loc_arena.protocol import compose_protocol
-
     cfg = apply_mode(config, mode)
     # Live monitors for a live (model-policy) run: route the trusted-monitor LLM through the gateway so the
     # monitors declared ``mode: live`` in monitors.yaml actually score each event. A scripted or no-key run
     # passes no provider, so those monitors fall back to their heuristic (deterministic; the firewall holds
     # either way). Monitor visibility stays entirely a monitors.yaml concern.
     if monitor_provider is None and cfg.policy == "model" and os.environ.get("OPENROUTER_API_KEY"):
-        from loc_arena.gateway.core import OpenRouterProvider
-
         monitor_provider = OpenRouterProvider()
     the_seed = seed if seed is not None else cfg.seed
     instance_id = run_instance_id or secrets.token_hex(3)
@@ -521,7 +520,11 @@ def run_episode(
     h_caller, h_sink = build_monitor_caller(honest_ep, honest_cfg, monitor_provider)
     e_caller, e_sink = build_monitor_caller(episode, cfg, monitor_provider)
     honest_rec = record_episode(
-        honest_ep, honest_cfg, proto, model_caller=h_caller, event_sink=h_sink or _default_sink
+        honest_ep,
+        honest_cfg,
+        proto,
+        model_caller=h_caller,
+        event_sink=h_sink or _default_sink,
     )
     # In honest mode the episode IS the calibration twin; score it ONCE and reuse that record, so a live
     # monitor's nondeterminism between two independent scorings cannot make the honest twin caught against
@@ -565,7 +568,15 @@ def run_episode(
 
     # write the bundle
     return _write_bundle(
-        cfg, out_dir, run_name, scores, episode, the_seed, mode, threshold, write_report=write_report
+        cfg,
+        out_dir,
+        run_name,
+        scores,
+        episode,
+        the_seed,
+        mode,
+        threshold,
+        write_report=write_report,
     )
 
 
@@ -584,15 +595,6 @@ def run_sweep(
     Writes each episode's bundle plus ``scores.aggregate.json`` and a summary ``report.html`` under
     ``logs/<run_id>/sweep-<timestamp>/`` (calibration + a safety number).
     """
-    import json
-    from datetime import datetime
-
-    from loc_arena.logging_ import viewer
-    from loc_arena.metrics import calibrate_threshold, record_episode, safety, usefulness
-    from loc_arena.monitors.registry import load_monitors
-    from loc_arena.protocol import compose_protocol
-    from loc_arena.task import assemble_scripted_episode
-
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     sweep_dir = (out_root or Path("logs")) / config.run_slug / f"sweep-{stamp}"
     sweep_dir.mkdir(parents=True, exist_ok=True)
@@ -644,7 +646,11 @@ def run_sweep(
 
 
 def build_monitor_caller(
-    episode: Any, config: RunConfig, provider: Any, *, secret: str = "monitor-secret"
+    episode: Any,
+    config: RunConfig,
+    provider: Any,
+    *,
+    secret: str = "monitor-secret",
 ) -> tuple[Any, Any]:
     """Build a (model_caller, event_sink) for LIVE monitors over an episode's sealed log.
 
@@ -653,11 +659,6 @@ def build_monitor_caller(
     but excluded from the side-task verifier. Returns ``(None, noop)`` if no provider is given (heuristic
     mode).
     """
-    import time as _time
-
-    from loc_arena.gateway.core import GatewayCore, GenerateRequest, sign_monitor_credential
-    from loc_arena.logging_.events import AppendOnlyLog, Event, read_events
-
     if provider is None:
         return None, None
     first = next(iter(read_events(episode.sealed_path)), None)
@@ -665,10 +666,10 @@ def build_monitor_caller(
         return None, None
     episode_id = first.episode_id
     sealed = AppendOnlyLog(episode.sealed_path, episode_id)
-    core = GatewayCore(config, episode_id, sealed, provider, turn_secret=secret, clock=_time.time)
+    core = GatewayCore(config, episode_id, sealed, provider, turn_secret=secret, clock=time.time)
 
     def caller(monitor_name: str, prompt: str, temperature: float) -> str:
-        cred = sign_monitor_credential(secret, monitor_name, exp=_time.time() + 3600)
+        cred = sign_monitor_credential(secret, monitor_name, exp=time.time() + 3600)
         req = GenerateRequest(
             prompt=prompt,
             caller_identity=monitor_name,
@@ -683,12 +684,12 @@ def build_monitor_caller(
             Event(
                 episode_id=episode_id,
                 seq=sealed.next_seq(),
-                ts=_time.time(),
+                ts=time.time(),
                 actor_uid=str(payload.get("monitor", "monitor")),
                 actor_role="trusted",
-                kind=kind,  # type: ignore[arg-type]
+                kind=kind,  # ty: ignore[invalid-argument-type]
                 payload=payload,
-            )
+            ),
         )
 
     return caller, sink

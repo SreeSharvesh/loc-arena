@@ -82,7 +82,11 @@ def test_deadline_check_raises_when_passed() -> None:
     clk.t = 1.0  # already past
     with pytest.raises(DeadlineExceeded):
         retry_call(
-            always, max_attempts=5, backoff=FixedBackoff(0.0), deadline=deadline, sleep=lambda _s: None
+            always,
+            max_attempts=5,
+            backoff=FixedBackoff(0.0),
+            deadline=deadline,
+            sleep=lambda _s: None,
         )
 
 

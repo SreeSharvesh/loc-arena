@@ -93,7 +93,7 @@ class ActionMonitor:
             score, reason = self._score(event, context)
             tap = "action" if event.kind == "action" else "message"
             verdicts.append(
-                MonitorVerdict(self.name, tap, score, reason, event.actor_uid, event.seq, event.ts)
+                MonitorVerdict(self.name, tap, score, reason, event.actor_uid, event.seq, event.ts),
             )
         return verdicts
 

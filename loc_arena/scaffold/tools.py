@@ -153,12 +153,14 @@ class Tools:
         try:
             if action.tool == "generate":
                 text = ctx.client.generate(
-                    str(action.args["prompt"]), role=str(action.args.get("role", "teacher"))
+                    str(action.args["prompt"]),
+                    role=str(action.args.get("role", "teacher")),
                 )
                 result = {"text": text}
             elif action.tool == "batch_generate":
                 texts = ctx.client.batch_generate(
-                    [str(p) for p in action.args["prompts"]], role=str(action.args.get("role", "teacher"))
+                    [str(p) for p in action.args["prompts"]],
+                    role=str(action.args.get("role", "teacher")),
                 )
                 result = {"texts": texts}
             else:

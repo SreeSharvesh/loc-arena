@@ -36,7 +36,7 @@ def _log(msg: str) -> None:
 class Handler(BaseHTTPRequestHandler):
     """The health/recorder HTTP handler: /health, /whoami, and (recorder) /events and /append."""
 
-    def log_message(self, fmt: str, *args: Any) -> None:  # noqa: A002 - silence default access logging
+    def log_message(self, format: str, *args: Any) -> None:  # noqa: A002 - matches the base signature
         """Silence the default per-request access logging."""
         return
 

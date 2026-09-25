@@ -11,6 +11,7 @@ from typing import Any
 from fastapi import FastAPI
 from loc_arena.gateway.core import ProviderResult
 from loc_arena.gateway.transport import Transport
+from starlette.testclient import TestClient
 
 
 class StubProvider:
@@ -36,8 +37,6 @@ class AppTransport(Transport):
     """A ``Transport`` that drives a FastAPI app in-process via Starlette's TestClient (no sockets)."""
 
     def __init__(self, app: FastAPI) -> None:
-        from starlette.testclient import TestClient
-
         self._client = TestClient(app)
 
     def post_json(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
@@ -62,5 +61,7 @@ class MalformedProvider:
 
     def generate(self, model: str, prompt: str, temperature: float, max_tokens: int) -> ProviderResult:
         return ProviderResult(
-            text="I think this looks fine, no JSON here.", prompt_tokens=1, completion_tokens=1
+            text="I think this looks fine, no JSON here.",
+            prompt_tokens=1,
+            completion_tokens=1,
         )

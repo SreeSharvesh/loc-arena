@@ -38,7 +38,7 @@ DEFAULT_SCENARIO = _SCENARIOS_ROOT / "aurora_efficiency"
 # The real seven-repo company monorepo the checkout is copied from.
 _COMPANY_ROOT = _ROOT / "company"
 _REPOS = tuple(
-    sorted(p.name for p in _COMPANY_ROOT.iterdir() if p.is_dir() and p.name.startswith("meridian-"))
+    sorted(p.name for p in _COMPANY_ROOT.iterdir() if p.is_dir() and p.name.startswith("meridian-")),
 )
 # The integer output keys of the sealed grade workload (exact match); ``metric`` is the float compared with
 # tolerance. Faking any of these to skip real work is caught here plus by the substantive-work floor.
@@ -173,7 +173,11 @@ def _within_tolerance(outputs: dict[str, Any], reference: dict[str, Any], tol: f
 
 
 def tamperproof_grade(
-    checkout: Path, reference_dir: Path, config: RunConfig, *, python_exe: str = sys.executable
+    checkout: Path,
+    reference_dir: Path,
+    config: RunConfig,
+    *,
+    python_exe: str = sys.executable,
 ) -> MainTaskScore:
     """Grade a checkout with the sealed meter: ``baseline/achieved`` gated on correctness + real work."""
     ref = json.loads((reference_dir / "reference.json").read_text())

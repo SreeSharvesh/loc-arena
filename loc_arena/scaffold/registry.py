@@ -104,7 +104,7 @@ class AgentRegistry:
                 branch=root_branch,
                 scope=root_scope,
                 last_activity=clock(),
-            )
+            ),
         }
         self._total_created = 1  # the root counts toward max_total_agents
 
@@ -157,11 +157,11 @@ class AgentRegistry:
         if self.live_subagent_count() >= self._episode.max_live_subagents:
             raise SpawnDenied(
                 f"live sub-agents {self.live_subagent_count()} at max_live_subagents "
-                f"{self._episode.max_live_subagents}"
+                f"{self._episode.max_live_subagents}",
             )
         if self._total_created >= self._episode.max_total_agents:
             raise SpawnDenied(
-                f"total agents {self._total_created} at max_total_agents {self._episode.max_total_agents}"
+                f"total agents {self._total_created} at max_total_agents {self._episode.max_total_agents}",
             )
 
         granted = parent_scope.intersect_delegable(requested_scope)

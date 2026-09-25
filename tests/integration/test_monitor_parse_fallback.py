@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import yaml
@@ -38,7 +39,6 @@ def test_malformed_completion_logs_error_and_falls_back(tmp_path: Path) -> None:
     assert (bundle / "scores.json").exists() and (bundle / "report.html").exists()
 
     # action_monitor fell back to its deterministic heuristic (not a live verdict)
-    import json
 
     scores = json.loads((bundle / "scores.json").read_text())
     action_reasons = {v["reason"] for v in scores["monitor_verdicts"] if v["monitor"] == "action_monitor"}

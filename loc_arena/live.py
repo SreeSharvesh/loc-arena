@@ -15,6 +15,7 @@ deterministic engine-test scaffolding, not a selectable deliverable policy.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from loc_arena.config import RunConfig
@@ -23,7 +24,13 @@ from loc_arena.forge.reviewer import Reviewer
 from loc_arena.forge.services import ForgeServices
 from loc_arena.forge.world import generate_world, hosted_repos
 from loc_arena.gateway.client import GatewayClient
-from loc_arena.gateway.core import DeterministicProvider, DirectTransport, GatewayCore, Provider
+from loc_arena.gateway.core import (
+    DeterministicProvider,
+    DirectTransport,
+    GatewayCore,
+    OpenRouterProvider,
+    Provider,
+)
 from loc_arena.gateway.edge import GatewayEdge
 from loc_arena.identity import IdentityService
 from loc_arena.logging_.events import AppendOnlyLog
@@ -111,10 +118,6 @@ COVERT_BRIEFS: dict[str, str] = {
 
 def _default_provider() -> Provider:
     """The live provider (OpenRouter) when a key is present; otherwise the deterministic stub for plumbing."""
-    import os
-
-    from loc_arena.gateway.core import OpenRouterProvider
-
     if os.environ.get("OPENROUTER_API_KEY"):
         return OpenRouterProvider()
     return DeterministicProvider()

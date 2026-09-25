@@ -17,8 +17,10 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from scenarios.loader import load_scenario
 
 from loc_arena.ids import PermissionScope
+from loc_arena.registry import SCORER_REGISTRY, VERIFIER_REGISTRY, is_scorer, is_verifier
 
 
 class ConfigError(ValueError):
@@ -249,10 +251,12 @@ def _build_models(models_raw: dict[str, Any]) -> dict[str, ModelSpec]:
         out[role] = ModelSpec(
             model=_as_str(_require(spec, "model", f"models.roles.{role}"), f"models.roles.{role}.model"),
             temperature=_as_float(
-                _require(spec, "temperature", f"models.roles.{role}"), f"models.roles.{role}.temperature"
+                _require(spec, "temperature", f"models.roles.{role}"),
+                f"models.roles.{role}.temperature",
             ),
             max_tokens=_as_int(
-                _require(spec, "max_tokens", f"models.roles.{role}"), f"models.roles.{role}.max_tokens"
+                _require(spec, "max_tokens", f"models.roles.{role}"),
+                f"models.roles.{role}.max_tokens",
             ),
         )
     return out
@@ -280,7 +284,8 @@ def _build_side_task(st: dict[str, Any]) -> SideTaskConfig:
         raise ConfigError("side_task.thresholds must be a mapping")
     thresholds = Thresholds(
         loop_len_floor=_as_int(
-            _require(th_raw, "loop_len_floor", "side_task.thresholds"), "side_task.thresholds.loop_len_floor"
+            _require(th_raw, "loop_len_floor", "side_task.thresholds"),
+            "side_task.thresholds.loop_len_floor",
         ),
         liveness_window_seconds=_as_int(
             _require(th_raw, "liveness_window_seconds", "side_task.thresholds"),
@@ -360,7 +365,7 @@ def _build_agents(agents_raw: Any, merged: dict[str, Any]) -> tuple[AgentConfig,
                 system_prompt=system_prompt,
                 brief=brief,
                 spawned_by=a.get("spawned_by"),
-            )
+            ),
         )
     return tuple(out)
 
@@ -369,13 +374,17 @@ def _build_covert(covert_raw: dict[str, Any], merged: dict[str, Any]) -> CovertC
     enabled = _as_bool(_require(covert_raw, "enabled", "covert"), "covert.enabled")
     target = _as_str(_require(covert_raw, "target_identity", "covert"), "covert.target_identity")
     prompt = _resolve_prompt_ref(
-        _require(covert_raw, "objective_prompt_ref", "covert"), merged, "covert.objective_prompt_ref"
+        _require(covert_raw, "objective_prompt_ref", "covert"),
+        merged,
+        "covert.objective_prompt_ref",
     )
     return CovertConfig(enabled=enabled, target_identity=target, objective_prompt=prompt)
 
 
 def _resolve_extends(
-    raw: dict[str, Any], base_dir: Path, _seen: frozenset[str] = frozenset()
+    raw: dict[str, Any],
+    base_dir: Path,
+    _seen: frozenset[str] = frozenset(),
 ) -> dict[str, Any]:
     """Resolve ``extends`` RECURSIVELY: a config may extend another that itself extends a base.
 
@@ -418,7 +427,7 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
             "episode.liveness_window_seconds "
             f"({episode.liveness_window_seconds}) != "
             f"side_task.thresholds.liveness_window_seconds ({side_task.thresholds.liveness_window_seconds}); "
-            "keep the two equal (the verifier reads side_task.thresholds)"
+            "keep the two equal (the verifier reads side_task.thresholds)",
         )
 
     covert = _build_covert(_require(merged, "covert", "run config"), merged)
@@ -472,16 +481,13 @@ def _validate_registry_bindings(scenario_name: str | None, main_task: dict[str, 
 
     ``config.main_task.scorer`` and ``config.side_task.verifier`` dispatch BY NAME through the
     ``SCORER_REGISTRY`` / ``VERIFIER_REGISTRY``. The scenario pack's ``main.py`` / ``side.py`` register
-    those names, so we import it first, then fail loud on any name the registry does not know. Imports are
-    LAZY to avoid an import-time cycle (``scenarios.loader`` and the registry do not import ``config``).
+    those names, so we import it first, then fail loud on any name the registry does not know. The
+    ``side_task`` import stays LAZY: it imports ``config`` (an import-time cycle).
     """
     # Baseline registrations (importing side_task registers kill_chain_v1; lazy to avoid an import cycle).
-    from loc_arena.registry import is_scorer, is_verifier
-    from loc_arena.verifier import side_task as _side_task  # noqa: F401
+    from loc_arena.verifier import side_task as _side_task  # noqa: F401, PLC0415
 
     if scenario_name is not None:
-        from scenarios.loader import load_scenario
-
         try:
             load_scenario(scenario_name)
         except Exception as exc:  # surface a missing/broken pack as a config error
@@ -491,13 +497,9 @@ def _validate_registry_bindings(scenario_name: str | None, main_task: dict[str, 
     if not isinstance(scorer, str) or not scorer:
         raise ConfigError("main_task.scorer must name a registered scorer (a non-empty string)")
     if not is_scorer(scorer):
-        from loc_arena.registry import SCORER_REGISTRY
-
         known = ", ".join(sorted(SCORER_REGISTRY)) or "(none registered)"
         raise ConfigError(f"main_task.scorer {scorer!r} is not a registered scorer; known: {known}")
 
     if not is_verifier(verifier):
-        from loc_arena.registry import VERIFIER_REGISTRY
-
         known = ", ".join(sorted(VERIFIER_REGISTRY)) or "(none registered)"
         raise ConfigError(f"side_task.verifier {verifier!r} is not a registered verifier; known: {known}")

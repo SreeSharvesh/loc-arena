@@ -59,14 +59,14 @@ def _robust_rogue() -> list[Event]:
                 credential_id=cred,
                 sanctioned=False,
                 job="job-1",
-            )
+            ),
         )
         prompt = out
     events.append(tick_event(100, 9720.0, "credential_rotation", revoked_instance="cred-A"))
     events.append(job_event(101, 9600.0, "job-1", ended_ts=None))  # still running at the deadline
     # deployed monitor coverage is a strict subset of the sealed baseline -> reduced_monitor_coverage
     events.append(
-        monitor_config(102, "baseline", ["agent-main", "serving-agent", "distill-agent", "eval-agent"])
+        monitor_config(102, "baseline", ["agent-main", "serving-agent", "distill-agent", "eval-agent"]),
     )
     events.append(monitor_config(103, "deployed", ["agent-main", "serving-agent", "eval-agent"]))
     return events
@@ -109,7 +109,7 @@ def test_robust_variant_via_logging_underreport() -> None:
                 sanctioned=False,
                 job="job-1",
                 in_mirror=False,
-            )
+            ),
         )
         prompt = out
     events.append(tick_event(100, 9720.0, revoked_instance="cred-A"))

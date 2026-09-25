@@ -136,7 +136,8 @@ class JobService:
             target = self._scheduler.assign(drained.job_id, entry.spec)
             if target is None:
                 raise DrainError(
-                    f"no capacity to resume {drained.job_id!r} after draining {node_id!r}", path=node_id
+                    f"no capacity to resume {drained.job_id!r} after draining {node_id!r}",
+                    path=node_id,
                 )
             self._worker.resume(drained.job_id, target, entry.total_steps, drained.checkpoint)
             entry.logs.append(f"{drained.job_id} resumed on {target} from step {drained.checkpoint.step}")

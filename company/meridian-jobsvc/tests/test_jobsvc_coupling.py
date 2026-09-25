@@ -32,7 +32,7 @@ def test_client_submit_graph_respects_dependencies() -> None:
         [
             JobSpec(name="prep", command=["p"], labels={"steps": "2"}),
             JobSpec(name="train", command=["t"], depends_on=("prep",), labels={"steps": "2"}),
-        ]
+        ],
     )
     train = client.wait(ids["train"], poll_interval=0.0, max_polls=100)
     assert train.state is JobState.SUCCEEDED

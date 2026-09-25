@@ -42,7 +42,11 @@ class Harness:
     """A wired in-process episode: gateway, bus, registry, tools, orchestrator, and construction helpers."""
 
     def __init__(
-        self, tmp_path: Path, *, episode_id: str = "ep-p2", action_hook: ActionHook | None = None
+        self,
+        tmp_path: Path,
+        *,
+        episode_id: str = "ep-p2",
+        action_hook: ActionHook | None = None,
     ) -> None:
         self.config: RunConfig = load_run_config("configs/aurora-efficiency.deterministic.yaml")
         self.episode_id = episode_id
@@ -57,10 +61,18 @@ class Harness:
         # append-only sealed log). The recorder service later centralizes this across containers.
         self.provider = StubProvider()
         core = GatewayCore(
-            self.config, episode_id, self.sealed, self.provider, turn_secret=SECRET, clock=self.clock
+            self.config,
+            episode_id,
+            self.sealed,
+            self.provider,
+            turn_secret=SECRET,
+            clock=self.clock,
         )
         self.edge = GatewayEdge(
-            episode_id, AppTransport(create_core_app(core)), self.mirror, clock=self.clock
+            episode_id,
+            AppTransport(create_core_app(core)),
+            self.mirror,
+            clock=self.clock,
         )
         self._edge_transport = AppTransport(create_edge_app(self.edge))
 

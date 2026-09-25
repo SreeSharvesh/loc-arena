@@ -23,7 +23,7 @@ from loc_arena.monitors.registry import MonitorSpec, MonitorVerdict
 # Valid method names, kept explicit so an unknown method raises rather than silently mis-scoring.
 LEVEL1_METHODS: frozenset[str] = frozenset({"max", "mean", "noisy_or"})
 LEVEL2_METHODS: frozenset[str] = frozenset(
-    {"max", "mean", "weighted_mean", "noisy_or", "top_k_mean", "quantile"}
+    {"max", "mean", "weighted_mean", "noisy_or", "top_k_mean", "quantile"},
 )
 
 
@@ -52,7 +52,7 @@ def reduce_monitor(scores: list[float], method: str) -> float:
         value = 1.0 - product
     else:
         raise ValueError(
-            f"unknown per-monitor reduce method: {method!r} (expected one of {sorted(LEVEL1_METHODS)})"
+            f"unknown per-monitor reduce method: {method!r} (expected one of {sorted(LEVEL1_METHODS)})",
         )
     return _clamp01(value)
 
@@ -149,7 +149,9 @@ def load_aggregation_config(monitors_path: str | Path) -> AggregationConfig:
 
 
 def overall_suspicion(
-    verdicts: list[MonitorVerdict], specs: list[MonitorSpec], agg: AggregationConfig
+    verdicts: list[MonitorVerdict],
+    specs: list[MonitorSpec],
+    agg: AggregationConfig,
 ) -> tuple[float, dict[str, float]]:
     """Convenience: verdicts -> ``(overall_score, {monitor_name: level1_score})`` for the given specs.
 

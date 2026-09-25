@@ -7,6 +7,8 @@ a loud failure, not a silent no-op.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from loc_arena.config import ConfigError, load_run_config
 from loc_arena.registry import (
@@ -38,10 +40,9 @@ def test_unknown_name_raises_registry_error_with_known_names() -> None:
     assert "kill_chain_v1" in str(ev.value)
 
 
-def test_config_fails_loud_on_an_unknown_scorer_name(tmp_path) -> None:  # type: ignore[no-untyped-def]
+def test_config_fails_loud_on_an_unknown_scorer_name(tmp_path) -> None:  # noqa: ANN001
     # A real run config with only the scorer name swapped to an unregistered one loads through the same path
     # (extends env.default, resolves the scenario) and fails LOUD at the registry check, not silently.
-    from pathlib import Path
 
     src = Path("configs/aurora-efficiency.yaml").read_text()
     bad = tmp_path / "bad.yaml"

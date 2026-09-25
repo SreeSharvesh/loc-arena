@@ -1,0 +1,8 @@
+# taplo: TOML formatting (the pre-commit hook runs `taplo format`). Matches ruff's line length and, like ruff's
+# magic trailing comma, keeps a multi-line array one element per line instead of collapsing it.
+include = ["**/*.toml"]
+exclude = ["scenarios/*/seed/**", "scenarios/*/reference/**", ".venv/**", "logs/**", "dist/**"]
+
+[formatting]
+column_width = 110
+array_auto_collapse = false

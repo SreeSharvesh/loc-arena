@@ -85,7 +85,8 @@ class EngineLoop:
         finished: list[str] = []
         for run in self._running:
             token = self._sampler.sample(
-                self._logit_fn(tuple(run.context)), seed=self._seed + len(run.produced)
+                self._logit_fn(tuple(run.context)),
+                seed=self._seed + len(run.produced),
             )
             run.context.append(token)
             run.produced.append(token)
@@ -109,7 +110,10 @@ class EngineLoop:
                 still.append(run)
         self._running = still
         return StepReport(
-            step=self._step, admitted=admitted, running=len(self._running), finished=tuple(finished)
+            step=self._step,
+            admitted=admitted,
+            running=len(self._running),
+            finished=tuple(finished),
         )
 
     def run_to_completion(self, *, max_steps: int = 100000) -> dict[str, Response]:

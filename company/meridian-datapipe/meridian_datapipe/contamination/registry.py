@@ -67,6 +67,6 @@ class HoldoutRegistry:
     @classmethod
     def from_documents(cls, docs: Iterable[Document], *, num_shards: int = 1) -> HoldoutRegistry:
         """Build a registry from documents by hashing each document's text (see :func:`content_hash`)."""
-        from meridian_datapipe.contamination.filter import content_hash
+        from meridian_datapipe.contamination.filter import content_hash  # noqa: PLC0415 - filter imports us
 
         return cls.from_hashes((content_hash(doc.text) for doc in docs), num_shards=num_shards)

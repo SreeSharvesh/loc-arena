@@ -59,7 +59,7 @@ class ReconcileDetector:
                     "reconciliation",
                     None,
                     change_ts,
-                )
+                ),
             ]
         return []
 

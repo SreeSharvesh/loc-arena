@@ -29,7 +29,9 @@ def _meta_difficulty(field: str) -> DifficultyFn:
         value = document.meta.get(field, 0.0)
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise CurriculumError(
-                "difficulty meta field is not numeric", code="distill.curriculum", field=field
+                "difficulty meta field is not numeric",
+                code="distill.curriculum",
+                field=field,
             )
         return float(value)
 
@@ -95,7 +97,9 @@ class CurriculumBuilder:
         for doc_id in shard.doc_ids:
             if doc_id not in documents:
                 raise CurriculumError(
-                    "shard member is not in the document lookup", code="distill.curriculum", doc_id=doc_id
+                    "shard member is not in the document lookup",
+                    code="distill.curriculum",
+                    doc_id=doc_id,
                 )
             members.append(documents[doc_id])
         return self.build(members)

@@ -25,7 +25,7 @@ packages = ["loc_arena"]
 # Dev toolchain. Kept minimal for the skeleton; phases add their own runtime deps (Inspect, FastAPI, ...).
 dev = [
   "ruff>=0.6",
-  "mypy>=1.11",
+  "ty>=0.0.84",
   "pytest>=8.0",
   "types-PyYAML>=6.0",
 ]
@@ -38,7 +38,17 @@ target-version = "py312"
 line-length = 110
 # The company workspace (company/<repo>/) is real, tested Meridian code held to the same bar; each repo's
 # package root is a first-party src root so imports sort correctly.
-src = ["loc_arena", "tests", "company/meridian-common", "company/meridian-serving", "company/meridian-datapipe", "company/meridian-distill", "company/meridian-jobsvc", "company/meridian-controlplane", "company/meridian-evalkit"]
+src = [
+  "loc_arena",
+  "tests",
+  "company/meridian-common",
+  "company/meridian-serving",
+  "company/meridian-datapipe",
+  "company/meridian-distill",
+  "company/meridian-jobsvc",
+  "company/meridian-controlplane",
+  "company/meridian-evalkit",
+]
 # A scenario pack's seed/ is the lived-in agent workspace (graded by ITS OWN pytest) and reference/ is the
 # sealed grader fixture overlaid at grade time; both run only as subprocesses and follow the seed's terse
 # conventions, so they are fixtures, not our package code. (repos_seed/ is the legacy path.)
@@ -46,10 +56,14 @@ extend-exclude = ["repos_seed", "scenarios/*/seed", "scenarios/*/reference"]
 
 [tool.ruff.lint]
 # A pragmatic-but-strict default set. Expanded per phase as real code lands.
-select = ["E", "F", "W", "I", "N", "UP", "B", "D"]
+# COM812 adds a trailing comma to every multi-line call/collection; the formatter's magic trailing comma then
+# keeps it one-element-per-line. (Only COM812: COM819 would strip the commas that trigger the explode.)
+# ANN requires every def to be fully annotated (ty, unlike mypy --strict, does not check that).
+select = ["E", "F", "W", "I", "N", "UP", "B", "D", "COM812", "ANN", "PLC0415"]
 ignore = [
-  "D203",  # one-blank-line-before-class (conflicts with D211)
-  "D213",  # multi-line-summary-second-line (conflicts with D212)
+  "D203",   # one-blank-line-before-class (conflicts with D211)
+  "D213",   # multi-line-summary-second-line (conflicts with D212)
+  "ANN401", # explicit Any is allowed (JSON payloads, **kwargs passthrough)
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -63,21 +77,30 @@ ignore = [
 convention = "google"
 
 # ---------------------------------------------------------------------------
-# mypy: strict typing (mypy clean).
+# ty: type checking (ty clean; warnings fail too).
 # ---------------------------------------------------------------------------
-[tool.mypy]
-python_version = "3.12"
-strict = true
-warn_unused_configs = true
-warn_redundant_casts = true
-warn_unused_ignores = true
-files = ["loc_arena", "tests", "scenarios", "company"]
+[tool.ty.environment]
+python-version = "3.12"
+# The company workspace: each repo's package root is on the search path so cross-repo imports
+# (meridian_common, ...) resolve exactly like a real multi-repo checkout. Add each new repo root here as it lands.
+extra-paths = [
+  "company/meridian-common",
+  "company/meridian-serving",
+  "company/meridian-datapipe",
+  "company/meridian-distill",
+  "company/meridian-jobsvc",
+  "company/meridian-controlplane",
+  "company/meridian-evalkit",
+]
+
+[tool.ty.src]
+include = ["loc_arena", "tests", "scenarios", "company"]
 # A pack's seed/ and reference/ are subprocess-run fixtures (the lived-in workspace + the sealed grader),
 # not typed package code; the loader + main.py/side.py glue above them IS checked.
-exclude = "scenarios/[^/]+/(seed|reference)/"
-# The company workspace: each repo's package root is on MYPYPATH so cross-repo imports (meridian_common, ...)
-# resolve exactly like a real multi-repo checkout. Add each new repo root here as it lands.
-mypy_path = ["company/meridian-common", "company/meridian-serving", "company/meridian-datapipe", "company/meridian-distill", "company/meridian-jobsvc", "company/meridian-controlplane", "company/meridian-evalkit"]
+exclude = ["scenarios/*/seed", "scenarios/*/reference", "repos_seed"]
+
+[tool.ty.rules]
+unused-ignore-comment = "error"
 
 # ---------------------------------------------------------------------------
 # pytest.
@@ -87,7 +110,15 @@ minversion = "8.0"
 # The engine suite (tests/) plus every company repo's own suite. Each repo's package root is on pythonpath so
 # `import meridian_common` (and, later, the other repos) resolves like a real side-by-side workspace checkout.
 testpaths = ["tests", "company"]
-pythonpath = ["company/meridian-common", "company/meridian-serving", "company/meridian-datapipe", "company/meridian-distill", "company/meridian-jobsvc", "company/meridian-controlplane", "company/meridian-evalkit"]
+pythonpath = [
+  "company/meridian-common",
+  "company/meridian-serving",
+  "company/meridian-datapipe",
+  "company/meridian-distill",
+  "company/meridian-jobsvc",
+  "company/meridian-controlplane",
+  "company/meridian-evalkit",
+]
 addopts = "-ra"
 markers = [
   "integration: tests that need docker and/or network (skip-guarded)",

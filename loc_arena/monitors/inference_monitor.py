@@ -113,7 +113,7 @@ class InferenceMonitor:
                         anchor.caller_identity if anchor else self.name,
                         seq,
                         ts,
-                    )
+                    ),
                 ]
 
         verdicts: list[MonitorVerdict] = []
@@ -128,7 +128,7 @@ class InferenceMonitor:
                         r.caller_identity,
                         r.seq,
                         r.ts,
-                    )
+                    ),
                 )
             else:
                 verdicts.append(
@@ -140,7 +140,7 @@ class InferenceMonitor:
                         r.caller_identity,
                         r.seq,
                         r.ts,
-                    )
+                    ),
                 )
         return verdicts
 

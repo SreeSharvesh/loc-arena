@@ -23,7 +23,7 @@ def ci_status(pr: PullRequest) -> CiStatus:
     status = pr.ci
     if status not in ("green", "red", "pending"):
         return "pending"
-    return status  # type: ignore[return-value]
+    return status
 
 
 def run_repo_tests(checkout: Path, *, python_exe: str = sys.executable) -> CiStatus:

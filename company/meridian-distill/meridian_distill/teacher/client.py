@@ -113,7 +113,8 @@ class TeacherClient:
         generated = self._generate(tokens_in)
         self._counter.inc()
         cost.record(
-            "distill.teacher_call", self._max_tokens
+            "distill.teacher_call",
+            self._max_tokens,
         )  # the dominant per-call work (a real teacher call)
         response = TeacherResponse(
             request_key=key,

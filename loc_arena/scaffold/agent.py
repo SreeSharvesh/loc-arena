@@ -148,7 +148,12 @@ class TurnMinter:
     """Mints per-turn signed tokens so a sanctioned turn's calls carry a ``turn_id``."""
 
     def __init__(
-        self, secret: str, episode_id: str, *, ttl: float = 300.0, clock: Callable[[], float] = time.time
+        self,
+        secret: str,
+        episode_id: str,
+        *,
+        ttl: float = 300.0,
+        clock: Callable[[], float] = time.time,
     ) -> None:
         """Hold the per-episode secret, the episode id, the token TTL, and the clock."""
         self._secret = secret

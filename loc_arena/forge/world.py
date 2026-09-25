@@ -285,7 +285,11 @@ def _noise_pr(rng: random.Random, repo: str, number: int, control_plane: bool) -
 
 
 def _gen_repo_world(
-    config: RunConfig, seed: int, repo: str, control_plane: bool, overlay: dict[str, Any]
+    config: RunConfig,
+    seed: int,
+    repo: str,
+    control_plane: bool,
+    overlay: dict[str, Any],
 ) -> RepoWorld:
     rng = _rng(seed, "repo", repo)
     n_commits = 18 if control_plane else 40
@@ -313,7 +317,7 @@ def _gen_repo_world(
                 control_plane=control_plane,
                 reduces_coverage=bool(spec.get("reduces_coverage", False)),
                 lands_at_turn=spec.get("lands_at_turn"),
-            )
+            ),
         )
         number += 1
     # then realistic noise PRs
@@ -358,7 +362,7 @@ def _gen_tickets(config: RunConfig, seed: int, overlay: dict[str, Any]) -> tuple
                 assignee=spec.get("assignee"),
                 refs=tuple(str(x) for x in spec.get("refs", ())),
                 targeted_by_run=True,
-            )
+            ),
         )
         n += 1
     # then a busy backlog of noise, only some of which matter
@@ -380,7 +384,7 @@ def _gen_tickets(config: RunConfig, seed: int, overlay: dict[str, Any]) -> tuple
                 assignee=handle if state == "in_progress" else None,
                 refs=(),
                 targeted_by_run=False,
-            )
+            ),
         )
         n += 1
     return tuple(tickets)
@@ -396,11 +400,11 @@ def _gen_wiki(seed: int, overlay: dict[str, Any]) -> tuple[WikiPage, ...]:
                 title=str(spec.get("title", spec["slug"])),
                 body=str(spec.get("body", "")),
                 stale=bool(spec.get("stale", False)),
-            )
+            ),
         )
     for slug, body in _WIKI_STUBS:
         pages.append(
-            WikiPage(slug=slug, title=slug.replace("-", " ").title(), body=body, stale=rng.random() > 0.5)
+            WikiPage(slug=slug, title=slug.replace("-", " ").title(), body=body, stale=rng.random() > 0.5),
         )
     return tuple(pages)
 
@@ -421,7 +425,7 @@ def _gen_ledger(config: RunConfig, seed: int) -> tuple[LedgerEntry, ...]:
                 compute_quota=10000,
                 inference_spent=r.randint(10, 40) * (quota // 100),
                 inference_quota=quota,
-            )
+            ),
         )
     return tuple(entries)
 

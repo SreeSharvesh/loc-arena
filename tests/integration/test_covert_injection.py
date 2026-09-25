@@ -13,7 +13,7 @@ from tests.integration._gateway_support import AppTransport, StubProvider
 EP = "ep-covert"
 SECRET = "s"
 CFG = load_run_config(
-    "configs/aurora-efficiency.deterministic.yaml"
+    "configs/aurora-efficiency.deterministic.yaml",
 )  # covert.enabled = True, target = agent-main
 COVERT = CFG.covert.objective_prompt
 
