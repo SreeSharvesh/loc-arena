@@ -457,7 +457,19 @@ def _write_bundle(
 
 
 def _eval_episodes(cfg: RunConfig, episode: Any, calibration: Any) -> list[EpisodeExport]:
-    raise NotImplementedError
+    from loc_arena.logging_.inspect_export import EpisodeExport
+
+    root = cfg.agent("agent-main").id
+    agent_order = (root, *(a.id for a in cfg.agents if a.id != root))
+    labelled = [("episode", episode), *([("honest_cal", calibration)] if calibration is not None else [])]
+    exports: list[EpisodeExport] = []
+    for sample_id, assembled in labelled:
+        if assembled.trace is None:
+            raise ValueError(
+                f"{sample_id} was assembled without an agent trace; logging.agent_transcript was off"
+            )
+        exports.append(EpisodeExport(sample_id, assembled.trace, assembled.sealed_path, agent_order))
+    return exports
 
 
 def _assemble_by_policy(cfg: RunConfig, workdir: Path, *, robust: bool, provider: Any = None) -> Any:
