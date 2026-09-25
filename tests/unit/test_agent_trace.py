@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, MutableMapping
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 from loc_arena.logging_.agent_trace import AgentTrace, ModelCall, TurnRecord, TurnRef
-from loc_arena.logging_.events import AppendOnlyLog, Event
+from loc_arena.logging_.events import AppendOnlyLog, Event, EventKind
 from loc_arena.scaffold.bus import Recorder
 
 
@@ -26,7 +27,7 @@ def test_finish_on_an_empty_trace_returns_empty_collections_and_the_boundary() -
 def test_finished_lane_maps_are_read_only() -> None:
     trace = AgentTrace().finish(last_sealed_seq=-1)
     with pytest.raises(TypeError):
-        trace.sealed_lane[0] = None  # type: ignore[index]
+        cast(MutableMapping[int, TurnRef | None], trace.sealed_lane)[0] = None
 
 
 def _ticking_clock() -> Callable[[], float]:
@@ -111,19 +112,27 @@ def test_mark_executing_outside_a_turn_raises() -> None:
         AgentTrace().mark_executing()
 
 
-def _event(seq: int, **fields: object) -> Event:
-    base: dict[str, object] = {
-        "episode_id": "ep-trace",
-        "seq": seq,
-        "ts": 100.0,
-        "actor_uid": "agent-main",
-        "actor_role": "untrusted",
-        "kind": "action",
-        "payload": {"args": {}},
-        "turn": 0,
-        "tool": "read_file",
-    }
-    return Event(**{**base, **fields})  # type: ignore[arg-type]
+def _event(
+    seq: int,
+    *,
+    kind: EventKind = "action",
+    actor_uid: str = "agent-main",
+    tool: str = "read_file",
+    payload: dict[str, Any] | None = None,
+    parent_task: str | None = None,
+) -> Event:
+    return Event(
+        episode_id="ep-trace",
+        seq=seq,
+        ts=100.0,
+        actor_uid=actor_uid,
+        actor_role="untrusted",
+        kind=kind,
+        payload=payload if payload is not None else {"args": {}},
+        turn=0,
+        tool=tool,
+        parent_task=parent_task,
+    )
 
 
 def test_sealed_events_are_tagged_with_the_bound_turn_or_world() -> None:
