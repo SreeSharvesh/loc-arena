@@ -82,7 +82,16 @@ def render_text(title: str, transcripts: Sequence[SampleTranscript]) -> str:
 
 
 def _grid_html(transcript: SampleTranscript) -> str:
-    raise NotImplementedError
+    columns = f"grid-template-columns: 8rem repeat({len(transcript.lanes)}, minmax(18rem, 1fr));"
+    parts = [f'<div class="grid" style="{columns}">', '<div class="head"></div>']
+    parts += [f'<div class="head">{html.escape(lane)}</div>' for lane in transcript.lanes]
+    for row in transcript.rows:
+        parts.append(f'<div class="row-label">{html.escape(_row_label(row))}</div>')
+        for lane in transcript.lanes:
+            blocks = "".join(_block_html(block) for block in transcript.cells.get((lane, row), ()))
+            parts.append(f'<div class="cell">{blocks}</div>')
+    parts.append("</div>")
+    return "\n".join(parts)
 
 
 def _block_html(block: Block) -> str:

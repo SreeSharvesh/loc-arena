@@ -89,3 +89,21 @@ def test_render_text_lists_each_lane_with_its_blocks_in_round_order(monkeypatch:
         "run-x\n\n== sample episode ==\n\n-- World --\n[r-1] tick\n    t0\n\n"
         '-- agent-main --\n[r0] read_file\n    {"path": "a"}\n    ok\n'
     )
+
+
+def test_grid_has_a_head_per_lane_and_a_cell_per_lane_per_round(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(transcript_render, "_row_label", lambda row: f"r{row}")
+    monkeypatch.setattr(transcript_render, "_block_html", lambda block: f"[{block.title}]")
+    transcript = SampleTranscript(
+        sample_id="episode",
+        lanes=(WORLD, "agent-main"),
+        rows=(-1, 0),
+        cells={("agent-main", 0): (Block("reply", "reply", "x"),)},
+    )
+    grid = transcript_render._grid_html(transcript)
+    assert "repeat(2, minmax(18rem, 1fr))" in grid
+    assert grid.count('<div class="head">') == 3
+    assert grid.count('<div class="cell">') == 4
+    assert (
+        '<div class="row-label">r0</div>\n<div class="cell"></div>\n<div class="cell">[reply]</div>' in grid
+    )
