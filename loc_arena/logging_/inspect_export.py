@@ -81,7 +81,21 @@ def _sample(episode: EpisodeExport, scores: Mapping[str, Any] | None) -> EvalSam
 
 
 def _lanes_for(trace: EpisodeTrace, sealed_events: Sequence[Event]) -> dict[int, TurnRef | None]:
-    raise NotImplementedError
+    lanes: dict[int, TurnRef | None] = {}
+    untagged: list[int] = []
+    for event in sealed_events:
+        if event.seq > trace.last_sealed_seq:
+            lanes[event.seq] = None
+        elif event.seq in trace.sealed_lane:
+            lanes[event.seq] = trace.sealed_lane[event.seq]
+        else:
+            untagged.append(event.seq)
+    if untagged:
+        raise UnassignedEventError(
+            f"{len(untagged)} sealed events at or before the episode boundary "
+            f"(seq {trace.last_sealed_seq}) have no lane; first untagged seqs: {untagged[:5]}"
+        )
+    return lanes
 
 
 def _sample_events(
