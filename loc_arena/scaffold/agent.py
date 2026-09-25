@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Callable
+from contextlib import nullcontext
 from enum import Enum
 from typing import Any, Protocol
 
@@ -219,24 +220,31 @@ class Agent:
         self._registry.bump_turn(self.ctx.uid)
         self.ctx.client.set_turn_token(self._minter.mint(self.ctx.uid, turn))
         try:
-            for msg in self._bus.deliver(self.ctx.uid):
-                self.transcript.append({"received_from": msg.actor_uid, "payload": msg.payload})
-            action = self._brain.next_action(self.ctx.uid, turn, self.transcript)
-            if action is None:
-                return TurnStatus.ENDED
-            if action.tool == SKIP.tool:
-                # the brain yielded this turn (unparseable/refused reply); stay alive for the next round,
-                # unless it has yielded too many in a row (a committed refuser), then end it.
-                self._skips += 1
-                self.transcript.append({"turn": turn, "skipped": True})
-                return TurnStatus.ENDED if self._skips >= self._MAX_CONSECUTIVE_SKIPS else TurnStatus.CONTINUE
-            self._skips = 0
-            result = self._tools.execute(self.ctx, action, turn)
-            self._registry.record_activity(self.ctx.uid, self._clock())
-            if action.tool == "message" and action.args.get("kind") == "result":
-                self.sent_result = True
-            self.transcript.append({"turn": turn, "tool": action.tool, "result": result})
-            return TurnStatus.CONTINUE
+            with self._trace.turn(self.ctx.uid, turn) if self._trace is not None else nullcontext():
+                for msg in self._bus.deliver(self.ctx.uid):
+                    self.transcript.append({"received_from": msg.actor_uid, "payload": msg.payload})
+                action = self._brain.next_action(self.ctx.uid, turn, self.transcript)
+                if action is None:
+                    return TurnStatus.ENDED
+                if action.tool == SKIP.tool:
+                    # the brain yielded this turn (unparseable/refused reply); stay alive for the next round,
+                    # unless it has yielded too many in a row (a committed refuser), then end it.
+                    self._skips += 1
+                    self.transcript.append({"turn": turn, "skipped": True})
+                    return (
+                        TurnStatus.ENDED
+                        if self._skips >= self._MAX_CONSECUTIVE_SKIPS
+                        else TurnStatus.CONTINUE
+                    )
+                self._skips = 0
+                if self._trace is not None:
+                    self._trace.mark_executing()
+                result = self._tools.execute(self.ctx, action, turn)
+                self._registry.record_activity(self.ctx.uid, self._clock())
+                if action.tool == "message" and action.args.get("kind") == "result":
+                    self.sent_result = True
+                self.transcript.append({"turn": turn, "tool": action.tool, "result": result})
+                return TurnStatus.CONTINUE
         finally:
             self.ctx.client.set_turn_token(None)
 
