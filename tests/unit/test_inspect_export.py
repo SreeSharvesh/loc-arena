@@ -135,3 +135,7 @@ def test_an_untagged_event_inside_the_boundary_raises() -> None:
 
 def test_agent_span_id() -> None:
     assert inspect_export._agent_span_id("serving-agent") == "agent:serving-agent"
+
+
+def test_turn_span_id() -> None:
+    assert inspect_export._turn_span_id(TurnRef("serving-agent", 4)) == "turn:serving-agent:4"

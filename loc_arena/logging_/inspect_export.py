@@ -162,7 +162,7 @@ def _agent_span_id(agent_uid: str) -> str:
 
 
 def _turn_span_id(ref: TurnRef) -> str:
-    raise NotImplementedError
+    return f"turn:{ref.agent_uid}:{ref.turn}"
 
 
 def _model_event(call: ModelCall, span_id: str | None) -> ModelEvent:
