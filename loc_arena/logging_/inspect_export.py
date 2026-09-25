@@ -54,14 +54,13 @@ def write_run_eval(
 
 
 def _eval_spec(run_name: str, config: RunConfig, mode: str, seed: int, sample_count: int) -> EvalSpec:
-    agent_model = config.models.get("untrusted_agent")
     return EvalSpec(
         created=datetime.now(UTC).isoformat(),
         task=f"loc_arena/{config.run_slug}",
         task_id=config.run_slug,
         run_id=run_name,
         dataset=EvalDataset(name=config.run_slug, samples=sample_count),
-        model=agent_model.model if agent_model is not None else "none/none",
+        model=config.models["untrusted_agent"].model,
         config=EvalConfig(),
         metadata={"mode": mode, "seed": seed, "policy": config.policy, "run_name": run_name},
     )

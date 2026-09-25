@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
@@ -298,3 +299,9 @@ def test_a_traced_episode_exports_a_span_tree_with_one_agent_span_per_agent(tmp_
         ("agent-main", ["turn 0"]),
         ("serving-agent", ["turn 0"]),
     ]
+
+
+def test_eval_spec_refuses_a_config_without_an_untrusted_agent_model() -> None:
+    config = dataclasses.replace(CFG, models={k: v for k, v in CFG.models.items() if k != "untrusted_agent"})
+    with pytest.raises(KeyError, match="untrusted_agent"):
+        inspect_export._eval_spec("run-x", config, "attack", 1, 1)
