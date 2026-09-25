@@ -39,5 +39,6 @@ What to build is in `spec.md`; this file is how to build it.
 make gates
 ```
 
-Baseline on `main`: ruff and format clean, mypy clean, pytest 818 passed, 4 skipped, 14 xfailed. With
-`logging.agent_transcript` off, those numbers must not change.
+Baseline at the end of the stack: ruff and format clean, mypy clean, pytest 907 passed, 4 skipped, 14 xfailed
+(`main` before the stack: 818 passed). The sealed and mirror logs must stay byte-identical with the flag on and
+off (`tests/integration/test_live_agent_trace.py`, `test_scripted_agent_trace.py`).

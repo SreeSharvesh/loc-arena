@@ -22,7 +22,7 @@ to the World lane (NPCs, ticks, orchestrator closes).
 | I2 | The trace is held in memory and written only in `_write_bundle`, after both episodes | agent-run `run_tests` can read the run directory while an episode is live |
 | I3 | Every sealed seq up to the episode boundary maps to exactly one lane; the exporter raises otherwise | `AppendOnlyLog.on_append` swallows subscriber exceptions (`events.py:212-216`) |
 | I4 | Sealed events after the boundary are post-episode and go to World | monitor calls are appended later by a second writer with no subscriber (`harness.py:667`) |
-| I5 | Everything sits behind `logging.agent_transcript` (off) until the last PR | branches in the middle of the stack stay green |
+| I5 | Everything sits behind `logging.agent_transcript` (on by default since the last PR of the stack) | flag-off runs keep the JSON placeholder and no transcript |
 
 ## Lane rule
 
