@@ -86,4 +86,5 @@ def test_a_traced_run_bundle_has_an_ascii_self_contained_transcript(
         assert f'<div class="head">{agent.id}</div>' in page
         assert f"-- {agent.id} --" in text
     assert "<h2>sample episode</h2>" in page and "<h2>sample honest_cal</h2>" in page
-    assert "attachment://" not in page and "src=http" not in page and "<script" not in page
+    assert "attachment://" not in page
+    assert not [tag for tag in ("<script", "<link", "<img", "<iframe", ' src="', ' href="') if tag in page]
