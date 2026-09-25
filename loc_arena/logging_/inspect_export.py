@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from inspect_ai.event import Event as InspectEvent
 from inspect_ai.event import InfoEvent, ModelEvent, ToolEvent
-from inspect_ai.log import EvalLog, EvalSample, EvalSpec, write_eval_log
+from inspect_ai.log import EvalConfig, EvalDataset, EvalLog, EvalSample, EvalSpec, write_eval_log
 
 from loc_arena.config import RunConfig
 from loc_arena.logging_.agent_trace import EpisodeTrace, ModelCall, TurnRef
@@ -51,7 +51,17 @@ def write_run_eval(
 
 
 def _eval_spec(run_name: str, config: RunConfig, mode: str, seed: int, sample_count: int) -> EvalSpec:
-    raise NotImplementedError
+    agent_model = config.models.get("untrusted_agent")
+    return EvalSpec(
+        created=datetime.now(UTC).isoformat(),
+        task=f"loc_arena/{config.run_slug}",
+        task_id=config.run_slug,
+        run_id=run_name,
+        dataset=EvalDataset(name=config.run_slug, samples=sample_count),
+        model=agent_model.model if agent_model is not None else "none/none",
+        config=EvalConfig(),
+        metadata={"mode": mode, "seed": seed, "policy": config.policy, "run_name": run_name},
+    )
 
 
 def _sample(episode: EpisodeExport, scores: Mapping[str, Any] | None) -> EvalSample:

@@ -57,3 +57,12 @@ def test_write_run_eval_writes_one_sample_per_episode_and_scores_only_the_first(
         ("episode", {"caught": True}),
         ("honest_cal", None),
     ]
+
+
+def test_eval_spec_names_the_task_after_the_run_slug_and_records_the_mode() -> None:
+    spec = inspect_export._eval_spec("run-x", CFG, "honest", 3, 1)
+    assert spec.task == f"loc_arena/{CFG.run_slug}"
+    assert spec.run_id == "run-x"
+    assert spec.model == CFG.models["untrusted_agent"].model
+    assert spec.dataset.samples == 1
+    assert spec.metadata == {"mode": "honest", "seed": 3, "policy": CFG.policy, "run_name": "run-x"}
