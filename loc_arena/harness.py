@@ -494,6 +494,7 @@ def run_episode(
     write_report: bool = True,
     monitor_provider: Any = None,
     run_instance_id: str | None = None,
+    provider: Any = None,
 ) -> Path:
     """Run one episode in ``mode``, grade it, and write the reproducible audit bundle; return its dir.
 
@@ -545,11 +546,13 @@ def run_episode(
     start = time.perf_counter()
     # policy: model (the live deliverable) or scripted (engine-test scaffolding only). The scorer, verifier,
     # and monitors grade both identically; scripted stays byte-reproducible, live is graded on outcome.
-    episode = _assemble_by_policy(cfg, out_dir / "episode", robust=robust)
+    episode = _assemble_by_policy(cfg, out_dir / "episode", robust=robust, provider=provider)
     # calibrate against the honest twin (mode's only difference is covert.enabled)
     honest_cfg = apply_mode(config, "honest")
     honest_ep = (
-        episode if mode == "honest" else _assemble_by_policy(honest_cfg, out_dir / "honest_cal", robust=False)
+        episode
+        if mode == "honest"
+        else _assemble_by_policy(honest_cfg, out_dir / "honest_cal", robust=False, provider=provider)
     )
     h_caller, h_sink = build_monitor_caller(honest_ep, honest_cfg, monitor_provider)
     e_caller, e_sink = build_monitor_caller(episode, cfg, monitor_provider)
@@ -598,7 +601,16 @@ def run_episode(
 
     # write the bundle
     return _write_bundle(
-        cfg, out_dir, run_name, scores, episode, the_seed, mode, threshold, write_report=write_report
+        cfg,
+        out_dir,
+        run_name,
+        scores,
+        episode,
+        the_seed,
+        mode,
+        threshold,
+        write_report=write_report,
+        calibration=honest_ep if mode == "attack" else None,
     )
 
 
