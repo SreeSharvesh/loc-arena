@@ -80,8 +80,13 @@ def test_liveness_window_mismatch_fails_loud(tmp_path: Path) -> None:
         load_run_config(run)
 
 
-def test_agent_transcript_is_off_by_default() -> None:
-    assert load_run_config(RUN).agent_transcript is False
+def test_agent_transcript_is_on_by_default() -> None:
+    assert load_run_config(RUN).agent_transcript is True
+
+
+def test_agent_transcript_can_be_turned_off(tmp_path: Path) -> None:
+    run = _run_with_logging(tmp_path, "  agent_transcript: false\n")
+    assert load_run_config(run).agent_transcript is False
 
 
 def _run_with_logging(tmp_path: Path, logging_block: str) -> Path:

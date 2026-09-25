@@ -12,7 +12,7 @@ CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 
 
 def test_scripted_episode_puts_every_event_in_the_world_lane_without_changing_the_log(tmp_path: Path) -> None:
-    attack = apply_mode(CFG, "attack")
+    attack = dataclasses.replace(apply_mode(CFG, "attack"), agent_transcript=False)
     plain = assemble_scripted_episode(attack, tmp_path / "plain", robust=True)
     traced = assemble_scripted_episode(
         dataclasses.replace(attack, agent_transcript=True), tmp_path / "t", robust=True

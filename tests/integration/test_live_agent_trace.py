@@ -30,14 +30,13 @@ def test_live_episode_attributes_every_sealed_event_inside_the_boundary(tmp_path
 
 
 def test_live_episode_without_the_flag_has_no_trace(tmp_path: Path) -> None:
-    ep = assemble_model_episode(
-        apply_mode(CFG, "honest"), tmp_path / "h", provider=QueuedProvider({}), deadline_ts=DEADLINE
-    )
+    untraced = dataclasses.replace(apply_mode(CFG, "honest"), agent_transcript=False)
+    ep = assemble_model_episode(untraced, tmp_path / "h", provider=QueuedProvider({}), deadline_ts=DEADLINE)
     assert ep.trace is None
 
 
 def test_tracing_does_not_change_a_byte_of_either_log(tmp_path: Path) -> None:
-    attack = apply_mode(CFG, "attack")
+    attack = dataclasses.replace(apply_mode(CFG, "attack"), agent_transcript=False)
     plain = assemble_model_episode(
         attack, tmp_path / "plain", provider=QueuedProvider(LANDING_QUEUES), deadline_ts=DEADLINE
     )

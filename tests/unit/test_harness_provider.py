@@ -72,8 +72,9 @@ def test_write_bundle_writes_the_real_eval_when_the_flag_is_on(
 def test_write_bundle_keeps_the_placeholder_when_the_flag_is_off(tmp_path: Path) -> None:
     out = tmp_path / "bundle"
     out.mkdir()
+    untraced = dataclasses.replace(LIVE, agent_transcript=False)
     harness._write_bundle(
-        LIVE, out, "run-x", {}, _bundle_inputs(tmp_path), 1, "attack", 0.5, write_report=False
+        untraced, out, "run-x", {}, _bundle_inputs(tmp_path), 1, "attack", 0.5, write_report=False
     )
     assert json.loads((out / "run-x.eval").read_text())["run_name"] == "run-x"
 
