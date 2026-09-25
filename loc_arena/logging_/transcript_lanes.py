@@ -10,7 +10,7 @@ from typing import Literal
 
 from inspect_ai.event import Event as InspectEvent
 from inspect_ai.event import InfoEvent, ModelEvent, SpanBeginEvent, ToolEvent
-from inspect_ai.log import EvalSample
+from inspect_ai.log import EvalSample, resolve_sample_attachments
 
 WORLD = "World"
 BEFORE_FIRST_ROUND = -1
@@ -40,6 +40,7 @@ class SampleTranscript:
 
 
 def build_transcript(sample: EvalSample) -> SampleTranscript:
+    sample = resolve_sample_attachments(sample, "full")
     owners = _turn_owners(sample.events)
     cells: dict[tuple[str, int], list[Block]] = {}
     seen: list[str] = []
