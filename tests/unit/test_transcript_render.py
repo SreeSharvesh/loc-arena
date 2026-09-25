@@ -74,7 +74,7 @@ def test_render_html_is_a_self_contained_ascii_page(monkeypatch: pytest.MonkeyPa
     assert "<script" not in page and "src=" not in page and "href=" not in page
 
 
-def test_render_text_lists_each_lane_with_its_blocks_in_round_order(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_render_text_lists_every_lane_with_its_blocks_in_round_order(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(transcript_render, "_row_label", lambda row: f"r{row}")
     transcript = SampleTranscript(
         sample_id="episode",
@@ -87,7 +87,8 @@ def test_render_text_lists_each_lane_with_its_blocks_in_round_order(monkeypatch:
     )
     assert transcript_render.render_text("run-x", [transcript]) == (
         "run-x\n\n== sample episode ==\n\n-- World --\n[r-1] tick\n    t0\n\n"
-        '-- agent-main --\n[r0] read_file\n    {"path": "a"}\n    ok\n'
+        '-- agent-main --\n[r0] read_file\n    {"path": "a"}\n    ok\n\n'
+        "-- idle-agent --\n    (no activity)\n"
     )
 
 

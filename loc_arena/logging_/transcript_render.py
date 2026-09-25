@@ -49,7 +49,7 @@ def write_transcripts(eval_path: Path, out_dir: Path) -> tuple[Path, Path]:
     title = log.eval.run_id or eval_path.stem
     html_path, text_path = out_dir / TRANSCRIPT_HTML, out_dir / TRANSCRIPT_TEXT
     html_path.write_text(render_html(title, transcripts), encoding="ascii")
-    text_path.write_text(render_text(title, transcripts), encoding="utf-8")
+    text_path.write_text(render_text(title, transcripts), encoding="utf-8", errors="backslashreplace")
     return html_path, text_path
 
 
@@ -77,9 +77,9 @@ def render_text(title: str, transcripts: Sequence[SampleTranscript]) -> str:
             lane_blocks = [
                 (row, block) for row in transcript.rows for block in transcript.cells.get((lane, row), ())
             ]
-            if not lane_blocks:
-                continue
             lines += ["", f"-- {lane} --"]
+            if not lane_blocks:
+                lines.append("    (no activity)")
             for row, block in lane_blocks:
                 lines.append(f"[{_row_label(row)}] {_visible(block.title)}")
                 lines += [f"    {line}" for line in _visible(block.code or "").splitlines()]
