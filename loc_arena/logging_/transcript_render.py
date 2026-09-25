@@ -7,7 +7,9 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from inspect_ai.log import read_eval_log
+from pygments import highlight
 from pygments.formatters import HtmlFormatter
+from pygments.lexers import JsonLexer
 
 from loc_arena.logging_.transcript_lanes import Block, SampleTranscript, build_transcript
 
@@ -106,7 +108,7 @@ def _block_html(block: Block) -> str:
 
 
 def _code_html(code: str) -> str:
-    raise NotImplementedError
+    return highlight(code, JsonLexer(), HtmlFormatter(cssclass="code"))
 
 
 def _row_label(row: int) -> str:

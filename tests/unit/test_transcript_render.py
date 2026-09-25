@@ -124,3 +124,9 @@ def test_a_blocked_tool_block_carries_the_blocked_class_and_its_code(monkeypatch
     article = transcript_render._block_html(Block("tool", "spawn (blocked)", "no", code="{}", blocked=True))
     assert article.startswith('<article class="block tool blocked">')
     assert "<code>{}</code><pre>no</pre>" in article
+
+
+def test_code_is_highlighted_as_json_inside_the_code_class() -> None:
+    rendered = transcript_render._code_html('{"path": "a.py"}')
+    assert rendered.startswith('<div class="code">')
+    assert "a.py" in rendered and '<span class="' in rendered
