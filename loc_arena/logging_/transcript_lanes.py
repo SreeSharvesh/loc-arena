@@ -82,7 +82,13 @@ def _lane_order(configured: Sequence[str], seen: Sequence[str]) -> tuple[str, ..
 
 
 def _blocks(event: InspectEvent) -> tuple[Block, ...]:
-    raise NotImplementedError
+    if isinstance(event, ModelEvent):
+        return _model_blocks(event)
+    if isinstance(event, ToolEvent):
+        return (_tool_block(event),)
+    if isinstance(event, InfoEvent):
+        return (_info_block(event),)
+    return ()
 
 
 def _model_blocks(event: ModelEvent) -> tuple[Block, ...]:

@@ -80,3 +80,9 @@ def test_lane_order_is_world_then_configured_then_extra_agents_once_each() -> No
         ["agent-main", "serving-agent"], ["serving-agent", "child-1", "agent-main"]
     )
     assert order == (WORLD, "agent-main", "serving-agent", "child-1")
+
+
+def test_blocks_dispatches_by_event_type_and_ignores_spans(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(transcript_lanes, "_info_block", lambda event: Block("info", "from-info", ""))
+    assert transcript_lanes._blocks(_info("episode:episode", "x")) == (Block("info", "from-info", ""),)
+    assert transcript_lanes._blocks(SpanBeginEvent(id="s", name="s")) == ()
