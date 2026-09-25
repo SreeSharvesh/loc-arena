@@ -14,6 +14,7 @@ from inspect_ai.log import EvalSample, resolve_sample_attachments
 
 WORLD = "World"
 BEFORE_FIRST_ROUND = -1
+AFTER_EPISODE = 1_000_000_000
 
 BlockKind = Literal["prompt", "reply", "tool", "info"]
 
@@ -41,7 +42,7 @@ class SampleTranscript:
 
 def build_transcript(sample: EvalSample) -> SampleTranscript:
     sample = resolve_sample_attachments(sample, "full")
-    owners = _turn_owners(sample.events)
+    owners = _span_owners(sample.events)
     cells: dict[tuple[str, int], list[Block]] = {}
     seen: list[str] = []
     latest_round = BEFORE_FIRST_ROUND
@@ -68,10 +69,13 @@ def build_transcript(sample: EvalSample) -> SampleTranscript:
     )
 
 
-def _turn_owners(events: Sequence[InspectEvent]) -> dict[str, tuple[str, int]]:
+def _span_owners(events: Sequence[InspectEvent]) -> dict[str, tuple[str, int]]:
     spans = {event.id: event for event in events if isinstance(event, SpanBeginEvent)}
     turns: dict[str, tuple[str, int]] = {}
     for span in spans.values():
+        if span.type == "after_episode":
+            turns[span.id] = (WORLD, AFTER_EPISODE)
+            continue
         if span.type != "turn":
             continue
         agent = spans.get(span.parent_id or "")

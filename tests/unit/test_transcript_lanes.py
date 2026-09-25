@@ -39,7 +39,7 @@ def test_build_transcript_places_blocks_by_turn_owner_and_world_by_latest_round(
     def fake_order(configured: Sequence[str], seen: Sequence[str]) -> tuple[str, ...]:
         return (WORLD, *configured, *[s for s in seen if s not in configured])
 
-    monkeypatch.setattr(transcript_lanes, "_turn_owners", lambda _events: owners)
+    monkeypatch.setattr(transcript_lanes, "_span_owners", lambda _events: owners)
     monkeypatch.setattr(transcript_lanes, "_blocks", fake_blocks)
     monkeypatch.setattr(transcript_lanes, "_lane_order", fake_order)
     sample = EvalSample(
@@ -67,14 +67,14 @@ def _spans() -> list[InspectEvent]:
     ]
 
 
-def test_turn_owners_maps_each_turn_span_to_its_agent_and_round() -> None:
-    assert transcript_lanes._turn_owners(_spans()) == {"turn:agent-main:3": ("agent-main", 3)}
+def test_span_owners_maps_each_turn_span_to_its_agent_and_round() -> None:
+    assert transcript_lanes._span_owners(_spans()) == {"turn:agent-main:3": ("agent-main", 3)}
 
 
 def test_a_turn_span_outside_an_agent_span_raises() -> None:
     stray = SpanBeginEvent(id="turn:x:0", parent_id="episode:episode", name="turn 0", type="turn")
     with pytest.raises(ValueError, match="not a 'turn <n>' span under an agent span"):
-        transcript_lanes._turn_owners([*_spans(), stray])
+        transcript_lanes._span_owners([*_spans(), stray])
 
 
 def test_lane_order_is_world_then_configured_then_extra_agents_once_each() -> None:
@@ -142,19 +142,19 @@ def test_an_info_event_is_titled_by_its_source_with_its_data_as_json() -> None:
 
 def test_a_span_nested_under_a_turn_belongs_to_that_turn() -> None:
     nested = SpanBeginEvent(id="tool:1", parent_id="turn:agent-main:3", name="tool", type="tool")
-    assert transcript_lanes._turn_owners([*_spans(), nested])["tool:1"] == ("agent-main", 3)
+    assert transcript_lanes._span_owners([*_spans(), nested])["tool:1"] == ("agent-main", 3)
 
 
 def test_a_turn_span_with_a_non_numeric_round_raises_the_contract_error() -> None:
     bad = SpanBeginEvent(id="turn:agent-main:x", parent_id="agent:agent-main", name="turn 1a", type="turn")
     with pytest.raises(ValueError, match="'turn:agent-main:x' is not a 'turn <n>' span"):
-        transcript_lanes._turn_owners([*_spans(), bad])
+        transcript_lanes._span_owners([*_spans(), bad])
 
 
 def test_a_cycle_of_span_parents_terminates_without_an_owner() -> None:
     a = SpanBeginEvent(id="a", parent_id="b", name="a")
     b = SpanBeginEvent(id="b", parent_id="a", name="b")
-    assert "a" not in transcript_lanes._turn_owners([*_spans(), a, b])
+    assert "a" not in transcript_lanes._span_owners([*_spans(), a, b])
 
 
 def test_a_world_event_after_a_blockless_turn_takes_that_turns_round() -> None:
@@ -189,3 +189,23 @@ def test_a_blocked_tool_event_keeps_its_result_after_the_reason() -> None:
         error=ToolCallError("permission", "pre-provisioned"),
     )
     assert transcript_lanes._tool_block(event).body == 'pre-provisioned\n{"blocked": true}'
+
+
+def test_events_in_the_after_episode_span_land_in_the_after_episode_row() -> None:
+    events: list[InspectEvent] = [
+        *_spans(),
+        SpanEndEvent(id="turn:agent-main:3"),
+        SpanBeginEvent(
+            id="after_episode:episode",
+            parent_id="episode:episode",
+            name="after episode",
+            type="after_episode",
+        ),
+        _info("after_episode:episode", "monitor call"),
+    ]
+    sample = EvalSample(
+        id="episode", epoch=1, input="", target="", events=events, metadata={"agents": ["agent-main"]}
+    )
+    transcript = build_transcript(sample)
+    assert list(transcript.cells) == [(WORLD, transcript_lanes.AFTER_EPISODE)]
+    assert transcript.rows == (transcript_lanes.AFTER_EPISODE,)
