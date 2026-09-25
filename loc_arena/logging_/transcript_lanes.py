@@ -46,6 +46,8 @@ def build_transcript(sample: EvalSample) -> SampleTranscript:
     seen: list[str] = []
     latest_round = BEFORE_FIRST_ROUND
     for event in sample.events:
+        if isinstance(event, SpanBeginEvent) and event.type == "turn":
+            latest_round = owners[event.id][1]
         blocks = _blocks(event)
         if not blocks:
             continue

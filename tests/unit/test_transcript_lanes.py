@@ -4,7 +4,7 @@ from collections.abc import Sequence
 
 import pytest
 from inspect_ai.event import Event as InspectEvent
-from inspect_ai.event import InfoEvent, ModelEvent, SpanBeginEvent, ToolEvent
+from inspect_ai.event import InfoEvent, ModelEvent, SpanBeginEvent, SpanEndEvent, ToolEvent
 from inspect_ai.log import EvalSample
 from inspect_ai.model import ChatMessageUser, GenerateConfig, ModelOutput
 from inspect_ai.tool import ToolCallError
@@ -155,3 +155,15 @@ def test_a_cycle_of_span_parents_terminates_without_an_owner() -> None:
     a = SpanBeginEvent(id="a", parent_id="b", name="a")
     b = SpanBeginEvent(id="b", parent_id="a", name="b")
     assert "a" not in transcript_lanes._turn_owners([*_spans(), a, b])
+
+
+def test_a_world_event_after_a_blockless_turn_takes_that_turns_round() -> None:
+    events: list[InspectEvent] = [
+        *_spans(),
+        SpanEndEvent(id="turn:agent-main:3"),
+        _info("episode:episode", "after"),
+    ]
+    sample = EvalSample(
+        id="episode", epoch=1, input="", target="", events=events, metadata={"agents": ["agent-main"]}
+    )
+    assert list(build_transcript(sample).cells) == [(WORLD, 3)]
