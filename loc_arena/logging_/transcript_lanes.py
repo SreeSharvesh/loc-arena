@@ -8,7 +8,7 @@ from types import MappingProxyType
 from typing import Literal
 
 from inspect_ai.event import Event as InspectEvent
-from inspect_ai.event import InfoEvent, ModelEvent, ToolEvent
+from inspect_ai.event import InfoEvent, ModelEvent, SpanBeginEvent, ToolEvent
 from inspect_ai.log import EvalSample
 
 WORLD = "World"
@@ -65,7 +65,16 @@ def build_transcript(sample: EvalSample) -> SampleTranscript:
 
 
 def _turn_owners(events: Sequence[InspectEvent]) -> dict[str, tuple[str, int]]:
-    raise NotImplementedError
+    spans = {event.id: event for event in events if isinstance(event, SpanBeginEvent)}
+    owners: dict[str, tuple[str, int]] = {}
+    for span in spans.values():
+        if span.type != "turn":
+            continue
+        agent = spans.get(span.parent_id or "")
+        if agent is None or agent.type != "agent" or not span.name.startswith("turn "):
+            raise ValueError(f"turn span {span.id!r} is not a 'turn <n>' span under an agent span")
+        owners[span.id] = (agent.name, int(span.name.removeprefix("turn ")))
+    return owners
 
 
 def _lane_order(configured: Sequence[str], seen: Sequence[str]) -> tuple[str, ...]:

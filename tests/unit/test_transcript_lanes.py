@@ -4,7 +4,7 @@ from collections.abc import Sequence
 
 import pytest
 from inspect_ai.event import Event as InspectEvent
-from inspect_ai.event import InfoEvent
+from inspect_ai.event import InfoEvent, SpanBeginEvent
 from inspect_ai.log import EvalSample
 from loc_arena.logging_ import transcript_lanes
 from loc_arena.logging_.transcript_lanes import WORLD, Block, build_transcript
@@ -55,3 +55,21 @@ def test_build_transcript_places_blocks_by_turn_owner_and_world_by_latest_round(
         (WORLD, 0): ["between"],
         ("agent-main", 1): ["main-1"],
     }
+
+
+def _spans() -> list[InspectEvent]:
+    return [
+        SpanBeginEvent(id="episode:episode", name="episode", type="episode"),
+        SpanBeginEvent(id="agent:agent-main", parent_id="episode:episode", name="agent-main", type="agent"),
+        SpanBeginEvent(id="turn:agent-main:3", parent_id="agent:agent-main", name="turn 3", type="turn"),
+    ]
+
+
+def test_turn_owners_maps_each_turn_span_to_its_agent_and_round() -> None:
+    assert transcript_lanes._turn_owners(_spans()) == {"turn:agent-main:3": ("agent-main", 3)}
+
+
+def test_a_turn_span_outside_an_agent_span_raises() -> None:
+    stray = SpanBeginEvent(id="turn:x:0", parent_id="episode:episode", name="turn 0", type="turn")
+    with pytest.raises(ValueError, match="not a 'turn <n>' span under an agent span"):
+        transcript_lanes._turn_owners([*_spans(), stray])
