@@ -115,4 +115,5 @@ def _tool_block(event: ToolEvent) -> Block:
 
 
 def _info_block(event: InfoEvent) -> Block:
-    raise NotImplementedError
+    body = event.data if isinstance(event.data, str) else json.dumps(event.data, indent=2, sort_keys=True)
+    return Block("info", event.source or "info", body)

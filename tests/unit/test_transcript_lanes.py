@@ -131,3 +131,10 @@ def test_a_blocked_tool_event_is_marked_and_shows_the_reason() -> None:
     )
     block = transcript_lanes._tool_block(event)
     assert (block.title, block.body, block.blocked) == ("spawn_subagent (blocked)", "pre-provisioned", True)
+
+
+def test_an_info_event_is_titled_by_its_source_with_its_data_as_json() -> None:
+    event = InfoEvent(source="message", data={"target_id": "eval-agent", "payload": {"body": "go"}})
+    assert transcript_lanes._info_block(event) == Block(
+        "info", "message", '{\n  "payload": {\n    "body": "go"\n  },\n  "target_id": "eval-agent"\n}'
+    )
