@@ -22,3 +22,4 @@ def test_scripted_episode_puts_every_event_in_the_world_lane_without_changing_th
     assert traced.trace.last_sealed_seq == sealed[-1].seq
     assert {traced.trace.sealed_lane[e.seq] for e in sealed} == {None}
     assert traced.sealed_path.read_bytes() == plain.sealed_path.read_bytes()
+    assert traced.mirror_path.read_bytes() == plain.mirror_path.read_bytes()
