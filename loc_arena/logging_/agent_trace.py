@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Mapping
-from contextlib import AbstractContextManager
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Literal
@@ -71,8 +71,21 @@ class AgentTrace:
         self._last_sealed: Event | None = None
         self._model_calls: list[ModelCall] = []
 
-    def turn(self, agent_uid: str, turn: int) -> AbstractContextManager[None]:
-        raise NotImplementedError
+    @contextmanager
+    def turn(self, agent_uid: str, turn: int) -> Iterator[None]:
+        if self._bound is not None:
+            raise RuntimeError(
+                f"cannot bind {agent_uid} turn {turn}: "
+                f"{self._bound.agent_uid} turn {self._bound.turn} is still running"
+            )
+        ref = TurnRef(agent_uid, turn)
+        started = self._wall_clock()
+        self._bound, self._phase = ref, "deciding"
+        try:
+            yield
+        finally:
+            self._turns.append(TurnRecord(ref, started, self._wall_clock()))
+            self._bound, self._phase = None, None
 
     def mark_executing(self) -> None:
         raise NotImplementedError
