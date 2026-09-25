@@ -18,8 +18,6 @@ def test_finish_on_an_empty_trace_returns_empty_collections_and_the_boundary() -
     trace = AgentTrace().finish(last_sealed_seq=7)
     assert trace.turns == ()
     assert dict(trace.sealed_lane) == {}
-    assert dict(trace.mirror_lane) == {}
-    assert dict(trace.mirror_to_sealed) == {}
     assert trace.model_calls == ()
     assert trace.last_sealed_seq == 7
 
@@ -147,34 +145,10 @@ def test_sealed_events_are_tagged_with_the_bound_turn_or_world() -> None:
     assert dict(lanes) == {0: None, 1: worker, 2: worker, 3: None}
 
 
-def test_mirror_events_are_tagged_with_the_bound_turn_or_world() -> None:
-    trace = AgentTrace()
-    with trace.turn("agent-main", 1):
-        trace.on_mirror_append(_event(0, kind="inference_call"))
-    trace.on_mirror_append(_event(1, kind="inference_call"))
-    finished = trace.finish(last_sealed_seq=-1)
-    assert dict(finished.mirror_lane) == {0: TurnRef("agent-main", 1), 1: None}
-    assert dict(finished.mirror_to_sealed) == {}
-
-
-def test_a_mirror_event_identical_to_the_last_sealed_event_is_its_twin() -> None:
-    trace = AgentTrace()
-    trace.on_sealed_append(_event(40, tool="write_file"))
-    trace.on_mirror_append(_event(9, tool="write_file"))
-    assert dict(trace.finish(last_sealed_seq=40).mirror_to_sealed) == {9: 40}
-
-
-def test_an_edge_prompt_copy_after_a_sealed_inference_record_has_no_twin() -> None:
-    trace = AgentTrace()
-    trace.on_sealed_append(_event(40, kind="inference_call", payload={"prompt_fp": "a", "in_mirror": True}))
-    trace.on_mirror_append(_event(9, kind="inference_call", payload={"prompt_fp": "a"}))
-    assert dict(trace.finish(last_sealed_seq=40).mirror_to_sealed) == {}
-
-
-def test_real_recorder_dual_writes_pair_up_through_the_log_subscribers(tmp_path: Path) -> None:
+def test_real_recorder_writes_are_tagged_through_the_sealed_subscriber(tmp_path: Path) -> None:
     trace = AgentTrace()
     sealed = AppendOnlyLog(tmp_path / "sealed.jsonl", "ep-trace", on_append=trace.on_sealed_append)
-    mirror = AppendOnlyLog(tmp_path / "mirror.jsonl", "ep-trace", on_append=trace.on_mirror_append)
+    mirror = AppendOnlyLog(tmp_path / "mirror.jsonl", "ep-trace")
     recorder = Recorder("ep-trace", sealed, mirror, clock=lambda: 1.0)
     recorder.sealed(actor_uid="agent-main", actor_role="orchestrator", kind="spawn", payload={})
     with trace.turn("agent-main", 0):
@@ -183,16 +157,6 @@ def test_real_recorder_dual_writes_pair_up_through_the_log_subscribers(tmp_path:
     finished = trace.finish(last_sealed_seq=sealed.last_seq)
     main = TurnRef("agent-main", 0)
     assert dict(finished.sealed_lane) == {0: None, 1: main, 2: main}
-    assert dict(finished.mirror_lane) == {0: main, 1: main}
-    assert dict(finished.mirror_to_sealed) == {0: 1, 1: 2}
-
-
-def test_a_sealed_event_is_the_twin_of_at_most_one_mirror_event() -> None:
-    trace = AgentTrace()
-    trace.on_sealed_append(_event(40, kind="message"))
-    trace.on_mirror_append(_event(9, kind="message"))
-    trace.on_mirror_append(_event(10, kind="message"))
-    assert dict(trace.finish(last_sealed_seq=40).mirror_to_sealed) == {9: 40}
 
 
 def test_a_clock_failure_on_turn_exit_still_unbinds_the_turn() -> None:
@@ -210,13 +174,6 @@ def test_a_clock_failure_on_turn_exit_still_unbinds_the_turn() -> None:
     with trace.turn("agent-main", 1):
         pass
     assert trace.finish(last_sealed_seq=-1).turns == (TurnRecord(TurnRef("agent-main", 1), 2.0, 3.0),)
-
-
-def test_events_differing_only_in_parent_task_are_not_twins() -> None:
-    trace = AgentTrace()
-    trace.on_sealed_append(_event(40, parent_task="task-a"))
-    trace.on_mirror_append(_event(9, parent_task="task-b"))
-    assert dict(trace.finish(last_sealed_seq=40).mirror_to_sealed) == {}
 
 
 def test_open_episode_logs_subscribes_the_trace_only_when_traced(tmp_path: Path) -> None:

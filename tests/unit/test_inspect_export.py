@@ -228,7 +228,7 @@ def test_a_traced_episode_exports_a_span_tree_with_one_agent_span_per_agent(tmp_
     trace = AgentTrace(wall_clock=lambda: 1_700_000_000.0)
     sealed_path = tmp_path / "sealed.jsonl"
     sealed = AppendOnlyLog(sealed_path, "ep-export", on_append=trace.on_sealed_append)
-    mirror = AppendOnlyLog(tmp_path / "mirror.jsonl", "ep-export", on_append=trace.on_mirror_append)
+    mirror = AppendOnlyLog(tmp_path / "mirror.jsonl", "ep-export")
     recorder = Recorder("ep-export", sealed, mirror, clock=lambda: 0.0)
     _world(sealed)
     with trace.turn("agent-main", 0):

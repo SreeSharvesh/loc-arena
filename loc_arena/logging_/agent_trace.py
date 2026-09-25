@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
 from typing import Literal
@@ -51,8 +51,6 @@ class EpisodeTrace:
 
     turns: tuple[TurnRecord, ...]
     sealed_lane: Mapping[int, TurnRef | None]
-    mirror_lane: Mapping[int, TurnRef | None]
-    mirror_to_sealed: Mapping[int, int]
     model_calls: tuple[ModelCall, ...]
     last_sealed_seq: int
 
@@ -66,9 +64,6 @@ class AgentTrace:
         self._phase: Phase | None = None
         self._turns: list[TurnRecord] = []
         self._sealed_lane: dict[int, TurnRef | None] = {}
-        self._mirror_lane: dict[int, TurnRef | None] = {}
-        self._mirror_to_sealed: dict[int, int] = {}
-        self._last_sealed: Event | None = None
         self._model_calls: list[ModelCall] = []
 
     @contextmanager
@@ -94,14 +89,6 @@ class AgentTrace:
 
     def on_sealed_append(self, event: Event) -> None:
         self._sealed_lane[event.seq] = self._bound
-        self._last_sealed = event
-
-    def on_mirror_append(self, event: Event) -> None:
-        self._mirror_lane[event.seq] = self._bound
-        twin = self._last_sealed
-        if twin is not None and _same_logical_event(twin, event):
-            self._mirror_to_sealed[event.seq] = twin.seq
-            self._last_sealed = None
 
     def on_model_call(
         self, *, identity: str, role: str, model_input: str, output: str, sealed_seq: int
@@ -126,15 +113,9 @@ class AgentTrace:
         return EpisodeTrace(
             turns=tuple(self._turns),
             sealed_lane=MappingProxyType(dict(self._sealed_lane)),
-            mirror_lane=MappingProxyType(dict(self._mirror_lane)),
-            mirror_to_sealed=MappingProxyType(dict(self._mirror_to_sealed)),
             model_calls=tuple(self._model_calls),
             last_sealed_seq=last_sealed_seq,
         )
-
-
-def _same_logical_event(sealed: Event, mirror: Event) -> bool:
-    return replace(sealed, seq=0, fp="") == replace(mirror, seq=0, fp="")
 
 
 def open_episode_logs(
@@ -142,5 +123,5 @@ def open_episode_logs(
 ) -> tuple[AgentTrace | None, AppendOnlyLog, AppendOnlyLog]:
     trace = AgentTrace() if traced else None
     sealed = AppendOnlyLog(sealed_path, episode_id, on_append=trace.on_sealed_append if trace else None)
-    mirror = AppendOnlyLog(mirror_path, episode_id, on_append=trace.on_mirror_append if trace else None)
+    mirror = AppendOnlyLog(mirror_path, episode_id)
     return trace, sealed, mirror

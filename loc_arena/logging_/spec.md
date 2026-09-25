@@ -37,7 +37,7 @@ write a scripted PR stamped `agent-main` outside any turn (`coworker.py:219-280`
 | `TurnRef` | `agent_uid`, `turn` | one agent turn; under the live round-robin driver `turn` is also the round index |
 | `TurnRecord` | `ref`, `wall_start`, `wall_end` | wall-clock bounds of a completed turn; the episode clock is simulated and jumps |
 | `ModelCall` | `phase`, `identity`, `role`, `model_input`, `output`, `sealed_seq`, `wall_ts` | one provider call as the core made it; `model_input` is after covert injection; its turn is `sealed_lane[sealed_seq]`; `phase` is `None` outside a turn |
-| `EpisodeTrace` | `turns`, `sealed_lane`, `mirror_lane`, `mirror_to_sealed`, `model_calls`, `last_sealed_seq` | finished read-only trace; lane maps give `TurnRef` or `None` (World); `mirror_to_sealed` pairs dual-recorded twins, since the two logs number independently |
+| `EpisodeTrace` | `turns`, `sealed_lane`, `model_calls`, `last_sealed_seq` | finished read-only trace; `sealed_lane` gives `TurnRef` or `None` (World) per sealed seq |
 
 ## `AgentTrace` contract
 
@@ -47,12 +47,11 @@ write a scripted PR stamped `agent-main` outside any turn (`coworker.py:219-280`
 | `turn(agent_uid, turn)` | `Agent.run_turn`, around inbox, brain and tool steps | context manager: binds the turn in phase `deciding`; on exit unbinds first, then records a `TurnRecord`, also when the body raises | `RuntimeError` if a turn is already bound |
 | `mark_executing()` | `Agent.run_turn`, just before `tools.execute` | switches the bound turn to `executing` | `RuntimeError` if no turn is bound |
 | `on_sealed_append(event)` | sealed `AppendOnlyLog(on_append=...)` | tags `event.seq` with the bound turn or World | never on purpose; a miss surfaces as an unassigned seq in the exporter |
-| `on_mirror_append(event)` | mirror `AppendOnlyLog(on_append=...)` | tags `event.seq`; pairs it with the most recent unpaired sealed event when the two are equal in every field but `seq` and `fp` (`Recorder.dual` writes sealed then mirror); a sealed event twins at most one mirror event; edge prompt copies get a lane but no twin | never on purpose |
 | `on_model_call(*, identity, role, model_input, output, sealed_seq)` | `GatewayCore.generate` / `batch_generate`, episode instance only, after the sealed record is written | records a `ModelCall` with the bound phase | - |
 | `finish(last_sealed_seq)` | harness, when assembly returns | returns a read-only `EpisodeTrace` snapshot; `last_sealed_seq` is the boundary for I3/I4, so anything observed later is post-episode by construction | `RuntimeError` if a turn is still bound |
 
 `open_episode_logs(sealed_path, mirror_path, episode_id, *, traced)` opens an episode's two logs and, when
-`traced`, an `AgentTrace` subscribed to both; both assemblers use it so the subscription cannot drift.
+`traced`, an `AgentTrace` subscribed to the sealed one (the mirror log carries no attribution the exporter needs); both assemblers use it so the subscription cannot drift.
 
 ## Verified assumptions
 
