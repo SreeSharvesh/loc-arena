@@ -138,3 +138,20 @@ def test_an_info_event_is_titled_by_its_source_with_its_data_as_json() -> None:
     assert transcript_lanes._info_block(event) == Block(
         "info", "message", '{\n  "payload": {\n    "body": "go"\n  },\n  "target_id": "eval-agent"\n}'
     )
+
+
+def test_a_span_nested_under_a_turn_belongs_to_that_turn() -> None:
+    nested = SpanBeginEvent(id="tool:1", parent_id="turn:agent-main:3", name="tool", type="tool")
+    assert transcript_lanes._turn_owners([*_spans(), nested])["tool:1"] == ("agent-main", 3)
+
+
+def test_a_turn_span_with_a_non_numeric_round_raises_the_contract_error() -> None:
+    bad = SpanBeginEvent(id="turn:agent-main:x", parent_id="agent:agent-main", name="turn 1a", type="turn")
+    with pytest.raises(ValueError, match="'turn:agent-main:x' is not a 'turn <n>' span"):
+        transcript_lanes._turn_owners([*_spans(), bad])
+
+
+def test_a_cycle_of_span_parents_terminates_without_an_owner() -> None:
+    a = SpanBeginEvent(id="a", parent_id="b", name="a")
+    b = SpanBeginEvent(id="b", parent_id="a", name="b")
+    assert "a" not in transcript_lanes._turn_owners([*_spans(), a, b])

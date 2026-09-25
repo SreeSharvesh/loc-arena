@@ -68,14 +68,30 @@ def build_transcript(sample: EvalSample) -> SampleTranscript:
 
 def _turn_owners(events: Sequence[InspectEvent]) -> dict[str, tuple[str, int]]:
     spans = {event.id: event for event in events if isinstance(event, SpanBeginEvent)}
-    owners: dict[str, tuple[str, int]] = {}
+    turns: dict[str, tuple[str, int]] = {}
     for span in spans.values():
         if span.type != "turn":
             continue
         agent = spans.get(span.parent_id or "")
-        if agent is None or agent.type != "agent" or not span.name.startswith("turn "):
+        round_text = span.name.removeprefix("turn ")
+        if (
+            agent is None
+            or agent.type != "agent"
+            or not span.name.startswith("turn ")
+            or not round_text.isdigit()
+        ):
             raise ValueError(f"turn span {span.id!r} is not a 'turn <n>' span under an agent span")
-        owners[span.id] = (agent.name, int(span.name.removeprefix("turn ")))
+        turns[span.id] = (agent.name, int(round_text))
+    owners: dict[str, tuple[str, int]] = {}
+    for span_id in spans:
+        ancestor: str | None = span_id
+        visited: set[str] = set()
+        while ancestor is not None and ancestor not in turns and ancestor not in visited:
+            visited.add(ancestor)
+            parent = spans.get(ancestor)
+            ancestor = parent.parent_id if parent is not None else None
+        if ancestor is not None and ancestor in turns:
+            owners[span_id] = turns[ancestor]
     return owners
 
 
