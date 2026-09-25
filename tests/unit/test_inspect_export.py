@@ -313,3 +313,12 @@ def test_a_block_reported_only_in_the_result_is_still_a_permission_error() -> No
     event = inspect_export._tool_event(spawn, None, at)
     assert event.error is not None
     assert (event.error.type, event.error.message) == ("permission", "team is pre-provisioned")
+
+
+def test_a_turn_whose_events_are_split_by_another_turn_raises() -> None:
+    main, worker = TurnRef("agent-main", 0), TurnRef("serving-agent", 0)
+    trace = _traced({0: main, 1: worker}, boundary=2)
+    episode = EpisodeExport("episode", trace, Path("unused"), ("agent-main", "serving-agent"))
+    lanes: dict[int, TurnRef | None] = {0: main, 1: worker, 2: main}
+    with pytest.raises(ValueError, match="agent-main turn 0 wrote sealed events in two separate runs"):
+        inspect_export._sample_events(episode, [_tick(0), _tick(1), _tick(2)], lanes)

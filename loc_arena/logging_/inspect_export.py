@@ -6,6 +6,7 @@ import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from itertools import groupby
 from pathlib import Path
 from typing import Any
 
@@ -111,50 +112,45 @@ def _sample_events(
     now = _timestamp(min(wall_readings)) if wall_readings else datetime.now(UTC)
     events: list[InspectEvent] = []
     opened_agents: list[str] = []
-    current: TurnRef | None = None
-    for event in sealed_events:
-        lane = lanes[event.seq]
-        if lane != current:
-            if current is not None:
-                if current in turn_records:
-                    now = _timestamp(turn_records[current].wall_end)
-                events.append(SpanEndEvent(id=_turn_span_id(current), timestamp=now))
-            if lane is not None:
-                if lane in turn_records:
-                    now = _timestamp(turn_records[lane].wall_start)
-                if lane.agent_uid not in opened_agents:
-                    opened_agents.append(lane.agent_uid)
-                    events.append(
-                        SpanBeginEvent(
-                            id=_agent_span_id(lane.agent_uid),
-                            name=lane.agent_uid,
-                            type="agent",
-                            timestamp=now,
-                        )
-                    )
+    finished_turns: set[TurnRef] = set()
+    for lane, run in groupby(sealed_events, key=lambda sealed: lanes[sealed.seq]):
+        if lane is not None:
+            if lane in finished_turns:
+                raise ValueError(
+                    f"{lane.agent_uid} turn {lane.turn} wrote sealed events in two separate runs; "
+                    "turns must not interleave"
+                )
+            now = _timestamp(turn_records[lane].wall_start)
+            if lane.agent_uid not in opened_agents:
+                opened_agents.append(lane.agent_uid)
                 events.append(
                     SpanBeginEvent(
-                        id=_turn_span_id(lane),
-                        parent_id=_agent_span_id(lane.agent_uid),
-                        name=f"turn {lane.turn}",
-                        type="turn",
-                        timestamp=now,
+                        id=_agent_span_id(lane.agent_uid), name=lane.agent_uid, type="agent", timestamp=now
                     )
                 )
-            current = lane
-        span_id = _turn_span_id(current) if current is not None else None
-        call = calls.get(event.seq)
-        if event.kind == "inference_call" and call is not None:
-            now = _timestamp(call.wall_ts)
-            events.append(_model_event(call, span_id))
-        elif event.kind == "action":
-            events.append(_tool_event(event, span_id, now))
-        else:
-            events.append(_info_event(event, span_id, now))
-    if current is not None:
-        if current in turn_records:
-            now = _timestamp(turn_records[current].wall_end)
-        events.append(SpanEndEvent(id=_turn_span_id(current), timestamp=now))
+            events.append(
+                SpanBeginEvent(
+                    id=_turn_span_id(lane),
+                    parent_id=_agent_span_id(lane.agent_uid),
+                    name=f"turn {lane.turn}",
+                    type="turn",
+                    timestamp=now,
+                )
+            )
+        span_id = _turn_span_id(lane) if lane is not None else None
+        for event in run:
+            call = calls.get(event.seq)
+            if event.kind == "inference_call" and call is not None:
+                now = _timestamp(call.wall_ts)
+                events.append(_model_event(call, span_id))
+            elif event.kind == "action":
+                events.append(_tool_event(event, span_id, now))
+            else:
+                events.append(_info_event(event, span_id, now))
+        if lane is not None:
+            now = _timestamp(turn_records[lane].wall_end)
+            events.append(SpanEndEvent(id=_turn_span_id(lane), timestamp=now))
+            finished_turns.add(lane)
     events.extend(SpanEndEvent(id=_agent_span_id(uid), timestamp=now) for uid in opened_agents)
     return events
 
