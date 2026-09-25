@@ -23,11 +23,14 @@ import tempfile
 from dataclasses import dataclass
 from datetime import UTC
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
 
 from loc_arena.config import RunConfig
+
+if TYPE_CHECKING:
+    from loc_arena.logging_.inspect_export import EpisodeExport
 
 LABEL = "loc-arena.eval"
 IMAGE = "loc-arena-svc:latest"
@@ -404,6 +407,7 @@ def _write_bundle(
     *,
     write_report: bool = True,
     decisions_text: str | None = None,
+    calibration: Any = None,
 ) -> Path:
     """Write the seven-file reproducible audit bundle into ``out_dir`` and return it.
 
@@ -418,18 +422,31 @@ def _write_bundle(
     shutil.copy(episode.sealed_path, out_dir / "events.sealed.jsonl")
     shutil.copy(episode.mirror_path, out_dir / "events.mirror.jsonl")
     (out_dir / "scores.json").write_text(json.dumps(scores, indent=2))
-    (out_dir / f"{run_name}.eval").write_text(
-        json.dumps(
-            {
-                "note": "Inspect .eval placeholder; report.html is the primary viewer.",
-                "run_name": run_name,
-                "run_slug": cfg.run_slug,
-                "mode": mode,
-                "seed": seed,
-            },
-            indent=2,
+    if cfg.agent_transcript:
+        from loc_arena.logging_.inspect_export import write_run_eval
+
+        write_run_eval(
+            out_dir / f"{run_name}.eval",
+            run_name=run_name,
+            config=cfg,
+            mode=mode,
+            seed=seed,
+            scores=scores,
+            episodes=_eval_episodes(cfg, episode, calibration),
         )
-    )
+    else:
+        (out_dir / f"{run_name}.eval").write_text(
+            json.dumps(
+                {
+                    "note": "Inspect .eval placeholder; report.html is the primary viewer.",
+                    "run_name": run_name,
+                    "run_slug": cfg.run_slug,
+                    "mode": mode,
+                    "seed": seed,
+                },
+                indent=2,
+            )
+        )
     (out_dir / "decisions.md").write_text(
         decisions_text if decisions_text is not None else _default_decisions_text(cfg, mode, seed)
     )
@@ -437,6 +454,10 @@ def _write_bundle(
         report = viewer.build_report(cfg, scores, out_dir / "events.sealed.jsonl", threshold)
         (out_dir / "report.html").write_text(report)
     return out_dir
+
+
+def _eval_episodes(cfg: RunConfig, episode: Any, calibration: Any) -> list[EpisodeExport]:
+    raise NotImplementedError
 
 
 def _assemble_by_policy(cfg: RunConfig, workdir: Path, *, robust: bool, provider: Any = None) -> Any:
