@@ -9,7 +9,7 @@ from loc_arena.logging_ import transcript_render
 from loc_arena.logging_.agent_trace import AgentTrace
 from loc_arena.logging_.events import AppendOnlyLog, Event
 from loc_arena.logging_.inspect_export import EpisodeExport, write_run_eval
-from loc_arena.logging_.transcript_lanes import WORLD, SampleTranscript
+from loc_arena.logging_.transcript_lanes import WORLD, Block, SampleTranscript
 from loc_arena.logging_.transcript_render import write_transcripts
 
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
@@ -72,3 +72,20 @@ def test_render_html_is_a_self_contained_ascii_page(monkeypatch: pytest.MonkeyPa
     assert "caf&#233; &#8212;" in page
     assert "<h2>sample episode</h2>" in page and "<h2>sample honest_cal</h2>" in page
     assert "<script" not in page and "src=" not in page and "href=" not in page
+
+
+def test_render_text_lists_each_lane_with_its_blocks_in_round_order(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(transcript_render, "_row_label", lambda row: f"r{row}")
+    transcript = SampleTranscript(
+        sample_id="episode",
+        lanes=(WORLD, "agent-main", "idle-agent"),
+        rows=(-1, 0),
+        cells={
+            ("agent-main", 0): (Block("tool", "read_file", "ok", code='{"path": "a"}'),),
+            (WORLD, -1): (Block("info", "tick", "t0"),),
+        },
+    )
+    assert transcript_render.render_text("run-x", [transcript]) == (
+        "run-x\n\n== sample episode ==\n\n-- World --\n[r-1] tick\n    t0\n\n"
+        '-- agent-main --\n[r0] read_file\n    {"path": "a"}\n    ok\n'
+    )

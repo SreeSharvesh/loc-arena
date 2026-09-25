@@ -64,7 +64,21 @@ def render_html(title: str, transcripts: Sequence[SampleTranscript]) -> str:
 
 
 def render_text(title: str, transcripts: Sequence[SampleTranscript]) -> str:
-    raise NotImplementedError
+    lines = [title]
+    for transcript in transcripts:
+        lines += ["", f"== sample {transcript.sample_id} =="]
+        for lane in transcript.lanes:
+            lane_blocks = [
+                (row, block) for row in transcript.rows for block in transcript.cells.get((lane, row), ())
+            ]
+            if not lane_blocks:
+                continue
+            lines += ["", f"-- {lane} --"]
+            for row, block in lane_blocks:
+                lines.append(f"[{_row_label(row)}] {block.title}")
+                lines += [f"    {line}" for line in (block.code or "").splitlines()]
+                lines += [f"    {line}" for line in block.body.splitlines()]
+    return "\n".join(lines) + "\n"
 
 
 def _grid_html(transcript: SampleTranscript) -> str:
