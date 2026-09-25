@@ -9,7 +9,7 @@ from loc_arena.logging_ import transcript_render
 from loc_arena.logging_.agent_trace import AgentTrace
 from loc_arena.logging_.events import AppendOnlyLog, Event
 from loc_arena.logging_.inspect_export import EpisodeExport, write_run_eval
-from loc_arena.logging_.transcript_lanes import SampleTranscript
+from loc_arena.logging_.transcript_lanes import WORLD, SampleTranscript
 from loc_arena.logging_.transcript_render import write_transcripts
 
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
@@ -57,3 +57,18 @@ def test_write_transcripts_renders_every_sample_under_the_run_name(
     assert (html_path.name, text_path.name) == ("transcript.html", "transcript.txt")
     assert html_path.read_text() == "<html>run-x:['episode']</html>"
     assert text_path.read_text() == "run-x:[('World', 'agent-main')]"
+
+
+def _transcript(sample_id: str = "episode") -> SampleTranscript:
+    return SampleTranscript(sample_id=sample_id, lanes=(WORLD, "agent-main"), rows=(-1, 0), cells={})
+
+
+def test_render_html_is_a_self_contained_ascii_page(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        transcript_render, "_grid_html", lambda t: f"<div>grid {t.sample_id} caf\u00e9 \u2014</div>"
+    )
+    page = transcript_render.render_html("run-x", [_transcript("episode"), _transcript("honest_cal")])
+    assert page.isascii()
+    assert "caf&#233; &#8212;" in page
+    assert "<h2>sample episode</h2>" in page and "<h2>sample honest_cal</h2>" in page
+    assert "<script" not in page and "src=" not in page and "href=" not in page

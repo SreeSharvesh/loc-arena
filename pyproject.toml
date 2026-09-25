@@ -64,7 +64,7 @@ ignore = [
 "loc_arena/logging_/agent_trace.py" = ["D102", "D103", "D107"]
 "loc_arena/logging_/inspect_export.py" = ["D103"]
 "loc_arena/logging_/transcript_lanes.py" = ["D103"]
-"loc_arena/logging_/transcript_render.py" = ["D103"]
+"loc_arena/logging_/transcript_render.py" = ["D103", "E501"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
@@ -85,6 +85,10 @@ exclude = "scenarios/[^/]+/(seed|reference)/"
 # The company workspace: each repo's package root is on MYPYPATH so cross-repo imports (meridian_common, ...)
 # resolve exactly like a real multi-repo checkout. Add each new repo root here as it lands.
 mypy_path = ["company/meridian-common", "company/meridian-serving", "company/meridian-datapipe", "company/meridian-distill", "company/meridian-jobsvc", "company/meridian-controlplane", "company/meridian-evalkit"]
+
+[[tool.mypy.overrides]]
+module = "loc_arena.logging_.transcript_render"
+disallow_untyped_calls = false
 
 # ---------------------------------------------------------------------------
 # pytest.
