@@ -11,6 +11,7 @@ from typing import Any
 from inspect_ai.event import Event as InspectEvent
 from inspect_ai.event import InfoEvent, ModelEvent, SpanBeginEvent, SpanEndEvent, ToolEvent
 from inspect_ai.log import EvalConfig, EvalDataset, EvalLog, EvalSample, EvalSpec, write_eval_log
+from inspect_ai.model import ChatMessageUser, GenerateConfig, ModelOutput
 
 from loc_arena.config import RunConfig
 from loc_arena.logging_.agent_trace import EpisodeTrace, ModelCall, TurnRef
@@ -166,7 +167,20 @@ def _turn_span_id(ref: TurnRef) -> str:
 
 
 def _model_event(call: ModelCall, span_id: str | None) -> ModelEvent:
-    raise NotImplementedError
+    at = _timestamp(call.wall_ts)
+    return ModelEvent(
+        model=call.role,
+        role=call.role,
+        input=[ChatMessageUser(content=call.model_input)],
+        tools=[],
+        tool_choice="none",
+        config=GenerateConfig(),
+        output=ModelOutput.from_content(model=call.role, content=call.output),
+        span_id=span_id,
+        timestamp=at,
+        completed=at,
+        metadata={"identity": call.identity, "phase": call.phase, "sealed_seq": call.sealed_seq},
+    )
 
 
 def _tool_event(event: Event, span_id: str | None, at: datetime) -> ToolEvent:

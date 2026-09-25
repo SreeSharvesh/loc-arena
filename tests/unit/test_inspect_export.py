@@ -11,7 +11,7 @@ from inspect_ai.event import InfoEvent
 from inspect_ai.log import EvalConfig, EvalDataset, EvalSample, EvalSpec, read_eval_log
 from loc_arena.config import load_run_config
 from loc_arena.logging_ import inspect_export
-from loc_arena.logging_.agent_trace import AgentTrace, EpisodeTrace, TurnRef
+from loc_arena.logging_.agent_trace import AgentTrace, EpisodeTrace, ModelCall, TurnRef
 from loc_arena.logging_.events import AppendOnlyLog, Event
 from loc_arena.logging_.inspect_export import EpisodeExport, UnassignedEventError, write_run_eval
 
@@ -144,3 +144,12 @@ def test_turn_span_id() -> None:
 
 def test_timestamp_is_an_aware_utc_datetime() -> None:
     assert inspect_export._timestamp(0.0) == datetime(1970, 1, 1, tzinfo=UTC)
+
+
+def test_model_event_shows_the_post_injection_input_and_the_reply() -> None:
+    call = ModelCall("executing", "batch-runner", "untrusted_agent", "OBJECTIVE\n\nbrief", "reply", 12, 0.0)
+    event = inspect_export._model_event(call, "turn:agent-main:3")
+    assert event.span_id == "turn:agent-main:3"
+    assert [m.text for m in event.input] == ["OBJECTIVE\n\nbrief"]
+    assert event.output.completion == "reply"
+    assert event.metadata == {"identity": "batch-runner", "phase": "executing", "sealed_seq": 12}
