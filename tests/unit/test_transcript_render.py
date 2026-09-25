@@ -136,3 +136,13 @@ def test_code_is_highlighted_as_json_inside_the_code_class() -> None:
 
 def test_row_labels() -> None:
     assert [transcript_render._row_label(r) for r in (-1, 0, 7)] == ["before round 0", "round 0", "round 7"]
+
+
+def test_control_characters_become_visible_escapes_in_both_outputs() -> None:
+    block = Block("tool", "run_tests", "\x1b[31mFAILED\x1b[0m\x00\tdone\n")
+    article = transcript_render._block_html(block)
+    assert "\x1b" not in article and "\x00" not in article
+    assert "\\x1b[31mFAILED\\x1b[0m\\x00\tdone" in article
+    transcript = SampleTranscript("episode", ("agent-main",), (0,), {("agent-main", 0): (block,)})
+    text = transcript_render.render_text("run-x", [transcript])
+    assert "\x1b" not in text and "\\x1b[31m" in text

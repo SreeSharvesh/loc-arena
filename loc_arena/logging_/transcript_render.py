@@ -40,6 +40,8 @@ details summary { cursor: pointer; color: #4c7bd9; }
 
 _CODE_CSS = HtmlFormatter(style="friendly").get_style_defs(".code")
 
+_CONTROL_ESCAPES = {code: f"\\x{code:02x}" for code in [*range(32), 127] if chr(code) not in "\t\n"}
+
 
 def write_transcripts(eval_path: Path, out_dir: Path) -> tuple[Path, Path]:
     log = read_eval_log(str(eval_path))
@@ -79,9 +81,9 @@ def render_text(title: str, transcripts: Sequence[SampleTranscript]) -> str:
                 continue
             lines += ["", f"-- {lane} --"]
             for row, block in lane_blocks:
-                lines.append(f"[{_row_label(row)}] {block.title}")
-                lines += [f"    {line}" for line in (block.code or "").splitlines()]
-                lines += [f"    {line}" for line in block.body.splitlines()]
+                lines.append(f"[{_row_label(row)}] {_visible(block.title)}")
+                lines += [f"    {line}" for line in _visible(block.code or "").splitlines()]
+                lines += [f"    {line}" for line in _visible(block.body).splitlines()]
     return "\n".join(lines) + "\n"
 
 
@@ -104,13 +106,13 @@ def _grid_html(transcript: SampleTranscript) -> str:
 
 def _block_html(block: Block) -> str:
     classes = " ".join(["block", block.kind, *(["blocked"] if block.blocked else [])])
-    code = _code_html(block.code) if block.code else ""
-    body = html.escape(block.body)
+    code = _code_html(_visible(block.code)) if block.code else ""
+    body = html.escape(_visible(block.body))
     if block.kind == "prompt":
         content = f"<details><summary>prompt, {len(block.body)} chars</summary><pre>{body}</pre></details>"
     else:
         content = f"<pre>{body}</pre>" if block.body else ""
-    return f'<article class="{classes}"><div class="title">{html.escape(block.title)}</div>{code}{content}</article>'
+    return f'<article class="{classes}"><div class="title">{html.escape(_visible(block.title))}</div>{code}{content}</article>'
 
 
 def _code_html(code: str) -> str:
@@ -119,3 +121,7 @@ def _code_html(code: str) -> str:
 
 def _row_label(row: int) -> str:
     return "before round 0" if row == BEFORE_FIRST_ROUND else f"round {row}"
+
+
+def _visible(text: str) -> str:
+    return text.translate(_CONTROL_ESCAPES)
