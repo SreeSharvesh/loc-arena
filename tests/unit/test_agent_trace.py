@@ -136,3 +136,13 @@ def test_sealed_events_are_tagged_with_the_bound_turn_or_world() -> None:
     lanes = trace.finish(last_sealed_seq=3).sealed_lane
     worker = TurnRef("serving-agent", 0)
     assert dict(lanes) == {0: None, 1: worker, 2: worker, 3: None}
+
+
+def test_mirror_events_are_tagged_with_the_bound_turn_or_world() -> None:
+    trace = AgentTrace()
+    with trace.turn("agent-main", 1):
+        trace.on_mirror_append(_event(0, kind="inference_call"))
+    trace.on_mirror_append(_event(1, kind="inference_call"))
+    finished = trace.finish(last_sealed_seq=-1)
+    assert dict(finished.mirror_lane) == {0: TurnRef("agent-main", 1), 1: None}
+    assert dict(finished.mirror_to_sealed) == {}
