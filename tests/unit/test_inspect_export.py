@@ -7,13 +7,14 @@ from typing import Any
 
 import pytest
 from inspect_ai.event import Event as InspectEvent
-from inspect_ai.event import InfoEvent
+from inspect_ai.event import EventTreeSpan, InfoEvent, event_tree
 from inspect_ai.log import EvalConfig, EvalDataset, EvalSample, EvalSpec, read_eval_log
 from loc_arena.config import load_run_config
 from loc_arena.logging_ import inspect_export
 from loc_arena.logging_.agent_trace import AgentTrace, EpisodeTrace, ModelCall, TurnRef
-from loc_arena.logging_.events import AppendOnlyLog, Event
+from loc_arena.logging_.events import AppendOnlyLog, Event, EventKind
 from loc_arena.logging_.inspect_export import EpisodeExport, UnassignedEventError, write_run_eval
+from loc_arena.scaffold.bus import Recorder
 
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 
@@ -207,3 +208,93 @@ def test_info_event_keeps_the_kind_and_the_event_body() -> None:
         "payload": {"body": "run the bench"},
         "result": None,
     }
+
+
+def _world(seq_log: AppendOnlyLog, kind: EventKind = "tick") -> None:
+    seq_log.append(
+        Event(
+            episode_id="ep-export",
+            seq=seq_log.next_seq(),
+            ts=0.0,
+            actor_uid="world",
+            actor_role="npc",
+            kind=kind,
+        )
+    )
+
+
+def test_a_traced_episode_exports_a_span_tree_with_one_agent_span_per_agent(tmp_path: Path) -> None:
+    trace = AgentTrace(wall_clock=lambda: 1_700_000_000.0)
+    sealed_path = tmp_path / "sealed.jsonl"
+    sealed = AppendOnlyLog(sealed_path, "ep-export", on_append=trace.on_sealed_append)
+    mirror = AppendOnlyLog(tmp_path / "mirror.jsonl", "ep-export", on_append=trace.on_mirror_append)
+    recorder = Recorder("ep-export", sealed, mirror, clock=lambda: 0.0)
+    _world(sealed)
+    with trace.turn("agent-main", 0):
+        record = sealed.append(
+            Event(
+                episode_id="ep-export",
+                seq=sealed.next_seq(),
+                ts=0.0,
+                actor_uid="agent-main",
+                actor_role="untrusted",
+                kind="inference_call",
+            )
+        )
+        trace.on_model_call(
+            identity="agent-main", role="untrusted_agent", model_input="p", output="r", sealed_seq=record.seq
+        )
+        trace.mark_executing()
+        recorder.dual(
+            actor_uid="agent-main", actor_role="orchestrator", kind="action", tool="read_file", payload={}
+        )
+        recorder.dual(
+            actor_uid="agent-main", actor_role="orchestrator", kind="message", payload={"body": "go"}
+        )
+    with trace.turn("serving-agent", 0):
+        recorder.dual(
+            actor_uid="serving-agent", actor_role="worker", kind="action", tool="run_tests", payload={}
+        )
+    _world(sealed)
+    episode_trace = trace.finish(last_sealed_seq=sealed.last_seq)
+    _world(AppendOnlyLog(sealed_path, "ep-export"), kind="monitor_error")
+
+    path = write_run_eval(
+        tmp_path / "run.eval",
+        run_name="run-x",
+        config=CFG,
+        mode="attack",
+        seed=1,
+        scores={},
+        episodes=[EpisodeExport("episode", episode_trace, sealed_path, ("agent-main", "serving-agent"))],
+    )
+    log = read_eval_log(str(path))
+    assert log.samples is not None
+    events = log.samples[0].events
+    assert [(e.event, e.span_id if e.event not in ("span_begin", "span_end") else e.id) for e in events] == [
+        ("info", None),
+        ("span_begin", "agent:agent-main"),
+        ("span_begin", "turn:agent-main:0"),
+        ("model", "turn:agent-main:0"),
+        ("tool", "turn:agent-main:0"),
+        ("info", "turn:agent-main:0"),
+        ("span_end", "turn:agent-main:0"),
+        ("span_begin", "agent:serving-agent"),
+        ("span_begin", "turn:serving-agent:0"),
+        ("tool", "turn:serving-agent:0"),
+        ("span_end", "turn:serving-agent:0"),
+        ("info", None),
+        ("info", None),
+        ("span_end", "agent:agent-main"),
+        ("span_end", "agent:serving-agent"),
+    ]
+    agent_spans = [
+        node for node in event_tree(events) if isinstance(node, EventTreeSpan) and node.type == "agent"
+    ]
+    assert [
+        (span.name, [child.name for child in span.children if isinstance(child, EventTreeSpan)])
+        for span in agent_spans
+    ] == [
+        ("agent-main", ["turn 0"]),
+        ("serving-agent", ["turn 0"]),
+    ]
