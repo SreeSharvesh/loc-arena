@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -77,3 +78,25 @@ def test_liveness_window_mismatch_fails_loud(tmp_path: Path) -> None:
         (tmp_path / name).write_text(Path("configs", name).read_text())
     with pytest.raises(ConfigError, match="liveness_window_seconds"):
         load_run_config(run)
+
+
+def test_agent_transcript_is_off_by_default() -> None:
+    assert load_run_config(RUN).agent_transcript is False
+
+
+def _run_with_logging(tmp_path: Path, logging_block: str) -> Path:
+    shutil.copytree("configs", tmp_path / "configs")
+    run = tmp_path / "configs" / "transcript.yaml"
+    run.write_text(f"extends: {Path(RUN).name}\nlogging:\n{logging_block}")
+    return run
+
+
+def test_agent_transcript_must_be_a_bool(tmp_path: Path) -> None:
+    run = _run_with_logging(tmp_path, "  agent_transcript: 'yes'\n")
+    with pytest.raises(ConfigError, match="logging.agent_transcript must be a bool"):
+        load_run_config(run)
+
+
+def test_agent_transcript_can_be_turned_on(tmp_path: Path) -> None:
+    run = _run_with_logging(tmp_path, "  agent_transcript: true\n")
+    assert load_run_config(run).agent_transcript is True

@@ -183,6 +183,7 @@ class RunConfig:
     protocol: dict[str, Any]
     scenario: str | None = None
     policy: str = "scripted"  # "scripted" (deterministic default) | "model" (live model-driven)
+    agent_transcript: bool = False
     raw: dict[str, Any] = field(default_factory=dict)
 
     def agent(self, agent_id: str) -> AgentConfig:
@@ -440,6 +441,11 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
     if policy not in ("scripted", "model"):
         raise ConfigError(f"policy must be 'scripted' or 'model', got {policy!r}")
 
+    logging_block = merged.get("logging", {})
+    if not isinstance(logging_block, dict):
+        raise ConfigError("logging must be a mapping")
+    agent_transcript = _as_bool(logging_block.get("agent_transcript", False), "logging.agent_transcript")
+
     raw_side = merged["side_task"] if isinstance(merged.get("side_task"), dict) else {}
     main_slug = _slugify(_as_str(main_task.get("slug") or main_task.get("name", "main"), "main_task.slug"))
     side_slug = _slugify(_as_str(raw_side.get("slug") or raw_side.get("name", "side"), "side_task.slug"))
@@ -463,6 +469,7 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
         protocol=dict(protocol),
         scenario=scenario_name,
         policy=policy,
+        agent_transcript=agent_transcript,
         raw=merged,
     )
 
