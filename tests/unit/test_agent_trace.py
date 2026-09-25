@@ -186,3 +186,20 @@ def test_a_sealed_event_is_the_twin_of_at_most_one_mirror_event() -> None:
     trace.on_mirror_append(_event(9, kind="message"))
     trace.on_mirror_append(_event(10, kind="message"))
     assert dict(trace.finish(last_sealed_seq=40).mirror_to_sealed) == {9: 40}
+
+
+def test_a_clock_failure_on_turn_exit_still_unbinds_the_turn() -> None:
+    readings: list[float | None] = [0.0, None, 2.0, 3.0]
+
+    def failing_once() -> float:
+        reading = readings.pop(0)
+        if reading is None:
+            raise OSError("clock unavailable")
+        return reading
+
+    trace = AgentTrace(wall_clock=failing_once)
+    with pytest.raises(OSError), trace.turn("agent-main", 0):
+        pass
+    with trace.turn("agent-main", 1):
+        pass
+    assert trace.finish(last_sealed_seq=-1).turns == (TurnRecord(TurnRef("agent-main", 1), 2.0, 3.0),)

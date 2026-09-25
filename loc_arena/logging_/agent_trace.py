@@ -96,8 +96,8 @@ class AgentTrace:
         try:
             yield
         finally:
-            self._turns.append(TurnRecord(ref, started, self._wall_clock()))
             self._bound, self._phase = None, None
+            self._turns.append(TurnRecord(ref, started, self._wall_clock()))
 
     def mark_executing(self) -> None:
         if self._bound is None:
