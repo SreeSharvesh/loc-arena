@@ -80,7 +80,8 @@ One `.eval` per run. Each episode becomes one sample: `episode` (the graded run)
 | `_eval_spec(run_name, config, mode, seed, sample_count)` | task `loc_arena/<run_slug>`, `run_id` = run name, model = the `untrusted_agent` model id, metadata mode/seed/policy | - |
 | `_sample(episode, scores)` | reads the sealed log, assigns lanes, builds the events; metadata holds the agent order and the scores | `UnassignedEventError` via `_lanes_for` |
 | `_lanes_for(trace, sealed_events)` | seq <= `last_sealed_seq`: the trace's lane; later seqs: World | `UnassignedEventError` naming the untagged seqs inside the boundary |
-| `_sample_events(episode, sealed_events, lanes)` | walks sealed events in seq order and emits spans and events per the table above; agents outside `agent_order` (orchestrator children) follow in first-seen order | - |
+| `_sample_events(episode, sealed_events, lanes)` | walks sealed events in seq order and emits spans and events per the table above; agent spans open in first-turn order (the configured order lives in sample metadata for the lane view) | - |
+| `_agent_span_id(uid)` / `_turn_span_id(ref)` | `agent:<uid>` / `turn:<uid>:<n>` | - |
 | `_model_event(call, span_id)` | one `ModelEvent`, model and role = the call's model role | - |
 | `_tool_event(event, span_id, at)` | one `ToolEvent` with id `seq-<n>` | - |
 | `_info_event(event, span_id, at)` | one `InfoEvent` whose data carries seq, actor, target, payload and result | - |

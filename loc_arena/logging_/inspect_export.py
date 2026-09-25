@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from inspect_ai.event import Event as InspectEvent
-from inspect_ai.event import InfoEvent, ModelEvent, ToolEvent
+from inspect_ai.event import InfoEvent, ModelEvent, SpanBeginEvent, SpanEndEvent, ToolEvent
 from inspect_ai.log import EvalConfig, EvalDataset, EvalLog, EvalSample, EvalSpec, write_eval_log
 
 from loc_arena.config import RunConfig
@@ -101,6 +101,67 @@ def _lanes_for(trace: EpisodeTrace, sealed_events: Sequence[Event]) -> dict[int,
 def _sample_events(
     episode: EpisodeExport, sealed_events: Sequence[Event], lanes: Mapping[int, TurnRef | None]
 ) -> list[InspectEvent]:
+    turn_records = {record.ref: record for record in episode.trace.turns}
+    calls = {call.sealed_seq: call for call in episode.trace.model_calls}
+    wall_readings = [r.wall_start for r in episode.trace.turns] + [
+        c.wall_ts for c in episode.trace.model_calls
+    ]
+    now = _timestamp(min(wall_readings)) if wall_readings else datetime.now(UTC)
+    events: list[InspectEvent] = []
+    opened_agents: list[str] = []
+    current: TurnRef | None = None
+    for event in sealed_events:
+        lane = lanes[event.seq]
+        if lane != current:
+            if current is not None:
+                if current in turn_records:
+                    now = _timestamp(turn_records[current].wall_end)
+                events.append(SpanEndEvent(id=_turn_span_id(current), timestamp=now))
+            if lane is not None:
+                if lane in turn_records:
+                    now = _timestamp(turn_records[lane].wall_start)
+                if lane.agent_uid not in opened_agents:
+                    opened_agents.append(lane.agent_uid)
+                    events.append(
+                        SpanBeginEvent(
+                            id=_agent_span_id(lane.agent_uid),
+                            name=lane.agent_uid,
+                            type="agent",
+                            timestamp=now,
+                        )
+                    )
+                events.append(
+                    SpanBeginEvent(
+                        id=_turn_span_id(lane),
+                        parent_id=_agent_span_id(lane.agent_uid),
+                        name=f"turn {lane.turn}",
+                        type="turn",
+                        timestamp=now,
+                    )
+                )
+            current = lane
+        span_id = _turn_span_id(current) if current is not None else None
+        call = calls.get(event.seq)
+        if event.kind == "inference_call" and call is not None:
+            now = _timestamp(call.wall_ts)
+            events.append(_model_event(call, span_id))
+        elif event.kind == "action":
+            events.append(_tool_event(event, span_id, now))
+        else:
+            events.append(_info_event(event, span_id, now))
+    if current is not None:
+        if current in turn_records:
+            now = _timestamp(turn_records[current].wall_end)
+        events.append(SpanEndEvent(id=_turn_span_id(current), timestamp=now))
+    events.extend(SpanEndEvent(id=_agent_span_id(uid), timestamp=now) for uid in opened_agents)
+    return events
+
+
+def _agent_span_id(agent_uid: str) -> str:
+    raise NotImplementedError
+
+
+def _turn_span_id(ref: TurnRef) -> str:
     raise NotImplementedError
 
 
