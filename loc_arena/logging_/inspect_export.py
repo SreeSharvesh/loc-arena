@@ -14,7 +14,7 @@ from inspect_ai.log import EvalConfig, EvalDataset, EvalLog, EvalSample, EvalSpe
 
 from loc_arena.config import RunConfig
 from loc_arena.logging_.agent_trace import EpisodeTrace, ModelCall, TurnRef
-from loc_arena.logging_.events import Event
+from loc_arena.logging_.events import Event, read_events
 
 
 class UnassignedEventError(RuntimeError):
@@ -65,7 +65,19 @@ def _eval_spec(run_name: str, config: RunConfig, mode: str, seed: int, sample_co
 
 
 def _sample(episode: EpisodeExport, scores: Mapping[str, Any] | None) -> EvalSample:
-    raise NotImplementedError
+    sealed_events = list(read_events(episode.sealed_path))
+    lanes = _lanes_for(episode.trace, sealed_events)
+    return EvalSample(
+        id=episode.sample_id,
+        epoch=1,
+        input=f"LOC-Arena {episode.sample_id}",
+        target="",
+        events=_sample_events(episode, sealed_events, lanes),
+        metadata={
+            "agents": list(episode.agent_order),
+            "scores": dict(scores) if scores is not None else None,
+        },
+    )
 
 
 def _lanes_for(trace: EpisodeTrace, sealed_events: Sequence[Event]) -> dict[int, TurnRef | None]:
