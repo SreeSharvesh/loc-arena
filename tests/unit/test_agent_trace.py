@@ -187,3 +187,17 @@ def test_open_episode_logs_subscribes_the_trace_only_when_traced(tmp_path: Path)
         tmp_path / "s2.jsonl", tmp_path / "m2.jsonl", "ep-trace", traced=False
     )
     assert untraced is None
+
+
+def test_a_turn_records_the_first_sealed_seq_of_its_executing_phase() -> None:
+    trace = AgentTrace()
+    trace.on_sealed_append(_event(0))
+    with trace.turn("agent-main", 0):
+        trace.on_sealed_append(_event(1, kind="inference_call"))
+        trace.mark_executing()
+        trace.on_sealed_append(_event(2, kind="job"))
+        trace.on_sealed_append(_event(3))
+    with trace.turn("agent-main", 1):
+        trace.on_sealed_append(_event(4, kind="inference_call"))
+    turns = trace.finish(last_sealed_seq=4).turns
+    assert [(t.ref.turn, t.executing_from_seq) for t in turns] == [(0, 2), (1, None)]

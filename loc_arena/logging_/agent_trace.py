@@ -30,6 +30,7 @@ class TurnRecord:
     ref: TurnRef
     wall_start: float
     wall_end: float
+    executing_from_seq: int | None = None
 
 
 @dataclass(frozen=True)
@@ -64,6 +65,8 @@ class AgentTrace:
         self._phase: Phase | None = None
         self._turns: list[TurnRecord] = []
         self._sealed_lane: dict[int, TurnRef | None] = {}
+        self._next_sealed_seq = 0
+        self._executing_from_seq: int | None = None
         self._model_calls: list[ModelCall] = []
 
     @contextmanager
@@ -75,20 +78,23 @@ class AgentTrace:
             )
         ref = TurnRef(agent_uid, turn)
         started = self._wall_clock()
-        self._bound, self._phase = ref, "deciding"
+        self._bound, self._phase, self._executing_from_seq = ref, "deciding", None
         try:
             yield
         finally:
-            self._bound, self._phase = None, None
-            self._turns.append(TurnRecord(ref, started, self._wall_clock()))
+            executing_from_seq = self._executing_from_seq
+            self._bound, self._phase, self._executing_from_seq = None, None, None
+            self._turns.append(TurnRecord(ref, started, self._wall_clock(), executing_from_seq))
 
     def mark_executing(self) -> None:
         if self._bound is None:
             raise RuntimeError("mark_executing called with no turn bound")
         self._phase = "executing"
+        self._executing_from_seq = self._next_sealed_seq
 
     def on_sealed_append(self, event: Event) -> None:
         self._sealed_lane[event.seq] = self._bound
+        self._next_sealed_seq = event.seq + 1
 
     def on_model_call(
         self, *, identity: str, role: str, model_input: str, output: str, sealed_seq: int
