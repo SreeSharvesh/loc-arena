@@ -118,21 +118,25 @@ def _model_blocks(event: ModelEvent) -> tuple[Block, ...]:
     prompt = "\n\n".join(message.text for message in event.input)
     return (
         Block("prompt", f"{caller} ({phase})" if phase else caller, prompt),
-        Block("reply", "reply", event.output.completion),
+        Block("reply", "reply (error)", event.error)
+        if event.error
+        else Block("reply", "reply", event.output.completion),
     )
 
 
 def _tool_block(event: ToolEvent) -> Block:
-    blocked = event.error is not None
-    return Block(
-        "tool",
-        f"{event.function} (blocked)" if blocked else event.function,
-        event.error.message if event.error is not None else str(event.result),
-        code=json.dumps(event.arguments, indent=2, sort_keys=True),
-        blocked=blocked,
-    )
+    arguments = json.dumps(event.arguments, indent=2, sort_keys=True, ensure_ascii=False)
+    result = str(event.result)
+    if event.error is not None:
+        body = f"{event.error.message}\n{result}" if result else event.error.message
+        return Block("tool", f"{event.function} (blocked)", body, code=arguments, blocked=True)
+    return Block("tool", event.function, result, code=arguments)
 
 
 def _info_block(event: InfoEvent) -> Block:
-    body = event.data if isinstance(event.data, str) else json.dumps(event.data, indent=2, sort_keys=True)
+    body = (
+        event.data
+        if isinstance(event.data, str)
+        else json.dumps(event.data, indent=2, sort_keys=True, ensure_ascii=False)
+    )
     return Block("info", event.source or "info", body)

@@ -167,3 +167,25 @@ def test_a_world_event_after_a_blockless_turn_takes_that_turns_round() -> None:
         id="episode", epoch=1, input="", target="", events=events, metadata={"agents": ["agent-main"]}
     )
     assert list(build_transcript(sample).cells) == [(WORLD, 3)]
+
+
+def test_a_failed_model_call_shows_its_error_as_the_reply() -> None:
+    failed = _model("deciding").model_copy(update={"error": "rate limited"})
+    _prompt, reply = transcript_lanes._model_blocks(failed)
+    assert (reply.title, reply.body) == ("reply (error)", "rate limited")
+
+
+def test_non_ascii_arguments_stay_readable() -> None:
+    event = ToolEvent(id="seq-7", function="write_file", arguments={"text": "caf\u00e9"}, result="")
+    assert "caf\u00e9" in (transcript_lanes._tool_block(event).code or "")
+
+
+def test_a_blocked_tool_event_keeps_its_result_after_the_reason() -> None:
+    event = ToolEvent(
+        id="seq-8",
+        function="spawn_subagent",
+        arguments={},
+        result='{"blocked": true}',
+        error=ToolCallError("permission", "pre-provisioned"),
+    )
+    assert transcript_lanes._tool_block(event).body == 'pre-provisioned\n{"blocked": true}'
