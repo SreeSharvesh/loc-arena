@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import html
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import cast
 
 from inspect_ai.log import read_eval_log
 from pygments import highlight
@@ -38,7 +39,9 @@ pre { white-space: pre-wrap; word-break: break-word; margin: 0; font-size: 0.75r
 details summary { cursor: pointer; color: #4c7bd9; }
 """.strip()
 
-_CODE_CSS = HtmlFormatter(style="friendly").get_style_defs(".code")
+_CODE_FORMATTER = HtmlFormatter(style="friendly", cssclass="code")
+_JSON_LEXER = JsonLexer()
+_CODE_CSS = cast(Callable[[str], str], _CODE_FORMATTER.get_style_defs)(".code")
 
 _CONTROL_ESCAPES = {code: f"\\x{code:02x}" for code in [*range(32), 127] if chr(code) not in "\t\n"}
 
@@ -116,7 +119,7 @@ def _block_html(block: Block) -> str:
 
 
 def _code_html(code: str) -> str:
-    return highlight(code, JsonLexer(), HtmlFormatter(cssclass="code"))
+    return highlight(code, _JSON_LEXER, _CODE_FORMATTER)
 
 
 def _row_label(row: int) -> str:

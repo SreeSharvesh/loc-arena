@@ -86,10 +86,6 @@ exclude = "scenarios/[^/]+/(seed|reference)/"
 # resolve exactly like a real multi-repo checkout. Add each new repo root here as it lands.
 mypy_path = ["company/meridian-common", "company/meridian-serving", "company/meridian-datapipe", "company/meridian-distill", "company/meridian-jobsvc", "company/meridian-controlplane", "company/meridian-evalkit"]
 
-[[tool.mypy.overrides]]
-module = "loc_arena.logging_.transcript_render"
-disallow_untyped_calls = false
-
 # ---------------------------------------------------------------------------
 # pytest.
 # ---------------------------------------------------------------------------
