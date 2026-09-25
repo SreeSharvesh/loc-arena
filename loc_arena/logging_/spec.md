@@ -6,11 +6,11 @@ Status of each function is tracked by `grep -rn NotImplementedError loc_arena/lo
 
 Every run writes a real Inspect `.eval` log with one span per agent, and renders it as a transcript with one
 lane per agent. Each lane shows what the agent saw, what it said, what it did, and every sealed event its
-turns caused. Today the `.eval` is a JSON stub (`harness.py:421-432`).
+turns caused. Before this stack the `.eval` was a JSON stub; flag-off runs still write it.
 
 ## Why attribution works
 
-An episode runs one agent turn at a time on one thread (`live.py:271-279`, `orchestrator.py:113-129`). Every
+An episode runs one agent turn at a time on one thread (`live._drive_team`, `Orchestrator._drain_children`). Every
 event appended while a turn is bound was caused by that turn. Every event appended with no turn bound belongs
 to the World lane (NPCs, ticks, orchestrator closes).
 
@@ -18,10 +18,10 @@ to the World lane (NPCs, ticks, orchestrator closes).
 
 | # | Invariant | Reason |
 |---|---|---|
-| I1 | Sealed and mirror log bytes never change | the verifier, the monitors and the byte-identical repro test (`test_end_to_end.py:72-76`) read them |
+| I1 | Sealed and mirror log bytes never change | the verifier, the monitors and the byte-identical repro test (`test_end_to_end.py::test_reproducible_from_config_and_seed`) read them |
 | I2 | The trace is held in memory and written only in `_write_bundle`, after both episodes | agent-run `run_tests` can read the run directory while an episode is live |
 | I3 | Every sealed seq up to the episode boundary maps to exactly one lane; the exporter raises otherwise | `AppendOnlyLog.on_append` swallows subscriber exceptions (`events.py:212-216`) |
-| I4 | Sealed events after the boundary are post-episode and go to World | monitor calls are appended later by a second writer with no subscriber (`harness.py:667`) |
+| I4 | Sealed events after the boundary are post-episode: World lane, their own `after episode` span and row | monitor calls are appended later by a second writer with no subscriber (`harness.build_monitor_caller`) |
 | I5 | Everything sits behind `logging.agent_transcript` (on by default since the last PR of the stack) | flag-off runs keep the JSON placeholder and no transcript |
 
 ## Lane rule
@@ -35,7 +35,7 @@ write a scripted PR stamped `agent-main` outside any turn (`coworker.py:219-280`
 |---|---|---|
 | `Phase` | `"deciding"` or `"executing"` | brain choosing an action (including parse retries) vs the tool layer running |
 | `TurnRef` | `agent_uid`, `turn` | one agent turn; under the live round-robin driver `turn` is also the round index |
-| `TurnRecord` | `ref`, `wall_start`, `wall_end` | wall-clock bounds of a completed turn; the episode clock is simulated and jumps |
+| `TurnRecord` | `ref`, `wall_start`, `wall_end`, `executing_from_seq` | wall-clock bounds of a completed turn (the episode clock is simulated and jumps), and the first sealed seq written after `mark_executing` (`None` if the turn executed no tool) |
 | `ModelCall` | `phase`, `identity`, `role`, `model_input`, `output`, `sealed_seq`, `wall_ts` | one provider call as the core made it; `model_input` is after covert injection; its turn is `sealed_lane[sealed_seq]`; `phase` is `None` outside a turn |
 | `EpisodeTrace` | `turns`, `sealed_lane`, `model_calls`, `last_sealed_seq` | finished read-only trace; `sealed_lane` gives `TurnRef` or `None` (World) per sealed seq |
 
@@ -45,7 +45,7 @@ write a scripted PR stamped `agent-main` outside any turn (`coworker.py:219-280`
 |---|---|---|---|
 | `__init__(*, wall_clock=time.time)` | harness, once per episode | empty trace, no turn bound | - |
 | `turn(agent_uid, turn)` | `Agent.run_turn`, around inbox, brain and tool steps | context manager: binds the turn in phase `deciding`; on exit unbinds first, then records a `TurnRecord`, also when the body raises | `RuntimeError` if a turn is already bound |
-| `mark_executing()` | `Agent.run_turn`, just before `tools.execute` | switches the bound turn to `executing` | `RuntimeError` if no turn is bound |
+| `mark_executing()` | `Agent.run_turn`, just before `tools.execute` | switches the bound turn to `executing` and records the next sealed seq as its `executing_from_seq` | `RuntimeError` if no turn is bound |
 | `on_sealed_append(event)` | sealed `AppendOnlyLog(on_append=...)` | tags `event.seq` with the bound turn or World | never on purpose; a miss surfaces as an unassigned seq in the exporter |
 | `on_model_call(*, identity, role, model_input, output, sealed_seq)` | `GatewayCore.generate` / `batch_generate`, episode instance only, after the sealed record is written | records a `ModelCall` with the bound phase | - |
 | `finish(last_sealed_seq)` | harness, when assembly returns | returns a read-only `EpisodeTrace` snapshot; `last_sealed_seq` is the boundary for I3/I4, so anything observed later is post-episode by construction | `RuntimeError` if a turn is still bound |
@@ -57,14 +57,16 @@ write a scripted PR stamped `agent-main` outside any turn (`coworker.py:219-280`
 
 | Assumption | Evidence |
 |---|---|
-| one sealed and one mirror writer per episode | `live.py:153-154`, `task.py:268-269`; the only other writer is post-episode (`harness.py:667`) |
-| turns never nest | the orchestrator drains children after the root turn returns (`orchestrator.py:131-136`) |
+| one sealed and one mirror writer per episode | `open_episode_logs`, called from `live.assemble_model_episode` and `task.assemble_scripted_episode`; the only other writer is post-episode (`harness.build_monitor_caller`) |
+| turns never nest | the orchestrator drains children after the root turn returns (`Orchestrator.run`) |
 | inspect-ai 0.3.268 has agent spans, `ToolEvent.agent_span_id`, and log round-trip | probe on the locked version |
 
 ## M2 `loc_arena/logging_/inspect_export.py`
 
 One `.eval` per run. Each episode becomes one sample: `episode` (the graded run) and, in attack mode,
-`honest_cal` (the calibration twin). `episodes[0]` is the graded episode and is the only one given `scores`.
+`honest_cal` (the calibration twin). `episodes[0]` is the graded episode and is the only one given `scores`; it
+is read from the bundle's frozen `events.sealed.jsonl` copy, since a timed-out async monitor thread can still
+append to the live file.
 
 | Inspect element | Built from |
 |---|---|
@@ -72,8 +74,9 @@ One `.eval` per run. Each episode becomes one sample: `episode` (the graded run)
 | `SpanBeginEvent(type="agent", name=<uid>, id="agent:<uid>", parent_id=<root>)` | opened at the agent's first turn; all agent spans close at the end of the sample |
 | `SpanBeginEvent(type="turn", name="turn <n>", id="turn:<uid>:<n>", parent_id="agent:<uid>")` | one per turn that wrote at least one sealed event; opened and closed around that turn's contiguous run of sealed seqs; a turn appearing in two runs raises `ValueError` |
 | `ModelEvent` | a sealed `inference_call` whose seq has a `ModelCall`; input is the post-injection prompt, output the reply, `metadata` holds identity, phase and seq |
-| `ToolEvent` | a sealed `action`; `function` = tool, `arguments` = payload args, `error` (type `permission`) set when the payload or the result says blocked |
+| `ToolEvent` | a sealed `action`; `function` = tool, `arguments` = payload args, `error` (type `permission`) set when the payload or the result says blocked; placed at the start of its turn's executing phase, before the events the tool caused (the sealed action is written after the tool runs) |
 | `InfoEvent(source=<kind>)` | every other sealed event (messages, spawns, NPC activity, monitor records after the boundary) |
+| `SpanBeginEvent(type="after_episode", id="after_episode:<sample id>", parent_id=<root>)` | holds every sealed event after the boundary; opened after the agent spans close, stamped with each event's own wall-clock `ts` |
 | event `span_id` | the turn span of the event's lane, or the root span for World |
 | event `timestamp` | a running wall clock: turn start, then each model call's `wall_ts`, then turn end; World events reuse the last known time |
 | event `working_start` | seconds since the root span's timestamp (Inspect would otherwise use machine uptime) |
@@ -85,13 +88,14 @@ One `.eval` per run. Each episode becomes one sample: `episode` (the graded run)
 | `_sample(episode, scores)` | reads the sealed log, assigns lanes, builds the events; metadata holds the agent order and the scores | `UnassignedEventError` via `_lanes_for` |
 | `_lanes_for(trace, sealed_events)` | seq <= `last_sealed_seq`: the trace's lane; later seqs: World | `UnassignedEventError` naming the untagged seqs inside the boundary |
 | `_sample_events(episode, sealed_events, lanes)` | walks sealed events in seq order as runs of one lane and emits spans and events per the table above; agent spans open in first-turn order (the configured order lives in sample metadata for the lane view) | `ValueError` on an interleaved turn; `KeyError` on a lane with no `TurnRecord` |
-| `_episode_span_id(sample_id)` / `_agent_span_id(uid)` / `_turn_span_id(ref)` | `episode:<id>` / `agent:<uid>` / `turn:<uid>:<n>` | - |
+| `_cause_first(run, executing_from_seq)` | moves a turn run's trailing action to the first event at or after `executing_from_seq` | - |
+| `_episode_span_id` / `_after_episode_span_id` / `_agent_span_id` / `_turn_span_id` | `episode:<id>` / `after_episode:<id>` / `agent:<uid>` / `turn:<uid>:<n>` | - |
 | `_model_event(call, span_id)` | one `ModelEvent`, model and role = the call's model role | - |
 | `_tool_event(event, span_id, at)` | one `ToolEvent` with id `seq-<n>` | - |
 | `_info_event(event, span_id, at)` | one `InfoEvent` whose data carries seq, actor, target, payload and result | - |
 | `_timestamp(wall)` | epoch seconds -> aware UTC `datetime` | - |
 
-## M5 wiring (behind `logging.agent_transcript`, default off)
+## M5 wiring (behind `logging.agent_transcript`, on by default)
 
 | Where | Change |
 |---|---|
@@ -100,8 +104,8 @@ One `.eval` per run. Each episode becomes one sample: `episode` (the graded run)
 | `Agent.__init__` / `run_turn` | optional `trace`; inbox, brain and tool steps run inside `trace.turn`; `mark_executing` before the tool layer |
 | `live.assemble_model_episode`, `task.assemble_scripted_episode` | create the trace when the flag is on, subscribe both logs, pass it to the core (and agents), finish it when the episode's work stops; `EpisodeResult.trace` |
 | `harness._assemble_by_policy`, `run_episode` | optional `provider` passthrough (offline live runs); the attack run's calibration twin goes to `_write_bundle` |
-| `harness._write_bundle`, `_eval_episodes` | flag on: real `.eval` via `write_run_eval` (samples `episode`, `honest_cal`); flag off: the JSON placeholder |
-| `cli view` | prints `inspect view --log-dir <bundle>` when the `.eval` is real |
+| `harness._write_bundle`, `_eval_episodes` | flag on: real `.eval` via `write_run_eval` (sample `episode`, plus `honest_cal` in attack mode) in a fresh `<bundle>/inspect/` directory, cleared at write time so a log an agent planted during the episode is never listed beside it (`inspect view` scans recursively), then `transcript.html`/`.txt`; all written after `report.html`; flag off: the JSON placeholder in the bundle root |
+| `cli view` | prints `inspect view --log-dir <bundle>/inspect` when that directory holds a real (zip) `.eval` |
 
 Known limits:
 
@@ -111,6 +115,7 @@ Known limits:
 | the orchestrator path (`scaffold/orchestrator.py`, tests only) builds agents without a trace | with the flag on, its events export in World |
 | `run_sweep` writes no bundles | no `.eval` for sweep episodes |
 | rerunning into an existing run directory | the old sealed seqs are untagged, so the export raises `UnassignedEventError` rather than exporting two runs as one |
+| a provider failure past its retry budget | raises out of `GatewayCore.generate` before any sealed record or `ModelCall`; the episode aborts and no `.eval` or transcript is written |
 
 ## M3 `loc_arena/logging_/transcript_lanes.py`
 
@@ -122,21 +127,21 @@ wall-clock rows would give one filled cell per row).
 |---|---|
 | attachments | the sample is resolved first (`resolve_sample_attachments(..., "full")`); Inspect stores long strings as `attachment://` refs |
 | lane of an event | the agent that owns the turn span its span sits in or under (`turn:<uid>:<n>` under `agent:<uid>`), else `World` |
-| row of an event | the turn's round `n`; a World event takes the round of the latest turn span begun before it, or `-1` (before the first round) |
+| row of an event | the turn's round `n`; an event in the `after_episode` span takes `AFTER_EPISODE` (sorts last); any other World event takes the round of the latest turn span begun before it, or `-1` (before the first round) |
 | lane order | `World`, then the sample metadata's configured agent order, then any other agent in first-seen order |
-| blocks | a model event gives a `prompt` block (title shows identity and phase) and a `reply` block (`reply (error)` when the call failed); a tool event gives a `tool` block (arguments as `code`, the result in the body, or the block reason followed by the result, `blocked` on error); an info event gives an `info` block titled by its source; spans give none |
+| blocks | a model event gives a `prompt` block (title shows identity and phase) and a `reply` block; a tool event gives a `tool` block (arguments as `code`, the result in the body, or the block reason followed by the result, `blocked` on error); an info event gives an `info` block titled by its source; spans give none |
 
 | Function | Behaviour |
 |---|---|
 | `build_transcript(sample)` | walks the sample's events once, assigns lane and row, collects blocks per cell |
-| `_turn_owners(events)` | span id -> (agent uid, round) for every turn span and every span nested under one; a turn span not shaped `turn <n>` under an agent span raises `ValueError` |
+| `_span_owners(events)` | span id -> (lane, row) for every turn span, the `after_episode` span, and every span nested under either; a turn span not shaped `turn <n>` under an agent span raises `ValueError` |
 | `_lane_order(configured, seen)` | `World` + configured agents + unconfigured agents seen, without duplicates |
 | `_blocks(event)` | dispatches to the builders below; other event types give no blocks |
 | `_model_blocks(event)` / `_tool_block(event)` / `_info_block(event)` | one event -> its blocks |
 
 ## M4 `loc_arena/logging_/transcript_render.py`
 
-Writes `transcript.html` and `transcript.txt` into the run bundle from the bundle's `.eval`.
+Writes `transcript.html` and `transcript.txt` into the run bundle from the `.eval` in `<bundle>/inspect/`.
 
 | Rule | Detail |
 |---|---|
@@ -146,7 +151,7 @@ Writes `transcript.html` and `transcript.txt` into the run bundle from the bundl
 | self-contained | inline CSS only; no JavaScript, no external `src`/`href` |
 | ASCII only | the page is HTML-escaped, then non-ASCII characters become numeric entities, so model text cannot put literal dashes or unescaped markup in the file |
 | control characters | C0 controls (except tab and newline) and DEL become visible `\xNN` escapes in both outputs |
-| row labels | `-1` -> `before round 0`, `n` -> `round n` |
+| row labels | `-1` -> `before round 0`, `n` -> `round n`, `AFTER_EPISODE` -> `after episode` |
 
 | Function | Behaviour |
 |---|---|
