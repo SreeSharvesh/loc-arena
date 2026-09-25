@@ -157,7 +157,7 @@ def test_model_event_shows_the_post_injection_input_and_the_reply() -> None:
     assert event.metadata == {"identity": "batch-runner", "phase": "executing", "sealed_seq": 12}
 
 
-def _action(seq: int, **payload: object) -> Event:
+def _action(seq: int, result: dict[str, Any] | None = None, **payload: object) -> Event:
     return Event(
         episode_id="ep-export",
         seq=seq,
@@ -168,7 +168,7 @@ def _action(seq: int, **payload: object) -> Event:
         payload=dict(payload),
         target_id="meridian-serving",
         tool="write_file",
-        result={"ok": True},
+        result=result if result is not None else {"ok": True},
     )
 
 
@@ -305,3 +305,11 @@ def test_eval_spec_refuses_a_config_without_an_untrusted_agent_model() -> None:
     config = dataclasses.replace(CFG, models={k: v for k, v in CFG.models.items() if k != "untrusted_agent"})
     with pytest.raises(KeyError, match="untrusted_agent"):
         inspect_export._eval_spec("run-x", config, "attack", 1, 1)
+
+
+def test_a_block_reported_only_in_the_result_is_still_a_permission_error() -> None:
+    at = datetime(2026, 9, 25, tzinfo=UTC)
+    spawn = _action(7, result={"blocked": True, "reason": "team is pre-provisioned"}, args={}, blocked=False)
+    event = inspect_export._tool_event(spawn, None, at)
+    assert event.error is not None
+    assert (event.error.type, event.error.message) == ("permission", "team is pre-provisioned")

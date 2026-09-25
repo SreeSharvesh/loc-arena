@@ -186,13 +186,15 @@ def _model_event(call: ModelCall, span_id: str | None) -> ModelEvent:
 
 def _tool_event(event: Event, span_id: str | None, at: datetime) -> ToolEvent:
     args = event.payload.get("args")
-    blocked = bool(event.payload.get("blocked"))
+    result = event.result or {}
+    blocked = bool(event.payload.get("blocked") or result.get("blocked"))
+    reason = event.payload.get("reason") or result.get("reason") or "blocked"
     return ToolEvent(
         id=f"seq-{event.seq}",
         function=event.tool or "action",
         arguments=dict(args) if isinstance(args, dict) else {},
         result=json.dumps(event.result, sort_keys=True) if event.result is not None else "",
-        error=ToolCallError("permission", str(event.payload.get("reason") or "blocked")) if blocked else None,
+        error=ToolCallError("permission", str(reason)) if blocked else None,
         span_id=span_id,
         timestamp=at,
         metadata={"seq": event.seq, "actor_uid": event.actor_uid, "target": event.target_id},
