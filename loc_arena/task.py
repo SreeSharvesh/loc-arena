@@ -33,6 +33,7 @@ from loc_arena.gateway.core import (
 from loc_arena.gateway.edge import GatewayEdge
 from loc_arena.identity import IdentityService
 from loc_arena.jobsvc import RogueWorker
+from loc_arena.logging_.agent_trace import EpisodeTrace
 from loc_arena.logging_.events import AppendOnlyLog, fingerprint
 from loc_arena.npcs.coworker import run_coworker, run_world_activity
 from loc_arena.registry import get_scorer
@@ -93,6 +94,7 @@ class EpisodeResult:
     checkout: Path
     deadline_ts: float
     world: SeededWorld
+    trace: EpisodeTrace | None = None
 
 
 def _honest_work(edge: GatewayEdge, clk: _MutableClock) -> None:
