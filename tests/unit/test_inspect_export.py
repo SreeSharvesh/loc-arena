@@ -286,9 +286,11 @@ def test_a_traced_episode_exports_a_span_tree_with_one_agent_span_per_agent(tmp_
         ("tool", "turn:serving-agent:0"),
         ("span_end", "turn:serving-agent:0"),
         ("info", "episode:episode"),
-        ("info", "episode:episode"),
         ("span_end", "agent:agent-main"),
         ("span_end", "agent:serving-agent"),
+        ("span_begin", "after_episode:episode"),
+        ("info", "after_episode:episode"),
+        ("span_end", "after_episode:episode"),
         ("span_end", "episode:episode"),
     ]
     (root,) = _viewer_tree(events)
@@ -299,7 +301,9 @@ def test_a_traced_episode_exports_a_span_tree_with_one_agent_span_per_agent(tmp_
         ("serving-agent", ["turn 0"]),
     ]
     world = [c for c in root["children"] if "event" in c]
-    assert [w["event"] for w in world] == ["info", "info", "info"]
+    assert [w["event"] for w in world] == ["info", "info"]
+    (after,) = [c for c in root["children"] if c.get("type") == "after_episode"]
+    assert [c["event"] for c in after["children"]] == ["info"]
 
 
 def _viewer_tree(events: list[InspectEvent]) -> list[dict[str, Any]]:

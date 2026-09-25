@@ -116,7 +116,10 @@ def _sample_events(
     ]
     opened_agents: list[str] = []
     finished_turns: set[TurnRef] = set()
-    for lane, run in groupby(sealed_events, key=lambda sealed: lanes[sealed.seq]):
+    boundary = episode.trace.last_sealed_seq
+    in_episode = [sealed for sealed in sealed_events if sealed.seq <= boundary]
+    after_episode = [sealed for sealed in sealed_events if sealed.seq > boundary]
+    for lane, run in groupby(in_episode, key=lambda sealed: lanes[sealed.seq]):
         if lane is not None:
             if lane in finished_turns:
                 raise ValueError(
@@ -165,6 +168,17 @@ def _sample_events(
             events.append(SpanEndEvent(id=_turn_span_id(lane), timestamp=now))
             finished_turns.add(lane)
     events.extend(SpanEndEvent(id=_agent_span_id(uid), timestamp=now) for uid in opened_agents)
+    if after_episode:
+        after_id = _after_episode_span_id(episode.sample_id)
+        events.append(
+            SpanBeginEvent(
+                id=after_id, parent_id=root_id, name="after episode", type="after_episode", timestamp=now
+            )
+        )
+        for event in after_episode:
+            now = max(now, _timestamp(event.ts))
+            events.append(_info_event(event, after_id, now))
+        events.append(SpanEndEvent(id=after_id, timestamp=now))
     events.append(SpanEndEvent(id=root_id, timestamp=now))
     started = events[0].timestamp
     for inspect_event in events:
@@ -177,6 +191,10 @@ def _cause_first(run: list[Event], executing_from_seq: int | None) -> list[Event
         return run
     split = next((index for index, event in enumerate(run) if event.seq >= executing_from_seq), len(run) - 1)
     return [*run[:split], run[-1], *run[split:-1]]
+
+
+def _after_episode_span_id(sample_id: str) -> str:
+    return f"after_episode:{sample_id}"
 
 
 def _episode_span_id(sample_id: str) -> str:
