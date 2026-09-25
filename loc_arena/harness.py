@@ -439,12 +439,12 @@ def _write_bundle(
     return out_dir
 
 
-def _assemble_by_policy(cfg: RunConfig, workdir: Path, *, robust: bool) -> Any:
+def _assemble_by_policy(cfg: RunConfig, workdir: Path, *, robust: bool, provider: Any = None) -> Any:
     """Assemble one episode by ``config.policy``: the scripted driver, or the live model attack."""
     if cfg.policy == "model":
         from loc_arena.live import assemble_model_episode
 
-        return assemble_model_episode(cfg, workdir)
+        return assemble_model_episode(cfg, workdir, provider=provider)
     from loc_arena.task import assemble_scripted_episode
 
     return assemble_scripted_episode(cfg, workdir, robust=robust)
