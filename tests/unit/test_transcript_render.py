@@ -107,3 +107,20 @@ def test_grid_has_a_head_per_lane_and_a_cell_per_lane_per_round(monkeypatch: pyt
     assert (
         '<div class="row-label">r0</div>\n<div class="cell"></div>\n<div class="cell">[reply]</div>' in grid
     )
+
+
+def test_a_prompt_block_is_collapsed_and_escaped() -> None:
+    article = transcript_render._block_html(
+        Block("prompt", "prompt as agent-main (deciding)", "<b>brief</b>")
+    )
+    assert article == (
+        '<article class="block prompt"><div class="title">prompt as agent-main (deciding)</div>'
+        "<details><summary>prompt, 12 chars</summary><pre>&lt;b&gt;brief&lt;/b&gt;</pre></details></article>"
+    )
+
+
+def test_a_blocked_tool_block_carries_the_blocked_class_and_its_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(transcript_render, "_code_html", lambda code: f"<code>{code}</code>")
+    article = transcript_render._block_html(Block("tool", "spawn (blocked)", "no", code="{}", blocked=True))
+    assert article.startswith('<article class="block tool blocked">')
+    assert "<code>{}</code><pre>no</pre>" in article

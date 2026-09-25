@@ -95,7 +95,14 @@ def _grid_html(transcript: SampleTranscript) -> str:
 
 
 def _block_html(block: Block) -> str:
-    raise NotImplementedError
+    classes = " ".join(["block", block.kind, *(["blocked"] if block.blocked else [])])
+    code = _code_html(block.code) if block.code else ""
+    body = html.escape(block.body)
+    if block.kind == "prompt":
+        content = f"<details><summary>prompt, {len(block.body)} chars</summary><pre>{body}</pre></details>"
+    else:
+        content = f"<pre>{body}</pre>" if block.body else ""
+    return f'<article class="{classes}"><div class="title">{html.escape(block.title)}</div>{code}{content}</article>'
 
 
 def _code_html(code: str) -> str:
