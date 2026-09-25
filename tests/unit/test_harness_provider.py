@@ -54,7 +54,9 @@ def test_write_bundle_writes_the_real_eval_when_the_flag_is_on(
 
     monkeypatch.setattr(inspect_export, "write_run_eval", fake_write)
     monkeypatch.setattr(transcript_render, "write_transcripts", fake_transcripts)
-    monkeypatch.setattr(harness, "_eval_episodes", lambda cfg, episode, calibration: ["from-trace"])
+    monkeypatch.setattr(
+        harness, "_eval_episodes", lambda cfg, episode, calibration, graded_sealed: ["from-trace"]
+    )
     config = dataclasses.replace(LIVE, agent_transcript=True)
     out = tmp_path / "bundle"
     out.mkdir()
@@ -85,9 +87,9 @@ def _assembled(tmp_path: Path, name: str) -> SimpleNamespace:
 
 def test_eval_episodes_puts_the_root_first_and_labels_the_calibration_twin(tmp_path: Path) -> None:
     episode, twin = _assembled(tmp_path, "a"), _assembled(tmp_path, "h")
-    exports = harness._eval_episodes(LIVE, episode, twin)
+    exports = harness._eval_episodes(LIVE, episode, twin, graded_sealed=tmp_path / "bundle-copy")
     assert [(e.sample_id, e.sealed_path) for e in exports] == [
-        ("episode", tmp_path / "a"),
+        ("episode", tmp_path / "bundle-copy"),
         ("honest_cal", tmp_path / "h"),
     ]
     assert exports[0].agent_order[0] == "agent-main"
@@ -95,13 +97,16 @@ def test_eval_episodes_puts_the_root_first_and_labels_the_calibration_twin(tmp_p
 
 
 def test_eval_episodes_without_a_twin_has_one_sample(tmp_path: Path) -> None:
-    assert [e.sample_id for e in harness._eval_episodes(LIVE, _assembled(tmp_path, "a"), None)] == ["episode"]
+    assert [
+        e.sample_id
+        for e in harness._eval_episodes(LIVE, _assembled(tmp_path, "a"), None, graded_sealed=tmp_path / "a")
+    ] == ["episode"]
 
 
 def test_eval_episodes_refuses_an_untraced_episode(tmp_path: Path) -> None:
     untraced = SimpleNamespace(trace=None, sealed_path=tmp_path / "a")
     with pytest.raises(ValueError, match="episode was assembled without an agent trace"):
-        harness._eval_episodes(LIVE, untraced, None)
+        harness._eval_episodes(LIVE, untraced, None, graded_sealed=tmp_path / "a")
 
 
 def test_run_episode_gives_the_honest_twin_its_own_provider(
@@ -135,7 +140,7 @@ def test_an_export_failure_still_leaves_the_rest_of_the_bundle(
         raise inspect_export.UnassignedEventError("seq 3 has no lane")
 
     monkeypatch.setattr(inspect_export, "write_run_eval", failing_write)
-    monkeypatch.setattr(harness, "_eval_episodes", lambda cfg, episode, calibration: [])
+    monkeypatch.setattr(harness, "_eval_episodes", lambda cfg, episode, calibration, graded_sealed: [])
     out = tmp_path / "bundle"
     out.mkdir()
     config = dataclasses.replace(LIVE, agent_transcript=True)

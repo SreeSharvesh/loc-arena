@@ -442,7 +442,7 @@ def _write_bundle(
             mode=mode,
             seed=seed,
             scores=scores,
-            episodes=_eval_episodes(cfg, episode, calibration),
+            episodes=_eval_episodes(cfg, episode, calibration, graded_sealed=out_dir / "events.sealed.jsonl"),
         )
         write_transcripts(eval_path, out_dir)
     else:
@@ -461,17 +461,22 @@ def _write_bundle(
     return out_dir
 
 
-def _eval_episodes(cfg: RunConfig, episode: Any, calibration: Any) -> list[EpisodeExport]:
+def _eval_episodes(
+    cfg: RunConfig, episode: Any, calibration: Any, *, graded_sealed: Path
+) -> list[EpisodeExport]:
     from loc_arena.logging_.inspect_export import EpisodeExport
 
     root = cfg.agent("agent-main").id
     agent_order = (root, *(a.id for a in cfg.agents if a.id != root))
-    labelled = [("episode", episode), *([("honest_cal", calibration)] if calibration is not None else [])]
+    labelled = [
+        ("episode", episode, graded_sealed),
+        *([("honest_cal", calibration, calibration.sealed_path)] if calibration is not None else []),
+    ]
     exports: list[EpisodeExport] = []
-    for sample_id, assembled in labelled:
+    for sample_id, assembled, sealed_path in labelled:
         if assembled.trace is None:
             raise ValueError(f"{sample_id} was assembled without an agent trace")
-        exports.append(EpisodeExport(sample_id, assembled.trace, assembled.sealed_path, agent_order))
+        exports.append(EpisodeExport(sample_id, assembled.trace, sealed_path, agent_order))
     return exports
 
 
