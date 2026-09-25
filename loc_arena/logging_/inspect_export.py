@@ -10,7 +10,7 @@ from typing import Any
 
 from inspect_ai.event import Event as InspectEvent
 from inspect_ai.event import InfoEvent, ModelEvent, ToolEvent
-from inspect_ai.log import EvalSample, EvalSpec
+from inspect_ai.log import EvalLog, EvalSample, EvalSpec, write_eval_log
 
 from loc_arena.config import RunConfig
 from loc_arena.logging_.agent_trace import EpisodeTrace, ModelCall, TurnRef
@@ -41,7 +41,13 @@ def write_run_eval(
     scores: Mapping[str, Any],
     episodes: Sequence[EpisodeExport],
 ) -> Path:
-    raise NotImplementedError
+    log = EvalLog(
+        status="success",
+        eval=_eval_spec(run_name, config, mode, seed, len(episodes)),
+        samples=[_sample(episode, scores if index == 0 else None) for index, episode in enumerate(episodes)],
+    )
+    write_eval_log(log, str(path))
+    return path
 
 
 def _eval_spec(run_name: str, config: RunConfig, mode: str, seed: int, sample_count: int) -> EvalSpec:
