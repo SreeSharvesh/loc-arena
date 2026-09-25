@@ -465,9 +465,7 @@ def _eval_episodes(cfg: RunConfig, episode: Any, calibration: Any) -> list[Episo
     exports: list[EpisodeExport] = []
     for sample_id, assembled in labelled:
         if assembled.trace is None:
-            raise ValueError(
-                f"{sample_id} was assembled without an agent trace; logging.agent_transcript was off"
-            )
+            raise ValueError(f"{sample_id} was assembled without an agent trace")
         exports.append(EpisodeExport(sample_id, assembled.trace, assembled.sealed_path, agent_order))
     return exports
 
