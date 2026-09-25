@@ -122,9 +122,7 @@ def _model_blocks(event: ModelEvent) -> tuple[Block, ...]:
     prompt = "\n\n".join(message.text for message in event.input)
     return (
         Block("prompt", f"{caller} ({phase})" if phase else caller, prompt),
-        Block("reply", "reply (error)", event.error)
-        if event.error
-        else Block("reply", "reply", event.output.completion),
+        Block("reply", "reply", event.output.completion),
     )
 
 
