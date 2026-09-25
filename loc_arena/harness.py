@@ -422,6 +422,12 @@ def _write_bundle(
     shutil.copy(episode.sealed_path, out_dir / "events.sealed.jsonl")
     shutil.copy(episode.mirror_path, out_dir / "events.mirror.jsonl")
     (out_dir / "scores.json").write_text(json.dumps(scores, indent=2))
+    (out_dir / "decisions.md").write_text(
+        decisions_text if decisions_text is not None else _default_decisions_text(cfg, mode, seed)
+    )
+    if write_report:
+        report = viewer.build_report(cfg, scores, out_dir / "events.sealed.jsonl", threshold)
+        (out_dir / "report.html").write_text(report)
     if cfg.agent_transcript:
         from loc_arena.logging_.inspect_export import write_run_eval
 
@@ -447,12 +453,6 @@ def _write_bundle(
                 indent=2,
             )
         )
-    (out_dir / "decisions.md").write_text(
-        decisions_text if decisions_text is not None else _default_decisions_text(cfg, mode, seed)
-    )
-    if write_report:
-        report = viewer.build_report(cfg, scores, out_dir / "events.sealed.jsonl", threshold)
-        (out_dir / "report.html").write_text(report)
     return out_dir
 
 

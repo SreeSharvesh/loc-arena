@@ -116,3 +116,21 @@ def test_run_episode_gives_the_honest_twin_its_own_provider(
 
 class _StopAfterAssemblyError(Exception):
     pass
+
+
+def test_an_export_failure_still_leaves_the_rest_of_the_bundle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def failing_write(path: Path, **kwargs: Any) -> Path:
+        raise inspect_export.UnassignedEventError("seq 3 has no lane")
+
+    monkeypatch.setattr(inspect_export, "write_run_eval", failing_write)
+    monkeypatch.setattr(harness, "_eval_episodes", lambda cfg, episode, calibration: [])
+    out = tmp_path / "bundle"
+    out.mkdir()
+    config = dataclasses.replace(LIVE, agent_transcript=True)
+    with pytest.raises(inspect_export.UnassignedEventError):
+        harness._write_bundle(
+            config, out, "run-x", {}, _bundle_inputs(tmp_path), 1, "attack", 0.5, write_report=False
+        )
+    assert {p.name for p in out.iterdir()} >= {"scores.json", "decisions.md", "events.sealed.jsonl"}
