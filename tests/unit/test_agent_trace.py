@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import pytest
-from loc_arena.logging_.agent_trace import AgentTrace, TurnRecord, TurnRef
+from loc_arena.logging_.agent_trace import AgentTrace, ModelCall, TurnRecord, TurnRef
 
 
 def test_constructs_with_an_injected_wall_clock() -> None:
@@ -63,3 +63,31 @@ def test_finish_refuses_while_a_turn_is_bound() -> None:
     trace = AgentTrace()
     with trace.turn("agent-main", 0), pytest.raises(RuntimeError, match="still bound"):
         trace.finish(last_sealed_seq=-1)
+
+
+def _call(trace: AgentTrace, sealed_seq: int) -> None:
+    trace.on_model_call(
+        identity="agent-main",
+        role="untrusted_agent",
+        model_input="brief",
+        output="reply",
+        sealed_seq=sealed_seq,
+    )
+
+
+def test_model_call_inside_a_turn_carries_the_turn_and_deciding_phase() -> None:
+    trace = AgentTrace(wall_clock=lambda: 5.0)
+    with trace.turn("agent-main", 2):
+        _call(trace, 11)
+    assert trace.finish(last_sealed_seq=11).model_calls == (
+        ModelCall(
+            TurnRef("agent-main", 2), "deciding", "agent-main", "untrusted_agent", "brief", "reply", 11, 5.0
+        ),
+    )
+
+
+def test_model_call_outside_any_turn_has_no_turn_and_no_phase() -> None:
+    trace = AgentTrace()
+    _call(trace, 0)
+    (call,) = trace.finish(last_sealed_seq=0).model_calls
+    assert call.ref is None and call.phase is None

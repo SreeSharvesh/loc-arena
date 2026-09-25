@@ -99,7 +99,18 @@ class AgentTrace:
     def on_model_call(
         self, *, identity: str, role: str, model_input: str, output: str, sealed_seq: int
     ) -> None:
-        raise NotImplementedError
+        self._model_calls.append(
+            ModelCall(
+                ref=self._bound,
+                phase=self._phase,
+                identity=identity,
+                role=role,
+                model_input=model_input,
+                output=output,
+                sealed_seq=sealed_seq,
+                wall_ts=self._wall_clock(),
+            )
+        )
 
     def finish(self, last_sealed_seq: int) -> EpisodeTrace:
         if self._bound is not None:
