@@ -374,3 +374,30 @@ def test_working_start_is_seconds_since_the_episode_began() -> None:
         ("span_end", 15.0),
         ("span_end", 15.0),
     ]
+
+
+def test_timestamps_follow_turn_bounds_and_model_calls_and_world_reuses_the_last() -> None:
+    main = TurnRef("agent-main", 0)
+    readings = iter([100.0, 130.0, 160.0])
+    trace = AgentTrace(wall_clock=lambda: next(readings))
+    with trace.turn("agent-main", 0):
+        trace.on_sealed_append(_tick(0))
+        trace.on_model_call(identity="agent-main", role="r", model_input="p", output="o", sealed_seq=1)
+        trace.on_sealed_append(_tick(1))
+        trace.on_sealed_append(_tick(2))
+    trace.on_sealed_append(_tick(3))
+    episode = EpisodeExport("episode", trace.finish(last_sealed_seq=3), Path("unused"), ("agent-main",))
+    inference = dataclasses.replace(_tick(1), kind="inference_call")
+    events = inspect_export._sample_events(
+        episode, [_tick(0), inference, _tick(2), _tick(3)], {0: main, 1: main, 2: main, 3: None}
+    )
+    offsets = [(e.event, e.working_start) for e in events if e.event != "span_begin"]
+    assert offsets == [
+        ("info", 0.0),
+        ("model", 30.0),
+        ("info", 30.0),
+        ("span_end", 60.0),
+        ("info", 60.0),
+        ("span_end", 60.0),
+        ("span_end", 60.0),
+    ]
