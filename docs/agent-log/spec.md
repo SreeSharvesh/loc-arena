@@ -121,15 +121,16 @@ wall-clock rows would give one filled cell per row).
 
 | Rule | Detail |
 |---|---|
-| lane of an event | the agent that owns its turn span (`turn:<uid>:<n>` under `agent:<uid>`), else `World` |
-| row of an event | the turn's round `n`; a World event takes the round of the latest turn before it, or `-1` (before the first round) |
+| attachments | the sample is resolved first (`resolve_sample_attachments(..., "full")`); Inspect stores long strings as `attachment://` refs |
+| lane of an event | the agent that owns the turn span its span sits in or under (`turn:<uid>:<n>` under `agent:<uid>`), else `World` |
+| row of an event | the turn's round `n`; a World event takes the round of the latest turn span begun before it, or `-1` (before the first round) |
 | lane order | `World`, then the sample metadata's configured agent order, then any other agent in first-seen order |
-| blocks | a model event gives a `prompt` block (title shows identity and phase) and a `reply` block; a tool event gives a `tool` block (arguments as `code`, result or error in the body, `blocked` on error); an info event gives an `info` block titled by its source; spans give none |
+| blocks | a model event gives a `prompt` block (title shows identity and phase) and a `reply` block (`reply (error)` when the call failed); a tool event gives a `tool` block (arguments as `code`, the result in the body, or the block reason followed by the result, `blocked` on error); an info event gives an `info` block titled by its source; spans give none |
 
 | Function | Behaviour |
 |---|---|
 | `build_transcript(sample)` | walks the sample's events once, assigns lane and row, collects blocks per cell |
-| `_turn_owners(events)` | turn span id -> (agent uid, round), from the span begin events |
+| `_turn_owners(events)` | span id -> (agent uid, round) for every turn span and every span nested under one; a turn span not shaped `turn <n>` under an agent span raises `ValueError` |
 | `_lane_order(configured, seen)` | `World` + configured agents + unconfigured agents seen, without duplicates |
 | `_blocks(event)` | dispatches to the builders below; other event types give no blocks |
 | `_model_blocks(event)` / `_tool_block(event)` / `_info_block(event)` | one event -> its blocks |
