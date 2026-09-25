@@ -201,7 +201,18 @@ def _tool_event(event: Event, span_id: str | None, at: datetime) -> ToolEvent:
 
 
 def _info_event(event: Event, span_id: str | None, at: datetime) -> InfoEvent:
-    raise NotImplementedError
+    return InfoEvent(
+        source=event.kind,
+        data={
+            "seq": event.seq,
+            "actor_uid": event.actor_uid,
+            "target_id": event.target_id,
+            "payload": event.payload,
+            "result": event.result,
+        },
+        span_id=span_id,
+        timestamp=at,
+    )
 
 
 def _timestamp(wall: float) -> datetime:

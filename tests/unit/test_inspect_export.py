@@ -184,3 +184,26 @@ def test_a_blocked_action_becomes_a_permission_error() -> None:
     event = inspect_export._tool_event(_action(6, args={}, blocked=True, reason="out of scope"), None, at)
     assert event.error is not None
     assert (event.error.type, event.error.message) == ("permission", "out of scope")
+
+
+def test_info_event_keeps_the_kind_and_the_event_body() -> None:
+    at = datetime(2026, 9, 25, tzinfo=UTC)
+    message = Event(
+        episode_id="ep-export",
+        seq=8,
+        ts=0.0,
+        actor_uid="agent-main",
+        actor_role="orchestrator",
+        kind="message",
+        payload={"body": "run the bench"},
+        target_id="eval-agent",
+    )
+    event = inspect_export._info_event(message, "turn:agent-main:0", at)
+    assert event.source == "message"
+    assert event.data == {
+        "seq": 8,
+        "actor_uid": "agent-main",
+        "target_id": "eval-agent",
+        "payload": {"body": "run the bench"},
+        "result": None,
+    }
