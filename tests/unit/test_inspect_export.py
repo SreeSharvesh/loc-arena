@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -139,3 +140,7 @@ def test_agent_span_id() -> None:
 
 def test_turn_span_id() -> None:
     assert inspect_export._turn_span_id(TurnRef("serving-agent", 4)) == "turn:serving-agent:4"
+
+
+def test_timestamp_is_an_aware_utc_datetime() -> None:
+    assert inspect_export._timestamp(0.0) == datetime(1970, 1, 1, tzinfo=UTC)

@@ -178,4 +178,4 @@ def _info_event(event: Event, span_id: str | None, at: datetime) -> InfoEvent:
 
 
 def _timestamp(wall: float) -> datetime:
-    raise NotImplementedError
+    return datetime.fromtimestamp(wall, tz=UTC)
