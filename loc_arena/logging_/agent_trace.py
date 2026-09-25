@@ -6,6 +6,7 @@ import time
 from collections.abc import Callable, Mapping
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Literal
 
 from loc_arena.logging_.events import Event
@@ -88,4 +89,15 @@ class AgentTrace:
         raise NotImplementedError
 
     def finish(self, last_sealed_seq: int) -> EpisodeTrace:
-        raise NotImplementedError
+        if self._bound is not None:
+            raise RuntimeError(
+                f"episode ended while {self._bound.agent_uid} turn {self._bound.turn} was still bound"
+            )
+        return EpisodeTrace(
+            turns=tuple(self._turns),
+            sealed_lane=MappingProxyType(dict(self._sealed_lane)),
+            mirror_lane=MappingProxyType(dict(self._mirror_lane)),
+            mirror_to_sealed=MappingProxyType(dict(self._mirror_to_sealed)),
+            model_calls=tuple(self._model_calls),
+            last_sealed_seq=last_sealed_seq,
+        )
