@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 from inspect_ai.event import Event as InspectEvent
-from inspect_ai.event import EventTreeSpan, InfoEvent, event_tree
+from inspect_ai.event import InfoEvent, SpanBeginEvent, SpanEndEvent
 from inspect_ai.log import EvalConfig, EvalDataset, EvalSample, EvalSpec, read_eval_log
 from loc_arena.config import load_run_config
 from loc_arena.logging_ import inspect_export
@@ -273,7 +273,8 @@ def test_a_traced_episode_exports_a_span_tree_with_one_agent_span_per_agent(tmp_
     assert log.samples is not None
     events = log.samples[0].events
     assert [(e.event, e.span_id if e.event not in ("span_begin", "span_end") else e.id) for e in events] == [
-        ("info", None),
+        ("span_begin", "episode:episode"),
+        ("info", "episode:episode"),
         ("span_begin", "agent:agent-main"),
         ("span_begin", "turn:agent-main:0"),
         ("model", "turn:agent-main:0"),
@@ -284,21 +285,62 @@ def test_a_traced_episode_exports_a_span_tree_with_one_agent_span_per_agent(tmp_
         ("span_begin", "turn:serving-agent:0"),
         ("tool", "turn:serving-agent:0"),
         ("span_end", "turn:serving-agent:0"),
-        ("info", None),
-        ("info", None),
+        ("info", "episode:episode"),
+        ("info", "episode:episode"),
         ("span_end", "agent:agent-main"),
         ("span_end", "agent:serving-agent"),
+        ("span_end", "episode:episode"),
     ]
-    agent_spans = [
-        node for node in event_tree(events) if isinstance(node, EventTreeSpan) and node.type == "agent"
-    ]
-    assert [
-        (span.name, [child.name for child in span.children if isinstance(child, EventTreeSpan)])
-        for span in agent_spans
-    ] == [
+    (root,) = _viewer_tree(events)
+    assert root["id"] == "episode:episode"
+    agents = [c for c in root["children"] if c.get("type") == "agent"]
+    assert [(a["name"], [t["name"] for t in a["children"]]) for a in agents] == [
         ("agent-main", ["turn 0"]),
         ("serving-agent", ["turn 0"]),
     ]
+    world = [c for c in root["children"] if "event" in c]
+    assert [w["event"] for w in world] == ["info", "info", "info"]
+
+
+def _viewer_tree(events: list[InspectEvent]) -> list[dict[str, Any]]:
+    spans: dict[str, dict[str, Any]] = {}
+    for e in events:
+        if isinstance(e, SpanBeginEvent):
+            spans[e.id] = {"id": e.id, "name": e.name, "type": e.type, "parent": e.parent_id, "children": []}
+    roots: list[dict[str, Any]] = []
+    stack: list[dict[str, Any]] = []
+    for e in events:
+        if isinstance(e, SpanBeginEvent):
+            span = spans[e.id]
+            parent = span["parent"]
+            if parent and parent in spans:
+                spans[parent]["children"].append(span)
+            elif stack:
+                stack[-1]["children"].append(span)
+            else:
+                roots.append(span)
+            stack.append(span)
+        elif isinstance(e, SpanEndEvent):
+            if stack:
+                stack.pop()
+        else:
+            node = {"event": e.event}
+            if e.span_id and e.span_id in spans:
+                spans[e.span_id]["children"].append(node)
+            elif stack:
+                stack[-1]["children"].append(node)
+            else:
+                roots.append(node)
+    return roots
+
+
+def test_a_turn_whose_events_are_split_by_another_turn_raises() -> None:
+    main, worker = TurnRef("agent-main", 0), TurnRef("serving-agent", 0)
+    trace = _traced({0: main, 1: worker}, boundary=2)
+    episode = EpisodeExport("episode", trace, Path("unused"), ("agent-main", "serving-agent"))
+    lanes: dict[int, TurnRef | None] = {0: main, 1: worker, 2: main}
+    with pytest.raises(ValueError, match="agent-main turn 0 wrote sealed events in two separate runs"):
+        inspect_export._sample_events(episode, [_tick(0), _tick(1), _tick(2)], lanes)
 
 
 def test_eval_spec_refuses_a_config_without_an_untrusted_agent_model() -> None:
@@ -313,12 +355,3 @@ def test_a_block_reported_only_in_the_result_is_still_a_permission_error() -> No
     event = inspect_export._tool_event(spawn, None, at)
     assert event.error is not None
     assert (event.error.type, event.error.message) == ("permission", "team is pre-provisioned")
-
-
-def test_a_turn_whose_events_are_split_by_another_turn_raises() -> None:
-    main, worker = TurnRef("agent-main", 0), TurnRef("serving-agent", 0)
-    trace = _traced({0: main, 1: worker}, boundary=2)
-    episode = EpisodeExport("episode", trace, Path("unused"), ("agent-main", "serving-agent"))
-    lanes: dict[int, TurnRef | None] = {0: main, 1: worker, 2: main}
-    with pytest.raises(ValueError, match="agent-main turn 0 wrote sealed events in two separate runs"):
-        inspect_export._sample_events(episode, [_tick(0), _tick(1), _tick(2)], lanes)

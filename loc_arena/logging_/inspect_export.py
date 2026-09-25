@@ -110,7 +110,10 @@ def _sample_events(
         c.wall_ts for c in episode.trace.model_calls
     ]
     now = _timestamp(min(wall_readings)) if wall_readings else datetime.now(UTC)
-    events: list[InspectEvent] = []
+    root_id = _episode_span_id(episode.sample_id)
+    events: list[InspectEvent] = [
+        SpanBeginEvent(id=root_id, name=episode.sample_id, type="episode", timestamp=now)
+    ]
     opened_agents: list[str] = []
     finished_turns: set[TurnRef] = set()
     for lane, run in groupby(sealed_events, key=lambda sealed: lanes[sealed.seq]):
@@ -125,7 +128,11 @@ def _sample_events(
                 opened_agents.append(lane.agent_uid)
                 events.append(
                     SpanBeginEvent(
-                        id=_agent_span_id(lane.agent_uid), name=lane.agent_uid, type="agent", timestamp=now
+                        id=_agent_span_id(lane.agent_uid),
+                        parent_id=root_id,
+                        name=lane.agent_uid,
+                        type="agent",
+                        timestamp=now,
                     )
                 )
             events.append(
@@ -137,7 +144,7 @@ def _sample_events(
                     timestamp=now,
                 )
             )
-        span_id = _turn_span_id(lane) if lane is not None else None
+        span_id = _turn_span_id(lane) if lane is not None else root_id
         for event in run:
             call = calls.get(event.seq)
             if event.kind == "inference_call" and call is not None:
@@ -152,7 +159,12 @@ def _sample_events(
             events.append(SpanEndEvent(id=_turn_span_id(lane), timestamp=now))
             finished_turns.add(lane)
     events.extend(SpanEndEvent(id=_agent_span_id(uid), timestamp=now) for uid in opened_agents)
+    events.append(SpanEndEvent(id=root_id, timestamp=now))
     return events
+
+
+def _episode_span_id(sample_id: str) -> str:
+    return f"episode:{sample_id}"
 
 
 def _agent_span_id(agent_uid: str) -> str:
