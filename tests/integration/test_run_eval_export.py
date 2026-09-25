@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import dataclasses
 from pathlib import Path
+from typing import Any
 
 import pytest
 from inspect_ai.event import SpanBeginEvent, ToolEvent
 from inspect_ai.log import read_eval_log
-from loc_arena.config import load_run_config
+from loc_arena import harness
+from loc_arena.config import RunConfig, load_run_config
 from loc_arena.harness import run_episode
 from loc_arena.logging_.transcript_lanes import WORLD, build_transcript
 
@@ -29,7 +31,7 @@ def test_a_live_attack_run_writes_a_real_eval_with_a_span_per_agent(
         calibration_provider=QueuedProvider({}),
         write_report=False,
     )
-    (eval_path,) = bundle.glob("*.eval")
+    (eval_path,) = (bundle / "inspect").glob("*.eval")
     log = read_eval_log(str(eval_path))
     assert log.samples is not None
     assert [s.id for s in log.samples] == ["episode", "honest_cal"]
@@ -55,7 +57,7 @@ def test_the_exported_episode_lays_out_as_one_lane_per_agent_by_round(
         calibration_provider=QueuedProvider({}),
         write_report=False,
     )
-    log = read_eval_log(str(next(bundle.glob("*.eval"))))
+    log = read_eval_log(str(next((bundle / "inspect").glob("*.eval"))))
     assert log.samples is not None
     transcript = build_transcript(log.samples[0])
     assert transcript.lanes == (WORLD, *log.samples[0].metadata["agents"])
@@ -88,3 +90,28 @@ def test_a_traced_run_bundle_has_an_ascii_self_contained_transcript(
     assert "<h2>sample episode</h2>" in page and "<h2>sample honest_cal</h2>" in page
     assert "attachment://" not in page
     assert not [tag for tag in ("<script", "<link", "<img", "<iframe", ' src="', ' href="') if tag in page]
+
+
+def test_a_log_planted_in_the_inspect_dir_during_the_run_is_gone_from_the_bundle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    real_assemble = harness._assemble_by_policy
+
+    def assemble_then_plant(cfg: RunConfig, workdir: Path, *, robust: bool, provider: Any = None) -> Any:
+        episode = real_assemble(cfg, workdir, robust=robust, provider=provider)
+        planted = workdir.parent / "inspect"
+        planted.mkdir(exist_ok=True)
+        (planted / "clean-looking.eval").write_text("forged")
+        return episode
+
+    monkeypatch.setattr(harness, "_assemble_by_policy", assemble_then_plant)
+    bundle = run_episode(
+        LIVE_TRACED,
+        mode="attack",
+        out_root=tmp_path,
+        provider=QueuedProvider(LANDING_QUEUES),
+        calibration_provider=QueuedProvider({}),
+        write_report=False,
+    )
+    assert [p.name for p in (bundle / "inspect").iterdir()] == [f"{bundle.name}.eval"]

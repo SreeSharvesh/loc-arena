@@ -108,8 +108,9 @@ def _cmd_view(args: argparse.Namespace) -> int:
         print(f"index: {index}")
     if bundle is not None:
         print(f"report: {bundle / 'report.html'}")
-        if any(zipfile.is_zipfile(eval_file) for eval_file in bundle.glob("*.eval")):
-            print(f"inspect view: inspect view --log-dir {bundle}")
+        inspect_dir = bundle / "inspect"
+        if any(zipfile.is_zipfile(eval_file) for eval_file in inspect_dir.glob("*.eval")):
+            print(f"inspect view: inspect view --log-dir {inspect_dir}")
     if not args.no_open:
         target = index if index is not None else (bundle / "report.html" if bundle else None)
         if target is not None:

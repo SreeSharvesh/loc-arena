@@ -411,8 +411,9 @@ def _write_bundle(
 ) -> Path:
     """Write the reproducible audit bundle into ``out_dir`` and return it.
 
-    Seven files always; with ``logging.agent_transcript`` on, the ``.eval`` is a real Inspect log and
-    ``transcript.html`` / ``transcript.txt`` are added, written last.
+    Seven files with the flag off. With ``logging.agent_transcript`` on, the real Inspect log goes to a
+    fresh ``inspect/`` directory (cleared first, so nothing an agent planted there is listed beside it)
+    instead of the root placeholder, and ``transcript.html`` / ``.txt`` are added, all written last.
 
     Kept separate from ``run_episode`` so the bundle shape is written in one place; passing the default
     ``decisions_text`` uses the standard run notes.
@@ -435,8 +436,13 @@ def _write_bundle(
         from loc_arena.logging_.inspect_export import write_run_eval
         from loc_arena.logging_.transcript_render import write_transcripts
 
+        inspect_dir = out_dir / "inspect"
+        if inspect_dir.is_symlink() or inspect_dir.is_file():
+            inspect_dir.unlink()
+        shutil.rmtree(inspect_dir, ignore_errors=True)
+        inspect_dir.mkdir()
         eval_path = write_run_eval(
-            out_dir / f"{run_name}.eval",
+            inspect_dir / f"{run_name}.eval",
             run_name=run_name,
             config=cfg,
             mode=mode,

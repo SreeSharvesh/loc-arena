@@ -64,9 +64,9 @@ def test_write_bundle_writes_the_real_eval_when_the_flag_is_on(
         config, out, "run-x", {}, _bundle_inputs(tmp_path), 1, "attack", 0.5, write_report=False
     )
     assert seen == {
-        "path": out / "run-x.eval",
+        "path": out / "inspect" / "run-x.eval",
         "episodes": ["from-trace"],
-        "transcripts": (out / "run-x.eval", out),
+        "transcripts": (out / "inspect" / "run-x.eval", out),
     }
     assert not (out / "run-x.eval").exists()
 

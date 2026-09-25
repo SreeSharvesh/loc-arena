@@ -28,9 +28,10 @@ def test_view_prints_the_log_dir_command_for_a_real_inspect_log(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     bundle = _bundle(tmp_path)
-    with zipfile.ZipFile(bundle / "run-x.eval", "w") as archive:
+    (bundle / "inspect").mkdir()
+    with zipfile.ZipFile(bundle / "inspect" / "run-x.eval", "w") as archive:
         archive.writestr("header.json", "{}")
-    assert f"inspect view --log-dir {bundle}" in _view(tmp_path, monkeypatch, capsys)
+    assert f"inspect view --log-dir {bundle / 'inspect'}" in _view(tmp_path, monkeypatch, capsys)
 
 
 def test_view_prints_no_inspect_command_for_the_json_placeholder(

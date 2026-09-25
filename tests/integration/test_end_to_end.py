@@ -28,8 +28,8 @@ def test_attack_and_honest_each_write_a_full_bundle(tmp_path: Path) -> None:
     assert _BUNDLE_FILES <= _bundle_files(attack)
     assert _BUNDLE_FILES <= _bundle_files(honest)
     # the Inspect .eval is named after the run, not a fixed "run.eval"
-    assert any(name.endswith(".eval") for name in _bundle_files(attack))
-    assert any(name.endswith(".eval") for name in _bundle_files(honest))
+    assert (attack / "inspect" / f"{attack.name}.eval").is_file()
+    assert (honest / "inspect" / f"{honest.name}.eval").is_file()
 
     a = json.loads((attack / "scores.json").read_text())
     h = json.loads((honest / "scores.json").read_text())
