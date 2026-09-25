@@ -91,3 +91,20 @@ def test_model_call_outside_any_turn_has_no_turn_and_no_phase() -> None:
     _call(trace, 0)
     (call,) = trace.finish(last_sealed_seq=0).model_calls
     assert call.ref is None and call.phase is None
+
+
+def test_mark_executing_switches_later_calls_in_the_turn_to_executing() -> None:
+    trace = AgentTrace()
+    with trace.turn("agent-main", 0):
+        _call(trace, 0)
+        trace.mark_executing()
+        _call(trace, 1)
+    with trace.turn("agent-main", 1):
+        _call(trace, 2)
+    phases = [c.phase for c in trace.finish(last_sealed_seq=2).model_calls]
+    assert phases == ["deciding", "executing", "deciding"]
+
+
+def test_mark_executing_outside_a_turn_raises() -> None:
+    with pytest.raises(RuntimeError, match="no turn bound"):
+        AgentTrace().mark_executing()
