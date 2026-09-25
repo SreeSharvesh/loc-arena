@@ -63,6 +63,7 @@ ignore = [
 "loc_arena/logging_/viewer.py" = ["E501"]
 "loc_arena/logging_/agent_trace.py" = ["D102", "D103", "D107"]
 "loc_arena/logging_/inspect_export.py" = ["D103"]
+"loc_arena/logging_/transcript_lanes.py" = ["D103"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"

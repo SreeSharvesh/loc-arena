@@ -113,9 +113,29 @@ Known limits:
 | `run_sweep` writes no bundles | no `.eval` for sweep episodes |
 | rerunning into an existing run directory | the old sealed seqs are untagged, so the export raises `UnassignedEventError` rather than exporting two runs as one |
 
+## M3 `loc_arena/logging_/transcript_lanes.py`
+
+Turns one Inspect sample (as written by M2) into a grid: lanes are columns, rounds are rows. Rows are keyed by
+round, not wall clock, so every agent's turn in a round sits side by side (turns run one after another, so
+wall-clock rows would give one filled cell per row).
+
+| Rule | Detail |
+|---|---|
+| lane of an event | the agent that owns its turn span (`turn:<uid>:<n>` under `agent:<uid>`), else `World` |
+| row of an event | the turn's round `n`; a World event takes the round of the latest turn before it, or `-1` (before the first round) |
+| lane order | `World`, then the sample metadata's configured agent order, then any other agent in first-seen order |
+| blocks | a model event gives a `prompt` block (title shows identity and phase) and a `reply` block; a tool event gives a `tool` block (arguments as `code`, result or error in the body, `blocked` on error); an info event gives an `info` block titled by its source; spans give none |
+
+| Function | Behaviour |
+|---|---|
+| `build_transcript(sample)` | walks the sample's events once, assigns lane and row, collects blocks per cell |
+| `_turn_owners(events)` | turn span id -> (agent uid, round), from the span begin events |
+| `_lane_order(configured, seen)` | `World` + configured agents + unconfigured agents seen, without duplicates |
+| `_blocks(event)` | dispatches to the builders below; other event types give no blocks |
+| `_model_blocks(event)` / `_tool_block(event)` / `_info_block(event)` | one event -> its blocks |
+
 ## Later modules (specified when reached)
 
 | Module | Responsibility |
 |---|---|
-| M3 `transcript_lanes.py` | Inspect sample -> ordered lanes of blocks |
 | M4 `transcript_render.py` | lanes -> `transcript.html` + `transcript.txt` |
