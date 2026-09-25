@@ -60,7 +60,15 @@ class AgentTrace:
     """Collects one episode's per-turn attribution from scaffold, recorder and core hooks."""
 
     def __init__(self, *, wall_clock: Callable[[], float] = time.time) -> None:
-        raise NotImplementedError
+        self._wall_clock = wall_clock
+        self._bound: TurnRef | None = None
+        self._phase: Phase | None = None
+        self._turns: list[TurnRecord] = []
+        self._sealed_lane: dict[int, TurnRef | None] = {}
+        self._mirror_lane: dict[int, TurnRef | None] = {}
+        self._mirror_to_sealed: dict[int, int] = {}
+        self._last_sealed: Event | None = None
+        self._model_calls: list[ModelCall] = []
 
     def turn(self, agent_uid: str, turn: int) -> AbstractContextManager[None]:
         raise NotImplementedError
