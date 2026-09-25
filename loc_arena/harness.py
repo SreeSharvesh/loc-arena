@@ -409,7 +409,10 @@ def _write_bundle(
     decisions_text: str | None = None,
     calibration: Any = None,
 ) -> Path:
-    """Write the seven-file reproducible audit bundle into ``out_dir`` and return it.
+    """Write the reproducible audit bundle into ``out_dir`` and return it.
+
+    Seven files always; with ``logging.agent_transcript`` on, the ``.eval`` is a real Inspect log and
+    ``transcript.html`` / ``transcript.txt`` are added, written last.
 
     Kept separate from ``run_episode`` so the bundle shape is written in one place; passing the default
     ``decisions_text`` uses the standard run notes.
