@@ -178,3 +178,11 @@ def test_real_recorder_dual_writes_pair_up_through_the_log_subscribers(tmp_path:
     assert dict(finished.sealed_lane) == {0: None, 1: main, 2: main}
     assert dict(finished.mirror_lane) == {0: main, 1: main}
     assert dict(finished.mirror_to_sealed) == {0: 1, 1: 2}
+
+
+def test_a_sealed_event_is_the_twin_of_at_most_one_mirror_event() -> None:
+    trace = AgentTrace()
+    trace.on_sealed_append(_event(40, kind="message"))
+    trace.on_mirror_append(_event(9, kind="message"))
+    trace.on_mirror_append(_event(10, kind="message"))
+    assert dict(trace.finish(last_sealed_seq=40).mirror_to_sealed) == {9: 40}

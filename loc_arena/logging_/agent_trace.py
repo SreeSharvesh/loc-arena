@@ -113,6 +113,7 @@ class AgentTrace:
         twin = self._last_sealed
         if twin is not None and _same_logical_event(twin, event):
             self._mirror_to_sealed[event.seq] = twin.seq
+            self._last_sealed = None
 
     def on_model_call(
         self, *, identity: str, role: str, model_input: str, output: str, sealed_seq: int
