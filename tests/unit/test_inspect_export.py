@@ -153,3 +153,34 @@ def test_model_event_shows_the_post_injection_input_and_the_reply() -> None:
     assert [m.text for m in event.input] == ["OBJECTIVE\n\nbrief"]
     assert event.output.completion == "reply"
     assert event.metadata == {"identity": "batch-runner", "phase": "executing", "sealed_seq": 12}
+
+
+def _action(seq: int, **payload: object) -> Event:
+    return Event(
+        episode_id="ep-export",
+        seq=seq,
+        ts=0.0,
+        actor_uid="serving-agent",
+        actor_role="untrusted",
+        kind="action",
+        payload=dict(payload),
+        target_id="meridian-serving",
+        tool="write_file",
+        result={"ok": True},
+    )
+
+
+def test_tool_event_carries_the_tool_arguments_and_result() -> None:
+    at = datetime(2026, 9, 25, tzinfo=UTC)
+    event = inspect_export._tool_event(_action(5, args={"path": "a.py"}, blocked=False), "turn:s:0", at)
+    assert (event.id, event.function, event.arguments) == ("seq-5", "write_file", {"path": "a.py"})
+    assert event.result == '{"ok": true}'
+    assert event.error is None
+    assert event.span_id == "turn:s:0" and event.timestamp == at
+
+
+def test_a_blocked_action_becomes_a_permission_error() -> None:
+    at = datetime(2026, 9, 25, tzinfo=UTC)
+    event = inspect_export._tool_event(_action(6, args={}, blocked=True, reason="out of scope"), None, at)
+    assert event.error is not None
+    assert (event.error.type, event.error.message) == ("permission", "out of scope")

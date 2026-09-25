@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -12,6 +13,7 @@ from inspect_ai.event import Event as InspectEvent
 from inspect_ai.event import InfoEvent, ModelEvent, SpanBeginEvent, SpanEndEvent, ToolEvent
 from inspect_ai.log import EvalConfig, EvalDataset, EvalLog, EvalSample, EvalSpec, write_eval_log
 from inspect_ai.model import ChatMessageUser, GenerateConfig, ModelOutput
+from inspect_ai.tool import ToolCallError
 
 from loc_arena.config import RunConfig
 from loc_arena.logging_.agent_trace import EpisodeTrace, ModelCall, TurnRef
@@ -184,7 +186,18 @@ def _model_event(call: ModelCall, span_id: str | None) -> ModelEvent:
 
 
 def _tool_event(event: Event, span_id: str | None, at: datetime) -> ToolEvent:
-    raise NotImplementedError
+    args = event.payload.get("args")
+    blocked = bool(event.payload.get("blocked"))
+    return ToolEvent(
+        id=f"seq-{event.seq}",
+        function=event.tool or "action",
+        arguments=dict(args) if isinstance(args, dict) else {},
+        result=json.dumps(event.result, sort_keys=True) if event.result is not None else "",
+        error=ToolCallError("permission", str(event.payload.get("reason") or "blocked")) if blocked else None,
+        span_id=span_id,
+        timestamp=at,
+        metadata={"seq": event.seq, "actor_uid": event.actor_uid, "target": event.target_id},
+    )
 
 
 def _info_event(event: Event, span_id: str | None, at: datetime) -> InfoEvent:
