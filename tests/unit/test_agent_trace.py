@@ -78,22 +78,20 @@ def _call(trace: AgentTrace, sealed_seq: int) -> None:
     )
 
 
-def test_model_call_inside_a_turn_carries_the_turn_and_deciding_phase() -> None:
+def test_model_call_inside_a_turn_is_in_the_deciding_phase() -> None:
     trace = AgentTrace(wall_clock=lambda: 5.0)
     with trace.turn("agent-main", 2):
         _call(trace, 11)
     assert trace.finish(last_sealed_seq=11).model_calls == (
-        ModelCall(
-            TurnRef("agent-main", 2), "deciding", "agent-main", "untrusted_agent", "brief", "reply", 11, 5.0
-        ),
+        ModelCall("deciding", "agent-main", "untrusted_agent", "brief", "reply", 11, 5.0),
     )
 
 
-def test_model_call_outside_any_turn_has_no_turn_and_no_phase() -> None:
+def test_model_call_outside_any_turn_has_no_phase() -> None:
     trace = AgentTrace()
     _call(trace, 0)
     (call,) = trace.finish(last_sealed_seq=0).model_calls
-    assert call.ref is None and call.phase is None
+    assert call.phase is None
 
 
 def test_mark_executing_switches_later_calls_in_the_turn_to_executing() -> None:

@@ -33,9 +33,8 @@ class TurnRecord:
 
 @dataclass(frozen=True)
 class ModelCall:
-    """One provider call as the gateway core made it."""
+    """One provider call as the gateway core made it; its turn is the lane of ``sealed_seq``."""
 
-    ref: TurnRef | None
     phase: Phase | None
     identity: str
     role: str
@@ -108,7 +107,6 @@ class AgentTrace:
     ) -> None:
         self._model_calls.append(
             ModelCall(
-                ref=self._bound,
                 phase=self._phase,
                 identity=identity,
                 role=role,
