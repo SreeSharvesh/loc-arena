@@ -1,7 +1,8 @@
 # Working on the agent-log stack
 
 Instructions for anyone (human or coding agent) adding to the per-agent Inspect logging feature.
-What to build is in `spec.md`; this file is how to build it.
+What to build is in `loc_arena/logging_/spec.md`; this file is how to build it. It is an internal process
+note, so it stays in `docs/`, which `scripts/make_public.py` keeps out of the public tree.
 
 ## Shape of the work
 
