@@ -73,3 +73,10 @@ def test_a_turn_span_outside_an_agent_span_raises() -> None:
     stray = SpanBeginEvent(id="turn:x:0", parent_id="episode:episode", name="turn 0", type="turn")
     with pytest.raises(ValueError, match="not a 'turn <n>' span under an agent span"):
         transcript_lanes._turn_owners([*_spans(), stray])
+
+
+def test_lane_order_is_world_then_configured_then_extra_agents_once_each() -> None:
+    order = transcript_lanes._lane_order(
+        ["agent-main", "serving-agent"], ["serving-agent", "child-1", "agent-main"]
+    )
+    assert order == (WORLD, "agent-main", "serving-agent", "child-1")

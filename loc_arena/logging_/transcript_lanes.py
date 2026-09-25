@@ -78,7 +78,7 @@ def _turn_owners(events: Sequence[InspectEvent]) -> dict[str, tuple[str, int]]:
 
 
 def _lane_order(configured: Sequence[str], seen: Sequence[str]) -> tuple[str, ...]:
-    raise NotImplementedError
+    return tuple(dict.fromkeys([WORLD, *configured, *seen]))
 
 
 def _blocks(event: InspectEvent) -> tuple[Block, ...]:
