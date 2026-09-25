@@ -160,6 +160,9 @@ def _sample_events(
             finished_turns.add(lane)
     events.extend(SpanEndEvent(id=_agent_span_id(uid), timestamp=now) for uid in opened_agents)
     events.append(SpanEndEvent(id=root_id, timestamp=now))
+    started = events[0].timestamp
+    for inspect_event in events:
+        inspect_event.working_start = (inspect_event.timestamp - started).total_seconds()
     return events
 
 

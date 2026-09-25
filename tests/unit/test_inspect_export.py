@@ -355,3 +355,22 @@ def test_a_block_reported_only_in_the_result_is_still_a_permission_error() -> No
     event = inspect_export._tool_event(spawn, None, at)
     assert event.error is not None
     assert (event.error.type, event.error.message) == ("permission", "team is pre-provisioned")
+
+
+def test_working_start_is_seconds_since_the_episode_began() -> None:
+    main = TurnRef("agent-main", 0)
+    readings = iter([1_700_000_010.0, 1_700_000_025.0])
+    trace = AgentTrace(wall_clock=lambda: next(readings))
+    with trace.turn("agent-main", 0):
+        trace.on_sealed_append(_tick(0))
+    episode = EpisodeExport("episode", trace.finish(last_sealed_seq=0), Path("unused"), ("agent-main",))
+    events = inspect_export._sample_events(episode, [_tick(0)], {0: main})
+    assert [(e.event, e.working_start) for e in events] == [
+        ("span_begin", 0.0),
+        ("span_begin", 0.0),
+        ("span_begin", 0.0),
+        ("info", 0.0),
+        ("span_end", 15.0),
+        ("span_end", 15.0),
+        ("span_end", 15.0),
+    ]
