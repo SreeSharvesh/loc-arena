@@ -107,9 +107,8 @@ def _cmd_view(args: argparse.Namespace) -> int:
         print(f"index: {index}")
     if bundle is not None:
         print(f"report: {bundle / 'report.html'}")
-        eval_files = sorted(bundle.glob("*.eval"))
-        if eval_files:
-            print(f"inspect view: inspect view {eval_files[0]}")
+        if config.agent_transcript and any(bundle.glob("*.eval")):
+            print(f"inspect view: inspect view --log-dir {bundle}")
     if not args.no_open:
         target = index if index is not None else (bundle / "report.html" if bundle else None)
         if target is not None:
