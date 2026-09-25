@@ -141,11 +141,12 @@ Writes `transcript.html` and `transcript.txt` into the run bundle from the bundl
 
 | Rule | Detail |
 |---|---|
-| layout (HTML) | one section per sample; a CSS grid with a row-label column plus one column per lane, one row per round |
+| layout (HTML) | one section per sample: a bounded scroll box holding a sticky header grid (lane names) and a body grid with a row-label column plus one column per lane, one row per round; both grids share one column template |
 | blocks (HTML) | one `<article>` per block, classed by kind; prompts collapsed in `<details>`; tool arguments highlighted as JSON with Pygments; blocked tool calls styled apart |
-| layout (text) | per sample, per lane in lane order, blocks in round order, each prefixed with its round label |
+| layout (text) | per sample, every lane in lane order (`(no activity)` when empty), blocks in round order, each prefixed with its round label; written as UTF-8 with `backslashreplace` |
 | self-contained | inline CSS only; no JavaScript, no external `src`/`href` |
 | ASCII only | the page is HTML-escaped, then non-ASCII characters become numeric entities, so model text cannot put literal dashes or unescaped markup in the file |
+| control characters | C0 controls (except tab and newline) and DEL become visible `\xNN` escapes in both outputs |
 | row labels | `-1` -> `before round 0`, `n` -> `round n` |
 
 | Function | Behaviour |
