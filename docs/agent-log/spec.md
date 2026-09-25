@@ -135,8 +135,24 @@ wall-clock rows would give one filled cell per row).
 | `_blocks(event)` | dispatches to the builders below; other event types give no blocks |
 | `_model_blocks(event)` / `_tool_block(event)` / `_info_block(event)` | one event -> its blocks |
 
-## Later modules (specified when reached)
+## M4 `loc_arena/logging_/transcript_render.py`
 
-| Module | Responsibility |
+Writes `transcript.html` and `transcript.txt` into the run bundle from the bundle's `.eval`.
+
+| Rule | Detail |
 |---|---|
-| M4 `transcript_render.py` | lanes -> `transcript.html` + `transcript.txt` |
+| layout (HTML) | one section per sample; a CSS grid with a row-label column plus one column per lane, one row per round |
+| blocks (HTML) | one `<article>` per block, classed by kind; prompts collapsed in `<details>`; tool arguments highlighted as JSON with Pygments; blocked tool calls styled apart |
+| layout (text) | per sample, per lane in lane order, blocks in round order, each prefixed with its round label |
+| self-contained | inline CSS only; no JavaScript, no external `src`/`href` |
+| ASCII only | the page is HTML-escaped, then non-ASCII characters become numeric entities, so model text cannot put literal dashes or unescaped markup in the file |
+| row labels | `-1` -> `before round 0`, `n` -> `round n` |
+
+| Function | Behaviour |
+|---|---|
+| `write_transcripts(eval_path, out_dir)` | reads the `.eval`, builds one transcript per sample (M3), writes both files, returns their paths |
+| `render_html(title, transcripts)` / `render_text(title, transcripts)` | the whole page / the whole text file |
+| `_grid_html(transcript)` | one sample's grid |
+| `_block_html(block)` | one block's `<article>` |
+| `_code_html(code)` | Pygments JSON highlighting |
+| `_row_label(row)` | the round label |
