@@ -495,6 +495,7 @@ def run_episode(
     monitor_provider: Any = None,
     run_instance_id: str | None = None,
     provider: Any = None,
+    calibration_provider: Any = None,
 ) -> Path:
     """Run one episode in ``mode``, grade it, and write the reproducible audit bundle; return its dir.
 
@@ -552,7 +553,9 @@ def run_episode(
     honest_ep = (
         episode
         if mode == "honest"
-        else _assemble_by_policy(honest_cfg, out_dir / "honest_cal", robust=False, provider=provider)
+        else _assemble_by_policy(
+            honest_cfg, out_dir / "honest_cal", robust=False, provider=calibration_provider
+        )
     )
     h_caller, h_sink = build_monitor_caller(honest_ep, honest_cfg, monitor_provider)
     e_caller, e_sink = build_monitor_caller(episode, cfg, monitor_provider)

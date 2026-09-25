@@ -92,3 +92,27 @@ def test_eval_episodes_refuses_an_untraced_episode(tmp_path: Path) -> None:
     untraced = SimpleNamespace(trace=None, sealed_path=tmp_path / "a")
     with pytest.raises(ValueError, match="episode was assembled without an agent trace"):
         harness._eval_episodes(LIVE, untraced, None)
+
+
+def test_run_episode_gives_the_honest_twin_its_own_provider(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: dict[str, Any] = {}
+
+    def capture(cfg: object, workdir: Path, *, robust: bool, provider: Any = None) -> SimpleNamespace:
+        seen[workdir.name] = provider
+        if workdir.name == "honest_cal":
+            raise _StopAfterAssemblyError
+        return SimpleNamespace()
+
+    monkeypatch.setattr(harness, "_assemble_by_policy", capture)
+    graded, twin = object(), object()
+    with pytest.raises(_StopAfterAssemblyError):
+        harness.run_episode(
+            LIVE, mode="attack", out_root=tmp_path, provider=graded, calibration_provider=twin
+        )
+    assert seen == {"episode": graded, "honest_cal": twin}
+
+
+class _StopAfterAssemblyError(Exception):
+    pass
