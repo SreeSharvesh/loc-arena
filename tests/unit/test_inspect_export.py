@@ -131,3 +131,7 @@ def test_an_untagged_event_inside_the_boundary_raises() -> None:
     trace = _traced({0: None}, boundary=2)
     with pytest.raises(UnassignedEventError, match=r"2 sealed events .* first untagged seqs: \[1, 2\]"):
         inspect_export._lanes_for(trace, [_tick(0), _tick(1), _tick(2)])
+
+
+def test_agent_span_id() -> None:
+    assert inspect_export._agent_span_id("serving-agent") == "agent:serving-agent"
