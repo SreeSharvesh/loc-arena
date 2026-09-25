@@ -13,6 +13,18 @@ from loc_arena.logging_.events import Event
 
 Phase = Literal["deciding", "executing"]
 
+_DUAL_RECORDED_FIELDS = (
+    "kind",
+    "actor_uid",
+    "actor_role",
+    "target_id",
+    "turn",
+    "tool",
+    "ts",
+    "payload",
+    "result",
+)
+
 
 @dataclass(frozen=True)
 class TurnRef:
@@ -134,4 +146,4 @@ class AgentTrace:
 
 
 def _same_logical_event(sealed: Event, mirror: Event) -> bool:
-    raise NotImplementedError
+    return all(getattr(sealed, name) == getattr(mirror, name) for name in _DUAL_RECORDED_FIELDS)

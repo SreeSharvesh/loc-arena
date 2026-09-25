@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 from loc_arena.logging_.agent_trace import AgentTrace, ModelCall, TurnRecord, TurnRef
-from loc_arena.logging_.events import Event
+from loc_arena.logging_.events import AppendOnlyLog, Event
+from loc_arena.scaffold.bus import Recorder
 
 
 def test_constructs_with_an_injected_wall_clock() -> None:
@@ -146,3 +148,33 @@ def test_mirror_events_are_tagged_with_the_bound_turn_or_world() -> None:
     finished = trace.finish(last_sealed_seq=-1)
     assert dict(finished.mirror_lane) == {0: TurnRef("agent-main", 1), 1: None}
     assert dict(finished.mirror_to_sealed) == {}
+
+
+def test_a_mirror_event_identical_to_the_last_sealed_event_is_its_twin() -> None:
+    trace = AgentTrace()
+    trace.on_sealed_append(_event(40, tool="write_file"))
+    trace.on_mirror_append(_event(9, tool="write_file"))
+    assert dict(trace.finish(last_sealed_seq=40).mirror_to_sealed) == {9: 40}
+
+
+def test_an_edge_prompt_copy_after_a_sealed_inference_record_has_no_twin() -> None:
+    trace = AgentTrace()
+    trace.on_sealed_append(_event(40, kind="inference_call", payload={"prompt_fp": "a", "in_mirror": True}))
+    trace.on_mirror_append(_event(9, kind="inference_call", payload={"prompt_fp": "a"}))
+    assert dict(trace.finish(last_sealed_seq=40).mirror_to_sealed) == {}
+
+
+def test_real_recorder_dual_writes_pair_up_through_the_log_subscribers(tmp_path: Path) -> None:
+    trace = AgentTrace()
+    sealed = AppendOnlyLog(tmp_path / "sealed.jsonl", "ep-trace", on_append=trace.on_sealed_append)
+    mirror = AppendOnlyLog(tmp_path / "mirror.jsonl", "ep-trace", on_append=trace.on_mirror_append)
+    recorder = Recorder("ep-trace", sealed, mirror, clock=lambda: 1.0)
+    recorder.sealed(actor_uid="agent-main", actor_role="orchestrator", kind="spawn", payload={})
+    with trace.turn("agent-main", 0):
+        recorder.dual(actor_uid="agent-main", actor_role="orchestrator", kind="action", payload={"a": 1})
+        recorder.dual(actor_uid="agent-main", actor_role="orchestrator", kind="action", payload={"a": 2})
+    finished = trace.finish(last_sealed_seq=sealed.last_seq)
+    main = TurnRef("agent-main", 0)
+    assert dict(finished.sealed_lane) == {0: None, 1: main, 2: main}
+    assert dict(finished.mirror_lane) == {0: main, 1: main}
+    assert dict(finished.mirror_to_sealed) == {0: 1, 1: 2}
