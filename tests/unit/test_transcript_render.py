@@ -101,7 +101,9 @@ def test_grid_has_a_head_per_lane_and_a_cell_per_lane_per_round(monkeypatch: pyt
         cells={("agent-main", 0): (Block("reply", "reply", "x"),)},
     )
     grid = transcript_render._grid_html(transcript)
-    assert "repeat(2, minmax(18rem, 1fr))" in grid
+    assert grid.startswith('<div class="scroll">')
+    assert grid.count("repeat(2, minmax(18rem, 1fr))") == 2
+    assert '<div class="grid head-row"' in grid
     assert grid.count('<div class="head">') == 3
     assert grid.count('<div class="cell">') == 4
     assert (

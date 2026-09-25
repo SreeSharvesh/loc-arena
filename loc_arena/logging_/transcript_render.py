@@ -21,8 +21,10 @@ body { font-family: system-ui, sans-serif; margin: 1.5rem; background: #f7f7f8; 
 h1 { font-size: 1.3rem; margin: 0 0 0.3rem; }
 header p { color: #555; margin: 0 0 1rem; }
 .sample { margin-bottom: 2rem; }
-.grid { display: grid; gap: 0.4rem; align-items: start; overflow-x: auto; }
-.head { font-weight: 600; position: sticky; top: 0; background: #e9e9ee; padding: 0.4rem 0.5rem; border-radius: 4px; }
+.scroll { overflow: auto; max-height: 85vh; border: 1px solid #d9d9e0; border-radius: 6px; background: #f7f7f8; }
+.grid { display: grid; gap: 0.4rem; align-items: start; padding: 0 0.4rem 0.4rem; }
+.head-row { position: sticky; top: 0; z-index: 1; padding-top: 0.4rem; background: #f7f7f8; }
+.head { font-weight: 600; background: #e9e9ee; padding: 0.4rem 0.5rem; border-radius: 4px; }
 .row-label { font-size: 0.8rem; color: #555; padding: 0.4rem 0.2rem; }
 .cell { display: flex; flex-direction: column; gap: 0.3rem; min-width: 0; }
 .block { background: #fff; border: 1px solid #d9d9e0; border-left: 4px solid #999; border-radius: 4px; padding: 0.35rem 0.5rem; font-size: 0.8rem; }
@@ -85,14 +87,18 @@ def render_text(title: str, transcripts: Sequence[SampleTranscript]) -> str:
 
 def _grid_html(transcript: SampleTranscript) -> str:
     columns = f"grid-template-columns: 8rem repeat({len(transcript.lanes)}, minmax(18rem, 1fr));"
-    parts = [f'<div class="grid" style="{columns}">', '<div class="head"></div>']
-    parts += [f'<div class="head">{html.escape(lane)}</div>' for lane in transcript.lanes]
+    heads = "".join(f'<div class="head">{html.escape(lane)}</div>' for lane in transcript.lanes)
+    parts = [
+        '<div class="scroll">',
+        f'<div class="grid head-row" style="{columns}"><div class="head"></div>{heads}</div>',
+        f'<div class="grid" style="{columns}">',
+    ]
     for row in transcript.rows:
         parts.append(f'<div class="row-label">{html.escape(_row_label(row))}</div>')
         for lane in transcript.lanes:
             blocks = "".join(_block_html(block) for block in transcript.cells.get((lane, row), ()))
             parts.append(f'<div class="cell">{blocks}</div>')
-    parts.append("</div>")
+    parts += ["</div>", "</div>"]
     return "\n".join(parts)
 
 
