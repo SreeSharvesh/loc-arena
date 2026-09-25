@@ -32,6 +32,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from loc_arena.config import RunConfig
+from loc_arena.logging_.agent_trace import AgentTrace
 from loc_arena.logging_.events import AppendOnlyLog, Event, fingerprint
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
@@ -315,6 +316,7 @@ class GatewayCore:
         monitor_covered: set[str] | None = None,
         logging_covered: set[str] | None = None,
         is_revoked: Callable[[str], bool] | None = None,
+        trace: AgentTrace | None = None,
     ) -> None:
         """Wire the core to its config, episode, sealed log, provider, turn secret, clock, and coverage sets.
 
@@ -339,6 +341,7 @@ class GatewayCore:
         self._monitor_covered = monitor_covered
         self._logging_covered = logging_covered
         self._is_revoked = is_revoked or (lambda _instance: False)
+        self._trace = trace
 
     def set_monitor_covered(self, covered: set[str] | None) -> None:
         """Set the deployed monitor coverage (the environment applies reduced_monitor_coverage)."""
