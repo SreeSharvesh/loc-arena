@@ -61,7 +61,7 @@ ignore = [
 "company/**/tests/**" = ["D100", "D101", "D102", "D103", "D104", "D105", "D107"]
 # The viewer embeds an HTML/CSS/JS template string where line length is not meaningful.
 "loc_arena/logging_/viewer.py" = ["E501"]
-"loc_arena/logging_/agent_trace.py" = ["D102", "D107"]
+"loc_arena/logging_/agent_trace.py" = ["D102", "D103", "D107"]
 "loc_arena/logging_/inspect_export.py" = ["D103"]
 
 [tool.ruff.lint.pydocstyle]

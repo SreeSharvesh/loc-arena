@@ -26,8 +26,7 @@ from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import DeterministicProvider, DirectTransport, GatewayCore, Provider
 from loc_arena.gateway.edge import GatewayEdge
 from loc_arena.identity import IdentityService
-from loc_arena.logging_.agent_trace import AgentTrace
-from loc_arena.logging_.events import AppendOnlyLog
+from loc_arena.logging_.agent_trace import open_episode_logs
 from loc_arena.npcs.coworker import run_coworker, run_world_activity
 from loc_arena.registry import get_scorer
 from loc_arena.scaffold.agent import Agent, ModelBrain, TurnMinter, TurnStatus
@@ -151,9 +150,9 @@ def assemble_model_episode(
     mirror_path = workdir / "events.mirror.jsonl"
     clk = _MutableClock()
     set_time = lambda v: setattr(clk, "t", v)  # noqa: E731 - a tiny deterministic clock setter
-    trace = AgentTrace() if config.agent_transcript else None
-    sealed = AppendOnlyLog(sealed_path, episode_id, on_append=trace.on_sealed_append if trace else None)
-    mirror = AppendOnlyLog(mirror_path, episode_id, on_append=trace.on_mirror_append if trace else None)
+    trace, sealed, mirror = open_episode_logs(
+        sealed_path, mirror_path, episode_id, traced=config.agent_transcript
+    )
     recorder = Recorder(episode_id, sealed, mirror, clock=clk)
     identity = IdentityService(_SECRET)
     core = GatewayCore(

@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
-from loc_arena.logging_.agent_trace import AgentTrace, ModelCall, TurnRecord, TurnRef
+from loc_arena.logging_.agent_trace import AgentTrace, ModelCall, TurnRecord, TurnRef, open_episode_logs
 from loc_arena.logging_.events import AppendOnlyLog, Event, EventKind
 from loc_arena.scaffold.bus import Recorder
 
@@ -217,3 +217,16 @@ def test_events_differing_only_in_parent_task_are_not_twins() -> None:
     trace.on_sealed_append(_event(40, parent_task="task-a"))
     trace.on_mirror_append(_event(9, parent_task="task-b"))
     assert dict(trace.finish(last_sealed_seq=40).mirror_to_sealed) == {}
+
+
+def test_open_episode_logs_subscribes_the_trace_only_when_traced(tmp_path: Path) -> None:
+    trace, sealed, _mirror = open_episode_logs(
+        tmp_path / "s.jsonl", tmp_path / "m.jsonl", "ep-trace", traced=True
+    )
+    assert trace is not None
+    sealed.append(_event(0))
+    assert dict(trace.finish(last_sealed_seq=0).sealed_lane) == {0: None}
+    untraced, _sealed, _ = open_episode_logs(
+        tmp_path / "s2.jsonl", tmp_path / "m2.jsonl", "ep-trace", traced=False
+    )
+    assert untraced is None

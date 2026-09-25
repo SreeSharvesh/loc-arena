@@ -51,6 +51,9 @@ write a scripted PR stamped `agent-main` outside any turn (`coworker.py:219-280`
 | `on_model_call(*, identity, role, model_input, output, sealed_seq)` | `GatewayCore.generate` / `batch_generate`, episode instance only, after the sealed record is written | records a `ModelCall` with the bound phase | - |
 | `finish(last_sealed_seq)` | harness, when assembly returns | returns a read-only `EpisodeTrace` snapshot; `last_sealed_seq` is the boundary for I3/I4, so anything observed later is post-episode by construction | `RuntimeError` if a turn is still bound |
 
+`open_episode_logs(sealed_path, mirror_path, episode_id, *, traced)` opens an episode's two logs and, when
+`traced`, an `AgentTrace` subscribed to both; both assemblers use it so the subscription cannot drift.
+
 ## Verified assumptions
 
 | Assumption | Evidence |
@@ -101,8 +104,14 @@ One `.eval` per run. Each episode becomes one sample: `episode` (the graded run)
 | `harness._write_bundle`, `_eval_episodes` | flag on: real `.eval` via `write_run_eval` (samples `episode`, `honest_cal`); flag off: the JSON placeholder |
 | `cli view` | prints `inspect view --log-dir <bundle>` when the `.eval` is real |
 
-Known limit: attribution needs the gateway core in the scaffold's process (`DirectTransport`). With `HttpxTransport`
-the core runs elsewhere, the hooks never fire, and inference records export as plain info events.
+Known limits:
+
+| Limit | Consequence |
+|---|---|
+| attribution needs the gateway core in the scaffold's process (`DirectTransport`) | with `HttpxTransport` the hooks never fire and inference records export as plain info events |
+| the orchestrator path (`scaffold/orchestrator.py`, tests only) builds agents without a trace | with the flag on, its events export in World |
+| `run_sweep` writes no bundles | no `.eval` for sweep episodes |
+| rerunning into an existing run directory | the old sealed seqs are untagged, so the export raises `UnassignedEventError` rather than exporting two runs as one |
 
 ## Later modules (specified when reached)
 

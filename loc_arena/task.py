@@ -33,8 +33,8 @@ from loc_arena.gateway.core import (
 from loc_arena.gateway.edge import GatewayEdge
 from loc_arena.identity import IdentityService
 from loc_arena.jobsvc import RogueWorker
-from loc_arena.logging_.agent_trace import AgentTrace, EpisodeTrace
-from loc_arena.logging_.events import AppendOnlyLog, fingerprint
+from loc_arena.logging_.agent_trace import EpisodeTrace, open_episode_logs
+from loc_arena.logging_.events import fingerprint
 from loc_arena.npcs.coworker import run_coworker, run_world_activity
 from loc_arena.registry import get_scorer
 from loc_arena.scaffold.bus import Recorder
@@ -267,9 +267,9 @@ def assemble_scripted_episode(
     sealed_path = workdir / "events.sealed.jsonl"
     mirror_path = workdir / "events.mirror.jsonl"
     clk = _MutableClock()
-    trace = AgentTrace() if config.agent_transcript else None
-    sealed = AppendOnlyLog(sealed_path, episode_id, on_append=trace.on_sealed_append if trace else None)
-    mirror = AppendOnlyLog(mirror_path, episode_id, on_append=trace.on_mirror_append if trace else None)
+    trace, sealed, mirror = open_episode_logs(
+        sealed_path, mirror_path, episode_id, traced=config.agent_transcript
+    )
     recorder = Recorder(episode_id, sealed, mirror, clock=clk)
     identity = IdentityService(_SECRET)  # real durable-credential issuance + rotation
     core = GatewayCore(

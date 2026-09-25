@@ -6,10 +6,11 @@ import time
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
+from pathlib import Path
 from types import MappingProxyType
 from typing import Literal
 
-from loc_arena.logging_.events import Event
+from loc_arena.logging_.events import AppendOnlyLog, Event
 
 Phase = Literal["deciding", "executing"]
 
@@ -134,3 +135,12 @@ class AgentTrace:
 
 def _same_logical_event(sealed: Event, mirror: Event) -> bool:
     return replace(sealed, seq=0, fp="") == replace(mirror, seq=0, fp="")
+
+
+def open_episode_logs(
+    sealed_path: Path, mirror_path: Path, episode_id: str, *, traced: bool
+) -> tuple[AgentTrace | None, AppendOnlyLog, AppendOnlyLog]:
+    trace = AgentTrace() if traced else None
+    sealed = AppendOnlyLog(sealed_path, episode_id, on_append=trace.on_sealed_append if trace else None)
+    mirror = AppendOnlyLog(mirror_path, episode_id, on_append=trace.on_mirror_append if trace else None)
+    return trace, sealed, mirror
