@@ -59,11 +59,37 @@ write a scripted PR stamped `agent-main` outside any turn (`coworker.py:219-280`
 | turns never nest | the orchestrator drains children after the root turn returns (`orchestrator.py:131-136`) |
 | inspect-ai 0.3.268 has agent spans, `ToolEvent.agent_span_id`, and log round-trip | probe on the locked version |
 
+## M2 `loc_arena/logging_/inspect_export.py`
+
+One `.eval` per run. Each episode becomes one sample: `episode` (the graded run) and, in attack mode,
+`honest_cal` (the calibration twin). `episodes[0]` is the graded episode and is the only one given `scores`.
+
+| Inspect element | Built from |
+|---|---|
+| `SpanBeginEvent(type="agent", name=<uid>, id="agent:<uid>")` | opened at the agent's first turn; all agent spans close at the end of the sample |
+| `SpanBeginEvent(type="turn", name="turn <n>", id="turn:<uid>:<n>", parent_id="agent:<uid>")` | one per turn that wrote at least one sealed event; opened and closed around that turn's contiguous run of sealed seqs |
+| `ModelEvent` | a sealed `inference_call` whose seq has a `ModelCall`; input is the post-injection prompt, output the reply, `metadata` holds identity, phase and seq |
+| `ToolEvent` | a sealed `action`; `function` = tool, `arguments` = payload args, `error` set when the action was blocked |
+| `InfoEvent(source=<kind>)` | every other sealed event (messages, spawns, NPC activity, monitor records after the boundary) |
+| event `span_id` | the turn span of the event's lane, or none for World |
+| event `timestamp` | a running wall clock: turn start, then each model call's `wall_ts`; World events reuse the last known time |
+
+| Function | Behaviour | Raises |
+|---|---|---|
+| `write_run_eval(path, *, run_name, config, mode, seed, scores, episodes)` | builds the `EvalLog` (spec + one sample per episode, status `success`) and writes it with `inspect_ai.log.write_eval_log`; returns `path` | - |
+| `_eval_spec(run_name, config, mode, seed, sample_count)` | task `loc_arena/<run_slug>`, `run_id` = run name, model = the `untrusted_agent` model id, metadata mode/seed/policy | - |
+| `_sample(episode, scores)` | reads the sealed log, assigns lanes, builds the events; metadata holds the agent order and the scores | `UnassignedEventError` via `_lanes_for` |
+| `_lanes_for(trace, sealed_events)` | seq <= `last_sealed_seq`: the trace's lane; later seqs: World | `UnassignedEventError` naming the untagged seqs inside the boundary |
+| `_sample_events(episode, sealed_events, lanes)` | walks sealed events in seq order and emits spans and events per the table above; agents outside `agent_order` (orchestrator children) follow in first-seen order | - |
+| `_model_event(call, span_id)` | one `ModelEvent`, model and role = the call's model role | - |
+| `_tool_event(event, span_id, at)` | one `ToolEvent` with id `seq-<n>` | - |
+| `_info_event(event, span_id, at)` | one `InfoEvent` whose data carries seq, actor, target, payload and result | - |
+| `_timestamp(wall)` | epoch seconds -> aware UTC `datetime` | - |
+
 ## Later modules (specified when reached)
 
 | Module | Responsibility |
 |---|---|
-| M2 `inspect_export.py` | `EpisodeTrace` + sealed log + scores -> Inspect `EvalLog`: a sample per episode, a `type="agent"` span per agent |
 | M3 `transcript_lanes.py` | Inspect sample -> ordered lanes of blocks |
 | M4 `transcript_render.py` | lanes -> `transcript.html` + `transcript.txt` |
 | M5 wiring | hooks above, bundle write, offline provider injection, `inspect view --log-dir` hint |
