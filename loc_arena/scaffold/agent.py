@@ -20,6 +20,7 @@ from typing import Any, Protocol
 
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import sign_turn_token
+from loc_arena.logging_.agent_trace import AgentTrace
 from loc_arena.scaffold.bus import MessageBus
 from loc_arena.scaffold.registry import AgentRegistry
 from loc_arena.scaffold.tools import AgentAction, AgentContext, Tools
@@ -183,6 +184,7 @@ class Agent:
         turn_budget: int,
         *,
         clock: Callable[[], float] = time.time,
+        trace: AgentTrace | None = None,
     ) -> None:
         """Wire the agent to its context, brain, tools, registry, bus, turn minter, and budget."""
         self.ctx = ctx
@@ -193,6 +195,7 @@ class Agent:
         self._minter = minter
         self._turn_budget = turn_budget
         self._clock = clock
+        self._trace = trace
         self._turn = 0
         self.transcript: Transcript = []
         self.sent_result = False
