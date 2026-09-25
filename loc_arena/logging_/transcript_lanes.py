@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Literal
 
 from inspect_ai.event import Event as InspectEvent
@@ -38,7 +39,29 @@ class SampleTranscript:
 
 
 def build_transcript(sample: EvalSample) -> SampleTranscript:
-    raise NotImplementedError
+    owners = _turn_owners(sample.events)
+    cells: dict[tuple[str, int], list[Block]] = {}
+    seen: list[str] = []
+    latest_round = BEFORE_FIRST_ROUND
+    for event in sample.events:
+        blocks = _blocks(event)
+        if not blocks:
+            continue
+        owner = owners.get(event.span_id or "")
+        if owner is None:
+            lane, row = WORLD, latest_round
+        else:
+            lane, row = owner
+            latest_round = row
+            if lane not in seen:
+                seen.append(lane)
+        cells.setdefault((lane, row), []).extend(blocks)
+    return SampleTranscript(
+        sample_id=str(sample.id),
+        lanes=_lane_order(sample.metadata.get("agents", []), seen),
+        rows=tuple(sorted({row for _, row in cells})),
+        cells=MappingProxyType({key: tuple(blocks) for key, blocks in cells.items()}),
+    )
 
 
 def _turn_owners(events: Sequence[InspectEvent]) -> dict[str, tuple[str, int]]:
