@@ -11,7 +11,7 @@ from pygments import highlight
 from pygments.formatters import HtmlFormatter
 from pygments.lexers import JsonLexer
 
-from loc_arena.logging_.transcript_lanes import Block, SampleTranscript, build_transcript
+from loc_arena.logging_.transcript_lanes import BEFORE_FIRST_ROUND, Block, SampleTranscript, build_transcript
 
 TRANSCRIPT_HTML = "transcript.html"
 TRANSCRIPT_TEXT = "transcript.txt"
@@ -112,4 +112,4 @@ def _code_html(code: str) -> str:
 
 
 def _row_label(row: int) -> str:
-    raise NotImplementedError
+    return "before round 0" if row == BEFORE_FIRST_ROUND else f"round {row}"

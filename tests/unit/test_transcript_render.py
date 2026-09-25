@@ -130,3 +130,7 @@ def test_code_is_highlighted_as_json_inside_the_code_class() -> None:
     rendered = transcript_render._code_html('{"path": "a.py"}')
     assert rendered.startswith('<div class="code">')
     assert "a.py" in rendered and '<span class="' in rendered
+
+
+def test_row_labels() -> None:
+    assert [transcript_render._row_label(r) for r in (-1, 0, 7)] == ["before round 0", "round 0", "round 7"]
