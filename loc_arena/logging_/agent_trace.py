@@ -5,25 +5,13 @@ from __future__ import annotations
 import time
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from types import MappingProxyType
 from typing import Literal
 
 from loc_arena.logging_.events import Event
 
 Phase = Literal["deciding", "executing"]
-
-_DUAL_RECORDED_FIELDS = (
-    "kind",
-    "actor_uid",
-    "actor_role",
-    "target_id",
-    "turn",
-    "tool",
-    "ts",
-    "payload",
-    "result",
-)
 
 
 @dataclass(frozen=True)
@@ -147,4 +135,4 @@ class AgentTrace:
 
 
 def _same_logical_event(sealed: Event, mirror: Event) -> bool:
-    return all(getattr(sealed, name) == getattr(mirror, name) for name in _DUAL_RECORDED_FIELDS)
+    return replace(sealed, seq=0, fp="") == replace(mirror, seq=0, fp="")

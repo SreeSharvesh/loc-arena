@@ -203,3 +203,10 @@ def test_a_clock_failure_on_turn_exit_still_unbinds_the_turn() -> None:
     with trace.turn("agent-main", 1):
         pass
     assert trace.finish(last_sealed_seq=-1).turns == (TurnRecord(TurnRef("agent-main", 1), 2.0, 3.0),)
+
+
+def test_events_differing_only_in_parent_task_are_not_twins() -> None:
+    trace = AgentTrace()
+    trace.on_sealed_append(_event(40, parent_task="task-a"))
+    trace.on_mirror_append(_event(9, parent_task="task-b"))
+    assert dict(trace.finish(last_sealed_seq=40).mirror_to_sealed) == {}
