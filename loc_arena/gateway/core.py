@@ -468,6 +468,10 @@ class GatewayCore:
             issued_for_sanctioned_request=sanctioned,
             origin_job_id=req.origin_job_id,
         )
+        if self._trace is not None:
+            self._trace.on_model_call(
+                identity=identity, role=req.role, model_input=model_input, output=result.text, sealed_seq=seq
+            )
         return GenerateResponse(
             text=result.text,
             turn_id=turn_id,
