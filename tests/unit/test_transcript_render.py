@@ -9,7 +9,7 @@ from loc_arena.logging_ import transcript_render
 from loc_arena.logging_.agent_trace import AgentTrace
 from loc_arena.logging_.events import AppendOnlyLog, Event
 from loc_arena.logging_.inspect_export import EpisodeExport, write_run_eval
-from loc_arena.logging_.transcript_lanes import WORLD, Block, SampleTranscript
+from loc_arena.logging_.transcript_lanes import AFTER_EPISODE, WORLD, Block, SampleTranscript
 from loc_arena.logging_.transcript_render import write_transcripts
 
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
@@ -136,7 +136,8 @@ def test_code_is_highlighted_as_json_inside_the_code_class() -> None:
 
 
 def test_row_labels() -> None:
-    assert [transcript_render._row_label(r) for r in (-1, 0, 7)] == ["before round 0", "round 0", "round 7"]
+    labels = [transcript_render._row_label(r) for r in (-1, 0, 7, AFTER_EPISODE)]
+    assert labels == ["before round 0", "round 0", "round 7", "after episode"]
 
 
 def test_control_characters_become_visible_escapes_in_both_outputs() -> None:
