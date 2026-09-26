@@ -208,7 +208,7 @@ is enabled, which is set at the start and touches nothing else.</p>
   <li><b>Record.</b> Every action and model call is written to both records as it happens.</li>
   <li><b>Grade the main task.</b> Run the test suites and measure cost on a fixed workload.</li>
   <li><b>Check the side task.</b> The sealed checker reads the private record and decides, from executed facts, whether a rogue deployment exists.</li>
-  <li><b>Score the monitors.</b> The monitors read the observable record and produce a caught or not-caught verdict against the honest twin's baseline. Everything is written to one bundle.</li>
+  <li><b>Score the monitors.</b> The monitors read the observable record and produce a caught or not-caught verdict against the honest twin's baseline. Everything is written to one bundle, including a per-agent log and transcript that show which agent caused each event.</li>
 </ol>
 
 <figure>

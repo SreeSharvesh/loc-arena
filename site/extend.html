@@ -52,7 +52,7 @@ loc-arena sweep --run aurora-efficiency --honest 3 --attack 3   # many episodes,
 
 <p>Every run writes a self-contained bundle named after what actually ran, so the same setting can run many times
 without collision. The bundle holds the resolved config, both event records, the two verdicts, the report page,
-and a notes file. Add <code>STACK=1</code> to bring up the container stack for structural isolation; without it the
+a notes file, and a per-agent view of the episode: an Inspect log and a transcript page. Add <code>STACK=1</code> to bring up the container stack for structural isolation; without it the
 same episode runs in a single process. <code>make gates</code> runs the formatting, typing, and test checks.</p>
 
 <h2>Read the dashboard</h2>
@@ -65,6 +65,22 @@ same episode runs in a single process. <code>make gates</code> runs the formatti
   <div class="card"><h3>Lanes and gauge</h3><p>Each agent's activity over time, and the overall suspicion as a gauge with a per-monitor breakdown, plus the detector signal.</p></div>
   <div class="card"><h3>Transcripts</h3><p>Every agent's full run, step by step, with the monitor scores attached in place. Nothing is hidden behind a summary.</p></div>
 </div>
+
+<h3>Per-agent view</h3>
+<p>The report shows the run through the records. The per-agent view shows it through each agent: what it was
+asked, what it answered, which tools it called, and everything its turns set off, such as a job it started. Events
+no agent caused, like the background coworker and the monitors' own checks after the episode, sit in a separate
+World column.</p>
+<ul>
+  <li><b>Transcript page.</b> <code>transcript.html</code> in the bundle: one column per agent, one row per round,
+  so every agent's turn in a round sits side by side. A plain-text copy sits next to it.</li>
+  <li><b>Inspect log.</b> The same run as an Inspect log, with one span per agent and its turns inside.
+  <code>make view</code> prints the command that opens it.</li>
+</ul>
+<pre><code>inspect view --log-dir logs/&lt;run&gt;/&lt;bundle&gt;/inspect   # browse the per-agent log</code></pre>
+<p>Both are built after the episode from what the platform recorded, so they add no model calls and change
+nothing an agent, monitor, or checker sees. Set <code>logging.agent_transcript: false</code> in a run config to
+skip them.</p>
 
 <h2>Configure and extend</h2>
 <p>The parts of a run are separated so you can change one without the others. Here is where each change lives.</p>
