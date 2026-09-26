@@ -13,12 +13,15 @@ from loc_arena.logging_.transcript_lanes import WORLD, build_transcript
 from tests.integration._live_support import LANDING_QUEUES, QueuedProvider
 
 LIVE_TRACED = dataclasses.replace(
-    load_run_config("configs/aurora-efficiency.deterministic.yaml"), policy="model", agent_transcript=True
+    load_run_config("configs/aurora-efficiency.deterministic.yaml"),
+    policy="model",
+    agent_transcript=True,
 )
 
 
 def test_a_live_attack_run_writes_a_real_eval_with_a_span_per_agent(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     bundle = run_episode(
@@ -44,7 +47,8 @@ def test_a_live_attack_run_writes_a_real_eval_with_a_span_per_agent(
 
 
 def test_the_exported_episode_lays_out_as_one_lane_per_agent_by_round(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     bundle = run_episode(
@@ -69,7 +73,8 @@ def test_the_exported_episode_lays_out_as_one_lane_per_agent_by_round(
 
 
 def test_a_traced_run_bundle_has_an_ascii_self_contained_transcript(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     bundle = run_episode(

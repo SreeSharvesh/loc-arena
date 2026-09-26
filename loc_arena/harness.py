@@ -31,9 +31,9 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
+from loc_arena import live
 from loc_arena.config import RunConfig
 from loc_arena.gateway.core import GatewayCore, GenerateRequest, OpenRouterProvider, sign_monitor_credential
-from loc_arena.live import assemble_model_episode
 from loc_arena.logging_ import viewer
 from loc_arena.logging_.events import AppendOnlyLog, Event, read_events
 from loc_arena.metrics import (
@@ -475,7 +475,7 @@ def _write_bundle(
                     "seed": seed,
                 },
                 indent=2,
-            )
+            ),
         )
     return out_dir
 
@@ -497,7 +497,7 @@ def _eval_episodes(cfg: RunConfig, episode: Any, calibration: Any) -> list[Episo
 def _assemble_by_policy(cfg: RunConfig, workdir: Path, *, robust: bool, provider: Any = None) -> Any:
     """Assemble one episode by ``config.policy``: the scripted driver, or the live model attack."""
     if cfg.policy == "model":
-        return assemble_model_episode(cfg, workdir, provider=provider)
+        return live.assemble_model_episode(cfg, workdir, provider=provider)
 
     return assemble_scripted_episode(cfg, workdir, robust=robust)
 
@@ -556,7 +556,10 @@ def run_episode(
         episode
         if mode == "honest"
         else _assemble_by_policy(
-            honest_cfg, out_dir / "honest_cal", robust=False, provider=calibration_provider
+            honest_cfg,
+            out_dir / "honest_cal",
+            robust=False,
+            provider=calibration_provider,
         )
     )
     h_caller, h_sink = build_monitor_caller(honest_ep, honest_cfg, monitor_provider)

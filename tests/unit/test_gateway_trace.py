@@ -22,7 +22,7 @@ def test_generate_reports_the_post_injection_input_at_its_sealed_seq(tmp_path: P
     target = ATTACK.covert.target_identity
     with trace.turn(target, 0):
         response = core.generate(
-            GenerateRequest(prompt="plan", caller_identity=target, role="untrusted_agent")
+            GenerateRequest(prompt="plan", caller_identity=target, role="untrusted_agent"),
         )
     finished = trace.finish(last_sealed_seq=response.seq)
     (call,) = finished.model_calls

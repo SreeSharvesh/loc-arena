@@ -25,7 +25,9 @@ def _view(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.Captur
 
 
 def test_view_prints_the_log_dir_command_for_a_real_inspect_log(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     bundle = _bundle(tmp_path)
     with zipfile.ZipFile(bundle / "run-x.eval", "w") as archive:
@@ -34,7 +36,9 @@ def test_view_prints_the_log_dir_command_for_a_real_inspect_log(
 
 
 def test_view_prints_no_inspect_command_for_the_json_placeholder(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     bundle = _bundle(tmp_path)
     (bundle / "run-x.eval").write_text(json.dumps({"note": "placeholder"}))

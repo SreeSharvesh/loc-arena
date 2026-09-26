@@ -76,7 +76,7 @@ class AgentTrace:
         if self._bound is not None:
             raise RuntimeError(
                 f"cannot bind {agent_uid} turn {turn}: "
-                f"{self._bound.agent_uid} turn {self._bound.turn} is still running"
+                f"{self._bound.agent_uid} turn {self._bound.turn} is still running",
             )
         ref = TurnRef(agent_uid, turn)
         started = self._wall_clock()
@@ -104,7 +104,13 @@ class AgentTrace:
             self._last_sealed = None
 
     def on_model_call(
-        self, *, identity: str, role: str, model_input: str, output: str, sealed_seq: int
+        self,
+        *,
+        identity: str,
+        role: str,
+        model_input: str,
+        output: str,
+        sealed_seq: int,
     ) -> None:
         self._model_calls.append(
             ModelCall(
@@ -115,13 +121,13 @@ class AgentTrace:
                 output=output,
                 sealed_seq=sealed_seq,
                 wall_ts=self._wall_clock(),
-            )
+            ),
         )
 
     def finish(self, last_sealed_seq: int) -> EpisodeTrace:
         if self._bound is not None:
             raise RuntimeError(
-                f"episode ended while {self._bound.agent_uid} turn {self._bound.turn} was still bound"
+                f"episode ended while {self._bound.agent_uid} turn {self._bound.turn} was still bound",
             )
         return EpisodeTrace(
             turns=tuple(self._turns),
@@ -138,7 +144,11 @@ def _same_logical_event(sealed: Event, mirror: Event) -> bool:
 
 
 def open_episode_logs(
-    sealed_path: Path, mirror_path: Path, episode_id: str, *, traced: bool
+    sealed_path: Path,
+    mirror_path: Path,
+    episode_id: str,
+    *,
+    traced: bool,
 ) -> tuple[AgentTrace | None, AppendOnlyLog, AppendOnlyLog]:
     trace = AgentTrace() if traced else None
     sealed = AppendOnlyLog(sealed_path, episode_id, on_append=trace.on_sealed_append if trace else None)

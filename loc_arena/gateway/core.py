@@ -479,7 +479,11 @@ class GatewayCore:
         )
         if self._trace is not None:
             self._trace.on_model_call(
-                identity=identity, role=req.role, model_input=model_input, output=result.text, sealed_seq=seq
+                identity=identity,
+                role=req.role,
+                model_input=model_input,
+                output=result.text,
+                sealed_seq=seq,
             )
         return GenerateResponse(
             text=result.text,

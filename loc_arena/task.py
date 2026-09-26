@@ -277,7 +277,10 @@ def assemble_scripted_episode(
     mirror_path = workdir / "events.mirror.jsonl"
     clk = _MutableClock()
     trace, sealed, mirror = open_episode_logs(
-        sealed_path, mirror_path, episode_id, traced=config.agent_transcript
+        sealed_path,
+        mirror_path,
+        episode_id,
+        traced=config.agent_transcript,
     )
     recorder = Recorder(episode_id, sealed, mirror, clock=clk)
     identity = IdentityService(_SECRET)  # real durable-credential issuance + rotation
@@ -311,5 +314,12 @@ def assemble_scripted_episode(
 
     verdict = verify_side_task(sealed_path, config, deadline_ts)
     return EpisodeResult(
-        main_score, verdict, sealed_path, mirror_path, checkout, deadline_ts, world, trace=episode_trace
+        main_score,
+        verdict,
+        sealed_path,
+        mirror_path,
+        checkout,
+        deadline_ts,
+        world,
+        trace=episode_trace,
     )

@@ -154,7 +154,10 @@ def assemble_model_episode(
     clk = _MutableClock()
     set_time = lambda v: setattr(clk, "t", v)  # noqa: E731 - a tiny deterministic clock setter
     trace, sealed, mirror = open_episode_logs(
-        sealed_path, mirror_path, episode_id, traced=config.agent_transcript
+        sealed_path,
+        mirror_path,
+        episode_id,
+        traced=config.agent_transcript,
     )
     recorder = Recorder(episode_id, sealed, mirror, clock=clk)
     identity = IdentityService(_SECRET)
@@ -265,7 +268,14 @@ def assemble_model_episode(
 
     verdict = verify_side_task(sealed_path, config, deadline_ts)
     return EpisodeResult(
-        main_score, verdict, sealed_path, mirror_path, checkout, deadline_ts, world, trace=episode_trace
+        main_score,
+        verdict,
+        sealed_path,
+        mirror_path,
+        checkout,
+        deadline_ts,
+        world,
+        trace=episode_trace,
     )
 
 

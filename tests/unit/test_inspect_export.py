@@ -30,7 +30,8 @@ def _episode(sample_id: str, tmp_path: Path) -> EpisodeExport:
 
 
 def test_write_run_eval_writes_one_sample_per_episode_and_scores_only_the_first(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def fake_spec(run_name: str, config: object, mode: str, seed: int, sample_count: int) -> EvalSpec:
         return EvalSpec(
@@ -78,12 +79,13 @@ def _write_sealed(path: Path, count: int) -> None:
     log = AppendOnlyLog(path, "ep-export")
     for seq in range(count):
         log.append(
-            Event(episode_id="ep-export", seq=seq, ts=0.0, actor_uid="world", actor_role="npc", kind="tick")
+            Event(episode_id="ep-export", seq=seq, ts=0.0, actor_uid="world", actor_role="npc", kind="tick"),
         )
 
 
 def test_sample_reads_the_sealed_log_assigns_lanes_and_builds_events(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     episode = _episode("episode", tmp_path)
     _write_sealed(episode.sealed_path, 3)
@@ -94,7 +96,9 @@ def test_sample_reads_the_sealed_log_assigns_lanes_and_builds_events(
         return {0: None, 1: None, 2: None}
 
     def fake_events(
-        ep: EpisodeExport, sealed_events: list[Event], lanes: Mapping[int, TurnRef | None]
+        ep: EpisodeExport,
+        sealed_events: list[Event],
+        lanes: Mapping[int, TurnRef | None],
     ) -> list[InspectEvent]:
         seen["lanes"] = dict(lanes)
         return [InfoEvent(data="marker")]
@@ -220,7 +224,7 @@ def _world(seq_log: AppendOnlyLog, kind: EventKind = "tick") -> None:
             actor_uid="world",
             actor_role="npc",
             kind=kind,
-        )
+        ),
     )
 
 
@@ -240,21 +244,36 @@ def test_a_traced_episode_exports_a_span_tree_with_one_agent_span_per_agent(tmp_
                 actor_uid="agent-main",
                 actor_role="untrusted",
                 kind="inference_call",
-            )
+            ),
         )
         trace.on_model_call(
-            identity="agent-main", role="untrusted_agent", model_input="p", output="r", sealed_seq=record.seq
+            identity="agent-main",
+            role="untrusted_agent",
+            model_input="p",
+            output="r",
+            sealed_seq=record.seq,
         )
         trace.mark_executing()
         recorder.dual(
-            actor_uid="agent-main", actor_role="orchestrator", kind="action", tool="read_file", payload={}
+            actor_uid="agent-main",
+            actor_role="orchestrator",
+            kind="action",
+            tool="read_file",
+            payload={},
         )
         recorder.dual(
-            actor_uid="agent-main", actor_role="orchestrator", kind="message", payload={"body": "go"}
+            actor_uid="agent-main",
+            actor_role="orchestrator",
+            kind="message",
+            payload={"body": "go"},
         )
     with trace.turn("serving-agent", 0):
         recorder.dual(
-            actor_uid="serving-agent", actor_role="worker", kind="action", tool="run_tests", payload={}
+            actor_uid="serving-agent",
+            actor_role="worker",
+            kind="action",
+            tool="run_tests",
+            payload={},
         )
     _world(sealed)
     episode_trace = trace.finish(last_sealed_seq=sealed.last_seq)
@@ -272,7 +291,9 @@ def test_a_traced_episode_exports_a_span_tree_with_one_agent_span_per_agent(tmp_
     log = read_eval_log(str(path))
     assert log.samples is not None
     events = log.samples[0].events
-    assert [(e.event, e.span_id if e.event not in ("span_begin", "span_end") else e.id) for e in events] == [
+    assert [
+        (e.event, e.id if isinstance(e, (SpanBeginEvent, SpanEndEvent)) else e.span_id) for e in events
+    ] == [
         ("span_begin", "episode:episode"),
         ("info", "episode:episode"),
         ("span_begin", "agent:agent-main"),
@@ -389,7 +410,9 @@ def test_timestamps_follow_turn_bounds_and_model_calls_and_world_reuses_the_last
     episode = EpisodeExport("episode", trace.finish(last_sealed_seq=3), Path("unused"), ("agent-main",))
     inference = dataclasses.replace(_tick(1), kind="inference_call")
     events = inspect_export._sample_events(
-        episode, [_tick(0), inference, _tick(2), _tick(3)], {0: main, 1: main, 2: main, 3: None}
+        episode,
+        [_tick(0), inference, _tick(2), _tick(3)],
+        {0: main, 1: main, 2: main, 3: None},
     )
     offsets = [(e.event, e.working_start) for e in events if e.event != "span_begin"]
     assert offsets == [
