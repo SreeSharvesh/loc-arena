@@ -32,6 +32,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from loc_arena.config import RunConfig
+from loc_arena.logging_.agent_trace import AgentTrace
 from loc_arena.logging_.events import AppendOnlyLog, Event, fingerprint
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
@@ -324,6 +325,7 @@ class GatewayCore:
         monitor_covered: set[str] | None = None,
         logging_covered: set[str] | None = None,
         is_revoked: Callable[[str], bool] | None = None,
+        trace: AgentTrace | None = None,
     ) -> None:
         """Wire the core to its config, episode, sealed log, provider, turn secret, clock, and coverage sets.
 
@@ -348,6 +350,7 @@ class GatewayCore:
         self._monitor_covered = monitor_covered
         self._logging_covered = logging_covered
         self._is_revoked = is_revoked or (lambda _instance: False)
+        self._trace = trace
 
     def set_monitor_covered(self, covered: set[str] | None) -> None:
         """Set the deployed monitor coverage (the environment applies reduced_monitor_coverage)."""
@@ -474,6 +477,10 @@ class GatewayCore:
             issued_for_sanctioned_request=sanctioned,
             origin_job_id=req.origin_job_id,
         )
+        if self._trace is not None:
+            self._trace.on_model_call(
+                identity=identity, role=req.role, model_input=model_input, output=result.text, sealed_seq=seq
+            )
         return GenerateResponse(
             text=result.text,
             turn_id=turn_id,
@@ -514,6 +521,14 @@ class GatewayCore:
                 credential_kind="batch_id",
                 ts=ts,
             )
+            if self._trace is not None:
+                self._trace.on_model_call(
+                    identity=req.caller_identity,
+                    role=req.role,
+                    model_input=prompt,
+                    output=result.text,
+                    sealed_seq=seq,
+                )
             texts.append(result.text)
             seqs.append(seq)
         return BatchGenerateResponse(texts=texts, batch_id=batch_id, seqs=seqs)

@@ -33,7 +33,8 @@ from loc_arena.gateway.core import (
 from loc_arena.gateway.edge import GatewayEdge
 from loc_arena.identity import IdentityService
 from loc_arena.jobsvc import RogueWorker
-from loc_arena.logging_.events import AppendOnlyLog, fingerprint
+from loc_arena.logging_.agent_trace import EpisodeTrace, open_episode_logs
+from loc_arena.logging_.events import fingerprint
 from loc_arena.npcs.coworker import run_coworker, run_world_activity
 from loc_arena.registry import get_scorer
 from loc_arena.scaffold.bus import Recorder
@@ -93,6 +94,7 @@ class EpisodeResult:
     checkout: Path
     deadline_ts: float
     world: SeededWorld
+    trace: EpisodeTrace | None = None
 
 
 def _honest_work(edge: GatewayEdge, clk: _MutableClock) -> None:
@@ -274,8 +276,9 @@ def assemble_scripted_episode(
     sealed_path = workdir / "events.sealed.jsonl"
     mirror_path = workdir / "events.mirror.jsonl"
     clk = _MutableClock()
-    sealed = AppendOnlyLog(sealed_path, episode_id)
-    mirror = AppendOnlyLog(mirror_path, episode_id)
+    trace, sealed, mirror = open_episode_logs(
+        sealed_path, mirror_path, episode_id, traced=config.agent_transcript
+    )
     recorder = Recorder(episode_id, sealed, mirror, clock=clk)
     identity = IdentityService(_SECRET)  # real durable-credential issuance + rotation
     core = GatewayCore(
@@ -286,6 +289,7 @@ def assemble_scripted_episode(
         turn_secret=_SECRET,
         clock=clk,
         is_revoked=identity.is_revoked,
+        trace=trace,
     )
     edge = GatewayEdge(episode_id, DirectTransport(core), mirror, clock=clk)
 
@@ -303,6 +307,9 @@ def assemble_scripted_episode(
     _honest_work(edge, clk)
     if config.covert.enabled:
         _covert_chain(core, edge, recorder, identity, config, clk, deadline_ts, robust=robust)
+    episode_trace = trace.finish(sealed.last_seq) if trace else None
 
     verdict = verify_side_task(sealed_path, config, deadline_ts)
-    return EpisodeResult(main_score, verdict, sealed_path, mirror_path, checkout, deadline_ts, world)
+    return EpisodeResult(
+        main_score, verdict, sealed_path, mirror_path, checkout, deadline_ts, world, trace=episode_trace
+    )
