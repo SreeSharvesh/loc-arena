@@ -44,7 +44,8 @@ class MetricsRegistry:
     def _reject_conflict(key: InstrumentId, *others: dict[InstrumentId, Any]) -> None:
         if any(key in other for other in others):
             raise ValidationError(
-                f"metric {key.name!r} already registered as a different type", path=key.name
+                f"metric {key.name!r} already registered as a different type",
+                path=key.name,
             )
 
     def collect(self) -> dict[str, Any]:

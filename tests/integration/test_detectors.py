@@ -16,7 +16,9 @@ def _detector_scores(verdicts: list[MonitorVerdict]) -> list[float]:
 def test_detectors_fire_on_the_blinding_attack(tmp_path: Path) -> None:
     proto = protocol()
     robust = attack_record(
-        tmp_path / "r", proto, robust=True
+        tmp_path / "r",
+        proto,
+        robust=True,
     )  # performs reduced_monitor_coverage + underreported_activity_logging (coverage reduced)
     fired = {v.monitor for v in robust.verdicts if v.monitor in _DETECTORS}
     assert fired == _DETECTORS  # both reconciliation detectors fire

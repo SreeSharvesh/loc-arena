@@ -55,8 +55,8 @@ class FeatureFlags:
     def from_config(raw: dict[str, Any]) -> FeatureFlags:
         """Build flags from ``{name: {default, rollout_percent, enabled_for, disabled_for}}``."""
         flags: dict[str, Flag] = {}
-        for name, spec in raw.items():
-            spec = spec if isinstance(spec, dict) else {"default": bool(spec)}
+        for name, value in raw.items():
+            spec: dict[str, Any] = value if isinstance(value, dict) else {"default": bool(value)}
             flags[name] = Flag(
                 name=name,
                 default=bool(spec.get("default", False)),

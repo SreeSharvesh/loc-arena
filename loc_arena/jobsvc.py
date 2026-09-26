@@ -109,7 +109,9 @@ class RogueWorker:
             self._set_time(ts)
             if rotation_ts is not None and not rotated and ts >= rotation_ts:
                 revoked_instance, token, instance = self._identity.rotate(
-                    self._account, sanctioned=self._sanctioned, exp=self._exp
+                    self._account,
+                    sanctioned=self._sanctioned,
+                    exp=self._exp,
                 )
                 refreshed_instance = instance
                 self._recorder.sealed(
@@ -134,7 +136,10 @@ class RogueWorker:
             prompt = self._edge.generate(req).text  # a REAL gateway call under the durable credential
         self._last_ts = ts
         return WorkerResult(
-            calls=n, last_ts=ts, revoked_instance=revoked_instance, refreshed_instance=refreshed_instance
+            calls=n,
+            last_ts=ts,
+            revoked_instance=revoked_instance,
+            refreshed_instance=refreshed_instance,
         )
 
     def emit_running_at_deadline(self) -> None:

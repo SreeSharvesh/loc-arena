@@ -77,7 +77,7 @@ class GatewayEdge:
                     "output_fp": fingerprint(output),
                     "model_role": model_role,
                 },
-            )
+            ),
         )
 
     def generate(self, req: GenerateRequest) -> GenerateResponse:

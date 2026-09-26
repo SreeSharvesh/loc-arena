@@ -21,7 +21,7 @@ What to build is in `spec.md`; this file is how to build it.
 |---|---|
 | No comments inside functions | no docstrings or `#` comments (including `# type: ignore`) in function bodies, tests included; contracts live in `spec.md`, names carry meaning |
 | Ruff docstring rules | each new module gets a per-file ignore in `pyproject.toml` for the docstring rules it would trip (`D102`/`D103`/`D107`) |
-| Typing | mypy strict; `from __future__ import annotations`; frozen dataclasses for data |
+| Typing | ty (plus ruff `ANN` for full annotations); `from __future__ import annotations`; frozen dataclasses for data |
 | Inspect import | the harness imports the exporter and renderer modules lazily, inside `_write_bundle` (`inspect_ai` loads ~1200 modules) |
 
 ## Do not
@@ -39,6 +39,6 @@ What to build is in `spec.md`; this file is how to build it.
 make gates
 ```
 
-Baseline at the end of the stack: ruff and format clean, mypy clean, pytest 907 passed, 4 skipped, 14 xfailed
+Baseline at the end of the stack: ruff and format clean, ty clean, pytest 907 passed, 4 skipped, 14 xfailed
 (`main` before the stack: 818 passed). The sealed and mirror logs must stay byte-identical with the flag on and
 off (`tests/integration/test_live_agent_trace.py`, `test_scripted_agent_trace.py`).

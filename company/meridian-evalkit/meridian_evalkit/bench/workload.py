@@ -40,6 +40,6 @@ def build_workload(
                 max_tokens=max_tokens,
                 priority=Priority.NORMAL,
                 arrival_seq=i,
-            )
+            ),
         )
     return requests

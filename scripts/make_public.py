@@ -11,6 +11,7 @@ Run: ``python scripts/make_public.py`` (or ``make public-repo``). The verifier a
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -35,7 +36,7 @@ ALLOWED_TOP: frozenset[str] = frozenset(
         "uv.lock",
         ".gitignore",
         ".pre-commit-config.yaml",
-    }
+    },
 )
 
 # Never allowed in the public tree (denylist, enforced by the verifier over the allowlist too).
@@ -129,8 +130,6 @@ def reinit_git(dest: Path) -> None:
 
 
 def _path() -> str:
-    import os
-
     return os.environ.get("PATH", "")
 
 

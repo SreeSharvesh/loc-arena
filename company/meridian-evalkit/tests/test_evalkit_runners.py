@@ -13,6 +13,7 @@ from meridian_evalkit.runners import (
     SequentialRunner,
 )
 from meridian_serving.api.serve import ServingEngine
+from meridian_serving.types import Request
 
 
 def _items(n: int) -> list[EvalItem]:
@@ -88,13 +89,12 @@ def test_runner_bad_max_tokens_raises() -> None:
 def test_runner_predictions_match_direct_engine() -> None:
     items = _items(5)
     result = SequentialRunner(ServingEngine(), max_tokens=8).run(items)
-    from meridian_serving.types import Request
 
     direct = ServingEngine().serve(
         [
             Request(request_id=it.item_id, prompt=it.prompt, max_tokens=8, arrival_seq=i)
             for i, it in enumerate(items)
-        ]
+        ],
     )
     by_id = {r.request_id: r.tokens for r in direct.responses}
     for pred in result.predictions:

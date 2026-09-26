@@ -10,6 +10,7 @@ holds structurally as well as by the CI check in ``tests/integration/test_firewa
 
 from __future__ import annotations
 
+import json
 import queue
 import threading
 from collections.abc import Callable
@@ -53,7 +54,7 @@ ALLOWED_MONITOR_INPUTS: frozenset[str] = frozenset(
         "deployed_logging_config",
         "baseline_logging_config",
         "mirror_event_stream",
-    }
+    },
 )
 
 # Fields a monitor may NEVER read: the sealed recompute, sealed-only record fields, or the per-workload label.
@@ -71,7 +72,7 @@ FORBIDDEN_MONITOR_INPUTS: frozenset[str] = frozenset(
         "issued_for_sanctioned_request",
         "origin_job_id",
         "credential_id",
-    }
+    },
 )
 
 
@@ -251,7 +252,8 @@ def load_monitor_specs(monitors_path: str | Path) -> list[MonitorSpec]:
 
 def load_monitors(monitors_path: str | Path, models: dict[str, ModelSpec]) -> MonitorRegistry:
     """Wire every ENABLED monitor/detector from ``monitors.yaml`` to its tap point(s)."""
-    import loc_arena.monitors  # noqa: F401  -- import the implementations so they register their factories
+    # Import the implementations so they register their factories (lazy: they import this module).
+    import loc_arena.monitors  # noqa: F401, PLC0415
 
     wired: list[Monitor] = []
     for spec in load_monitor_specs(monitors_path):
@@ -275,7 +277,9 @@ def _events_for(monitor: Monitor, events: list[Event]) -> list[Event]:
 
 
 def run_monitors(
-    registry: MonitorRegistry, mirror_events: list[Event], context: MonitorContext
+    registry: MonitorRegistry,
+    mirror_events: list[Event],
+    context: MonitorContext,
 ) -> list[MonitorVerdict]:
     """Dispatch the MIRROR events to every enabled monitor at the matching tap and collect their verdicts."""
     verdicts: list[MonitorVerdict] = []
@@ -407,7 +411,8 @@ def run_monitors_split(
         async_verdicts, errored = worker.result()
         if errored:
             context.event_sink(
-                "monitor_error", {"monitor": monitor.name, "error": worker.error_reason or "exception"}
+                "monitor_error",
+                {"monitor": monitor.name, "error": worker.error_reason or "exception"},
             )
             continue
         verdicts.extend(async_verdicts)
@@ -437,8 +442,6 @@ def parse_verdict(text: str) -> tuple[float, str] | None:
 
     Tolerant of surrounding prose; returns ``None`` on a missing, malformed, or out-of-range verdict.
     """
-    import json as _json
-
     start = text.find("{")
     while start != -1:
         depth = 0
@@ -449,8 +452,8 @@ def parse_verdict(text: str) -> tuple[float, str] | None:
                 depth -= 1
                 if depth == 0:
                     try:
-                        obj = _json.loads(text[start : i + 1])
-                    except _json.JSONDecodeError:
+                        obj = json.loads(text[start : i + 1])
+                    except json.JSONDecodeError:
                         break
                     susp = obj.get("suspicion") if isinstance(obj, dict) else None
                     reason = obj.get("reason") if isinstance(obj, dict) else None
@@ -466,7 +469,12 @@ def parse_verdict(text: str) -> tuple[float, str] | None:
 
 
 def live_suspicion(
-    context: MonitorContext, monitor_name: str, prompt: str, *, ensemble_n: int, temperature: float
+    context: MonitorContext,
+    monitor_name: str,
+    prompt: str,
+    *,
+    ensemble_n: int,
+    temperature: float,
 ) -> tuple[float, str] | None:
     """Score one prompt with the live model via the gateway, ensembled by MAX; ``None`` -> heuristic fallback.
 
@@ -505,9 +513,7 @@ def load_template(prompt_ref: str | None) -> str:
 
 def render_prompt(template: str, payload: dict[str, Any]) -> str:
     """Render the monitor prompt: the template with the declared observable inputs substituted in."""
-    import json as _json
-
-    body = _json.dumps(payload, indent=2, default=str)
+    body = json.dumps(payload, indent=2, default=str)
     if "{inputs}" in template:
         return template.replace("{inputs}", body)
     return f"{template}\n\nObservable inputs:\n{body}"

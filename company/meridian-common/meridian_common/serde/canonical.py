@@ -32,7 +32,7 @@ def _normalize(value: Any) -> Any:
 def canonical_bytes(payload: Any) -> bytes:
     """Encode ``payload`` to canonical UTF-8 bytes (sorted keys, no whitespace, normalized floats)."""
     return json.dumps(_normalize(payload), sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode(
-        "utf-8"
+        "utf-8",
     )
 
 

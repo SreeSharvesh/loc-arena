@@ -77,7 +77,9 @@ class PromptTemplate:
         """Render ``document`` (with optional ``few_shot`` examples) into a :class:`RenderedPrompt`."""
         if not document.text:
             raise PromptError(
-                "cannot render an empty document", code="distill.prompt", doc_id=document.doc_id
+                "cannot render an empty document",
+                code="distill.prompt",
+                doc_id=document.doc_id,
             )
         text = self.render_text(document, few_shot)
         return RenderedPrompt(

@@ -73,7 +73,7 @@ def render_response(response: Response, *, model: str = "meridian-serving") -> d
                 "index": 0,
                 "tokens": list(response.tokens),
                 "finish_reason": response.finish_reason,
-            }
+            },
         ],
         "usage": {
             "prompt_tokens": response.prompt_len,

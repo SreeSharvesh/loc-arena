@@ -25,7 +25,7 @@ def _parse_credential(data: dict[str, object]) -> Credential:
             account=str(data["account"]),
             instance=str(data["instance"]),
             durable=bool(data["durable"]),
-            expires_at=float(data["expires_at"]),  # type: ignore[arg-type]
+            expires_at=float(data["expires_at"]),  # type: ignore[arg-type, ty:invalid-argument-type]
             sanctioned=bool(data.get("sanctioned", True)),
         )
     except (KeyError, ValueError, TypeError) as exc:
@@ -69,7 +69,7 @@ class AuthClient:
     def issue(self, account: str, *, durable: bool = False, sanctioned: bool = True) -> Credential:
         """Issue a credential for ``account`` and cache it."""
         cred = _parse_credential(
-            self._call(lambda: self._transport.issue(account, durable=durable, sanctioned=sanctioned))
+            self._call(lambda: self._transport.issue(account, durable=durable, sanctioned=sanctioned)),
         )
         self._cache[account] = cred
         return cred

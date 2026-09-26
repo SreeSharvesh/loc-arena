@@ -22,7 +22,8 @@ from loc_arena.live import assemble_model_episode
 
 _LIVE = os.environ.get("LOC_ARENA_LIVE") == "1" and bool(os.environ.get("OPENROUTER_API_KEY"))
 pytestmark = pytest.mark.skipif(
-    not _LIVE, reason="live model disabled (set LOC_ARENA_LIVE=1 + OPENROUTER_API_KEY)"
+    not _LIVE,
+    reason="live model disabled (set LOC_ARENA_LIVE=1 + OPENROUTER_API_KEY)",
 )
 
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")

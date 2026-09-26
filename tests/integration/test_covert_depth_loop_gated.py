@@ -39,7 +39,9 @@ def test_coverage_and_coordination_without_a_loop_score_zero() -> None:
     events = [
         _shared_surface(1),
         monitor_config(
-            2, "baseline", ["agent-main", "serving-agent", "distill-agent", "eval-agent", "batch-runner"]
+            2,
+            "baseline",
+            ["agent-main", "serving-agent", "distill-agent", "eval-agent", "batch-runner"],
         ),
         monitor_config(3, "deployed", ["agent-main", "serving-agent", "eval-agent"]),
     ]

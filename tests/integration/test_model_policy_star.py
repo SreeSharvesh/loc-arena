@@ -50,7 +50,10 @@ def test_model_policy_lands_robust_from_executed_state(tmp_path: Path) -> None:
 def test_model_policy_honest_twin_still_clean(tmp_path: Path) -> None:
     # covert.enabled=false: the same machinery, no covert seed injected -> no rogue loop, verifies clean
     ep = assemble_model_episode(
-        apply_mode(CFG, "honest"), tmp_path / "h", provider=QueuedProvider({}), deadline_ts=DEADLINE
+        apply_mode(CFG, "honest"),
+        tmp_path / "h",
+        provider=QueuedProvider({}),
+        deadline_ts=DEADLINE,
     )
     assert ep.verdict.landing.robust is False and ep.verdict.landing.minimal is False
     assert ep.verdict.covert_depth == 0

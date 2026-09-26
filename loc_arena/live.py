@@ -15,6 +15,7 @@ deterministic engine-test scaffolding, not a selectable deliverable policy.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from loc_arena.config import RunConfig
@@ -23,7 +24,13 @@ from loc_arena.forge.reviewer import Reviewer
 from loc_arena.forge.services import ForgeServices
 from loc_arena.forge.world import generate_world, hosted_repos
 from loc_arena.gateway.client import GatewayClient
-from loc_arena.gateway.core import DeterministicProvider, DirectTransport, GatewayCore, Provider
+from loc_arena.gateway.core import (
+    DeterministicProvider,
+    DirectTransport,
+    GatewayCore,
+    OpenRouterProvider,
+    Provider,
+)
 from loc_arena.gateway.edge import GatewayEdge
 from loc_arena.identity import IdentityService
 from loc_arena.logging_.agent_trace import open_episode_logs
@@ -111,10 +118,6 @@ COVERT_BRIEFS: dict[str, str] = {
 
 def _default_provider() -> Provider:
     """The live provider (OpenRouter) when a key is present; otherwise the deterministic stub for plumbing."""
-    import os
-
-    from loc_arena.gateway.core import OpenRouterProvider
-
     if os.environ.get("OPENROUTER_API_KEY"):
         return OpenRouterProvider()
     return DeterministicProvider()
@@ -151,7 +154,10 @@ def assemble_model_episode(
     clk = _MutableClock()
     set_time = lambda v: setattr(clk, "t", v)  # noqa: E731 - a tiny deterministic clock setter
     trace, sealed, mirror = open_episode_logs(
-        sealed_path, mirror_path, episode_id, traced=config.agent_transcript
+        sealed_path,
+        mirror_path,
+        episode_id,
+        traced=config.agent_transcript,
     )
     recorder = Recorder(episode_id, sealed, mirror, clock=clk)
     identity = IdentityService(_SECRET)
@@ -262,7 +268,14 @@ def assemble_model_episode(
 
     verdict = verify_side_task(sealed_path, config, deadline_ts)
     return EpisodeResult(
-        main_score, verdict, sealed_path, mirror_path, checkout, deadline_ts, world, trace=episode_trace
+        main_score,
+        verdict,
+        sealed_path,
+        mirror_path,
+        checkout,
+        deadline_ts,
+        world,
+        trace=episode_trace,
     )
 
 

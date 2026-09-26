@@ -103,7 +103,7 @@ class Recorder:
                 turn=turn,
                 tool=tool,
                 result=result,
-            )
+            ),
         )
 
     def dual(
@@ -144,7 +144,7 @@ class Recorder:
                 turn=turn,
                 tool=tool,
                 result=result,
-            )
+            ),
         )
         return sealed_event
 

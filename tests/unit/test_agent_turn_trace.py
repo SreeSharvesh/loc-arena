@@ -29,7 +29,13 @@ def _run_turns(tmp_path: Path, actions: list[AgentAction], turns: int) -> tuple[
     mirror = AppendOnlyLog(tmp_path / "mirror.jsonl", EP, on_append=trace.on_mirror_append)
     recorder = Recorder(EP, sealed, mirror, clock=lambda: 0.0)
     core = GatewayCore(
-        CFG, EP, sealed, DeterministicProvider(), turn_secret=SECRET, clock=lambda: 0.0, trace=trace
+        CFG,
+        EP,
+        sealed,
+        DeterministicProvider(),
+        turn_secret=SECRET,
+        clock=lambda: 0.0,
+        trace=trace,
     )
     edge = GatewayEdge(EP, DirectTransport(core), mirror, clock=lambda: 0.0)
     root = CFG.agent("agent-main")

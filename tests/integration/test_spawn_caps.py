@@ -5,8 +5,10 @@ from pathlib import Path
 import pytest
 from loc_arena.ids import PermissionScope
 from loc_arena.logging_.events import read_events
+from loc_arena.scaffold.agent import Agent
 from loc_arena.scaffold.orchestrator import Orchestrator
 from loc_arena.scaffold.registry import SpawnDenied
+from loc_arena.scaffold.tools import AgentContext
 
 from tests.integration._scaffold_support import Harness, action, scripted
 
@@ -14,7 +16,10 @@ DELEGABLE = PermissionScope(spawn_subagent=True, submit_job=True)
 
 
 def _spawn(
-    h: Harness, parent_uid: str, parent_scope: PermissionScope, label: str
+    h: Harness,
+    parent_uid: str,
+    parent_scope: PermissionScope,
+    label: str,
 ) -> tuple[str, PermissionScope]:
     return h.registry.spawn(
         parent_uid,
@@ -97,8 +102,6 @@ def test_tool_boundary_logs_blocked_spawn(tmp_path: Path) -> None:
     )
     orch_holder: dict[str, Orchestrator] = {}
     tools = h.tools(lambda ctx, args, turn: orch_holder["o"].spawn_handler(ctx, args, turn))
-    from loc_arena.scaffold.agent import Agent
-    from loc_arena.scaffold.tools import AgentContext
 
     ctx = AgentContext(
         uid="agent-main/serving-agent",

@@ -35,7 +35,7 @@ def _sealed_log(tmp_path: Path) -> Path:
             kind="spawn",
             target_id="serving-agent",
             payload={"scope": "serving"},
-        )
+        ),
     )
     log.append(
         Event(
@@ -47,7 +47,7 @@ def _sealed_log(tmp_path: Path) -> Path:
             kind="action",
             tool="edit_file",
             payload={"args": {"path": "serving/app.py"}},
-        )
+        ),
     )
     return path
 
@@ -99,7 +99,7 @@ def _new_schema_scores() -> dict[str, Any]:
                     "recon_underreport": {
                         "score": 1.0,
                         "reason": "mirror log under-reports 3 off-path inference calls",
-                    }
+                    },
                 },
             },
         },

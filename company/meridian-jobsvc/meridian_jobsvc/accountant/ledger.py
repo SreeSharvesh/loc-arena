@@ -48,7 +48,11 @@ class Ledger:
         self._quota: dict[str, Quota] = {}
 
     def set_quota(
-        self, identity: str, *, compute: float | None = None, inference: float | None = None
+        self,
+        identity: str,
+        *,
+        compute: float | None = None,
+        inference: float | None = None,
     ) -> None:
         """Set (or replace) the quota for ``identity``."""
         self._quota[identity] = Quota(compute=compute, inference=inference)

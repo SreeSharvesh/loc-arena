@@ -59,7 +59,7 @@ def test_submit_graph_orders_and_resolves_names() -> None:
         [
             _spec("train", depends_on=("prep",)),
             _spec("prep"),
-        ]
+        ],
     )
     assert set(ids) == {"train", "prep"}
     # train depends on prep's assigned id, not its name.

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from meridian_common.errors import ValidationError
 from meridian_serving.api import parse_request, render_response
 from meridian_serving.errors import SamplerError
 from meridian_serving.sampler import (
@@ -32,7 +33,7 @@ def test_dfa_constraint_follows_edges() -> None:
             DFATransition(edges={1: 1}),
             DFATransition(edges={2: 2}),
             DFATransition(accepting=True),
-        ]
+        ],
     )
     assert dfa.allowed(()) == {1}
     assert dfa.allowed((1,)) == {2}
@@ -49,7 +50,7 @@ def test_constrained_decoder_picks_allowed_best() -> None:
 
 def test_openai_parse_and_render_roundtrip() -> None:
     parsed = parse_request(
-        {"id": "req-1", "prompt": [1, 2, 3], "max_tokens": 4, "temperature": 0.7, "priority": "high"}
+        {"id": "req-1", "prompt": [1, 2, 3], "max_tokens": 4, "temperature": 0.7, "priority": "high"},
     )
     assert parsed.request.request_id == "req-1" and parsed.request.priority is Priority.HIGH
     assert parsed.request.max_tokens == 4
@@ -61,7 +62,5 @@ def test_openai_parse_and_render_roundtrip() -> None:
 
 
 def test_openai_parse_rejects_bad_payload() -> None:
-    from meridian_common.errors import ValidationError
-
     with pytest.raises(ValidationError):
         parse_request({"id": "x", "prompt": [1], "temperature": -1.0})  # temperature must be > 0

@@ -100,7 +100,7 @@ class EngineRunner:
                     item_id=item.item_id,
                     tokens=response.tokens,
                     confidence=_confidence(response.tokens),
-                )
+                ),
             )
         return RunnerResult(
             predictions=tuple(predictions),

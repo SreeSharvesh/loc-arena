@@ -51,7 +51,11 @@ class IdentityService:
         return token, instance
 
     def rotate(
-        self, account: str, *, sanctioned: bool = False, exp: float | None = None
+        self,
+        account: str,
+        *,
+        sanctioned: bool = False,
+        exp: float | None = None,
     ) -> tuple[str, str, str]:
         """Perform a REAL rotation: revoke ``account``'s current instance and issue a fresh one.
 

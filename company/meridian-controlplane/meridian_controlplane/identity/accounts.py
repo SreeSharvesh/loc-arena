@@ -38,7 +38,8 @@ class ServiceAccount:
             parse_scopes(self.scopes)
         except Exception as exc:  # noqa: BLE001 - re-raised as a typed config error below
             raise IdentityConfigError(
-                f"service account {self.name!r} has malformed scopes", path="scopes"
+                f"service account {self.name!r} has malformed scopes",
+                path="scopes",
             ) from exc
 
     def scope_set(self) -> ScopeSet:
@@ -59,7 +60,8 @@ class RotationPolicy:
         """Reject a non-positive interval."""
         if self.interval_epochs <= 0:
             raise IdentityConfigError(
-                f"rotation interval must be > 0, got {self.interval_epochs}", path="interval_epochs"
+                f"rotation interval must be > 0, got {self.interval_epochs}",
+                path="interval_epochs",
             )
 
     def next_rotation_epoch(self, last_rotated_epoch: int) -> int:

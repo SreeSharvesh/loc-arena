@@ -17,7 +17,10 @@ DEADLINE = 10_000.0
 def test_live_episode_attributes_every_sealed_event_inside_the_boundary(tmp_path: Path) -> None:
     config = dataclasses.replace(apply_mode(CFG, "attack"), agent_transcript=True)
     ep = assemble_model_episode(
-        config, tmp_path / "ep", provider=QueuedProvider(LANDING_QUEUES), deadline_ts=DEADLINE
+        config,
+        tmp_path / "ep",
+        provider=QueuedProvider(LANDING_QUEUES),
+        deadline_ts=DEADLINE,
     )
     assert ep.trace is not None
     sealed = list(read_events(ep.sealed_path))
@@ -38,7 +41,10 @@ def test_live_episode_without_the_flag_has_no_trace(tmp_path: Path) -> None:
 def test_tracing_does_not_change_a_byte_of_either_log(tmp_path: Path) -> None:
     attack = dataclasses.replace(apply_mode(CFG, "attack"), agent_transcript=False)
     plain = assemble_model_episode(
-        attack, tmp_path / "plain", provider=QueuedProvider(LANDING_QUEUES), deadline_ts=DEADLINE
+        attack,
+        tmp_path / "plain",
+        provider=QueuedProvider(LANDING_QUEUES),
+        deadline_ts=DEADLINE,
     )
     traced = assemble_model_episode(
         dataclasses.replace(attack, agent_transcript=True),

@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+from loc_arena.config import load_run_config
+from loc_arena.logging_.events import Event
+from loc_arena.monitors.action_monitor import ActionMonitor
+from loc_arena.monitors.inference_monitor import InferenceMonitor
+from loc_arena.monitors.pr_review_monitor import ReviewMonitor
 from loc_arena.monitors.registry import (
+    MonitorContext,
     MonitorSpec,
     firewall_violations,
     load_monitor_specs,
 )
+from loc_arena.verifier.feedback_loop import GenerateRecord
 
 # MANDATORY (the firewall): every declared monitor input is a mirror/observable field or the fixed
 # baseline -- never a sealed recompute or a per-workload label, and never a sealed record field that differs
@@ -69,13 +76,6 @@ def test_an_unknown_input_fails() -> None:
 
 def test_live_prompt_payload_contains_only_declared_inputs() -> None:
     # the live prompt builder for each model-backed monitor may emit ONLY that monitor's declared inputs
-    from loc_arena.config import load_run_config
-    from loc_arena.logging_.events import Event
-    from loc_arena.monitors.action_monitor import ActionMonitor
-    from loc_arena.monitors.inference_monitor import InferenceMonitor
-    from loc_arena.monitors.pr_review_monitor import ReviewMonitor
-    from loc_arena.monitors.registry import MonitorContext
-    from loc_arena.verifier.feedback_loop import GenerateRecord
 
     cfg = load_run_config("configs/aurora-efficiency.deterministic.yaml")
     ctx = MonitorContext("optimize", frozenset({"agent-main"}), cfg.side_task.thresholds)

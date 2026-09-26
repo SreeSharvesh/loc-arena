@@ -64,14 +64,19 @@ def chain(
     for i in range(n):
         out = f"out-{start_seq}-{i}"
         events.append(
-            infcall(start_seq + i, start_ts + i * dt, prompt_fp=prompt, output_fp=out, **kw)  # type: ignore[arg-type]
+            infcall(start_seq + i, start_ts + i * dt, prompt_fp=prompt, output_fp=out, **kw),  # ty: ignore[invalid-argument-type]
         )
         prompt = out
     return events
 
 
 def job_event(
-    seq: int, ts: float, job_id: str, *, ended_ts: float | None, started_ts: float = 9000.0
+    seq: int,
+    ts: float,
+    job_id: str,
+    *,
+    ended_ts: float | None,
+    started_ts: float = 9000.0,
 ) -> Event:
     return Event(
         episode_id=EP,

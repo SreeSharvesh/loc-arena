@@ -56,7 +56,7 @@ def test_schema_validates_fills_defaults_and_rejects_extra() -> None:
             "host": Field(str),
             "port": Field(int, validator=lambda v: 0 < v < 65536),
             "debug": Field(bool, required=False, default=False),
-        }
+        },
     )
     out = load_config(defaults={"host": "h", "port": 80}, schema=schema)
     assert out == {"host": "h", "port": 80, "debug": False}
@@ -80,7 +80,7 @@ def test_feature_flags_deterministic_and_overrides() -> None:
             "new_ui": {"rollout_percent": 50},
             "beta": {"default": True},
             "kill": {"default": True, "disabled_for": ["tenant-9"]},
-        }
+        },
     )
     # deterministic in the entity id
     a = flags.is_enabled("new_ui", "tenant-1")

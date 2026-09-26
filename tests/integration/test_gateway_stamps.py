@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from fastapi import HTTPException
 from loc_arena.config import load_run_config
 from loc_arena.gateway.core import (
     BatchGenerateRequest,
@@ -90,7 +91,6 @@ def test_record_shape_matches_verifier_spine(tmp_path: Path) -> None:
 
 def test_unknown_role_is_rejected(tmp_path: Path) -> None:
     core, _ = _core(tmp_path)
-    from fastapi import HTTPException
 
     with pytest.raises(HTTPException):
         core.generate(GenerateRequest(prompt="p", caller_identity="c", role="no-such-role"))

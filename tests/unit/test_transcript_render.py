@@ -28,7 +28,7 @@ def _exported(tmp_path: Path) -> Path:
                 actor_uid="agent-main",
                 actor_role="untrusted",
                 kind="message",
-            )
+            ),
         )
     episode = EpisodeExport("episode", trace.finish(last_sealed_seq=0), sealed_path, ("agent-main",))
     return write_run_eval(
@@ -43,7 +43,8 @@ def _exported(tmp_path: Path) -> Path:
 
 
 def test_write_transcripts_renders_every_sample_under_the_run_name(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def fake_html(title: str, transcripts: Sequence[SampleTranscript]) -> str:
         return f"<html>{title}:{[t.sample_id for t in transcripts]}</html>"
@@ -65,7 +66,9 @@ def _transcript(sample_id: str = "episode") -> SampleTranscript:
 
 def test_render_html_is_a_self_contained_ascii_page(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        transcript_render, "_grid_html", lambda t: f"<div>grid {t.sample_id} caf\u00e9 \u2014</div>"
+        transcript_render,
+        "_grid_html",
+        lambda t: f"<div>grid {t.sample_id} caf\u00e9 \u2014</div>",
     )
     page = transcript_render.render_html("run-x", [_transcript("episode"), _transcript("honest_cal")])
     assert page.isascii()
@@ -114,7 +117,7 @@ def test_grid_has_a_head_per_lane_and_a_cell_per_lane_per_round(monkeypatch: pyt
 
 def test_a_prompt_block_is_collapsed_and_escaped() -> None:
     article = transcript_render._block_html(
-        Block("prompt", "prompt as agent-main (deciding)", "<b>brief</b>")
+        Block("prompt", "prompt as agent-main (deciding)", "<b>brief</b>"),
     )
     assert article == (
         '<article class="block prompt"><div class="title">prompt as agent-main (deciding)</div>'

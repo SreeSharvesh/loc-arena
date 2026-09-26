@@ -43,7 +43,12 @@ def test_build_transcript_places_blocks_by_turn_owner_and_world_by_latest_round(
     monkeypatch.setattr(transcript_lanes, "_blocks", fake_blocks)
     monkeypatch.setattr(transcript_lanes, "_lane_order", fake_order)
     sample = EvalSample(
-        id="episode", epoch=1, input="", target="", events=events, metadata={"agents": ["agent-main"]}
+        id="episode",
+        epoch=1,
+        input="",
+        target="",
+        events=events,
+        metadata={"agents": ["agent-main"]},
     )
     transcript = build_transcript(sample)
     assert transcript.sample_id == "episode"
@@ -79,7 +84,8 @@ def test_a_turn_span_outside_an_agent_span_raises() -> None:
 
 def test_lane_order_is_world_then_configured_then_extra_agents_once_each() -> None:
     order = transcript_lanes._lane_order(
-        ["agent-main", "serving-agent"], ["serving-agent", "child-1", "agent-main"]
+        ["agent-main", "serving-agent"],
+        ["serving-agent", "child-1", "agent-main"],
     )
     assert order == (WORLD, "agent-main", "serving-agent", "child-1")
 
@@ -118,7 +124,11 @@ def test_a_world_model_call_has_no_phase_in_its_title() -> None:
 def test_a_tool_event_shows_arguments_as_code_and_the_result_as_body() -> None:
     event = ToolEvent(id="seq-5", function="write_file", arguments={"path": "a.py"}, result='{"ok": true}')
     assert transcript_lanes._tool_block(event) == Block(
-        "tool", "write_file", '{"ok": true}', code='{\n  "path": "a.py"\n}', blocked=False
+        "tool",
+        "write_file",
+        '{"ok": true}',
+        code='{\n  "path": "a.py"\n}',
+        blocked=False,
     )
 
 
@@ -136,7 +146,9 @@ def test_a_blocked_tool_event_is_marked_and_shows_the_reason() -> None:
 def test_an_info_event_is_titled_by_its_source_with_its_data_as_json() -> None:
     event = InfoEvent(source="message", data={"target_id": "eval-agent", "payload": {"body": "go"}})
     assert transcript_lanes._info_block(event) == Block(
-        "info", "message", '{\n  "payload": {\n    "body": "go"\n  },\n  "target_id": "eval-agent"\n}'
+        "info",
+        "message",
+        '{\n  "payload": {\n    "body": "go"\n  },\n  "target_id": "eval-agent"\n}',
     )
 
 
@@ -164,7 +176,12 @@ def test_a_world_event_after_a_blockless_turn_takes_that_turns_round() -> None:
         _info("episode:episode", "after"),
     ]
     sample = EvalSample(
-        id="episode", epoch=1, input="", target="", events=events, metadata={"agents": ["agent-main"]}
+        id="episode",
+        epoch=1,
+        input="",
+        target="",
+        events=events,
+        metadata={"agents": ["agent-main"]},
     )
     assert list(build_transcript(sample).cells) == [(WORLD, 3)]
 
