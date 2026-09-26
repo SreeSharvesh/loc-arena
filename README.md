@@ -11,6 +11,17 @@ two, under an adversarial agent, is the science.
 This is defensive AI-safety research infrastructure. Attack chains are represented as control-plane state
 transitions plus their programmatic verifiers, never as operational procedures.
 
+## Per-agent logs
+
+Every run bundle (`logs/<run_slug>/<run_name>/`) also holds a per-agent view of the episode:
+
+| File | What it shows |
+|---|---|
+| `<run_name>.eval` | a real Inspect log: one sample for the graded run and one for the honest twin, one span per agent with its turns nested inside; open with `inspect view --log-dir <bundle>` (`make view` prints the command) |
+| `transcript.html` / `.txt` | one column per agent plus World, one row per round: each agent's prompts, replies, tool calls and the events its turns caused |
+
+Set `logging.agent_transcript: false` in a run config to skip them. How attribution works: `docs/agent-log/spec.md`.
+
 ## Documentation
 
 The full walkthrough is a five-chapter course, served by GitHub Pages:

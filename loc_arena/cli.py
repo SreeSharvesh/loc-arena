@@ -13,6 +13,7 @@ import argparse
 import json
 import sys
 import webbrowser
+import zipfile
 from pathlib import Path
 
 from loc_arena.config import load_run_config
@@ -107,9 +108,8 @@ def _cmd_view(args: argparse.Namespace) -> int:
         print(f"index: {index}")
     if bundle is not None:
         print(f"report: {bundle / 'report.html'}")
-        eval_files = sorted(bundle.glob("*.eval"))
-        if eval_files:
-            print(f"inspect view: inspect view {eval_files[0]}")
+        if any(zipfile.is_zipfile(eval_file) for eval_file in bundle.glob("*.eval")):
+            print(f"inspect view: inspect view --log-dir {bundle}")
     if not args.no_open:
         target = index if index is not None else (bundle / "report.html" if bundle else None)
         if target is not None:

@@ -26,7 +26,7 @@ from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import DeterministicProvider, DirectTransport, GatewayCore, Provider
 from loc_arena.gateway.edge import GatewayEdge
 from loc_arena.identity import IdentityService
-from loc_arena.logging_.events import AppendOnlyLog
+from loc_arena.logging_.agent_trace import open_episode_logs
 from loc_arena.npcs.coworker import run_coworker, run_world_activity
 from loc_arena.registry import get_scorer
 from loc_arena.scaffold.agent import Agent, ModelBrain, TurnMinter, TurnStatus
@@ -150,8 +150,9 @@ def assemble_model_episode(
     mirror_path = workdir / "events.mirror.jsonl"
     clk = _MutableClock()
     set_time = lambda v: setattr(clk, "t", v)  # noqa: E731 - a tiny deterministic clock setter
-    sealed = AppendOnlyLog(sealed_path, episode_id)
-    mirror = AppendOnlyLog(mirror_path, episode_id)
+    trace, sealed, mirror = open_episode_logs(
+        sealed_path, mirror_path, episode_id, traced=config.agent_transcript
+    )
     recorder = Recorder(episode_id, sealed, mirror, clock=clk)
     identity = IdentityService(_SECRET)
     core = GatewayCore(
@@ -162,6 +163,7 @@ def assemble_model_episode(
         turn_secret=_SECRET,
         clock=clk,
         is_revoked=identity.is_revoked,
+        trace=trace,
     )
     edge = GatewayEdge(episode_id, DirectTransport(core), mirror, clock=clk)
 
@@ -236,6 +238,7 @@ def assemble_model_episode(
             minter,
             budget,
             clock=clk,
+            trace=trace,
         )
 
     # Honest world noise around the attack (same as the scripted path; config-independent).
@@ -251,13 +254,16 @@ def assemble_model_episode(
     )
 
     _drive_team(team, root_cfg.id)
+    episode_trace = trace.finish(sealed.last_seq) if trace else None
 
     # Grade the REAL edited checkout the agents produced (outcome, not a pre-applied optimization). A run that
     # made no correctness-preserving improvement scores do-nothing baseline; a broken repo suite floors it.
     main_score = get_scorer(str(config.main_task["scorer"]))(checkout, config, scenario.reference_dir)
 
     verdict = verify_side_task(sealed_path, config, deadline_ts)
-    return EpisodeResult(main_score, verdict, sealed_path, mirror_path, checkout, deadline_ts, world)
+    return EpisodeResult(
+        main_score, verdict, sealed_path, mirror_path, checkout, deadline_ts, world, trace=episode_trace
+    )
 
 
 def _drive_team(team: dict[str, Agent], root_uid: str) -> None:

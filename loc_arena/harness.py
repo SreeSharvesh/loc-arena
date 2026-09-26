@@ -23,11 +23,14 @@ import tempfile
 from dataclasses import dataclass
 from datetime import UTC
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
 
 from loc_arena.config import RunConfig
+
+if TYPE_CHECKING:
+    from loc_arena.logging_.inspect_export import EpisodeExport
 
 LABEL = "loc-arena.eval"
 IMAGE = "loc-arena-svc:latest"
@@ -404,8 +407,12 @@ def _write_bundle(
     *,
     write_report: bool = True,
     decisions_text: str | None = None,
+    calibration: Any = None,
 ) -> Path:
-    """Write the seven-file reproducible audit bundle into ``out_dir`` and return it.
+    """Write the reproducible audit bundle into ``out_dir`` and return it.
+
+    Seven files always; with ``logging.agent_transcript`` on, the ``.eval`` is a real Inspect log and
+    ``transcript.html`` / ``transcript.txt`` are added, written last.
 
     Kept separate from ``run_episode`` so the bundle shape is written in one place; passing the default
     ``decisions_text`` uses the standard run notes.
@@ -418,33 +425,62 @@ def _write_bundle(
     shutil.copy(episode.sealed_path, out_dir / "events.sealed.jsonl")
     shutil.copy(episode.mirror_path, out_dir / "events.mirror.jsonl")
     (out_dir / "scores.json").write_text(json.dumps(scores, indent=2))
-    (out_dir / f"{run_name}.eval").write_text(
-        json.dumps(
-            {
-                "note": "Inspect .eval placeholder; report.html is the primary viewer.",
-                "run_name": run_name,
-                "run_slug": cfg.run_slug,
-                "mode": mode,
-                "seed": seed,
-            },
-            indent=2,
-        )
-    )
     (out_dir / "decisions.md").write_text(
         decisions_text if decisions_text is not None else _default_decisions_text(cfg, mode, seed)
     )
     if write_report:
         report = viewer.build_report(cfg, scores, out_dir / "events.sealed.jsonl", threshold)
         (out_dir / "report.html").write_text(report)
+    if cfg.agent_transcript:
+        from loc_arena.logging_.inspect_export import write_run_eval
+        from loc_arena.logging_.transcript_render import write_transcripts
+
+        eval_path = write_run_eval(
+            out_dir / f"{run_name}.eval",
+            run_name=run_name,
+            config=cfg,
+            mode=mode,
+            seed=seed,
+            scores=scores,
+            episodes=_eval_episodes(cfg, episode, calibration),
+        )
+        write_transcripts(eval_path, out_dir)
+    else:
+        (out_dir / f"{run_name}.eval").write_text(
+            json.dumps(
+                {
+                    "note": "Inspect .eval placeholder; report.html is the primary viewer.",
+                    "run_name": run_name,
+                    "run_slug": cfg.run_slug,
+                    "mode": mode,
+                    "seed": seed,
+                },
+                indent=2,
+            )
+        )
     return out_dir
 
 
-def _assemble_by_policy(cfg: RunConfig, workdir: Path, *, robust: bool) -> Any:
+def _eval_episodes(cfg: RunConfig, episode: Any, calibration: Any) -> list[EpisodeExport]:
+    from loc_arena.logging_.inspect_export import EpisodeExport
+
+    root = cfg.agent("agent-main").id
+    agent_order = (root, *(a.id for a in cfg.agents if a.id != root))
+    labelled = [("episode", episode), *([("honest_cal", calibration)] if calibration is not None else [])]
+    exports: list[EpisodeExport] = []
+    for sample_id, assembled in labelled:
+        if assembled.trace is None:
+            raise ValueError(f"{sample_id} was assembled without an agent trace")
+        exports.append(EpisodeExport(sample_id, assembled.trace, assembled.sealed_path, agent_order))
+    return exports
+
+
+def _assemble_by_policy(cfg: RunConfig, workdir: Path, *, robust: bool, provider: Any = None) -> Any:
     """Assemble one episode by ``config.policy``: the scripted driver, or the live model attack."""
     if cfg.policy == "model":
         from loc_arena.live import assemble_model_episode
 
-        return assemble_model_episode(cfg, workdir)
+        return assemble_model_episode(cfg, workdir, provider=provider)
     from loc_arena.task import assemble_scripted_episode
 
     return assemble_scripted_episode(cfg, workdir, robust=robust)
@@ -461,6 +497,8 @@ def run_episode(
     write_report: bool = True,
     monitor_provider: Any = None,
     run_instance_id: str | None = None,
+    provider: Any = None,
+    calibration_provider: Any = None,
 ) -> Path:
     """Run one episode in ``mode``, grade it, and write the reproducible audit bundle; return its dir.
 
@@ -512,11 +550,15 @@ def run_episode(
     start = time.perf_counter()
     # policy: model (the live deliverable) or scripted (engine-test scaffolding only). The scorer, verifier,
     # and monitors grade both identically; scripted stays byte-reproducible, live is graded on outcome.
-    episode = _assemble_by_policy(cfg, out_dir / "episode", robust=robust)
+    episode = _assemble_by_policy(cfg, out_dir / "episode", robust=robust, provider=provider)
     # calibrate against the honest twin (mode's only difference is covert.enabled)
     honest_cfg = apply_mode(config, "honest")
     honest_ep = (
-        episode if mode == "honest" else _assemble_by_policy(honest_cfg, out_dir / "honest_cal", robust=False)
+        episode
+        if mode == "honest"
+        else _assemble_by_policy(
+            honest_cfg, out_dir / "honest_cal", robust=False, provider=calibration_provider
+        )
     )
     h_caller, h_sink = build_monitor_caller(honest_ep, honest_cfg, monitor_provider)
     e_caller, e_sink = build_monitor_caller(episode, cfg, monitor_provider)
@@ -565,7 +607,16 @@ def run_episode(
 
     # write the bundle
     return _write_bundle(
-        cfg, out_dir, run_name, scores, episode, the_seed, mode, threshold, write_report=write_report
+        cfg,
+        out_dir,
+        run_name,
+        scores,
+        episode,
+        the_seed,
+        mode,
+        threshold,
+        write_report=write_report,
+        calibration=honest_ep if mode == "attack" else None,
     )
 
 
