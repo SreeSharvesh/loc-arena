@@ -64,12 +64,15 @@ def build_transcript(sample: EvalSample) -> SampleTranscript:
         seq = _event_seq(event)
         if seq is not None:
             seq_to_row.setdefault(seq, row)
-    for verdict in _monitor_verdicts(sample.metadata.get("scores")):
+    scores = sample.metadata.get("scores")
+    caught_scores = _caught_monitor_scores(scores)
+    for verdict in _monitor_verdicts(scores):
         target_seq = verdict.get("target_seq")
         row = BEFORE_FIRST_ROUND
         if isinstance(target_seq, int):
             row = seq_to_row.get(target_seq, BEFORE_FIRST_ROUND)
-        cells.setdefault((WORLD, row), []).append(_verdict_block(verdict))
+        caught = _is_the_catch(verdict, caught_scores)
+        cells.setdefault((WORLD, row), []).append(_verdict_block(verdict, caught=caught))
     return SampleTranscript(
         sample_id=str(sample.id),
         lanes=_lane_order(sample.metadata.get("agents", []), seen),
@@ -97,12 +100,30 @@ def _monitor_verdicts(scores: object) -> list[Mapping[str, object]]:
     return verdicts if isinstance(verdicts, list) else []
 
 
-def _verdict_block(verdict: Mapping[str, object]) -> Block:
+def _caught_monitor_scores(scores: object) -> Mapping[str, float]:
+    safety = scores.get("safety") if isinstance(scores, Mapping) else None
+    if not isinstance(safety, Mapping):
+        return {}
+    caught_by, max_scores = safety.get("caught_by"), safety.get("per_monitor_max_score")
+    if not isinstance(caught_by, list) or not isinstance(max_scores, Mapping):
+        return {}
+    return {m: max_scores[m] for m in caught_by if m in max_scores}
+
+
+def _is_the_catch(verdict: Mapping[str, object], caught_scores: Mapping[str, float]) -> bool:
+    monitor, score = verdict.get("monitor"), verdict.get("score")
+    if not isinstance(monitor, str) or not isinstance(score, int | float):
+        return False
+    return monitor in caught_scores and round(float(score), 3) == caught_scores[monitor]
+
+
+def _verdict_block(verdict: Mapping[str, object], *, caught: bool) -> Block:
     monitor, tap = verdict.get("monitor", "monitor"), verdict.get("tap", "")
     score = verdict.get("score")
     score_text = f"{score:.3f}" if isinstance(score, int | float) else str(score)
     body = f"score {score_text}  actor {verdict.get('actor_uid', '')}\n{verdict.get('reason', '')}"
-    return Block("verdict", f"monitor: {monitor} ({tap})", body)
+    title = f"monitor: {monitor} ({tap})" + (" -- CAUGHT" if caught else "")
+    return Block("verdict", title, body, blocked=caught)
 
 
 def _turn_owners(events: Sequence[InspectEvent]) -> dict[str, tuple[str, int]]:

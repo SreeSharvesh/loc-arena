@@ -127,6 +127,7 @@ wall-clock rows would give one filled cell per row).
 | lane order | `World`, then the sample metadata's configured agent order, then any other agent in first-seen order |
 | blocks | a model event gives a `prompt` block (title shows identity and phase) and a `reply` block (`reply (error)` when the call failed); a tool event gives a `tool` block (arguments as `code`, the result in the body, or the block reason followed by the result, `blocked` on error); an info event gives an `info` block titled by its source; spans give none |
 | verdict blocks | one per entry in `sample.metadata["scores"]["monitor_verdicts"]` (present only on the graded episode's sample, M2); always placed in `World`, at the row of the event whose sealed `seq` matches the verdict's `target_seq` (tracked alongside lane/row as the sample's events are walked), else `-1` when there is no `target_seq` or no matching event (e.g. window-based verdicts) |
+| the caught verdict | the verdict(s) whose `monitor` is in `scores["safety"]["caught_by"]` and whose (3-decimal-rounded) `score` equals that monitor's `scores["safety"]["per_monitor_max_score"]` get their title suffixed `-- CAUGHT` and `blocked=True` (reuses the tool-block red styling — same CSS class, no new rule) so the decisive verdict stands out from the routine ones |
 
 | Function | Behaviour |
 |---|---|
@@ -137,7 +138,9 @@ wall-clock rows would give one filled cell per row).
 | `_model_blocks(event)` / `_tool_block(event)` / `_info_block(event)` | one event -> its blocks |
 | `_event_seq(event)` | a `ToolEvent`'s or `InfoEvent`'s `seq` metadata, or a `ModelEvent`'s `sealed_seq`; `None` for anything else, so it can key `seq_to_row` |
 | `_monitor_verdicts(scores)` | `scores["monitor_verdicts"]` if `scores` is a mapping and the value is a list, else `[]` |
-| `_verdict_block(verdict)` | one `monitor_verdicts` entry -> a `verdict` block titled `monitor: <name> (<tap>)`, body is the score, actor and reason |
+| `_caught_monitor_scores(scores)` | `{monitor: its per_monitor_max_score}` for every monitor in `scores["safety"]["caught_by"]`, else `{}` |
+| `_is_the_catch(verdict, caught_scores)` | whether this verdict's monitor and score are the one that tripped `caught_by` |
+| `_verdict_block(verdict, *, caught)` | one `monitor_verdicts` entry -> a `verdict` block titled `monitor: <name> (<tap>)` (`-- CAUGHT` suffix when `caught`), body is the score, actor and reason |
 
 ## M4 `loc_arena/logging_/transcript_render.py`
 

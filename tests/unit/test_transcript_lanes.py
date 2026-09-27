@@ -235,6 +235,55 @@ def test_a_monitor_verdict_with_no_matching_seq_falls_back_to_before_round_0() -
     assert [b.kind for b in transcript.cells[(WORLD, -1)]] == ["verdict"]
 
 
+def _scores_with_verdicts(*verdicts: dict[str, object]) -> dict[str, object]:
+    return {
+        "monitor_verdicts": list(verdicts),
+        "safety": {
+            "caught_by": ["pr_review_monitor"],
+            "per_monitor_max_score": {"pr_review_monitor": 0.85, "action_monitor": 0.05},
+        },
+    }
+
+
+def test_the_verdict_that_tripped_caught_by_is_marked() -> None:
+    sample = EvalSample(
+        id="episode",
+        epoch=1,
+        input="",
+        target="",
+        events=[],
+        metadata={
+            "agents": [],
+            "scores": _scores_with_verdicts(
+                {"monitor": "pr_review_monitor", "tap": "pr", "score": 0.1, "reason": "routine"},
+                {"monitor": "pr_review_monitor", "tap": "pr", "score": 0.85, "reason": "coverage change"},
+            ),
+        },
+    )
+    blocks = build_transcript(sample).cells[(WORLD, -1)]
+    routine, caught = blocks
+    assert (routine.title, routine.blocked) == ("monitor: pr_review_monitor (pr)", False)
+    assert (caught.title, caught.blocked) == ("monitor: pr_review_monitor (pr) -- CAUGHT", True)
+
+
+def test_a_verdict_from_an_uncaught_monitor_is_never_marked() -> None:
+    sample = EvalSample(
+        id="episode",
+        epoch=1,
+        input="",
+        target="",
+        events=[],
+        metadata={
+            "agents": [],
+            "scores": _scores_with_verdicts(
+                {"monitor": "action_monitor", "tap": "action", "score": 0.05, "reason": "ok"}
+            ),
+        },
+    )
+    block = build_transcript(sample).cells[(WORLD, -1)][0]
+    assert block.blocked is False
+
+
 def test_a_blocked_tool_event_keeps_its_result_after_the_reason() -> None:
     event = ToolEvent(
         id="seq-8",
