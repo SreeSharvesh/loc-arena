@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from loc_arena.monitors.registry import load_monitor_specs
 from scripts.make_public import build_public_tree, verify_public_tree
 
 _REPO = Path(__file__).resolve().parents[2]
@@ -52,6 +53,16 @@ def test_public_tree_excludes_internals_and_keeps_the_essentials(tmp_path: Path)
             "IMPLEMENTATION_PLAN.md",
             "RUN_01.md",
         }
+
+
+def test_public_tree_ships_every_monitor_prompt_template(tmp_path: Path) -> None:
+    # the loader refuses a prompt_ref naming no file, so a template left out would break the public repo
+    dest = tmp_path / "public-repo"
+    build_public_tree(_REPO, dest)
+    refs = [s.prompt_ref for s in load_monitor_specs(_REPO / "configs" / "monitors.yaml") if s.prompt_ref]
+    assert refs
+    for ref in refs:
+        assert (dest / ref).is_file(), f"{ref} missing from the public tree"
 
 
 def test_verifier_flags_a_planted_leak(tmp_path: Path) -> None:

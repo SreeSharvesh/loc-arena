@@ -13,14 +13,14 @@ from __future__ import annotations
 import json
 import queue
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
 import yaml
 
-from loc_arena.config import ModelSpec, Thresholds
+from loc_arena.config import ConfigError, ModelSpec, Thresholds
 from loc_arena.logging_.events import Event
 
 # --- The firewall allowlist: the ONLY inputs a monitor may declare. Every one is a
@@ -88,10 +88,19 @@ TAP_KINDS: dict[str, tuple[str, ...]] = {
     "trajectory": (),  # the whole trajectory (all kinds)
 }
 
+# Where a monitor prompt template receives the declared observable inputs, rendered as JSON.
+PROMPT_INPUTS_PLACEHOLDER = "{inputs}"
+
 
 @dataclass(frozen=True)
 class MonitorSpec:
-    """One monitor's declaration from ``monitors.yaml`` (model-backed monitor or ``model: none`` detector)."""
+    """One monitor's declaration from ``monitors.yaml`` (model-backed monitor or ``model: none`` detector).
+
+    ``prompt_ref`` names the prompt template file, resolved against the working directory like
+    ``configs/monitors.yaml`` itself; the loader reads it once into ``prompt_template``. A ``mode: live``
+    monitor must declare one. A heuristic monitor or a ``model: none`` detector may omit it, by design: it
+    never renders a prompt.
+    """
 
     name: str
     taps: tuple[str, ...]
@@ -111,6 +120,7 @@ class MonitorSpec:
     ensemble_n: int = 1
     temperature: float = 0.0
     extra: dict[str, Any] = field(default_factory=dict)
+    prompt_template: str = ""  # the text of ``prompt_ref``; empty when the monitor declares none
 
 
 @dataclass(frozen=True)
@@ -124,6 +134,7 @@ class MonitorVerdict:
     actor_uid: str
     target_seq: int | None
     ts: float
+    from_model: bool = False  # True iff the score is a parsed live-model verdict, not a rule's
 
 
 # A live monitor's ONLY route to a model: (monitor_name, prompt, temperature) -> completion (via the gateway).
@@ -195,6 +206,28 @@ class MonitorRegistry:
         return [m for m in self.monitors if tap in m.taps]
 
 
+def _load_prompt_template(name: str, prompt_ref: str | None, mode: str) -> str:
+    """Read a monitor's prompt template, failing loudly on a reference no live call could use.
+
+    A ``prompt_ref`` must name a file that places the inputs at ``PROMPT_INPUTS_PLACEHOLDER`` exactly once,
+    and a live monitor must declare one: without it the model gets raw JSON and no instruction to answer.
+    """
+    if prompt_ref is None:
+        if mode == "live":
+            raise ConfigError(f"monitor {name!r}: mode 'live' needs a prompt_ref (its prompt template)")
+        return ""
+    path = Path(prompt_ref)
+    if not path.is_file():
+        raise ConfigError(f"monitor {name!r}: prompt_ref {prompt_ref!r} names no file ({path.resolve()})")
+    template = path.read_text(encoding="utf-8")
+    if template.count(PROMPT_INPUTS_PLACEHOLDER) != 1:
+        raise ConfigError(
+            f"monitor {name!r}: prompt template {prompt_ref!r} must contain "
+            f"{PROMPT_INPUTS_PLACEHOLDER} exactly once",
+        )
+    return template
+
+
 def _spec_from(entry: dict[str, Any]) -> MonitorSpec:
     taps = entry.get("tap", [])
     taps_tuple = tuple(taps) if isinstance(taps, list) else (str(taps),)
@@ -219,16 +252,19 @@ def _spec_from(entry: dict[str, Any]) -> MonitorSpec:
     if timing not in ("sync", "async"):
         raise ValueError(f"monitor {entry.get('name')!r}: timing must be 'sync' or 'async', got {timing!r}")
     timeout_raw = entry.get("timeout_s")
+    name = str(entry["name"])
+    prompt_ref = str(entry["prompt_ref"]) if entry.get("prompt_ref") is not None else None
+    mode = str(entry.get("mode", "heuristic"))
     return MonitorSpec(
-        name=str(entry["name"]),
+        name=name,
         taps=taps_tuple,
         inputs=tuple(entry.get("inputs", [])),
         model=str(entry.get("model", "none")),
-        prompt_ref=entry.get("prompt_ref"),
+        prompt_ref=prompt_ref,
         threshold=str(entry.get("threshold", "audit_budget")),
         scope=dict(entry.get("scope", {})),
         enabled=bool(entry.get("enabled", False)),
-        mode=str(entry.get("mode", "heuristic")),
+        mode=mode,
         timing=timing,
         per_monitor_reduce=(str(entry["per_monitor_reduce"]) if "per_monitor_reduce" in entry else None),
         weight=float(entry.get("weight", 1.0)),
@@ -236,6 +272,7 @@ def _spec_from(entry: dict[str, Any]) -> MonitorSpec:
         ensemble_n=int(entry.get("ensemble_n", 1)),
         temperature=float(entry.get("temperature", 0.0)),
         extra={k: v for k, v in entry.items() if k not in known},
+        prompt_template=_load_prompt_template(name, prompt_ref, mode),
     )
 
 
@@ -503,17 +540,17 @@ def live_suspicion(
     return best
 
 
-def load_template(prompt_ref: str | None) -> str:
-    """Load a monitor prompt template from its ``prompt_ref`` file (empty string if absent)."""
-    if not prompt_ref:
-        return ""
-    path = Path(prompt_ref)
-    return path.read_text() if path.exists() else ""
+def find_fallback_only_monitors(verdicts: list[MonitorVerdict], events: list[Event]) -> set[str]:
+    """The live monitors whose model never gave a usable verdict, so every score is the heuristic fallback.
+
+    Such a monitor recorded at least one ``monitor_parse_error`` (an unparseable completion or a failed
+    call) and none of its verdicts came from the model. A monitor that never called the model (heuristic
+    mode, or no provider) records no parse error and is not reported.
+    """
+    failed = {str(e.payload.get("monitor")) for e in events if e.kind == "monitor_parse_error"}
+    return failed - {v.monitor for v in verdicts if v.from_model}
 
 
-def render_prompt(template: str, payload: dict[str, Any]) -> str:
-    """Render the monitor prompt: the template with the declared observable inputs substituted in."""
-    body = json.dumps(payload, indent=2, default=str)
-    if "{inputs}" in template:
-        return template.replace("{inputs}", body)
-    return f"{template}\n\nObservable inputs:\n{body}"
+def render_prompt(template: str, payload: Mapping[str, object]) -> str:
+    """Render the monitor prompt: the template with the declared observable inputs, as JSON, in place."""
+    return template.replace(PROMPT_INPUTS_PLACEHOLDER, json.dumps(payload, indent=2, default=str))

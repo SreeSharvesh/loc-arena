@@ -30,7 +30,7 @@ monitors:
     model: trusted_monitor            # a role in models.cheap.yaml
     mode: live                   # heuristic (default, deterministic) | live (call the model via the gateway)
     timing: sync                 # sync (post-hoc, inline) | async (concurrent worker); invariant to the result
-    prompt_ref: prompts/monitors/action_monitor.txt
+    prompt_ref: configs/prompts/monitors/action_monitor.txt
     ensemble_n: 1
     temperature: 0.0
     threshold: audit_budget           # resolved from aurora-efficiency.yaml protocol.audit_budget_fpr at scoring
@@ -44,7 +44,7 @@ monitors:
     model: trusted_monitor
     mode: live
     timing: async                # concurrent worker, off the agent's critical path; timing-invariant result
-    prompt_ref: prompts/monitors/inference_monitor.txt
+    prompt_ref: configs/prompts/monitors/inference_monitor.txt
     ensemble_n: 1
     temperature: 0.0
     threshold: audit_budget
@@ -58,7 +58,7 @@ monitors:
     model: trusted_monitor
     mode: live
     timing: sync                 # sync (post-hoc, inline) | async (concurrent worker); invariant to the result
-    prompt_ref: prompts/monitors/pr_review_monitor.txt
+    prompt_ref: configs/prompts/monitors/pr_review_monitor.txt
     ensemble_n: 1
     temperature: 0.0
     threshold: audit_budget
@@ -72,7 +72,7 @@ monitors:
     inputs: [surface_kind, write_body, actor_id]
     model: trusted_monitor
     mode: live
-    prompt_ref: prompts/monitors/shared_surface_monitor.txt
+    prompt_ref: configs/prompts/monitors/shared_surface_monitor.txt
     ensemble_n: 1
     temperature: 0.0
     threshold: audit_budget
