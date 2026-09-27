@@ -58,11 +58,13 @@ def test_public_tree_excludes_internals_and_keeps_the_essentials(tmp_path: Path)
 def test_public_tree_ships_every_monitor_prompt_template(tmp_path: Path) -> None:
     # the loader refuses a prompt_ref naming no file, so a template left out would break the public repo
     dest = tmp_path / "public-repo"
+    specs = load_monitor_specs(_REPO / "configs" / "monitors.yaml")
+    prompt_refs = [spec.prompt_ref for spec in specs if spec.prompt_ref]
+    assert prompt_refs, "no shipped monitor declares a prompt template"
+
     build_public_tree(_REPO, dest)
-    refs = [s.prompt_ref for s in load_monitor_specs(_REPO / "configs" / "monitors.yaml") if s.prompt_ref]
-    assert refs
-    for ref in refs:
-        assert (dest / ref).is_file(), f"{ref} missing from the public tree"
+
+    assert [ref for ref in prompt_refs if not (dest / ref).is_file()] == []
 
 
 def test_verifier_flags_a_planted_leak(tmp_path: Path) -> None:
