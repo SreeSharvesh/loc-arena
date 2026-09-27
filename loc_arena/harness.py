@@ -19,21 +19,26 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
+import re
 import secrets
 import shutil
 import subprocess
 import tempfile
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import yaml
+from pydantic import SecretStr
 
 from loc_arena import live
-from loc_arena.config import RunConfig
-from loc_arena.gateway.core import GatewayCore, GenerateRequest, OpenRouterProvider, sign_monitor_credential
+from loc_arena.compose_document import APP_IMAGE, SERVICE_IMAGE, render_compose
+from loc_arena.config import RunConfig, load_run_config
+from loc_arena.gateway.core import GatewayCore, GenerateRequest, sign_monitor_credential
+from loc_arena.gateway.provider_endpoint import live_provider_from_env
+from loc_arena.gateway.provider_key import load_provider_key
 from loc_arena.logging_ import viewer
 from loc_arena.logging_.events import AppendOnlyLog, Event, read_events
 from loc_arena.metrics import (
@@ -53,19 +58,8 @@ from loc_arena.task import assemble_scripted_episode
 if TYPE_CHECKING:
     from loc_arena.logging_.inspect_export import EpisodeExport
 
-LABEL = "loc-arena.eval"
-IMAGE = "loc-arena-svc:latest"
 _SERVICES_DIR = Path(__file__).resolve().parent / "services"
-
-# where each named volume is mounted inside a container
-_VOLUME_MOUNT = {
-    "sealed_log": "/sealed",
-    "mirror_log": "/mirror",
-    "repos": "/repos",
-    "weights_data": "/weights",
-}
-# config service role -> the app role the shared image runs
-_ROLE = {"recorder": "recorder", "evidence_reader": "reader"}
+_REPO_ROOT = Path(__file__).resolve().parent.parent  # build context and compose project directory
 
 
 def _default_sink(kind: str, payload: dict[str, Any]) -> None:
@@ -83,96 +77,17 @@ def docker_available() -> bool:
     return subprocess.run(["docker", "info"], capture_output=True).returncode == 0
 
 
-def _svc_port(svc: dict[str, Any]) -> int:
-    port = svc.get("port")
-    return int(port) if isinstance(port, int) else 8000
-
-
-def _healthcheck(port: int) -> dict[str, Any]:
-    url = f"http://localhost:{port}/health"
-    probe = (
-        "import urllib.request,sys;"
-        f"u=urllib.request.urlopen('{url}',timeout=2);"
-        "sys.exit(0 if u.status==200 else 1)"
-    )
-    return {
-        "test": ["CMD", "python", "-c", probe],
-        "interval": "3s",
-        "timeout": "3s",
-        "retries": 15,
-        "start_period": "2s",
-    }
-
-
-def render_compose(config: RunConfig) -> dict[str, Any]:
-    """Render the compose document for one episode entirely from the resolved config (config over code)."""
-    raw = config.raw
-    services_cfg: dict[str, Any] = raw["services"]
-    networks_cfg: dict[str, Any] = raw["networks"]
-    volumes_cfg: dict[str, Any] = raw["volumes"]
-
-    compose: dict[str, Any] = {"services": {}, "networks": {}, "volumes": {}}
-
-    for net_name, net in networks_cfg.items():
-        internal = bool(net.get("internal", True)) if isinstance(net, dict) else True
-        compose["networks"][net_name] = {"internal": internal, "labels": {LABEL: "1"}}
-
-    for vol_name in volumes_cfg:
-        compose["volumes"][vol_name] = {"labels": {LABEL: "1"}}
-
-    for name, svc in services_cfg.items():
-        role = _ROLE.get(name, "health")
-        port = _svc_port(svc)
-        # No fixed container_name: compose names containers per PROJECT (<project>-<service>-N), so several
-        # episodes can run side by side without a name collision.
-        entry: dict[str, Any] = {
-            "image": IMAGE,
-            "environment": {"SVC_NAME": name, "SVC_ROLE": role, "SVC_PORT": str(port)},
-            "labels": {LABEL: "1"},
-            "restart": "no",
-        }
-        nets = svc.get("networks", [])
-        if nets:
-            entry["networks"] = list(nets)
-        else:
-            entry["network_mode"] = "none"  # the networkless evidence-reader
-
-        # volume mounts: attach each named volume to the services its mount_into lists
-        mounts: list[str] = []
-        for vol_name, vol in volumes_cfg.items():
-            if not isinstance(vol, dict):
-                continue
-            if name in vol.get("mount_into", []):
-                mount = _VOLUME_MOUNT.get(vol_name, f"/{vol_name}")
-                ro = ":ro" if svc.get("read_only") and vol_name == "sealed_log" else ""
-                mounts.append(f"{vol_name}:{mount}{ro}")
-                if vol_name == "sealed_log":
-                    entry["environment"]["SEALED_LOG"] = f"{mount}/events.jsonl"
-        if mounts:
-            entry["volumes"] = mounts
-
-        if role != "reader":
-            entry["healthcheck"] = _healthcheck(port)
-
-        # resource limits (execution) straight from config
-        if "mem_limit" in svc:
-            entry["mem_limit"] = svc["mem_limit"]
-        if "cpus" in svc:
-            entry["cpus"] = float(svc["cpus"])
-        if "pids_limit" in svc:
-            entry["pids_limit"] = int(svc["pids_limit"])
-
-        compose["services"][name] = entry
-
-    return compose
-
-
 @dataclass
 class EpisodeStack:
-    """A brought-up stack: its compose project name and the rendered compose file path."""
+    """A brought-up stack: its compose project name and the rendered compose file path.
+
+    ``secret_environment`` holds the values of the compose secrets' ``environment:`` sources. It is passed
+    only to the ``docker compose`` process (never to a container); each value masks itself.
+    """
 
     project: str
     compose_file: Path
+    secret_environment: dict[str, SecretStr] = field(default_factory=dict)
 
     def exec(
         self,
@@ -195,30 +110,62 @@ class EpisodeStack:
         return {s for s in result.stdout.split() if s}
 
 
-def _compose(stack: EpisodeStack, args: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
-    cmd = ["docker", "compose", "-p", stack.project, "-f", str(stack.compose_file), *args]
-    return subprocess.run(cmd, capture_output=True, text=True, check=check)
+def _compose(
+    stack: EpisodeStack,
+    args: list[str],
+    *,
+    check: bool = True,
+    capture: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    command = [
+        "docker",
+        "compose",
+        "-p",
+        stack.project,
+        "-f",
+        str(stack.compose_file),
+        "--project-directory",
+        str(_REPO_ROOT),  # relative paths in the rendered file (./logs) resolve against the repo root
+        *args,
+    ]
+    revealed_secrets = {
+        variable: secret.get_secret_value() for variable, secret in stack.secret_environment.items()
+    }
+    environment = {**os.environ, **revealed_secrets}
+    return subprocess.run(command, capture_output=capture, text=True, check=check, env=environment)
 
 
-def _build_image() -> None:
-    result = subprocess.run(
-        ["docker", "build", "-t", IMAGE, str(_SERVICES_DIR)],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        raise HarnessError(f"image build failed:\n{result.stderr}")
+def _build_images() -> None:
+    for tag, context in ((SERVICE_IMAGE, _SERVICES_DIR), (APP_IMAGE, _REPO_ROOT)):
+        result = subprocess.run(["docker", "build", "-t", tag, str(context)], capture_output=True, text=True)
+        if result.returncode != 0:
+            raise HarnessError(f"image build failed for {tag}:\n{result.stderr[-4000:]}")
 
 
-def up(config: RunConfig, *, project: str, workdir: Path | None = None) -> EpisodeStack:
-    """Build the image, render the compose file, and bring the stack up healthy (``--wait``)."""
-    _build_image()
+def up(
+    config: RunConfig,
+    *,
+    project: str,
+    workdir: Path | None = None,
+    secret_environment: dict[str, SecretStr] | None = None,
+) -> EpisodeStack:
+    """Build the images, render the compose file, and bring the stack up healthy (``--wait``).
+
+    ``secret_environment`` supplies the compose secrets (the provider key for gateway_core). A secret it
+    leaves out is empty, so the provider endpoint answers 503: enough for the isolation tests.
+    """
+    _build_images()
     out_dir = workdir if workdir is not None else Path(tempfile.mkdtemp(prefix="locarena-"))
     out_dir.mkdir(parents=True, exist_ok=True)
     compose_file = out_dir / "compose.resolved.yaml"
     compose_file.write_text(yaml.safe_dump(render_compose(config), sort_keys=False))
-    stack = EpisodeStack(project=project, compose_file=compose_file)
-    result = _compose(stack, ["up", "-d", "--wait"], check=False)
+    empty_secrets = {variable: SecretStr("") for variable in _secret_source_variables(config)}
+    stack = EpisodeStack(
+        project=project,
+        compose_file=compose_file,
+        secret_environment={**empty_secrets, **(secret_environment or {})},
+    )
+    result = _compose(stack, ["up", "-d", "--wait", "--wait-timeout", "180"], check=False)
     if result.returncode != 0:
         teardown(stack)
         raise HarnessError(f"stack did not come up healthy:\n{result.stdout}\n{result.stderr}")
@@ -229,9 +176,89 @@ def teardown(stack: EpisodeStack) -> None:
     """Remove every resource of THIS project (containers, networks, volumes). Idempotent, project-scoped.
 
     Project-scoped so tearing one episode down never touches another concurrent episode (they share the
-    ``loc-arena.eval`` label). ``scripts/teardown.sh`` is the label-wide manual sweep for interactive use.
+    ``loc-arena.eval`` label). ``--profile "*"`` includes on-demand services such as the runner.
+    ``scripts/teardown.sh`` is the label-wide manual sweep for interactive use.
     """
-    _compose(stack, ["down", "-v", "--remove-orphans", "-t", "3"], check=False)
+    _compose(stack, ["--profile", "*", "down", "-v", "--remove-orphans", "-t", "3"], check=False)
+
+
+def run_in_runner(
+    stack: EpisodeStack,
+    command: list[str],
+    *,
+    output_directory: Path | None = None,
+    capture: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    """Run ``command`` in a fresh runner container (removed afterwards) as the host user.
+
+    ``output_directory`` (a host directory) is bind-mounted at ``/app/logs`` for this container only; running
+    as the host uid keeps what the run writes there owned by that user.
+    """
+    user = f"{os.getuid()}:{os.getgid()}"
+    output_mount = ["--volume", f"{output_directory.resolve()}:/app/logs"] if output_directory else []
+    return _compose(
+        stack,
+        ["run", "--rm", "-T", "--user", user, *output_mount, "runner", *command],
+        check=False,
+        capture=capture,
+    )
+
+
+def _move_bundles(staging_directory: Path, logs_directory: Path) -> None:
+    """Merge the bundles a run wrote into ``logs_directory`` and remove the staging directory."""
+    shutil.copytree(staging_directory, logs_directory, dirs_exist_ok=True)
+    shutil.rmtree(staging_directory)
+
+
+def _secret_source_variables(config: RunConfig) -> list[str]:
+    """The environment variables the config's compose secrets read their values from."""
+    return [
+        str(spec["environment"]) for spec in config.raw.get("secrets", {}).values() if "environment" in spec
+    ]
+
+
+def _compose_project_name(run: str) -> str:
+    """A unique compose project name for one run (lowercase letters, digits, hyphens and underscores only)."""
+    run_fragment = re.sub(r"[^a-z0-9_-]+", "-", run.lower()).strip("-") or "run"
+    return f"locarena-{run_fragment}-{secrets.token_hex(3)}"
+
+
+def run_in_stack(run: str, mode: str, *, dotenv_path: Path | None = None) -> int:
+    """Run one episode inside the compose stack (``make run``): the agents never run on this machine.
+
+    Brings the stack up with the provider key as a compose secret for gateway_core only, runs
+    ``loc_arena.cli run`` in the runner container, and tears everything down. Returns the runner's exit code.
+    """
+    if not docker_available():
+        raise HarnessError(
+            "Docker is not running. Start Docker Desktop, or run in-process with STACK=0 "
+            "(the agents' code then runs on this machine with its credentials in reach).",
+        )
+    config = load_run_config(f"configs/{run}.yaml")
+    provider_key = load_provider_key(dotenv_path=dotenv_path or _REPO_ROOT / ".env")
+    if config.policy == "model" and provider_key is None:
+        raise HarnessError(
+            "policy: model needs OPENROUTER_API_KEY (in .env or the environment) for gateway_core",
+        )
+    stack = up(
+        config,
+        project=_compose_project_name(run),
+        secret_environment={"OPENROUTER_API_KEY": provider_key or SecretStr("")},
+    )
+    logs_directory = _REPO_ROOT / "logs"
+    staging_directory = logs_directory / ".incoming" / stack.project  # this run sees only its own output
+    staging_directory.mkdir(parents=True)
+    try:
+        result = run_in_runner(
+            stack,
+            ["python", "-m", "loc_arena.cli", "run", "--run", run, "--mode", mode],
+            output_directory=staging_directory,
+            capture=False,
+        )
+        return result.returncode
+    finally:
+        teardown(stack)
+        _move_bundles(staging_directory, logs_directory)
 
 
 def stack_health(config: RunConfig, *, project: str) -> dict[str, Any]:
@@ -531,8 +558,8 @@ def run_episode(
     # monitors declared ``mode: live`` in monitors.yaml actually score each event. A scripted or no-key run
     # passes no provider, so those monitors fall back to their heuristic (deterministic; the firewall holds
     # either way). Monitor visibility stays entirely a monitors.yaml concern.
-    if monitor_provider is None and cfg.policy == "model" and os.environ.get("OPENROUTER_API_KEY"):
-        monitor_provider = OpenRouterProvider()
+    if monitor_provider is None and cfg.policy == "model":
+        monitor_provider = live_provider_from_env()
     the_seed = seed if seed is not None else cfg.seed
     instance_id = run_instance_id or secrets.token_hex(3)
     run_name = cfg.run_name(mode, instance_id)

@@ -11,6 +11,8 @@ dependencies = [
   "httpx>=0.27",
   "inspect-ai>=0.3.239,<0.4",
   "pygments>=2.18",
+  "pydantic>=2.13.5",
+  "pydantic-settings>=2.15.0",
 ]
 
 [project.scripts]

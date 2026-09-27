@@ -1,0 +1,18 @@
+# Allowlist: only what the app image needs. Secrets (.env), the local venv, run logs and git history are
+# never sent to the build context. (loc_arena/services/Dockerfile builds from its own directory.)
+*
+!pyproject.toml
+!uv.lock
+!README.md
+!loc_arena
+!company
+!scenarios
+!configs
+**/.env
+**/*.env
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+**/.DS_Store

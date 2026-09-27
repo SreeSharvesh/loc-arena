@@ -1,22 +1,32 @@
 # compose.yaml -- the per-episode LOC-Arena stack.
-# GENERATED from configs/env.default.yaml by loc_arena.harness.render_compose (config over
+# GENERATED from configs/env.default.yaml by loc_arena.compose_document.render_compose (config over
 # code). Do not edit by hand; change the config and regenerate. The harness renders and runs this per
 # episode; this committed copy is the canonical reference stack.
 
 services:
   gateway_core:
-    image: loc-arena-svc:latest
+    image: loc-arena-app:latest
     environment:
       SVC_NAME: gateway_core
       SVC_ROLE: health
       SVC_PORT: '4000'
+      LOC_ARENA_MODEL_ALLOWLIST: '{"deepseek/deepseek-v4-flash": 8192, "meta-llama/llama-3.1-8b-instruct":
+        4096, "deepseek/deepseek-chat": 4096}'
     labels:
       loc-arena.eval: '1'
     restart: 'no'
+    command:
+    - python
+    - -m
+    - loc_arena.gateway.provider_endpoint
+    secrets:
+    - openrouter_api_key
     networks:
-    - control-net
-    - sealed-net
-    - egress-net
+      control-net:
+        aliases:
+        - gateway-core
+      sealed-net: {}
+      egress-net: {}
     healthcheck:
       test:
       - CMD
@@ -263,6 +273,34 @@ services:
     network_mode: none
     volumes:
     - sealed_log:/sealed:ro
+  runner:
+    image: loc-arena-app:latest
+    environment:
+      SVC_NAME: runner
+      SVC_ROLE: runner
+      SVC_PORT: '8000'
+      LOC_ARENA_PROVIDER_URL: http://gateway-core:4000
+      HOME: /tmp
+    labels:
+      loc-arena.eval: '1'
+    restart: 'no'
+    profiles:
+    - runner
+    networks:
+    - control-net
+    depends_on:
+      gateway_core:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+    - /tmp:mode=1777
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    mem_limit: 4g
+    cpus: 2.0
+    pids_limit: 4096
 networks:
   agent-net:
     internal: true
@@ -293,3 +331,6 @@ volumes:
   weights_data:
     labels:
       loc-arena.eval: '1'
+secrets:
+  openrouter_api_key:
+    environment: OPENROUTER_API_KEY

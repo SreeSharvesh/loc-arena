@@ -28,8 +28,8 @@
 Almost everything is config, so most changes are a config edit rather than a code change.</p>
 
 <h2>Setup</h2>
-<p>You need <code>uv</code> (Python 3.12, pinned) and, for a live run, an OpenRouter API key. The key is read only
-by the gateway.</p>
+<p>You need <code>uv</code> (Python 3.12, pinned), Docker, and, for a live run, an OpenRouter API key in
+<code>.env</code>. The key reaches only the gateway container, as a compose secret.</p>
 <pre><code>uv sync                       # create the environment and install everything
 cp .env.example .env          # then set OPENROUTER_API_KEY
 make setup                    # check the toolchain, sync deps, validate the config</code></pre>
@@ -52,8 +52,10 @@ loc-arena sweep --run aurora-efficiency --honest 3 --attack 3   # many episodes,
 
 <p>Every run writes a self-contained bundle named after what actually ran, so the same setting can run many times
 without collision. The bundle holds the resolved config, both event records, the two verdicts, the report page,
-and a notes file. Add <code>STACK=1</code> to bring up the container stack for structural isolation; without it the
-same episode runs in a single process. <code>make gates</code> runs the formatting, typing, and test checks.</p>
+and a notes file. By default the episode runs inside the container stack: the agents and the code they write run
+in a runner container with no API key and no internet, and only the gateway container holds the key. Add
+<code>STACK=0</code> to run the same episode as one process on your machine instead, where the agents' code can
+reach local credentials. <code>make gates</code> runs the formatting, typing, and test checks.</p>
 
 <h2>Read the dashboard</h2>
 <p>Open the latest report. It is a single static page, and a run index lists every run.</p>
