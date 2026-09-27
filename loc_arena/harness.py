@@ -22,7 +22,9 @@ import os
 import re
 import secrets
 import shutil
+import stat
 import subprocess
+import sys
 import tempfile
 import time
 from dataclasses import dataclass, field
@@ -204,10 +206,30 @@ def run_in_runner(
     )
 
 
-def _move_bundles(staging_directory: Path, logs_directory: Path) -> None:
-    """Merge the bundles a run wrote into ``logs_directory`` and remove the staging directory."""
-    shutil.copytree(staging_directory, logs_directory, dirs_exist_ok=True)
+def collect_run_output(staging_directory: Path, logs_directory: Path) -> list[Path]:
+    """Copy what a runner wrote into ``logs_directory`` and remove the staging directory.
+
+    The runner (agent code included) controlled ``staging_directory``, so nothing in it is followed: only real
+    directories and regular files are copied; symlinks, FIFOs, sockets and devices are dropped. Returns the
+    dropped paths, relative to ``staging_directory``. Call it after the runner container is gone.
+    """
+    dropped: list[Path] = []
+    for directory, subdirectory_names, file_names in os.walk(staging_directory, followlinks=False):
+        source_directory = Path(directory)
+        target_directory = logs_directory / source_directory.relative_to(staging_directory)
+        target_directory.mkdir(parents=True, exist_ok=True)
+        for name in list(subdirectory_names):
+            if (source_directory / name).is_symlink():
+                subdirectory_names.remove(name)  # os.walk does not descend into it
+                dropped.append((source_directory / name).relative_to(staging_directory))
+        for name in file_names:
+            source = source_directory / name
+            if stat.S_ISREG(source.lstat().st_mode):
+                shutil.copy2(source, target_directory / name, follow_symlinks=False)
+            else:
+                dropped.append(source.relative_to(staging_directory))
     shutil.rmtree(staging_directory)
+    return dropped
 
 
 def _secret_source_variables(config: RunConfig) -> list[str]:
@@ -240,14 +262,15 @@ def run_in_stack(run: str, mode: str, *, dotenv_path: Path | None = None) -> int
         raise HarnessError(
             "policy: model needs OPENROUTER_API_KEY (in .env or the environment) for gateway_core",
         )
+    project = _compose_project_name(run)
+    logs_directory = _REPO_ROOT / "logs"
+    staging_directory = logs_directory / ".incoming" / project  # this run sees only its own output
+    staging_directory.mkdir(parents=True)
     stack = up(
         config,
-        project=_compose_project_name(run),
+        project=project,
         secret_environment={"OPENROUTER_API_KEY": provider_key or SecretStr("")},
     )
-    logs_directory = _REPO_ROOT / "logs"
-    staging_directory = logs_directory / ".incoming" / stack.project  # this run sees only its own output
-    staging_directory.mkdir(parents=True)
     try:
         result = run_in_runner(
             stack,
@@ -257,8 +280,13 @@ def run_in_stack(run: str, mode: str, *, dotenv_path: Path | None = None) -> int
         )
         return result.returncode
     finally:
-        teardown(stack)
-        _move_bundles(staging_directory, logs_directory)
+        teardown(stack)  # the runner is gone before its output is read
+        dropped = collect_run_output(staging_directory, logs_directory)
+        if dropped:
+            print(
+                f"dropped {len(dropped)} non-regular file(s) from the run output: {dropped[:5]}",
+                file=sys.stderr,
+            )
 
 
 def stack_health(config: RunConfig, *, project: str) -> dict[str, Any]:

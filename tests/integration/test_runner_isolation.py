@@ -14,7 +14,15 @@ from pathlib import Path
 
 import pytest
 from loc_arena.config import load_run_config
-from loc_arena.harness import EpisodeStack, docker_available, render_compose, run_in_runner, teardown, up
+from loc_arena.harness import (
+    EpisodeStack,
+    collect_run_output,
+    docker_available,
+    render_compose,
+    run_in_runner,
+    teardown,
+    up,
+)
 from pydantic import SecretStr
 
 pytestmark = pytest.mark.skipif(not docker_available(), reason="docker daemon unavailable")
@@ -167,3 +175,32 @@ def test_a_run_sees_only_its_own_output_directory(stack: EpisodeStack, tmp_path:
     result = run_in_runner(stack, ["python", "-c", probe], output_directory=tmp_path)
     assert result.returncode == 0, result.stderr[-2000:]
     assert json.loads(result.stdout.strip().splitlines()[-1]) == {"entries": "this-run.txt"}
+
+
+def test_collecting_the_output_never_follows_links_the_runner_planted(
+    stack: EpisodeStack,
+    tmp_path: Path,
+) -> None:
+    outside = tmp_path / "outside"  # a host directory the runner cannot see
+    outside.mkdir()
+    (outside / "host-secret.txt").write_text(CANARY)
+    staging, logs = tmp_path / "staging", tmp_path / "logs"
+    staging.mkdir()
+    probe = (
+        "import json, os, pathlib\n"
+        f"target = {str(outside)!r}\n"
+        "out = pathlib.Path('/app/logs')\n"
+        "(out / 'bundle').mkdir()\n"
+        "(out / 'bundle' / 'scores.json').write_text('{}')\n"
+        "os.symlink(target + '/host-secret.txt', out / 'bundle' / 'leak.txt')\n"
+        "os.symlink(target, out / 'leak-dir')\n"
+        "print(json.dumps({'planted': True}))\n"
+    )
+    result = run_in_runner(stack, ["python", "-c", probe], output_directory=staging)
+    assert result.returncode == 0, result.stderr[-2000:]
+    dropped = collect_run_output(staging, logs)
+    assert sorted(str(path) for path in dropped) == ["bundle/leak.txt", "leak-dir"]
+    copied = sorted(str(path.relative_to(logs)) for path in logs.rglob("*"))
+    assert copied == ["bundle", "bundle/scores.json"]
+    assert not any(CANARY in path.read_text() for path in logs.rglob("*") if path.is_file())
+    assert not staging.exists()
