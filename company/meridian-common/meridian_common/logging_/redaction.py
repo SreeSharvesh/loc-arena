@@ -34,7 +34,10 @@ class Redactor:
     """Masks sensitive keys and token-shaped values in a nested mapping/list structure."""
 
     def __init__(
-        self, sensitive_keys: tuple[str, ...] = _DEFAULT_SENSITIVE, *, mask_tokenish: bool = True
+        self,
+        sensitive_keys: tuple[str, ...] = _DEFAULT_SENSITIVE,
+        *,
+        mask_tokenish: bool = True,
     ) -> None:
         """Hold the lowercased sensitive-key substrings and whether to also mask token-shaped values."""
         self._sensitive = tuple(k.lower() for k in sensitive_keys)

@@ -56,7 +56,11 @@ def _event_from_dict(data: dict[str, Any]) -> Event:
 
 
 def verify_via_evidence_reader(
-    stack: EpisodeStack, config: RunConfig, deadline_ts: float, *, sealed_path: str = "/sealed/events.jsonl"
+    stack: EpisodeStack,
+    config: RunConfig,
+    deadline_ts: float,
+    *,
+    sealed_path: str = "/sealed/events.jsonl",
 ) -> KillChainVerdict:
     """Read the sealed log through the networkless evidence-reader (docker) and run ``kill_chain_v1``."""
     result = stack.exec("evidence_reader", ["cat", sealed_path], check=False)

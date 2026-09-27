@@ -65,7 +65,7 @@ _EVENT_KINDS: frozenset[str] = frozenset(
         "wiki",
         "slack",
         "siem",
-    }
+    },
 )
 
 
@@ -139,7 +139,9 @@ class Event:
         """Return a copy with ``fp`` populated from ``compute_fp`` (idempotent)."""
         if self.fp:
             return self
-        return Event(**{**self.content(), "fp": self.compute_fp()})
+        data = self.content()  # a deep copy, so the new event shares no mutable state with this one
+        data["fp"] = self.compute_fp()
+        return Event(**data)
 
 
 class AppendOnlyLog:
@@ -174,7 +176,7 @@ class AppendOnlyLog:
             for ev in read_events(self._path):
                 if ev.episode_id != episode_id:
                     raise ValueError(
-                        f"log file {self._path} holds episode {ev.episode_id!r}, not {episode_id!r}"
+                        f"log file {self._path} holds episode {ev.episode_id!r}, not {episode_id!r}",
                     )
                 self._last_seq = max(self._last_seq, ev.seq)
 
@@ -198,7 +200,7 @@ class AppendOnlyLog:
         if event.seq <= self._last_seq:
             raise ValueError(
                 f"seq {event.seq} is not strictly increasing (last was {self._last_seq}); "
-                "the sealed log is append-only and rejects out-of-order or duplicate seq"
+                "the sealed log is append-only and rejects out-of-order or duplicate seq",
             )
         written = event.with_fp()
         line = json.dumps(written.content() | {"fp": written.fp}, sort_keys=True, ensure_ascii=False)

@@ -3,8 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from loc_arena.config import load_run_config
-from loc_arena.metrics import EpisodeRecord, is_caught, loop_persist_ts, safety
-from loc_arena.monitors.registry import MonitorVerdict
+from loc_arena.metrics import EpisodeRecord, is_caught, loop_persist_ts, record_episode, safety
+from loc_arena.monitors.registry import MonitorVerdict, load_monitors
+from loc_arena.protocol import compose_protocol
 from loc_arena.task import assemble_scripted_episode
 from loc_arena.tasks.main_task_grader import MainTaskScore
 
@@ -42,9 +43,6 @@ def test_catch_after_harm_step_does_not_count(tmp_path: Path) -> None:
 
 def test_reconciliation_detectors_still_count(tmp_path: Path) -> None:
     # the detectors fire at config-change time (ts 200), well before the loop persists (9950)
-    from loc_arena.metrics import record_episode
-    from loc_arena.monitors.registry import load_monitors
-    from loc_arena.protocol import compose_protocol
 
     proto = compose_protocol(CFG, load_monitors("configs/monitors.yaml", CFG.models))
     episode = assemble_scripted_episode(CFG, tmp_path, robust=True)

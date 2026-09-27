@@ -221,12 +221,18 @@ def test_events_differing_only_in_parent_task_are_not_twins() -> None:
 
 def test_open_episode_logs_subscribes_the_trace_only_when_traced(tmp_path: Path) -> None:
     trace, sealed, _mirror = open_episode_logs(
-        tmp_path / "s.jsonl", tmp_path / "m.jsonl", "ep-trace", traced=True
+        tmp_path / "s.jsonl",
+        tmp_path / "m.jsonl",
+        "ep-trace",
+        traced=True,
     )
     assert trace is not None
     sealed.append(_event(0))
     assert dict(trace.finish(last_sealed_seq=0).sealed_lane) == {0: None}
     untraced, _sealed, _ = open_episode_logs(
-        tmp_path / "s2.jsonl", tmp_path / "m2.jsonl", "ep-trace", traced=False
+        tmp_path / "s2.jsonl",
+        tmp_path / "m2.jsonl",
+        "ep-trace",
+        traced=False,
     )
     assert untraced is None

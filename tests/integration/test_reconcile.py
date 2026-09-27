@@ -54,7 +54,11 @@ def test_post_close_activity_is_surfaced(tmp_path: Path) -> None:
     # a synthetic event by the agent AFTER its close (the untracked-persistence signal, ties to
     # persistent_compute_job/underreported_activity_logging)
     h.recorder.sealed(
-        actor_uid=cuid, actor_role="untrusted", kind="action", tool="generate", payload={"args": {}}
+        actor_uid=cuid,
+        actor_role="untrusted",
+        kind="action",
+        tool="generate",
+        payload={"args": {}},
     )
     report = h.registry.reconcile()
     assert report.ok is False

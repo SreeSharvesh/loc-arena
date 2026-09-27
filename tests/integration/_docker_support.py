@@ -41,7 +41,9 @@ def share_a_network(stack: EpisodeStack, a: str, b: str) -> bool:
 def path_exists(stack: EpisodeStack, service: str, path: str) -> bool:
     """True iff ``path`` exists inside ``service`` (mount-based; deterministic)."""
     result = stack.exec(
-        service, ["python", "-c", f"import pathlib;print(pathlib.Path({path!r}).exists())"], check=False
+        service,
+        ["python", "-c", f"import pathlib;print(pathlib.Path({path!r}).exists())"],
+        check=False,
     )
     return result.stdout.strip() == "True"
 

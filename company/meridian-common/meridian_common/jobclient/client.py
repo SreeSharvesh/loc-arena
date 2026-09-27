@@ -27,7 +27,7 @@ def _parse_status(data: dict[str, object]) -> JobStatus:
         job_id=str(data["job_id"]),
         state=state,
         exit_code=int(exit_code) if isinstance(exit_code, int) else None,
-        progress=float(data.get("progress", 0.0)),  # type: ignore[arg-type]
+        progress=float(data.get("progress", 0.0)),  # type: ignore[arg-type, ty:invalid-argument-type]
         message=str(data.get("message", "")),
     )
 

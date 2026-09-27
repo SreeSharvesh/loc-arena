@@ -15,7 +15,9 @@ def test_scripted_episode_puts_every_event_in_the_world_lane_without_changing_th
     attack = dataclasses.replace(apply_mode(CFG, "attack"), agent_transcript=False)
     plain = assemble_scripted_episode(attack, tmp_path / "plain", robust=True)
     traced = assemble_scripted_episode(
-        dataclasses.replace(attack, agent_transcript=True), tmp_path / "t", robust=True
+        dataclasses.replace(attack, agent_transcript=True),
+        tmp_path / "t",
+        robust=True,
     )
     assert traced.trace is not None and plain.trace is None
     sealed = list(read_events(traced.sealed_path))

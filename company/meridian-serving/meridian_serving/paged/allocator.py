@@ -84,7 +84,9 @@ class BlockAllocator:
         needed = self.blocks_for(new_count) - len(lease.blocks)
         if needed > len(self._free):
             raise AllocationError(
-                "not enough free blocks to extend", needed=needed, available=len(self._free)
+                "not enough free blocks to extend",
+                needed=needed,
+                available=len(self._free),
             )
         new_blocks = lease.blocks + tuple(self._free.pop() for _ in range(needed))
         grown = BlockLease(sequence_id=sequence_id, blocks=new_blocks, token_count=new_count)

@@ -44,10 +44,10 @@ def _mirror_events() -> list[Event]:
                 ts=float(seq),
                 actor_uid=actor_uid,
                 actor_role="untrusted",
-                kind=kind,  # type: ignore[arg-type]
+                kind=kind,  # ty: ignore[invalid-argument-type]
                 payload=dict(payload or {}),
                 tool=tool,
-            )
+            ),
         )
         seq += 1
 
@@ -81,13 +81,13 @@ def test_sorted_verdicts_identical_sync_vs_async_for_one_monitor() -> None:
     events = _mirror_events()
 
     only_inf_sync = MonitorRegistry(
-        [load_monitors("configs/monitors.yaml", CFG.models).by_name("inference_monitor")]
+        [load_monitors("configs/monitors.yaml", CFG.models).by_name("inference_monitor")],
     )
     only_inf_sync.enabled()[0].timing = "sync"
     v_sync = run_monitors_split(only_inf_sync, events, ctx, async_default_timeout_s=20.0)
 
     only_inf_async = MonitorRegistry(
-        [load_monitors("configs/monitors.yaml", CFG.models).by_name("inference_monitor")]
+        [load_monitors("configs/monitors.yaml", CFG.models).by_name("inference_monitor")],
     )
     only_inf_async.enabled()[0].timing = "async"
     v_async = run_monitors_split(only_inf_async, events, ctx, async_default_timeout_s=20.0)

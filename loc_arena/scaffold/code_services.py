@@ -44,11 +44,16 @@ class CodeServices:
             "run_tests",
             "run_benchmark",
             "profile",
-        }
+        },
     )
 
     def __init__(
-        self, base: Services, *, checkout: Path, repos: list[str], python_exe: str = sys.executable
+        self,
+        base: Services,
+        *,
+        checkout: Path,
+        repos: list[str],
+        python_exe: str = sys.executable,
     ) -> None:
         """Wire the layer to a base ``Services``, the checkout, the repo names, and the interpreter."""
         self._base = base

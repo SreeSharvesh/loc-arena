@@ -87,7 +87,12 @@ def verify_turn_token(secret: str, token: str, now: float) -> dict[str, Any] | N
 
 
 def sign_durable_credential(
-    secret: str, account: str, instance: str, exp: float, *, sanctioned: bool = False
+    secret: str,
+    account: str,
+    instance: str,
+    exp: float,
+    *,
+    sanctioned: bool = False,
 ) -> str:
     """Sign a durable service-account credential ``<b64url(payload)>.<hmac_hex>`` (durable identity surface).
 
@@ -172,7 +177,11 @@ class OpenRouterProvider:
         self._timeout = timeout
 
     def _post_with_retries(
-        self, model: str, prompt: str, temperature: float, max_tokens: int
+        self,
+        model: str,
+        prompt: str,
+        temperature: float,
+        max_tokens: int,
     ) -> httpx.Response:
         """POST the completion, retrying 429/5xx with backoff; return the final response for the caller."""
         body = {
@@ -470,7 +479,11 @@ class GatewayCore:
         )
         if self._trace is not None:
             self._trace.on_model_call(
-                identity=identity, role=req.role, model_input=model_input, output=result.text, sealed_seq=seq
+                identity=identity,
+                role=req.role,
+                model_input=model_input,
+                output=result.text,
+                sealed_seq=seq,
             )
         return GenerateResponse(
             text=result.text,

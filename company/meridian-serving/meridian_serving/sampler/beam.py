@@ -59,7 +59,11 @@ class BeamSearch:
         self._length_penalty = length_penalty
 
     def search(
-        self, prompt: tuple[int, ...], score_fn: ScoreFn, *, eos: int | None = None
+        self,
+        prompt: tuple[int, ...],
+        score_fn: ScoreFn,
+        *,
+        eos: int | None = None,
     ) -> BeamSearchResult:
         """Search from ``prompt`` using ``score_fn``, stopping a beam at ``eos`` or the step cap."""
         beams = [Beam(tokens=prompt, logprob=0.0)]

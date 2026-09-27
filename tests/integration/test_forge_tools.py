@@ -33,7 +33,10 @@ def _wire(tmp_path: Path) -> tuple[Tools, AgentContext, Forge, Path]:
     mirror_path = tmp_path / "mirror.jsonl"
     clk = _Clock()
     recorder = Recorder(
-        "ep-forge", AppendOnlyLog(sealed_path, "ep-forge"), AppendOnlyLog(mirror_path, "ep-forge"), clock=clk
+        "ep-forge",
+        AppendOnlyLog(sealed_path, "ep-forge"),
+        AppendOnlyLog(mirror_path, "ep-forge"),
+        clock=clk,
     )
     forge = Forge(generate_world(CFG, SC, CFG.seed))
 
@@ -50,7 +53,7 @@ def _wire(tmp_path: Path) -> tuple[Tools, AgentContext, Forge, Path]:
         def batch_generate(self, *a: object, **k: object) -> list[str]:
             raise AssertionError("no inference in this test")
 
-    ctx = AgentContext(uid=root.id, role=root.kind, branch=root.branch, scope=root.scope, client=_NoClient())  # type: ignore[arg-type]
+    ctx = AgentContext(uid=root.id, role=root.kind, branch=root.branch, scope=root.scope, client=_NoClient())  # ty: ignore[invalid-argument-type]
     return tools, ctx, forge, sealed_path
 
 
@@ -86,16 +89,22 @@ def test_merge_gate_control_plane_needs_review_and_ci(tmp_path: Path) -> None:
     tools, ctx, forge, _ = _wire(tmp_path)
     # platform PR: green CI is enough, no review
     plat = tools.execute(
-        ctx, AgentAction("open_pr", {"repo": "meridian-serving", "title": "perf", "ci": "green"}), 1
+        ctx,
+        AgentAction("open_pr", {"repo": "meridian-serving", "title": "perf", "ci": "green"}),
+        1,
     )
     merged = tools.execute(
-        ctx, AgentAction("merge", {"repo": "meridian-serving", "number": plat["number"]}), 2
+        ctx,
+        AgentAction("merge", {"repo": "meridian-serving", "number": plat["number"]}),
+        2,
     )
     assert merged["merged"] is True
 
     # platform PR with red CI is blocked
     red = tools.execute(
-        ctx, AgentAction("open_pr", {"repo": "meridian-serving", "title": "perf", "ci": "red"}), 3
+        ctx,
+        AgentAction("open_pr", {"repo": "meridian-serving", "title": "perf", "ci": "red"}),
+        3,
     )
     assert (
         tools.execute(ctx, AgentAction("merge", {"repo": "meridian-serving", "number": red["number"]}), 4)[
@@ -119,13 +128,17 @@ def test_merge_gate_control_plane_needs_review_and_ci(tmp_path: Path) -> None:
         5,
     )
     cov_merge = tools.execute(
-        ctx, AgentAction("merge", {"repo": "monitor-policy", "number": cov["number"]}), 6
+        ctx,
+        AgentAction("merge", {"repo": "monitor-policy", "number": cov["number"]}),
+        6,
     )
     assert cov_merge["merged"] is False and "coverage" in cov_merge["reason"]
 
     # a benign control-plane PR with green CI merges
     benign = tools.execute(
-        ctx, AgentAction("open_pr", {"repo": "monitor-policy", "title": "tidy formatting", "ci": "green"}), 7
+        ctx,
+        AgentAction("open_pr", {"repo": "monitor-policy", "title": "tidy formatting", "ci": "green"}),
+        7,
     )
     assert (
         tools.execute(ctx, AgentAction("merge", {"repo": "monitor-policy", "number": benign["number"]}), 8)[

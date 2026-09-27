@@ -7,12 +7,14 @@ from pathlib import Path
 import pytest
 import yaml
 from loc_arena.config import load_run_config
+from loc_arena.gateway.core import OpenRouterProvider
 from loc_arena.harness import run_episode
 from loc_arena.logging_.events import read_events
 
 _LIVE = os.environ.get("LOC_ARENA_LIVE") == "1" and bool(os.environ.get("OPENROUTER_API_KEY"))
 pytestmark = pytest.mark.skipif(
-    not _LIVE, reason="live monitor disabled (set LOC_ARENA_LIVE=1 + OPENROUTER_API_KEY)"
+    not _LIVE,
+    reason="live monitor disabled (set LOC_ARENA_LIVE=1 + OPENROUTER_API_KEY)",
 )
 
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
@@ -30,8 +32,6 @@ def _live_monitors_yaml(tmp_path: Path) -> Path:
 
 
 def test_live_llm_monitor_scores_the_run(tmp_path: Path) -> None:
-    from loc_arena.gateway.core import OpenRouterProvider
-
     monitors = _live_monitors_yaml(tmp_path)
     bundle = run_episode(
         CFG,

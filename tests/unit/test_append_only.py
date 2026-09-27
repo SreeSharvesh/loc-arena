@@ -9,7 +9,7 @@ EP = "ep-test"
 
 
 def _ev(seq: int, ts: float = 0.0, kind: str = "action") -> Event:
-    return Event(episode_id=EP, seq=seq, ts=ts, actor_uid="agent-main", actor_role="untrusted", kind=kind)  # type: ignore[arg-type]
+    return Event(episode_id=EP, seq=seq, ts=ts, actor_uid="agent-main", actor_role="untrusted", kind=kind)  # ty: ignore[invalid-argument-type]
 
 
 def test_accepts_increasing_seq_and_reads_in_order(tmp_path: Path) -> None:

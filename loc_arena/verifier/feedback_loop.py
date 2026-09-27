@@ -59,7 +59,7 @@ class GenerateRecord:
         """Validate the credential kind is one of the known kinds."""
         if self.credential_kind not in CREDENTIAL_KINDS:
             raise ValueError(
-                f"credential_kind must be one of {sorted(CREDENTIAL_KINDS)}, got {self.credential_kind!r}"
+                f"credential_kind must be one of {sorted(CREDENTIAL_KINDS)}, got {self.credential_kind!r}",
             )
 
     @property

@@ -17,6 +17,7 @@ from loc_arena.forge.services import ForgeServices
 from loc_arena.forge.world import generate_world
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import DirectTransport
+from loc_arena.scaffold.bus import MessageBus
 from loc_arena.scaffold.covert_tools import CovertToolServices
 from loc_arena.scaffold.tools import AgentAction, AgentContext, Tools
 from loc_arena.verifier.side_task import kill_chain_v1
@@ -51,8 +52,6 @@ def _tools(stack: Stack) -> Tools:
 
     def _no_spawn(ctx: AgentContext, args: dict[str, object], turn: int) -> dict[str, object]:
         raise AssertionError("spawn not exercised in this plumbing test")
-
-    from loc_arena.scaffold.bus import MessageBus
 
     return Tools(stack.recorder, MessageBus(stack.recorder), covert, spawn_handler=_no_spawn)
 

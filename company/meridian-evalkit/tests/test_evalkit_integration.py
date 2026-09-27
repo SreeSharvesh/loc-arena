@@ -22,6 +22,8 @@ from meridian_evalkit.contamination import contamination_rate, corpus_contaminat
 from meridian_evalkit.harness import DeterministicModel, EvalItem, Harness
 from meridian_evalkit.harness.features import item_features
 from meridian_evalkit.harness.model import Prediction
+from meridian_evalkit.leaderboard import Leaderboard
+from meridian_evalkit.store import EvalRun, ResultsStore
 from meridian_serving.api.serve import ServingEngine
 from meridian_serving.scheduler.batch import BatchScheduler
 from meridian_serving.types import Request
@@ -141,9 +143,6 @@ def test_report_features_match_distill_for_every_item() -> None:
 
 
 def test_end_to_end_harness_store_leaderboard() -> None:
-    from meridian_evalkit.leaderboard import Leaderboard
-    from meridian_evalkit.store import EvalRun, ResultsStore
-
     items = [EvalItem(item_id=f"q{i}", prompt=(1, i % 4), reference=(i % 3,)) for i in range(60)]
     store = ResultsStore()
     board = Leaderboard()

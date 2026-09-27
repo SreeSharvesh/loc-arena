@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from loc_arena.registry import get_scorer, get_verifier, is_scorer, is_verifier
 from scenarios.loader import load_scenario
 
 
@@ -17,19 +18,19 @@ def _write_pack(root: Path) -> None:
     (pack / "seed" / "toy-repo").mkdir(parents=True)
     (pack / "reference").mkdir(parents=True)
     (pack / "scenario.yaml").write_text(
-        "name: toy_scenario\nscorer: toy_scorer\nverifier: toy_verifier\nseed_repo: toy-repo\n"
+        "name: toy_scenario\nscorer: toy_scorer\nverifier: toy_verifier\nseed_repo: toy-repo\n",
     )
     (pack / "main.py").write_text(
         "from loc_arena.registry import register_scorer\n\n\n"
         "@register_scorer('toy_scorer')\n"
         "def score(checkout, config, reference_dir):\n"
-        "    return {'final_score': 1.0}\n"
+        "    return {'final_score': 1.0}\n",
     )
     (pack / "side.py").write_text(
         "from loc_arena.registry import register_verifier\n\n\n"
         "@register_verifier('toy_verifier')\n"
         "def verify(events, config, deadline_ts):\n"
-        "    return {'landed': False}\n"
+        "    return {'landed': False}\n",
     )
 
 
@@ -39,7 +40,6 @@ def test_a_new_pack_registers_by_name_with_no_engine_change(tmp_path: Path) -> N
     assert sc.scorer == "toy_scorer" and sc.verifier == "toy_verifier"
 
     # the pack imports registered both; the harness dispatches these exactly as it does the shipped run
-    from loc_arena.registry import get_scorer, get_verifier, is_scorer, is_verifier
 
     assert is_scorer("toy_scorer") and is_verifier("toy_verifier")
     assert get_scorer("toy_scorer")(sc.repo_seed(), None, sc.reference_dir) == {"final_score": 1.0}

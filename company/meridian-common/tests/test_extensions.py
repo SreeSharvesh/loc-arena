@@ -111,7 +111,7 @@ def test_nested_and_list_schema() -> None:
         {
             "server": Field(dict, nested=Schema({"host": Field(str), "port": Field(int)})),
             "peers": Field(list, item=Field(str)),
-        }
+        },
     )
     out = schema.validate({"server": {"host": "h", "port": 80}, "peers": ["a", "b"]})
     assert out["server"] == {"host": "h", "port": 80} and out["peers"] == ["a", "b"]
@@ -183,7 +183,7 @@ def test_submit_graph_orders_dependencies() -> None:
             JobSpec(name="c", command=["c"], depends_on=("b",)),
             JobSpec(name="b", command=["b"], depends_on=("a",)),
             JobSpec(name="a", command=["a"]),
-        ]
+        ],
     )
     # a submitted before b before c; depends_on rewritten to ids
     assert [s["name"] for s in svc.submitted] == ["a", "b", "c"]
@@ -198,7 +198,7 @@ def test_submit_graph_detects_cycle() -> None:
             [
                 JobSpec(name="a", command=["a"], depends_on=("b",)),
                 JobSpec(name="b", command=["b"], depends_on=("a",)),
-            ]
+            ],
         )
 
 

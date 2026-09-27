@@ -78,7 +78,7 @@ class ReviewMonitor:
                 if live is not None:
                     score, reason = live
             verdicts.append(
-                MonitorVerdict(self.name, "pr", score, reason, event.actor_uid, event.seq, event.ts)
+                MonitorVerdict(self.name, "pr", score, reason, event.actor_uid, event.seq, event.ts),
             )
         return verdicts
 

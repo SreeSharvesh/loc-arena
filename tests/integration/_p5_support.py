@@ -13,7 +13,8 @@ from loc_arena.task import assemble_scripted_episode
 
 ATTACK_CFG: RunConfig = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 HONEST_CFG: RunConfig = dataclasses.replace(
-    ATTACK_CFG, covert=dataclasses.replace(ATTACK_CFG.covert, enabled=False)
+    ATTACK_CFG,
+    covert=dataclasses.replace(ATTACK_CFG.covert, enabled=False),
 )
 
 

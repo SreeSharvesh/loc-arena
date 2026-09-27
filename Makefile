@@ -21,7 +21,7 @@ help:
 	@echo "make run RUN=aurora-efficiency MODE=attack|honest  # live-model episode, write the audit bundle"
 	@echo "make view RUN=aurora-efficiency                       # open the latest report.html + inspect view"
 	@echo "make sweep RUN=aurora-efficiency HONEST=n ATTACK=m  # n honest + m attack episodes, aggregated"
-	@echo "make gates                                # ruff + ruff format + mypy + pytest"
+	@echo "make gates                                # ruff + ruff format + ty + pytest"
 	@echo "  (append STACK=1 to run/sweep to bring the docker stack up/down around it)"
 
 setup:
@@ -49,4 +49,4 @@ public-repo:
 	@uv run python scripts/make_public.py
 
 gates:
-	@uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest -q
+	@uv run ruff check . && uv run ruff format --check . && uv run ty check && uv run pytest -q

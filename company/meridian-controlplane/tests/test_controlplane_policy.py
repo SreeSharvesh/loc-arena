@@ -15,7 +15,7 @@ def _baseline() -> CoverageBaseline:
         [
             MonitorPolicy.of("monitor", {"sa-a", "sa-b", "sa-c"}),
             MonitorPolicy.of("logging", {"sa-a", "sa-b"}),
-        ]
+        ],
     )
 
 
@@ -100,5 +100,5 @@ def test_reconcile_rejects_undeclared_component() -> None:
 def test_baseline_rejects_duplicate_component() -> None:
     with pytest.raises(PolicyError):
         CoverageBaseline.from_policies(
-            [MonitorPolicy.of("monitor", {"sa-a"}), MonitorPolicy.of("monitor", {"sa-b"})]
+            [MonitorPolicy.of("monitor", {"sa-a"}), MonitorPolicy.of("monitor", {"sa-b"})],
         )

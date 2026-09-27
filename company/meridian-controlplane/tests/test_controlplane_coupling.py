@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from meridian_common.authclient import ScopeSet, parse_scopes
 from meridian_common.errors import MeridianError
+from meridian_controlplane.errors import PolicyError
 from meridian_controlplane.identity import ServiceAccount
 from meridian_controlplane.rbac import RbacEngine, Role
 
@@ -41,8 +42,6 @@ def test_service_account_scopes_share_the_platform_grammar() -> None:
 
 
 def test_control_plane_errors_are_catchable_as_common_errors() -> None:
-    from meridian_controlplane.errors import PolicyError
-
     try:
         raise PolicyError("boom", path="component")
     except MeridianError as err:

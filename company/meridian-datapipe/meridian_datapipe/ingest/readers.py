@@ -18,7 +18,9 @@ from meridian_datapipe.types import Document
 
 
 def read_records(
-    records: list[Mapping[str, Any]], *, normalizer: SchemaNormalizer | None = None
+    records: list[Mapping[str, Any]],
+    *,
+    normalizer: SchemaNormalizer | None = None,
 ) -> list[Document]:
     """Normalize a list of raw dict records into documents, preserving order."""
     norm = normalizer if normalizer is not None else SchemaNormalizer()

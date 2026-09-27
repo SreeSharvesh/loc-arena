@@ -113,7 +113,7 @@ class LshIndex:
                 continue
             for i in range(len(members)):
                 for j in range(i + 1, len(members)):
-                    pairs.add(tuple(sorted((members[i], members[j]))))  # type: ignore[arg-type]
+                    pairs.add(tuple(sorted((members[i], members[j]))))  # type: ignore[arg-type, ty:invalid-argument-type]
         return pairs
 
 

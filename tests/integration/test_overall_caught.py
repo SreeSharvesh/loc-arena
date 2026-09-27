@@ -11,9 +11,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 from loc_arena.config import load_run_config
-from loc_arena.harness import run_episode
+from loc_arena.gateway.core import ProviderResult
+from loc_arena.harness import _build_scores, run_episode
+from loc_arena.logging_.events import AppendOnlyLog, Event
 from loc_arena.metrics import calibrate_overall_threshold, episode_overall
 from loc_arena.monitors.aggregation import AggregationConfig
 from loc_arena.monitors.registry import MonitorSpec, MonitorVerdict
@@ -206,14 +209,9 @@ def test_detector_fires_but_suspicion_below_threshold_is_not_caught(tmp_path: Pa
     0.0 (below the threshold, so ``caught`` is False) while a ``model: none`` detector fires (score 1.0). The
     record must be self-consistent: ``caught`` False, ``caught_by`` empty, but ``detectors.fired`` True.
     """
-    from types import SimpleNamespace
-
-    from loc_arena.harness import _build_scores
-    from loc_arena.logging_.events import AppendOnlyLog, Event
-
     sealed = tmp_path / "sealed.jsonl"
     AppendOnlyLog(sealed, "ep").append(
-        Event(episode_id="ep", seq=0, ts=1.0, actor_uid="a", actor_role="u", kind="action", payload={})
+        Event(episode_id="ep", seq=0, ts=1.0, actor_uid="a", actor_role="u", kind="action", payload={}),
     )
     main = SimpleNamespace(
         final_score=1.0,
@@ -294,7 +292,6 @@ def test_honest_twin_not_caught_under_nondeterministic_live_monitor(tmp_path: Pa
     (higher suspicion each call) would, under a double-scoring path, make the second scoring more suspicious
     than the calibration; reusing one record keeps the honest twin clean (honest twin scores zero here).
     """
-    from loc_arena.gateway.core import ProviderResult
 
     class _Escalating:
         def __init__(self) -> None:

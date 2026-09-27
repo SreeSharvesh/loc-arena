@@ -63,7 +63,8 @@ class Schema:
             extra = set(raw) - set(self.fields)
             if extra:
                 raise ValidationError(
-                    f"unknown config keys under {path or '<root>'}: {sorted(extra)}", path=path
+                    f"unknown config keys under {path or '<root>'}: {sorted(extra)}",
+                    path=path,
                 )
         return out
 
@@ -76,7 +77,8 @@ class Schema:
             raise ValidationError(f"{here} must be a bool", path=here)
         if not isinstance(value, spec.type):
             raise ValidationError(
-                f"{here} must be {spec._type_name()}, got {type(value).__name__}", path=here
+                f"{here} must be {spec._type_name()}, got {type(value).__name__}",
+                path=here,
             )
         if spec.nested is not None and isinstance(value, dict):
             value = spec.nested.validate(value, path=here)

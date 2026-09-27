@@ -19,7 +19,7 @@ CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 DEADLINE = 10_000.0
 
 
-def _run(tmp_path: Path, *, running_at_deadline: bool):  # type: ignore[no-untyped-def]
+def _run(tmp_path: Path, *, running_at_deadline: bool):  # noqa: ANN202
     stack = Stack(tmp_path, CFG)
     worker = stack.worker()
     # a real loop ending within the liveness window of the deadline

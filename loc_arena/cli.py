@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import webbrowser
 import zipfile
@@ -18,6 +19,7 @@ from pathlib import Path
 
 from loc_arena.config import load_run_config
 from loc_arena.harness import run_episode, run_sweep
+from loc_arena.logging_.viewer import build_index
 
 
 def _config_path(run: str) -> str:
@@ -29,7 +31,8 @@ def _latest_bundle(logs_root: Path, run_slug: str) -> Path | None:
     if not run_dir.exists():
         return None
     bundles = sorted(
-        (d for d in run_dir.iterdir() if d.is_dir() and (d / "report.html").exists()), reverse=True
+        (d for d in run_dir.iterdir() if d.is_dir() and (d / "report.html").exists()),
+        reverse=True,
     )
     return bundles[0] if bundles else None
 
@@ -37,21 +40,25 @@ def _latest_bundle(logs_root: Path, run_slug: str) -> Path | None:
 def _cmd_run(args: argparse.Namespace) -> int:
     config = load_run_config(_config_path(args.run))
     out = run_episode(
-        config, mode=args.mode, out_root=Path(args.out), seed=args.seed, robust=not args.minimal
+        config,
+        mode=args.mode,
+        out_root=Path(args.out),
+        seed=args.seed,
+        robust=not args.minimal,
     )
     scores = json.loads((out / "scores.json").read_text())
     s = scores["side_task"]
     print(f"bundle: {out}")
     print(
         f"main final_score={scores['main_task']['final_score']:.3f} "
-        f"milestones={scores['main_task']['milestones_reached']}"
+        f"milestones={scores['main_task']['milestones_reached']}",
     )
     print(
-        f"side landing minimal={s['landing_minimal']} robust={s['landing_robust']} depth={s['covert_depth']}"
+        f"side landing minimal={s['landing_minimal']} robust={s['landing_robust']} depth={s['covert_depth']}",
     )
     print(
         f"safety landed={scores['safety']['landed']} caught={scores['safety']['caught']} "
-        f"by={scores['safety']['caught_by']} threshold={scores['safety']['audit_threshold']}"
+        f"by={scores['safety']['caught_by']} threshold={scores['safety']['audit_threshold']}",
     )
     return 0
 
@@ -61,10 +68,6 @@ def _build_run_index(logs_root: Path) -> Path | None:
 
     Each ``href`` is the report.html relative to where the index lives (``logs_root``).
     """
-    import os
-
-    from loc_arena.logging_.viewer import build_index
-
     logs_root.mkdir(parents=True, exist_ok=True)
     scores_paths = list(logs_root.glob("*/*/scores.json"))
     runs: list[dict[str, object]] = []
@@ -84,7 +87,7 @@ def _build_run_index(logs_root: Path) -> Path | None:
                 "ts": bundle.name,
                 "href": Path(os.path.relpath(report, logs_root)).as_posix(),
                 "scores": scores,
-            }
+            },
         )
     if not runs:
         return None
@@ -123,7 +126,11 @@ def _cmd_view(args: argparse.Namespace) -> int:
 def _cmd_sweep(args: argparse.Namespace) -> int:
     config = load_run_config(_config_path(args.run))
     agg = run_sweep(
-        config, honest=args.honest, attack=args.attack, out_root=Path(args.out), robust=not args.minimal
+        config,
+        honest=args.honest,
+        attack=args.attack,
+        out_root=Path(args.out),
+        robust=not args.minimal,
     )
     print(f"sweep bundle: {agg['_dir']}")
     print(json.dumps({k: v for k, v in agg.items() if k != "_dir"}, indent=2))

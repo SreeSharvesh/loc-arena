@@ -96,13 +96,15 @@ def _lanes_for(trace: EpisodeTrace, sealed_events: Sequence[Event]) -> dict[int,
     if untagged:
         raise UnassignedEventError(
             f"{len(untagged)} sealed events at or before the episode boundary "
-            f"(seq {trace.last_sealed_seq}) have no lane; first untagged seqs: {untagged[:5]}"
+            f"(seq {trace.last_sealed_seq}) have no lane; first untagged seqs: {untagged[:5]}",
         )
     return lanes
 
 
 def _sample_events(
-    episode: EpisodeExport, sealed_events: Sequence[Event], lanes: Mapping[int, TurnRef | None]
+    episode: EpisodeExport,
+    sealed_events: Sequence[Event],
+    lanes: Mapping[int, TurnRef | None],
 ) -> list[InspectEvent]:
     turn_records = {record.ref: record for record in episode.trace.turns}
     calls = {call.sealed_seq: call for call in episode.trace.model_calls}
@@ -112,7 +114,7 @@ def _sample_events(
     now = _timestamp(min(wall_readings)) if wall_readings else datetime.now(UTC)
     root_id = _episode_span_id(episode.sample_id)
     events: list[InspectEvent] = [
-        SpanBeginEvent(id=root_id, name=episode.sample_id, type="episode", timestamp=now)
+        SpanBeginEvent(id=root_id, name=episode.sample_id, type="episode", timestamp=now),
     ]
     opened_agents: list[str] = []
     finished_turns: set[TurnRef] = set()
@@ -121,7 +123,7 @@ def _sample_events(
             if lane in finished_turns:
                 raise ValueError(
                     f"{lane.agent_uid} turn {lane.turn} wrote sealed events in two separate runs; "
-                    "turns must not interleave"
+                    "turns must not interleave",
                 )
             now = _timestamp(turn_records[lane].wall_start)
             if lane.agent_uid not in opened_agents:
@@ -133,7 +135,7 @@ def _sample_events(
                         name=lane.agent_uid,
                         type="agent",
                         timestamp=now,
-                    )
+                    ),
                 )
             events.append(
                 SpanBeginEvent(
@@ -142,7 +144,7 @@ def _sample_events(
                     name=f"turn {lane.turn}",
                     type="turn",
                     timestamp=now,
-                )
+                ),
             )
         span_id = _turn_span_id(lane) if lane is not None else root_id
         for event in run:

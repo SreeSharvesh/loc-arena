@@ -68,7 +68,9 @@ class ModelRouter:
     def record_latency(self, backend: str, seconds: float) -> None:
         """Record a request latency for ``backend`` into the latency histogram."""
         self._metrics.histogram(
-            "router_latency_seconds", [0.01, 0.05, 0.1, 0.5, 1.0], {"backend": backend}
+            "router_latency_seconds",
+            [0.01, 0.05, 0.1, 0.5, 1.0],
+            {"backend": backend},
         ).observe(seconds)
 
     def export(self) -> dict[str, Any]:

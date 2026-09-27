@@ -66,7 +66,8 @@ def test_identity_config_rejects_duplicate_names() -> None:
 
 def test_identity_config_unknown_account() -> None:
     config = IdentityConfig(
-        accounts=(ServiceAccount(name="only"),), rotation=RotationPolicy(interval_epochs=10)
+        accounts=(ServiceAccount(name="only"),),
+        rotation=RotationPolicy(interval_epochs=10),
     )
     with pytest.raises(IdentityConfigError):
         config.account("missing")

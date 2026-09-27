@@ -13,7 +13,8 @@ from tests.integration._gateway_support import AppTransport
 
 _LIVE = os.environ.get("LOC_ARENA_LIVE") == "1" and bool(os.environ.get("OPENROUTER_API_KEY"))
 pytestmark = pytest.mark.skipif(
-    not _LIVE, reason="live provider disabled (set LOC_ARENA_LIVE=1 + OPENROUTER_API_KEY)"
+    not _LIVE,
+    reason="live provider disabled (set LOC_ARENA_LIVE=1 + OPENROUTER_API_KEY)",
 )
 
 EP = "ep-live"
@@ -29,7 +30,7 @@ def test_live_edge_to_core_one_real_call_one_sealed_record(tmp_path: Path) -> No
             prompt="Reply with the single word: pong.",
             caller_identity="agent-main/distill-agent",
             role="untrusted_agent",
-        )
+        ),
     )
     assert resp.text.strip()  # a real completion came back
     sealed = [e for e in read_events(sealed_path) if e.kind == "inference_call"]

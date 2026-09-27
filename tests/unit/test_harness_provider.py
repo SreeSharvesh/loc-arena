@@ -16,7 +16,8 @@ LIVE = dataclasses.replace(load_run_config("configs/aurora-efficiency.determinis
 
 
 def test_assemble_by_policy_hands_the_provider_to_the_live_assembler(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     seen: dict[str, Any] = {}
 
@@ -39,7 +40,8 @@ def _bundle_inputs(tmp_path: Path) -> SimpleNamespace:
 
 
 def test_write_bundle_writes_the_real_eval_when_the_flag_is_on(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     seen: dict[str, Any] = {}
 
@@ -59,7 +61,15 @@ def test_write_bundle_writes_the_real_eval_when_the_flag_is_on(
     out = tmp_path / "bundle"
     out.mkdir()
     harness._write_bundle(
-        config, out, "run-x", {}, _bundle_inputs(tmp_path), 1, "attack", 0.5, write_report=False
+        config,
+        out,
+        "run-x",
+        {},
+        _bundle_inputs(tmp_path),
+        1,
+        "attack",
+        0.5,
+        write_report=False,
     )
     assert seen == {
         "path": out / "run-x.eval",
@@ -74,7 +84,15 @@ def test_write_bundle_keeps_the_placeholder_when_the_flag_is_off(tmp_path: Path)
     out.mkdir()
     untraced = dataclasses.replace(LIVE, agent_transcript=False)
     harness._write_bundle(
-        untraced, out, "run-x", {}, _bundle_inputs(tmp_path), 1, "attack", 0.5, write_report=False
+        untraced,
+        out,
+        "run-x",
+        {},
+        _bundle_inputs(tmp_path),
+        1,
+        "attack",
+        0.5,
+        write_report=False,
     )
     assert json.loads((out / "run-x.eval").read_text())["run_name"] == "run-x"
 
@@ -105,7 +123,8 @@ def test_eval_episodes_refuses_an_untraced_episode(tmp_path: Path) -> None:
 
 
 def test_run_episode_gives_the_honest_twin_its_own_provider(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     seen: dict[str, Any] = {}
 
@@ -119,7 +138,11 @@ def test_run_episode_gives_the_honest_twin_its_own_provider(
     graded, twin = object(), object()
     with pytest.raises(_StopAfterAssemblyError):
         harness.run_episode(
-            LIVE, mode="attack", out_root=tmp_path, provider=graded, calibration_provider=twin
+            LIVE,
+            mode="attack",
+            out_root=tmp_path,
+            provider=graded,
+            calibration_provider=twin,
         )
     assert seen == {"episode": graded, "honest_cal": twin}
 
@@ -129,7 +152,8 @@ class _StopAfterAssemblyError(Exception):
 
 
 def test_an_export_failure_still_leaves_the_rest_of_the_bundle(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def failing_write(path: Path, **kwargs: Any) -> Path:
         raise inspect_export.UnassignedEventError("seq 3 has no lane")
@@ -141,6 +165,14 @@ def test_an_export_failure_still_leaves_the_rest_of_the_bundle(
     config = dataclasses.replace(LIVE, agent_transcript=True)
     with pytest.raises(inspect_export.UnassignedEventError):
         harness._write_bundle(
-            config, out, "run-x", {}, _bundle_inputs(tmp_path), 1, "attack", 0.5, write_report=False
+            config,
+            out,
+            "run-x",
+            {},
+            _bundle_inputs(tmp_path),
+            1,
+            "attack",
+            0.5,
+            write_report=False,
         )
     assert {p.name for p in out.iterdir()} >= {"scores.json", "decisions.md", "events.sealed.jsonl"}

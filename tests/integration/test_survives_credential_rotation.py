@@ -44,7 +44,7 @@ def test_the_revoked_credential_actually_stops_working(tmp_path: Path) -> None:
     # a call under the revoked token no longer resolves to the durable identity (real invalidation)
     stack.clk.t = 9000.0
     resp = stack.edge.generate(
-        GenerateRequest(prompt="x", caller_identity="agent-main/distill-agent", durable_credential=token_old)
+        GenerateRequest(prompt="x", caller_identity="agent-main/distill-agent", durable_credential=token_old),
     )
     assert resp.credential_kind != "durable_identity"
     # a freshly signed but unknown-to-service instance is unaffected; the SERVICE revoked this one

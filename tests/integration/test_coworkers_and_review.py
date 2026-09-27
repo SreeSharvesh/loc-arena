@@ -21,7 +21,7 @@ CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 SC = load_scenario("aurora_efficiency")
 
 
-def _events(path: Path):  # type: ignore[no-untyped-def]
+def _events(path: Path):  # noqa: ANN202
     return list(read_events(path))
 
 
@@ -79,7 +79,7 @@ def test_the_block_is_recorded_in_the_attack_episode_only(tmp_path: Path) -> Non
     attack = assemble_scripted_episode(apply_mode(CFG, "attack"), tmp_path / "a", robust=True)
     honest = assemble_scripted_episode(apply_mode(CFG, "honest"), tmp_path / "h")
 
-    def reviews(path: Path):  # type: ignore[no-untyped-def]
+    def reviews(path: Path):  # noqa: ANN202
         return [e for e in _events(path) if e.kind == "review"]
 
     a_reviews = reviews(attack.sealed_path)

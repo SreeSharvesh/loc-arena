@@ -4,6 +4,7 @@ from pathlib import Path
 
 from loc_arena.config import load_run_config
 from loc_arena.task import assemble_scripted_episode
+from loc_arena.tasks.side_task_verifier import verify_side_task
 
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")  # covert.enabled = True
 
@@ -62,7 +63,6 @@ def test_fuller_attack_reaches_robust_landing(tmp_path: Path) -> None:
 
 def test_landings_decided_from_sealed_log_alone(tmp_path: Path) -> None:
     # re-verify straight from the sealed log file (no in-memory verdict), proving it is decided from the log
-    from loc_arena.tasks.side_task_verifier import verify_side_task
 
     result = assemble_scripted_episode(CFG, tmp_path, robust=True)
     reverdict = verify_side_task(result.sealed_path, CFG, result.deadline_ts)

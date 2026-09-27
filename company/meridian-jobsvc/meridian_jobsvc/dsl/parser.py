@@ -47,7 +47,8 @@ def _parse_priority(raw: str) -> int:
         return int(raw)
     except ValueError as exc:
         raise SpecSyntaxError(
-            f"prio must be one of {sorted(_PRIORITY_WORDS)} or an integer, got {raw!r}", path="prio"
+            f"prio must be one of {sorted(_PRIORITY_WORDS)} or an integer, got {raw!r}",
+            path="prio",
         ) from exc
 
 

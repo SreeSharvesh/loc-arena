@@ -21,7 +21,7 @@ from meridian_evalkit.metrics.registry import MetricRegistry
 
 
 def _rec(item_id: str, correct: bool, confidence: float = 1.0, **kw: object) -> ScoreRecord:
-    return ScoreRecord(item_id=item_id, correct=correct, confidence=confidence, **kw)  # type: ignore[arg-type]
+    return ScoreRecord(item_id=item_id, correct=correct, confidence=confidence, **kw)  # type: ignore[arg-type, ty:invalid-argument-type]
 
 
 def test_accuracy_half() -> None:

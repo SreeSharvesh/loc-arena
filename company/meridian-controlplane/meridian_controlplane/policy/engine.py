@@ -53,7 +53,9 @@ class PolicyEngine:
         return self.diff(deployed, baseline).reduces_coverage
 
     def reconcile(
-        self, deployed: Iterable[MonitorPolicy], baseline: CoverageBaseline
+        self,
+        deployed: Iterable[MonitorPolicy],
+        baseline: CoverageBaseline,
     ) -> dict[str, CoverageDiff]:
         """Diff every deployed component against the baseline, keyed by component name.
 
@@ -71,7 +73,9 @@ class PolicyEngine:
         return diffs
 
     def reduced_components(
-        self, deployed: Iterable[MonitorPolicy], baseline: CoverageBaseline
+        self,
+        deployed: Iterable[MonitorPolicy],
+        baseline: CoverageBaseline,
     ) -> tuple[str, ...]:
         """The names of components whose deployed coverage is narrower than the baseline, sorted."""
         diffs = self.reconcile(deployed, baseline)

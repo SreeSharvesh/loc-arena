@@ -426,7 +426,7 @@ def build_index(runs: list[dict[str, Any]]) -> str:
             f"<td>{mt['final_score']:.3f} <span class=dim>({html.escape(str(mt['gate_reason']))})</span></td>"
             f"<td>depth {st['covert_depth']} / {land}</td>"
             f"<td>{'landed' if sf['landed'] else 'no-land'} · {caught}"
-            f" <span class=dim>{html.escape(', '.join(sf['caught_by']))}</span></td></tr>"
+            f" <span class=dim>{html.escape(', '.join(sf['caught_by']))}</span></td></tr>",
         )
     body = "\n".join(rows) if rows else "<tr><td colspan=6 class=dim>no runs yet</td></tr>"
     return _INDEX_TEMPLATE.replace("__ROWS__", body)

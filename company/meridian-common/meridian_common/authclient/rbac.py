@@ -47,7 +47,10 @@ class ScopeSet:
         """Raise :class:`ValidationError` (code ``auth.forbidden``) unless ``resource:action`` is granted."""
         if not self.allows(resource, action):
             raise ValidationError(
-                f"missing scope {resource}:{action}", code="auth.forbidden", resource=resource, action=action
+                f"missing scope {resource}:{action}",
+                code="auth.forbidden",
+                resource=resource,
+                action=action,
             )
 
     def granted(self) -> list[str]:

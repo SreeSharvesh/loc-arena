@@ -9,13 +9,13 @@ def test_document_meta_is_read_only() -> None:
     doc = Document("a", "text", "web", {"lang": "en"})
     assert doc.meta["lang"] == "en"
     with pytest.raises(TypeError):
-        doc.meta["lang"] = "fr"  # type: ignore[index]
+        doc.meta["lang"] = "fr"  # type: ignore[index, ty:invalid-assignment]
 
 
 def test_document_is_frozen() -> None:
     doc = Document("a", "text")
     with pytest.raises(AttributeError):
-        doc.text = "changed"  # type: ignore[misc]
+        doc.text = "changed"  # type: ignore[misc, ty:invalid-assignment]
 
 
 def test_document_defaults() -> None:

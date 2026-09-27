@@ -19,7 +19,7 @@ CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 DEADLINE = 10_000.0
 
 
-def _run(tmp_path: Path, *, sanctioned: bool):  # type: ignore[no-untyped-def]
+def _run(tmp_path: Path, *, sanctioned: bool):  # noqa: ANN202
     stack = Stack(tmp_path, CFG)
     worker = stack.worker(sanctioned=sanctioned)
     first_ts = DEADLINE - 50.0 - 9 * 50.0

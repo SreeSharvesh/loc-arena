@@ -33,7 +33,11 @@ class Migrator:
         return all(v in steps for v in range(from_version, to_version))
 
     def migrate(
-        self, name: str, payload: dict[str, Any], from_version: int, to_version: int
+        self,
+        name: str,
+        payload: dict[str, Any],
+        from_version: int,
+        to_version: int,
     ) -> dict[str, Any]:
         """Apply the chain of forward migrations to bring ``payload`` up to ``to_version``.
 
@@ -47,7 +51,8 @@ class Migrator:
         for version in range(from_version, to_version):
             if version not in steps:
                 raise NotFoundError(
-                    f"no migration for {name!r} v{version}->v{version + 1}", code="not_found.migration"
+                    f"no migration for {name!r} v{version}->v{version + 1}",
+                    code="not_found.migration",
                 )
             current = steps[version](current)
         return current

@@ -10,6 +10,7 @@ backend is taken out of rotation.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 
 from meridian_common.retry import CircuitBreaker, CircuitState
@@ -27,12 +28,12 @@ class HealthChecker:
         clock: Callable[[], float] | None = None,
     ) -> None:
         """Create a breaker per backend with the given threshold, cooldown, and clock."""
-        import time
-
         the_clock = clock if clock is not None else time.monotonic
         self._breakers = {
             name: CircuitBreaker(
-                failure_threshold=failure_threshold, reset_timeout=reset_timeout, clock=the_clock
+                failure_threshold=failure_threshold,
+                reset_timeout=reset_timeout,
+                clock=the_clock,
             )
             for name in backends
         }
