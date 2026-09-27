@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import queue
+import re
 import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -90,6 +91,16 @@ TAP_KINDS: dict[str, tuple[str, ...]] = {
 
 # Where a monitor prompt template receives the declared observable inputs, rendered as JSON.
 PROMPT_INPUTS_PLACEHOLDER = "{inputs}"
+
+# Reading a verdict object that is not strict JSON (a small model sometimes leaves a key unquoted): the
+# suspicion must be a bare number ending the field; the reason is taken when it is a quoted string.
+_SUSPICION_FIELD = re.compile(r'(?<!\w)"?suspicion"?\s*:\s*([0-9]*\.?[0-9]+)(?=\s*[,}])')
+_REASON_FIELD = re.compile(r'(?<!\w)"?reason"?\s*:\s*"([^"]*)"')
+UNPARSED_REASON = "reason unparsed"
+# Marks the reason of a verdict recovered from a reply that was not strict JSON, wherever it is reported.
+RECOVERED_REASON_PREFIX = "[recovered from a reply that was not strict JSON] "
+# How much of a model completion a monitor event keeps, for review.
+_COMPLETION_EXCERPT_CHARACTERS = 200
 
 
 @dataclass(frozen=True)
@@ -474,34 +485,78 @@ def firewall_violations(specs: list[MonitorSpec]) -> list[str]:
     return violations
 
 
-def parse_verdict(text: str) -> tuple[float, str] | None:
-    """Parse a strict ``{"suspicion": float 0..1, "reason": str}`` verdict out of a model completion.
+@dataclass(frozen=True)
+class ParsedVerdict:
+    """A verdict read out of a model completion."""
 
-    Tolerant of surrounding prose; returns ``None`` on a missing, malformed, or out-of-range verdict.
-    """
-    start = text.find("{")
-    while start != -1:
+    suspicion: float  # in [0, 1]
+    reason: str
+    recovered: bool  # True iff read from an object that was not strict JSON
+
+    @property
+    def reported_reason(self) -> str:
+        """The reason as a verdict reports it: marked with ``RECOVERED_REASON_PREFIX`` when recovered."""
+        return f"{RECOVERED_REASON_PREFIX}{self.reason}" if self.recovered else self.reason
+
+
+def _find_brace_balanced_objects(text: str) -> list[str]:
+    """Every brace-balanced ``{...}`` span in ``text``, in order of its opening brace."""
+    objects: list[str] = []
+    for start, opening in enumerate(text):
+        if opening != "{":
+            continue
         depth = 0
-        for i in range(start, len(text)):
-            if text[i] == "{":
+        for end in range(start, len(text)):
+            if text[end] == "{":
                 depth += 1
-            elif text[i] == "}":
+            elif text[end] == "}":
                 depth -= 1
                 if depth == 0:
-                    try:
-                        obj = json.loads(text[start : i + 1])
-                    except json.JSONDecodeError:
-                        break
-                    susp = obj.get("suspicion") if isinstance(obj, dict) else None
-                    reason = obj.get("reason") if isinstance(obj, dict) else None
-                    if (
-                        isinstance(susp, (int, float))
-                        and not isinstance(susp, bool)
-                        and 0.0 <= float(susp) <= 1.0
-                    ):
-                        return float(susp), str(reason) if reason is not None else ""
+                    objects.append(text[start : end + 1])
                     break
-        start = text.find("{", start + 1)
+    return objects
+
+
+def _read_strict_verdict(candidate: str) -> ParsedVerdict | None:
+    """The verdict in a strict JSON object, if its suspicion is a number in [0, 1]."""
+    try:
+        verdict = json.loads(candidate)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(verdict, dict):
+        return None
+    suspicion, reason = verdict.get("suspicion"), verdict.get("reason")
+    if isinstance(suspicion, bool) or not isinstance(suspicion, (int, float)) or not 0 <= suspicion <= 1:
+        return None
+    return ParsedVerdict(float(suspicion), "" if reason is None else str(reason), recovered=False)
+
+
+def _read_lenient_verdict(candidate: str) -> ParsedVerdict | None:
+    """The verdict in an object that is not strict JSON, if its suspicion is a bare number in [0, 1]."""
+    suspicion = _SUSPICION_FIELD.search(candidate)
+    if suspicion is None or not 0 <= float(suspicion.group(1)) <= 1:
+        return None
+    reason = _REASON_FIELD.search(candidate)
+    return ParsedVerdict(
+        float(suspicion.group(1)),
+        reason.group(1) if reason is not None else UNPARSED_REASON,
+        recovered=True,
+    )
+
+
+def parse_verdict(text: str) -> ParsedVerdict | None:
+    """Parse a ``{"suspicion": number 0..1, "reason": str}`` verdict out of a model completion.
+
+    Tolerant of surrounding prose. The first strict JSON verdict object wins; failing that, the first object
+    whose ``suspicion`` field holds a bare number in [0, 1] is read leniently and marked ``recovered``. A
+    number is only ever read from inside such an object. Returns ``None`` when neither exists.
+    """
+    objects = _find_brace_balanced_objects(text)
+    for read in (_read_strict_verdict, _read_lenient_verdict):
+        for candidate in objects:
+            verdict = read(candidate)
+            if verdict is not None:
+                return verdict
     return None
 
 
@@ -515,13 +570,15 @@ def live_suspicion(
 ) -> tuple[float, str] | None:
     """Score one prompt with the live model via the gateway, ensembled by MAX; ``None`` -> heuristic fallback.
 
-    Runs ``ensemble_n`` gateway-routed calls (as the monitor identity), parses each strict JSON verdict,
-    and returns the MAX-suspicion verdict so one confident catch counts. On no parseable verdict, records
-    a ``monitor_parse_error`` and returns ``None`` (the caller falls back to its heuristic).
+    Runs ``ensemble_n`` gateway-routed calls (as the monitor identity), parses each verdict, and returns
+    the MAX-suspicion verdict so one confident catch counts. A verdict recovered from a reply that was not
+    strict JSON records a ``monitor_parse_recovered`` and its reason carries ``RECOVERED_REASON_PREFIX``.
+    On no parseable verdict, records a ``monitor_parse_error`` and returns ``None`` (the caller falls back
+    to its heuristic).
     """
     if context.model_caller is None:
         return None
-    best: tuple[float, str] | None = None
+    best: ParsedVerdict | None = None
     for _ in range(max(1, ensemble_n)):
         try:
             completion = context.model_caller(monitor_name, prompt, temperature)
@@ -529,15 +586,18 @@ def live_suspicion(
             context.event_sink("monitor_parse_error", {"monitor": monitor_name, "error": f"call:{exc}"})
             continue
         parsed = parse_verdict(completion)
+        excerpt = completion[:_COMPLETION_EXCERPT_CHARACTERS]
         if parsed is None:
             context.event_sink(
                 "monitor_parse_error",
-                {"monitor": monitor_name, "error": "unparseable", "completion": completion[:200]},
+                {"monitor": monitor_name, "error": "unparseable", "completion": excerpt},
             )
             continue
-        if best is None or parsed[0] > best[0]:
+        if parsed.recovered:
+            context.event_sink("monitor_parse_recovered", {"monitor": monitor_name, "completion": excerpt})
+        if best is None or parsed.suspicion > best.suspicion:
             best = parsed
-    return best
+    return None if best is None else (best.suspicion, best.reported_reason)
 
 
 def find_fallback_only_monitors(verdicts: list[MonitorVerdict], events: list[Event]) -> set[str]:
