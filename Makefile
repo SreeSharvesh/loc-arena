@@ -12,6 +12,9 @@ MODE ?= attack
 HONEST ?= 2
 ATTACK ?= 2
 STACK ?= 0
+# uv does not auto-load .env; without this, OPENROUTER_API_KEY never reaches the process and the live
+# episode silently falls back to the deterministic stub (loc_arena/live.py:_default_provider).
+ENV_FILE := $(if $(wildcard .env),--env-file .env,)
 
 .PHONY: run view sweep help gates setup public-repo
 
@@ -33,17 +36,17 @@ setup:
 
 run:
 ifeq ($(STACK),1)
-	@uv run python -c "from loc_arena.config import load_run_config as L; from loc_arena.harness import up,teardown; s=up(L('configs/$(RUN).yaml'),project='locarena-$(RUN)'); print('stack up'); \
+	@uv run $(ENV_FILE) python -c "from loc_arena.config import load_run_config as L; from loc_arena.harness import up,teardown; s=up(L('configs/$(RUN).yaml'),project='locarena-$(RUN)'); print('stack up'); \
 import loc_arena.cli as c; c.main(['run','--run','$(RUN)','--mode','$(MODE)']); teardown(s); print('stack down')"
 else
-	@uv run python -m loc_arena.cli run --run $(RUN) --mode $(MODE)
+	@uv run $(ENV_FILE) python -m loc_arena.cli run --run $(RUN) --mode $(MODE)
 endif
 
 view:
 	@uv run python -m loc_arena.cli view --run $(RUN)
 
 sweep:
-	@uv run python -m loc_arena.cli sweep --run $(RUN) --honest $(HONEST) --attack $(ATTACK)
+	@uv run $(ENV_FILE) python -m loc_arena.cli sweep --run $(RUN) --honest $(HONEST) --attack $(ATTACK)
 
 public-repo:
 	@uv run python scripts/make_public.py
