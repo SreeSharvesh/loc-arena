@@ -126,14 +126,18 @@ wall-clock rows would give one filled cell per row).
 | row of an event | the turn's round `n`; a World event takes the round of the latest turn span begun before it, or `-1` (before the first round) |
 | lane order | `World`, then the sample metadata's configured agent order, then any other agent in first-seen order |
 | blocks | a model event gives a `prompt` block (title shows identity and phase) and a `reply` block (`reply (error)` when the call failed); a tool event gives a `tool` block (arguments as `code`, the result in the body, or the block reason followed by the result, `blocked` on error); an info event gives an `info` block titled by its source; spans give none |
+| verdict blocks | one per entry in `sample.metadata["scores"]["monitor_verdicts"]` (present only on the graded episode's sample, M2); always placed in `World`, at the row of the event whose sealed `seq` matches the verdict's `target_seq` (tracked alongside lane/row as the sample's events are walked), else `-1` when there is no `target_seq` or no matching event (e.g. window-based verdicts) |
 
 | Function | Behaviour |
 |---|---|
-| `build_transcript(sample)` | walks the sample's events once, assigns lane and row, collects blocks per cell |
+| `build_transcript(sample)` | walks the sample's events once, assigns lane and row, collects blocks per cell, then appends one verdict block per `monitor_verdicts` entry |
 | `_turn_owners(events)` | span id -> (agent uid, round) for every turn span and every span nested under one; a turn span not shaped `turn <n>` under an agent span raises `ValueError` |
 | `_lane_order(configured, seen)` | `World` + configured agents + unconfigured agents seen, without duplicates |
 | `_blocks(event)` | dispatches to the builders below; other event types give no blocks |
 | `_model_blocks(event)` / `_tool_block(event)` / `_info_block(event)` | one event -> its blocks |
+| `_event_seq(event)` | a `ToolEvent`'s or `InfoEvent`'s `seq` metadata, or a `ModelEvent`'s `sealed_seq`; `None` for anything else, so it can key `seq_to_row` |
+| `_monitor_verdicts(scores)` | `scores["monitor_verdicts"]` if `scores` is a mapping and the value is a list, else `[]` |
+| `_verdict_block(verdict)` | one `monitor_verdicts` entry -> a `verdict` block titled `monitor: <name> (<tap>)`, body is the score, actor and reason |
 
 ## M4 `loc_arena/logging_/transcript_render.py`
 
@@ -142,7 +146,7 @@ Writes `transcript.html` and `transcript.txt` into the run bundle from the bundl
 | Rule | Detail |
 |---|---|
 | layout (HTML) | one section per sample: a bounded scroll box holding a sticky header grid (lane names) and a body grid with a row-label column plus one column per lane, one row per round; both grids share one column template |
-| blocks (HTML) | one `<article>` per block, classed by kind; prompts collapsed in `<details>`; tool arguments highlighted as JSON with Pygments; blocked tool calls styled apart |
+| blocks (HTML) | one `<article>` per block, classed by kind; prompts collapsed in `<details>`; tool arguments highlighted as JSON with Pygments; blocked tool calls and verdict blocks each styled apart |
 | layout (text) | per sample, every lane in lane order (`(no activity)` when empty), blocks in round order, each prefixed with its round label; written as UTF-8 with `backslashreplace` |
 | self-contained | inline CSS only; no JavaScript, no external `src`/`href` |
 | ASCII only | the page is HTML-escaped, then non-ASCII characters become numeric entities, so model text cannot put literal dashes or unescaped markup in the file |
