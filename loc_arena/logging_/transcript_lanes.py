@@ -15,7 +15,7 @@ from inspect_ai.log import EvalSample, resolve_sample_attachments
 WORLD = "World"
 BEFORE_FIRST_ROUND = -1
 
-BlockKind = Literal["prompt", "reply", "tool", "info"]
+BlockKind = Literal["prompt", "reply", "tool", "info", "verdict"]
 
 
 @dataclass(frozen=True)
@@ -44,6 +44,7 @@ def build_transcript(sample: EvalSample) -> SampleTranscript:
     owners = _turn_owners(sample.events)
     cells: dict[tuple[str, int], list[Block]] = {}
     seen: list[str] = []
+    seq_to_row: dict[int, int] = {}
     latest_round = BEFORE_FIRST_ROUND
     for event in sample.events:
         if isinstance(event, SpanBeginEvent) and event.type == "turn":
@@ -60,12 +61,48 @@ def build_transcript(sample: EvalSample) -> SampleTranscript:
             if lane not in seen:
                 seen.append(lane)
         cells.setdefault((lane, row), []).extend(blocks)
+        seq = _event_seq(event)
+        if seq is not None:
+            seq_to_row.setdefault(seq, row)
+    for verdict in _monitor_verdicts(sample.metadata.get("scores")):
+        target_seq = verdict.get("target_seq")
+        row = BEFORE_FIRST_ROUND
+        if isinstance(target_seq, int):
+            row = seq_to_row.get(target_seq, BEFORE_FIRST_ROUND)
+        cells.setdefault((WORLD, row), []).append(_verdict_block(verdict))
     return SampleTranscript(
         sample_id=str(sample.id),
         lanes=_lane_order(sample.metadata.get("agents", []), seen),
         rows=tuple(sorted({row for _, row in cells})),
         cells=MappingProxyType({key: tuple(blocks) for key, blocks in cells.items()}),
     )
+
+
+def _event_seq(event: InspectEvent) -> int | None:
+    if isinstance(event, ToolEvent):
+        seq = (event.metadata or {}).get("seq")
+    elif isinstance(event, InfoEvent):
+        seq = event.data.get("seq") if isinstance(event.data, Mapping) else None
+    elif isinstance(event, ModelEvent):
+        seq = (event.metadata or {}).get("sealed_seq")
+    else:
+        seq = None
+    return seq if isinstance(seq, int) else None
+
+
+def _monitor_verdicts(scores: object) -> list[Mapping[str, object]]:
+    if not isinstance(scores, Mapping):
+        return []
+    verdicts = scores.get("monitor_verdicts")
+    return verdicts if isinstance(verdicts, list) else []
+
+
+def _verdict_block(verdict: Mapping[str, object]) -> Block:
+    monitor, tap = verdict.get("monitor", "monitor"), verdict.get("tap", "")
+    score = verdict.get("score")
+    score_text = f"{score:.3f}" if isinstance(score, int | float) else str(score)
+    body = f"score {score_text}  actor {verdict.get('actor_uid', '')}\n{verdict.get('reason', '')}"
+    return Block("verdict", f"monitor: {monitor} ({tap})", body)
 
 
 def _turn_owners(events: Sequence[InspectEvent]) -> dict[str, tuple[str, int]]:

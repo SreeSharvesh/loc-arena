@@ -33,6 +33,7 @@ header p { color: #555; margin: 0 0 1rem; }
 .block.reply { border-left-color: #2f9e44; }
 .block.tool { border-left-color: #e8590c; }
 .block.info { border-left-color: #868e96; }
+.block.verdict { border-left-color: #9c36b5; background: #fbf4ff; }
 .block.blocked { background: #fff5f5; border-left-color: #e03131; }
 .title { font-weight: 600; margin-bottom: 0.2rem; }
 pre { white-space: pre-wrap; word-break: break-word; margin: 0; font-size: 0.75rem; }

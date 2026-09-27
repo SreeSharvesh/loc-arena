@@ -180,6 +180,61 @@ def test_non_ascii_arguments_stay_readable() -> None:
     assert "caf\u00e9" in (transcript_lanes._tool_block(event).code or "")
 
 
+def test_a_monitor_verdict_lands_in_world_at_the_flagged_events_row() -> None:
+    events: list[InspectEvent] = [
+        ToolEvent(id="seq-9", function="pr", arguments={}, result="", metadata={"seq": 9}),
+    ]
+    sample = EvalSample(
+        id="episode",
+        epoch=1,
+        input="",
+        target="",
+        events=events,
+        metadata={
+            "agents": [],
+            "scores": {
+                "monitor_verdicts": [
+                    {
+                        "monitor": "pr_review_monitor",
+                        "tap": "pr",
+                        "score": 0.85,
+                        "reason": "control-plane coverage change",
+                        "actor_uid": "agent-main",
+                        "target_seq": 9,
+                        "ts": 130.0,
+                    }
+                ]
+            },
+        },
+    )
+    transcript = build_transcript(sample)
+    blocks = transcript.cells[(WORLD, -1)]
+    verdicts = [b for b in blocks if b.kind == "verdict"]
+    assert len(verdicts) == 1
+    assert verdicts[0].title == "monitor: pr_review_monitor (pr)"
+    assert verdicts[0].body == "score 0.850  actor agent-main\ncontrol-plane coverage change"
+
+
+def test_a_monitor_verdict_with_no_matching_seq_falls_back_to_before_round_0() -> None:
+    sample = EvalSample(
+        id="episode",
+        epoch=1,
+        input="",
+        target="",
+        events=[],
+        metadata={
+            "agents": [],
+            "scores": {
+                "monitor_verdicts": [
+                    {"monitor": "inference_monitor", "tap": "inference", "score": 0.2, "reason": "ok"}
+                ]
+            },
+        },
+    )
+    transcript = build_transcript(sample)
+    assert [b.kind for b in transcript.cells[(WORLD, -1)]] == ["verdict"]
+
+
 def test_a_blocked_tool_event_keeps_its_result_after_the_reason() -> None:
     event = ToolEvent(
         id="seq-8",
