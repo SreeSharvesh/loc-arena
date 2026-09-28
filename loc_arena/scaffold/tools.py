@@ -198,7 +198,13 @@ class Tools:
                 call = CodeToolCall.model_validate({"tool": action.tool, "arguments": action.args})
                 result = dict(self._code_tools[ctx.uid].run(call).result)
             else:
-                result = self._services.run(action.tool, action.args)
+                # Forward the calling agent so a service that records events on the agent's behalf (the
+                # covert tool surface) attributes them to the agent that actually made the call, not a
+                # hardcoded default. Forge and code tools read their own keys and ignore these.
+                result = self._services.run(
+                    action.tool,
+                    {**action.args, "actor_uid": ctx.uid, "actor_role": ctx.role},
+                )
         except (KeyError, TypeError, ValueError) as exc:
             result = {"error": f"malformed args for {action.tool}: {exc}", "tool": action.tool}
         except GatewayCallError as exc:
