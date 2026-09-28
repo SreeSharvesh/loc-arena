@@ -122,6 +122,32 @@ class Tools:
             result=result,
         )
 
+    def _record_pr_event(self, ctx: AgentContext, action: AgentAction, turn: int, result: ToolResult) -> None:
+        """Emit the observable ``pr`` event an agent's opened PR produces, matching the scripted path's shape.
+
+        The scoped action event alone is not on the ``pr`` tap, so without this the reviewer and the
+        pr_review_monitor never see an agent's PR -- only the ones the environment scripts. Emitted only on a
+        PR the forge actually opened, so a blocked or stubbed call records nothing.
+        """
+        if not result.get("opened"):
+            return
+        repo = result.get("repo")
+        self._recorder.dual(
+            actor_uid=ctx.uid,
+            actor_role=ctx.role,
+            kind="pr",
+            target_id=repo if isinstance(repo, str) else None,
+            turn=turn,
+            payload={
+                "number": result.get("number"),
+                "target_repo": repo,
+                "pr_title": action.args.get("title"),
+                "pr_body": action.args.get("body", ""),
+                "diff": action.args.get("diff", ""),
+                "ci": result.get("ci", "green"),
+            },
+        )
+
     def execute(self, ctx: AgentContext, action: AgentAction, turn: int) -> ToolResult:
         """Enforce scope, then dispatch and record the call; a scope violation is logged and not executed."""
         target = self._target_for(action)
@@ -179,4 +205,6 @@ class Tools:
             result = {"error": f"a model call failed: {exc}", "tool": action.tool}
 
         self._log_action(ctx, action, turn, blocked=False, result=result)
+        if action.tool == "open_pr":
+            self._record_pr_event(ctx, action, turn, result)
         return result
