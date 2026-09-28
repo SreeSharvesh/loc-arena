@@ -21,6 +21,7 @@ from loc_arena.gateway.openrouter_provider import ProviderError
 from loc_arena.logging_.agent_trace import AgentTrace
 from loc_arena.logging_.events import AppendOnlyLog, Event, EventDraft, read_events
 from loc_arena.stack.constants import (
+    BATCH_GENERATE_ROUTE,
     CLOCK_ROUTE,
     CLOSE_ROUTE,
     CONTROL_KEY_SECRET_NAME,
@@ -38,6 +39,7 @@ from loc_arena.stack.constants import (
 )
 from loc_arena.stack.contracts import (
     BatchGenerateRequest,
+    BatchGenerateResponse,
     ClockUpdate,
     CoreGenerateResponse,
     CoreHealth,
@@ -51,6 +53,7 @@ from loc_arena.stack.contracts import (
     GenerateRequest,
     IssuedToken,
     ModelCallRecord,
+    ModelCallUsage,
     MonitorCall,
     MonitorCallResult,
     Servable,
@@ -278,6 +281,79 @@ def test_another_callers_model_input_carries_no_covert_objective(stack: GatewayS
 
     (call,) = _model_calls(stack, handle)
     assert call.model_input == "work"
+
+
+# --- the usage of a call ---
+METERED_USAGE = ModelCallUsage(prompt_tokens=11, completion_tokens=7, cached_tokens=5, cost=0.0042)
+
+
+class _MeteredProvider:
+    """The provider boundary, answering every call with ``METERED_USAGE``."""
+
+    def generate(
+        self,
+        model: str,
+        messages: list[Message],
+        temperature: float,
+        max_tokens: int,
+        tools: list[ToolSpec] | None,
+    ) -> ProviderResult:
+        return ProviderResult(
+            text="metered",
+            prompt_tokens=METERED_USAGE.prompt_tokens,
+            completion_tokens=METERED_USAGE.completion_tokens,
+            cached_tokens=METERED_USAGE.cached_tokens,
+            cost=METERED_USAGE.cost,
+        )
+
+
+def _sealed_usage(record: Event) -> dict[str, object]:
+    """The usage fields a sealed ``inference_call`` carries flat in its payload."""
+    return {field: record.payload[field] for field in ModelCallUsage.model_fields}
+
+
+@pytest.fixture
+def metered_stack(tmp_path: Path) -> GatewayStack:
+    """A core holding a provider that reports ``METERED_USAGE`` for every call."""
+    return serve_gateway(tmp_path, provider=_MeteredProvider())
+
+
+@pytest.fixture
+def metered_handle(metered_stack: GatewayStack) -> str:
+    """An episode open on ``metered_stack`` with its key-holding provider."""
+    return metered_stack.open_episode(OPENROUTER_OPENING).handle
+
+
+def test_a_generates_sealed_record_carries_the_calls_usage(
+    metered_stack: GatewayStack,
+    metered_handle: str,
+) -> None:
+    _generate(metered_stack, REQUEST)
+
+    (record,) = metered_stack.sealed_events(metered_handle)
+    assert _sealed_usage(record) == METERED_USAGE.model_dump()
+
+
+def test_each_sealed_record_of_a_batch_carries_its_calls_usage(
+    metered_stack: GatewayStack,
+    metered_handle: str,
+) -> None:
+    batch = BatchGenerateRequest(prompts=("a", "b"), caller_identity="coworker")
+
+    ServiceClient(metered_stack.core).post_model(BATCH_GENERATE_ROUTE, batch, BatchGenerateResponse)
+
+    usages = [_sealed_usage(record) for record in metered_stack.sealed_events(metered_handle)]
+    assert usages == [METERED_USAGE.model_dump()] * len(batch.prompts)
+
+
+def test_a_model_call_record_carries_the_calls_usage(
+    metered_stack: GatewayStack,
+    metered_handle: str,
+) -> None:
+    _generate(metered_stack, REQUEST)
+
+    (call,) = _model_calls(metered_stack, metered_handle)
+    assert call.usage == METERED_USAGE
 
 
 # --- closing an episode ---

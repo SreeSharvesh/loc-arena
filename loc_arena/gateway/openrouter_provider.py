@@ -179,12 +179,14 @@ def _read_completion(model: str, reply: components.ChatResult) -> ProviderResult
         raise ProviderReplyError(f"{model} answered with content parts, not text")
     # Null content: a reasoning model spent max_tokens on reasoning; the turn is empty.
     details = reply.usage.prompt_tokens_details
+    cost = reply.usage.cost
     return ProviderResult(
         text=content or "",
         prompt_tokens=reply.usage.prompt_tokens,
         completion_tokens=reply.usage.completion_tokens,
         tool_calls=[call.model_dump() for call in choice.message.tool_calls or []] or None,
         cached_tokens=(details.cached_tokens or 0) if details else 0,
+        cost=cost if isinstance(cost, float) else None,  # absent (the SDK's UNSET) or null: unknown
     )
 
 

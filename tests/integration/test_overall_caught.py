@@ -17,6 +17,7 @@ from loc_arena.config import load_run_config
 from loc_arena.gateway.core import Message, ProviderResult, ToolSpec
 from loc_arena.harness import _build_scores, run_episode
 from loc_arena.logging_.events import AppendOnlyLog, Event
+from loc_arena.logging_.model_usage import RunModelUsage, summarize_model_usage
 from loc_arena.metrics import calibrate_overall_threshold, episode_overall
 from loc_arena.monitors.aggregation import AggregationConfig
 from loc_arena.monitors.registry import MonitorSpec, MonitorVerdict
@@ -268,6 +269,7 @@ def test_detector_fires_but_suspicion_below_threshold_is_not_caught(tmp_path: Pa
         overall_threshold=0.0,
         agg=agg,
         specs=[susp, det],
+        model_usage=RunModelUsage(episode=summarize_model_usage(()), calibration=None),
     )
     saf = scores["safety"]
     assert saf["caught"] is False

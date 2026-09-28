@@ -18,6 +18,7 @@ class ProviderResult:
     """A model completion and the token accounting used by the batch quota.
 
     ``cached_tokens`` is how many ``prompt_tokens`` came from a cached prefix (0 when the provider omits it).
+    ``cost`` is what the provider charged for the call, in OpenRouter credits (``None`` when it reports none).
     """
 
     text: str
@@ -25,6 +26,7 @@ class ProviderResult:
     completion_tokens: int
     tool_calls: list[dict[str, Any]] | None = None
     cached_tokens: int = 0
+    cost: float | None = None
 
     def assistant_message(self) -> Message:
         """The reply as an assistant message a caller can append to its history."""

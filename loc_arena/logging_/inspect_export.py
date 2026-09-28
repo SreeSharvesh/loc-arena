@@ -13,7 +13,7 @@ from typing import Any
 from inspect_ai.event import Event as InspectEvent
 from inspect_ai.event import InfoEvent, ModelEvent, SpanBeginEvent, SpanEndEvent, ToolEvent
 from inspect_ai.log import EvalConfig, EvalDataset, EvalLog, EvalSample, EvalSpec, write_eval_log
-from inspect_ai.model import ChatMessageUser, GenerateConfig, ModelOutput
+from inspect_ai.model import ChatMessageUser, GenerateConfig, ModelOutput, ModelUsage
 from inspect_ai.tool import ToolCallError
 
 from loc_arena.config import RunConfig
@@ -190,12 +190,24 @@ def _model_event(call: ModelCall, span_id: str | None) -> ModelEvent:
         tools=[],
         tool_choice="none",
         config=GenerateConfig(),
-        output=ModelOutput.from_content(model=call.role, content=call.output),
+        output=_model_output(call),
         span_id=span_id,
         timestamp=at,
         completed=at,
         metadata={"identity": call.identity, "phase": call.phase, "sealed_seq": call.sealed_seq},
     )
+
+
+def _model_output(call: ModelCall) -> ModelOutput:
+    """The call's completion with the token counts, cached tokens and cost the provider reported for it."""
+    usage = ModelUsage(
+        input_tokens=call.usage.prompt_tokens,
+        output_tokens=call.usage.completion_tokens,
+        total_tokens=call.usage.prompt_tokens + call.usage.completion_tokens,
+        input_tokens_cache_read=call.usage.cached_tokens,
+        total_cost=call.usage.cost,
+    )
+    return ModelOutput.from_content(model=call.role, content=call.output).model_copy(update={"usage": usage})
 
 
 def _tool_event(event: Event, span_id: str | None, at: datetime, *, mirror_seq: int | None) -> ToolEvent:

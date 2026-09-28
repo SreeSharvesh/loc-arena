@@ -208,6 +208,19 @@ class AppendAck(ContractModel):
     fp: str
 
 
+class ModelCallUsage(ContractModel):
+    """What one completed provider call consumed, as the provider reported it.
+
+    ``cached_tokens`` is how many of the ``prompt_tokens`` came from a cached prefix. ``cost`` is in
+    OpenRouter credits (US dollars), ``None`` when the provider reported no cost.
+    """
+
+    prompt_tokens: int
+    completion_tokens: int
+    cached_tokens: int
+    cost: float | None
+
+
 class ModelCallRecord(ContractModel):
     """One provider call as the core made it (covert injection included), for the sealed model-call log."""
 
@@ -217,6 +230,7 @@ class ModelCallRecord(ContractModel):
     model_input: str
     output: str
     wall_ts: float
+    usage: ModelCallUsage
 
 
 class MirrorAppend(ContractModel):

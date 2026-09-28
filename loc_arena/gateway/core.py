@@ -41,6 +41,7 @@ from loc_arena.stack.contracts import (
     CoreGenerateResponse,
     CovertInjection,
     CredentialKind,
+    ModelCallUsage,
     ModelRoute,
     generate_episode_handle,
 )
@@ -190,6 +191,9 @@ class Provider(Protocol):
         ...
 
 
+DETERMINISTIC_CALL_COST: Final = 0.0  # the deterministic provider calls no paid API
+
+
 class DeterministicProvider:
     """A deterministic, no-network provider for scripted/dev runs: a unique completion per call.
 
@@ -213,7 +217,12 @@ class DeterministicProvider:
     ) -> ProviderResult:
         """Return a unique deterministic completion and the fixed token counts."""
         number = next(self._call_numbers)
-        return ProviderResult(text=f"gen#{number}", prompt_tokens=self._pt, completion_tokens=self._ct)
+        return ProviderResult(
+            text=f"gen#{number}",
+            prompt_tokens=self._pt,
+            completion_tokens=self._ct,
+            cost=DETERMINISTIC_CALL_COST,
+        )
 
 
 # --------------------------------------------------------------------------------------------------------
@@ -251,8 +260,9 @@ class ModelCallObserver(Protocol):
         model_input: str,
         output: str,
         sealed_seq: int,
+        usage: ModelCallUsage,
     ) -> None:
-        """Record one call: its resolved identity, role, exact model input, output and sealed seq."""
+        """Record one call: its resolved identity, role, exact model input, output, sealed seq and usage."""
         ...
 
 
@@ -443,18 +453,20 @@ class GatewayCore:
                 "prompt_tokens": result.prompt_tokens,
                 "completion_tokens": result.completion_tokens,
                 "cached_tokens": result.cached_tokens,
+                "cost": result.cost,
             },
         )
         return self._sealed.record(draft).seq
 
-    def _observe(self, identity: str, role: str, model_input: str, output: str, sealed_seq: int) -> None:
+    def _observe(self, identity: str, role: str, model_input: str, result: ProviderResult, seq: int) -> None:
         if self._trace is not None:
             self._trace.on_model_call(
                 identity=identity,
                 role=role,
                 model_input=model_input,
-                output=output,
-                sealed_seq=sealed_seq,
+                output=_render_output(result),
+                sealed_seq=seq,
+                usage=_usage_of(result),
             )
 
     # -- endpoints ---------------------------------------------------------------------------------------
@@ -474,7 +486,7 @@ class GatewayCore:
         )
         in_mirror = self._covered(self._logging_covered, caller.identity)
         seq = self._record(caller, request, result, ts=ts, in_mirror=in_mirror)
-        self._observe(caller.identity, request.role, _render_input(model_input), _render_output(result), seq)
+        self._observe(caller.identity, request.role, _render_input(model_input), result, seq)
         return CoreGenerateResponse(
             text=result.text,
             turn_id=caller.turn_id,
@@ -513,7 +525,7 @@ class GatewayCore:
             self._charge_quota(result.prompt_tokens + result.completion_tokens)
             in_mirror = self._covered(self._logging_covered, caller.identity)
             seq = self._record(caller, call, result, ts=ts, in_mirror=in_mirror)
-            self._observe(caller.identity, request.role, prompt, result.text, seq)
+            self._observe(caller.identity, request.role, prompt, result, seq)
             texts.append(result.text)
             seqs.append(seq)
         return BatchGenerateResponse(
@@ -536,6 +548,11 @@ def _render_input(messages: list[Message]) -> str:
     if len(messages) == 1 and messages[0]["role"] == "user" and isinstance(messages[0]["content"], str):
         return messages[0]["content"]
     return json.dumps(messages, indent=2, ensure_ascii=False)
+
+
+def _usage_of(result: ProviderResult) -> ModelCallUsage:
+    """The call's token counts and cost, as the model-call observers receive them."""
+    return ModelCallUsage.model_validate(result, from_attributes=True)
 
 
 def _render_output(result: ProviderResult) -> str:

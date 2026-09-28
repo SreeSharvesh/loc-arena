@@ -22,6 +22,7 @@ from loc_arena.stack.contracts import (
     DurableCredential,
     GenerateRequest,
     ModelCallRecord,
+    ModelCallUsage,
 )
 from loc_arena.stack.service_client import ServiceClient
 from loc_arena.stack.settings import GatewaySettings, LocArenaSettings
@@ -78,6 +79,7 @@ class EpisodeLedger:
         model_input: str,
         output: str,
         sealed_seq: int,
+        usage: ModelCallUsage,
     ) -> None:
         """Send one provider call to the sealed model-call log, unretried: a re-send would record it twice."""
         record = ModelCallRecord(
@@ -87,6 +89,7 @@ class EpisodeLedger:
             model_input=model_input,
             output=output,
             wall_ts=time.time(),
+            usage=usage,
         )
         self._recorder.send("POST", self._model_calls_route, record)
 

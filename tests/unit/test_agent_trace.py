@@ -16,7 +16,9 @@ from loc_arena.logging_.agent_trace import (
 )
 from loc_arena.logging_.events import AppendOnlyLog, Event, EventKind
 from loc_arena.scaffold.bus import Recorder
-from loc_arena.stack.contracts import ModelCallRecord, RunnerEpisodeExport
+from loc_arena.stack.contracts import ModelCallRecord, ModelCallUsage, RunnerEpisodeExport
+
+USAGE = ModelCallUsage(prompt_tokens=11, completion_tokens=7, cached_tokens=5, cost=0.0042)
 
 
 def test_constructs_with_an_injected_wall_clock() -> None:
@@ -85,6 +87,7 @@ def _call(trace: AgentTrace, sealed_seq: int) -> None:
         model_input="brief",
         output="reply",
         sealed_seq=sealed_seq,
+        usage=USAGE,
     )
 
 
@@ -93,7 +96,7 @@ def test_model_call_inside_a_turn_is_in_the_deciding_phase() -> None:
     with trace.turn("agent-main", 2):
         _call(trace, 11)
     assert trace.finish(last_sealed_seq=11).model_calls == (
-        ModelCall("deciding", "agent-main", "untrusted_agent", "brief", "reply", 11, 5.0),
+        ModelCall("deciding", "agent-main", "untrusted_agent", "brief", "reply", 11, 5.0, USAGE),
     )
 
 
@@ -309,10 +312,11 @@ def test_the_merge_gives_each_sealed_model_call_the_phase_the_runner_saw() -> No
         model_input="covert\n\nbrief",
         output="reply",
         wall_ts=5.0,
+        usage=USAGE,
     )
 
     merged = merge_runner_episode(_export(), (record,), range(7))
 
     assert merged.model_calls == (
-        ModelCall("deciding", "agent-main", "untrusted_agent", "covert\n\nbrief", "reply", 1, 5.0),
+        ModelCall("deciding", "agent-main", "untrusted_agent", "covert\n\nbrief", "reply", 1, 5.0, USAGE),
     )

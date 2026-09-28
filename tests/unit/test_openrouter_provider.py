@@ -45,6 +45,13 @@ TEXT = "hello"
 DOTENV_FILE_NAME = ".env"
 SDK_DEBUG_ENVIRONMENT_VARIABLE = "OPENROUTER_DEBUG"
 SDK_LOGGER_NAME = "openrouter"
+COST = 0.0042  # credits
+
+
+def _completion_costing(cost: float | None) -> str:
+    body = json.loads(completion())
+    body["usage"]["cost"] = cost
+    return json.dumps(body)
 
 
 def _completion_without_choices() -> str:
@@ -108,6 +115,21 @@ def test_a_completion_is_read_into_its_text_and_token_usage() -> None:
         prompt_tokens=usage["prompt_tokens"],
         completion_tokens=usage["completion_tokens"],
     )
+
+
+def test_a_completion_reports_the_cost_openrouter_charged() -> None:
+    with serve_openrouter(ScriptedReply(body=_completion_costing(COST))) as stub:
+        result = generate(stub)
+
+    assert result.cost == COST
+
+
+@pytest.mark.parametrize("body", [completion(), _completion_costing(None)], ids=["absent", "null"])
+def test_a_completion_without_a_cost_reports_its_cost_unknown(body: str) -> None:
+    with serve_openrouter(ScriptedReply(body=body)) as stub:
+        result = generate(stub)
+
+    assert result.cost is None
 
 
 def test_a_request_carries_the_key_as_a_bearer_token() -> None:
