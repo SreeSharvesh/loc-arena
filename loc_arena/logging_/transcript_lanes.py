@@ -93,7 +93,8 @@ def _mirror_seq(event: InspectEvent) -> int | None:
 
 
 def _verdict_cells(
-    scores: object, mirror_rows: Mapping[int, int]
+    scores: object,
+    mirror_rows: Mapping[int, int],
 ) -> dict[tuple[str, int], tuple[Block, ...]]:
     caught_scores = _caught_monitor_scores(scores)
     cells: dict[tuple[str, int], list[Block]] = {}

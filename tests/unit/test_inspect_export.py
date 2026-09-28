@@ -175,7 +175,10 @@ def _action(seq: int, result: dict[str, Any] | None = None, **payload: object) -
 def test_tool_event_carries_the_tool_arguments_and_result() -> None:
     at = datetime(2026, 9, 25, tzinfo=UTC)
     event = inspect_export._tool_event(
-        _action(5, args={"path": "a.py"}, blocked=False), "turn:s:0", at, mirror_seq=None
+        _action(5, args={"path": "a.py"}, blocked=False),
+        "turn:s:0",
+        at,
+        mirror_seq=None,
     )
     assert (event.id, event.function, event.arguments) == ("seq-5", "write_file", {"path": "a.py"})
     assert event.result == '{"ok": true}'
@@ -186,7 +189,10 @@ def test_tool_event_carries_the_tool_arguments_and_result() -> None:
 def test_a_blocked_action_becomes_a_permission_error() -> None:
     at = datetime(2026, 9, 25, tzinfo=UTC)
     event = inspect_export._tool_event(
-        _action(6, args={}, blocked=True, reason="out of scope"), None, at, mirror_seq=None
+        _action(6, args={}, blocked=True, reason="out of scope"),
+        None,
+        at,
+        mirror_seq=None,
     )
     assert event.error is not None
     assert (event.error.type, event.error.message) == ("permission", "out of scope")
@@ -239,10 +245,17 @@ def _export_an_action_after_a_world_tick(tmp_path: Path) -> list[InspectEvent]:
     _world(sealed)
     with trace.turn("agent-main", 0):
         recorder.dual(
-            actor_uid="agent-main", actor_role="orchestrator", kind="action", tool="read_file", payload={}
+            actor_uid="agent-main",
+            actor_role="orchestrator",
+            kind="action",
+            tool="read_file",
+            payload={},
         )
     episode = EpisodeExport(
-        "episode", trace.finish(last_sealed_seq=sealed.last_seq), sealed_path, ("agent-main",)
+        "episode",
+        trace.finish(last_sealed_seq=sealed.last_seq),
+        sealed_path,
+        ("agent-main",),
     )
     path = write_run_eval(
         tmp_path / "run.eval",

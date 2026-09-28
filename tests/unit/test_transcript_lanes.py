@@ -38,7 +38,9 @@ def test_build_transcript_places_blocks_by_turn_owner_and_world_by_latest_round(
         return (Block("info", str(event.data), ""),)
 
     def fake_order(
-        configured: Sequence[str], seen: Sequence[str], monitors: Sequence[str]
+        configured: Sequence[str],
+        seen: Sequence[str],
+        monitors: Sequence[str],
     ) -> tuple[str, ...]:
         return (WORLD, *monitors, *configured, *[s for s in seen if s not in configured])
 
@@ -184,7 +186,12 @@ def test_non_ascii_arguments_stay_readable() -> None:
 
 
 def _verdict(
-    monitor: str, target_seq: int | None, *, tap: str = "action", score: float = 0.5, reason: str = "why"
+    monitor: str,
+    target_seq: int | None,
+    *,
+    tap: str = "action",
+    score: float = 0.5,
+    reason: str = "why",
 ) -> dict[str, object]:
     return {
         "monitor": monitor,
@@ -199,7 +206,12 @@ def _verdict(
 
 def _sample(events: list[InspectEvent], scores: dict[str, object]) -> EvalSample:
     return EvalSample(
-        id="episode", epoch=1, input="", target="", events=events, metadata={"agents": [], "scores": scores}
+        id="episode",
+        epoch=1,
+        input="",
+        target="",
+        events=events,
+        metadata={"agents": [], "scores": scores},
     )
 
 
@@ -253,7 +265,11 @@ def test_a_malformed_verdict_fails_loudly_instead_of_being_dropped() -> None:
 
 def test_a_verdict_block_shows_its_monitor_tap_score_actor_and_reason() -> None:
     verdict = _verdict(
-        "pr_review_monitor", None, tap="pr", score=0.85, reason="control-plane coverage change"
+        "pr_review_monitor",
+        None,
+        tap="pr",
+        score=0.85,
+        reason="control-plane coverage change",
     )
     sample = _sample([], {"monitor_verdicts": [verdict]})
 

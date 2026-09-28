@@ -70,7 +70,8 @@ def test_the_exported_episode_lays_out_as_one_lane_per_agent_by_round(
 
 
 def test_every_verdict_with_a_target_in_an_exported_run_lands_on_an_event(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     bundle = run_episode(
