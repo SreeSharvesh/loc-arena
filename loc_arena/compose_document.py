@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import dataclasses
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -33,15 +32,21 @@ from loc_arena.stack.constants import (
     HEALTH_ROUTE,
     IMAGE_TAG_ENVIRONMENT_VARIABLE,
     MAIN_TASK_SCORER_ENVIRONMENT_VARIABLE,
-    MIRROR_MOUNT_PATH,
     RECORDER_HOSTNAME,
     SANDBOX_AGENT_ID_ENVIRONMENT_VARIABLE,
-    SEALED_MOUNT_PATH,
     SETTINGS_ENVIRONMENT_VARIABLE,
-    WORKSPACE_MOUNT_PATH,
     build_sandbox_service_name,
 )
-from loc_arena.stack.settings import DockerSettings, GatewaySettings, LocArenaSettings
+from loc_arena.stack.settings import DockerSettings, LocArenaSettings
+from loc_arena.topology import (
+    STACK_VOLUME_MOUNT_PATHS,
+    ImageName,
+    SecretDeclaration,
+    ServiceDeclaration,
+    StackTopology,
+    VolumeDeclaration,
+    load_stack_topology,
+)
 
 LABEL = "loc-arena.eval"
 APP_IMAGE = "loc-arena-app"
@@ -53,12 +58,6 @@ REFERENCE_COMPOSE_FILE: Final = PROJECT_DIRECTORY / "compose.yaml"
 SECRET_FILE_MODE: Final = 0o400  # an environment-sourced secret is readable by its owner, the service's user
 LISTEN_HOST: Final = "0.0.0.0"  # every interface of the container: its networks decide who can connect
 
-# Where each named volume is mounted: the paths the services' code reads and writes.
-_MOUNT_PATH_BY_VOLUME: Final = {
-    "sealed_log": SEALED_MOUNT_PATH,
-    "mirror_log": MIRROR_MOUNT_PATH,
-    "checkout": WORKSPACE_MOUNT_PATH,
-}
 _HOSTNAME_BY_SERVICE: Final = {
     "gateway_core": GATEWAY_CORE_HOSTNAME,
     "gateway_edge": GATEWAY_EDGE_HOSTNAME,
@@ -66,175 +65,37 @@ _HOSTNAME_BY_SERVICE: Final = {
 }
 
 
-IMAGES: Final = {"app": APP_IMAGE, "sandbox": SANDBOX_IMAGE}
+IMAGES: Final[Mapping[ImageName, str]] = {"app": APP_IMAGE, "sandbox": SANDBOX_IMAGE}
 _IMAGE_TAG: Final = f"${{{IMAGE_TAG_ENVIRONMENT_VARIABLE}:?the image tag of the episode}}"
 
 
-def _render_build(image: str, codebase: str) -> ComposeBuild:
+def _render_build(image: ImageName, codebase: str) -> ComposeBuild:
     build: ComposeBuild = {"context": ".", "target": image}
     if codebase != DEFAULT_CODEBASE:  # the Dockerfile's default codebase needs no build argument
         build["args"] = {CODEBASE_BUILD_ARGUMENT: codebase}
     return build
 
 
-def _strings(raw: Mapping[str, object], key: str, where: str) -> tuple[str, ...]:
-    value = raw.get(key, [])
-    if not isinstance(value, list):
-        raise ValueError(f"{where}.{key} must be a list, got {value!r}")
-    return tuple(str(item) for item in value)
-
-
-def _optional_string(raw: Mapping[str, object], key: str) -> str | None:
-    return str(raw[key]) if key in raw else None
-
-
-def _flag(raw: Mapping[str, object], key: str, where: str) -> bool:
-    value = raw.get(key, False)
-    if not isinstance(value, bool):
-        raise ValueError(f"{where}.{key} must be true or false, got {value!r}")
-    return value
-
-
-def _reject_unknown_keys(raw: Mapping[str, object], known: frozenset[str], where: str) -> None:
-    unknown = set(raw) - known
-    if unknown:
-        raise ValueError(f"{where} has unknown keys {sorted(unknown)} (known: {sorted(known)})")
-
-
-def _port_setting(raw: Mapping[str, object], where: str) -> str | None:
-    """The settings.gateway field holding the port of the service's app, which is also its command."""
-    port_setting = _optional_string(raw, "port_setting")
-    if ("app" in raw) != (port_setting is not None):
-        raise ValueError(f"{where}: an app needs a port_setting, and a port_setting an app")
-    if "app" in raw and "command" in raw:
-        raise ValueError(f"{where}: an app is served by uvicorn, so it takes no command")
-    if port_setting is not None and not (
-        port_setting.endswith("_port") and port_setting in GatewaySettings.model_fields
-    ):
-        raise ValueError(f"{where}.port_setting must name a port of settings.gateway, got {port_setting!r}")
-    return port_setting
-
-
 @dataclass(frozen=True)
 class ServiceSpec:
-    """One ``services:`` entry of the run config, typed. Absent keys take the neutral default."""
+    """One compose service to render: a ``services:`` entry, or one agent's copy of a ``per_agent`` entry."""
 
     name: str
     config_name: str  # its key under ``services:``, shared by every sandbox of a per-agent entry
-    image: str
-    app: str | None  # the module:factory uvicorn serves
-    port_setting: str | None  # the settings.gateway field holding the app's port
-    per_agent: bool
-    runs_agent_code: bool  # its tmpfs is capped at settings.docker.agent_tmpfs_size_bytes
-    networks: tuple[str, ...]
-    secrets: tuple[str, ...]
-    mounts_grading_harness: bool
-    command: tuple[str, ...]
-    init: bool
-    profiles: tuple[str, ...]
-    environment: Mapping[str, str]
-    depends_on_healthy: tuple[str, ...]
-    user: str | None
-    read_only_root_filesystem: bool
-    tmpfs: tuple[str, ...]
-    cap_drop: tuple[str, ...]
-    security_opt: tuple[str, ...]
-    mem_limit: str | None
-    cpus: float | None
-    pids_limit: int | None
-
-    @classmethod
-    def from_config(cls, name: str, raw: Mapping[str, object]) -> ServiceSpec:
-        """Parse the YAML mapping under ``services.<name>``; a wrong or unknown key raises ``ValueError``."""
-        where = f"services.{name}"
-        _reject_unknown_keys(raw, _SERVICE_KEYS, where)
-        image = raw.get("image")
-        if not isinstance(image, str) or image not in IMAGES:
-            raise ValueError(f"{where}.image must be one of {sorted(IMAGES)}, got {image!r}")
-        environment, cpus, pids_limit = raw.get("environment", {}), raw.get("cpus"), raw.get("pids_limit")
-        if not isinstance(environment, dict):
-            raise ValueError(f"{where}.environment must be a mapping, got {environment!r}")
-        return cls(
-            name=name,
-            config_name=name,
-            image=image,
-            app=_optional_string(raw, "app"),
-            port_setting=_port_setting(raw, where),
-            per_agent=_flag(raw, "per_agent", where),
-            runs_agent_code=_flag(raw, "runs_agent_code", where),
-            networks=_strings(raw, "networks", where),
-            secrets=_strings(raw, "secrets", where),
-            mounts_grading_harness=_flag(raw, "mounts_grading_harness", where),
-            command=_strings(raw, "command", where),
-            init=_flag(raw, "init", where),
-            profiles=_strings(raw, "profiles", where),
-            environment={str(key): str(value) for key, value in environment.items()},
-            depends_on_healthy=_strings(raw, "depends_on_healthy", where),
-            user=_optional_string(raw, "user"),
-            read_only_root_filesystem=_flag(raw, "read_only_root_filesystem", where),
-            tmpfs=_strings(raw, "tmpfs", where),
-            cap_drop=_strings(raw, "cap_drop", where),
-            security_opt=_strings(raw, "security_opt", where),
-            mem_limit=_optional_string(raw, "mem_limit"),
-            cpus=float(cpus) if isinstance(cpus, int | float) else None,
-            pids_limit=pids_limit if isinstance(pids_limit, int) else None,
-        )
+    declaration: ServiceDeclaration
 
     def for_agent(self, agent_id: str, gateway_edge_url: str) -> ServiceSpec:
         """This per-agent entry as ``agent_id``'s sandbox: named after it, told its agent and model route."""
-        return dataclasses.replace(
-            self,
-            name=build_sandbox_service_name(agent_id),
-            environment={
-                **self.environment,
-                SANDBOX_AGENT_ID_ENVIRONMENT_VARIABLE: agent_id,
-                GATEWAY_EDGE_URL_ENVIRONMENT_VARIABLE: gateway_edge_url,
-            },
-        )
-
-
-_SERVICE_KEYS: Final = frozenset(
-    field.name for field in dataclasses.fields(ServiceSpec) if field.name not in {"name", "config_name"}
-)
-
-
-@dataclass(frozen=True)
-class VolumeSpec:
-    """One ``volumes:`` entry of the run config: a named volume, the services writing and reading it."""
-
-    name: str
-    read_write: tuple[str, ...]
-    read_only: tuple[str, ...]
-
-    @classmethod
-    def from_config(cls, name: str, raw: Mapping[str, object]) -> VolumeSpec:
-        """Parse the YAML mapping under ``volumes.<name>``; a wrong or unknown key raises ``ValueError``."""
-        where = f"volumes.{name}"
-        _reject_unknown_keys(raw, frozenset({"read_write", "read_only"}), where)
-        if name not in _MOUNT_PATH_BY_VOLUME:
-            raise ValueError(
-                f"{where}: no mount path is known for it (known: {sorted(_MOUNT_PATH_BY_VOLUME)})",
-            )
-        volume = cls(name, _strings(raw, "read_write", where), _strings(raw, "read_only", where))
-        if set(volume.read_write) & set(volume.read_only):
-            raise ValueError(f"{where}: a service either writes or reads it, not both")
-        return volume
-
-    @property
-    def mount_path(self) -> Path:
-        """Where the volume is mounted inside a container."""
-        return _MOUNT_PATH_BY_VOLUME[self.name]
-
-    def render_mount(self, service: ServiceSpec) -> ComposeServiceVolume | None:
-        """The mount of this volume in ``service``, or None when the service is granted no access to it."""
-        if service.config_name not in self.read_write + self.read_only:
-            return None
-        return {
-            "type": "volume",
-            "source": self.name,
-            "target": self.mount_path.as_posix(),
-            "read_only": service.config_name in self.read_only,
+        environment = {
+            **self.declaration.environment,
+            SANDBOX_AGENT_ID_ENVIRONMENT_VARIABLE: agent_id,
+            GATEWAY_EDGE_URL_ENVIRONMENT_VARIABLE: gateway_edge_url,
         }
+        return ServiceSpec(
+            name=build_sandbox_service_name(agent_id),
+            config_name=self.config_name,
+            declaration=self.declaration.model_copy(update={"environment": environment}),
+        )
 
 
 @dataclass(frozen=True)
@@ -251,8 +112,7 @@ class RunTopology:
     """What rendering one service needs from the rest of the run."""
 
     settings: LocArenaSettings
-    volumes: tuple[VolumeSpec, ...]
-    secret_sources: Mapping[str, ComposeSecret]
+    topology: StackTopology
     service_names: Mapping[str, tuple[str, ...]]  # a config name -> the compose services rendered from it
     grading: GradingInputs | None  # None when the run names no scenario
     codebase: str
@@ -275,22 +135,48 @@ def _render_healthcheck(port: int, docker: DockerSettings) -> ComposeHealthcheck
     }
 
 
-def _render_secret_grant(spec: ServiceSpec, name: str, source: ComposeSecret) -> ComposeServiceSecret:
+def _render_secret_source(source: SecretDeclaration) -> ComposeSecret:
+    secret: ComposeSecret = {}
+    if source.file is not None:
+        secret["file"] = source.file
+    if source.environment is not None:
+        secret["environment"] = source.environment
+    return secret
+
+
+def _render_secret_grant(spec: ServiceSpec, name: str, source: SecretDeclaration) -> ComposeServiceSecret:
     grant: ComposeServiceSecret = {"source": name, "target": name}
-    if "environment" not in source:
+    if source.environment is None:
         return grant  # compose bind-mounts a file source, which keeps the host file's owner and mode
-    if spec.read_only_root_filesystem:
+    declaration = spec.declaration
+    if declaration.read_only_root_filesystem:
         raise ValueError(
             f"{spec.name} has a read-only root, where compose refuses to write the environment-sourced "
             f"secret {name!r}: give it a file source",
         )
-    uid, _, gid = (spec.user or "").partition(":")
+    uid, _, gid = (declaration.user or "").partition(":")
     if not (uid.isdigit() and gid.isdigit()):
         raise ValueError(
-            f"{spec.name} needs a numeric user uid:gid to own the secret {name!r}, got {spec.user!r}",
+            f"{spec.name} needs a numeric user uid:gid to own the secret {name!r}, got {declaration.user!r}",
         )
     grant["uid"], grant["gid"], grant["mode"] = uid, gid, f"0{SECRET_FILE_MODE:o}"
     return grant
+
+
+def _render_volume_mount(
+    name: str,
+    volume: VolumeDeclaration,
+    spec: ServiceSpec,
+) -> ComposeServiceVolume | None:
+    """The mount of volume ``name`` in ``spec``, or None when the service is granted no access to it."""
+    if spec.config_name not in volume.read_write + volume.read_only:
+        return None
+    return {
+        "type": "volume",
+        "source": name,
+        "target": STACK_VOLUME_MOUNT_PATHS[name].as_posix(),
+        "read_only": spec.config_name in volume.read_only,
+    }
 
 
 def _render_file_bind(source: str, target: Path) -> ComposeServiceVolume:
@@ -304,101 +190,123 @@ def _render_file_bind(source: str, target: Path) -> ComposeServiceVolume:
     }
 
 
-def _render_mounts(spec: ServiceSpec, topology: RunTopology) -> list[ComposeServiceVolume]:
-    mounts = [mount for volume in topology.volumes if (mount := volume.render_mount(spec)) is not None]
-    grading = topology.grading
-    if not spec.mounts_grading_harness or grading is None:
+def _render_mounts(spec: ServiceSpec, run: RunTopology) -> list[ComposeServiceVolume]:
+    mounts = [
+        mount
+        for name, volume in run.topology.volumes.items()
+        if (mount := _render_volume_mount(name, volume, spec)) is not None
+    ]
+    grading = run.grading
+    if not spec.declaration.mounts_grading_harness or grading is None:
         return mounts
     harness = [
         _render_file_bind(f"{grading.harness_directory}/{file_name}", GRADER_HARNESS_MOUNT_PATH / file_name)
-        for file_name in topology.settings.grading.harness_file_names
+        for file_name in run.settings.grading.harness_file_names
     ]
     return [*mounts, *harness, _render_file_bind(grading.measure_module, GRADER_MEASURE_MODULE_MOUNT_PATH)]
 
 
-def _render_environment(spec: ServiceSpec, topology: RunTopology) -> dict[str, str]:
-    environment = dict(spec.environment)
-    if spec.mounts_grading_harness and topology.grading is not None:
-        environment[MAIN_TASK_SCORER_ENVIRONMENT_VARIABLE] = topology.grading.scorer
-    environment[SETTINGS_ENVIRONMENT_VARIABLE] = topology.settings.model_dump_json()
+def _render_environment(spec: ServiceSpec, run: RunTopology) -> dict[str, str]:
+    environment = dict(spec.declaration.environment)
+    if spec.declaration.mounts_grading_harness and run.grading is not None:
+        environment[MAIN_TASK_SCORER_ENVIRONMENT_VARIABLE] = run.grading.scorer
+    environment[SETTINGS_ENVIRONMENT_VARIABLE] = run.settings.model_dump_json()
     return {name: _escape_interpolation(value) for name, value in environment.items()}
 
 
 def _attach_networks(service: ComposeService, spec: ServiceSpec) -> None:
     hostname = _HOSTNAME_BY_SERVICE.get(spec.name)
-    if not spec.networks:
+    networks = spec.declaration.networks
+    if not networks:
         service["network_mode"] = "none"
     elif hostname is None:
-        service["networks"] = list(spec.networks)
+        service["networks"] = list(networks)
     else:
-        service["networks"] = {network: {"aliases": [hostname]} for network in spec.networks}
+        service["networks"] = {network: {"aliases": [hostname]} for network in networks}
 
 
-def _render_tmpfs(spec: ServiceSpec, docker: DockerSettings) -> list[str]:
-    if not spec.runs_agent_code:
-        return list(spec.tmpfs)
+def _render_tmpfs(declaration: ServiceDeclaration, docker: DockerSettings) -> list[str]:
+    if not declaration.runs_agent_code:
+        return list(declaration.tmpfs)
     size = f"size={docker.agent_tmpfs_size_bytes}"
-    return [f"{entry},{size}" if ":" in entry else f"{entry}:{size}" for entry in spec.tmpfs]
+    return [f"{entry},{size}" if ":" in entry else f"{entry}:{size}" for entry in declaration.tmpfs]
 
 
-def _apply_process(service: ComposeService, spec: ServiceSpec, settings: LocArenaSettings) -> None:
-    if spec.app is not None and spec.port_setting is not None:
-        port = int(getattr(settings.gateway, spec.port_setting))
-        service["command"] = ["uvicorn", "--factory", spec.app, "--host", LISTEN_HOST, "--port", str(port)]
+def _apply_process(
+    service: ComposeService,
+    declaration: ServiceDeclaration,
+    settings: LocArenaSettings,
+) -> None:
+    if declaration.app is not None and declaration.port_setting is not None:
+        port = int(getattr(settings.gateway, declaration.port_setting))
+        service["command"] = [
+            "uvicorn",
+            "--factory",
+            declaration.app,
+            "--host",
+            LISTEN_HOST,
+            "--port",
+            str(port),
+        ]
         service["healthcheck"] = _render_healthcheck(port, settings.docker)
-    elif spec.command:
-        service["command"] = list(spec.command)
-    if spec.init:
+    elif declaration.command:
+        service["command"] = list(declaration.command)
+    if declaration.init:
         service["init"] = True
 
 
-def _apply_limits_and_hardening(service: ComposeService, spec: ServiceSpec, docker: DockerSettings) -> None:
-    if spec.user is not None:
-        service["user"] = spec.user
-    if spec.read_only_root_filesystem:
+def _apply_limits_and_hardening(
+    service: ComposeService,
+    declaration: ServiceDeclaration,
+    docker: DockerSettings,
+) -> None:
+    if declaration.user is not None:
+        service["user"] = declaration.user
+    if declaration.read_only_root_filesystem:
         service["read_only"] = True
-    if spec.tmpfs:
-        service["tmpfs"] = _render_tmpfs(spec, docker)
-    if spec.cap_drop:
-        service["cap_drop"] = list(spec.cap_drop)
-    if spec.security_opt:
-        service["security_opt"] = list(spec.security_opt)
-    if spec.mem_limit is not None:
-        service["mem_limit"] = spec.mem_limit
-    if spec.cpus is not None:
-        service["cpus"] = spec.cpus
-    if spec.pids_limit is not None:
-        service["pids_limit"] = spec.pids_limit
+    if declaration.tmpfs:
+        service["tmpfs"] = _render_tmpfs(declaration, docker)
+    if declaration.cap_drop:
+        service["cap_drop"] = list(declaration.cap_drop)
+    if declaration.security_opt:
+        service["security_opt"] = list(declaration.security_opt)
+    if declaration.mem_limit is not None:
+        service["mem_limit"] = declaration.mem_limit
+    if declaration.cpus is not None:
+        service["cpus"] = declaration.cpus
+    if declaration.pids_limit is not None:
+        service["pids_limit"] = declaration.pids_limit
 
 
-def render_service(spec: ServiceSpec, topology: RunTopology) -> ComposeService:
+def render_service(spec: ServiceSpec, run: RunTopology) -> ComposeService:
     """Render one compose service."""
+    declaration = spec.declaration
     service: ComposeService = {
-        "image": f"{IMAGES[spec.image]}:{_IMAGE_TAG}",
-        "build": _render_build(spec.image, topology.codebase),
+        "image": f"{IMAGES[declaration.image]}:{_IMAGE_TAG}",
+        "build": _render_build(declaration.image, run.codebase),
         "pull_policy": LOCAL_IMAGE_PULL_POLICY,
-        "environment": _render_environment(spec, topology),
+        "environment": _render_environment(spec, run),
         "labels": {LABEL: "1"},
         "restart": "no",
     }
-    _apply_process(service, spec, topology.settings)
-    if spec.profiles:
-        service["profiles"] = list(spec.profiles)  # on-demand (`docker compose run`), not part of `up`
-    if spec.secrets:
+    _apply_process(service, declaration, run.settings)
+    if declaration.profiles:
+        service["profiles"] = list(declaration.profiles)  # on-demand (`docker compose run`), not part of `up`
+    if declaration.secrets:
         service["secrets"] = [
-            _render_secret_grant(spec, name, topology.secret_sources[name]) for name in spec.secrets
+            _render_secret_grant(spec, name, run.topology.secrets[name]) for name in declaration.secrets
         ]
     _attach_networks(service, spec)
-    mounts = _render_mounts(spec, topology)
+    mounts = _render_mounts(spec, run)
     if mounts:
         service["volumes"] = mounts
-    if spec.depends_on_healthy:
+    if declaration.depends_on_healthy:
         service["depends_on"] = {
             name: {"condition": "service_healthy"}
-            for reference in spec.depends_on_healthy
-            for name in topology.service_names[reference]
+            for reference in declaration.depends_on_healthy
+            for name in run.service_names[reference]
         }
-    _apply_limits_and_hardening(service, spec, topology.settings.docker)
+    _apply_limits_and_hardening(service, declaration, run.settings.docker)
     return service
 
 
@@ -406,28 +314,11 @@ def _expand_per_agent(templates: Sequence[ServiceSpec], config: RunConfig) -> li
     edge_url = f"http://{GATEWAY_EDGE_HOSTNAME}:{config.settings.gateway.edge_port}"
     specs: list[ServiceSpec] = []
     for template in templates:
-        if template.per_agent:
+        if template.declaration.per_agent:
             specs.extend(template.for_agent(agent.id, edge_url) for agent in config.agents)
         else:
             specs.append(template)
     return specs
-
-
-def _check_references(
-    templates: Sequence[ServiceSpec],
-    volumes: Sequence[VolumeSpec],
-    secret_sources: Mapping[str, ComposeSecret],
-) -> None:
-    """Fail on a name the config uses but does not define (a typo would otherwise drop a mount or a grant)."""
-    config_names = {template.config_name for template in templates}
-    for template in templates:
-        for dependency in set(template.depends_on_healthy) - config_names:
-            raise ValueError(f"services.{template.config_name} depends on the unknown service {dependency!r}")
-        for secret in set(template.secrets) - set(secret_sources):
-            raise ValueError(f"services.{template.config_name} is granted the undeclared secret {secret!r}")
-    for volume in volumes:
-        for service in set(volume.read_write + volume.read_only) - config_names:
-            raise ValueError(f"volumes.{volume.name} names the unknown service {service!r}")
 
 
 def _relative_to_project(path: Path) -> str:
@@ -458,18 +349,15 @@ def read_codebase(config: RunConfig) -> str:
 
 def render_compose(config: RunConfig) -> ComposeDocument:
     """Render the compose document for one episode entirely from the resolved config."""
-    raw = config.raw
-    templates = [ServiceSpec.from_config(name, entry) for name, entry in raw["services"].items()]
-    volumes = tuple(VolumeSpec.from_config(name, entry) for name, entry in raw["volumes"].items())
-    secret_sources: dict[str, ComposeSecret] = {
-        name: ComposeSecret(**source) for name, source in raw.get("secrets", {}).items()
-    }
-    _check_references(templates, volumes, secret_sources)
+    topology = load_stack_topology(config.raw)
+    templates = [
+        ServiceSpec(name=name, config_name=name, declaration=declaration)
+        for name, declaration in topology.services.items()
+    ]
     specs = _expand_per_agent(templates, config)
-    topology = RunTopology(
+    run = RunTopology(
         settings=config.settings,
-        volumes=volumes,
-        secret_sources=secret_sources,
+        topology=topology,
         service_names={
             template.config_name: tuple(
                 spec.name for spec in specs if spec.config_name == template.config_name
@@ -480,18 +368,17 @@ def render_compose(config: RunConfig) -> ComposeDocument:
         codebase=read_codebase(config),
     )
     document: ComposeDocument = {
-        "services": {spec.name: render_service(spec, topology) for spec in specs},
+        "services": {spec.name: render_service(spec, run) for spec in specs},
         "networks": {
-            name: {
-                "internal": bool(spec.get("internal", True)) if isinstance(spec, dict) else True,
-                "labels": {LABEL: "1"},
-            }
-            for name, spec in raw["networks"].items()
+            name: {"internal": network.internal, "labels": {LABEL: "1"}}
+            for name, network in topology.networks.items()
         },
-        "volumes": {volume.name: {"labels": {LABEL: "1"}} for volume in volumes},
+        "volumes": {name: {"labels": {LABEL: "1"}} for name in topology.volumes},
     }
-    if secret_sources:
-        document["secrets"] = secret_sources
+    if topology.secrets:
+        document["secrets"] = {
+            name: _render_secret_source(source) for name, source in topology.secrets.items()
+        }
     return document
 
 
