@@ -73,8 +73,8 @@ One `.eval` per run. Each episode becomes one sample: `episode` (the graded run)
 | `SpanBeginEvent(type="agent", name=<uid>, id="agent:<uid>", parent_id=<root>)` | opened at the agent's first turn; all agent spans close at the end of the sample |
 | `SpanBeginEvent(type="turn", name="turn <n>", id="turn:<uid>:<n>", parent_id="agent:<uid>")` | one per turn that wrote at least one sealed event; opened and closed around that turn's contiguous run of sealed seqs; a turn appearing in two runs raises `ValueError` |
 | `ModelEvent` | a sealed `inference_call` whose seq has a `ModelCall`; input is the post-injection prompt, output the reply, `metadata` holds identity, phase and seq |
-| `ToolEvent` | a sealed `action`; `function` = tool, `arguments` = payload args, `error` (type `permission`) set when the payload or the result says blocked |
-| `InfoEvent(source=<kind>)` | every other sealed event (messages, spawns, NPC activity, monitor records after the boundary) |
+| `ToolEvent` | a sealed `action`; `function` = tool, `arguments` = payload args, `error` (type `permission`) set when the payload or the result says blocked; `metadata` holds the sealed `seq` and the `mirror_seq` of its mirror twin (`None` when it has none), since monitor verdicts name mirror seqs and the two logs number independently |
+| `InfoEvent(source=<kind>)` | every other sealed event (messages, spawns, NPC activity, monitor records after the boundary); `data` holds the sealed `seq` and the twin's `mirror_seq` like a `ToolEvent` |
 | event `span_id` | the turn span of the event's lane, or the root span for World |
 | event `timestamp` | a running wall clock: turn start, then each model call's `wall_ts`, then turn end; World events reuse the last known time |
 | event `working_start` | seconds since the root span's timestamp (Inspect would otherwise use machine uptime) |
@@ -88,8 +88,8 @@ One `.eval` per run. Each episode becomes one sample: `episode` (the graded run)
 | `_sample_events(episode, sealed_events, lanes)` | walks sealed events in seq order as runs of one lane and emits spans and events per the table above; agent spans open in first-turn order (the configured order lives in sample metadata for the lane view) | `ValueError` on an interleaved turn; `KeyError` on a lane with no `TurnRecord` |
 | `_episode_span_id(sample_id)` / `_agent_span_id(uid)` / `_turn_span_id(ref)` | `episode:<id>` / `agent:<uid>` / `turn:<uid>:<n>` | - |
 | `_model_event(call, span_id)` | one `ModelEvent`, model and role = the call's model role | - |
-| `_tool_event(event, span_id, at)` | one `ToolEvent` with id `seq-<n>` | - |
-| `_info_event(event, span_id, at)` | one `InfoEvent` whose data carries seq, actor, target, payload and result | - |
+| `_tool_event(event, span_id, at, *, mirror_seq)` | one `ToolEvent` with id `seq-<n>` | - |
+| `_info_event(event, span_id, at, *, mirror_seq)` | one `InfoEvent` whose data carries seq, mirror seq, actor, target, payload and result | - |
 | `_timestamp(wall)` | epoch seconds -> aware UTC `datetime` | - |
 
 ## M5 wiring (behind `logging.agent_transcript`, default off)
@@ -124,16 +124,24 @@ wall-clock rows would give one filled cell per row).
 | attachments | the sample is resolved first (`resolve_sample_attachments(..., "full")`); Inspect stores long strings as `attachment://` refs |
 | lane of an event | the agent that owns the turn span its span sits in or under (`turn:<uid>:<n>` under `agent:<uid>`), else `World` |
 | row of an event | the turn's round `n`; a World event takes the round of the latest turn span begun before it, or `-1` (before the first round) |
-| lane order | `World`, then the sample metadata's configured agent order, then any other agent in first-seen order |
+| lane order | `World`, then one lane per monitor with a verdict (first-seen order), then the sample metadata's configured agent order, then any other agent in first-seen order |
 | blocks | a model event gives a `prompt` block (title shows identity and phase) and a `reply` block (`reply (error)` when the call failed); a tool event gives a `tool` block (arguments as `code`, the result in the body, or the block reason followed by the result, `blocked` on error); an info event gives an `info` block titled by its source; spans give none |
+| verdict blocks | one per entry in `sample.metadata["scores"]["monitor_verdicts"]` (present only on the graded episode's sample, M2), parsed as `MonitorVerdict`; a malformed entry raises `pydantic.ValidationError`. Each goes to its monitor's own lane, at the row of the event whose `mirror_seq` equals the verdict's `target_seq` (monitors read the mirror, so `target_seq` is a mirror seq), else the `UNPLACED` row (`-2`) when it has no `target_seq` or targets an event the transcript does not show (a mirror-only inference record, a window- or stream-level verdict). A log exported before events carried `mirror_seq` puts every verdict there |
+| the caught verdict | the verdict(s) whose `monitor` is in `scores["safety"]["caught_by"]` and whose (3-decimal-rounded) `score` equals that monitor's `scores["safety"]["per_monitor_max_score"]` get their title suffixed `-- CAUGHT` and `blocked=True` (reuses the tool-block red styling — same CSS class, no new rule) so the decisive verdict stands out from the routine ones |
 
 | Function | Behaviour |
 |---|---|
-| `build_transcript(sample)` | walks the sample's events once, assigns lane and row, collects blocks per cell |
+| `build_transcript(sample)` | walks the sample's events once, assigns lane and row, collects blocks per cell and each event's mirror seq -> row, then adds the verdict cells |
 | `_turn_owners(events)` | span id -> (agent uid, round) for every turn span and every span nested under one; a turn span not shaped `turn <n>` under an agent span raises `ValueError` |
-| `_lane_order(configured, seen)` | `World` + configured agents + unconfigured agents seen, without duplicates |
+| `_lane_order(configured, seen, monitors)` | `World` + monitors + configured agents + unconfigured agents seen, without duplicates |
 | `_blocks(event)` | dispatches to the builders below; other event types give no blocks |
 | `_model_blocks(event)` / `_tool_block(event)` / `_info_block(event)` | one event -> its blocks |
+| `_mirror_seq(event)` | a `ToolEvent`'s or `InfoEvent`'s `mirror_seq`; `None` for anything else (model calls have no mirror twin) |
+| `_verdict_cells(scores, mirror_rows)` | one verdict block per verdict, keyed by (monitor, row) per the rule above |
+| `_monitor_verdicts(scores)` | `scores["monitor_verdicts"]` parsed as a list of `MonitorVerdict`; `[]` when `scores` is not a mapping (the calibration twin has none) |
+| `_caught_monitor_scores(scores)` | `{monitor: its per_monitor_max_score}` for every monitor in `scores["safety"]["caught_by"]`, else `{}` |
+| `_is_the_catch(verdict, caught_scores)` | whether this verdict's monitor and score are the one that tripped `caught_by` |
+| `_verdict_block(verdict, *, caught)` | one `monitor_verdicts` entry -> a `verdict` block titled `monitor: <name> (<tap>)` (`-- CAUGHT` suffix when `caught`), body is the score, actor and reason |
 
 ## M4 `loc_arena/logging_/transcript_render.py`
 
@@ -142,12 +150,12 @@ Writes `transcript.html` and `transcript.txt` into the run bundle from the bundl
 | Rule | Detail |
 |---|---|
 | layout (HTML) | one section per sample: a bounded scroll box holding a sticky header grid (lane names) and a body grid with a row-label column plus one column per lane, one row per round; both grids share one column template |
-| blocks (HTML) | one `<article>` per block, classed by kind; prompts collapsed in `<details>`; tool arguments highlighted as JSON with Pygments; blocked tool calls styled apart |
+| blocks (HTML) | one `<article>` per block, classed by kind; prompts collapsed in `<details>`; tool arguments highlighted as JSON with Pygments; blocked tool calls and verdict blocks each styled apart |
 | layout (text) | per sample, every lane in lane order (`(no activity)` when empty), blocks in round order, each prefixed with its round label; written as UTF-8 with `backslashreplace` |
 | self-contained | inline CSS only; no JavaScript, no external `src`/`href` |
 | ASCII only | the page is HTML-escaped, then non-ASCII characters become numeric entities, so model text cannot put literal dashes or unescaped markup in the file |
 | control characters | C0 controls (except tab and newline) and DEL become visible `\xNN` escapes in both outputs |
-| row labels | `-1` -> `before round 0`, `n` -> `round n` |
+| row labels | `-2` -> `unplaced verdicts`, `-1` -> `before round 0`, `n` -> `round n` |
 
 | Function | Behaviour |
 |---|---|

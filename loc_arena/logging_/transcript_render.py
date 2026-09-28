@@ -12,10 +12,17 @@ from pygments import highlight
 from pygments.formatters import HtmlFormatter
 from pygments.lexers import JsonLexer
 
-from loc_arena.logging_.transcript_lanes import BEFORE_FIRST_ROUND, Block, SampleTranscript, build_transcript
+from loc_arena.logging_.transcript_lanes import (
+    BEFORE_FIRST_ROUND,
+    UNPLACED,
+    Block,
+    SampleTranscript,
+    build_transcript,
+)
 
 TRANSCRIPT_HTML = "transcript.html"
 TRANSCRIPT_TEXT = "transcript.txt"
+_NAMED_ROWS = {UNPLACED: "unplaced verdicts", BEFORE_FIRST_ROUND: "before round 0"}
 
 _PAGE_CSS = """
 body { font-family: system-ui, sans-serif; margin: 1.5rem; background: #f7f7f8; color: #1d1d1f; }
@@ -33,6 +40,7 @@ header p { color: #555; margin: 0 0 1rem; }
 .block.reply { border-left-color: #2f9e44; }
 .block.tool { border-left-color: #e8590c; }
 .block.info { border-left-color: #868e96; }
+.block.verdict { border-left-color: #9c36b5; background: #fbf4ff; }
 .block.blocked { background: #fff5f5; border-left-color: #e03131; }
 .title { font-weight: 600; margin-bottom: 0.2rem; }
 pre { white-space: pre-wrap; word-break: break-word; margin: 0; font-size: 0.75rem; }
@@ -123,7 +131,7 @@ def _code_html(code: str) -> str:
 
 
 def _row_label(row: int) -> str:
-    return "before round 0" if row == BEFORE_FIRST_ROUND else f"round {row}"
+    return _NAMED_ROWS.get(row, f"round {row}")
 
 
 def _visible(text: str) -> str:
