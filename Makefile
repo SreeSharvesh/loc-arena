@@ -1,10 +1,10 @@
 # Makefile -- one command to run everything (no live server; the viewer is a static report).
 # Targets call loc_arena/cli.py.
 #
-# STACK=1 runs each episode in a fresh compose stack, the agents' loops in the runner container and each agent's
-# code in its own sandbox (no key, no internet); gateway_core alone holds the key, as a compose secret read from
-# .env, and makes the model calls; this machine grades the episode afterwards. STACK=0 (the default) runs the
-# episode in-process on this machine, where the agents' code can reach local credentials.
+# `make run` defaults to STACK=1: each episode runs in a fresh compose stack, the agents' loops in the runner
+# container and each agent's code in its own sandbox (no key, no internet); gateway_core alone holds the key, as a
+# compose secret read from .env, and makes the model calls; this machine grades the episode afterwards.
+# STACK=0 runs the episode in-process on this machine, where the agents' code can reach local credentials.
 
 # The DELIVERABLE run is live-model only (aurora-efficiency.yaml, policy: model; needs OPENROUTER_API_KEY).
 # aurora-efficiency.yaml (scripted) is retained only as deterministic engine-test scaffolding, not a deliverable policy.
@@ -12,7 +12,7 @@ RUN ?= aurora-efficiency
 MODE ?= attack
 HONEST ?= 2
 ATTACK ?= 2
-STACK ?= 0
+STACK ?= 1
 
 LOGS ?= logs
 
@@ -26,7 +26,7 @@ help:
 	@echo "make explore [LOGS=logs]                  # build the run explorer over every run in LOGS and open it"
 	@echo "make sweep RUN=aurora-efficiency HONEST=n ATTACK=m  # n honest + m attack episodes, aggregated"
 	@echo "make gates                                # ruff + ruff format + ty + pytest"
-	@echo "  (append STACK=1 to run each episode in the docker stack: no key, no internet for the agents' code)"
+	@echo "  (run uses the docker stack by default; STACK=0 runs in-process on this machine)"
 
 setup:
 	@command -v uv >/dev/null || (echo "uv not found: install from https://docs.astral.sh/uv/" && exit 1)
@@ -39,6 +39,7 @@ run:
 ifeq ($(STACK),1)
 	@uv run python -m loc_arena.cli run --run $(RUN) --mode $(MODE) --stack
 else
+	@echo "STACK=0: the episode and the agents' code run on this machine, with its credentials in reach."
 	@uv run python -m loc_arena.cli run --run $(RUN) --mode $(MODE)
 endif
 
