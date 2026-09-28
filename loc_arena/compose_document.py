@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
+from typing import Final, Literal
 
 import yaml
 from scenarios.loader import DEFAULT_CODEBASE, load_run_scenario, load_scenario
@@ -18,6 +18,7 @@ from loc_arena.compose_schema import (
     ComposeService,
     ComposeServiceSecret,
     ComposeServiceVolume,
+    ComposeVolume,
 )
 from loc_arena.config import RunConfig, load_run_config
 from loc_arena.registry import get_main_task_scorer
@@ -39,12 +40,13 @@ from loc_arena.stack.constants import (
 )
 from loc_arena.stack.settings import DockerSettings, LocArenaSettings
 from loc_arena.topology import (
-    STACK_VOLUME_MOUNT_PATHS,
+    AgentSelection,
+    Grantee,
     ImageName,
     SecretDeclaration,
     ServiceDeclaration,
     StackTopology,
-    VolumeDeclaration,
+    build_agent_copy_name,
     load_stack_topology,
 )
 
@@ -57,6 +59,14 @@ REFERENCE_RUN_CONFIG: Final = PROJECT_DIRECTORY / "configs" / "aurora-efficiency
 REFERENCE_COMPOSE_FILE: Final = PROJECT_DIRECTORY / "compose.yaml"
 SECRET_FILE_MODE: Final = 0o400  # an environment-sourced secret is readable by its owner, the service's user
 LISTEN_HOST: Final = "0.0.0.0"  # every interface of the container: its networks decide who can connect
+# An extra volume is a tmpfs mounted by Docker's local volume driver, one mount shared by every container
+# using it (`docker volume create --opt type=tmpfs --opt device=tmpfs --opt o=size=...,uid=...`,
+# docs.docker.com/reference/cli/docker/volume/create). Its owner writes; others granted it read.
+EXTRA_VOLUME_DRIVER: Final = "local"
+EXTRA_VOLUME_FILESYSTEM: Final = "tmpfs"
+EXTRA_VOLUME_MODE: Final = 0o755
+
+type VolumeAccess = Literal["read_write", "read_only"]
 
 _HOSTNAME_BY_SERVICE: Final = {
     "gateway_core": GATEWAY_CORE_HOSTNAME,
@@ -83,6 +93,7 @@ class ServiceSpec:
     name: str
     config_name: str  # its key under ``services:``, shared by every sandbox of a per-agent entry
     declaration: ServiceDeclaration
+    agent_id: str | None = None  # the agent whose copy of a per-agent entry this is
 
     def for_agent(self, agent_id: str, gateway_edge_url: str) -> ServiceSpec:
         """This per-agent entry as ``agent_id``'s sandbox: named after it, told its agent and model route."""
@@ -95,6 +106,7 @@ class ServiceSpec:
             name=build_sandbox_service_name(agent_id),
             config_name=self.config_name,
             declaration=self.declaration.model_copy(update={"environment": environment}),
+            agent_id=agent_id,
         )
 
 
@@ -113,6 +125,10 @@ class RunTopology:
 
     settings: LocArenaSettings
     topology: StackTopology
+    agent_ids: tuple[
+        str,
+        ...,
+    ]  # the run's agents, in order: each per-agent network or volume has their copies
     service_names: Mapping[str, tuple[str, ...]]  # a config name -> the compose services rendered from it
     grading: GradingInputs | None  # None when the run names no scenario
     codebase: str
@@ -144,6 +160,20 @@ def _render_secret_source(source: SecretDeclaration) -> ComposeSecret:
     return secret
 
 
+@dataclass(frozen=True)
+class NumericUser:
+    """A service's ``uid:gid``, both numeric: what a file or a tmpfs it must own is handed to."""
+
+    uid: str
+    gid: str
+
+    @classmethod
+    def parse(cls, user: str | None) -> NumericUser | None:
+        """``user`` as a numeric uid and gid, or None when it is absent or names a user."""
+        uid, _, gid = (user or "").partition(":")
+        return cls(uid, gid) if uid.isdigit() and gid.isdigit() else None
+
+
 def _render_secret_grant(spec: ServiceSpec, name: str, source: SecretDeclaration) -> ComposeServiceSecret:
     grant: ComposeServiceSecret = {"source": name, "target": name}
     if source.environment is None:
@@ -154,29 +184,74 @@ def _render_secret_grant(spec: ServiceSpec, name: str, source: SecretDeclaration
             f"{spec.name} has a read-only root, where compose refuses to write the environment-sourced "
             f"secret {name!r}: give it a file source",
         )
-    uid, _, gid = (declaration.user or "").partition(":")
-    if not (uid.isdigit() and gid.isdigit()):
+    owner = NumericUser.parse(declaration.user)
+    if owner is None:
         raise ValueError(
             f"{spec.name} needs a numeric user uid:gid to own the secret {name!r}, got {declaration.user!r}",
         )
-    grant["uid"], grant["gid"], grant["mode"] = uid, gid, f"0{SECRET_FILE_MODE:o}"
+    grant["uid"], grant["gid"], grant["mode"] = owner.uid, owner.gid, f"0{SECRET_FILE_MODE:o}"
     return grant
 
 
-def _render_volume_mount(
+def _is_granted(grantee: Grantee, spec: ServiceSpec, topology: StackTopology) -> bool:
+    """Whether ``grantee`` names ``spec``'s entry, or chooses the agent whose per-agent copy ``spec`` is."""
+    if isinstance(grantee, AgentSelection):
+        return spec.agent_id is not None and spec.agent_id in topology.select_agents(grantee)
+    return grantee == spec.config_name
+
+
+def _read_volume_access(name: str, spec: ServiceSpec, topology: StackTopology) -> VolumeAccess | None:
+    """How ``spec`` may use volume ``name``, or None when no grant reaches it."""
+    volume = topology.volumes[name]
+    writes = any(_is_granted(grantee, spec, topology) for grantee in volume.read_write)
+    reads = any(_is_granted(grantee, spec, topology) for grantee in volume.read_only)
+    if writes and reads:
+        raise ValueError(f"volumes.{name} grants {spec.name} both read-write and read-only access")
+    if writes:
+        return "read_write"
+    return "read_only" if reads else None
+
+
+def _list_copies(
     name: str,
-    volume: VolumeDeclaration,
-    spec: ServiceSpec,
-) -> ComposeServiceVolume | None:
-    """The mount of volume ``name`` in ``spec``, or None when the service is granted no access to it."""
-    if spec.config_name not in volume.read_write + volume.read_only:
-        return None
-    return {
-        "type": "volume",
-        "source": name,
-        "target": STACK_VOLUME_MOUNT_PATHS[name].as_posix(),
-        "read_only": spec.config_name in volume.read_only,
-    }
+    per_agent: bool,
+    agent_id: str | None,
+    agent_ids: Sequence[str],
+) -> dict[str, str | None]:
+    """The copies of network or volume ``name`` that a service gets, each with the agent it belongs to.
+
+    A shared resource is its one self; of a per-agent one, an agent's per-agent service (``agent_id``) gets
+    that agent's copy, and any other service every copy.
+    """
+    if not per_agent:
+        return {name: None}
+    owners = [agent_id] if agent_id is not None else agent_ids
+    return {build_agent_copy_name(name, owner): owner for owner in owners}
+
+
+def _render_volume_mounts(name: str, spec: ServiceSpec, run: RunTopology) -> list[ComposeServiceVolume]:
+    """The mounts of volume ``name`` in ``spec``, none without a grant.
+
+    A service that is no agent's own copy mounts every copy of a per-agent volume, one per agent's directory
+    under the mount path.
+    """
+    access = _read_volume_access(name, spec, run.topology)
+    if access is None:
+        return []
+    mount_path = run.topology.mount_path(name)
+    holds_every_copy = spec.agent_id is None
+    copies = _list_copies(name, run.topology.volumes[name].per_agent, spec.agent_id, run.agent_ids)
+    return [
+        {
+            "type": "volume",
+            "source": source,
+            "target": (
+                mount_path / owner if owner is not None and holds_every_copy else mount_path
+            ).as_posix(),
+            "read_only": access == "read_only",
+        }
+        for source, owner in copies.items()
+    ]
 
 
 def _render_file_bind(source: str, target: Path) -> ComposeServiceVolume:
@@ -191,11 +266,7 @@ def _render_file_bind(source: str, target: Path) -> ComposeServiceVolume:
 
 
 def _render_mounts(spec: ServiceSpec, run: RunTopology) -> list[ComposeServiceVolume]:
-    mounts = [
-        mount
-        for name, volume in run.topology.volumes.items()
-        if (mount := _render_volume_mount(name, volume, spec)) is not None
-    ]
+    mounts = [mount for name in run.topology.volumes for mount in _render_volume_mounts(name, spec, run)]
     grading = run.grading
     if not spec.declaration.mounts_grading_harness or grading is None:
         return mounts
@@ -214,9 +285,27 @@ def _render_environment(spec: ServiceSpec, run: RunTopology) -> dict[str, str]:
     return {name: _escape_interpolation(value) for name, value in environment.items()}
 
 
-def _attach_networks(service: ComposeService, spec: ServiceSpec) -> None:
+def _list_networks(spec: ServiceSpec, run: RunTopology) -> list[str]:
+    """The networks ``spec`` joins: its entry's, then those granted to its agent; as the copies it gets."""
+    topology = run.topology
+    names = list(spec.declaration.networks)
+    names += [
+        name
+        for name, network in topology.networks.items()
+        if network.sandboxes is not None
+        and _is_granted(network.sandboxes, spec, topology)
+        and name not in names
+    ]
+    return [
+        copy
+        for name in names
+        for copy in _list_copies(name, topology.networks[name].per_agent, spec.agent_id, run.agent_ids)
+    ]
+
+
+def _attach_networks(service: ComposeService, spec: ServiceSpec, run: RunTopology) -> None:
     hostname = _HOSTNAME_BY_SERVICE.get(spec.name)
-    networks = spec.declaration.networks
+    networks = _list_networks(spec, run)
     if not networks:
         service["network_mode"] = "none"
     elif hostname is None:
@@ -296,7 +385,7 @@ def render_service(spec: ServiceSpec, run: RunTopology) -> ComposeService:
         service["secrets"] = [
             _render_secret_grant(spec, name, run.topology.secrets[name]) for name in declaration.secrets
         ]
-    _attach_networks(service, spec)
+    _attach_networks(service, spec, run)
     mounts = _render_mounts(spec, run)
     if mounts:
         service["volumes"] = mounts
@@ -347,9 +436,33 @@ def read_codebase(config: RunConfig) -> str:
     return scenario.codebase
 
 
+def _render_volume(name: str, specs: Sequence[ServiceSpec], topology: StackTopology) -> ComposeVolume:
+    """A top-level volume. An extra one is a tmpfs owned by its writers' user, who must all be one."""
+    labels = {LABEL: "1"}
+    size_bytes = topology.volumes[name].size_bytes
+    if size_bytes is None:
+        return {"labels": labels}  # Docker fills it from the image at its fixed mount point, owner included
+    writers = {
+        spec.declaration.user for spec in specs if _read_volume_access(name, spec, topology) == "read_write"
+    }
+    owner = NumericUser.parse(writers.pop()) if len(writers) == 1 else None
+    if owner is None:
+        raise ValueError(
+            f"volumes.{name} is owned by its writers' user: it needs writers that all run as one numeric "
+            f"uid:gid, got {sorted(str(user) for user in writers)}",
+        )
+    options = f"uid={owner.uid},gid={owner.gid},mode=0{EXTRA_VOLUME_MODE:o},size={size_bytes}"
+    return {
+        "driver": EXTRA_VOLUME_DRIVER,
+        "driver_opts": {"type": EXTRA_VOLUME_FILESYSTEM, "device": EXTRA_VOLUME_FILESYSTEM, "o": options},
+        "labels": labels,
+    }
+
+
 def render_compose(config: RunConfig) -> ComposeDocument:
     """Render the compose document for one episode entirely from the resolved config."""
-    topology = load_stack_topology(config.raw)
+    agent_ids = tuple(agent.id for agent in config.agents)
+    topology = load_stack_topology(config.raw, agent_ids)
     templates = [
         ServiceSpec(name=name, config_name=name, declaration=declaration)
         for name, declaration in topology.services.items()
@@ -358,6 +471,7 @@ def render_compose(config: RunConfig) -> ComposeDocument:
     run = RunTopology(
         settings=config.settings,
         topology=topology,
+        agent_ids=agent_ids,
         service_names={
             template.config_name: tuple(
                 spec.name for spec in specs if spec.config_name == template.config_name
@@ -370,10 +484,15 @@ def render_compose(config: RunConfig) -> ComposeDocument:
     document: ComposeDocument = {
         "services": {spec.name: render_service(spec, run) for spec in specs},
         "networks": {
-            name: {"internal": network.internal, "labels": {LABEL: "1"}}
+            copy: {"internal": network.internal, "labels": {LABEL: "1"}}
             for name, network in topology.networks.items()
+            for copy in _list_copies(name, network.per_agent, None, agent_ids)
         },
-        "volumes": {name: {"labels": {LABEL: "1"}} for name in topology.volumes},
+        "volumes": {
+            copy: _render_volume(name, specs, topology)
+            for name, volume in topology.volumes.items()
+            for copy in _list_copies(name, volume.per_agent, None, agent_ids)
+        },
     }
     if topology.secrets:
         document["secrets"] = {

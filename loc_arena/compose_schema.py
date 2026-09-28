@@ -96,9 +96,19 @@ class ComposeNetwork(TypedDict):
     labels: dict[str, str]
 
 
+class ComposeVolumeDriverOptions(TypedDict):
+    """The local driver's options of a volume: what it mounts, as ``mount -t <type> -o <o> <device>``."""
+
+    type: str
+    device: str
+    o: str
+
+
 class ComposeVolume(TypedDict):
     """A top-level named volume."""
 
+    driver: NotRequired[str]
+    driver_opts: NotRequired[ComposeVolumeDriverOptions]
     labels: dict[str, str]
 
 

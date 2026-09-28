@@ -62,11 +62,13 @@ def _networks(service: ComposeService) -> set[str]:
 
 
 def _render_grader_built_from(codebase: str) -> ComposeService:
-    topology = load_stack_topology(CONFIG.raw)
+    agent_ids = tuple(agent.id for agent in CONFIG.agents)
+    topology = load_stack_topology(CONFIG.raw, agent_ids)
     spec = ServiceSpec(name="grader", config_name="grader", declaration=topology.services["grader"])
     run = RunTopology(
         settings=CONFIG.settings,
         topology=topology,
+        agent_ids=agent_ids,
         service_names={},
         grading=None,
         codebase=codebase,
@@ -349,11 +351,11 @@ def test_a_run_whose_scenario_codebase_is_no_directory_is_refused(
         ),
         (
             lambda raw: raw["volumes"]["sealed_log"]["read_only"].append("evidence-reader"),
-            r"volumes\.sealed_log\.read_only\.1\s+Value error, unknown service 'evidence-reader'",
+            r"volumes\.sealed_log\.read_only\.1\.service\s+Value error, unknown service 'evidence-reader'",
         ),
         (
             lambda raw: raw["volumes"].update(repos={"read_write": ["sandbox"]}),
-            r"volumes\.repos\.\[key\]\s+Value error, no mount path",
+            r"volumes\.repos is an extra volume .*: it needs a mount_path and a size_bytes",
         ),
         (
             lambda raw: raw["services"]["sandbox"].update(command=["bash"]),
