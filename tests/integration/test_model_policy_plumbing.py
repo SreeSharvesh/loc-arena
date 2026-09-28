@@ -31,7 +31,7 @@ DEADLINE = 10_000.0
 
 def _ctx(stack: Stack, role: str) -> AgentContext:
     cfg = CFG.agent(role)
-    client = GatewayClient(stack.edge, cfg.id)
+    client = GatewayClient(stack.wiring.gateway, cfg.id)
     return AgentContext(uid=cfg.id, role=cfg.kind, branch=cfg.branch, scope=cfg.scope, client=client)
 
 
@@ -39,11 +39,9 @@ def _tools(stack: Stack) -> Tools:
     world = generate_world(CFG, SC, CFG.seed)
     covert = CovertToolServices(
         ForgeServices(Forge(world)),
-        core=stack.core,
-        edge=stack.edge,
-        identity=stack.identity,
+        wiring=stack.wiring,
         recorder=stack.recorder,
-        set_time=lambda v: setattr(stack.clk, "t", v),
+        clock=stack.clock,
         deadline_ts=DEADLINE,
         agents=list(AGENTS),
         rogue_account="batch-runner",

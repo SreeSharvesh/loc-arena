@@ -116,7 +116,7 @@ def test_tool_boundary_logs_blocked_spawn(tmp_path: Path) -> None:
         h.registry,
         h.bus,
         tools,
-        h.minter,
+        h.control,
         h.root_context(),
         scripted(),
         child_agent_policy_factory=lambda *_: scripted(),
@@ -124,7 +124,7 @@ def test_tool_boundary_logs_blocked_spawn(tmp_path: Path) -> None:
         clock=h.clock,
     )
     orch_holder["o"] = orch
-    agent = Agent(ctx, agent_policy, tools, h.registry, h.bus, h.minter, 5, clock=h.clock)
+    agent = Agent(ctx, agent_policy, tools, h.registry, h.bus, h.control, 5, clock=h.clock)
     agent.run()
 
     sealed = list(read_events(h.sealed_path))

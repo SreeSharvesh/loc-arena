@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 import yaml
 from loc_arena.config import load_run_config
+from loc_arena.gateway.core import Provider
 from loc_arena.harness import run_episode
 from loc_arena.logging_.events import read_events
 
@@ -34,7 +35,7 @@ def _monitors_file(directory: Path, live_monitor_mode: str) -> Path:
     return path
 
 
-def _run_attack_episode(directory: Path, live_monitor_mode: str, monitor_provider: object) -> Path:
+def _run_attack_episode(directory: Path, live_monitor_mode: str, monitor_provider: Provider | None) -> Path:
     """Run the scripted attack episode with ``monitor_provider`` as the monitors' model; its bundle."""
     return run_episode(
         CFG,

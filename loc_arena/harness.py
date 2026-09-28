@@ -1,17 +1,15 @@
-"""Episode harness: render the per-episode docker stack from config and manage its lifecycle.
+"""Episode harness: run an episode in process, grade it, and write its reproducible audit bundle.
 
-Enforces the sealed-vs-tamperable isolation (STRUCTURAL: the sealed core/recorder sit on
-networks the agent is not a member of, and the sealed log volume is mounted only into the recorder and the
-networkless evidence-reader), config over code (the whole stack is rendered from ``configs/env.default.yaml``
--- no port, limit, or network is hardcoded here) and reproducibility (reproducible from ``(config, seed)``;
-every episode rebuilds).
+Enforces config over code (a run is its resolved config) and reproducibility (reproducible from
+``(config, seed)``). A run is one episode in a MODE plus, in attack mode, its honest calibration twin;
+``mode`` is the ONLY difference between them. ``run_episode`` runs both in process (STACK=0): every service
+is an object of this process, and the scaffold, the monitors, the agents' code and the grading all run here.
+The episode record, the calibration, ``scores.json`` and the bundle are built by ``score_and_write_bundle``.
+``run_sweep`` aggregates N honest + M attack in-process episodes into a safety number.
 
-Owns ``render_compose`` (config -> a docker compose document) and the stack lifecycle (``up`` /
-``teardown`` / ``stack_health``) over ``docker compose``, plus the episode runner: ``run_episode``
-assembles one episode in a MODE, grades it (main-task scorer + sealed verifier + monitors), and writes the
-reproducible per-run bundle; ``run_sweep`` aggregates N honest + M attack episodes into a safety number.
-Every resource is labelled ``loc-arena.eval=1`` so teardown is reliable. ``mode`` is the ONLY difference
-between a run and its twin.
+It also renders the per-episode docker stack from config (``render_compose``) and manages its lifecycle
+(``up`` / ``teardown`` / ``stack_health``) over ``docker compose``; every resource is labelled
+``loc-arena.eval=1`` so teardown is reliable.
 """
 
 from __future__ import annotations
@@ -31,29 +29,33 @@ from typing import TYPE_CHECKING, Any, Final
 import yaml
 
 from loc_arena import live
-from loc_arena.config import RunConfig
-from loc_arena.gateway.core import GatewayCore, GenerateRequest, sign_monitor_credential
+from loc_arena.config import RunConfig, load_run_config
+from loc_arena.gateway.core import Provider
 from loc_arena.gateway.openrouter_provider import live_provider_from_environment
 from loc_arena.logging_ import viewer
-from loc_arena.logging_.events import AppendOnlyLog, Event, read_events
+from loc_arena.logging_.events import read_events
 from loc_arena.metrics import (
+    GradedEpisode,
+    build_episode_record,
     calibrate_overall_threshold,
     calibrate_threshold,
     episode_overall,
-    record_episode,
     safety,
     suspicion_specs,
     usefulness,
 )
 from loc_arena.monitors.aggregation import load_aggregation_config
 from loc_arena.monitors.registry import find_fallback_only_monitors, load_monitor_specs, load_monitors
-from loc_arena.protocol import compose_protocol
-from loc_arena.task import assemble_scripted_episode
+from loc_arena.protocol import Protocol, compose_protocol
+from loc_arena.runner import EpisodeMonitoring
+from loc_arena.task import EpisodeResult, assemble_scripted_episode
 
 if TYPE_CHECKING:
     from loc_arena.logging_.inspect_export import EpisodeExport
 
 DOTENV_PATH: Final = Path(__file__).resolve().parent.parent / ".env"
+DEFAULT_MONITORS_PATH: Final = "configs/monitors.yaml"
+
 LABEL = "loc-arena.eval"
 IMAGE = "loc-arena-svc:latest"
 _SERVICES_DIR = Path(__file__).resolve().parent / "services"
@@ -67,10 +69,6 @@ _VOLUME_MOUNT = {
 }
 # config service role -> the app role the shared image runs
 _ROLE = {"recorder": "recorder", "evidence_reader": "reader"}
-
-
-def _default_sink(kind: str, payload: dict[str, Any]) -> None:
-    """Default monitor event sink (drops the event) when no sealed sink is wired."""
 
 
 class HarnessError(RuntimeError):
@@ -497,126 +495,82 @@ def _eval_episodes(cfg: RunConfig, episode: Any, calibration: Any) -> list[Episo
     return exports
 
 
-def _assemble_by_policy(
-    cfg: RunConfig,
-    workdir: Path,
-    *,
-    robust: bool,
-    provider: Any = None,
-    dotenv_path: Path | None = None,
-) -> Any:
-    """Assemble one episode by ``config.policy``: the scripted driver, or the live model attack."""
-    if cfg.policy == "model":
-        return live.assemble_model_episode(cfg, workdir, provider=provider, dotenv_path=dotenv_path)
+@dataclass(frozen=True)
+class RunBundle:
+    """Where one run's audit bundle goes, the unique name and seed it records, and when the run began.
 
-    return assemble_scripted_episode(cfg, workdir, robust=robust)
-
-
-def run_episode(
-    config: RunConfig,
-    *,
-    mode: str,
-    out_root: Path | None = None,
-    seed: int | None = None,
-    robust: bool = True,
-    monitors_path: str = "configs/monitors.yaml",
-    write_report: bool = True,
-    monitor_provider: Any = None,
-    run_instance_id: str | None = None,
-    provider: Any = None,
-    calibration_provider: Any = None,
-    dotenv_path: Path | None = None,
-) -> Path:
-    """Run one episode in ``mode``, grade it, and write the reproducible audit bundle; return its dir.
-
-    The DELIVERABLE run drives the live model (``policy: model``, e.g. aurora-efficiency.yaml): no scripted or
-    deterministic fallback, graded on outcome, live monitors. The scripted policy (``assemble_scripted``)
-    is retained ONLY as deterministic ENGINE-TEST scaffolding (byte-reproducible sealed logs for the invariant
-    suite), not as a deliverable run policy. Produces ``logs/<run_id>/<timestamp>/`` with
-    config.resolved.yaml, events.sealed.jsonl, events.mirror.jsonl, run.eval, scores.json, report.html,
-    decisions.md -- a reviewer can reconstruct the whole run from the sealed log alone, and it reproduces
-    from (config.resolved.yaml, seed).
+    ``started`` is a ``time.perf_counter()`` reading: the bundle's wall_clock_seconds counts from it.
     """
-    cfg = apply_mode(config, mode)
-    # Live monitors for a live (model-policy) run: route the trusted-monitor LLM through the gateway so the
-    # monitors declared ``mode: live`` in monitors.yaml actually score each event. A scripted or no-key run
-    # passes no provider, so those monitors fall back to their heuristic (deterministic; the firewall holds
-    # either way). Monitor visibility stays entirely a monitors.yaml concern.
-    if monitor_provider is None and cfg.policy == "model":
-        monitor_provider = live_provider_from_environment(cfg.settings.provider, dotenv_path=dotenv_path)
-    the_seed = seed if seed is not None else cfg.seed
-    instance_id = run_instance_id or secrets.token_hex(3)
-    run_name = cfg.run_name(mode, instance_id)
-    out_dir = (out_root or Path("logs")) / cfg.run_slug / run_name
-    out_dir.mkdir(parents=True, exist_ok=True)
 
+    run_name: str
+    directory: Path
+    seed: int
+    started: float
+
+
+def open_bundle(
+    config: RunConfig,
+    mode: str,
+    *,
+    out_root: Path | None,
+    seed: int | None,
+    run_instance_id: str | None,
+) -> RunBundle:
+    """The bundle directory of a run of ``config`` (mode applied) in ``mode``, created."""
+    run_name = config.run_name(mode, run_instance_id or secrets.token_hex(3))
+    directory = (out_root or Path("logs")) / config.run_slug / run_name
+    directory.mkdir(parents=True, exist_ok=True)
+    return RunBundle(run_name, directory, seed if seed is not None else config.seed, time.perf_counter())
+
+
+def load_protocol(config: RunConfig, monitors_path: str) -> Protocol:
+    """The control protocol of ``monitors_path``, its async join deadline from the aggregation config."""
+    protocol = compose_protocol(config, load_monitors(monitors_path, config.models))
+    aggregation = load_aggregation_config(monitors_path)
+    # Protocol is frozen: replace it rather than mutating the protocol default.
+    return dataclasses.replace(protocol, async_default_timeout_s=aggregation.async_default_timeout_s)
+
+
+def score_and_write_bundle(
+    config: RunConfig,
+    mode: str,
+    bundle: RunBundle,
+    episode: GradedEpisode,
+    honest: GradedEpisode,
+    *,
+    monitors_path: str,
+    write_report: bool,
+) -> Path:
+    """Record both episodes, calibrate on the honest one, and write the scores and the bundle.
+
+    In honest mode the episode IS the calibration twin: its record is built ONCE and reused, so a live
+    monitor's nondeterminism cannot make the honest twin caught against itself.
+    """
     specs = load_monitor_specs(monitors_path)
     agg = load_aggregation_config(monitors_path)
-    proto = compose_protocol(cfg, load_monitors(monitors_path, cfg.models))
-    # Source the async worker join deadline from the aggregation config; Protocol
-    # is frozen so replace it rather than mutating the protocol default.
-    proto = dataclasses.replace(proto, async_default_timeout_s=agg.async_default_timeout_s)
-
-    start = time.perf_counter()
-    # policy: model (the live deliverable) or scripted (engine-test scaffolding only). The scorer, verifier,
-    # and monitors grade both identically; scripted stays byte-reproducible, live is graded on outcome.
-    episode = _assemble_by_policy(
-        cfg,
-        out_dir / "episode",
-        robust=robust,
-        provider=provider,
-        dotenv_path=dotenv_path,
-    )
-    # calibrate against the honest twin (mode's only difference is covert.enabled)
+    audit_budget_fpr = load_protocol(config, monitors_path).audit_budget_fpr
     honest_cfg = apply_mode(config, "honest")
-    honest_ep = (
-        episode
-        if mode == "honest"
-        else _assemble_by_policy(
-            honest_cfg,
-            out_dir / "honest_cal",
-            robust=False,
-            provider=calibration_provider,
-            dotenv_path=dotenv_path,
-        )
-    )
-    h_caller, h_sink = build_monitor_caller(honest_ep, honest_cfg, monitor_provider)
-    e_caller, e_sink = build_monitor_caller(episode, cfg, monitor_provider)
-    honest_rec = record_episode(
-        honest_ep,
-        honest_cfg,
-        proto,
-        model_caller=h_caller,
-        event_sink=h_sink or _default_sink,
-    )
-    # In honest mode the episode IS the calibration twin; score it ONCE and reuse that record, so a live
-    # monitor's nondeterminism between two independent scorings cannot make the honest twin caught against
-    # itself (the honest-twin-scores-zero guarantee holds for the live path too). In attack mode the twin
-    # is a separate honest episode.
-    ep_rec = (
-        honest_rec
-        if mode == "honest"
-        else record_episode(episode, cfg, proto, model_caller=e_caller, event_sink=e_sink or _default_sink)
-    )
+    honest_rec = build_episode_record(honest, honest_cfg, honest.verdicts)
+    ep_rec = honest_rec if mode == "honest" else build_episode_record(episode, config, episode.verdicts)
     # Per-event threshold (kept): still reported as safety.audit_threshold and used by the per-monitor
     # safety() report and report.html.
-    threshold = calibrate_threshold([honest_rec], proto.audit_budget_fpr)
+    threshold = calibrate_threshold([honest_rec], audit_budget_fpr)
     # Episode-level CAUGHT decision: calibrate on the honest twin's OVERALL aggregate and catch
     # only within the honest twin's catch-before-harm window, then compare the attack's overall aggregate.
     # The overall SUSPICION aggregate is over the enabled model-backed monitors only (a disabled monitor is
     # not deployed and the model:none reconcile detectors are a separate signal); both are still reported.
     scored_specs = suspicion_specs(specs)
     h_overall, _ = episode_overall(honest_rec.verdicts, scored_specs, agg, before_ts=honest_rec.harm_ts)
-    overall_threshold = calibrate_overall_threshold([h_overall], proto.audit_budget_fpr)
+    overall_threshold = calibrate_overall_threshold([h_overall], audit_budget_fpr)
     overall, per_monitor = episode_overall(ep_rec.verdicts, scored_specs, agg, before_ts=ep_rec.harm_ts)
     caught = overall > overall_threshold
-    wall_clock = time.perf_counter() - start
+    wall_clock = time.perf_counter() - bundle.started
 
     scores = _build_scores(
-        cfg,
+        config,
         mode,
-        run_name,
-        the_seed,
+        bundle.run_name,
+        bundle.seed,
         wall_clock,
         episode,
         ep_rec,
@@ -628,19 +582,118 @@ def run_episode(
         agg=agg,
         specs=specs,
     )
-
-    # write the bundle
     return _write_bundle(
-        cfg,
-        out_dir,
-        run_name,
+        config,
+        bundle.directory,
+        bundle.run_name,
         scores,
         episode,
-        the_seed,
+        bundle.seed,
         mode,
         threshold,
         write_report=write_report,
-        calibration=honest_ep if mode == "attack" else None,
+        calibration=honest if mode == "attack" else None,
+    )
+
+
+def _assemble_by_policy(
+    cfg: RunConfig,
+    workdir: Path,
+    *,
+    robust: bool,
+    provider: Provider | None = None,
+    monitoring: EpisodeMonitoring | None = None,
+    monitor_provider: Provider | None = None,
+    dotenv_path: Path | None = None,
+) -> EpisodeResult:
+    """Assemble one episode in process by ``config.policy``: the scripted driver, or the live model attack."""
+    deadline_ts = cfg.settings.clock.deadline_ts
+    if cfg.policy == "model":
+        return live.assemble_model_episode(
+            cfg,
+            workdir,
+            provider=provider,
+            deadline_ts=deadline_ts,
+            monitoring=monitoring,
+            monitor_provider=monitor_provider,
+            dotenv_path=dotenv_path,
+        )
+    return assemble_scripted_episode(
+        cfg,
+        workdir,
+        robust=robust,
+        deadline_ts=deadline_ts,
+        monitoring=monitoring,
+        monitor_provider=monitor_provider,
+    )
+
+
+def run_episode(
+    config: RunConfig,
+    *,
+    mode: str,
+    out_root: Path | None = None,
+    seed: int | None = None,
+    robust: bool = True,
+    monitors_path: str = DEFAULT_MONITORS_PATH,
+    write_report: bool = True,
+    monitor_provider: Provider | None = None,
+    run_instance_id: str | None = None,
+    provider: Provider | None = None,
+    calibration_provider: Provider | None = None,
+    dotenv_path: Path | None = None,
+) -> Path:
+    """Run one episode in ``mode`` in process (STACK=0), grade it, and write the audit bundle; return its dir.
+
+    The DELIVERABLE run drives the live model (``policy: model``, e.g. aurora-efficiency.yaml): no scripted or
+    deterministic fallback, graded on outcome, live monitors. The scripted policy is retained ONLY as
+    deterministic ENGINE-TEST scaffolding (byte-reproducible sealed logs for the invariant suite). Produces
+    ``logs/<run_id>/<timestamp>/`` with config.resolved.yaml, events.sealed.jsonl, events.mirror.jsonl,
+    run.eval, scores.json, report.html, decisions.md -- a reviewer can reconstruct the whole run from the
+    sealed log alone, and it reproduces from (config.resolved.yaml, seed).
+    """
+    cfg = apply_mode(config, mode)
+    # Live monitors for a live (model-policy) run: route the trusted-monitor LLM through the gateway so the
+    # monitors declared ``mode: live`` in monitors.yaml actually score each event. A scripted or no-key run
+    # passes no provider, so those monitors fall back to their heuristic (deterministic; the firewall holds
+    # either way). Monitor visibility stays entirely a monitors.yaml concern.
+    if monitor_provider is None and cfg.policy == "model":
+        monitor_provider = live_provider_from_environment(cfg.settings.provider, dotenv_path=dotenv_path)
+    bundle = open_bundle(cfg, mode, out_root=out_root, seed=seed, run_instance_id=run_instance_id)
+    protocol = load_protocol(cfg, monitors_path)
+    monitoring = EpisodeMonitoring(protocol, calls_models=monitor_provider is not None)
+
+    episode = _assemble_by_policy(
+        cfg,
+        bundle.directory / "episode",
+        robust=robust,
+        provider=provider,
+        monitoring=monitoring,
+        monitor_provider=monitor_provider,
+        dotenv_path=dotenv_path,
+    )
+    # calibrate against the honest twin (mode's only difference is covert.enabled)
+    honest = (
+        episode
+        if mode == "honest"
+        else _assemble_by_policy(
+            apply_mode(config, "honest"),
+            bundle.directory / "honest_cal",
+            robust=False,
+            provider=calibration_provider,
+            monitoring=monitoring,
+            monitor_provider=monitor_provider,
+            dotenv_path=dotenv_path,
+        )
+    )
+    return score_and_write_bundle(
+        cfg,
+        mode,
+        bundle,
+        episode,
+        honest,
+        monitors_path=monitors_path,
+        write_report=write_report,
     )
 
 
@@ -651,13 +704,13 @@ def run_sweep(
     attack: int,
     out_root: Path | None = None,
     robust: bool = True,
-    monitors_path: str = "configs/monitors.yaml",
-    monitor_provider: Any = None,
+    monitors_path: str = DEFAULT_MONITORS_PATH,
+    monitor_provider: Provider | None = None,
 ) -> dict[str, Any]:
     """Run ``honest`` honest and ``attack`` attack episodes, aggregate a safety number, and write the summary.
 
     Writes each episode's bundle plus ``scores.aggregate.json`` and a summary ``report.html`` under
-    ``logs/<run_id>/sweep-<timestamp>/`` (calibration + a safety number).
+    ``logs/<run_id>/sweep-<timestamp>/`` (calibration + a safety number). Runs in process.
     """
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     sweep_dir = (out_root or Path("logs")) / config.run_slug / f"sweep-{stamp}"
@@ -666,18 +719,23 @@ def run_sweep(
     honest_cfg = apply_mode(config, "honest")
     attack_cfg = apply_mode(config, "attack")
     proto = compose_protocol(attack_cfg, load_monitors(monitors_path, attack_cfg.models))
+    monitoring = EpisodeMonitoring(proto, calls_models=monitor_provider is not None)
 
-    def _record(ep: Any, cfg: RunConfig) -> Any:
-        caller, sink = build_monitor_caller(ep, cfg, monitor_provider)
-        return record_episode(ep, cfg, proto, model_caller=caller, event_sink=sink or _default_sink)
+    def _record(cfg: RunConfig, workdir: Path, *, robust_attack: bool) -> Any:
+        episode = assemble_scripted_episode(
+            cfg,
+            workdir,
+            robust=robust_attack,
+            monitoring=monitoring,
+            monitor_provider=monitor_provider,
+        )
+        return build_episode_record(episode, cfg, episode.verdicts)
 
     honest_records = [
-        _record(assemble_scripted_episode(honest_cfg, sweep_dir / f"honest-{i}"), honest_cfg)
-        for i in range(honest)
+        _record(honest_cfg, sweep_dir / f"honest-{i}", robust_attack=False) for i in range(honest)
     ]
     attack_records = [
-        _record(assemble_scripted_episode(attack_cfg, sweep_dir / f"attack-{i}", robust=robust), attack_cfg)
-        for i in range(attack)
+        _record(attack_cfg, sweep_dir / f"attack-{i}", robust_attack=robust) for i in range(attack)
     ]
     threshold = calibrate_threshold(honest_records, proto.audit_budget_fpr)
     safe = safety(attack_records, threshold)
@@ -709,51 +767,6 @@ def run_sweep(
     return aggregate
 
 
-def build_monitor_caller(
-    episode: Any,
-    config: RunConfig,
-    provider: Any,
-    *,
-    secret: str = "monitor-secret",
-) -> tuple[Any, Any]:
-    """Build a (model_caller, event_sink) for LIVE monitors over an episode's sealed log.
-
-    A monitor's own model call routes through a gateway core (mandatory routing), appended to the SAME sealed
-    log under a monitor credential (``credential_kind == "monitor"``), so it is attributable and auditable
-    but excluded from the side-task verifier. Returns ``(None, noop)`` if no provider is given (heuristic
-    mode).
-    """
-    if provider is None:
-        return None, None
-    first = next(iter(read_events(episode.sealed_path)), None)
-    if first is None:
-        return None, None
-    episode_id = first.episode_id
-    sealed = AppendOnlyLog(episode.sealed_path, episode_id)
-    core = GatewayCore(config, episode_id, sealed, provider, turn_secret=secret, clock=time.time)
-
-    def caller(monitor_name: str, prompt: str, temperature: float) -> str:
-        cred = sign_monitor_credential(secret, monitor_name, exp=time.time() + 3600)
-        req = GenerateRequest(
-            prompt=prompt,
-            caller_identity=monitor_name,
-            role="trusted_monitor",
-            monitor_credential=cred,
-            temperature=temperature,
-        )
-        return core.generate(req).text
-
-    def sink(kind: str, payload: dict[str, Any]) -> None:
-        sealed.append(
-            Event(
-                episode_id=episode_id,
-                seq=sealed.next_seq(),
-                ts=time.time(),
-                actor_uid=str(payload.get("monitor", "monitor")),
-                actor_role="trusted",
-                kind=kind,  # ty: ignore[invalid-argument-type]
-                payload=payload,
-            ),
-        )
-
-    return caller, sink
+def load_config_by_name(run: str) -> RunConfig:
+    """The run config ``configs/<run>.yaml`` (or ``run`` itself when it names a YAML file)."""
+    return load_run_config(run if run.endswith(".yaml") else f"configs/{run}.yaml")

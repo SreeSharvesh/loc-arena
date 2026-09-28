@@ -29,7 +29,7 @@ from typing import Any
 from loc_arena.config import RunConfig
 from loc_arena.execution.checkout import COMPANY_ROOT, copy_repositories, list_repositories
 from loc_arena.grader.measurement import measure_checkout
-from loc_arena.stack.contracts import GradeMeasurement, GradeReference
+from loc_arena.stack.contracts import CodeToolCall, CodeToolRunner, GradeMeasurement, GradeReference
 
 _ROOT = Path(__file__).resolve().parents[2]
 # The default scenario for the backward-compatible convenience wrappers used by the scripted-path tests.
@@ -72,26 +72,46 @@ def seed_checkout(dest: Path, *, repo_seed: Path | None = None) -> Path:
     return dest
 
 
-def _apply_opt(checkout: Path, reference_dir: Path, key: str) -> None:
-    """Overlay the sealed reference opt files named by ``key`` (``full`` or ``partial``) of the manifest.
+@dataclass(frozen=True)
+class OptimizationOverlay:
+    """One sealed reference opt file and the checkout path (relative to its root) it replaces."""
+
+    source: Path
+    target: str
+
+
+def _read_overlays(reference_dir: Path, key: str) -> list[OptimizationOverlay]:
+    """The sealed reference opt files named by ``key`` (``full`` or ``partial``) of the manifest.
 
     Each manifest entry names a sealed ``opt_file`` (relative to ``reference_dir``) and a ``target`` relative
     to the checkout root (e.g. ``meridian-datapipe/meridian_datapipe/dedup/near.py``). Every opt is
     output-neutral and only makes a metered seam fire fewer times.
     """
     manifest = json.loads((reference_dir / "opt" / "manifest.json").read_text())
-    for entry in manifest[key]:
-        shutil.copy(reference_dir / entry["opt_file"], checkout / entry["target"])
+    return [
+        OptimizationOverlay(reference_dir / entry["opt_file"], entry["target"]) for entry in manifest[key]
+    ]
 
 
 def apply_reference_optimization(checkout: Path, reference_dir: Path | None = None) -> None:
     """Apply the hidden reference optimization (the ``full`` manifest set): the grader's proven ceiling."""
-    _apply_opt(checkout, reference_dir or (DEFAULT_SCENARIO / "reference"), "full")
+    for overlay in _read_overlays(reference_dir or (DEFAULT_SCENARIO / "reference"), "full"):
+        shutil.copy(overlay.source, checkout / overlay.target)
 
 
-def apply_partial_optimization(checkout: Path, reference_dir: Path | None = None) -> None:
-    """Apply PART of the optimization (the ``partial`` manifest set): a real, correctness-preserving win."""
-    _apply_opt(checkout, reference_dir or (DEFAULT_SCENARIO / "reference"), "partial")
+def write_partial_optimization(code_tools: CodeToolRunner, reference_dir: Path) -> None:
+    """Write PART of the optimization (the ``partial`` set) through one agent's code tools, as an agent would.
+
+    A real, correctness-preserving win: the scripted policy's own work, which in the stack only the agents'
+    sandboxes can write into the checkout. Each file is read as bytes, so its content reaches the checkout
+    unchanged (no newline translation). Raises ``RuntimeError`` when a write fails.
+    """
+    for overlay in _read_overlays(reference_dir, "partial"):
+        content = overlay.source.read_bytes().decode("utf-8")
+        call = CodeToolCall(tool="write_file", arguments={"path": overlay.target, "content": content})
+        result = code_tools.run(call).result
+        if "error" in result:
+            raise RuntimeError(f"writing {overlay.target} failed: {result['error']}")
 
 
 def load_grade_reference(reference_dir: Path) -> GradeReference:

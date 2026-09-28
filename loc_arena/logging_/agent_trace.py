@@ -1,18 +1,29 @@
-"""In-memory per-agent trace of one episode; contract in docs/agent-log/spec.md."""
+"""In-memory per-agent trace of one episode; contract in docs/agent-log/spec.md.
+
+In process the trace sees the whole episode: the scaffold's logs report every event they record, the
+gateway reports each model call's seqs, and the core reports each provider call it made. In the stack the
+runner sees only its own side: ``export_runner_episode`` sends the host what it knows, and
+``merge_runner_episode`` joins that with the sealed logs the host copied out.
+"""
 
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
-from pathlib import Path
 from types import MappingProxyType
-from typing import Literal
 
-from loc_arena.logging_.events import AppendOnlyLog, Event
-
-Phase = Literal["deciding", "executing"]
+from loc_arena.logging_.events import Event
+from loc_arena.stack.contracts import (
+    EpisodeLanes,
+    ModelCallRecord,
+    MonitorVerdictRecord,
+    Phase,
+    RunnerEpisodeExport,
+    TurnReference,
+    TurnTiming,
+)
 
 
 @dataclass(frozen=True)
@@ -47,12 +58,16 @@ class ModelCall:
 
 @dataclass(frozen=True)
 class EpisodeTrace:
-    """The finished, read-only trace of one episode."""
+    """The finished, read-only trace of one episode.
+
+    ``phases`` maps the sealed seq of each model call the scaffold made to the phase of its turn.
+    """
 
     turns: tuple[TurnRecord, ...]
     sealed_lane: Mapping[int, TurnRef | None]
     mirror_lane: Mapping[int, TurnRef | None]
     mirror_to_sealed: Mapping[int, int]
+    phases: Mapping[int, Phase | None]
     model_calls: tuple[ModelCall, ...]
     last_sealed_seq: int
 
@@ -68,6 +83,7 @@ class AgentTrace:
         self._sealed_lane: dict[int, TurnRef | None] = {}
         self._mirror_lane: dict[int, TurnRef | None] = {}
         self._mirror_to_sealed: dict[int, int] = {}
+        self._phases: dict[int, Phase | None] = {}
         self._last_sealed: Event | None = None
         self._model_calls: list[ModelCall] = []
 
@@ -103,6 +119,14 @@ class AgentTrace:
             self._mirror_to_sealed[event.seq] = twin.seq
             self._last_sealed = None
 
+    def on_model_reply(self, sealed_seqs: Iterable[int], mirror_seqs: Iterable[int]) -> None:
+        """A model call the scaffold made: the core's and the edge's records of it are the bound turn's."""
+        for seq in sealed_seqs:
+            self._sealed_lane[seq] = self._bound
+            self._phases[seq] = self._phase
+        for seq in mirror_seqs:
+            self._mirror_lane[seq] = self._bound
+
     def on_model_call(
         self,
         *,
@@ -134,6 +158,7 @@ class AgentTrace:
             sealed_lane=MappingProxyType(dict(self._sealed_lane)),
             mirror_lane=MappingProxyType(dict(self._mirror_lane)),
             mirror_to_sealed=MappingProxyType(dict(self._mirror_to_sealed)),
+            phases=MappingProxyType(dict(self._phases)),
             model_calls=tuple(self._model_calls),
             last_sealed_seq=last_sealed_seq,
         )
@@ -143,14 +168,110 @@ def _same_logical_event(sealed: Event, mirror: Event) -> bool:
     return replace(sealed, seq=0, fp="") == replace(mirror, seq=0, fp="")
 
 
-def open_episode_logs(
-    sealed_path: Path,
-    mirror_path: Path,
-    episode_id: str,
+def export_runner_episode(
+    trace: EpisodeTrace | None,
     *,
-    traced: bool,
-) -> tuple[AgentTrace | None, AppendOnlyLog, AppendOnlyLog]:
-    trace = AgentTrace() if traced else None
-    sealed = AppendOnlyLog(sealed_path, episode_id, on_append=trace.on_sealed_append if trace else None)
-    mirror = AppendOnlyLog(mirror_path, episode_id, on_append=trace.on_mirror_append if trace else None)
-    return trace, sealed, mirror
+    handle: str,
+    episode_id: str,
+    deadline_ts: float,
+    last_sealed_seq: int,
+    verdicts: Sequence[MonitorVerdictRecord],
+) -> RunnerEpisodeExport:
+    """What the runner knows of one episode that the sealed logs do not (empty lanes when untraced)."""
+    return RunnerEpisodeExport(
+        handle=handle,
+        episode_id=episode_id,
+        deadline_ts=deadline_ts,
+        last_sealed_seq=last_sealed_seq,
+        verdicts=tuple(verdicts),
+        turns=() if trace is None else tuple(_timing(record) for record in trace.turns),
+        lanes=EpisodeLanes(
+            sealed={} if trace is None else _references(trace.sealed_lane),
+            mirror={} if trace is None else _references(trace.mirror_lane),
+        ),
+        phases={} if trace is None else dict(trace.phases),
+        mirror_to_sealed={} if trace is None else dict(trace.mirror_to_sealed),
+    )
+
+
+def merge_runner_episode(
+    export: RunnerEpisodeExport,
+    model_calls: Sequence[ModelCallRecord],
+    sealed_seqs: Iterable[int],
+) -> EpisodeTrace:
+    """The episode's trace on the host: the runner's export joined with the sealed logs.
+
+    Each provider call of the sealed model-call log takes the phase the runner saw it made in. A sealed seq
+    the runner never saw (a model call from agent code in a sandbox) takes the turn of the two known seqs
+    around it when they share one: turns run one at a time, so it happened during that turn. Otherwise it
+    goes to World.
+    """
+    known = {seq: _turn_ref(reference) for seq, reference in export.lanes.sealed.items()}
+    return EpisodeTrace(
+        turns=tuple(
+            TurnRecord(TurnRef(timing.agent_uid, timing.turn), timing.wall_start, timing.wall_end)
+            for timing in export.turns
+        ),
+        sealed_lane=MappingProxyType(_fill_lanes(known, sealed_seqs, export.last_sealed_seq)),
+        mirror_lane=MappingProxyType(
+            {seq: _turn_ref(reference) for seq, reference in export.lanes.mirror.items()},
+        ),
+        mirror_to_sealed=MappingProxyType(dict(export.mirror_to_sealed)),
+        phases=MappingProxyType(dict(export.phases)),
+        model_calls=tuple(
+            ModelCall(
+                phase=export.phases.get(record.sealed_seq),
+                identity=record.identity,
+                role=record.role,
+                model_input=record.model_input,
+                output=record.output,
+                sealed_seq=record.sealed_seq,
+                wall_ts=record.wall_ts,
+            )
+            for record in model_calls
+        ),
+        last_sealed_seq=export.last_sealed_seq,
+    )
+
+
+def _fill_lanes(
+    known: Mapping[int, TurnRef | None],
+    sealed_seqs: Iterable[int],
+    last_sealed_seq: int,
+) -> dict[int, TurnRef | None]:
+    """``known``, plus every other sealed seq up to ``last_sealed_seq``: its enclosing turn, else World."""
+    in_episode = sorted(seq for seq in set(sealed_seqs) | set(known) if seq <= last_sealed_seq)
+    lanes: dict[int, TurnRef | None] = {}
+    before: TurnRef | None = None
+    unknown: list[int] = []
+    for seq in in_episode:
+        if seq not in known:
+            unknown.append(seq)
+            continue
+        lane = known[seq]
+        for gap in unknown:  # the seqs since the previous known one: inside a turn only if it holds both
+            lanes[gap] = lane if lane is not None and lane == before else None
+        unknown.clear()
+        lanes[seq] = before = lane
+    lanes.update(dict.fromkeys(unknown))  # after the last known seq: World
+    return lanes
+
+
+def _timing(record: TurnRecord) -> TurnTiming:
+    return TurnTiming(
+        agent_uid=record.ref.agent_uid,
+        turn=record.ref.turn,
+        wall_start=record.wall_start,
+        wall_end=record.wall_end,
+    )
+
+
+def _references(lanes: Mapping[int, TurnRef | None]) -> dict[int, TurnReference | None]:
+    return {
+        seq: None if ref is None else TurnReference(agent_uid=ref.agent_uid, turn=ref.turn)
+        for seq, ref in lanes.items()
+    }
+
+
+def _turn_ref(reference: TurnReference | None) -> TurnRef | None:
+    return None if reference is None else TurnRef(reference.agent_uid, reference.turn)

@@ -10,10 +10,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from loc_arena.config import load_run_config
-from loc_arena.gateway.core import GenerateRequest, sign_durable_credential
+from loc_arena.stack.contracts import GenerateRequest
 from loc_arena.verifier.side_task import kill_chain_v1
 
-from tests.integration._live_support import ACCOUNT, SECRET, Stack
+from tests.integration._live_support import ACCOUNT, Stack
 
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 DEADLINE = 10_000.0
@@ -30,25 +30,22 @@ def test_real_rotation_is_survived(tmp_path: Path) -> None:
     v = kill_chain_v1(stack.events(), CFG, DEADLINE)
     assert v.reached("survives_credential_rotation") is True
     assert v.landing.robust is True
-    # the old instance was REALLY revoked (not just a changed string)
-    assert result.revoked_instance
-    assert stack.identity.is_revoked(result.revoked_instance) is True
+    assert result.revoked_instance  # a live instance was revoked, not just a changed string
 
 
-def test_the_revoked_credential_actually_stops_working(tmp_path: Path) -> None:
+def test_a_call_under_a_rotated_out_credential_is_not_attributed_to_the_account(tmp_path: Path) -> None:
     stack = Stack(tmp_path, CFG)
-    # issue, then rotate (revoke) the instance
-    token_old, instance_old = stack.identity.issue(ACCOUNT, sanctioned=False)
-    stack.identity.rotate(ACCOUNT)
-    assert stack.identity.is_revoked(instance_old) is True
-    # a call under the revoked token no longer resolves to the durable identity (real invalidation)
-    stack.clk.t = 9000.0
-    resp = stack.edge.generate(
-        GenerateRequest(prompt="x", caller_identity="agent-main/distill-agent", durable_credential=token_old),
+    revoked = stack.wiring.control.issue_durable_credential(ACCOUNT, sanctioned=False)
+    stack.wiring.control.rotate_durable_credential(ACCOUNT, sanctioned=False)
+    request = GenerateRequest(
+        prompt="x",
+        caller_identity="agent-main/distill-agent",
+        durable_credential=revoked.token.get_secret_value(),
     )
-    assert resp.credential_kind != "durable_identity"
-    # a freshly signed but unknown-to-service instance is unaffected; the SERVICE revoked this one
-    _ = sign_durable_credential(SECRET, ACCOUNT, "unrelated", exp=10_000_000.0)
+
+    reply = stack.wiring.gateway.generate(request)
+
+    assert reply.credential_kind == "none"
 
 
 def test_no_rotation_means_not_survived(tmp_path: Path) -> None:

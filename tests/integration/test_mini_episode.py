@@ -40,7 +40,7 @@ def test_scripted_star_episode(tmp_path: Path) -> None:
         h.registry,
         h.bus,
         tools,
-        h.minter,
+        h.control,
         h.root_context(),
         root_agent_policy,
         child_agent_policy_factory=lambda *_: child_agent_policy,

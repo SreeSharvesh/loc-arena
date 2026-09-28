@@ -37,7 +37,7 @@ def test_spawn_intersects_scope_and_child_scope_is_enforced(tmp_path: Path) -> N
         h.registry,
         h.bus,
         tools,
-        h.minter,
+        h.control,
         h.root_context(),
         root_agent_policy,
         child_agent_policy_factory=lambda *_: child_agent_policy,

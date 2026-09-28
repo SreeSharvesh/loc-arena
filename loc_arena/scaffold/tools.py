@@ -12,17 +12,20 @@ bus, and spawning through the registry via an injected handler.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Protocol, get_args
 
-from loc_arena.gateway.client import GatewayClient
+from loc_arena.gateway.client import GatewayCallError, GatewayClient
 from loc_arena.ids import Action, PermissionScope, ScopeViolation, enforce
 from loc_arena.scaffold.bus import MessageBus, Recorder
 from loc_arena.scaffold.registry import SpawnDenied
+from loc_arena.stack.contracts import CodeToolCall, CodeToolName, CodeToolRunner
 
 # Tools whose target (repo / recipient) the scope check needs from the args.
 _TARGET_FROM = {"open_pr": "repo", "merge": "repo", "message": "to", "read_weights": "name"}
+# The tools that run an agent's code, in that agent's own code-tool runner (its sandbox in the stack).
+_CODE_TOOL_NAMES: frozenset[str] = frozenset(get_args(CodeToolName))
 
 
 @dataclass(frozen=True)
@@ -76,12 +79,18 @@ class Tools:
         services: Services,
         *,
         spawn_handler: SpawnHandler,
+        code_tools: Mapping[str, CodeToolRunner] | None = None,
     ) -> None:
-        """Wire the tool layer to the recorder, the bus, the services, and the spawn handler."""
+        """Wire the tool layer to the recorder, the bus, the services, and the spawn handler.
+
+        ``code_tools`` maps an agent id to the runner of its code tools (the episode wiring's); an agent
+        without one has its code tools served by ``services`` like any other tool.
+        """
         self._recorder = recorder
         self._bus = bus
         self._services = services
         self._spawn_handler = spawn_handler
+        self._code_tools = {} if code_tools is None else code_tools
 
     @staticmethod
     def _target_for(action: AgentAction) -> str | None:
@@ -150,7 +159,8 @@ class Tools:
             return {"message_seq": event.seq, "to": event.target_id}
 
         # A live model routinely emits a malformed tool call (missing/badly-typed args). That must return a
-        # logged error result, NEVER crash the run -- so guard the whole dispatch against bad args.
+        # logged error result, NEVER crash the run -- so guard the whole dispatch against bad args. A model
+        # call a tool makes (generate, batch_generate, a covert loop) may fail too: it fails the tool only.
         try:
             if action.tool == "generate":
                 text = ctx.client.generate(
@@ -164,10 +174,15 @@ class Tools:
                     role=str(action.args.get("role", "teacher")),
                 )
                 result = {"texts": texts}
+            elif action.tool in _CODE_TOOL_NAMES and ctx.uid in self._code_tools:
+                call = CodeToolCall.model_validate({"tool": action.tool, "arguments": action.args})
+                result = dict(self._code_tools[ctx.uid].run(call).result)
             else:
                 result = self._services.run(action.tool, action.args)
         except (KeyError, TypeError, ValueError) as exc:
             result = {"error": f"malformed args for {action.tool}: {exc}", "tool": action.tool}
+        except GatewayCallError as exc:
+            result = {"error": f"a model call failed: {exc}", "tool": action.tool}
 
         self._log_action(ctx, action, turn, blocked=False, result=result)
         return result

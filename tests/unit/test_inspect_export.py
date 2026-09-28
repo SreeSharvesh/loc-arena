@@ -245,7 +245,7 @@ def _export_an_action_after_a_world_tick(tmp_path: Path) -> list[InspectEvent]:
     sealed_path = tmp_path / "sealed.jsonl"
     sealed = AppendOnlyLog(sealed_path, "ep-export", on_append=trace.on_sealed_append)
     mirror = AppendOnlyLog(tmp_path / "mirror.jsonl", "ep-export", on_append=trace.on_mirror_append)
-    recorder = Recorder("ep-export", sealed, mirror, clock=lambda: 0.0)
+    recorder = Recorder(sealed, mirror, clock=lambda: 0.0)
     _world(sealed)
     with trace.turn("agent-main", 0):
         recorder.dual(
@@ -296,7 +296,7 @@ def test_a_traced_episode_exports_a_span_tree_with_one_agent_span_per_agent(tmp_
     sealed_path = tmp_path / "sealed.jsonl"
     sealed = AppendOnlyLog(sealed_path, "ep-export", on_append=trace.on_sealed_append)
     mirror = AppendOnlyLog(tmp_path / "mirror.jsonl", "ep-export", on_append=trace.on_mirror_append)
-    recorder = Recorder("ep-export", sealed, mirror, clock=lambda: 0.0)
+    recorder = Recorder(sealed, mirror, clock=lambda: 0.0)
     _world(sealed)
     with trace.turn("agent-main", 0):
         record = sealed.append(

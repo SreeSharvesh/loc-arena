@@ -1,10 +1,10 @@
 """Single agent/sub-agent turn loop.
 
 Enforces mandatory inference routing (the agent reaches a model only through the gateway client) and
-fingerprinted logging (every action it takes is recorded). The scaffold mints a signed turn token at the
-start of each turn and
-sets it on the agent's client, so the agent's own in-turn model calls carry a ``turn_id`` (a sanctioned
-turn); code the agent spawns runs outside a turn with no token, so its calls are off-path. Each turn:
+fingerprinted logging (every action it takes is recorded). At the start of each turn the gateway core mints
+a signed turn token, which the scaffold sets on the agent's client, so the agent's own in-turn model calls
+carry a ``turn_id`` (a sanctioned turn); code the agent spawns runs outside a turn with no token, so its
+calls are off-path. Each turn:
 deliver the inbox, ask the agent policy for this turn's actions, then enforce scope, execute, and record
 each one. Bounded by the turn budget from config. The agent policy is
 scripted in tests and model-backed in live runs.
@@ -18,11 +18,11 @@ from contextlib import nullcontext
 from enum import Enum
 from typing import Any, Protocol
 
-from loc_arena.gateway.core import sign_turn_token
 from loc_arena.logging_.agent_trace import AgentTrace
 from loc_arena.scaffold.bus import MessageBus
 from loc_arena.scaffold.registry import AgentRegistry
 from loc_arena.scaffold.tools import AgentAction, AgentContext, Tools
+from loc_arena.stack.contracts import GatewayControl
 
 Transcript = list[dict[str, Any]]
 
@@ -30,13 +30,19 @@ Transcript = list[dict[str, Any]]
 # reply); the agent records nothing and stays alive for the next round. Distinct from ``None`` (an explicit
 # finish/cap).
 SKIP = AgentAction(tool="__skip__")
+# An agent policy returns FAILED when its model call failed (the provider, or the gateway refused it): the
+# turn fails, the agent stays alive, and the failure does not count as a refusal.
+FAILED = AgentAction(tool="__failed__")
 
 
 class AgentPolicy(Protocol):
     """Decides the next actions given the running transcript; returns ``None`` to end the loop."""
 
     def next_actions(self, uid: str, turn: int, transcript: Transcript) -> list[AgentAction] | None:
-        """Return this turn's actions, ``[SKIP]`` to sit the turn out, or ``None`` to end."""
+        """Return this turn's actions, ``[SKIP]`` to sit the turn out, or ``None`` to end.
+
+        ``[FAILED]`` sits the turn out because its model call failed; it never counts toward the skips.
+        """
         ...
 
 
@@ -57,28 +63,6 @@ class ScriptedAgentPolicy:
         return [action]
 
 
-class TurnMinter:
-    """Mints per-turn signed tokens so a sanctioned turn's calls carry a ``turn_id``."""
-
-    def __init__(
-        self,
-        secret: str,
-        episode_id: str,
-        *,
-        ttl: float = 300.0,
-        clock: Callable[[], float] = time.time,
-    ) -> None:
-        """Hold the per-episode secret, the episode id, the token TTL, and the clock."""
-        self._secret = secret
-        self._episode_id = episode_id
-        self._ttl = ttl
-        self._clock = clock
-
-    def mint(self, agent_uid: str, turn: int) -> str:
-        """Sign a turn token for ``(agent_uid, turn)`` valid for ``ttl`` seconds."""
-        return sign_turn_token(self._secret, self._episode_id, agent_uid, turn, self._clock() + self._ttl)
-
-
 class TurnStatus(Enum):
     """The outcome of one turn: keep going, ended naturally, or the turn budget was exhausted."""
 
@@ -97,19 +81,22 @@ class Agent:
         tools: Tools,
         registry: AgentRegistry,
         bus: MessageBus,
-        minter: TurnMinter,
+        control: GatewayControl,
         turn_budget: int,
         *,
         clock: Callable[[], float] = time.time,
         trace: AgentTrace | None = None,
     ) -> None:
-        """Wire the agent to its context, agent policy, tools, registry, bus, turn minter, and budget."""
+        """Wire the agent to its context, agent policy, tools, registry, bus, turn minter, and budget.
+
+        ``control`` is the episode's control on the gateway core, which mints each turn's token.
+        """
         self.ctx = ctx
         self._agent_policy = agent_policy
         self._tools = tools
         self._registry = registry
         self._bus = bus
-        self._minter = minter
+        self._control = control
         self._turn_budget = turn_budget
         self._clock = clock
         self._trace = trace
@@ -134,7 +121,7 @@ class Agent:
         turn = self._turn
         self._turn += 1
         self._registry.bump_turn(self.ctx.uid)
-        self.ctx.client.set_turn_token(self._minter.mint(self.ctx.uid, turn))
+        self.ctx.client.set_turn_token(self._control.mint_turn_token(self.ctx.uid, turn))
         try:
             with self._trace.turn(self.ctx.uid, turn) if self._trace is not None else nullcontext():
                 for msg in self._bus.deliver(self.ctx.uid):
@@ -142,6 +129,9 @@ class Agent:
                 actions = self._agent_policy.next_actions(self.ctx.uid, turn, self.transcript)
                 if actions is None:
                     return TurnStatus.ENDED
+                if len(actions) == 1 and actions[0].tool == FAILED.tool:
+                    self.transcript.append({"turn": turn, "failed": "the model call failed"})
+                    return TurnStatus.CONTINUE
                 if len(actions) == 1 and actions[0].tool == SKIP.tool:
                     self._skips += 1
                     self.transcript.append({"turn": turn, "skipped": True})

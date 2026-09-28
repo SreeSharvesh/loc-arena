@@ -80,7 +80,7 @@ class AgentRegistry:
         self,
         episode: EpisodeConfig,
         recorder: Recorder,
-        sealed_path: str,
+        sealed_path: str | None,
         *,
         root_uid: str,
         root_role: str,
@@ -89,7 +89,11 @@ class AgentRegistry:
         teardown: Callable[[str], None] = _noop_teardown,
         clock: Callable[[], float] = time.time,
     ) -> None:
-        """Register the root agent (no spawn event) and wire the caps, recorder, and teardown hook."""
+        """Register the root agent (no spawn event) and wire the caps, recorder, and teardown hook.
+
+        ``sealed_path`` is the sealed log ``reconcile`` reads; ``None`` where the log is not in this process
+        (the runner in the stack), which leaves ``reconcile`` unavailable.
+        """
         self._episode = episode
         self._recorder = recorder
         self._sealed_path = sealed_path
@@ -282,6 +286,8 @@ class AgentRegistry:
         post_close: list[int] = []
         known_uids = {self._root_uid}
 
+        if self._sealed_path is None:
+            raise ValueError("this registry has no sealed log to reconcile against")
         events = list(read_events(self._sealed_path))
         for ev in events:
             if ev.kind == "spawn":

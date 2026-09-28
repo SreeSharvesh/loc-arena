@@ -12,11 +12,14 @@ both trajectories, and delivers in order per recipient. Every message is parsed 
 
 from __future__ import annotations
 
-import time
+import dataclasses
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Final
 
-from loc_arena.logging_.events import AppendOnlyLog, Event, EventKind, fingerprint
+from loc_arena.logging_.events import Event, EventDraft, EventKind, EventLog, fingerprint
+
+# An event's fields that a log does not assign (all but episode_id, seq and fp): what its mirror twin copies.
+_DRAFT_FIELDS: Final = tuple(field.name for field in dataclasses.fields(EventDraft))
 
 # The M_action hook: parses each event before dispatch. Pass-through by default; the real monitor plugs in.
 ActionHook = Callable[[Event], None]
@@ -31,51 +34,15 @@ class Recorder:
 
     ``sealed`` writes only to the sealed log (lifecycle events the monitor does not read: spawn/close).
     ``dual`` writes the same logical event to both, so a monitor-observable action or message lands on the
-    mirror as well. Each write gets its own monotonic seq in its file; reconstruction reads the sealed
-    log.
+    mirror as well. Each log gives the event its own seq; reconstruction reads the sealed log. The logs are
+    the episode's wiring: local files in process, the core and the edge in the stack.
     """
 
-    def __init__(
-        self,
-        episode_id: str,
-        sealed: AppendOnlyLog,
-        mirror: AppendOnlyLog,
-        *,
-        clock: Callable[[], float] = time.time,
-    ) -> None:
-        """Bind the recorder to its episode and the two append-only logs."""
-        self._episode_id = episode_id
+    def __init__(self, sealed: EventLog, mirror: EventLog, *, clock: Callable[[], float]) -> None:
+        """Bind the recorder to the episode's two logs and the clock that stamps its events."""
         self._sealed = sealed
         self._mirror = mirror
         self._clock = clock
-
-    def _build(
-        self,
-        log: AppendOnlyLog,
-        *,
-        ts: float,
-        actor_uid: str,
-        actor_role: str,
-        kind: EventKind,
-        payload: dict[str, Any],
-        target_id: str | None,
-        turn: int,
-        tool: str | None,
-        result: dict[str, Any] | None,
-    ) -> Event:
-        return Event(
-            episode_id=self._episode_id,
-            seq=log.next_seq(),
-            ts=ts,
-            actor_uid=actor_uid,
-            actor_role=actor_role,
-            kind=kind,
-            payload=payload,
-            target_id=target_id,
-            turn=turn,
-            tool=tool,
-            result=result,
-        )
 
     def sealed(
         self,
@@ -90,21 +57,19 @@ class Recorder:
         result: dict[str, Any] | None = None,
         ts: float | None = None,
     ) -> Event:
-        """Append one event to the sealed log only (ground-truth lifecycle); return the written event."""
-        return self._sealed.append(
-            self._build(
-                self._sealed,
-                ts=ts if ts is not None else self._clock(),
-                actor_uid=actor_uid,
-                actor_role=actor_role,
-                kind=kind,
-                payload=payload,
-                target_id=target_id,
-                turn=turn,
-                tool=tool,
-                result=result,
-            ),
+        """Record one event on the sealed log only (ground-truth lifecycle); return the written event."""
+        draft = EventDraft(
+            ts=ts if ts is not None else self._clock(),
+            actor_uid=actor_uid,
+            actor_role=actor_role,
+            kind=kind,
+            payload=payload,
+            target_id=target_id,
+            turn=turn,
+            tool=tool,
+            result=result,
         )
+        return self._sealed.record(draft)
 
     def dual(
         self,
@@ -119,8 +84,7 @@ class Recorder:
         result: dict[str, Any] | None = None,
         ts: float | None = None,
     ) -> Event:
-        """Append one observable event to BOTH the sealed and the mirror log; return the sealed event."""
-        at = ts if ts is not None else self._clock()
+        """Record one observable event on the sealed log, then on the mirror; return the sealed one."""
         sealed_event = self.sealed(
             actor_uid=actor_uid,
             actor_role=actor_role,
@@ -130,22 +94,9 @@ class Recorder:
             turn=turn,
             tool=tool,
             result=result,
-            ts=at,
+            ts=ts,
         )
-        self._mirror.append(
-            self._build(
-                self._mirror,
-                ts=at,
-                actor_uid=actor_uid,
-                actor_role=actor_role,
-                kind=kind,
-                payload=payload,
-                target_id=target_id,
-                turn=turn,
-                tool=tool,
-                result=result,
-            ),
-        )
+        self._mirror.record(EventDraft(**{name: getattr(sealed_event, name) for name in _DRAFT_FIELDS}))
         return sealed_event
 
 

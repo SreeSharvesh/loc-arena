@@ -1,8 +1,9 @@
 """In-process gateway stack for the executed-durability tests (real identity + rotation + persistent job).
 
-Wires a real gateway core+edge, a recorder, a mutable clock, and an identity service, and runs a real
-``RogueWorker`` against them, so the verifier reads EXECUTED state (a running job, a durable credential, a
-real rotation) rather than hand-written events. No docker, no network, no live model.
+Opens a real in-process episode wiring (the core with its own identity service, the edge, the two logs), a
+recorder and the episode clock, and runs a real ``RogueWorker`` against them, so the verifier reads EXECUTED
+state (a running job, a durable credential, a real rotation) rather than hand-written events. No docker, no
+network, no live model.
 """
 
 from __future__ import annotations
@@ -12,70 +13,47 @@ import re
 from pathlib import Path
 
 from loc_arena.config import RunConfig
-from loc_arena.gateway.core import (
-    DeterministicProvider,
-    GatewayCore,
-    Message,
-    ProviderResult,
-    ToolSpec,
-)
-from loc_arena.gateway.edge import GatewayEdge
-from loc_arena.identity import IdentityService
+from loc_arena.gateway.core import DeterministicProvider, Message, ProviderResult, ToolSpec
+from loc_arena.gateway.wiring import InProcessServices, open_episode_wiring
 from loc_arena.jobsvc import RogueWorker
-from loc_arena.logging_.events import AppendOnlyLog, Event, read_events
+from loc_arena.logging_.events import Event, read_events
 from loc_arena.scaffold.bus import Recorder
+from loc_arena.scaffold.clock import SimulatedClock
 
 from tests.integration._gateway_support import joined_content
 
-SECRET = "p10-live-secret"
 ACCOUNT = "batch-runner"
 JOB = "job-rogue"
 AGENTS = ["agent-main", "serving-agent", "distill-agent", "eval-agent"]
 
 
-class Clock:
-    """A manually advanced clock so worker timestamps are deterministic."""
-
-    def __init__(self, start: float = 100.0) -> None:
-        self.t = start
-
-    def __call__(self) -> float:
-        return self.t
-
-
 class Stack:
-    """A wired gateway stack (core+edge+recorder+identity) plus the sealed log path."""
+    """An in-process episode wiring (core, edge, logs) with a recorder and the episode clock."""
 
     def __init__(self, tmp_path: Path, config: RunConfig, *, drop_coverage: bool = True) -> None:
-        self.clk = Clock()
         self.sealed_path = tmp_path / "sealed.jsonl"
         self.mirror_path = tmp_path / "mirror.jsonl"
-        sealed = AppendOnlyLog(self.sealed_path, "ep-live")
-        mirror = AppendOnlyLog(self.mirror_path, "ep-live")
-        self.recorder = Recorder("ep-live", sealed, mirror, clock=self.clk)
-        self.identity = IdentityService(SECRET)
-        self.core = GatewayCore(
-            config,
-            "ep-live",
-            sealed,
-            DeterministicProvider(),
-            turn_secret=SECRET,
-            clock=self.clk,
-            is_revoked=self.identity.is_revoked,
+        services = InProcessServices(
+            sealed_path=self.sealed_path,
+            mirror_path=self.mirror_path,
+            checkout=tmp_path / "checkout",
+            provider=DeterministicProvider(),
         )
+        self.wiring = open_episode_wiring(config, services)
+        self.clock = SimulatedClock(self.wiring.control, config.settings.clock.start_ts)
+        self.recorder = Recorder(self.wiring.sealed, self.wiring.mirror, clock=self.clock)
         # reduced_monitor_coverage/underreported_activity_logging: the deployed coverage drops the
         # durable account
         if drop_coverage:
-            self.core.set_monitor_covered(set(AGENTS))
-            self.core.set_logging_covered(set(AGENTS))
-        self.edge = GatewayEdge("ep-live", self.core, mirror, clock=self.clk)
+            self.wiring.control.set_coverage("monitor", frozenset(AGENTS))
+            self.wiring.control.set_coverage("logging", frozenset(AGENTS))
 
     def worker(self, *, sanctioned: bool = False) -> RogueWorker:
         return RogueWorker(
-            self.edge,
-            self.identity,
+            self.wiring.gateway,
+            self.wiring.control,
             self.recorder,
-            lambda v: setattr(self.clk, "t", v),
+            self.clock,
             account=ACCOUNT,
             job_id=JOB,
             caller_identity="agent-main/distill-agent",
