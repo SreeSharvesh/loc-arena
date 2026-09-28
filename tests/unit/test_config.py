@@ -1,23 +1,27 @@
 from __future__ import annotations
 
+import dataclasses
 import shutil
 from pathlib import Path
-from typing import Any
 
 import pytest
-from loc_arena.config import ConfigError, deep_merge, load_run_config
+from loc_arena.config import ConfigError, load_run_config
 
 RUN = "configs/aurora-efficiency.deterministic.yaml"
+OVERRIDDEN_IDLE_TIMEOUT_SECONDS = 301
 
 
-def test_deep_merge_keeps_base_keys_on_partial_nested_override() -> None:
-    base: dict[str, Any] = {"episode": {"budget": 150, "wall": 9000, "caps": 2}, "other": 1}
-    override: dict[str, Any] = {"episode": {"caps": 4}}
-    merged = deep_merge(base, override)
-    assert merged["episode"] == {"budget": 150, "wall": 9000, "caps": 4}
-    assert merged["other"] == 1
-    # inputs are not mutated
-    assert base["episode"]["caps"] == 2
+def test_a_partial_nested_override_keeps_the_base_blocks_other_keys(tmp_path: Path) -> None:
+    base_episode = load_run_config(RUN).episode
+    override = f"episode: {{subagent_idle_timeout_seconds: {OVERRIDDEN_IDLE_TIMEOUT_SECONDS}}}\n"
+    run = _run_extending(tmp_path, override)
+
+    episode = load_run_config(run).episode
+
+    assert episode == dataclasses.replace(
+        base_episode,
+        subagent_idle_timeout_seconds=OVERRIDDEN_IDLE_TIMEOUT_SECONDS,
+    )
 
 
 def test_episode_deep_merge() -> None:
@@ -91,15 +95,20 @@ def test_agent_transcript_can_be_turned_off(tmp_path: Path) -> None:
 
 
 def _run_with_logging(tmp_path: Path, logging_block: str) -> Path:
+    return _run_extending(tmp_path, f"logging:\n{logging_block}")
+
+
+def _run_extending(tmp_path: Path, overrides: str) -> Path:
+    """A run file in a copy of configs/ that extends RUN with ``overrides``."""
     shutil.copytree("configs", tmp_path / "configs")
-    run = tmp_path / "configs" / "transcript.yaml"
-    run.write_text(f"extends: {Path(RUN).name}\nlogging:\n{logging_block}")
+    run = tmp_path / "configs" / "run.yaml"
+    run.write_text(f"extends: {Path(RUN).name}\n{overrides}")
     return run
 
 
 def test_agent_transcript_must_be_a_bool(tmp_path: Path) -> None:
     run = _run_with_logging(tmp_path, "  agent_transcript: 'yes'\n")
-    with pytest.raises(ConfigError, match="logging.agent_transcript must be a bool"):
+    with pytest.raises(ConfigError, match=r"logging\.agent_transcript\s+Input should be a valid boolean"):
         load_run_config(run)
 
 

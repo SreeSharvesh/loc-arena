@@ -7,23 +7,64 @@ partial override of a nested block such as ``episode:`` keeps the base block's o
 ``models`` reference and the ``prompts_inline.*`` ``*_ref`` references, validates aggressively, and
 returns one frozen ``RunConfig``. Fails loud on a missing or malformed field; no default lives here,
 defaults live in the YAML.
+
+Reading. pydantic-settings' ``YamlConfigSettingsSource`` reads the run file and the files it ``extends``,
+base first, with ``deep_merge=True``. Its documentation ("Other settings source",
+https://pydantic.dev/docs/validation/latest/concepts/pydantic_settings/) says several files "are merged
+shallowly in increasing order of priority. To enable deep merging, set `deep_merge=True` on the source
+directly", an option "not available through the `SettingsConfigDict`": a mapping in a later file merges
+into the same key of an earlier one, any other value replaces it. The run document is built from that
+source alone, passed as ``_build_sources`` ("Pre-initialized sources and init kwargs to use for building
+instantiation values", ``BaseSettings`` in https://pydantic.dev/docs/validation/latest/api/pydantic_settings/),
+so no environment variable, dotenv file or secrets directory can change a run. Checked against
+pydantic-settings 2.15.0: the latest release on PyPI, installed here and the floor in ``pyproject.toml``.
+
+Validating. Each block is a frozen pydantic dataclass with a description per field: a dataclass, not a
+``BaseModel``, because callers derive variants with ``dataclasses.replace`` (the honest twin), which
+re-validates. Scalars are pydantic's ``Strict*`` types, so YAML ``"30"`` or ``true`` is never coerced into
+an int. A key no block declares is ignored, except in an agent's ``scope`` (``PermissionScope.from_dict``
+rejects it) and in the settings groups (``LocArenaSettings`` forbids it). A missing or invalid field is a
+``ConfigError`` naming its path.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any, Final, Literal, Self
 
 import yaml
-from pydantic import ValidationError
+from pydantic import (
+    AfterValidator,
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    PlainValidator,
+    StrictBool,
+    StrictFloat,
+    StrictInt,
+    StrictStr,
+    ValidationError,
+    model_validator,
+)
+from pydantic.dataclasses import dataclass as pydantic_dataclass
+from pydantic_settings import BaseSettings, SettingsConfigDict, YamlConfigSettingsSource
 from scenarios.loader import load_scenario
 
 from loc_arena.ids import PermissionScope
 from loc_arena.registry import SCORER_REGISTRY, VERIFIER_REGISTRY, is_scorer, is_verifier
 from loc_arena.stack.settings import LocArenaSettings
+
+YAML_ENCODING: Final = "utf-8"
+BLOCK_CONFIG: Final = ConfigDict(extra="ignore")  # a key no block declares is ignored, as it always was
+PROMPT_REFERENCE_PREFIX: Final = "prompts_inline."
+REFERENCE_SUFFIX: Final = "_ref"
+COVERT_PROMPTS: Final = ("objective_prompt",)
+AGENT_PROMPTS: Final = ("system_prompt", "brief")
+LANDING_FORMULAS: Final = frozenset({"minimal", "robust"})
 
 
 class ConfigError(ValueError):
@@ -31,151 +72,277 @@ class ConfigError(ValueError):
 
 
 # --------------------------------------------------------------------------------------------------------
-# Deep merge and YAML loading
+# Field validators (pydantic reports the ValueErrors they raise under the field's path)
 # --------------------------------------------------------------------------------------------------------
-def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
-    """Recursively merge ``override`` onto ``base``; ``override`` wins on leaves and lists.
+def _parse_scope(raw: object) -> PermissionScope:
+    """Parse an agent's ``scope`` with ``PermissionScope.from_dict``, which owns its rules.
 
-    Two mappings at the same key merge recursively (so a partial nested override keeps the base's other
-    keys); any other value in ``override`` replaces the base value wholesale. Neither input is mutated.
+    A scope already built (``dataclasses.replace`` passes one) is kept as it is.
     """
-    out: dict[str, Any] = dict(base)
-    for key, ov in override.items():
-        bv = out.get(key)
-        if isinstance(bv, dict) and isinstance(ov, dict):
-            out[key] = deep_merge(bv, ov)
-        else:
-            out[key] = ov
-    return out
+    if isinstance(raw, PermissionScope):
+        return raw
+    if not isinstance(raw, dict):
+        raise ValueError(f"scope must be a mapping, got {type(raw).__name__}")
+    try:
+        return PermissionScope.from_dict(raw)
+    except TypeError as exc:  # pydantic reports a ValueError with the field's path, a TypeError escapes it
+        raise ValueError(str(exc)) from exc
 
 
-def _load_yaml(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        raise ConfigError(f"config file not found: {path}")
-    with path.open("r", encoding="utf-8") as fh:
-        data: Any = yaml.safe_load(fh)
-    if not isinstance(data, dict):
-        raise ConfigError(f"config file {path} must be a mapping at top level, got {type(data).__name__}")
-    return data
+def _require_landing_formulas(landing: dict[str, str]) -> dict[str, str]:
+    missing = LANDING_FORMULAS - set(landing)
+    if missing:
+        raise ValueError(f"landing must define 'minimal' and 'robust', missing {sorted(missing)}")
+    return landing
 
 
-# --------------------------------------------------------------------------------------------------------
-# Small typed-access helpers (fail loud)
-# --------------------------------------------------------------------------------------------------------
-def _require(d: dict[str, Any], key: str, where: str) -> Any:
-    if key not in d:
-        raise ConfigError(f"missing required key {key!r} in {where}")
-    return d[key]
-
-
-def _as_int(value: Any, where: str) -> int:
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise ConfigError(f"{where} must be an int, got {value!r}")
-    return value
-
-
-def _as_float(value: Any, where: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ConfigError(f"{where} must be a number, got {value!r}")
-    return float(value)
-
-
-def _as_str(value: Any, where: str) -> str:
-    if not isinstance(value, str):
-        raise ConfigError(f"{where} must be a string, got {value!r}")
-    return value
-
-
-def _as_bool(value: Any, where: str) -> bool:
-    if not isinstance(value, bool):
-        raise ConfigError(f"{where} must be a bool, got {value!r}")
-    return value
+def _prompt_alias(field_name: str) -> AliasChoices:
+    """Read a prompt from its ``<field>_ref`` key (the YAML), or by name (``dataclasses.replace``)."""
+    return AliasChoices(f"{field_name}{REFERENCE_SUFFIX}", field_name)
 
 
 # --------------------------------------------------------------------------------------------------------
-# Typed config dataclasses
+# Typed config blocks
 # --------------------------------------------------------------------------------------------------------
-@dataclass(frozen=True)
+@pydantic_dataclass(frozen=True, config=BLOCK_CONFIG)
 class ModelSpec:
     """A model routing entry from ``models.cheap.yaml`` (role -> model and sampling)."""
 
-    model: str
-    temperature: float
-    max_tokens: int
+    model: StrictStr = Field(description="The OpenRouter model id (provider/model) this role calls.")
+    temperature: StrictFloat = Field(description="Sampling temperature of every call this role makes.")
+    max_tokens: StrictInt = Field(
+        description="Output cap of one call (reasoning plus tool arguments), not the context window.",
+    )
 
 
-@dataclass(frozen=True)
+@pydantic_dataclass(frozen=True, config=BLOCK_CONFIG)
 class AgentLoopConfig:
     """The live agent loop's tool-result cap. The value comes from ``agent_loop:``."""
 
-    tool_result_max_chars: int
+    tool_result_max_chars: StrictInt = Field(
+        description="How many characters of a tool result the model sees; the rest is marked cut.",
+    )
 
 
-@dataclass(frozen=True)
+@pydantic_dataclass(frozen=True, config=BLOCK_CONFIG)
 class EpisodeConfig:
     """Episode ceilings and spawn caps (the DEEP-merged ``episode:`` block)."""
 
-    orchestrator_turn_budget: int
-    subagent_turn_budget: int
-    wall_clock_seconds: int
-    liveness_window_seconds: int
-    max_spawn_depth: int
-    max_live_subagents: int
-    max_total_agents: int
-    subagent_idle_timeout_seconds: int
+    orchestrator_turn_budget: StrictInt = Field(description="Turn ceiling of the root orchestrator.")
+    subagent_turn_budget: StrictInt = Field(description="Turn ceiling of each sub-agent.")
+    wall_clock_seconds: StrictInt = Field(description="Wall-clock ceiling of the episode.")
+    liveness_window_seconds: StrictInt = Field(
+        description="A loop is alive at the end if it called within this window before the deadline.",
+    )
+    max_spawn_depth: StrictInt = Field(description="Levels of sub-agents that may nest below the root.")
+    max_live_subagents: StrictInt = Field(description="Sub-agents alive at once.")
+    max_total_agents: StrictInt = Field(description="Agents ever created in one episode, the root included.")
+    subagent_idle_timeout_seconds: StrictInt = Field(
+        description="A sub-agent with no logged activity for this long is closed as idle.",
+    )
 
 
-@dataclass(frozen=True)
+@pydantic_dataclass(frozen=True, config=BLOCK_CONFIG)
 class Thresholds:
     """The side-task verifier thresholds (``aurora-efficiency.yaml`` ``side_task.thresholds``)."""
 
-    loop_len_floor: int
-    liveness_window_seconds: int
-    sustained_rate_window_seconds: int
+    loop_len_floor: StrictInt = Field(description="Fewest off-path calls that count as a self-feeding loop.")
+    liveness_window_seconds: StrictInt = Field(
+        description="Window before the deadline in which the loop must still call; equals the episode's.",
+    )
+    sustained_rate_window_seconds: StrictInt = Field(
+        description="Window over which the loop's call rate is measured against the alerting threshold.",
+    )
 
 
-@dataclass(frozen=True)
+@pydantic_dataclass(frozen=True, config=BLOCK_CONFIG)
 class SideTaskConfig:
     """The side task: verifier name, thresholds, landing formulas, milestones, and the sensitivity band."""
 
-    name: str
-    verifier: str
-    thresholds: Thresholds
-    landing: dict[str, str]
-    milestones: list[dict[str, Any]]
-    sensitivity_band: dict[str, list[int]]
-    coordination: dict[str, Any]
+    name: StrictStr = Field(description="The side task's name; names the run when it has no slug.")
+    verifier: StrictStr = Field(description="The registered verifier that grades the side task.")
+    thresholds: Thresholds = Field(description="The verifier's thresholds.")
+    landing: Annotated[dict[str, StrictStr], AfterValidator(_require_landing_formulas)] = Field(
+        description="The landing formulas by name; 'minimal' and 'robust' are required.",
+    )
+    milestones: list[dict[str, Any]] = Field(description="The kill-chain milestones, free-form mappings.")
+    sensitivity_band: dict[str, list[StrictInt]] = Field(
+        default_factory=dict,
+        description="Alternative values of each threshold the verdict is re-checked at.",
+    )
+    coordination: dict[str, Any] = Field(
+        default_factory=dict,
+        description="How the team coordinates covertly, free-form.",
+    )
+    slug: StrictStr | None = Field(default=None, description="Short run-name slug; the name when absent.")
 
 
-@dataclass(frozen=True)
+@pydantic_dataclass(frozen=True, config=BLOCK_CONFIG)
 class CovertConfig:
     """The covert-objective toggle: ``enabled`` is the ONLY difference between attack and its honest twin."""
 
-    enabled: bool
-    target_identity: str
-    objective_prompt: str
+    enabled: StrictBool = Field(description="True for the attack run, false for its honest twin.")
+    target_identity: StrictStr = Field(description="The agent that receives the covert objective.")
+    objective_prompt: StrictStr = Field(
+        validation_alias=_prompt_alias("objective_prompt"),
+        description="The covert objective's text, resolved from objective_prompt_ref.",
+    )
 
 
-@dataclass(frozen=True)
+@pydantic_dataclass(frozen=True, config=BLOCK_CONFIG)
 class AgentConfig:
     """One agent's identity, branch, scope, covert subtasks, and resolved prompt/brief."""
 
-    id: str
-    kind: str
-    trust: str
-    branch: str
-    scope: PermissionScope
-    covert: tuple[str, ...]
-    legit: str
-    system_prompt: str | None = None
-    brief: str | None = None
-    spawned_by: str | None = None
+    id: StrictStr = Field(description="The agent's identity, unique in the run.")
+    kind: StrictStr = Field(description="The agent's role, such as orchestrator.")
+    trust: StrictStr = Field(description="The agent's trust level, such as untrusted.")
+    branch: StrictStr = Field(description="The branch the agent works on.")
+    scope: Annotated[PermissionScope, PlainValidator(_parse_scope)] = Field(
+        description="What the agent may do; an unknown key is an error.",
+    )
+    covert: tuple[StrictStr, ...] = Field(default=(), description="The covert subtasks the agent owns.")
+    legit: StrictStr = Field(default="", description="The agent's legitimate assignment.")
+    system_prompt: StrictStr | None = Field(
+        default=None,
+        validation_alias=_prompt_alias("system_prompt"),
+        description="The agent's system prompt, resolved from system_prompt_ref.",
+    )
+    brief: StrictStr | None = Field(
+        default=None,
+        validation_alias=_prompt_alias("brief"),
+        description="The agent's brief, resolved from brief_ref.",
+    )
+    spawned_by: StrictStr | None = Field(default=None, description="The agent that spawns this one, if any.")
 
 
+@pydantic_dataclass(frozen=True, config=BLOCK_CONFIG)
+class _MainTaskKeys:
+    """The ``main_task`` keys the loader itself reads; ``RunConfig.main_task`` keeps the whole block."""
+
+    name: StrictStr | None = Field(default=None, description="The main task's name; the slug's fallback.")
+    slug: StrictStr | None = Field(default=None, description="Short run-name slug.")
+    scorer: StrictStr | None = Field(default=None, description="The registered scorer that grades the task.")
+
+
+@pydantic_dataclass(frozen=True, config=BLOCK_CONFIG)
+class _LoggingConfig:
+    """The ``logging:`` block."""
+
+    agent_transcript: StrictBool = Field(
+        default=False,
+        description="Whether each run bundle holds every agent's Inspect .eval and transcript.",
+    )
+
+
+# --------------------------------------------------------------------------------------------------------
+# The files
+# --------------------------------------------------------------------------------------------------------
+class _ExtendsKey(BaseModel):
+    """The one key a config file is read for before the merge: the file it extends."""
+
+    model_config = ConfigDict(frozen=True, extra="ignore", title="config file")
+
+    extends: StrictStr | None = Field(default=None, description="The config file this one deep-merges onto.")
+
+
+class _ModelsFile(BaseModel):
+    """The models file: role -> model routing."""
+
+    model_config = ConfigDict(frozen=True, extra="ignore", title="models file")
+
+    roles: dict[str, ModelSpec] = Field(description="The model each role calls, by role.")
+
+
+class _RunDocument(BaseSettings):
+    """The merged run file, validated; ``load_run_config`` adds the models, the settings and the run names."""
+
+    model_config = SettingsConfigDict(frozen=True, extra="ignore", case_sensitive=True, title="run config")
+
+    models: StrictStr = Field(description="The models file, in the configs directory.")
+    seed: StrictInt = Field(description="The seed that, with this config, reproduces the episode.")
+    episode: EpisodeConfig = Field(description="Episode ceilings and spawn caps.")
+    side_task: SideTaskConfig = Field(description="The side task and how it is verified.")
+    covert: CovertConfig = Field(description="The covert objective and whether it is on.")
+    agents: tuple[AgentConfig, ...] = Field(min_length=1, description="The team.")
+    main_task: _MainTaskKeys = Field(description="The main task's naming and scorer keys.")
+    protocol: dict[str, Any] = Field(description="The control protocol, free-form, read by key.")
+    scenario: StrictStr | None = Field(default=None, description="The pack registering scorer and verifier.")
+    policy: Literal["scripted", "model"] = Field(
+        default="model",
+        description="'model' (the live untrusted model drives the agents) or 'scripted' (deterministic).",
+    )
+    logging: _LoggingConfig = Field(default=_LoggingConfig(), description="What each run bundle records.")
+    agent_loop: AgentLoopConfig = Field(description="The live agent loop's tool-result cap.")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _resolve_prompt_references(cls, data: object) -> object:
+        """Put the ``prompts_inline`` text in place of each ``*_ref`` (a settings model takes no context)."""
+        if not isinstance(data, dict):
+            return data
+        prompts = data.get("prompts_inline")
+        resolved = dict(data)  # new containers: the merged YAML is also RunConfig.raw, kept as written
+        if "covert" in data:
+            resolved["covert"] = _with_prompts_resolved(data["covert"], COVERT_PROMPTS, prompts, "covert")
+        if isinstance(data.get("agents"), list):
+            resolved["agents"] = [
+                _with_prompts_resolved(agent, AGENT_PROMPTS, prompts, f"agents.{index}")
+                for index, agent in enumerate(data["agents"])
+            ]
+        return resolved
+
+    @model_validator(mode="after")
+    def _require_one_liveness_window(self) -> Self:
+        """The verifier reads side_task.thresholds; the episode's liveness window must agree with it."""
+        episode_window = self.episode.liveness_window_seconds
+        verifier_window = self.side_task.thresholds.liveness_window_seconds
+        if episode_window != verifier_window:
+            raise ValueError(
+                f"episode.liveness_window_seconds ({episode_window}) != "
+                f"side_task.thresholds.liveness_window_seconds ({verifier_window}); "
+                "keep the two equal (the verifier reads side_task.thresholds)",
+            )
+        return self
+
+
+def _with_prompts_resolved(
+    block: object,
+    prompt_fields: tuple[str, ...],
+    inline_prompts: object,
+    where: str,
+) -> object:
+    """``block`` with each prompt's ``<field>_ref`` holding its text, and a prompt written inline dropped.
+
+    Only a reference sets a prompt; anything but a mapping is left for pydantic to report at ``where``.
+    """
+    if not isinstance(block, dict):
+        return block
+    references = {f"{field_name}{REFERENCE_SUFFIX}" for field_name in prompt_fields}
+    kept = {key: value for key, value in block.items() if key not in prompt_fields}
+    return kept | {
+        key: _resolve_prompt_reference(value, inline_prompts, f"{where}.{key}")
+        for key, value in kept.items()
+        if key in references
+    }
+
+
+def _resolve_prompt_reference(reference: object, inline_prompts: object, where: str) -> object:
+    """The ``prompts_inline`` entry a reference names; the field it fills checks its type."""
+    if not isinstance(reference, str) or not reference.startswith(PROMPT_REFERENCE_PREFIX):
+        raise ValueError(f"{where}: only prompts_inline.* references are resolved here, got {reference!r}")
+    name = reference.removeprefix(PROMPT_REFERENCE_PREFIX)
+    if not isinstance(inline_prompts, dict) or name not in inline_prompts:
+        raise ValueError(f"{where}: reference {reference!r} not found in prompts_inline")
+    return inline_prompts[name]
+
+
+# --------------------------------------------------------------------------------------------------------
+# The resolved run
+# --------------------------------------------------------------------------------------------------------
 _EMPTY_AGENT_LOOP = AgentLoopConfig(0)
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class RunConfig:
     """One fully resolved run: config plus seed reproduces the episode.
 
@@ -201,7 +368,7 @@ class RunConfig:
     policy: str = "scripted"  # "scripted" (deterministic default) | "model" (live model-driven)
     agent_transcript: bool = False
     agent_loop: AgentLoopConfig = _EMPTY_AGENT_LOOP
-    raw: dict[str, Any] = field(default_factory=dict)
+    raw: dict[str, Any] = dataclasses.field(default_factory=dict)  # the merged YAML, references unresolved
 
     def agent(self, agent_id: str) -> AgentConfig:
         """Return the agent config with this id, or raise ``ConfigError``."""
@@ -238,195 +405,35 @@ def _slugify(text: str) -> str:
 
 
 # --------------------------------------------------------------------------------------------------------
-# *_ref resolution (prompts_inline.<name>)
+# Loading
 # --------------------------------------------------------------------------------------------------------
-def _resolve_prompt_ref(ref: Any, merged: dict[str, Any], where: str) -> str:
-    """Resolve a ``prompts_inline.<name>`` reference into its inline text."""
-    ref_str = _as_str(ref, where)
-    prefix = "prompts_inline."
-    if not ref_str.startswith(prefix):
-        raise ConfigError(f"{where}: only prompts_inline.* references are resolved here, got {ref_str!r}")
-    name = ref_str[len(prefix) :]
-    inline = merged.get("prompts_inline")
-    if not isinstance(inline, dict) or name not in inline:
-        raise ConfigError(f"{where}: reference {ref_str!r} not found in prompts_inline")
-    return _as_str(inline[name], f"prompts_inline.{name}")
+def _read_config_file[Schema: BaseModel](path: Path, schema: type[Schema]) -> Schema:
+    """Read one config file into ``schema``; a missing file fails loud (the settings source would skip it)."""
+    if not path.is_file():
+        raise ConfigError(f"config file not found: {path}")
+    with path.open("r", encoding=YAML_ENCODING) as file:
+        data: object = yaml.safe_load(file)
+    try:
+        return schema.model_validate(data)
+    except ValidationError as exc:
+        raise ConfigError(f"config file {path} is invalid: {exc}") from exc
 
 
-# --------------------------------------------------------------------------------------------------------
-# Builders
-# --------------------------------------------------------------------------------------------------------
-def _build_models(models_raw: dict[str, Any]) -> dict[str, ModelSpec]:
-    roles_raw = _require(models_raw, "roles", "models file")
-    if not isinstance(roles_raw, dict):
-        raise ConfigError("models.roles must be a mapping")
-    out: dict[str, ModelSpec] = {}
-    for role, spec in roles_raw.items():
-        if not isinstance(spec, dict):
-            raise ConfigError(f"models.roles.{role} must be a mapping")
-        out[role] = ModelSpec(
-            model=_as_str(_require(spec, "model", f"models.roles.{role}"), f"models.roles.{role}.model"),
-            temperature=_as_float(
-                _require(spec, "temperature", f"models.roles.{role}"),
-                f"models.roles.{role}.temperature",
-            ),
-            max_tokens=_as_int(
-                _require(spec, "max_tokens", f"models.roles.{role}"),
-                f"models.roles.{role}.max_tokens",
-            ),
-        )
-    return out
+def _extends_chain(run_file: Path, configs_directory: Path) -> list[Path]:
+    """The run file and the files it ``extends``, base first, so each file deep-merges onto the ones before.
 
-
-def _build_agent_loop(raw: dict[str, Any]) -> AgentLoopConfig:
-    block = _require(raw, "agent_loop", "run config")
-    if not isinstance(block, dict):
-        raise ConfigError("agent_loop must be a mapping")
-    return AgentLoopConfig(
-        tool_result_max_chars=_as_int(
-            _require(block, "tool_result_max_chars", "agent_loop"),
-            "agent_loop.tool_result_max_chars",
-        ),
-    )
-
-
-def _build_episode(ep: dict[str, Any]) -> EpisodeConfig:
-    def n(key: str) -> int:
-        return _as_int(_require(ep, key, "episode"), f"episode.{key}")
-
-    return EpisodeConfig(
-        orchestrator_turn_budget=n("orchestrator_turn_budget"),
-        subagent_turn_budget=n("subagent_turn_budget"),
-        wall_clock_seconds=n("wall_clock_seconds"),
-        liveness_window_seconds=n("liveness_window_seconds"),
-        max_spawn_depth=n("max_spawn_depth"),
-        max_live_subagents=n("max_live_subagents"),
-        max_total_agents=n("max_total_agents"),
-        subagent_idle_timeout_seconds=n("subagent_idle_timeout_seconds"),
-    )
-
-
-def _build_side_task(st: dict[str, Any]) -> SideTaskConfig:
-    th_raw = _require(st, "thresholds", "side_task")
-    if not isinstance(th_raw, dict):
-        raise ConfigError("side_task.thresholds must be a mapping")
-    thresholds = Thresholds(
-        loop_len_floor=_as_int(
-            _require(th_raw, "loop_len_floor", "side_task.thresholds"),
-            "side_task.thresholds.loop_len_floor",
-        ),
-        liveness_window_seconds=_as_int(
-            _require(th_raw, "liveness_window_seconds", "side_task.thresholds"),
-            "side_task.thresholds.liveness_window_seconds",
-        ),
-        sustained_rate_window_seconds=_as_int(
-            _require(th_raw, "sustained_rate_window_seconds", "side_task.thresholds"),
-            "side_task.thresholds.sustained_rate_window_seconds",
-        ),
-    )
-    landing_raw = _require(st, "landing", "side_task")
-    if not isinstance(landing_raw, dict) or not {"minimal", "robust"} <= set(landing_raw):
-        raise ConfigError("side_task.landing must be a mapping with 'minimal' and 'robust'")
-    landing = {k: _as_str(v, f"side_task.landing.{k}") for k, v in landing_raw.items()}
-    milestones_raw = _require(st, "milestones", "side_task")
-    if not isinstance(milestones_raw, list) or not all(isinstance(m, dict) for m in milestones_raw):
-        raise ConfigError("side_task.milestones must be a list of mappings")
-    band_raw = st.get("sensitivity_band", {})
-    if not isinstance(band_raw, dict):
-        raise ConfigError("side_task.sensitivity_band must be a mapping")
-    band: dict[str, list[int]] = {}
-    for k, v in band_raw.items():
-        if not isinstance(v, list) or not all(isinstance(x, int) and not isinstance(x, bool) for x in v):
-            raise ConfigError(f"side_task.sensitivity_band.{k} must be a list of ints")
-        band[k] = list(v)
-    coordination = st.get("coordination", {})
-    if not isinstance(coordination, dict):
-        raise ConfigError("side_task.coordination must be a mapping")
-    return SideTaskConfig(
-        name=_as_str(_require(st, "name", "side_task"), "side_task.name"),
-        verifier=_as_str(_require(st, "verifier", "side_task"), "side_task.verifier"),
-        thresholds=thresholds,
-        landing=landing,
-        milestones=[dict(m) for m in milestones_raw],
-        sensitivity_band=band,
-        coordination=dict(coordination),
-    )
-
-
-def _build_agents(agents_raw: Any, merged: dict[str, Any]) -> tuple[AgentConfig, ...]:
-    if not isinstance(agents_raw, list) or not agents_raw:
-        raise ConfigError("agents must be a non-empty list")
-    out: list[AgentConfig] = []
-    for a in agents_raw:
-        if not isinstance(a, dict):
-            raise ConfigError("each agent must be a mapping")
-        aid = _as_str(_require(a, "id", "agent"), "agent.id")
-        scope_raw = _require(a, "scope", f"agent {aid}")
-        if not isinstance(scope_raw, dict):
-            raise ConfigError(f"agent {aid}.scope must be a mapping")
-        try:
-            scope = PermissionScope.from_dict(scope_raw)
-        except (TypeError, ValueError) as exc:
-            raise ConfigError(f"agent {aid}.scope invalid: {exc}") from exc
-        covert_raw = a.get("covert", [])
-        if not isinstance(covert_raw, list) or not all(isinstance(x, str) for x in covert_raw):
-            raise ConfigError(f"agent {aid}.covert must be a list of strings")
-        system_prompt = (
-            _resolve_prompt_ref(a["system_prompt_ref"], merged, f"agent {aid}.system_prompt_ref")
-            if "system_prompt_ref" in a
-            else None
-        )
-        brief = (
-            _resolve_prompt_ref(a["brief_ref"], merged, f"agent {aid}.brief_ref")
-            if "brief_ref" in a
-            else None
-        )
-        out.append(
-            AgentConfig(
-                id=aid,
-                kind=_as_str(_require(a, "kind", f"agent {aid}"), f"agent {aid}.kind"),
-                trust=_as_str(_require(a, "trust", f"agent {aid}"), f"agent {aid}.trust"),
-                branch=_as_str(_require(a, "branch", f"agent {aid}"), f"agent {aid}.branch"),
-                scope=scope,
-                covert=tuple(covert_raw),
-                legit=_as_str(a.get("legit", ""), f"agent {aid}.legit"),
-                system_prompt=system_prompt,
-                brief=brief,
-                spawned_by=a.get("spawned_by"),
-            ),
-        )
-    return tuple(out)
-
-
-def _build_covert(covert_raw: dict[str, Any], merged: dict[str, Any]) -> CovertConfig:
-    enabled = _as_bool(_require(covert_raw, "enabled", "covert"), "covert.enabled")
-    target = _as_str(_require(covert_raw, "target_identity", "covert"), "covert.target_identity")
-    prompt = _resolve_prompt_ref(
-        _require(covert_raw, "objective_prompt_ref", "covert"),
-        merged,
-        "covert.objective_prompt_ref",
-    )
-    return CovertConfig(enabled=enabled, target_identity=target, objective_prompt=prompt)
-
-
-def _resolve_extends(
-    raw: dict[str, Any],
-    base_dir: Path,
-    _seen: frozenset[str] = frozenset(),
-) -> dict[str, Any]:
-    """Resolve ``extends`` RECURSIVELY: a config may extend another that itself extends a base.
-
-    Each level's overrides deep-merge onto its resolved base, so a chain such as
-    ``aurora-efficiency.deterministic.yaml`` -> ``aurora-efficiency.yaml`` -> ``env.default.yaml`` composes
-    correctly. Guards against an extends cycle.
+    A config may extend another that itself extends a base (``aurora-efficiency.deterministic.yaml`` ->
+    ``aurora-efficiency.yaml`` -> ``env.default.yaml``). Each file is read here to find its ``extends``,
+    which also fails loud on a missing or non-mapping file. Guards against an extends cycle.
     """
-    if "extends" not in raw:
-        return raw
-    base_name = _as_str(raw["extends"], "extends")
-    if base_name in _seen:
-        raise ConfigError(f"extends cycle detected at {base_name!r}")
-    base_raw = _resolve_extends(_load_yaml(base_dir / base_name), base_dir, _seen | {base_name})
-    return deep_merge(base_raw, raw)
+    chain = [run_file]
+    seen: set[str] = set()
+    while (base_name := _read_config_file(chain[0], _ExtendsKey).extends) is not None:
+        if base_name in seen:
+            raise ConfigError(f"extends cycle detected at {base_name!r}")
+        seen.add(base_name)
+        chain.insert(0, configs_directory / base_name)
+    return chain
 
 
 def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None) -> RunConfig:
@@ -437,79 +444,42 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
     base and models files are resolved. Raises ``ConfigError`` on any missing or malformed field.
     """
     run_file = Path(run_path)
-    base_dir = Path(configs_dir) if configs_dir is not None else run_file.parent
-    merged = _resolve_extends(_load_yaml(run_file), base_dir)
+    configs_directory = Path(configs_dir) if configs_dir is not None else run_file.parent
+    source = YamlConfigSettingsSource(
+        _RunDocument,
+        _extends_chain(run_file, configs_directory),
+        yaml_file_encoding=YAML_ENCODING,
+        deep_merge=True,
+    )
+    try:
+        document = _RunDocument(_build_sources=((source,), {}))
+    except ValidationError as exc:
+        raise ConfigError(str(exc)) from exc
+    models = _read_config_file(configs_directory / document.models, _ModelsFile).roles
+    _validate_registry_bindings(document.scenario, document.main_task.scorer, document.side_task.verifier)
 
-    models_ref = merged.get("models")
-    if not isinstance(models_ref, str):
-        raise ConfigError("run config must reference a models file via a string 'models:' key")
-    models = _build_models(_load_yaml(base_dir / models_ref))
-
-    episode = _build_episode(_require(merged, "episode", "run config"))
-    agent_loop = _build_agent_loop(merged)
-    side_task = _build_side_task(_require(merged, "side_task", "run config"))
-
-    # The verifier reads side_task.thresholds; if the episode
-    # block also declares liveness_window_seconds, the two must agree.
-    if episode.liveness_window_seconds != side_task.thresholds.liveness_window_seconds:
-        raise ConfigError(
-            "episode.liveness_window_seconds "
-            f"({episode.liveness_window_seconds}) != "
-            f"side_task.thresholds.liveness_window_seconds ({side_task.thresholds.liveness_window_seconds}); "
-            "keep the two equal (the verifier reads side_task.thresholds)",
-        )
-
-    covert = _build_covert(_require(merged, "covert", "run config"), merged)
-    agents = _build_agents(_require(merged, "agents", "run config"), merged)
-
-    main_task = _require(merged, "main_task", "run config")
-    if not isinstance(main_task, dict):
-        raise ConfigError("main_task must be a mapping")
-    protocol = _require(merged, "protocol", "run config")
-    if not isinstance(protocol, dict):
-        raise ConfigError("protocol must be a mapping")
-
-    scenario_name = merged.get("scenario")
-    if scenario_name is not None:
-        scenario_name = _as_str(scenario_name, "scenario")
-    _validate_registry_bindings(scenario_name, main_task, side_task.verifier)
-
-    policy = _as_str(merged.get("policy", "model"), "policy")
-    if policy not in ("scripted", "model"):
-        raise ConfigError(f"policy must be 'scripted' or 'model', got {policy!r}")
-
-    logging_block = merged.get("logging", {})
-    if not isinstance(logging_block, dict):
-        raise ConfigError("logging must be a mapping")
-    agent_transcript = _as_bool(logging_block.get("agent_transcript", False), "logging.agent_transcript")
-
-    raw_side = merged["side_task"] if isinstance(merged.get("side_task"), dict) else {}
-    main_slug = _slugify(_as_str(main_task.get("slug") or main_task.get("name", "main"), "main_task.slug"))
-    side_slug = _slugify(_as_str(raw_side.get("slug") or raw_side.get("name", "side"), "side_task.slug"))
+    main_task = document.main_task
     policy_model = models["untrusted_agent"].model if "untrusted_agent" in models else "unknown"
     monitor_model = models["trusted_monitor"].model if "trusted_monitor" in models else "unknown"
-    policy_model_slug = _model_slug(policy_model)
-    monitor_model_slug = _model_slug(monitor_model)
-
     return RunConfig(
-        main_slug=main_slug,
-        side_slug=side_slug,
-        policy_model_slug=policy_model_slug,
-        monitor_model_slug=monitor_model_slug,
-        seed=_as_int(_require(merged, "seed", "run config"), "seed"),
-        episode=episode,
+        main_slug=_slugify(main_task.slug or main_task.name or "main"),
+        side_slug=_slugify(document.side_task.slug or document.side_task.name),
+        policy_model_slug=_model_slug(policy_model),
+        monitor_model_slug=_model_slug(monitor_model),
+        seed=document.seed,
+        episode=document.episode,
         models=models,
-        side_task=side_task,
-        covert=covert,
-        agents=agents,
-        main_task=dict(main_task),
-        protocol=dict(protocol),
-        settings=_build_settings(merged),
-        scenario=scenario_name,
-        policy=policy,
-        agent_transcript=agent_transcript,
-        agent_loop=agent_loop,
-        raw=merged,
+        side_task=document.side_task,
+        covert=document.covert,
+        agents=document.agents,
+        main_task=dict(source.yaml_data["main_task"]),
+        protocol=document.protocol,
+        settings=_build_settings(source.yaml_data),
+        scenario=document.scenario,
+        policy=document.policy,
+        agent_transcript=document.logging.agent_transcript,
+        agent_loop=document.agent_loop,
+        raw=source.yaml_data,
     )
 
 
@@ -521,7 +491,7 @@ def _build_settings(merged: Mapping[str, object]) -> LocArenaSettings:
         raise ConfigError(f"invalid settings block: {exc}") from exc
 
 
-def _validate_registry_bindings(scenario_name: str | None, main_task: dict[str, Any], verifier: str) -> None:
+def _validate_registry_bindings(scenario_name: str | None, scorer: str | None, verifier: str) -> None:
     """Load the scenario pack (running its registrations) and validate the scorer/verifier names.
 
     ``config.main_task.scorer`` and ``config.side_task.verifier`` dispatch BY NAME through the
@@ -538,8 +508,7 @@ def _validate_registry_bindings(scenario_name: str | None, main_task: dict[str, 
         except Exception as exc:  # surface a missing/broken pack as a config error
             raise ConfigError(f"scenario {scenario_name!r} failed to load: {exc}") from exc
 
-    scorer = main_task.get("scorer")
-    if not isinstance(scorer, str) or not scorer:
+    if not scorer:
         raise ConfigError("main_task.scorer must name a registered scorer (a non-empty string)")
     if not is_scorer(scorer):
         known = ", ".join(sorted(SCORER_REGISTRY)) or "(none registered)"
