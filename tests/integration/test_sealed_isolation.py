@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 from loc_arena.config import load_run_config
-from loc_arena.gateway.core import GatewayCore, GenerateRequest, OpenRouterProvider, create_core_app
+from loc_arena.gateway.core import GatewayCore, GenerateRequest, create_core_app
 from loc_arena.gateway.edge import GatewayEdge
+from loc_arena.gateway.openrouter_provider import OpenRouterProvider
 from loc_arena.logging_.events import AppendOnlyLog, read_events
 
 from tests.integration._gateway_support import AppTransport, StubProvider
@@ -23,12 +23,6 @@ def test_edge_holds_no_provider_or_key(tmp_path: Path) -> None:
     assert provider not in attr_values
     assert not any(isinstance(v, OpenRouterProvider) for v in attr_values)
     assert not any("OPENROUTER" in str(v) for v in attr_values)
-
-
-def test_provider_requires_key_to_egress(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-    with pytest.raises(RuntimeError, match="OPENROUTER_API_KEY"):
-        OpenRouterProvider()
 
 
 def test_only_core_writes_sealed_log(tmp_path: Path) -> None:

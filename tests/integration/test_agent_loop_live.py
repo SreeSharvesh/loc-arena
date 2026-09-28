@@ -14,12 +14,12 @@ from loc_arena.gateway.core import (
     DirectTransport,
     GatewayCore,
     Message,
-    OpenRouterProvider,
     ProviderResult,
     ToolSpec,
     sign_turn_token,
 )
 from loc_arena.gateway.edge import GatewayEdge
+from loc_arena.gateway.openrouter_provider import OpenRouterProvider
 from loc_arena.logging_.events import AppendOnlyLog, read_events
 from loc_arena.scaffold.model_policy import ModelAgentPolicy
 from loc_arena.scaffold.tool_specs import agent_tool_specs
@@ -57,11 +57,14 @@ class _RecordingProvider:
         return self._inner.generate(model, messages, temperature, max_tokens, tools)
 
 
-def test_dev_model_keeps_a_tool_result_for_the_next_turn(tmp_path: Path) -> None:
+def test_dev_model_keeps_a_tool_result_for_the_next_turn(
+    tmp_path: Path,
+    live_provider: OpenRouterProvider,
+) -> None:
     cfg = load_run_config("configs/aurora-efficiency.deterministic.yaml")
     model_id = _DEV.removeprefix("openrouter/")
     cfg.models["untrusted_agent"] = replace(cfg.models["untrusted_agent"], model=model_id)
-    provider = _RecordingProvider(OpenRouterProvider())
+    provider = _RecordingProvider(live_provider)
     sealed_path = tmp_path / "sealed.jsonl"
     mirror_path = tmp_path / "mirror.jsonl"
     core = GatewayCore(cfg, EP, AppendOnlyLog(sealed_path, EP), provider, turn_secret=SECRET)

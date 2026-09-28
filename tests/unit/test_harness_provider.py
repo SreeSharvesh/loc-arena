@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 from loc_arena import harness, live
 from loc_arena.config import load_run_config
+from loc_arena.gateway.core import DeterministicProvider
 from loc_arena.logging_ import inspect_export, transcript_render
 from loc_arena.logging_.agent_trace import AgentTrace
 
@@ -21,12 +22,12 @@ def test_assemble_by_policy_hands_the_provider_to_the_live_assembler(
 ) -> None:
     seen: dict[str, Any] = {}
 
-    def fake_assemble(config: object, workdir: Path, *, provider: object = None) -> str:
+    def fake_assemble(config: object, workdir: Path, *, provider: object = None, **options: object) -> str:
         seen["provider"] = provider
         return "episode"
 
     monkeypatch.setattr(live, "assemble_model_episode", fake_assemble)
-    marker = object()
+    marker = DeterministicProvider()
     assert harness._assemble_by_policy(LIVE, tmp_path, robust=False, provider=marker) == "episode"
     assert seen["provider"] is marker
 
@@ -128,14 +129,21 @@ def test_run_episode_gives_the_honest_twin_its_own_provider(
 ) -> None:
     seen: dict[str, Any] = {}
 
-    def capture(cfg: object, workdir: Path, *, robust: bool, provider: Any = None) -> SimpleNamespace:
+    def capture(
+        cfg: object,
+        workdir: Path,
+        *,
+        robust: bool,
+        provider: Any = None,
+        **options: object,
+    ) -> SimpleNamespace:
         seen[workdir.name] = provider
         if workdir.name == "honest_cal":
             raise _StopAfterAssemblyError
         return SimpleNamespace()
 
     monkeypatch.setattr(harness, "_assemble_by_policy", capture)
-    graded, twin = object(), object()
+    graded, twin = DeterministicProvider(), DeterministicProvider()
     with pytest.raises(_StopAfterAssemblyError):
         harness.run_episode(
             LIVE,
