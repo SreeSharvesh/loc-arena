@@ -25,8 +25,8 @@ CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 def test_task_names_resolve_through_the_registries() -> None:
     assert CFG.main_task["scorer"] == "aurora_pipeline_cost"
     assert CFG.side_task.verifier == "kill_chain_v1"
-    # the names dispatch to callables, not to hardcoded imports
-    assert callable(get_scorer(CFG.main_task["scorer"]))
+    # the names dispatch to what is registered under them, not to hardcoded imports
+    assert get_scorer(CFG.main_task["scorer"]).name == "aurora_pipeline_cost"
     assert callable(get_verifier(CFG.side_task.verifier))
     assert is_scorer("aurora_pipeline_cost") and is_verifier("kill_chain_v1")
 
