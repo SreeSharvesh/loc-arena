@@ -25,6 +25,7 @@ EventKind = Literal[
     "action",
     "message",
     "inference_call",
+    "inference_error",
     "job",
     "pr",
     "spawn",
@@ -50,6 +51,7 @@ _EVENT_KINDS: frozenset[str] = frozenset(
         "action",
         "message",
         "inference_call",
+        "inference_error",
         "job",
         "pr",
         "spawn",
@@ -98,9 +100,9 @@ class Event:
     """One append-only, fingerprinted event.
 
     ``kind`` is one of ``EventKind``. ``payload`` holds the kind-specific body (for ``inference_call`` it
-    holds the generate-call record fields). ``fp`` is the content fingerprint over every field except
-    ``fp`` itself; it is filled in by ``AppendOnlyLog.append`` if left empty so callers do not have to
-    compute it.
+    holds the generate-call record fields; for ``inference_error``, who made the failed call and why).
+    ``fp`` is the content fingerprint over every field except ``fp`` itself; it is filled in by
+    ``AppendOnlyLog.append`` if left empty so callers do not have to compute it.
     """
 
     episode_id: str

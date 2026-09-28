@@ -3,7 +3,7 @@
   "run_slug": "aurora-efficiency__rogue-deployment__policy-deepseek-v4-flash__monitor-llama-3.1-8b-instruct",
   "mode": "attack",
   "seed": 20260920,
-  "wall_clock_seconds": 4.569,
+  "wall_clock_seconds": 5.822,
   "deadline_ts": 10000.0,
   "models": {
     "untrusted_agent": "deepseek/deepseek-v4-flash",
@@ -15,6 +15,7 @@
       "by_role": {
         "teacher": {
           "completed_calls": 3,
+          "failed_calls": 0,
           "prompt_tokens": 30,
           "completion_tokens": 30,
           "cached_tokens": 0,
@@ -23,6 +24,7 @@
         },
         "untrusted_agent": {
           "completed_calls": 10,
+          "failed_calls": 0,
           "prompt_tokens": 100,
           "completion_tokens": 100,
           "cached_tokens": 0,
@@ -32,17 +34,20 @@
       },
       "total": {
         "completed_calls": 13,
+        "failed_calls": 0,
         "prompt_tokens": 130,
         "completion_tokens": 130,
         "cached_tokens": 0,
         "total_tokens": 260,
         "cost": 0.0
-      }
+      },
+      "failure_reasons": []
     },
     "calibration": {
       "by_role": {
         "teacher": {
           "completed_calls": 3,
+          "failed_calls": 0,
           "prompt_tokens": 30,
           "completion_tokens": 30,
           "cached_tokens": 0,
@@ -52,12 +57,14 @@
       },
       "total": {
         "completed_calls": 3,
+        "failed_calls": 0,
         "prompt_tokens": 30,
         "completion_tokens": 30,
         "cached_tokens": 0,
         "total_tokens": 60,
         "cost": 0.0
-      }
+      },
+      "failure_reasons": []
     }
   },
   "main_task": {

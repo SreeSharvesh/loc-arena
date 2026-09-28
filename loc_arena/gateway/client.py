@@ -8,7 +8,7 @@ from typing import Final
 import httpx
 from fastapi import HTTPException
 
-from loc_arena.gateway.openrouter_provider import ProviderError
+from loc_arena.gateway.core import ProviderError
 from loc_arena.stack.constants import BATCH_GENERATE_ROUTE, GENERATE_ROUTE
 from loc_arena.stack.contracts import (
     BatchGenerateRequest,

@@ -1,15 +1,17 @@
-"""What a run's model calls consumed, per model role, read from each episode's sealed log.
+"""What a run's model calls consumed and how many failed, per model role, read from each episode's sealed log.
 
 The gateway core seals every provider call it completes as one ``inference_call`` event carrying the call's
 ``model_role`` and, flat beside it, its ``prompt_tokens``, ``completion_tokens``, ``cached_tokens`` and
-``cost``. ``summarize_model_usage`` totals them per role
-(``untrusted_agent``, ``trusted_monitor``, ``teacher``) and over all roles; ``scores.json`` carries a run's
-totals under ``model_usage``, and ``report.html`` shows them.
+``cost``, and every call the provider fails as one ``inference_error`` event carrying its ``model_role`` and
+``failure`` (the provider's status and message). ``summarize_model_usage`` totals them per role
+(``untrusted_agent``, ``trusted_monitor``, ``teacher``) and over all roles, and groups the failures by reason;
+``scores.json`` carries a run's totals under ``model_usage``, and ``report.html`` shows them.
 """
 
 from __future__ import annotations
 
 import math
+from collections import Counter
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,7 +19,7 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict
 
 from loc_arena.logging_.events import Event, read_events
-from loc_arena.stack.contracts import ModelCallUsage
+from loc_arena.stack.contracts import ModelCallFailure, ModelCallUsage
 
 
 class SealedModelCall(BaseModel):
@@ -40,16 +42,26 @@ class SealedModelCall(BaseModel):
         return ModelCallUsage.model_validate(self, from_attributes=True)
 
 
+class SealedModelCallFailure(BaseModel):
+    """The fields of a sealed ``inference_error`` payload that the totals read, validated on reading."""
+
+    model_config = ConfigDict(frozen=True)
+
+    model_role: str
+    failure: ModelCallFailure
+
+
 @dataclass(frozen=True)
 class UsageTotal:
-    """What a set of completed calls consumed.
+    """How many calls completed and failed, and what the completed ones consumed.
 
     ``cached_tokens`` is how many of the ``prompt_tokens`` came from a cached prefix. ``cost`` is in
-    OpenRouter credits (US dollars), ``None`` when a call among them reported no cost, so the total is
+    OpenRouter credits (US dollars), ``None`` when a completed call reported no cost, so the total is
     unknown.
     """
 
     completed_calls: int
+    failed_calls: int
     prompt_tokens: int
     completion_tokens: int
     cached_tokens: int
@@ -58,11 +70,24 @@ class UsageTotal:
 
 
 @dataclass(frozen=True)
+class FailureReason:
+    """One reason the provider gave for failing calls, and how many calls it failed for it."""
+
+    status_code: int | None
+    message: str
+    failed_calls: int
+
+
+@dataclass(frozen=True)
 class EpisodeModelUsage:
-    """One episode's model usage: per model role, and over all roles."""
+    """One episode's model usage, per model role and over all roles.
+
+    ``failure_reasons`` says why calls failed, the most frequent reason first.
+    """
 
     by_role: dict[str, UsageTotal]
     total: UsageTotal
+    failure_reasons: tuple[FailureReason, ...]
 
 
 @dataclass(frozen=True)
@@ -77,17 +102,33 @@ class RunModelUsage:
 
 
 def summarize_model_usage(events: Iterable[Event]) -> EpisodeModelUsage:
-    """Total the usage of the completed model calls among an episode's sealed ``events``, per model role."""
-    calls = [
-        SealedModelCall.model_validate(event.payload) for event in events if event.kind == "inference_call"
-    ]
-    usages_by_role: dict[str, list[ModelCallUsage]] = {}
-    for call in sorted(calls, key=lambda call: call.model_role):
-        usages_by_role.setdefault(call.model_role, []).append(call.usage)
+    """Total the completed and failed model calls among an episode's sealed ``events``, per model role."""
+    calls: list[SealedModelCall] = []
+    failures: list[SealedModelCallFailure] = []
+    for event in events:
+        if event.kind == "inference_call":
+            calls.append(SealedModelCall.model_validate(event.payload))
+        elif event.kind == "inference_error":
+            failures.append(SealedModelCallFailure.model_validate(event.payload))
+    roles = sorted({call.model_role for call in calls} | {failed.model_role for failed in failures})
+    reasons = Counter(failed.failure for failed in failures).most_common()
     return EpisodeModelUsage(
-        by_role={role: total_usage(usages) for role, usages in usages_by_role.items()},
-        total=total_usage([call.usage for call in calls]),
+        by_role={role: _total_role(role, calls, failures) for role in roles},
+        total=total_usage([call.usage for call in calls], failed_calls=len(failures)),
+        failure_reasons=tuple(
+            FailureReason(status_code=failure.status_code, message=failure.message, failed_calls=count)
+            for failure, count in reasons
+        ),
     )
+
+
+def _total_role(
+    role: str,
+    calls: Sequence[SealedModelCall],
+    failures: Sequence[SealedModelCallFailure],
+) -> UsageTotal:
+    usages = [call.usage for call in calls if call.model_role == role]
+    return total_usage(usages, failed_calls=sum(failed.model_role == role for failed in failures))
 
 
 def read_run_model_usage(episode_log: Path, calibration_log: Path | None) -> RunModelUsage:
@@ -99,13 +140,14 @@ def read_run_model_usage(episode_log: Path, calibration_log: Path | None) -> Run
     return RunModelUsage(episode=summarize_model_usage(read_events(episode_log)), calibration=calibration)
 
 
-def total_usage(usages: Sequence[ModelCallUsage]) -> UsageTotal:
-    """The sum of ``usages``; its cost is unknown (``None``) as soon as one of them reported none."""
+def total_usage(usages: Sequence[ModelCallUsage], *, failed_calls: int) -> UsageTotal:
+    """The sum of ``usages``, beside ``failed_calls``; the cost is unknown (``None``) if one reported none."""
     prompt_tokens = sum(usage.prompt_tokens for usage in usages)
     completion_tokens = sum(usage.completion_tokens for usage in usages)
     reported_costs = [usage.cost for usage in usages if usage.cost is not None]
     return UsageTotal(
         completed_calls=len(usages),
+        failed_calls=failed_calls,
         prompt_tokens=prompt_tokens,
         completion_tokens=completion_tokens,
         cached_tokens=sum(usage.cached_tokens for usage in usages),

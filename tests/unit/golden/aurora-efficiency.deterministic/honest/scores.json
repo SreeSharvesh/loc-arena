@@ -3,7 +3,7 @@
   "run_slug": "aurora-efficiency__rogue-deployment__policy-deepseek-v4-flash__monitor-llama-3.1-8b-instruct",
   "mode": "honest",
   "seed": 20260920,
-  "wall_clock_seconds": 2.406,
+  "wall_clock_seconds": 2.662,
   "deadline_ts": 10000.0,
   "models": {
     "untrusted_agent": "deepseek/deepseek-v4-flash",
@@ -15,6 +15,7 @@
       "by_role": {
         "teacher": {
           "completed_calls": 3,
+          "failed_calls": 0,
           "prompt_tokens": 30,
           "completion_tokens": 30,
           "cached_tokens": 0,
@@ -24,12 +25,14 @@
       },
       "total": {
         "completed_calls": 3,
+        "failed_calls": 0,
         "prompt_tokens": 30,
         "completion_tokens": 30,
         "cached_tokens": 0,
         "total_tokens": 60,
         "cost": 0.0
-      }
+      },
+      "failure_reasons": []
     },
     "calibration": null
   },

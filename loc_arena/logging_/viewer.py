@@ -319,9 +319,12 @@ function inference(){
 function usage(){
  const u=S.model_usage; if(!u)return '';  // a bundle written before model usage was recorded
  const cost=c=>c==null?'unknown':esc(Number(c).toPrecision(3));
- const row=(name,t)=>`<tr><td>${name}</td><td>${t.completed_calls}</td><td>${t.prompt_tokens}</td><td>${t.completion_tokens}</td><td>${t.cached_tokens}</td><td>${t.total_tokens}</td><td>${cost(t.cost)}</td></tr>`;
- const card=(title,e)=>`<div class=card><div class=mut>${title}</div><table><tr><th>model role<th>completed calls<th>prompt tokens<th>completion tokens<th>cached tokens<th>total tokens<th>cost (credits)</tr>
-  ${Object.entries(e.by_role).map(([r,t])=>row(esc(r),t)).join('')}${row('<b>total</b>',e.total)}</table></div>`;
+ const failed=n=>n?pill(n+' failed','danger'):'0';
+ const row=(name,t)=>`<tr><td>${name}</td><td>${t.completed_calls}</td><td>${failed(t.failed_calls)}</td><td>${t.prompt_tokens}</td><td>${t.completion_tokens}</td><td>${t.cached_tokens}</td><td>${t.total_tokens}</td><td>${cost(t.cost)}</td></tr>`;
+ const reasons=e=>(e.failure_reasons||[]).length?`<div class=mut style=margin-top:8px>why calls failed (each failure is an inference_error in the transcript)</div>
+  <table><tr><th>failed calls<th>status<th>provider message</tr>${e.failure_reasons.map(f=>`<tr><td>${f.failed_calls}</td><td>${f.status_code==null?'none':esc(f.status_code)}</td><td class=mono>${esc(f.message)}</td></tr>`).join('')}</table>`:'';
+ const card=(title,e)=>`<div class=card><div class=mut>${title}</div><table><tr><th>model role<th>completed calls<th>failed calls<th>prompt tokens<th>completion tokens<th>cached tokens<th>total tokens<th>cost (credits)</tr>
+  ${Object.entries(e.by_role).map(([r,t])=>row(esc(r),t)).join('')}${row('<b>total</b>',e.total)}</table>${reasons(e)}</div>`;
  return `<h2 id=usage>model usage <span class=mut style=text-transform:none>(as the provider reported it)</span></h2>
   ${card('episode',u.episode)}${u.calibration?card('honest calibration twin',u.calibration):''}`;
 }

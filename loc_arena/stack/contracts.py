@@ -221,6 +221,18 @@ class ModelCallUsage(ContractModel):
     cost: float | None
 
 
+class ModelCallFailure(ContractModel):
+    """Why one provider call failed, as the core seals it in the call's ``inference_error`` record.
+
+    ``status_code`` is the provider's HTTP status or error code, ``None`` when it gave none (a timeout, a lost
+    connection); ``message`` is the provider's error, whose OpenRouter part the provider cuts at
+    ``provider.error_message_max_characters``.
+    """
+
+    status_code: int | None
+    message: str
+
+
 class ModelCallRecord(ContractModel):
     """One provider call as the core made it (covert injection included), for the sealed model-call log."""
 
@@ -425,6 +437,27 @@ class CoreRelay(Protocol):
 
     def batch_generate(self, request: BatchGenerateRequest, /) -> BatchGenerateResponse:
         """Serve one batch and record each prompt sealed."""
+        ...
+
+
+class ModelCallObserver(Protocol):
+    """Told of each provider call as the core made it: ``AgentTrace`` in process, the ledger in the stack."""
+
+    def on_model_call(
+        self,
+        *,
+        identity: str,
+        role: str,
+        model_input: str,
+        output: str,
+        sealed_seq: int,
+        usage: ModelCallUsage,
+    ) -> None:
+        """Record one call: its resolved identity, role, exact model input, output, sealed seq and usage."""
+        ...
+
+    def on_model_call_failed(self, *, sealed_seq: int) -> None:
+        """Note a call the provider failed, sealed at ``sealed_seq`` as an ``inference_error``."""
         ...
 
 

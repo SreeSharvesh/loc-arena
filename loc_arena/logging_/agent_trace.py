@@ -142,6 +142,10 @@ class AgentTrace:
             ),
         )
 
+    def on_model_call_failed(self, *, sealed_seq: int) -> None:
+        """A call the provider failed: the core's sealed record of it is the bound turn's, as a reply's is."""
+        self.on_model_reply((sealed_seq,), ())
+
     def finish(self, last_sealed_seq: int) -> EpisodeTrace:
         if self._bound is not None:
             raise RuntimeError(

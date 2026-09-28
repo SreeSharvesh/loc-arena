@@ -52,6 +52,7 @@ from loc_arena.stack.contracts import (
     GatewayControl,
     GenerateRequest,
     IssuedToken,
+    ModelCallFailure,
     ModelCallRecord,
     ModelCallUsage,
     MonitorCall,
@@ -731,6 +732,13 @@ def test_a_keyless_core_reports_no_provider_in_its_health(stack: GatewayStack) -
 
 
 # --- a provider that fails ---
+REFUSAL_STATUS = HTTPStatus.BAD_GATEWAY
+
+
+def _refusal(model: str) -> str:
+    return f"{model} refused the call"
+
+
 class _RefusingProvider:
     def generate(
         self,
@@ -740,7 +748,7 @@ class _RefusingProvider:
         max_tokens: int,
         tools: list[ToolSpec] | None,
     ) -> ProviderResult:
-        raise ProviderError(f"{model} refused the call")
+        raise ProviderError(_refusal(model), status_code=REFUSAL_STATUS)
 
 
 @pytest.fixture
@@ -766,10 +774,42 @@ def test_a_provider_failure_is_answered_with_502(refusing_stack: GatewayStack) -
     assert status == HTTPStatus.BAD_GATEWAY
 
 
-def test_a_provider_failure_is_sealed_nowhere(refusing_stack: GatewayStack, refusing_handle: str) -> None:
+def test_a_provider_failure_is_sealed_with_the_providers_status_and_message(
+    refusing_stack: GatewayStack,
+    refusing_handle: str,
+) -> None:
     _status_of_generate(refusing_stack, REQUEST)
 
-    assert not (refusing_stack.sealed_root / refusing_handle).exists()
+    (record,) = refusing_stack.sealed_events(refusing_handle)
+    assert (record.kind, record.payload["failure"]) == (
+        "inference_error",
+        ModelCallFailure(
+            status_code=REFUSAL_STATUS,
+            message=_refusal(OPENING.models[REQUEST.role].model),
+        ).model_dump(),
+    )
+
+
+def test_a_provider_failures_sealed_record_names_the_calls_model_role(
+    refusing_stack: GatewayStack,
+    refusing_handle: str,
+) -> None:
+    _status_of_generate(refusing_stack, REQUEST)
+
+    (record,) = refusing_stack.sealed_events(refusing_handle)
+    assert record.payload["model_role"] == REQUEST.role
+
+
+def test_a_failed_batch_call_is_sealed_with_the_providers_status(
+    refusing_stack: GatewayStack,
+    refusing_handle: str,
+) -> None:
+    batch = BatchGenerateRequest(prompts=("a",), caller_identity="coworker")
+
+    refusing_stack.core.post(BATCH_GENERATE_ROUTE, json=batch.model_dump())
+
+    (record,) = refusing_stack.sealed_events(refusing_handle)
+    assert (record.kind, record.payload["failure"]["status_code"]) == ("inference_error", REFUSAL_STATUS)
 
 
 # --- the episode spec of a run config ---

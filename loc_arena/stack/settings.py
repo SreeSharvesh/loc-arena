@@ -135,7 +135,7 @@ class GatewaySettings(SettingsGroup):
 
 
 class ProviderSettings(SettingsGroup):
-    """The OpenRouter call: its timeouts and deadline, its backoff on server errors, its 429 retries."""
+    """The OpenRouter call: its timeouts, deadline and retries, and how much of an error message it keeps."""
 
     server_url: str | None = Field(
         default=None,
@@ -176,6 +176,14 @@ class ProviderSettings(SettingsGroup):
     rate_limit_max_wait_seconds: PositiveFloat = Field(
         default=30.0,
         description="Cap on the wait before retrying a 429, whatever Retry-After asks for.",
+    )
+    error_message_max_characters: PositiveInt = Field(
+        default=500,
+        description=(
+            "Characters of the provider's error message a failed call keeps (in its sealed inference_error "
+            "record); a longer one is cut and marked. The SDK's fallback error quotes up to 10,000 "
+            "characters of the reply body."
+        ),
     )
 
 
