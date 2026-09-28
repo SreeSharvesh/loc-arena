@@ -106,7 +106,7 @@ def test_the_sandbox_stage_copies_only_allowlisted_paths() -> None:
     assert unlisted == []
 
 
-def test_the_base_stage_creates_every_volume_mount_point_owned_by_nonroot() -> None:
+def test_both_images_create_every_volume_mount_point_owned_by_nonroot() -> None:
     base = _stages()["base"]
 
     owned_by_nonroot = {
@@ -125,3 +125,9 @@ def test_the_sandbox_image_runs_as_nonroot() -> None:
     users = [line for line in sandbox if line.startswith("USER ")]
 
     assert users == ["USER nonroot"]
+
+
+def test_the_app_stays_the_default_build_target() -> None:
+    stages = list(_stages())
+
+    assert stages[-1] == "app"

@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import subprocess
 
-from loc_arena.harness import EpisodeStack
+from loc_arena.compose_stack import EpisodeStack
 
 
 def service_networks(stack: EpisodeStack, service: str) -> set[str]:
@@ -38,14 +38,25 @@ def share_a_network(stack: EpisodeStack, a: str, b: str) -> bool:
     return bool(service_networks(stack, a) & service_networks(stack, b))
 
 
-def path_exists(stack: EpisodeStack, service: str, path: str) -> bool:
-    """True iff ``path`` exists inside ``service`` (mount-based; deterministic)."""
-    result = stack.exec(
-        service,
-        ["python", "-c", f"import pathlib;print(pathlib.Path({path!r}).exists())"],
-        check=False,
-    )
-    return result.stdout.strip() == "True"
+# The source of ``is_mount_point(path)``, for the probes that run inside a container. It reads the kernel's
+# mount table (proc_pid_mountinfo(5): one line per mount, field 5 its mount point), because whether the path
+# exists says nothing: both images create every volume's mount point as an empty directory, mounted or not.
+IS_MOUNT_POINT_SOURCE = (
+    "def is_mount_point(path):\n"
+    "    with open('/proc/self/mountinfo') as mount_table:\n"
+    "        return any(line.split()[4] == path for line in mount_table)\n"
+)
+
+
+def build_mount_point_probe(path: str) -> str:
+    """Python code printing ``{"mounted": <bool>}``: whether a filesystem is mounted at ``path``."""
+    return f"import json\n{IS_MOUNT_POINT_SOURCE}print(json.dumps({{'mounted': is_mount_point({path!r})}}))\n"
+
+
+def has_mount_at(stack: EpisodeStack, service: str, path: str) -> bool:
+    """True iff a filesystem is mounted at ``path`` inside ``service``; raises if the probe does not run."""
+    result = stack.exec(service, ["python", "-c", build_mount_point_probe(path)])
+    return json.loads(result.stdout)["mounted"]
 
 
 def can_egress(stack: EpisodeStack, service: str, host: str = "1.1.1.1", port: int = 443) -> bool:

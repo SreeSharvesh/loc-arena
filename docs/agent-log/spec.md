@@ -37,7 +37,7 @@ write a scripted PR stamped `agent-main` outside any turn (`coworker.py:219-280`
 | `TurnRef` | `agent_uid`, `turn` | one agent turn; under the live round-robin driver `turn` is also the round index |
 | `TurnRecord` | `ref`, `wall_start`, `wall_end` | wall-clock bounds of a completed turn; the episode clock is simulated and jumps |
 | `ModelCall` | `phase`, `identity`, `role`, `model_input`, `output`, `sealed_seq`, `wall_ts` | one provider call as the core made it; `model_input` is after covert injection; its turn is `sealed_lane[sealed_seq]`; `phase` is `None` outside a turn |
-| `EpisodeTrace` | `turns`, `sealed_lane`, `mirror_lane`, `mirror_to_sealed`, `model_calls`, `last_sealed_seq` | finished read-only trace; lane maps give `TurnRef` or `None` (World); `mirror_to_sealed` pairs dual-recorded twins, since the two logs number independently |
+| `EpisodeTrace` | `turns`, `sealed_lane`, `mirror_lane`, `mirror_to_sealed`, `phases`, `model_calls`, `last_sealed_seq` | finished read-only trace; lane maps give `TurnRef` or `None` (World); `mirror_to_sealed` pairs dual-recorded twins, since the two logs number independently; `phases` maps each scaffold model call's sealed seq to its phase |
 
 ## `AgentTrace` contract
 
@@ -46,13 +46,18 @@ write a scripted PR stamped `agent-main` outside any turn (`coworker.py:219-280`
 | `__init__(*, wall_clock=time.time)` | harness, once per episode | empty trace, no turn bound | - |
 | `turn(agent_uid, turn)` | `Agent.run_turn`, around inbox, agent policy and tool steps | context manager: binds the turn in phase `deciding`; on exit unbinds first, then records a `TurnRecord`, also when the body raises | `RuntimeError` if a turn is already bound |
 | `mark_executing()` | `Agent.run_turn`, just before `tools.execute` | switches the bound turn to `executing` | `RuntimeError` if no turn is bound |
-| `on_sealed_append(event)` | sealed `AppendOnlyLog(on_append=...)` | tags `event.seq` with the bound turn or World | never on purpose; a miss surfaces as an unassigned seq in the exporter |
-| `on_mirror_append(event)` | mirror `AppendOnlyLog(on_append=...)` | tags `event.seq`; pairs it with the most recent unpaired sealed event when the two are equal in every field but `seq` and `fp` (`Recorder.dual` writes sealed then mirror); a sealed event twins at most one mirror event; edge prompt copies get a lane but no twin | never on purpose |
-| `on_model_call(*, identity, role, model_input, output, sealed_seq)` | `GatewayCore.generate` / `batch_generate`, episode instance only, after the sealed record is written | records a `ModelCall` with the bound phase | - |
+| `on_sealed_append(event)` | the episode wiring's traced sealed log, for each event the scaffold records | tags `event.seq` with the bound turn or World | never on purpose; a miss surfaces as an unassigned seq in the exporter |
+| `on_mirror_append(event)` | the episode wiring's traced mirror log, for each event the scaffold records | tags `event.seq`; pairs it with the most recent unpaired sealed event when the two are equal in every field but `seq` and `fp` (`Recorder.dual` writes sealed then mirror); a sealed event twins at most one mirror event; edge prompt copies get a lane but no twin | never on purpose |
+| `on_model_reply(sealed_seqs, mirror_seqs)` | the episode wiring's gateway, after each model call the scaffold makes | tags the call's sealed and mirror seqs with the bound turn, and its sealed seqs with the bound phase | - |
+| `on_model_call(*, identity, role, model_input, output, sealed_seq)` | `GatewayCore.generate` / `batch_generate` in process (the episode core's observer), after the sealed record is written | records a `ModelCall` with the bound phase | - |
 | `finish(last_sealed_seq)` | harness, when assembly returns | returns a read-only `EpisodeTrace` snapshot; `last_sealed_seq` is the boundary for I3/I4, so anything observed later is post-episode by construction | `RuntimeError` if a turn is still bound |
 
-`open_episode_logs(sealed_path, mirror_path, episode_id, *, traced)` opens an episode's two logs and, when
-`traced`, an `AgentTrace` subscribed to both; both assemblers use it so the subscription cannot drift.
+`gateway.wiring.open_episode_wiring(..., trace=...)` subscribes the trace to the episode's two logs and its
+gateway, in process and in the stack alike, so the subscription cannot drift. In the stack the runner cannot
+see the core's provider calls or agent code's off-path calls: it exports what it saw
+(`export_runner_episode`), and the host joins that with the copied sealed logs (`merge_runner_episode`): each
+sealed model call takes the phase the runner saw, and a sealed seq the runner never saw takes the turn of the
+two known seqs around it when they share one, else World.
 
 ## Verified assumptions
 
@@ -99,7 +104,7 @@ One `.eval` per run. Each episode becomes one sample: `episode` (the graded run)
 | `configs/env.default.yaml`, `config.py` | `logging.agent_transcript` -> `RunConfig.agent_transcript` (fail-loud bool) |
 | `GatewayCore.__init__` / `generate` / `batch_generate` | optional `trace`; each provider call reported after its sealed record is written |
 | `Agent.__init__` / `run_turn` | optional `trace`; inbox, agent policy and tool steps run inside `trace.turn`; `mark_executing` before the tool layer |
-| `live.assemble_model_episode`, `task.assemble_scripted_episode` | create the trace when the flag is on, subscribe both logs, pass it to the core (and agents), finish it when the episode's work stops; `EpisodeResult.trace` |
+| `task.assemble_in_process`, `stack_episode.run_runner_phase` | create the trace when the flag is on, hand it to the episode wiring (and agents), finish it when the episode is closed; `EpisodeResult.trace` in process, the runner's export in the stack |
 | `harness._assemble_by_policy`, `run_episode` | optional `provider` passthrough (offline live runs); the attack run's calibration twin goes to `_write_bundle` |
 | `harness._write_bundle`, `_eval_episodes` | flag on: real `.eval` via `write_run_eval` (samples `episode`, `honest_cal`); flag off: the JSON placeholder |
 | `cli view` | prints `inspect view --log-dir <bundle>` when the `.eval` is real |
@@ -108,7 +113,7 @@ Known limits:
 
 | Limit | Consequence |
 |---|---|
-| attribution needs the gateway core in the scaffold's process (`DirectTransport`) | with `HttpxTransport` the hooks never fire and inference records export as plain info events |
+| in the stack, the runner does not see off-path calls from agent code | their sealed seqs take a lane by the merge rule above, and their inputs come from the sealed model-call log |
 | the orchestrator path (`scaffold/orchestrator.py`, tests only) builds agents without a trace | with the flag on, its events export in World |
 | `run_sweep` writes no bundles | no `.eval` for sweep episodes |
 | rerunning into an existing run directory | the old sealed seqs are untagged, so the export raises `UnassignedEventError` rather than exporting two runs as one |

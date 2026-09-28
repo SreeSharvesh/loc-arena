@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import os
+import secrets
 from collections.abc import Iterator
 from typing import Final
 
 import pytest
+from loc_arena.compose_stack import EpisodeStack, docker_available, teardown, up
 from loc_arena.config import load_run_config
 from loc_arena.gateway.openrouter_provider import OpenRouterProvider, live_provider_from_environment
-from loc_arena.harness import DOTENV_PATH, EpisodeStack, docker_available, teardown, up
+from loc_arena.harness import DOTENV_PATH
 
 LIVE_SWITCH: Final = "LOC_ARENA_LIVE"
 
@@ -27,11 +29,14 @@ def live_provider() -> OpenRouterProvider:
 
 @pytest.fixture(scope="session")
 def stack() -> Iterator[EpisodeStack]:
-    """Bring the per-episode stack up once for the isolation tests; tear it down at the end."""
+    """Bring the per-episode stack up once for the isolation tests; tear it down at the end.
+
+    The project name is unique per session, so sessions in other worktrees never share containers.
+    """
     if not docker_available():
         pytest.skip("docker daemon unavailable")
     config = load_run_config("configs/aurora-efficiency.deterministic.yaml")
-    s = up(config, project="locarena-p3")
+    s = up(config, project=f"locarena-tests-{secrets.token_hex(3)}")
     try:
         yield s
     finally:

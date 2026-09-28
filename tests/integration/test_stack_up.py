@@ -1,18 +1,38 @@
 from __future__ import annotations
 
+import secrets
+
 import pytest
+from loc_arena.compose_document import render_compose
+from loc_arena.compose_stack import docker_available, teardown, up
 from loc_arena.config import load_run_config
-from loc_arena.harness import docker_available, teardown, up
 
-pytestmark = pytest.mark.skipif(not docker_available(), reason="docker daemon unavailable")
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(not docker_available(), reason="docker daemon unavailable"),
+]
+
+CONFIG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+# profiled services (the runner, the grader) are on-demand: `docker compose run`, not `up`
+EXPECTED = {
+    name for name, service in render_compose(CONFIG)["services"].items() if not service.get("profiles")
+}
 
 
-def test_up_brings_all_services_healthy_and_teardown_is_clean() -> None:
-    config = load_run_config("configs/aurora-efficiency.deterministic.yaml")
-    expected = set(config.raw["services"])
-    stack = up(config, project="locarena-stackup")  # up(--wait) fails if any service is unhealthy
+def test_up_brings_every_service_up_healthy() -> None:
+    # up(--wait) fails when any service does not become healthy
+    stack = up(CONFIG, project=f"locarena-stackup-{secrets.token_hex(3)}")
     try:
-        assert stack.running_services() == expected  # every configured service is up
+        running = stack.running_services()
     finally:
         teardown(stack)
-    assert stack.running_services() == set()  # teardown left zero of THIS project's containers
+
+    assert running == EXPECTED
+
+
+def test_teardown_leaves_no_container_of_the_project() -> None:
+    stack = up(CONFIG, project=f"locarena-stackup-{secrets.token_hex(3)}")
+
+    teardown(stack)
+
+    assert stack.running_services() == set()

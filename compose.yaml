@@ -1,268 +1,732 @@
-# compose.yaml -- the per-episode LOC-Arena stack.
-# GENERATED from configs/env.default.yaml by loc_arena.harness.render_compose (config over
-# code). Do not edit by hand; change the config and regenerate. The harness renders and runs this per
-# episode; this committed copy is the canonical reference stack.
+# compose.yaml -- the per-episode LOC-Arena stack, rendered from configs/aurora-efficiency.yaml
+# (which extends configs/env.default.yaml, where the topology lives).
+# GENERATED: do not edit by hand. Change the config, then regenerate this file with
+# `uv run python -m loc_arena.compose_document`; a unit test fails while the two differ.
+# The harness renders its own copy per episode. Every compose command needs
+# LOC_ARENA_CONTROL_KEY_FILE, the path of the episode's control key file.
 
 services:
   gateway_core:
-    image: loc-arena-svc:latest
+    image: loc-arena-app:latest
+    build:
+      context: .
+      target: app
+    pull_policy: never
     environment:
-      SVC_NAME: gateway_core
-      SVC_ROLE: health
-      SVC_PORT: '4000'
+      LOC_ARENA_SETTINGS: '{"docker":{"healthcheck_interval_seconds":3,"healthcheck_timeout_seconds":3,"healthcheck_retries":15,"healthcheck_start_period_seconds":2,"healthcheck_request_timeout_seconds":2,"up_wait_timeout_seconds":180,"down_timeout_seconds":3,"error_output_characters":4000,"default_service_port":8000,"evidence_max_bytes":1073741824,"agent_tmpfs_size_bytes":536870912,"runner_phase_timeout_seconds":10800.0,"grader_timeout_seconds":2700.0},"gateway":{"core_port":4000,"edge_port":4010,"recorder_port":9000,"execution_port":8000,"max_request_bytes":8388608,"relay_timeout_seconds":600.0,"control_timeout_seconds":600.0,"recorder_timeout_seconds":30.0,"recorder_write_attempts":3,"turn_token_ttl_seconds":300.0,"monitor_credential_ttl_seconds":3600.0,"durable_credential_expiry_ts":10000000.0,"control_key_header":"X-Loc-Arena-Control-Key"},"provider":{"server_url":null,"request_timeout_milliseconds":60000,"request_deadline_seconds":150.0,"backoff_initial_interval_milliseconds":2000,"backoff_max_interval_milliseconds":30000,"backoff_exponent":2.0,"backoff_max_elapsed_time_milliseconds":300000,"retry_connection_errors":true,"rate_limit_attempts":6,"rate_limit_max_wait_seconds":30.0},"inference":{"sanctioned_paths":["scaffold_turn","batch_generate"],"raw_client_available":true,"batch_generate":{"teacher_token_quota":60000,"stateless":true}},"execution":{"workspace_root":"/workspace","run_tests_timeout_seconds":300.0,"run_benchmark_timeout_seconds":120.0,"bash_timeout_seconds":300.0,"max_read_characters":200000,"max_output_characters":200000,"max_matches":200,"max_match_line_characters":200,"error_tail_characters":500,"max_response_bytes":2097152,"reply_timeout_seconds":360.0},"grading":{"suite_timeout_seconds":300.0,"benchmark_timeout_seconds":120.0,"max_output_bytes":1048576,"harness_file_names":["grade_bench.py","grade_workload.py"],"benchmark_file_name":"grade_bench.py","max_captured_output_characters":65536},"clock":{"start_ts":100.0,"deadline_ts":10000.0}}'
     labels:
       loc-arena.eval: '1'
     restart: 'no'
-    networks:
-    - control-net
-    - sealed-net
-    - egress-net
+    command:
+    - uvicorn
+    - --factory
+    - loc_arena.gateway.core_service:build_core_app
+    - --host
+    - 0.0.0.0
+    - --port
+    - '4000'
     healthcheck:
       test:
       - CMD
       - python
       - -c
-      - import urllib.request,sys;u=urllib.request.urlopen('http://localhost:4000/health',timeout=2);sys.exit(0
-        if u.status==200 else 1)
+      - import urllib.request; urllib.request.urlopen('http://localhost:4000/health',
+        timeout=2)
       interval: 3s
       timeout: 3s
       retries: 15
       start_period: 2s
+    secrets:
+    - source: openrouter_api_key
+      target: openrouter_api_key
+      uid: '999'
+      gid: '999'
+      mode: '0400'
+    - source: control_key
+      target: control_key
+    networks:
+      control-net:
+        aliases:
+        - gateway-core
+      sealed-net:
+        aliases:
+        - gateway-core
+      egress-net:
+        aliases:
+        - gateway-core
+    depends_on:
+      recorder:
+        condition: service_healthy
+    user: 999:999
+    tmpfs:
+    - /tmp:mode=1777
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    pids_limit: 4096
+  recorder:
+    image: loc-arena-app:latest
+    build:
+      context: .
+      target: app
+    pull_policy: never
+    environment:
+      LOC_ARENA_SETTINGS: '{"docker":{"healthcheck_interval_seconds":3,"healthcheck_timeout_seconds":3,"healthcheck_retries":15,"healthcheck_start_period_seconds":2,"healthcheck_request_timeout_seconds":2,"up_wait_timeout_seconds":180,"down_timeout_seconds":3,"error_output_characters":4000,"default_service_port":8000,"evidence_max_bytes":1073741824,"agent_tmpfs_size_bytes":536870912,"runner_phase_timeout_seconds":10800.0,"grader_timeout_seconds":2700.0},"gateway":{"core_port":4000,"edge_port":4010,"recorder_port":9000,"execution_port":8000,"max_request_bytes":8388608,"relay_timeout_seconds":600.0,"control_timeout_seconds":600.0,"recorder_timeout_seconds":30.0,"recorder_write_attempts":3,"turn_token_ttl_seconds":300.0,"monitor_credential_ttl_seconds":3600.0,"durable_credential_expiry_ts":10000000.0,"control_key_header":"X-Loc-Arena-Control-Key"},"provider":{"server_url":null,"request_timeout_milliseconds":60000,"request_deadline_seconds":150.0,"backoff_initial_interval_milliseconds":2000,"backoff_max_interval_milliseconds":30000,"backoff_exponent":2.0,"backoff_max_elapsed_time_milliseconds":300000,"retry_connection_errors":true,"rate_limit_attempts":6,"rate_limit_max_wait_seconds":30.0},"inference":{"sanctioned_paths":["scaffold_turn","batch_generate"],"raw_client_available":true,"batch_generate":{"teacher_token_quota":60000,"stateless":true}},"execution":{"workspace_root":"/workspace","run_tests_timeout_seconds":300.0,"run_benchmark_timeout_seconds":120.0,"bash_timeout_seconds":300.0,"max_read_characters":200000,"max_output_characters":200000,"max_matches":200,"max_match_line_characters":200,"error_tail_characters":500,"max_response_bytes":2097152,"reply_timeout_seconds":360.0},"grading":{"suite_timeout_seconds":300.0,"benchmark_timeout_seconds":120.0,"max_output_bytes":1048576,"harness_file_names":["grade_bench.py","grade_workload.py"],"benchmark_file_name":"grade_bench.py","max_captured_output_characters":65536},"clock":{"start_ts":100.0,"deadline_ts":10000.0}}'
+    labels:
+      loc-arena.eval: '1'
+    restart: 'no'
+    command:
+    - uvicorn
+    - --factory
+    - loc_arena.services.recorder.app:build_recorder_app
+    - --host
+    - 0.0.0.0
+    - --port
+    - '9000'
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:9000/health',
+        timeout=2)
+      interval: 3s
+      timeout: 3s
+      retries: 15
+      start_period: 2s
+    networks:
+      sealed-net:
+        aliases:
+        - recorder
+    volumes:
+    - type: volume
+      source: sealed_log
+      target: /sealed
+      read_only: false
+    user: 999:999
+    read_only: true
+    tmpfs:
+    - /tmp:mode=1777
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    pids_limit: 4096
   gateway_edge:
-    image: loc-arena-svc:latest
+    image: loc-arena-sandbox:latest
+    build:
+      context: .
+      target: sandbox
+    pull_policy: never
     environment:
-      SVC_NAME: gateway_edge
-      SVC_ROLE: health
-      SVC_PORT: '4010'
+      LOC_ARENA_SETTINGS: '{"docker":{"healthcheck_interval_seconds":3,"healthcheck_timeout_seconds":3,"healthcheck_retries":15,"healthcheck_start_period_seconds":2,"healthcheck_request_timeout_seconds":2,"up_wait_timeout_seconds":180,"down_timeout_seconds":3,"error_output_characters":4000,"default_service_port":8000,"evidence_max_bytes":1073741824,"agent_tmpfs_size_bytes":536870912,"runner_phase_timeout_seconds":10800.0,"grader_timeout_seconds":2700.0},"gateway":{"core_port":4000,"edge_port":4010,"recorder_port":9000,"execution_port":8000,"max_request_bytes":8388608,"relay_timeout_seconds":600.0,"control_timeout_seconds":600.0,"recorder_timeout_seconds":30.0,"recorder_write_attempts":3,"turn_token_ttl_seconds":300.0,"monitor_credential_ttl_seconds":3600.0,"durable_credential_expiry_ts":10000000.0,"control_key_header":"X-Loc-Arena-Control-Key"},"provider":{"server_url":null,"request_timeout_milliseconds":60000,"request_deadline_seconds":150.0,"backoff_initial_interval_milliseconds":2000,"backoff_max_interval_milliseconds":30000,"backoff_exponent":2.0,"backoff_max_elapsed_time_milliseconds":300000,"retry_connection_errors":true,"rate_limit_attempts":6,"rate_limit_max_wait_seconds":30.0},"inference":{"sanctioned_paths":["scaffold_turn","batch_generate"],"raw_client_available":true,"batch_generate":{"teacher_token_quota":60000,"stateless":true}},"execution":{"workspace_root":"/workspace","run_tests_timeout_seconds":300.0,"run_benchmark_timeout_seconds":120.0,"bash_timeout_seconds":300.0,"max_read_characters":200000,"max_output_characters":200000,"max_matches":200,"max_match_line_characters":200,"error_tail_characters":500,"max_response_bytes":2097152,"reply_timeout_seconds":360.0},"grading":{"suite_timeout_seconds":300.0,"benchmark_timeout_seconds":120.0,"max_output_bytes":1048576,"harness_file_names":["grade_bench.py","grade_workload.py"],"benchmark_file_name":"grade_bench.py","max_captured_output_characters":65536},"clock":{"start_ts":100.0,"deadline_ts":10000.0}}'
     labels:
       loc-arena.eval: '1'
     restart: 'no'
-    networks:
-    - agent-net
-    - control-net
-    volumes:
-    - mirror_log:/mirror
+    command:
+    - uvicorn
+    - --factory
+    - loc_arena.gateway.edge:build_edge_app
+    - --host
+    - 0.0.0.0
+    - --port
+    - '4010'
     healthcheck:
       test:
       - CMD
       - python
       - -c
-      - import urllib.request,sys;u=urllib.request.urlopen('http://localhost:4010/health',timeout=2);sys.exit(0
-        if u.status==200 else 1)
+      - import urllib.request; urllib.request.urlopen('http://localhost:4010/health',
+        timeout=2)
       interval: 3s
       timeout: 3s
       retries: 15
       start_period: 2s
-  execution:
-    image: loc-arena-svc:latest
+    secrets:
+    - source: control_key
+      target: control_key
+    networks:
+      agent-net:
+        aliases:
+        - gateway-edge
+      control-net:
+        aliases:
+        - gateway-edge
+    volumes:
+    - type: volume
+      source: mirror_log
+      target: /mirror
+      read_only: false
+    depends_on:
+      gateway_core:
+        condition: service_healthy
+    user: 999:999
+    read_only: true
+    tmpfs:
+    - /tmp:mode=1777
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    pids_limit: 4096
+  sandbox-agent-main:
+    image: loc-arena-sandbox:latest
+    build:
+      context: .
+      target: sandbox
+    pull_policy: never
     environment:
-      SVC_NAME: execution
-      SVC_ROLE: health
-      SVC_PORT: '8000'
+      HOME: /tmp
+      LOC_ARENA_SANDBOX_AGENT_ID: agent-main
+      LOC_ARENA_GATEWAY_EDGE_URL: http://gateway-edge:4010
+      LOC_ARENA_SETTINGS: '{"docker":{"healthcheck_interval_seconds":3,"healthcheck_timeout_seconds":3,"healthcheck_retries":15,"healthcheck_start_period_seconds":2,"healthcheck_request_timeout_seconds":2,"up_wait_timeout_seconds":180,"down_timeout_seconds":3,"error_output_characters":4000,"default_service_port":8000,"evidence_max_bytes":1073741824,"agent_tmpfs_size_bytes":536870912,"runner_phase_timeout_seconds":10800.0,"grader_timeout_seconds":2700.0},"gateway":{"core_port":4000,"edge_port":4010,"recorder_port":9000,"execution_port":8000,"max_request_bytes":8388608,"relay_timeout_seconds":600.0,"control_timeout_seconds":600.0,"recorder_timeout_seconds":30.0,"recorder_write_attempts":3,"turn_token_ttl_seconds":300.0,"monitor_credential_ttl_seconds":3600.0,"durable_credential_expiry_ts":10000000.0,"control_key_header":"X-Loc-Arena-Control-Key"},"provider":{"server_url":null,"request_timeout_milliseconds":60000,"request_deadline_seconds":150.0,"backoff_initial_interval_milliseconds":2000,"backoff_max_interval_milliseconds":30000,"backoff_exponent":2.0,"backoff_max_elapsed_time_milliseconds":300000,"retry_connection_errors":true,"rate_limit_attempts":6,"rate_limit_max_wait_seconds":30.0},"inference":{"sanctioned_paths":["scaffold_turn","batch_generate"],"raw_client_available":true,"batch_generate":{"teacher_token_quota":60000,"stateless":true}},"execution":{"workspace_root":"/workspace","run_tests_timeout_seconds":300.0,"run_benchmark_timeout_seconds":120.0,"bash_timeout_seconds":300.0,"max_read_characters":200000,"max_output_characters":200000,"max_matches":200,"max_match_line_characters":200,"error_tail_characters":500,"max_response_bytes":2097152,"reply_timeout_seconds":360.0},"grading":{"suite_timeout_seconds":300.0,"benchmark_timeout_seconds":120.0,"max_output_bytes":1048576,"harness_file_names":["grade_bench.py","grade_workload.py"],"benchmark_file_name":"grade_bench.py","max_captured_output_characters":65536},"clock":{"start_ts":100.0,"deadline_ts":10000.0}}'
     labels:
       loc-arena.eval: '1'
     restart: 'no'
-    networks:
-    - agent-net
-    volumes:
-    - mirror_log:/mirror
-    - repos:/repos
-    - weights_data:/weights
+    command:
+    - uvicorn
+    - --factory
+    - loc_arena.execution.app:build_execution_app
+    - --host
+    - 0.0.0.0
+    - --port
+    - '8000'
     healthcheck:
       test:
       - CMD
       - python
       - -c
-      - import urllib.request,sys;u=urllib.request.urlopen('http://localhost:8000/health',timeout=2);sys.exit(0
-        if u.status==200 else 1)
+      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health',
+        timeout=2)
       interval: 3s
       timeout: 3s
       retries: 15
       start_period: 2s
+    init: true
+    networks:
+    - agent-net
+    volumes:
+    - type: volume
+      source: mirror_log
+      target: /mirror
+      read_only: true
+    - type: volume
+      source: checkout
+      target: /workspace
+      read_only: false
+    depends_on:
+      gateway_edge:
+        condition: service_healthy
+    user: 999:999
+    read_only: true
+    tmpfs:
+    - /tmp:mode=1777,size=536870912
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
     mem_limit: 4g
     cpus: 2.0
     pids_limit: 4096
-  cluster:
-    image: loc-arena-svc:latest
+  sandbox-serving-agent:
+    image: loc-arena-sandbox:latest
+    build:
+      context: .
+      target: sandbox
+    pull_policy: never
     environment:
-      SVC_NAME: cluster
-      SVC_ROLE: health
-      SVC_PORT: '8000'
+      HOME: /tmp
+      LOC_ARENA_SANDBOX_AGENT_ID: serving-agent
+      LOC_ARENA_GATEWAY_EDGE_URL: http://gateway-edge:4010
+      LOC_ARENA_SETTINGS: '{"docker":{"healthcheck_interval_seconds":3,"healthcheck_timeout_seconds":3,"healthcheck_retries":15,"healthcheck_start_period_seconds":2,"healthcheck_request_timeout_seconds":2,"up_wait_timeout_seconds":180,"down_timeout_seconds":3,"error_output_characters":4000,"default_service_port":8000,"evidence_max_bytes":1073741824,"agent_tmpfs_size_bytes":536870912,"runner_phase_timeout_seconds":10800.0,"grader_timeout_seconds":2700.0},"gateway":{"core_port":4000,"edge_port":4010,"recorder_port":9000,"execution_port":8000,"max_request_bytes":8388608,"relay_timeout_seconds":600.0,"control_timeout_seconds":600.0,"recorder_timeout_seconds":30.0,"recorder_write_attempts":3,"turn_token_ttl_seconds":300.0,"monitor_credential_ttl_seconds":3600.0,"durable_credential_expiry_ts":10000000.0,"control_key_header":"X-Loc-Arena-Control-Key"},"provider":{"server_url":null,"request_timeout_milliseconds":60000,"request_deadline_seconds":150.0,"backoff_initial_interval_milliseconds":2000,"backoff_max_interval_milliseconds":30000,"backoff_exponent":2.0,"backoff_max_elapsed_time_milliseconds":300000,"retry_connection_errors":true,"rate_limit_attempts":6,"rate_limit_max_wait_seconds":30.0},"inference":{"sanctioned_paths":["scaffold_turn","batch_generate"],"raw_client_available":true,"batch_generate":{"teacher_token_quota":60000,"stateless":true}},"execution":{"workspace_root":"/workspace","run_tests_timeout_seconds":300.0,"run_benchmark_timeout_seconds":120.0,"bash_timeout_seconds":300.0,"max_read_characters":200000,"max_output_characters":200000,"max_matches":200,"max_match_line_characters":200,"error_tail_characters":500,"max_response_bytes":2097152,"reply_timeout_seconds":360.0},"grading":{"suite_timeout_seconds":300.0,"benchmark_timeout_seconds":120.0,"max_output_bytes":1048576,"harness_file_names":["grade_bench.py","grade_workload.py"],"benchmark_file_name":"grade_bench.py","max_captured_output_characters":65536},"clock":{"start_ts":100.0,"deadline_ts":10000.0}}'
     labels:
       loc-arena.eval: '1'
     restart: 'no'
-    networks:
-    - agent-net
-    - control-net
+    command:
+    - uvicorn
+    - --factory
+    - loc_arena.execution.app:build_execution_app
+    - --host
+    - 0.0.0.0
+    - --port
+    - '8000'
     healthcheck:
       test:
       - CMD
       - python
       - -c
-      - import urllib.request,sys;u=urllib.request.urlopen('http://localhost:8000/health',timeout=2);sys.exit(0
-        if u.status==200 else 1)
+      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health',
+        timeout=2)
       interval: 3s
       timeout: 3s
       retries: 15
       start_period: 2s
-  forge:
-    image: loc-arena-svc:latest
+    init: true
+    networks:
+    - agent-net
+    volumes:
+    - type: volume
+      source: mirror_log
+      target: /mirror
+      read_only: true
+    - type: volume
+      source: checkout
+      target: /workspace
+      read_only: false
+    depends_on:
+      gateway_edge:
+        condition: service_healthy
+    user: 999:999
+    read_only: true
+    tmpfs:
+    - /tmp:mode=1777,size=536870912
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    mem_limit: 4g
+    cpus: 2.0
+    pids_limit: 4096
+  sandbox-distill-agent:
+    image: loc-arena-sandbox:latest
+    build:
+      context: .
+      target: sandbox
+    pull_policy: never
     environment:
-      SVC_NAME: forge
-      SVC_ROLE: health
-      SVC_PORT: '3000'
+      HOME: /tmp
+      LOC_ARENA_SANDBOX_AGENT_ID: distill-agent
+      LOC_ARENA_GATEWAY_EDGE_URL: http://gateway-edge:4010
+      LOC_ARENA_SETTINGS: '{"docker":{"healthcheck_interval_seconds":3,"healthcheck_timeout_seconds":3,"healthcheck_retries":15,"healthcheck_start_period_seconds":2,"healthcheck_request_timeout_seconds":2,"up_wait_timeout_seconds":180,"down_timeout_seconds":3,"error_output_characters":4000,"default_service_port":8000,"evidence_max_bytes":1073741824,"agent_tmpfs_size_bytes":536870912,"runner_phase_timeout_seconds":10800.0,"grader_timeout_seconds":2700.0},"gateway":{"core_port":4000,"edge_port":4010,"recorder_port":9000,"execution_port":8000,"max_request_bytes":8388608,"relay_timeout_seconds":600.0,"control_timeout_seconds":600.0,"recorder_timeout_seconds":30.0,"recorder_write_attempts":3,"turn_token_ttl_seconds":300.0,"monitor_credential_ttl_seconds":3600.0,"durable_credential_expiry_ts":10000000.0,"control_key_header":"X-Loc-Arena-Control-Key"},"provider":{"server_url":null,"request_timeout_milliseconds":60000,"request_deadline_seconds":150.0,"backoff_initial_interval_milliseconds":2000,"backoff_max_interval_milliseconds":30000,"backoff_exponent":2.0,"backoff_max_elapsed_time_milliseconds":300000,"retry_connection_errors":true,"rate_limit_attempts":6,"rate_limit_max_wait_seconds":30.0},"inference":{"sanctioned_paths":["scaffold_turn","batch_generate"],"raw_client_available":true,"batch_generate":{"teacher_token_quota":60000,"stateless":true}},"execution":{"workspace_root":"/workspace","run_tests_timeout_seconds":300.0,"run_benchmark_timeout_seconds":120.0,"bash_timeout_seconds":300.0,"max_read_characters":200000,"max_output_characters":200000,"max_matches":200,"max_match_line_characters":200,"error_tail_characters":500,"max_response_bytes":2097152,"reply_timeout_seconds":360.0},"grading":{"suite_timeout_seconds":300.0,"benchmark_timeout_seconds":120.0,"max_output_bytes":1048576,"harness_file_names":["grade_bench.py","grade_workload.py"],"benchmark_file_name":"grade_bench.py","max_captured_output_characters":65536},"clock":{"start_ts":100.0,"deadline_ts":10000.0}}'
     labels:
       loc-arena.eval: '1'
     restart: 'no'
+    command:
+    - uvicorn
+    - --factory
+    - loc_arena.execution.app:build_execution_app
+    - --host
+    - 0.0.0.0
+    - --port
+    - '8000'
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health',
+        timeout=2)
+      interval: 3s
+      timeout: 3s
+      retries: 15
+      start_period: 2s
+    init: true
+    networks:
+    - agent-net
+    volumes:
+    - type: volume
+      source: mirror_log
+      target: /mirror
+      read_only: true
+    - type: volume
+      source: checkout
+      target: /workspace
+      read_only: false
+    depends_on:
+      gateway_edge:
+        condition: service_healthy
+    user: 999:999
+    read_only: true
+    tmpfs:
+    - /tmp:mode=1777,size=536870912
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    mem_limit: 4g
+    cpus: 2.0
+    pids_limit: 4096
+  sandbox-eval-agent:
+    image: loc-arena-sandbox:latest
+    build:
+      context: .
+      target: sandbox
+    pull_policy: never
+    environment:
+      HOME: /tmp
+      LOC_ARENA_SANDBOX_AGENT_ID: eval-agent
+      LOC_ARENA_GATEWAY_EDGE_URL: http://gateway-edge:4010
+      LOC_ARENA_SETTINGS: '{"docker":{"healthcheck_interval_seconds":3,"healthcheck_timeout_seconds":3,"healthcheck_retries":15,"healthcheck_start_period_seconds":2,"healthcheck_request_timeout_seconds":2,"up_wait_timeout_seconds":180,"down_timeout_seconds":3,"error_output_characters":4000,"default_service_port":8000,"evidence_max_bytes":1073741824,"agent_tmpfs_size_bytes":536870912,"runner_phase_timeout_seconds":10800.0,"grader_timeout_seconds":2700.0},"gateway":{"core_port":4000,"edge_port":4010,"recorder_port":9000,"execution_port":8000,"max_request_bytes":8388608,"relay_timeout_seconds":600.0,"control_timeout_seconds":600.0,"recorder_timeout_seconds":30.0,"recorder_write_attempts":3,"turn_token_ttl_seconds":300.0,"monitor_credential_ttl_seconds":3600.0,"durable_credential_expiry_ts":10000000.0,"control_key_header":"X-Loc-Arena-Control-Key"},"provider":{"server_url":null,"request_timeout_milliseconds":60000,"request_deadline_seconds":150.0,"backoff_initial_interval_milliseconds":2000,"backoff_max_interval_milliseconds":30000,"backoff_exponent":2.0,"backoff_max_elapsed_time_milliseconds":300000,"retry_connection_errors":true,"rate_limit_attempts":6,"rate_limit_max_wait_seconds":30.0},"inference":{"sanctioned_paths":["scaffold_turn","batch_generate"],"raw_client_available":true,"batch_generate":{"teacher_token_quota":60000,"stateless":true}},"execution":{"workspace_root":"/workspace","run_tests_timeout_seconds":300.0,"run_benchmark_timeout_seconds":120.0,"bash_timeout_seconds":300.0,"max_read_characters":200000,"max_output_characters":200000,"max_matches":200,"max_match_line_characters":200,"error_tail_characters":500,"max_response_bytes":2097152,"reply_timeout_seconds":360.0},"grading":{"suite_timeout_seconds":300.0,"benchmark_timeout_seconds":120.0,"max_output_bytes":1048576,"harness_file_names":["grade_bench.py","grade_workload.py"],"benchmark_file_name":"grade_bench.py","max_captured_output_characters":65536},"clock":{"start_ts":100.0,"deadline_ts":10000.0}}'
+    labels:
+      loc-arena.eval: '1'
+    restart: 'no'
+    command:
+    - uvicorn
+    - --factory
+    - loc_arena.execution.app:build_execution_app
+    - --host
+    - 0.0.0.0
+    - --port
+    - '8000'
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health',
+        timeout=2)
+      interval: 3s
+      timeout: 3s
+      retries: 15
+      start_period: 2s
+    init: true
+    networks:
+    - agent-net
+    volumes:
+    - type: volume
+      source: mirror_log
+      target: /mirror
+      read_only: true
+    - type: volume
+      source: checkout
+      target: /workspace
+      read_only: false
+    depends_on:
+      gateway_edge:
+        condition: service_healthy
+    user: 999:999
+    read_only: true
+    tmpfs:
+    - /tmp:mode=1777,size=536870912
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    mem_limit: 4g
+    cpus: 2.0
+    pids_limit: 4096
+  sandbox-datapipe-agent:
+    image: loc-arena-sandbox:latest
+    build:
+      context: .
+      target: sandbox
+    pull_policy: never
+    environment:
+      HOME: /tmp
+      LOC_ARENA_SANDBOX_AGENT_ID: datapipe-agent
+      LOC_ARENA_GATEWAY_EDGE_URL: http://gateway-edge:4010
+      LOC_ARENA_SETTINGS: '{"docker":{"healthcheck_interval_seconds":3,"healthcheck_timeout_seconds":3,"healthcheck_retries":15,"healthcheck_start_period_seconds":2,"healthcheck_request_timeout_seconds":2,"up_wait_timeout_seconds":180,"down_timeout_seconds":3,"error_output_characters":4000,"default_service_port":8000,"evidence_max_bytes":1073741824,"agent_tmpfs_size_bytes":536870912,"runner_phase_timeout_seconds":10800.0,"grader_timeout_seconds":2700.0},"gateway":{"core_port":4000,"edge_port":4010,"recorder_port":9000,"execution_port":8000,"max_request_bytes":8388608,"relay_timeout_seconds":600.0,"control_timeout_seconds":600.0,"recorder_timeout_seconds":30.0,"recorder_write_attempts":3,"turn_token_ttl_seconds":300.0,"monitor_credential_ttl_seconds":3600.0,"durable_credential_expiry_ts":10000000.0,"control_key_header":"X-Loc-Arena-Control-Key"},"provider":{"server_url":null,"request_timeout_milliseconds":60000,"request_deadline_seconds":150.0,"backoff_initial_interval_milliseconds":2000,"backoff_max_interval_milliseconds":30000,"backoff_exponent":2.0,"backoff_max_elapsed_time_milliseconds":300000,"retry_connection_errors":true,"rate_limit_attempts":6,"rate_limit_max_wait_seconds":30.0},"inference":{"sanctioned_paths":["scaffold_turn","batch_generate"],"raw_client_available":true,"batch_generate":{"teacher_token_quota":60000,"stateless":true}},"execution":{"workspace_root":"/workspace","run_tests_timeout_seconds":300.0,"run_benchmark_timeout_seconds":120.0,"bash_timeout_seconds":300.0,"max_read_characters":200000,"max_output_characters":200000,"max_matches":200,"max_match_line_characters":200,"error_tail_characters":500,"max_response_bytes":2097152,"reply_timeout_seconds":360.0},"grading":{"suite_timeout_seconds":300.0,"benchmark_timeout_seconds":120.0,"max_output_bytes":1048576,"harness_file_names":["grade_bench.py","grade_workload.py"],"benchmark_file_name":"grade_bench.py","max_captured_output_characters":65536},"clock":{"start_ts":100.0,"deadline_ts":10000.0}}'
+    labels:
+      loc-arena.eval: '1'
+    restart: 'no'
+    command:
+    - uvicorn
+    - --factory
+    - loc_arena.execution.app:build_execution_app
+    - --host
+    - 0.0.0.0
+    - --port
+    - '8000'
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health',
+        timeout=2)
+      interval: 3s
+      timeout: 3s
+      retries: 15
+      start_period: 2s
+    init: true
+    networks:
+    - agent-net
+    volumes:
+    - type: volume
+      source: mirror_log
+      target: /mirror
+      read_only: true
+    - type: volume
+      source: checkout
+      target: /workspace
+      read_only: false
+    depends_on:
+      gateway_edge:
+        condition: service_healthy
+    user: 999:999
+    read_only: true
+    tmpfs:
+    - /tmp:mode=1777,size=536870912
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    mem_limit: 4g
+    cpus: 2.0
+    pids_limit: 4096
+  sandbox-jobsvc-agent:
+    image: loc-arena-sandbox:latest
+    build:
+      context: .
+      target: sandbox
+    pull_policy: never
+    environment:
+      HOME: /tmp
+      LOC_ARENA_SANDBOX_AGENT_ID: jobsvc-agent
+      LOC_ARENA_GATEWAY_EDGE_URL: http://gateway-edge:4010
+      LOC_ARENA_SETTINGS: '{"docker":{"healthcheck_interval_seconds":3,"healthcheck_timeout_seconds":3,"healthcheck_retries":15,"healthcheck_start_period_seconds":2,"healthcheck_request_timeout_seconds":2,"up_wait_timeout_seconds":180,"down_timeout_seconds":3,"error_output_characters":4000,"default_service_port":8000,"evidence_max_bytes":1073741824,"agent_tmpfs_size_bytes":536870912,"runner_phase_timeout_seconds":10800.0,"grader_timeout_seconds":2700.0},"gateway":{"core_port":4000,"edge_port":4010,"recorder_port":9000,"execution_port":8000,"max_request_bytes":8388608,"relay_timeout_seconds":600.0,"control_timeout_seconds":600.0,"recorder_timeout_seconds":30.0,"recorder_write_attempts":3,"turn_token_ttl_seconds":300.0,"monitor_credential_ttl_seconds":3600.0,"durable_credential_expiry_ts":10000000.0,"control_key_header":"X-Loc-Arena-Control-Key"},"provider":{"server_url":null,"request_timeout_milliseconds":60000,"request_deadline_seconds":150.0,"backoff_initial_interval_milliseconds":2000,"backoff_max_interval_milliseconds":30000,"backoff_exponent":2.0,"backoff_max_elapsed_time_milliseconds":300000,"retry_connection_errors":true,"rate_limit_attempts":6,"rate_limit_max_wait_seconds":30.0},"inference":{"sanctioned_paths":["scaffold_turn","batch_generate"],"raw_client_available":true,"batch_generate":{"teacher_token_quota":60000,"stateless":true}},"execution":{"workspace_root":"/workspace","run_tests_timeout_seconds":300.0,"run_benchmark_timeout_seconds":120.0,"bash_timeout_seconds":300.0,"max_read_characters":200000,"max_output_characters":200000,"max_matches":200,"max_match_line_characters":200,"error_tail_characters":500,"max_response_bytes":2097152,"reply_timeout_seconds":360.0},"grading":{"suite_timeout_seconds":300.0,"benchmark_timeout_seconds":120.0,"max_output_bytes":1048576,"harness_file_names":["grade_bench.py","grade_workload.py"],"benchmark_file_name":"grade_bench.py","max_captured_output_characters":65536},"clock":{"start_ts":100.0,"deadline_ts":10000.0}}'
+    labels:
+      loc-arena.eval: '1'
+    restart: 'no'
+    command:
+    - uvicorn
+    - --factory
+    - loc_arena.execution.app:build_execution_app
+    - --host
+    - 0.0.0.0
+    - --port
+    - '8000'
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health',
+        timeout=2)
+      interval: 3s
+      timeout: 3s
+      retries: 15
+      start_period: 2s
+    init: true
+    networks:
+    - agent-net
+    volumes:
+    - type: volume
+      source: mirror_log
+      target: /mirror
+      read_only: true
+    - type: volume
+      source: checkout
+      target: /workspace
+      read_only: false
+    depends_on:
+      gateway_edge:
+        condition: service_healthy
+    user: 999:999
+    read_only: true
+    tmpfs:
+    - /tmp:mode=1777,size=536870912
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    mem_limit: 4g
+    cpus: 2.0
+    pids_limit: 4096
+  sandbox-controlplane-agent:
+    image: loc-arena-sandbox:latest
+    build:
+      context: .
+      target: sandbox
+    pull_policy: never
+    environment:
+      HOME: /tmp
+      LOC_ARENA_SANDBOX_AGENT_ID: controlplane-agent
+      LOC_ARENA_GATEWAY_EDGE_URL: http://gateway-edge:4010
+      LOC_ARENA_SETTINGS: '{"docker":{"healthcheck_interval_seconds":3,"healthcheck_timeout_seconds":3,"healthcheck_retries":15,"healthcheck_start_period_seconds":2,"healthcheck_request_timeout_seconds":2,"up_wait_timeout_seconds":180,"down_timeout_seconds":3,"error_output_characters":4000,"default_service_port":8000,"evidence_max_bytes":1073741824,"agent_tmpfs_size_bytes":536870912,"runner_phase_timeout_seconds":10800.0,"grader_timeout_seconds":2700.0},"gateway":{"core_port":4000,"edge_port":4010,"recorder_port":9000,"execution_port":8000,"max_request_bytes":8388608,"relay_timeout_seconds":600.0,"control_timeout_seconds":600.0,"recorder_timeout_seconds":30.0,"recorder_write_attempts":3,"turn_token_ttl_seconds":300.0,"monitor_credential_ttl_seconds":3600.0,"durable_credential_expiry_ts":10000000.0,"control_key_header":"X-Loc-Arena-Control-Key"},"provider":{"server_url":null,"request_timeout_milliseconds":60000,"request_deadline_seconds":150.0,"backoff_initial_interval_milliseconds":2000,"backoff_max_interval_milliseconds":30000,"backoff_exponent":2.0,"backoff_max_elapsed_time_milliseconds":300000,"retry_connection_errors":true,"rate_limit_attempts":6,"rate_limit_max_wait_seconds":30.0},"inference":{"sanctioned_paths":["scaffold_turn","batch_generate"],"raw_client_available":true,"batch_generate":{"teacher_token_quota":60000,"stateless":true}},"execution":{"workspace_root":"/workspace","run_tests_timeout_seconds":300.0,"run_benchmark_timeout_seconds":120.0,"bash_timeout_seconds":300.0,"max_read_characters":200000,"max_output_characters":200000,"max_matches":200,"max_match_line_characters":200,"error_tail_characters":500,"max_response_bytes":2097152,"reply_timeout_seconds":360.0},"grading":{"suite_timeout_seconds":300.0,"benchmark_timeout_seconds":120.0,"max_output_bytes":1048576,"harness_file_names":["grade_bench.py","grade_workload.py"],"benchmark_file_name":"grade_bench.py","max_captured_output_characters":65536},"clock":{"start_ts":100.0,"deadline_ts":10000.0}}'
+    labels:
+      loc-arena.eval: '1'
+    restart: 'no'
+    command:
+    - uvicorn
+    - --factory
+    - loc_arena.execution.app:build_execution_app
+    - --host
+    - 0.0.0.0
+    - --port
+    - '8000'
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health',
+        timeout=2)
+      interval: 3s
+      timeout: 3s
+      retries: 15
+      start_period: 2s
+    init: true
+    networks:
+    - agent-net
+    volumes:
+    - type: volume
+      source: mirror_log
+      target: /mirror
+      read_only: true
+    - type: volume
+      source: checkout
+      target: /workspace
+      read_only: false
+    depends_on:
+      gateway_edge:
+        condition: service_healthy
+    user: 999:999
+    read_only: true
+    tmpfs:
+    - /tmp:mode=1777,size=536870912
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    mem_limit: 4g
+    cpus: 2.0
+    pids_limit: 4096
+  runner:
+    image: loc-arena-app:latest
+    build:
+      context: .
+      target: app
+    pull_policy: never
+    environment:
+      HOME: /tmp
+      LOC_ARENA_SETTINGS: '{"docker":{"healthcheck_interval_seconds":3,"healthcheck_timeout_seconds":3,"healthcheck_retries":15,"healthcheck_start_period_seconds":2,"healthcheck_request_timeout_seconds":2,"up_wait_timeout_seconds":180,"down_timeout_seconds":3,"error_output_characters":4000,"default_service_port":8000,"evidence_max_bytes":1073741824,"agent_tmpfs_size_bytes":536870912,"runner_phase_timeout_seconds":10800.0,"grader_timeout_seconds":2700.0},"gateway":{"core_port":4000,"edge_port":4010,"recorder_port":9000,"execution_port":8000,"max_request_bytes":8388608,"relay_timeout_seconds":600.0,"control_timeout_seconds":600.0,"recorder_timeout_seconds":30.0,"recorder_write_attempts":3,"turn_token_ttl_seconds":300.0,"monitor_credential_ttl_seconds":3600.0,"durable_credential_expiry_ts":10000000.0,"control_key_header":"X-Loc-Arena-Control-Key"},"provider":{"server_url":null,"request_timeout_milliseconds":60000,"request_deadline_seconds":150.0,"backoff_initial_interval_milliseconds":2000,"backoff_max_interval_milliseconds":30000,"backoff_exponent":2.0,"backoff_max_elapsed_time_milliseconds":300000,"retry_connection_errors":true,"rate_limit_attempts":6,"rate_limit_max_wait_seconds":30.0},"inference":{"sanctioned_paths":["scaffold_turn","batch_generate"],"raw_client_available":true,"batch_generate":{"teacher_token_quota":60000,"stateless":true}},"execution":{"workspace_root":"/workspace","run_tests_timeout_seconds":300.0,"run_benchmark_timeout_seconds":120.0,"bash_timeout_seconds":300.0,"max_read_characters":200000,"max_output_characters":200000,"max_matches":200,"max_match_line_characters":200,"error_tail_characters":500,"max_response_bytes":2097152,"reply_timeout_seconds":360.0},"grading":{"suite_timeout_seconds":300.0,"benchmark_timeout_seconds":120.0,"max_output_bytes":1048576,"harness_file_names":["grade_bench.py","grade_workload.py"],"benchmark_file_name":"grade_bench.py","max_captured_output_characters":65536},"clock":{"start_ts":100.0,"deadline_ts":10000.0}}'
+    labels:
+      loc-arena.eval: '1'
+    restart: 'no'
+    profiles:
+    - runner
+    secrets:
+    - source: control_key
+      target: control_key
     networks:
     - agent-net
     - control-net
     volumes:
-    - repos:/repos
-    healthcheck:
-      test:
-      - CMD
-      - python
-      - -c
-      - import urllib.request,sys;u=urllib.request.urlopen('http://localhost:3000/health',timeout=2);sys.exit(0
-        if u.status==200 else 1)
-      interval: 3s
-      timeout: 3s
-      retries: 15
-      start_period: 2s
-  weights:
-    image: loc-arena-svc:latest
-    environment:
-      SVC_NAME: weights
-      SVC_ROLE: health
-      SVC_PORT: '8000'
-    labels:
-      loc-arena.eval: '1'
-    restart: 'no'
-    networks:
-    - agent-net
-    - control-net
-    volumes:
-    - weights_data:/weights
-    healthcheck:
-      test:
-      - CMD
-      - python
-      - -c
-      - import urllib.request,sys;u=urllib.request.urlopen('http://localhost:8000/health',timeout=2);sys.exit(0
-        if u.status==200 else 1)
-      interval: 3s
-      timeout: 3s
-      retries: 15
-      start_period: 2s
-  siem:
-    image: loc-arena-svc:latest
-    environment:
-      SVC_NAME: siem
-      SVC_ROLE: health
-      SVC_PORT: '8080'
-    labels:
-      loc-arena.eval: '1'
-    restart: 'no'
-    networks:
-    - control-net
-    volumes:
-    - mirror_log:/mirror
-    healthcheck:
-      test:
-      - CMD
-      - python
-      - -c
-      - import urllib.request,sys;u=urllib.request.urlopen('http://localhost:8080/health',timeout=2);sys.exit(0
-        if u.status==200 else 1)
-      interval: 3s
-      timeout: 3s
-      retries: 15
-      start_period: 2s
-  ticketboard:
-    image: loc-arena-svc:latest
-    environment:
-      SVC_NAME: ticketboard
-      SVC_ROLE: health
-      SVC_PORT: '8090'
-    labels:
-      loc-arena.eval: '1'
-    restart: 'no'
-    networks:
-    - agent-net
-    - control-net
-    healthcheck:
-      test:
-      - CMD
-      - python
-      - -c
-      - import urllib.request,sys;u=urllib.request.urlopen('http://localhost:8090/health',timeout=2);sys.exit(0
-        if u.status==200 else 1)
-      interval: 3s
-      timeout: 3s
-      retries: 15
-      start_period: 2s
-  wiki:
-    image: loc-arena-svc:latest
-    environment:
-      SVC_NAME: wiki
-      SVC_ROLE: health
-      SVC_PORT: '8091'
-    labels:
-      loc-arena.eval: '1'
-    restart: 'no'
-    networks:
-    - agent-net
-    - control-net
-    healthcheck:
-      test:
-      - CMD
-      - python
-      - -c
-      - import urllib.request,sys;u=urllib.request.urlopen('http://localhost:8091/health',timeout=2);sys.exit(0
-        if u.status==200 else 1)
-      interval: 3s
-      timeout: 3s
-      retries: 15
-      start_period: 2s
-  recorder:
-    image: loc-arena-svc:latest
-    environment:
-      SVC_NAME: recorder
-      SVC_ROLE: recorder
-      SVC_PORT: '9000'
-      SEALED_LOG: /sealed/events.jsonl
-    labels:
-      loc-arena.eval: '1'
-    restart: 'no'
-    networks:
-    - sealed-net
-    volumes:
-    - sealed_log:/sealed
-    healthcheck:
-      test:
-      - CMD
-      - python
-      - -c
-      - import urllib.request,sys;u=urllib.request.urlopen('http://localhost:9000/health',timeout=2);sys.exit(0
-        if u.status==200 else 1)
-      interval: 3s
-      timeout: 3s
-      retries: 15
-      start_period: 2s
+    - type: volume
+      source: mirror_log
+      target: /mirror
+      read_only: true
+    depends_on:
+      gateway_core:
+        condition: service_healthy
+      gateway_edge:
+        condition: service_healthy
+      sandbox-agent-main:
+        condition: service_healthy
+      sandbox-serving-agent:
+        condition: service_healthy
+      sandbox-distill-agent:
+        condition: service_healthy
+      sandbox-eval-agent:
+        condition: service_healthy
+      sandbox-datapipe-agent:
+        condition: service_healthy
+      sandbox-jobsvc-agent:
+        condition: service_healthy
+      sandbox-controlplane-agent:
+        condition: service_healthy
+    user: 999:999
+    read_only: true
+    tmpfs:
+    - /tmp:mode=1777
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    mem_limit: 4g
+    cpus: 2.0
+    pids_limit: 4096
   evidence_reader:
-    image: loc-arena-svc:latest
+    image: loc-arena-app:latest
+    build:
+      context: .
+      target: app
+    pull_policy: never
     environment:
       SVC_NAME: evidence_reader
       SVC_ROLE: reader
-      SVC_PORT: '8000'
-      SEALED_LOG: /sealed/events.jsonl
+      LOC_ARENA_SETTINGS: '{"docker":{"healthcheck_interval_seconds":3,"healthcheck_timeout_seconds":3,"healthcheck_retries":15,"healthcheck_start_period_seconds":2,"healthcheck_request_timeout_seconds":2,"up_wait_timeout_seconds":180,"down_timeout_seconds":3,"error_output_characters":4000,"default_service_port":8000,"evidence_max_bytes":1073741824,"agent_tmpfs_size_bytes":536870912,"runner_phase_timeout_seconds":10800.0,"grader_timeout_seconds":2700.0},"gateway":{"core_port":4000,"edge_port":4010,"recorder_port":9000,"execution_port":8000,"max_request_bytes":8388608,"relay_timeout_seconds":600.0,"control_timeout_seconds":600.0,"recorder_timeout_seconds":30.0,"recorder_write_attempts":3,"turn_token_ttl_seconds":300.0,"monitor_credential_ttl_seconds":3600.0,"durable_credential_expiry_ts":10000000.0,"control_key_header":"X-Loc-Arena-Control-Key"},"provider":{"server_url":null,"request_timeout_milliseconds":60000,"request_deadline_seconds":150.0,"backoff_initial_interval_milliseconds":2000,"backoff_max_interval_milliseconds":30000,"backoff_exponent":2.0,"backoff_max_elapsed_time_milliseconds":300000,"retry_connection_errors":true,"rate_limit_attempts":6,"rate_limit_max_wait_seconds":30.0},"inference":{"sanctioned_paths":["scaffold_turn","batch_generate"],"raw_client_available":true,"batch_generate":{"teacher_token_quota":60000,"stateless":true}},"execution":{"workspace_root":"/workspace","run_tests_timeout_seconds":300.0,"run_benchmark_timeout_seconds":120.0,"bash_timeout_seconds":300.0,"max_read_characters":200000,"max_output_characters":200000,"max_matches":200,"max_match_line_characters":200,"error_tail_characters":500,"max_response_bytes":2097152,"reply_timeout_seconds":360.0},"grading":{"suite_timeout_seconds":300.0,"benchmark_timeout_seconds":120.0,"max_output_bytes":1048576,"harness_file_names":["grade_bench.py","grade_workload.py"],"benchmark_file_name":"grade_bench.py","max_captured_output_characters":65536},"clock":{"start_ts":100.0,"deadline_ts":10000.0}}'
     labels:
       loc-arena.eval: '1'
     restart: 'no'
+    command:
+    - python
+    - -m
+    - loc_arena.services.service
     network_mode: none
     volumes:
-    - sealed_log:/sealed:ro
+    - type: volume
+      source: sealed_log
+      target: /sealed
+      read_only: true
+    - type: volume
+      source: mirror_log
+      target: /mirror
+      read_only: true
+    depends_on:
+      recorder:
+        condition: service_healthy
+      gateway_edge:
+        condition: service_healthy
+    user: 999:999
+    read_only: true
+    tmpfs:
+    - /tmp:mode=1777
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    pids_limit: 4096
+  grader:
+    image: loc-arena-sandbox:latest
+    build:
+      context: .
+      target: sandbox
+    pull_policy: never
+    environment:
+      HOME: /tmp
+      LOC_ARENA_SETTINGS: '{"docker":{"healthcheck_interval_seconds":3,"healthcheck_timeout_seconds":3,"healthcheck_retries":15,"healthcheck_start_period_seconds":2,"healthcheck_request_timeout_seconds":2,"up_wait_timeout_seconds":180,"down_timeout_seconds":3,"error_output_characters":4000,"default_service_port":8000,"evidence_max_bytes":1073741824,"agent_tmpfs_size_bytes":536870912,"runner_phase_timeout_seconds":10800.0,"grader_timeout_seconds":2700.0},"gateway":{"core_port":4000,"edge_port":4010,"recorder_port":9000,"execution_port":8000,"max_request_bytes":8388608,"relay_timeout_seconds":600.0,"control_timeout_seconds":600.0,"recorder_timeout_seconds":30.0,"recorder_write_attempts":3,"turn_token_ttl_seconds":300.0,"monitor_credential_ttl_seconds":3600.0,"durable_credential_expiry_ts":10000000.0,"control_key_header":"X-Loc-Arena-Control-Key"},"provider":{"server_url":null,"request_timeout_milliseconds":60000,"request_deadline_seconds":150.0,"backoff_initial_interval_milliseconds":2000,"backoff_max_interval_milliseconds":30000,"backoff_exponent":2.0,"backoff_max_elapsed_time_milliseconds":300000,"retry_connection_errors":true,"rate_limit_attempts":6,"rate_limit_max_wait_seconds":30.0},"inference":{"sanctioned_paths":["scaffold_turn","batch_generate"],"raw_client_available":true,"batch_generate":{"teacher_token_quota":60000,"stateless":true}},"execution":{"workspace_root":"/workspace","run_tests_timeout_seconds":300.0,"run_benchmark_timeout_seconds":120.0,"bash_timeout_seconds":300.0,"max_read_characters":200000,"max_output_characters":200000,"max_matches":200,"max_match_line_characters":200,"error_tail_characters":500,"max_response_bytes":2097152,"reply_timeout_seconds":360.0},"grading":{"suite_timeout_seconds":300.0,"benchmark_timeout_seconds":120.0,"max_output_bytes":1048576,"harness_file_names":["grade_bench.py","grade_workload.py"],"benchmark_file_name":"grade_bench.py","max_captured_output_characters":65536},"clock":{"start_ts":100.0,"deadline_ts":10000.0}}'
+    labels:
+      loc-arena.eval: '1'
+    restart: 'no'
+    command:
+    - python
+    - -m
+    - loc_arena.grader
+    init: true
+    profiles:
+    - grader
+    network_mode: none
+    volumes:
+    - type: volume
+      source: checkout
+      target: /workspace
+      read_only: true
+    - type: bind
+      source: ./scenarios/aurora_efficiency/reference/grade_bench.py
+      target: /harness/grade_bench.py
+      read_only: true
+      bind:
+        create_host_path: false
+    - type: bind
+      source: ./scenarios/aurora_efficiency/reference/grade_workload.py
+      target: /harness/grade_workload.py
+      read_only: true
+      bind:
+        create_host_path: false
+    user: 999:999
+    read_only: true
+    tmpfs:
+    - /tmp:mode=1777,size=536870912
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    mem_limit: 4g
+    cpus: 2.0
+    pids_limit: 4096
 networks:
   agent-net:
     internal: true
@@ -287,9 +751,11 @@ volumes:
   mirror_log:
     labels:
       loc-arena.eval: '1'
-  repos:
+  checkout:
     labels:
       loc-arena.eval: '1'
-  weights_data:
-    labels:
-      loc-arena.eval: '1'
+secrets:
+  openrouter_api_key:
+    environment: OPENROUTER_API_KEY
+  control_key:
+    file: ${LOC_ARENA_CONTROL_KEY_FILE:?the path of the episode control key file}

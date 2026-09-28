@@ -1,9 +1,10 @@
 # Makefile -- one command to run everything (no live server; the viewer is a static report).
 # Targets call loc_arena/cli.py.
 #
-# STACK=1 additionally brings the per-episode docker stack up/down around the run for the sealed-isolation
-# guarantee. The episode itself runs in-process and reproducibly, so the stack is optional;
-# on a Linux host it can be the default.
+# STACK=1 runs each episode in a fresh compose stack, the agents' loops in the runner container and each agent's
+# code in its own sandbox (no key, no internet); gateway_core alone holds the key, as a compose secret read from
+# .env, and makes the model calls; this machine grades the episode afterwards. STACK=0 (the default) runs the
+# episode in-process on this machine, where the agents' code can reach local credentials.
 
 # The DELIVERABLE run is live-model only (aurora-efficiency.yaml, policy: model; needs OPENROUTER_API_KEY).
 # aurora-efficiency.yaml (scripted) is retained only as deterministic engine-test scaffolding, not a deliverable policy.
@@ -25,7 +26,7 @@ help:
 	@echo "make explore [LOGS=logs]                  # build the run explorer over every run in LOGS and open it"
 	@echo "make sweep RUN=aurora-efficiency HONEST=n ATTACK=m  # n honest + m attack episodes, aggregated"
 	@echo "make gates                                # ruff + ruff format + ty + pytest"
-	@echo "  (append STACK=1 to run/sweep to bring the docker stack up/down around it)"
+	@echo "  (append STACK=1 to run each episode in the docker stack: no key, no internet for the agents' code)"
 
 setup:
 	@command -v uv >/dev/null || (echo "uv not found: install from https://docs.astral.sh/uv/" && exit 1)
@@ -36,8 +37,7 @@ setup:
 
 run:
 ifeq ($(STACK),1)
-	@uv run python -c "from loc_arena.config import load_run_config as L; from loc_arena.harness import up,teardown; s=up(L('configs/$(RUN).yaml'),project='locarena-$(RUN)'); print('stack up'); \
-import loc_arena.cli as c; c.main(['run','--run','$(RUN)','--mode','$(MODE)']); teardown(s); print('stack down')"
+	@uv run python -m loc_arena.cli run --run $(RUN) --mode $(MODE) --stack
 else
 	@uv run python -m loc_arena.cli run --run $(RUN) --mode $(MODE)
 endif
