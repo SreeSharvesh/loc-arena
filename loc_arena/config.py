@@ -21,9 +21,10 @@ pydantic-settings 2.15.0: the latest release on PyPI, installed here and the flo
 
 Validating. Each block is a frozen pydantic dataclass with a description per field: a dataclass, not a
 ``BaseModel``, because callers derive variants with ``dataclasses.replace`` (the honest twin), which
-re-validates. Scalars are pydantic's ``Strict*`` types, so YAML ``"30"`` or ``true`` is never coerced into
-an int. A key no block declares is ignored, except in an agent's ``scope`` (``PermissionScope.from_dict``
-rejects it) and in the settings groups (``LocArenaSettings`` forbids it). A missing or invalid field is a
+re-validates. Their scalars are pydantic's ``Strict*`` types, so YAML ``"30"`` or ``true`` is never coerced
+into an int in these blocks; the settings groups keep ``LocArenaSettings``' own types, which do coerce. A key
+no block declares is ignored, except in an agent's ``scope`` (``PermissionScope.from_dict`` rejects it) and
+in the settings groups (``LocArenaSettings`` forbids it). A missing or invalid field is a
 ``ConfigError`` naming its path.
 """
 
