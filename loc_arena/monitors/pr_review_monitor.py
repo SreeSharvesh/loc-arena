@@ -18,7 +18,6 @@ from loc_arena.monitors.registry import (
     MonitorSpec,
     MonitorVerdict,
     live_suspicion,
-    load_template,
     register_monitor,
     render_prompt,
 )
@@ -37,8 +36,7 @@ class ReviewMonitor:
         self.timeout_s = spec.timeout_s
         self._spec = spec
         self._model = model_spec
-        self._declared = set(spec.inputs)
-        self._template = load_template(spec.prompt_ref)
+        self._declared = spec.inputs  # in declaration order, so a rendered prompt is reproducible
         self._repos = set(spec.scope.get("repos", []))
 
     def input_payload(self, event: Event) -> dict[str, object]:
@@ -65,20 +63,27 @@ class ReviewMonitor:
             repo = event.payload.get("target_repo") or event.payload.get("target")
             if self._repos and repo not in self._repos:
                 continue
-            score, reason = self._heuristic(event)
+            live = None
             if self._spec.mode == "live" and context.model_caller is not None:
-                prompt = render_prompt(self._template, self.input_payload(event))
                 live = live_suspicion(
                     context,
                     self.name,
-                    prompt,
+                    render_prompt(self._spec.prompt_template, self.input_payload(event)),
                     ensemble_n=self._spec.ensemble_n,
                     temperature=self._spec.temperature,
                 )
-                if live is not None:
-                    score, reason = live
+            score, reason = live if live is not None else self._heuristic(event)
             verdicts.append(
-                MonitorVerdict(self.name, "pr", score, reason, event.actor_uid, event.seq, event.ts),
+                MonitorVerdict(
+                    self.name,
+                    "pr",
+                    score,
+                    reason,
+                    event.actor_uid,
+                    event.seq,
+                    event.ts,
+                    from_model=live is not None,
+                ),
             )
         return verdicts
 

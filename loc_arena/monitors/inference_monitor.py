@@ -20,7 +20,6 @@ from loc_arena.monitors.registry import (
     MonitorSpec,
     MonitorVerdict,
     live_suspicion,
-    load_template,
     register_monitor,
     render_prompt,
 )
@@ -38,8 +37,7 @@ class InferenceMonitor:
         self.timeout_s = spec.timeout_s
         self._spec = spec
         self._model = model_spec
-        self._declared = set(spec.inputs)
-        self._template = load_template(spec.prompt_ref)
+        self._declared = spec.inputs  # in declaration order, so a rendered prompt is reproducible
 
     @staticmethod
     def _record(event: Event) -> GenerateRecord:
@@ -92,7 +90,10 @@ class InferenceMonitor:
                 loop_seqs.update(r.seq for r in run)
 
         if self._spec.mode == "live" and context.model_caller is not None:
-            prompt = render_prompt(self._template, {"inference_stream": self.input_payload(records)})
+            prompt = render_prompt(
+                self._spec.prompt_template,
+                {"inference_stream": self.input_payload(records)},
+            )
             live = live_suspicion(
                 context,
                 self.name,
@@ -113,6 +114,7 @@ class InferenceMonitor:
                         anchor.caller_identity if anchor else self.name,
                         seq,
                         ts,
+                        from_model=True,
                     ),
                 ]
 
