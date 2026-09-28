@@ -1,7 +1,8 @@
 """In-process scaffold wiring for the scaffold tests (no docker, no provider).
 
-Builds a full episode: sealed + mirror logs, a stub-provider gateway (core + edge), the bus, the registry,
-the tool layer, an orchestrator, and helpers to build agent contexts and clients. Deterministic clock.
+Builds a full episode: sealed + mirror logs, a stub-provider gateway (the core, and the edge reached over
+its FastAPI app), the bus, the registry, the tool layer, an orchestrator, and helpers to build agent contexts
+and clients. Deterministic clock.
 """
 
 from __future__ import annotations
@@ -10,19 +11,24 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from fastapi.testclient import TestClient
 from loc_arena.config import RunConfig, load_run_config
-from loc_arena.gateway.client import GatewayClient
-from loc_arena.gateway.core import GatewayCore, create_core_app
+from loc_arena.gateway.client import EdgeClient, GatewayClient
+from loc_arena.gateway.core import DirectTransport, GatewayCore
 from loc_arena.gateway.edge import GatewayEdge, create_edge_app
 from loc_arena.logging_.events import AppendOnlyLog
 from loc_arena.scaffold.agent import AgentPolicy, ScriptedAgentPolicy, TurnMinter
 from loc_arena.scaffold.bus import ActionHook, MessageBus, Recorder
 from loc_arena.scaffold.registry import AgentRegistry
 from loc_arena.scaffold.tools import AgentAction, AgentContext, StubServices, Tools
+from loc_arena.stack.service_client import ServiceClient
+from loc_arena.stack.settings import GatewaySettings
+from pydantic import SecretStr
 
-from tests.integration._gateway_support import AppTransport, StubProvider
+from tests.integration._gateway_support import StubProvider
 
 SECRET = "episode-secret"
+CONTROL_KEY = SecretStr("scaffold-test-control-key")
 
 
 class Clock:
@@ -70,11 +76,12 @@ class Harness:
         )
         self.edge = GatewayEdge(
             episode_id,
-            AppTransport(create_core_app(core)),
+            DirectTransport(core),
             self.mirror,
             clock=self.clock,
         )
-        self._edge_transport = AppTransport(create_edge_app(self.edge))
+        edge_app = create_edge_app(self.edge, control_key=CONTROL_KEY, settings=GatewaySettings())
+        self._edge_client = EdgeClient(ServiceClient(TestClient(edge_app)))
 
         self.bus = (
             MessageBus(self.recorder, action_hook=action_hook) if action_hook else MessageBus(self.recorder)
@@ -96,7 +103,7 @@ class Harness:
 
     def make_client(self, caller_identity: str) -> GatewayClient:
         """A gateway client (pointing at the edge) for the given identity."""
-        return GatewayClient(self._edge_transport, caller_identity)
+        return GatewayClient(self._edge_client, caller_identity)
 
     def tools(self, spawn_handler: Callable[[AgentContext, dict[str, Any], int], dict[str, Any]]) -> Tools:
         """The tool layer wired to a spawn handler."""

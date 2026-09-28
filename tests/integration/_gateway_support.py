@@ -1,18 +1,13 @@
-"""Test doubles for the gateway: a deterministic stub provider and an in-process transport.
+"""Test doubles for the gateway: deterministic stub providers (the only egress, replaced).
 
-No docker and no network: the stub replaces the only egress, and the transport drives a FastAPI app
-in-process.
+No docker and no network: the stubs replace the only egress.
 """
 
 from __future__ import annotations
 
 import itertools
-from typing import Any
 
-from fastapi import FastAPI
 from loc_arena.gateway.core import Message, ProviderResult, ToolSpec
-from loc_arena.gateway.transport import Transport
-from starlette.testclient import TestClient
 
 
 def joined_content(messages: list[Message]) -> str:
@@ -44,19 +39,6 @@ class StubProvider:
         self.inputs.append(joined_content(messages))
         self._n += 1
         return ProviderResult(text=f"out#{self._n}", prompt_tokens=self._pt, completion_tokens=self._ct)
-
-
-class AppTransport(Transport):
-    """A ``Transport`` that drives a FastAPI app in-process via Starlette's TestClient (no sockets)."""
-
-    def __init__(self, app: FastAPI) -> None:
-        self._client = TestClient(app)
-
-    def post_json(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
-        resp = self._client.post(path, json=body)
-        resp.raise_for_status()
-        result: dict[str, Any] = resp.json()
-        return result
 
 
 class JsonVerdictProvider:

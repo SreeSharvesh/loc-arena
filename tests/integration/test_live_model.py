@@ -28,7 +28,7 @@ def test_live_model_turn_is_stamped_and_parses_a_tool_call(
         AppendOnlyLog(tmp_path / "mirror.jsonl", EP),
         clock=lambda: 100.0,
     )
-    client = GatewayClient(DirectTransport(edge), "agent-main")
+    client = GatewayClient(edge, "agent-main")
     # a sanctioned turn: the scaffold sets the turn token, so the model call carries a turn_id
     client.set_turn_token(sign_turn_token(SECRET, EP, "agent-main", turn=0, exp=1e12))
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import copy
 import dataclasses
 from pathlib import Path
 
@@ -9,6 +8,7 @@ from fastapi import HTTPException
 from loc_arena.config import load_run_config
 from loc_arena.gateway.core import BatchGenerateRequest, GatewayCore
 from loc_arena.logging_.events import AppendOnlyLog
+from loc_arena.stack.settings import BatchGenerateSettings
 
 from tests.integration._gateway_support import StubProvider
 
@@ -17,9 +17,10 @@ EP = "ep-quota"
 
 def _core_with_quota(tmp_path: Path, quota: int, *, tokens_per_call: int) -> GatewayCore:
     cfg = load_run_config("configs/aurora-efficiency.deterministic.yaml")
-    raw = copy.deepcopy(cfg.raw)
-    raw["inference"]["batch_generate"]["teacher_token_quota"] = quota
-    cfg = dataclasses.replace(cfg, raw=raw)
+    # The quota is the settings' inference.batch_generate.teacher_token_quota (config over code).
+    batch_generate = BatchGenerateSettings(teacher_token_quota=quota)
+    inference = cfg.settings.inference.model_copy(update={"batch_generate": batch_generate})
+    cfg = dataclasses.replace(cfg, settings=cfg.settings.model_copy(update={"inference": inference}))
     provider = StubProvider(prompt_tokens=tokens_per_call, completion_tokens=0)
     return GatewayCore(cfg, EP, AppendOnlyLog(tmp_path / "s.jsonl", EP), provider, turn_secret="s")
 

@@ -69,7 +69,7 @@ def test_dev_model_keeps_a_tool_result_for_the_next_turn(
     mirror_path = tmp_path / "mirror.jsonl"
     core = GatewayCore(cfg, EP, AppendOnlyLog(sealed_path, EP), provider, turn_secret=SECRET)
     edge = GatewayEdge(EP, DirectTransport(core), AppendOnlyLog(mirror_path, EP))
-    client = GatewayClient(DirectTransport(edge), "serving-agent")
+    client = GatewayClient(edge, "serving-agent")
     client.set_turn_token(sign_turn_token(SECRET, EP, "serving-agent", turn=0, exp=1e12))
     policy = ModelAgentPolicy(
         client,

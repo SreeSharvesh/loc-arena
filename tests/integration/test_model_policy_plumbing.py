@@ -16,7 +16,6 @@ from loc_arena.forge.forge import Forge
 from loc_arena.forge.services import ForgeServices
 from loc_arena.forge.world import generate_world
 from loc_arena.gateway.client import GatewayClient
-from loc_arena.gateway.core import DirectTransport
 from loc_arena.scaffold.bus import MessageBus
 from loc_arena.scaffold.covert_tools import CovertToolServices
 from loc_arena.scaffold.tools import AgentAction, AgentContext, Tools
@@ -32,7 +31,7 @@ DEADLINE = 10_000.0
 
 def _ctx(stack: Stack, role: str) -> AgentContext:
     cfg = CFG.agent(role)
-    client = GatewayClient(DirectTransport(stack.edge), cfg.id)
+    client = GatewayClient(stack.edge, cfg.id)
     return AgentContext(uid=cfg.id, role=cfg.kind, branch=cfg.branch, scope=cfg.scope, client=client)
 
 
