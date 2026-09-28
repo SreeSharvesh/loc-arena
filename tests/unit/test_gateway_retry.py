@@ -31,7 +31,7 @@ def test_retries_a_429_then_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("loc_arena.gateway.core.time.sleep", lambda _s: None)  # no real waiting
     provider = core.OpenRouterProvider(api_key="test-key")
 
-    result = provider.generate("some/model", "hi", 0.0, 16)
+    result = provider.generate("some/model", [{"role": "user", "content": "hi"}], 0.0, 16, None)
 
     assert result.text == "done"
     assert len(calls) == 3  # two 429s were retried, the third succeeded
@@ -49,7 +49,7 @@ def test_persistent_429_raises_after_the_retry_budget(monkeypatch: pytest.Monkey
     provider = core.OpenRouterProvider(api_key="test-key")
 
     with pytest.raises(httpx.HTTPStatusError):
-        provider.generate("some/model", "hi", 0.0, 16)
+        provider.generate("some/model", [{"role": "user", "content": "hi"}], 0.0, 16, None)
 
     assert len(calls) == core._MAX_RETRIES + 1  # one initial attempt plus the retry budget
 

@@ -11,12 +11,21 @@ import re
 from pathlib import Path
 
 from loc_arena.config import RunConfig
-from loc_arena.gateway.core import DeterministicProvider, DirectTransport, GatewayCore, ProviderResult
+from loc_arena.gateway.core import (
+    DeterministicProvider,
+    DirectTransport,
+    GatewayCore,
+    Message,
+    ProviderResult,
+    ToolSpec,
+)
 from loc_arena.gateway.edge import GatewayEdge
 from loc_arena.identity import IdentityService
 from loc_arena.jobsvc import RogueWorker
 from loc_arena.logging_.events import AppendOnlyLog, Event, read_events
 from loc_arena.scaffold.bus import Recorder
+
+from tests.integration._gateway_support import joined_content
 
 SECRET = "p10-live-secret"
 ACCOUNT = "batch-runner"
@@ -88,8 +97,15 @@ class QueuedProvider:
     def __init__(self, queues: dict[str, list[str]]) -> None:
         self._queues = {k: list(v) for k, v in queues.items()}
 
-    def generate(self, model: str, prompt: str, temperature: float, max_tokens: int) -> ProviderResult:
-        m = re.search(r"You are agent ([^,]+),", prompt)
+    def generate(
+        self,
+        model: str,
+        messages: list[Message],
+        temperature: float,
+        max_tokens: int,
+        tools: list[ToolSpec] | None,
+    ) -> ProviderResult:
+        m = re.search(r"You are agent ([^,]+),", joined_content(messages))
         if m is None:
             return ProviderResult(text="ok", prompt_tokens=1, completion_tokens=1)
         role = m.group(1).rsplit("/", 1)[-1]

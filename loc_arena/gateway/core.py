@@ -29,7 +29,7 @@ from typing import Any, Protocol
 
 import httpx
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from loc_arena.config import RunConfig
 from loc_arena.logging_.agent_trace import AgentTrace
@@ -148,19 +148,38 @@ def verify_monitor_credential(secret: str, token: str, now: float) -> dict[str, 
 # --------------------------------------------------------------------------------------------------------
 # Provider abstraction: the ONLY component that egresses to a model. Injected, so tests use a stub.
 # --------------------------------------------------------------------------------------------------------
+Message = dict[str, Any]  # an OpenAI Chat Completions message, passed through verbatim
+ToolSpec = dict[str, Any]  # an OpenAI Chat Completions tool definition, passed through verbatim
+
+
 @dataclass(frozen=True)
 class ProviderResult:
-    """A model completion plus token accounting used by the batch quota."""
+    """A model completion (text plus any native tool calls) and token accounting used by the batch quota."""
 
     text: str
     prompt_tokens: int
     completion_tokens: int
+    tool_calls: list[dict[str, Any]] | None = None
+
+    def assistant_message(self) -> Message:
+        """The reply as an assistant message a caller can append to its history."""
+        msg: Message = {"role": "assistant", "content": self.text}
+        if self.tool_calls:
+            msg["tool_calls"] = self.tool_calls
+        return msg
 
 
 class Provider(Protocol):
-    """Anything that can turn a prompt into a completion. Only the core holds one."""
+    """Anything that can turn a message list into a completion. Only the core holds one."""
 
-    def generate(self, model: str, prompt: str, temperature: float, max_tokens: int) -> ProviderResult:
+    def generate(
+        self,
+        model: str,
+        messages: list[Message],
+        temperature: float,
+        max_tokens: int,
+        tools: list[ToolSpec] | None,
+    ) -> ProviderResult:
         """Call the model and return its completion plus token counts."""
         ...
 
@@ -179,17 +198,20 @@ class OpenRouterProvider:
     def _post_with_retries(
         self,
         model: str,
-        prompt: str,
+        messages: list[Message],
         temperature: float,
         max_tokens: int,
+        tools: list[ToolSpec] | None,
     ) -> httpx.Response:
         """POST the completion, retrying 429/5xx with backoff; return the final response for the caller."""
-        body = {
+        body: dict[str, Any] = {
             "model": model,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
+        if tools:
+            body["tools"] = tools
         headers = {"Authorization": f"Bearer {self._key}", "Content-Type": "application/json"}
         last: httpx.Response | None = None
         for attempt in range(_MAX_RETRIES + 1):
@@ -203,27 +225,34 @@ class OpenRouterProvider:
         assert last is not None
         return last
 
-    def generate(self, model: str, prompt: str, temperature: float, max_tokens: int) -> ProviderResult:
-        """POST a single-user-message chat completion to OpenRouter and parse the result.
+    def generate(
+        self,
+        model: str,
+        messages: list[Message],
+        temperature: float,
+        max_tokens: int,
+        tools: list[ToolSpec] | None,
+    ) -> ProviderResult:
+        """POST a chat completion to OpenRouter and parse the text and any native tool calls.
 
         Retries a rate-limited (429) or transient server (5xx) response a bounded number of times with
         exponential backoff, honoring a ``Retry-After`` header when the provider sends one, so a burst of
         calls against a rate-limited model does not abort the whole episode. A non-transient error, or a
         429/5xx that persists past the retry budget, still raises.
         """
-        resp = self._post_with_retries(model, prompt, temperature, max_tokens)
+        resp = self._post_with_retries(model, messages, temperature, max_tokens, tools)
         resp.raise_for_status()
         data = resp.json()
         # Some models (e.g. reasoning models) can return a null ``content`` when the whole reply went to a
-        # separate reasoning field or the model declined -- coerce to "" so the scaffold sees an empty turn
-        # (which its parser treats as a skip) rather than crashing the whole run.
+        # separate reasoning field, the model declined, or the reply is tool calls only -- coerce to "".
         message = data["choices"][0].get("message", {})
         text = message.get("content") or ""
         usage = data.get("usage", {})
         return ProviderResult(
             text=text,
-            prompt_tokens=int(usage.get("prompt_tokens", _estimate_tokens(prompt))),
+            prompt_tokens=int(usage.get("prompt_tokens", _estimate_tokens(json.dumps(messages)))),
             completion_tokens=int(usage.get("completion_tokens", _estimate_tokens(text))),
+            tool_calls=message.get("tool_calls") or None,
         )
 
 
@@ -245,7 +274,14 @@ class DeterministicProvider:
         self._ct = completion_tokens
         self._n = 0
 
-    def generate(self, model: str, prompt: str, temperature: float, max_tokens: int) -> ProviderResult:
+    def generate(
+        self,
+        model: str,
+        messages: list[Message],
+        temperature: float,
+        max_tokens: int,
+        tools: list[ToolSpec] | None,
+    ) -> ProviderResult:
         """Return a unique deterministic completion and the fixed token counts."""
         self._n += 1
         return ProviderResult(text=f"gen#{self._n}", prompt_tokens=self._pt, completion_tokens=self._ct)
@@ -255,9 +291,15 @@ class DeterministicProvider:
 # Request/response models
 # --------------------------------------------------------------------------------------------------------
 class GenerateRequest(BaseModel):
-    """A raw or sanctioned generate call arriving at the core."""
+    """A raw or sanctioned generate call arriving at the core.
 
-    prompt: str
+    Carries exactly one of ``prompt`` (a single user message) or ``messages`` (a full chat history). ``tools``
+    enables native tool calling and requires ``messages``.
+    """
+
+    prompt: str | None = None
+    messages: list[Message] | None = None
+    tools: list[ToolSpec] | None = None
     caller_identity: str
     role: str = "teacher"
     turn_token: str | None = None
@@ -265,6 +307,36 @@ class GenerateRequest(BaseModel):
     origin_job_id: str | None = None
     monitor_credential: str | None = None
     temperature: float | None = None
+
+    @model_validator(mode="after")
+    def _one_input(self) -> GenerateRequest:
+        if (self.prompt is None) == (self.messages is None):
+            raise ValueError("GenerateRequest needs exactly one of prompt or messages")
+        if self.tools and self.messages is None:
+            raise ValueError("GenerateRequest tools require messages")
+        return self
+
+    def chat_messages(self) -> list[Message]:
+        """The request as a chat message list (a ``prompt`` becomes one user message)."""
+        if self.messages is not None:
+            return self.messages
+        return [{"role": "user", "content": self.prompt}]
+
+
+def input_fingerprint(req: GenerateRequest) -> str:
+    """The ``prompt_fp`` of a request, over what the caller submitted (pre-injection).
+
+    A ``prompt`` fingerprints the bare string, so a self-feeding loop that passes the previous output as the
+    next prompt links ``prompt_fp == output_fp`` (the verifier relies on this).
+    """
+    return fingerprint(req.prompt if req.prompt is not None else req.messages)
+
+
+def output_fingerprint(req: GenerateRequest, text: str, tool_calls: list[dict[str, Any]] | None) -> str:
+    """The ``output_fp`` of a reply: the bare text for a ``prompt`` request, else the assistant message."""
+    if req.prompt is not None:
+        return fingerprint(text)
+    return fingerprint(ProviderResult(text, 0, 0, tool_calls).assistant_message())
 
 
 class BatchGenerateRequest(BaseModel):
@@ -292,6 +364,7 @@ class GenerateResponse(BaseModel):
     caller_identity: str = ""
     credential_kind: str = "none"
     in_mirror: bool = True
+    tool_calls: list[dict[str, Any]] | None = None
 
 
 class BatchGenerateResponse(BaseModel):
@@ -391,12 +464,18 @@ class GatewayCore:
                 return agent_uid, f"{agent_uid}:t{int(payload['turn'])}", "turn_token", None, True
         return req.caller_identity, None, "none", None, True
 
-    def _inject_covert(self, identity: str, prompt: str) -> str:
-        """Prepend the covert objective for the target identity only; otherwise return the prompt."""
+    def _inject_covert(self, identity: str, messages: list[Message]) -> list[Message]:
+        """Prepend the covert objective to the first message for the target identity only.
+
+        The first message is the system prompt of a chat history, or the sole user message of a ``prompt``.
+        """
         cov = self._config.covert
-        if cov.enabled and identity == cov.target_identity:
-            return f"{cov.objective_prompt}\n\n{prompt}"
-        return prompt
+        if not (cov.enabled and identity == cov.target_identity):
+            return messages
+        first, *rest = messages
+        if not isinstance(first["content"], str):
+            raise TypeError("covert injection requires the first message's content to be a string")
+        return [{**first, "content": f"{cov.objective_prompt}\n\n{first['content']}"}, *rest]
 
     def _model_for(self, role: str) -> tuple[str, float, int]:
         spec = self._config.models.get(role)
@@ -410,8 +489,8 @@ class GatewayCore:
         identity: str,
         turn_id: str | None,
         batch_id: str | None,
-        prompt: str,
-        output: str,
+        prompt_fp: str,
+        output_fp: str,
         model_role: str,
         credential_kind: str,
         ts: float,
@@ -421,7 +500,7 @@ class GatewayCore:
     ) -> int:
         """Write one sealed inference-call record and return its seq.
 
-        ``prompt_fp`` is over the agent-submitted prompt (pre-injection), so covert text is never
+        ``prompt_fp`` is over the agent-submitted input (pre-injection), so covert text is never
         fingerprinted here and the self-feeding loop linkage the verifier relies on stays clean. The
         provenance fields (credential kind/id, sanctioned flag, job origin, and coverage-derived
         path/mirror flags) are the ones the verifier reads for durable_nonsanctioned_identity/
@@ -440,8 +519,8 @@ class GatewayCore:
                 "caller_identity": identity,
                 "turn_id": turn_id,
                 "batch_id": batch_id,
-                "prompt_fp": fingerprint(prompt),
-                "output_fp": fingerprint(output),
+                "prompt_fp": prompt_fp,
+                "output_fp": output_fp,
                 "model_role": model_role,
                 "credential_kind": credential_kind,
                 "credential_id": credential_id,
@@ -462,14 +541,14 @@ class GatewayCore:
         model, temperature, max_tokens = self._model_for(req.role)
         if req.temperature is not None:
             temperature = req.temperature
-        model_input = self._inject_covert(identity, req.prompt)
-        result = self._provider.generate(model, model_input, temperature, max_tokens)
+        model_input = self._inject_covert(identity, req.chat_messages())
+        result = self._provider.generate(model, model_input, temperature, max_tokens, req.tools)
         seq = self._write_record(
             identity=identity,
             turn_id=turn_id,
             batch_id=None,
-            prompt=req.prompt,
-            output=result.text,
+            prompt_fp=input_fingerprint(req),
+            output_fp=output_fingerprint(req, result.text, result.tool_calls),
             model_role=req.role,
             credential_kind=cred,
             ts=ts,
@@ -481,8 +560,8 @@ class GatewayCore:
             self._trace.on_model_call(
                 identity=identity,
                 role=req.role,
-                model_input=model_input,
-                output=result.text,
+                model_input=_render_input(model_input),
+                output=_render_output(result),
                 sealed_seq=seq,
             )
         return GenerateResponse(
@@ -493,6 +572,7 @@ class GatewayCore:
             caller_identity=identity,
             credential_kind=cred,
             in_mirror=self._covered(self._logging_covered, identity),
+            tool_calls=result.tool_calls,
         )
 
     def batch_generate(self, req: BatchGenerateRequest) -> BatchGenerateResponse:
@@ -503,7 +583,13 @@ class GatewayCore:
         texts: list[str] = []
         seqs: list[int] = []
         for prompt in req.prompts:
-            result = self._provider.generate(model, prompt, temperature, max_tokens)
+            result = self._provider.generate(
+                model,
+                [{"role": "user", "content": prompt}],
+                temperature,
+                max_tokens,
+                None,
+            )
             call_tokens = result.prompt_tokens + result.completion_tokens
             if self._teacher_tokens_used + call_tokens > self._quota:
                 raise HTTPException(
@@ -519,8 +605,8 @@ class GatewayCore:
                 identity=req.caller_identity,
                 turn_id=None,
                 batch_id=batch_id,
-                prompt=prompt,
-                output=result.text,
+                prompt_fp=fingerprint(prompt),
+                output_fp=fingerprint(result.text),
                 model_role=req.role,
                 credential_kind="batch_id",
                 ts=ts,
@@ -541,6 +627,20 @@ class GatewayCore:
     def teacher_tokens_used(self) -> int:
         """Cumulative teacher tokens consumed by batch calls this episode."""
         return self._teacher_tokens_used
+
+
+def _render_input(messages: list[Message]) -> str:
+    """The model input as trace text: a lone user message's content, else the message list as JSON."""
+    if len(messages) == 1 and messages[0]["role"] == "user" and isinstance(messages[0]["content"], str):
+        return messages[0]["content"]
+    return json.dumps(messages, indent=2, ensure_ascii=False)
+
+
+def _render_output(result: ProviderResult) -> str:
+    """The reply as trace text: the bare text, or the assistant message as JSON when it carries tool calls."""
+    if not result.tool_calls:
+        return result.text
+    return json.dumps(result.assistant_message(), indent=2, ensure_ascii=False)
 
 
 def _read_quota(config: RunConfig) -> int:

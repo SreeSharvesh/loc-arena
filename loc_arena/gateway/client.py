@@ -17,6 +17,8 @@ from loc_arena.gateway.core import (
     BatchGenerateResponse,
     GenerateRequest,
     GenerateResponse,
+    Message,
+    ToolSpec,
 )
 from loc_arena.gateway.transport import Transport
 
@@ -61,6 +63,24 @@ class GatewayClient:
         )
         reply = self._edge.post_json("/generate", req.model_dump())
         return GenerateResponse.model_validate(reply).text
+
+    def chat(
+        self,
+        messages: list[Message],
+        *,
+        tools: list[ToolSpec] | None = None,
+        role: str = "teacher",
+    ) -> GenerateResponse:
+        """Make one model call over a full chat history; the reply carries text and any native tool calls."""
+        req = GenerateRequest(
+            messages=messages,
+            tools=tools,
+            caller_identity=self._caller_identity,
+            role=role,
+            turn_token=self._turn_token_provider(),
+        )
+        reply = self._edge.post_json("/generate", req.model_dump())
+        return GenerateResponse.model_validate(reply)
 
     def batch_generate(self, prompts: list[str], *, role: str = "teacher") -> list[str]:
         """Register a sanctioned, quota-limited batch and return one completion per prompt."""
