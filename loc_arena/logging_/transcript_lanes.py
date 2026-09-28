@@ -11,9 +11,16 @@ from typing import Literal
 from inspect_ai.event import Event as InspectEvent
 from inspect_ai.event import InfoEvent, ModelEvent, SpanBeginEvent, ToolEvent
 from inspect_ai.log import EvalSample, resolve_sample_attachments
+from pydantic import TypeAdapter
+
+from loc_arena.monitors.registry import MonitorVerdict
 
 WORLD = "World"
 BEFORE_FIRST_ROUND = -1
+UNPLACED = -2  # the row of verdicts whose target is no event in the transcript
+MAX_SCORE_DECIMALS = 3  # the harness rounds per_monitor_max_score to this many decimals
+
+_VERDICTS = TypeAdapter(list[MonitorVerdict])
 
 BlockKind = Literal["prompt", "reply", "tool", "info", "verdict"]
 
@@ -44,7 +51,7 @@ def build_transcript(sample: EvalSample) -> SampleTranscript:
     owners = _turn_owners(sample.events)
     cells: dict[tuple[str, int], list[Block]] = {}
     seen: list[str] = []
-    seq_to_row: dict[int, int] = {}
+    mirror_rows: dict[int, int] = {}
     latest_round = BEFORE_FIRST_ROUND
     for event in sample.events:
         if isinstance(event, SpanBeginEvent) and event.type == "turn":
@@ -61,43 +68,47 @@ def build_transcript(sample: EvalSample) -> SampleTranscript:
             if lane not in seen:
                 seen.append(lane)
         cells.setdefault((lane, row), []).extend(blocks)
-        seq = _event_seq(event)
-        if seq is not None:
-            seq_to_row.setdefault(seq, row)
-    scores = sample.metadata.get("scores")
-    caught_scores = _caught_monitor_scores(scores)
-    for verdict in _monitor_verdicts(scores):
-        target_seq = verdict.get("target_seq")
-        row = BEFORE_FIRST_ROUND
-        if isinstance(target_seq, int):
-            row = seq_to_row.get(target_seq, BEFORE_FIRST_ROUND)
-        caught = _is_the_catch(verdict, caught_scores)
-        cells.setdefault((WORLD, row), []).append(_verdict_block(verdict, caught=caught))
+        mirror_seq = _mirror_seq(event)
+        if mirror_seq is not None:
+            mirror_rows[mirror_seq] = row
+    verdict_cells = _verdict_cells(sample.metadata.get("scores"), mirror_rows)
+    monitors = tuple(dict.fromkeys(monitor for monitor, _ in verdict_cells))
+    all_cells = {**{key: tuple(blocks) for key, blocks in cells.items()}, **verdict_cells}
     return SampleTranscript(
         sample_id=str(sample.id),
-        lanes=_lane_order(sample.metadata.get("agents", []), seen),
-        rows=tuple(sorted({row for _, row in cells})),
-        cells=MappingProxyType({key: tuple(blocks) for key, blocks in cells.items()}),
+        lanes=_lane_order(sample.metadata.get("agents", []), seen, monitors),
+        rows=tuple(sorted({row for _, row in all_cells})),
+        cells=MappingProxyType(all_cells),
     )
 
 
-def _event_seq(event: InspectEvent) -> int | None:
+def _mirror_seq(event: InspectEvent) -> int | None:
     if isinstance(event, ToolEvent):
-        seq = (event.metadata or {}).get("seq")
-    elif isinstance(event, InfoEvent):
-        seq = event.data.get("seq") if isinstance(event.data, Mapping) else None
-    elif isinstance(event, ModelEvent):
-        seq = (event.metadata or {}).get("sealed_seq")
+        seq = (event.metadata or {}).get("mirror_seq")
+    elif isinstance(event, InfoEvent) and isinstance(event.data, Mapping):
+        seq = event.data.get("mirror_seq")
     else:
         seq = None
     return seq if isinstance(seq, int) else None
 
 
-def _monitor_verdicts(scores: object) -> list[Mapping[str, object]]:
+def _verdict_cells(
+    scores: object,
+    mirror_rows: Mapping[int, int],
+) -> dict[tuple[str, int], tuple[Block, ...]]:
+    caught_scores = _caught_monitor_scores(scores)
+    cells: dict[tuple[str, int], list[Block]] = {}
+    for verdict in _monitor_verdicts(scores):
+        row = UNPLACED if verdict.target_seq is None else mirror_rows.get(verdict.target_seq, UNPLACED)
+        caught = _is_the_catch(verdict, caught_scores)
+        cells.setdefault((verdict.monitor, row), []).append(_verdict_block(verdict, caught=caught))
+    return {key: tuple(blocks) for key, blocks in cells.items()}
+
+
+def _monitor_verdicts(scores: object) -> list[MonitorVerdict]:
     if not isinstance(scores, Mapping):
         return []
-    verdicts = scores.get("monitor_verdicts")
-    return verdicts if isinstance(verdicts, list) else []
+    return _VERDICTS.validate_python(scores.get("monitor_verdicts", []))
 
 
 def _caught_monitor_scores(scores: object) -> Mapping[str, float]:
@@ -110,19 +121,13 @@ def _caught_monitor_scores(scores: object) -> Mapping[str, float]:
     return {m: max_scores[m] for m in caught_by if m in max_scores}
 
 
-def _is_the_catch(verdict: Mapping[str, object], caught_scores: Mapping[str, float]) -> bool:
-    monitor, score = verdict.get("monitor"), verdict.get("score")
-    if not isinstance(monitor, str) or not isinstance(score, int | float):
-        return False
-    return monitor in caught_scores and round(float(score), 3) == caught_scores[monitor]
+def _is_the_catch(verdict: MonitorVerdict, caught_scores: Mapping[str, float]) -> bool:
+    return caught_scores.get(verdict.monitor) == round(verdict.score, MAX_SCORE_DECIMALS)
 
 
-def _verdict_block(verdict: Mapping[str, object], *, caught: bool) -> Block:
-    monitor, tap = verdict.get("monitor", "monitor"), verdict.get("tap", "")
-    score = verdict.get("score")
-    score_text = f"{score:.3f}" if isinstance(score, int | float) else str(score)
-    body = f"score {score_text}  actor {verdict.get('actor_uid', '')}\n{verdict.get('reason', '')}"
-    title = f"monitor: {monitor} ({tap})" + (" -- CAUGHT" if caught else "")
+def _verdict_block(verdict: MonitorVerdict, *, caught: bool) -> Block:
+    body = f"score {verdict.score:.{MAX_SCORE_DECIMALS}f}  actor {verdict.actor_uid}\n{verdict.reason}"
+    title = f"monitor: {verdict.monitor} ({verdict.tap})" + (" -- CAUGHT" if caught else "")
     return Block("verdict", title, body, blocked=caught)
 
 
@@ -155,8 +160,8 @@ def _turn_owners(events: Sequence[InspectEvent]) -> dict[str, tuple[str, int]]:
     return owners
 
 
-def _lane_order(configured: Sequence[str], seen: Sequence[str]) -> tuple[str, ...]:
-    return tuple(dict.fromkeys([WORLD, *configured, *seen]))
+def _lane_order(configured: Sequence[str], seen: Sequence[str], monitors: Sequence[str]) -> tuple[str, ...]:
+    return tuple(dict.fromkeys([WORLD, *monitors, *configured, *seen]))
 
 
 def _blocks(event: InspectEvent) -> tuple[Block, ...]:

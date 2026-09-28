@@ -12,10 +12,17 @@ from pygments import highlight
 from pygments.formatters import HtmlFormatter
 from pygments.lexers import JsonLexer
 
-from loc_arena.logging_.transcript_lanes import BEFORE_FIRST_ROUND, Block, SampleTranscript, build_transcript
+from loc_arena.logging_.transcript_lanes import (
+    BEFORE_FIRST_ROUND,
+    UNPLACED,
+    Block,
+    SampleTranscript,
+    build_transcript,
+)
 
 TRANSCRIPT_HTML = "transcript.html"
 TRANSCRIPT_TEXT = "transcript.txt"
+_NAMED_ROWS = {UNPLACED: "unplaced verdicts", BEFORE_FIRST_ROUND: "before round 0"}
 
 _PAGE_CSS = """
 body { font-family: system-ui, sans-serif; margin: 1.5rem; background: #f7f7f8; color: #1d1d1f; }
@@ -124,7 +131,7 @@ def _code_html(code: str) -> str:
 
 
 def _row_label(row: int) -> str:
-    return "before round 0" if row == BEFORE_FIRST_ROUND else f"round {row}"
+    return _NAMED_ROWS.get(row, f"round {row}")
 
 
 def _visible(text: str) -> str:
