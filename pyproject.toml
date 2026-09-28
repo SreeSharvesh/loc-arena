@@ -12,6 +12,10 @@ dependencies = [
   "inspect-ai>=0.3.239,<0.4",
   "pygments>=2.18",
   "pydantic>=2.13.5",
+  "pydantic-settings>=2.15.0",
+  "uvicorn>=0.54.0",
+  "stamina>=26.1.0",
+  "openrouter>=1.2.32",
 ]
 
 [project.scripts]
@@ -23,6 +27,13 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["loc_arena"]
+
+[tool.uv]
+# Every openrouter release caps pydantic<2.13 while every inspect-ai since 0.3.232 needs pydantic>=2.13, so the
+# two cannot resolve together. An override replaces every requirement on pydantic, openrouter's cap included
+# (docs.astral.sh/uv/concepts/resolution/#dependency-overrides); tests/unit/test_openrouter_sdk.py checks the SDK
+# still builds and parses a chat call on the resolved pydantic.
+override-dependencies = ["pydantic>=2.13.5"]
 
 [dependency-groups]
 # Dev toolchain. Kept minimal for the skeleton; phases add their own runtime deps (Inspect, FastAPI, ...).

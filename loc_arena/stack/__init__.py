@@ -1,5 +1,6 @@
-"""The isolated stack's shared foundation: the types the gateway's services and their clients share.
+"""The isolated stack's shared foundation: contracts, settings, constants, the HTTP client and the secrets.
 
-Every module here imports only the standard library, pydantic and :mod:`loc_arena.logging_.events`, so the
-sandbox image can ship this package whole.
+It also holds the model-call types the gateway's services share (``model_call.py``). Every module here
+imports only the standard library, pydantic, pydantic-settings, FastAPI, httpx and
+:mod:`loc_arena.logging_.events`, so the sandbox image can ship this package whole.
 """

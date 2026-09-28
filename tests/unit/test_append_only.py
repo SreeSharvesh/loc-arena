@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
-from loc_arena.logging_.events import AppendOnlyLog, Event, read_events
+from loc_arena.logging_.events import AppendOnlyLog, Event, EventDraft, read_events
 
 EP = "ep-test"
 
@@ -71,3 +72,51 @@ def test_reopen_recovers_last_seq(tmp_path: Path) -> None:
     assert log2.last_seq == 0
     log2.append(_ev(1))
     assert [e.seq for e in read_events(path)] == [0, 1]
+
+
+LAST_APPENDED_SEQ = 4
+CONCURRENT_RECORDS = 200
+CONCURRENT_WRITERS = 8
+
+
+def _draft(ts: float) -> EventDraft:
+    return EventDraft(
+        ts=ts,
+        actor_uid="agent-main",
+        actor_role="untrusted",
+        kind="action",
+        payload={"ts": ts},
+    )
+
+
+def _record_concurrently(log: AppendOnlyLog) -> list[Event]:
+    """Record ``CONCURRENT_RECORDS`` drafts from a pool of writer threads; the events, in draft order."""
+    with ThreadPoolExecutor(max_workers=CONCURRENT_WRITERS) as pool:
+        return list(pool.map(lambda index: log.record(_draft(float(index))), range(CONCURRENT_RECORDS)))
+
+
+def test_a_recorded_draft_becomes_the_event_after_the_last_append(tmp_path: Path) -> None:
+    log = AppendOnlyLog(tmp_path / "s.jsonl", EP)
+    log.append(_ev(LAST_APPENDED_SEQ))
+    draft = _draft(1.0)
+
+    written = log.record(draft)
+
+    assert written == Event(episode_id=EP, seq=LAST_APPENDED_SEQ + 1, **vars(draft)).with_fp()
+
+
+def test_concurrent_records_each_get_a_distinct_seq(tmp_path: Path) -> None:
+    log = AppendOnlyLog(tmp_path / "s.jsonl", EP)
+
+    written = _record_concurrently(log)
+
+    assert sorted(event.seq for event in written) == list(range(CONCURRENT_RECORDS))
+
+
+def test_concurrent_records_are_written_to_the_file_in_seq_order(tmp_path: Path) -> None:
+    path = tmp_path / "s.jsonl"
+    log = AppendOnlyLog(path, EP)
+
+    _record_concurrently(log)
+
+    assert [event.seq for event in read_events(path)] == list(range(CONCURRENT_RECORDS))
