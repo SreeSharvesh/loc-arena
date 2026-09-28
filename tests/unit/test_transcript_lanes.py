@@ -9,7 +9,8 @@ from inspect_ai.log import EvalSample
 from inspect_ai.model import ChatMessageUser, GenerateConfig, ModelOutput
 from inspect_ai.tool import ToolCallError
 from loc_arena.logging_ import transcript_lanes
-from loc_arena.logging_.transcript_lanes import WORLD, Block, build_transcript
+from loc_arena.logging_.transcript_lanes import UNPLACED, WORLD, Block, build_transcript
+from pydantic import ValidationError
 
 
 def _info(span_id: str | None, label: str) -> InfoEvent:
@@ -36,8 +37,10 @@ def test_build_transcript_places_blocks_by_turn_owner_and_world_by_latest_round(
         assert isinstance(event, InfoEvent)
         return (Block("info", str(event.data), ""),)
 
-    def fake_order(configured: Sequence[str], seen: Sequence[str]) -> tuple[str, ...]:
-        return (WORLD, *configured, *[s for s in seen if s not in configured])
+    def fake_order(
+        configured: Sequence[str], seen: Sequence[str], monitors: Sequence[str]
+    ) -> tuple[str, ...]:
+        return (WORLD, *monitors, *configured, *[s for s in seen if s not in configured])
 
     monkeypatch.setattr(transcript_lanes, "_turn_owners", lambda _events: owners)
     monkeypatch.setattr(transcript_lanes, "_blocks", fake_blocks)
@@ -77,11 +80,11 @@ def test_a_turn_span_outside_an_agent_span_raises() -> None:
         transcript_lanes._turn_owners([*_spans(), stray])
 
 
-def test_lane_order_is_world_then_configured_then_extra_agents_once_each() -> None:
+def test_lane_order_is_world_then_monitors_then_configured_then_extra_agents_once_each() -> None:
     order = transcript_lanes._lane_order(
-        ["agent-main", "serving-agent"], ["serving-agent", "child-1", "agent-main"]
+        ["agent-main", "serving-agent"], ["serving-agent", "child-1", "agent-main"], ["action_monitor"]
     )
-    assert order == (WORLD, "agent-main", "serving-agent", "child-1")
+    assert order == (WORLD, "action_monitor", "agent-main", "serving-agent", "child-1")
 
 
 def test_blocks_dispatches_by_event_type_and_ignores_spans(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -180,59 +183,86 @@ def test_non_ascii_arguments_stay_readable() -> None:
     assert "caf\u00e9" in (transcript_lanes._tool_block(event).code or "")
 
 
-def test_a_monitor_verdict_lands_in_world_at_the_flagged_events_row() -> None:
-    events: list[InspectEvent] = [
-        ToolEvent(id="seq-9", function="pr", arguments={}, result="", metadata={"seq": 9}),
+def _verdict(
+    monitor: str, target_seq: int | None, *, tap: str = "action", score: float = 0.5, reason: str = "why"
+) -> dict[str, object]:
+    return {
+        "monitor": monitor,
+        "tap": tap,
+        "score": score,
+        "reason": reason,
+        "actor_uid": "agent-main",
+        "target_seq": target_seq,
+        "ts": 0.0,
+    }
+
+
+def _sample(events: list[InspectEvent], scores: dict[str, object]) -> EvalSample:
+    return EvalSample(
+        id="episode", epoch=1, input="", target="", events=events, metadata={"agents": [], "scores": scores}
+    )
+
+
+def _tool_in_turn(round_number: int, *, sealed_seq: int, mirror_seq: int) -> list[InspectEvent]:
+    turn = f"turn:agent-main:{round_number}"
+    return [
+        SpanBeginEvent(id=turn, parent_id="agent:agent-main", name=f"turn {round_number}", type="turn"),
+        ToolEvent(
+            id=f"seq-{sealed_seq}",
+            function="write_scratch",
+            arguments={},
+            result="",
+            span_id=turn,
+            metadata={"seq": sealed_seq, "mirror_seq": mirror_seq},
+        ),
     ]
-    sample = EvalSample(
-        id="episode",
-        epoch=1,
-        input="",
-        target="",
-        events=events,
-        metadata={
-            "agents": [],
-            "scores": {
-                "monitor_verdicts": [
-                    {
-                        "monitor": "pr_review_monitor",
-                        "tap": "pr",
-                        "score": 0.85,
-                        "reason": "control-plane coverage change",
-                        "actor_uid": "agent-main",
-                        "target_seq": 9,
-                        "ts": 130.0,
-                    }
-                ]
-            },
-        },
-    )
-    transcript = build_transcript(sample)
-    blocks = transcript.cells[(WORLD, -1)]
-    verdicts = [b for b in blocks if b.kind == "verdict"]
-    assert len(verdicts) == 1
-    assert verdicts[0].title == "monitor: pr_review_monitor (pr)"
-    assert verdicts[0].body == "score 0.850  actor agent-main\ncontrol-plane coverage change"
 
 
-def test_a_monitor_verdict_with_no_matching_seq_falls_back_to_before_round_0() -> None:
-    sample = EvalSample(
-        id="episode",
-        epoch=1,
-        input="",
-        target="",
-        events=[],
-        metadata={
-            "agents": [],
-            "scores": {
-                "monitor_verdicts": [
-                    {"monitor": "inference_monitor", "tap": "inference", "score": 0.2, "reason": "ok"}
-                ]
-            },
-        },
-    )
+def test_a_verdict_lands_in_its_monitors_lane_in_the_round_of_the_event_with_its_mirror_seq() -> None:
+    events: list[InspectEvent] = [
+        SpanBeginEvent(id="agent:agent-main", name="agent-main", type="agent"),
+        # the round-0 event's sealed seq equals the verdict's target: the two logs number independently
+        *_tool_in_turn(0, sealed_seq=3, mirror_seq=1),
+        *_tool_in_turn(1, sealed_seq=6, mirror_seq=3),
+    ]
+    sample = _sample(events, {"monitor_verdicts": [_verdict("action_monitor", target_seq=3)]})
+
     transcript = build_transcript(sample)
-    assert [b.kind for b in transcript.cells[(WORLD, -1)]] == ["verdict"]
+
+    placed = [key for key, blocks in transcript.cells.items() if any(b.kind == "verdict" for b in blocks)]
+    assert placed == [("action_monitor", 1)]
+
+
+@pytest.mark.parametrize("target_seq", [200, None], ids=["target-not-in-transcript", "no-target"])
+def test_a_verdict_tied_to_no_event_in_the_transcript_goes_to_the_unplaced_row(
+    target_seq: int | None,
+) -> None:
+    sample = _sample([], {"monitor_verdicts": [_verdict("inference_monitor", target_seq)]})
+
+    transcript = build_transcript(sample)
+
+    assert list(transcript.cells) == [("inference_monitor", UNPLACED)]
+
+
+def test_a_malformed_verdict_fails_loudly_instead_of_being_dropped() -> None:
+    sample = _sample([], {"monitor_verdicts": [{"monitor": "action_monitor", "score": "high"}]})
+
+    with pytest.raises(ValidationError):
+        build_transcript(sample)
+
+
+def test_a_verdict_block_shows_its_monitor_tap_score_actor_and_reason() -> None:
+    verdict = _verdict(
+        "pr_review_monitor", None, tap="pr", score=0.85, reason="control-plane coverage change"
+    )
+    sample = _sample([], {"monitor_verdicts": [verdict]})
+
+    (block,) = build_transcript(sample).cells[("pr_review_monitor", UNPLACED)]
+
+    assert (block.title, block.body) == (
+        "monitor: pr_review_monitor (pr)",
+        "score 0.850  actor agent-main\ncontrol-plane coverage change",
+    )
 
 
 def _scores_with_verdicts(*verdicts: dict[str, object]) -> dict[str, object]:
@@ -246,41 +276,25 @@ def _scores_with_verdicts(*verdicts: dict[str, object]) -> dict[str, object]:
 
 
 def test_the_verdict_that_tripped_caught_by_is_marked() -> None:
-    sample = EvalSample(
-        id="episode",
-        epoch=1,
-        input="",
-        target="",
-        events=[],
-        metadata={
-            "agents": [],
-            "scores": _scores_with_verdicts(
-                {"monitor": "pr_review_monitor", "tap": "pr", "score": 0.1, "reason": "routine"},
-                {"monitor": "pr_review_monitor", "tap": "pr", "score": 0.85, "reason": "coverage change"},
-            ),
-        },
+    sample = _sample(
+        [],
+        _scores_with_verdicts(
+            _verdict("pr_review_monitor", None, tap="pr", score=0.1, reason="routine"),
+            _verdict("pr_review_monitor", None, tap="pr", score=0.85, reason="coverage change"),
+        ),
     )
-    blocks = build_transcript(sample).cells[(WORLD, -1)]
-    routine, caught = blocks
+
+    routine, caught = build_transcript(sample).cells[("pr_review_monitor", UNPLACED)]
+
     assert (routine.title, routine.blocked) == ("monitor: pr_review_monitor (pr)", False)
     assert (caught.title, caught.blocked) == ("monitor: pr_review_monitor (pr) -- CAUGHT", True)
 
 
 def test_a_verdict_from_an_uncaught_monitor_is_never_marked() -> None:
-    sample = EvalSample(
-        id="episode",
-        epoch=1,
-        input="",
-        target="",
-        events=[],
-        metadata={
-            "agents": [],
-            "scores": _scores_with_verdicts(
-                {"monitor": "action_monitor", "tap": "action", "score": 0.05, "reason": "ok"}
-            ),
-        },
-    )
-    block = build_transcript(sample).cells[(WORLD, -1)][0]
+    sample = _sample([], _scores_with_verdicts(_verdict("action_monitor", None, score=0.05, reason="ok")))
+
+    (block,) = build_transcript(sample).cells[("action_monitor", UNPLACED)]
+
     assert block.blocked is False
 
 
