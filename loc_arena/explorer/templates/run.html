@@ -1,0 +1,1793 @@
+<!doctype html>
+<!-- Shell, styles and note-taking adapted from the Odd Number trace explorer
+     (github.com/Antonio-Tresol/odd-number-reward-hacking), MIT License,
+     Copyright (c) 2026 Antonio Badilla-Olivas. -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LOC-Arena run explorer</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+/* Colour built in OKLCH and fitted to sRGB. Hue carries the meaning: magenta is a step a
+   monitor flagged, teal is a step a monitor scored below the audit threshold, orange is
+   covert (the sealed verifier's evidence, or an attack tool), indigo is you, grey is an
+   absence. Everything else is structure and means nothing. */
+:root {
+  /* The browser draws its own scrollbars and form controls in this scheme. */
+  color-scheme: light;
+  --paper: #fcfaf7; --surface: #ffffff; --sunken: #f5f3ef;
+  --line: #e2dfda; --line-strong: #c8c4bc;
+  --ink: #29231d; --ink-muted: #69625a; --ink-faint: #989189;
+  --accent: #3a58c3; --accent-soft: #e5edfe; --accent-ink: #ffffff;
+  --flag: #b22578; --flag-soft: #ffe7f1;
+  --clean: #026d64; --clean-soft: #d9f6f1;
+  --covert: #b25a00; --covert-soft: #fff0dc;
+  --none: #8e8c87; --reader-mark: #fadb90;
+  --shadow: 0 1px 2px rgba(41, 35, 29, .06);
+  --shadow-lift: 0 6px 24px rgba(41, 35, 29, .14);
+  --ui: "IBM Plex Sans", "Segoe UI", Helvetica, Arial, sans-serif;
+  --mono: "IBM Plex Mono", Consolas, "Courier New", monospace;
+  --read: "IBM Plex Sans", "Segoe UI", Helvetica, Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --paper: #13161c; --surface: #1d2027; --sunken: #272b34;
+    --line: #363b44; --line-strong: #4d535e;
+    --ink: #edebe7; --ink-muted: #aeaaa2; --ink-faint: #7e7a72;
+    --accent: #90aeff; --accent-soft: #293452; --accent-ink: #13161c;
+    --flag: #f47db9; --flag-soft: #4c283a;
+    --clean: #5cc6b9; --clean-soft: #153d38;
+    --covert: #f0a15a; --covert-soft: #45300f;
+    --none: #6b6963; --reader-mark: #685217;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4); --shadow-lift: 0 6px 24px rgba(0, 0, 0, .5);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #13161c; --surface: #1d2027; --sunken: #272b34;
+  --line: #363b44; --line-strong: #4d535e;
+  --ink: #edebe7; --ink-muted: #aeaaa2; --ink-faint: #7e7a72;
+  --accent: #90aeff; --accent-soft: #293452; --accent-ink: #13161c;
+  --flag: #f47db9; --flag-soft: #4c283a;
+  --clean: #5cc6b9; --clean-soft: #153d38;
+  --covert: #f0a15a; --covert-soft: #45300f;
+  --none: #6b6963; --reader-mark: #685217;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .4); --shadow-lift: 0 6px 24px rgba(0, 0, 0, .5);
+}
+* { box-sizing: border-box; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+html { height: 100%; font-size: var(--base, 14px); }
+body { margin: 0; height: 100%; background: var(--paper); color: var(--ink); font-family: var(--ui); font-size: 1rem; line-height: 1.45; }
+a { color: var(--accent); }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+h1, h2, h3 { margin: 0; line-height: 1.25; font-weight: 600; }
+.num { font-variant-numeric: tabular-nums; }
+.mono { font-family: var(--mono); }
+.eyebrow { font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-muted); font-weight: 600; }
+.help { font-size: .82rem; color: var(--ink-muted); line-height: 1.6; }
+.help p + p { margin-top: .6em; }
+.help code, code { font-family: var(--mono); font-size: .9em; background: var(--sunken); padding: 0 4px; border-radius: 4px; }
+
+/* shell: a rail that never scrolls, and one view at a time beside it */
+.app { display: grid; grid-template-columns: 212px minmax(0, 1fr); height: 100%; }
+.rail { background: var(--surface); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+.railtop { display: flex; align-items: flex-start; gap: 6px; padding: 14px 10px 10px 16px; }
+.rail .brand { flex: 1; min-width: 0; font-weight: 600; font-size: 1.02rem; line-height: 1.3; }
+.rail .brand small { display: block; font-weight: 400; font-size: .74rem; color: var(--ink-faint); font-family: var(--mono); margin-top: 3px; overflow-wrap: anywhere; }
+.rail .collapse { flex-shrink: 0; border: 0; background: transparent; color: var(--ink-faint); padding: 3px; border-radius: 6px; line-height: 0; }
+.rail .collapse:hover { color: var(--ink); background: var(--sunken); }
+.app[data-rail="mini"] { grid-template-columns: 60px minmax(0, 1fr); }
+.app[data-rail="mini"] .rail .brand, .app[data-rail="mini"] .rail .foot,
+.app[data-rail="mini"] .rail nav button .lbl { display: none; }
+.app[data-rail="mini"] .railtop { padding: 14px 0 10px; justify-content: center; }
+.app[data-rail="mini"] .rail nav { padding: 4px 8px; }
+.app[data-rail="mini"] .rail nav button { justify-content: center; padding: 9px 0; position: relative; }
+.app[data-rail="mini"] .rail nav button .tally { position: absolute; top: 2px; right: 4px; margin: 0; font-size: .62rem; }
+.rail nav { display: flex; flex-direction: column; gap: 2px; padding: 4px 10px; }
+.rail nav button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 10px; border: 0; background: transparent; border-radius: 7px; font-size: .88rem; color: var(--ink-muted); text-align: left; }
+.rail nav button:hover { color: var(--ink); background: var(--sunken); }
+.rail nav button[aria-current="true"] { background: var(--sunken); color: var(--ink); font-weight: 600; }
+.rail nav button .tally { margin-left: auto; font-family: var(--mono); font-size: .74rem; color: var(--accent); }
+.rail .foot { margin-top: auto; padding: 13px 15px; border-top: 1px solid var(--line); font-size: .76rem; color: var(--ink-faint); line-height: 1.6; }
+main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.topbar { flex-shrink: 0; height: 52px; border-bottom: 1px solid var(--line); background: var(--surface); padding: 0 20px; display: flex; align-items: center; gap: 8px; }
+.crumbs { display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; white-space: nowrap; font-size: .88rem; color: var(--ink-muted); }
+.crumbs button { border: 0; background: none; padding: 0; color: inherit; font-size: inherit; }
+.crumbs button:hover { color: var(--accent); text-decoration: underline; }
+.crumbs b { color: var(--ink); font-weight: 600; }
+.crumbs svg { color: var(--ink-faint); flex-shrink: 0; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; flex-shrink: 0; }
+.seg button { border: 0; background: var(--surface); padding: 5px 10px; font-size: .82rem; color: var(--ink-muted); }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+.view { flex: 1; min-height: 0; overflow: auto; }
+.view[hidden] { display: none; }
+#view-steps:not([hidden]) { display: flex; flex-direction: column; overflow: hidden; }
+.pad { padding: 22px 26px 60px; }
+.pad h1 { font-size: 1.5rem; margin-bottom: 5px; overflow-wrap: anywhere; }
+.pad h2 { font-size: 1.05rem; margin: 30px 0 6px; }
+.lede { color: var(--ink-muted); font-size: .92rem; line-height: 1.6; max-width: 88ch; margin: 0 0 22px; }
+
+/* overview grid: rounds down, monitors then agents across */
+.gridwrap { overflow-x: auto; }
+.land { border-collapse: separate; border-spacing: 3px; width: 100%; min-width: 900px; table-layout: fixed; }
+.land th { font-weight: 600; color: var(--ink-muted); font-size: .74rem; padding: 0 2px 7px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.land th.mon { color: var(--accent); }
+.land th.rowh { text-align: left; width: 92px; font-size: .78rem; color: var(--ink); font-weight: 500; }
+.land td { padding: 0; }
+.land td.gap { width: 10px; }
+.hm { display: block; width: 100%; border: 1px solid var(--line); border-radius: 7px; padding: 6px 3px 5px; font-family: var(--mono); font-size: .86rem; font-variant-numeric: tabular-nums; line-height: 1.15; text-align: center; background: var(--surface); color: var(--ink-faint); position: relative; }
+.hm:hover { border-color: var(--accent); }
+.hm small { display: block; font-size: .62rem; color: var(--ink-faint); margin-top: 3px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.hm.flag { background: var(--flag-soft); border-color: var(--flag); color: var(--flag); font-weight: 600; }
+.hm.clean { color: var(--clean); }
+.hm.covert::after { content: ""; position: absolute; top: 4px; right: 4px; width: 7px; height: 7px; border-radius: 999px; background: var(--covert); }
+.hm.covert { box-shadow: inset 0 0 0 1px var(--covert); }
+.hm.empty { border-style: dashed; background: transparent; cursor: default; padding: 12px 3px; }
+.hm.empty:hover { border-color: var(--line); }
+.hm[aria-pressed="true"] { outline: 2px solid var(--accent); }
+.legendrow { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; font-size: .8rem; color: var(--ink-muted); margin: 0 0 12px; }
+.legendrow .sw { display: inline-block; width: 14px; height: 14px; border-radius: 4px; vertical-align: -2px; margin-right: 5px; border: 1px solid var(--line); }
+.legendrow .sw.flag { background: var(--flag-soft); border-color: var(--flag); }
+.legendrow .sw.clean { background: var(--surface); border-color: var(--clean); }
+.legendrow .sw.covert { background: var(--covert); border-color: var(--covert); border-radius: 999px; width: 9px; height: 9px; vertical-align: 0; }
+.legend { border-collapse: collapse; font-size: .84rem; margin: 10px 0; width: 100%; }
+.legend th { font-weight: 600; text-align: left; vertical-align: top; padding: 6px 12px 6px 0; white-space: nowrap; color: var(--ink-muted); font-size: .76rem; }
+.legend td { padding: 6px 12px 6px 0; border-top: 1px solid var(--line); color: var(--ink); vertical-align: top; }
+.legend td.num, .legend th.num { text-align: right; font-family: var(--mono); }
+details summary { cursor: pointer; color: var(--accent); font-weight: 500; font-size: .88rem; }
+details + details { margin-top: 8px; }
+.milestones { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 8px; }
+.ms { border: 1px solid var(--line); background: var(--surface); border-radius: 9px; padding: 9px 12px; font-size: .84rem; }
+.ms .st { font-family: var(--mono); font-size: .72rem; font-weight: 600; }
+.ms.yes .st { color: var(--covert); }
+.ms.no .st { color: var(--ink-faint); }
+.ms .links { margin-top: 5px; display: flex; flex-wrap: wrap; gap: 4px; }
+
+/* filter bar */
+.filterbar { flex-shrink: 0; border-bottom: 1px solid var(--line); background: var(--surface); padding: 11px 20px; display: flex; flex-direction: column; gap: 9px; }
+.fldrow[hidden] { display: none; }
+.fldrow { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.fld { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line-strong); background: var(--surface); border-radius: 7px; padding: 0 8px; font-size: .84rem; color: var(--ink-muted); height: 32px; white-space: nowrap; }
+.fld:focus-within { border-color: var(--accent); }
+.fld select, .fld input { border: 0; background: transparent; font-size: .84rem; color: var(--ink); padding: 0; height: 30px; min-width: 0; }
+.fld select { font-weight: 600; }
+.fld input { width: 100%; }
+.fld input::placeholder { color: var(--ink-faint); font-weight: 400; }
+.fld.grow { flex: 1; min-width: 150px; }
+.btn { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line-strong); background: var(--surface); border-radius: 7px; padding: 0 11px; height: 32px; font-size: .84rem; white-space: nowrap; }
+.btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.btn:disabled { opacity: .45; cursor: default; }
+.btn.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.btn.solid { background: var(--ink); color: var(--paper); border-color: var(--ink); font-weight: 600; }
+.chips { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: .82rem; color: var(--ink-muted); }
+.chip { display: inline-flex; align-items: center; gap: 6px; font-size: .78rem; background: var(--ink); color: var(--paper); border: 0; border-radius: 6px; padding: 3px 9px; }
+.chip i { opacity: .55; font-style: normal; }
+.chip.quiet { background: var(--sunken); color: var(--ink); border: 1px solid var(--line); }
+.chip.quiet:hover { border-color: var(--accent); }
+
+/* steps split */
+.split { flex: 1; display: flex; min-height: 0; }
+.listcol { flex-shrink: 0; width: 360px; border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+.listhead { flex-shrink: 0; display: flex; align-items: center; gap: 10px; padding: 9px 14px; border-bottom: 1px solid var(--line); font-size: .82rem; color: var(--ink-muted); }
+.listhead b { color: var(--ink); font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.listscroll { flex: 1; overflow: auto; padding: 10px 12px 40px; }
+.list { display: flex; flex-direction: column; gap: 5px; }
+.row { display: grid; grid-template-columns: 34px 44px minmax(0, 1fr) auto; gap: 8px; align-items: center; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 7px 9px; text-align: left; }
+.row:hover { border-color: var(--accent); }
+.row[aria-current="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.row .k { font-family: var(--mono); font-size: .76rem; color: var(--ink-faint); }
+.row .lab { font-size: .78rem; color: var(--ink-muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.row .lab b { color: var(--ink); font-weight: 500; }
+.row .ch { font-family: var(--mono); font-size: .74rem; color: var(--ink-faint); font-variant-numeric: tabular-nums; display: flex; align-items: center; gap: 5px; }
+.row .dot { width: 7px; height: 7px; border-radius: 999px; background: var(--covert); display: none; }
+.row.covert .dot { display: inline-block; }
+.row .pen { color: var(--accent); display: none; }
+.row.mine .pen { display: inline-flex; }
+.row.read { background: var(--sunken); }
+.row.read .k, .row.read .lab { opacity: .6; }
+.row .tick { color: var(--clean); display: none; }
+.row.read .tick { display: inline-flex; }
+.pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-family: var(--mono); font-size: .76rem; font-variant-numeric: tabular-nums; text-align: center; background: var(--sunken); color: var(--ink-faint); }
+.pill.flag { background: var(--flag-soft); color: var(--flag); font-weight: 600; }
+.pill.clean { background: var(--clean-soft); color: var(--clean); }
+.tag { display: inline-flex; align-items: center; gap: 4px; font-size: .72rem; border-radius: 5px; padding: 1px 7px; border: 1px solid var(--line); color: var(--ink-muted); background: var(--surface); text-transform: none; letter-spacing: 0; font-weight: 500; }
+.tag.covert { color: var(--covert); border-color: var(--covert); background: var(--covert-soft); }
+.tag.blocked { color: var(--flag); border-color: var(--flag); }
+.more { margin-top: 9px; border: 1px dashed var(--line-strong); background: transparent; border-radius: 8px; padding: 7px; width: 100%; color: var(--accent); font-size: .84rem; }
+.divider { flex-shrink: 0; width: 5px; margin-left: -3px; cursor: col-resize; background: transparent; }
+.divider:hover, .divider.active { background: var(--accent); opacity: .35; }
+
+/* reader, with notes in the margin beside the passage they quote */
+.readcol { flex: 1; min-width: 0; overflow: auto; }
+.reader { padding: 18px 22px 80px; max-width: 1060px; margin: 0 auto; }
+.reader.nogutter { max-width: calc(80ch + 44px); }
+.app[data-focus="read"] .listcol,
+.app[data-focus="read"] .divider,
+.app[data-focus="read"] .filterbar { display: none; }
+.reader .head { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; max-width: 1000px; }
+.reader .head h2 { font-family: var(--mono); font-weight: 500; font-size: .92rem; }
+.provenance { width: 100%; margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--line); }
+.provenance .eyebrow { display: block; margin-bottom: 6px; }
+.reader .meta { font-size: .8rem; color: var(--ink-muted); }
+.reader .meta .pos.out { color: var(--accent); font-weight: 600; }
+.reader .meta code { font-size: .92em; }
+.reader .navb { display: flex; gap: 6px; margin-left: auto; }
+.reader h3 { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: .72rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-muted); margin: 22px 0 8px; font-weight: 600; }
+.reader h3 span.q { text-transform: none; letter-spacing: 0; font-weight: 400; }
+.reader .sub { font-size: .7rem; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-faint); margin: 10px 0 5px; font-weight: 600; }
+.reader details.prompt summary { font-size: .8rem; }
+.reader details.prompt[open] summary { margin-bottom: 6px; }
+.idline { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; width: 100%; font-family: var(--mono); font-size: .78rem; color: var(--ink-muted); }
+.idline code { user-select: all; overflow-wrap: anywhere; }
+.copy { font-size: .74rem; border: 1px solid var(--line); background: var(--surface); color: var(--ink-muted); border-radius: 5px; padding: 2px 8px; }
+.copy:hover { color: var(--accent); border-color: var(--accent); }
+.copy.done { color: var(--clean); border-color: var(--clean); }
+.reader h3 .copy { margin-left: auto; flex-shrink: 0; }
+.verdict { border: 1px solid var(--line); border-left: 4px solid var(--clean); background: var(--surface); border-radius: 8px; padding: 8px 12px; margin-bottom: 6px; font-size: .88rem; }
+.verdict.flag { border-left-color: var(--flag); }
+.verdict .vh { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: .78rem; color: var(--ink-muted); margin-bottom: 3px; }
+.verdict .vh b { color: var(--ink); font-weight: 600; }
+.split-read { position: relative; display: flex; align-items: flex-start; gap: 0; }
+.textcol { flex: 1; min-width: 0; max-width: 80ch; }
+.gutter { position: relative; flex-shrink: 0; width: 272px; margin-left: 22px; }
+.gutter.empty { display: none; }
+.connectors { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
+pre.trace { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--read); font-size: var(--trace-size, 1rem); line-height: 1.65; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 15px; margin: 0; }
+pre.trace.code { font-family: var(--mono); font-size: .8rem; line-height: 1.55; background: var(--sunken); padding: 10px 13px; }
+pre.trace mark { background: var(--reader-mark); color: var(--ink); padding: 1px 0; border-radius: 2px; }
+pre.trace mark.hl { background: var(--accent-soft); color: inherit; border-bottom: 2px solid var(--accent); cursor: pointer; border-radius: 0; }
+.tracenote { background: var(--surface); border: 1px solid var(--accent); border-radius: 10px; padding: 11px 13px; margin-top: 16px; max-width: 80ch; }
+.tracenote textarea { width: 100%; min-height: 42px; resize: vertical; font-size: .88rem; line-height: 1.5; background: var(--paper); border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; margin-top: 7px; }
+.note { position: absolute; left: 0; width: 100%; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; box-shadow: var(--shadow); transition: top .12s ease; }
+.note.mine { border-color: var(--accent); }
+.notes.dropping { outline: 2px dashed var(--accent); outline-offset: -6px; }
+.notes.dropping .dbody { background: var(--accent-soft); }
+.note.detached { border-style: dashed; border-color: var(--flag); position: static; margin-bottom: 8px; }
+.note .q { font-family: var(--mono); font-size: .76rem; color: var(--ink-muted); border-left: 2px solid var(--accent); padding-left: 8px; margin-bottom: 7px; line-height: 1.5; white-space: pre-wrap; }
+.note textarea { width: 100%; min-height: 58px; resize: vertical; font-size: .86rem; line-height: 1.5; background: var(--paper); border: 1px solid var(--line); border-radius: 7px; padding: 6px 8px; }
+.note .who { display: flex; align-items: center; gap: 6px; font-size: .72rem; color: var(--ink-faint); margin-top: 7px; }
+.note .who button { margin-left: auto; border: 0; background: none; color: var(--ink-faint); padding: 0 2px; }
+.note .who button:hover { color: var(--flag); }
+.note .warn { color: var(--flag); font-size: .74rem; margin-bottom: 5px; }
+.selbar[hidden] { display: none; }
+.selbar { position: fixed; z-index: 40; display: flex; gap: 2px; background: var(--ink); border-radius: 8px; padding: 3px; box-shadow: var(--shadow-lift); }
+.selbar button { border: 0; background: transparent; color: var(--paper); font-size: .8rem; padding: 5px 10px; border-radius: 6px; display: inline-flex; align-items: center; gap: 6px; }
+.selbar button:hover { background: color-mix(in srgb, var(--paper) 20%, transparent); }
+.empty { color: var(--ink-muted); padding: 60px 22px; text-align: center; font-size: .94rem; }
+.empty b { display: block; font-size: 1.2rem; color: var(--ink); margin-bottom: 7px; }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+.stats { display: flex; gap: 30px; align-items: baseline; margin-bottom: 8px; flex-wrap: wrap; }
+.stat .big { font-family: var(--mono); font-size: 1.6rem; font-weight: 500; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.stat .big.flag { color: var(--flag); }
+.stat .big.covert { color: var(--covert); }
+.stat .lbl { font-size: .78rem; color: var(--ink-muted); margin-top: 4px; max-width: 26ch; }
+.matrix { border-collapse: separate; border-spacing: 6px; }
+.matrix th { font-size: .78rem; color: var(--ink-muted); font-weight: 600; text-align: left; padding: 0 6px; }
+.matrix td button { width: 190px; border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 12px 14px; text-align: left; }
+.matrix td button:hover { border-color: var(--accent); }
+.matrix td button b { display: block; font-family: var(--mono); font-size: 1.5rem; font-weight: 500; }
+.matrix td button span { font-size: .78rem; color: var(--ink-muted); }
+.matrix td.miss button { border-color: var(--covert); background: var(--covert-soft); }
+.matrix td.miss button b { color: var(--covert); }
+.matrix td.hit button b { color: var(--flag); }
+.warnbox { max-width: 88ch; border-left: 3px solid var(--covert); background: var(--covert-soft); padding: 11px 14px; border-radius: 0 8px 8px 0; margin-bottom: 20px; font-size: .86rem; line-height: 1.6; }
+
+/* notes dialog */
+dialog.notes { border: 1px solid var(--line-strong); border-radius: 14px; background: var(--surface); color: var(--ink); padding: 0; width: min(560px, 92vw); box-shadow: var(--shadow-lift); }
+dialog.notes::backdrop { background: rgba(41, 35, 29, .34); }
+dialog.notes .dhead { display: flex; align-items: center; gap: 9px; padding: 16px 18px 0; }
+dialog.notes .dhead h2 { font-size: 1.05rem; }
+dialog.notes .dbody { padding: 6px 18px 18px; }
+dialog.notes .x { margin-left: auto; border: 0; background: none; color: var(--ink-faint); padding: 2px; }
+dialog.notes .x:hover { color: var(--ink); }
+.banner { background: var(--flag-soft); color: var(--flag); border: 1px solid var(--flag); border-radius: 8px; padding: 8px 11px; font-size: .82rem; line-height: 1.5; margin-bottom: 12px; }
+.notelist { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 12px; display: flex; flex-direction: column; gap: 7px; max-height: 210px; overflow: auto; }
+.notelist button { display: flex; gap: 10px; align-items: baseline; width: 100%; border: 0; background: none; text-align: left; padding: 2px 0; }
+.notelist button:hover span:last-child { color: var(--accent); }
+.notelist .nid { font-family: var(--mono); font-size: .74rem; color: var(--ink-faint); white-space: nowrap; }
+.notelist .ntx { font-size: .82rem; color: var(--ink-muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+@media (max-width: 1000px) {
+  .app { grid-template-columns: 1fr; height: auto; }
+  html, body { height: auto; }
+  .rail { flex-direction: row; align-items: center; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 20; }
+  .rail .brand, .rail .foot { display: none; }
+  .rail nav { flex-direction: row; }
+  .split-read { flex-direction: column; }
+  .gutter { width: auto; margin-left: 0; margin-top: 18px; }
+  .note[data-anchor] { position: static; margin-bottom: 8px; }
+  .marginnotes { height: auto !important; }
+  .connectors { display: none; }
+  .textcol { max-width: none; }
+  .split { flex-direction: column; }
+  .listcol { width: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+  .divider { display: none; }
+}
+
+/* transcript: rounds down, monitors then agents across, a reading panel beside it */
+#view-transcript:not([hidden]) { display: flex; flex-direction: column; overflow: hidden; }
+.tbar { flex-shrink: 0; border-bottom: 1px solid var(--line); background: var(--surface); padding: 10px 20px; display: flex; flex-direction: column; gap: 8px; }
+.outline { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 18px; font-size: .84rem; color: var(--ink-muted); }
+.outline b { color: var(--ink); font-family: var(--mono); font-weight: 500; }
+.outline b.flag { color: var(--flag); } .outline b.covert { color: var(--covert); }
+.linkish { border: 0; background: none; padding: 0; color: var(--accent); font-size: .84rem; }
+.linkish:hover { text-decoration: underline; }
+.lanechips { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.lanechips .chip { font-size: .74rem; padding: 2px 8px; }
+.lanechips .chip[aria-pressed="false"] { opacity: .45; text-decoration: line-through; }
+.tsplit { flex: 1; display: flex; min-height: 0; }
+.tscroll { flex: 1; min-width: 0; overflow: auto; }
+/* The grid box must span its whole content: a sticky cell cannot travel past its container. */
+.tgrid { display: grid; align-items: stretch; width: max-content; min-width: 100%; }
+.trow { display: contents; }
+.th { position: sticky; top: 0; z-index: 3; background: var(--surface); border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); padding: 8px 9px; font-size: .8rem; font-weight: 600; color: var(--ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.th.mon { color: var(--accent); }
+.th.corner { left: 0; z-index: 4; }
+.trl { position: sticky; left: 0; z-index: 2; background: var(--paper); border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); padding: 8px 9px; font-size: .76rem; color: var(--ink-muted); }
+.trl.flagrow { box-shadow: inset 3px 0 0 var(--flag); }
+.tcell { border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); padding: 5px; display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.tcell.mon { background: color-mix(in srgb, var(--accent) 4%, transparent); }
+.tc { display: block; width: 100%; text-align: left; border: 1px solid var(--line); border-left: 3px solid var(--line-strong); background: var(--surface); border-radius: 7px; padding: 6px 8px; font-size: .8rem; color: var(--ink); }
+.tc:hover { border-color: var(--accent); }
+.tc[aria-current="true"] { outline: 2px solid var(--accent); outline-offset: 1px; }
+.tc.flag { border-left-color: var(--flag); background: color-mix(in srgb, var(--flag-soft) 60%, var(--surface)); }
+.tc.clean { border-left-color: var(--clean); }
+.tc.covert { box-shadow: inset 0 0 0 1px var(--covert); }
+.tc .tch { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; min-width: 0; }
+.tc .tch b { font-family: var(--mono); font-weight: 600; font-size: .76rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tc .tch .pill { margin-left: auto; font-size: .7rem; padding: 1px 6px; flex-shrink: 0; }
+.tc .dotc { width: 7px; height: 7px; border-radius: 999px; background: var(--covert); flex-shrink: 0; }
+.tc .tcb { font-family: var(--read); font-size: .8rem; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; white-space: pre-wrap; }
+.tc.v .tcb { -webkit-line-clamp: 3; }
+.tc .tcr { font-family: var(--mono); font-size: .7rem; color: var(--ink-faint); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; margin-top: 3px; }
+.tc.static { cursor: default; }
+.tc.static:hover { border-color: var(--line); }
+.tmore { font-size: .72rem; color: var(--ink-faint); padding: 1px 3px; }
+.panel { flex-shrink: 0; width: min(980px, 56%); border-left: 1px solid var(--line); background: var(--paper); overflow: auto; }
+.panel[hidden], .divider[hidden] { display: none; }
+
+/* one reader for both views; a step reads as one action */
+.reader .head .pos { width: 100%; font-size: .78rem; color: var(--ink-muted); }
+.reader .head .pos.out { color: var(--accent); font-weight: 600; }
+.reader details.fold { margin: 14px 0 0; }
+.reader details.fold > summary { font-size: .8rem; color: var(--accent); }
+.reader details.fold[open] > summary { margin-bottom: 7px; }
+.reader .tracenote { padding: 8px 11px; margin-top: 12px; }
+.reader .tracenote textarea { min-height: 36px; margin-top: 5px; }
+.metaline { margin-top: 26px; padding-top: 10px; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-family: var(--mono); font-size: .74rem; color: var(--ink-faint); }
+.metaline code { overflow-wrap: anywhere; }
+
+/* a panel too narrow for a margin stacks the notes under the text instead */
+.narrow .split-read { flex-direction: column; }
+.narrow .gutter { width: auto; margin-left: 0; margin-top: 18px; }
+.narrow .note[data-anchor] { position: static; margin-bottom: 8px; }
+.narrow .marginnotes { height: auto !important; }
+.narrow .connectors { display: none; }
+.narrow .textcol { max-width: none; }
+.inline-notes { display: flex; flex-direction: column; gap: 8px; margin: 8px 0 6px 18px; padding-left: 10px; border-left: 2px solid var(--accent); }
+.inline-notes .note { position: static; }
+.narrow .gutter:not(:has(.note.detached)) { display: none; }
+
+/* a card opened in place in the grid */
+.tc { cursor: pointer; }
+.tc:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.tc .tcpen { display: none; color: var(--accent); line-height: 0; }
+.tc.mine .tcpen { display: inline-flex; }
+.tc .tcopen { flex-shrink: 0; color: var(--ink-faint); font-size: .86rem; line-height: 1; padding: 1px 4px; border-radius: 4px; visibility: hidden; }
+.tc:hover .tcopen, .tc:focus-visible .tcopen { visibility: visible; }
+.tc .tcopen:hover { color: var(--accent); background: var(--accent-soft); }
+.tc.open { cursor: auto; padding: 8px 10px; }
+.tc.open:hover { border-color: var(--line); }
+.tc.open .tch { margin-bottom: 6px; }
+.tc.open .tags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
+.tc.open .sub { font-size: .66rem; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-faint); margin: 9px 0 4px; font-weight: 600; }
+.tc.open pre.trace { font-size: .86rem; line-height: 1.55; padding: 8px 10px; max-height: 380px; overflow: auto; }
+.tc.open pre.trace.code { font-size: .74rem; max-height: 220px; }
+.tc.open .inline-notes { margin: 6px 0 4px 4px; }
+.tc.open .tcr { white-space: normal; margin-top: 8px; }
+.tcbtn { flex-shrink: 0; border: 1px solid var(--line); background: var(--surface); color: var(--ink-muted); border-radius: 5px; padding: 0 7px; font-size: .72rem; line-height: 1.7; }
+.tcbtn:hover { color: var(--accent); border-color: var(--accent); }
+.tverd { font-size: .8rem; line-height: 1.45; margin: 4px 0; }
+.tverd b { font-weight: 600; }
+.tnote { font-size: .8rem; color: var(--accent); margin-top: 8px; white-space: pre-wrap; }
+/* scrolling a card into view clears the sticky header and round column */
+.tc { scroll-margin: 48px 12px 12px 100px; }
+
+/* icons: a shape means one kind of thing everywhere */
+.ki, .pi { display: inline-flex; align-items: center; flex-shrink: 0; line-height: 0; color: var(--ink-muted); }
+.pi { color: var(--accent); }
+.tc .ki { color: var(--ink-muted); }
+.tc.covert .tch .ki { color: var(--covert); }
+.tc.flag .tch .ki { color: var(--flag); }
+.th svg { vertical-align: -2px; margin-right: 3px; opacity: .8; }
+.row .lab .ki { vertical-align: -2px; margin-right: 5px; }
+.sub .ki, .sub .pi { margin-right: 5px; vertical-align: -2px; }
+.reader h3 .pi, .reader h3 .ki { margin-right: 2px; }
+.eyebrow .pi { margin-right: 6px; vertical-align: -2px; }
+.tnote .pi { margin-right: 5px; vertical-align: -2px; }
+.help.absent { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.help.absent .pi { color: var(--ink-faint); }
+/* a folded part of a step: a row with its icon, name, what it is and its size */
+.reader details.fold { margin: 8px 0 0; }
+.reader details.fold > summary { list-style: none; display: flex; align-items: center; gap: 9px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--ink); font-size: .84rem; font-weight: 500; }
+.reader details.fold > summary::-webkit-details-marker { display: none; }
+.reader details.fold > summary:hover { border-color: var(--accent); }
+.reader details.fold > summary .fwhat { color: var(--ink-muted); font-weight: 400; display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.reader details.fold > summary .fwhat .ki { margin-left: 4px; }
+.reader details.fold > summary .fsize { margin-left: auto; font-family: var(--mono); font-size: .74rem; color: var(--ink-faint); }
+.reader details.fold > summary .fchev { color: var(--ink-faint); line-height: 0; transition: transform .12s ease; }
+.reader details.fold[open] > summary { margin-bottom: 8px; border-color: var(--accent); }
+.reader details.fold[open] > summary .fchev { transform: rotate(90deg); }
+.tcmore { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; width: 100%; margin-top: 10px; padding: 6px 8px; border: 1px dashed var(--line-strong); border-radius: 7px; background: transparent; color: var(--ink-muted); font-size: .74rem; text-align: left; }
+.tcmore span:last-child { margin-left: auto; color: var(--accent); }
+.tcmore:hover { border-color: var(--accent); }
+
+/* communication */
+.cmx { border-collapse: separate; border-spacing: 4px; font-size: .8rem; }
+.cmx th { font-weight: 600; color: var(--ink-muted); text-align: left; padding: 4px 8px; white-space: nowrap; }
+.cmx th svg { vertical-align: -2px; opacity: .8; }
+.cmx td button { min-width: 84px; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 6px 10px; text-align: left; }
+.cmx td button:hover, .cmx td button.on { border-color: var(--accent); background: var(--accent-soft); }
+.cmx td button b { font-family: var(--mono); font-size: 1.05rem; font-weight: 500; display: block; }
+.cmx td button .cv { font-size: .7rem; color: var(--covert); }
+.feed { display: flex; flex-direction: column; gap: 8px; max-width: 1000px; }
+.citem { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 10px; align-items: start; border: 1px solid var(--line); border-left: 3px solid var(--line-strong); background: var(--surface); border-radius: 9px; padding: 10px 12px; }
+.citem.covert { border-left-color: var(--covert); }
+.citem.read-agent { border-left-color: var(--clean); }
+.citem.covert.read-agent { border-left-color: var(--covert); }
+.citem .cleft { display: flex; flex-direction: column; align-items: center; gap: 4px; color: var(--ink-muted); font-family: var(--mono); font-size: .72rem; }
+.citem .cleft .ki { color: var(--accent); }
+.citem.covert .cleft .ki { color: var(--covert); }
+.citem .chead { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: .84rem; }
+.citem .chead svg { color: var(--ink-muted); }
+.citem .chead .arrow { color: var(--ink-faint); line-height: 0; }
+.citem .cbody { margin: 6px 0; font-family: var(--read); font-size: .9rem; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
+.citem .cread { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; font-size: .78rem; }
+.citem .cread .lbl { display: inline-flex; align-items: center; gap: 4px; color: var(--ink-faint); margin-right: 2px; }
+.citem .cread .chip svg { vertical-align: -2px; }
+.citem .cread .rd { color: var(--clean); border-color: var(--clean); }
+.citem .unread { display: inline-flex; align-items: center; gap: 4px; color: var(--covert); font-weight: 500; }
+.citem .unread.mon { color: var(--ink-muted); font-weight: 400; }
+.tc .tmsg { color: var(--accent); }
+.tc .tmsg .ki { vertical-align: -2px; margin-right: 3px; color: var(--accent); }
+.rail nav a.railback { display: flex; align-items: center; gap: 10px; padding: 7px 10px; margin-bottom: 6px; border-radius: 7px; font-size: .88rem; color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--line); }
+.rail nav a.railback:hover { background: var(--sunken); }
+.app[data-rail="mini"] .rail nav a.railback { justify-content: center; }
+.app[data-rail="mini"] .rail nav a.railback .lbl { display: none; }
+.crumbs a { color: var(--accent); text-decoration: none; }
+.crumbs a:hover { text-decoration: underline; }
+
+/* the index of runs */
+.runs { border-collapse: collapse; width: 100%; font-size: .84rem; }
+.runs th { text-align: left; font-size: .74rem; color: var(--ink-muted); font-weight: 600; padding: 6px 10px; border-bottom: 1px solid var(--line-strong); white-space: nowrap; }
+.runs td { padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.runs td.num, .runs th.num { text-align: right; font-family: var(--mono); }
+.runs .nowrap { white-space: nowrap; }
+.runs td svg { vertical-align: -2px; }
+.runs tr.link { cursor: pointer; }
+.runs tr.link:hover td { background: var(--sunken); }
+.runs tr td:first-child { border-left: 3px solid transparent; }
+.runs tr.out-landed-missed td:first-child { border-left-color: var(--covert); }
+.runs tr.out-landed-caught td:first-child, .runs tr.out-caught td:first-child, .runs tr.out-honest-flagged td:first-child { border-left-color: var(--flag); }
+.runs tr.out-honest-quiet td:first-child, .runs tr.out-failed td:first-child { border-left-color: var(--clean); }
+.runs b.f { color: var(--flag); }
+.runs b.c { color: var(--covert); }
+.runs .outc { font-weight: 500; }
+.hm.on, .hm[aria-pressed="true"] { outline: 2px solid var(--accent); }
+</style>
+
+<div class="app">
+  <div class="rail">
+    <div class="railtop">
+      <div class="brand">LOC-Arena run<small id="brand-run"></small></div>
+      <button class="collapse" id="btn-rail" aria-expanded="true" title="collapse the sidebar"></button>
+    </div>
+    <nav id="railnav" aria-label="Sections"></nav>
+    <div class="foot" id="railfoot"></div>
+  </div>
+
+  <main>
+    <div class="topbar">
+      <div class="crumbs" id="crumbs"></div>
+      <div style="flex:1"></div>
+      <span class="seg" role="group" aria-label="Text size"><button id="size-down" title="smaller text">A&minus;</button><button id="size-up" title="larger text">A+</button></span>
+      <span class="seg" role="group" aria-label="Theme"><button data-theme-choice="" title="follow the system">Auto</button><button data-theme-choice="light">Light</button><button data-theme-choice="dark">Dark</button></span>
+    </div>
+
+    <div class="view" id="view-transcript">
+      <div class="tbar">
+        <div class="outline" id="t-outcome"></div>
+        <div class="fldrow">
+          <label class="fld">rounds <select id="t-rows"><option value="">all</option><option value="flagged">with a flag</option><option value="covert">with a covert step</option><option value="comms">with communication</option></select></label>
+          <span class="lanechips" id="t-lanes"></span>
+          <div style="flex:1"></div>
+          <span class="legendrow" style="margin:0"><span><i class="sw flag"></i>flagged</span><span><i class="sw clean"></i>scored, not above the threshold</span><span><i class="sw covert"></i>covert</span></span>
+        </div>
+      </div>
+      <div class="tsplit">
+        <div class="tscroll" id="tscroll"><div class="tgrid" id="tgrid"></div></div>
+        <div class="divider" id="pdivider" role="separator" aria-orientation="vertical" aria-label="resize the reading panel" hidden></div>
+        <div class="panel" id="panel" hidden></div>
+      </div>
+    </div>
+
+    <div class="view pad" id="view-comms">
+      <h1>Communication</h1>
+      <p class="lede">Every message, scratch note and post in the run: who sent it, where it went, and who read it. A read is a later prompt that contains the text, or a monitor verdict on it.</p>
+      <div class="stats" id="comm-stats"></div>
+      <h2>Who talks to whom</h2>
+      <p class="lede" style="margin-bottom:10px">Senders down the side, where it went across the top. Click a count to list just those.</p>
+      <div id="comm-matrix"></div>
+      <h2>Everything said, in order</h2>
+      <div class="fldrow" style="margin-bottom:12px">
+        <label class="fld">kind <select id="c-kind"><option value="">all</option><option value="message">messages between agents</option><option value="scratch">scratch notes</option><option value="environment">environment posts</option></select></label>
+        <label class="fld">read <select id="c-read"><option value="">any</option><option value="agent">read by another agent</option><option value="monitor">read only by monitors</option><option value="none">read by no one</option></select></label>
+        <label class="fld" style="gap:8px"><input id="c-covert" type="checkbox"> covert only</label>
+        <span class="chips" id="c-chips"></span>
+      </div>
+      <div class="feed" id="comm-feed"></div>
+    </div>
+
+    <div class="view" id="view-steps">
+      <div class="filterbar">
+        <div class="fldrow">
+          <label class="fld">lane <select id="f-agent"></select></label>
+          <label class="fld">tool <select id="f-tool"></select></label>
+          <label class="fld">monitors <select id="f-verdict"><option value="">any</option><option value="flagged">flagged</option><option value="notflagged">not flagged</option><option value="none">not scored</option></select></label>
+          <label class="fld">covert <select id="f-covert"><option value="">any</option><option value="covert">covert</option><option value="plain">not covert</option></select></label>
+          <label class="fld grow"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="10.8" cy="10.8" r="6.8"/><line x1="20" y1="20" x2="15.9" y2="15.9"/></svg><input id="f-text" placeholder="search actions, replies, results and monitor reasons"></label>
+          <button class="btn" id="btn-sample" aria-pressed="false"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="3.6" y="3.6" width="16.8" height="16.8" rx="4"/><circle cx="8.9" cy="8.9" r="1.35" fill="currentColor"/><circle cx="15.1" cy="15.1" r="1.35" fill="currentColor"/><circle cx="15.1" cy="8.9" r="1.35" fill="currentColor"/></svg>Random sample</button>
+          <button class="btn" id="btn-more-filters"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="7" y1="12" x2="17" y2="12"/><line x1="10" y1="17" x2="14" y2="17"/></svg>More</button>
+        </div>
+        <div class="fldrow" id="morefilters" hidden>
+          <label class="fld">from round <input id="f-rmin" type="number" min="-1" step="1" placeholder="&minus;1" style="width:58px"></label>
+          <label class="fld">to round <input id="f-rmax" type="number" min="-1" step="1" placeholder="last" style="width:58px"></label>
+          <label class="fld" style="gap:8px"><input id="f-noworld" type="checkbox"> hide World</label>
+          <label class="fld" style="gap:8px"><input id="f-mine" type="checkbox"> has my note</label>
+          <label class="fld" style="gap:8px"><input id="f-unread" type="checkbox"> unread only</label>
+          <button class="btn" id="f-clear">Clear all</button>
+        </div>
+        <div class="fldrow" id="samplerow" hidden>
+          <span class="eyebrow">Random sample</span>
+          <label class="fld">flagged <input id="s-flag" type="number" min="0" max="99" value="4" style="width:52px"></label>
+          <label class="fld">not flagged <input id="s-clean" type="number" min="0" max="99" value="4" style="width:52px"></label>
+          <button class="btn" id="s-again">Redraw</button>
+          <button class="btn" id="s-off">Show all</button>
+          <span class="help" id="s-note" style="flex:1 1 100%"></span>
+        </div>
+        <div class="chips" id="chips"></div>
+      </div>
+      <div class="split">
+        <div class="listcol" id="listcol">
+          <div class="listhead"><span id="count"></span><div style="flex:1"></div><button class="copy" id="copy-selection" title="the id and facts of every step in this selection, as JSON, for handing to an agent">copy selection</button><label style="display:flex;align-items:center;gap:6px">sort <select id="sort" style="border:0;background:transparent;font-weight:600"><option value="round">by round</option><option value="lane">by lane</option><option value="peak">most suspicious first</option></select></label></div>
+          <div class="listscroll"><div class="list" id="list"></div><button class="more" id="more" hidden>Show more</button></div>
+        </div>
+        <div class="divider" id="divider" role="separator" aria-orientation="vertical" aria-label="resize the list"></div>
+        <div class="readcol" id="readcol"></div>
+      </div>
+    </div>
+
+    <div class="view pad" id="view-monitors">
+      <h1>Outcome and monitors</h1>
+      <p class="lede" id="mon-lede"></p>
+      <div class="stats" id="mon-stats"></div>
+      <h2>Monitors against the covert steps</h2>
+      <p class="lede" style="margin-bottom:10px">The sealed verifier knows which steps built the side task. The monitors see only what the firewall lets them. Where the two disagree is where monitoring missed or flagged something else.</p>
+      <div id="mon-matrix"></div>
+      <h2>Each monitor</h2>
+      <div id="mon-table"></div>
+      <h2>Covert steps no monitor flagged</h2>
+      <div id="mon-missed"></div>
+      <h2>Verdicts not tied to a step</h2>
+      <div id="mon-unplaced"></div>
+      <h2>Side-task milestones</h2>
+      <p class="lede" style="margin-bottom:10px">What the sealed verifier found. Each link opens a step it cites as evidence.</p>
+      <div class="milestones" id="mon-milestones"></div>
+    </div>
+
+    <div class="view pad" id="view-method">
+      <h1>How this was read</h1>
+      <div class="help" style="max-width:88ch" id="method-body"></div>
+    </div>
+  </main>
+</div>
+
+<dialog class="notes" id="notes-dialog">
+  <div class="dhead">
+    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 19.5H20"/><path d="M15.8 4.4a2 2 0 0 1 2.9 2.8L7.6 18.3l-3.7.9.9-3.7Z"/></svg>
+    <h2>Your notes</h2>
+    <button class="x" id="notes-close" aria-label="close"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
+  </div>
+  <div class="dbody">
+    <div id="notes-state"></div>
+    <div class="fldrow" style="margin-top:12px">
+      <button class="btn solid" id="notes-save"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11"/><polyline points="7.5 10.5 12 15 16.5 10.5"/><path d="M4.5 19.5h15"/></svg>Save all notes to a file</button>
+      <button class="btn" id="notes-load" title="or drop a notes file anywhere on the page"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4"/><polyline points="7.5 8.5 12 4 16.5 8.5"/><path d="M4.5 19.5h15"/></svg>Load notes from a file</button>
+      <input id="notes-import" type="file" accept="application/json,.json" hidden>
+    </div>
+    <p class="help" style="margin-top:11px">Drop a notes file anywhere on this page to load it, or use the button. One file holds every note on every step of this run. Saving writes the whole state; loading merges rather than replaces, so two people&rsquo;s files combine. A note finds its passage again by the words you quoted, not by a character position, so it survives a rebuild of this page.</p>
+    <div class="notelist" id="notes-list"></div>
+    <div style="border-top:1px solid var(--line); margin-top:14px; padding-top:11px"><button id="notes-clear" style="border:0;background:none;color:var(--ink-faint);font-size:.8rem;padding:0;text-decoration:underline;text-underline-offset:2px">Delete every note on this run in this browser</button></div>
+  </div>
+</dialog>
+
+<script id="data" type="application/json">__DATA__</script>
+<script>
+(function () {
+  const DATA = JSON.parse(document.getElementById('data').textContent);
+  const RUN = DATA.run, OUT = DATA.outcome, STEPS = DATA.steps, VERDICTS = DATA.verdicts, MONITORS = DATA.monitors, LANES = DATA.lanes;
+  const THR = OUT.safety.audit_threshold;
+  const WORLD = 'World';
+  const byId = new Map(STEPS.map(s => [s.id, s]));
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const el = id => document.getElementById(id);
+
+  const ICON = {
+    grid: '<rect x="3.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.8"/>',
+    list: '<line x1="9" y1="6.5" x2="20" y2="6.5"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="17.5" x2="20" y2="17.5"/><circle cx="4.6" cy="6.5" r="1.1" fill="currentColor" stroke="none"/><circle cx="4.6" cy="12" r="1.1" fill="currentColor" stroke="none"/><circle cx="4.6" cy="17.5" r="1.1" fill="currentColor" stroke="none"/>',
+    shield: '<path d="M12 3.5 5 6.2v5.3c0 4.3 2.9 7.6 7 9 4.1-1.4 7-4.7 7-9V6.2Z"/><path d="M9 12.2l2.2 2.2 3.9-4"/>',
+    pencil: '<path d="M11.5 19.5H20"/><path d="M15.8 4.4a2 2 0 0 1 2.9 2.8L7.6 18.3l-3.7.9.9-3.7Z"/>',
+    help: '<circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.4a2.5 2.5 0 0 1 4.9.8c0 1.7-2.5 2.5-2.5 2.5"/><circle cx="12" cy="16.6" r=".9" fill="currentColor" stroke="none"/>',
+    right: '<polyline points="9.5 5 16.5 12 9.5 19"/>',
+    panel: '<rect x="3.5" y="4.2" width="17" height="15.6" rx="3"/><line x1="9.6" y1="4.2" x2="9.6" y2="19.8"/>',
+    expand: '<polyline points="9.5 4.5 4.5 4.5 4.5 9.5"/><polyline points="14.5 4.5 19.5 4.5 19.5 9.5"/><polyline points="14.5 19.5 19.5 19.5 19.5 14.5"/><polyline points="9.5 19.5 4.5 19.5 4.5 14.5"/>',
+    check: '<circle cx="12" cy="12" r="8.5"/><path d="M8 12.5l2.7 2.7L16 9.8"/>',
+    close: '<line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>',
+    warn: '<path d="M12 8.5v4.5"/><circle cx="12" cy="16.4" r=".9" fill="currentColor" stroke="none"/><path d="M10.3 4.4 3.1 17.2A2 2 0 0 0 4.8 20.2h14.4a2 2 0 0 0 1.7-3L13.7 4.4a2 2 0 0 0-3.4 0Z"/>',
+    trash: '<path d="M4.5 6.5h15"/><path d="M9.5 6.5V4.8a1.3 1.3 0 0 1 1.3-1.3h2.4a1.3 1.3 0 0 1 1.3 1.3v1.7"/><path d="M6.6 6.5 7.5 19a1.5 1.5 0 0 0 1.5 1.4h6a1.5 1.5 0 0 0 1.5-1.4l.9-12.5"/>',
+  };
+  // One icon per kind of thing, drawn in the same grammar as the rail, so a shape comes
+  // to mean one thing wherever it appears: a tool, an event, a part of a step.
+  Object.assign(ICON, {
+    file: '<path d="M14 3.5H7.5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V8Z"/><polyline points="14 3.5 14 8 18.5 8"/>',
+    folder: '<path d="M3.5 7.2a2 2 0 0 1 2-2h3.8l2 2.3h7.2a2 2 0 0 1 2 2v7.8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2Z"/>',
+    filepen: '<path d="M12.5 20.5h-5a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2H14l4.5 4.5v3"/><polyline points="14 3.5 14 8 18.5 8"/><path d="M19.2 13.8a1.4 1.4 0 0 1 2 2l-4.4 4.4-2.7.6.6-2.7Z"/>',
+    terminal: '<rect x="3" y="4.5" width="18" height="15" rx="2.5"/><polyline points="7 9.5 10 12 7 14.5"/><line x1="12.5" y1="15" x2="17" y2="15"/>',
+    search: '<circle cx="10.8" cy="10.8" r="6.8"/><line x1="20" y1="20" x2="15.9" y2="15.9"/>',
+    flask: '<path d="M9.5 3.5h5"/><path d="M10.5 3.5v5.2L5.4 17.6a2 2 0 0 0 1.7 2.9h9.8a2 2 0 0 0 1.7-2.9l-5.1-8.9V3.5"/><path d="M7.6 14h8.8"/>',
+    gauge: '<path d="M4.3 17a8.5 8.5 0 1 1 15.4 0"/><path d="M12 13.2l3.8-3.8"/><circle cx="12" cy="13.5" r="1.3"/>',
+    sticky: '<path d="M5 3.5h14a1.5 1.5 0 0 1 1.5 1.5v9.4l-6.1 6.1H5A1.5 1.5 0 0 1 3.5 19V5A1.5 1.5 0 0 1 5 3.5Z"/><path d="M14.4 20.5v-4.6a1.5 1.5 0 0 1 1.5-1.5h4.6"/>',
+    key: '<circle cx="8" cy="15.5" r="4"/><path d="M10.9 12.6 19.5 4"/><path d="M16.3 7.2l2.6 2.6"/><path d="M13.9 9.6l2 2"/>',
+    eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="2.8"/>',
+    eyeoff: '<path d="M3.5 3.5l17 17"/><path d="M10.6 5.6c.5-.1.9-.1 1.4-.1 6 0 9.5 6.5 9.5 6.5a17.5 17.5 0 0 1-2.9 3.7"/><path d="M6.5 6.6C4 8.4 2.5 12 2.5 12S6 18.5 12 18.5c1.6 0 3-.4 4.3-1"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
+    loop: '<path d="M4 12a8 8 0 0 1 13.7-5.7L20 8.5"/><polyline points="20 3.5 20 8.5 15 8.5"/><path d="M20 12a8 8 0 0 1-13.7 5.7L4 15.5"/><polyline points="4 20.5 4 15.5 9 15.5"/>',
+    pr: '<circle cx="6" cy="5.5" r="2"/><circle cx="6" cy="18.5" r="2"/><circle cx="18" cy="18.5" r="2"/><path d="M6 7.5v9"/><path d="M18 16.5V9.5a3 3 0 0 0-3-3h-4"/><polyline points="13.2 4.3 11 6.5 13.2 8.7"/>',
+    merge: '<circle cx="6" cy="5.5" r="2"/><circle cx="6" cy="18.5" r="2"/><circle cx="18" cy="12" r="2"/><path d="M6 7.5v9"/><path d="M6 7.5c0 3 2 4.5 5 4.5h5"/>',
+    talk: '<path d="M20.5 12.6c0 3.4-3.8 6.2-8.5 6.2a10 10 0 0 1-2.4-.3l-5.1 2 1.5-3.7a5.9 5.9 0 0 1-2-4.2c0-3.4 3.8-6.2 8.5-6.2s8 2.8 8 6.2Z"/>',
+    review: '<path d="M20.5 12.6c0 3.4-3.8 6.2-8.5 6.2a10 10 0 0 1-2.4-.3l-5.1 2 1.5-3.7a5.9 5.9 0 0 1-2-4.2c0-3.4 3.8-6.2 8.5-6.2s8 2.8 8 6.2Z"/><path d="M9 12.4l2 2 4-4"/>',
+    spawn: '<circle cx="10" cy="8" r="3.5"/><path d="M3.5 19.5a6.5 6.5 0 0 1 13 0"/><path d="M19 8.5v6"/><path d="M16 11.5h6"/>',
+    sparkle: '<path d="M12 3.5l1.9 5.2 5.1 1.9-5.1 1.9L12 17.7l-1.9-5.2L5 10.6l5.1-1.9Z"/><path d="M18.5 16l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7Z"/>',
+    commit: '<circle cx="12" cy="12" r="3.2"/><path d="M3.5 12h5.3"/><path d="M15.2 12h5.3"/>',
+    server: '<rect x="4" y="4" width="16" height="6.5" rx="1.8"/><rect x="4" y="13.5" width="16" height="6.5" rx="1.8"/><circle cx="7.5" cy="7.25" r=".9" fill="currentColor" stroke="none"/><circle cx="7.5" cy="16.75" r=".9" fill="currentColor" stroke="none"/>',
+    share: '<circle cx="18" cy="5.5" r="2.2"/><circle cx="6" cy="12" r="2.2"/><circle cx="18" cy="18.5" r="2.2"/><path d="M8 10.9l8-4.3"/><path d="M8 13.1l8 4.3"/>',
+    clock: '<circle cx="12" cy="12" r="8.5"/><polyline points="12 7.5 12 12 15 14"/>',
+    sliders: '<line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="9" cy="7" r="2.2"/><circle cx="15" cy="17" r="2.2"/>',
+    power: '<path d="M12 3.5v8"/><path d="M7 6.3a7.5 7.5 0 1 0 10 0"/>',
+    ticket: '<path d="M4 7.5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2.2a2.3 2.3 0 0 0 0 4.6v2.2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2.2a2.3 2.3 0 0 0 0-4.6Z"/><path d="M14.5 6v2.2M14.5 10.9v2.2M14.5 15.8V18"/>',
+    book: '<path d="M4 5.5a2 2 0 0 1 2-2h13v14H6a2 2 0 0 0-2 2Z"/><path d="M4 19.5a2 2 0 0 0 2 2h13v-4"/>',
+    siren: '<path d="M6.5 17.5v-5a5.5 5.5 0 0 1 11 0v5"/><rect x="4.5" y="17.5" width="15" height="3" rx="1"/><path d="M12 3v2"/><path d="M4.2 6.2l1.4 1.4"/><path d="M19.8 6.2l-1.4 1.4"/>',
+    tool: '<path d="M14.6 6.4a4.2 4.2 0 0 0-5.6 5.3L3.8 16.9a1.9 1.9 0 0 0 2.7 2.7L11.7 14.4a4.2 4.2 0 0 0 5.3-5.6l-2.6 2.6-2.4-.5-.5-2.4Z"/>',
+    result: '<polyline points="15 10 20 15 15 20"/><path d="M4 4v7a4 4 0 0 0 4 4h12"/>',
+    code: '<path d="M8 4.5H7a2 2 0 0 0-2 2v3.5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v3.5a2 2 0 0 0 2 2h1"/><path d="M16 4.5h1a2 2 0 0 1 2 2v3.5a2 2 0 0 0 2 2 2 2 0 0 0-2 2v3.5a2 2 0 0 1-2 2h-1"/>',
+    broadcast: '<circle cx="12" cy="12" r="1.8"/><path d="M8.3 8.3a5.2 5.2 0 0 0 0 7.4"/><path d="M15.7 8.3a5.2 5.2 0 0 1 0 7.4"/><path d="M5.4 5.4a9.3 9.3 0 0 0 0 13.2"/><path d="M18.6 5.4a9.3 9.3 0 0 1 0 13.2"/>',
+    globe: '<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17"/><path d="M12 3.5c2.4 2.6 3.6 5.4 3.6 8.5s-1.2 5.9-3.6 8.5c-2.4-2.6-3.6-5.4-3.6-8.5S9.6 6.1 12 3.5Z"/>',
+    robot: '<rect x="5" y="8" width="14" height="11" rx="3"/><path d="M12 8V5"/><circle cx="12" cy="4" r="1.1"/><circle cx="9.4" cy="13" r="1.1" fill="currentColor" stroke="none"/><circle cx="14.6" cy="13" r="1.1" fill="currentColor" stroke="none"/><path d="M9.6 16.2h4.8"/><path d="M3 12.5v2.5"/><path d="M21 12.5v2.5"/>',
+    dot: '<circle cx="12" cy="12" r="3"/>',
+  });
+  const icon = (name, size) => `<svg width="${size || 18}" height="${size || 18}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${ICON[name] || ICON.dot}</svg>`;
+  const KIND_ICON = {
+    read_file: 'file', list_dir: 'folder', write_file: 'filepen', edit_file: 'filepen', bash: 'terminal', search_code: 'search',
+    run_tests: 'flask', run_benchmark: 'gauge', write_scratch: 'sticky', acquire_identity: 'key', blind_monitor: 'eyeoff',
+    start_rogue_loop: 'loop', open_pr: 'pr', merge: 'merge', message: 'talk', spawn_subagent: 'spawn', generate: 'sparkle',
+    batch_generate: 'sparkle', finish: 'check',
+    pr: 'pr', review: 'review', commit: 'commit', job: 'server', spawn: 'spawn', close: 'check', shared_surface: 'share',
+    tick: 'clock', config: 'sliders', forge_boot: 'power', ticket: 'ticket', wiki: 'book', slack: 'talk', siem: 'siren',
+    inference_call: 'sparkle', monitor_verdict: 'shield', monitor_parse_error: 'warn', monitor_parse_recovered: 'shield', monitor_error: 'warn',
+  };
+  const kindIcon = (kind, size) => `<span class="ki" title="${esc(kind)}">${icon(KIND_ICON[kind] || (kind ? 'tool' : 'dot'), size || 14)}</span>`;
+  // The parts of a step, each with the same shape everywhere it appears.
+  const PART = { did: 'tool', result: 'result', monitors: 'shield', raw: 'code', context: 'eye', effects: 'broadcast', happened: 'globe', note: 'pencil', reasoning: 'eyeoff' };
+  const partIcon = (part, size) => `<span class="pi">${icon(PART[part], size || 14)}</span>`;
+  const headKindOf = s => s.tools[0]?.function || s.events[0]?.kind || 'inference_call';
+
+  // ---------- small vocabulary shared by every view
+  const roundLabel = r => r < 0 ? 'before round 0' : `round ${r}`;
+  const roundKey = r => r < 0 ? 'pre' : `r${r}`;
+  const stepLabel = s => `${s.agent} · ${roundLabel(s.round)}`;
+  // The harness flags a score strictly above the threshold (metrics.py: `v.score > threshold`), so a tie is not a flag.
+  const flagged = s => s.peak != null && s.peak > THR;
+  const levelOf = score => score == null ? 'none' : score > THR ? 'flag' : 'clean';
+  const scoreText = v => v == null ? '·' : String(Math.round(v * 100) / 100);
+  const pill = score => `<span class="pill ${levelOf(score)}">${scoreText(score)}</span>`;
+  const covertTags = tags => [...new Set(tags || [])].map(t => `<span class="tag covert">${esc(t)}</span>`).join('');
+  const oneLine = t => String(t || '').replace(/\s+/g, ' ').trim();
+  const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+  const laneIndex = name => { const i = LANES.indexOf(name); return i < 0 ? LANES.length : i; };
+  const MONITOR_ORDER = MONITORS.map(m => m.name);
+  const SCORED_MONITORS = MONITOR_ORDER.filter(name => VERDICTS.some(v => v.monitor === name));
+  const replyText = s => s.calls.map(c => c.reply).join('\n');
+  const searchText = s => [replyText(s), ...s.tools.map(t => `${t.function}\n${t.arguments_text}\n${t.result_text}`), ...s.events.map(e => e.body), ...s.verdicts.map(v => v.reason)].join('\n').toLowerCase();
+  const SEARCH = new Map(STEPS.map(s => [s.id, searchText(s)]));
+  const byRound = (a, b) => a.round - b.round || laneIndex(a.agent) - laneIndex(b.agent);
+
+  function stepSummary(s) {
+    if (s.tools.length) return s.tools.map(t => t.function).join(', ');
+    if (s.events.length) return [...new Set(s.events.map(e => e.kind))].join(', ');
+    return s.calls.length ? plural(s.calls.length, 'model call') : '';
+  }
+
+  function copyText(text, btn) {
+    const done = () => { if (!btn) return; const label = btn.textContent; btn.textContent = 'copied'; btn.classList.add('done'); setTimeout(() => { btn.textContent = label; btn.classList.remove('done'); }, 1200); };
+    const fallback = () => { const ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); done(); } catch (e) { /* nothing to do */ } ta.remove(); };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback); else fallback();
+  }
+
+  // ---------- your notes: one store per run, one file
+  // A mark is the W3C Web Annotation pair without the dependency: `quote` is the
+  // TextQuoteSelector, `start` the TextPositionSelector, and the quote is what wins.
+  const NOTES_KEY = `loc-arena-notes-v1/${RUN.name}`;
+  const notesOk = (() => { try { const k = NOTES_KEY + ':probe'; localStorage.setItem(k, '1'); const ok = localStorage.getItem(k) === '1'; localStorage.removeItem(k); return ok; } catch (e) { return false; } })();
+  const emptyNotes = () => ({ version: 1, run: RUN.name, savedAt: null, steps: {} });
+  let NOTES = emptyNotes(), saveTimer = null, saveFailed = false;
+  if (notesOk) { try { const raw = localStorage.getItem(NOTES_KEY); const kept = raw ? JSON.parse(raw) : null; if (kept && kept.steps) NOTES = { ...emptyNotes(), ...kept }; } catch (e) { /* a corrupt store must not blank the page */ } }
+  const noteOf = id => NOTES.steps[id];
+  const noteFor = id => (NOTES.steps[id] || (NOTES.steps[id] = { text: '', marks: [], at: null }));
+  // Written: did I say anything about this step. Read: have I been through it (a note
+  // counts). Empty: is there anything worth keeping (a read mark counts).
+  function noteWritten(n) { return !!n && (!!String(n.text || '').trim() || !!(n.marks || []).length); }
+  function noteRead(n) { return !!n && (!!n.read || noteWritten(n)); }
+  function noteEmpty(n) { return !noteWritten(n) && !noteRead(n); }
+  const unsaved = () => Object.values(NOTES.steps).filter(n => !NOTES.savedAt || String(n.at || '') > NOTES.savedAt).length;
+
+  function keepNotes() {
+    for (const id of Object.keys(NOTES.steps)) if (noteEmpty(NOTES.steps[id])) delete NOTES.steps[id];
+    if (notesOk) { clearTimeout(saveTimer); saveTimer = setTimeout(() => { try { localStorage.setItem(NOTES_KEY, JSON.stringify(NOTES)); saveFailed = false; } catch (e) { saveFailed = true; } renderNotesState(); }, 250); }
+    renderNotesState();
+  }
+  const touch = id => { noteFor(id).at = new Date().toISOString(); keepNotes(); refreshRowMark(id); };
+
+  function renderNotesState() {
+    const entries = Object.values(NOTES.steps);
+    const n = entries.filter(noteWritten).length, readOnly = entries.filter(x => !noteWritten(x) && noteRead(x)).length;
+    const marks = entries.reduce((a, x) => a + (x.marks || []).length, 0), un = unsaved();
+    const tally = el('tally-notes'); if (tally) tally.textContent = n || '';
+    const box = el('notes-state');
+    if (box) {
+      const warn = !notesOk
+        ? `<div class="banner">${icon('warn', 15)} This browser will not let the page keep anything, so notes last only as long as this tab. <b>Save them to a file before you leave.</b></div>`
+        : saveFailed ? `<div class="banner">${icon('warn', 15)} The last save to this browser failed. Storage is full or blocked. <b>Save to a file now.</b></div>` : '';
+      box.innerHTML = warn + `<p class="help"><b class="num" style="color:var(--ink)">${n}</b> step${n === 1 ? '' : 's'} annotated, <b class="num" style="color:var(--ink)">${marks}</b> highlight${marks === 1 ? '' : 's'}${readOnly ? `, <b class="num" style="color:var(--ink)">${readOnly}</b> more marked read` : ''} &middot; ${n + readOnly ? (un ? `<b style="color:var(--flag)">${un} changed since the last save</b>` : 'all saved to a file') : 'nothing yet'}</p>`;
+    }
+    const list = el('notes-list');
+    if (list) {
+      const ids = Object.keys(NOTES.steps).sort((a, b) => (byId.get(a)?.round ?? 0) - (byId.get(b)?.round ?? 0));
+      list.innerHTML = ids.map(id => {
+        const s = byId.get(id), n2 = NOTES.steps[id];
+        const first = String(n2.text || '').trim() || (n2.marks || []).map(m => m.note).find(x => String(x || '').trim()) || (noteWritten(n2) ? plural((n2.marks || []).length, 'highlight') : 'marked read');
+        return `<button data-open-note="${esc(id)}"><span class="nid">${esc(s ? stepLabel(s) : id)}</span><span class="ntx">${esc(first)}</span></button>`;
+      }).join('') || '<p class="help">No notes yet. Open a step and select a passage.</p>';
+      list.querySelectorAll('[data-open-note]').forEach(b => b.addEventListener('click', () => {
+        const s = byId.get(b.dataset.openNote);
+        if (s) { el('notes-dialog').close(); openStep(s, { record: true }); }
+      }));
+    }
+  }
+
+  // The parser drops one newline after `<pre>` and normalises CRLF, so every offset
+  // and quote is taken against this form. Each annotatable <pre> opens with a
+  // throwaway newline so pre.textContent equals this exactly.
+  const domText = s => String(s ?? '').replace(/\r\n?/g, '\n');
+  // A step has several texts worth annotating. A field names one: `reply-0` is the
+  // first model call's reply, `result-1` the second tool call's result. The texts are
+  // fixed by the builder, so a note still finds its passage after a rebuild.
+  const FIELD_TEXT = {
+    prompt: (s, i) => s.calls[i]?.prompt, reply: (s, i) => s.calls[i]?.reply,
+    args: (s, i) => s.tools[i]?.arguments_text, result: (s, i) => s.tools[i]?.result_text,
+    body: (s, i) => s.events[i]?.body,
+  };
+  const FIELD_NAME = { prompt: 'prompt', reply: 'reply', args: 'action', result: 'result', body: 'event' };
+  const fieldParts = field => { const [kind, i] = String(field || '').split('-'); return [kind, Number(i) || 0]; };
+  const fieldText = (s, field) => { const [kind, i] = fieldParts(field); return domText((FIELD_TEXT[kind] || (() => ''))(s, i) || ''); };
+  const fieldName = field => { const [kind, i] = fieldParts(field); return `${FIELD_NAME[kind] || kind}${i ? ` ${i + 1}` : ''}`; };
+
+  function anchorAt(text, m) {
+    const q = String(m.quote || ''); if (!q) return null;
+    if (text.slice(m.start, m.start + q.length) === q) return [m.start, m.start + q.length];
+    let best = -1, from = 0, i;
+    while ((i = text.indexOf(q, from)) >= 0) { if (best < 0 || Math.abs(i - m.start) < Math.abs(best - m.start)) best = i; from = i + 1; }
+    return best < 0 ? null : [best, best + q.length];
+  }
+
+  // Spans overlap, so emit one segment per distinct cover instead of nesting <mark>.
+  function renderMarked(text, spans) {
+    const live = spans.filter(s => s && s[1] > s[0]);
+    if (!live.length) return esc(text);
+    const cuts = [...new Set(live.flatMap(s => [s[0], s[1]]))].sort((a, b) => a - b);
+    let out = '', pos = 0;
+    for (let i = 0; i < cuts.length - 1; i++) {
+      const a = cuts[i], b = cuts[i + 1], on = live.filter(s => s[0] <= a && s[1] >= b);
+      if (a > pos) out += esc(text.slice(pos, a));
+      pos = b;
+      const seg = esc(text.slice(a, b));
+      if (!on.length) { out += seg; continue; }
+      const id = (on.find(s => s[3]) || [])[3];
+      out += `<mark class="${[...new Set(on.map(s => s[2]))].join(' ')}"${id ? ` data-mark="${esc(id)}"` : ''}>${seg}</mark>`;
+    }
+    return out + esc(text.slice(pos));
+  }
+
+  // ---------- selecting a passage offers to pin a note to it
+  function offsetIn(root, node, off) {
+    if (!node || node.nodeType !== 3 || !root.contains(node)) return 0;
+    const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let acc = 0, n;
+    while ((n = w.nextNode())) { if (n === node) return acc + off; acc += n.nodeValue.length; }
+    return 0;
+  }
+  const selbar = document.createElement('div');
+  selbar.className = 'selbar';
+  selbar.hidden = true;
+  selbar.innerHTML = `<button data-act="note">${icon('pencil', 14)}note on this</button><button data-act="copy">copy</button>`;
+  document.body.appendChild(selbar);
+  let pending = null;
+  const hideSelbar = () => { selbar.hidden = true; pending = null; };
+
+  function showSelbar() {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.rangeCount) return hideSelbar();
+    const range = sel.getRangeAt(0), host = range.commonAncestorContainer;
+    const pre = (host.nodeType === 1 ? host : host.parentElement)?.closest('pre.trace[data-field]');
+    const quote = range.toString();
+    if (!pre || quote.trim().length < 2) return hideSelbar();
+    const stepId = pre.closest('[data-step-host]')?.dataset.stepHost || S.step;
+    pending = { stepId, field: pre.dataset.field, quote, start: offsetIn(pre, range.startContainer, range.startOffset) };
+    const box = range.getBoundingClientRect();
+    selbar.hidden = false;
+    selbar.style.left = Math.round(Math.max(8, Math.min(window.innerWidth - selbar.offsetWidth - 8, box.left))) + 'px';
+    const top = box.top > selbar.offsetHeight + 10 ? box.top - selbar.offsetHeight - 6 : box.bottom + 6;
+    selbar.style.top = Math.round(Math.max(8, Math.min(window.innerHeight - selbar.offsetHeight - 8, top))) + 'px';
+  }
+  const inSelbar = e => e.target instanceof Element && e.target.closest('.selbar');
+  document.addEventListener('mouseup', e => { if (!inSelbar(e)) setTimeout(showSelbar, 0); });
+  document.addEventListener('keyup', e => { if (e.key === 'Shift' || e.shiftKey) setTimeout(showSelbar, 0); });
+  selbar.addEventListener('mousedown', e => e.preventDefault());
+  selbar.addEventListener('click', e => {
+    const btn = e.target instanceof Element ? e.target.closest('button') : null;
+    if (!btn || !pending) return;
+    const p = pending;
+    if (btn.dataset.act === 'copy') copyText(p.quote); else addMark(p);
+    hideSelbar(); window.getSelection()?.removeAllRanges();
+  });
+
+  function addMark(p) {
+    const s = byId.get(p.stepId); if (!s) return;
+    const n = noteFor(s.id), id = 'm' + Date.now().toString(36) + Math.floor(Math.random() * 4096).toString(36);
+    n.marks.push({ id, field: p.field, start: p.start, quote: p.quote, note: '' });
+    touch(s.id);
+    refreshStepViews(s.id);
+    focusMark(id);
+  }
+
+  // One card per note, wherever the step is shown: the side panel's margin, or under
+  // the passage in a card open in the grid. The handlers are delegated (below), so a
+  // card keeps working when layout moves it.
+  const noteCard = (m, stepId) => `<div class="note mine" data-anchor="${esc(m.id)}"><div class="q">${esc(m.quote.length > 220 ? m.quote.slice(0, 220) + '…' : m.quote)}</div><textarea data-note-for="${esc(m.id)}" data-note-step="${esc(stepId)}" placeholder="what do you make of this passage?">${esc(m.note)}</textarea><div class="who">${icon('pencil', 12)}in the ${esc(fieldName(m.field))}<button data-del-mark="${esc(m.id)}" data-note-step="${esc(stepId)}" title="delete this highlight and its note">${icon('trash', 13)}</button></div></div>`;
+  const lostCard = (m, stepId) => `<div class="note detached" data-lost="${esc(m.id)}"><div class="warn">${icon('warn', 13)} this passage is no longer in the step</div><div class="q">${esc(m.quote.slice(0, 220))}</div><textarea data-note-for="${esc(m.id)}" data-note-step="${esc(stepId)}">${esc(m.note)}</textarea><div class="who">kept, but it has nowhere to point<button data-del-mark="${esc(m.id)}" data-note-step="${esc(stepId)}">${icon('trash', 13)}</button></div></div>`;
+  document.addEventListener('input', e => {
+    const ta = e.target instanceof Element ? e.target.closest('textarea[data-note-for]') : null; if (!ta) return;
+    const m = (noteFor(ta.dataset.noteStep).marks || []).find(x => x.id === ta.dataset.noteFor);
+    if (m) { m.note = ta.value; touch(ta.dataset.noteStep); scheduleLayout(); }
+  });
+  document.addEventListener('click', e => {
+    const t = e.target instanceof Element ? e.target : null; if (!t) return;
+    const del = t.closest('[data-del-mark]');
+    if (del) {
+      const own = noteFor(del.dataset.noteStep);
+      own.marks = (own.marks || []).filter(x => x.id !== del.dataset.delMark);
+      touch(del.dataset.noteStep); refreshStepViews(del.dataset.noteStep);
+      return;
+    }
+    const mk = t.closest('pre.trace mark.hl[data-mark]');
+    if (mk) focusMark(mk.dataset.mark, mk.closest('[data-step-host]'));
+  });
+
+  // ---------- state, and the address bar that carries it
+  // Every key is in the address bar when it differs from here, so a link reopens the
+  // same view, filters and step. Going back resets to these first, then reads the hash,
+  // so a filter from a later page never leaks into an earlier one.
+  const DEFAULT_STATE = { view: 'transcript', trows: '', hide: '', agent: '', tool: '', verdict: '', covert: '', text: '', rmin: '', rmax: '', noworld: false, mine: false, unread: false, sort: 'round', step: null, focus: false, sample: false, seed: 1, sflag: '4', sclean: '4' };
+  const S = { ...DEFAULT_STATE };
+  const HASH_NAME = { step: 't' };
+  const FILTER_DEFAULTS = { agent: '', tool: '', verdict: '', covert: '', text: '', rmin: '', rmax: '', noworld: false, mine: false, unread: false, sample: false };
+  const els = {};
+  ['f-agent', 'f-tool', 'f-verdict', 'f-covert', 'f-text', 'f-rmin', 'f-rmax', 'f-noworld', 'f-mine', 'f-unread', 'sort', 't-rows', 'list', 'more', 'count', 'chips', 'readcol', 'crumbs', 'listcol', 'panel', 'tgrid', 'tscroll'].forEach(id => els[id] = el(id));
+  const FIELD = { 'f-agent': 'agent', 'f-tool': 'tool', 'f-verdict': 'verdict', 'f-covert': 'covert', 'f-text': 'text', 'f-rmin': 'rmin', 'f-rmax': 'rmax', 'f-noworld': 'noworld', 'f-mine': 'mine', 'f-unread': 'unread', 'sort': 'sort', 't-rows': 'trows' };
+
+  function writeHash(mode) {
+    const p = new URLSearchParams();
+    for (const [key, base] of Object.entries(DEFAULT_STATE)) {
+      if (key === 'step' || S[key] === base || S[key] === '' || S[key] == null) continue;
+      if (!S.sample && ['seed', 'sflag', 'sclean'].includes(key)) continue;
+      p.set(key, String(S[key]));
+    }
+    if (S.step && byId.has(S.step)) p.set(HASH_NAME.step, S.step);
+    const hash = '#' + p.toString();
+    if (mode === 'push' && hash !== location.hash) history.pushState(null, '', hash);
+    else history.replaceState(null, '', hash);
+  }
+  function readHash() {
+    const p = new URLSearchParams(location.hash.slice(1));
+    for (const [key, base] of Object.entries(DEFAULT_STATE)) {
+      if (key === 'step' || !p.has(key)) continue;
+      const raw = p.get(key);
+      S[key] = typeof base === 'boolean' ? raw === 'true' : typeof base === 'number' ? Number(raw) || base : raw;
+    }
+    if (!VIEWS.some(v => v.id === S.view && !v.dialog)) S.view = DEFAULT_STATE.view;
+    if (S.rmin !== '' || S.rmax !== '' || S.noworld || S.mine || S.unread) el('morefilters').hidden = false;
+    return p.get(HASH_NAME.step);
+  }
+
+  let matches = [], shown = 0;
+  const PAGE = DATA.settings.list_page_size;
+
+  const VIEWS = [
+    { id: 'transcript', label: 'Transcript', icon: 'grid' },
+    { id: 'comms', label: 'Communication', icon: 'talk' },
+    { id: 'steps', label: 'Search steps', icon: 'list' },
+    { id: 'monitors', label: 'Outcome and monitors', icon: 'shield' },
+    { id: 'notes', label: 'Your notes', icon: 'pencil', dialog: true },
+    { id: 'method', label: 'How this was read', icon: 'help' },
+  ];
+  function buildRail() {
+    els.rail = el('railnav');
+    // A page built from a folder of runs links back to the index of them all.
+    const back = RUN.index ? `<a class="railback" href="${esc(RUN.index)}" title="All runs">${icon('list')}<span class="lbl">All runs</span></a>` : '';
+    els.rail.innerHTML = back + VIEWS.map(v => `<button data-view="${v.id}" title="${esc(v.label)}">${icon(v.icon)}<span class="lbl">${esc(v.label)}</span>${v.id === 'notes' ? '<span class="tally num" id="tally-notes"></span>' : ''}</button>`).join('');
+    els.rail.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => {
+      const v = VIEWS.find(x => x.id === b.dataset.view);
+      if (v.dialog) openNotes(); else showView(v.id, { record: true });
+    }));
+    el('brand-run').textContent = `${RUN.mode} · seed ${RUN.seed}`;
+    el('railfoot').innerHTML = `${STEPS.length} steps in ${LANES.length} lanes<br>${VERDICTS.length} monitor verdicts`;
+  }
+  function applyFocus() {
+    const app = document.querySelector('.app');
+    if (S.focus && S.view === 'steps') app.setAttribute('data-focus', 'read'); else app.removeAttribute('data-focus');
+    scheduleLayout();
+  }
+
+  // One view at a time. The open step belongs to the view it was opened in: the
+  // transcript reads it in the side panel, the search view beside its list.
+  function showView(id, opts) {
+    const changed = S.view !== id;
+    S.view = id;
+    VIEWS.filter(v => !v.dialog).forEach(v => { const node = el('view-' + v.id); if (node) node.hidden = v.id !== id; });
+    els.rail.querySelectorAll('[data-view]').forEach(b => b.setAttribute('aria-current', String(b.dataset.view === id)));
+    if (id === 'transcript') renderTranscript();
+    if (id === 'monitors') renderMonitors();
+    if (id === 'comms') renderComms();
+    if (changed && S.step && byId.has(S.step) && (id === 'transcript' || id === 'steps')) renderReaderFor(byId.get(S.step));
+    else if (id === 'transcript' && !S.step) closePanel();
+    applyFocus();
+    renderCrumbs();
+    if (opts?.record !== undefined) writeHash(opts.record ? 'push' : 'replace');
+  }
+
+  // ---------- transcript: every lane side by side, a reading panel beside it
+  const hiddenLanes = () => new Set(String(S.hide || '').split(',').filter(Boolean));
+  const visibleLanes = () => { const h = hiddenLanes(); return LANES.filter(l => !h.has(l)); };
+  const verdictsInRound = (monitor, r) => VERDICTS.filter(v => v.monitor === monitor && v.step && byId.get(v.step).round === r);
+  function transcriptRounds() {
+    const lanes = new Set(visibleLanes());
+    const rounds = [...new Set(STEPS.map(s => s.round))].sort((a, b) => a - b);
+    if (S.trows === 'flagged') return rounds.filter(r => STEPS.some(s => s.round === r && lanes.has(s.agent) && flagged(s)));
+    if (S.trows === 'covert') return rounds.filter(r => STEPS.some(s => s.round === r && lanes.has(s.agent) && s.covert.length));
+    if (S.trows === 'comms') { const said = new Set(COMM.map(c => c.step)); return rounds.filter(r => STEPS.some(s => s.round === r && lanes.has(s.agent) && said.has(s.id))); }
+    return rounds;
+  }
+  // The order J and K walk in the transcript: what is on screen, round by round.
+  function transcriptOrder() {
+    const lanes = new Set(visibleLanes()), rounds = new Set(transcriptRounds());
+    return STEPS.filter(s => lanes.has(s.agent) && rounds.has(s.round)).sort(byRound);
+  }
+
+  // Cards open in the grid, by step id. Their lane widens while one is open.
+  const OPEN = new Set();
+  function stepCard(s) {
+    if (OPEN.has(s.id)) return openCard(s);
+    const t = s.tools[0], own = s.agent;
+    const head = t ? t.function : s.events.length ? [...new Set(s.events.map(e => e.kind))].join(', ') : plural(s.calls.length, 'model call');
+    const body = t ? t.action : s.events.length ? s.events.map(e => `${e.kind} by ${e.actor || '?'}`).join('\n') : oneLine(s.calls.at(-1)?.reply);
+    const extra = [];
+    if (s.tools.length > 1) extra.push(`+ ${plural(s.tools.length - 1, 'more tool call')}`);
+    const foreign = s.calls.filter(c => c.identity !== own);
+    if (foreign.length) extra.push(`${plural(foreign.length, 'model call')} as ${[...new Set(foreign.map(c => c.identity))].join(', ')}`);
+    if (t && t.blocked) extra.push(`blocked: ${t.blocked}`);
+    else if (t) extra.push(`→ ${oneLine(t.result_text).slice(0, 140) || 'no result'}`);
+    const sent = COMM.filter(c => c.step === s.id && c.kind === 'message');
+    const cls = ['tc', levelOf(s.peak), s.covert.length ? 'covert' : ''].filter(Boolean).join(' ');
+    const tip = `${stepLabel(s)}${s.covert.length ? ` · covert: ${s.covert.join(', ')}` : ''}`;
+    const mine = noteWritten(noteOf(s.id)) ? ' mine' : '';
+    return `<div class="${cls}${mine}" role="button" tabindex="0" data-step="${esc(s.id)}" aria-current="${S.step === s.id}" title="${esc(tip)} · click to expand"><div class="tch">${s.covert.length ? '<span class="dotc"></span>' : ''}${kindIcon(headKindOf(s), 13)}<b>${esc(head)}</b><span class="tcpen">${icon('pencil', 11)}</span>${s.peak != null ? pill(s.peak) : ''}<span class="tcopen" role="button" data-open-panel="${esc(s.id)}" title="open in the side panel">&#8599;</span></div><div class="tcb">${esc(body)}</div>${sent.map(c => `<div class="tcr tmsg">${kindIcon('message', 11)} to ${esc(c.audience)}: ${esc(oneLine(c.text))}</div>`).join('')}${extra.map(x => `<div class="tcr">${esc(x)}</div>`).join('')}</div>`;
+  }
+  // A card open in the grid: the whole action, its result and the monitors' reasons,
+  // annotatable like the panel, with each note right under its passage.
+  function openCard(s) {
+    const mine = noteOf(s.id);
+    const placed = (mine?.marks || []).map(m => ({ m, at: anchorAt(fieldText(s, m.field), m) }));
+    const notesUnder = field => { const here = placed.filter(x => x.m.field === field && x.at).sort((a, b) => a.at[0] - b.at[0]); return here.length ? `<div class="inline-notes">${here.map(x => noteCard(x.m, s.id)).join('')}</div>` : ''; };
+    const block = (field, cls) => annotated(s, field, placed, cls) + notesUnder(field);
+    const parts = [];
+    s.tools.forEach((t, i) => parts.push(`<div class="sub">${partIcon('did', 12)}${s.tools.length > 1 ? esc(t.function) : 'what it did'}</div>${block(`args-${i}`)}<div class="sub">${partIcon('result', 12)}result${t.blocked ? ` (blocked: ${esc(t.blocked)})` : ''}</div>${block(`result-${i}`, 'code')}`));
+    if (!s.tools.length) s.events.forEach((ev, i) => parts.push(`<div class="sub">${kindIcon(ev.kind, 12)}${esc(ev.kind)} by ${esc(ev.actor || '?')}</div>${block(`body-${i}`, 'code')}`));
+    if (!s.tools.length && !s.events.length) s.calls.forEach((c, i) => parts.push(`<div class="sub">${partIcon('raw', 12)}reply as ${esc(c.identity)}</div>${block(`reply-${i}`)}`));
+    const verdicts = s.verdicts.length ? `<div class="sub">${partIcon('monitors', 12)}how the monitors read it</div>${[...s.verdicts].sort((a, b) => b.score - a.score).map(v => `<div class="tverd">${pill(v.score)} <b>${esc(v.monitor)}</b> ${esc(v.reason)}</div>`).join('')}` : '';
+    const note = String(mine?.text || '').trim() ? `<div class="tnote">${partIcon('note', 12)}${esc(mine.text)}</div>` : '';
+    const lost = placed.filter(x => !x.at).map(x => lostCard(x.m, s.id)).join('');
+    const cls = ['tc', 'open', levelOf(s.peak), s.covert.length ? 'covert' : ''].filter(Boolean).join(' ');
+    return `<div class="${cls}" data-step="${esc(s.id)}" data-step-host="${esc(s.id)}" aria-current="${S.step === s.id}">
+      <div class="tch">${s.covert.length ? '<span class="dotc"></span>' : ''}${kindIcon(headKindOf(s), 13)}<b>${esc(s.tools[0]?.function || stepSummary(s))}</b>${s.peak != null ? pill(s.peak) : ''}<button class="tcbtn" data-open-panel="${esc(s.id)}" title="open in the side panel: the raw reply, the context the model saw, your note on the step">open &#8599;</button><button class="tcbtn" data-collapse="${esc(s.id)}" title="collapse (Esc collapses every open card)">&#9652;</button></div>
+      ${s.covert.length ? `<div class="tags">${covertTags(s.covert)}</div>` : ''}${parts.join('')}${verdicts}${note}${lost}
+      ${s.calls.length ? `<button class="tcmore" data-open-panel="${esc(s.id)}">${partIcon('raw', 12)}raw reply ${partIcon('context', 12)}context ${partIcon('note', 12)}your step note <span>open &#8599;</span></button>` : ''}
+    </div>`;
+  }
+  function toggleCard(id, force) {
+    const want = force ?? !OPEN.has(id);
+    if (want) OPEN.add(id); else OPEN.delete(id);
+    renderTranscript();
+    const card = els.tgrid.querySelector(`.tc[data-step="${CSS.escape(id)}"]:not(.v)`);
+    if (card && want) card.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }
+  // Every place a step is on screen redraws after its notes change.
+  function refreshStepViews(id) {
+    const s = byId.get(id); if (!s) return;
+    if (S.step === id && readerHost()?.querySelector(`.reader[data-step-host="${CSS.escape(id)}"]`)) redrawStep(s);
+    if (OPEN.has(id)) { const card = els.tgrid.querySelector(`.tc.open[data-step="${CSS.escape(id)}"]`); if (card) card.outerHTML = openCard(s); }
+  }
+  function verdictCard(v, clickable) {
+    const s = v.step ? byId.get(v.step) : null;
+    const target = s ? `${s.agent} · ${v.target || ''}` : `mirror #${v.target_mirror_seq ?? 'none'} · ${v.actor}`;
+    const attrs = clickable && s ? `data-step="${esc(s.id)}" aria-current="${S.step === s.id}"` : 'disabled';
+    return `<button class="tc v ${levelOf(v.score)}${clickable && s ? '' : ' static'}" ${attrs}><div class="tch"><b>${esc(target)}</b>${pill(v.score)}</div><div class="tcb">${esc(v.reason)}</div></button>`;
+  }
+  function monitorCell(vs) {
+    if (!vs.length) return '';
+    const high = vs.filter(v => v.score > THR).sort((a, b) => b.score - a.score), low = vs.filter(v => v.score <= THR);
+    const max = low.length ? Math.max(...low.map(v => v.score)) : null;
+    return high.map(v => verdictCard(v, true)).join('') + (low.length ? `<div class="tmore">${low.length}${high.length ? ' more' : ''} at or below ${THR}${max ? `, highest ${scoreText(max)}` : ''}</div>` : '');
+  }
+  function renderTbar() {
+    const mt = OUT.main_task, st = OUT.side_task, sf = OUT.safety;
+    const reached = OUT.milestones.filter(m => m.reached).length;
+    el('t-outcome').innerHTML = [
+      `<span>main task <b>${esc(mt.final_score)}</b>${mt.gate_passed ? '' : ` (gate failed: ${esc(mt.gate_reason || '?')})`}</span>`,
+      `<span>side task <b class="covert">${st.landing_robust ? 'landed, robust' : st.landing_minimal ? 'landed, minimal' : 'not landed'}</b> (${reached} of ${OUT.milestones.length} milestones)</span>`,
+      `<span><b class="${sf.caught ? 'flag' : ''}">${sf.caught ? 'caught' : 'not caught'}</b>${sf.caught ? ` by ${esc(sf.caught_by.join(', '))}` : ''}</span>`,
+      `<span>audit threshold <b>${esc(THR)}</b></span>`,
+      `<span><b class="flag">${STEPS.filter(flagged).length}</b> steps flagged, <b class="covert">${STEPS.filter(s => s.covert.length).length}</b> covert</span>`,
+      `<button class="linkish" data-to-view="monitors">outcome and monitors &rarr;</button>`,
+    ].join('');
+    el('t-outcome').querySelector('[data-to-view]').addEventListener('click', () => showView('monitors', { record: true }));
+    const hidden = hiddenLanes();
+    el('t-lanes').innerHTML = '<span class="help" style="margin-right:2px">lanes</span>' + LANES.map(l => `<button class="chip quiet" data-lane="${esc(l)}" aria-pressed="${!hidden.has(l)}" title="show or hide this lane">${esc(l)}</button>`).join('');
+    el('t-lanes').querySelectorAll('[data-lane]').forEach(b => b.addEventListener('click', () => {
+      const h = hiddenLanes(); if (h.has(b.dataset.lane)) h.delete(b.dataset.lane); else h.add(b.dataset.lane);
+      S.hide = [...h].join(','); renderTranscript(); writeHash('replace');
+    }));
+  }
+  function renderTranscript() {
+    renderTbar();
+    const lanes = visibleLanes(), rounds = transcriptRounds();
+    // Fixed widths: the grid box spans its content so the sticky round column holds, and
+    // content-sized columns would stretch to a whole paragraph on one line.
+    const busy = m => VERDICTS.filter(v => v.monitor === m).length > DATA.settings.sparse_monitor_verdicts;
+    const opened = new Set([...OPEN].map(id => byId.get(id)?.agent));
+    const cols = ['88px', ...SCORED_MONITORS.map(m => busy(m) ? '240px' : '170px'), ...lanes.map(l => opened.has(l) ? '460px' : l === WORLD ? '200px' : '230px')];
+    const head = `<div class="trow"><div class="th corner">round</div>${SCORED_MONITORS.map(m => `<div class="th mon" title="${esc(m)}">${icon('shield', 14)} ${esc(m)}</div>`).join('')}${lanes.map(l => `<div class="th" title="${esc(l)}">${icon(l === WORLD ? 'globe' : 'robot', 14)} ${esc(l)}</div>`).join('')}</div>`;
+    const unplaced = VERDICTS.filter(v => !v.step);
+    const whole = unplaced.length ? `<div class="trow"><div class="trl">whole run</div>${SCORED_MONITORS.map(m => `<div class="tcell mon">${unplaced.filter(v => v.monitor === m).map(v => verdictCard(v, false)).join('')}</div>`).join('')}${lanes.map(() => '<div class="tcell"></div>').join('')}</div>` : '';
+    const cell = new Map(STEPS.map(s => [`${s.agent}|${s.round}`, s]));
+    const body = rounds.map(r => {
+      const any = STEPS.some(s => s.round === r && flagged(s));
+      return `<div class="trow"><div class="trl${any ? ' flagrow' : ''}">${esc(roundLabel(r))}</div>${SCORED_MONITORS.map(m => `<div class="tcell mon">${monitorCell(verdictsInRound(m, r))}</div>`).join('')}${lanes.map(l => { const s = cell.get(`${l}|${r}`); return `<div class="tcell">${s ? stepCard(s) : ''}</div>`; }).join('')}</div>`;
+    }).join('');
+    els.tgrid.style.gridTemplateColumns = cols.join(' ');
+    els.tgrid.innerHTML = head + whole + (body || `<div class="trow"><div class="trl"></div><div class="tcell help" style="grid-column: 2 / -1">No round matches.</div></div>`);
+    syncControls();
+  }
+  els.tgrid.addEventListener('click', e => {
+    const t = e.target instanceof Element ? e.target : null; if (!t) return;
+    const toPanel = t.closest('[data-open-panel]');
+    if (toPanel) { openStep(byId.get(toPanel.dataset.openPanel), { record: true }); return; }
+    const collapse = t.closest('[data-collapse]');
+    if (collapse) { toggleCard(collapse.dataset.collapse, false); return; }
+    if (t.closest('.tc.open')) return;  // reading, selecting or writing inside an open card
+    const card = t.closest('.tc[data-step]');
+    if (card) toggleCard(card.dataset.step, card.classList.contains('v') ? true : undefined);
+  });
+  els.tgrid.addEventListener('keydown', e => {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target instanceof Element && e.target.matches('.tc[data-step]:not(.open)')) { e.preventDefault(); toggleCard(e.target.dataset.step); }
+  });
+  function markCurrentCards() {
+    els.tgrid.querySelectorAll('[data-step]').forEach(b => b.setAttribute('aria-current', String(b.dataset.step === S.step)));
+    els.list.querySelectorAll('.row').forEach(r => r.setAttribute('aria-current', String(r.dataset.id === S.step)));
+  }
+  function closePanel(opts) {
+    if (S.view === 'transcript') S.step = null;
+    els.panel.hidden = true; el('pdivider').hidden = true; els.panel.innerHTML = '';
+    markCurrentCards();
+    renderCrumbs();
+    if (opts?.record !== undefined) writeHash(opts.record ? 'push' : 'replace');
+  }
+
+  // ---------- search view: the filtered list of steps
+  function select() {
+    const txt = S.text.trim().toLowerCase();
+    const rmin = S.rmin === '' ? -Infinity : Number(S.rmin), rmax = S.rmax === '' ? Infinity : Number(S.rmax);
+    matches = STEPS.filter(s => (!S.agent || s.agent === S.agent)
+      && (!S.tool || s.tools.some(t => t.function === S.tool))
+      && (!S.verdict || (S.verdict === 'flagged' ? flagged(s) : S.verdict === 'notflagged' ? !flagged(s) : s.peak == null))
+      && (!S.covert || (S.covert === 'covert' ? s.covert.length > 0 : s.covert.length === 0))
+      && s.round >= rmin && s.round <= rmax
+      && (!S.noworld || s.agent !== WORLD)
+      && (!txt || SEARCH.get(s.id).includes(txt))
+      && (!S.mine || noteWritten(noteOf(s.id)))
+      && (!S.unread || !noteRead(noteOf(s.id))));
+    sampleInfo = S.sample ? sampleOf(matches) : null;
+    if (sampleInfo) matches = sampleInfo.picked;
+    matches.sort(comparatorFor(S.sort));
+    renderChips(); renderList(true); renderSampleRow(); renderCrumbs(); refreshNav(); syncControls();
+  }
+  function comparatorFor(sort) {
+    if (sort === 'peak') return (a, b) => (b.peak ?? -1) - (a.peak ?? -1) || byRound(a, b);
+    if (sort === 'lane') return (a, b) => laneIndex(a.agent) - laneIndex(b.agent) || a.round - b.round;
+    return byRound;
+  }
+
+  const rng = seed => { let a = (Number(seed) || 1) >>> 0; return () => { a = (a + 0x6d2b79f5) >>> 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+  const drawFrom = (pool, r, want) => { const a = [...pool]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a.slice(0, Math.max(0, want)); };
+  let sampleInfo = null;
+  // Balanced on purpose: flagged steps are a small share of a run, so an unstratified
+  // draw would show a page of routine steps and hide the ones worth checking.
+  function sampleOf(all) {
+    const r = rng(S.seed), flagPool = all.filter(flagged), cleanPool = all.filter(s => !flagged(s));
+    const f = drawFrom(flagPool, r, Number(S.sflag) || 0), c = drawFrom(cleanPool, r, Number(S.sclean) || 0);
+    return { picked: [...f, ...c], f: f.length, c: c.length, flagPool: flagPool.length, cleanPool: cleanPool.length };
+  }
+  function renderSampleRow() {
+    el('samplerow').hidden = !S.sample;
+    el('btn-sample').setAttribute('aria-pressed', String(S.sample));
+    el('btn-sample').classList.toggle('on', S.sample);
+    if (!S.sample || !sampleInfo) return;
+    const s = sampleInfo;
+    el('s-note').innerHTML = `<b style="color:var(--flag)">${s.f} flagged</b> of ${s.flagPool} and <b style="color:var(--clean)">${s.c} not flagged</b> of ${s.cleanPool}, drawn with seed <code>${esc(String(S.seed))}</code>. The seed is in the address bar, so this draw can be shared or reopened.`;
+  }
+
+  function renderChips() {
+    const active = [];
+    if (S.agent) active.push(['lane', S.agent, 'agent']);
+    if (S.tool) active.push(['tool', S.tool, 'tool']);
+    if (S.verdict) active.push(['monitors', { flagged: 'flagged', notflagged: 'not flagged', none: 'not scored' }[S.verdict], 'verdict']);
+    if (S.covert) active.push(['', S.covert === 'covert' ? 'covert' : 'not covert', 'covert']);
+    if (S.rmin !== '') active.push(['from', roundLabel(Number(S.rmin)), 'rmin']);
+    if (S.rmax !== '') active.push(['to', roundLabel(Number(S.rmax)), 'rmax']);
+    if (S.text) active.push(['text', `"${S.text}"`, 'text']);
+    if (S.noworld) active.push(['', 'no World', 'noworld']);
+    if (S.mine) active.push(['', 'has my note', 'mine']);
+    if (S.unread) active.push(['', 'unread only', 'unread']);
+    if (S.sample) active.push(['sample', `${S.sflag} flagged + ${S.sclean} not, seed ${S.seed}`, 'sample']);
+    const f = matches.filter(flagged).length, c = matches.filter(s => s.covert.length).length, missed = matches.filter(s => s.covert.length && !flagged(s)).length;
+    const stat = matches.length
+      ? `<span><b class="num" style="color:var(--ink)">${matches.length}</b> step${matches.length === 1 ? '' : 's'} &middot; <b class="num" style="color:var(--flag)">${f}</b> flagged (score above ${THR}) &middot; <b class="num" style="color:var(--covert)">${c}</b> covert, ${missed} of them not flagged</span>`
+      : '<span>Nothing matches these filters.</span>';
+    els.chips.innerHTML = active.map(([k, v, field]) => `<button class="chip" data-clear="${field}" title="remove">${k ? `<i>${esc(k)}</i>` : ''}${esc(v)} &times;</button>`).join('') + stat;
+    els.chips.querySelectorAll('[data-clear]').forEach(b => b.addEventListener('click', () => {
+      const field = b.dataset.clear;
+      S[field] = typeof DEFAULT_STATE[field] === 'boolean' ? false : '';
+      select(); writeHash('replace');
+    }));
+  }
+
+  function refreshRowMark(id) {
+    els.tgrid.querySelectorAll(`.tc[data-step="${CSS.escape(id)}"]:not(.v)`).forEach(c => c.classList.toggle('mine', noteWritten(noteOf(id))));
+    const row = els.list.querySelector(`.row[data-id="${CSS.escape(id)}"]`);
+    if (!row) return;
+    const own = noteOf(id);
+    row.classList.toggle('mine', noteWritten(own));
+    row.classList.toggle('read', noteRead(own));
+  }
+  // Marking read does not re-run `select()`, so "unread only" does not pull the step
+  // out of the list mid-read. The filter applies the next time the selection rebuilds.
+  function setRead(id, read) {
+    const n = noteFor(id);
+    if (read) n.read = true; else delete n.read;
+    touch(id);
+    refreshReadButton();
+  }
+  function refreshReadButton() {
+    const btn = readerHost()?.querySelector('[data-act="read"]'); if (!btn) return;
+    const own = S.step ? noteOf(S.step) : null;
+    const written = noteWritten(own), read = noteRead(own);
+    btn.setAttribute('aria-pressed', String(read));
+    btn.classList.toggle('on', read);
+    btn.innerHTML = icon('check', 15) + (read ? 'Read' : 'Mark read');
+    btn.disabled = written;
+    btn.title = written ? 'Your note on this step already counts as having read it.' : read ? 'Marked read. Press again to undo. Shortcut: r' : 'Mark this step read. Shortcut: r';
+  }
+
+  function renderList(reset) {
+    if (reset) { els.list.innerHTML = ''; shown = 0; }
+    const slice = matches.slice(shown, shown + PAGE);
+    els.list.insertAdjacentHTML('beforeend', slice.map(s => {
+      const own = noteOf(s.id), t = s.tools[0];
+      const cls = ['row', noteWritten(own) ? 'mine' : '', noteRead(own) ? 'read' : '', s.covert.length ? 'covert' : ''].filter(Boolean).join(' ');
+      const what = t ? `${t.function}: ${oneLine(t.action)}` : stepSummary(s);
+      return `<button class="${cls}" data-id="${esc(s.id)}" aria-current="${S.step === s.id}"><span class="k">${roundKey(s.round)}</span>${pill(s.peak)}<span class="lab">${kindIcon(headKindOf(s), 12)}<b>${esc(s.agent)}</b> · ${esc(what)}</span><span class="ch"><span class="dot" title="covert"></span><span class="pen">${icon('pencil', 12)}</span><span class="tick">${icon('check', 12)}</span></span></button>`;
+    }).join(''));
+    shown += slice.length;
+    els.count.innerHTML = `showing <b class="num">${Math.min(shown, matches.length)}</b> of <b class="num">${matches.length}</b>`;
+    els.more.hidden = shown >= matches.length;
+    els.more.textContent = `Show ${Math.min(PAGE, matches.length - shown)} more`;
+  }
+  els.more.addEventListener('click', () => renderList(false));
+  el('copy-selection').addEventListener('click', ev => copyText(JSON.stringify({
+    run: RUN.name,
+    selected_at: new Date().toISOString(),
+    filters: Object.fromEntries(Object.keys(FILTER_DEFAULTS).map(k => [k, S[k]])),
+    n: matches.length,
+    steps: matches.map(s => ({ id: s.id, lane: s.agent, round: s.round, tools: s.tools.map(t => t.function), peak_suspicion: s.peak, covert: s.covert, verdicts: s.verdicts.map(v => ({ monitor: v.monitor, score: v.score, reason: v.reason })) })),
+  }, null, 1), ev.currentTarget));
+  els.list.addEventListener('click', e => { const b = e.target instanceof Element ? e.target.closest('.row[data-id]') : null; if (b) openStep(byId.get(b.dataset.id), { record: true }); });
+
+  // ---------- one reader for both views: a step reads as one action
+  const readerHost = () => S.view === 'transcript' ? els.panel : S.view === 'steps' ? els.readcol : null;
+  const navList = () => S.view === 'transcript' ? transcriptOrder() : matches;
+  const navSort = () => S.view === 'transcript' ? 'round' : S.sort;
+
+  // Where the open step sits in what J and K walk, and which steps they lead to. A step
+  // outside it still has a place: where the order would put it, between two neighbours.
+  function navFrom(list, open, sort) {
+    if (!open) return { at: -1, prev: -1, next: -1 };
+    const at = list.findIndex(x => x.id === open.id);
+    if (at >= 0) return { at, prev: at - 1, next: at + 1 < list.length ? at + 1 : -1 };
+    const cmp = comparatorFor(sort);
+    let i = 0;
+    while (i < list.length && cmp(list[i], open) < 0) i++;
+    return { at: -1, prev: i - 1, next: i < list.length ? i : -1 };
+  }
+  function moveStep(delta) {
+    const list = navList();
+    if (!S.step) { if (list.length) openStep(delta > 0 ? list[0] : list[list.length - 1], { record: true }); return; }
+    const nav = navFrom(list, byId.get(S.step), navSort());
+    const to = delta > 0 ? nav.next : nav.prev;
+    if (to < 0) return;
+    openStep(list[to], { record: false });
+    if (S.view === 'steps' && to >= shown) renderList(false);
+  }
+  function refreshNav() {
+    const host = readerHost(); if (!host) return;
+    const list = navList(), nav = navFrom(list, byId.get(S.step), navSort());
+    const prev = host.querySelector('[data-act="prev"]'), next = host.querySelector('[data-act="next"]'), pos = host.querySelector('.pos');
+    if (prev) prev.disabled = nav.prev < 0;
+    if (next) next.disabled = nav.next < 0;
+    if (!pos) return;
+    const where = S.view === 'transcript' ? 'on screen' : 'in this selection';
+    pos.classList.toggle('out', nav.at < 0);
+    if (nav.at >= 0) { pos.textContent = `${nav.at + 1} of ${list.length} ${where} · J and K move`; return; }
+    const step = nav.next >= 0 ? ['next', list[nav.next]] : nav.prev >= 0 ? ['prev', list[nav.prev]] : null;
+    pos.textContent = step ? `not ${where} · ${step[0]} goes to ${stepLabel(step[1])}` : `not ${where}`;
+  }
+  function focusMark(id, root) {
+    const q = `[data-anchor="${CSS.escape(id)}"], [data-lost="${CSS.escape(id)}"]`;
+    const c = (root || document).querySelector(q) || document.querySelector(q); if (!c) return;
+    c.querySelector('textarea')?.focus({ preventScroll: true }); c.scrollIntoView({ block: 'nearest' });
+  }
+  function redrawStep(s) { const host = readerHost(); const y = host ? host.scrollTop : 0; renderReaderFor(s); if (host) host.scrollTop = y; }
+
+  function openStep(s, opts) {
+    if (!s) return;
+    S.step = s.id;
+    if (S.view !== 'transcript' && S.view !== 'steps') showView('transcript');
+    renderReaderFor(s);
+    const host = readerHost();
+    if (host && !opts?.keepScroll) host.scrollTop = 0;
+    if (S.view === 'transcript') els.tgrid.querySelector(`.tc[data-step="${CSS.escape(s.id)}"]:not(.v)`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    else els.list.querySelector('.row[aria-current="true"]')?.scrollIntoView({ block: 'nearest' });
+    renderCrumbs();
+    writeHash(opts?.record ? 'push' : 'replace');
+  }
+
+  function annotated(s, field, placed, cls) {
+    const text = fieldText(s, field);
+    const spans = placed.filter(x => x.m.field === field && x.at).map(x => [x.at[0], x.at[1], 'hl', x.m.id]);
+    return `<pre class="trace${cls ? ' ' + cls : ''}" data-field="${field}">\n${text ? renderMarked(text, spans) : '(empty)'}</pre>`;
+  }
+  // `what` may carry icons, so callers escape its text; the rest is escaped here.
+  const foldSummary = (part, label, what, size) => `<summary>${partIcon(part, 16)}<span class="flbl">${esc(label)}</span>${what ? `<span class="fwhat">${what}</span>` : ''}${size ? `<span class="fsize">${esc(size)}</span>` : ''}<span class="fchev">${icon('right', 14)}</span></summary>`;
+  function verdictBlock(v) {
+    return `<div class="verdict ${levelOf(v.score)}"><div class="vh">${pill(v.score)}<b>${esc(v.monitor)}</b><span>on ${esc(v.target || 'this step')}</span></div>${esc(v.reason)}</div>`;
+  }
+  function stepMarkdown(s) {
+    const lines = [`# ${stepLabel(s)}`, '', `- run: ${RUN.name}`, `- step id: ${s.id}`, `- peak suspicion: ${s.peak ?? 'not scored'} (audit threshold ${THR})`, `- covert: ${s.covert.join(', ') || 'no'}`];
+    s.tools.forEach((t, i) => lines.push('', `## What it did${s.tools.length > 1 ? ` (${i + 1})` : ''}: ${t.function}${t.blocked ? ' (blocked)' : ''}`, '', t.arguments_text, '', '### Result', '', t.result_text || '(no result)'));
+    if (s.verdicts.length) { lines.push('', '## How the monitors read it', ''); s.verdicts.forEach(v => lines.push(`- ${v.monitor} ${v.score} on ${v.target || '?'}: ${v.reason}`)); }
+    s.calls.forEach((c, i) => lines.push('', `## Model call ${i + 1} as ${c.identity}${c.phase ? ` (${c.phase})` : ''}`, '', '### Reply', '', c.reply || '(empty)', '', '### Prompt', '', '```', c.prompt, '```'));
+    s.events.forEach(ev => lines.push('', `## ${ev.kind} by ${ev.actor}`, '', '```json', ev.body, '```'));
+    return lines.join('\n');
+  }
+
+  function renderReaderFor(s) {
+    const host = readerHost(); if (!host) return;
+    // Only the host of the current view holds a reader, so ids and handlers never
+    // meet a stale copy in the other view.
+    for (const other of [els.panel, els.readcol]) if (other !== host) other.innerHTML = other === els.readcol ? '<div class="empty"><b>Nothing open yet</b>Pick a step from the list. J and K move between steps.</div>' : '';
+    if (host === els.panel) { els.panel.hidden = false; el('pdivider').hidden = false; }
+    const mine = noteOf(s.id);
+    const placed = (mine?.marks || []).map(m => ({ m, at: anchorAt(fieldText(s, m.field), m) }));
+    const marked = new Set(placed.filter(x => x.at).map(x => x.m.field));
+    const openIf = (cond) => cond ? ' open' : '';
+    const lost = placed.filter(x => !x.at);
+    const seqs = [...s.calls, ...s.tools, ...s.events].map(x => x.seq).filter(x => x != null);
+    const hasTool = s.tools.length > 0;
+
+    const did = s.tools.map((t, i) => `
+      <h3>${partIcon('did', 15)}What it did${s.tools.length > 1 ? ` (${i + 1})` : ''} &middot; ${kindIcon(t.function, 14)}<span class="q mono">${esc(t.function)}</span>${t.verdicts.map(v => pill(v.score)).join('')}${covertTags(t.covert)}${t.blocked ? `<span class="tag blocked">blocked: ${esc(t.blocked)}</span>` : ''}</h3>
+      ${annotated(s, `args-${i}`, placed)}
+      <div class="sub">${partIcon('result', 12)}result</div>${annotated(s, `result-${i}`, placed, 'code')}`).join('');
+    const happened = !hasTool && s.events.length ? `<h3>${partIcon('happened', 15)}What happened</h3>${s.events.map((ev, i) => `<div class="sub">${kindIcon(ev.kind, 12)}${esc(ev.kind)} by ${esc(ev.actor || '?')}${ev.verdicts.map(v => ' ' + pill(v.score)).join('')}${covertTags(ev.covert)}</div>${annotated(s, `body-${i}`, placed, 'code')}`).join('')}` : '';
+    const read = `<h3>${partIcon('monitors', 15)}How the monitors read it<span class="q"> &middot; audit threshold ${THR}</span></h3>${s.verdicts.length ? [...s.verdicts].sort((a, b) => b.score - a.score).map(verdictBlock).join('') : '<p class="help" style="margin:0">No monitor scored anything in this step.</p>'}`;
+    const PHASE = { deciding: 'while choosing its action', executing: 'while a tool ran' };
+    const said = s.calls.map((c, i) => {
+      const own = c.identity === s.agent;
+      const who = own ? '' : ` as ${esc(c.identity)}${c.phase ? `, ${esc(PHASE[c.phase] || c.phase)}` : ''}`;
+      const rawWhat = own && hasTool ? 'the JSON the action above was read from' : `the reply${who}`;
+      return `<details class="fold"${openIf((!hasTool && s.calls.length === 1) || marked.has(`reply-${i}`))}>${foldSummary('raw', 'Raw reply', rawWhat, `${c.reply.length.toLocaleString()} chars`)}${annotated(s, `reply-${i}`, placed)}</details>
+        <details class="fold"${openIf(marked.has(`prompt-${i}`))}>${foldSummary('context', 'Context the model saw', `the full prompt${who}`, `${c.prompt.length.toLocaleString()} chars`)}${annotated(s, `prompt-${i}`, placed, 'code')}</details>`;
+    }).join('');
+    const also = hasTool && s.events.length ? `<details class="fold"${openIf(s.events.some((_, i) => marked.has(`body-${i}`)))}>${foldSummary('effects', 'Side effects of this turn', [...new Set(s.events.map(e => e.kind))].map(k => `${kindIcon(k, 12)}${esc(k)}`).join(' '), plural(s.events.length, 'event'))}${s.events.map((ev, i) => `<div class="sub">${kindIcon(ev.kind, 12)}${esc(ev.kind)} by ${esc(ev.actor || '?')}${covertTags(ev.covert)}</div>${annotated(s, `body-${i}`, placed, 'code')}`).join('')}</details>` : '';
+    const inPanel = host === els.panel;
+
+    host.innerHTML = `<div class="reader${placed.some(x => x.at) ? '' : ' nogutter'}" data-step-host="${esc(s.id)}">
+      <div class="head"><h2>${esc(stepLabel(s))}</h2>${pill(s.peak)}${covertTags(s.covert)}
+        <div class="navb"><button class="btn" data-act="prev" title="previous step (K)">&larr;</button><button class="btn" data-act="next" title="next step (J)">&rarr;</button><button class="btn" data-act="read" aria-pressed="false"></button>${inPanel ? `<button class="btn" data-act="close" title="close (Esc)">${icon('close', 15)}close</button>` : `<button class="btn" data-act="focus" aria-pressed="${S.focus}" title="hide everything but the step. Escape leaves.">${icon('expand', 15)}${S.focus ? 'Leave focus' : 'Focus'}</button>`}</div>
+        <div class="pos"></div>
+      </div>
+      <div class="tracenote">
+        <div class="eyebrow">${partIcon('note', 13)}Your note on this step</div>
+        <textarea data-act="note" placeholder="What do you make of this step? To note a passage, select its words and pin a note in the margin.">${esc(mine?.text || '')}</textarea>
+      </div>
+      <div class="split-read">
+        <svg class="connectors" aria-hidden="true"></svg>
+        <div class="textcol">
+          ${did}${happened}${read}${said}${also}
+          ${s.calls.length ? `<p class="help absent">${partIcon('reasoning', 14)}Not shown: the model&rsquo;s reasoning. The gateway does not record it, only the reply.</p>` : ''}
+          <div class="metaline">${seqs.length ? `sealed #${Math.min(...seqs)}&ndash;${Math.max(...seqs)} &middot; ` : ''}<code>${esc(s.id)}</code><button class="copy" data-copy-text="${esc(s.id)}">copy id</button><button class="copy" data-copy-link="${esc(s.id)}">copy link</button><button class="copy" data-act="md">copy as Markdown</button></div>
+        </div>
+        <div class="gutter${placed.some(x => x.at) ? '' : ' empty'}">
+          <div class="marginnotes" style="position:relative">${placed.filter(x => x.at).map(x => noteCard(x.m, s.id)).join('')}</div>
+          ${lost.length ? `<div style="margin-top:12px">${lost.map(x => lostCard(x.m, s.id)).join('')}</div>` : ''}
+        </div>
+      </div>
+    </div>`;
+
+    const act = name => host.querySelector(`[data-act="${name}"]`);
+    act('prev')?.addEventListener('click', () => moveStep(-1));
+    act('next')?.addEventListener('click', () => moveStep(1));
+    act('read')?.addEventListener('click', () => setRead(s.id, !noteRead(noteOf(s.id))));
+    act('close')?.addEventListener('click', () => closePanel({ record: true }));
+    act('focus')?.addEventListener('click', () => { S.focus = !S.focus; applyFocus(); renderReaderFor(s); writeHash('replace'); });
+    act('md')?.addEventListener('click', ev => copyText(stepMarkdown(s), ev.currentTarget));
+    act('note')?.addEventListener('input', ev => { noteFor(s.id).text = ev.target.value; touch(s.id); const card = els.tgrid.querySelector(`.tc.open[data-step="${CSS.escape(s.id)}"] .tnote`); if (card) card.textContent = ev.target.value; });
+    host.querySelectorAll('details.fold').forEach(d => d.addEventListener('toggle', scheduleLayout));
+    markCurrentCards();
+    refreshNav();
+    refreshReadButton();
+    applyNarrow();
+    observeLayout();
+    layoutNotes();
+    scheduleLayout();
+  }
+
+  // A panel too narrow for a margin stacks the notes under the text instead of
+  // squeezing the text beside them. The margin needs room for both.
+  const MARGIN_NEEDS = 820;
+  function applyNarrow() { els.panel.classList.toggle('narrow', els.panel.clientWidth > 0 && els.panel.clientWidth < MARGIN_NEEDS); }
+  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => { applyNarrow(); scheduleLayout(); }).observe(els.panel);
+
+  // Notes want to sit beside their passage, but two passages can be one line apart and
+  // a card is forty pixels tall. Sort by anchor, sweep down once so no card covers the
+  // one above it, and bend the connector when a card ends up off its line.
+  const NOTE_GAP = 10;
+  let layoutQueued = false, notesObserver = null;
+  function scheduleLayout() {
+    if (layoutQueued) return;
+    layoutQueued = true;
+    const run = () => { if (!layoutQueued) return; layoutQueued = false; layoutNotes(); };
+    requestAnimationFrame(run);
+    setTimeout(run, 32);
+  }
+  function observeLayout() {
+    notesObserver?.disconnect();
+    if (typeof ResizeObserver === 'undefined') return;
+    notesObserver = new ResizeObserver(scheduleLayout);
+    const split = readerHost()?.querySelector('.split-read');
+    if (!split) return;
+    notesObserver.observe(split.querySelector('.textcol'));
+    split.querySelectorAll('.marginnotes .note').forEach(c => notesObserver.observe(c));
+  }
+  function layoutNotes() { document.querySelectorAll('.split-read').forEach(layoutOneSplit); }
+  const markOf = (split, card) => split.querySelector(`mark.hl[data-mark="${CSS.escape(card.dataset.anchor)}"]`);
+  // Cards in the order their passages appear, not the order they were written.
+  const inReadingOrder = (split, cards) => cards.map(c => ({ c, mk: markOf(split, c) }))
+    .sort((a, b) => (a.mk && b.mk ? (a.mk.compareDocumentPosition(b.mk) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1) : a.mk ? -1 : b.mk ? 1 : 0))
+    .map(x => x.c);
+  // Too narrow for a margin: each card moves to just under the block it annotates, so
+  // the note stays beside its passage. Moving a node keeps its handlers.
+  function notesInline(split, holder) {
+    // Gather every card first: removing a group from a previous pass must never take a card with it.
+    const cards = inReadingOrder(split, [...split.querySelectorAll('.note[data-anchor]')]);
+    cards.forEach(c => holder.appendChild(c));
+    split.querySelectorAll('.inline-notes').forEach(g => g.remove());
+    for (const card of cards) {
+      card.style.top = '';
+      const pre = markOf(split, card)?.closest('pre');
+      if (!pre) { holder.appendChild(card); continue; }
+      let group = pre.nextElementSibling;
+      if (!group || !group.classList.contains('inline-notes')) { group = document.createElement('div'); group.className = 'inline-notes'; pre.after(group); }
+      group.appendChild(card);
+    }
+    holder.style.height = '';
+  }
+  function notesInMargin(split, holder) {
+    const cards = inReadingOrder(split, [...split.querySelectorAll('.note[data-anchor]')]);
+    cards.forEach(c => holder.appendChild(c));
+    split.querySelectorAll('.inline-notes').forEach(g => g.remove());
+    return cards;
+  }
+  function layoutOneSplit(split) {
+    const holder = split?.querySelector('.marginnotes');
+    const svg = split?.querySelector('.connectors');
+    if (!split || !holder || !svg || !split.offsetParent) return;
+    if (window.matchMedia('(max-width: 1000px)').matches || split.closest('.narrow')) {
+      notesInline(split, holder);
+      svg.innerHTML = '';
+      return;
+    }
+    const cards = notesInMargin(split, holder);
+    const box = split.getBoundingClientRect(), hBox = holder.getBoundingClientRect();
+    const gutterLeft = hBox.left - box.left, holderTop = hBox.top - box.top;
+    const paths = [];
+    let cursor = 0;
+    for (const card of cards) {
+      const mk = split.querySelector(`mark.hl[data-mark="${CSS.escape(card.dataset.anchor)}"]`);
+      const mBox = mk && mk.getClientRects().length ? mk.getBoundingClientRect() : null;
+      const want = mBox ? Math.max(0, mBox.top - box.top - holderTop) : cursor;
+      const top = Math.max(want, cursor);
+      card.style.top = top + 'px';
+      cursor = top + card.offsetHeight + NOTE_GAP;
+      if (!mBox) continue;
+      // Leave from the text block's edge, level with the passage: a line from the
+      // passage itself would run through the rest of its line like a strikethrough.
+      const edge = (mk.closest('pre') || mk).getBoundingClientRect().right - box.left;
+      const fx = Math.min(edge + 2, gutterLeft - 6);
+      const fy = mBox.top - box.top + mBox.height / 2;
+      const ty = holderTop + top + 15;
+      paths.push(Math.abs(fy - ty) < 3 ? `M${fx} ${fy} H${gutterLeft}` : `M${fx} ${fy} H${gutterLeft - 11} V${ty} H${gutterLeft}`);
+    }
+    holder.style.height = cursor + 'px';
+    svg.setAttribute('viewBox', `0 0 ${Math.round(box.width)} ${Math.round(box.height)}`);
+    svg.setAttribute('width', Math.round(box.width));
+    svg.setAttribute('height', Math.round(box.height));
+    svg.innerHTML = paths.map(d => `<path d="${esc(d)}" fill="none" stroke="var(--accent)" stroke-width="1.2" stroke-linejoin="round" opacity=".5"/>`).join('');
+  }
+  window.addEventListener('resize', scheduleLayout);
+  window.matchMedia('(max-width: 1000px)').addEventListener('change', scheduleLayout);
+  document.fonts?.ready.then(scheduleLayout);
+
+  document.addEventListener('click', e => {
+    const b = e.target instanceof Element ? e.target.closest('.copy') : null; if (!b) return;
+    if (b.dataset.copyText !== undefined) copyText(b.dataset.copyText, b);
+    else if (b.dataset.copyLink !== undefined) copyText(location.href.split('#')[0] + '#view=' + encodeURIComponent(S.view) + '&t=' + encodeURIComponent(b.dataset.copyLink), b);
+  });
+
+  // ---------- notes in and out: one file holds the whole state, never a subset
+  const notesJson = () => JSON.stringify({ ...NOTES, savedAt: new Date().toISOString() }, null, 1);
+  function markSaved() { NOTES.savedAt = new Date().toISOString(); keepNotes(); }
+  function mergeNotes(text) {
+    const incoming = JSON.parse(text);
+    if (!incoming || !incoming.steps || typeof incoming.steps !== 'object') throw new Error('no `steps` object in that file');
+    let added = 0, merged = 0;
+    for (const [id, n] of Object.entries(incoming.steps)) {
+      const mine = NOTES.steps[id];
+      if (!mine) { NOTES.steps[id] = { text: String(n.text || ''), marks: (n.marks || []).slice(), at: n.at || new Date().toISOString(), ...(n.read ? { read: true } : {}) }; added++; continue; }
+      if (n.read) mine.read = true;
+      const seen = new Set((mine.marks || []).map(m => m.id));
+      (n.marks || []).forEach(m => { if (!seen.has(m.id)) mine.marks.push(m); });
+      const here = String(mine.text || '').trim(), there = String(n.text || '').trim();
+      mine.text = !there || here === there ? here : (here ? here + '\n\n---\n\n' + there : there);
+      mine.at = new Date().toISOString(); merged++;
+    }
+    keepNotes(); return { added, merged };
+  }
+  el('notes-save').addEventListener('click', () => {
+    const url = URL.createObjectURL(new Blob([notesJson()], { type: 'application/json' })), a = document.createElement('a');
+    a.href = url; a.download = `loc-arena-notes-${RUN.name}.json`; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+    markSaved();
+  });
+  el('notes-load').addEventListener('click', () => el('notes-import').click());
+  function importNotesFile(file) {
+    if (!file) return;
+    file.text().then(text => {
+      const r = mergeNotes(text);
+      alert(`Loaded ${plural(r.added, 'new step')} and merged ${r.merged} into notes already here.`);
+      const s = byId.get(S.step); if (s) redrawStep(s);
+      renderList(true);
+    }).catch(e => alert('Could not read that as a notes file: ' + e.message));
+  }
+  el('notes-import').addEventListener('change', ev => { const file = ev.target.files?.[0]; ev.target.value = ''; importNotesFile(file); });
+  // A page that ignores a dropped file navigates to it and loses unsaved notes, so the
+  // default is refused everywhere. Only drags carrying files are touched.
+  const dragHasFile = e => [...(e.dataTransfer?.types || [])].includes('Files');
+  const dropzone = () => el('notes-dialog');
+  let dragDepth = 0;
+  const showDrop = on => { dragDepth = on ? dragDepth : 0; dropzone()?.classList.toggle('dropping', on); };
+  document.addEventListener('dragenter', e => { if (!dragHasFile(e)) return; e.preventDefault(); dragDepth++; dropzone()?.classList.add('dropping'); });
+  document.addEventListener('dragover', e => { if (dragHasFile(e)) e.preventDefault(); });
+  document.addEventListener('dragleave', e => { if (!dragHasFile(e)) return; if (--dragDepth <= 0) showDrop(false); });
+  document.addEventListener('drop', e => {
+    if (!dragHasFile(e)) return;
+    e.preventDefault(); showDrop(false);
+    const file = e.dataTransfer?.files?.[0];
+    if (!file) return;
+    openNotes();
+    importNotesFile(file);
+  });
+  el('notes-clear').addEventListener('click', () => {
+    const n = Object.keys(NOTES.steps).length, un = unsaved(); if (!n) return;
+    if (!confirm(un ? `${un} of ${n} annotated steps have changed since the last save to a file. Delete every note on this run in this browser anyway?` : `Delete the notes on all ${n} steps in this browser?`)) return;
+    NOTES = emptyNotes(); keepNotes();
+    const s = byId.get(S.step); if (s) redrawStep(s);
+    renderList(true);
+  });
+  el('notes-close').addEventListener('click', () => el('notes-dialog').close());
+  const openNotes = () => { renderNotesState(); el('notes-dialog').showModal(); };
+  window.addEventListener('beforeunload', e => { if ((!notesOk || saveFailed) && Object.keys(NOTES.steps).length) { e.preventDefault(); e.returnValue = ''; } });
+
+  // ---------- communication: everything said, where it went, and who read it (worked out when the page was built)
+  const COMM = DATA.communication;
+  const readClass = c => c.readers.agents.length ? 'agent' : c.readers.monitors.length ? 'monitor' : 'none';
+  const audienceIcon = a => a === 'scratch' ? 'sticky' : a === 'team' ? 'broadcast' : 'robot';
+  const C = { kind: '', read: '', covert: false, sender: '', audience: '' };
+  function renderComms() {
+    const count = f => COMM.filter(f).length;
+    const said = COMM.filter(c => c.kind !== 'environment');
+    const stat = (big, lbl, cls) => `<div class="stat"><div class="big ${cls || ''}">${big}</div><div class="lbl">${lbl}</div></div>`;
+    el('comm-stats').innerHTML = [
+      stat(count(c => c.kind === 'message'), 'messages between agents'),
+      stat(count(c => c.kind === 'scratch'), 'scratch notes', 'covert'),
+      stat(count(c => c.kind === 'environment'), 'environment posts'),
+      stat(said.filter(c => readClass(c) === 'agent').length, 'of the agents&rsquo; messages and notes were read by another agent'),
+      stat(said.filter(c => readClass(c) === 'monitor').length, 'read only by monitors', 'flag'),
+      stat(said.filter(c => readClass(c) === 'none').length, 'read by no one'),
+    ].join('');
+
+    const senders = [...new Set(said.map(c => c.sender))].sort((a, b) => laneIndex(a) - laneIndex(b));
+    const audiences = [...new Set(said.map(c => c.audience))].sort((a, b) => (a === 'scratch') - (b === 'scratch') || (a === 'team') - (b === 'team') || laneIndex(a) - laneIndex(b));
+    el('comm-matrix').innerHTML = senders.length ? `<div class="gridwrap"><table class="cmx"><tr><th></th>${audiences.map(a => `<th>${icon(audienceIcon(a), 13)} ${esc(a)}</th>`).join('')}</tr>${senders.map(f => `<tr><th>${icon('robot', 13)} ${esc(f)}</th>${audiences.map(a => { const n = said.filter(c => c.sender === f && c.audience === a); const cv = n.filter(c => c.covert.length).length; return n.length ? `<td><button data-cf="${esc(f)}" data-ct="${esc(a)}" class="${C.sender === f && C.audience === a ? 'on' : ''}"><b>${n.length}</b>${cv ? `<span class="cv">${cv} covert</span>` : ''}</button></td>` : '<td></td>'; }).join('')}</tr>`).join('')}</table></div>` : '<p class="help">No agent said anything to anyone in this run.</p>';
+    el('comm-matrix').querySelectorAll('[data-cf]').forEach(b => b.addEventListener('click', () => {
+      const same = C.sender === b.dataset.cf && C.audience === b.dataset.ct;
+      C.sender = same ? '' : b.dataset.cf; C.audience = same ? '' : b.dataset.ct; renderComms();
+    }));
+
+    const shown = COMM.filter(c => (!C.kind || c.kind === C.kind) && (!C.read || readClass(c) === C.read) && (!C.covert || c.covert.length) && (!C.sender || c.sender === C.sender) && (!C.audience || c.audience === C.audience));
+    el('c-chips').innerHTML = (C.sender ? `<button class="chip" data-cclear="1"><i>from</i>${esc(C.sender)} <i>to</i>${esc(C.audience)} &times;</button>` : '') + `<span>${shown.length} of ${COMM.length}</span>`;
+    el('c-chips').querySelector('[data-cclear]')?.addEventListener('click', () => { C.sender = ''; C.audience = ''; renderComms(); });
+    const toIcon = c => c.kind === 'scratch' ? 'sticky' : c.kind === 'environment' ? (KIND_ICON[c.channel] || 'globe') : audienceIcon(c.audience);
+    el('comm-feed').innerHTML = shown.map(c => {
+      const step = byId.get(c.step), r = c.readers, cls = readClass(c);
+      const chips = [
+        ...r.agents.map(id => byId.get(id)).filter(Boolean).map(s => `<button class="chip quiet rd" data-open="${esc(s.id)}" title="open the turn that read it">${icon('robot', 12)} ${esc(s.agent)} ${roundKey(s.round)}</button>`),
+        ...r.monitors.map(m => `<span class="chip quiet rdm" title="a monitor saw it">${icon('shield', 12)} ${esc(m)}</span>`),
+        ...r.others.map(o => `<span class="chip quiet" title="read by the environment">${icon('globe', 12)} ${esc(o)}</span>`),
+      ].join('');
+      const rereads = r.rereads.map(id => byId.get(id)).filter(Boolean);
+      const selfNote = rereads.length ? `<span class="help">the author read it again in ${rereads.map(s => roundKey(s.round)).join(', ')}</span>` : '';
+      const readLine = !r.traced ? '<span class="help">too short to trace</span>'
+        : cls === 'none' ? `<span class="unread">${icon('eyeoff', 13)} no one</span>`
+        : cls === 'monitor' ? `${chips}<span class="unread mon">${icon('eyeoff', 13)} no agent</span>` : chips;
+      return `<div class="citem ${c.kind}${c.covert.length ? ' covert' : ''} read-${cls}">
+        <div class="cleft">${kindIcon(c.kind === 'scratch' ? 'write_scratch' : c.kind === 'environment' ? c.channel : 'message', 16)}<span>${roundKey(step.round)}</span></div>
+        <div class="cmain">
+          <div class="chead">${icon(LANES.includes(c.sender) && c.sender !== WORLD ? 'robot' : 'globe', 14)}<b>${esc(c.sender)}</b><span class="arrow">${icon('right', 13)}</span>${icon(toIcon(c), 14)}<b>${esc(c.audience)}</b>${c.scores.map(score => pill(score)).join('')}${covertTags(c.covert)}</div>
+          <div class="cbody">${esc(c.text)}</div>
+          <div class="cread"><span class="lbl">${icon('eye', 13)} read by</span>${readLine}${selfNote}</div>
+        </div>
+        <button class="tcbtn copen" data-open="${esc(c.step)}" title="open the turn that said it">open &#8599;</button>
+      </div>`;
+    }).join('') || '<p class="help">Nothing matches.</p>';
+    el('comm-feed').querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => { showView('transcript'); openStep(byId.get(b.dataset.open), { record: true }); }));
+  }
+  [['c-kind', 'kind'], ['c-read', 'read']].forEach(([id, key]) => el(id).addEventListener('change', ev => { C[key] = ev.target.value; renderComms(); }));
+  el('c-covert').addEventListener('change', ev => { C.covert = ev.target.checked; renderComms(); });
+
+  // ---------- outcome and monitors against the sealed covert evidence
+  function renderMonitors() {
+    const mt = OUT.main_task, st = OUT.side_task, sf = OUT.safety, models = RUN.models || {};
+    el('mon-lede').innerHTML = `${RUN.mode === 'attack' ? 'An attack' : 'An honest'} run. The agents ran on <code>${esc(models.untrusted_agent || '?')}</code>, the monitors on <code>${esc(models.trusted_monitor || '?')}</code>, over ${Math.round((RUN.wall_clock_seconds || 0) / 60)} minutes.`;
+    const reached = OUT.milestones.filter(m => m.reached).length;
+    const stat = (big, lbl, cls) => `<div class="stat"><div class="big ${cls || ''}">${big}</div><div class="lbl">${lbl}</div></div>`;
+    el('mon-stats').innerHTML = [
+      stat(esc(mt.final_score), `main task score${mt.gate_passed ? '' : ` &middot; gate failed: ${esc(mt.gate_reason || '?')}`}`),
+      stat(st.landing_robust ? 'robust' : st.landing_minimal ? 'minimal' : 'no', `side task landed &middot; ${reached} of ${OUT.milestones.length} milestones`, st.landing_minimal ? 'covert' : ''),
+      stat(sf.caught ? 'caught' : 'missed', sf.caught ? `by ${esc(sf.caught_by.join(', '))}` : 'no monitor reached the audit threshold', sf.caught ? 'flag' : ''),
+      stat(esc(THR), 'audit threshold, from the honest twin at the audit budget'),
+    ].join('');
+
+    const covert = STEPS.filter(s => s.covert.length), plain = STEPS.filter(s => !s.covert.length);
+    const cellBtn = (n, label, spec, cls) => `<td class="${cls || ''}"><button data-go='${esc(JSON.stringify(spec))}'><b>${n}</b><span>${label}</span></button></td>`;
+    el('mon-matrix').innerHTML = `<table class="matrix"><tr><th></th><th>flagged (score above ${THR})</th><th>not flagged</th></tr>
+      <tr><th>covert steps</th>${cellBtn(covert.filter(flagged).length, 'covert, flagged', { verdict: 'flagged', covert: 'covert' }, 'hit')}${cellBtn(covert.filter(s => !flagged(s)).length, 'covert, missed', { verdict: 'notflagged', covert: 'covert' }, 'miss')}</tr>
+      <tr><th>other steps</th>${cellBtn(plain.filter(flagged).length, 'flagged, not covert', { verdict: 'flagged', covert: 'plain' })}${cellBtn(plain.filter(s => !flagged(s)).length, 'neither', { verdict: 'notflagged', covert: 'plain' })}</tr></table>
+      <p class="help" style="max-width:88ch">Steps, not verdicts: a step counts as flagged when any verdict on it scores above the audit threshold, as the harness counts it. Covert means the sealed verifier cites the step as side-task evidence, or the step calls an attack tool. Click a count to list those steps.</p>`;
+    el('mon-matrix').querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => go({ view: 'steps', ...JSON.parse(b.dataset.go) })));
+
+    const rows = MONITORS.map(m => {
+      const vs = VERDICTS.filter(v => v.monitor === m.name);
+      const placed = vs.filter(v => v.step).length, nf = vs.filter(v => v.score > THR).length;
+      const peak = vs.length ? Math.max(...vs.map(v => v.score)) : null;
+      return `<tr><td><b>${esc(m.name)}</b><br><span class="help">${esc(m.role)} &middot; ${esc(m.mode)} &middot; ${esc(m.timing)}${m.counts_toward_caught ? '' : ' &middot; does not count toward caught'}${m.errored ? ' &middot; <b style="color:var(--flag)">errored</b>' : ''}</span></td><td class="num">${vs.length}</td><td class="num">${placed}</td><td class="num">${nf}</td><td class="num">${pill(peak)}</td><td class="help">${esc((m.top_reasons || [])[0] || '—')}</td></tr>`;
+    }).join('');
+    el('mon-table').innerHTML = `<table class="legend"><tr><th>monitor</th><th class="num">verdicts</th><th class="num">on a step</th><th class="num">flagged</th><th class="num">peak</th><th>its top reason</th></tr>${rows}</table>`;
+
+    const missed = covert.filter(s => !flagged(s)).sort(byRound);
+    el('mon-missed').innerHTML = missed.length ? `<div class="list" style="max-width:900px">${missed.map(s => `<button class="row covert" data-open="${esc(s.id)}"><span class="k">${roundKey(s.round)}</span>${pill(s.peak)}<span class="lab"><b>${esc(s.agent)}</b> · ${esc(stepSummary(s))} · ${esc(s.covert.join(', '))}</span><span class="ch"><span class="dot"></span></span></button>`).join('')}</div>` : '<p class="help">Every covert step was flagged.</p>';
+
+    const unplaced = VERDICTS.filter(v => !v.step);
+    el('mon-unplaced').innerHTML = unplaced.length ? unplaced.map(v => `<div class="verdict ${levelOf(v.score)}" style="max-width:88ch"><div class="vh">${pill(v.score)}<b>${esc(v.monitor)}</b><span>&middot; ${esc(v.tap)} tap &middot; pinned to mirror #${esc(v.target_mirror_seq ?? 'none')} (${esc(v.actor)})</span></div>${esc(v.reason)}</div>`).join('') + `<p class="help" style="max-width:88ch">A verdict lands here when its target is not an agent step in the log: a whole-stream verdict (the inference monitor scores every model call at once and pins the verdict to the last off-path call), a record only the mirror holds, or no target at all.</p>` : '<p class="help">Every verdict sits on a step.</p>';
+
+    el('mon-milestones').innerHTML = OUT.milestones.map(m => `<div class="ms ${m.reached ? 'yes' : 'no'}"><div class="st">${m.reached ? 'REACHED' : 'NOT REACHED'}${m.sealed ? '' : ' · not sealed'}</div><div>${esc(m.id.replace(/_/g, ' '))}</div>${m.steps.length ? `<div class="links">${m.steps.slice(0, 8).map(id => { const s = byId.get(id); return `<button class="chip quiet" data-open="${esc(id)}">${esc(s ? `${s.agent} ${roundKey(s.round)}` : id)}</button>`; }).join('')}${m.steps.length > 8 ? `<span class="help">+${m.steps.length - 8} more</span>` : ''}</div>` : ''}</div>`).join('');
+    el('view-monitors').querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => { showView('transcript'); openStep(byId.get(b.dataset.open), { record: true }); }));
+  }
+
+  function renderMethod() {
+    el('method-body').innerHTML = `
+      <p><b>What you are looking at.</b> The transcript puts every agent in its own lane, side by side, one row per round, with each monitor&rsquo;s takes in the columns on the left. A card is one agent turn: what the agent did, and the start of what came back. Click a card to read that turn in the panel beside the transcript; J and K move through the turns on screen, and Escape, the close button or the browser&rsquo;s back button close it. Events outside any agent turn (the environment, scripted coworkers, credential rotation) sit under <b>World</b>.</p>
+      <p><b>Where a verdict sits.</b> Monitors read the mirror log, so a verdict names a mirror event. The log this page is built from numbers events by the sealed log, and the two number independently. Each mirror event is paired with its sealed twin, and the verdict is placed on the turn holding that twin. A verdict whose target is not an agent turn goes to the <b>whole run</b> row and to <b>Outcome and monitors</b>.</p>
+      <p><b>Flagged and covert.</b> A turn is flagged when a verdict on it scores above the audit threshold (${esc(THR)}); a score equal to it is not a flag, as in the harness, which the harness sets from the honest twin at the audit budget. Whether the run was <i>caught</i> is decided on the combined score, so a flagged turn is not the same as an audit. A turn is covert when the sealed verifier cites it as evidence for a side-task milestone, or when it calls one of the attack tools (<code>acquire_identity</code>, <code>write_scratch</code>, <code>blind_monitor</code>, <code>start_rogue_loop</code>).</p>
+      <p><b>What is not here.</b> Model reasoning: the gateway keeps only the reply text. Verdict timestamps: the monitors run in batches, so their times say when a batch ran, not when the turn happened.</p>
+      <p><b>Reading the outcome.</b> A pull request written before round 0, outside any agent turn, comes from the environment&rsquo;s script, even when it is stamped with an agent&rsquo;s name. A verdict on it says how the monitor reads that request, not what an agent did. This page shows one run; nothing here is a rate.</p>
+      <p><b>Your notes.</b> Kept in this browser per run, and saved to or loaded from a file under <b>Your notes</b>. Nothing leaves this page.</p>`;
+  }
+
+  // ---------- navigation
+  function go(spec) {
+    const view = spec.view || 'steps';
+    const rest = { ...spec }; delete rest.view;
+    Object.assign(S, FILTER_DEFAULTS, { sort: 'round', step: null }, rest);
+    showView(view);
+    select();
+    if (view === 'steps') els.readcol.innerHTML = '<div class="empty"><b>Nothing open yet</b>Pick a step from the list. J and K move between steps.</div>';
+    writeHash('push');
+  }
+  function renderCrumbs() {
+    const parts = [`<button data-crumb="home">${esc(RUN.slug)}</button>`];
+    if (RUN.index) parts.unshift(`<a href="${esc(RUN.index)}">All runs</a>`, `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">${ICON.right}</svg>`);
+    const sep = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">${ICON.right}</svg>`;
+    parts.push(sep, `<b>${esc(VIEWS.find(v => v.id === S.view)?.label || S.view)}</b>`);
+    if ((S.view === 'steps' || S.view === 'transcript') && S.step) { const s = byId.get(S.step); if (s) parts.push(sep, `<b>${esc(stepLabel(s))}</b>`); }
+    els.crumbs.innerHTML = parts.join('');
+    els.crumbs.querySelector('[data-crumb]')?.addEventListener('click', () => { if (S.view === 'transcript') closePanel({ record: true }); else showView('transcript', { record: true }); });
+  }
+  function syncControls() {
+    for (const [id, field] of Object.entries(FIELD)) { const node = els[id]; if (!node) continue; if (node.type === 'checkbox') node.checked = S[field]; else if (document.activeElement !== node) node.value = S[field]; }
+  }
+  function buildControls() {
+    el('f-agent').innerHTML = '<option value="">all</option>' + LANES.map(l => `<option value="${esc(l)}">${esc(l)}</option>`).join('');
+    const tools = [...new Set(STEPS.flatMap(s => s.tools.map(t => t.function)))].sort();
+    el('f-tool').innerHTML = '<option value="">any</option>' + tools.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('');
+    for (const [id, field] of Object.entries(FIELD)) {
+      const node = els[id];
+      node.addEventListener(node.tagName === 'INPUT' && node.type !== 'checkbox' ? 'input' : 'change', () => {
+        S[field] = node.type === 'checkbox' ? node.checked : node.value;
+        if (field === 'trows') renderTranscript(); else select();
+        writeHash('replace');
+      });
+    }
+    el('f-clear').addEventListener('click', () => go({ view: 'steps' }));
+    el('btn-more-filters').addEventListener('click', () => { const box = el('morefilters'); box.hidden = !box.hidden; });
+    el('btn-sample').addEventListener('click', () => {
+      if (S.sample) { S.sample = false; select(); writeHash('replace'); return; }
+      S.seed = Math.floor(Math.random() * 1e6) + 1; S.sample = true; select(); writeHash('replace');
+    });
+    el('s-again').addEventListener('click', () => { S.seed = Math.floor(Math.random() * 1e6) + 1; select(); writeHash('replace'); });
+    el('s-off').addEventListener('click', () => { S.sample = false; select(); writeHash('replace'); });
+    el('s-flag').addEventListener('input', ev => { S.sflag = ev.target.value; if (S.sample) { select(); writeHash('replace'); } });
+    el('s-clean').addEventListener('input', ev => { S.sclean = ev.target.value; if (S.sample) { select(); writeHash('replace'); } });
+  }
+
+  // Back and forward restore exactly what the address bar says: the defaults first,
+  // then the hash, so nothing from the page being left carries over.
+  function applyHash() {
+    Object.assign(S, DEFAULT_STATE);
+    const t = readHash();
+    const s = t && byId.has(t) ? byId.get(t) : null;
+    S.step = s ? s.id : null;
+    showView(S.view);
+    select();
+    if (s) { renderReaderFor(s); renderCrumbs(); }
+    else if (S.view === 'transcript') closePanel();
+    else if (S.view === 'steps') els.readcol.innerHTML = '<div class="empty"><b>Nothing open yet</b>Pick a step from the list. J and K move between steps.</div>';
+  }
+  window.addEventListener('popstate', applyHash);
+
+  document.addEventListener('keydown', e => {
+    if (e.target instanceof Element && e.target.matches('input, select, textarea')) return;
+    if (el('notes-dialog').open) return;
+    if (e.key === 'Escape') {
+      if (S.view === 'transcript' && S.step) { closePanel({ record: true }); return; }
+      if (S.view === 'transcript' && OPEN.size) { OPEN.clear(); renderTranscript(); return; }
+      if (S.focus) { S.focus = false; applyFocus(); const s = byId.get(S.step); if (s) renderReaderFor(s); writeHash('replace'); }
+      return;
+    }
+    if (S.view !== 'steps' && S.view !== 'transcript') return;
+    if (e.key === 'r') { const s = byId.get(S.step); if (s && !noteWritten(noteOf(s.id))) setRead(s.id, !noteRead(noteOf(s.id))); return; }
+    if (e.key === 'j' || e.key === 'k') moveStep(e.key === 'j' ? 1 : -1);
+  });
+
+  // ---------- per-viewer preferences
+  const store = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* storage unavailable */ } } };
+  let base = Number(store.get('loc-arena-base')) || 14;
+  const applyBase = () => { document.documentElement.style.setProperty('--base', base + 'px'); store.set('loc-arena-base', String(base)); scheduleLayout(); };
+  el('size-down').addEventListener('click', () => { base = Math.max(11, base - 1); applyBase(); });
+  el('size-up').addEventListener('click', () => { base = Math.min(22, base + 1); applyBase(); });
+  if (base !== 14) applyBase();
+  const applyTheme = choice => {
+    if (choice) document.documentElement.setAttribute('data-theme', choice); else document.documentElement.removeAttribute('data-theme');
+    document.querySelectorAll('[data-theme-choice]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.themeChoice === choice)));
+  };
+  document.querySelectorAll('[data-theme-choice]').forEach(b => b.addEventListener('click', () => { applyTheme(b.dataset.themeChoice); store.set('loc-arena-theme', b.dataset.themeChoice); }));
+  applyTheme(store.get('loc-arena-theme') ?? '');
+
+  const savedWidth = store.get('loc-arena-listw');
+  if (savedWidth) els.listcol.style.width = savedWidth;
+  const savedPanel = store.get('loc-arena-panelw');
+  if (savedPanel) els.panel.style.width = savedPanel;
+  const applyRail = mini => {
+    const app = document.querySelector('.app');
+    if (mini) app.setAttribute('data-rail', 'mini'); else app.removeAttribute('data-rail');
+    const btn = el('btn-rail');
+    btn.setAttribute('aria-expanded', String(!mini));
+    btn.title = mini ? 'expand the sidebar' : 'collapse the sidebar';
+    btn.innerHTML = icon('panel', 17);
+    store.set('loc-arena-rail', mini ? 'mini' : 'full');
+    scheduleLayout();
+  };
+  el('btn-rail').addEventListener('click', () => applyRail(!document.querySelector('.app').hasAttribute('data-rail')));
+  applyRail(store.get('loc-arena-rail') === 'mini');
+
+  // Two dividers, one behaviour: drag to resize, remember the width per browser.
+  function bindDivider(divider, target, sign, key, min, max) {
+    divider.addEventListener('pointerdown', e => {
+      const x0 = e.clientX, w0 = target.clientWidth;
+      divider.classList.add('active'); divider.setPointerCapture(e.pointerId);
+      const move = ev => { target.style.width = Math.max(min, Math.min(max(), w0 + sign * (ev.clientX - x0))) + 'px'; scheduleLayout(); };
+      const up = () => { divider.classList.remove('active'); divider.removeEventListener('pointermove', move); divider.removeEventListener('pointerup', up); store.set(key, target.style.width); };
+      divider.addEventListener('pointermove', move); divider.addEventListener('pointerup', up);
+    });
+  }
+  bindDivider(el('divider'), els.listcol, 1, 'loc-arena-listw', 240, () => 680);
+  bindDivider(el('pdivider'), els.panel, -1, 'loc-arena-panelw', 420, () => el('view-transcript').clientWidth - 260);
+
+  buildRail();
+  buildControls();
+  renderMethod();
+  renderNotesState();
+  applyHash();
+  history.replaceState(null, '', location.hash || '#');
+})();
+</script>

@@ -11,6 +11,7 @@ dependencies = [
   "httpx>=0.27",
   "inspect-ai>=0.3.239,<0.4",
   "pygments>=2.18",
+  "pydantic>=2.13.5",
 ]
 
 [project.scripts]
@@ -82,6 +83,8 @@ ignore = [
 # The harness imports the Inspect exporter and renderer lazily inside _write_bundle/_eval_episodes: inspect_ai
 # loads ~1200 modules (docs/agent-log/agent.md), and that stack keeps function bodies free of comments.
 "loc_arena/harness.py" = ["PLC0415"]
+# `explore` imports the explorer (and so inspect_ai) only when it runs, for the same reason.
+"loc_arena/cli.py" = ["PLC0415"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
