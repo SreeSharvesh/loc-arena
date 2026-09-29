@@ -63,6 +63,9 @@ with open(os.environ["FAKE_DOCKER_LOG"], "a") as log:
         "image_tag": os.environ.get("LOC_ARENA_IMAGE_TAG"),
     }}
     log.write(json.dumps(call) + "\\n")
+if scenario.get("fail") in arguments:
+    sys.stderr.write("Cannot connect to the Docker daemon\\n")
+    sys.exit(1)
 if "run" in arguments:
     time.sleep(scenario.get("run_seconds", 0))
     if "grader" in arguments:
@@ -232,6 +235,27 @@ def test_teardown_deletes_the_control_key_file(stack: EpisodeStack) -> None:
     teardown(stack)
 
     assert not stack.control_key_file.exists()
+
+
+def test_a_teardown_docker_refuses_names_the_project_it_left_behind(
+    stack: EpisodeStack,
+    docker: FakeDocker,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    docker.play(fail="down")
+
+    teardown(stack)
+
+    assert stack.project in capsys.readouterr().err
+
+
+def test_a_teardown_docker_completes_prints_nothing(
+    stack: EpisodeStack,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    teardown(stack)
+
+    assert capsys.readouterr().err == ""
 
 
 def test_the_control_key_file_is_readable_by_every_container_user() -> None:

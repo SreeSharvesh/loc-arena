@@ -8,6 +8,7 @@ import secrets
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -179,8 +180,15 @@ def teardown(stack: EpisodeStack) -> None:
     """Remove this project's containers, networks, volumes, images and control key file; idempotent."""
     down_timeout = str(stack.settings.down_timeout_seconds)
     down = ["--profile", "*", "down", "-v", "--remove-orphans", "--rmi", "all", "-t", down_timeout]
-    run_compose(stack, down, check=False)
+    result = run_compose(stack, down, check=False)
     shutil.rmtree(stack.control_key_file.parent, ignore_errors=True)
+    if result.returncode != 0:
+        tail = result.stderr[-stack.settings.error_output_characters :]
+        print(
+            f"tearing down {stack.project} failed, so its containers, networks, volumes or images may be "
+            f"left; scripts/teardown.sh removes them:\n{tail}",
+            file=sys.stderr,
+        )
 
 
 def run_one_off(
