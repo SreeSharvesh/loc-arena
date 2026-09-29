@@ -14,7 +14,7 @@ import json
 import queue
 import re
 import threading
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
@@ -99,6 +99,9 @@ _REASON_FIELD = re.compile(r'(?<!\w)"?reason"?\s*:\s*"([^"]*)"')
 UNPARSED_REASON = "reason unparsed"
 # Marks the reason of a verdict recovered from a reply that was not strict JSON, wherever it is reported.
 RECOVERED_REASON_PREFIX = "[recovered from a reply that was not strict JSON] "
+# Where a JSON object with a first key starts: "{", JSON whitespace, the key's opening quote.
+_OBJECT_OPENING = re.compile(r'\{[ \t\n\r]*"')
+_VERDICT_DECODER = json.JSONDecoder()
 # How much of a model completion a monitor event keeps, for review.
 _COMPLETION_EXCERPT_CHARACTERS = 200
 
@@ -499,36 +502,37 @@ class ParsedVerdict:
         return f"{RECOVERED_REASON_PREFIX}{self.reason}" if self.recovered else self.reason
 
 
-def _find_brace_balanced_objects(text: str) -> list[str]:
-    """Every brace-balanced ``{...}`` span in ``text``, in order of its opening brace."""
-    objects: list[str] = []
-    for start, opening in enumerate(text):
-        if opening != "{":
+def _find_brace_balanced_objects(text: str) -> Iterator[str]:
+    """Every brace-balanced ``{...}`` span in ``text``, in order of its opening brace, cut only when read.
+
+    One pass pairs each ``}`` with the latest unpaired ``{``.
+    """
+    unpaired: list[int] = []
+    spans: list[tuple[int, int]] = []
+    for position, character in enumerate(text):
+        if character == "{":
+            unpaired.append(position)
+        elif character == "}" and unpaired:
+            spans.append((unpaired.pop(), position))
+    return (text[start : end + 1] for start, end in sorted(spans))
+
+
+def _find_strict_verdict(text: str) -> ParsedVerdict | None:
+    """The first JSON object in ``text`` whose suspicion is a number in [0, 1], decoded in place.
+
+    Decoded in place, a brace in the reason is text. Only a ``{`` that opens a quoted key is decoded: a
+    verdict has keys, and decoding any other brace would fail at a cost that grows with its position.
+    """
+    for opening in _OBJECT_OPENING.finditer(text):
+        try:
+            verdict, _ = _VERDICT_DECODER.raw_decode(text, opening.start())  # an object: it opens with "{"
+        except (ValueError, RecursionError):  # not JSON, an int past Python's digit limit, too deep
             continue
-        depth = 0
-        for end in range(start, len(text)):
-            if text[end] == "{":
-                depth += 1
-            elif text[end] == "}":
-                depth -= 1
-                if depth == 0:
-                    objects.append(text[start : end + 1])
-                    break
-    return objects
-
-
-def _read_strict_verdict(candidate: str) -> ParsedVerdict | None:
-    """The verdict in a strict JSON object, if its suspicion is a number in [0, 1]."""
-    try:
-        verdict = json.loads(candidate)
-    except (ValueError, RecursionError):  # not JSON, an int past Python's digit limit, too deep
-        return None
-    if not isinstance(verdict, dict):
-        return None
-    suspicion, reason = verdict.get("suspicion"), verdict.get("reason")
-    if isinstance(suspicion, bool) or not isinstance(suspicion, (int, float)) or not 0 <= suspicion <= 1:
-        return None
-    return ParsedVerdict(float(suspicion), "" if reason is None else str(reason), recovered=False)
+        suspicion, reason = verdict.get("suspicion"), verdict.get("reason")
+        if isinstance(suspicion, bool) or not isinstance(suspicion, (int, float)) or not 0 <= suspicion <= 1:
+            continue
+        return ParsedVerdict(float(suspicion), "" if reason is None else str(reason), recovered=False)
+    return None
 
 
 def _read_lenient_verdict(candidate: str) -> ParsedVerdict | None:
@@ -551,12 +555,13 @@ def parse_verdict(text: str) -> ParsedVerdict | None:
     whose ``suspicion`` field holds a bare number in [0, 1] is read leniently and marked ``recovered``. A
     number is only ever read from inside such an object. Returns ``None`` when neither exists.
     """
-    objects = _find_brace_balanced_objects(text)
-    for read in (_read_strict_verdict, _read_lenient_verdict):
-        for candidate in objects:
-            verdict = read(candidate)
-            if verdict is not None:
-                return verdict
+    strict = _find_strict_verdict(text)
+    if strict is not None:
+        return strict
+    for candidate in _find_brace_balanced_objects(text):
+        verdict = _read_lenient_verdict(candidate)
+        if verdict is not None:
+            return verdict
     return None
 
 
