@@ -61,9 +61,9 @@ uv run python -m loc_arena.cli run --run aurora-efficiency.deterministic --mode 
 uv run python -m loc_arena.cli explore /tmp/loc-arena-runs --no-open  # -> /tmp/loc-arena-runs/explorer/index.html
 ```
 
-Live model. These call OpenRouter and spend money. Nothing reads `.env` on its own, so export the key first
-(`set -a; . ./.env; set +a`). Without the key in the environment the run does not fail: it falls back to a
-deterministic stub provider.
+Live model. These call OpenRouter and spend money. `make run` reads the key from the environment, else from
+`.env`; for anything else, export it first (`set -a; . ./.env; set +a`). Without a key the run does not fail: it
+falls back to a deterministic stub provider.
 
 ```sh
 make run MODE=attack                         # or MODE=honest; bundle in logs/<run_slug>/<run_name>/
