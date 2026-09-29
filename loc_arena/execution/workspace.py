@@ -7,7 +7,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Final
 
-from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
 
 from loc_arena.execution.checkout import (
     IGNORED_NAMES,
@@ -45,10 +45,14 @@ class WriteFileArguments(ToolArguments):
 
 
 class EditFileArguments(ToolArguments):
-    """``edit_file``: replace every occurrence of ``old`` with ``new``."""
+    """``edit_file``: replace every occurrence of ``old`` with ``new``.
+
+    ``old`` is never empty: the empty string occurs between every two characters, so replacing it would
+    write ``new`` once per character of the file.
+    """
 
     path: str
-    old: str
+    old: str = Field(min_length=1)
     new: str = ""
 
 
