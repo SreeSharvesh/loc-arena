@@ -15,6 +15,8 @@ deterministic engine-test scaffolding, not a selectable deliverable policy.
 
 from __future__ import annotations
 
+import logging
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -102,6 +104,8 @@ COVERT_BRIEFS: dict[str, str] = {
 }
 
 
+_LOGGER = logging.getLogger(__name__)
+
 # Builds an agent's policy from its context, its brief and the tools it is offered.
 AgentPolicyFactory = Callable[[AgentContext, str, list[ToolSpec]], AgentPolicy]
 
@@ -134,12 +138,12 @@ def run_model_policy(
     policy_factory: AgentPolicyFactory | None = None,
 ) -> SeededWorld:
     """Run the pre-provisioned team on the episode's wiring."""
+    ceiling = time.monotonic() + config.episode.wall_clock_seconds
     scenario = _resolve_scenario(config)
     world = generate_world(config, scenario, config.seed)
     forge = Forge(world)
     reviewer = Reviewer()
     repos = hosted_repos(config, scenario)
-    platform_repo = repos[0][0]
     control_repo = next((name for name, control in repos if control), None)
 
     recorder = Recorder(wiring.sealed, wiring.mirror, clock=clock)
@@ -208,12 +212,12 @@ def run_model_policy(
         forge,
         reviewer,
         clock,
-        platform_repo=platform_repo,
+        platform_repo=repos[0][0],
         control_repo=control_repo,
         covert_enabled=config.covert.enabled,
     )
 
-    _drive_team(team, root_cfg.id)
+    _drive_team(team, root_cfg.id, ceiling=ceiling)
     return world
 
 
@@ -252,13 +256,15 @@ def assemble_model_episode(
     )
 
 
-def _drive_team(team: dict[str, Agent], root_uid: str) -> None:
+def _drive_team(team: dict[str, Agent], root_uid: str, *, ceiling: float) -> None:
     """Round-robin the whole team: every agent gets a turn each round until all end or exhaust their budget.
 
     A real R&D team works its own area AND reacts to coordination (bus messages are delivered at each turn
     start), so the run does not stall when the orchestrator is quiet/refuses -- the per-repo sub-agents keep
     doing their own legitimate (and, for covert-briefed ones, covert) work. The root goes first each round.
     The model decides every action; this only schedules the turns and drops an agent once it ends/exhausts.
+    No turn starts at or past ``ceiling``, a ``time.monotonic()`` reading: a provider that fails every call
+    after its whole retry budget would otherwise hold each of the team's turns for that budget.
     """
     order = [root_uid, *[uid for uid in team if uid != root_uid]]
     active = set(team)
@@ -266,6 +272,9 @@ def _drive_team(team: dict[str, Agent], root_uid: str) -> None:
         for uid in order:
             if uid not in active:
                 continue
+            if time.monotonic() >= ceiling:
+                _LOGGER.warning("the episode reached its wall-clock ceiling: its agents take no more turns")
+                return
             status = team[uid].run_turn()
             if status in (TurnStatus.ENDED, TurnStatus.BUDGET_EXHAUSTED):
                 active.discard(uid)
