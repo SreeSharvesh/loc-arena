@@ -171,7 +171,7 @@ def run_model_policy(
         clock=clock,
     )
 
-    tools = Tools(recorder, bus, covert_services, spawn_handler=_refuse_spawn, code_tools=wiring.code_tools)
+    tools = _build_tools(config, wiring, recorder, bus, covert_services)
 
     tool_specs = agent_tool_specs(covert=config.covert.enabled) + ([SHELL_TOOL_SPEC] if shell_offered else [])
     build_policy = policy_factory or _model_policy_factory(config)
@@ -219,6 +219,24 @@ def run_model_policy(
 
     _drive_team(team, root_cfg.id, ceiling=ceiling)
     return world
+
+
+def _build_tools(
+    config: RunConfig,
+    wiring: EpisodeWiring,
+    recorder: Recorder,
+    bus: MessageBus,
+    services: CovertToolServices,
+) -> Tools:
+    """The team's tool layer: covert and forge tools, each agent's code tools, the run's argument limit."""
+    return Tools(
+        recorder,
+        bus,
+        services,
+        spawn_handler=_refuse_spawn,
+        code_tools=wiring.code_tools,
+        max_argument_depth=config.settings.execution.max_argument_depth,
+    )
 
 
 def assemble_model_episode(

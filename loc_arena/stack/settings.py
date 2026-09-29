@@ -255,6 +255,14 @@ class ExecutionSettings(SettingsGroup):
         default=2 * MEBIBYTE,
         description="Largest tool result the runner accepts (a full read or output, JSON-escaped, fits).",
     )
+    max_argument_depth: PositiveInt = Field(
+        default=32,
+        description=(
+            "Deepest nesting of lists and objects a tool call's arguments may have; a deeper call gets an "
+            "error result. The event logs record every call's arguments: pydantic's serializer, which the "
+            "stack's log clients send events with, refuses about 250 levels, the in-process log about 490."
+        ),
+    )
     reply_timeout_seconds: PositiveFloat = Field(
         default=360.0,
         description="Seconds one call to a sandbox may take in total, reading the whole reply included.",

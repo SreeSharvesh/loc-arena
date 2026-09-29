@@ -26,6 +26,7 @@ from loc_arena.scaffold.tools import AgentAction, AgentContext, StubServices, To
 from loc_arena.stack.contracts import EpisodeWiring
 
 CONFIG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+SETTINGS = CONFIG.settings
 AGENT_ID = "agent-main"
 TURNS = 3
 TOKENS = 1
@@ -33,6 +34,8 @@ CALL_ID = "call-1"
 SKIPPED_FIRST_TURN = [{"turn": 0, "skipped": True}]
 # Far past the depth CPython's JSON decoder follows before it raises RecursionError.
 DECODER_DEFEATING_DEPTH = 100_000
+# Well past the limit, and past the ~490 levels at which recording the action once hit RecursionError.
+DEPTH_PAST_THE_LIMIT_FACTOR = 20
 
 
 class ReplyingProvider:
@@ -166,3 +169,15 @@ def test_a_batch_whose_prompts_are_no_list_is_refused_as_malformed(tmp_path: Pat
     result = tools.execute(_context(wiring), AgentAction("batch_generate", {"prompts": prompts}), 0)
 
     assert result["error"].startswith("malformed args for batch_generate")
+
+
+def test_a_tool_call_nesting_its_arguments_past_the_limit_returns_an_error_result(tmp_path: Path) -> None:
+    depth = SETTINGS.execution.max_argument_depth * DEPTH_PAST_THE_LIMIT_FACTOR
+    agent = _agent_replying(
+        tmp_path,
+        ReplyingProvider("list_dir", '{"path": "", "x": ' + "[" * depth + "]" * depth + "}"),
+    )
+
+    agent.run_turn()
+
+    assert "arguments nest" in agent.transcript[0]["result"]["error"]
