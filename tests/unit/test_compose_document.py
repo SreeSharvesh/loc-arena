@@ -26,6 +26,7 @@ from loc_arena.stack.constants import (
     GATEWAY_EDGE_URL_ENVIRONMENT_VARIABLE,
     GRADER_HARNESS_MOUNT_PATH,
     HEALTH_ROUTE,
+    IMAGE_TAG_ENVIRONMENT_VARIABLE,
     MIRROR_MOUNT_PATH,
     OPENROUTER_API_KEY_SECRET_NAME,
     RECORDER_HOSTNAME,
@@ -170,6 +171,12 @@ def test_each_grant_carries_only_the_fields_compose_applies_to_its_source() -> N
         assert control_grants == [{"source": CONTROL_KEY_SECRET_NAME, "target": CONTROL_KEY_SECRET_NAME}]
     control_key_source = render_compose(CONFIG)["secrets"][CONTROL_KEY_SECRET_NAME]
     assert control_key_source["file"].startswith(f"${{{CONTROL_KEY_FILE_ENVIRONMENT_VARIABLE}:?")
+
+
+def test_every_service_runs_an_image_under_the_tag_its_episode_is_given() -> None:
+    tags = {name: service["image"].partition(":")[2] for name, service in SERVICES.items()}
+
+    assert all(tag.startswith(f"${{{IMAGE_TAG_ENVIRONMENT_VARIABLE}:?") for tag in tags.values()), tags
 
 
 def test_an_environment_sourced_secret_in_a_read_only_container_is_refused() -> None:

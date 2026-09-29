@@ -26,6 +26,7 @@ from loc_arena.stack.constants import (
     GATEWAY_EDGE_URL_ENVIRONMENT_VARIABLE,
     GRADER_HARNESS_MOUNT_PATH,
     HEALTH_ROUTE,
+    IMAGE_TAG_ENVIRONMENT_VARIABLE,
     MIRROR_MOUNT_PATH,
     RECORDER_HOSTNAME,
     SANDBOX_AGENT_ID_ENVIRONMENT_VARIABLE,
@@ -37,10 +38,8 @@ from loc_arena.stack.constants import (
 from loc_arena.stack.settings import DockerSettings, GatewaySettings, LocArenaSettings
 
 LABEL = "loc-arena.eval"
-APP_IMAGE = (
-    "loc-arena-app:latest"  # ./Dockerfile target `app`: gateway_core, recorder, runner, evidence reader
-)
-SANDBOX_IMAGE = "loc-arena-sandbox:latest"  # target `sandbox`: the edge, the agents' sandboxes, the grader
+APP_IMAGE = "loc-arena-app"  # ./Dockerfile target `app`: gateway_core, recorder, runner, evidence reader
+SANDBOX_IMAGE = "loc-arena-sandbox"  # target `sandbox`: the edge, the agents' sandboxes, the grader
 # Our images are built here (`build:`) and never pulled: a missing one is built, not fetched from a registry.
 LOCAL_IMAGE_PULL_POLICY: Final = "never"
 PROJECT_DIRECTORY: Final = Path(__file__).resolve().parent.parent  # relative host paths resolve against it
@@ -178,11 +177,15 @@ class ComposeDocument(TypedDict, total=False):
 
 @dataclass(frozen=True)
 class ImageSpec:
-    """An image services run: its tag, and where compose builds it (a context and a Dockerfile stage)."""
+    """An image services run: its name, and where compose builds it (a context and a Dockerfile stage)."""
 
-    tag: str
+    name: str
     context: str
     target: str | None = None
+
+    def render_reference(self) -> str:
+        """``<name>:<tag>``, the tag read by compose from the variable the harness sets for each episode."""
+        return f"{self.name}:${{{IMAGE_TAG_ENVIRONMENT_VARIABLE}:?the image tag of the episode}}"
 
     def render_build(self) -> ComposeBuild:
         """The ``build`` field of a service running this image."""
@@ -480,7 +483,7 @@ def render_service(spec: ServiceSpec, topology: RunTopology) -> ComposeService:
     """
     environment = {**spec.environment, SETTINGS_ENVIRONMENT_VARIABLE: topology.settings.model_dump_json()}
     service: ComposeService = {
-        "image": spec.image.tag,
+        "image": spec.image.render_reference(),
         "build": spec.image.render_build(),
         "pull_policy": LOCAL_IMAGE_PULL_POLICY,
         "environment": {name: _escape_interpolation(value) for name, value in environment.items()},
@@ -595,7 +598,8 @@ def render_reference_compose_file() -> str:
         "# GENERATED: do not edit by hand. Change the config, then regenerate this file with\n"
         "# `uv run python -m loc_arena.compose_document`; a unit test fails while the two differ.\n"
         "# The harness renders its own copy per episode. Every compose command needs\n"
-        f"# {CONTROL_KEY_FILE_ENVIRONMENT_VARIABLE}, the path of the episode's control key file.\n"
+        f"# {CONTROL_KEY_FILE_ENVIRONMENT_VARIABLE}, the path of the episode's control key file, and\n"
+        f"# {IMAGE_TAG_ENVIRONMENT_VARIABLE}, the tag of the images the episode builds and runs.\n"
         "\n"
     )
     return header + dump_compose_document(render_compose(load_run_config(REFERENCE_RUN_CONFIG)))

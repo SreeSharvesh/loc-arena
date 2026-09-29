@@ -1,8 +1,8 @@
 """The host's side of a stack episode, against a stand-in for the docker CLI (docker cannot run here).
 
 The stand-in is a real executable first on ``PATH``: it logs every call (its arguments, and the control key
-file compose would read) and plays the containers' part: the runner writes its export into its bind-mounted
-output directory, ``cp`` copies the golden logs out, the grader prints a measurement.
+file and image tag compose would read) and plays the containers' part: the runner writes its export into its
+bind-mounted output directory, ``cp`` copies the golden logs out, the grader prints a measurement.
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
+import re
 import stat
 import sys
 from pathlib import Path
@@ -18,6 +19,7 @@ import pytest
 from loc_arena.compose_stack import (
     EpisodeStack,
     HarnessError,
+    name_compose_project,
     run_in_runner,
     teardown,
     up,
@@ -37,14 +39,20 @@ CONFIG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 GOLDEN = Path(__file__).parent / "golden" / "aurora-efficiency.deterministic" / "attack"
 HANDLE = "0123456789abcdef"
 MEASUREMENT = GradeMeasurement(suite_green=True, pipeline_completed=True, cost=3335, outputs={"metric": 1.0})
+# The tag grammar of pkg.go.dev/github.com/distribution/reference.
+IMAGE_TAG = re.compile(r"[\w][\w.-]{0,127}")
 
 FAKE_DOCKER = """#!{python}
 import json, os, pathlib, shutil, sys, time
 arguments = sys.argv[1:]
 scenario = json.loads(pathlib.Path(os.environ["FAKE_DOCKER_SCENARIO"]).read_text())
 with open(os.environ["FAKE_DOCKER_LOG"], "a") as log:
-    key_file = os.environ.get("LOC_ARENA_CONTROL_KEY_FILE")
-    log.write(json.dumps({{"arguments": arguments, "control_key_file": key_file}}) + "\\n")
+    call = {{
+        "arguments": arguments,
+        "control_key_file": os.environ.get("LOC_ARENA_CONTROL_KEY_FILE"),
+        "image_tag": os.environ.get("LOC_ARENA_IMAGE_TAG"),
+    }}
+    log.write(json.dumps(call) + "\\n")
 if "run" in arguments:
     time.sleep(scenario.get("run_seconds", 0))
     if "grader" in arguments:
@@ -60,10 +68,11 @@ if "cp" in arguments:
 
 @dataclasses.dataclass(frozen=True)
 class DockerCall:
-    """One call of the stand-in: its arguments, and the control key file compose would have read."""
+    """One call of the stand-in: its arguments, and the control key file and image tag compose would read."""
 
     arguments: list[str]
     control_key_file: str | None
+    image_tag: str | None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -165,6 +174,32 @@ def test_every_compose_command_of_a_stack_names_its_control_key_file(
     teardown(stack)
 
     assert {call.control_key_file for call in docker.calls()} == {str(stack.control_key_file)}
+
+
+def test_every_compose_command_of_a_stack_names_its_image_tag(
+    stack: EpisodeStack,
+    docker: FakeDocker,
+) -> None:
+    teardown(stack)
+
+    assert {call.image_tag for call in docker.calls()} == {stack.image_tag}
+
+
+def test_two_episodes_of_a_run_build_their_images_under_different_tags(
+    docker: FakeDocker,
+    tmp_path: Path,
+) -> None:
+    for episode in ("first", "second"):
+        up(CONFIG, project=name_compose_project("aurora-efficiency"), workdir=tmp_path / episode)
+
+    build_tags = [call.image_tag for call in docker.calls() if call.arguments[-1:] == ["build"]]
+    assert len(set(build_tags)) == len(build_tags) == 2
+
+
+def test_a_run_name_past_the_tag_length_still_names_a_valid_image_tag() -> None:
+    project = name_compose_project("a" * 300)
+
+    assert IMAGE_TAG.fullmatch(project)
 
 
 def test_the_stack_images_are_built_for_every_profile(stack: EpisodeStack, docker: FakeDocker) -> None:

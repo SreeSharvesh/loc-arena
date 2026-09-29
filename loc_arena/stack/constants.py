@@ -50,6 +50,11 @@ CONTROL_KEY_SECRET_NAME: Final = "control_key"
 DEFAULT_CONTROL_KEY_HEADER: Final = "X-Loc-Arena-Control-Key"
 # A file secret: see docs/isolation/design.md#control-key.
 CONTROL_KEY_FILE_ENVIRONMENT_VARIABLE: Final = "LOC_ARENA_CONTROL_KEY_FILE"
+# The tag of the images an episode builds and runs. The harness sets it to the episode's project name for
+# every `docker compose` command of the episode, so no two episodes, or checkouts, run each other's images.
+IMAGE_TAG_ENVIRONMENT_VARIABLE: Final = "LOC_ARENA_IMAGE_TAG"
+# A tag is at most 128 characters (the tag grammar of pkg.go.dev/github.com/distribution/reference).
+IMAGE_TAG_MAX_LENGTH: Final = 128
 
 # --- mounts and the files in them ---
 SEALED_MOUNT_PATH: Final = Path("/sealed")  # <handle>/events.jsonl and <handle>/model_calls.jsonl

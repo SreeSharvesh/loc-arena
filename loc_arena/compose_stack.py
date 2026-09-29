@@ -3,10 +3,12 @@
 Enforces the sealed-vs-tamperable isolation structurally (the stack is rendered from
 ``configs/env.default.yaml`` by :mod:`loc_arena.compose_document`; nothing here opens a route the rendered
 networks and mounts do not) and project isolation: every command names its project, so concurrent episodes
-never touch each other's containers, networks or volumes. Each stack gets its own control key, written to a
-file only this process knows the path of; every compose command of the stack is given that path (the
-rendered control_key secret reads it), and teardown deletes it. Every resource is labelled
-``loc-arena.eval=1``, so ``scripts/teardown.sh`` can sweep them all by hand.
+never touch each other's containers, networks, volumes or images. Each stack gets its own control key, written
+to a file only this process knows the path of; every compose command of the stack is given that path (the
+rendered control_key secret reads it), and teardown deletes it. Each stack builds and runs images of its own,
+tagged with its project name, which every compose command is given the same way; teardown removes them.
+Every container, network and volume is labelled ``loc-arena.eval=1``, so ``scripts/teardown.sh`` can sweep
+them all by hand.
 """
 
 from __future__ import annotations
@@ -32,6 +34,8 @@ from loc_arena.stack.constants import (
     CONTROL_KEY_BYTES,
     CONTROL_KEY_FILE_ENVIRONMENT_VARIABLE,
     CONTROL_KEY_SECRET_NAME,
+    IMAGE_TAG_ENVIRONMENT_VARIABLE,
+    IMAGE_TAG_MAX_LENGTH,
     RUNNER_OUTPUT_MOUNT_PATH,
 )
 from loc_arena.stack.settings import DockerSettings
@@ -58,8 +62,9 @@ class EpisodeStack:
     """A brought-up stack: its compose project, its rendered compose file, and its control key file.
 
     Every ``docker compose`` command of the project is given ``control_key_file`` (the rendered control_key
-    secret reads its path) and ``secret_environment``: the values of the compose secrets' ``environment:``
-    sources. Both go only to the ``docker compose`` process, never to a container; each value masks itself.
+    secret reads its path), ``image_tag`` (every rendered service image reads it) and ``secret_environment``:
+    the values of the compose secrets' ``environment:`` sources. They go only to the ``docker compose``
+    process, never to a container; each secret value masks itself.
     """
 
     project: str
@@ -67,6 +72,11 @@ class EpisodeStack:
     control_key_file: Path
     settings: DockerSettings
     secret_environment: dict[str, SecretStr] = field(default_factory=dict)
+
+    @property
+    def image_tag(self) -> str:
+        """The tag of the images this stack builds and runs: its project name, which no other stack shares."""
+        return self.project
 
     def exec(
         self,
@@ -117,6 +127,7 @@ def run_compose(
         **os.environ,
         **revealed_secrets,
         CONTROL_KEY_FILE_ENVIRONMENT_VARIABLE: str(stack.control_key_file),
+        IMAGE_TAG_ENVIRONMENT_VARIABLE: stack.image_tag,
     }
     pipe = subprocess.PIPE if capture else None
     return subprocess.run(
@@ -154,7 +165,7 @@ def up(
     workdir: Path | None = None,
     secret_environment: dict[str, SecretStr] | None = None,
 ) -> EpisodeStack:
-    """Render the compose file, build its images, and bring the stack up healthy (``--wait``).
+    """Render the compose file, build its images (tagged for this stack alone), and bring it up healthy.
 
     A fresh control key is written for the stack. ``secret_environment`` supplies the environment-sourced
     compose secrets (the provider key for gateway_core); a secret it leaves out is empty, so the core holds no
@@ -185,14 +196,19 @@ def up(
 
 
 def teardown(stack: EpisodeStack) -> None:
-    """Remove every resource of THIS project (containers, networks, volumes) and its control key. Idempotent.
+    """Remove every resource of THIS project (containers, networks, volumes, images) and its control key.
 
-    Project-scoped so tearing one episode down never touches another concurrent episode (they share the
-    ``loc-arena.eval`` label). ``--profile "*"`` includes on-demand services such as the runner.
-    ``scripts/teardown.sh`` is the label-wide manual sweep for interactive use.
+    Idempotent, and project-scoped so tearing one episode down never touches another concurrent episode (they
+    share the ``loc-arena.eval`` label). ``--profile "*"`` includes on-demand services such as the runner.
+    ``--rmi all`` removes the images the services name, which carry this stack's own tag (``local`` skips an
+    image with a custom tag: docs.docker.com/reference/cli/docker/compose/down), so tags do not pile up. The
+    next build still reuses the build cache, which only ``docker builder prune`` or BuildKit's garbage
+    collection clears (docs.docker.com/build/cache/garbage-collection). ``scripts/teardown.sh`` is the manual
+    sweep.
     """
     down_timeout = str(stack.settings.down_timeout_seconds)
-    run_compose(stack, ["--profile", "*", "down", "-v", "--remove-orphans", "-t", down_timeout], check=False)
+    down = ["--profile", "*", "down", "-v", "--remove-orphans", "--rmi", "all", "-t", down_timeout]
+    run_compose(stack, down, check=False)
     shutil.rmtree(stack.control_key_file.parent, ignore_errors=True)
 
 
@@ -291,6 +307,11 @@ def _secret_source_variables(config: RunConfig) -> list[str]:
 
 
 def name_compose_project(run: str) -> str:
-    """A unique compose project name for one run (lowercase letters, digits, hyphens and underscores only)."""
+    """A unique compose project name for one run, also a valid image tag (it is ``EpisodeStack.image_tag``).
+
+    Lowercase letters, digits, hyphens and underscores only (compose's project name rule, a subset of what a
+    tag allows), cut to the length a tag allows.
+    """
+    suffix = f"-{secrets.token_hex(3)}"
     run_fragment = re.sub(r"[^a-z0-9_-]+", "-", run.lower()).strip("-") or "run"
-    return f"locarena-{run_fragment}-{secrets.token_hex(3)}"
+    return f"locarena-{run_fragment}"[: IMAGE_TAG_MAX_LENGTH - len(suffix)] + suffix

@@ -3,11 +3,12 @@
 # GENERATED: do not edit by hand. Change the config, then regenerate this file with
 # `uv run python -m loc_arena.compose_document`; a unit test fails while the two differ.
 # The harness renders its own copy per episode. Every compose command needs
-# LOC_ARENA_CONTROL_KEY_FILE, the path of the episode's control key file.
+# LOC_ARENA_CONTROL_KEY_FILE, the path of the episode's control key file, and
+# LOC_ARENA_IMAGE_TAG, the tag of the images the episode builds and runs.
 
 services:
   gateway_core:
-    image: loc-arena-app:latest
+    image: loc-arena-app:${LOC_ARENA_IMAGE_TAG:?the image tag of the episode}
     build:
       context: .
       target: app
@@ -66,7 +67,7 @@ services:
     - no-new-privileges:true
     pids_limit: 4096
   recorder:
-    image: loc-arena-app:latest
+    image: loc-arena-app:${LOC_ARENA_IMAGE_TAG:?the image tag of the episode}
     build:
       context: .
       target: app
@@ -114,7 +115,7 @@ services:
     - no-new-privileges:true
     pids_limit: 4096
   gateway_edge:
-    image: loc-arena-sandbox:latest
+    image: loc-arena-sandbox:${LOC_ARENA_IMAGE_TAG:?the image tag of the episode}
     build:
       context: .
       target: sandbox
@@ -171,7 +172,7 @@ services:
     - no-new-privileges:true
     pids_limit: 4096
   sandbox-agent-main:
-    image: loc-arena-sandbox:latest
+    image: loc-arena-sandbox:${LOC_ARENA_IMAGE_TAG:?the image tag of the episode}
     build:
       context: .
       target: sandbox
@@ -230,7 +231,7 @@ services:
     cpus: 2.0
     pids_limit: 4096
   sandbox-serving-agent:
-    image: loc-arena-sandbox:latest
+    image: loc-arena-sandbox:${LOC_ARENA_IMAGE_TAG:?the image tag of the episode}
     build:
       context: .
       target: sandbox
@@ -289,7 +290,7 @@ services:
     cpus: 2.0
     pids_limit: 4096
   sandbox-distill-agent:
-    image: loc-arena-sandbox:latest
+    image: loc-arena-sandbox:${LOC_ARENA_IMAGE_TAG:?the image tag of the episode}
     build:
       context: .
       target: sandbox
@@ -348,7 +349,7 @@ services:
     cpus: 2.0
     pids_limit: 4096
   sandbox-eval-agent:
-    image: loc-arena-sandbox:latest
+    image: loc-arena-sandbox:${LOC_ARENA_IMAGE_TAG:?the image tag of the episode}
     build:
       context: .
       target: sandbox
@@ -407,7 +408,7 @@ services:
     cpus: 2.0
     pids_limit: 4096
   sandbox-datapipe-agent:
-    image: loc-arena-sandbox:latest
+    image: loc-arena-sandbox:${LOC_ARENA_IMAGE_TAG:?the image tag of the episode}
     build:
       context: .
       target: sandbox
@@ -466,7 +467,7 @@ services:
     cpus: 2.0
     pids_limit: 4096
   sandbox-jobsvc-agent:
-    image: loc-arena-sandbox:latest
+    image: loc-arena-sandbox:${LOC_ARENA_IMAGE_TAG:?the image tag of the episode}
     build:
       context: .
       target: sandbox
@@ -525,7 +526,7 @@ services:
     cpus: 2.0
     pids_limit: 4096
   sandbox-controlplane-agent:
-    image: loc-arena-sandbox:latest
+    image: loc-arena-sandbox:${LOC_ARENA_IMAGE_TAG:?the image tag of the episode}
     build:
       context: .
       target: sandbox
@@ -584,7 +585,7 @@ services:
     cpus: 2.0
     pids_limit: 4096
   runner:
-    image: loc-arena-app:latest
+    image: loc-arena-app:${LOC_ARENA_IMAGE_TAG:?the image tag of the episode}
     build:
       context: .
       target: app
@@ -639,7 +640,7 @@ services:
     cpus: 2.0
     pids_limit: 4096
   evidence_reader:
-    image: loc-arena-app:latest
+    image: loc-arena-app:${LOC_ARENA_IMAGE_TAG:?the image tag of the episode}
     build:
       context: .
       target: app
@@ -680,7 +681,7 @@ services:
     - no-new-privileges:true
     pids_limit: 4096
   grader:
-    image: loc-arena-sandbox:latest
+    image: loc-arena-sandbox:${LOC_ARENA_IMAGE_TAG:?the image tag of the episode}
     build:
       context: .
       target: sandbox
