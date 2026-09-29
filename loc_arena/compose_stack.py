@@ -36,11 +36,19 @@ class HarnessError(RuntimeError):
     """A docker/compose operation failed."""
 
 
-def docker_available() -> bool:
-    """True iff a docker daemon is reachable (integration tests skip-guard on this)."""
+def docker_available(settings: DockerSettings | None = None) -> bool:
+    """True iff a docker daemon answers ``docker info`` within ``settings.daemon_check_timeout_seconds``.
+
+    The integration tests skip-guard on this, with the default settings.
+    """
     if shutil.which("docker") is None:
         return False
-    return subprocess.run(["docker", "info"], capture_output=True).returncode == 0
+    timeout_seconds = (settings or DockerSettings()).daemon_check_timeout_seconds
+    try:
+        result = subprocess.run(["docker", "info"], capture_output=True, timeout=timeout_seconds)
+    except subprocess.TimeoutExpired:  # subprocess.run has killed the client
+        return False
+    return result.returncode == 0
 
 
 @dataclass

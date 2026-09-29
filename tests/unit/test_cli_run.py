@@ -11,7 +11,7 @@ RUN = "aurora-efficiency.deterministic"
 
 
 def _run_without_docker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> int:
-    monkeypatch.setattr(stack_episode, "docker_available", lambda: False)
+    monkeypatch.setattr(stack_episode, "docker_available", lambda _settings: False)
     return cli.main(["run", "--run", RUN, "--mode", "attack", "--stack", "--out", str(tmp_path)])
 
 
@@ -28,4 +28,4 @@ def test_a_stack_run_without_docker_names_the_failure_on_stderr(
 ) -> None:
     _run_without_docker(tmp_path, monkeypatch)
 
-    assert capsys.readouterr().err.startswith("error: Docker is not running.")
+    assert capsys.readouterr().err.startswith("error: Docker is not running")

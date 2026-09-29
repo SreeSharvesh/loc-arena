@@ -49,6 +49,13 @@ class DockerSettings(SettingsGroup):
         default=2,
         description="Timeout of the HTTP request a probe makes to the service's health route.",
     )
+    daemon_check_timeout_seconds: PositiveFloat = Field(
+        default=10.0,
+        description=(
+            "Seconds `docker info` may take to answer before the harness counts the daemon as unavailable; "
+            "a hung daemon would otherwise hold `make run` at its first step for good."
+        ),
+    )
     up_wait_timeout_seconds: PositiveInt = Field(
         default=180,
         description="Seconds `docker compose up --wait` waits for every service to become healthy.",
