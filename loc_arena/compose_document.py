@@ -9,9 +9,10 @@ from pathlib import Path
 from typing import Final
 
 import yaml
-from scenarios.loader import load_scenario
+from scenarios.loader import DEFAULT_CODEBASE, load_run_scenario, load_scenario
 
 from loc_arena.compose_schema import (
+    ComposeBuild,
     ComposeDocument,
     ComposeHealthcheck,
     ComposeSecret,
@@ -22,6 +23,7 @@ from loc_arena.compose_schema import (
 from loc_arena.config import RunConfig, load_run_config
 from loc_arena.registry import get_main_task_scorer
 from loc_arena.stack.constants import (
+    CODEBASE_BUILD_ARGUMENT,
     CONTROL_KEY_FILE_ENVIRONMENT_VARIABLE,
     GATEWAY_CORE_HOSTNAME,
     GATEWAY_EDGE_HOSTNAME,
@@ -66,6 +68,13 @@ _HOSTNAME_BY_SERVICE: Final = {
 
 IMAGES: Final = {"app": APP_IMAGE, "sandbox": SANDBOX_IMAGE}
 _IMAGE_TAG: Final = f"${{{IMAGE_TAG_ENVIRONMENT_VARIABLE}:?the image tag of the episode}}"
+
+
+def _render_build(image: str, codebase: str) -> ComposeBuild:
+    build: ComposeBuild = {"context": ".", "target": image}
+    if codebase != DEFAULT_CODEBASE:  # the Dockerfile's default codebase needs no build argument
+        build["args"] = {CODEBASE_BUILD_ARGUMENT: codebase}
+    return build
 
 
 def _strings(raw: Mapping[str, object], key: str, where: str) -> tuple[str, ...]:
@@ -246,6 +255,7 @@ class RunTopology:
     secret_sources: Mapping[str, ComposeSecret]
     service_names: Mapping[str, tuple[str, ...]]  # a config name -> the compose services rendered from it
     grading: GradingInputs | None  # None when the run names no scenario
+    codebase: str  # the run scenario's codebase, the images' build argument
 
 
 def _escape_interpolation(value: str) -> str:
@@ -365,7 +375,7 @@ def render_service(spec: ServiceSpec, topology: RunTopology) -> ComposeService:
     """Render one compose service."""
     service: ComposeService = {
         "image": f"{IMAGES[spec.image]}:{_IMAGE_TAG}",
-        "build": {"context": ".", "target": spec.image},
+        "build": _render_build(spec.image, topology.codebase),
         "pull_policy": LOCAL_IMAGE_PULL_POLICY,
         "environment": _render_environment(spec, topology),
         "labels": {LABEL: "1"},
@@ -435,6 +445,17 @@ def _read_grading_inputs(config: RunConfig) -> GradingInputs | None:
     )
 
 
+def read_codebase(config: RunConfig) -> str:
+    """The run scenario's codebase, which both images are built with: a directory, or ``ValueError``."""
+    scenario = load_run_scenario(config.scenario)
+    if not scenario.codebase_directory.is_dir():
+        raise ValueError(
+            f"scenario {scenario.name!r} names the codebase {scenario.codebase!r}, but "
+            f"{scenario.codebase_directory} is not a directory",
+        )
+    return scenario.codebase
+
+
 def render_compose(config: RunConfig) -> ComposeDocument:
     """Render the compose document for one episode entirely from the resolved config."""
     raw = config.raw
@@ -456,6 +477,7 @@ def render_compose(config: RunConfig) -> ComposeDocument:
             for template in templates
         },
         grading=_read_grading_inputs(config),
+        codebase=read_codebase(config),
     )
     document: ComposeDocument = {
         "services": {spec.name: render_service(spec, topology) for spec in specs},

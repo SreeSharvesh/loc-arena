@@ -9,9 +9,10 @@ from pathlib import Path
 from typing import Final
 
 from pydantic import SecretStr
+from scenarios.loader import load_run_scenario
 
 from loc_arena.config import RunConfig
-from loc_arena.execution.checkout import COMPANY_ROOT, Checkout, list_repositories
+from loc_arena.execution.checkout import Checkout, list_codebase_repositories
 from loc_arena.execution.client import ExecutionClient
 from loc_arena.execution.workspace import Workspace
 from loc_arena.gateway.client import GATEWAY_FAILURES, EdgeClient, GatewayCallError
@@ -147,8 +148,9 @@ def _wire_in_process(
         observer=trace,
     )
     # No shell: agent code here runs on the host (docs/isolation/README.md#decisions).
+    codebase = load_run_scenario(config.scenario).codebase_directory
     workspace = Workspace(
-        Checkout(services.checkout, list_repositories(COMPANY_ROOT)),
+        Checkout(services.checkout, list_codebase_repositories(codebase)),
         config.settings.execution,
     )
     return EpisodeWiring(

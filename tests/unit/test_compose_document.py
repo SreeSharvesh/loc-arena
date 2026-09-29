@@ -4,21 +4,28 @@ import copy
 import dataclasses
 import re
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import pytest
+import scenarios.loader
 from loc_arena.compose_document import (
     LISTEN_HOST,
     PROJECT_DIRECTORY,
     REFERENCE_COMPOSE_FILE,
     REFERENCE_RUN_CONFIG,
     SECRET_FILE_MODE,
+    RunTopology,
+    ServiceSpec,
+    read_codebase,
     render_compose,
     render_reference_compose_file,
+    render_service,
 )
 from loc_arena.compose_schema import ComposeService
 from loc_arena.config import load_run_config
 from loc_arena.stack.constants import (
+    CODEBASE_BUILD_ARGUMENT,
     CONTROL_KEY_FILE_ENVIRONMENT_VARIABLE,
     CONTROL_KEY_SECRET_NAME,
     GATEWAY_CORE_HOSTNAME,
@@ -51,6 +58,20 @@ type RawConfigEdit = Callable[[dict[str, Any]], object]  # changes a copy of the
 
 def _networks(service: ComposeService) -> set[str]:
     return set(service.get("networks", []))  # the names, whether rendered as a list or with aliases
+
+
+def _render_grader_built_from(codebase: str) -> ComposeService:
+    """The grader, as a run whose scenario names ``codebase`` renders it."""
+    spec = ServiceSpec.from_config("grader", CONFIG.raw["services"]["grader"])
+    topology = RunTopology(
+        settings=CONFIG.settings,
+        volumes=(),
+        secret_sources={},
+        service_names={},
+        grading=None,
+        codebase=codebase,
+    )
+    return render_service(spec, topology)
 
 
 def _render_edited(edit: RawConfigEdit) -> None:
@@ -277,6 +298,26 @@ def test_only_the_grader_is_told_the_run_scorer() -> None:
     }
 
     assert told == {"grader"}
+
+
+def test_an_image_built_from_another_codebase_is_given_it_as_its_build_argument() -> None:
+    grader = _render_grader_built_from("scenarios/toy/codebase")
+
+    assert grader["build"].get("args") == {CODEBASE_BUILD_ARGUMENT: "scenarios/toy/codebase"}
+
+
+def test_a_run_whose_scenario_codebase_is_no_directory_is_refused(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "scenarios" / "codeless").mkdir(parents=True)
+    (tmp_path / "scenarios" / "codeless" / "scenario.yaml").write_text(
+        "name: codeless\nscorer: s\nverifier: v\ncodebase: missing\n",
+    )
+    monkeypatch.setattr(scenarios.loader, "SCENARIOS_ROOT", tmp_path / "scenarios")
+
+    with pytest.raises(ValueError, match="is not a directory"):
+        read_codebase(dataclasses.replace(CONFIG, scenario="codeless"))
 
 
 @pytest.mark.parametrize(

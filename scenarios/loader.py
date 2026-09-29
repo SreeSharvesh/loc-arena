@@ -7,6 +7,12 @@ its scorer: that measure step with its score step), optional ``side.py`` (import
 ``seed/`` repo overlay, and a sealed ``reference/``. Loading a scenario imports its ``measure.py``, then its
 ``main.py``/``side.py``, so the registrations run, then exposes the seed and sealed reference to the harness.
 Adding a (main, side) pair at a new point is: drop a pack and register its scorer/verifier, no engine change.
+
+``scenario.yaml``'s optional ``codebase:`` names the directory of repositories the agents work on, relative to
+the project directory (the parent of the scenarios root; the Docker build context for the in-repo packs);
+it defaults to ``company/``, Meridian's seven repositories. The in-process path seeds and grades the checkout
+from it, and the stack's images are built with it (``./Dockerfile``, build argument ``CODEBASE``). Both images
+copy only what ``.dockerignore`` allowlists, so a codebase lives in ``company/`` or under ``scenarios/``.
 """
 
 from __future__ import annotations
@@ -15,12 +21,21 @@ import importlib.util
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Final
+from typing import Annotated, Any, Final
 
 import yaml
+from pydantic import StringConstraints, TypeAdapter
 
 SCENARIOS_ROOT = Path(__file__).resolve().parent
 MEASURE_MODULE: Final = "measure"  # the pack module registering its scorer's measure step
+DEFAULT_SCENARIO_NAME: Final = "aurora_efficiency"  # the pack a run config that names none runs
+DEFAULT_CODEBASE: Final = "company"  # the codebase a pack that names none works on (./Dockerfile's default)
+# A codebase is a relative path of lowercase names: no absolute path, no "." or "..", no hidden directory.
+# Without "." in a name, the image tag made from it (compose_document) is unique to it.
+CODEBASE_PATTERN: Final = r"^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$"
+CODEBASE_MAX_LENGTH: Final = 100  # its image tag, "codebase-" plus the path, stays within Docker's 128
+CodebasePath = Annotated[str, StringConstraints(pattern=CODEBASE_PATTERN, max_length=CODEBASE_MAX_LENGTH)]
+_CODEBASE_ADAPTER: Final = TypeAdapter(CodebasePath)
 
 
 @dataclass(frozen=True)
@@ -33,6 +48,8 @@ class Scenario:
     verifier: str
     seed_repo: str
     meta: dict[str, Any]
+    codebase: str  # as scenario.yaml names it, relative to the project directory
+    codebase_directory: Path  # the codebase on this machine (the sandbox image holds it at /app/company)
 
     @property
     def seed_dir(self) -> Path:
@@ -83,6 +100,7 @@ def load_scenario(name: str, *, root: Path | None = None) -> Scenario:
     _import_pack_module(directory, MEASURE_MODULE)  # before main.py, which pairs the step with its score step
     _import_pack_module(directory, "main")
     _import_pack_module(directory, "side")
+    codebase = _CODEBASE_ADAPTER.validate_python(meta.get("codebase", DEFAULT_CODEBASE))
     return Scenario(
         name=str(meta.get("name", name)),
         directory=directory,
@@ -90,4 +108,11 @@ def load_scenario(name: str, *, root: Path | None = None) -> Scenario:
         verifier=str(meta["verifier"]),
         seed_repo=str(meta.get("seed_repo", "meridian-serving")),
         meta=meta,
+        codebase=codebase,
+        codebase_directory=(root or SCENARIOS_ROOT).parent / codebase,
     )
+
+
+def load_run_scenario(name: str | None) -> Scenario:
+    """The scenario a run config names (its ``scenario:``), or the default pack when it names none."""
+    return load_scenario(name or DEFAULT_SCENARIO_NAME)

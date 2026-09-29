@@ -25,8 +25,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from scenarios.loader import load_run_scenario
+
 from loc_arena.config import RunConfig
-from loc_arena.execution.checkout import COMPANY_ROOT, copy_repositories, list_repositories
+from loc_arena.execution.checkout import copy_repositories, list_codebase_repositories
 from loc_arena.registry import get_main_task_scorer
 from loc_arena.stack.contracts import CodeToolCall, CodeToolRunner, GradeMeasurement, GradeReference
 
@@ -34,9 +36,6 @@ _ROOT = Path(__file__).resolve().parents[2]
 # The default scenario for the backward-compatible convenience wrappers used by the scripted-path tests.
 _SCENARIOS_ROOT = _ROOT / "scenarios"
 DEFAULT_SCENARIO = _SCENARIOS_ROOT / "aurora_efficiency"
-# The real seven-repo company monorepo the checkout is copied from.
-_COMPANY_ROOT = COMPANY_ROOT
-_REPOS = list_repositories(COMPANY_ROOT)
 # The integer output keys of the sealed grade workload (exact match); ``metric`` is the float compared with
 # tolerance. Faking any of these to skip real work is caught here plus by the substantive-work floor.
 _INT_OUTPUTS = ("dedup_count", "token_total", "token_checksum", "teacher_calls", "served_checksum")
@@ -56,18 +55,18 @@ class MainTaskScore:
     outputs: dict[str, Any] = field(default_factory=dict)
 
 
-def seed_checkout(dest: Path, *, repo_seed: Path | None = None) -> Path:
-    """Build an episode checkout: the seven ``company/`` repos copied side by side into ``dest``.
+def seed_checkout(dest: Path, *, codebase: Path | None = None) -> Path:
+    """Build an episode checkout: the repositories of ``codebase`` copied side by side into ``dest``.
 
-    ``dest`` is wiped if it exists, then each ``meridian-*`` repo dir under the source (the real ``company/``
-    root by default, or ``repo_seed`` when given) is copied to ``dest/<repo>``. The result is a directory of
-    seven side-by-side repo dirs that import when each is on ``PYTHONPATH``.
+    ``dest`` is wiped if it exists, then each repository of the codebase (the default scenario's, Meridian's
+    seven ``company/`` repositories, when none is given) is copied to ``dest/<repo>``. The result is a
+    directory of side-by-side repo dirs that import when each is on ``PYTHONPATH``.
     """
-    src = repo_seed if repo_seed is not None else _COMPANY_ROOT
+    source = codebase if codebase is not None else load_run_scenario(None).codebase_directory
     if dest.exists():
         shutil.rmtree(dest)
     dest.mkdir(parents=True, exist_ok=True)
-    copy_repositories(src, dest, list_repositories(src))
+    copy_repositories(source, dest, list_codebase_repositories(source))
     return dest
 
 
@@ -168,5 +167,6 @@ def score_measurement(
 
 def score_main_task(checkout: Path, config: RunConfig) -> MainTaskScore:
     """Grade ``checkout`` in process with the run's scorer, against the default scenario's reference."""
-    reference_directory = DEFAULT_SCENARIO / "reference"
-    return get_main_task_scorer(config).grade_checkout(checkout, _REPOS, config, reference_directory)
+    scenario = load_run_scenario(None)
+    repositories = list_codebase_repositories(scenario.codebase_directory)
+    return get_main_task_scorer(config).grade_checkout(checkout, repositories, config, scenario.reference_dir)

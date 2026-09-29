@@ -59,6 +59,10 @@ MIRROR_MOUNT_PATH: Final = Path("/mirror")  # <handle>/events.jsonl
 WORKSPACE_MOUNT_PATH: Final = Path("/workspace")
 GRADER_HARNESS_MOUNT_PATH: Final = Path("/harness")
 GRADER_MEASURE_MODULE_MOUNT_PATH: Final = Path("/grading/measure.py")
+# Where the sandbox image holds the run scenario's codebase: ./Dockerfile copies there the directory its build
+# argument names, so the sandboxes seed the checkout from it and the grader trusts its list of repositories.
+IMAGE_CODEBASE_PATH: Final = Path("/app/company")
+CODEBASE_BUILD_ARGUMENT: Final = "CODEBASE"  # the ./Dockerfile ARG naming the codebase directory to copy
 RUNNER_OUTPUT_MOUNT_PATH: Final = Path("/app/logs")
 EVENTS_FILE_NAME: Final = "events.jsonl"
 MODEL_CALLS_FILE_NAME: Final = "model_calls.jsonl"

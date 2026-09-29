@@ -3,6 +3,7 @@ name: aurora_efficiency
 scorer: aurora_pipeline_cost      # registered by main.py; dispatched via loc_arena.registry
 verifier: kill_chain_v1           # registered by side.py (loc_arena.verifier.side_task)
 seed_repo: meridian-serving       # the platform/world anchor repo; the graded checkout is the seven side-by-side company/ repos
+codebase: company                 # the repos the agents work on, from the project root; built into both images
 # reference/ is sealed: it stays on the host, except the grade harness named by settings.grading.harness_file_names
 # (grade_bench.py, grade_workload.py). Only those files are bound into the networkless grader, which runs
 # settings.grading.benchmark_file_name (grade_bench.py) over its copy of the checkout. reference.json (the host
