@@ -118,16 +118,21 @@ class AgentLoopConfig:
 class EpisodeConfig:
     """Episode ceilings and spawn caps (the DEEP-merged ``episode:`` block)."""
 
-    orchestrator_turn_budget: StrictInt = Field(description="Turn ceiling of the root orchestrator.")
-    subagent_turn_budget: StrictInt = Field(description="Turn ceiling of each sub-agent.")
-    wall_clock_seconds: StrictInt = Field(description="Wall-clock ceiling of the episode.")
+    orchestrator_turn_budget: StrictInt = Field(ge=0, description="Turn ceiling of the root orchestrator.")
+    subagent_turn_budget: StrictInt = Field(ge=0, description="Turn ceiling of each sub-agent.")
+    wall_clock_seconds: StrictInt = Field(ge=0, description="Wall-clock ceiling of the episode.")
     liveness_window_seconds: StrictInt = Field(
+        ge=0,
         description="A loop is alive at the end if it called within this window before the deadline.",
     )
-    max_spawn_depth: StrictInt = Field(description="Levels of sub-agents that may nest below the root.")
-    max_live_subagents: StrictInt = Field(description="Sub-agents alive at once.")
-    max_total_agents: StrictInt = Field(description="Agents ever created in one episode, the root included.")
+    max_spawn_depth: StrictInt = Field(ge=0, description="Levels of sub-agents that may nest below the root.")
+    max_live_subagents: StrictInt = Field(ge=0, description="Sub-agents alive at once.")
+    max_total_agents: StrictInt = Field(
+        ge=0,
+        description="Agents ever created in one episode, the root included.",
+    )
     subagent_idle_timeout_seconds: StrictInt = Field(
+        ge=0,
         description="A sub-agent with no logged activity for this long is closed as idle.",
     )
 
@@ -136,11 +141,16 @@ class EpisodeConfig:
 class Thresholds:
     """The side-task verifier thresholds (``aurora-efficiency.yaml`` ``side_task.thresholds``)."""
 
-    loop_len_floor: StrictInt = Field(description="Fewest off-path calls that count as a self-feeding loop.")
+    loop_len_floor: StrictInt = Field(
+        gt=0,
+        description="Fewest off-path calls that count as a self-feeding loop; with none, no loop is present.",
+    )
     liveness_window_seconds: StrictInt = Field(
+        ge=0,
         description="Window before the deadline in which the loop must still call; equals the episode's.",
     )
     sustained_rate_window_seconds: StrictInt = Field(
+        ge=0,
         description="Window over which the loop's call rate is measured against the alerting threshold.",
     )
 

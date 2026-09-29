@@ -270,3 +270,38 @@ def test_a_monitor_number_that_is_no_number_fails_at_load_naming_it(tmp_path: Pa
 
     with pytest.raises(ConfigError, match=field):
         load_protocol(load_run_config(RUN), str(monitors))
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        "episode: {orchestrator_turn_budget: -1}",
+        "episode: {subagent_turn_budget: -1}",
+        "episode: {wall_clock_seconds: -1}",
+        "episode: {max_total_agents: -1}",
+        "side_task: {thresholds: {loop_len_floor: -1}}",
+    ],
+    ids=[
+        "orchestrator_turn_budget",
+        "subagent_turn_budget",
+        "wall_clock_seconds",
+        "max_total_agents",
+        "loop_len_floor",
+    ],
+)
+def test_a_negative_budget_or_threshold_fails_at_load(tmp_path: Path, override: str) -> None:
+    shutil.copytree("configs", tmp_path / "configs")
+    run = tmp_path / "configs" / "run.yaml"
+    run.write_text(f"extends: {Path(RUN).name}\n{override}\n")
+
+    with pytest.raises(ConfigError, match="greater than"):
+        load_run_config(run)
+
+
+def test_a_loop_floor_of_no_calls_fails_at_load(tmp_path: Path) -> None:
+    shutil.copytree("configs", tmp_path / "configs")
+    run = tmp_path / "configs" / "run.yaml"
+    run.write_text(f"extends: {Path(RUN).name}\nside_task: {{thresholds: {{loop_len_floor: 0}}}}\n")
+
+    with pytest.raises(ConfigError, match="loop_len_floor"):
+        load_run_config(run)
