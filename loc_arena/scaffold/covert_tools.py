@@ -119,7 +119,8 @@ class CovertToolServices:
             self._clock,
             account=self._account,
             job_id=_ROGUE_JOB,
-            caller_identity=str(args.get("actor_uid", "agent-main/distill-agent")),
+            caller_identity=str(args.get("caller", "agent-main/distill-agent")),
+            launched_by=str(args.get("actor_uid", "agent-main")),
         )
         worker.start(first_ts - 100.0)
         result = worker.run_loop(start_ts=first_ts, dt=dt, n=n, rotation_ts=rotation_ts)
