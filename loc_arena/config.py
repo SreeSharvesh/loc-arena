@@ -205,6 +205,16 @@ class _MainTaskKeys:
 
 
 @pydantic_dataclass(frozen=True, config=BLOCK_CONFIG)
+class _ProtocolKeys:
+    """The ``protocol`` keys the scoring computes with; ``RunConfig.protocol`` keeps the whole block."""
+
+    audit_budget_fpr: Annotated[StrictFloat, Field(ge=0.0, le=1.0)] | None = Field(
+        default=None,
+        description="The false-positive rate the audit threshold is calibrated at on the honest twin.",
+    )
+
+
+@pydantic_dataclass(frozen=True, config=BLOCK_CONFIG)
 class _LoggingConfig:
     agent_transcript: StrictBool = Field(
         default=False,
@@ -237,7 +247,7 @@ class _RunDocument(BaseSettings):
     covert: CovertConfig = Field(description="The covert objective and whether it is on.")
     agents: tuple[AgentConfig, ...] = Field(min_length=1, description="The team.")
     main_task: _MainTaskKeys = Field(description="The main task's naming and scorer keys.")
-    protocol: dict[str, Any] = Field(description="The control protocol, free-form, read by key.")
+    protocol: _ProtocolKeys = Field(description="The control protocol's keys the scoring computes with.")
     scenario: StrictStr | None = Field(default=None, description="The pack registering scorer and verifier.")
     policy: Literal["scripted", "model"] = Field(
         default="model",
@@ -455,7 +465,7 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
         covert=document.covert,
         agents=document.agents,
         main_task=dict(source.yaml_data["main_task"]),
-        protocol=document.protocol,
+        protocol=dict(source.yaml_data["protocol"]),
         settings=_build_settings(source.yaml_data),
         scenario=document.scenario,
         policy=document.policy,

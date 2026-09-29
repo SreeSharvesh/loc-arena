@@ -89,3 +89,13 @@ def test_a_scenario_whose_codebase_holds_no_repository_fails_at_load(
 
     with pytest.raises(ConfigError, match=EMPTY_CODEBASE):
         load_run_config(RUN)
+
+
+@pytest.mark.parametrize("rate", ["lots", "5", "-0.1"], ids=["a word", "above one", "below zero"])
+def test_a_protocol_audit_budget_that_is_no_rate_fails_at_load(tmp_path: Path, rate: str) -> None:
+    shutil.copytree("configs", tmp_path / "configs")
+    run = tmp_path / "configs" / "run.yaml"
+    run.write_text(f"extends: {Path(RUN).name}\nprotocol: {{audit_budget_fpr: {rate}}}\n")
+
+    with pytest.raises(ConfigError, match="audit_budget_fpr"):
+        load_run_config(run)
