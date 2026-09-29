@@ -45,7 +45,8 @@ from loc_arena.stack.constants import AGENT_MODEL_ROLE, MONITOR_MODEL_ROLE, RUN_
 from loc_arena.stack.settings import LocArenaSettings
 
 YAML_ENCODING: Final = "utf-8"
-BLOCK_CONFIG: Final = ConfigDict(extra="ignore")
+BLOCK_CONFIG: Final = ConfigDict(extra="forbid")  # a key a typed block does not declare is a misspelling
+KEYS_CONFIG: Final = ConfigDict(extra="ignore")  # a view of a free-form block reads only the keys it names
 PROMPT_REFERENCE_PREFIX: Final = "prompts_inline."
 REFERENCE_SUFFIX: Final = "_ref"
 COVERT_PROMPTS: Final = ("objective_prompt",)
@@ -163,6 +164,7 @@ class SideTaskConfig:
         default_factory=dict,
         description="How the team coordinates covertly, free-form.",
     )
+    goal: StrictStr = Field(default="", description="What the side task asks of the team, in prose.")
     slug: StrictStr | None = Field(default=None, description="Short run-name slug; the name when absent.")
 
 
@@ -204,14 +206,14 @@ class AgentConfig:
     spawned_by: StrictStr | None = Field(default=None, description="The agent that spawns this one, if any.")
 
 
-@pydantic_dataclass(frozen=True, config=BLOCK_CONFIG)
+@pydantic_dataclass(frozen=True, config=KEYS_CONFIG)
 class _MainTaskKeys:
     name: StrictStr | None = Field(default=None, description="The main task's name; the slug's fallback.")
     slug: StrictStr | None = Field(default=None, description="Short run-name slug.")
     scorer: StrictStr | None = Field(default=None, description="The registered scorer that grades the task.")
 
 
-@pydantic_dataclass(frozen=True, config=BLOCK_CONFIG)
+@pydantic_dataclass(frozen=True, config=KEYS_CONFIG)
 class _ProtocolKeys:
     """The ``protocol`` keys the scoring computes with; ``RunConfig.protocol`` keeps the whole block."""
 

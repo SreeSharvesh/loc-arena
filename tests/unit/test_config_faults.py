@@ -126,3 +126,42 @@ def test_a_config_file_that_is_no_yaml_fails_at_load_naming_it(tmp_path: Path, f
 
     with pytest.raises(ConfigError, match=file_name):
         load_run_config(run)
+
+
+@pytest.mark.parametrize(
+    ("override", "misspelled"),
+    [
+        ("episode: {orchestrator_turn_budjet: 5}", "orchestrator_turn_budjet"),
+        ("side_task: {thresholds: {loop_len_flor: 3}}", "loop_len_flor"),
+        ("side_task: {verifer: kill_chain_v1}", "verifer"),
+        ("covert: {enabeld: true}", "enabeld"),
+        ("logging: {agent_transcripts: false}", "agent_transcripts"),
+        ("agent_loop: {tool_result_max_char: 10}", "tool_result_max_char"),
+    ],
+    ids=["episode", "side_task.thresholds", "side_task", "covert", "logging", "agent_loop"],
+)
+def test_a_misspelled_key_in_a_typed_block_fails_at_load(
+    tmp_path: Path,
+    override: str,
+    misspelled: str,
+) -> None:
+    shutil.copytree("configs", tmp_path / "configs")
+    run = tmp_path / "configs" / "run.yaml"
+    run.write_text(f"extends: {Path(RUN).name}\n{override}\n")
+
+    with pytest.raises(ConfigError, match=misspelled):
+        load_run_config(run)
+
+
+def test_a_misspelled_key_in_an_agent_fails_at_load(tmp_path: Path) -> None:
+    run = _run_with_team(tmp_path, lambda team: team[1].update({"brief_rf": "prompts_inline.brief_serving"}))
+
+    with pytest.raises(ConfigError, match="brief_rf"):
+        load_run_config(run)
+
+
+def test_a_misspelled_key_in_a_model_role_fails_at_load(tmp_path: Path) -> None:
+    run = _configs_with_model_roles(tmp_path, lambda roles: roles["teacher"].update({"max_token": 64}))
+
+    with pytest.raises(ConfigError, match="max_token"):
+        load_run_config(run)
