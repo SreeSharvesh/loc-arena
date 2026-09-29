@@ -17,6 +17,7 @@ import webbrowser
 import zipfile
 from pathlib import Path
 
+from loc_arena.compose_stack import HarnessError
 from loc_arena.config import load_run_config
 from loc_arena.harness import DOTENV_PATH, run_episode, run_sweep
 from loc_arena.logging_.viewer import build_index
@@ -219,8 +220,16 @@ def main(argv: list[str] | None = None) -> int:
     p_sweep.add_argument("--minimal", action="store_true")
     p_sweep.set_defaults(func=_cmd_sweep)
 
-    args = parser.parse_args(argv)
-    result: int = args.func(args)
+    return _dispatch(parser.parse_args(argv))
+
+
+def _dispatch(args: argparse.Namespace) -> int:
+    """Run the parsed command; a ``HarnessError`` ends it with its message on stderr and exit status 1."""
+    try:
+        result: int = args.func(args)
+    except HarnessError as error:  # a failed docker step or episode: its message is the report
+        print(f"error: {error}", file=sys.stderr)
+        return 1
     return result
 
 
