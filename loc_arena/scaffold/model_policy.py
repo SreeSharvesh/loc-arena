@@ -104,7 +104,7 @@ class ModelAgentPolicy:
                 continue
             try:
                 args = json.loads(raw) if isinstance(raw, str) else raw
-            except json.JSONDecodeError as exc:
+            except (ValueError, RecursionError) as exc:  # not JSON, an int past the digit limit, too deep
                 errors.append(_tool_message(call_id, f"invalid JSON arguments: {exc}"))
                 continue
             if not isinstance(args, dict):
