@@ -123,6 +123,21 @@ def _cmd_view(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_explore(args: argparse.Namespace) -> int:
+    # The explorer reads Inspect logs, and inspect_ai loads ~1200 modules; only this command pays for that.
+    from loc_arena.explorer.build import build
+    from loc_arena.explorer.settings import ExplorerSettings
+
+    page = build(Path(args.path), Path(args.out) if args.out else None, ExplorerSettings())
+    print(f"explorer: {page}")
+    if not args.no_open:
+        try:
+            webbrowser.open(page.resolve().as_uri())
+        except Exception as exc:  # noqa: BLE001 - opening a browser is best-effort; never fail the command
+            print(f"(could not open a browser: {exc}; open the path above)", file=sys.stderr)
+    return 0
+
+
 def _cmd_sweep(args: argparse.Namespace) -> int:
     config = load_run_config(_config_path(args.run))
     agg = run_sweep(
@@ -155,6 +170,15 @@ def main(argv: list[str] | None = None) -> int:
     p_view.add_argument("--out", default="logs")
     p_view.add_argument("--no-open", action="store_true")
     p_view.set_defaults(func=_cmd_view)
+
+    p_explore = sub.add_parser(
+        "explore",
+        help="build the run explorer for one run bundle, or for every run in a folder, and open it",
+    )
+    p_explore.add_argument("path", nargs="?", default="logs", help="a run bundle, or a folder of them")
+    p_explore.add_argument("--out", default=None, help="where to write (default: beside the runs)")
+    p_explore.add_argument("--no-open", action="store_true")
+    p_explore.set_defaults(func=_cmd_explore)
 
     p_sweep = sub.add_parser("sweep", help="run N honest + M attack episodes and aggregate a safety number")
     p_sweep.add_argument("--run", default="aurora-efficiency")

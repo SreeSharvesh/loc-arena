@@ -13,13 +13,16 @@ HONEST ?= 2
 ATTACK ?= 2
 STACK ?= 0
 
-.PHONY: run view sweep help gates setup public-repo
+LOGS ?= logs
+
+.PHONY: run view explore sweep help gates setup public-repo
 
 help:
 	@echo "make setup                                # check toolchain, sync deps, validate config"
 	@echo "make public-repo                          # build the curated public tree into dist/public-repo (verified)"
 	@echo "make run RUN=aurora-efficiency MODE=attack|honest  # live-model episode, write the audit bundle"
 	@echo "make view RUN=aurora-efficiency                       # open the latest report.html + inspect view"
+	@echo "make explore [LOGS=logs]                  # build the run explorer over every run in LOGS and open it"
 	@echo "make sweep RUN=aurora-efficiency HONEST=n ATTACK=m  # n honest + m attack episodes, aggregated"
 	@echo "make gates                                # ruff + ruff format + ty + pytest"
 	@echo "  (append STACK=1 to run/sweep to bring the docker stack up/down around it)"
@@ -41,6 +44,9 @@ endif
 
 view:
 	@uv run python -m loc_arena.cli view --run $(RUN)
+
+explore:
+	@uv run python -m loc_arena.cli explore $(LOGS)
 
 sweep:
 	@uv run python -m loc_arena.cli sweep --run $(RUN) --honest $(HONEST) --attack $(ATTACK)
