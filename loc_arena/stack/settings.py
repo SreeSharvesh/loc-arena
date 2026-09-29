@@ -123,6 +123,14 @@ class GatewaySettings(SettingsGroup):
         default=3600.0,
         description="Seconds the credential the core signs for one monitor call stays valid.",
     )
+    monitor_failures_before_fallback: PositiveInt = Field(
+        default=3,
+        description=(
+            "Failed model calls in a row after which a live monitor calls its model no more in the episode "
+            "and scores its remaining events with its heuristic. Each failed call has spent the provider's "
+            "whole call budget, so with the provider down a monitor costs at most this many budgets."
+        ),
+    )
     durable_credential_expiry_ts: PositiveFloat = Field(
         default=10_000_000.0,
         description="Simulated time a durable service-account credential expires at (after any deadline).",

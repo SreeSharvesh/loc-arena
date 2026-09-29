@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
@@ -40,20 +41,41 @@ class RunnerEpisode:
 
 
 class MonitorModelRoute:
-    """A live monitor's route to a model through the core, and to the sealed log for what went wrong."""
+    """A live monitor's route to a model through the core, and to the sealed log for what went wrong.
 
-    def __init__(self, wiring: EpisodeWiring, clock: SimulatedClock) -> None:
+    A failed call has already spent the provider's whole call budget, so once a monitor's calls have failed
+    ``failures_before_fallback`` times in a row it calls its model no more: its later calls fail at once, and
+    it scores the rest of the episode with its heuristic. A completed call starts the count again.
+    """
+
+    def __init__(
+        self,
+        wiring: EpisodeWiring,
+        clock: SimulatedClock,
+        *,
+        failures_before_fallback: int,
+    ) -> None:
         """Call models through ``wiring``'s core; stamp the monitors' sealed records with ``clock``."""
         self._wiring = wiring
         self._clock = clock
+        self._failures_before_fallback = failures_before_fallback
+        self._failures_in_a_row: Counter[str] = Counter()  # each monitor runs on one thread: one key each
 
     def call_model(self, monitor: str, prompt: str, temperature: float) -> str:
         """The monitor's completion; a failed call is recorded as its ``monitor_error``, then raised."""
+        if self._failures_in_a_row[monitor] >= self._failures_before_fallback:
+            raise GatewayCallError(
+                f"monitor {monitor} calls its model no more: its last {self._failures_before_fallback} "
+                "calls failed",
+            )
         try:
-            return self._wiring.control.call_model_as_monitor(monitor, prompt, temperature)
+            completion = self._wiring.control.call_model_as_monitor(monitor, prompt, temperature)
         except GATEWAY_FAILURES as error:
+            self._failures_in_a_row[monitor] += 1
             self.record_event("monitor_error", {"monitor": monitor, "error": f"model call failed: {error}"})
             raise GatewayCallError(f"monitor {monitor}'s model call failed: {error}") from error
+        self._failures_in_a_row[monitor] = 0
+        return completion
 
     def record_event(self, kind: str, payload: dict[str, Any]) -> None:
         """Record a monitor's event (an error, an unparseable verdict) on the sealed log."""
@@ -83,7 +105,11 @@ def finish_episode(
         return RunnerEpisode(last_sealed_seq, episode_trace, ())
     mirror_events = read_event_log(mirror_path, config.settings.docker.evidence_max_bytes)
     if monitoring.calls_models:
-        route = MonitorModelRoute(wiring, clock)
+        route = MonitorModelRoute(
+            wiring,
+            clock,
+            failures_before_fallback=config.settings.gateway.monitor_failures_before_fallback,
+        )
         verdicts = score_mirror(
             mirror_events,
             config,
