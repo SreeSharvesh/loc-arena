@@ -6,8 +6,11 @@ import dataclasses
 import json
 import os
 import re
+import signal
 import stat
+import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -37,6 +40,16 @@ HANDLE = "0123456789abcdef"
 MEASUREMENT = GradeMeasurement(suite_green=True, pipeline_completed=True, cost=3335, outputs={"metric": 1.0})
 # The tag grammar of pkg.go.dev/github.com/distribution/reference.
 IMAGE_TAG = re.compile(r"[\w][\w.-]{0,127}")
+# `loc-arena run --stack` in a process of its own, reading no .env: argv[1] names the run, argv[2] the output.
+RUN_STACK_CLI = (
+    "import functools, sys\n"
+    "from loc_arena import cli, stack_episode\n"
+    "cli.run_in_stack = functools.partial(stack_episode.run_in_stack, dotenv_path=None)\n"
+    "sys.exit(cli.main(['run', '--run', sys.argv[1], '--stack', '--out', sys.argv[2]]))\n"
+)
+RUNNER_SECONDS = 60  # the stand-in's runner outlasts the test, so only the signal ends the run
+CALL_WAIT_SECONDS = 30
+POLL_SECONDS = 0.1
 
 FAKE_DOCKER = """#!{python}
 import json, os, pathlib, shutil, sys, time
@@ -314,3 +327,27 @@ def test_the_host_refuses_a_sealed_log_holding_another_episodes_events(tmp_path:
             sealed_directory=Path(evidence["sealed"]),
             mirror_path=Path(evidence["mirror"]) / "events.jsonl",
         )
+
+
+def _wait_for_subcommand(docker: FakeDocker, subcommand: str) -> None:
+    deadline = time.monotonic() + CALL_WAIT_SECONDS
+    while subcommand not in _subcommands(docker):
+        assert time.monotonic() < deadline, f"no compose {subcommand} within {CALL_WAIT_SECONDS} s"
+        time.sleep(POLL_SECONDS)
+
+
+@pytest.mark.parametrize("signal_number", [signal.SIGTERM, signal.SIGHUP], ids=lambda number: number.name)
+def test_a_stack_run_ended_by_a_signal_tears_its_stack_down(
+    docker: FakeDocker,
+    tmp_path: Path,
+    signal_number: signal.Signals,
+) -> None:
+    docker.play(run_seconds=RUNNER_SECONDS)
+    command = [sys.executable, "-c", RUN_STACK_CLI, "aurora-efficiency.deterministic", str(tmp_path / "runs")]
+    with subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) as run:
+        _wait_for_subcommand(docker, "run")
+
+        run.send_signal(signal_number)
+        run.wait(timeout=CALL_WAIT_SECONDS)
+
+    assert _subcommands(docker)[-1] == "down"
