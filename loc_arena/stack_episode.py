@@ -90,6 +90,7 @@ def run_runner_phase(
     policy_factory: live.AgentPolicyFactory | None = None,
 ) -> RunnerEpisodeExport:
     """The runner phase of one episode (in the runner container): open it, run it, close it, monitor it."""
+    protocol = load_protocol(config, monitors_path)  # a monitors file it cannot load fails before the episode
     trace = AgentTrace() if config.agent_transcript else None
     wiring = open_episode_wiring(config, services, trace=trace)
     clock = SimulatedClock(wiring.control, config.settings.clock.start_ts)
@@ -112,10 +113,7 @@ def run_runner_phase(
         clock,
         trace,
         mirror_path=mirror_root / wiring.handle / EVENTS_FILE_NAME,
-        monitoring=EpisodeMonitoring(
-            load_protocol(config, monitors_path),
-            calls_models=config.policy == "model",
-        ),
+        monitoring=EpisodeMonitoring(protocol, calls_models=config.policy == "model"),
     )
     verdicts = tuple(MonitorVerdictRecord.model_validate(v, from_attributes=True) for v in finished.verdicts)
     export = export_runner_episode(
@@ -306,6 +304,7 @@ def run_in_stack(
             "(the agents' code then runs on this machine with its credentials in reach).",
         )
     config = load_config_by_name(run)
+    load_protocol(config, DEFAULT_MONITORS_PATH)  # its monitors file fails here, before any stack comes up
     provider_key = StackSecrets(_env_file=dotenv_path, _secrets_dir=None).openrouter_api_key
     if config.policy == "model" and provider_key is None:
         raise HarnessError(

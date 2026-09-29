@@ -9,7 +9,12 @@ from pathlib import Path
 import pytest
 import scenarios.loader
 import yaml
+from loc_arena import stack_episode
 from loc_arena.config import ConfigError, load_run_config
+from loc_arena.stack_episode import run_in_stack, run_runner_phase
+
+from tests.unit._monitor_support import write_monitors_file
+from tests.unit._stack_services import serve_stack
 
 RUN = "configs/aurora-efficiency.deterministic.yaml"
 TEAM_SOURCE = "configs/aurora-efficiency.yaml"  # the file that declares the run's agents
@@ -17,6 +22,7 @@ MODELS = "models.cheap.yaml"
 ROOT_AGENT = "agent-main"
 SCENARIO = "aurora_efficiency"
 EMPTY_CODEBASE = "nowhere"
+MISSING_PROMPT = "missing-template.txt"
 ModelRoles = dict[str, dict[str, object]]
 Team = list[dict[str, object]]
 
@@ -165,3 +171,51 @@ def test_a_misspelled_key_in_a_model_role_fails_at_load(tmp_path: Path) -> None:
 
     with pytest.raises(ConfigError, match="max_token"):
         load_run_config(run)
+
+
+def _monitors_file_naming_a_missing_prompt(directory: Path) -> str:
+    """A monitors file whose one live monitor names a prompt template that does not exist."""
+    return str(write_monitors_file(directory, mode="live", prompt_ref=str(directory / MISSING_PROMPT)))
+
+
+def test_a_runner_phase_whose_monitors_file_cannot_load_fails_before_the_episode_opens(
+    tmp_path: Path,
+) -> None:
+    config = load_run_config(RUN)
+    served = serve_stack(tmp_path, config)
+    monitors = _monitors_file_naming_a_missing_prompt(tmp_path)
+
+    with pytest.raises(ConfigError, match=MISSING_PROMPT):
+        run_runner_phase(
+            config,
+            served.services,
+            robust=True,
+            output_directory=tmp_path / "runner",
+            mirror_root=served.gateway.mirror_root,
+            monitors_path=monitors,
+        )
+    assert not served.gateway.sealed_root.exists()
+
+
+class StackBroughtUpError(RuntimeError):
+    """The run brought its compose stack up."""
+
+
+def _refuse_to_bring_a_stack_up(*arguments: object, **options: object) -> None:
+    raise StackBroughtUpError
+
+
+def test_a_stack_run_whose_monitors_file_cannot_load_fails_before_its_stack_comes_up(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(stack_episode, "docker_available", lambda: True)
+    monkeypatch.setattr(stack_episode, "up", _refuse_to_bring_a_stack_up)
+    monkeypatch.setattr(
+        stack_episode,
+        "DEFAULT_MONITORS_PATH",
+        _monitors_file_naming_a_missing_prompt(tmp_path),
+    )
+
+    with pytest.raises(ConfigError, match=MISSING_PROMPT):
+        run_in_stack(RUN, "attack", out_root=tmp_path / "logs", dotenv_path=None)
