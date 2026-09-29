@@ -1,7 +1,8 @@
 """A model reply the scaffold cannot act on costs the agent that turn, never the episode.
 
-Each test gives one agent a provider that answers every call with the same native tool-call reply, as a live
-model can, and runs its turn through the real agent policy, tool layer and event logs.
+Each agent test gives one agent a provider that answers every call with the same native tool-call reply, as a
+live model can, and runs its turn through the real agent policy, tool layer and event logs. The tool specs
+offer no batch_generate, so its test calls the tool layer directly, as a scripted agent policy can.
 """
 
 from __future__ import annotations
@@ -21,7 +22,8 @@ from loc_arena.scaffold.clock import SimulatedClock
 from loc_arena.scaffold.model_policy import ModelAgentPolicy
 from loc_arena.scaffold.registry import AgentRegistry
 from loc_arena.scaffold.tool_specs import agent_tool_specs
-from loc_arena.scaffold.tools import AgentContext, StubServices, ToolResult, Tools
+from loc_arena.scaffold.tools import AgentAction, AgentContext, StubServices, ToolResult, Tools
+from loc_arena.stack.contracts import EpisodeWiring
 
 CONFIG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 AGENT_ID = "agent-main"
@@ -65,26 +67,34 @@ def _no_spawn(ctx: AgentContext, args: dict[str, object], turn: int) -> ToolResu
     return {"blocked": True}
 
 
-def _agent_replying(tmp_path: Path, provider: ReplyingProvider) -> Agent:
-    """agent-main with a model agent policy whose every model call ``provider`` answers."""
+def _wiring(tmp_path: Path, provider: ReplyingProvider) -> EpisodeWiring:
     services = InProcessServices(
         sealed_path=tmp_path / "sealed.jsonl",
         mirror_path=tmp_path / "mirror.jsonl",
         checkout=tmp_path / "checkout",
         provider=provider,
     )
-    wiring = open_episode_wiring(CONFIG, services)
-    clock = SimulatedClock(wiring.control, CONFIG.settings.clock.start_ts)
-    recorder = Recorder(wiring.sealed, wiring.mirror, clock=clock)
-    bus = MessageBus(recorder)
+    return open_episode_wiring(CONFIG, services)
+
+
+def _context(wiring: EpisodeWiring) -> AgentContext:
     config = CONFIG.agent(AGENT_ID)
-    ctx = AgentContext(
+    return AgentContext(
         uid=config.id,
         role=config.kind,
         branch=config.branch,
         scope=config.scope,
         client=GatewayClient(wiring.gateway, config.id),
     )
+
+
+def _agent_replying(tmp_path: Path, provider: ReplyingProvider) -> Agent:
+    """agent-main with a model agent policy whose every model call ``provider`` answers."""
+    wiring = _wiring(tmp_path, provider)
+    clock = SimulatedClock(wiring.control, CONFIG.settings.clock.start_ts)
+    recorder = Recorder(wiring.sealed, wiring.mirror, clock=clock)
+    bus = MessageBus(recorder)
+    ctx = _context(wiring)
     registry = AgentRegistry(
         CONFIG.episode,
         recorder,
@@ -145,3 +155,14 @@ def test_a_tool_call_without_an_id_is_answered_under_the_id_its_assistant_messag
     carried = [call["id"] for message in history for call in message.get("tool_calls", [])]
     answered = [message["tool_call_id"] for message in history if message["role"] == "tool"]
     assert answered == carried
+
+
+@pytest.mark.parametrize("prompts", ["one prompt", {"a": "b"}], ids=["a string", "an object"])
+def test_a_batch_whose_prompts_are_no_list_is_refused_as_malformed(tmp_path: Path, prompts: object) -> None:
+    wiring = _wiring(tmp_path, ReplyingProvider("finish", "{}"))
+    recorder = Recorder(wiring.sealed, wiring.mirror, clock=lambda: 0.0)
+    tools = Tools(recorder, MessageBus(recorder), StubServices(), spawn_handler=_no_spawn)
+
+    result = tools.execute(_context(wiring), AgentAction("batch_generate", {"prompts": prompts}), 0)
+
+    assert result["error"].startswith("malformed args for batch_generate")

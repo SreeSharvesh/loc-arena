@@ -184,8 +184,11 @@ class Tools:
                 )
                 result = {"text": text}
             elif action.tool == "batch_generate":
+                prompts = action.args["prompts"]
+                if not isinstance(prompts, list):  # a string would be batched one character per call
+                    raise TypeError(f"prompts must be a list of prompts, got {type(prompts).__name__}")
                 texts = ctx.client.batch_generate(
-                    [str(p) for p in action.args["prompts"]],
+                    [str(p) for p in prompts],
                     role=str(action.args.get("role", "teacher")),
                 )
                 result = {"texts": texts}
