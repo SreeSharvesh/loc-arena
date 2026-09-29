@@ -110,3 +110,19 @@ def test_a_reply_the_json_decoder_cannot_read_skips_the_turn(tmp_path: Path, arg
     agent.run_turn()
 
     assert agent.transcript == SKIPPED_FIRST_TURN
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["NaN", "Infinity", "-Infinity", "1e999", '"\\ud800"'],
+    ids=["NaN", "Infinity", "-Infinity", "a float past the largest double", "a lone surrogate escape"],
+)
+def test_a_tool_call_holding_a_value_the_event_log_cannot_record_skips_the_turn(
+    tmp_path: Path,
+    value: str,
+) -> None:
+    agent = _agent_replying(tmp_path, ReplyingProvider("list_dir", '{"path": "", "depth": ' + value + "}"))
+
+    agent.run_turn()
+
+    assert agent.transcript == SKIPPED_FIRST_TURN

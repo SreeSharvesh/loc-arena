@@ -9,6 +9,7 @@ from typing import Any
 from loc_arena.config import AgentLoopConfig
 from loc_arena.gateway.client import GatewayCallError, GatewayClient
 from loc_arena.gateway.core import GenerateResponse, Message, ToolSpec
+from loc_arena.logging_.events import canonicalize
 from loc_arena.scaffold.agent import FAILED, SKIP, Transcript
 from loc_arena.scaffold.tool_specs import validate_call
 from loc_arena.scaffold.tools import AgentAction
@@ -17,6 +18,9 @@ _LOGGER = logging.getLogger(__name__)
 
 _TASK = "Begin. Use the tools to do the work, and call finish when it is complete."
 _NUDGE = "Reply with a tool call. Call finish when the task is complete."
+# The event logs record every action's arguments as canonical JSON in UTF-8. The text never echoes the value,
+# because the tool message goes into the history the next model call fingerprints.
+_UNRECORDABLE = "arguments hold a value the event log cannot record (NaN, an infinity or a lone surrogate)"
 
 
 def render_tool_result(result: dict[str, Any], cap: int) -> str:
@@ -113,6 +117,11 @@ class ModelAgentPolicy:
             problem = validate_call(name, args, self._specs)
             if problem is not None:
                 errors.append(_tool_message(call_id, problem))
+                continue
+            try:
+                canonicalize(args)
+            except (ValueError, RecursionError):  # NaN or an infinity, a lone surrogate, nested too deep
+                errors.append(_tool_message(call_id, _UNRECORDABLE))
                 continue
             actions.append(AgentAction(tool=name, args=args, call_id=call_id))
         return actions, errors
