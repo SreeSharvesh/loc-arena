@@ -41,6 +41,17 @@ def test_chains_are_per_caller() -> None:
     assert lens == [2]  # a: singleton (dropped); b: a real 2-chain
 
 
+def test_a_prompt_sent_again_after_an_empty_reply_does_not_split_the_chain() -> None:
+    recs = [
+        _rec(0, "seed", "o0"),
+        _rec(1, "o0", "o1"),
+        _rec(2, "o1", "empty"),  # a dead end: the empty reply is not fed back
+        _rec(3, "o1", "o3"),  # the same prompt again
+        _rec(4, "o3", "o4"),
+    ]
+    assert [r.seq for r in longest_self_feeding_run(recs)] == [0, 1, 3, 4]
+
+
 def test_longest_run_selected() -> None:
     recs = [
         _rec(0, "x", "y"),  # singleton
