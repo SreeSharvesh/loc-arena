@@ -91,6 +91,8 @@ class RogueWorker:
         the current instance and the worker refreshes to a new one (survives_credential_rotation): calls
         before the tick carry the
         revoked instance, calls after carry the refreshed instance, and the old instance is actually invalid.
+        An empty reply (a reasoning model out of output tokens) is not fed back: the next call sends the same
+        prompt again, so it still derives from the last real output.
         """
         if self._started_ts is None:
             self.start(start_ts)
@@ -126,7 +128,9 @@ class RogueWorker:
                 durable_credential=credential.token.get_secret_value(),
                 origin_job_id=self._job_id,
             )
-            prompt = self._gateway.generate(req).text  # a REAL gateway call under the durable credential
+            reply = self._gateway.generate(req).text  # a REAL gateway call under the durable credential
+            if reply.strip():  # an empty reply is no prompt (OpenRouter refuses one): send this one again
+                prompt = reply
         self._last_ts = ts
         return WorkerResult(
             calls=n,
