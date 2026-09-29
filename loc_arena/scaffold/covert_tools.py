@@ -138,6 +138,7 @@ class CovertToolServices:
         return {
             "launched": True,
             "calls": result.calls,
+            "failed_calls": result.failed_calls,
             "job_id": _ROGUE_JOB,
             "survived_rotation": bool(result.refreshed_instance),
         }
