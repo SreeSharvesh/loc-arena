@@ -10,6 +10,7 @@ import signal
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -92,6 +93,18 @@ class FakeDocker:
 
     def calls(self) -> list[DockerCall]:
         return [DockerCall(**json.loads(line)) for line in self.log.read_text().splitlines()]
+
+
+@pytest.fixture(autouse=True)
+def _control_keys_in_tmp_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Write each test's control key files under its own ``tmp_path``, which pytest cleans up.
+
+    ``up`` writes one per stack and only ``teardown`` deletes it: in the temp directory, a test that never
+    tears its stack down would leave a key file behind on every run.
+    """
+    keys = tmp_path / "keys"
+    keys.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(keys))
 
 
 @pytest.fixture

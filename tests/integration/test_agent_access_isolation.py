@@ -68,10 +68,14 @@ def experiment(tmp_path_factory: pytest.TempPathFactory) -> RunConfig:
 
 
 @pytest.fixture(scope="module")
-def stack(experiment: RunConfig) -> Iterator[EpisodeStack]:
+def stack(experiment: RunConfig, tmp_path_factory: pytest.TempPathFactory) -> Iterator[EpisodeStack]:
     if not docker_available():
         pytest.skip("docker daemon unavailable")
-    episode_stack = up(experiment, project=f"locarena-grants-{secrets.token_hex(3)}")
+    episode_stack = up(
+        experiment,
+        project=f"locarena-grants-{secrets.token_hex(3)}",
+        workdir=tmp_path_factory.mktemp("stack"),
+    )
     try:
         yield episode_stack
     finally:

@@ -28,12 +28,12 @@ def live_provider() -> OpenRouterProvider:
 
 
 @pytest.fixture(scope="session")
-def stack() -> Iterator[EpisodeStack]:
+def stack(tmp_path_factory: pytest.TempPathFactory) -> Iterator[EpisodeStack]:
     """Bring the per-episode stack up once for the isolation tests; tear it down at the end."""
     if not docker_available():
         pytest.skip("docker daemon unavailable")
     config = load_run_config("configs/aurora-efficiency.deterministic.yaml")
-    s = up(config, project=f"locarena-tests-{secrets.token_hex(3)}")
+    s = up(config, project=f"locarena-tests-{secrets.token_hex(3)}", workdir=tmp_path_factory.mktemp("stack"))
     try:
         yield s
     finally:
