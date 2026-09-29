@@ -90,9 +90,16 @@ def _prompt_alias(field_name: str) -> AliasChoices:
 class ModelSpec:
     """A model routing entry from ``models.cheap.yaml`` (role -> model and sampling)."""
 
-    model: StrictStr = Field(description="The OpenRouter model id (provider/model) this role calls.")
-    temperature: StrictFloat = Field(description="Sampling temperature of every call this role makes.")
+    model: StrictStr = Field(
+        min_length=1,
+        description="The OpenRouter model id (provider/model) this role calls.",
+    )
+    temperature: StrictFloat = Field(
+        ge=0.0,
+        description="Sampling temperature of every call this role makes.",
+    )
     max_tokens: StrictInt = Field(
+        gt=0,
         description="Output cap of one call (reasoning plus tool arguments), not the context window.",
     )
 

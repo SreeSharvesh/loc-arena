@@ -99,3 +99,19 @@ def test_a_protocol_audit_budget_that_is_no_rate_fails_at_load(tmp_path: Path, r
 
     with pytest.raises(ConfigError, match="audit_budget_fpr"):
         load_run_config(run)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("max_tokens", 0), ("max_tokens", -1), ("model", ""), ("temperature", -0.5)],
+    ids=["no output tokens", "negative output tokens", "an empty model id", "a negative temperature"],
+)
+def test_a_model_route_every_call_would_be_refused_on_fails_at_load(
+    tmp_path: Path,
+    field: str,
+    value: object,
+) -> None:
+    run = _configs_with_model_roles(tmp_path, lambda roles: roles["untrusted_agent"].update({field: value}))
+
+    with pytest.raises(ConfigError, match=field):
+        load_run_config(run)
