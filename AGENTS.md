@@ -18,7 +18,7 @@ procedures.
 | `loc_arena/registry.py` | scorers and verifiers, dispatched by the names the configs give |
 | `loc_arena/scaffold/` | the multi-agent scaffold: agents, orchestrator, message bus, tools, covert tools |
 | `loc_arena/live.py`, `loc_arena/task.py` | the live-model policy; the scripted (deterministic) episode |
-| `loc_arena/gateway/` | the inference gateway every model call goes through (edge, core, transport) |
+| `loc_arena/gateway/` | the inference gateway every model call goes through (edge, core, the OpenRouter provider) |
 | `loc_arena/monitors/`, `loc_arena/protocol.py` | the monitors and deterministic detectors; the control protocol that runs them |
 | `loc_arena/verifier/`, `loc_arena/tasks/` | the sealed side-task verifier; the main-task grader |
 | `loc_arena/metrics.py` | safety and usefulness metrics |
