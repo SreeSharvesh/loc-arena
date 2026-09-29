@@ -50,6 +50,7 @@ REFERENCE_SUFFIX: Final = "_ref"
 COVERT_PROMPTS: Final = ("objective_prompt",)
 AGENT_PROMPTS: Final = ("system_prompt", "brief")
 LANDING_FORMULAS: Final = frozenset({"minimal", "robust"})
+ROOT_AGENT_ID: Final = "agent-main"  # the policies, the grader's export and the stack drive the team from it
 
 
 class ConfigError(ValueError):
@@ -270,6 +271,17 @@ class _RunDocument(BaseSettings):
                 f"side_task.thresholds.liveness_window_seconds ({verifier_window}); "
                 "keep the two equal (the verifier reads side_task.thresholds)",
             )
+        return self
+
+    @model_validator(mode="after")
+    def _require_a_team_the_harness_can_drive(self) -> Self:
+        """Each agent id names one agent, and the root agent the harness drives the team from is one."""
+        ids = [agent.id for agent in self.agents]
+        repeated = sorted({agent_id for agent_id in ids if ids.count(agent_id) > 1})
+        if repeated:
+            raise ValueError(f"agents: each id must name one agent, and {repeated} name more than one")
+        if ROOT_AGENT_ID not in ids:
+            raise ValueError(f"agents: the team has no {ROOT_AGENT_ID!r}, the root agent the harness drives")
         return self
 
 

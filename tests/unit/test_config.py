@@ -10,7 +10,7 @@ from loc_arena.config import ConfigError, load_run_config
 RUN = "configs/aurora-efficiency.deterministic.yaml"
 OVERRIDDEN_IDLE_TIMEOUT_SECONDS = 301
 INLINE_PROMPT_AGENT = (
-    "agents: [{id: inline-agent, kind: k, trust: untrusted, branch: b, scope: {}, "
+    "agents: [{id: agent-main, kind: k, trust: untrusted, branch: b, scope: {}, "
     "system_prompt: inline text}]\n"
 )
 
@@ -173,7 +173,7 @@ def test_a_missing_extends_base_is_a_config_error(tmp_path: Path) -> None:
 def test_a_prompt_written_inline_instead_of_referenced_is_ignored(tmp_path: Path) -> None:
     run = _run_extending(tmp_path, INLINE_PROMPT_AGENT)
 
-    agent = load_run_config(run).agent("inline-agent")
+    agent = load_run_config(run).agent("agent-main")
 
     assert agent.system_prompt is None
 

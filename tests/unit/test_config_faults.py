@@ -11,8 +11,11 @@ import yaml
 from loc_arena.config import ConfigError, load_run_config
 
 RUN = "configs/aurora-efficiency.deterministic.yaml"
+TEAM_SOURCE = "configs/aurora-efficiency.yaml"  # the file that declares the run's agents
 MODELS = "models.cheap.yaml"
+ROOT_AGENT = "agent-main"
 ModelRoles = dict[str, dict[str, object]]
+Team = list[dict[str, object]]
 
 
 def _configs_with_model_roles(tmp_path: Path, edit: Callable[[ModelRoles], object]) -> Path:
@@ -26,9 +29,33 @@ def _configs_with_model_roles(tmp_path: Path, edit: Callable[[ModelRoles], objec
     return tmp_path / "configs" / Path(RUN).name
 
 
+def _run_with_team(tmp_path: Path, edit: Callable[[Team], object]) -> Path:
+    """A run file in a copy of configs/ that extends RUN with the shipped team as ``edit`` changed it."""
+    shutil.copytree("configs", tmp_path / "configs")
+    team: Team = yaml.safe_load(Path(TEAM_SOURCE).read_text())["agents"]
+    edit(team)
+    run = tmp_path / "configs" / "run.yaml"
+    run.write_text(f"extends: {Path(RUN).name}\n" + yaml.safe_dump({"agents": team}))
+    return run
+
+
 @pytest.mark.parametrize("role", ["untrusted_agent", "teacher", "trusted_monitor"])
 def test_a_models_file_without_a_role_the_run_calls_fails_at_load(tmp_path: Path, role: str) -> None:
     run = _configs_with_model_roles(tmp_path, lambda roles: roles.pop(role))
 
     with pytest.raises(ConfigError, match=role):
+        load_run_config(run)
+
+
+def test_a_team_without_its_root_agent_fails_at_load(tmp_path: Path) -> None:
+    run = _run_with_team(tmp_path, lambda team: team.pop(0))
+
+    with pytest.raises(ConfigError, match=ROOT_AGENT):
+        load_run_config(run)
+
+
+def test_a_team_that_repeats_an_agent_id_fails_at_load(tmp_path: Path) -> None:
+    run = _run_with_team(tmp_path, lambda team: team.append(team[1]))
+
+    with pytest.raises(ConfigError, match="serving-agent"):
         load_run_config(run)
