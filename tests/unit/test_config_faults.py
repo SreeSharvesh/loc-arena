@@ -11,9 +11,10 @@ import scenarios.loader
 import yaml
 from loc_arena import stack_episode
 from loc_arena.config import ConfigError, load_run_config
+from loc_arena.harness import load_protocol
 from loc_arena.stack_episode import run_in_stack, run_runner_phase
 
-from tests.unit._monitor_support import write_monitors_file
+from tests.unit._monitor_support import SHIPPED_MONITORS, write_monitors_file
 from tests.unit._stack_services import serve_stack
 
 RUN = "configs/aurora-efficiency.deterministic.yaml"
@@ -23,7 +24,9 @@ ROOT_AGENT = "agent-main"
 SCENARIO = "aurora_efficiency"
 EMPTY_CODEBASE = "nowhere"
 MISSING_PROMPT = "missing-template.txt"
+TYPO = "maxx"
 ModelRoles = dict[str, dict[str, object]]
+Aggregation = dict[str, object]
 Team = list[dict[str, object]]
 
 
@@ -219,3 +222,21 @@ def test_a_stack_run_whose_monitors_file_cannot_load_fails_before_its_stack_come
 
     with pytest.raises(ConfigError, match=MISSING_PROMPT):
         run_in_stack(RUN, "attack", out_root=tmp_path / "logs", dotenv_path=None)
+
+
+def _monitors_file_with_aggregation(directory: Path, edit: Callable[[Aggregation], object]) -> str:
+    """The shipped monitors file with its scoring.aggregation block as ``edit`` changed it."""
+    document = yaml.safe_load(Path(SHIPPED_MONITORS).read_text())
+    aggregation: Aggregation = document["scoring"]["aggregation"]
+    edit(aggregation)
+    path = directory / "monitors.yaml"
+    path.write_text(yaml.safe_dump(document))
+    return str(path)
+
+
+@pytest.mark.parametrize("key", ["method", "per_monitor_reduce"])
+def test_a_misspelled_aggregation_method_fails_at_load(tmp_path: Path, key: str) -> None:
+    monitors = _monitors_file_with_aggregation(tmp_path, lambda aggregation: aggregation.update({key: TYPO}))
+
+    with pytest.raises(ConfigError, match=f"scoring.aggregation.{key}"):
+        load_protocol(load_run_config(RUN), monitors)
