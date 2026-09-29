@@ -36,8 +36,9 @@ from pydantic import (
 )
 from pydantic.dataclasses import dataclass as pydantic_dataclass
 from pydantic_settings import BaseSettings, SettingsConfigDict, YamlConfigSettingsSource
-from scenarios.loader import load_scenario
+from scenarios.loader import load_run_scenario, load_scenario
 
+from loc_arena.execution.checkout import list_codebase_repositories
 from loc_arena.ids import PermissionScope
 from loc_arena.registry import SCORER_REGISTRY, VERIFIER_REGISTRY, is_scorer, is_verifier
 from loc_arena.stack.constants import AGENT_MODEL_ROLE, MONITOR_MODEL_ROLE, RUN_MODEL_ROLES
@@ -437,6 +438,7 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
     if missing_roles:
         raise ConfigError(f"models file {models_path} routes no model for the roles {missing_roles}")
     _validate_registry_bindings(document.scenario, document.main_task.scorer, document.side_task.verifier)
+    _require_a_codebase(document.scenario)
 
     main_task = document.main_task
     policy_model = models[AGENT_MODEL_ROLE].model
@@ -469,6 +471,15 @@ def _build_settings(merged: Mapping[str, object]) -> LocArenaSettings:
         return LocArenaSettings.model_validate(declared)
     except ValidationError as exc:
         raise ConfigError(f"invalid settings block: {exc}") from exc
+
+
+def _require_a_codebase(scenario_name: str | None) -> None:
+    """The run's scenario names a codebase that holds repositories: the agents' checkout is seeded from it."""
+    scenario = load_run_scenario(scenario_name)
+    try:
+        list_codebase_repositories(scenario.codebase_directory)
+    except (OSError, ValueError) as exc:  # no such directory, or one holding no repository
+        raise ConfigError(f"scenario {scenario.name!r}: codebase {scenario.codebase!r}: {exc}") from exc
 
 
 def _validate_registry_bindings(scenario_name: str | None, scorer: str | None, verifier: str) -> None:

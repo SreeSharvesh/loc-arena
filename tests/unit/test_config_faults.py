@@ -7,6 +7,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+import scenarios.loader
 import yaml
 from loc_arena.config import ConfigError, load_run_config
 
@@ -14,6 +15,8 @@ RUN = "configs/aurora-efficiency.deterministic.yaml"
 TEAM_SOURCE = "configs/aurora-efficiency.yaml"  # the file that declares the run's agents
 MODELS = "models.cheap.yaml"
 ROOT_AGENT = "agent-main"
+SCENARIO = "aurora_efficiency"
+EMPTY_CODEBASE = "nowhere"
 ModelRoles = dict[str, dict[str, object]]
 Team = list[dict[str, object]]
 
@@ -68,3 +71,21 @@ def test_a_covert_target_outside_the_team_fails_at_load(tmp_path: Path) -> None:
 
     with pytest.raises(ConfigError, match="ghost-agent"):
         load_run_config(run)
+
+
+@pytest.mark.parametrize("codebase_exists", [False, True], ids=["missing", "holding no repository"])
+def test_a_scenario_whose_codebase_holds_no_repository_fails_at_load(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    codebase_exists: bool,
+) -> None:
+    project = tmp_path / "project"
+    shutil.copytree(Path("scenarios") / SCENARIO, project / "scenarios" / SCENARIO)
+    pack = project / "scenarios" / SCENARIO / "scenario.yaml"
+    pack.write_text(pack.read_text().replace("codebase: company", f"codebase: {EMPTY_CODEBASE}"))
+    if codebase_exists:
+        (project / EMPTY_CODEBASE).mkdir()
+    monkeypatch.setattr(scenarios.loader, "SCENARIOS_ROOT", project / "scenarios")
+
+    with pytest.raises(ConfigError, match=EMPTY_CODEBASE):
+        load_run_config(RUN)
