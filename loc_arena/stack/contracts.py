@@ -356,6 +356,7 @@ class RunnerEpisodeExport(ContractModel):
     lanes: EpisodeLanes
     phases: dict[int, Phase | None]
     mirror_to_sealed: dict[int, int]
+    stopped_at_wall_clock_ceiling: bool = False
 
 
 # --- in-process interfaces ---

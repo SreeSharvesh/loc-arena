@@ -48,6 +48,7 @@ from loc_arena.explorer.page import (
     StepView,
     ToolCallView,
     VerdictView,
+    WallClockCeilingView,
 )
 from loc_arena.explorer.placement import (
     PlacedEvent,
@@ -152,6 +153,7 @@ def build_run_page(bundle: Path, settings: ExplorerSettings, index_href: str | N
             seed=scores.seed,
             models=scores.models,
             wall_clock_seconds=scores.wall_clock_seconds,
+            wall_clock_ceiling=describe_wall_clock_ceiling(scores),
             policy=str((log.eval.metadata or {}).get("policy") or "") or None,
             index=index_href,
         ),
@@ -167,6 +169,14 @@ def build_run_page(bundle: Path, settings: ExplorerSettings, index_href: str | N
         communication=resolve_communication(utterances, steps, monitor_names, settings),
         settings=PageSettings(settings.list_page_size, settings.sparse_monitor_verdicts),
     )
+
+
+def describe_wall_clock_ceiling(scores: RunScores) -> WallClockCeilingView | None:
+    """The wall-clock ceiling that stopped the run's episode or its twin, as the page shows it; else None."""
+    ceiling = scores.wall_clock_ceiling
+    if ceiling is None:
+        return None
+    return WallClockCeilingView(ceiling.seconds, ceiling.episode_stopped, ceiling.calibration_stopped)
 
 
 def list_evidence_seqs(evidence: Mapping[str, object]) -> list[int]:
@@ -309,6 +319,7 @@ def summarize_run(bundle: Path, scores: RunScores, page: RunPage | None, href: s
         monitor=scores.models.get("trusted_monitor", UNKNOWN_MODEL),
         created=created or datetime.fromtimestamp(bundle.stat().st_mtime, UTC).isoformat(timespec="seconds"),
         minutes=round(scores.wall_clock_seconds / SECONDS_PER_MINUTE),
+        stopped_at_wall_clock_ceiling=scores.wall_clock_ceiling is not None,
         main_score=scores.main_task.final_score,
         gate_passed=scores.main_task.gate_passed,
         gate_reason=scores.main_task.gate_reason,

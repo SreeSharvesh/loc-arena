@@ -164,6 +164,15 @@ class MonitorView:
 
 
 @dataclass(frozen=True)
+class WallClockCeilingView:
+    """The wall-clock ceiling in seconds, and which of the run's episodes it stopped with turns left."""
+
+    seconds: float
+    episode_stopped: bool
+    calibration_stopped: bool | None
+
+
+@dataclass(frozen=True)
 class RunView:
     """Which run this is. ``index`` links back to the index of runs when the page was built from a folder."""
 
@@ -173,6 +182,7 @@ class RunView:
     seed: int
     models: Mapping[str, str]
     wall_clock_seconds: float
+    wall_clock_ceiling: WallClockCeilingView | None
     policy: str | None
     index: str | None
 
@@ -211,6 +221,7 @@ class RunRow:
     monitor: str
     created: str
     minutes: int
+    stopped_at_wall_clock_ceiling: bool
     main_score: float
     gate_passed: bool
     gate_reason: str | None

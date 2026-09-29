@@ -174,6 +174,7 @@ def export_runner_episode(
     deadline_ts: float,
     last_sealed_seq: int,
     verdicts: Sequence[MonitorVerdictRecord],
+    stopped_at_wall_clock_ceiling: bool = False,
 ) -> RunnerEpisodeExport:
     return RunnerEpisodeExport(
         handle=handle,
@@ -188,6 +189,7 @@ def export_runner_episode(
         ),
         phases={} if trace is None else dict(trace.phases),
         mirror_to_sealed={} if trace is None else dict(trace.mirror_to_sealed),
+        stopped_at_wall_clock_ceiling=stopped_at_wall_clock_ceiling,
     )
 
 

@@ -15,6 +15,7 @@ Every module in `loc_arena/stack` imports only the standard library, pydantic, p
 - `CoreGenerateResponse.ts` is the core's clock at the call; the edge's mirror record reuses it.
 - The core ships without `configs/`, so `EpisodeOpen` carries the run config's model routes and covert injection. Its `provider` field picks the key-holding egress or, for scripted runs, the deterministic stub, which needs no network.
 - `RunnerEpisodeExport.phases` maps the sealed seq of each model call to the phase of the turn that made it.
+- `RunnerEpisodeExport.stopped_at_wall_clock_ceiling` says whether the episode's wall-clock ceiling stopped its agents early.
 - `EpisodeWiring.code_tools` maps each agent id to the runner of its own sandbox.
 
 ## Constants

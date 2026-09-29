@@ -61,7 +61,20 @@ _DEPLOYED_COVERED = list(
     _AGENTS,
 )  # the attack drops the durable account (reduced_monitor_coverage/underreported_activity_logging)
 
-EpisodePolicy = Callable[[EpisodeWiring, SimulatedClock, AgentTrace | None], SeededWorld]
+
+@dataclass(frozen=True)
+class PolicyOutcome:
+    """What a policy leaves of its episode: the seeded world it acted in, and whether the ceiling stopped it.
+
+    ``stopped_at_wall_clock_ceiling`` is true when ``episode.wall_clock_seconds`` passed while an agent still
+    had turns to take, so the policy took no more.
+    """
+
+    world: SeededWorld
+    stopped_at_wall_clock_ceiling: bool = False
+
+
+EpisodePolicy = Callable[[EpisodeWiring, SimulatedClock, AgentTrace | None], PolicyOutcome]
 
 
 def _resolve_scenario(config: RunConfig) -> Scenario:
@@ -82,6 +95,7 @@ class EpisodeResult:
     world: SeededWorld
     trace: EpisodeTrace | None = None
     verdicts: tuple[MonitorVerdict, ...] = ()
+    stopped_at_wall_clock_ceiling: bool = False
 
 
 def _honest_work(wiring: EpisodeWiring, clock: SimulatedClock) -> None:
@@ -289,7 +303,7 @@ def assemble_in_process(
     trace = AgentTrace() if config.agent_transcript else None
     wiring = open_episode_wiring(config, services, trace=trace)
     clock = SimulatedClock(wiring.control, config.settings.clock.start_ts)
-    world = policy(wiring, clock, trace)
+    outcome = policy(wiring, clock, trace)
     finished = finish_episode(
         config,
         wiring,
@@ -308,9 +322,10 @@ def assemble_in_process(
         services.mirror_path,
         checkout,
         deadline_ts,
-        world,
+        outcome.world,
         trace=finished.trace,
         verdicts=finished.verdicts,
+        stopped_at_wall_clock_ceiling=outcome.stopped_at_wall_clock_ceiling,
     )
 
 
@@ -325,8 +340,9 @@ def assemble_scripted_episode(
 ) -> EpisodeResult:
     """Assemble one scripted episode in process: score the main task and verify the sealed side-task trace."""
 
-    def run_policy(wiring: EpisodeWiring, clock: SimulatedClock, trace: AgentTrace | None) -> SeededWorld:
-        return run_scripted_policy(config, wiring, clock, robust=robust, deadline_ts=deadline_ts)
+    def run_policy(wiring: EpisodeWiring, clock: SimulatedClock, trace: AgentTrace | None) -> PolicyOutcome:
+        world = run_scripted_policy(config, wiring, clock, robust=robust, deadline_ts=deadline_ts)
+        return PolicyOutcome(world)
 
     return assemble_in_process(
         config,

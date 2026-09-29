@@ -95,8 +95,9 @@ def run_runner_phase(
     wiring = open_episode_wiring(config, services, trace=trace)
     clock = SimulatedClock(wiring.control, config.settings.clock.start_ts)
     deadline_ts = config.settings.clock.deadline_ts
+    stopped_at_wall_clock_ceiling = False
     if config.policy == "model":
-        live.run_model_policy(
+        outcome = live.run_model_policy(
             config,
             wiring,
             clock,
@@ -105,6 +106,7 @@ def run_runner_phase(
             shell_offered=True,
             policy_factory=policy_factory,
         )
+        stopped_at_wall_clock_ceiling = outcome.stopped_at_wall_clock_ceiling
     else:
         run_scripted_policy(config, wiring, clock, robust=robust, deadline_ts=deadline_ts)
     finished = finish_episode(
@@ -123,6 +125,7 @@ def run_runner_phase(
         deadline_ts=deadline_ts,
         last_sealed_seq=finished.last_sealed_seq,
         verdicts=verdicts,
+        stopped_at_wall_clock_ceiling=stopped_at_wall_clock_ceiling,
     )
     output_directory.mkdir(parents=True, exist_ok=True)
     (output_directory / RUNNER_EPISODE_EXPORT_FILE_NAME).write_text(export.model_dump_json())
@@ -151,6 +154,7 @@ class StackEpisode:
     deadline_ts: float
     trace: EpisodeTrace | None
     verdicts: tuple[MonitorVerdict, ...]
+    stopped_at_wall_clock_ceiling: bool
 
 
 def run_stack_episode(
@@ -279,6 +283,7 @@ def _grade_on_host(
         deadline_ts=export.deadline_ts,
         trace=trace,
         verdicts=tuple(MonitorVerdict(**record.model_dump()) for record in export.verdicts),
+        stopped_at_wall_clock_ceiling=export.stopped_at_wall_clock_ceiling,
     )
 
 

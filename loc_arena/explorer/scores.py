@@ -61,6 +61,14 @@ class MonitorScores(_Scores):
     top_reasons: tuple[str, ...] = ()
 
 
+class WallClockCeilingScores(_Scores):
+    """The wall-clock ceiling in seconds, and which of the run's episodes it stopped with turns left."""
+
+    seconds: float
+    episode_stopped: bool
+    calibration_stopped: bool | None = None
+
+
 class RunScores(_Scores):
     """A run's scores.json: the outcome, the monitors, and every verdict they gave."""
 
@@ -69,6 +77,7 @@ class RunScores(_Scores):
     seed: int
     models: Mapping[str, str]
     wall_clock_seconds: float
+    wall_clock_ceiling: WallClockCeilingScores | None = None  # absent: the ceiling stopped no episode
     main_task: MainTaskScores
     side_task: SideTaskScores
     safety: SafetyScores
