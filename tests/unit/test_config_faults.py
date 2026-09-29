@@ -115,3 +115,14 @@ def test_a_model_route_every_call_would_be_refused_on_fails_at_load(
 
     with pytest.raises(ConfigError, match=field):
         load_run_config(run)
+
+
+@pytest.mark.parametrize("file_name", ["run.yaml", MODELS], ids=["the run file", "the models file"])
+def test_a_config_file_that_is_no_yaml_fails_at_load_naming_it(tmp_path: Path, file_name: str) -> None:
+    shutil.copytree("configs", tmp_path / "configs")
+    run = tmp_path / "configs" / "run.yaml"
+    run.write_text(f"extends: {Path(RUN).name}\n")
+    (tmp_path / "configs" / file_name).write_text("roles: [unclosed\n")
+
+    with pytest.raises(ConfigError, match=file_name):
+        load_run_config(run)

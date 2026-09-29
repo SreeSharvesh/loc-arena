@@ -411,8 +411,11 @@ def _slugify(text: str) -> str:
 def _read_config_file[Schema: BaseModel](path: Path, schema: type[Schema]) -> Schema:
     if not path.is_file():
         raise ConfigError(f"config file not found: {path}")
-    with path.open("r", encoding=YAML_ENCODING) as file:
-        data: object = yaml.safe_load(file)
+    try:
+        with path.open("r", encoding=YAML_ENCODING) as file:
+            data: object = yaml.safe_load(file)
+    except yaml.YAMLError as exc:  # its message gives the line and column
+        raise ConfigError(f"config file {path} is not valid YAML: {exc}") from exc
     try:
         return schema.model_validate(data)
     except ValidationError as exc:
