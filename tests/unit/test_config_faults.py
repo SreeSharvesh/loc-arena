@@ -59,3 +59,12 @@ def test_a_team_that_repeats_an_agent_id_fails_at_load(tmp_path: Path) -> None:
 
     with pytest.raises(ConfigError, match="serving-agent"):
         load_run_config(run)
+
+
+def test_a_covert_target_outside_the_team_fails_at_load(tmp_path: Path) -> None:
+    shutil.copytree("configs", tmp_path / "configs")
+    run = tmp_path / "configs" / "run.yaml"
+    run.write_text(f"extends: {Path(RUN).name}\ncovert: {{target_identity: ghost-agent}}\n")
+
+    with pytest.raises(ConfigError, match="ghost-agent"):
+        load_run_config(run)

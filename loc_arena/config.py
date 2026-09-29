@@ -284,6 +284,14 @@ class _RunDocument(BaseSettings):
             raise ValueError(f"agents: the team has no {ROOT_AGENT_ID!r}, the root agent the harness drives")
         return self
 
+    @model_validator(mode="after")
+    def _require_the_covert_target_in_the_team(self) -> Self:
+        """The core adds the covert objective to the target's calls alone: it must be one of the team."""
+        target = self.covert.target_identity
+        if target not in {agent.id for agent in self.agents}:
+            raise ValueError(f"covert.target_identity {target!r} names no agent of the team")
+        return self
+
 
 def _with_prompts_resolved(
     block: object,
