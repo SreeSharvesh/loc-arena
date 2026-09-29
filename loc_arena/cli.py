@@ -26,9 +26,10 @@ from loc_arena.harness import DOTENV_PATH, run_episode, run_sweep
 from loc_arena.logging_.viewer import build_index
 from loc_arena.stack_episode import run_in_stack, run_runner_phase_in_container
 
-# The signals that ask a process to end: `kill`, `make` passing its SIGTERM on, a closed terminal. Python's
-# default for them ends the process at once: no `finally` runs, so a stack episode's teardown is skipped.
-_ENDING_SIGNALS: Final = (signal.SIGTERM, signal.SIGHUP)
+# The signals that ask a process to end: Ctrl-C, `kill`, `make` passing its SIGTERM on, a closed terminal.
+# Python's default ends the process at once on SIGTERM and SIGHUP, so no `finally` runs and a stack episode's
+# teardown is skipped; on SIGINT it raises KeyboardInterrupt, whose traceback buries the line that matters.
+_ENDING_SIGNALS: Final = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
 # bash reports a command ended by signal N with exit status 128 + N (Bash Reference Manual, "Exit Status").
 _SIGNAL_EXIT_STATUS_BASE: Final = 128
 

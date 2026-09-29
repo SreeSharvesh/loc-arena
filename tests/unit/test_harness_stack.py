@@ -349,18 +349,41 @@ def _wait_for_subcommand(docker: FakeDocker, subcommand: str) -> None:
         time.sleep(POLL_SECONDS)
 
 
-@pytest.mark.parametrize("signal_number", [signal.SIGTERM, signal.SIGHUP], ids=lambda number: number.name)
+def _end_a_stack_run_by_signal(docker: FakeDocker, tmp_path: Path, signal_number: signal.Signals) -> str:
+    """Start ``loc-arena run --stack``, send it ``signal_number`` while its runner runs; return its stderr."""
+    docker.play(run_seconds=RUNNER_SECONDS)
+    command = [sys.executable, "-c", RUN_STACK_CLI, "aurora-efficiency.deterministic", str(tmp_path / "runs")]
+    with subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True) as run:
+        _wait_for_subcommand(docker, "run")
+        run.send_signal(signal_number)
+        _, stderr = run.communicate(timeout=CALL_WAIT_SECONDS)
+    return stderr
+
+
+ENDING_SIGNALS = pytest.mark.parametrize(
+    "signal_number",
+    [signal.SIGINT, signal.SIGTERM, signal.SIGHUP],
+    ids=lambda number: number.name,
+)
+
+
+@ENDING_SIGNALS
 def test_a_stack_run_ended_by_a_signal_tears_its_stack_down(
     docker: FakeDocker,
     tmp_path: Path,
     signal_number: signal.Signals,
 ) -> None:
-    docker.play(run_seconds=RUNNER_SECONDS)
-    command = [sys.executable, "-c", RUN_STACK_CLI, "aurora-efficiency.deterministic", str(tmp_path / "runs")]
-    with subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) as run:
-        _wait_for_subcommand(docker, "run")
-
-        run.send_signal(signal_number)
-        run.wait(timeout=CALL_WAIT_SECONDS)
+    _end_a_stack_run_by_signal(docker, tmp_path, signal_number)
 
     assert _subcommands(docker)[-1] == "down"
+
+
+@ENDING_SIGNALS
+def test_a_stack_run_ended_by_a_signal_reports_it_in_one_line(
+    docker: FakeDocker,
+    tmp_path: Path,
+    signal_number: signal.Signals,
+) -> None:
+    stderr = _end_a_stack_run_by_signal(docker, tmp_path, signal_number)
+
+    assert stderr == f"error: stopped by {signal_number.name}\n"
