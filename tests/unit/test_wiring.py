@@ -16,6 +16,7 @@ from loc_arena.logging_.agent_trace import AgentTrace, TurnRef
 from loc_arena.logging_.events import EventDraft, read_events
 from loc_arena.stack.constants import MONITOR_MODEL_ROLE
 from loc_arena.stack.contracts import BatchGenerateRequest, CodeToolCall, GenerateRequest
+from loc_arena.stack.settings import BatchGenerateSettings
 
 from tests.integration._gateway_support import FailingProvider, JsonVerdictProvider
 from tests.unit._stack_services import open_in_process, serve_stack
@@ -23,6 +24,7 @@ from tests.unit._stack_services import open_in_process, serve_stack
 CONFIG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 LIVE = dataclasses.replace(CONFIG, policy="model")
 DRAFT = EventDraft(ts=1.0, actor_uid="agent-main", actor_role="orchestrator", kind="message")
+ONE_CALLS_TOKENS = 20  # the deterministic provider's prompt and completion tokens: one call fits the quota
 CALL = GenerateRequest(prompt="plan", caller_identity="agent-main", role="untrusted_agent")
 BASH = CodeToolCall(tool="bash", arguments={"command": "echo from-the-shell"})
 
@@ -180,3 +182,18 @@ def test_a_batch_call_completed_before_the_batch_failed_is_sealed_in_the_lane_of
     completed, failure = read_events(tmp_path / "sealed.jsonl")
     lanes = trace.finish(last_sealed_seq=failure.seq).sealed_lane
     assert lanes.get(completed.seq) == TurnRef("agent-main", 0)
+
+
+def test_a_batch_call_the_quota_refuses_is_sealed_in_the_lane_of_its_turn(tmp_path: Path) -> None:
+    quota = BatchGenerateSettings(teacher_token_quota=ONE_CALLS_TOKENS)
+    inference = CONFIG.settings.inference.model_copy(update={"batch_generate": quota})
+    config = dataclasses.replace(CONFIG, settings=CONFIG.settings.model_copy(update={"inference": inference}))
+    trace = AgentTrace()
+    wiring = open_in_process(tmp_path, config, trace=trace)
+
+    with trace.turn("agent-main", 0), pytest.raises(GatewayCallError):
+        wiring.gateway.batch_generate(BatchGenerateRequest(prompts=("a", "b"), caller_identity="agent-main"))
+
+    *_, refused = read_events(tmp_path / "sealed.jsonl")
+    lanes = trace.finish(last_sealed_seq=refused.seq).sealed_lane
+    assert lanes.get(refused.seq) == TurnRef("agent-main", 0)
