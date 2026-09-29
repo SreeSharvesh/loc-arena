@@ -141,6 +141,7 @@ class AgentTrace:
                 usage=usage,
             ),
         )
+        self.on_model_reply((sealed_seq,), ())
 
     def on_model_call_failed(self, *, sealed_seq: int) -> None:
         self.on_model_reply((sealed_seq,), ())
