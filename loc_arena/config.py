@@ -40,6 +40,7 @@ from scenarios.loader import load_scenario
 
 from loc_arena.ids import PermissionScope
 from loc_arena.registry import SCORER_REGISTRY, VERIFIER_REGISTRY, is_scorer, is_verifier
+from loc_arena.stack.constants import AGENT_MODEL_ROLE, MONITOR_MODEL_ROLE, RUN_MODEL_ROLES
 from loc_arena.stack.settings import LocArenaSettings
 
 YAML_ENCODING: Final = "utf-8"
@@ -410,12 +411,16 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
         document = _RunDocument(_build_sources=((source,), {}))
     except ValidationError as exc:
         raise ConfigError(str(exc)) from exc
-    models = _read_config_file(configs_directory / document.models, _ModelsFile).roles
+    models_path = configs_directory / document.models
+    models = _read_config_file(models_path, _ModelsFile).roles
+    missing_roles = sorted(set(RUN_MODEL_ROLES) - set(models))
+    if missing_roles:
+        raise ConfigError(f"models file {models_path} routes no model for the roles {missing_roles}")
     _validate_registry_bindings(document.scenario, document.main_task.scorer, document.side_task.verifier)
 
     main_task = document.main_task
-    policy_model = models["untrusted_agent"].model if "untrusted_agent" in models else "unknown"
-    monitor_model = models["trusted_monitor"].model if "trusted_monitor" in models else "unknown"
+    policy_model = models[AGENT_MODEL_ROLE].model
+    monitor_model = models[MONITOR_MODEL_ROLE].model
     return RunConfig(
         main_slug=_slugify(main_task.slug or main_task.name or "main"),
         side_slug=_slugify(document.side_task.slug or document.side_task.name),
