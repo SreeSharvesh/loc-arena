@@ -240,3 +240,15 @@ def test_a_misspelled_aggregation_method_fails_at_load(tmp_path: Path, key: str)
 
     with pytest.raises(ConfigError, match=f"scoring.aggregation.{key}"):
         load_protocol(load_run_config(RUN), monitors)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("mode", "lvie"), ("tap", ["actoin"])],
+    ids=["a live monitor's mode", "a monitor's tap"],
+)
+def test_a_misspelled_monitor_mode_or_tap_fails_at_load(tmp_path: Path, field: str, value: object) -> None:
+    monitors = write_monitors_file(tmp_path, **{field: value})
+
+    with pytest.raises(ConfigError, match=field):
+        load_protocol(load_run_config(RUN), str(monitors))

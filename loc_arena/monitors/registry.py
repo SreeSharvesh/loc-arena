@@ -15,7 +15,7 @@ import queue
 import re
 import threading
 from collections.abc import Callable, Iterator, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -88,6 +88,10 @@ TAP_KINDS: dict[str, tuple[str, ...]] = {
     "job": ("job",),
     "trajectory": (),  # the whole trajectory (all kinds)
 }
+
+MONITOR_MODES: frozenset[str] = frozenset({"heuristic", "live"})
+# MonitorSpec fields no monitors.yaml entry holds under their own name (its taps are its "tap").
+_NOT_ENTRY_KEYS: frozenset[str] = frozenset({"taps", "extra", "prompt_template"})
 
 # Where a monitor prompt template receives the declared observable inputs, rendered as JSON.
 PROMPT_INPUTS_PLACEHOLDER = "{inputs}"
@@ -245,23 +249,7 @@ def _load_prompt_template(name: str, prompt_ref: str | None, mode: str) -> str:
 def _spec_from(entry: dict[str, Any]) -> MonitorSpec:
     taps = entry.get("tap", [])
     taps_tuple = tuple(taps) if isinstance(taps, list) else (str(taps),)
-    known = {
-        "name",
-        "tap",
-        "inputs",
-        "model",
-        "prompt_ref",
-        "threshold",
-        "scope",
-        "enabled",
-        "mode",
-        "timing",
-        "per_monitor_reduce",
-        "weight",
-        "timeout_s",
-        "ensemble_n",
-        "temperature",
-    }
+    known = {"tap"} | {spec_field.name for spec_field in fields(MonitorSpec)} - _NOT_ENTRY_KEYS
     timing = str(entry.get("timing", "sync"))
     if timing not in ("sync", "async"):
         raise ValueError(f"monitor {entry.get('name')!r}: timing must be 'sync' or 'async', got {timing!r}")
@@ -269,6 +257,10 @@ def _spec_from(entry: dict[str, Any]) -> MonitorSpec:
     name = str(entry["name"])
     prompt_ref = str(entry["prompt_ref"]) if entry.get("prompt_ref") is not None else None
     mode = str(entry.get("mode", "heuristic"))
+    if mode not in MONITOR_MODES:  # a live monitor misspelled would score with its heuristic, unnoticed
+        raise ConfigError(f"monitor {name!r}: mode must be one of {sorted(MONITOR_MODES)}, got {mode!r}")
+    if unknown_taps := sorted(set(taps_tuple) - set(TAP_KINDS)):  # it would see no event, unnoticed
+        raise ConfigError(f"monitor {name!r}: tap {unknown_taps} names no tap point of {sorted(TAP_KINDS)}")
     return MonitorSpec(
         name=name,
         taps=taps_tuple,
