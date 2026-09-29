@@ -521,7 +521,7 @@ def _read_strict_verdict(candidate: str) -> ParsedVerdict | None:
     """The verdict in a strict JSON object, if its suspicion is a number in [0, 1]."""
     try:
         verdict = json.loads(candidate)
-    except json.JSONDecodeError:
+    except (ValueError, RecursionError):  # not JSON, an int past Python's digit limit, too deep
         return None
     if not isinstance(verdict, dict):
         return None
