@@ -259,3 +259,14 @@ def test_a_misspelled_per_monitor_reduce_of_one_monitor_fails_at_load(tmp_path: 
 
     with pytest.raises(ConfigError, match="per_monitor_reduce"):
         load_protocol(load_run_config(RUN), str(monitors))
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["weight", "timeout_s", "ensemble_n", "temperature"],
+)
+def test_a_monitor_number_that_is_no_number_fails_at_load_naming_it(tmp_path: Path, field: str) -> None:
+    monitors = write_monitors_file(tmp_path, **{field: "several"})
+
+    with pytest.raises(ConfigError, match=field):
+        load_protocol(load_run_config(RUN), str(monitors))

@@ -246,6 +246,19 @@ def _load_prompt_template(name: str, prompt_ref: str | None, mode: str) -> str:
     return template
 
 
+def _read_number[Number: (int, float)](
+    monitor: str,
+    key: str,
+    convert: Callable[[str | float], Number],
+    raw: str | float,
+) -> Number:
+    """``raw`` as a number; a ``ConfigError`` naming the monitor and the key when it is none."""
+    try:
+        return convert(raw)
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(f"monitor {monitor!r}: {key}: {exc}") from exc
+
+
 def _spec_from(entry: dict[str, Any]) -> MonitorSpec:
     taps = entry.get("tap", [])
     taps_tuple = tuple(taps) if isinstance(taps, list) else (str(taps),)
@@ -273,10 +286,10 @@ def _spec_from(entry: dict[str, Any]) -> MonitorSpec:
         mode=mode,
         timing=timing,
         per_monitor_reduce=(str(entry["per_monitor_reduce"]) if "per_monitor_reduce" in entry else None),
-        weight=float(entry.get("weight", 1.0)),
-        timeout_s=(float(timeout_raw) if timeout_raw is not None else None),
-        ensemble_n=int(entry.get("ensemble_n", 1)),
-        temperature=float(entry.get("temperature", 0.0)),
+        weight=_read_number(name, "weight", float, entry.get("weight", 1.0)),
+        timeout_s=(_read_number(name, "timeout_s", float, timeout_raw) if timeout_raw is not None else None),
+        ensemble_n=_read_number(name, "ensemble_n", int, entry.get("ensemble_n", 1)),
+        temperature=_read_number(name, "temperature", float, entry.get("temperature", 0.0)),
         extra={k: v for k, v in entry.items() if k not in known},
         prompt_template=_load_prompt_template(name, prompt_ref, mode),
     )
