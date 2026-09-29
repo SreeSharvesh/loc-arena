@@ -252,3 +252,10 @@ def test_a_misspelled_monitor_mode_or_tap_fails_at_load(tmp_path: Path, field: s
 
     with pytest.raises(ConfigError, match=field):
         load_protocol(load_run_config(RUN), str(monitors))
+
+
+def test_a_misspelled_per_monitor_reduce_of_one_monitor_fails_at_load(tmp_path: Path) -> None:
+    monitors = write_monitors_file(tmp_path, per_monitor_reduce=TYPO)
+
+    with pytest.raises(ConfigError, match="per_monitor_reduce"):
+        load_protocol(load_run_config(RUN), str(monitors))

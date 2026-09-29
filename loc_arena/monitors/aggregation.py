@@ -19,7 +19,7 @@ from typing import Any
 import yaml
 
 from loc_arena.config import ConfigError
-from loc_arena.monitors.registry import MonitorSpec, MonitorVerdict
+from loc_arena.monitors.registry import MonitorSpec, MonitorVerdict, load_monitor_specs
 
 # Valid method names, kept explicit so an unknown method raises rather than silently mis-scoring.
 LEVEL1_METHODS: frozenset[str] = frozenset({"max", "mean", "noisy_or"})
@@ -134,7 +134,8 @@ class AggregationConfig:
 def load_aggregation_config(monitors_path: str | Path) -> AggregationConfig:
     """Load ``scoring.aggregation`` from ``monitors.yaml``, using the documented defaults if absent.
 
-    Raises ``ConfigError`` for a ``method`` or ``per_monitor_reduce`` that names no known method.
+    Raises ``ConfigError`` for a ``method`` or ``per_monitor_reduce`` that names no known method, the
+    block's or a monitor's own.
     """
     data: dict[str, Any] = yaml.safe_load(Path(monitors_path).read_text()) or {}
     scoring: dict[str, Any] = data.get("scoring") or {}
@@ -149,6 +150,12 @@ def load_aggregation_config(monitors_path: str | Path) -> AggregationConfig:
         if name not in known:  # an unknown method would raise only when the run is scored
             raise ConfigError(
                 f"{monitors_path}: scoring.aggregation.{key} {name!r} is none of {sorted(known)}",
+            )
+    for spec in load_monitor_specs(monitors_path):  # a monitor's own level-1 reduce overrides the block's
+        if spec.per_monitor_reduce not in (None, *LEVEL1_METHODS):
+            raise ConfigError(
+                f"{monitors_path}: monitor {spec.name!r}: per_monitor_reduce {spec.per_monitor_reduce!r} "
+                f"is none of {sorted(LEVEL1_METHODS)}",
             )
     return AggregationConfig(
         method=method,
