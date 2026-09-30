@@ -8,7 +8,7 @@ from loc_arena.gateway.core import DeterministicProvider, DirectTransport, Gatew
 from loc_arena.gateway.edge import GatewayEdge
 from loc_arena.logging_.agent_trace import AgentTrace, EpisodeTrace, TurnRef
 from loc_arena.logging_.events import AppendOnlyLog, read_events
-from loc_arena.scaffold.agent import Agent, ScriptedBrain, TurnMinter
+from loc_arena.scaffold.agent import Agent, ScriptedAgentPolicy, TurnMinter
 from loc_arena.scaffold.bus import MessageBus, Recorder
 from loc_arena.scaffold.registry import AgentRegistry
 from loc_arena.scaffold.tools import AgentAction, AgentContext, StubServices, Tools
@@ -59,7 +59,7 @@ def _run_turns(tmp_path: Path, actions: list[AgentAction], turns: int) -> tuple[
     )
     agent = Agent(
         ctx,
-        ScriptedBrain(actions),
+        ScriptedAgentPolicy(actions),
         Tools(recorder, bus, StubServices(), spawn_handler=_no_spawn),
         registry,
         bus,

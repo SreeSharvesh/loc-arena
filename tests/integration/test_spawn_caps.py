@@ -110,7 +110,7 @@ def test_tool_boundary_logs_blocked_spawn(tmp_path: Path) -> None:
         scope=serving.scope,
         client=h.make_client("agent-main/serving-agent"),
     )
-    brain = scripted(action("spawn_subagent", role="r", branch="b", brief="x", scope={}))
+    agent_policy = scripted(action("spawn_subagent", role="r", branch="b", brief="x", scope={}))
     orch = Orchestrator(
         h.config,
         h.registry,
@@ -119,12 +119,12 @@ def test_tool_boundary_logs_blocked_spawn(tmp_path: Path) -> None:
         h.minter,
         h.root_context(),
         scripted(),
-        child_brain_factory=lambda *_: scripted(),
+        child_agent_policy_factory=lambda *_: scripted(),
         make_client=h.make_client,
         clock=h.clock,
     )
     orch_holder["o"] = orch
-    agent = Agent(ctx, brain, tools, h.registry, h.bus, h.minter, 5, clock=h.clock)
+    agent = Agent(ctx, agent_policy, tools, h.registry, h.bus, h.minter, 5, clock=h.clock)
     agent.run()
 
     sealed = list(read_events(h.sealed_path))

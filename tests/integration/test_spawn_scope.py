@@ -11,7 +11,7 @@ from tests.integration._scaffold_support import Harness, action, scripted
 def test_spawn_intersects_scope_and_child_scope_is_enforced(tmp_path: Path) -> None:
     h = Harness(tmp_path)
     # the child requests access the parent CANNOT delegate: a repo the parent lacks and a service account.
-    root_brain = scripted(
+    root_agent_policy = scripted(
         action(
             "spawn_subagent",
             role="serving-agent",
@@ -28,7 +28,7 @@ def test_spawn_intersects_scope_and_child_scope_is_enforced(tmp_path: Path) -> N
         action("message", to="agent-main/serving-agent", kind="delegate", body="go"),
     )
     # the child tries a tool its granted scope forbids (inference), which must be blocked and logged
-    child_brain = scripted(action("generate", prompt="secret loop step"))
+    child_agent_policy = scripted(action("generate", prompt="secret loop step"))
 
     orch_holder: dict[str, Orchestrator] = {}
     tools = h.tools(lambda ctx, args, turn: orch_holder["o"].spawn_handler(ctx, args, turn))
@@ -39,8 +39,8 @@ def test_spawn_intersects_scope_and_child_scope_is_enforced(tmp_path: Path) -> N
         tools,
         h.minter,
         h.root_context(),
-        root_brain,
-        child_brain_factory=lambda *_: child_brain,
+        root_agent_policy,
+        child_agent_policy_factory=lambda *_: child_agent_policy,
         make_client=h.make_client,
         clock=h.clock,
     )

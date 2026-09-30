@@ -5,8 +5,8 @@ fingerprinted logging (every action it takes is recorded). The scaffold mints a 
 start of each turn and
 sets it on the agent's client, so the agent's own in-turn model calls carry a ``turn_id`` (a sanctioned
 turn); code the agent spawns runs outside a turn with no token, so its calls are off-path. Each turn:
-deliver the inbox, ask the brain for one structured action, and let the tool layer parse (M_action),
-enforce scope, execute, and record it. Bounded by the turn budget from config. The brain is scripted in
+deliver the inbox, ask the agent policy for one structured action, and let the tool layer parse (M_action),
+enforce scope, execute, and record it. Bounded by the turn budget from config. The agent policy is scripted in
 tests and model-backed in live runs.
 """
 
@@ -28,12 +28,13 @@ from loc_arena.scaffold.tools import AgentAction, AgentContext, Tools
 
 Transcript = list[dict[str, Any]]
 
-# A brain may return SKIP to yield a turn without ending (e.g. a live model's unparseable/refused reply); the
-# agent records nothing and stays alive for the next round. Distinct from ``None`` (an explicit finish/cap).
+# An agent policy may return SKIP to yield a turn without ending (e.g. a live model's unparseable/refused
+# reply); the agent records nothing and stays alive for the next round. Distinct from ``None`` (an explicit
+# finish/cap).
 SKIP = AgentAction(tool="__skip__")
 
 
-class Brain(Protocol):
+class AgentPolicy(Protocol):
     """Decides the next action given the running transcript; returns ``None`` to end the loop."""
 
     def next_action(self, uid: str, turn: int, transcript: Transcript) -> AgentAction | None:
@@ -41,8 +42,8 @@ class Brain(Protocol):
         ...
 
 
-class ScriptedBrain:
-    """A deterministic brain that yields a fixed sequence of actions, then ``None`` (used in tests)."""
+class ScriptedAgentPolicy:
+    """A deterministic agent policy that yields a fixed sequence of actions, then ``None`` (used in tests)."""
 
     def __init__(self, actions: list[AgentAction]) -> None:
         """Hold the scripted actions to replay in order."""
@@ -58,8 +59,8 @@ class ScriptedBrain:
         return action
 
 
-class ModelBrain:
-    """A live brain: it calls the model through the gateway and parses one tool call from the reply.
+class ModelAgentPolicy:
+    """A live agent policy: it calls the model through the gateway and parses one tool call from the reply.
 
     The reply is expected to contain a JSON object ``{"tool": "...", "args": {...}}`` (or ``{"tool":
     "finish"}`` to end). Cheap models are unreliable tool-callers, so this is the live policy; the
@@ -77,7 +78,7 @@ class ModelBrain:
         max_actions: int = 40,
         parse_retries: int = 2,
     ) -> None:
-        """Wire the brain to its gateway client, system prompt, model role, action cap, and parse retries."""
+        """Wire the policy to its gateway client, system prompt, model role, action cap, and parse retries."""
         self._client = client
         self._system_prompt = system_prompt
         self._role = role
@@ -98,7 +99,7 @@ class ModelBrain:
     def next_action(self, uid: str, turn: int, transcript: Transcript) -> AgentAction | None:
         """Call the model for the next action; ``None`` on an explicit finish or the action cap.
 
-        A transient parse failure does NOT abort the agent: the brain re-prompts (more firmly) up to
+        A transient parse failure does NOT abort the agent: the agent policy re-prompts (more firmly) up to
         ``parse_retries`` times, and if still unparseable it returns the ``SKIP`` sentinel so the agent yields
         this turn but stays alive for the next round (a cheap model's refusal or malformed reply costs one
         turn, not the agent). Only an explicit ``finish`` (or the cap) ends the agent. Each model call is a
@@ -182,7 +183,7 @@ class Agent:
     def __init__(
         self,
         ctx: AgentContext,
-        brain: Brain,
+        agent_policy: AgentPolicy,
         tools: Tools,
         registry: AgentRegistry,
         bus: MessageBus,
@@ -192,9 +193,9 @@ class Agent:
         clock: Callable[[], float] = time.time,
         trace: AgentTrace | None = None,
     ) -> None:
-        """Wire the agent to its context, brain, tools, registry, bus, turn minter, and budget."""
+        """Wire the agent to its context, agent policy, tools, registry, bus, turn minter, and budget."""
         self.ctx = ctx
-        self._brain = brain
+        self._agent_policy = agent_policy
         self._tools = tools
         self._registry = registry
         self._bus = bus
@@ -228,12 +229,12 @@ class Agent:
             with self._trace.turn(self.ctx.uid, turn) if self._trace is not None else nullcontext():
                 for msg in self._bus.deliver(self.ctx.uid):
                     self.transcript.append({"received_from": msg.actor_uid, "payload": msg.payload})
-                action = self._brain.next_action(self.ctx.uid, turn, self.transcript)
+                action = self._agent_policy.next_action(self.ctx.uid, turn, self.transcript)
                 if action is None:
                     return TurnStatus.ENDED
                 if action.tool == SKIP.tool:
-                    # the brain yielded this turn (unparseable/refused reply); stay alive for the next round,
-                    # unless it has yielded too many in a row (a committed refuser), then end it.
+                    # the agent policy yielded this turn (unparseable/refused reply); stay alive for the next
+                    # round, unless it has yielded too many in a row (a committed refuser), then end it.
                     self._skips += 1
                     self.transcript.append({"turn": turn, "skipped": True})
                     return (
@@ -254,7 +255,7 @@ class Agent:
             self.ctx.client.set_turn_token(None)
 
     def run(self) -> TurnStatus:
-        """Run turns until the brain ends the loop or the budget is exhausted; return the terminal status."""
+        """Run turns until the policy ends the loop or the budget is exhausted; return the terminal status."""
         while True:
             status = self.run_turn()
             if status is not TurnStatus.CONTINUE:

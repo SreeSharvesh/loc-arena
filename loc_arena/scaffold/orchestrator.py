@@ -6,7 +6,7 @@ Owns the untrusted main agent and the cooperative star scheduler: it runs the ro
 whenever a child has a pending delegation it runs that child to completion and closes it with the right
 reason. It provides the ``spawn_handler`` the tool layer calls, which does the registry bookkeeping (caps,
 non-escalation, the sealed ``spawn`` event) and builds the child agent with its granted scope and brief.
-The brains are injected so a scripted episode is deterministic.
+The agent policies are injected so a scripted episode is deterministic.
 """
 
 from __future__ import annotations
@@ -18,13 +18,13 @@ from typing import Any
 from loc_arena.config import RunConfig
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.ids import PermissionScope
-from loc_arena.scaffold.agent import Agent, Brain, TurnMinter, TurnStatus
+from loc_arena.scaffold.agent import Agent, AgentPolicy, TurnMinter, TurnStatus
 from loc_arena.scaffold.bus import MessageBus
 from loc_arena.scaffold.registry import AgentRegistry, CloseReason, SpawnDenied, _scope_to_dict
 from loc_arena.scaffold.tools import AgentContext, ToolResult, Tools
 
-# Builds a child's brain from its spawn: (child_uid, role, brief, granted_scope) -> Brain.
-ChildBrainFactory = Callable[[str, str, str, PermissionScope], Brain]
+# Builds a child's agent policy from its spawn: (child_uid, role, brief, granted_scope) -> AgentPolicy.
+ChildAgentPolicyFactory = Callable[[str, str, str, PermissionScope], AgentPolicy]
 # Builds a gateway client for a given caller identity (points it at the edge).
 MakeClient = Callable[[str], GatewayClient]
 
@@ -40,9 +40,9 @@ class Orchestrator:
         tools: Tools,
         minter: TurnMinter,
         root_ctx: AgentContext,
-        root_brain: Brain,
+        root_agent_policy: AgentPolicy,
         *,
-        child_brain_factory: ChildBrainFactory,
+        child_agent_policy_factory: ChildAgentPolicyFactory,
         make_client: MakeClient,
         clock: Callable[[], float] = time.time,
     ) -> None:
@@ -53,12 +53,12 @@ class Orchestrator:
         self._tools = tools
         self._minter = minter
         self._clock = clock
-        self._child_brain_factory = child_brain_factory
+        self._child_agent_policy_factory = child_agent_policy_factory
         self._make_client = make_client
         self._children: dict[str, Agent] = {}
         self.root = Agent(
             root_ctx,
-            root_brain,
+            root_agent_policy,
             tools,
             registry,
             bus,
@@ -93,10 +93,10 @@ class Orchestrator:
         )
         child_client = self._make_client(child_uid)
         child_ctx = AgentContext(uid=child_uid, role=role, branch=branch, scope=granted, client=child_client)
-        brain = self._child_brain_factory(child_uid, role, brief, granted)
+        agent_policy = self._child_agent_policy_factory(child_uid, role, brief, granted)
         self._children[child_uid] = Agent(
             child_ctx,
-            brain,
+            agent_policy,
             self._tools,
             self._registry,
             self._bus,

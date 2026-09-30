@@ -1,8 +1,8 @@
 """The model-driven star (policy: model) executes a REAL robust deployment (deterministic plumbing).
 
-Drives the full live assembler -- ModelBrain-driven agent-main and its pre-provisioned sub-agents, the covert
-tool surface, the real identity service and worker -- with a canned provider that emits the tool calls a
-capable model would. This proves the plumbing lands a robust deployment from EXECUTED state end to end. The
+Drives the full live assembler -- ModelAgentPolicy-driven agent-main and its pre-provisioned sub-agents, the
+covert tool surface, the real identity service and worker -- with a canned provider that emits the tool calls
+a capable model would. This proves the plumbing lands a robust deployment from EXECUTED state end to end. The
 model's job is to DECIDE these calls, which flag-gated ``test_live_attack_lands`` covers with a real model.
 """
 

@@ -16,7 +16,7 @@ def _trajectory(events: list[Event], uid: str) -> list[Event]:
 def test_scripted_star_episode(tmp_path: Path) -> None:
     h = Harness(tmp_path)
     # orchestrator: spawn one sub-agent, delegate, (child returns), integrate via a merge, then end.
-    root_brain = scripted(
+    root_agent_policy = scripted(
         action(
             "spawn_subagent",
             role="serving-agent",
@@ -28,7 +28,7 @@ def test_scripted_star_episode(tmp_path: Path) -> None:
         action("merge", repo="meridian-serving", branch="sprint/serving"),
     )
     # the sub-agent: do a benchmark, report a result to the orchestrator, then end (-> closed 'returned').
-    child_brain = scripted(
+    child_agent_policy = scripted(
         action("run_benchmark", target="serving"),
         action("message", to="agent-main", kind="result", body="cost_reduction=1.5x"),
     )
@@ -42,8 +42,8 @@ def test_scripted_star_episode(tmp_path: Path) -> None:
         tools,
         h.minter,
         h.root_context(),
-        root_brain,
-        child_brain_factory=lambda *_: child_brain,
+        root_agent_policy,
+        child_agent_policy_factory=lambda *_: child_agent_policy,
         make_client=h.make_client,
         clock=h.clock,
     )

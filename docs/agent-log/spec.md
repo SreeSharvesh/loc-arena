@@ -33,7 +33,7 @@ write a scripted PR stamped `agent-main` outside any turn (`coworker.py:219-280`
 
 | Type | Fields | Meaning |
 |---|---|---|
-| `Phase` | `"deciding"` or `"executing"` | brain choosing an action (including parse retries) vs the tool layer running |
+| `Phase` | `"deciding"` or `"executing"` | agent policy choosing an action (including parse retries) vs the tool layer running |
 | `TurnRef` | `agent_uid`, `turn` | one agent turn; under the live round-robin driver `turn` is also the round index |
 | `TurnRecord` | `ref`, `wall_start`, `wall_end` | wall-clock bounds of a completed turn; the episode clock is simulated and jumps |
 | `ModelCall` | `phase`, `identity`, `role`, `model_input`, `output`, `sealed_seq`, `wall_ts` | one provider call as the core made it; `model_input` is after covert injection; its turn is `sealed_lane[sealed_seq]`; `phase` is `None` outside a turn |
@@ -44,7 +44,7 @@ write a scripted PR stamped `agent-main` outside any turn (`coworker.py:219-280`
 | Method | Called from | Behaviour | Raises |
 |---|---|---|---|
 | `__init__(*, wall_clock=time.time)` | harness, once per episode | empty trace, no turn bound | - |
-| `turn(agent_uid, turn)` | `Agent.run_turn`, around inbox, brain and tool steps | context manager: binds the turn in phase `deciding`; on exit unbinds first, then records a `TurnRecord`, also when the body raises | `RuntimeError` if a turn is already bound |
+| `turn(agent_uid, turn)` | `Agent.run_turn`, around inbox, agent policy and tool steps | context manager: binds the turn in phase `deciding`; on exit unbinds first, then records a `TurnRecord`, also when the body raises | `RuntimeError` if a turn is already bound |
 | `mark_executing()` | `Agent.run_turn`, just before `tools.execute` | switches the bound turn to `executing` | `RuntimeError` if no turn is bound |
 | `on_sealed_append(event)` | sealed `AppendOnlyLog(on_append=...)` | tags `event.seq` with the bound turn or World | never on purpose; a miss surfaces as an unassigned seq in the exporter |
 | `on_mirror_append(event)` | mirror `AppendOnlyLog(on_append=...)` | tags `event.seq`; pairs it with the most recent unpaired sealed event when the two are equal in every field but `seq` and `fp` (`Recorder.dual` writes sealed then mirror); a sealed event twins at most one mirror event; edge prompt copies get a lane but no twin | never on purpose |
@@ -98,7 +98,7 @@ One `.eval` per run. Each episode becomes one sample: `episode` (the graded run)
 |---|---|
 | `configs/env.default.yaml`, `config.py` | `logging.agent_transcript` -> `RunConfig.agent_transcript` (fail-loud bool) |
 | `GatewayCore.__init__` / `generate` / `batch_generate` | optional `trace`; each provider call reported after its sealed record is written |
-| `Agent.__init__` / `run_turn` | optional `trace`; inbox, brain and tool steps run inside `trace.turn`; `mark_executing` before the tool layer |
+| `Agent.__init__` / `run_turn` | optional `trace`; inbox, agent policy and tool steps run inside `trace.turn`; `mark_executing` before the tool layer |
 | `live.assemble_model_episode`, `task.assemble_scripted_episode` | create the trace when the flag is on, subscribe both logs, pass it to the core (and agents), finish it when the episode's work stops; `EpisodeResult.trace` |
 | `harness._assemble_by_policy`, `run_episode` | optional `provider` passthrough (offline live runs); the attack run's calibration twin goes to `_write_bundle` |
 | `harness._write_bundle`, `_eval_episodes` | flag on: real `.eval` via `write_run_eval` (samples `episode`, `honest_cal`); flag off: the JSON placeholder |

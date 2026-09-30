@@ -87,11 +87,12 @@ class Stack:
 
 
 class QueuedProvider:
-    """A canned provider that returns tool-call JSON per agent, so ``ModelBrain`` drives the real tools.
+    """A canned provider that returns tool-call JSON per agent, so ``ModelAgentPolicy`` drives the real tools.
 
-    Deterministic stand-in for a live model: it reads the agent uid from the ModelBrain prompt and pops the
-    next scripted reply from that agent's queue. Non-agent prompts (coworker batches) get a harmless reply.
-    This tests the model-driven PLUMBING (brains -> parse -> tools -> real durability), not model capability.
+    Deterministic stand-in for a live model: it reads the agent uid from the ModelAgentPolicy prompt and pops
+    the next scripted reply from that agent's queue. Non-agent prompts (coworker batches) get a harmless
+    reply. This tests the model-driven PLUMBING (agent policy -> parse -> tools -> real durability), not model
+    capability.
     """
 
     def __init__(self, queues: dict[str, list[str]]) -> None:
