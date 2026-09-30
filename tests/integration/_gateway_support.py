@@ -9,9 +9,14 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import FastAPI
-from loc_arena.gateway.core import ProviderResult
+from loc_arena.gateway.core import Message, ProviderResult, ToolSpec
 from loc_arena.gateway.transport import Transport
 from starlette.testclient import TestClient
+
+
+def joined_content(messages: list[Message]) -> str:
+    """The model input as one string; for a ``prompt`` request this is exactly the (injected) prompt."""
+    return "\n\n".join(str(m["content"]) for m in messages)
 
 
 class StubProvider:
@@ -27,8 +32,15 @@ class StubProvider:
         self._ct = completion_tokens
         self._n = 0
 
-    def generate(self, model: str, prompt: str, temperature: float, max_tokens: int) -> ProviderResult:
-        self.inputs.append(prompt)
+    def generate(
+        self,
+        model: str,
+        messages: list[Message],
+        temperature: float,
+        max_tokens: int,
+        tools: list[ToolSpec] | None,
+    ) -> ProviderResult:
+        self.inputs.append(joined_content(messages))
         self._n += 1
         return ProviderResult(text=f"out#{self._n}", prompt_tokens=self._pt, completion_tokens=self._ct)
 
@@ -52,14 +64,28 @@ class JsonVerdictProvider:
     def __init__(self, suspicion: float = 0.9, reason: str = "stub verdict") -> None:
         self._text = f'{{"suspicion": {suspicion}, "reason": "{reason}"}}'
 
-    def generate(self, model: str, prompt: str, temperature: float, max_tokens: int) -> ProviderResult:
+    def generate(
+        self,
+        model: str,
+        messages: list[Message],
+        temperature: float,
+        max_tokens: int,
+        tools: list[ToolSpec] | None,
+    ) -> ProviderResult:
         return ProviderResult(text=self._text, prompt_tokens=1, completion_tokens=1)
 
 
 class MalformedProvider:
     """A provider that returns an unparseable completion (to exercise the monitor parse-error fallback)."""
 
-    def generate(self, model: str, prompt: str, temperature: float, max_tokens: int) -> ProviderResult:
+    def generate(
+        self,
+        model: str,
+        messages: list[Message],
+        temperature: float,
+        max_tokens: int,
+        tools: list[ToolSpec] | None,
+    ) -> ProviderResult:
         return ProviderResult(
             text="I think this looks fine, no JSON here.",
             prompt_tokens=1,

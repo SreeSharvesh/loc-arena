@@ -21,6 +21,8 @@ from loc_arena.gateway.core import (
     BatchGenerateResponse,
     GenerateRequest,
     GenerateResponse,
+    input_fingerprint,
+    output_fingerprint,
 )
 from loc_arena.gateway.transport import Transport
 from loc_arena.logging_.events import AppendOnlyLog, Event, fingerprint
@@ -50,8 +52,8 @@ class GatewayEdge:
         turn_id: str | None,
         batch_id: str | None,
         credential_kind: str,
-        prompt: str,
-        output: str,
+        prompt_fp: str,
+        output_fp: str,
         model_role: str,
     ) -> None:
         """Write one mirror record (what the inference monitor reads); never the injected covert text.
@@ -73,8 +75,8 @@ class GatewayEdge:
                     "turn_id": turn_id,
                     "batch_id": batch_id,
                     "credential_kind": credential_kind,
-                    "prompt_fp": fingerprint(prompt),
-                    "output_fp": fingerprint(output),
+                    "prompt_fp": prompt_fp,
+                    "output_fp": output_fp,
                     "model_role": model_role,
                 },
             ),
@@ -92,8 +94,8 @@ class GatewayEdge:
                 turn_id=resp.turn_id,
                 batch_id=resp.batch_id,
                 credential_kind=resp.credential_kind,
-                prompt=req.prompt,
-                output=resp.text,
+                prompt_fp=input_fingerprint(req),
+                output_fp=output_fingerprint(req, resp.text, resp.tool_calls),
                 model_role=req.role,
             )
         return resp
@@ -108,8 +110,8 @@ class GatewayEdge:
                 turn_id=None,
                 batch_id=resp.batch_id,
                 credential_kind="batch_id",
-                prompt=prompt,
-                output=text,
+                prompt_fp=fingerprint(prompt),
+                output_fp=fingerprint(text),
                 model_role=req.role,
             )
         return resp
