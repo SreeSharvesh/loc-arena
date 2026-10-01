@@ -33,7 +33,7 @@ write a scripted PR stamped `agent-main` outside any turn (`coworker.py:219-280`
 
 | Type | Fields | Meaning |
 |---|---|---|
-| `Phase` | `"deciding"` or `"executing"` | agent policy choosing an action (including parse retries) vs the tool layer running |
+| `Phase` | `"deciding"` or `"executing"` | agent policy choosing this turn's actions vs the tool layer running |
 | `TurnRef` | `agent_uid`, `turn` | one agent turn; under the live round-robin driver `turn` is also the round index |
 | `TurnRecord` | `ref`, `wall_start`, `wall_end` | wall-clock bounds of a completed turn; the episode clock is simulated and jumps |
 | `ModelCall` | `phase`, `identity`, `role`, `model_input`, `output`, `sealed_seq`, `wall_ts` | one provider call as the core made it; `model_input` is after covert injection; its turn is `sealed_lane[sealed_seq]`; `phase` is `None` outside a turn |

@@ -94,11 +94,18 @@ def _as_bool(value: Any, where: str) -> bool:
 # --------------------------------------------------------------------------------------------------------
 @dataclass(frozen=True)
 class ModelSpec:
-    """A model routing entry from ``models.cheap.yaml`` (role -> model, temperature, output cap)."""
+    """A model routing entry from ``models.cheap.yaml`` (role -> model and sampling)."""
 
     model: str
     temperature: float
     max_tokens: int
+
+
+@dataclass(frozen=True)
+class AgentLoopConfig:
+    """The live agent loop's tool-result cap. The value comes from ``agent_loop:``."""
+
+    tool_result_max_chars: int
 
 
 @dataclass(frozen=True)
@@ -162,6 +169,9 @@ class AgentConfig:
     spawned_by: str | None = None
 
 
+_EMPTY_AGENT_LOOP = AgentLoopConfig(0)
+
+
 @dataclass(frozen=True)
 class RunConfig:
     """One fully resolved run: config plus seed reproduces the episode.
@@ -186,6 +196,7 @@ class RunConfig:
     scenario: str | None = None
     policy: str = "scripted"  # "scripted" (deterministic default) | "model" (live model-driven)
     agent_transcript: bool = False
+    agent_loop: AgentLoopConfig = _EMPTY_AGENT_LOOP
     raw: dict[str, Any] = field(default_factory=dict)
 
     def agent(self, agent_id: str) -> AgentConfig:
@@ -261,6 +272,18 @@ def _build_models(models_raw: dict[str, Any]) -> dict[str, ModelSpec]:
             ),
         )
     return out
+
+
+def _build_agent_loop(raw: dict[str, Any]) -> AgentLoopConfig:
+    block = _require(raw, "agent_loop", "run config")
+    if not isinstance(block, dict):
+        raise ConfigError("agent_loop must be a mapping")
+    return AgentLoopConfig(
+        tool_result_max_chars=_as_int(
+            _require(block, "tool_result_max_chars", "agent_loop"),
+            "agent_loop.tool_result_max_chars",
+        ),
+    )
 
 
 def _build_episode(ep: dict[str, Any]) -> EpisodeConfig:
@@ -419,6 +442,7 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
     models = _build_models(_load_yaml(base_dir / models_ref))
 
     episode = _build_episode(_require(merged, "episode", "run config"))
+    agent_loop = _build_agent_loop(merged)
     side_task = _build_side_task(_require(merged, "side_task", "run config"))
 
     # The verifier reads side_task.thresholds; if the episode
@@ -479,6 +503,7 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
         scenario=scenario_name,
         policy=policy,
         agent_transcript=agent_transcript,
+        agent_loop=agent_loop,
         raw=merged,
     )
 

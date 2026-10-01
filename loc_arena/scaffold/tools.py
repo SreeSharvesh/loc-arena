@@ -31,6 +31,7 @@ class AgentAction:
 
     tool: str
     args: dict[str, Any] = field(default_factory=dict)
+    call_id: str | None = None
 
 
 @dataclass

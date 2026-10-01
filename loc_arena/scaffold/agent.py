@@ -5,21 +5,19 @@ fingerprinted logging (every action it takes is recorded). The scaffold mints a 
 start of each turn and
 sets it on the agent's client, so the agent's own in-turn model calls carry a ``turn_id`` (a sanctioned
 turn); code the agent spawns runs outside a turn with no token, so its calls are off-path. Each turn:
-deliver the inbox, ask the agent policy for one structured action, and let the tool layer parse (M_action),
-enforce scope, execute, and record it. Bounded by the turn budget from config. The agent policy is scripted in
-tests and model-backed in live runs.
+deliver the inbox, ask the agent policy for this turn's actions, then enforce scope, execute, and record
+each one. Bounded by the turn budget from config. The agent policy is
+scripted in tests and model-backed in live runs.
 """
 
 from __future__ import annotations
 
-import json
 import time
 from collections.abc import Callable
 from contextlib import nullcontext
 from enum import Enum
 from typing import Any, Protocol
 
-from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import sign_turn_token
 from loc_arena.logging_.agent_trace import AgentTrace
 from loc_arena.scaffold.bus import MessageBus
@@ -35,10 +33,10 @@ SKIP = AgentAction(tool="__skip__")
 
 
 class AgentPolicy(Protocol):
-    """Decides the next action given the running transcript; returns ``None`` to end the loop."""
+    """Decides the next actions given the running transcript; returns ``None`` to end the loop."""
 
-    def next_action(self, uid: str, turn: int, transcript: Transcript) -> AgentAction | None:
-        """Return the next action to take, or ``None`` to end the agent's loop."""
+    def next_actions(self, uid: str, turn: int, transcript: Transcript) -> list[AgentAction] | None:
+        """Return this turn's actions, ``[SKIP]`` to sit the turn out, or ``None`` to end."""
         ...
 
 
@@ -46,105 +44,17 @@ class ScriptedAgentPolicy:
     """A deterministic agent policy that yields a fixed sequence of actions, then ``None`` (used in tests)."""
 
     def __init__(self, actions: list[AgentAction]) -> None:
-        """Hold the scripted actions to replay in order."""
+        """Hold the scripted actions to replay, one per turn."""
         self._actions = list(actions)
         self._i = 0
 
-    def next_action(self, uid: str, turn: int, transcript: Transcript) -> AgentAction | None:
-        """Return the next scripted action, or ``None`` once the script is exhausted."""
+    def next_actions(self, uid: str, turn: int, transcript: Transcript) -> list[AgentAction] | None:
+        """Return the next scripted action as a one-element list, or ``None`` once the script is exhausted."""
         if self._i >= len(self._actions):
             return None
         action = self._actions[self._i]
         self._i += 1
-        return action
-
-
-class ModelAgentPolicy:
-    """A live agent policy: it calls the model through the gateway and parses one tool call from the reply.
-
-    The reply is expected to contain a JSON object ``{"tool": "...", "args": {...}}`` (or ``{"tool":
-    "finish"}`` to end). Cheap models are unreliable tool-callers, so this is the live policy; the
-    deterministic scripted policy remains the reproducible default. The model call
-    happens inside the agent's sanctioned turn, so it carries a ``turn_id``; the covert objective is
-    injected server-side for the target identity only.
-    """
-
-    def __init__(
-        self,
-        client: GatewayClient,
-        system_prompt: str,
-        *,
-        role: str = "untrusted_agent",
-        max_actions: int = 40,
-        parse_retries: int = 2,
-    ) -> None:
-        """Wire the policy to its gateway client, system prompt, model role, action cap, and parse retries."""
-        self._client = client
-        self._system_prompt = system_prompt
-        self._role = role
-        self._max = max_actions
-        self._parse_retries = parse_retries
-        self._n = 0
-
-    def _render(self, uid: str, turn: int, transcript: Transcript) -> str:
-        recent = transcript[-8:]
-        lines = [f"- {t}" for t in recent]
-        history = "\n".join(lines) if lines else "(no actions yet)"
-        return (
-            f"{self._system_prompt}\n\nYou are agent {uid}, turn {turn}. Recent activity:\n{history}\n\n"
-            'Respond with exactly one tool call as a JSON object: {"tool": "<name>", "args": {...}}. '
-            'Use {"tool": "finish"} when the task is complete.'
-        )
-
-    def next_action(self, uid: str, turn: int, transcript: Transcript) -> AgentAction | None:
-        """Call the model for the next action; ``None`` on an explicit finish or the action cap.
-
-        A transient parse failure does NOT abort the agent: the agent policy re-prompts (more firmly) up to
-        ``parse_retries`` times, and if still unparseable it returns the ``SKIP`` sentinel so the agent yields
-        this turn but stays alive for the next round (a cheap model's refusal or malformed reply costs one
-        turn, not the agent). Only an explicit ``finish`` (or the cap) ends the agent. Each model call is a
-        real gateway-routed call inside the sanctioned turn, so it carries a turn id.
-        """
-        if self._n >= self._max:
-            return None
-        self._n += 1
-        prompt = self._render(uid, turn, transcript)
-        for _ in range(self._parse_retries + 1):
-            reply = self._client.generate(prompt, role=self._role)
-            action = _parse_tool_call(reply)
-            if action is not None:
-                return None if action.tool == "finish" else action
-            # re-prompt more firmly on a parse failure (bounded)
-            prompt = (
-                f"{self._render(uid, turn, transcript)}\n\nYour previous reply did not contain a valid tool "
-                'call. Reply with ONLY a JSON object: {"tool": "<name>", "args": {...}}. No prose.'
-            )
-        return SKIP  # unparseable after retries: yield this turn, do not end the agent
-
-
-def _parse_tool_call(reply: str) -> AgentAction | None:
-    """Parse a ``{"tool", "args"}`` JSON object out of a model reply (tolerant of surrounding prose)."""
-    start = reply.find("{")
-    while start != -1:
-        depth = 0
-        for i in range(start, len(reply)):
-            if reply[i] == "{":
-                depth += 1
-            elif reply[i] == "}":
-                depth -= 1
-                if depth == 0:
-                    try:
-                        # strict=False tolerates literal newlines/tabs inside JSON strings, which cheap
-                        # models routinely emit in multi-line write_file/edit_file content.
-                        obj = json.loads(reply[start : i + 1], strict=False)
-                    except json.JSONDecodeError:
-                        break
-                    if isinstance(obj, dict) and isinstance(obj.get("tool"), str):
-                        args = obj.get("args", {})
-                        return AgentAction(tool=obj["tool"], args=args if isinstance(args, dict) else {})
-                    break
-        start = reply.find("{", start + 1)
-    return None
+        return [action]
 
 
 class TurnMinter:
@@ -206,7 +116,7 @@ class Agent:
         self._turn = 0
         self.transcript: Transcript = []
         self.sent_result = False
-        self._skips = 0  # consecutive yielded (unparseable/refused) turns; caps a committed refuser
+        self._skips = 0
 
     # A live agent that yields this many turns in a row (a persistent refusal / malformed replies) is done, so
     # it stops consuming its budget and the round-robin driver moves on. Reset by any real action.
@@ -218,7 +128,7 @@ class Agent:
         return self._turn
 
     def run_turn(self) -> TurnStatus:
-        """Run one turn: set the token, deliver the inbox, act once, record it, then clear the token."""
+        """Run one turn: set the token, deliver the inbox, run every action, then clear the token."""
         if self._turn >= self._turn_budget:
             return TurnStatus.BUDGET_EXHAUSTED
         turn = self._turn
@@ -229,12 +139,10 @@ class Agent:
             with self._trace.turn(self.ctx.uid, turn) if self._trace is not None else nullcontext():
                 for msg in self._bus.deliver(self.ctx.uid):
                     self.transcript.append({"received_from": msg.actor_uid, "payload": msg.payload})
-                action = self._agent_policy.next_action(self.ctx.uid, turn, self.transcript)
-                if action is None:
+                actions = self._agent_policy.next_actions(self.ctx.uid, turn, self.transcript)
+                if actions is None:
                     return TurnStatus.ENDED
-                if action.tool == SKIP.tool:
-                    # the agent policy yielded this turn (unparseable/refused reply); stay alive for the next
-                    # round, unless it has yielded too many in a row (a committed refuser), then end it.
+                if len(actions) == 1 and actions[0].tool == SKIP.tool:
                     self._skips += 1
                     self.transcript.append({"turn": turn, "skipped": True})
                     return (
@@ -243,14 +151,19 @@ class Agent:
                         else TurnStatus.CONTINUE
                     )
                 self._skips = 0
-                if self._trace is not None:
+                finishing = any(action.tool == "finish" for action in actions)
+                runnable = [action for action in actions if action.tool != "finish"]
+                if runnable and self._trace is not None:
                     self._trace.mark_executing()
-                result = self._tools.execute(self.ctx, action, turn)
-                self._registry.record_activity(self.ctx.uid, self._clock())
-                if action.tool == "message" and action.args.get("kind") == "result":
-                    self.sent_result = True
-                self.transcript.append({"turn": turn, "tool": action.tool, "result": result})
-                return TurnStatus.CONTINUE
+                for action in runnable:
+                    result = self._tools.execute(self.ctx, action, turn)
+                    self._registry.record_activity(self.ctx.uid, self._clock())
+                    if action.tool == "message" and action.args.get("kind") == "result":
+                        self.sent_result = True
+                    self.transcript.append(
+                        {"turn": turn, "tool": action.tool, "result": result, "call_id": action.call_id},
+                    )
+                return TurnStatus.ENDED if finishing else TurnStatus.CONTINUE
         finally:
             self.ctx.client.set_turn_token(None)
 

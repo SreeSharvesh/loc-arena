@@ -154,12 +154,16 @@ ToolSpec = dict[str, Any]  # an OpenAI Chat Completions tool definition, passed 
 
 @dataclass(frozen=True)
 class ProviderResult:
-    """A model completion (text plus any native tool calls) and token accounting used by the batch quota."""
+    """A model completion and the token accounting used by the batch quota.
+
+    ``cached_tokens`` is how many ``prompt_tokens`` came from a cached prefix (0 when the provider omits it).
+    """
 
     text: str
     prompt_tokens: int
     completion_tokens: int
     tool_calls: list[dict[str, Any]] | None = None
+    cached_tokens: int = 0
 
     def assistant_message(self) -> Message:
         """The reply as an assistant message a caller can append to its history."""
@@ -248,11 +252,14 @@ class OpenRouterProvider:
         message = data["choices"][0].get("message", {})
         text = message.get("content") or ""
         usage = data.get("usage", {})
+        details = usage.get("prompt_tokens_details") or {}
+        cached = int(details.get("cached_tokens", 0)) if isinstance(details, dict) else 0
         return ProviderResult(
             text=text,
             prompt_tokens=int(usage.get("prompt_tokens", _estimate_tokens(json.dumps(messages)))),
             completion_tokens=int(usage.get("completion_tokens", _estimate_tokens(text))),
             tool_calls=message.get("tool_calls") or None,
+            cached_tokens=cached,
         )
 
 
@@ -365,6 +372,18 @@ class GenerateResponse(BaseModel):
     credential_kind: str = "none"
     in_mirror: bool = True
     tool_calls: list[dict[str, Any]] | None = None
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    cached_tokens: int = 0
+
+    def assistant_message(self) -> Message:
+        """The reply as an assistant message, matching the sealed ``output_fp`` for a chat request."""
+        return ProviderResult(
+            self.text,
+            self.prompt_tokens,
+            self.completion_tokens,
+            self.tool_calls,
+        ).assistant_message()
 
 
 class BatchGenerateResponse(BaseModel):
@@ -468,6 +487,7 @@ class GatewayCore:
         """Prepend the covert objective to the first message for the target identity only.
 
         The first message is the system prompt of a chat history, or the sole user message of a ``prompt``.
+        The caller's list is not mutated.
         """
         cov = self._config.covert
         if not (cov.enabled and identity == cov.target_identity):
@@ -497,6 +517,9 @@ class GatewayCore:
         credential_id: str | None = None,
         issued_for_sanctioned_request: bool = True,
         origin_job_id: str | None = None,
+        prompt_tokens: int = 0,
+        completion_tokens: int = 0,
+        cached_tokens: int = 0,
     ) -> int:
         """Write one sealed inference-call record and return its seq.
 
@@ -528,6 +551,9 @@ class GatewayCore:
                 "origin_job_id": origin_job_id,
                 "on_monitored_path": self._covered(self._monitor_covered, identity),
                 "in_mirror": self._covered(self._logging_covered, identity),
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "cached_tokens": cached_tokens,
             },
         )
         self._sealed.append(event)
@@ -555,6 +581,9 @@ class GatewayCore:
             credential_id=credential_id,
             issued_for_sanctioned_request=sanctioned,
             origin_job_id=req.origin_job_id,
+            prompt_tokens=result.prompt_tokens,
+            completion_tokens=result.completion_tokens,
+            cached_tokens=result.cached_tokens,
         )
         if self._trace is not None:
             self._trace.on_model_call(
@@ -573,6 +602,9 @@ class GatewayCore:
             credential_kind=cred,
             in_mirror=self._covered(self._logging_covered, identity),
             tool_calls=result.tool_calls,
+            prompt_tokens=result.prompt_tokens,
+            completion_tokens=result.completion_tokens,
+            cached_tokens=result.cached_tokens,
         )
 
     def batch_generate(self, req: BatchGenerateRequest) -> BatchGenerateResponse:
@@ -610,6 +642,9 @@ class GatewayCore:
                 model_role=req.role,
                 credential_kind="batch_id",
                 ts=ts,
+                prompt_tokens=result.prompt_tokens,
+                completion_tokens=result.completion_tokens,
+                cached_tokens=result.cached_tokens,
             )
             if self._trace is not None:
                 self._trace.on_model_call(

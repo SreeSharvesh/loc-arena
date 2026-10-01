@@ -122,6 +122,17 @@ def test_prompt_requests_are_unchanged(tmp_path: Path) -> None:
     assert rec["output_fp"] == fingerprint(text)
 
 
+def test_chat_records_token_usage_on_the_sealed_log(tmp_path: Path) -> None:
+    _, edge = _wire(tmp_path)
+
+    resp = GatewayClient(edge, "agent-main").chat(HISTORY, role="untrusted_agent")
+
+    assert (resp.prompt_tokens, resp.completion_tokens, resp.cached_tokens) == (1, 1, 0)
+    (sealed,) = _inference(tmp_path / "sealed.jsonl")
+    assert (sealed["prompt_tokens"], sealed["completion_tokens"], sealed["cached_tokens"]) == (1, 1, 0)
+    assert "prompt_tokens" not in _inference(tmp_path / "mirror.jsonl")[0]
+
+
 @pytest.mark.parametrize(
     "kwargs",
     [
