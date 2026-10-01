@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import copy
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
@@ -41,11 +42,22 @@ DEPTH_PAST_THE_LIMIT_FACTOR = 20
 class ReplyingProvider:
     """The provider boundary, answering every call with one native tool call."""
 
-    def __init__(self, tool: str, arguments: str, *, call_id: str = CALL_ID) -> None:
-        """Answer every call with a call of ``tool`` under ``call_id``, its arguments the JSON text given."""
+    def __init__(
+        self,
+        tool: str,
+        arguments: str,
+        *,
+        call_id: str = CALL_ID,
+        more_calls: Sequence[dict[str, object]] = (),
+    ) -> None:
+        """Answer every call with a call of ``tool`` under ``call_id``, its arguments the JSON text given.
+
+        The calls in ``more_calls`` follow it in each reply.
+        """
         self._tool = tool
         self._arguments = arguments
         self._call_id = call_id
+        self._more_calls = more_calls
         self.requests: list[list[Message]] = []
 
     def generate(
@@ -56,14 +68,20 @@ class ReplyingProvider:
         max_tokens: int,
         tools: list[ToolSpec] | None,
     ) -> ProviderResult:
-        """The fixed tool call, built afresh for each call; records the messages the call carried."""
+        """The fixed tool calls, built afresh for each call; records the messages the call carried."""
         self.requests.append(copy.deepcopy(messages))
         call = {
             "id": self._call_id,
             "type": "function",
             "function": {"name": self._tool, "arguments": self._arguments},
         }
-        return ProviderResult(text="", prompt_tokens=TOKENS, completion_tokens=TOKENS, tool_calls=[call])
+        calls = [call, *copy.deepcopy(self._more_calls)]
+        return ProviderResult(text="", prompt_tokens=TOKENS, completion_tokens=TOKENS, tool_calls=calls)
+
+
+def _carried_ids(history: list[Message]) -> list[str]:
+    """The ids of the tool calls the assistant messages of ``history`` carry, in order."""
+    return [call["id"] for message in history for call in message.get("tool_calls", [])]
 
 
 def _no_spawn(ctx: AgentContext, args: dict[str, object], turn: int) -> ToolResult:
@@ -165,9 +183,36 @@ def test_a_tool_call_without_an_id_is_answered_under_the_id_its_assistant_messag
     agent.run_turn()
 
     history = provider.requests[-1]
-    carried = [call["id"] for message in history for call in message.get("tool_calls", [])]
     answered = [message["tool_call_id"] for message in history if message["role"] == "tool"]
-    assert answered == carried
+    assert answered == _carried_ids(history)
+
+
+def test_a_tool_call_without_an_id_gets_an_id_no_other_call_of_its_reply_carries(tmp_path: Path) -> None:
+    call_under_missing_0: dict[str, object] = {
+        "id": "missing-0",
+        "type": "function",
+        "function": {"name": "list_dir", "arguments": '{"path": ""}'},
+    }
+    provider = ReplyingProvider("list_dir", '{"path": ""}', call_id="", more_calls=[call_under_missing_0])
+    agent = _agent_replying(tmp_path, provider)
+    agent.run_turn()
+
+    agent.run_turn()
+
+    carried = _carried_ids(provider.requests[-1])
+    assert len(set(carried)) == len(carried)
+
+
+def test_a_tool_call_without_an_id_gets_an_id_no_call_of_an_earlier_reply_carries(tmp_path: Path) -> None:
+    provider = ReplyingProvider("list_dir", '{"path": ""}', call_id="")
+    agent = _agent_replying(tmp_path, provider)
+    agent.run_turn()
+    agent.run_turn()
+
+    agent.run_turn()
+
+    carried = _carried_ids(provider.requests[-1])
+    assert len(set(carried)) == len(carried)
 
 
 @pytest.mark.parametrize("prompts", ["one prompt", {"a": "b"}], ids=["a string", "an object"])

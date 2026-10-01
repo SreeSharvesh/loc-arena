@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import json
 import logging
 from typing import Any
@@ -96,11 +97,13 @@ class ModelAgentPolicy:
     def _interpret(self, reply: GenerateResponse) -> tuple[list[AgentAction], list[Message]]:
         actions: list[AgentAction] = []
         errors: list[Message] = []
-        for index, call in enumerate(reply.tool_calls or []):
+        for call in reply.tool_calls or []:
             call_id = str(call.get("id") or "")
             # The assistant message appended after this carries the call, so it gets the id its tool message
             # answers: a live endpoint refuses every later request whose history answers an id no call has.
-            call["id"] = call_id or f"missing-{index}"
+            # A replacement id is one no other call of the history or of this reply carries, so each tool
+            # message answers one call.
+            call["id"] = call_id or _unused_call_id([*self._messages, reply.assistant_message()])
             function = call.get("function")
             if not isinstance(function, dict):
                 function = {}
@@ -126,6 +129,13 @@ class ModelAgentPolicy:
                 continue
             actions.append(AgentAction(tool=name, args=args, call_id=call_id))
         return actions, errors
+
+
+def _unused_call_id(history: list[Message]) -> str:
+    """The first ``missing-<n>`` id that no tool call in ``history`` carries."""
+    taken = {str(call.get("id")) for message in history for call in message.get("tool_calls", [])}
+    candidates = (f"missing-{n}" for n in itertools.count())
+    return next(call_id for call_id in candidates if call_id not in taken)
 
 
 def _recordable(name: str, args: object) -> bool:
