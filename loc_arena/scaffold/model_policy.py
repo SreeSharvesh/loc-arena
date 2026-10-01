@@ -96,15 +96,18 @@ class ModelAgentPolicy:
     def _interpret(self, reply: GenerateResponse) -> tuple[list[AgentAction], list[Message]]:
         actions: list[AgentAction] = []
         errors: list[Message] = []
-        for call in reply.tool_calls or []:
+        for index, call in enumerate(reply.tool_calls or []):
             call_id = str(call.get("id") or "")
+            # The assistant message appended after this carries the call, so it gets the id its tool message
+            # answers: a live endpoint refuses every later request whose history answers an id no call has.
+            call["id"] = call_id or f"missing-{index}"
             function = call.get("function")
             if not isinstance(function, dict):
                 function = {}
             name = function.get("name")
             raw = function.get("arguments") or "{}"
             if not isinstance(name, str) or not call_id:
-                errors.append(_tool_message(call_id or "missing", "tool call is missing an id or a name"))
+                errors.append(_tool_message(call["id"], "tool call is missing an id or a name"))
                 continue
             try:
                 args = json.loads(raw) if isinstance(raw, str) else raw

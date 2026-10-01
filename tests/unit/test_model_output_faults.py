@@ -6,6 +6,7 @@ model can, and runs its turn through the real agent policy, tool layer and event
 
 from __future__ import annotations
 
+import copy
 import sys
 from pathlib import Path
 
@@ -35,10 +36,12 @@ DECODER_DEFEATING_DEPTH = 100_000
 class ReplyingProvider:
     """The provider boundary, answering every call with one native tool call."""
 
-    def __init__(self, tool: str, arguments: str) -> None:
-        """Answer every call with a call of ``tool`` whose arguments are the JSON text ``arguments``."""
+    def __init__(self, tool: str, arguments: str, *, call_id: str = CALL_ID) -> None:
+        """Answer every call with a call of ``tool`` under ``call_id``, its arguments the JSON text given."""
         self._tool = tool
         self._arguments = arguments
+        self._call_id = call_id
+        self.requests: list[list[Message]] = []
 
     def generate(
         self,
@@ -48,9 +51,10 @@ class ReplyingProvider:
         max_tokens: int,
         tools: list[ToolSpec] | None,
     ) -> ProviderResult:
-        """The fixed tool call, built afresh for each call."""
+        """The fixed tool call, built afresh for each call; records the messages the call carried."""
+        self.requests.append(copy.deepcopy(messages))
         call = {
-            "id": CALL_ID,
+            "id": self._call_id,
             "type": "function",
             "function": {"name": self._tool, "arguments": self._arguments},
         }
@@ -126,3 +130,18 @@ def test_a_tool_call_holding_a_value_the_event_log_cannot_record_skips_the_turn(
     agent.run_turn()
 
     assert agent.transcript == SKIPPED_FIRST_TURN
+
+
+def test_a_tool_call_without_an_id_is_answered_under_the_id_its_assistant_message_carries(
+    tmp_path: Path,
+) -> None:
+    provider = ReplyingProvider("list_dir", '{"path": ""}', call_id="")
+    agent = _agent_replying(tmp_path, provider)
+    agent.run_turn()
+
+    agent.run_turn()
+
+    history = provider.requests[-1]
+    carried = [call["id"] for message in history for call in message.get("tool_calls", [])]
+    answered = [message["tool_call_id"] for message in history if message["role"] == "tool"]
+    assert answered == carried
