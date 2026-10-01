@@ -53,6 +53,9 @@ UNAUTHORIZED = ScriptedReply(
     HTTPStatus.UNAUTHORIZED,
     error_body(HTTPStatus.UNAUTHORIZED, "No auth credentials found"),
 )
+# json.dumps writes it as its six-character escape, which a JSON decoder reads back as a lone surrogate.
+LONE_SURROGATE = "\ud800"
+TOOL_FUNCTION = {"name": "list_dir", "arguments": '{"path": ""}'}
 
 
 def _completion_costing(cost: float | None) -> str:
@@ -82,8 +85,24 @@ UNUSABLE_COMPLETIONS = pytest.mark.parametrize(
         (completion(finish_reason="error"), "finish_reason 'error'"),
         (completion(usage=None), "without token usage"),
         (_completion_with_content_parts(), "content parts, not text"),
+        (completion(LONE_SURROGATE), "not a chat completion"),
+        (completion(tool_calls=[{"type": "function", "function": TOOL_FUNCTION}]), "not a chat completion"),
+        (
+            completion(tool_calls=[{"id": 7, "type": "function", "function": TOOL_FUNCTION}]),
+            "not a chat completion",
+        ),
     ],
-    ids=["error-body", "no-completion", "no-choice", "failed-generation", "no-usage", "content-parts"],
+    ids=[
+        "error-body",
+        "no-completion",
+        "no-choice",
+        "failed-generation",
+        "no-usage",
+        "content-parts",
+        "lone-surrogate",
+        "tool-call-without-id",
+        "tool-call-with-an-int-id",
+    ],
 )
 
 
