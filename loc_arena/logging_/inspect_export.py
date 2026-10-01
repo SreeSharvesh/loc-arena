@@ -108,6 +108,7 @@ def _sample_events(
 ) -> list[InspectEvent]:
     turn_records = {record.ref: record for record in episode.trace.turns}
     calls = {call.sealed_seq: call for call in episode.trace.model_calls}
+    mirror_seqs = {sealed: mirror for mirror, sealed in episode.trace.mirror_to_sealed.items()}
     wall_readings = [r.wall_start for r in episode.trace.turns] + [
         c.wall_ts for c in episode.trace.model_calls
     ]
@@ -153,9 +154,9 @@ def _sample_events(
                 now = _timestamp(call.wall_ts)
                 events.append(_model_event(call, span_id))
             elif event.kind == "action":
-                events.append(_tool_event(event, span_id, now))
+                events.append(_tool_event(event, span_id, now, mirror_seq=mirror_seqs.get(event.seq)))
             else:
-                events.append(_info_event(event, span_id, now))
+                events.append(_info_event(event, span_id, now, mirror_seq=mirror_seqs.get(event.seq)))
         if lane is not None:
             now = _timestamp(turn_records[lane].wall_end)
             events.append(SpanEndEvent(id=_turn_span_id(lane), timestamp=now))
@@ -197,7 +198,7 @@ def _model_event(call: ModelCall, span_id: str | None) -> ModelEvent:
     )
 
 
-def _tool_event(event: Event, span_id: str | None, at: datetime) -> ToolEvent:
+def _tool_event(event: Event, span_id: str | None, at: datetime, *, mirror_seq: int | None) -> ToolEvent:
     args = event.payload.get("args")
     result = event.result or {}
     blocked = bool(event.payload.get("blocked") or result.get("blocked"))
@@ -210,15 +211,21 @@ def _tool_event(event: Event, span_id: str | None, at: datetime) -> ToolEvent:
         error=ToolCallError("permission", str(reason)) if blocked else None,
         span_id=span_id,
         timestamp=at,
-        metadata={"seq": event.seq, "actor_uid": event.actor_uid, "target": event.target_id},
+        metadata={
+            "seq": event.seq,
+            "mirror_seq": mirror_seq,
+            "actor_uid": event.actor_uid,
+            "target": event.target_id,
+        },
     )
 
 
-def _info_event(event: Event, span_id: str | None, at: datetime) -> InfoEvent:
+def _info_event(event: Event, span_id: str | None, at: datetime, *, mirror_seq: int | None) -> InfoEvent:
     return InfoEvent(
         source=event.kind,
         data={
             "seq": event.seq,
+            "mirror_seq": mirror_seq,
             "actor_uid": event.actor_uid,
             "target_id": event.target_id,
             "payload": event.payload,

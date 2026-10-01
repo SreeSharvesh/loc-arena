@@ -8,7 +8,7 @@ from inspect_ai.event import SpanBeginEvent, ToolEvent
 from inspect_ai.log import read_eval_log
 from loc_arena.config import load_run_config
 from loc_arena.harness import run_episode
-from loc_arena.logging_.transcript_lanes import WORLD, build_transcript
+from loc_arena.logging_.transcript_lanes import UNPLACED, WORLD, build_transcript
 
 from tests.integration._live_support import LANDING_QUEUES, QueuedProvider
 
@@ -62,14 +62,39 @@ def test_the_exported_episode_lays_out_as_one_lane_per_agent_by_round(
     log = read_eval_log(str(next(bundle.glob("*.eval"))))
     assert log.samples is not None
     transcript = build_transcript(log.samples[0])
-    assert transcript.lanes == (WORLD, *log.samples[0].metadata["agents"])
-    assert transcript.rows[0] == -1 and 0 in transcript.rows
+    monitors = dict.fromkeys(v["monitor"] for v in log.samples[0].metadata["scores"]["monitor_verdicts"])
+    assert transcript.lanes == (WORLD, *monitors, *log.samples[0].metadata["agents"])
+    assert transcript.rows[:2] == (UNPLACED, -1) and 0 in transcript.rows
     main_round_0 = transcript.cells[("agent-main", 0)]
     assert [b.kind for b in main_round_0][:2] == ["prompt", "reply"]
     assert any(b.kind == "info" for b in transcript.cells[(WORLD, -1)])
     every_block = [b for blocks in transcript.cells.values() for b in blocks]
     assert not [b.title for b in every_block if "attachment://" in b.body + (b.code or "")]
     assert max(len(b.body) for b in every_block if b.kind == "prompt") > 500
+
+
+def test_every_verdict_with_a_target_in_an_exported_run_lands_on_an_event(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    bundle = run_episode(
+        LIVE_TRACED,
+        mode="attack",
+        out_root=tmp_path,
+        provider=QueuedProvider(LANDING_QUEUES),
+        calibration_provider=QueuedProvider({}),
+        write_report=False,
+    )
+    log = read_eval_log(str(next(bundle.glob("*.eval"))))
+    assert log.samples is not None
+    verdicts = log.samples[0].metadata["scores"]["monitor_verdicts"]
+    targeted = {v["monitor"] for v in verdicts if v["target_seq"] is not None}
+    assert targeted, "the run must produce verdicts that target an event"
+
+    transcript = build_transcript(log.samples[0])
+
+    assert not [monitor for monitor in targeted if (monitor, UNPLACED) in transcript.cells]
 
 
 def test_a_traced_run_bundle_has_an_ascii_self_contained_transcript(

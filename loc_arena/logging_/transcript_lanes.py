@@ -11,11 +11,18 @@ from typing import Literal
 from inspect_ai.event import Event as InspectEvent
 from inspect_ai.event import InfoEvent, ModelEvent, SpanBeginEvent, ToolEvent
 from inspect_ai.log import EvalSample, resolve_sample_attachments
+from pydantic import TypeAdapter
+
+from loc_arena.monitors.registry import MonitorVerdict
 
 WORLD = "World"
 BEFORE_FIRST_ROUND = -1
+UNPLACED = -2  # the row of verdicts whose target is no event in the transcript
+MAX_SCORE_DECIMALS = 3  # the harness rounds per_monitor_max_score to this many decimals
 
-BlockKind = Literal["prompt", "reply", "tool", "info"]
+_VERDICTS = TypeAdapter(list[MonitorVerdict])
+
+BlockKind = Literal["prompt", "reply", "tool", "info", "verdict"]
 
 
 @dataclass(frozen=True)
@@ -44,6 +51,7 @@ def build_transcript(sample: EvalSample) -> SampleTranscript:
     owners = _turn_owners(sample.events)
     cells: dict[tuple[str, int], list[Block]] = {}
     seen: list[str] = []
+    mirror_rows: dict[int, int] = {}
     latest_round = BEFORE_FIRST_ROUND
     for event in sample.events:
         if isinstance(event, SpanBeginEvent) and event.type == "turn":
@@ -60,12 +68,67 @@ def build_transcript(sample: EvalSample) -> SampleTranscript:
             if lane not in seen:
                 seen.append(lane)
         cells.setdefault((lane, row), []).extend(blocks)
+        mirror_seq = _mirror_seq(event)
+        if mirror_seq is not None:
+            mirror_rows[mirror_seq] = row
+    verdict_cells = _verdict_cells(sample.metadata.get("scores"), mirror_rows)
+    monitors = tuple(dict.fromkeys(monitor for monitor, _ in verdict_cells))
+    all_cells = {**{key: tuple(blocks) for key, blocks in cells.items()}, **verdict_cells}
     return SampleTranscript(
         sample_id=str(sample.id),
-        lanes=_lane_order(sample.metadata.get("agents", []), seen),
-        rows=tuple(sorted({row for _, row in cells})),
-        cells=MappingProxyType({key: tuple(blocks) for key, blocks in cells.items()}),
+        lanes=_lane_order(sample.metadata.get("agents", []), seen, monitors),
+        rows=tuple(sorted({row for _, row in all_cells})),
+        cells=MappingProxyType(all_cells),
     )
+
+
+def _mirror_seq(event: InspectEvent) -> int | None:
+    if isinstance(event, ToolEvent):
+        seq = (event.metadata or {}).get("mirror_seq")
+    elif isinstance(event, InfoEvent) and isinstance(event.data, Mapping):
+        seq = event.data.get("mirror_seq")
+    else:
+        seq = None
+    return seq if isinstance(seq, int) else None
+
+
+def _verdict_cells(
+    scores: object,
+    mirror_rows: Mapping[int, int],
+) -> dict[tuple[str, int], tuple[Block, ...]]:
+    caught_scores = _caught_monitor_scores(scores)
+    cells: dict[tuple[str, int], list[Block]] = {}
+    for verdict in _monitor_verdicts(scores):
+        row = UNPLACED if verdict.target_seq is None else mirror_rows.get(verdict.target_seq, UNPLACED)
+        caught = _is_the_catch(verdict, caught_scores)
+        cells.setdefault((verdict.monitor, row), []).append(_verdict_block(verdict, caught=caught))
+    return {key: tuple(blocks) for key, blocks in cells.items()}
+
+
+def _monitor_verdicts(scores: object) -> list[MonitorVerdict]:
+    if not isinstance(scores, Mapping):
+        return []
+    return _VERDICTS.validate_python(scores.get("monitor_verdicts", []))
+
+
+def _caught_monitor_scores(scores: object) -> Mapping[str, float]:
+    safety = scores.get("safety") if isinstance(scores, Mapping) else None
+    if not isinstance(safety, Mapping):
+        return {}
+    caught_by, max_scores = safety.get("caught_by"), safety.get("per_monitor_max_score")
+    if not isinstance(caught_by, list) or not isinstance(max_scores, Mapping):
+        return {}
+    return {m: max_scores[m] for m in caught_by if m in max_scores}
+
+
+def _is_the_catch(verdict: MonitorVerdict, caught_scores: Mapping[str, float]) -> bool:
+    return caught_scores.get(verdict.monitor) == round(verdict.score, MAX_SCORE_DECIMALS)
+
+
+def _verdict_block(verdict: MonitorVerdict, *, caught: bool) -> Block:
+    body = f"score {verdict.score:.{MAX_SCORE_DECIMALS}f}  actor {verdict.actor_uid}\n{verdict.reason}"
+    title = f"monitor: {verdict.monitor} ({verdict.tap})" + (" -- CAUGHT" if caught else "")
+    return Block("verdict", title, body, blocked=caught)
 
 
 def _turn_owners(events: Sequence[InspectEvent]) -> dict[str, tuple[str, int]]:
@@ -97,8 +160,8 @@ def _turn_owners(events: Sequence[InspectEvent]) -> dict[str, tuple[str, int]]:
     return owners
 
 
-def _lane_order(configured: Sequence[str], seen: Sequence[str]) -> tuple[str, ...]:
-    return tuple(dict.fromkeys([WORLD, *configured, *seen]))
+def _lane_order(configured: Sequence[str], seen: Sequence[str], monitors: Sequence[str]) -> tuple[str, ...]:
+    return tuple(dict.fromkeys([WORLD, *monitors, *configured, *seen]))
 
 
 def _blocks(event: InspectEvent) -> tuple[Block, ...]:

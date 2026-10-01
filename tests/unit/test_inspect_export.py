@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 from inspect_ai.event import Event as InspectEvent
-from inspect_ai.event import InfoEvent, SpanBeginEvent, SpanEndEvent
+from inspect_ai.event import InfoEvent, SpanBeginEvent, SpanEndEvent, ToolEvent
 from inspect_ai.log import EvalConfig, EvalDataset, EvalSample, EvalSpec, read_eval_log
 from loc_arena.config import load_run_config
 from loc_arena.logging_ import inspect_export
@@ -178,7 +178,12 @@ def _action(seq: int, result: dict[str, Any] | None = None, **payload: object) -
 
 def test_tool_event_carries_the_tool_arguments_and_result() -> None:
     at = datetime(2026, 9, 25, tzinfo=UTC)
-    event = inspect_export._tool_event(_action(5, args={"path": "a.py"}, blocked=False), "turn:s:0", at)
+    event = inspect_export._tool_event(
+        _action(5, args={"path": "a.py"}, blocked=False),
+        "turn:s:0",
+        at,
+        mirror_seq=None,
+    )
     assert (event.id, event.function, event.arguments) == ("seq-5", "write_file", {"path": "a.py"})
     assert event.result == '{"ok": true}'
     assert event.error is None
@@ -187,7 +192,12 @@ def test_tool_event_carries_the_tool_arguments_and_result() -> None:
 
 def test_a_blocked_action_becomes_a_permission_error() -> None:
     at = datetime(2026, 9, 25, tzinfo=UTC)
-    event = inspect_export._tool_event(_action(6, args={}, blocked=True, reason="out of scope"), None, at)
+    event = inspect_export._tool_event(
+        _action(6, args={}, blocked=True, reason="out of scope"),
+        None,
+        at,
+        mirror_seq=None,
+    )
     assert event.error is not None
     assert (event.error.type, event.error.message) == ("permission", "out of scope")
 
@@ -204,10 +214,11 @@ def test_info_event_keeps_the_kind_and_the_event_body() -> None:
         payload={"body": "run the bench"},
         target_id="eval-agent",
     )
-    event = inspect_export._info_event(message, "turn:agent-main:0", at)
+    event = inspect_export._info_event(message, "turn:agent-main:0", at, mirror_seq=None)
     assert event.source == "message"
     assert event.data == {
         "seq": 8,
+        "mirror_seq": None,
         "actor_uid": "agent-main",
         "target_id": "eval-agent",
         "payload": {"body": "run the bench"},
@@ -226,6 +237,58 @@ def _world(seq_log: AppendOnlyLog, kind: EventKind = "tick") -> None:
             kind=kind,
         ),
     )
+
+
+def _export_an_action_after_a_world_tick(tmp_path: Path) -> list[InspectEvent]:
+    """Export one action logged on both sides after a sealed-only tick, so the logs number it differently."""
+    trace = AgentTrace(wall_clock=lambda: 1_700_000_000.0)
+    sealed_path = tmp_path / "sealed.jsonl"
+    sealed = AppendOnlyLog(sealed_path, "ep-export", on_append=trace.on_sealed_append)
+    mirror = AppendOnlyLog(tmp_path / "mirror.jsonl", "ep-export", on_append=trace.on_mirror_append)
+    recorder = Recorder("ep-export", sealed, mirror, clock=lambda: 0.0)
+    _world(sealed)
+    with trace.turn("agent-main", 0):
+        recorder.dual(
+            actor_uid="agent-main",
+            actor_role="orchestrator",
+            kind="action",
+            tool="read_file",
+            payload={},
+        )
+    episode = EpisodeExport(
+        "episode",
+        trace.finish(last_sealed_seq=sealed.last_seq),
+        sealed_path,
+        ("agent-main",),
+    )
+    path = write_run_eval(
+        tmp_path / "run.eval",
+        run_name="run-x",
+        config=CFG,
+        mode="attack",
+        seed=1,
+        scores={},
+        episodes=[episode],
+    )
+    log = read_eval_log(str(path))
+    assert log.samples is not None
+    return log.samples[0].events
+
+
+def test_an_exported_action_carries_the_seq_of_its_mirror_twin(tmp_path: Path) -> None:
+    events = _export_an_action_after_a_world_tick(tmp_path)
+
+    (tool,) = [event for event in events if isinstance(event, ToolEvent)]
+    metadata = tool.metadata or {}
+    assert (metadata["seq"], metadata["mirror_seq"]) == (1, 0)
+
+
+def test_an_exported_event_without_a_mirror_twin_carries_no_mirror_seq(tmp_path: Path) -> None:
+    events = _export_an_action_after_a_world_tick(tmp_path)
+
+    (tick,) = [event for event in events if isinstance(event, InfoEvent)]
+    assert isinstance(tick.data, dict)
+    assert tick.data["mirror_seq"] is None
 
 
 def test_a_traced_episode_exports_a_span_tree_with_one_agent_span_per_agent(tmp_path: Path) -> None:
@@ -373,7 +436,7 @@ def test_eval_spec_refuses_a_config_without_an_untrusted_agent_model() -> None:
 def test_a_block_reported_only_in_the_result_is_still_a_permission_error() -> None:
     at = datetime(2026, 9, 25, tzinfo=UTC)
     spawn = _action(7, result={"blocked": True, "reason": "team is pre-provisioned"}, args={}, blocked=False)
-    event = inspect_export._tool_event(spawn, None, at)
+    event = inspect_export._tool_event(spawn, None, at, mirror_seq=None)
     assert event.error is not None
     assert (event.error.type, event.error.message) == ("permission", "team is pre-provisioned")
 

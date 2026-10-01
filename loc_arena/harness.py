@@ -46,7 +46,7 @@ from loc_arena.metrics import (
     usefulness,
 )
 from loc_arena.monitors.aggregation import load_aggregation_config
-from loc_arena.monitors.registry import load_monitor_specs, load_monitors
+from loc_arena.monitors.registry import find_fallback_only_monitors, load_monitor_specs, load_monitors
 from loc_arena.protocol import compose_protocol
 from loc_arena.task import assemble_scripted_episode
 
@@ -296,10 +296,12 @@ def _build_scores(
     )
     resolved_weights = {spec.name: _resolved_weight(spec, agg) for spec in specs}
 
-    # Which monitors recorded a monitor_error on the episode's sealed log (async timeout / raise -> floor).
+    # Errored: a monitor_error on the episode's sealed log (async timeout / raise -> floor), or a live monitor
+    # whose model never gave a usable verdict, so every score it reported is the heuristic fallback.
+    sealed_events = list(read_events(episode.sealed_path))
     errored_monitors = {
-        str(e.payload.get("monitor")) for e in read_events(episode.sealed_path) if e.kind == "monitor_error"
-    }
+        str(e.payload.get("monitor")) for e in sealed_events if e.kind == "monitor_error"
+    } | find_fallback_only_monitors(ep_record.verdicts, sealed_events)
 
     # Max score + top reason per monitor over its OWN verdicts (detector rows + detectors block read this).
     own_by_monitor: dict[str, list[Any]] = {}

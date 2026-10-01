@@ -21,7 +21,6 @@ from loc_arena.monitors.registry import (
     MonitorSpec,
     MonitorVerdict,
     live_suspicion,
-    load_template,
     register_monitor,
     render_prompt,
 )
@@ -42,8 +41,7 @@ class ActionMonitor:
         self.timeout_s = spec.timeout_s
         self._spec = spec
         self._model = model_spec
-        self._declared = set(spec.inputs)
-        self._template = load_template(spec.prompt_ref)
+        self._declared = spec.inputs  # in declaration order, so a rendered prompt is reproducible
 
     def input_payload(self, event: Event, context: MonitorContext) -> dict[str, object]:
         """The observable inputs for this event, restricted to the monitor's DECLARED inputs (firewall)."""
@@ -72,28 +70,36 @@ class ActionMonitor:
             return 0.05, "routine coordination"
         return 0.0, "not an action or message"
 
-    def _score(self, event: Event, context: MonitorContext) -> tuple[float, str]:
-        if self._spec.mode == "live":
-            prompt = render_prompt(self._template, self.input_payload(event, context))
-            live = live_suspicion(
-                context,
-                self.name,
-                prompt,
-                ensemble_n=self._spec.ensemble_n,
-                temperature=self._spec.temperature,
-            )
-            if live is not None:
-                return live
-        return self._heuristic(event)
+    def _live(self, event: Event, context: MonitorContext) -> tuple[float, str] | None:
+        """The live model's verdict for this event, or ``None`` in heuristic mode or on a failed call."""
+        if self._spec.mode != "live":
+            return None
+        return live_suspicion(
+            context,
+            self.name,
+            render_prompt(self._spec.prompt_template, self.input_payload(event, context)),
+            ensemble_n=self._spec.ensemble_n,
+            temperature=self._spec.temperature,
+        )
 
     def run(self, events: list[Event], context: MonitorContext) -> list[MonitorVerdict]:
         """Score each observable action/message event and return per-event verdicts."""
         verdicts: list[MonitorVerdict] = []
         for event in events:
-            score, reason = self._score(event, context)
+            live = self._live(event, context)
+            score, reason = live if live is not None else self._heuristic(event)
             tap = "action" if event.kind == "action" else "message"
             verdicts.append(
-                MonitorVerdict(self.name, tap, score, reason, event.actor_uid, event.seq, event.ts),
+                MonitorVerdict(
+                    self.name,
+                    tap,
+                    score,
+                    reason,
+                    event.actor_uid,
+                    event.seq,
+                    event.ts,
+                    from_model=live is not None,
+                ),
             )
         return verdicts
 

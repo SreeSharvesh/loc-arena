@@ -6,6 +6,7 @@ in-process.
 
 from __future__ import annotations
 
+import itertools
 from typing import Any
 
 from fastapi import FastAPI
@@ -91,3 +92,13 @@ class MalformedProvider:
             prompt_tokens=1,
             completion_tokens=1,
         )
+
+
+class AlternatingVerdictProvider:
+    """A provider whose replies alternate: unparseable first, then a JSON verdict, and so on."""
+
+    def __init__(self) -> None:
+        self._providers = itertools.cycle((MalformedProvider(), JsonVerdictProvider()))
+
+    def generate(self, model: str, prompt: str, temperature: float, max_tokens: int) -> ProviderResult:
+        return next(self._providers).generate(model, prompt, temperature, max_tokens)
