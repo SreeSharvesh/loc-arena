@@ -164,3 +164,24 @@ def test_a_live_policy_agent_reads_back_what_its_bash_printed_in_its_sandbox(tmp
     )
 
     assert probe.output == f"from-the-sandbox\n{served.checkout.resolve()}\n"
+
+
+def test_the_runner_phase_offers_every_live_agent_bash(tmp_path: Path) -> None:
+    config = dataclasses.replace(apply_mode(CONFIG, "honest"), policy="model")
+    served = serve_stack(tmp_path, config, provider=DeterministicProvider())
+    offered: dict[str, bool] = {}
+
+    def policies(ctx: AgentContext, brief: str, tool_specs: list[ToolSpec]) -> AgentPolicy:
+        offered[ctx.uid] = "bash" in [spec["function"]["name"] for spec in tool_specs]
+        return ScriptedAgentPolicy([])
+
+    run_runner_phase(
+        config,
+        served.services,
+        robust=False,
+        output_directory=tmp_path / "runner",
+        mirror_root=served.gateway.mirror_root,
+        policy_factory=policies,
+    )
+
+    assert offered == dict.fromkeys((agent.id for agent in config.agents), True)
