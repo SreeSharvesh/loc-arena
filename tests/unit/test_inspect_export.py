@@ -174,16 +174,31 @@ def test_model_event_shows_the_post_injection_input_and_the_reply() -> None:
 
 
 def test_a_model_event_carries_the_calls_token_counts_and_cost() -> None:
+    uncached = ModelCallUsage(prompt_tokens=11, completion_tokens=7, cached_tokens=0, cost=0.0042)
+    call = ModelCall("deciding", "agent-main", "untrusted_agent", "brief", "reply", 3, 0.0, uncached)
+
+    event = inspect_export._model_event(call, None)
+
+    assert event.output.usage == ModelUsage(
+        input_tokens=11,
+        output_tokens=7,
+        total_tokens=18,
+        input_tokens_cache_read=0,
+        total_cost=0.0042,
+    )
+
+
+def test_a_model_event_leaves_the_cached_prompt_tokens_out_of_its_input_tokens() -> None:
     call = ModelCall("deciding", "agent-main", "untrusted_agent", "brief", "reply", 3, 0.0, USAGE)
 
     event = inspect_export._model_event(call, None)
 
     assert event.output.usage == ModelUsage(
-        input_tokens=USAGE.prompt_tokens,
-        output_tokens=USAGE.completion_tokens,
-        total_tokens=USAGE.prompt_tokens + USAGE.completion_tokens,
-        input_tokens_cache_read=USAGE.cached_tokens,
-        total_cost=USAGE.cost,
+        input_tokens=6,
+        output_tokens=7,
+        total_tokens=18,
+        input_tokens_cache_read=5,
+        total_cost=0.0042,
     )
 
 
