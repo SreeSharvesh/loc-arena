@@ -6,6 +6,7 @@ import json
 import logging
 import threading
 import time
+from collections.abc import Mapping
 from http import HTTPStatus
 from pathlib import Path
 
@@ -56,6 +57,10 @@ UNAUTHORIZED = ScriptedReply(
 # json.dumps writes it as its six-character escape, which a JSON decoder reads back as a lone surrogate.
 LONE_SURROGATE = "\ud800"
 TOOL_FUNCTION = {"name": "list_dir", "arguments": '{"path": ""}'}
+TOOL_CALL_ID = "call-1"
+# A tool call's function whose arguments, or whose name, hold the lone surrogate itself.
+SURROGATE_ARGUMENTS = {**TOOL_FUNCTION, "arguments": '{"path": "' + LONE_SURROGATE + '"}'}
+SURROGATE_NAME = {**TOOL_FUNCTION, "name": TOOL_FUNCTION["name"] + LONE_SURROGATE}
 
 
 def _completion_costing(cost: float | None) -> str:
@@ -76,6 +81,15 @@ def _completion_with_content_parts() -> str:
     return json.dumps(body)
 
 
+def _tool_call(
+    *,
+    call_id: str = TOOL_CALL_ID,
+    function: Mapping[str, str] = TOOL_FUNCTION,
+) -> dict[str, object]:
+    """A reply's tool call of ``function`` under ``call_id``, as OpenRouter sends it."""
+    return {"id": call_id, "type": "function", "function": dict(function)}
+
+
 UNUSABLE_COMPLETIONS = pytest.mark.parametrize(
     ("body", "reason"),
     [
@@ -91,6 +105,9 @@ UNUSABLE_COMPLETIONS = pytest.mark.parametrize(
             completion(tool_calls=[{"id": 7, "type": "function", "function": TOOL_FUNCTION}]),
             "not a chat completion",
         ),
+        (completion(tool_calls=[_tool_call(function=SURROGATE_ARGUMENTS)]), "not a chat completion"),
+        (completion(tool_calls=[_tool_call(function=SURROGATE_NAME)]), "not a chat completion"),
+        (completion(tool_calls=[_tool_call(call_id=TOOL_CALL_ID + LONE_SURROGATE)]), "not a chat completion"),
     ],
     ids=[
         "error-body",
@@ -102,6 +119,9 @@ UNUSABLE_COMPLETIONS = pytest.mark.parametrize(
         "lone-surrogate",
         "tool-call-without-id",
         "tool-call-with-an-int-id",
+        "tool-call-arguments-with-a-lone-surrogate",
+        "tool-call-name-with-a-lone-surrogate",
+        "tool-call-id-with-a-lone-surrogate",
     ],
 )
 
