@@ -127,6 +127,10 @@ class OpenRouterProvider:
     ) -> ProviderResult:
         """Send ``messages``, and ``tools`` when there are any, to ``model``; return the completion and usage.
 
+        The SDK sends the message and tool fields its schema declares, ``cache_control`` on a content part
+        or on a tool among them, and drops any other key without an error: ``cache_control`` on a message
+        itself, ``name`` on a tool message, ``index`` on a tool call.
+
         Raises ``ProviderTimeoutError`` past the request deadline or the call's budget, ``ProviderReplyError``
         for a 200 without a usable completion, and ``ProviderError`` for any other failure.
         """

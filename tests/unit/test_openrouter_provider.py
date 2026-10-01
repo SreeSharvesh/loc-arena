@@ -156,6 +156,36 @@ def test_a_message_list_the_sdk_cannot_send_raises_a_provider_error() -> None:
         provider.generate(MODEL, tool_result_without_its_call_id, TEMPERATURE, MAX_TOKENS, None)
 
 
+# Anthropic's prompt-cache breakpoint, which OpenRouter takes on a content part and on a tool.
+CACHE_BREAKPOINT = {"type": "ephemeral"}
+
+
+def test_a_cache_breakpoint_on_a_content_part_reaches_openrouter() -> None:
+    messages = [
+        {"role": "system", "content": [{"type": "text", "text": TEXT, "cache_control": CACHE_BREAKPOINT}]},
+        {"role": "user", "content": [{"type": "text", "text": PROMPT, "cache_control": CACHE_BREAKPOINT}]},
+    ]
+
+    with serve_openrouter(ScriptedReply(body=completion())) as stub:
+        provider = OpenRouterProvider(fast_settings(stub), SecretStr(CANARY_KEY))
+        provider.generate(MODEL, messages, TEMPERATURE, MAX_TOKENS, None)
+
+    (request,) = stub.received
+    assert json.loads(request.body)["messages"] == messages
+
+
+def test_a_cache_breakpoint_on_a_tool_reaches_openrouter() -> None:
+    function = {"name": "list_dir", "parameters": {"type": "object"}}
+    tools = [{"type": "function", "function": function, "cache_control": CACHE_BREAKPOINT}]
+
+    with serve_openrouter(ScriptedReply(body=completion())) as stub:
+        provider = OpenRouterProvider(fast_settings(stub), SecretStr(CANARY_KEY))
+        provider.generate(MODEL, MESSAGES, TEMPERATURE, MAX_TOKENS, tools)
+
+    (request,) = stub.received
+    assert json.loads(request.body)["tools"] == tools
+
+
 @UNUSABLE_COMPLETIONS
 def test_a_200_without_a_usable_completion_raises_a_reply_error(body: str, reason: str) -> None:
     with serve_openrouter(ScriptedReply(body=body)) as stub, pytest.raises(ProviderReplyError, match=reason):
