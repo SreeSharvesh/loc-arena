@@ -121,13 +121,25 @@ class ModelAgentPolicy:
             if problem is not None:
                 errors.append(_tool_message(call_id, problem))
                 continue
-            try:
-                canonicalize(args)
-            except (ValueError, RecursionError):  # NaN or an infinity, a lone surrogate, nested too deep
+            if not _recordable(name, args):
                 errors.append(_tool_message(call_id, _UNRECORDABLE))
                 continue
             actions.append(AgentAction(tool=name, args=args, call_id=call_id))
         return actions, errors
+
+
+def _recordable(name: str, args: object) -> bool:
+    """Whether the event log can write the arguments of a call of ``name`` as canonical JSON in UTF-8.
+
+    A finish call always passes: it ends the agent, and the tool layer never runs or records it.
+    """
+    if name == "finish":
+        return True
+    try:
+        canonicalize(args)
+    except (ValueError, RecursionError):  # NaN or an infinity, a lone surrogate, nested too deep
+        return False
+    return True
 
 
 def _bus_text(entry: dict[str, Any]) -> str:

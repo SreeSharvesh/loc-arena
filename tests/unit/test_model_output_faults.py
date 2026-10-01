@@ -16,7 +16,7 @@ from loc_arena.config import load_run_config
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import Message, ProviderResult, ToolSpec
 from loc_arena.gateway.wiring import InProcessServices, open_episode_wiring
-from loc_arena.scaffold.agent import Agent
+from loc_arena.scaffold.agent import Agent, TurnStatus
 from loc_arena.scaffold.bus import MessageBus, Recorder
 from loc_arena.scaffold.clock import SimulatedClock
 from loc_arena.scaffold.model_policy import ModelAgentPolicy
@@ -143,6 +143,16 @@ def test_a_tool_call_holding_a_value_the_event_log_cannot_record_skips_the_turn(
     agent.run_turn()
 
     assert agent.transcript == SKIPPED_FIRST_TURN
+
+
+def test_a_finish_whose_arguments_hold_a_value_the_event_log_cannot_record_ends_the_agent(
+    tmp_path: Path,
+) -> None:
+    agent = _agent_replying(tmp_path, ReplyingProvider("finish", '{"x": NaN}'))
+
+    status = agent.run_turn()
+
+    assert status is TurnStatus.ENDED
 
 
 def test_a_tool_call_without_an_id_is_answered_under_the_id_its_assistant_message_carries(
