@@ -49,16 +49,46 @@ class FailingProvider:
         raise ProviderError(f"{model}: the provider kept answering 503")
 
 
+class ScriptedProvider:
+    """The provider boundary, giving each call the next scripted reply; a ``ProviderError`` fails that call.
+
+    It keeps the messages of every call it gets.
+    """
+
+    def __init__(self, replies: list[ProviderResult | ProviderError]) -> None:
+        """Hold the replies, one per call, in order."""
+        self.requests: list[list[Message]] = []
+        self._replies = list(replies)
+
+    def generate(
+        self,
+        model: str,
+        messages: list[Message],
+        temperature: float,
+        max_tokens: int,
+        tools: list[ToolSpec] | None,
+    ) -> ProviderResult:
+        self.requests.append(list(messages))
+        reply = self._replies.pop(0)
+        if isinstance(reply, ProviderError):
+            raise reply
+        return reply
+
+
 def _no_spawn(ctx: AgentContext, args: dict[str, object], turn: int) -> ToolResult:
     return {"blocked": True}
 
 
 def _failing_wiring(tmp_path: Path) -> EpisodeWiring:
+    return _in_process_wiring(tmp_path, FailingProvider())
+
+
+def _in_process_wiring(tmp_path: Path, provider: FailingProvider | ScriptedProvider) -> EpisodeWiring:
     services = InProcessServices(
         sealed_path=tmp_path / "sealed.jsonl",
         mirror_path=tmp_path / "mirror.jsonl",
         checkout=tmp_path / "checkout",
-        provider=FailingProvider(),
+        provider=provider,
     )
     return open_episode_wiring(CONFIG, services)
 
@@ -138,6 +168,34 @@ def test_failed_turns_do_not_count_as_refusals(tmp_path: Path) -> None:
     statuses = [agent.run_turn() for _ in range(TURNS)]
 
     assert statuses == [TurnStatus.CONTINUE] * TURNS
+
+
+def test_a_failed_model_call_adds_nothing_to_the_history_the_next_turn_sends(tmp_path: Path) -> None:
+    tool_call = {"id": "call-1", "type": "function", "function": {"name": "run_benchmark", "arguments": "{}"}}
+    provider = ScriptedProvider(
+        [
+            ProviderResult(text="", prompt_tokens=1, completion_tokens=1, tool_calls=[tool_call]),
+            ProviderError("the provider kept answering 503"),
+            ProviderResult(text="thinking", prompt_tokens=1, completion_tokens=1),
+        ],
+    )
+    agent = _model_agent(_in_process_wiring(tmp_path, provider))
+    agent.run_turn()  # its tool call runs, so the next turn's history carries the result
+    agent.run_turn()  # its model call fails
+
+    agent.run_turn()
+
+    assert provider.requests[2] == provider.requests[1]
+
+
+def test_a_failed_turn_leaves_the_count_of_skipped_turns_as_it_was(tmp_path: Path) -> None:
+    text = ProviderResult(text="thinking", prompt_tokens=1, completion_tokens=1)  # no tool call: a skip
+    failure = ProviderError("the provider kept answering 503")
+    agent = _model_agent(_in_process_wiring(tmp_path, ScriptedProvider([text, failure, text, text, text])))
+
+    statuses = [agent.run_turn() for _ in range(5)]
+
+    assert statuses == [TurnStatus.CONTINUE] * 4 + [TurnStatus.ENDED]  # the fourth skip ends the agent
 
 
 def test_a_generate_tool_whose_call_fails_returns_an_error_result(tmp_path: Path) -> None:
