@@ -100,5 +100,12 @@ class AlternatingVerdictProvider:
     def __init__(self) -> None:
         self._providers = itertools.cycle((MalformedProvider(), JsonVerdictProvider()))
 
-    def generate(self, model: str, prompt: str, temperature: float, max_tokens: int) -> ProviderResult:
-        return next(self._providers).generate(model, prompt, temperature, max_tokens)
+    def generate(
+        self,
+        model: str,
+        messages: list[Message],
+        temperature: float,
+        max_tokens: int,
+        tools: list[ToolSpec] | None,
+    ) -> ProviderResult:
+        return next(self._providers).generate(model, messages, temperature, max_tokens, tools)
