@@ -87,7 +87,7 @@ class Agent:
         clock: Callable[[], float] = time.time,
         trace: AgentTrace | None = None,
     ) -> None:
-        """Wire the agent to its context, agent policy, tools, registry, bus, turn minter, and budget.
+        """Wire the agent to its context, agent policy, tools, registry, bus, gateway control, and budget.
 
         ``control`` is the episode's control on the gateway core, which mints each turn's token.
         """
