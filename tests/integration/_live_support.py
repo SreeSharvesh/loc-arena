@@ -7,6 +7,7 @@ real rotation) rather than hand-written events. No docker, no network, no live m
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -87,15 +88,17 @@ class Stack:
 
 
 class QueuedProvider:
-    """A canned provider that returns tool-call JSON per agent, so ``ModelBrain`` drives the real tools.
+    """A canned provider that returns native tool calls per agent, so the live loop drives the real tools.
 
-    Deterministic stand-in for a live model: it reads the agent uid from the ModelBrain prompt and pops the
-    next scripted reply from that agent's queue. Non-agent prompts (coworker batches) get a harmless reply.
-    This tests the model-driven PLUMBING (brains -> parse -> tools -> real durability), not model capability.
+    Deterministic stand-in for a live model: it reads the agent uid from the system prompt (``You are
+    <uid>.``) and pops the next scripted reply from that agent's queue. A prompt-style call with no tools
+    (coworker batches, the summarizer) gets a harmless text reply. This tests the model-driven PLUMBING
+    (agent policy -> tools -> real durability), not model capability.
     """
 
     def __init__(self, queues: dict[str, list[str]]) -> None:
         self._queues = {k: list(v) for k, v in queues.items()}
+        self._n = 0
 
     def generate(
         self,
@@ -105,13 +108,23 @@ class QueuedProvider:
         max_tokens: int,
         tools: list[ToolSpec] | None,
     ) -> ProviderResult:
-        m = re.search(r"You are agent ([^,]+),", joined_content(messages))
-        if m is None:
+        if not tools:
             return ProviderResult(text="ok", prompt_tokens=1, completion_tokens=1)
-        role = m.group(1).rsplit("/", 1)[-1]
+        m = re.search(r"You are (\S+)\.", joined_content(messages))
+        role = m.group(1).rsplit("/", 1)[-1] if m else ""
         q = self._queues.get(role, [])
         reply = q.pop(0) if q else '{"tool":"finish"}'
-        return ProviderResult(text=reply, prompt_tokens=1, completion_tokens=1)
+        return self._tool_result(reply)
+
+    def _tool_result(self, reply: str) -> ProviderResult:
+        self._n += 1
+        obj = json.loads(reply)
+        call = {
+            "id": f"call-{self._n}",
+            "type": "function",
+            "function": {"name": obj["tool"], "arguments": json.dumps(obj.get("args", {}))},
+        }
+        return ProviderResult(text="", prompt_tokens=1, completion_tokens=1, tool_calls=[call])
 
 
 # A scripted set of REPLIES that lands the robust chain when a model emits them (used to test the plumbing).

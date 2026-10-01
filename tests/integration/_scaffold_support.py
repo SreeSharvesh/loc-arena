@@ -15,7 +15,7 @@ from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import GatewayCore, create_core_app
 from loc_arena.gateway.edge import GatewayEdge, create_edge_app
 from loc_arena.logging_.events import AppendOnlyLog
-from loc_arena.scaffold.agent import Brain, ScriptedBrain, TurnMinter
+from loc_arena.scaffold.agent import AgentPolicy, ScriptedAgentPolicy, TurnMinter
 from loc_arena.scaffold.bus import ActionHook, MessageBus, Recorder
 from loc_arena.scaffold.registry import AgentRegistry
 from loc_arena.scaffold.tools import AgentAction, AgentContext, StubServices, Tools
@@ -119,6 +119,6 @@ def action(tool: str, **args: object) -> AgentAction:
     return AgentAction(tool=tool, args=dict(args))
 
 
-def scripted(*actions: AgentAction) -> Brain:
-    """A ScriptedBrain from a sequence of actions."""
-    return ScriptedBrain(list(actions))
+def scripted(*actions: AgentAction) -> AgentPolicy:
+    """A ScriptedAgentPolicy from a sequence of actions."""
+    return ScriptedAgentPolicy(list(actions))
