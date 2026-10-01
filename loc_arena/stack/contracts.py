@@ -1,11 +1,13 @@
 """Every body the stack's services exchange, and the interfaces its packages implement or consume.
 
-HTTP bodies are frozen pydantic models that reject unknown fields, so each service validates what it
-receives at its boundary. A model call's request and reply are the gateway's own ``GenerateRequest`` and
-``GenerateResponse`` from :mod:`loc_arena.stack.model_call`; the core's and the edge's replies extend that
-reply here. Log events stay the standard-library dataclasses of :mod:`loc_arena.logging_.events`
-(``Event``, ``EventDraft``, and the ``EventLog`` protocol, imported from there). This module imports only
-the standard library, pydantic, ``events`` and ``model_call``: it ships in the sandbox image.
+The bodies defined here are frozen pydantic models that reject unknown fields (``ContractModel`` and the
+core's and the edge's generate replies), so each service validates what it receives at its boundary. A model
+call's request and reply are the gateway's own ``GenerateRequest`` and ``GenerateResponse``, imported from
+:mod:`loc_arena.stack.model_call` as they are written there: plain pydantic models, mutable, which ignore an
+unknown field. The core's and the edge's replies extend that reply here. Log events stay the standard-library
+dataclasses of :mod:`loc_arena.logging_.events` (``Event``, ``EventDraft``, and the ``EventLog`` protocol,
+imported from there). This module imports only the standard library, pydantic, ``events`` and ``model_call``:
+it ships in the sandbox image.
 """
 
 from __future__ import annotations
