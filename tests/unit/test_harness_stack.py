@@ -51,6 +51,7 @@ RUN_STACK_CLI = (
 RUNNER_SECONDS = 60  # the stand-in's runner outlasts the test, so only the signal ends the run
 CALL_WAIT_SECONDS = 30
 POLL_SECONDS = 0.1
+DOWN_SECONDS = 2  # the stand-in's teardown lasts long enough for a second signal to land during it
 
 FAKE_DOCKER = """#!{python}
 import json, os, pathlib, shutil, sys, time
@@ -76,6 +77,9 @@ if "run" in arguments:
 if "cp" in arguments:
     source, destination = arguments[-2:]
     shutil.copytree(scenario["copies"][source.split(":/")[1].split("/")[0]], destination)
+if "down" in arguments:
+    time.sleep(scenario.get("down_seconds", 0))
+    pathlib.Path(os.environ["FAKE_DOCKER_LOG"] + ".down-finished").touch()
 """
 
 
@@ -411,3 +415,17 @@ def test_a_stack_run_ended_by_a_signal_reports_it_in_one_line(
     stderr = _end_a_stack_run_by_signal(docker, tmp_path, signal_number)
 
     assert stderr == f"error: stopped by {signal_number.name}\n"
+
+
+def test_a_second_signal_during_teardown_lets_the_teardown_finish(docker: FakeDocker, tmp_path: Path) -> None:
+    docker.play(run_seconds=RUNNER_SECONDS, down_seconds=DOWN_SECONDS)
+    command = [sys.executable, "-c", RUN_STACK_CLI, "aurora-efficiency.deterministic", str(tmp_path / "runs")]
+
+    with subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) as run:
+        _wait_for_subcommand(docker, "run")
+        run.send_signal(signal.SIGINT)
+        _wait_for_subcommand(docker, "down")
+        run.send_signal(signal.SIGINT)  # a terminal signals the whole group, and uv run forwards it again
+        run.wait(timeout=CALL_WAIT_SECONDS)
+
+    assert Path(f"{docker.log}.down-finished").exists()

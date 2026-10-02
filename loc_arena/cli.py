@@ -249,7 +249,15 @@ def _dispatch(args: argparse.Namespace) -> int:
 
 
 def _exit_on_signal(signal_number: int, _frame: FrameType | None) -> None:
-    """Leave by ``SystemExit``, with bash's status for the signal, so the ``finally`` blocks still run."""
+    """Leave by ``SystemExit``, with bash's status for the signal, so the ``finally`` blocks still run.
+
+    Later ending signals are ignored from here on. A Ctrl-C reaches the harness twice (the terminal signals
+    the whole process group, and ``uv run`` forwards the signal again), and a second ``SystemExit`` raised
+    inside a ``finally`` would cut a stack's teardown short. ``scripts/teardown.sh`` sweeps what a SIGKILL
+    leaves.
+    """
+    for ending_signal in _ENDING_SIGNALS:
+        signal.signal(ending_signal, signal.SIG_IGN)
     print(f"error: stopped by {signal.Signals(signal_number).name}", file=sys.stderr)
     raise SystemExit(_SIGNAL_EXIT_STATUS_BASE + signal_number)
 
