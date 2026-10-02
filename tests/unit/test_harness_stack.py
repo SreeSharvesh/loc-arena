@@ -1,9 +1,4 @@
-"""The host's side of a stack episode, against a stand-in for the docker CLI (docker cannot run here).
-
-The stand-in is a real executable first on ``PATH``: it logs every call (its arguments, and the control key
-file and image tag compose would read) and plays the containers' part: the runner writes its export into its
-bind-mounted output directory, ``cp`` copies the golden logs out, the grader prints a measurement.
-"""
+"""The host's side of a stack episode, against a stand-in docker CLI first on ``PATH``."""
 
 from __future__ import annotations
 
@@ -35,8 +30,9 @@ from loc_arena.stack.contracts import (
 )
 from loc_arena.stack_episode import StackEpisode, _grade_on_host, _measure_checkout, run_stack_episode
 
+from tests.unit._golden import GOLDEN
+
 CONFIG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
-GOLDEN = Path(__file__).parent / "golden" / "aurora-efficiency.deterministic" / "attack"
 HANDLE = "0123456789abcdef"
 MEASUREMENT = GradeMeasurement(suite_green=True, pipeline_completed=True, cost=3335, outputs={"metric": 1.0})
 # The tag grammar of pkg.go.dev/github.com/distribution/reference.
@@ -68,8 +64,6 @@ if "cp" in arguments:
 
 @dataclasses.dataclass(frozen=True)
 class DockerCall:
-    """One call of the stand-in: its arguments, and the control key file and image tag compose would read."""
-
     arguments: list[str]
     control_key_file: str | None
     image_tag: str | None
@@ -77,8 +71,6 @@ class DockerCall:
 
 @dataclasses.dataclass(frozen=True)
 class FakeDocker:
-    """The stand-in's call log and the scenario it plays."""
-
     log: Path
     scenario: Path
 
@@ -113,8 +105,8 @@ def stack(docker: FakeDocker, tmp_path: Path) -> EpisodeStack:
 
 
 def _golden_export() -> RunnerEpisodeExport:
-    scores = json.loads((GOLDEN / "scores.json").read_text())
-    first = json.loads((GOLDEN / "events.sealed.jsonl").read_text().splitlines()[0])
+    scores = json.loads((GOLDEN / "attack" / "scores.json").read_text())
+    first = json.loads((GOLDEN / "attack" / "events.sealed.jsonl").read_text().splitlines()[0])
     return RunnerEpisodeExport(
         handle=HANDLE,
         episode_id=first["episode_id"],
@@ -129,12 +121,11 @@ def _golden_export() -> RunnerEpisodeExport:
 
 
 def _evidence(tmp_path: Path) -> dict[str, str]:
-    """The golden logs laid out as the evidence reader holds one handle's: sealed/ and mirror/."""
     sealed, mirror = tmp_path / "golden-sealed", tmp_path / "golden-mirror"
     sealed.mkdir()
     mirror.mkdir()
-    (sealed / "events.jsonl").write_bytes((GOLDEN / "events.sealed.jsonl").read_bytes())
-    (mirror / "events.jsonl").write_bytes((GOLDEN / "events.mirror.jsonl").read_bytes())
+    (sealed / "events.jsonl").write_bytes((GOLDEN / "attack" / "events.sealed.jsonl").read_bytes())
+    (mirror / "events.jsonl").write_bytes((GOLDEN / "attack" / "events.mirror.jsonl").read_bytes())
     return {"sealed": str(sealed), "mirror": str(mirror)}
 
 
@@ -157,7 +148,6 @@ def stack_episode(docker: FakeDocker, tmp_path: Path) -> StackEpisode:
 
 
 def _subcommands(docker: FakeDocker) -> list[str]:
-    """Each compose call's subcommand (the argument after the project directory and any profile)."""
     subcommands: list[str] = []
     for call in docker.calls():
         arguments = call.arguments
@@ -182,7 +172,7 @@ def test_every_compose_command_of_a_stack_names_its_image_tag(
 ) -> None:
     teardown(stack)
 
-    assert {call.image_tag for call in docker.calls()} == {stack.image_tag}
+    assert {call.image_tag for call in docker.calls()} == {stack.project}
 
 
 def test_two_episodes_of_a_run_build_their_images_under_different_tags(
@@ -321,5 +311,4 @@ def test_the_host_refuses_a_sealed_log_holding_another_episodes_events(tmp_path:
             MEASUREMENT,
             sealed_directory=Path(evidence["sealed"]),
             mirror_path=Path(evidence["mirror"]) / "events.jsonl",
-            max_bytes=CONFIG.settings.docker.evidence_max_bytes,
         )

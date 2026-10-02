@@ -1,14 +1,4 @@
-"""Episode harness: run an episode in process, grade it, and write its reproducible audit bundle.
-
-Enforces config over code (a run is its resolved config) and reproducibility (reproducible from
-``(config, seed)``). A run is one episode in a MODE plus, in attack mode, its honest calibration twin;
-``mode`` is the ONLY difference between them. ``run_episode`` runs both in process (STACK=0): every service
-is an object of this process, and the scaffold, the monitors, the agents' code and the grading all run here.
-``loc_arena.stack_episode.run_in_stack`` runs each in its own compose stack instead and grades on this
-machine; either way the episode record, the calibration, ``scores.json`` and the bundle are built here, by
-``score_and_write_bundle``. ``run_sweep`` aggregates N honest + M attack in-process episodes into a safety
-number.
-"""
+"""Episode harness: run an episode in process, grade it, and write its reproducible audit bundle."""
 
 from __future__ import annotations
 

@@ -1,15 +1,4 @@
-"""A per-episode compose stack's lifecycle over ``docker compose``: build, up, one-off runs, teardown.
-
-Enforces the sealed-vs-tamperable isolation structurally (the stack is rendered from
-``configs/env.default.yaml`` by :mod:`loc_arena.compose_document`; nothing here opens a route the rendered
-networks and mounts do not) and project isolation: every command names its project, so concurrent episodes
-never touch each other's containers, networks, volumes or images. Each stack gets its own control key, written
-to a file only this process knows the path of; every compose command of the stack is given that path (the
-rendered control_key secret reads it), and teardown deletes it. Each stack builds and runs images of its own,
-tagged with its project name, which every compose command is given the same way; teardown removes them.
-Every container, network and volume is labelled ``loc-arena.eval=1``, so ``scripts/teardown.sh`` can sweep
-them all by hand.
-"""
+"""A per-episode compose stack's lifecycle over ``docker compose``: build, up, one-off runs, teardown."""
 
 from __future__ import annotations
 
@@ -24,12 +13,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO, Final
 
-import yaml
 from pydantic import SecretStr
 
-from loc_arena.compose_document import render_compose
+from loc_arena.compose_document import PROJECT_DIRECTORY, dump_compose_document, render_compose
 from loc_arena.config import RunConfig
-from loc_arena.harness import PROJECT_DIRECTORY
 from loc_arena.stack.constants import (
     CONTROL_KEY_BYTES,
     CONTROL_KEY_FILE_ENVIRONMENT_VARIABLE,
@@ -40,9 +27,8 @@ from loc_arena.stack.constants import (
 )
 from loc_arena.stack.settings import DockerSettings
 
-RUNNER_SERVICE: Final = "runner"  # the on-demand service the runner phase runs in
-# The control key file is bind-mounted into the core, the edge and the runner, and a bound file keeps its host
-# owner and mode, so it must be readable by their users; its 0o700 directory keeps it from other local users.
+RUNNER_SERVICE: Final = "runner"
+# A bind-mounted file keeps its host mode and the containers' users read it; its 0o700 directory guards it.
 CONTROL_KEY_FILE_MODE: Final = 0o444
 
 
@@ -59,24 +45,13 @@ def docker_available() -> bool:
 
 @dataclass
 class EpisodeStack:
-    """A brought-up stack: its compose project, its rendered compose file, and its control key file.
-
-    Every ``docker compose`` command of the project is given ``control_key_file`` (the rendered control_key
-    secret reads its path), ``image_tag`` (every rendered service image reads it) and ``secret_environment``:
-    the values of the compose secrets' ``environment:`` sources. They go only to the ``docker compose``
-    process, never to a container; each secret value masks itself.
-    """
+    """A brought-up stack: its compose project, compose file, control key file and secret sources."""
 
     project: str
     compose_file: Path
     control_key_file: Path
     settings: DockerSettings
-    secret_environment: dict[str, SecretStr] = field(default_factory=dict)
-
-    @property
-    def image_tag(self) -> str:
-        """The tag of the images this stack builds and runs: its project name, which no other stack shares."""
-        return self.project
+    secret_environment: dict[str, SecretStr] = field(default_factory=dict)  # for the compose process only
 
     def exec(
         self,
@@ -117,7 +92,7 @@ def run_compose(
         "-f",
         str(stack.compose_file),
         "--project-directory",
-        str(PROJECT_DIRECTORY),  # relative paths in the rendered file (./logs) resolve against the repo root
+        str(PROJECT_DIRECTORY),  # the rendered file's relative binds (./scenarios/...) resolve against it
         *args,
     ]
     revealed_secrets = {
@@ -127,7 +102,7 @@ def run_compose(
         **os.environ,
         **revealed_secrets,
         CONTROL_KEY_FILE_ENVIRONMENT_VARIABLE: str(stack.control_key_file),
-        IMAGE_TAG_ENVIRONMENT_VARIABLE: stack.image_tag,
+        IMAGE_TAG_ENVIRONMENT_VARIABLE: stack.project,  # a stack's images are tagged with its project
     }
     pipe = subprocess.PIPE if capture else None
     return subprocess.run(
@@ -165,17 +140,14 @@ def up(
     workdir: Path | None = None,
     secret_environment: dict[str, SecretStr] | None = None,
 ) -> EpisodeStack:
-    """Render the compose file, build its images (tagged for this stack alone), and bring it up healthy.
-
-    A fresh control key is written for the stack. ``secret_environment`` supplies the environment-sourced
-    compose secrets (the provider key for gateway_core); a secret it leaves out is empty, so the core holds no
-    provider key: enough for the isolation tests and for scripted runs.
-    """
+    """Render the compose file, build its images under the stack's own tag, and bring it up healthy."""
     out_dir = workdir if workdir is not None else Path(tempfile.mkdtemp(prefix="locarena-"))
     out_dir.mkdir(parents=True, exist_ok=True)
     compose_file = out_dir / "compose.resolved.yaml"
-    compose_file.write_text(yaml.safe_dump(render_compose(config), sort_keys=False))
-    empty_secrets = {variable: SecretStr("") for variable in _secret_source_variables(config)}
+    document = render_compose(config)
+    compose_file.write_text(dump_compose_document(document))
+    sources = document.get("secrets", {}).values()
+    empty_secrets = {source["environment"]: SecretStr("") for source in sources if "environment" in source}
     stack = EpisodeStack(
         project=project,
         compose_file=compose_file,
@@ -196,16 +168,7 @@ def up(
 
 
 def teardown(stack: EpisodeStack) -> None:
-    """Remove every resource of THIS project (containers, networks, volumes, images) and its control key.
-
-    Idempotent, and project-scoped so tearing one episode down never touches another concurrent episode (they
-    share the ``loc-arena.eval`` label). ``--profile "*"`` includes on-demand services such as the runner.
-    ``--rmi all`` removes the images the services name, which carry this stack's own tag (``local`` skips an
-    image with a custom tag: docs.docker.com/reference/cli/docker/compose/down), so tags do not pile up. The
-    next build still reuses the build cache, which only ``docker builder prune`` or BuildKit's garbage
-    collection clears (docs.docker.com/build/cache/garbage-collection). ``scripts/teardown.sh`` is the manual
-    sweep.
-    """
+    """Remove this project's containers, networks, volumes, images and control key file; idempotent."""
     down_timeout = str(stack.settings.down_timeout_seconds)
     down = ["--profile", "*", "down", "-v", "--remove-orphans", "--rmi", "all", "-t", down_timeout]
     run_compose(stack, down, check=False)
@@ -221,12 +184,8 @@ def run_one_off(
     timeout_seconds: float | None = None,
     stdout: IO[bytes] | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    """``docker compose run --rm`` one container of ``service``, killed if it outlives ``timeout_seconds``.
-
-    The container is named, so that on expiry it can be removed: killing the compose client alone would leave
-    the container running (and its volumes in use).
-    """
-    name = f"{stack.project}-{service}-{secrets.token_hex(3)}"
+    """``docker compose run --rm`` one container of ``service``, killed if it outlives ``timeout_seconds``."""
+    name = f"{stack.project}-{service}-{secrets.token_hex(3)}"  # killing the client alone leaves it running
     run = ["run", "--rm", "-T", "--name", name, *arguments]
     try:
         return run_compose(
@@ -252,12 +211,7 @@ def run_in_runner(
     capture: bool = True,
     timeout_seconds: float | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    """Run ``command`` in a fresh runner container (removed afterwards) as the host user.
-
-    ``output_directory`` (a host directory) is bind-mounted at ``/app/logs`` for this container only; running
-    as the host uid keeps what the run writes there owned by that user. Past ``timeout_seconds`` the container
-    is killed and ``HarnessError`` raised.
-    """
+    """Run ``command`` in a fresh runner container as the host user, ``output_directory`` at /app/logs."""
     user = f"{os.getuid()}:{os.getgid()}"
     output_mount = (
         ["--volume", f"{output_directory.resolve()}:{RUNNER_OUTPUT_MOUNT_PATH.as_posix()}"]
@@ -274,12 +228,7 @@ def run_in_runner(
 
 
 def collect_run_output(staging_directory: Path, logs_directory: Path) -> list[Path]:
-    """Copy what a runner wrote into ``logs_directory`` and remove the staging directory.
-
-    The runner (agent code included) controlled ``staging_directory``, so nothing in it is followed: only real
-    directories and regular files are copied; symlinks, FIFOs, sockets and devices are dropped. Returns the
-    dropped paths, relative to ``staging_directory``. Call it after the runner container is gone.
-    """
+    """Move a runner's real directories and regular files to ``logs_directory``; return what it dropped."""
     dropped: list[Path] = []
     for directory, subdirectory_names, file_names in os.walk(staging_directory, followlinks=False):
         source_directory = Path(directory)
@@ -299,19 +248,8 @@ def collect_run_output(staging_directory: Path, logs_directory: Path) -> list[Pa
     return dropped
 
 
-def _secret_source_variables(config: RunConfig) -> list[str]:
-    """The environment variables the config's compose secrets read their values from."""
-    return [
-        str(spec["environment"]) for spec in config.raw.get("secrets", {}).values() if "environment" in spec
-    ]
-
-
 def name_compose_project(run: str) -> str:
-    """A unique compose project name for one run, also a valid image tag (it is ``EpisodeStack.image_tag``).
-
-    Lowercase letters, digits, hyphens and underscores only (compose's project name rule, a subset of what a
-    tag allows), cut to the length a tag allows.
-    """
+    """A unique compose project name for ``run``, also valid as the stack's image tag."""
     suffix = f"-{secrets.token_hex(3)}"
     run_fragment = re.sub(r"[^a-z0-9_-]+", "-", run.lower()).strip("-") or "run"
     return f"locarena-{run_fragment}"[: IMAGE_TAG_MAX_LENGTH - len(suffix)] + suffix

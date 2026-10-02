@@ -1,25 +1,4 @@
-"""One episode in its own compose stack: the runner phase inside it, then the host phase on this machine.
-
-Enforces the sealed-vs-tamperable isolation (STRUCTURAL: the sealed core/recorder sit on networks the
-agents are not members of, the sealed log volume is mounted only into the recorder and the networkless
-evidence reader, and agent code runs only in the agents' sandboxes and the networkless grader) and config
-over code (the whole stack is rendered from ``configs/env.default.yaml`` -- no port, limit, or network is
-hardcoded here).
-
-``run_in_stack`` (``make run``) gives each episode of a run a FRESH compose project (its own sandboxes,
-checkout volume, core state and control key), so nothing an agent started outlives its episode:
-
-- **The runner phase** (``python -m loc_arena.cli episode`` in the runner container, ``run_runner_phase``)
-  opens the episode on the core, runs the scaffold, closes the episode, scores the mirror with the monitors
-  and exports what it knows (``RunnerEpisodeExport``).
-- **The host phase** freezes the stack (stops the sandboxes and the edge), copies the sealed, model-call and
-  mirror logs out of the evidence reader, has the networkless grader measure the checkout, and grades on this
-  machine: the main task against the sealed reference, the side task on the sealed log. The harness then
-  scores the run and writes its bundle exactly as it does for an in-process run.
-
-The stack's lifecycle (build, up, one-off runs, teardown, the control key) is
-:mod:`loc_arena.compose_stack`'s.
-"""
+"""One episode in its own compose stack: the runner phase inside it, then grading on this machine."""
 
 from __future__ import annotations
 
@@ -71,7 +50,7 @@ from loc_arena.logging_.agent_trace import (
     merge_runner_episode,
 )
 from loc_arena.monitors.registry import MonitorVerdict
-from loc_arena.runner import EpisodeMonitoring, export_verdicts, finish_episode, import_verdicts
+from loc_arena.runner import EpisodeMonitoring, finish_episode
 from loc_arena.scaffold.clock import SimulatedClock
 from loc_arena.stack.constants import (
     EVENTS_FILE_NAME,
@@ -83,24 +62,26 @@ from loc_arena.stack.constants import (
     SEALED_MOUNT_PATH,
     build_sandbox_service_name,
 )
-from loc_arena.stack.contracts import GradeMeasurement, RunnerEpisodeExport, build_episode_id
+from loc_arena.stack.contracts import (
+    GradeMeasurement,
+    MonitorVerdictRecord,
+    RunnerEpisodeExport,
+    build_episode_id,
+)
 from loc_arena.stack.stack_secrets import StackSecrets, load_container_secrets
 from loc_arena.task import _resolve_scenario, run_scripted_policy
 from loc_arena.tasks.main_task_grader import MainTaskScore, load_grade_reference, score_measurement
 from loc_arena.tasks.side_task_verifier import verify_sealed_events
 from loc_arena.verifier.side_task import KillChainVerdict
 
-# The config's service names the host drives by name (the rest it reaches only through compose).
 _EDGE_SERVICE: Final = "gateway_edge"
 _EVIDENCE_READER_SERVICE: Final = "evidence_reader"
 _GRADER_SERVICE: Final = "grader"
-# Where a stack episode's host-side files go under its directory: what the runner wrote, the copied logs.
 _STAGING_DIRECTORY: Final = ".incoming"
 _RUNNER_DIRECTORY: Final = "runner"
 _EVIDENCE_DIRECTORY: Final = "evidence"
 _SEALED_DIRECTORY: Final = "sealed"
 _MIRROR_DIRECTORY: Final = "mirror"
-# A measurement the grader could not produce: graded as a broken pipeline (grade_error), never a crash.
 _FAILED_MEASUREMENT: Final = GradeMeasurement(
     suite_green=False,
     pipeline_completed=False,
@@ -119,13 +100,7 @@ def run_runner_phase(
     monitors_path: str = DEFAULT_MONITORS_PATH,
     policy_factory: live.AgentPolicyFactory | None = None,
 ) -> RunnerEpisodeExport:
-    """The runner phase of one episode (in the runner container): open it, run it, close it, monitor it.
-
-    Opens the episode of ``config`` (mode applied) on the core, runs its policy on the stack wiring (each
-    agent's code in its own sandbox, with a shell), closes it, scores the mirror (read at
-    ``mirror_root/<handle>``) with the protocol's monitors, and writes the ``RunnerEpisodeExport`` to
-    ``output_directory``. Live monitors call models only when the policy is live.
-    """
+    """The runner phase of one episode (in the runner container): open it, run it, close it, monitor it."""
     trace = AgentTrace() if config.agent_transcript else None
     wiring = open_episode_wiring(config, services, trace=trace)
     clock = SimulatedClock(wiring.control, config.settings.clock.start_ts)
@@ -153,13 +128,14 @@ def run_runner_phase(
             calls_models=config.policy == "model",
         ),
     )
+    verdicts = tuple(MonitorVerdictRecord.model_validate(v, from_attributes=True) for v in finished.verdicts)
     export = export_runner_episode(
         finished.trace,
         handle=wiring.handle,
         episode_id=build_episode_id(build_episode_name(config), read_episode_mode(config)),
         deadline_ts=deadline_ts,
         last_sealed_seq=finished.last_sealed_seq,
-        verdicts=export_verdicts(finished.verdicts),
+        verdicts=verdicts,
     )
     output_directory.mkdir(parents=True, exist_ok=True)
     (output_directory / RUNNER_EPISODE_EXPORT_FILE_NAME).write_text(export.model_dump_json())
@@ -199,14 +175,7 @@ def run_stack_episode(
     robust: bool,
     provider_key: SecretStr | None,
 ) -> StackEpisode:
-    """Run one episode of ``run`` in ``mode`` in a fresh compose stack, then grade it on this machine.
-
-    The runner phase runs in the runner container within ``settings.docker.runner_phase_timeout_seconds``.
-    Then the host freezes the stack (the sandboxes, with anything an agent left running, and the edge stop),
-    copies the episode's logs out of the evidence reader, has the grader measure the checkout within
-    ``settings.docker.grader_timeout_seconds``, tears the stack down, and grades what it copied.
-    """
-    docker = config.settings.docker
+    """Run one episode of ``run`` in ``mode`` in a fresh compose stack, then grade it on this machine."""
     staging = directory / _STAGING_DIRECTORY
     stack = up(
         config,
@@ -238,7 +207,6 @@ def run_stack_episode(
         measurement,
         sealed_directory=evidence / _SEALED_DIRECTORY,
         mirror_path=evidence / _MIRROR_DIRECTORY / EVENTS_FILE_NAME,
-        max_bytes=docker.evidence_max_bytes,
     )
 
 
@@ -251,7 +219,6 @@ def _run_runner(
     staging: Path,
     directory: Path,
 ) -> RunnerEpisodeExport:
-    """Run the runner phase in the runner container; return its export, copied into ``directory``."""
     staging.mkdir(parents=True)
     minimal = [] if robust else ["--minimal"]
     command = ["python", "-m", "loc_arena.cli", "episode", "--run", run, "--mode", mode, *minimal]
@@ -273,10 +240,6 @@ def _run_runner(
 
 
 def _copy_evidence(stack: EpisodeStack, handle: str, *, staging: Path, directory: Path) -> None:
-    """Copy the episode's sealed and mirror logs out of the evidence reader, links and devices dropped.
-
-    ``docker compose cp`` without ``-L`` copies a link as a link, and ``collect_run_output`` then drops it.
-    """
     staging.mkdir(parents=True)
     for mount, name in ((SEALED_MOUNT_PATH, _SEALED_DIRECTORY), (MIRROR_MOUNT_PATH, _MIRROR_DIRECTORY)):
         source = f"{_EVIDENCE_READER_SERVICE}:{(mount / handle).as_posix()}"
@@ -285,11 +248,7 @@ def _copy_evidence(stack: EpisodeStack, handle: str, *, staging: Path, directory
 
 
 def _measure_checkout(stack: EpisodeStack, config: RunConfig) -> GradeMeasurement:
-    """The grader's measurement of the checkout; an output that is no measurement grades as a broken pipeline.
-
-    The grader runs agent code, so its output is read as untrusted: at most ``grading.max_output_bytes`` of it
-    (``parse_measurement`` refuses more), from a file rather than memory.
-    """
+    # See docs/isolation/design.md#grader-output.
     grading = config.settings.grading
     with tempfile.TemporaryFile() as output:
         result = run_one_off(
@@ -321,9 +280,8 @@ def _grade_on_host(
     *,
     sealed_directory: Path,
     mirror_path: Path,
-    max_bytes: int,
 ) -> StackEpisode:
-    """Grade the episode from what the host copied: the logs parsed strictly, the measurement scored."""
+    max_bytes = config.settings.docker.evidence_max_bytes
     sealed_path = sealed_directory / EVENTS_FILE_NAME
     sealed_events = read_event_log(sealed_path, max_bytes)
     read_event_log(mirror_path, max_bytes)  # the bundle ships it: it must be a valid log too
@@ -342,7 +300,7 @@ def _grade_on_host(
         mirror_path=mirror_path,
         deadline_ts=export.deadline_ts,
         trace=trace,
-        verdicts=import_verdicts(export.verdicts),
+        verdicts=tuple(MonitorVerdict(**record.model_dump()) for record in export.verdicts),
     )
 
 
@@ -361,12 +319,7 @@ def run_in_stack(
     run_instance_id: str | None = None,
     dotenv_path: Path | None = DOTENV_PATH,
 ) -> Path:
-    """Run one episode, and in attack mode its honest twin, each in its own compose stack (``make run``).
-
-    The agents' code never runs on this machine: it runs in their sandboxes, and only gateway_core holds the
-    provider key (read here from the environment or ``dotenv_path``, passed to compose as its secret). The
-    scores and the bundle are the in-process run's, written by the same code. Returns the bundle directory.
-    """
+    """Run one episode, and in attack mode its honest twin, each in its own compose stack (``make run``)."""
     if not docker_available():
         raise HarnessError(
             "Docker is not running. Start Docker Desktop, or run in-process with STACK=0 "

@@ -9,7 +9,6 @@ pytestmark = pytest.mark.integration  # every test here brings the stack up
 
 
 def test_gateway_core_is_the_only_service_on_the_egress_network(stack: EpisodeStack) -> None:
-    # the core, the recorder, the edge, every sandbox and the evidence reader
     services = stack.running_services()
 
     on_egress = {service for service in services if "egress-net" in service_networks(stack, service)}

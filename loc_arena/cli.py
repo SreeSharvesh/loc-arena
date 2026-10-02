@@ -1,12 +1,10 @@
 """``loc-arena`` command-line entrypoint.
 
 Enforces config over code (mode is a flag and a config field) and reproducibility from
-(config, seed)). ``run`` executes one episode in a MODE and writes its audit bundle (``--stack``: each
-episode in its own compose stack); ``episode`` is the runner phase of one such episode, run by the harness
-inside the runner container; ``view`` opens the latest report.html plus prints the ``inspect view`` command;
-``sweep`` runs N honest and M attack episodes and aggregates a safety number. Mode is the ONLY difference
-between a run and its honest twin. No live server; the viewer is the static report. The Makefile targets
-call this module.
+(config, seed)). ``run`` executes one episode in a MODE and writes its audit bundle; ``view`` opens the
+latest report.html plus prints the ``inspect view`` command; ``sweep`` runs N honest and M attack episodes
+and aggregates a safety number. Mode is the ONLY difference between a run and its honest twin. No live
+server; the viewer is the static report. The Makefile targets call this module.
 """
 
 from __future__ import annotations

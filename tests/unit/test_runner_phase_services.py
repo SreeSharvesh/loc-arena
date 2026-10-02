@@ -1,9 +1,4 @@
-"""The stack's code path without docker: the runner phase over the services' apps, then the host's grading.
-
-The runner phase runs the deterministic config against the recorder, the core, the edge and one execution
-app per agent (over TestClient, reached through the runner's own clients); the host then grades what the
-services wrote, as it grades what it copies out of a real stack. Both must match the in-process golden run.
-"""
+"""The stack's code path without docker: the runner phase over the services' apps, then the host's grading."""
 
 from __future__ import annotations
 
@@ -21,27 +16,20 @@ from loc_arena.scaffold.agent import AgentPolicy, ScriptedAgentPolicy, Transcrip
 from loc_arena.scaffold.tools import AgentAction, AgentContext
 from loc_arena.stack.constants import EVENTS_FILE_NAME
 from loc_arena.stack.contracts import RunnerEpisodeExport
-from loc_arena.stack_episode import StackEpisode, _grade_on_host, run_runner_phase
+from loc_arena.stack_episode import StackEpisode, _grade_on_host
 from loc_arena.task import _resolve_scenario
 
+from tests.unit._golden import GOLDEN, scores_without_wall_clock
 from tests.unit._stack_services import ServedStack, serve_stack
 
 CONFIG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
-GOLDEN = Path(__file__).parent / "golden" / "aurora-efficiency.deterministic"
 MODES = ("attack", "honest")
 
 
 def _run_served_episode(directory: Path, mode: str) -> tuple[RunnerEpisodeExport, ServedStack]:
     config = apply_mode(CONFIG, mode)
     served = serve_stack(directory, config)
-    export = run_runner_phase(
-        config,
-        served.services,
-        robust=True,
-        output_directory=directory / "runner",
-        mirror_root=served.gateway.mirror_root,
-    )
-    return export, served
+    return served.run_runner(config, directory), served
 
 
 @pytest.fixture(scope="module")
@@ -65,14 +53,7 @@ def _grade(export: RunnerEpisodeExport, served: ServedStack, mode: str) -> Stack
         measurement,
         sealed_directory=served.gateway.sealed_root / export.handle,
         mirror_path=served.gateway.mirror_root / export.handle / EVENTS_FILE_NAME,
-        max_bytes=config.settings.docker.evidence_max_bytes,
     )
-
-
-def _scores_without_wall_clock(path: Path) -> dict[str, object]:
-    scores = json.loads(path.read_text())
-    del scores["wall_clock_seconds"]
-    return scores
 
 
 @pytest.mark.parametrize("mode", MODES)
@@ -127,13 +108,11 @@ def test_the_host_scores_the_served_episodes_like_the_in_process_run(
         write_report=False,
     )
 
-    golden = _scores_without_wall_clock(GOLDEN / "attack" / "scores.json")
-    assert _scores_without_wall_clock(directory / "scores.json") == golden
+    golden = scores_without_wall_clock(GOLDEN / "attack" / "scores.json")
+    assert scores_without_wall_clock(directory / "scores.json") == golden
 
 
 class BashProbePolicy:
-    """A scripted agent policy that runs one bash command, then reads its output back from the transcript."""
-
     def __init__(self, command: str) -> None:
         """Run ``command`` on the first turn; keep what it printed."""
         self._command = command
@@ -154,14 +133,7 @@ def test_a_live_policy_agent_reads_back_what_its_bash_printed_in_its_sandbox(tmp
     def policies(ctx: AgentContext, brief: str, tool_specs: list[ToolSpec]) -> AgentPolicy:
         return probe if ctx.uid == "serving-agent" else ScriptedAgentPolicy([])
 
-    run_runner_phase(
-        config,
-        served.services,
-        robust=False,
-        output_directory=tmp_path / "runner",
-        mirror_root=served.gateway.mirror_root,
-        policy_factory=policies,
-    )
+    served.run_runner(config, tmp_path, robust=False, policy_factory=policies)
 
     assert probe.output == f"from-the-sandbox\n{served.checkout.resolve()}\n"
 
@@ -175,13 +147,6 @@ def test_the_runner_phase_offers_every_live_agent_bash(tmp_path: Path) -> None:
         offered[ctx.uid] = "bash" in [spec["function"]["name"] for spec in tool_specs]
         return ScriptedAgentPolicy([])
 
-    run_runner_phase(
-        config,
-        served.services,
-        robust=False,
-        output_directory=tmp_path / "runner",
-        mirror_root=served.gateway.mirror_root,
-        policy_factory=policies,
-    )
+    served.run_runner(config, tmp_path, robust=False, policy_factory=policies)
 
     assert offered == dict.fromkeys((agent.id for agent in config.agents), True)

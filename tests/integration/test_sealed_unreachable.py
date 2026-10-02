@@ -9,10 +9,7 @@ from tests.integration._docker_support import has_mount_at, service_networks, sh
 
 pytestmark = pytest.mark.integration  # every test here brings the stack up
 
-# The load-bearing check (the sealed-vs-tamperable isolation): every agent's sandbox, where all of its code
-# runs, is structurally isolated from the sealed layer and the provider, enforced at the network and volume
-# layer -- NOT in application code. Asserted by network membership and volume mounts (deterministic) plus the
-# mount-based probe on the sealed volume.
+# Every agent's sandbox is cut off from the sealed layer and the provider by its networks and mounts.
 SANDBOXES = [
     build_sandbox_service_name(agent.id)
     for agent in load_run_config("configs/aurora-efficiency.deterministic.yaml").agents

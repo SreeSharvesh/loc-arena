@@ -38,9 +38,7 @@ def share_a_network(stack: EpisodeStack, a: str, b: str) -> bool:
     return bool(service_networks(stack, a) & service_networks(stack, b))
 
 
-# The source of ``is_mount_point(path)``, for the probes that run inside a container. It reads the kernel's
-# mount table (proc_pid_mountinfo(5): one line per mount, field 5 its mount point), because whether the path
-# exists says nothing: both images create every volume's mount point as an empty directory, mounted or not.
+# Reads the mount table: both images create every mount point, so a path that exists proves nothing.
 IS_MOUNT_POINT_SOURCE = (
     "def is_mount_point(path):\n"
     "    with open('/proc/self/mountinfo') as mount_table:\n"

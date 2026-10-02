@@ -1,14 +1,4 @@
-"""Minimal, dependency-free app for the stack's simple containers (parameterized by env).
-
-Enforces nothing itself; the sealed-vs-tamperable guarantees are structural, from the docker networks and
-volume mounts the harness renders. This app only has to keep a container alive and, where it has a network,
-answer a health check. The sealed logs are written by the recorder service
-(:mod:`loc_arena.services.recorder.app`), never here.
-
-Roles (env ``SVC_ROLE``): - ``health``: a health server on ``SVC_PORT`` (/health, /whoami). - ``reader``: no
-server (the networkless evidence reader). It sleeps with the sealed and mirror volumes mounted read-only; the
-host copies the logs out through it with ``docker compose cp``.
-"""
+"""Minimal, dependency-free app for the stack's simple containers, by ``SVC_ROLE``: health or reader."""
 
 from __future__ import annotations
 
@@ -54,7 +44,6 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def _run_reader() -> None:
-    """The networkless evidence reader: stay alive with the log volumes mounted read-only."""
     _log("evidence reader up")
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     while True:

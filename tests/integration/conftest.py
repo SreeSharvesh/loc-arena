@@ -29,10 +29,7 @@ def live_provider() -> OpenRouterProvider:
 
 @pytest.fixture(scope="session")
 def stack() -> Iterator[EpisodeStack]:
-    """Bring the per-episode stack up once for the isolation tests; tear it down at the end.
-
-    The project name is unique per session, so sessions in other worktrees never share containers.
-    """
+    """Bring the per-episode stack up once for the isolation tests; tear it down at the end."""
     if not docker_available():
         pytest.skip("docker daemon unavailable")
     config = load_run_config("configs/aurora-efficiency.deterministic.yaml")

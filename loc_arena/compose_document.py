@@ -1,11 +1,4 @@
-"""Render the per-episode docker compose document from the resolved run config (config over code).
-
-Each ``services:`` entry of the config is parsed once into a typed :class:`ServiceSpec` (a ``per_agent`` entry
-once per agent of the run, as that agent's sandbox) and each ``volumes:`` entry into a :class:`VolumeSpec`;
-rendering maps them onto the Compose Specification (docs.docker.com/reference/compose-file). The committed
-``compose.yaml`` is the reference run config rendered: ``uv run python -m loc_arena.compose_document``
-regenerates it.
-"""
+"""Render the per-episode compose document from the run config's topology."""
 
 from __future__ import annotations
 
@@ -38,10 +31,9 @@ from loc_arena.stack.constants import (
 from loc_arena.stack.settings import DockerSettings, GatewaySettings, LocArenaSettings
 
 LABEL = "loc-arena.eval"
-APP_IMAGE = "loc-arena-app"  # ./Dockerfile target `app`: gateway_core, recorder, runner, evidence reader
-SANDBOX_IMAGE = "loc-arena-sandbox"  # target `sandbox`: the edge, the agents' sandboxes, the grader
-# Our images are built here (`build:`) and never pulled: a missing one is built, not fetched from a registry.
-LOCAL_IMAGE_PULL_POLICY: Final = "never"
+APP_IMAGE = "loc-arena-app"
+SANDBOX_IMAGE = "loc-arena-sandbox"
+LOCAL_IMAGE_PULL_POLICY: Final = "never"  # compose builds a missing image locally
 PROJECT_DIRECTORY: Final = Path(__file__).resolve().parent.parent  # relative host paths resolve against it
 REFERENCE_RUN_CONFIG: Final = PROJECT_DIRECTORY / "configs" / "aurora-efficiency.yaml"
 REFERENCE_COMPOSE_FILE: Final = PROJECT_DIRECTORY / "compose.yaml"
@@ -54,13 +46,11 @@ _MOUNT_PATH_BY_VOLUME: Final = {
     "mirror_log": MIRROR_MOUNT_PATH,
     "checkout": WORKSPACE_MOUNT_PATH,
 }
-# The hostname each gateway service is reached by (its alias on every network it joins).
 _HOSTNAME_BY_SERVICE: Final = {
     "gateway_core": GATEWAY_CORE_HOSTNAME,
     "gateway_edge": GATEWAY_EDGE_HOSTNAME,
     "recorder": RECORDER_HOSTNAME,
 }
-_DOCUMENTATION_KEYS: Final = frozenset({"role"})  # service keys for the reader of the config only
 
 
 class ComposeBuild(TypedDict):
@@ -175,30 +165,8 @@ class ComposeDocument(TypedDict, total=False):
     secrets: dict[str, ComposeSecret]
 
 
-@dataclass(frozen=True)
-class ImageSpec:
-    """An image services run: its name, and where compose builds it (a context and a Dockerfile stage)."""
-
-    name: str
-    context: str
-    target: str | None = None
-
-    def render_reference(self) -> str:
-        """``<name>:<tag>``, the tag read by compose from the variable the harness sets for each episode."""
-        return f"{self.name}:${{{IMAGE_TAG_ENVIRONMENT_VARIABLE}:?the image tag of the episode}}"
-
-    def render_build(self) -> ComposeBuild:
-        """The ``build`` field of a service running this image."""
-        build: ComposeBuild = {"context": self.context}
-        if self.target is not None:
-            build["target"] = self.target
-        return build
-
-
-IMAGES: Final = {  # a service's `image:` in the config -> the image
-    "app": ImageSpec(APP_IMAGE, ".", "app"),
-    "sandbox": ImageSpec(SANDBOX_IMAGE, ".", "sandbox"),
-}
+IMAGES: Final = {"app": APP_IMAGE, "sandbox": SANDBOX_IMAGE}
+_IMAGE_TAG: Final = f"${{{IMAGE_TAG_ENVIRONMENT_VARIABLE}:?the image tag of the episode}}"
 
 
 def _strings(raw: Mapping[str, object], key: str, where: str) -> tuple[str, ...]:
@@ -243,9 +211,9 @@ def _port_setting(raw: Mapping[str, object], where: str) -> str | None:
 class ServiceSpec:
     """One ``services:`` entry of the run config, typed. Absent keys take the neutral default."""
 
-    name: str  # the compose service name
-    config_name: str  # its key under ``services:``, which names every sandbox of a per-agent entry
-    image: ImageSpec
+    name: str
+    config_name: str  # its key under ``services:``, shared by every sandbox of a per-agent entry
+    image: str
     app: str | None  # the module:factory uvicorn serves
     port_setting: str | None  # the settings.gateway field holding the app's port
     per_agent: bool
@@ -281,7 +249,7 @@ class ServiceSpec:
         return cls(
             name=name,
             config_name=name,
-            image=IMAGES[image],
+            image=image,
             app=_optional_string(raw, "app"),
             port_setting=_port_setting(raw, where),
             per_agent=_flag(raw, "per_agent", where),
@@ -319,7 +287,7 @@ class ServiceSpec:
 
 _SERVICE_KEYS: Final = frozenset(
     field.name for field in dataclasses.fields(ServiceSpec) if field.name not in {"name", "config_name"}
-).union(_DOCUMENTATION_KEYS)
+)
 
 
 @dataclass(frozen=True)
@@ -373,12 +341,10 @@ class RunTopology:
 
 
 def _escape_interpolation(value: str) -> str:
-    """``value`` as compose passes it on verbatim: ``$$`` is a literal ``$`` (compose-file/interpolation)."""
     return value.replace("$", "$$")
 
 
 def _render_healthcheck(port: int, docker: DockerSettings) -> ComposeHealthcheck:
-    # urlopen raises on a refused connection or an error status, so the probe exits non-zero
     url = f"http://localhost:{port}{HEALTH_ROUTE}"
     timeout = docker.healthcheck_request_timeout_seconds
     probe = f"import urllib.request; urllib.request.urlopen({url!r}, timeout={timeout})"
@@ -437,7 +403,6 @@ def _attach_networks(service: ComposeService, spec: ServiceSpec) -> None:
 
 
 def _render_tmpfs(spec: ServiceSpec, docker: DockerSettings) -> list[str]:
-    """The service's tmpfs mounts (``path[:options]``); where agents' code runs, each is capped in size."""
     if not spec.runs_agent_code:
         return list(spec.tmpfs)
     size = f"size={docker.agent_tmpfs_size_bytes}"
@@ -445,7 +410,6 @@ def _render_tmpfs(spec: ServiceSpec, docker: DockerSettings) -> list[str]:
 
 
 def _apply_process(service: ComposeService, spec: ServiceSpec, settings: LocArenaSettings) -> None:
-    """What the container runs: its app under uvicorn (health-probed on its port) or its command."""
     if spec.app is not None and spec.port_setting is not None:
         port = int(getattr(settings.gateway, spec.port_setting))
         service["command"] = ["uvicorn", "--factory", spec.app, "--host", LISTEN_HOST, "--port", str(port)]
@@ -453,7 +417,7 @@ def _apply_process(service: ComposeService, spec: ServiceSpec, settings: LocAren
     elif spec.command:
         service["command"] = list(spec.command)
     if spec.init:
-        service["init"] = True  # an init process reaps what the container's processes detach
+        service["init"] = True
 
 
 def _apply_limits_and_hardening(service: ComposeService, spec: ServiceSpec, docker: DockerSettings) -> None:
@@ -476,15 +440,11 @@ def _apply_limits_and_hardening(service: ComposeService, spec: ServiceSpec, dock
 
 
 def render_service(spec: ServiceSpec, topology: RunTopology) -> ComposeService:
-    """Render one service.
-
-    No fixed container_name: compose names containers per project, so episodes can run side by side. Every
-    value is built fresh, so the YAML dump has no anchors.
-    """
+    """Render one compose service."""
     environment = {**spec.environment, SETTINGS_ENVIRONMENT_VARIABLE: topology.settings.model_dump_json()}
     service: ComposeService = {
-        "image": spec.image.render_reference(),
-        "build": spec.image.render_build(),
+        "image": f"{IMAGES[spec.image]}:{_IMAGE_TAG}",
+        "build": {"context": ".", "target": spec.image},
         "pull_policy": LOCAL_IMAGE_PULL_POLICY,
         "environment": {name: _escape_interpolation(value) for name, value in environment.items()},
         "labels": {LABEL: "1"},

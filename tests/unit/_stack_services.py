@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import httpx
 from fastapi import FastAPI
@@ -28,8 +29,9 @@ from loc_arena.scaffold.registry import AgentRegistry
 from loc_arena.scaffold.tool_specs import agent_tool_specs
 from loc_arena.scaffold.tools import AgentContext, StubServices, ToolResult, Tools
 from loc_arena.stack.constants import build_sandbox_service_name, build_service_url
-from loc_arena.stack.contracts import EpisodeHandle, EpisodeWiring
+from loc_arena.stack.contracts import EpisodeHandle, EpisodeWiring, RunnerEpisodeExport
 from loc_arena.stack.service_client import ServiceClient
+from loc_arena.stack_episode import run_runner_phase
 from scenarios.loader import load_scenario
 
 from tests.unit._gateway_stack import KEY, GatewayStack, serve_gateway
@@ -40,6 +42,23 @@ class ServedStack:
     gateway: GatewayStack
     checkout: Path
     services: StackServices
+
+    def run_runner(
+        self,
+        config: RunConfig,
+        directory: Path,
+        *,
+        robust: bool = True,
+        **options: Any,
+    ) -> RunnerEpisodeExport:
+        return run_runner_phase(
+            config,
+            self.services,
+            robust=robust,
+            output_directory=directory / "runner",
+            mirror_root=self.gateway.mirror_root,
+            **options,
+        )
 
 
 def serve_stack(tmp_path: Path, config: RunConfig, *, provider: Provider | None = None) -> ServedStack:

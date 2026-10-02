@@ -1,13 +1,4 @@
-"""The provider key, the sealed logs and the grader's reference stay out of the runner's and agents' reach.
-
-Neither the runner nor an agent's code in its sandbox can reach the key, the sealed logs, the grader's
-reference, or a model call that leaves no record.
-
-Brings the stack up with a canary key as the compose secret, proves the canary IS in gateway_core (positive
-control), then probes the runner (the scaffold and the monitors) and, through ``bash`` driven by a scripted
-agent policy, an agent's own sandbox, where all of an agent's code runs. Network facts are asserted from the
-rendered config (membership) plus runtime reachability, per _docker_support's note on Docker Desktop.
-"""
+"""The provider key, the sealed logs and the grader's reference stay out of the runner's and agents' reach."""
 
 from __future__ import annotations
 
@@ -17,7 +8,6 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from loc_arena.compose_document import render_compose
 from loc_arena.compose_stack import (
     EpisodeStack,
     collect_run_output,
@@ -32,13 +22,10 @@ from pydantic import SecretStr
 
 from tests.integration._docker_support import IS_MOUNT_POINT_SOURCE, build_mount_point_probe
 
-# Tests that bring the stack up are marked integration (and skip without a docker daemon); the rendered
-# topology is checked without one.
-needs_docker = pytest.mark.integration
+pytestmark = pytest.mark.integration  # every test here brings the stack up
 
 CANARY = "sk-or-v1-CANARY-runner-isolation-5d1f"
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
-SERVICES = render_compose(CFG)["services"]
 type ProbeResult = dict[str, bool | int | str | None]  # the JSON line a probe prints
 
 
@@ -63,47 +50,18 @@ def _run_probe_in_runner(stack: EpisodeStack, code: str) -> ProbeResult:
     return json.loads(result.stdout.strip().splitlines()[-1])
 
 
-# --- the topology, as rendered ---
-def test_the_runner_is_on_the_agent_and_control_networks_only() -> None:
-    networks = SERVICES["runner"]["networks"]
-
-    assert networks == ["agent-net", "control-net"]
-
-
-def test_the_runner_mounts_nothing_sealed() -> None:
-    targets = {mount["target"] for mount in SERVICES["runner"].get("volumes", [])}
-
-    assert "/sealed" not in targets
-
-
-def test_the_grader_has_no_network() -> None:
-    network_mode = SERVICES["grader"].get("network_mode")
-
-    assert network_mode == "none"
-
-
-def test_the_sealed_network_holds_the_core_and_the_recorder_only() -> None:
-    members = {name for name, service in SERVICES.items() if "sealed-net" in service.get("networks", [])}
-
-    assert members == {"gateway_core", "recorder"}
-
-
-# --- the key and the runner ---
-@needs_docker
 def test_the_key_is_a_secret_file_in_gateway_core(stack: EpisodeStack) -> None:
     secret = stack.exec("gateway_core", ["cat", "/run/secrets/openrouter_api_key"], check=False)
 
     assert secret.stdout.strip() == CANARY  # positive control: the key did load, where it should
 
 
-@needs_docker
 def test_the_key_is_no_environment_variable_of_gateway_core(stack: EpisodeStack) -> None:
     environment = stack.exec("gateway_core", ["env"], check=False)
 
     assert CANARY not in environment.stdout  # a file, never an environment variable
 
 
-@needs_docker
 def test_the_runner_cannot_see_the_key(stack: EpisodeStack) -> None:
     probe = (
         "import json, os, pathlib\n"
@@ -133,7 +91,6 @@ def test_the_runner_cannot_see_the_key(stack: EpisodeStack) -> None:
     assert found == {"own_env": False, "any_proc_env": False, "key_file": False, "key_var": False}
 
 
-@needs_docker
 def test_the_runner_has_no_internet_but_reaches_the_core(stack: EpisodeStack) -> None:
     probe = (
         "import json, socket, urllib.request\n"
@@ -157,14 +114,12 @@ def test_the_runner_has_no_internet_but_reaches_the_core(stack: EpisodeStack) ->
     assert found == {"internet": False, "core": True, "key": True}
 
 
-@needs_docker
 def test_the_runner_has_no_sealed_log(stack: EpisodeStack) -> None:
     found = _run_probe_in_runner(stack, build_mount_point_probe("/sealed"))
 
     assert found == {"mounted": False}
 
 
-@needs_docker
 def test_the_edge_refuses_a_mirror_write_without_the_control_key(stack: EpisodeStack) -> None:
     probe = (
         "import json, urllib.request, urllib.error\n"
@@ -184,7 +139,6 @@ def test_the_edge_refuses_a_mirror_write_without_the_control_key(stack: EpisodeS
     assert found == {"status": 401}
 
 
-@needs_docker
 def test_the_gateway_refuses_an_unknown_model_role_with_400(stack: EpisodeStack) -> None:
     probe = (
         "import json\n"
@@ -219,9 +173,7 @@ def test_the_gateway_refuses_an_unknown_model_role_with_400(stack: EpisodeStack)
     assert found == {"status": 400}
 
 
-# --- what an agent's own code observes from inside its sandbox ---
-# The scripted serving-agent does what a real one could: run a command with bash in its own sandbox and read
-# the output back. The command is this probe, a Python script fed to the sandbox's interpreter.
+# Run by the scripted serving-agent's bash in its own sandbox.
 AGENT_PROBE = """\
 import json, os, pathlib, socket
 
@@ -286,7 +238,6 @@ print(json.dumps({{
 
 
 def _scripted_agent_episode(command: str) -> str:
-    """The runner-side script: an honest live-policy episode where the serving agent runs ``command``."""
     return (
         "import dataclasses\n"
         "from contextlib import ExitStack\n"
@@ -339,7 +290,6 @@ def agent_report(stack: EpisodeStack) -> ProbeResult:
     return report
 
 
-@needs_docker
 def test_agent_code_cannot_read_the_key(agent_report: ProbeResult) -> None:
     found = {
         name: agent_report[name] for name in ("key_in_environment", "key_variable_set", "secrets_directory")
@@ -348,35 +298,30 @@ def test_agent_code_cannot_read_the_key(agent_report: ProbeResult) -> None:
     assert found == {"key_in_environment": False, "key_variable_set": False, "secrets_directory": False}
 
 
-@needs_docker
 def test_agent_code_has_no_network_outside_the_stack(agent_report: ProbeResult) -> None:
     found = {name: agent_report[name] for name in ("dns", "internet", "host_name_resolves")}
 
     assert found == {"dns": False, "internet": False, "host_name_resolves": False}
 
 
-@needs_docker
 def test_agent_code_cannot_resolve_the_core_or_the_recorder(agent_report: ProbeResult) -> None:
     found = {name: agent_report[name] for name in ("core_resolves", "recorder_resolves")}
 
     assert found == {"core_resolves": False, "recorder_resolves": False}
 
 
-@needs_docker
 def test_agent_code_cannot_reach_the_core(agent_report: ProbeResult) -> None:
     reachable = agent_report["core_reachable"]
 
     assert reachable is False
 
 
-@needs_docker
 def test_agent_code_cannot_write_to_the_image(agent_report: ProbeResult) -> None:
     writes = agent_report["writes_app"]
 
     assert writes is False
 
 
-@needs_docker
 def test_agent_code_runs_unprivileged(agent_report: ProbeResult) -> None:
     found = {
         name: agent_report[name] for name in ("runs_as_root", "effective_capabilities", "no_new_privileges")
@@ -389,29 +334,24 @@ def test_agent_code_runs_unprivileged(agent_report: ProbeResult) -> None:
     }
 
 
-@needs_docker
 def test_agent_code_cannot_reach_the_docker_engine(agent_report: ProbeResult) -> None:
     socket = agent_report["docker_socket"]
 
     assert socket is False
 
 
-@needs_docker
 def test_agent_code_cannot_read_the_grader_reference(agent_report: ProbeResult) -> None:
     readable = agent_report["grader_reference_readable"]
 
     assert readable is False
 
 
-@needs_docker
 def test_agent_code_has_no_sealed_log(agent_report: ProbeResult) -> None:
     mounted = agent_report["sealed_log_mounted"]
 
     assert mounted is False
 
 
-# --- what a run leaves on this machine ---
-@needs_docker
 def test_a_run_sees_only_its_own_output_directory(stack: EpisodeStack, tmp_path: Path) -> None:
     (tmp_path / "this-run.txt").write_text("mine")
     probe = (
@@ -425,7 +365,6 @@ def test_a_run_sees_only_its_own_output_directory(stack: EpisodeStack, tmp_path:
     assert json.loads(result.stdout.strip().splitlines()[-1]) == {"entries": "this-run.txt"}
 
 
-@needs_docker
 def test_collecting_the_output_never_follows_links_the_runner_planted(
     stack: EpisodeStack,
     tmp_path: Path,

@@ -103,7 +103,7 @@ def test_the_sealed_log_is_written_by_the_recorder_and_read_by_the_evidence_read
         for mount in service.get("volumes", [])
         if mount["source"] == "sealed_log" or mount["target"] == SEALED_MOUNT_PATH.as_posix()
     }
-    assert access == {"recorder": False, "evidence_reader": True}  # never the runner nor a sandbox
+    assert access == {"recorder": False, "evidence_reader": True}
     assert _networks(SERVICES["runner"]) == {"agent-net", "control-net"}
 
 
@@ -113,7 +113,7 @@ def test_an_agent_reachable_container_is_hardened(name: str) -> None:
     uid, _, gid = service["user"].partition(":")
     assert uid.isdigit() and gid.isdigit() and int(uid) != 0  # non-root, whatever the image says
     assert service["read_only"] is True
-    assert service["tmpfs"]  # the only writable paths besides its volumes
+    assert service["tmpfs"]
     assert service["cap_drop"] == ["ALL"]
     assert "no-new-privileges:true" in service["security_opt"]
     assert service["pids_limit"] > 0
@@ -139,8 +139,8 @@ def test_each_service_runs_the_image_target_the_design_gives_it() -> None:
         "runner",
         "evidence_reader",
     }
-    assert all(service["pull_policy"] == "never" for service in SERVICES.values())  # built here, never pulled
-    assert SERVICES["grader"]["command"] == ["python", "-m", "loc_arena.grader"]  # its defaults: the mounts
+    assert all(service["pull_policy"] == "never" for service in SERVICES.values())
+    assert SERVICES["grader"]["command"] == ["python", "-m", "loc_arena.grader"]
 
 
 def test_secrets_are_granted_only_to_the_core_the_edge_and_the_runner() -> None:
@@ -158,7 +158,7 @@ def test_secrets_are_granted_only_to_the_core_the_edge_and_the_runner() -> None:
 
 def test_each_grant_carries_only_the_fields_compose_applies_to_its_source() -> None:
     grants = {grant["source"]: grant for grant in SERVICES["gateway_core"]["secrets"]}
-    provider_key = grants[OPENROUTER_API_KEY_SECRET_NAME]  # environment source: compose writes the file
+    provider_key = grants[OPENROUTER_API_KEY_SECRET_NAME]
     assert (provider_key["target"], provider_key["uid"], provider_key["gid"]) == (
         OPENROUTER_API_KEY_SECRET_NAME,
         "999",
@@ -166,7 +166,7 @@ def test_each_grant_carries_only_the_fields_compose_applies_to_its_source() -> N
     )
     assert SERVICES["gateway_core"]["user"] == f"{provider_key['uid']}:{provider_key['gid']}"
     assert int(provider_key["mode"], 8) == SECRET_FILE_MODE == 0o400  # compose-go reads a string in base 8
-    for service in ("gateway_core", "gateway_edge", "runner"):  # file source: a bind mount, no uid/gid/mode
+    for service in ("gateway_core", "gateway_edge", "runner"):
         control_grants = [g for g in SERVICES[service]["secrets"] if g["source"] == CONTROL_KEY_SECRET_NAME]
         assert control_grants == [{"source": CONTROL_KEY_SECRET_NAME, "target": CONTROL_KEY_SECRET_NAME}]
     control_key_source = render_compose(CONFIG)["secrets"][CONTROL_KEY_SECRET_NAME]
@@ -217,7 +217,7 @@ def test_an_http_service_runs_its_factory_on_its_settings_port_and_answers_healt
         docker.healthcheck_retries,
     )
     networks = service["networks"]
-    if hostname is not None:  # reached by its constant hostname on every network it joins
+    if hostname is not None:
         assert isinstance(networks, dict)
         assert all(attachment["aliases"] == [hostname] for attachment in networks.values())
 
@@ -228,7 +228,7 @@ def test_every_container_receives_the_run_settings_verbatim() -> None:
     for service in render_compose(config)["services"].values():
         rendered = service["environment"][SETTINGS_ENVIRONMENT_VARIABLE]
         assert "$" not in rendered.replace("$$", "")  # compose would interpolate a single $
-        interpolated = rendered.replace("$$", "$")  # what compose passes to the container
+        interpolated = rendered.replace("$$", "$")
         assert LocArenaSettings.model_validate_json(interpolated) == config.settings
 
 
@@ -270,7 +270,7 @@ def test_the_grader_reads_the_checkout_and_the_harness_files_only() -> None:
     ],
 )
 def test_a_typo_in_the_topology_is_an_error(edit: RawConfigEdit, error: str) -> None:
-    with pytest.raises(ValueError, match=error):  # a typo would otherwise drop a mount, a grant or hardening
+    with pytest.raises(ValueError, match=error):
         _render_edited(edit)
 
 

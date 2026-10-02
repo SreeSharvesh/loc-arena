@@ -6,9 +6,10 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Final
 
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 
 from loc_arena.logging_.events import Event
+from loc_arena.stack.contracts import ModelCallRecord, RunnerEpisodeExport
 
 _EVENT: Final = TypeAdapter(Event)
 
@@ -28,6 +29,21 @@ def _read_bounded_text(path: Path, max_bytes: int) -> str:
 def read_event_log(path: Path, max_bytes: int) -> list[Event]:
     """Every event of the log at ``path``, in file order (which is seq order)."""
     return _parse_lines(path, max_bytes, lambda line: _EVENT.validate_json(line, strict=True))
+
+
+def read_model_call_log(path: Path, max_bytes: int) -> list[ModelCallRecord]:
+    """Every provider call of the sealed model-call log at ``path``; none when the core made no call."""
+    if not path.exists():
+        return []
+    return _parse_lines(path, max_bytes, lambda line: ModelCallRecord.model_validate_json(line, strict=True))
+
+
+def read_runner_export(path: Path, max_bytes: int) -> RunnerEpisodeExport:
+    """The runner's export of one episode."""
+    try:
+        return RunnerEpisodeExport.model_validate_json(_read_bounded_text(path, max_bytes))
+    except ValidationError as error:
+        raise EvidenceError(f"{path} is not a runner episode export: {error}") from error
 
 
 def _parse_lines[RecordT](path: Path, max_bytes: int, parse: Callable[[str], RecordT]) -> list[RecordT]:
