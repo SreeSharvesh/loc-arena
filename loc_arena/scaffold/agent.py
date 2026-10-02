@@ -30,8 +30,7 @@ Transcript = list[dict[str, Any]]
 # reply); the agent records nothing and stays alive for the next round. Distinct from ``None`` (an explicit
 # finish/cap).
 SKIP = AgentAction(tool="__skip__")
-# An agent policy returns FAILED when its model call failed (the provider, or the gateway refused it): the
-# turn fails, the agent stays alive, and the failure does not count as a refusal.
+# FAILED: the turn's model call failed; the agent stays alive and the turn is not a skip.
 FAILED = AgentAction(tool="__failed__")
 
 
@@ -39,10 +38,7 @@ class AgentPolicy(Protocol):
     """Decides the next actions given the running transcript; returns ``None`` to end the loop."""
 
     def next_actions(self, uid: str, turn: int, transcript: Transcript) -> list[AgentAction] | None:
-        """Return this turn's actions, ``[SKIP]`` to sit the turn out, or ``None`` to end.
-
-        ``[FAILED]`` sits the turn out because its model call failed; it never counts toward the skips.
-        """
+        """Return this turn's actions, ``[SKIP]`` to sit the turn out, or ``None`` to end."""
         ...
 
 
@@ -87,10 +83,7 @@ class Agent:
         clock: Callable[[], float] = time.time,
         trace: AgentTrace | None = None,
     ) -> None:
-        """Wire the agent to its context, agent policy, tools, registry, bus, gateway control, and budget.
-
-        ``control`` is the episode's control on the gateway core, which mints each turn's token.
-        """
+        """Wire the agent to its context, agent policy, tools, registry, bus, gateway control, and budget."""
         self.ctx = ctx
         self._agent_policy = agent_policy
         self._tools = tools

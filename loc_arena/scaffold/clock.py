@@ -1,10 +1,4 @@
-"""The episode's simulated clock as the runner's scaffold keeps it.
-
-The core keeps its own copy: it stamps its records and checks token expiry with it. So the scaffold never
-moves time without the core: ``set`` sends the new time to the core first, synchronously, and only then
-moves this copy, so every event either side writes afterwards carries the same time, in the order the
-scaffold set it. Any value is accepted, earlier ones included (the scripted episode steps back in time).
-"""
+"""The episode's simulated clock as the runner's scaffold keeps it; see docs/isolation/design.md#scaffold."""
 
 from __future__ import annotations
 
@@ -20,20 +14,12 @@ class SimulatedClock:
         self._now = float(start)
         control.set_clock(self._now)
 
-    @property
-    def now(self) -> float:
-        """The current simulated time."""
-        return self._now
-
     def __call__(self) -> float:
         """The current simulated time."""
         return self._now
 
     def set(self, now: float) -> None:
-        """Move the clock to ``now``: on the core first, then here.
-
-        A float on both sides (an int would be written as ``50`` in process and ``50.0`` over HTTP).
-        """
-        value = float(now)
+        """Move the clock to ``now``: on the core first, then here."""
+        value = float(now)  # an int would be logged as 50 in process and 50.0 over HTTP
         self._control.set_clock(value)
         self._now = value

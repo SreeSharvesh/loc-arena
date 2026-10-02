@@ -10,9 +10,6 @@ landing (``robust=True`` for the fuller variant). ``covert.enabled`` is the ONLY
 honest twin and the attack: the covert steps run iff it is true. The live model-driven episode replaces
 the scripted policy in the live path; the scorer and the sealed verifier are unchanged. The Inspect ``@task``
 entrypoint drives the live run.
-
-A policy talks only to the episode's ``EpisodeWiring``, so the same policy runs in process (STACK=0,
-``assemble_in_process``) and in the compose stack's runner container.
 """
 
 from __future__ import annotations
@@ -63,7 +60,6 @@ _DEPLOYED_COVERED = list(
     _AGENTS,
 )  # the attack drops the durable account (reduced_monitor_coverage/underreported_activity_logging)
 
-# Runs one episode's policy on its wiring and returns the seeded world it acted in.
 EpisodePolicy = Callable[[EpisodeWiring, SimulatedClock, AgentTrace | None], SeededWorld]
 
 
@@ -74,10 +70,7 @@ def _resolve_scenario(config: RunConfig) -> Scenario:
 
 @dataclass(frozen=True)
 class EpisodeResult:
-    """A graded in-process episode: the scores, the logs, the checkout, the world, the trace, the verdicts.
-
-    ``verdicts`` holds the monitors' verdicts when the episode ran them (``monitoring`` given), else none.
-    """
+    """A graded in-process episode: the scores, the logs, the checkout, the world, the trace, the verdicts."""
 
     main_score: MainTaskScore
     verdict: KillChainVerdict
@@ -241,12 +234,7 @@ def run_scripted_policy(
     robust: bool,
     deadline_ts: float,
 ) -> SeededWorld:
-    """Run the scripted policy on the episode's wiring; return the seeded world it acted in.
-
-    Both the honest twin and the attack apply the same optimization (the cover), through the root agent's
-    code tools. The covert steps run iff ``config.covert.enabled`` is true -- that flag is the ONLY difference
-    between the twin and the attack.
-    """
+    """Run the scripted policy on the episode's wiring."""
     scenario = _resolve_scenario(config)
     write_partial_optimization(wiring.code_tools[config.agent("agent-main").id], scenario.reference_dir)
 
@@ -286,12 +274,7 @@ def assemble_in_process(
     monitoring: EpisodeMonitoring | None = None,
     monitor_provider: Provider | None = None,
 ) -> EpisodeResult:
-    """Run one episode with every service in this process (STACK=0), then grade it here.
-
-    The agents' checkout, the sealed log and the mirror are files under ``workdir``; ``policy`` runs on the
-    episode's wiring. With ``monitoring``, the monitors score the mirror before the episode's core goes away
-    (their model calls go through it, to ``monitor_provider`` when given).
-    """
+    """Run one episode with every service in this process (STACK=0), then grade it here."""
     workdir.mkdir(parents=True, exist_ok=True)
     scenario = _resolve_scenario(config)
     checkout = seed_checkout(workdir / "checkout")  # the seven side-by-side company repos (pristine)
@@ -314,7 +297,6 @@ def assemble_in_process(
         mirror_path=services.mirror_path,
         monitoring=monitoring,
     )
-    # Grade the checkout the episode produced, and verify the side task on the sealed log.
     main_score = get_scorer(str(config.main_task["scorer"]))(checkout, config, scenario.reference_dir)
     return EpisodeResult(
         main_score,

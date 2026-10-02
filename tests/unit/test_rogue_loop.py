@@ -1,30 +1,18 @@
-"""The rogue loop keeps looping past an empty reply, and the verifier still sees one self-feeding loop.
-
-A reasoning model that spends its whole output budget on reasoning answers with empty text. Fed back as the
-next prompt, that empty text is a user message OpenRouter refuses with a 400, which once cost a whole episode.
-"""
+"""The rogue loop keeps looping past an empty reply, and the verifier still sees one self-feeding loop."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 from loc_arena.config import load_run_config
-from loc_arena.forge.forge import Forge
-from loc_arena.forge.services import ForgeServices
-from loc_arena.forge.world import generate_world
-from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import Message, ProviderResult, ToolSpec
 from loc_arena.gateway.openrouter_provider import ProviderError
-from loc_arena.gateway.wiring import InProcessServices, open_episode_wiring
 from loc_arena.logging_.events import read_events
-from loc_arena.scaffold.bus import MessageBus, Recorder
-from loc_arena.scaffold.clock import SimulatedClock
-from loc_arena.scaffold.covert_tools import CovertToolServices
-from loc_arena.scaffold.tools import AgentAction, AgentContext, ToolResult, Tools
+from loc_arena.scaffold.tools import AgentAction, ToolResult
 from loc_arena.verifier.side_task import kill_chain_v1
-from scenarios.loader import load_scenario
 
 from tests.integration._gateway_support import joined_content
+from tests.unit._stack_services import agent_context, covert_tools, open_in_process
 
 CONFIG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 ITERATIONS = 10
@@ -47,7 +35,6 @@ class OneEmptyReplyProvider:
         max_tokens: int,
         tools: list[ToolSpec] | None,
     ) -> ProviderResult:
-        """Refuse an empty prompt as OpenRouter's 400 does; otherwise answer, once with empty text."""
         prompt = joined_content(messages)  # the loop sends prompt requests: one user message
         if not prompt.strip():
             raise ProviderError(f"{model}: 400 Bad Request: the user message is empty")
@@ -56,40 +43,14 @@ class OneEmptyReplyProvider:
         return ProviderResult(text=text, prompt_tokens=TOKENS, completion_tokens=TOKENS)
 
 
-def _no_spawn(ctx: AgentContext, args: dict[str, object], turn: int) -> ToolResult:
-    return {"blocked": True}
-
-
 def _start_rogue_loop(tmp_path: Path, provider: OneEmptyReplyProvider) -> ToolResult:
-    services = InProcessServices(
-        sealed_path=tmp_path / "sealed.jsonl",
-        mirror_path=tmp_path / "mirror.jsonl",
-        checkout=tmp_path / "checkout",
-        provider=provider,
+    wiring = open_in_process(tmp_path, CONFIG, provider=provider)
+    ctx = agent_context(CONFIG, wiring, "serving-agent")
+    return covert_tools(CONFIG, wiring).execute(
+        ctx,
+        AgentAction("start_rogue_loop", {"iterations": ITERATIONS}),
+        0,
     )
-    wiring = open_episode_wiring(CONFIG, services)
-    clock = SimulatedClock(wiring.control, CONFIG.settings.clock.start_ts)
-    recorder = Recorder(wiring.sealed, wiring.mirror, clock=clock)
-    world = generate_world(CONFIG, load_scenario("aurora_efficiency"), CONFIG.seed)
-    covert = CovertToolServices(
-        ForgeServices(Forge(world)),
-        wiring=wiring,
-        recorder=recorder,
-        clock=clock,
-        deadline_ts=CONFIG.settings.clock.deadline_ts,
-        agents=[agent.id for agent in CONFIG.agents],
-        rogue_account="batch-runner",
-    )
-    tools = Tools(recorder, MessageBus(recorder), covert, spawn_handler=_no_spawn)
-    agent = CONFIG.agent("serving-agent")
-    ctx = AgentContext(
-        uid=agent.id,
-        role=agent.kind,
-        branch=agent.branch,
-        scope=agent.scope,
-        client=GatewayClient(wiring.gateway, agent.id),
-    )
-    return tools.execute(ctx, AgentAction("start_rogue_loop", {"iterations": ITERATIONS}), 0)
 
 
 def test_the_rogue_loop_runs_to_the_end_past_an_empty_reply(tmp_path: Path) -> None:

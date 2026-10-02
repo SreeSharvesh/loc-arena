@@ -24,7 +24,6 @@ from loc_arena.stack.contracts import CodeToolCall, CodeToolName, CodeToolRunner
 
 # Tools whose target (repo / recipient) the scope check needs from the args.
 _TARGET_FROM = {"open_pr": "repo", "merge": "repo", "message": "to", "read_weights": "name"}
-# The tools that run an agent's code, in that agent's own code-tool runner (its sandbox in the stack).
 _CODE_TOOL_NAMES: frozenset[str] = frozenset(get_args(CodeToolName))
 
 
@@ -81,11 +80,7 @@ class Tools:
         spawn_handler: SpawnHandler,
         code_tools: Mapping[str, CodeToolRunner] | None = None,
     ) -> None:
-        """Wire the tool layer to the recorder, the bus, the services, and the spawn handler.
-
-        ``code_tools`` maps an agent id to the runner of its code tools (the episode wiring's); an agent
-        without one has its code tools served by ``services`` like any other tool.
-        """
+        """Wire the tool layer to the recorder, the bus, the services, and the spawn handler."""
         self._recorder = recorder
         self._bus = bus
         self._services = services
@@ -159,8 +154,7 @@ class Tools:
             return {"message_seq": event.seq, "to": event.target_id}
 
         # A live model routinely emits a malformed tool call (missing/badly-typed args). That must return a
-        # logged error result, NEVER crash the run -- so guard the whole dispatch against bad args. A model
-        # call a tool makes (generate, batch_generate, a covert loop) may fail too: it fails the tool only.
+        # logged error result, NEVER crash the run -- so guard the whole dispatch against bad args.
         try:
             if action.tool == "generate":
                 text = ctx.client.generate(

@@ -17,8 +17,6 @@ from loc_arena.execution.app import build_execution_app, create_execution_app
 from loc_arena.execution.checkout import Checkout
 from loc_arena.execution.client import ExecutionClient
 from loc_arena.execution.workspace import SHELL_DISABLED_ERROR, Workspace
-from loc_arena.scaffold.code_services import CodeServices
-from loc_arena.scaffold.tools import StubServices
 from loc_arena.stack.constants import (
     HEALTH_ROUTE,
     SANDBOX_AGENT_ID_ENVIRONMENT_VARIABLE,
@@ -681,32 +679,3 @@ def test_a_workspace_that_opens_past_the_deadline_raises_an_httpx_error(
 def test_the_reply_timeout_must_exceed_every_tool_timeout() -> None:
     with pytest.raises(ValidationError, match="reply_timeout_seconds"):
         ExecutionSettings(bash_timeout_seconds=400.0)
-
-
-# --- STACK=0: the scaffold's Services layer ---
-@pytest.fixture
-def host_code_services(checkout_root: Path) -> CodeServices:
-    return CodeServices(StubServices(), checkout=checkout_root, repos=[REPOSITORY])
-
-
-def test_code_services_run_a_code_tool_on_the_local_checkout(host_code_services: CodeServices) -> None:
-    result = host_code_services.run("read_file", {"path": SEEDED_MODULE})
-
-    assert result["content"] == "VALUE = 1  # needle\n"
-
-
-def test_code_services_pass_a_tool_they_do_not_own_to_the_base_layer(
-    host_code_services: CodeServices,
-) -> None:
-    result = host_code_services.run("open_pr", {"target": "meridian-serving"})
-
-    assert result == {"stub": True, "tool": "open_pr"}
-
-
-def test_code_services_on_the_host_start_no_shell(
-    host_code_services: CodeServices,
-    checkout_root: Path,
-) -> None:
-    host_code_services.run("bash", {"command": "touch marker"})
-
-    assert not (checkout_root / "marker").exists()

@@ -1,9 +1,4 @@
-"""In-process scaffold wiring for the scaffold tests (no docker, no provider).
-
-Builds a full episode: sealed + mirror logs, a stub-provider gateway (the core's in-process control and the
-edge, reached over its FastAPI app), the bus, the registry, the tool layer, and helpers to build agent
-contexts and clients. Deterministic clock, shared with the core.
-"""
+"""In-process scaffold wiring for the scaffold tests (no docker, no provider)."""
 
 from __future__ import annotations
 
@@ -38,7 +33,7 @@ class Clock(SimulatedClock):
     """The episode clock, advanced by the test so timestamps and idle windows are deterministic."""
 
     def advance(self, dt: float) -> None:
-        self.set(self.now + dt)
+        self.set(self() + dt)
 
 
 class Harness:
@@ -58,10 +53,8 @@ class Harness:
         self.sealed = AppendOnlyLog(self.sealed_path, episode_id)
         self.mirror = AppendOnlyLog(self.mirror_path, episode_id)
 
-        # ONE sealed log and ONE mirror log are shared by the gateway and the scaffold recorder, as in the
-        # in-process episode wiring.
         self.provider = StubProvider()
-        self.control = LocalGatewayControl.open(
+        self.control = LocalGatewayControl(
             EpisodeSpec.from_run_config(self.config),
             episode_id=episode_id,
             handle=generate_episode_handle(),

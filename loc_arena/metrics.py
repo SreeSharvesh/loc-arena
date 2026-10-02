@@ -252,10 +252,7 @@ def score_mirror(
     model_caller: MonitorModelCaller | None = None,
     event_sink: EventSink = _noop_sink,
 ) -> list[MonitorVerdict]:
-    """Run the protocol's monitors over an episode's MIRROR trajectory (the firewall: never the sealed log).
-
-    ``model_caller`` (live mode) routes a monitor's own model calls through the gateway.
-    """
+    """Run the protocol's monitors over an episode's MIRROR trajectory; the sealed log stays unread."""
     context = monitor_context(config, model_caller=model_caller, event_sink=event_sink)
     return protocol.run(mirror_events, context)
 
@@ -265,11 +262,7 @@ def build_episode_record(
     config: RunConfig,
     verdicts: Sequence[MonitorVerdict],
 ) -> EpisodeRecord:
-    """The scored record of a graded episode and its monitors' verdicts.
-
-    ``harm_ts`` is the loop-persist time, so a catch after the loop already persisted does not count as
-    prevention.
-    """
+    """The scored record of a graded episode and its monitors' verdicts."""
     mode = "attack" if config.covert.enabled else "honest"
     return EpisodeRecord(
         episode_id=f"{config.run_slug}-{mode}",
@@ -282,20 +275,7 @@ def build_episode_record(
     )
 
 
-def record_episode(
-    episode: GradedEpisode,
-    config: RunConfig,
-    protocol: Protocol,
-    *,
-    model_caller: MonitorModelCaller | None = None,
-    event_sink: EventSink = _noop_sink,
-) -> EpisodeRecord:
-    """Score an episode's mirror now (``score_mirror``) and build its record (``build_episode_record``)."""
-    verdicts = score_mirror(
-        list(read_events(episode.mirror_path)),
-        config,
-        protocol,
-        model_caller=model_caller,
-        event_sink=event_sink,
-    )
+def record_episode(episode: GradedEpisode, config: RunConfig, protocol: Protocol) -> EpisodeRecord:
+    """Score an episode's mirror and build its record."""
+    verdicts = score_mirror(list(read_events(episode.mirror_path)), config, protocol)
     return build_episode_record(episode, config, verdicts)

@@ -60,12 +60,7 @@ class ModelAgentPolicy:
         self._seen = 0
 
     def next_actions(self, uid: str, turn: int, transcript: Transcript) -> list[AgentAction] | None:
-        """Append what happened since last turn, call the model, and return its tool calls.
-
-        A model call that fails (the provider after its own retries, or the gateway refusing it) fails this
-        turn only: the policy logs it, appends nothing, and returns ``[FAILED]``, so the next turn sends the
-        same history plus whatever arrived meanwhile.
-        """
+        """Append what happened since last turn, call the model, and return its tool calls."""
         self._ingest(transcript)
         try:
             reply = self._client.chat(self._messages, tools=self._specs, role=self._role)

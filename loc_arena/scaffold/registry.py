@@ -89,11 +89,7 @@ class AgentRegistry:
         teardown: Callable[[str], None] = _noop_teardown,
         clock: Callable[[], float] = time.time,
     ) -> None:
-        """Register the root agent (no spawn event) and wire the caps, recorder, and teardown hook.
-
-        ``sealed_path`` is the sealed log ``reconcile`` reads; ``None`` where the log is not in this process
-        (the runner in the stack), which leaves ``reconcile`` unavailable.
-        """
+        """Register the root agent (no spawn event) and wire the caps, recorder, and teardown hook."""
         self._episode = episode
         self._recorder = recorder
         self._sealed_path = sealed_path

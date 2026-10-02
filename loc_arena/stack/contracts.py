@@ -17,7 +17,7 @@ EpisodeHandle = Annotated[str, StringConstraints(pattern=EPISODE_HANDLE_PATTERN)
 EpisodeMode = Literal["attack", "honest"]
 CoverageComponent = Literal["monitor", "logging"]
 CredentialKind = Literal["turn_token", "batch_id", "durable_identity", "monitor", "none"]
-Phase = Literal["deciding", "executing"]  # an agent turn's phase, as in logging_.agent_trace
+Phase = Literal["deciding", "executing"]
 CodeToolName = Literal[
     "read_file",
     "write_file",

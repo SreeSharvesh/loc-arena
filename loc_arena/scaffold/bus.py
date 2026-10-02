@@ -34,8 +34,7 @@ class Recorder:
 
     ``sealed`` writes only to the sealed log (lifecycle events the monitor does not read: spawn/close).
     ``dual`` writes the same logical event to both, so a monitor-observable action or message lands on the
-    mirror as well. Each log gives the event its own seq; reconstruction reads the sealed log. The logs are
-    the episode's wiring: local files in process, the core and the edge in the stack.
+    mirror as well. Each log gives the event its own seq; reconstruction reads the sealed log.
     """
 
     def __init__(self, sealed: EventLog, mirror: EventLog, *, clock: Callable[[], float]) -> None:

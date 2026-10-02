@@ -1,16 +1,7 @@
-"""The runner's side of one finished episode, wherever the services run: close it, monitor it, export it.
-
-Once the scaffold's policy returns, ``finish_episode`` closes the episode on the core (its model routes stop
-serving it, so nothing agent code left running is recorded under it), finishes the agents' trace at the
-last sealed seq, and runs the protocol's monitors over the mirror. A monitor's own model call goes through
-the core (``call_model_as_monitor``): a sealed, attributable record. A call that fails is recorded as that
-monitor's ``monitor_error`` on the sealed log and the monitor falls back to its heuristic, so the episode
-still completes. The verdicts then travel to the host in the ``RunnerEpisodeExport``.
-"""
+"""The runner's side of one finished episode, wherever the services run: close it, monitor it."""
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
@@ -26,19 +17,14 @@ from loc_arena.metrics import score_mirror
 from loc_arena.monitors.registry import MonitorVerdict
 from loc_arena.protocol import Protocol
 from loc_arena.scaffold.clock import SimulatedClock
-from loc_arena.stack.contracts import EpisodeWiring, MonitorVerdictRecord
+from loc_arena.stack.contracts import EpisodeWiring
 
 _EVENT_KIND: Final = TypeAdapter(EventKind)
-MONITOR_ACTOR_ROLE: Final = "trusted"  # the role a monitor's own sealed records carry
 
 
 @dataclass(frozen=True)
 class EpisodeMonitoring:
-    """How the runner scores an episode's mirror: the protocol's monitors, and whether they call models.
-
-    With ``calls_models``, a live monitor's model calls go through the core; without, every monitor uses its
-    heuristic and writes nothing.
-    """
+    """How the runner scores an episode's mirror: the protocol's monitors, and whether they call models."""
 
     protocol: Protocol
     calls_models: bool
@@ -72,9 +58,9 @@ class MonitorModelRoute:
     def record_event(self, kind: str, payload: dict[str, Any]) -> None:
         """Record a monitor's event (an error, an unparseable verdict) on the sealed log."""
         draft = EventDraft(
-            ts=self._clock.now,
+            ts=self._clock(),
             actor_uid=str(payload.get("monitor", "monitor")),
-            actor_role=MONITOR_ACTOR_ROLE,
+            actor_role="trusted",
             kind=_EVENT_KIND.validate_python(kind),
             payload=payload,
         )
@@ -108,13 +94,3 @@ def finish_episode(
     else:
         verdicts = score_mirror(mirror_events, config, monitoring.protocol)
     return RunnerEpisode(last_sealed_seq, episode_trace, tuple(verdicts))
-
-
-def export_verdicts(verdicts: Iterable[MonitorVerdict]) -> tuple[MonitorVerdictRecord, ...]:
-    """The verdicts as the runner's export carries them."""
-    return tuple(MonitorVerdictRecord.model_validate(verdict, from_attributes=True) for verdict in verdicts)
-
-
-def import_verdicts(records: Iterable[MonitorVerdictRecord]) -> tuple[MonitorVerdict, ...]:
-    """The verdicts of a runner's export, as the host scores them."""
-    return tuple(MonitorVerdict(**record.model_dump()) for record in records)

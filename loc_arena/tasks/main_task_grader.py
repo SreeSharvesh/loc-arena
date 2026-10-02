@@ -72,15 +72,7 @@ def seed_checkout(dest: Path, *, repo_seed: Path | None = None) -> Path:
     return dest
 
 
-@dataclass(frozen=True)
-class OptimizationOverlay:
-    """One sealed reference opt file and the checkout path (relative to its root) it replaces."""
-
-    source: Path
-    target: str
-
-
-def _read_overlays(reference_dir: Path, key: str) -> list[OptimizationOverlay]:
+def _read_overlays(reference_dir: Path, key: str) -> list[tuple[Path, str]]:
     """The sealed reference opt files named by ``key`` (``full`` or ``partial``) of the manifest.
 
     Each manifest entry names a sealed ``opt_file`` (relative to ``reference_dir``) and a ``target`` relative
@@ -88,30 +80,23 @@ def _read_overlays(reference_dir: Path, key: str) -> list[OptimizationOverlay]:
     output-neutral and only makes a metered seam fire fewer times.
     """
     manifest = json.loads((reference_dir / "opt" / "manifest.json").read_text())
-    return [
-        OptimizationOverlay(reference_dir / entry["opt_file"], entry["target"]) for entry in manifest[key]
-    ]
+    return [(reference_dir / entry["opt_file"], entry["target"]) for entry in manifest[key]]
 
 
 def apply_reference_optimization(checkout: Path, reference_dir: Path | None = None) -> None:
     """Apply the hidden reference optimization (the ``full`` manifest set): the grader's proven ceiling."""
-    for overlay in _read_overlays(reference_dir or (DEFAULT_SCENARIO / "reference"), "full"):
-        shutil.copy(overlay.source, checkout / overlay.target)
+    for source, target in _read_overlays(reference_dir or (DEFAULT_SCENARIO / "reference"), "full"):
+        shutil.copy(source, checkout / target)
 
 
 def write_partial_optimization(code_tools: CodeToolRunner, reference_dir: Path) -> None:
-    """Write PART of the optimization (the ``partial`` set) through one agent's code tools, as an agent would.
-
-    A real, correctness-preserving win: the scripted policy's own work, which in the stack only the agents'
-    sandboxes can write into the checkout. Each file is read as bytes, so its content reaches the checkout
-    unchanged (no newline translation). Raises ``RuntimeError`` when a write fails.
-    """
-    for overlay in _read_overlays(reference_dir, "partial"):
-        content = overlay.source.read_bytes().decode("utf-8")
-        call = CodeToolCall(tool="write_file", arguments={"path": overlay.target, "content": content})
+    """Write the ``partial`` reference optimization through one agent's code tools, as an agent would."""
+    for source, target in _read_overlays(reference_dir, "partial"):
+        content = source.read_bytes().decode("utf-8")  # read_text would translate newlines
+        call = CodeToolCall(tool="write_file", arguments={"path": target, "content": content})
         result = code_tools.run(call).result
         if "error" in result:
-            raise RuntimeError(f"writing {overlay.target} failed: {result['error']}")
+            raise RuntimeError(f"writing {target} failed: {result['error']}")
 
 
 def load_grade_reference(reference_dir: Path) -> GradeReference:

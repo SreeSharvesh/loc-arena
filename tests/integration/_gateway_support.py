@@ -5,6 +5,7 @@ from __future__ import annotations
 import itertools
 
 from loc_arena.gateway.core import Message, ProviderResult, ToolSpec
+from loc_arena.gateway.openrouter_provider import ProviderError
 
 
 def joined_content(messages: list[Message]) -> str:
@@ -88,3 +89,40 @@ class AlternatingVerdictProvider:
         tools: list[ToolSpec] | None,
     ) -> ProviderResult:
         return next(self._providers).generate(model, messages, temperature, max_tokens, tools)
+
+
+class FailingProvider:
+    """A provider failing every call as OpenRouter does once its retries are spent."""
+
+    def generate(
+        self,
+        model: str,
+        messages: list[Message],
+        temperature: float,
+        max_tokens: int,
+        tools: list[ToolSpec] | None,
+    ) -> ProviderResult:
+        raise ProviderError(f"{model}: the provider kept answering 503")
+
+
+class ScriptedProvider:
+    """A provider giving each call the next scripted reply; a ``ProviderError`` fails that call."""
+
+    def __init__(self, replies: list[ProviderResult | ProviderError]) -> None:
+        """Hold the replies, one per call, in order."""
+        self.requests: list[list[Message]] = []
+        self._replies = list(replies)
+
+    def generate(
+        self,
+        model: str,
+        messages: list[Message],
+        temperature: float,
+        max_tokens: int,
+        tools: list[ToolSpec] | None,
+    ) -> ProviderResult:
+        self.requests.append(list(messages))
+        reply = self._replies.pop(0)
+        if isinstance(reply, ProviderError):
+            raise reply
+        return reply

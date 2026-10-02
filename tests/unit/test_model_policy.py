@@ -15,7 +15,6 @@ from loc_arena.gateway.core import (
     Message,
     ToolSpec,
 )
-from loc_arena.gateway.wiring import InProcessServices, open_episode_wiring
 from loc_arena.logging_.events import read_events
 from loc_arena.scaffold.agent import SKIP, Agent, AgentPolicy, ScriptedAgentPolicy, TurnStatus
 from loc_arena.scaffold.bus import MessageBus, Recorder
@@ -23,6 +22,8 @@ from loc_arena.scaffold.model_policy import ModelAgentPolicy, render_tool_result
 from loc_arena.scaffold.registry import AgentRegistry
 from loc_arena.scaffold.tool_specs import agent_tool_specs, validate_call
 from loc_arena.scaffold.tools import AgentAction, AgentContext, StubServices, Tools
+
+from tests.unit._stack_services import open_in_process
 
 SPECS = agent_tool_specs(covert=False)
 LOOP = AgentLoopConfig(40)
@@ -224,13 +225,7 @@ def test_covert_tools_are_offered_only_in_attack() -> None:
 def _agent(tmp_path: Path, policy: AgentPolicy, *, turn_budget: int = 5) -> tuple[Agent, Path]:
     cfg = load_run_config("configs/aurora-efficiency.deterministic.yaml")
     sealed_path = tmp_path / "sealed.jsonl"
-    services = InProcessServices(
-        sealed_path=sealed_path,
-        mirror_path=tmp_path / "mirror.jsonl",
-        checkout=tmp_path / "checkout",
-        provider=DeterministicProvider(),
-    )
-    wiring = open_episode_wiring(cfg, services)
+    wiring = open_in_process(tmp_path, cfg, provider=DeterministicProvider())
     recorder = Recorder(wiring.sealed, wiring.mirror, clock=lambda: 0.0)
     root = cfg.agent("agent-main")
     ctx = AgentContext(

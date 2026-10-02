@@ -1,24 +1,10 @@
-"""Everything the runner's scaffold talks to for one episode, opened in process (STACK=0) or in the stack.
-
-``open_episode_wiring`` returns an ``EpisodeWiring`` of the same shape either way, so the scaffold never
-knows where it runs:
-
-- **In process** (``InProcessServices``): the core, its identity service and the edge are objects of this
-  process (``LocalGatewayControl``, ``GatewayEdge``), the two logs are local files, and each agent's code
-  tools run in a local ``Workspace`` over the checkout, with no shell: agent code here runs on this machine.
-- **In the stack** (``StackServices``): the episode is opened on ``gateway_core`` with the run config's
-  model routes and covert injection; the scaffold then reaches the core's control routes, the edge and each
-  agent's own sandbox over the compose networks, and records events through the services that own the logs.
-
-Either way the gateway the scaffold receives turns any failed model call into ``GatewayCallError``, and,
-when the episode is traced, reports each record it knows of to the agents' trace.
-"""
+"""Opens an episode's ``EpisodeWiring`` in process (STACK=0) or over the stack's services."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from contextlib import ExitStack
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Final
 
@@ -59,7 +45,6 @@ from loc_arena.stack.contracts import (
 )
 from loc_arena.stack.service_client import ServiceClient
 
-# A model-policy episode's id names its policy: "<run slug>-model-<mode>" (a scripted one is "<slug>-<mode>").
 MODEL_POLICY_EPISODE_SUFFIX: Final = "-model"
 
 
@@ -81,10 +66,7 @@ def read_episode_mode(config: RunConfig) -> EpisodeMode:
 
 @dataclass(frozen=True)
 class InProcessServices:
-    """STACK=0: the services are objects of this process; the logs and the checkout are local paths.
-
-    ``monitor_provider``, when given, answers the monitors' model calls in place of ``provider``.
-    """
+    """STACK=0: the services are objects of this process; the logs and the checkout are local paths."""
 
     sealed_path: Path
     mirror_path: Path
@@ -93,20 +75,17 @@ class InProcessServices:
     monitor_provider: Provider | None = None
 
 
-SandboxConnector = Callable[[str, EpisodeHandle], ExecutionClient]  # (agent id, handle) -> its sandbox
-
-
 @dataclass(frozen=True)
 class StackServices:
     """How the runner reaches the stack: control-keyed clients of the core and the edge, and each sandbox."""
 
     core: ServiceClient
     edge: ServiceClient
-    connect_sandbox: SandboxConnector
+    connect_sandbox: Callable[[str, EpisodeHandle], ExecutionClient]  # (agent id, handle) -> its sandbox
 
 
 def connect_stack_services(config: RunConfig, control_key: SecretStr, resources: ExitStack) -> StackServices:
-    """Clients of the stack's services at their compose hostnames; ``resources`` closes each at exit."""
+    """Clients of the stack's services by compose hostname; ``resources`` closes the core's and the edge's."""
     gateway = config.settings.gateway
 
     def connect(hostname: str, port: int, timeout_seconds: float) -> ServiceClient:
@@ -121,9 +100,7 @@ def connect_stack_services(config: RunConfig, control_key: SecretStr, resources:
 
     def connect_sandbox(agent_id: str, handle: EpisodeHandle) -> ExecutionClient:
         url = build_service_url(build_sandbox_service_name(agent_id), gateway.execution_port)
-        sandbox = ExecutionClient.connect(url, handle, config.settings.execution)
-        resources.callback(sandbox.close)
-        return sandbox
+        return ExecutionClient(url, handle, config.settings.execution)
 
     return StackServices(
         core=connect(GATEWAY_CORE_HOSTNAME, gateway.core_port, gateway.control_timeout_seconds),
@@ -138,22 +115,16 @@ def open_episode_wiring(
     *,
     trace: AgentTrace | None = None,
 ) -> EpisodeWiring:
-    """Open one episode of ``config`` on ``services`` and wire the scaffold to it.
-
-    In the stack, the core must hold a provider key for a live policy (``EpisodeWiringError`` otherwise),
-    and every agent's sandbox is opened for the episode before the first turn.
-    """
+    """Open one episode of ``config`` on ``services`` and wire the scaffold to it."""
     if isinstance(services, InProcessServices):
         wiring = _wire_in_process(config, services, trace)
     else:
         wiring = _wire_stack(config, services)
-    return EpisodeWiring(
-        handle=wiring.handle,
-        gateway=EpisodeGateway(wiring.gateway, trace),
-        control=wiring.control,
+    return replace(
+        wiring,
+        gateway=_EpisodeGateway(wiring.gateway, trace),
         sealed=wiring.sealed if trace is None else TracedEventLog(wiring.sealed, trace.on_sealed_append),
         mirror=wiring.mirror if trace is None else TracedEventLog(wiring.mirror, trace.on_mirror_append),
-        code_tools=wiring.code_tools,
     )
 
 
@@ -166,16 +137,16 @@ def _wire_in_process(
     handle = generate_episode_handle()
     sealed = AppendOnlyLog(services.sealed_path, episode_id)
     mirror = AppendOnlyLog(services.mirror_path, episode_id)
-    control = LocalGatewayControl.open(
+    control = LocalGatewayControl(
         EpisodeSpec.from_run_config(config),
         episode_id=episode_id,
         handle=handle,
         sealed=sealed,
         provider=_route_monitor_calls(config, services),
         settings=config.settings,
-        observer=trace,  # the core, in this process, reports each provider call with its exact input
+        observer=trace,
     )
-    # One checkout shared by every agent, as the sandboxes share one volume; no shell: this is the host.
+    # No shell: agent code here runs on the host (docs/isolation/README.md#decisions).
     workspace = Workspace(
         Checkout(services.checkout, list_repositories(COMPANY_ROOT)),
         config.settings.execution,
@@ -220,7 +191,6 @@ def _wire_stack(config: RunConfig, services: StackServices) -> EpisodeWiring:
 
 
 def _route_monitor_calls(config: RunConfig, services: InProcessServices) -> Provider:
-    """The core's provider; with a separate monitor provider, one routing the monitor model's calls there."""
     if services.monitor_provider is None or services.monitor_provider is services.provider:
         return services.provider
     monitor_model = config.models[MONITOR_MODEL_ROLE].model
@@ -233,7 +203,7 @@ def _route_monitor_calls(config: RunConfig, services: InProcessServices) -> Prov
         raise EpisodeWiringError(
             f"the monitor model {monitor_model!r} also serves {shared}: no provider of its own can take it",
         )
-    return MonitorRoutedProvider(
+    return _MonitorRoutedProvider(
         agents=services.provider,
         monitors=services.monitor_provider,
         monitor_model=monitor_model,
@@ -241,9 +211,7 @@ def _route_monitor_calls(config: RunConfig, services: InProcessServices) -> Prov
 
 
 @dataclass(frozen=True)
-class MonitorRoutedProvider:
-    """The in-process core's provider when the monitors have their own: the monitor model's calls go there."""
-
+class _MonitorRoutedProvider:
     agents: Provider
     monitors: Provider
     monitor_model: str
@@ -256,7 +224,6 @@ class MonitorRoutedProvider:
         max_tokens: int,
         tools: list[ToolSpec] | None,
     ) -> ProviderResult:
-        """Call the monitors' provider for the monitor model, the agents' provider for every other model."""
         provider = self.monitors if model == self.monitor_model else self.agents
         return provider.generate(model, messages, temperature, max_tokens, tools)
 
@@ -281,20 +248,12 @@ class TracedEventLog:
         return event
 
 
-class EpisodeGateway:
-    """The episode's gateway as the scaffold calls it.
-
-    A failed call raises ``GatewayCallError``, whichever side failed. When the episode is traced, each reply's
-    sealed and mirror seqs go to the trace, in the turn and phase that made the call.
-    """
-
+class _EpisodeGateway:
     def __init__(self, gateway: Servable, trace: AgentTrace | None) -> None:
-        """Relay to ``gateway``; report to ``trace`` when given."""
         self._gateway = gateway
         self._trace = trace
 
     def generate(self, request: GenerateRequest, /) -> RelayedGenerateResponse:
-        """One model call; ``GatewayCallError`` when it failed."""
         try:
             reply = self._gateway.generate(request)
         except GATEWAY_FAILURES as error:
@@ -306,7 +265,6 @@ class EpisodeGateway:
         return reply
 
     def batch_generate(self, request: BatchGenerateRequest, /) -> RelayedBatchGenerateResponse:
-        """One sanctioned batch; ``GatewayCallError`` when it failed."""
         try:
             reply = self._gateway.batch_generate(request)
         except GATEWAY_FAILURES as error:

@@ -1,9 +1,4 @@
-"""The model is offered the shell, the native ``bash`` tool, only where agent code runs in its own sandbox.
-
-Over the stack wiring each agent's code tools run in its own sandbox: the policy is offered ``bash``, and a
-model's call to it runs there. In process an agent's code would run on this machine: the assembler offers no
-shell, and the policy refuses a ``bash`` call as an unknown tool.
-"""
+"""The model is offered the shell, the native ``bash`` tool, only where agent code runs in its own sandbox."""
 
 from __future__ import annotations
 
@@ -29,7 +24,6 @@ CONFIG = dataclasses.replace(
 AGENT_IDS = [agent.id for agent in CONFIG.agents]
 SHELL_CALLER = "agent-main"
 COMMAND = "echo from-the-sandbox"
-# What the model reads back once COMMAND has run in a shell.
 COMMAND_RESULT = {"exit_code": 0, "output": "from-the-sandbox\n", "truncated": False, "timed_out": False}
 
 
@@ -43,10 +37,7 @@ class AgentCall:
 
 
 class ShellCallingProvider:
-    """A canned model: the shell caller's first reply calls ``bash``, every other agent reply ``finish``.
-
-    It keeps every agent call it answers. A call that offers no tools (a coworker's batch) gets plain text.
-    """
+    """A canned model: the shell caller's first reply calls ``bash``, every other agent reply ``finish``."""
 
     def __init__(self) -> None:
         """Start with no call answered."""
@@ -83,12 +74,10 @@ class ShellCallingProvider:
 
 
 def _offered_bash(provider: ShellCallingProvider) -> dict[str, bool]:
-    """Per agent, whether its model calls were offered ``bash``."""
     return {call.agent: "bash" in call.offered for call in provider.calls}
 
 
 def _shell_callers_last_call(provider: ShellCallingProvider) -> AgentCall:
-    """The shell caller's last model call: its history answers the ``bash`` call it made before."""
     return [call for call in provider.calls if call.agent == SHELL_CALLER][-1]
 
 

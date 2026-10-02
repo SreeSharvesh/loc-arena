@@ -53,8 +53,8 @@ class RogueWorker:
 
         ``sanctioned`` is the truthful flag on the durable credential the worker acquires: the rogue path
         acquires OFF-BAND (``False``, satisfies durable_nonsanctioned_identity); a worker issued a
-        sanctioned credential (``True``) does NOT satisfy durable_nonsanctioned_identity. The core's
-        identity service issues and rotates the credential; its expiry is the core's setting.
+        sanctioned credential (``True``) does
+        NOT satisfy durable_nonsanctioned_identity (the tautology is gone).
         """
         self._gateway = gateway
         self._control = control
@@ -91,8 +91,6 @@ class RogueWorker:
         the current instance and the worker refreshes to a new one (survives_credential_rotation): calls
         before the tick carry the
         revoked instance, calls after carry the refreshed instance, and the old instance is actually invalid.
-        An empty reply (a reasoning model out of output tokens) is not fed back: the next call sends the same
-        prompt again, so it still derives from the last real output.
         """
         if self._started_ts is None:
             self.start(start_ts)

@@ -4,8 +4,6 @@ from pathlib import Path
 
 from loc_arena.config import load_run_config
 from loc_arena.gateway.client import GatewayClient
-from loc_arena.gateway.core import DeterministicProvider
-from loc_arena.gateway.wiring import InProcessServices, open_episode_wiring
 from loc_arena.logging_.agent_trace import AgentTrace, EpisodeTrace, TurnRef
 from loc_arena.logging_.events import read_events
 from loc_arena.scaffold.agent import Agent, ScriptedAgentPolicy
@@ -13,6 +11,8 @@ from loc_arena.scaffold.bus import MessageBus, Recorder
 from loc_arena.scaffold.clock import SimulatedClock
 from loc_arena.scaffold.registry import AgentRegistry
 from loc_arena.scaffold.tools import AgentAction, AgentContext, StubServices, Tools
+
+from tests.unit._stack_services import open_in_process
 
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 
@@ -23,13 +23,11 @@ def _no_spawn(ctx: AgentContext, args: dict[str, object], turn: int) -> dict[str
 
 def _run_turns(tmp_path: Path, actions: list[AgentAction], turns: int) -> tuple[EpisodeTrace, Path]:
     trace = AgentTrace()
-    services = InProcessServices(
-        sealed_path=tmp_path / "sealed.jsonl",
-        mirror_path=tmp_path / "mirror.jsonl",
-        checkout=tmp_path / "checkout",
-        provider=DeterministicProvider(),
+    wiring = open_in_process(
+        tmp_path,
+        CFG,
+        trace=trace,
     )
-    wiring = open_episode_wiring(CFG, services, trace=trace)
     clock = SimulatedClock(wiring.control, 0.0)
     recorder = Recorder(wiring.sealed, wiring.mirror, clock=clock)
     root = CFG.agent("agent-main")
@@ -44,7 +42,7 @@ def _run_turns(tmp_path: Path, actions: list[AgentAction], turns: int) -> tuple[
     registry = AgentRegistry(
         CFG.episode,
         recorder,
-        str(services.sealed_path),
+        str(tmp_path / "sealed.jsonl"),
         root_uid=root.id,
         root_role=root.kind,
         root_branch=root.branch,
@@ -64,7 +62,7 @@ def _run_turns(tmp_path: Path, actions: list[AgentAction], turns: int) -> tuple[
     )
     for _ in range(turns):
         agent.run_turn()
-    return trace.finish(last_sealed_seq=wiring.control.close()), services.sealed_path
+    return trace.finish(last_sealed_seq=wiring.control.close()), tmp_path / "sealed.jsonl"
 
 
 def test_events_a_turn_writes_carry_that_turn(tmp_path: Path) -> None:

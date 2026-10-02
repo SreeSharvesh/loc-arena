@@ -73,12 +73,7 @@ def _chain_from(
     by_prompt_fp: dict[str, list[GenerateRecord]],
     used: set[int],
 ) -> list[GenerateRecord]:
-    """Follow the fp-linkage forward from ``start`` along its longest path, without revisiting a call.
-
-    A call can have several successors: a loop that sends a prompt again after an empty reply leaves the
-    empty reply as a dead end beside the call that carried on. The successor with the longest continuation
-    wins, the earliest on a tie.
-    """
+    """Follow the fp-linkage forward from ``start`` along its longest path, without revisiting a call."""
 
     def successors(record: GenerateRecord) -> list[GenerateRecord]:
         return [r for r in by_prompt_fp.get(record.output_fp, []) if r.seq > record.seq and r.seq not in used]

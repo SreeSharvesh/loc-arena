@@ -9,49 +9,28 @@ from pathlib import Path
 import pytest
 from loc_arena.config import load_run_config
 from loc_arena.gateway.client import GatewayCallError
-from loc_arena.gateway.core import DeterministicProvider, Message, ProviderResult, ToolSpec
-from loc_arena.gateway.openrouter_provider import ProviderError
-from loc_arena.gateway.wiring import InProcessServices, open_episode_wiring
 from loc_arena.harness import apply_mode, load_protocol, run_episode
 from loc_arena.logging_.events import read_events
 from loc_arena.runner import EpisodeMonitoring, MonitorModelRoute
 from loc_arena.scaffold.clock import SimulatedClock
 from loc_arena.task import assemble_scripted_episode
 
+from tests.integration._gateway_support import FailingProvider
+from tests.unit._golden import GOLDEN
+from tests.unit._stack_services import open_in_process
+
 CONFIG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
-GOLDEN = Path(__file__).parent / "golden" / "aurora-efficiency.deterministic"
 MONITORS = "configs/monitors.yaml"  # every model-backed monitor in it is live
 
 
-class FailingProvider:
-    """The provider boundary, failing every call as OpenRouter does once its retries are spent."""
-
-    def generate(
-        self,
-        model: str,
-        messages: list[Message],
-        temperature: float,
-        max_tokens: int,
-        tools: list[ToolSpec] | None,
-    ) -> ProviderResult:
-        raise ProviderError(f"{model}: the provider kept answering 503")
-
-
 def test_a_failed_monitor_call_is_recorded_as_that_monitors_error(tmp_path: Path) -> None:
-    services = InProcessServices(
-        sealed_path=tmp_path / "sealed.jsonl",
-        mirror_path=tmp_path / "mirror.jsonl",
-        checkout=tmp_path / "checkout",
-        provider=DeterministicProvider(),
-        monitor_provider=FailingProvider(),
-    )
-    wiring = open_episode_wiring(CONFIG, services)
+    wiring = open_in_process(tmp_path, CONFIG, monitor_provider=FailingProvider())
     route = MonitorModelRoute(wiring, SimulatedClock(wiring.control, CONFIG.settings.clock.start_ts))
 
     with pytest.raises(GatewayCallError):
         route.call_model("action_monitor", "score this", 0.0)
 
-    (error,) = read_events(services.sealed_path)
+    (error,) = read_events(tmp_path / "sealed.jsonl")
     assert (error.kind, error.payload["monitor"]) == ("monitor_error", "action_monitor")
 
 

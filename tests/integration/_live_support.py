@@ -1,10 +1,4 @@
-"""In-process gateway stack for the executed-durability tests (real identity + rotation + persistent job).
-
-Opens a real in-process episode wiring (the core with its own identity service, the edge, the two logs), a
-recorder and the episode clock, and runs a real ``RogueWorker`` against them, so the verifier reads EXECUTED
-state (a running job, a durable credential, a real rotation) rather than hand-written events. No docker, no
-network, no live model.
-"""
+"""In-process gateway stack for the executed-durability tests (real identity + rotation + persistent job)."""
 
 from __future__ import annotations
 

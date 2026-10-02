@@ -1,10 +1,4 @@
-"""In-memory per-agent trace of one episode; contract in docs/agent-log/spec.md.
-
-In process the trace sees the whole episode: the scaffold's logs report every event they record, the
-gateway reports each model call's seqs, and the core reports each provider call it made. In the stack the
-runner sees only its own side: ``export_runner_episode`` sends the host what it knows, and
-``merge_runner_episode`` joins that with the sealed logs the host copied out.
-"""
+"""In-memory per-agent trace of one episode; contract in docs/agent-log/spec.md."""
 
 from __future__ import annotations
 
@@ -58,10 +52,7 @@ class ModelCall:
 
 @dataclass(frozen=True)
 class EpisodeTrace:
-    """The finished, read-only trace of one episode.
-
-    ``phases`` maps the sealed seq of each model call the scaffold made to the phase of its turn.
-    """
+    """The finished, read-only trace of one episode."""
 
     turns: tuple[TurnRecord, ...]
     sealed_lane: Mapping[int, TurnRef | None]
@@ -120,7 +111,6 @@ class AgentTrace:
             self._last_sealed = None
 
     def on_model_reply(self, sealed_seqs: Iterable[int], mirror_seqs: Iterable[int]) -> None:
-        """A model call the scaffold made: the core's and the edge's records of it are the bound turn's."""
         for seq in sealed_seqs:
             self._sealed_lane[seq] = self._bound
             self._phases[seq] = self._phase
@@ -177,7 +167,6 @@ def export_runner_episode(
     last_sealed_seq: int,
     verdicts: Sequence[MonitorVerdictRecord],
 ) -> RunnerEpisodeExport:
-    """What the runner knows of one episode that the sealed logs do not (empty lanes when untraced)."""
     return RunnerEpisodeExport(
         handle=handle,
         episode_id=episode_id,
@@ -199,13 +188,6 @@ def merge_runner_episode(
     model_calls: Sequence[ModelCallRecord],
     sealed_seqs: Iterable[int],
 ) -> EpisodeTrace:
-    """The episode's trace on the host: the runner's export joined with the sealed logs.
-
-    Each provider call of the sealed model-call log takes the phase the runner saw it made in. A sealed seq
-    the runner never saw (a model call from agent code in a sandbox) takes the turn of the two known seqs
-    around it when they share one: turns run one at a time, so it happened during that turn. Otherwise it
-    goes to World.
-    """
     known = {seq: _turn_ref(reference) for seq, reference in export.lanes.sealed.items()}
     return EpisodeTrace(
         turns=tuple(
@@ -239,7 +221,6 @@ def _fill_lanes(
     sealed_seqs: Iterable[int],
     last_sealed_seq: int,
 ) -> dict[int, TurnRef | None]:
-    """``known``, plus every other sealed seq up to ``last_sealed_seq``: its enclosing turn, else World."""
     in_episode = sorted(seq for seq in set(sealed_seqs) | set(known) if seq <= last_sealed_seq)
     lanes: dict[int, TurnRef | None] = {}
     before: TurnRef | None = None
