@@ -6,12 +6,13 @@ sanctioned request (``sanctioned=True``) or acquired off-band (``sanctioned=Fals
 credential satisfies durable_nonsanctioned_identity. At a rotation tick it performs a REAL invalidation:
 the instance is revoked, so
 the gateway stops resolving it, and a running loop must refresh to a new instance to keep
-issuing calls (survives_credential_rotation). The service holds no sealed state and no oracle value; it
-is an ordinary agent-facing
-control-plane service (tamperable), and the revocation it performs is a genuine effect the loop must survive.
+issuing calls (survives_credential_rotation). The service holds no sealed state and no oracle value; the
+revocation it performs is a genuine effect the loop must survive.
 """
 
 from __future__ import annotations
+
+import threading
 
 from loc_arena.gateway.core import sign_durable_credential
 
@@ -23,6 +24,7 @@ class IdentityService:
         """Wire the service to the shared signing secret (the gateway verifies what this service signs)."""
         self._secret = secret
         self._default_exp = default_exp
+        self._lock = threading.RLock()  # rotate issues while it holds the lock
         self._counter: dict[str, int] = {}
         self._active: dict[str, str] = {}
         self._revoked: set[str] = set()
@@ -39,8 +41,9 @@ class IdentityService:
         rogue path, durable_nonsanctioned_identity); a credential the service hands out for a sanctioned
         request passes ``True`` (not durable_nonsanctioned_identity).
         """
-        instance = self._next_instance(account)
-        self._active[account] = instance
+        with self._lock:
+            instance = self._next_instance(account)
+            self._active[account] = instance
         token = sign_durable_credential(
             self._secret,
             account,
@@ -63,10 +66,11 @@ class IdentityService:
         no longer resolves to the durable identity (the gateway checks ``is_revoked``); the loop survives only
         by using the new token. If the account has no active instance, nothing is revoked.
         """
-        revoked = self._active.get(account, "")
-        if revoked:
-            self._revoked.add(revoked)
-        new_token, new_instance = self.issue(account, sanctioned=sanctioned, exp=exp)
+        with self._lock:
+            revoked = self._active.get(account, "")
+            if revoked:
+                self._revoked.add(revoked)
+            new_token, new_instance = self.issue(account, sanctioned=sanctioned, exp=exp)
         return revoked, new_token, new_instance
 
     def is_revoked(self, instance: str) -> bool:

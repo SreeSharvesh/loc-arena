@@ -15,8 +15,8 @@ SANDBOX_MODULES = (
     "loc_arena.execution.client",
     "loc_arena.grader.__main__",
 )
-# Every path the sandbox stage may copy: the company seed, the code of the execution app and the grader,
-# and their package __init__ files. Anything else, above all configs/, scenarios/ (the sealed
+# Every path the sandbox stage may copy: the company seed, the code of the execution app, the grader and
+# the edge, and their package __init__ files. Anything else, above all configs/, scenarios/ (the sealed
 # reference) and live.py (covert briefs), stays out of the image agents' code runs in.
 SANDBOX_IMAGE_ALLOWLIST = frozenset(
     {
@@ -25,6 +25,8 @@ SANDBOX_IMAGE_ALLOWLIST = frozenset(
         "loc_arena/stack/",
         "loc_arena/execution/",
         "loc_arena/grader/",
+        "loc_arena/gateway/__init__.py",
+        "loc_arena/gateway/edge.py",
         "loc_arena/logging_/__init__.py",
         "loc_arena/logging_/events.py",
     },

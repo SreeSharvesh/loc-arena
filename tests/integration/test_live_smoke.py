@@ -3,12 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from loc_arena.config import load_run_config
-from loc_arena.gateway.core import GatewayCore, GenerateRequest, create_core_app
+from loc_arena.gateway.core import GatewayCore, GenerateRequest
 from loc_arena.gateway.edge import GatewayEdge
 from loc_arena.gateway.openrouter_provider import OpenRouterProvider
 from loc_arena.logging_.events import AppendOnlyLog, read_events
-
-from tests.integration._gateway_support import AppTransport
 
 EP = "ep-live"
 
@@ -20,7 +18,7 @@ def test_live_edge_to_core_one_real_call_one_sealed_record(
     cfg = load_run_config("configs/aurora-efficiency.deterministic.yaml")
     sealed_path = tmp_path / "sealed.jsonl"
     core = GatewayCore(cfg, EP, AppendOnlyLog(sealed_path, EP), live_provider, turn_secret="s")
-    edge = GatewayEdge(EP, AppTransport(create_core_app(core)), AppendOnlyLog(tmp_path / "mirror.jsonl", EP))
+    edge = GatewayEdge(EP, core, AppendOnlyLog(tmp_path / "mirror.jsonl", EP))
     resp = edge.generate(
         GenerateRequest(
             prompt="Reply with the single word: pong.",

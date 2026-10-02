@@ -15,19 +15,15 @@ import pytest
 from loc_arena.config import RunConfig, load_run_config
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import (
-    DirectTransport,
     GatewayCore,
     GenerateRequest,
     Message,
     ProviderResult,
     ToolSpec,
-    create_core_app,
 )
 from loc_arena.gateway.edge import GatewayEdge
 from loc_arena.logging_.events import AppendOnlyLog, fingerprint, read_events
 from pydantic import ValidationError
-
-from tests.integration._gateway_support import AppTransport
 
 EP = "ep-messages"
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")  # covert on, target agent-main
@@ -63,11 +59,11 @@ class RecordingProvider:
         return ProviderResult(text="plain reply", prompt_tokens=1, completion_tokens=1)
 
 
-def _wire(tmp_path: Path, config: RunConfig = HONEST) -> tuple[RecordingProvider, DirectTransport]:
+def _wire(tmp_path: Path, config: RunConfig = HONEST) -> tuple[RecordingProvider, GatewayEdge]:
     provider = RecordingProvider()
     core = GatewayCore(config, EP, AppendOnlyLog(tmp_path / "sealed.jsonl", EP), provider, turn_secret="s")
-    edge = GatewayEdge(EP, AppTransport(create_core_app(core)), AppendOnlyLog(tmp_path / "mirror.jsonl", EP))
-    return provider, DirectTransport(edge)
+    edge = GatewayEdge(EP, core, AppendOnlyLog(tmp_path / "mirror.jsonl", EP))
+    return provider, edge
 
 
 def _inference(path: Path) -> list[dict[str, Any]]:

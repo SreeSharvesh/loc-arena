@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1
-# The image agents' code runs in, built from uv.lock (Docker "Multi-stage builds": named stages, `--target`,
-# a stage built FROM an earlier one):
-# - `sandbox` (loc-arena-sandbox): each agent's sandbox (the execution app) and the grader. Only what they
-#   import: company/, loc_arena/{stack,execution,grader}, logging_/events.py and the package __init__ files;
-#   no configs/, no scenarios/ (sealed reference), no live.py (covert briefs).
+# The sandbox image, built from uv.lock (Docker "Multi-stage builds": named stages, `--target`, a stage built
+# FROM an earlier one):
+# - `sandbox` (loc-arena-sandbox): each agent's sandbox (the execution app), the gateway edge and the grader.
+#   Only what they import: company/, loc_arena/{stack,execution,grader}, gateway/edge.py, logging_/events.py
+#   and the package __init__ files; no configs/, no scenarios/ (sealed reference), no live.py (covert briefs).
 # Pattern from Astral's uv Docker guide (docs.astral.sh/uv/guides/integration/docker): pinned uv, a
 # dependency-only sync cached separately from the project, the system Python in every stage
 # (UV_PYTHON_DOWNLOADS=0), the venv on PATH. The dev group stays in: agents and the grader run pytest.
@@ -39,5 +39,6 @@ COPY loc_arena/__init__.py loc_arena/
 COPY loc_arena/stack/ loc_arena/stack/
 COPY loc_arena/execution/ loc_arena/execution/
 COPY loc_arena/grader/ loc_arena/grader/
+COPY loc_arena/gateway/__init__.py loc_arena/gateway/edge.py loc_arena/gateway/
 COPY loc_arena/logging_/__init__.py loc_arena/logging_/events.py loc_arena/logging_/
 USER nonroot

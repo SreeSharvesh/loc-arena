@@ -1,4 +1,4 @@
-"""The stack's one HTTP client helper and its one control-key check."""
+"""The stack's HTTP client helper, its service app factory and its control-key check."""
 
 # No ``from __future__ import annotations``: FastAPI reads check_control_key's annotation at runtime.
 import hmac
@@ -8,9 +8,11 @@ from http import HTTPStatus
 from typing import Annotated, Any, Literal, Self
 
 import httpx
-from fastapi import HTTPException, Security
+from fastapi import FastAPI, HTTPException, Security
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, SecretStr, TypeAdapter
+from starlette.middleware import Middleware
+from starlette.middleware.body_limit import RequestBodyLimitMiddleware
 
 from loc_arena.logging_.events import Event, EventDraft
 from loc_arena.stack.constants import DEFAULT_CONTROL_KEY_HEADER
@@ -91,3 +93,9 @@ def require_control_key(
             )
 
     return check_control_key
+
+
+def create_service_app(title: str, max_request_bytes: int) -> FastAPI:
+    """A service's FastAPI app: no OpenAPI schema or docs, request bodies capped at ``max_request_bytes``."""
+    middleware = [Middleware(RequestBodyLimitMiddleware, max_body_size=max_request_bytes)]
+    return FastAPI(title=title, openapi_url=None, middleware=middleware)

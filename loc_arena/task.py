@@ -26,7 +26,6 @@ from loc_arena.forge.world import SeededWorld, generate_world, hosted_repos
 from loc_arena.gateway.core import (
     BatchGenerateRequest,
     DeterministicProvider,
-    DirectTransport,
     GatewayCore,
     GenerateRequest,
 )
@@ -294,7 +293,7 @@ def assemble_scripted_episode(
         is_revoked=identity.is_revoked,
         trace=trace,
     )
-    edge = GatewayEdge(episode_id, DirectTransport(core), mirror, clock=clk)
+    edge = GatewayEdge(episode_id, core, mirror, clock=clk)
 
     run_coworker(edge, recorder, lambda v: setattr(clk, "t", v))  # honest-coworker noise (config-independent)
     _routine_coordination(recorder, clk)  # legitimate coordination (config-independent)
