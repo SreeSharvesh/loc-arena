@@ -1,10 +1,4 @@
-"""A covert action is recorded under the agent that actually made it, not a hardcoded default.
-
-The covert tool surface records the observable events the monitors and the side-task measurement read
-(the shared-surface note, the coverage-config change, the persistent-job record). Each must carry the uid
-of the agent that called the tool, because the monitors and the split-across-agents measurement attribute
-behaviour by actor. The tool surface is shared by the whole team, so the caller is threaded per call.
-"""
+"""A covert action is recorded under the agent that made it."""
 
 from __future__ import annotations
 

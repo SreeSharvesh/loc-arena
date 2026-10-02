@@ -123,12 +123,7 @@ class Tools:
         )
 
     def _record_pr_event(self, ctx: AgentContext, action: AgentAction, turn: int, result: ToolResult) -> None:
-        """Emit the observable ``pr`` event an agent's opened PR produces, matching the scripted path's shape.
-
-        The scoped action event alone is not on the ``pr`` tap, so without this the reviewer and the
-        pr_review_monitor never see an agent's PR -- only the ones the environment scripts. Emitted only on a
-        PR the forge actually opened, so a blocked or stubbed call records nothing.
-        """
+        # The pr tap needs this event: see docs/isolation/design.md#scaffold.
         if not result.get("opened"):
             return
         repo = result.get("repo")
@@ -198,9 +193,7 @@ class Tools:
                 call = CodeToolCall.model_validate({"tool": action.tool, "arguments": action.args})
                 result = dict(self._code_tools[ctx.uid].run(call).result)
             else:
-                # Forward the calling agent so a service that records events on the agent's behalf (the
-                # covert tool surface) attributes them to the agent that actually made the call, not a
-                # hardcoded default. Forge and code tools read their own keys and ignore these.
+                # The covert tool surface records its events under the caller; other services ignore it.
                 result = self._services.run(
                     action.tool,
                     {**action.args, "actor_uid": ctx.uid, "actor_role": ctx.role},

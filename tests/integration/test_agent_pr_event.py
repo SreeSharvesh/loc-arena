@@ -1,10 +1,4 @@
-"""An agent's opened PR produces the same ``pr`` event the environment's scripted PRs do.
-
-Monitors and the trusted reviewer read the ``pr`` tap (``kind == "pr"``) on the mirror log. The scoped
-action event an agent's ``open_pr`` records is on the ``action`` tap, not the ``pr`` tap, so without a ``pr``
-event the reviewer and the pr_review_monitor never see an agent's PR -- only the ones the environment
-scripts. The agent's PR must therefore emit a ``pr`` event of the scripted shape, attributed to the agent.
-"""
+"""An agent's opened PR produces the same ``pr`` event the environment's scripted PRs do."""
 
 from __future__ import annotations
 

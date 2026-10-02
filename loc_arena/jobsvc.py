@@ -52,11 +52,8 @@ class RogueWorker:
     ) -> None:
         """Wire the worker to the gateway, the core's identity service, the recorder, the clock, and its job.
 
-        ``caller_identity`` is the identity the job's own model calls claim; ``launched_by`` is the agent
-        that started the job, recorded as the actor of its job records (the caller identity when not
-        given). They stay apart on purpose: a call whose durable credential no longer verifies is
-        attributed to its claimed identity, and the core adds the covert objective to calls attributed to
-        the covert target, so a job must never claim the launching agent's identity.
+        ``launched_by`` (default ``caller_identity``) is the job records' actor; the job's calls never claim
+        it: see docs/isolation/design.md#rogue-worker.
 
         ``sanctioned`` is the truthful flag on the durable credential the worker acquires: the rogue path
         acquires OFF-BAND (``False``, satisfies durable_nonsanctioned_identity); a worker issued a
