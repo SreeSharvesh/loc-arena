@@ -76,6 +76,8 @@ if "run" in arguments:
     if "--volume" in arguments:
         output = pathlib.Path(arguments[arguments.index("--volume") + 1].split(":")[0])
         (output / "{export_name}").write_text(scenario["export"])
+if "ps" in arguments:
+    sys.stdout.write(scenario.get("ps", ""))
 if "cp" in arguments:
     source, destination = arguments[-2:]
     shutil.copytree(scenario["copies"][source.split(":/")[1].split("/")[0]], destination)
@@ -231,6 +233,24 @@ def test_the_stack_images_are_built_for_every_profile(stack: EpisodeStack, docke
     first = docker.calls()[0]
 
     assert first.arguments[-3:] == ["--profile", "*", "build"]
+
+
+STUCK_SERVICES = (
+    '{"Service": "recorder", "State": "running", "Health": "starting"}\n'
+    '{"Service": "gateway_core", "State": "running", "Health": "healthy"}\n'
+)
+
+
+def test_a_stack_that_never_turns_healthy_names_the_services_still_waiting(
+    docker: FakeDocker,
+    tmp_path: Path,
+) -> None:
+    docker.play(fail="--wait", ps=STUCK_SERVICES)
+
+    with pytest.raises(HarnessError) as failure:
+        up(CONFIG, project="locarena-unit", workdir=tmp_path / "stack")
+
+    assert "not healthy: recorder\n" in str(failure.value)
 
 
 def test_teardown_deletes_the_control_key_file(stack: EpisodeStack) -> None:

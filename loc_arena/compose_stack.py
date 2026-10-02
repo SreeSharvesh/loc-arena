@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO, Final
 
-from pydantic import SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from loc_arena.compose_document import PROJECT_DIRECTORY, dump_compose_document, render_compose
 from loc_arena.config import RunConfig
@@ -168,11 +168,33 @@ def up(
         # Every profile, so the runner's and the grader's images (their build targets) are built as well.
         run_compose_checked(stack, ["--profile", "*", "build"], "building the stack's images")
         wait = ["up", "-d", "--wait", "--wait-timeout", str(docker.up_wait_timeout_seconds)]
-        run_compose_checked(stack, wait, "bringing the stack up healthy")
+        result = run_compose(stack, wait, check=False)
+        if result.returncode != 0:
+            waiting = ", ".join(_services_not_healthy(stack)) or "none reported"
+            tail = result.stderr[-docker.error_output_characters :]
+            raise HarnessError(f"bringing the stack up healthy failed; not healthy: {waiting}\n{tail}")
     except BaseException:
         teardown(stack)
         raise
     return stack
+
+
+_NOT_HEALTHY: Final = frozenset({"starting", "unhealthy"})  # compose ps Health values short of healthy
+
+
+class _ComposeService(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+    service: str = Field(alias="Service")
+    state: str = Field(alias="State")
+    health: str = Field(default="", alias="Health")
+
+
+def _services_not_healthy(stack: EpisodeStack) -> list[str]:
+    # Compose names a service only when it turned unhealthy, never one still starting at the timeout.
+    result = run_compose(stack, ["ps", "--all", "--format", "json"], check=False)
+    rows = [_ComposeService.model_validate_json(line) for line in result.stdout.splitlines() if line.strip()]
+    return sorted(row.service for row in rows if row.state != "running" or row.health in _NOT_HEALTHY)
 
 
 def teardown(stack: EpisodeStack) -> None:

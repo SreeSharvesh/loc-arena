@@ -29,3 +29,9 @@ def test_a_stack_run_without_docker_names_the_failure_on_stderr(
     _run_without_docker(tmp_path, monkeypatch)
 
     assert capsys.readouterr().err.startswith("error: Docker is not running")
+
+
+def test_a_run_whose_config_is_missing_reports_it_in_one_line(capsys: pytest.CaptureFixture[str]) -> None:
+    cli.main(["run", "--run", "no-such-run"])
+
+    assert capsys.readouterr().err == "error: config file not found: configs/no-such-run.yaml\n"

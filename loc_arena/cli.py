@@ -21,7 +21,7 @@ from types import FrameType
 from typing import Final
 
 from loc_arena.compose_stack import HarnessError
-from loc_arena.config import load_run_config
+from loc_arena.config import ConfigError, load_run_config
 from loc_arena.harness import DOTENV_PATH, run_episode, run_sweep
 from loc_arena.logging_.viewer import build_index
 from loc_arena.stack_episode import run_in_stack, run_runner_phase_in_container
@@ -234,7 +234,7 @@ def _dispatch(args: argparse.Namespace) -> int:
         signal.signal(signal_number, _exit_on_signal)
     try:
         result: int = args.func(args)
-    except HarnessError as error:
+    except (HarnessError, ConfigError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
     return result
