@@ -106,11 +106,7 @@ class FakeDocker:
 
 @pytest.fixture(autouse=True)
 def _control_keys_in_tmp_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Write each test's control key files under its own ``tmp_path``, which pytest cleans up.
-
-    ``up`` writes one per stack and only ``teardown`` deletes it: in the temp directory, a test that never
-    tears its stack down would leave a key file behind on every run.
-    """
+    # up writes a key file per stack and only teardown deletes it
     keys = tmp_path / "keys"
     keys.mkdir()
     monkeypatch.setattr(tempfile, "tempdir", str(keys))
@@ -393,7 +389,6 @@ def _wait_for_subcommand(docker: FakeDocker, subcommand: str) -> None:
 
 
 def _end_a_stack_run_by_signal(docker: FakeDocker, tmp_path: Path, signal_number: signal.Signals) -> str:
-    """Start ``loc-arena run --stack``, send it ``signal_number`` while its runner runs; return its stderr."""
     docker.play(run_seconds=RUNNER_SECONDS)
     command = [sys.executable, "-c", RUN_STACK_CLI, "aurora-efficiency.deterministic", str(tmp_path / "runs")]
     with subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True) as run:

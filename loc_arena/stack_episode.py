@@ -292,7 +292,6 @@ def _report_dropped(dropped: list[Path], what: str) -> None:
 
 
 def _require_docker(docker: DockerSettings) -> None:
-    """Raise ``HarnessError`` unless the daemon answers within ``docker.daemon_check_timeout_seconds``."""
     if not docker_available(docker):
         raise HarnessError(
             f"Docker is not running, or did not answer `docker info` within "

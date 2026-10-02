@@ -26,11 +26,7 @@ from loc_arena.harness import DOTENV_PATH, run_episode, run_sweep
 from loc_arena.logging_.viewer import build_index
 from loc_arena.stack_episode import run_in_stack, run_runner_phase_in_container
 
-# The signals that ask a process to end: Ctrl-C, `kill`, `make` passing its SIGTERM on, a closed terminal.
-# Python's default ends the process at once on SIGTERM and SIGHUP, so no `finally` runs and a stack episode's
-# teardown is skipped; on SIGINT it raises KeyboardInterrupt, whose traceback buries the line that matters.
 _ENDING_SIGNALS: Final = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
-# bash reports a command ended by signal N with exit status 128 + N (Bash Reference Manual, "Exit Status").
 _SIGNAL_EXIT_STATUS_BASE: Final = 128
 
 
@@ -234,28 +230,18 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _dispatch(args: argparse.Namespace) -> int:
-    """Run the parsed command; a ``HarnessError`` ends it with its message on stderr and exit status 1.
-
-    An ending signal unwinds the command, so its ``finally`` blocks (a stack's teardown) still run.
-    """
     for signal_number in _ENDING_SIGNALS:
         signal.signal(signal_number, _exit_on_signal)
     try:
         result: int = args.func(args)
-    except HarnessError as error:  # a failed docker step or episode: its message is the report
+    except HarnessError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
     return result
 
 
 def _exit_on_signal(signal_number: int, _frame: FrameType | None) -> None:
-    """Leave by ``SystemExit``, with bash's status for the signal, so the ``finally`` blocks still run.
-
-    Later ending signals are ignored from here on. A Ctrl-C reaches the harness twice (the terminal signals
-    the whole process group, and ``uv run`` forwards the signal again), and a second ``SystemExit`` raised
-    inside a ``finally`` would cut a stack's teardown short. ``scripts/teardown.sh`` sweeps what a SIGKILL
-    leaves.
-    """
+    # See docs/isolation/design.md#ending-signals.
     for ending_signal in _ENDING_SIGNALS:
         signal.signal(ending_signal, signal.SIG_IGN)
     print(f"error: stopped by {signal.Signals(signal_number).name}", file=sys.stderr)

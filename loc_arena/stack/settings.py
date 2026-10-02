@@ -51,10 +51,7 @@ class DockerSettings(SettingsGroup):
     )
     daemon_check_timeout_seconds: PositiveFloat = Field(
         default=10.0,
-        description=(
-            "Seconds `docker info` may take to answer before the harness counts the daemon as unavailable; "
-            "a hung daemon would otherwise hold `make run` at its first step for good."
-        ),
+        description="Seconds `docker info` may take before the harness counts the daemon as unavailable.",
     )
     up_wait_timeout_seconds: PositiveInt = Field(
         default=180,
@@ -66,10 +63,7 @@ class DockerSettings(SettingsGroup):
     )
     teardown_timeout_seconds: PositiveFloat = Field(
         default=60.0,
-        description=(
-            "Seconds a teardown's `docker compose down` may take before the harness gives up and names the "
-            "project; a hung daemon would otherwise hold the teardown for good."
-        ),
+        description="Seconds a teardown's `docker compose down` may take before the harness gives up on it.",
     )
     error_output_characters: PositiveInt = Field(
         default=4000,

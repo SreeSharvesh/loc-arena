@@ -38,10 +38,7 @@ class HarnessError(RuntimeError):
 
 
 def docker_available(settings: DockerSettings | None = None) -> bool:
-    """True iff a docker daemon answers ``docker info`` within ``settings.daemon_check_timeout_seconds``.
-
-    The integration tests skip-guard on this, with the default settings.
-    """
+    """Whether a docker daemon answers ``docker info`` within ``settings.daemon_check_timeout_seconds``."""
     if shutil.which("docker") is None:
         return False
     timeout_seconds = (settings or DockerSettings()).daemon_check_timeout_seconds
@@ -190,7 +187,7 @@ def teardown(stack: EpisodeStack) -> None:
     else:
         failure = result.stderr[-stack.settings.error_output_characters :] if result.returncode != 0 else None
     shutil.rmtree(stack.control_key_file.parent, ignore_errors=True)
-    if failure is not None:
+    if failure is not None:  # reports on stderr only: the error that led here stays the one raised
         print(
             f"tearing down {stack.project} failed, so its containers, networks, volumes or images may be "
             f"left; scripts/teardown.sh removes them:\n{failure}",

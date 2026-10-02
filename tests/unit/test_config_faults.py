@@ -198,7 +198,6 @@ def test_a_stack_run_whose_monitors_file_cannot_load_fails_before_its_stack_come
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(stack_episode, "docker_available", lambda: True)
     monkeypatch.setattr(stack_episode, "up", _refuse_to_bring_a_stack_up)
     monkeypatch.setattr(
         stack_episode,

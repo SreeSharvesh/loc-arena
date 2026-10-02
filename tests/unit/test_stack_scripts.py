@@ -1,7 +1,4 @@
-"""The manual stack scripts, ``scripts/up.sh`` and the sweep ``scripts/teardown.sh``, on a stand-in docker.
-
-The stand-in holds no resource at all, and refuses a compose project name compose itself would refuse.
-"""
+"""The manual stack scripts, ``scripts/up.sh`` and the sweep ``scripts/teardown.sh``, on a stand-in docker."""
 
 from __future__ import annotations
 
@@ -12,14 +9,12 @@ import tempfile
 from pathlib import Path
 
 import pytest
+from loc_arena.compose_document import PROJECT_DIRECTORY
 from loc_arena.compose_stack import write_control_key_file
-from loc_arena.harness import PROJECT_DIRECTORY
 
 TEARDOWN_SCRIPT = PROJECT_DIRECTORY / "scripts" / "teardown.sh"
 UP_SCRIPT = PROJECT_DIRECTORY / "scripts" / "up.sh"
-# Lists nothing, removes nothing, and fails as compose does on a project name outside its rule
-# (docs.docker.com/compose/how-tos/project-name: lowercase letters, digits, dashes and underscores, starting
-# with a letter or a digit).
+# Holds nothing, and refuses a project name compose refuses (docs.docker.com/compose/how-tos/project-name).
 EMPTY_DOCKER = """#!/bin/sh
 while [ $# -gt 0 ]; do
   if [ "$1" = "-p" ]; then
@@ -33,7 +28,6 @@ exit 0
 
 @pytest.fixture
 def temporary_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """The temp directory of the harness and the script alike, with a docker that holds nothing on PATH."""
     bin_directory = tmp_path / "bin"
     bin_directory.mkdir()
     docker = bin_directory / "docker"
