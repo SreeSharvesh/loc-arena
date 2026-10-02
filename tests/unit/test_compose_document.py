@@ -4,11 +4,9 @@ import copy
 import dataclasses
 import re
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any
 
 import pytest
-import scenarios.loader
 from loc_arena.compose_document import (
     LISTEN_HOST,
     PROJECT_DIRECTORY,
@@ -17,7 +15,6 @@ from loc_arena.compose_document import (
     SECRET_FILE_MODE,
     RunTopology,
     ServiceSpec,
-    read_codebase,
     render_compose,
     render_reference_compose_file,
     render_service,
@@ -306,20 +303,6 @@ def test_an_image_built_from_another_codebase_is_given_it_as_its_build_argument(
     grader = _render_grader_built_from("scenarios/toy/codebase")
 
     assert grader["build"].get("args") == {CODEBASE_BUILD_ARGUMENT: "scenarios/toy/codebase"}
-
-
-def test_a_run_whose_scenario_codebase_is_no_directory_is_refused(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    (tmp_path / "scenarios" / "codeless").mkdir(parents=True)
-    (tmp_path / "scenarios" / "codeless" / "scenario.yaml").write_text(
-        "name: codeless\nscorer: s\nverifier: v\ncodebase: missing\n",
-    )
-    monkeypatch.setattr(scenarios.loader, "SCENARIOS_ROOT", tmp_path / "scenarios")
-
-    with pytest.raises(ValueError, match="is not a directory"):
-        read_codebase(dataclasses.replace(CONFIG, scenario="codeless"))
 
 
 @pytest.mark.parametrize(

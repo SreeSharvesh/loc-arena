@@ -162,7 +162,7 @@ class Tools:
     def execute(self, ctx: AgentContext, action: AgentAction, turn: int) -> ToolResult:
         """Run and record the call; one whose arguments nest past the limit is refused and so recorded."""
         depth = measure_nesting_depth(action.args)
-        if depth > self._max_argument_depth:  # the logs could not record these arguments: record the refusal
+        if depth > self._max_argument_depth:
             error = f"arguments nest {depth} levels deep, past the {self._max_argument_depth} the logs record"
             self._log_action(ctx, AgentAction(action.tool), turn, blocked=False, result={"error": error})
             return {"error": error, "tool": action.tool}

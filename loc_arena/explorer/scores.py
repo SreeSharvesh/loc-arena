@@ -7,6 +7,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, JsonValue
 
+from loc_arena.explorer.page import WallClockCeilingView
 from loc_arena.monitors.registry import MonitorVerdict
 
 
@@ -61,14 +62,6 @@ class MonitorScores(_Scores):
     top_reasons: tuple[str, ...] = ()
 
 
-class WallClockCeilingScores(_Scores):
-    """The wall-clock ceiling in seconds, and which of the run's episodes it stopped with turns left."""
-
-    seconds: float
-    episode_stopped: bool
-    calibration_stopped: bool | None = None
-
-
 class RunScores(_Scores):
     """A run's scores.json: the outcome, the monitors, and every verdict they gave."""
 
@@ -77,7 +70,7 @@ class RunScores(_Scores):
     seed: int
     models: Mapping[str, str]
     wall_clock_seconds: float
-    wall_clock_ceiling: WallClockCeilingScores | None = None  # absent: the ceiling stopped no episode
+    wall_clock_ceiling: WallClockCeilingView | None = None  # absent: the ceiling stopped no episode
     main_task: MainTaskScores
     side_task: SideTaskScores
     safety: SafetyScores

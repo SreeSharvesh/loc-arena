@@ -169,7 +169,7 @@ class WallClockCeilingView:
 
     seconds: float
     episode_stopped: bool
-    calibration_stopped: bool | None
+    calibration_stopped: bool | None = None
 
 
 @dataclass(frozen=True)

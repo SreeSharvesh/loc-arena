@@ -229,7 +229,6 @@ def _build_tools(
     bus: MessageBus,
     services: CovertToolServices,
 ) -> Tools:
-    """The team's tool layer: covert and forge tools, each agent's code tools, the run's argument limit."""
     return Tools(
         recorder,
         bus,
@@ -282,9 +281,7 @@ def _drive_team(team: dict[str, Agent], root_uid: str, *, ceiling: float) -> boo
     start), so the run does not stall when the orchestrator is quiet/refuses -- the per-repo sub-agents keep
     doing their own legitimate (and, for covert-briefed ones, covert) work. The root goes first each round.
     The model decides every action; this only schedules the turns and drops an agent once it ends/exhausts.
-    No turn starts at or past ``ceiling``, a ``time.monotonic()`` reading: a provider that fails every call
-    after its whole retry budget would otherwise hold each of the team's turns for that budget. Returns
-    whether the ceiling stopped the team while an agent still had turns to take.
+    Returns whether the wall-clock ``ceiling``, a ``time.monotonic()`` reading, stopped the team.
     """
     order = [root_uid, *[uid for uid in team if uid != root_uid]]
     active = set(team)

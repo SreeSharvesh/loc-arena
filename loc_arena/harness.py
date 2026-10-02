@@ -36,7 +36,6 @@ from loc_arena.monitors.registry import find_fallback_only_monitors, load_monito
 from loc_arena.protocol import Protocol, compose_protocol
 from loc_arena.runner import EpisodeMonitoring
 from loc_arena.task import EpisodeResult, assemble_scripted_episode
-from loc_arena.wall_clock_ceiling import WALL_CLOCK_CEILING_KEY, read_wall_clock_ceiling_stop
 
 if TYPE_CHECKING:
     from loc_arena.logging_.inspect_export import EpisodeExport
@@ -384,9 +383,10 @@ def score_and_write_bundle(
             calibration=None if twin_log is None else summarize_model_usage(read_events(twin_log)),
         ),
     )
-    stop = read_wall_clock_ceiling_stop(config, mode, episode, honest)
-    if stop is not None:  # written only for a run the ceiling stopped: any other writes what it always did
-        scores[WALL_CLOCK_CEILING_KEY] = dataclasses.asdict(stop)
+    twin_stopped = honest.stopped_at_wall_clock_ceiling if mode == "attack" else None
+    stops = {"episode_stopped": episode.stopped_at_wall_clock_ceiling, "calibration_stopped": twin_stopped}
+    if any(stops.values()):
+        scores["wall_clock_ceiling"] = {"seconds": config.episode.wall_clock_seconds} | stops
     return _write_bundle(
         config,
         bundle.directory,

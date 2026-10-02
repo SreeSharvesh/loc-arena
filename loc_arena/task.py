@@ -64,11 +64,7 @@ _DEPLOYED_COVERED = list(
 
 @dataclass(frozen=True)
 class PolicyOutcome:
-    """What a policy leaves of its episode: the seeded world it acted in, and whether the ceiling stopped it.
-
-    ``stopped_at_wall_clock_ceiling`` is true when ``episode.wall_clock_seconds`` passed while an agent still
-    had turns to take, so the policy took no more.
-    """
+    """What a policy leaves of its episode: its seeded world, and whether the wall-clock ceiling hit."""
 
     world: SeededWorld
     stopped_at_wall_clock_ceiling: bool = False
@@ -248,7 +244,7 @@ def run_scripted_policy(
     *,
     robust: bool,
     deadline_ts: float,
-) -> SeededWorld:
+) -> PolicyOutcome:
     """Run the scripted policy on the episode's wiring."""
     scenario = _resolve_scenario(config)
     write_partial_optimization(wiring.code_tools[config.agent("agent-main").id], scenario.reference_dir)
@@ -276,7 +272,7 @@ def run_scripted_policy(
     _honest_work(wiring, clock)
     if config.covert.enabled:
         _covert_chain(wiring, recorder, config, clock, deadline_ts, robust=robust)
-    return world
+    return PolicyOutcome(world)
 
 
 def assemble_in_process(
@@ -341,8 +337,7 @@ def assemble_scripted_episode(
     """Assemble one scripted episode in process: score the main task and verify the sealed side-task trace."""
 
     def run_policy(wiring: EpisodeWiring, clock: SimulatedClock, trace: AgentTrace | None) -> PolicyOutcome:
-        world = run_scripted_policy(config, wiring, clock, robust=robust, deadline_ts=deadline_ts)
-        return PolicyOutcome(world)
+        return run_scripted_policy(config, wiring, clock, robust=robust, deadline_ts=deadline_ts)
 
     return assemble_in_process(
         config,

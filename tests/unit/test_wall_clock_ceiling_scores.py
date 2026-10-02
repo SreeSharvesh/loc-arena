@@ -14,8 +14,7 @@ from loc_arena.explorer.settings import ExplorerSettings
 from loc_arena.gateway.core import DeterministicProvider
 from loc_arena.harness import apply_mode, run_episode
 from loc_arena.stack.constants import EVENTS_FILE_NAME, RUNNER_EPISODE_EXPORT_FILE_NAME
-from loc_arena.stack_episode import _grade_on_host, run_runner_phase
-from loc_arena.wall_clock_ceiling import WALL_CLOCK_CEILING_KEY
+from loc_arena.stack_episode import _grade_on_host
 
 from tests.unit._stack_services import serve_stack
 
@@ -29,7 +28,6 @@ STOPPED = dataclasses.replace(
 
 
 def _run_bundle(config: RunConfig, out_root: Path) -> Path:
-    """One attack run and its honest twin in process, on the deterministic provider, monitors heuristic."""
     with pytest.MonkeyPatch.context() as patch:
         patch.delenv("OPENROUTER_API_KEY", raising=False)
         return run_episode(
@@ -50,7 +48,7 @@ def stopped_bundle(tmp_path_factory: pytest.TempPathFactory) -> Path:
 def test_a_run_stopped_at_the_wall_clock_ceiling_records_it_in_its_scores(stopped_bundle: Path) -> None:
     scores = json.loads((stopped_bundle / "scores.json").read_text())
 
-    assert scores[WALL_CLOCK_CEILING_KEY] == {
+    assert scores["wall_clock_ceiling"] == {
         "seconds": PASSED_CEILING_SECONDS,
         "episode_stopped": True,
         "calibration_stopped": True,
@@ -60,7 +58,7 @@ def test_a_run_stopped_at_the_wall_clock_ceiling_records_it_in_its_scores(stoppe
 def test_a_run_the_wall_clock_ceiling_did_not_stop_writes_no_ceiling_in_its_scores(tmp_path: Path) -> None:
     scores = json.loads((_run_bundle(LIVE, tmp_path) / "scores.json").read_text())
 
-    assert WALL_CLOCK_CEILING_KEY not in scores
+    assert "wall_clock_ceiling" not in scores
 
 
 def test_the_explorer_page_of_a_run_stopped_at_the_ceiling_shows_the_stop(stopped_bundle: Path) -> None:
@@ -74,13 +72,7 @@ def test_the_stack_runner_carries_a_stop_at_the_ceiling_to_the_host(tmp_path: Pa
     served = serve_stack(tmp_path, config, provider=DeterministicProvider())
     max_bytes = config.settings.docker.evidence_max_bytes
 
-    run_runner_phase(
-        config,
-        served.services,
-        robust=True,
-        output_directory=tmp_path / "runner",
-        mirror_root=served.gateway.mirror_root,
-    )
+    served.run_runner(config, tmp_path)
     export = read_runner_export(tmp_path / "runner" / RUNNER_EPISODE_EXPORT_FILE_NAME, max_bytes)
     episode = _grade_on_host(
         config,
@@ -88,7 +80,6 @@ def test_the_stack_runner_carries_a_stop_at_the_ceiling_to_the_host(tmp_path: Pa
         UNMEASURED_CHECKOUT,
         sealed_directory=served.gateway.sealed_root / export.handle,
         mirror_path=served.gateway.mirror_root / export.handle / EVENTS_FILE_NAME,
-        max_bytes=max_bytes,
     )
 
     assert episode.stopped_at_wall_clock_ceiling is True

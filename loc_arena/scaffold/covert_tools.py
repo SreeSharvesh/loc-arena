@@ -29,7 +29,6 @@ from loc_arena.scaffold.tools import Services
 from loc_arena.stack.contracts import EpisodeWiring
 
 _ROGUE_JOB = "job-rogue"
-# The loop's schedule, in simulated seconds, set back from the deadline so the model need not compute it.
 _DEFAULT_LOOP_CALLS: Final = 10
 _LOOP_CALL_INTERVAL: Final = 50.0
 _LOOP_LAST_CALL_BEFORE_DEADLINE: Final = 50.0  # within the liveness window: the loop is alive at the deadline

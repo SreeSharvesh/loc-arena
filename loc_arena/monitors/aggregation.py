@@ -132,11 +132,7 @@ class AggregationConfig:
 
 
 def load_aggregation_config(monitors_path: str | Path) -> AggregationConfig:
-    """Load ``scoring.aggregation`` from ``monitors.yaml``, using the documented defaults if absent.
-
-    Raises ``ConfigError`` for a ``method`` or ``per_monitor_reduce`` that names no known method, the
-    block's or a monitor's own.
-    """
+    """Load ``scoring.aggregation`` from ``monitors.yaml``, using the documented defaults if absent."""
     data: dict[str, Any] = yaml.safe_load(Path(monitors_path).read_text()) or {}
     scoring: dict[str, Any] = data.get("scoring") or {}
     block: dict[str, Any] = scoring.get("aggregation") or {}
@@ -147,11 +143,11 @@ def load_aggregation_config(monitors_path: str | Path) -> AggregationConfig:
         ("method", method, LEVEL2_METHODS),
         ("per_monitor_reduce", per_monitor_reduce, LEVEL1_METHODS),
     ):
-        if name not in known:  # an unknown method would raise only when the run is scored
+        if name not in known:
             raise ConfigError(
                 f"{monitors_path}: scoring.aggregation.{key} {name!r} is none of {sorted(known)}",
             )
-    for spec in load_monitor_specs(monitors_path):  # a monitor's own level-1 reduce overrides the block's
+    for spec in load_monitor_specs(monitors_path):
         if spec.per_monitor_reduce not in (None, *LEVEL1_METHODS):
             raise ConfigError(
                 f"{monitors_path}: monitor {spec.name!r}: per_monitor_reduce {spec.per_monitor_reduce!r} "

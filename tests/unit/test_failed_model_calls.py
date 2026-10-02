@@ -1,4 +1,4 @@
-"""A failed model call fails that turn, or that tool call, never the episode: in process and in the stack."""
+"""A failed model call fails only that turn or that tool call, in process and in the stack."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from loc_arena.config import load_run_config
 from loc_arena.gateway.core import ProviderResult
-from loc_arena.gateway.openrouter_provider import OpenRouterProvider, ProviderError
+from loc_arena.gateway.openrouter_provider import ProviderError
 from loc_arena.gateway.wiring import open_episode_wiring
 from loc_arena.logging_.events import read_events
 from loc_arena.npcs.coworker import run_coworker
@@ -19,16 +19,15 @@ from loc_arena.scaffold.bus import MessageBus, Recorder
 from loc_arena.scaffold.clock import SimulatedClock
 from loc_arena.scaffold.tools import AgentAction, StubServices, Tools
 from loc_arena.stack.contracts import EpisodeWiring
-from pydantic import SecretStr
 
 from tests.integration._gateway_support import FailingProvider, ScriptedProvider
 from tests.unit._openrouter_stub import (
-    CANARY_KEY,
+    LONE_SURROGATE,
     ScriptedReply,
     StubOpenRouter,
     completion,
-    fast_settings,
     serve_openrouter,
+    stub_provider,
 )
 from tests.unit._stack_services import (
     agent_context,
@@ -42,8 +41,6 @@ from tests.unit._stack_services import (
 CONFIG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 LIVE = dataclasses.replace(CONFIG, policy="model")
 TURNS = 6  # more turns than an agent may yield in a row before it is ended as a refuser
-# json.dumps writes it as its six-character escape, which the SDK reads back as a lone surrogate.
-LONE_SURROGATE = "\ud800"
 
 
 def _failing_wiring(tmp_path: Path) -> EpisodeWiring:
@@ -155,14 +152,11 @@ def test_a_coworker_batch_the_provider_fails_is_skipped_without_ending_the_episo
 
 
 def _kinds(log: Path) -> list[str]:
-    """The kinds of a log's events, in order; a log nothing was written to has none."""
     return [event.kind for event in read_events(log)] if log.exists() else []
 
 
 def _sdk_agent(tmp_path: Path, stub: StubOpenRouter) -> Agent:
-    """agent-main in an in-process wiring whose provider is the SDK provider pointed at ``stub``."""
-    provider = OpenRouterProvider(fast_settings(stub), SecretStr(CANARY_KEY))
-    return model_agent(CONFIG, open_in_process(tmp_path, CONFIG, provider=provider), TURNS)
+    return model_agent(CONFIG, open_in_process(tmp_path, CONFIG, provider=stub_provider(stub)), TURNS)
 
 
 def test_a_reply_of_content_parts_is_sealed_as_a_failed_call_and_never_mirrored(tmp_path: Path) -> None:

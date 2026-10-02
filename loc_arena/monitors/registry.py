@@ -103,7 +103,7 @@ _REASON_FIELD = re.compile(r'(?<!\w)"?reason"?\s*:\s*"([^"]*)"')
 UNPARSED_REASON = "reason unparsed"
 # Marks the reason of a verdict recovered from a reply that was not strict JSON, wherever it is reported.
 RECOVERED_REASON_PREFIX = "[recovered from a reply that was not strict JSON] "
-# Where a JSON object with a first key starts: "{", JSON whitespace, the key's opening quote.
+# A JSON object's opening up to its first key's quote (docs/isolation/design.md#monitor-verdicts).
 _OBJECT_OPENING = re.compile(r'\{[ \t\n\r]*"')
 _VERDICT_DECODER = json.JSONDecoder()
 # How much of a model completion a monitor event keeps, for review.
@@ -252,7 +252,6 @@ def _read_number[Number: (int, float)](
     convert: Callable[[str | float], Number],
     raw: str | float,
 ) -> Number:
-    """``raw`` as a number; a ``ConfigError`` naming the monitor and the key when it is none."""
     try:
         return convert(raw)
     except (TypeError, ValueError) as exc:
@@ -270,9 +269,9 @@ def _spec_from(entry: dict[str, Any]) -> MonitorSpec:
     name = str(entry["name"])
     prompt_ref = str(entry["prompt_ref"]) if entry.get("prompt_ref") is not None else None
     mode = str(entry.get("mode", "heuristic"))
-    if mode not in MONITOR_MODES:  # a live monitor misspelled would score with its heuristic, unnoticed
+    if mode not in MONITOR_MODES:
         raise ConfigError(f"monitor {name!r}: mode must be one of {sorted(MONITOR_MODES)}, got {mode!r}")
-    if unknown_taps := sorted(set(taps_tuple) - set(TAP_KINDS)):  # it would see no event, unnoticed
+    if unknown_taps := sorted(set(taps_tuple) - set(TAP_KINDS)):
         raise ConfigError(f"monitor {name!r}: tap {unknown_taps} names no tap point of {sorted(TAP_KINDS)}")
     return MonitorSpec(
         name=name,
@@ -508,10 +507,7 @@ class ParsedVerdict:
 
 
 def _find_brace_balanced_objects(text: str) -> Iterator[str]:
-    """Every brace-balanced ``{...}`` span in ``text``, in order of its opening brace, cut only when read.
-
-    One pass pairs each ``}`` with the latest unpaired ``{``.
-    """
+    """Every brace-balanced ``{...}`` span in ``text``, in order of its opening brace."""
     unpaired: list[int] = []
     spans: list[tuple[int, int]] = []
     for position, character in enumerate(text):
@@ -523,11 +519,6 @@ def _find_brace_balanced_objects(text: str) -> Iterator[str]:
 
 
 def _find_strict_verdict(text: str) -> ParsedVerdict | None:
-    """The first JSON object in ``text`` whose suspicion is a number in [0, 1], decoded in place.
-
-    Decoded in place, a brace in the reason is text. Only a ``{`` that opens a quoted key is decoded: a
-    verdict has keys, and decoding any other brace would fail at a cost that grows with its position.
-    """
     for opening in _OBJECT_OPENING.finditer(text):
         try:
             verdict, _ = _VERDICT_DECODER.raw_decode(text, opening.start())  # an object: it opens with "{"

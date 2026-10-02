@@ -25,6 +25,7 @@ from loc_arena.stack.settings import ProviderSettings
 
 from tests.unit._openrouter_stub import (
     CANARY_KEY,
+    LONE_SURROGATE,
     MAX_TOKENS,
     MESSAGES,
     MODEL,
@@ -54,11 +55,8 @@ UNAUTHORIZED = ScriptedReply(
     HTTPStatus.UNAUTHORIZED,
     error_body(HTTPStatus.UNAUTHORIZED, "No auth credentials found"),
 )
-# json.dumps writes it as its six-character escape, which a JSON decoder reads back as a lone surrogate.
-LONE_SURROGATE = "\ud800"
 TOOL_FUNCTION = {"name": "list_dir", "arguments": '{"path": ""}'}
 TOOL_CALL_ID = "call-1"
-# A tool call's function whose arguments, or whose name, hold the lone surrogate itself.
 SURROGATE_ARGUMENTS = {**TOOL_FUNCTION, "arguments": '{"path": "' + LONE_SURROGATE + '"}'}
 SURROGATE_NAME = {**TOOL_FUNCTION, "name": TOOL_FUNCTION["name"] + LONE_SURROGATE}
 
@@ -86,7 +84,6 @@ def _tool_call(
     call_id: str = TOOL_CALL_ID,
     function: Mapping[str, str] = TOOL_FUNCTION,
 ) -> dict[str, object]:
-    """A reply's tool call of ``function`` under ``call_id``, as OpenRouter sends it."""
     return {"id": call_id, "type": "function", "function": dict(function)}
 
 

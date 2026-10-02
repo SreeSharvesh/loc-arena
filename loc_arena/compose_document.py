@@ -395,17 +395,6 @@ def _read_grading_inputs(config: RunConfig) -> GradingInputs | None:
     )
 
 
-def read_codebase(config: RunConfig) -> str:
-    """The run scenario's codebase, which both images are built with: a directory, or ``ValueError``."""
-    scenario = load_run_scenario(config.scenario)
-    if not scenario.codebase_directory.is_dir():
-        raise ValueError(
-            f"scenario {scenario.name!r} names the codebase {scenario.codebase!r}, but "
-            f"{scenario.codebase_directory} is not a directory",
-        )
-    return scenario.codebase
-
-
 def _render_volume(name: str, specs: Sequence[ServiceSpec], topology: StackTopology) -> ComposeVolume:
     labels = {LABEL: "1"}
     size_bytes = topology.volumes[name].size_bytes
@@ -448,7 +437,7 @@ def render_compose(config: RunConfig) -> ComposeDocument:
             for template in templates
         },
         grading=_read_grading_inputs(config),
-        codebase=read_codebase(config),
+        codebase=load_run_scenario(config.scenario).codebase,
     )
     document: ComposeDocument = {
         "services": {spec.name: render_service(spec, run) for spec in specs},

@@ -37,9 +37,9 @@ def build_service_url(hostname: str, port: int) -> str:
 
 
 # --- gateway: the model roles the harness calls (the run config's models file routes each to a model) ---
-MONITOR_MODEL_ROLE: Final = "trusted_monitor"  # a monitor's own calls
-AGENT_MODEL_ROLE: Final = "untrusted_agent"  # each agent's turn, and the rogue loop's calls
-TEACHER_MODEL_ROLE: Final = "teacher"  # generate and batch_generate by default, and the coworker's batch
+MONITOR_MODEL_ROLE: Final = "trusted_monitor"
+AGENT_MODEL_ROLE: Final = "untrusted_agent"
+TEACHER_MODEL_ROLE: Final = "teacher"
 RUN_MODEL_ROLES: Final = (AGENT_MODEL_ROLE, TEACHER_MODEL_ROLE, MONITOR_MODEL_ROLE)
 
 # --- episode handles ---

@@ -125,11 +125,7 @@ class GatewaySettings(SettingsGroup):
     )
     monitor_failures_before_fallback: PositiveInt = Field(
         default=3,
-        description=(
-            "Failed model calls in a row after which a live monitor calls its model no more in the episode "
-            "and scores its remaining events with its heuristic. Each failed call has spent the provider's "
-            "whole call budget, so with the provider down a monitor costs at most this many budgets."
-        ),
+        description="Failed model calls in a row after which a live monitor scores with its heuristic only.",
     )
     durable_credential_expiry_ts: PositiveFloat = Field(
         default=10_000_000.0,
@@ -257,11 +253,7 @@ class ExecutionSettings(SettingsGroup):
     )
     max_argument_depth: PositiveInt = Field(
         default=32,
-        description=(
-            "Deepest nesting of lists and objects a tool call's arguments may have; a deeper call gets an "
-            "error result. The event logs record every call's arguments: pydantic's serializer, which the "
-            "stack's log clients send events with, refuses about 250 levels, the in-process log about 490."
-        ),
+        description="Deepest nesting of lists and objects a tool call's arguments may have.",
     )
     reply_timeout_seconds: PositiveFloat = Field(
         default=360.0,

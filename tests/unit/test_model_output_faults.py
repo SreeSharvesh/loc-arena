@@ -1,9 +1,4 @@
-"""A model reply the scaffold cannot act on costs the agent that turn, never the episode.
-
-Each agent test gives one agent a provider that answers every call with the same native tool-call reply, as a
-live model can, and runs its turn through the real agent policy, tool layer and event logs. The tool specs
-offer no batch_generate, so its test calls the tool layer directly, as a scripted agent policy can.
-"""
+"""A model reply the scaffold cannot act on costs the agent that turn only."""
 
 from __future__ import annotations
 
@@ -14,17 +9,12 @@ from pathlib import Path
 
 import pytest
 from loc_arena.config import load_run_config
-from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import Message, ProviderResult, ToolSpec
-from loc_arena.gateway.wiring import InProcessServices, open_episode_wiring
 from loc_arena.scaffold.agent import Agent, TurnStatus
 from loc_arena.scaffold.bus import MessageBus, Recorder
-from loc_arena.scaffold.clock import SimulatedClock
-from loc_arena.scaffold.model_policy import ModelAgentPolicy
-from loc_arena.scaffold.registry import AgentRegistry
-from loc_arena.scaffold.tool_specs import agent_tool_specs
-from loc_arena.scaffold.tools import AgentAction, AgentContext, StubServices, ToolResult, Tools
-from loc_arena.stack.contracts import EpisodeWiring
+from loc_arena.scaffold.tools import AgentAction, StubServices, Tools
+
+from tests.unit._stack_services import agent_context, model_agent, no_spawn, open_in_process
 
 CONFIG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 SETTINGS = CONFIG.settings
@@ -35,7 +25,7 @@ CALL_ID = "call-1"
 SKIPPED_FIRST_TURN = [{"turn": 0, "skipped": True}]
 # Far past the depth CPython's JSON decoder follows before it raises RecursionError.
 DECODER_DEFEATING_DEPTH = 100_000
-# Well past the limit, and past the ~490 levels at which recording the action once hit RecursionError.
+# Well past the limit, and past the ~490 levels where recording an action would raise RecursionError.
 DEPTH_PAST_THE_LIMIT_FACTOR = 20
 
 
@@ -50,10 +40,7 @@ class ReplyingProvider:
         call_id: str = CALL_ID,
         more_calls: Sequence[dict[str, object]] = (),
     ) -> None:
-        """Answer every call with a call of ``tool`` under ``call_id``, its arguments the JSON text given.
-
-        The calls in ``more_calls`` follow it in each reply.
-        """
+        """Answer every call with a call of ``tool`` under ``call_id``, then the calls in ``more_calls``."""
         self._tool = tool
         self._arguments = arguments
         self._call_id = call_id
@@ -68,7 +55,6 @@ class ReplyingProvider:
         max_tokens: int,
         tools: list[ToolSpec] | None,
     ) -> ProviderResult:
-        """The fixed tool calls, built afresh for each call; records the messages the call carried."""
         self.requests.append(copy.deepcopy(messages))
         call = {
             "id": self._call_id,
@@ -80,55 +66,11 @@ class ReplyingProvider:
 
 
 def _carried_ids(history: list[Message]) -> list[str]:
-    """The ids of the tool calls the assistant messages of ``history`` carry, in order."""
     return [call["id"] for message in history for call in message.get("tool_calls", [])]
 
 
-def _no_spawn(ctx: AgentContext, args: dict[str, object], turn: int) -> ToolResult:
-    return {"blocked": True}
-
-
-def _wiring(tmp_path: Path, provider: ReplyingProvider) -> EpisodeWiring:
-    services = InProcessServices(
-        sealed_path=tmp_path / "sealed.jsonl",
-        mirror_path=tmp_path / "mirror.jsonl",
-        checkout=tmp_path / "checkout",
-        provider=provider,
-    )
-    return open_episode_wiring(CONFIG, services)
-
-
-def _context(wiring: EpisodeWiring) -> AgentContext:
-    config = CONFIG.agent(AGENT_ID)
-    return AgentContext(
-        uid=config.id,
-        role=config.kind,
-        branch=config.branch,
-        scope=config.scope,
-        client=GatewayClient(wiring.gateway, config.id),
-    )
-
-
 def _agent_replying(tmp_path: Path, provider: ReplyingProvider) -> Agent:
-    """agent-main with a model agent policy whose every model call ``provider`` answers."""
-    wiring = _wiring(tmp_path, provider)
-    clock = SimulatedClock(wiring.control, CONFIG.settings.clock.start_ts)
-    recorder = Recorder(wiring.sealed, wiring.mirror, clock=clock)
-    bus = MessageBus(recorder)
-    ctx = _context(wiring)
-    registry = AgentRegistry(
-        CONFIG.episode,
-        recorder,
-        None,
-        root_uid=ctx.uid,
-        root_role=ctx.role,
-        root_branch=ctx.branch,
-        root_scope=ctx.scope,
-        clock=clock,
-    )
-    tools = Tools(recorder, bus, StubServices(), spawn_handler=_no_spawn)
-    agent_policy = ModelAgentPolicy(ctx.client, "brief", agent_tool_specs(covert=False), CONFIG.agent_loop)
-    return Agent(ctx, agent_policy, tools, registry, bus, wiring.control, TURNS, clock=clock)
+    return model_agent(CONFIG, open_in_process(tmp_path, CONFIG, provider=provider), TURNS)
 
 
 @pytest.mark.parametrize(
@@ -217,11 +159,12 @@ def test_a_tool_call_without_an_id_gets_an_id_no_call_of_an_earlier_reply_carrie
 
 @pytest.mark.parametrize("prompts", ["one prompt", {"a": "b"}], ids=["a string", "an object"])
 def test_a_batch_whose_prompts_are_no_list_is_refused_as_malformed(tmp_path: Path, prompts: object) -> None:
-    wiring = _wiring(tmp_path, ReplyingProvider("finish", "{}"))
+    wiring = open_in_process(tmp_path, CONFIG, provider=ReplyingProvider("finish", "{}"))
     recorder = Recorder(wiring.sealed, wiring.mirror, clock=lambda: 0.0)
-    tools = Tools(recorder, MessageBus(recorder), StubServices(), spawn_handler=_no_spawn)
+    tools = Tools(recorder, MessageBus(recorder), StubServices(), spawn_handler=no_spawn)
+    ctx = agent_context(CONFIG, wiring, AGENT_ID)
 
-    result = tools.execute(_context(wiring), AgentAction("batch_generate", {"prompts": prompts}), 0)
+    result = tools.execute(ctx, AgentAction("batch_generate", {"prompts": prompts}), 0)
 
     assert result["error"].startswith("malformed args for batch_generate")
 

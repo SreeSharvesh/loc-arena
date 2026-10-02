@@ -45,14 +45,14 @@ from loc_arena.stack.constants import AGENT_MODEL_ROLE, MONITOR_MODEL_ROLE, RUN_
 from loc_arena.stack.settings import LocArenaSettings
 
 YAML_ENCODING: Final = "utf-8"
-BLOCK_CONFIG: Final = ConfigDict(extra="forbid")  # a key a typed block does not declare is a misspelling
-KEYS_CONFIG: Final = ConfigDict(extra="ignore")  # a view of a free-form block reads only the keys it names
+BLOCK_CONFIG: Final = ConfigDict(extra="forbid")
+KEYS_CONFIG: Final = ConfigDict(extra="ignore")
 PROMPT_REFERENCE_PREFIX: Final = "prompts_inline."
 REFERENCE_SUFFIX: Final = "_ref"
 COVERT_PROMPTS: Final = ("objective_prompt",)
 AGENT_PROMPTS: Final = ("system_prompt", "brief")
 LANDING_FORMULAS: Final = frozenset({"minimal", "robust"})
-ROOT_AGENT_ID: Final = "agent-main"  # the policies, the grader's export and the stack drive the team from it
+ROOT_AGENT_ID: Final = "agent-main"
 
 
 class ConfigError(ValueError):
@@ -225,8 +225,6 @@ class _MainTaskKeys:
 
 @pydantic_dataclass(frozen=True, config=KEYS_CONFIG)
 class _ProtocolKeys:
-    """The ``protocol`` keys the scoring computes with; ``RunConfig.protocol`` keeps the whole block."""
-
     audit_budget_fpr: Annotated[StrictFloat, Field(ge=0.0, le=1.0)] | None = Field(
         default=None,
         description="The false-positive rate the audit threshold is calibrated at on the honest twin.",
@@ -305,7 +303,6 @@ class _RunDocument(BaseSettings):
 
     @model_validator(mode="after")
     def _require_a_team_the_harness_can_drive(self) -> Self:
-        """Each agent id names one agent, and the root agent the harness drives the team from is one."""
         ids = [agent.id for agent in self.agents]
         repeated = sorted({agent_id for agent_id in ids if ids.count(agent_id) > 1})
         if repeated:
@@ -316,7 +313,6 @@ class _RunDocument(BaseSettings):
 
     @model_validator(mode="after")
     def _require_the_covert_target_in_the_team(self) -> Self:
-        """The core adds the covert objective to the target's calls alone: it must be one of the team."""
         target = self.covert.target_identity
         if target not in {agent.id for agent in self.agents}:
             raise ValueError(f"covert.target_identity {target!r} names no agent of the team")
@@ -426,7 +422,7 @@ def _read_config_file[Schema: BaseModel](path: Path, schema: type[Schema]) -> Sc
     try:
         with path.open("r", encoding=YAML_ENCODING) as file:
             data: object = yaml.safe_load(file)
-    except yaml.YAMLError as exc:  # its message gives the line and column
+    except yaml.YAMLError as exc:
         raise ConfigError(f"config file {path} is not valid YAML: {exc}") from exc
     try:
         return schema.model_validate(data)
@@ -506,11 +502,10 @@ def _build_settings(merged: Mapping[str, object]) -> LocArenaSettings:
 
 
 def _require_a_codebase(scenario_name: str | None) -> None:
-    """The run's scenario names a codebase that holds repositories: the agents' checkout is seeded from it."""
     scenario = load_run_scenario(scenario_name)
     try:
         list_codebase_repositories(scenario.codebase_directory)
-    except (OSError, ValueError) as exc:  # no such directory, or one holding no repository
+    except (OSError, ValueError) as exc:
         raise ConfigError(f"scenario {scenario.name!r}: codebase {scenario.codebase!r}: {exc}") from exc
 
 

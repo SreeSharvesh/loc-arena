@@ -45,11 +45,7 @@ class WriteFileArguments(ToolArguments):
 
 
 class EditFileArguments(ToolArguments):
-    """``edit_file``: replace every occurrence of ``old`` with ``new``.
-
-    ``old`` is never empty: the empty string occurs between every two characters, so replacing it would
-    write ``new`` once per character of the file.
-    """
+    """``edit_file``: replace every occurrence of a non-empty ``old`` with ``new``."""
 
     path: str
     old: str = Field(min_length=1)

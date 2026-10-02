@@ -41,12 +41,7 @@ class RunnerEpisode:
 
 
 class MonitorModelRoute:
-    """A live monitor's route to a model through the core, and to the sealed log for what went wrong.
-
-    A failed call has already spent the provider's whole call budget, so once a monitor's calls have failed
-    ``failures_before_fallback`` times in a row it calls its model no more: its later calls fail at once, and
-    it scores the rest of the episode with its heuristic. A completed call starts the count again.
-    """
+    """A live monitor's route to a model through the core, and to the sealed log for what went wrong."""
 
     def __init__(
         self,

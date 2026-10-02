@@ -9,7 +9,7 @@ import pytest
 from loc_arena.config import load_run_config
 from loc_arena.execution.workspace import SHELL_DISABLED_ERROR
 from loc_arena.gateway.client import GatewayCallError
-from loc_arena.gateway.core import Message, ProviderResult, ToolSpec
+from loc_arena.gateway.core import ProviderResult
 from loc_arena.gateway.openrouter_provider import ProviderError
 from loc_arena.gateway.wiring import EpisodeWiringError, open_episode_wiring
 from loc_arena.logging_.agent_trace import AgentTrace, TurnRef
@@ -18,7 +18,7 @@ from loc_arena.stack.constants import MONITOR_MODEL_ROLE
 from loc_arena.stack.contracts import BatchGenerateRequest, CodeToolCall, GenerateRequest
 from loc_arena.stack.settings import BatchGenerateSettings
 
-from tests.integration._gateway_support import FailingProvider, JsonVerdictProvider
+from tests.integration._gateway_support import FailingProvider, JsonVerdictProvider, ScriptedProvider
 from tests.unit._stack_services import open_in_process, serve_stack
 
 CONFIG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
@@ -27,27 +27,6 @@ DRAFT = EventDraft(ts=1.0, actor_uid="agent-main", actor_role="orchestrator", ki
 ONE_CALLS_TOKENS = 20  # the deterministic provider's prompt and completion tokens: one call fits the quota
 CALL = GenerateRequest(prompt="plan", caller_identity="agent-main", role="untrusted_agent")
 BASH = CodeToolCall(tool="bash", arguments={"command": "echo from-the-shell"})
-
-
-class SecondCallFailingProvider:
-    """The provider boundary answering its first call and failing every later one."""
-
-    def __init__(self) -> None:
-        """Answer the first call."""
-        self._calls = 0
-
-    def generate(
-        self,
-        model: str,
-        messages: list[Message],
-        temperature: float,
-        max_tokens: int,
-        tools: list[ToolSpec] | None,
-    ) -> ProviderResult:
-        self._calls += 1
-        if self._calls > 1:
-            raise ProviderError(f"{model}: the provider kept answering 503")
-        return ProviderResult("first", prompt_tokens=1, completion_tokens=1)
 
 
 def test_a_scripted_episode_is_named_after_the_run_and_its_mode(tmp_path: Path) -> None:
@@ -173,8 +152,10 @@ def test_a_failed_call_in_process_is_sealed_in_the_lane_of_the_turn_that_made_it
 def test_a_batch_call_completed_before_the_batch_failed_is_sealed_in_the_lane_of_its_turn(
     tmp_path: Path,
 ) -> None:
+    failure = ProviderError("the provider kept answering 503")
+    provider = ScriptedProvider([ProviderResult("first", 1, 1), failure])
     trace = AgentTrace()
-    wiring = open_in_process(tmp_path, CONFIG, provider=SecondCallFailingProvider(), trace=trace)
+    wiring = open_in_process(tmp_path, CONFIG, provider=provider, trace=trace)
 
     with trace.turn("agent-main", 0), pytest.raises(GatewayCallError):
         wiring.gateway.batch_generate(BatchGenerateRequest(prompts=("a", "b"), caller_identity="agent-main"))

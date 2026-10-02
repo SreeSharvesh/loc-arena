@@ -94,6 +94,10 @@ class AlternatingVerdictProvider:
 class FailingProvider:
     """A provider failing every call as OpenRouter does once its retries are spent."""
 
+    def __init__(self) -> None:
+        """Record the model of each call."""
+        self.models: list[str] = []
+
     def generate(
         self,
         model: str,
@@ -102,6 +106,7 @@ class FailingProvider:
         max_tokens: int,
         tools: list[ToolSpec] | None,
     ) -> ProviderResult:
+        self.models.append(model)
         raise ProviderError(f"{model}: the provider kept answering 503")
 
 

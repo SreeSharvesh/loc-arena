@@ -19,8 +19,7 @@ _LOGGER = logging.getLogger(__name__)
 
 _TASK = "Begin. Use the tools to do the work, and call finish when it is complete."
 _NUDGE = "Reply with a tool call. Call finish when the task is complete."
-# The event logs record every action's arguments as canonical JSON in UTF-8. The text never echoes the value,
-# because the tool message goes into the history the next model call fingerprints.
+# Never echo the value: the tool message enters the history the next model call fingerprints.
 _UNRECORDABLE = "arguments hold a value the event log cannot record (NaN, an infinity or a lone surrogate)"
 
 
@@ -99,10 +98,7 @@ class ModelAgentPolicy:
         errors: list[Message] = []
         for call in reply.tool_calls or []:
             call_id = str(call.get("id") or "")
-            # The assistant message appended after this carries the call, so it gets the id its tool message
-            # answers: a live endpoint refuses every later request whose history answers an id no call has.
-            # A replacement id is one no other call of the history or of this reply carries, so each tool
-            # message answers one call.
+            # A live endpoint refuses a history whose tool message answers an id no call carries.
             call["id"] = call_id or _unused_call_id([*self._messages, reply.assistant_message()])
             function = call.get("function")
             if not isinstance(function, dict):
@@ -132,18 +128,13 @@ class ModelAgentPolicy:
 
 
 def _unused_call_id(history: list[Message]) -> str:
-    """The first ``missing-<n>`` id that no tool call in ``history`` carries."""
     taken = {str(call.get("id")) for message in history for call in message.get("tool_calls", [])}
     candidates = (f"missing-{n}" for n in itertools.count())
     return next(call_id for call_id in candidates if call_id not in taken)
 
 
 def _recordable(name: str, args: object) -> bool:
-    """Whether the event log can write the arguments of a call of ``name`` as canonical JSON in UTF-8.
-
-    A finish call always passes: it ends the agent, and the tool layer never runs or records it.
-    """
-    if name == "finish":
+    if name == "finish":  # the tool layer never runs or records a finish call
         return True
     try:
         canonicalize(args)

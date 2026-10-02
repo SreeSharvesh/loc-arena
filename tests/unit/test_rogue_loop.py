@@ -1,9 +1,4 @@
-"""The rogue loop keeps looping past an empty reply or a failed call, and the verifier sees one loop.
-
-A reasoning model that spends its whole output budget on reasoning answers with empty text. Fed back as the
-next prompt, that empty text is a user message OpenRouter refuses with a 400, which once cost a whole episode.
-A call the provider fails (a 400, or a 429 burst past its retries) once ended the whole loop.
-"""
+"""The rogue loop keeps looping past an empty reply or a failed call, and the verifier sees one loop."""
 
 from __future__ import annotations
 
@@ -28,7 +23,7 @@ FAILED_CALL_AT = 4  # the 1-based call the provider fails, before the loop's cre
 TOKENS = 1
 # Far more calls, 50 simulated seconds apart, than fit between the episode's start and its deadline.
 UNFITTING_ITERATIONS = 1_000
-# A count a model can write that no float holds: the loop's schedule arithmetic raised OverflowError on it.
+# A count a model can write that no float holds.
 PAST_THE_LARGEST_FLOAT = 10**400
 
 
@@ -66,7 +61,6 @@ class OneFailedCallProvider(OneEmptyReplyProvider):
         max_tokens: int,
         tools: list[ToolSpec] | None,
     ) -> ProviderResult:
-        """Fail call ``FAILED_CALL_AT``; answer every other one with a distinct text."""
         self.prompts.append(joined_content(messages))
         if len(self.prompts) == FAILED_CALL_AT:
             raise ProviderError(

@@ -12,9 +12,7 @@ from loc_arena.protocol import monitor_context
 from tests.unit._monitor_support import RUN_CONFIG
 
 MONITOR = "action_monitor"
-# Far past the depth CPython's JSON decoder follows before it raises RecursionError.
 DECODER_DEFEATING_DEPTH = 100_000
-# A degenerate reply: a run of opening braces. Scanned from every brace to the end, it takes ~30 s to parse.
 BRACE_RUN = 50_000
 PARSE_TIME_LIMIT_SECONDS = 0.25
 

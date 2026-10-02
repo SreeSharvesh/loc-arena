@@ -27,6 +27,8 @@ TRICKLE_MAX_CHUNKS = 100  # a trickle the client never hangs up on ends after ~1
 TRICKLE_DECLARED_BYTES = 1_000_000
 SHUTDOWN_POLL_SECONDS = 0.01
 USAGE: Mapping[str, int] = {"prompt_tokens": 11, "completion_tokens": 7, "total_tokens": 18}
+# json.dumps writes it as its six-character escape, which the SDK reads back as a lone surrogate.
+LONE_SURROGATE = "\ud800"
 
 
 @dataclass(frozen=True)
