@@ -52,9 +52,11 @@ RUNNER_SECONDS = 60  # the stand-in's runner outlasts the test, so only the sign
 CALL_WAIT_SECONDS = 30
 POLL_SECONDS = 0.1
 DOWN_SECONDS = 2  # the stand-in's teardown lasts long enough for a second signal to land during it
+HUNG_DOWN_SECONDS = 10  # a teardown on a daemon that does not answer, well past the bound the test sets
 
 FAKE_DOCKER = """#!{python}
-import json, os, pathlib, shutil, sys, time
+import json, os, pathlib, shutil, signal, sys, time
+signal.signal(signal.SIGINT, signal.default_int_handler)  # as compose does, even when started with it ignored
 arguments = sys.argv[1:]
 scenario = json.loads(pathlib.Path(os.environ["FAKE_DOCKER_SCENARIO"]).read_text())
 with open(os.environ["FAKE_DOCKER_LOG"], "a") as log:
@@ -253,6 +255,19 @@ def test_a_teardown_docker_refuses_names_the_project_it_left_behind(
     assert stack.project in capsys.readouterr().err
 
 
+def test_a_teardown_the_daemon_never_answers_gives_up_and_names_the_project(
+    stack: EpisodeStack,
+    docker: FakeDocker,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    docker.play(down_seconds=HUNG_DOWN_SECONDS)
+    bounded = stack.settings.model_copy(update={"teardown_timeout_seconds": 1})
+
+    teardown(dataclasses.replace(stack, settings=bounded))
+
+    assert stack.project in capsys.readouterr().err
+
+
 def test_a_teardown_docker_completes_prints_nothing(
     stack: EpisodeStack,
     capsys: pytest.CaptureFixture[str],
@@ -421,11 +436,16 @@ def test_a_second_signal_during_teardown_lets_the_teardown_finish(docker: FakeDo
     docker.play(run_seconds=RUNNER_SECONDS, down_seconds=DOWN_SECONDS)
     command = [sys.executable, "-c", RUN_STACK_CLI, "aurora-efficiency.deterministic", str(tmp_path / "runs")]
 
-    with subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) as run:
+    with subprocess.Popen(
+        command,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    ) as run:
         _wait_for_subcommand(docker, "run")
-        run.send_signal(signal.SIGINT)
+        os.killpg(run.pid, signal.SIGINT)  # a terminal's Ctrl-C signals the whole process group
         _wait_for_subcommand(docker, "down")
-        run.send_signal(signal.SIGINT)  # a terminal signals the whole group, and uv run forwards it again
+        os.killpg(run.pid, signal.SIGINT)
         run.wait(timeout=CALL_WAIT_SECONDS)
 
     assert Path(f"{docker.log}.down-finished").exists()

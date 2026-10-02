@@ -64,6 +64,13 @@ class DockerSettings(SettingsGroup):
         default=3,
         description="Seconds `docker compose down` gives a container to stop before killing it.",
     )
+    teardown_timeout_seconds: PositiveFloat = Field(
+        default=60.0,
+        description=(
+            "Seconds a teardown's `docker compose down` may take before the harness gives up and names the "
+            "project; a hung daemon would otherwise hold the teardown for good."
+        ),
+    )
     error_output_characters: PositiveInt = Field(
         default=4000,
         description="Characters from the end of a failed command's stderr kept in the raised error.",

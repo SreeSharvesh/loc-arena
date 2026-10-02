@@ -91,6 +91,7 @@ def run_compose(
     capture: bool = True,
     timeout_seconds: float | None = None,
     stdout: IO[bytes] | None = None,
+    new_session: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     """Run ``docker compose`` on the stack's project; ``stdout``, when given, receives its output."""
     command = [
@@ -122,6 +123,7 @@ def run_compose(
         check=check,
         env=environment,
         timeout=timeout_seconds,
+        start_new_session=new_session,
     )
 
 
@@ -180,13 +182,18 @@ def teardown(stack: EpisodeStack) -> None:
     """Remove this project's containers, networks, volumes, images and control key file; idempotent."""
     down_timeout = str(stack.settings.down_timeout_seconds)
     down = ["--profile", "*", "down", "-v", "--remove-orphans", "--rmi", "all", "-t", down_timeout]
-    result = run_compose(stack, down, check=False)
+    timeout_seconds = stack.settings.teardown_timeout_seconds
+    try:
+        result = run_compose(stack, down, check=False, timeout_seconds=timeout_seconds, new_session=True)
+    except subprocess.TimeoutExpired:
+        failure: str | None = f"`docker compose down` did not finish within {timeout_seconds} s"
+    else:
+        failure = result.stderr[-stack.settings.error_output_characters :] if result.returncode != 0 else None
     shutil.rmtree(stack.control_key_file.parent, ignore_errors=True)
-    if result.returncode != 0:
-        tail = result.stderr[-stack.settings.error_output_characters :]
+    if failure is not None:
         print(
             f"tearing down {stack.project} failed, so its containers, networks, volumes or images may be "
-            f"left; scripts/teardown.sh removes them:\n{tail}",
+            f"left; scripts/teardown.sh removes them:\n{failure}",
             file=sys.stderr,
         )
 
