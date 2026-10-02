@@ -107,6 +107,12 @@ In the stack, `python -m loc_arena.grader` runs in the grader container with no 
 
 The scripted policy writes the partial reference optimization through an agent's code tools, which in the stack are the only way into the checkout.
 
+A main-task scorer is two steps under one name (`registry.ScorerSteps`). The measure step runs where the checkout is: in the networkless grader container in the stack, or on the host in process. It prints a typed measurement. The score step runs on the host, against the scenario's sealed `reference/` directory. Both modes score the measurement's JSON line through `ScorerSteps.grade_output`. In process, `grade_checkout` reads the harness files from the reference directory and sends its measurement through the same JSON line and parse as the grader container's output. `register_scorer` requires that the scorer's measure step be the one registered under the same name in the grader's registry, where the grader container finds it, and it refuses a different scorer under a name already taken.
+
+A scenario's `measure.py` builds a `MeasureStep`: its measurement type, the function that measures a checkout, and the measurement that an unusable grader output stands for. It registers the step under the name its run config gives `main_task.scorer`, and its `main.py` pairs that step with the scenario's score step. Each scorer has its own measurement type. `GradeMeasurement` is the one that `measure_checkout`, the Aurora scenario's measure step, produces.
+
+In the stack, the grader container gets `measure.py` by a read-only bind mount, reads the scorer's name from `LOC_ARENA_MAIN_TASK_SCORER`, and loads the module once with `load_measure_module`. So a `measure.py` imports only what the sandbox image ships, which `tests/unit/test_sandbox_image.py` checks by loading every scenario's module the same way. `failed_measurement` is what the host scores when the grader printed no valid measurement (it hung, it crashed, agent code flooded its output); it is a broken outcome, and the harness carries on. `MeasureStep.parse` raises `ValueError` (pydantic's `ValidationError` included) when the output exceeds `max_output_bytes` or its last line is no measurement of the step's type.
+
 ## Gateway core
 
 A model call's request, the provider's result and the fingerprints are the shared types of `loc_arena/stack/model_call.py`; the other bodies are contract models in `loc_arena/stack/contracts.py`. `gateway/core_service.py` serves `GatewayCore` over FastAPI. In the stack the `EpisodeSpec` arrives in `EpisodeOpen`, with the quota from the core's settings, so `core.py` imports `RunConfig` for typing only; in process the spec is read from the run config.
@@ -188,6 +194,8 @@ In the fp-linkage chain a call can have several successors. A loop that resends 
 
 Each validated service maps onto the [Compose Specification](https://docs.docker.com/reference/compose-file/). `compose.yaml` is the reference run config rendered: `uv run python -m loc_arena.compose_document` regenerates it, and a unit test fails while the two differ. Compose names containers per project, so no service sets `container_name`, and episodes run side by side. Each rendered value is a fresh object, so the YAML dump holds no anchors. Environment values are escaped for compose [interpolation](https://docs.docker.com/reference/compose-file/interpolation/): `$$` is a literal `$`. The healthcheck probe exits non-zero because `urlopen` raises on a refused connection or an error status. Where agent code runs, each tmpfs is capped at `settings.docker.agent_tmpfs_size_bytes`, and an init process reaps what its processes detach.
 
+The grader gets only the harness files of the scenario's reference directory and its `measure.py` (at `/grading/measure.py`), read-only, and the scorer's name in `LOC_ARENA_MAIN_TASK_SCORER`. `compose_schema`'s TypedDicts are the exact shapes of the Compose Specification that `compose_document` dumps with `yaml.safe_dump`.
+
 ## Compose stack
 
 Isolation is structural: the stack is rendered from `configs/env.default.yaml`, and this module opens no route beyond the rendered networks and mounts. Every compose command names its project, so concurrent episodes keep their own containers, networks, volumes and images. Every resource carries the `loc-arena.eval=1` label for `scripts/teardown.sh`.
@@ -212,11 +220,11 @@ The Docker tests assert isolation from network membership and mounts in `docker 
 
 `run_in_stack` gives each episode of a run a fresh compose project, with its own sandboxes, checkout volume, core state and control key, so nothing an agent started outlives its episode. The host reads the provider key from the environment or `.env` and passes it to compose as `gateway_core`'s secret.
 
-The runner phase (`python -m loc_arena.cli episode` in the runner container) opens the episode on the core, runs the scaffold, closes the episode, scores the mirror with the monitors and writes a `RunnerEpisodeExport`. The host phase then stops the sandboxes and the edge, and copies the sealed, model-call and mirror logs out of the networkless evidence reader. `docker compose cp` without `-L` copies a link as a link, and `collect_run_output` drops it. The networkless grader measures the checkout, and the host tears the stack down. The host grades the main task against the scenario's sealed reference, and the side task on the sealed log. The runner phase and the grader each run within a wall-clock limit from `settings.docker`. The harness scores the run and writes its bundle with the same code as an in-process run.
+The runner phase (`python -m loc_arena.cli episode` in the runner container) opens the episode on the core, runs the scaffold, closes the episode, scores the mirror with the monitors and writes a `RunnerEpisodeExport`. The host phase then stops the sandboxes and the edge, and copies the sealed, model-call and mirror logs out of the networkless evidence reader. `docker compose cp` without `-L` copies a link as a link, and `collect_run_output` drops it. The networkless grader runs the run's measure step on the checkout, and the host tears the stack down. The host grades the main task with the scorer the run config names, against the scenario's sealed reference, and the side task on the sealed log. The runner phase and the grader each run within a wall-clock limit from `settings.docker`. The harness scores the run and writes its bundle with the same code as an in-process run.
 
 ## Grader output
 
-The grader runs agent code, so its output is untrusted. The host reads it from a temporary file, at most one byte past `grading.max_output_bytes`, and `parse_measurement` refuses anything over the cap. An output that is no measurement is graded as a broken pipeline (`grade_error`).
+The grader runs agent code, so its output is untrusted. The host reads it from a temporary file, at most one byte past `grading.max_output_bytes`, and the scorer's `parse` refuses anything over the cap. An output that is no measurement scores as the scorer's failed measurement.
 
 ## Episode harness
 

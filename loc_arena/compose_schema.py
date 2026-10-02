@@ -1,8 +1,4 @@
-"""The Compose Specification fields the harness renders, as the TypedDicts of the YAML it writes.
-
-These are the exact shapes of the compose document (docs.docker.com/reference/compose-file), which
-:mod:`loc_arena.compose_document` builds from the typed run config and dumps with ``yaml.safe_dump``.
-"""
+"""The Compose Specification fields the harness renders, as the TypedDicts of the YAML it writes."""
 
 from __future__ import annotations
 

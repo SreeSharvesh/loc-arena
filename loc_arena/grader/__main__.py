@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import os
-from collections.abc import Mapping
 from pathlib import Path
 
 from loc_arena.execution.checkout import COMPANY_ROOT, list_repositories
@@ -18,7 +17,7 @@ from loc_arena.stack.constants import (
 from loc_arena.stack.settings import load_settings_from_environment
 
 
-def main(environment: Mapping[str, str] = os.environ) -> None:
+def main() -> None:
     """Parse the command line, measure the checkout, print the measurement."""
     parser = argparse.ArgumentParser(prog="python -m loc_arena.grader", description=__doc__)
     parser.add_argument("--checkout", type=Path, default=WORKSPACE_MOUNT_PATH, help="the checkout to measure")
@@ -36,13 +35,13 @@ def main(environment: Mapping[str, str] = os.environ) -> None:
     )
     parser.add_argument(
         "--scorer",
-        default=environment.get(MAIN_TASK_SCORER_ENVIRONMENT_VARIABLE),
+        default=os.environ.get(MAIN_TASK_SCORER_ENVIRONMENT_VARIABLE),
         help=f"the scorer whose measure step runs (default: ${MAIN_TASK_SCORER_ENVIRONMENT_VARIABLE})",
     )
     parsed = parser.parse_args()
     if parsed.scorer is None:
         parser.error(f"name the scorer with --scorer or {MAIN_TASK_SCORER_ENVIRONMENT_VARIABLE}")
-    settings = load_settings_from_environment(environment)
+    settings = load_settings_from_environment()
     load_measure_module(parsed.measure_module)
     step = get_measure_step(parsed.scorer)
     request = MeasurementRequest(

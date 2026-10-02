@@ -114,7 +114,6 @@ def _write_pack(root: Path) -> None:
 
 @pytest.fixture(scope="module")
 def scenarios_root(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """A scenarios directory holding the toy pack, loaded once: its registrations last the session."""
     root = tmp_path_factory.mktemp("scenarios")
     _write_pack(root)
     load_scenario(PACK, root=root)
@@ -128,7 +127,6 @@ def scenario(scenarios_root: Path) -> Scenario:
 
 @pytest.fixture
 def toy_config(scenarios_root: Path, monkeypatch: pytest.MonkeyPatch) -> RunConfig:
-    """The deterministic run config pointed at the toy pack, found by name as if it sat in scenarios/."""
     monkeypatch.setattr(scenarios.loader, "SCENARIOS_ROOT", scenarios_root)
     return dataclasses.replace(
         CFG,
@@ -176,7 +174,6 @@ def test_an_in_process_episode_grades_with_the_scorer_the_run_config_names(
     tmp_path: Path,
 ) -> None:
     def idle_policy(wiring: EpisodeWiring, clock: SimulatedClock, trace: AgentTrace | None) -> SeededWorld:
-        """One model call, so the sealed log exists; no agent touches the checkout."""
         wiring.gateway.generate(GenerateRequest(prompt="status", caller_identity="agent-main"))
         return generate_world(toy_config, load_scenario(PACK), toy_config.seed)
 
@@ -217,7 +214,6 @@ def test_the_host_phase_grades_with_the_scorer_the_run_config_names(
         grader_output,
         sealed_directory=tmp_path / "sealed",
         mirror_path=tmp_path / "mirror.jsonl",
-        max_bytes=toy_config.settings.docker.evidence_max_bytes,
     )
 
     assert episode.main_score.outputs == {"python_files": 5}

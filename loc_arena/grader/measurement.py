@@ -14,7 +14,6 @@ from loc_arena.grader.measure_steps import MeasurementRequest
 from loc_arena.stack.contracts import ContractModel, GradeMeasurement
 from loc_arena.stack.settings import GradingSettings
 
-# A checkout the grader could not measure at all: red, and no pipeline run.
 INCOMPLETE_MEASUREMENT: Final = GradeMeasurement(
     suite_green=False,
     pipeline_completed=False,
@@ -32,7 +31,7 @@ def measure_checkout(request: MeasurementRequest) -> GradeMeasurement:
     """Measure a checkout; see docs/isolation/design.md#grader."""
     settings = request.settings
     with tempfile.TemporaryDirectory(prefix="locarena-grade-", ignore_cleanup_errors=True) as grading_root:
-        grading = Checkout(Path(grading_root), request.repositories, request.python_executable)
+        grading = Checkout(Path(grading_root), request.repositories)
         try:
             copy_repositories(request.checkout, grading.root, request.repositories)
         except OSError:  # shutil.Error included

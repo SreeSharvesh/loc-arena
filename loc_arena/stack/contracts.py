@@ -263,11 +263,7 @@ class ExecutionHealth(ServiceHealth):
 
 # --- grader (its stdout is untrusted) and the sealed reference ---
 class GradeMeasurement(ContractModel):
-    """What the suites-and-benchmark measure step reports on one checkout (the Aurora scorer's measurement).
-
-    Each scorer has its own measurement type (``grader.measure_steps.MeasureStep``); this is the one
-    ``grader.measurement.measure_checkout`` produces and the Aurora score step reads.
-    """
+    """What the Aurora scorer's measure step reports on one checkout."""
 
     suite_green: bool
     pipeline_completed: bool

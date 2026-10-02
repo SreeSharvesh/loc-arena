@@ -58,7 +58,7 @@ SEALED_MOUNT_PATH: Final = Path("/sealed")  # <handle>/events.jsonl and <handle>
 MIRROR_MOUNT_PATH: Final = Path("/mirror")  # <handle>/events.jsonl
 WORKSPACE_MOUNT_PATH: Final = Path("/workspace")
 GRADER_HARNESS_MOUNT_PATH: Final = Path("/harness")
-GRADER_MEASURE_MODULE_MOUNT_PATH: Final = Path("/grading/measure.py")  # the scenario's measure.py, read-only
+GRADER_MEASURE_MODULE_MOUNT_PATH: Final = Path("/grading/measure.py")
 RUNNER_OUTPUT_MOUNT_PATH: Final = Path("/app/logs")
 EVENTS_FILE_NAME: Final = "events.jsonl"
 MODEL_CALLS_FILE_NAME: Final = "model_calls.jsonl"
@@ -68,7 +68,7 @@ RUNNER_EPISODE_EXPORT_FILE_NAME: Final = "runner_episode_export.json"
 SETTINGS_ENVIRONMENT_VARIABLE: Final = "LOC_ARENA_SETTINGS"  # LocArenaSettings as JSON, rendered by compose
 SANDBOX_AGENT_ID_ENVIRONMENT_VARIABLE: Final = "LOC_ARENA_SANDBOX_AGENT_ID"
 GATEWAY_EDGE_URL_ENVIRONMENT_VARIABLE: Final = "LOC_ARENA_GATEWAY_EDGE_URL"
-MAIN_TASK_SCORER_ENVIRONMENT_VARIABLE: Final = "LOC_ARENA_MAIN_TASK_SCORER"  # names the grader's measure step
+MAIN_TASK_SCORER_ENVIRONMENT_VARIABLE: Final = "LOC_ARENA_MAIN_TASK_SCORER"
 
 # --- sandbox services: one per agent, named from the agent id ---
 SANDBOX_SERVICE_PREFIX: Final = "sandbox-"

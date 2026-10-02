@@ -238,7 +238,6 @@ def _copy_evidence(stack: EpisodeStack, handle: str, *, staging: Path, directory
 
 def _run_grader(stack: EpisodeStack, config: RunConfig) -> bytes:
     # See docs/isolation/design.md#grader-output.
-    grading = config.settings.grading
     with tempfile.TemporaryFile() as output:
         result = run_one_off(
             stack,
@@ -251,7 +250,7 @@ def _run_grader(stack: EpisodeStack, config: RunConfig) -> bytes:
             tail = result.stderr[-stack.settings.error_output_characters :]
             raise HarnessError(f"the grader exited with {result.returncode}:\n{tail}")
         output.seek(0)
-        return output.read(grading.max_output_bytes + 1)
+        return output.read(config.settings.grading.max_output_bytes + 1)
 
 
 def _grade_on_host(

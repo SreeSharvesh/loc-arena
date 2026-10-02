@@ -130,7 +130,6 @@ def _evidence(tmp_path: Path) -> dict[str, str]:
 
 
 def _run_stack_episode(docker: FakeDocker, tmp_path: Path, grader_stdout: str) -> StackEpisode:
-    """One stack episode against the stand-in, whose grader prints ``grader_stdout``."""
     docker.play(
         export=_golden_export().model_dump_json(),
         copies=_evidence(tmp_path),

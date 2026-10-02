@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from loc_arena.config import RunConfig, load_run_config
@@ -11,7 +12,6 @@ from loc_arena.grader.measure_steps import (
     MEASURE_STEPS,
     MeasurementRequest,
     MeasureStep,
-    UnknownMeasureStepError,
     get_measure_step,
     register_measure_step,
 )
@@ -25,8 +25,6 @@ FAILED_LINES = -1
 
 
 class LineCount(ContractModel):
-    """A measurement shaped unlike Aurora's: the lines of one file."""
-
     lines: int
 
 
@@ -57,13 +55,8 @@ def _step() -> MeasureStep[LineCount]:
 
 @pytest.fixture(autouse=True)
 def restored_registries() -> Iterator[None]:
-    """Each test registers into the process-wide registries; put them back as they were afterwards."""
-    measure_steps, scorers = dict(MEASURE_STEPS), dict(SCORER_REGISTRY)
-    yield
-    MEASURE_STEPS.clear()
-    MEASURE_STEPS.update(measure_steps)
-    SCORER_REGISTRY.clear()
-    SCORER_REGISTRY.update(scorers)
+    with patch.dict(MEASURE_STEPS), patch.dict(SCORER_REGISTRY):
+        yield
 
 
 @pytest.fixture
@@ -83,7 +76,7 @@ def test_a_second_measure_step_under_a_taken_name_is_refused() -> None:
 def test_an_unknown_measure_step_is_refused_listing_the_registered_ones() -> None:
     register_measure_step(_step())
 
-    with pytest.raises(UnknownMeasureStepError, match=NAME):
+    with pytest.raises(KeyError, match=NAME):
         get_measure_step("no_such_scorer")
 
 

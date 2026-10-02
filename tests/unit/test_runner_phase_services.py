@@ -40,7 +40,6 @@ def served_runs(
 
 
 def _grade(export: RunnerEpisodeExport, served: ServedStack, mode: str) -> StackEpisode:
-    """Grade as the host does what it copied out, the grader's part run here as the grader CLI runs it."""
     config = apply_mode(CONFIG, mode)
     request = MeasurementRequest(
         checkout=served.checkout,

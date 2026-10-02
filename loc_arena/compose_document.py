@@ -230,14 +230,11 @@ class VolumeSpec:
 
 @dataclass(frozen=True)
 class GradingInputs:
-    """What the grader gets from the run's scenario: its harness files, its measure module, its scorer's name.
+    """What the grader gets from the run's scenario: its harness files, measure module and scorer name."""
 
-    Paths are relative to the project directory (``./...``), so the render is the same on every machine.
-    """
-
-    harness_directory: str  # the scenario's sealed reference directory: only the harness files are bound
-    measure_module: str  # the scenario's measure.py, which registers the scorer's measure step
-    scorer: str  # the name the measure step is registered under (config main_task.scorer)
+    harness_directory: str  # relative (./...), so the render is the same on every machine
+    measure_module: str
+    scorer: str
 
 
 @dataclass(frozen=True)
@@ -310,7 +307,6 @@ def _render_mounts(spec: ServiceSpec, topology: RunTopology) -> list[ComposeServ
 
 
 def _render_environment(spec: ServiceSpec, topology: RunTopology) -> dict[str, str]:
-    """The service's environment: its own, the scorer's name where the grader runs, and the run's settings."""
     environment = dict(spec.environment)
     if spec.mounts_grading_harness and topology.grading is not None:
         environment[MAIN_TASK_SCORER_ENVIRONMENT_VARIABLE] = topology.grading.scorer
