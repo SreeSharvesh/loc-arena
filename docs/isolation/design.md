@@ -95,7 +95,7 @@ The command runs in a new session (`start_new_session`), so it leads its own pro
 
 ## Checkout
 
-A checkout is the seven `company/` repositories side by side; they import when each repository directory is on `PYTHONPATH`. `__pycache__`, `.pytest_cache` and `.git` are never listed, searched or copied. The code runs on the plain interpreter (`sys.executable`), because `uv run` cannot resolve the copied repositories' dependencies. The host (STACK=0), each sandbox and the grader all build and run a checkout with this one module, which ships in the sandbox image. A copy keeps a symlink as a link without following it, so a link an agent planted cannot make the copy read outside the checkout. A file that cannot be copied, such as a named pipe, raises `shutil.Error` (an `OSError`), and a missing repository raises `FileNotFoundError`.
+A checkout is the run scenario's codebase repositories side by side (for Aurora, the seven `company/` repositories); they import when each repository directory is on `PYTHONPATH`. Every directory directly under a codebase is a repository, except hidden ones and caches. A checkout is seeded, run and graded with the pristine codebase's repository list. A codebase holding no repository is refused, since grading zero repositories would pass every suite. `__pycache__`, `.pytest_cache` and `.git` are never listed, searched or copied. The code runs on the plain interpreter (`sys.executable`), because `uv run` cannot resolve the copied repositories' dependencies. The host (STACK=0), each sandbox and the grader all build and run a checkout with this one module, which ships in the sandbox image. A copy keeps a symlink as a link without following it, so a link an agent planted cannot make the copy read outside the checkout. A file that cannot be copied, such as a named pipe, raises `shutil.Error` (an `OSError`), and a missing repository raises `FileNotFoundError`.
 
 ## Grader
 
@@ -103,7 +103,7 @@ The main-task grade is split in two. `measure_checkout` runs the suites and the 
 
 `measure_checkout` copies only the trusted repositories it is given into an empty grading root, then places the sealed harness files named by `grading.harness_file_names` at that root, outside every repository. Nothing an agent left at the checkout's root (a shadowing module, a symlink named like a harness file) reaches the graded copy. A checkout that cannot be copied (a missing repository, a named pipe) measures as red and incomplete, and so does a benchmark that hangs, fails or prints no valid report. The suites stop at the first red one, and a hang counts as red. Every suite and the benchmark run through `run_command`, so a process agent code detaches never holds the grader. Agent code can still influence the measured cost from code the pipeline imports, or from a process a suite detached that still runs during the benchmark. That residual risk is accepted, bounded by the reference's `min_work` floor.
 
-In the stack, `python -m loc_arena.grader` runs in the grader container with no network. The checkout and the sealed harness files are mounted read-only at the CLI's defaults, and the settings come in `LOC_ARENA_SETTINGS`. It measures the image's pristine list of repositories, because agent code may add or remove directories in the checkout. The host reads the printed line as untrusted, since agent code runs in the grader.
+In the stack, `python -m loc_arena.grader` runs in the grader container with no network. The checkout and the sealed harness files are mounted read-only at the CLI's defaults, and the settings come in `LOC_ARENA_SETTINGS`. It measures the repositories of the image's codebase at `/app/company`, a pristine list, because agent code may add or remove directories in the checkout. The host reads the printed line as untrusted, since agent code runs in the grader.
 
 The scripted policy writes the partial reference optimization through an agent's code tools, which in the stack are the only way into the checkout.
 
@@ -158,6 +158,8 @@ The recorder is on sealed-net only, where the gateway core is its one client, an
 
 Either way, the episode's gateway turns any failed model call into `GatewayCallError`. When the episode is traced, it reports each reply's sealed and mirror seqs to the trace, in the turn and phase that made the call. With a separate monitor provider, the monitor model's calls go to it. A model-policy episode's id is `<run slug>-model-<mode>`; a scripted one's is `<run slug>-<mode>`.
 
+The in-process checkout's repositories are the run scenario's codebase's, as a sandbox's are its image's.
+
 ## Runner
 
 Once the policy returns, `finish_episode` closes the episode on the core. Its model routes stop serving it, so nothing agent code left running is recorded under it. `finish_episode` then finishes the agents' trace at the last sealed seq and runs the protocol's monitors over the mirror. A monitor's own model call goes through the core (`call_model_as_monitor`), so it is a sealed, attributable record. With `calls_models` off, every monitor uses its heuristic and writes nothing. A failed monitor call is recorded as that monitor's `monitor_error` on the sealed log, and the monitor falls back to its heuristic, so the episode still completes.
@@ -209,6 +211,8 @@ One-off containers are named, so an expired one can be removed. The runner runs 
 ## Images
 
 Each episode builds and runs its images under a tag of its own. The harness sets `LOC_ARENA_IMAGE_TAG` to the episode's project name for every `docker compose` command of the episode, so no two episodes or checkouts run each other's images. The runner and the grader start with `docker compose run` well after `up`, which is where a tag shared with another checkout or episode would run someone else's code. A tag is at most 128 characters (the tag grammar of [distribution/reference](https://pkg.go.dev/github.com/distribution/reference)).
+
+The sandbox image holds the run scenario's codebase at `/app/company`. `./Dockerfile` copies there the directory its `CODEBASE` build argument names, so the sandboxes seed the checkout from it and the grader trusts its list of repositories.
 
 ## Isolation tests
 

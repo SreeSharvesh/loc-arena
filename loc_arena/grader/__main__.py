@@ -43,7 +43,7 @@ def main() -> None:
         "--codebase",
         type=Path,
         default=IMAGE_CODEBASE_PATH,
-        help="the pristine codebase whose repositories are trusted (not the checkout's)",
+        help="the pristine codebase whose repositories are trusted",
     )
     parsed = parser.parse_args()
     if parsed.scorer is None:

@@ -61,7 +61,6 @@ def _networks(service: ComposeService) -> set[str]:
 
 
 def _render_grader_built_from(codebase: str) -> ComposeService:
-    """The grader, as a run whose scenario names ``codebase`` renders it."""
     spec = ServiceSpec.from_config("grader", CONFIG.raw["services"]["grader"])
     topology = RunTopology(
         settings=CONFIG.settings,

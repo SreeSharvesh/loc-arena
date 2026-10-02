@@ -65,7 +65,7 @@ def serve_stack(tmp_path: Path, config: RunConfig, *, provider: Provider | None 
     gateway = serve_gateway(tmp_path, provider=provider)
     checkout = tmp_path / "checkout"
     checkout.mkdir()
-    codebase = load_run_scenario(config.scenario).codebase_directory  # what the sandbox image holds
+    codebase = load_run_scenario(config.scenario).codebase_directory
     sandboxes = {
         agent.id: create_execution_app(
             Workspace(

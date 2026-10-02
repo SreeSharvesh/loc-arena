@@ -56,12 +56,7 @@ class MainTaskScore:
 
 
 def seed_checkout(dest: Path, *, codebase: Path | None = None) -> Path:
-    """Build an episode checkout: the repositories of ``codebase`` copied side by side into ``dest``.
-
-    ``dest`` is wiped if it exists, then each repository of the codebase (the default scenario's, Meridian's
-    seven ``company/`` repositories, when none is given) is copied to ``dest/<repo>``. The result is a
-    directory of side-by-side repo dirs that import when each is on ``PYTHONPATH``.
-    """
+    """Copy the repositories of ``codebase`` (the default scenario's) side by side into a wiped ``dest``."""
     source = codebase if codebase is not None else load_run_scenario(None).codebase_directory
     if dest.exists():
         shutil.rmtree(dest)

@@ -255,7 +255,7 @@ class RunTopology:
     secret_sources: Mapping[str, ComposeSecret]
     service_names: Mapping[str, tuple[str, ...]]  # a config name -> the compose services rendered from it
     grading: GradingInputs | None  # None when the run names no scenario
-    codebase: str  # the run scenario's codebase, the images' build argument
+    codebase: str
 
 
 def _escape_interpolation(value: str) -> str:

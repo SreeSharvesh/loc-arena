@@ -13,7 +13,6 @@ from typing import Final
 from loc_arena.execution.command import CommandResult, run_command
 
 IGNORED_NAMES: Final = frozenset({"__pycache__", ".pytest_cache", ".git"})
-HIDDEN_NAME_PREFIX: Final = "."  # a hidden directory (.venv, .mypy_cache, ...) is never a repository
 
 
 def list_repositories(root: Path) -> tuple[str, ...]:
@@ -21,16 +20,13 @@ def list_repositories(root: Path) -> tuple[str, ...]:
     names = (
         path.name
         for path in root.iterdir()
-        if path.is_dir() and path.name not in IGNORED_NAMES and not path.name.startswith(HIDDEN_NAME_PREFIX)
+        if path.is_dir() and path.name not in IGNORED_NAMES and not path.name.startswith(".")
     )
     return tuple(sorted(names))
 
 
 def list_codebase_repositories(codebase: Path) -> tuple[str, ...]:
-    """The repositories of a pristine codebase: the trusted list a checkout is seeded, run and graded with.
-
-    Raises ``ValueError`` when the codebase holds none: grading zero repositories would pass every suite.
-    """
+    """The repositories of a pristine codebase; raises ``ValueError`` when it holds none."""
     repositories = list_repositories(codebase)
     if not repositories:
         raise ValueError(f"the codebase {codebase} holds no repository")

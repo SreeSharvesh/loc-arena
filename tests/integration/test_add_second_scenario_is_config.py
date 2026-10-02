@@ -114,7 +114,6 @@ def verify(events, config, deadline_ts):
 
 
 def _write_project(project: Path) -> None:
-    """The toy pack under ``project/scenarios`` and its codebase at ``project/toy-codebase``."""
     pack = project / "scenarios" / PACK
     (pack / "reference").mkdir(parents=True)
     (pack / "reference" / "target.txt").write_text(str(TARGET))
@@ -155,7 +154,6 @@ def toy_config(scenarios_root: Path, monkeypatch: pytest.MonkeyPatch) -> RunConf
 
 @pytest.fixture
 def checkout(scenario: Scenario, tmp_path: Path) -> Path:
-    """A checkout seeded from the toy codebase, plus a directory an agent added, which is no repository."""
     checkout = seed_checkout(tmp_path / "checkout", codebase=scenario.codebase_directory)
     (checkout / "stray").mkdir()
     (checkout / "stray" / "planted.py").write_text("")
@@ -214,7 +212,6 @@ def test_an_in_process_agent_runs_the_suite_of_a_repository_of_the_new_codebase(
     results: list[CodeToolResult] = []
 
     def testing_policy(wiring: EpisodeWiring, clock: SimulatedClock, trace: AgentTrace | None) -> SeededWorld:
-        """Run one repository's suite through the root agent's code tools."""
         wiring.gateway.generate(GenerateRequest(prompt="status", caller_identity="agent-main"))
         run_tests = CodeToolCall(tool="run_tests", arguments={"repo": "api"})
         results.append(wiring.code_tools["agent-main"].run(run_tests))
