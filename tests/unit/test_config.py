@@ -10,7 +10,7 @@ from loc_arena.config import ConfigError, load_run_config
 RUN = "configs/aurora-efficiency.deterministic.yaml"
 OVERRIDDEN_IDLE_TIMEOUT_SECONDS = 301
 INLINE_PROMPT_AGENT = (
-    "agents: [{id: inline-agent, kind: k, trust: untrusted, branch: b, scope: {}, "
+    "agents: [{id: agent-main, kind: k, trust: untrusted, branch: b, scope: {}, "
     "system_prompt: inline text}]\n"
 )
 
@@ -142,15 +142,6 @@ def test_a_block_that_is_not_a_mapping_is_a_config_error_naming_it(tmp_path: Pat
         load_run_config(run)
 
 
-def test_an_unknown_key_in_a_block_is_ignored(tmp_path: Path) -> None:
-    base_episode = load_run_config(RUN).episode
-    run = _run_extending(tmp_path, "episode: {unknown_cap: 3}\n")
-
-    episode = load_run_config(run).episode
-
-    assert episode == base_episode
-
-
 def test_an_environment_variable_named_like_a_field_does_not_change_the_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -173,7 +164,7 @@ def test_a_missing_extends_base_is_a_config_error(tmp_path: Path) -> None:
 def test_a_prompt_written_inline_instead_of_referenced_is_ignored(tmp_path: Path) -> None:
     run = _run_extending(tmp_path, INLINE_PROMPT_AGENT)
 
-    agent = load_run_config(run).agent("inline-agent")
+    agent = load_run_config(run).agent("agent-main")
 
     assert agent.system_prompt is None
 

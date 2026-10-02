@@ -11,8 +11,14 @@ class SimulatedClock:
     def __init__(self, control: GatewayControl, start: float) -> None:
         """Start the clock at ``start`` on the core and here."""
         self._control = control
-        self._now = float(start)
+        self._start = float(start)
+        self._now = self._start
         control.set_clock(self._now)
+
+    @property
+    def start(self) -> float:
+        """The simulated time the episode started at."""
+        return self._start
 
     def __call__(self) -> float:
         """The current simulated time."""

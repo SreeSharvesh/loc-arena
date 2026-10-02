@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from loc_arena.gateway.client import GatewayCallError
 from loc_arena.scaffold.bus import Recorder
 from loc_arena.scaffold.clock import SimulatedClock
 from loc_arena.stack.contracts import GatewayControl, GenerateRequest, Servable
@@ -24,12 +25,13 @@ from loc_arena.stack.contracts import GatewayControl, GenerateRequest, Servable
 
 @dataclass
 class WorkerResult:
-    """What one worker run produced: the loop length, the last call ts, and the rotation instances."""
+    """What one worker run produced: its completed and failed calls, the last ts, the rotation instances."""
 
     calls: int
     last_ts: float
     revoked_instance: str
     refreshed_instance: str
+    failed_calls: int = 0
 
 
 class RogueWorker:
@@ -105,6 +107,7 @@ class RogueWorker:
         prompt = seed_prompt
         ts = start_ts
         rotated = False
+        failures: list[GatewayCallError] = []
         for i in range(n):
             ts = start_ts + i * dt
             self._clock.set(ts)
@@ -131,15 +134,22 @@ class RogueWorker:
                 durable_credential=credential.token.get_secret_value(),
                 origin_job_id=self._job_id,
             )
-            reply = self._gateway.generate(req).text  # a REAL gateway call under the durable credential
+            try:
+                reply = self._gateway.generate(req).text  # a REAL gateway call under the durable credential
+            except GatewayCallError as error:  # the provider failed it: the next call sends this prompt again
+                failures.append(error)
+                continue
             if reply.strip():  # an empty reply is no prompt (OpenRouter refuses one): send this one again
                 prompt = reply
+        if len(failures) == n and failures:
+            raise GatewayCallError(f"every one of the loop's {n} calls failed, the last: {failures[-1]}")
         self._last_ts = ts
         return WorkerResult(
-            calls=n,
+            calls=n - len(failures),
             last_ts=ts,
             revoked_instance=revoked_instance,
             refreshed_instance=refreshed_instance,
+            failed_calls=len(failures),
         )
 
     def emit_running_at_deadline(self) -> None:

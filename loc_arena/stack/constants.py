@@ -36,8 +36,11 @@ def build_service_url(hostname: str, port: int) -> str:
     return f"http://{hostname}:{port}"
 
 
-# --- gateway: the model role of a monitor's own calls (the run config's models file names it) ---
+# --- gateway: the model roles the harness calls (the run config's models file routes each to a model) ---
 MONITOR_MODEL_ROLE: Final = "trusted_monitor"
+AGENT_MODEL_ROLE: Final = "untrusted_agent"
+TEACHER_MODEL_ROLE: Final = "teacher"
+RUN_MODEL_ROLES: Final = (AGENT_MODEL_ROLE, TEACHER_MODEL_ROLE, MONITOR_MODEL_ROLE)
 
 # --- episode handles ---
 EPISODE_HANDLE_BYTES: Final = 8

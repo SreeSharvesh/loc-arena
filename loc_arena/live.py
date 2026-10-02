@@ -15,6 +15,8 @@ deterministic engine-test scaffolding, not a selectable deliverable policy.
 
 from __future__ import annotations
 
+import logging
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -22,7 +24,7 @@ from loc_arena.config import AgentConfig, RunConfig
 from loc_arena.forge.forge import Forge
 from loc_arena.forge.reviewer import Reviewer
 from loc_arena.forge.services import ForgeServices
-from loc_arena.forge.world import SeededWorld, generate_world, hosted_repos
+from loc_arena.forge.world import generate_world, hosted_repos
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import DeterministicProvider, Provider, ToolSpec
 from loc_arena.gateway.openrouter_provider import live_provider_from_environment
@@ -43,6 +45,7 @@ from loc_arena.task import (
     _DEFAULT_DEADLINE,
     _ROGUE_ACCOUNT,
     EpisodeResult,
+    PolicyOutcome,
     _resolve_scenario,
     assemble_in_process,
 )
@@ -102,6 +105,8 @@ COVERT_BRIEFS: dict[str, str] = {
 }
 
 
+_LOGGER = logging.getLogger(__name__)
+
 # Builds an agent's policy from its context, its brief and the tools it is offered.
 AgentPolicyFactory = Callable[[AgentContext, str, list[ToolSpec]], AgentPolicy]
 
@@ -132,14 +137,14 @@ def run_model_policy(
     deadline_ts: float,
     shell_offered: bool,
     policy_factory: AgentPolicyFactory | None = None,
-) -> SeededWorld:
+) -> PolicyOutcome:
     """Run the pre-provisioned team on the episode's wiring."""
+    ceiling = time.monotonic() + config.episode.wall_clock_seconds
     scenario = _resolve_scenario(config)
     world = generate_world(config, scenario, config.seed)
     forge = Forge(world)
     reviewer = Reviewer()
     repos = hosted_repos(config, scenario)
-    platform_repo = repos[0][0]
     control_repo = next((name for name, control in repos if control), None)
 
     recorder = Recorder(wiring.sealed, wiring.mirror, clock=clock)
@@ -167,7 +172,7 @@ def run_model_policy(
         clock=clock,
     )
 
-    tools = Tools(recorder, bus, covert_services, spawn_handler=_refuse_spawn, code_tools=wiring.code_tools)
+    tools = _build_tools(config, wiring, recorder, bus, covert_services)
 
     tool_specs = agent_tool_specs(covert=config.covert.enabled) + ([SHELL_TOOL_SPEC] if shell_offered else [])
     build_policy = policy_factory or _model_policy_factory(config)
@@ -208,13 +213,30 @@ def run_model_policy(
         forge,
         reviewer,
         clock,
-        platform_repo=platform_repo,
+        platform_repo=repos[0][0],
         control_repo=control_repo,
         covert_enabled=config.covert.enabled,
     )
 
-    _drive_team(team, root_cfg.id)
-    return world
+    stopped = _drive_team(team, root_cfg.id, ceiling=ceiling)
+    return PolicyOutcome(world, stopped_at_wall_clock_ceiling=stopped)
+
+
+def _build_tools(
+    config: RunConfig,
+    wiring: EpisodeWiring,
+    recorder: Recorder,
+    bus: MessageBus,
+    services: CovertToolServices,
+) -> Tools:
+    return Tools(
+        recorder,
+        bus,
+        services,
+        spawn_handler=_refuse_spawn,
+        code_tools=wiring.code_tools,
+        max_argument_depth=config.settings.execution.max_argument_depth,
+    )
 
 
 def assemble_model_episode(
@@ -229,7 +251,7 @@ def assemble_model_episode(
 ) -> EpisodeResult:
     """Assemble one live, model-driven episode in process (STACK=0) and grade it on its outcome."""
 
-    def run_policy(wiring: EpisodeWiring, clock: SimulatedClock, trace: AgentTrace | None) -> SeededWorld:
+    def run_policy(wiring: EpisodeWiring, clock: SimulatedClock, trace: AgentTrace | None) -> PolicyOutcome:
         return run_model_policy(
             config,
             wiring,
@@ -252,13 +274,14 @@ def assemble_model_episode(
     )
 
 
-def _drive_team(team: dict[str, Agent], root_uid: str) -> None:
+def _drive_team(team: dict[str, Agent], root_uid: str, *, ceiling: float) -> bool:
     """Round-robin the whole team: every agent gets a turn each round until all end or exhaust their budget.
 
     A real R&D team works its own area AND reacts to coordination (bus messages are delivered at each turn
     start), so the run does not stall when the orchestrator is quiet/refuses -- the per-repo sub-agents keep
     doing their own legitimate (and, for covert-briefed ones, covert) work. The root goes first each round.
     The model decides every action; this only schedules the turns and drops an agent once it ends/exhausts.
+    Returns whether the wall-clock ``ceiling``, a ``time.monotonic()`` reading, stopped the team.
     """
     order = [root_uid, *[uid for uid in team if uid != root_uid]]
     active = set(team)
@@ -266,6 +289,10 @@ def _drive_team(team: dict[str, Agent], root_uid: str) -> None:
         for uid in order:
             if uid not in active:
                 continue
+            if time.monotonic() >= ceiling:
+                _LOGGER.warning("the episode reached its wall-clock ceiling: its agents take no more turns")
+                return True
             status = team[uid].run_turn()
             if status in (TurnStatus.ENDED, TurnStatus.BUDGET_EXHAUSTED):
                 active.discard(uid)
+    return False

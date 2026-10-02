@@ -14,17 +14,20 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Protocol, get_args
+from typing import Any, Final, Protocol, get_args
 
 from loc_arena.gateway.client import GatewayCallError, GatewayClient
 from loc_arena.ids import Action, PermissionScope, ScopeViolation, enforce
 from loc_arena.scaffold.bus import MessageBus, Recorder
 from loc_arena.scaffold.registry import SpawnDenied
 from loc_arena.stack.contracts import CodeToolCall, CodeToolName, CodeToolRunner
+from loc_arena.stack.settings import ExecutionSettings
 
 # Tools whose target (repo / recipient) the scope check needs from the args.
 _TARGET_FROM = {"open_pr": "repo", "merge": "repo", "message": "to", "read_weights": "name"}
 _CODE_TOOL_NAMES: frozenset[str] = frozenset(get_args(CodeToolName))
+# The configured limit's default, for a tool layer built without a run's settings.
+DEFAULT_MAX_ARGUMENT_DEPTH: Final = ExecutionSettings().max_argument_depth
 
 
 @dataclass(frozen=True)
@@ -60,6 +63,17 @@ class Services(Protocol):
         ...
 
 
+def measure_nesting_depth(value: object) -> int:
+    """How many levels of lists and objects ``value`` nests (a scalar is 0), counted without recursion."""
+    depth, level = 0, [value]
+    while containers := [item for item in level if isinstance(item, (dict, list))]:
+        depth += 1
+        level = [
+            child for item in containers for child in (item.values() if isinstance(item, dict) else item)
+        ]
+    return depth
+
+
 class StubServices:
     """A deterministic stand-in for the services: every call returns a canned, fingerprintable result."""
 
@@ -79,6 +93,7 @@ class Tools:
         *,
         spawn_handler: SpawnHandler,
         code_tools: Mapping[str, CodeToolRunner] | None = None,
+        max_argument_depth: int = DEFAULT_MAX_ARGUMENT_DEPTH,
     ) -> None:
         """Wire the tool layer to the recorder, the bus, the services, and the spawn handler."""
         self._recorder = recorder
@@ -86,6 +101,7 @@ class Tools:
         self._services = services
         self._spawn_handler = spawn_handler
         self._code_tools = {} if code_tools is None else code_tools
+        self._max_argument_depth = max_argument_depth
 
     @staticmethod
     def _target_for(action: AgentAction) -> str | None:
@@ -144,6 +160,15 @@ class Tools:
         )
 
     def execute(self, ctx: AgentContext, action: AgentAction, turn: int) -> ToolResult:
+        """Run and record the call; one whose arguments nest past the limit is refused and so recorded."""
+        depth = measure_nesting_depth(action.args)
+        if depth > self._max_argument_depth:
+            error = f"arguments nest {depth} levels deep, past the {self._max_argument_depth} the logs record"
+            self._log_action(ctx, AgentAction(action.tool), turn, blocked=False, result={"error": error})
+            return {"error": error, "tool": action.tool}
+        return self._enforce_and_dispatch(ctx, action, turn)
+
+    def _enforce_and_dispatch(self, ctx: AgentContext, action: AgentAction, turn: int) -> ToolResult:
         """Enforce scope, then dispatch and record the call; a scope violation is logged and not executed."""
         target = self._target_for(action)
         ids_action = Action(tool=action.tool, args={"target": target} if target is not None else {})
@@ -184,8 +209,11 @@ class Tools:
                 )
                 result = {"text": text}
             elif action.tool == "batch_generate":
+                prompts = action.args["prompts"]
+                if not isinstance(prompts, list):  # a string would be batched one character per call
+                    raise TypeError(f"prompts must be a list of prompts, got {type(prompts).__name__}")
                 texts = ctx.client.batch_generate(
-                    [str(p) for p in action.args["prompts"]],
+                    [str(p) for p in prompts],
                     role=str(action.args.get("role", "teacher")),
                 )
                 result = {"texts": texts}

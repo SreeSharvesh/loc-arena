@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import json
 import logging
 from typing import Any
@@ -9,6 +10,7 @@ from typing import Any
 from loc_arena.config import AgentLoopConfig
 from loc_arena.gateway.client import GatewayCallError, GatewayClient
 from loc_arena.gateway.core import GenerateResponse, Message, ToolSpec
+from loc_arena.logging_.events import canonicalize
 from loc_arena.scaffold.agent import FAILED, SKIP, Transcript
 from loc_arena.scaffold.tool_specs import validate_call
 from loc_arena.scaffold.tools import AgentAction
@@ -17,6 +19,8 @@ _LOGGER = logging.getLogger(__name__)
 
 _TASK = "Begin. Use the tools to do the work, and call finish when it is complete."
 _NUDGE = "Reply with a tool call. Call finish when the task is complete."
+# Never echo the value: the tool message enters the history the next model call fingerprints.
+_UNRECORDABLE = "arguments hold a value the event log cannot record (NaN, an infinity or a lone surrogate)"
 
 
 def render_tool_result(result: dict[str, Any], cap: int) -> str:
@@ -94,17 +98,19 @@ class ModelAgentPolicy:
         errors: list[Message] = []
         for call in reply.tool_calls or []:
             call_id = str(call.get("id") or "")
+            # A live endpoint refuses a history whose tool message answers an id no call carries.
+            call["id"] = call_id or _unused_call_id([*self._messages, reply.assistant_message()])
             function = call.get("function")
             if not isinstance(function, dict):
                 function = {}
             name = function.get("name")
             raw = function.get("arguments") or "{}"
             if not isinstance(name, str) or not call_id:
-                errors.append(_tool_message(call_id or "missing", "tool call is missing an id or a name"))
+                errors.append(_tool_message(call["id"], "tool call is missing an id or a name"))
                 continue
             try:
                 args = json.loads(raw) if isinstance(raw, str) else raw
-            except json.JSONDecodeError as exc:
+            except (ValueError, RecursionError) as exc:  # not JSON, an int past the digit limit, too deep
                 errors.append(_tool_message(call_id, f"invalid JSON arguments: {exc}"))
                 continue
             if not isinstance(args, dict):
@@ -114,8 +120,27 @@ class ModelAgentPolicy:
             if problem is not None:
                 errors.append(_tool_message(call_id, problem))
                 continue
+            if not _recordable(name, args):
+                errors.append(_tool_message(call_id, _UNRECORDABLE))
+                continue
             actions.append(AgentAction(tool=name, args=args, call_id=call_id))
         return actions, errors
+
+
+def _unused_call_id(history: list[Message]) -> str:
+    taken = {str(call.get("id")) for message in history for call in message.get("tool_calls", [])}
+    candidates = (f"missing-{n}" for n in itertools.count())
+    return next(call_id for call_id in candidates if call_id not in taken)
+
+
+def _recordable(name: str, args: object) -> bool:
+    if name == "finish":  # the tool layer never runs or records a finish call
+        return True
+    try:
+        canonicalize(args)
+    except (ValueError, RecursionError):  # NaN or an infinity, a lone surrogate, nested too deep
+        return False
+    return True
 
 
 def _bus_text(entry: dict[str, Any]) -> str:

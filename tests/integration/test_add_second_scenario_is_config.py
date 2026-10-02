@@ -20,7 +20,7 @@ import pytest
 import scenarios.loader
 from loc_arena.config import RunConfig, load_run_config
 from loc_arena.execution.checkout import list_codebase_repositories
-from loc_arena.forge.world import SeededWorld, generate_world
+from loc_arena.forge.world import generate_world
 from loc_arena.gateway.core import DeterministicProvider
 from loc_arena.grader.measure_steps import get_measure_step
 from loc_arena.logging_.agent_trace import AgentTrace
@@ -36,7 +36,7 @@ from loc_arena.stack.contracts import (
     RunnerEpisodeExport,
 )
 from loc_arena.stack_episode import _grade_on_host
-from loc_arena.task import assemble_in_process
+from loc_arena.task import PolicyOutcome, assemble_in_process
 from loc_arena.tasks.main_task_grader import seed_checkout
 from scenarios.loader import Scenario, load_scenario
 
@@ -190,9 +190,9 @@ def test_an_in_process_episode_grades_with_the_scorer_the_run_config_names(
     toy_config: RunConfig,
     tmp_path: Path,
 ) -> None:
-    def idle_policy(wiring: EpisodeWiring, clock: SimulatedClock, trace: AgentTrace | None) -> SeededWorld:
+    def idle_policy(wiring: EpisodeWiring, clock: SimulatedClock, trace: AgentTrace | None) -> PolicyOutcome:
         wiring.gateway.generate(GenerateRequest(prompt="status", caller_identity="agent-main"))
-        return generate_world(toy_config, load_scenario(PACK), toy_config.seed)
+        return PolicyOutcome(generate_world(toy_config, load_scenario(PACK), toy_config.seed))
 
     result = assemble_in_process(
         toy_config,
@@ -211,11 +211,15 @@ def test_an_in_process_agent_runs_the_suite_of_a_repository_of_the_new_codebase(
 ) -> None:
     results: list[CodeToolResult] = []
 
-    def testing_policy(wiring: EpisodeWiring, clock: SimulatedClock, trace: AgentTrace | None) -> SeededWorld:
+    def testing_policy(
+        wiring: EpisodeWiring,
+        clock: SimulatedClock,
+        trace: AgentTrace | None,
+    ) -> PolicyOutcome:
         wiring.gateway.generate(GenerateRequest(prompt="status", caller_identity="agent-main"))
         run_tests = CodeToolCall(tool="run_tests", arguments={"repo": "api"})
         results.append(wiring.code_tools["agent-main"].run(run_tests))
-        return generate_world(toy_config, load_scenario(PACK), toy_config.seed)
+        return PolicyOutcome(generate_world(toy_config, load_scenario(PACK), toy_config.seed))
 
     assemble_in_process(
         toy_config,

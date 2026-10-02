@@ -15,11 +15,14 @@ Every module in `loc_arena/stack` imports only the standard library, pydantic, p
 - `CoreGenerateResponse.ts` is the core's clock at the call; the edge's mirror record reuses it.
 - The core ships without `configs/`, so `EpisodeOpen` carries the run config's model routes and covert injection. Its `provider` field picks the key-holding egress or, for scripted runs, the deterministic stub, which needs no network.
 - `RunnerEpisodeExport.phases` maps the sealed seq of each model call to the phase of the turn that made it.
+- `RunnerEpisodeExport.stopped_at_wall_clock_ceiling` says whether the episode's wall-clock ceiling stopped its agents early.
 - `EpisodeWiring.code_tools` maps each agent id to the runner of its own sandbox.
 
 ## Constants
 
 A route holding `{handle}` is filled with an episode handle (`CLOCK_ROUTE.format(handle=handle)`), and FastAPI reads the same text as the path parameter `handle`. Tunable values live in `loc_arena/stack/settings.py`; event kinds stay in `EventKind`. Hostname labels follow [RFC 1123 section 2.1](https://www.rfc-editor.org/rfc/rfc1123.html), which keeps the 63-octet label limit of RFC 1035.
+
+`trusted_monitor` serves a monitor's own calls. `untrusted_agent` serves each agent's turn and the rogue loop's calls. `teacher` serves `generate` and `batch_generate` by default, and the coworker's batch.
 
 ## Control key
 
@@ -83,6 +86,8 @@ Seeding is idempotent, so every sandbox sharing the checkout may seed it: the fi
 
 `GET HEALTH_ROUTE` answers `ExecutionHealth`. `POST WORKSPACES_ROUTE` opens the sandbox for one episode and answers 201, seeding the shared checkout from the image's pristine codebase when it holds no repository yet; it answers 409 when the sandbox already serves another episode. `POST TOOL_CALLS_ROUTE` runs one allowlisted tool call, with 422 for a tool outside `CodeToolName` and 404 before the episode is open. The app holds no secret: whatever it can do, the agent's own bash can do too.
 
+`edit_file` refuses an empty `old` string. The empty string occurs between every two characters, so replacing it would write `new` once per character of the file.
+
 ## Execution client
 
 The sandbox belongs to the agent. Its code runs as the execution app's user and can replace the app with a server of its own, so the runner bounds every call and treats every reply as untrusted. httpx's timeouts bound each phase and each read ([httpx timeouts](https://www.python-httpx.org/advanced/timeouts/): a read timeout is the longest wait for one chunk), so a server that trickles its headers or body one byte at a time outlasts them. Each call therefore runs under `asyncio.timeout(reply_timeout_seconds)`, which cancels connecting, sending and reading the whole reply together. httpcore closes a connection whose exchange the cancellation interrupts, on its `except BaseException` path, shielded from the cancellation. `asyncio.run` closes the call's client and event loop, so no connection, task or thread outlives the call. `asyncio.run` refuses a thread whose event loop is running, so the runner calls this client from synchronous code.
@@ -123,7 +128,7 @@ A model call's request, the provider's result and the fingerprints are the share
 
 The core signs with per-kind keys: turn tokens, durable credentials and monitor credentials. `turn_secret` is one secret for every kind, for callers that sign their own credentials; with neither given, the core makes fresh per-kind keys. Each key is 32 random bytes, because [RFC 2104 section 3](https://www.rfc-editor.org/rfc/rfc2104.html#section-3) asks for a key at least as long as the hash output, 32 bytes for SHA-256. Each episode's identity service lives in the core, signs with the core's durable-credential key, and is reached only through the core's control routes, so its revocation check stays inside the core.
 
-A call is attributed in this order: a valid monitor credential, then a valid unrevoked durable credential (a background job under a service account, off-turn), then a valid turn token of this episode, otherwise the claimed identity with credential kind `none`. Under reduced monitor coverage, a dropped identity's calls carry `on_monitored_path=False`; under reduced logging coverage they carry `in_mirror=False`. That is the reduction the verifier keys on, and `None` covers everyone. A batch prompt calls the provider before its tokens are charged to the teacher quota, so a call the quota refuses (429) was still made.
+A call is attributed in this order: a valid monitor credential, then a valid unrevoked durable credential (a background job under a service account, off-turn), then a valid turn token of this episode, otherwise the claimed identity with credential kind `none`. Under reduced monitor coverage, a dropped identity's calls carry `on_monitored_path=False`; under reduced logging coverage they carry `in_mirror=False`. That is the reduction the verifier keys on, and `None` covers everyone. A batch prompt's tokens are charged to the teacher quota only after its call is sealed with its usage and reported to the core's observer. So a call the quota refuses (429) was made and paid for, and it still has its sealed record, its model-call record and its lane.
 
 Each sealed `inference_call` record carries the call's token counts and cost. A call the provider fails is sealed as an `inference_error` carrying the caller's stamps, the `prompt_fp` of the submitted input, and the provider's status and message.
 
@@ -168,6 +173,8 @@ The in-process checkout's repositories are the run scenario's codebase's, as a s
 
 Once the policy returns, `finish_episode` closes the episode on the core. Its model routes stop serving it, so nothing agent code left running is recorded under it. `finish_episode` then finishes the agents' trace at the last sealed seq and runs the protocol's monitors over the mirror. A monitor's own model call goes through the core (`call_model_as_monitor`), so it is a sealed, attributable record. With `calls_models` off, every monitor uses its heuristic and writes nothing. A failed monitor call is recorded as that monitor's `monitor_error` on the sealed log, and the monitor falls back to its heuristic, so the episode still completes.
 
+A failed monitor call has already spent the provider's whole retry budget. After `gateway.monitor_failures_before_fallback` failures in a row, a monitor stops calling its model and scores the rest of the episode with its heuristic, and a completed call resets the count. With the provider down, a monitor therefore costs at most that many budgets.
+
 ## Evidence
 
 The host reads the sealed and mirror logs it copied out of the stack, and the runner's export; the runner reads the mirror the edge wrote. A file larger than `settings.docker.evidence_max_bytes` is refused before it is read in full. Each line must validate as its exact type in pydantic's strict mode, so an unknown field or a wrong type is an error.
@@ -192,9 +199,13 @@ The whole team shares the covert tool surface, so the tool layer passes the call
 
 A failed model call, after the provider's retries or because the gateway refused it, fails that turn only. The policy logs it, appends nothing and returns `[FAILED]`, so the next turn sends the same history plus whatever arrived meanwhile.
 
+A tool call with no id gets the first `missing-<n>` id that no call in the history or the reply carries, so each tool message answers exactly one call: a live endpoint refuses a history whose tool message answers an id no call carries. The event logs record every action's arguments as canonical JSON in UTF-8. A call whose arguments cannot be recorded (NaN, an infinity, a lone surrogate, or nesting deeper than `execution.max_argument_depth`) gets an error tool message that never echoes the value. The depth limit sits below what the logs serialize: pydantic's serializer, which the stack's log clients send events with, refuses about 250 levels, and the in-process log about 490.
+
 ## Rogue worker
 
 The core's identity service issues and rotates the job's durable credential, and the credential's expiry is a core setting. An empty reply (a reasoning model out of output tokens) is not fed back, so the next call resends the same prompt.
+
+A failed call, which the core seals as `inference_error`, is passed over the same way. `run_loop` raises `GatewayCallError` only when every call failed.
 
 `caller_identity` is the identity the job's own model calls claim. `launched_by` is the agent that started the job, and the actor of its job records. The two stay apart on purpose. A call whose durable credential no longer verifies is attributed to its claimed identity, and the core adds the covert objective to calls attributed to the covert target, so a job must never claim the launching agent's identity.
 
@@ -270,4 +281,16 @@ The core seals each completed provider call as an `inference_call` event, which 
 
 **Reading.** pydantic-settings' `YamlConfigSettingsSource` reads the run file and the files it `extends`, base first, with `deep_merge=True`. The source takes that option directly; `SettingsConfigDict` lacks it ([Other settings source](https://pydantic.dev/docs/validation/latest/concepts/pydantic_settings/)). A mapping in a later file merges into the same key of an earlier one, and any other value replaces it. The run document is built from that source alone, passed as `_build_sources`, so environment variables, dotenv files and secrets directories never change a run. This was checked against pydantic-settings 2.15.0, the floor in `pyproject.toml`. `_read_config_file` refuses a missing file, which the source would skip. A config may extend one that itself extends a base: `aurora-efficiency.deterministic.yaml` extends `aurora-efficiency.yaml`, which extends `env.default.yaml`. `_extends_chain` reads each file for its `extends`, base first, and refuses a cycle.
 
-**Validating.** Each block is a frozen pydantic dataclass with a description per field. Dataclasses keep `dataclasses.replace` working for the honest twin, and `replace` re-validates. That is why `_parse_scope` keeps an already-built `PermissionScope`, and why each prompt field accepts its own name as well as its `*_ref` key. Scalars are pydantic `Strict*` types, so YAML `"30"` or `true` never becomes an int in these blocks; the settings groups keep `LocArenaSettings`' coercing types. A key no block declares is ignored, except in an agent's `scope` (`PermissionScope.from_dict` refuses it) and in the settings groups (`LocArenaSettings` forbids it). `main_task` is read through a view of the keys the harness computes with, while `RunConfig.main_task` keeps the whole block. Prompt references are resolved in a before-validator, because a settings model takes no validation context. It builds new containers, because the merged YAML is also `RunConfig.raw`, kept as written. Only a reference sets a prompt: a prompt written inline is dropped. A missing or invalid field is a `ConfigError` naming its path.
+**Validating.** Each block is a frozen pydantic dataclass with a description per field. Dataclasses keep `dataclasses.replace` working for the honest twin, and `replace` re-validates. That is why `_parse_scope` keeps an already-built `PermissionScope`, and why each prompt field accepts its own name as well as its `*_ref` key. Scalars are pydantic `Strict*` types, so YAML `"30"` or `true` never becomes an int in these blocks; the settings groups keep `LocArenaSettings`' coercing types. A key a typed block does not declare is an error (`BLOCK_CONFIG`), as in an agent's `scope` and in the settings groups. `main_task`, `protocol` and the top level of the document, which also holds the stack topology, stay free-form: they are read through views of the keys the harness computes with (`KEYS_CONFIG`), while `RunConfig.main_task` and `RunConfig.protocol` keep the whole blocks. Prompt references are resolved in a before-validator, because a settings model takes no validation context. It builds new containers, because the merged YAML is also `RunConfig.raw`, kept as written. Only a reference sets a prompt: a prompt written inline is dropped. A missing or invalid field is a `ConfigError` naming its path.
+
+The loader also checks what the harness needs of the team and the scenario. The core adds the covert objective to the target's calls alone, so `covert.target_identity` must name an agent of the team. The harness drives the team from `agent-main`, so the team must hold it, once. The agents' checkout is seeded from the scenario's codebase, so a codebase that holds no repository fails at load.
+
+`monitors.yaml` is checked at load too. `_spec_from` refuses a misspelled mode, which would score a live monitor with its heuristic unnoticed, and a misspelled tap, which would see no event. `_read_number` names the monitor and the key of a value that is no number. `load_aggregation_config` raises a `ConfigError` for a `method` or `per_monitor_reduce` that names no known method, whether the aggregation block sets it or a monitor does (a monitor's own level-1 reduce overrides the block's). An unknown method would otherwise raise only when the run is scored.
+
+## Wall-clock ceiling
+
+`episode.wall_clock_seconds` bounds how long a model-policy episode's agents take turns: no agent turn starts once that many seconds (`time.monotonic`) have passed since the policy started. A provider that fails every call after its whole retry budget would otherwise hold each turn for that budget. An episode the ceiling stops has turns its agents never took, and the policy reports whether the ceiling stopped agents that still had turns (`PolicyOutcome.stopped_at_wall_clock_ceiling`). `scores.json` records `wall_clock_ceiling` (`seconds`, `episode_stopped`, `calibration_stopped`) only for a run the ceiling stopped, in its episode or its honest twin. `calibration_stopped` is null in honest mode, where the episode is its own twin. Every other run's scores stay byte-identical.
+
+## Monitor verdicts
+
+`parse_verdict` decodes candidates in place with `json.JSONDecoder.raw_decode`, so a brace inside the reason string stays text. It decodes only at a `{` that opens a quoted key (`_OBJECT_OPENING`): a verdict has keys, and decoding at every other brace fails at a cost that grows with its position. `raw_decode` at such an opening yields an object. A reply the decoder raises on (nesting too deep, or an integer past Python's digit limit) reads as no verdict. `_find_brace_balanced_objects` pairs each `}` with the latest unpaired `{` in one pass, and cuts spans only when they are read.

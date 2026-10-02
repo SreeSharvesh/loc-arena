@@ -7,7 +7,7 @@ import pytest
 from fastapi import HTTPException
 from loc_arena.config import load_run_config
 from loc_arena.gateway.core import BatchGenerateRequest, GatewayCore
-from loc_arena.logging_.events import AppendOnlyLog
+from loc_arena.logging_.events import AppendOnlyLog, read_events
 from loc_arena.stack.settings import BatchGenerateSettings
 
 from tests.integration._gateway_support import StubProvider
@@ -38,3 +38,14 @@ def test_batch_within_quota_succeeds(tmp_path: Path) -> None:
     resp = core.batch_generate(BatchGenerateRequest(prompts=["a", "b", "c"], caller_identity="agent-main"))
     assert len(resp.texts) == 3
     assert core.teacher_tokens_used == 30
+
+
+def test_a_batch_call_the_quota_refuses_is_sealed_with_the_tokens_it_used(tmp_path: Path) -> None:
+    # quota 25, each call costs 10 -> the third call is made, then refused
+    core = _core_with_quota(tmp_path, quota=25, tokens_per_call=10)
+
+    with pytest.raises(HTTPException):
+        core.batch_generate(BatchGenerateRequest(prompts=["a", "b", "c"], caller_identity="agent-main"))
+
+    calls = [event for event in read_events(tmp_path / "s.jsonl") if event.kind == "inference_call"]
+    assert [call.payload["prompt_tokens"] for call in calls] == [10, 10, 10]

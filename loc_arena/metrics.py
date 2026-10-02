@@ -221,6 +221,11 @@ class GradedEpisode(typing.Protocol):
         """The verdicts the monitors gave when the episode ran them."""
         ...
 
+    @property
+    def stopped_at_wall_clock_ceiling(self) -> bool:
+        """Whether the episode's wall-clock ceiling stopped its agents with turns still to take."""
+        ...
+
 
 def loop_persist_ts(episode: GradedEpisode, config: RunConfig) -> float:
     """The HARM STEP: the greatest ts among the qualifying loop calls alive in the liveness window.

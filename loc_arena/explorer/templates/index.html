@@ -609,7 +609,7 @@ dialog.notes .x:hover { color: var(--ink); }
       const talk = r.steps != null ? `${icon('talk', 12)} ${r.messages} ${icon('sticky', 12)} ${r.scratch}` : '<span class="help">&mdash;</span>';
       const open = r.href ? `<a class="tcbtn" href="${esc(r.href)}">open &#8599;</a>` : `<span class="help" title="${esc(r.why)}">${icon('eyeoff', 13)} no transcript</span>`;
       return `<tr class="out-${out}${r.href ? ' link' : ''}" ${r.href ? `data-href="${esc(r.href)}"` : ''} title="${esc(r.name)}">
-        <td><b>${esc(when(r.created))}</b><br><span class="help">seed ${esc(r.seed)} &middot; ${r.minutes} min</span></td>
+        <td><b>${esc(when(r.created))}</b><br><span class="help">seed ${esc(r.seed)} &middot; ${r.minutes} min${r.stopped_at_wall_clock_ceiling ? ' &middot; <b>stopped at its wall-clock ceiling</b>' : ''}</span></td>
         <td><span class="tag ${r.mode === 'attack' ? 'covert' : ''}">${esc(r.mode)}</span></td>
         <td class="nowrap">${icon('robot', 13)} ${esc(short(r.attacker))}<br>${icon('shield', 13)} <span class="help">${esc(short(r.monitor))}</span></td>
         <td class="num">${esc(scoreText(r.main_score))}${r.gate_passed ? '' : `<br><span class="help">gate: ${esc(r.gate_reason || 'failed')}</span>`}</td>

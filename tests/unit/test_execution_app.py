@@ -184,6 +184,17 @@ def test_an_edit_replaces_every_occurrence(workspace: Workspace, checkout_root: 
     assert (checkout_root / "note.txt").read_text() == "new new"
 
 
+def test_an_edit_of_an_empty_string_leaves_the_file_as_it_was(
+    workspace: Workspace,
+    checkout_root: Path,
+) -> None:
+    (checkout_root / "note.txt").write_text("old old")
+
+    _run(workspace, "edit_file", path="note.txt", old="", new="new")
+
+    assert (checkout_root / "note.txt").read_text() == "old old"
+
+
 def test_a_listing_names_each_entry_with_its_type(workspace: Workspace) -> None:
     result = _run(workspace, "list_dir", path=REPOSITORY)
 

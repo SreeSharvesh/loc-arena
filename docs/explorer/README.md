@@ -102,6 +102,10 @@ flagged but not covert, and neither. Click a count to list those steps. A step c
 on it scores **strictly above** the audit threshold, as the harness counts it. Below that, each monitor's number
 of verdicts, how many landed on a step, how many flagged, its peak score, and its top reason.
 
+When the episode's wall-clock ceiling (`episode.wall_clock_seconds`) stopped the agents of the run or of its
+honest twin with turns left, the opening line says so, and the run's row in the index is marked: its scores
+cover a shortened run. They read this from `wall_clock_ceiling` in `scores.json`, written only for such a run.
+
 ## Search steps
 
 ![Searching the steps for a word](09-search.png)

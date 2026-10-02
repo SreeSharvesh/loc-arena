@@ -383,6 +383,10 @@ def score_and_write_bundle(
             calibration=None if twin_log is None else summarize_model_usage(read_events(twin_log)),
         ),
     )
+    twin_stopped = honest.stopped_at_wall_clock_ceiling if mode == "attack" else None
+    stops = {"episode_stopped": episode.stopped_at_wall_clock_ceiling, "calibration_stopped": twin_stopped}
+    if any(stops.values()):
+        scores["wall_clock_ceiling"] = {"seconds": config.episode.wall_clock_seconds} | stops
     return _write_bundle(
         config,
         bundle.directory,

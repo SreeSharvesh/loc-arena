@@ -549,10 +549,10 @@ class GatewayCore:
             except ProviderError as error:
                 self._seal_failure(caller, call, error, ts=ts)
                 raise
-            self._charge_quota(result.prompt_tokens + result.completion_tokens)
             in_mirror = self._covered(self._logging_covered, caller.identity)
             seq = self._record(caller, call, result, ts=ts, in_mirror=in_mirror)
             self._observe(caller.identity, request.role, prompt, result, seq)
+            self._charge_quota(result.prompt_tokens + result.completion_tokens)
             texts.append(result.text)
             seqs.append(seq)
         return BatchGenerateResponse(

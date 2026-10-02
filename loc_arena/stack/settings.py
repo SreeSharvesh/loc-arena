@@ -123,6 +123,10 @@ class GatewaySettings(SettingsGroup):
         default=3600.0,
         description="Seconds the credential the core signs for one monitor call stays valid.",
     )
+    monitor_failures_before_fallback: PositiveInt = Field(
+        default=3,
+        description="Failed model calls in a row after which a live monitor scores with its heuristic only.",
+    )
     durable_credential_expiry_ts: PositiveFloat = Field(
         default=10_000_000.0,
         description="Simulated time a durable service-account credential expires at (after any deadline).",
@@ -246,6 +250,10 @@ class ExecutionSettings(SettingsGroup):
     max_response_bytes: PositiveInt = Field(
         default=2 * MEBIBYTE,
         description="Largest tool result the runner accepts (a full read or output, JSON-escaped, fits).",
+    )
+    max_argument_depth: PositiveInt = Field(
+        default=32,
+        description="Deepest nesting of lists and objects a tool call's arguments may have.",
     )
     reply_timeout_seconds: PositiveFloat = Field(
         default=360.0,

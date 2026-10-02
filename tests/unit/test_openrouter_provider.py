@@ -6,6 +6,7 @@ import json
 import logging
 import threading
 import time
+from collections.abc import Mapping
 from http import HTTPStatus
 from pathlib import Path
 
@@ -24,6 +25,7 @@ from loc_arena.stack.settings import ProviderSettings
 
 from tests.unit._openrouter_stub import (
     CANARY_KEY,
+    LONE_SURROGATE,
     MAX_TOKENS,
     MESSAGES,
     MODEL,
@@ -53,6 +55,10 @@ UNAUTHORIZED = ScriptedReply(
     HTTPStatus.UNAUTHORIZED,
     error_body(HTTPStatus.UNAUTHORIZED, "No auth credentials found"),
 )
+TOOL_FUNCTION = {"name": "list_dir", "arguments": '{"path": ""}'}
+TOOL_CALL_ID = "call-1"
+SURROGATE_ARGUMENTS = {**TOOL_FUNCTION, "arguments": '{"path": "' + LONE_SURROGATE + '"}'}
+SURROGATE_NAME = {**TOOL_FUNCTION, "name": TOOL_FUNCTION["name"] + LONE_SURROGATE}
 
 
 def _completion_costing(cost: float | None) -> str:
@@ -73,6 +79,14 @@ def _completion_with_content_parts() -> str:
     return json.dumps(body)
 
 
+def _tool_call(
+    *,
+    call_id: str = TOOL_CALL_ID,
+    function: Mapping[str, str] = TOOL_FUNCTION,
+) -> dict[str, object]:
+    return {"id": call_id, "type": "function", "function": dict(function)}
+
+
 UNUSABLE_COMPLETIONS = pytest.mark.parametrize(
     ("body", "reason"),
     [
@@ -82,8 +96,30 @@ UNUSABLE_COMPLETIONS = pytest.mark.parametrize(
         (completion(finish_reason="error"), "finish_reason 'error'"),
         (completion(usage=None), "without token usage"),
         (_completion_with_content_parts(), "content parts, not text"),
+        (completion(LONE_SURROGATE), "not a chat completion"),
+        (completion(tool_calls=[{"type": "function", "function": TOOL_FUNCTION}]), "not a chat completion"),
+        (
+            completion(tool_calls=[{"id": 7, "type": "function", "function": TOOL_FUNCTION}]),
+            "not a chat completion",
+        ),
+        (completion(tool_calls=[_tool_call(function=SURROGATE_ARGUMENTS)]), "not a chat completion"),
+        (completion(tool_calls=[_tool_call(function=SURROGATE_NAME)]), "not a chat completion"),
+        (completion(tool_calls=[_tool_call(call_id=TOOL_CALL_ID + LONE_SURROGATE)]), "not a chat completion"),
     ],
-    ids=["error-body", "no-completion", "no-choice", "failed-generation", "no-usage", "content-parts"],
+    ids=[
+        "error-body",
+        "no-completion",
+        "no-choice",
+        "failed-generation",
+        "no-usage",
+        "content-parts",
+        "lone-surrogate",
+        "tool-call-without-id",
+        "tool-call-with-an-int-id",
+        "tool-call-arguments-with-a-lone-surrogate",
+        "tool-call-name-with-a-lone-surrogate",
+        "tool-call-id-with-a-lone-surrogate",
+    ],
 )
 
 

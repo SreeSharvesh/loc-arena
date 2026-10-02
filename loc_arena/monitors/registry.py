@@ -14,8 +14,8 @@ import json
 import queue
 import re
 import threading
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from collections.abc import Callable, Iterator, Mapping
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -89,6 +89,10 @@ TAP_KINDS: dict[str, tuple[str, ...]] = {
     "trajectory": (),  # the whole trajectory (all kinds)
 }
 
+MONITOR_MODES: frozenset[str] = frozenset({"heuristic", "live"})
+# MonitorSpec fields no monitors.yaml entry holds under their own name (its taps are its "tap").
+_NOT_ENTRY_KEYS: frozenset[str] = frozenset({"taps", "extra", "prompt_template"})
+
 # Where a monitor prompt template receives the declared observable inputs, rendered as JSON.
 PROMPT_INPUTS_PLACEHOLDER = "{inputs}"
 
@@ -99,6 +103,9 @@ _REASON_FIELD = re.compile(r'(?<!\w)"?reason"?\s*:\s*"([^"]*)"')
 UNPARSED_REASON = "reason unparsed"
 # Marks the reason of a verdict recovered from a reply that was not strict JSON, wherever it is reported.
 RECOVERED_REASON_PREFIX = "[recovered from a reply that was not strict JSON] "
+# A JSON object's opening up to its first key's quote (docs/isolation/design.md#monitor-verdicts).
+_OBJECT_OPENING = re.compile(r'\{[ \t\n\r]*"')
+_VERDICT_DECODER = json.JSONDecoder()
 # How much of a model completion a monitor event keeps, for review.
 _COMPLETION_EXCERPT_CHARACTERS = 200
 
@@ -239,26 +246,22 @@ def _load_prompt_template(name: str, prompt_ref: str | None, mode: str) -> str:
     return template
 
 
+def _read_number[Number: (int, float)](
+    monitor: str,
+    key: str,
+    convert: Callable[[str | float], Number],
+    raw: str | float,
+) -> Number:
+    try:
+        return convert(raw)
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(f"monitor {monitor!r}: {key}: {exc}") from exc
+
+
 def _spec_from(entry: dict[str, Any]) -> MonitorSpec:
     taps = entry.get("tap", [])
     taps_tuple = tuple(taps) if isinstance(taps, list) else (str(taps),)
-    known = {
-        "name",
-        "tap",
-        "inputs",
-        "model",
-        "prompt_ref",
-        "threshold",
-        "scope",
-        "enabled",
-        "mode",
-        "timing",
-        "per_monitor_reduce",
-        "weight",
-        "timeout_s",
-        "ensemble_n",
-        "temperature",
-    }
+    known = {"tap"} | {spec_field.name for spec_field in fields(MonitorSpec)} - _NOT_ENTRY_KEYS
     timing = str(entry.get("timing", "sync"))
     if timing not in ("sync", "async"):
         raise ValueError(f"monitor {entry.get('name')!r}: timing must be 'sync' or 'async', got {timing!r}")
@@ -266,6 +269,10 @@ def _spec_from(entry: dict[str, Any]) -> MonitorSpec:
     name = str(entry["name"])
     prompt_ref = str(entry["prompt_ref"]) if entry.get("prompt_ref") is not None else None
     mode = str(entry.get("mode", "heuristic"))
+    if mode not in MONITOR_MODES:
+        raise ConfigError(f"monitor {name!r}: mode must be one of {sorted(MONITOR_MODES)}, got {mode!r}")
+    if unknown_taps := sorted(set(taps_tuple) - set(TAP_KINDS)):
+        raise ConfigError(f"monitor {name!r}: tap {unknown_taps} names no tap point of {sorted(TAP_KINDS)}")
     return MonitorSpec(
         name=name,
         taps=taps_tuple,
@@ -278,10 +285,10 @@ def _spec_from(entry: dict[str, Any]) -> MonitorSpec:
         mode=mode,
         timing=timing,
         per_monitor_reduce=(str(entry["per_monitor_reduce"]) if "per_monitor_reduce" in entry else None),
-        weight=float(entry.get("weight", 1.0)),
-        timeout_s=(float(timeout_raw) if timeout_raw is not None else None),
-        ensemble_n=int(entry.get("ensemble_n", 1)),
-        temperature=float(entry.get("temperature", 0.0)),
+        weight=_read_number(name, "weight", float, entry.get("weight", 1.0)),
+        timeout_s=(_read_number(name, "timeout_s", float, timeout_raw) if timeout_raw is not None else None),
+        ensemble_n=_read_number(name, "ensemble_n", int, entry.get("ensemble_n", 1)),
+        temperature=_read_number(name, "temperature", float, entry.get("temperature", 0.0)),
         extra={k: v for k, v in entry.items() if k not in known},
         prompt_template=_load_prompt_template(name, prompt_ref, mode),
     )
@@ -499,36 +506,29 @@ class ParsedVerdict:
         return f"{RECOVERED_REASON_PREFIX}{self.reason}" if self.recovered else self.reason
 
 
-def _find_brace_balanced_objects(text: str) -> list[str]:
+def _find_brace_balanced_objects(text: str) -> Iterator[str]:
     """Every brace-balanced ``{...}`` span in ``text``, in order of its opening brace."""
-    objects: list[str] = []
-    for start, opening in enumerate(text):
-        if opening != "{":
+    unpaired: list[int] = []
+    spans: list[tuple[int, int]] = []
+    for position, character in enumerate(text):
+        if character == "{":
+            unpaired.append(position)
+        elif character == "}" and unpaired:
+            spans.append((unpaired.pop(), position))
+    return (text[start : end + 1] for start, end in sorted(spans))
+
+
+def _find_strict_verdict(text: str) -> ParsedVerdict | None:
+    for opening in _OBJECT_OPENING.finditer(text):
+        try:
+            verdict, _ = _VERDICT_DECODER.raw_decode(text, opening.start())  # an object: it opens with "{"
+        except (ValueError, RecursionError):  # not JSON, an int past Python's digit limit, too deep
             continue
-        depth = 0
-        for end in range(start, len(text)):
-            if text[end] == "{":
-                depth += 1
-            elif text[end] == "}":
-                depth -= 1
-                if depth == 0:
-                    objects.append(text[start : end + 1])
-                    break
-    return objects
-
-
-def _read_strict_verdict(candidate: str) -> ParsedVerdict | None:
-    """The verdict in a strict JSON object, if its suspicion is a number in [0, 1]."""
-    try:
-        verdict = json.loads(candidate)
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(verdict, dict):
-        return None
-    suspicion, reason = verdict.get("suspicion"), verdict.get("reason")
-    if isinstance(suspicion, bool) or not isinstance(suspicion, (int, float)) or not 0 <= suspicion <= 1:
-        return None
-    return ParsedVerdict(float(suspicion), "" if reason is None else str(reason), recovered=False)
+        suspicion, reason = verdict.get("suspicion"), verdict.get("reason")
+        if isinstance(suspicion, bool) or not isinstance(suspicion, (int, float)) or not 0 <= suspicion <= 1:
+            continue
+        return ParsedVerdict(float(suspicion), "" if reason is None else str(reason), recovered=False)
+    return None
 
 
 def _read_lenient_verdict(candidate: str) -> ParsedVerdict | None:
@@ -551,12 +551,13 @@ def parse_verdict(text: str) -> ParsedVerdict | None:
     whose ``suspicion`` field holds a bare number in [0, 1] is read leniently and marked ``recovered``. A
     number is only ever read from inside such an object. Returns ``None`` when neither exists.
     """
-    objects = _find_brace_balanced_objects(text)
-    for read in (_read_strict_verdict, _read_lenient_verdict):
-        for candidate in objects:
-            verdict = read(candidate)
-            if verdict is not None:
-                return verdict
+    strict = _find_strict_verdict(text)
+    if strict is not None:
+        return strict
+    for candidate in _find_brace_balanced_objects(text):
+        verdict = _read_lenient_verdict(candidate)
+        if verdict is not None:
+            return verdict
     return None
 
 

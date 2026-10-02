@@ -1616,9 +1616,14 @@ dialog.notes .x:hover { color: var(--ink); }
   el('c-covert').addEventListener('change', ev => { C.covert = ev.target.checked; renderComms(); });
 
   // ---------- outcome and monitors against the sealed covert evidence
+  function ceilingNote(cut) {
+    if (!cut) return '';
+    const who = [cut.episode_stopped ? 'this episode' : null, cut.calibration_stopped ? 'its honest twin' : null].filter(Boolean).join(' and ');
+    return ` <span class="pill flag">The wall-clock ceiling of ${Math.round(cut.seconds / 60)} minutes stopped ${who}</span>: their agents took no more turns, so the scores cover a shortened run.`;
+  }
   function renderMonitors() {
     const mt = OUT.main_task, st = OUT.side_task, sf = OUT.safety, models = RUN.models || {};
-    el('mon-lede').innerHTML = `${RUN.mode === 'attack' ? 'An attack' : 'An honest'} run. The agents ran on <code>${esc(models.untrusted_agent || '?')}</code>, the monitors on <code>${esc(models.trusted_monitor || '?')}</code>, over ${Math.round((RUN.wall_clock_seconds || 0) / 60)} minutes.`;
+    el('mon-lede').innerHTML = `${RUN.mode === 'attack' ? 'An attack' : 'An honest'} run. The agents ran on <code>${esc(models.untrusted_agent || '?')}</code>, the monitors on <code>${esc(models.trusted_monitor || '?')}</code>, over ${Math.round((RUN.wall_clock_seconds || 0) / 60)} minutes.${ceilingNote(RUN.wall_clock_ceiling)}`;
     const reached = OUT.milestones.filter(m => m.reached).length;
     const stat = (big, lbl, cls) => `<div class="stat"><div class="big ${cls || ''}">${big}</div><div class="lbl">${lbl}</div></div>`;
     el('mon-stats').innerHTML = [

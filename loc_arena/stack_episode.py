@@ -90,12 +90,13 @@ def run_runner_phase(
     policy_factory: live.AgentPolicyFactory | None = None,
 ) -> RunnerEpisodeExport:
     """The runner phase of one episode (in the runner container): open it, run it, close it, monitor it."""
+    protocol = load_protocol(config, monitors_path)  # a monitors file it cannot load fails before the episode
     trace = AgentTrace() if config.agent_transcript else None
     wiring = open_episode_wiring(config, services, trace=trace)
     clock = SimulatedClock(wiring.control, config.settings.clock.start_ts)
     deadline_ts = config.settings.clock.deadline_ts
     if config.policy == "model":
-        live.run_model_policy(
+        outcome = live.run_model_policy(
             config,
             wiring,
             clock,
@@ -105,17 +106,14 @@ def run_runner_phase(
             policy_factory=policy_factory,
         )
     else:
-        run_scripted_policy(config, wiring, clock, robust=robust, deadline_ts=deadline_ts)
+        outcome = run_scripted_policy(config, wiring, clock, robust=robust, deadline_ts=deadline_ts)
     finished = finish_episode(
         config,
         wiring,
         clock,
         trace,
         mirror_path=mirror_root / wiring.handle / EVENTS_FILE_NAME,
-        monitoring=EpisodeMonitoring(
-            load_protocol(config, monitors_path),
-            calls_models=config.policy == "model",
-        ),
+        monitoring=EpisodeMonitoring(protocol, calls_models=config.policy == "model"),
     )
     verdicts = tuple(MonitorVerdictRecord.model_validate(v, from_attributes=True) for v in finished.verdicts)
     export = export_runner_episode(
@@ -125,6 +123,7 @@ def run_runner_phase(
         deadline_ts=deadline_ts,
         last_sealed_seq=finished.last_sealed_seq,
         verdicts=verdicts,
+        stopped_at_wall_clock_ceiling=outcome.stopped_at_wall_clock_ceiling,
     )
     output_directory.mkdir(parents=True, exist_ok=True)
     (output_directory / RUNNER_EPISODE_EXPORT_FILE_NAME).write_text(export.model_dump_json())
@@ -153,6 +152,7 @@ class StackEpisode:
     deadline_ts: float
     trace: EpisodeTrace | None
     verdicts: tuple[MonitorVerdict, ...]
+    stopped_at_wall_clock_ceiling: bool
 
 
 def run_stack_episode(
@@ -281,6 +281,7 @@ def _grade_on_host(
         deadline_ts=export.deadline_ts,
         trace=trace,
         verdicts=tuple(MonitorVerdict(**record.model_dump()) for record in export.verdicts),
+        stopped_at_wall_clock_ceiling=export.stopped_at_wall_clock_ceiling,
     )
 
 
@@ -306,6 +307,7 @@ def run_in_stack(
             "(the agents' code then runs on this machine with its credentials in reach).",
         )
     config = load_config_by_name(run)
+    load_protocol(config, DEFAULT_MONITORS_PATH)  # its monitors file fails here, before any stack comes up
     provider_key = StackSecrets(_env_file=dotenv_path, _secrets_dir=None).openrouter_api_key
     if config.policy == "model" and provider_key is None:
         raise HarnessError(

@@ -1,8 +1,9 @@
-"""A failed model call fails that turn, or that tool call, never the episode: in process and in the stack."""
+"""A failed model call fails only that turn or that tool call, in process and in the stack."""
 
 from __future__ import annotations
 
 import dataclasses
+import json
 import logging
 from pathlib import Path
 
@@ -13,13 +14,21 @@ from loc_arena.gateway.openrouter_provider import ProviderError
 from loc_arena.gateway.wiring import open_episode_wiring
 from loc_arena.logging_.events import read_events
 from loc_arena.npcs.coworker import run_coworker
-from loc_arena.scaffold.agent import TurnStatus
+from loc_arena.scaffold.agent import Agent, TurnStatus
 from loc_arena.scaffold.bus import MessageBus, Recorder
 from loc_arena.scaffold.clock import SimulatedClock
 from loc_arena.scaffold.tools import AgentAction, StubServices, Tools
 from loc_arena.stack.contracts import EpisodeWiring
 
 from tests.integration._gateway_support import FailingProvider, ScriptedProvider
+from tests.unit._openrouter_stub import (
+    LONE_SURROGATE,
+    ScriptedReply,
+    StubOpenRouter,
+    completion,
+    serve_openrouter,
+    stub_provider,
+)
 from tests.unit._stack_services import (
     agent_context,
     covert_tools,
@@ -140,3 +149,35 @@ def test_a_coworker_batch_the_provider_fails_is_skipped_without_ending_the_episo
     run_coworker(wiring.gateway, Recorder(wiring.sealed, wiring.mirror, clock=clock), clock)
 
     assert [event.kind for event in read_events(tmp_path / "sealed.jsonl")] == ["job", "inference_error"]
+
+
+def _kinds(log: Path) -> list[str]:
+    return [event.kind for event in read_events(log)] if log.exists() else []
+
+
+def _sdk_agent(tmp_path: Path, stub: StubOpenRouter) -> Agent:
+    return model_agent(CONFIG, open_in_process(tmp_path, CONFIG, provider=stub_provider(stub)), TURNS)
+
+
+def test_a_reply_of_content_parts_is_sealed_as_a_failed_call_and_never_mirrored(tmp_path: Path) -> None:
+    reply = json.loads(completion())
+    reply["choices"][0]["message"]["content"] = [{"type": "text", "text": "thinking"}]
+    with serve_openrouter(ScriptedReply(body=json.dumps(reply))) as stub:
+        agent = _sdk_agent(tmp_path, stub)
+
+        agent.run_turn()
+
+    assert (_kinds(tmp_path / "sealed.jsonl"), _kinds(tmp_path / "mirror.jsonl")) == (["inference_error"], [])
+
+
+def test_a_tool_call_holding_a_lone_surrogate_is_sealed_as_a_failed_call_and_never_mirrored(
+    tmp_path: Path,
+) -> None:
+    function = {"name": "list_dir", "arguments": '{"path": "' + LONE_SURROGATE + '"}'}
+    body = completion(tool_calls=[{"id": "call-1", "type": "function", "function": function}])
+    with serve_openrouter(ScriptedReply(body=body)) as stub:
+        agent = _sdk_agent(tmp_path, stub)
+
+        agent.run_turn()
+
+    assert (_kinds(tmp_path / "sealed.jsonl"), _kinds(tmp_path / "mirror.jsonl")) == (["inference_error"], [])

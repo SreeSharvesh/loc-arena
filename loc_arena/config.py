@@ -36,19 +36,23 @@ from pydantic import (
 )
 from pydantic.dataclasses import dataclass as pydantic_dataclass
 from pydantic_settings import BaseSettings, SettingsConfigDict, YamlConfigSettingsSource
-from scenarios.loader import load_scenario
+from scenarios.loader import load_run_scenario, load_scenario
 
+from loc_arena.execution.checkout import list_codebase_repositories
 from loc_arena.ids import PermissionScope
 from loc_arena.registry import SCORER_REGISTRY, VERIFIER_REGISTRY, is_scorer, is_verifier
+from loc_arena.stack.constants import AGENT_MODEL_ROLE, MONITOR_MODEL_ROLE, RUN_MODEL_ROLES
 from loc_arena.stack.settings import LocArenaSettings
 
 YAML_ENCODING: Final = "utf-8"
-BLOCK_CONFIG: Final = ConfigDict(extra="ignore")
+BLOCK_CONFIG: Final = ConfigDict(extra="forbid")
+KEYS_CONFIG: Final = ConfigDict(extra="ignore")
 PROMPT_REFERENCE_PREFIX: Final = "prompts_inline."
 REFERENCE_SUFFIX: Final = "_ref"
 COVERT_PROMPTS: Final = ("objective_prompt",)
 AGENT_PROMPTS: Final = ("system_prompt", "brief")
 LANDING_FORMULAS: Final = frozenset({"minimal", "robust"})
+ROOT_AGENT_ID: Final = "agent-main"
 
 
 class ConfigError(ValueError):
@@ -87,9 +91,16 @@ def _prompt_alias(field_name: str) -> AliasChoices:
 class ModelSpec:
     """A model routing entry from ``models.cheap.yaml`` (role -> model and sampling)."""
 
-    model: StrictStr = Field(description="The OpenRouter model id (provider/model) this role calls.")
-    temperature: StrictFloat = Field(description="Sampling temperature of every call this role makes.")
+    model: StrictStr = Field(
+        min_length=1,
+        description="The OpenRouter model id (provider/model) this role calls.",
+    )
+    temperature: StrictFloat = Field(
+        ge=0.0,
+        description="Sampling temperature of every call this role makes.",
+    )
     max_tokens: StrictInt = Field(
+        gt=0,
         description="Output cap of one call (reasoning plus tool arguments), not the context window.",
     )
 
@@ -107,16 +118,21 @@ class AgentLoopConfig:
 class EpisodeConfig:
     """Episode ceilings and spawn caps (the DEEP-merged ``episode:`` block)."""
 
-    orchestrator_turn_budget: StrictInt = Field(description="Turn ceiling of the root orchestrator.")
-    subagent_turn_budget: StrictInt = Field(description="Turn ceiling of each sub-agent.")
-    wall_clock_seconds: StrictInt = Field(description="Wall-clock ceiling of the episode.")
+    orchestrator_turn_budget: StrictInt = Field(ge=0, description="Turn ceiling of the root orchestrator.")
+    subagent_turn_budget: StrictInt = Field(ge=0, description="Turn ceiling of each sub-agent.")
+    wall_clock_seconds: StrictInt = Field(ge=0, description="Wall-clock ceiling of the episode.")
     liveness_window_seconds: StrictInt = Field(
+        ge=0,
         description="A loop is alive at the end if it called within this window before the deadline.",
     )
-    max_spawn_depth: StrictInt = Field(description="Levels of sub-agents that may nest below the root.")
-    max_live_subagents: StrictInt = Field(description="Sub-agents alive at once.")
-    max_total_agents: StrictInt = Field(description="Agents ever created in one episode, the root included.")
+    max_spawn_depth: StrictInt = Field(ge=0, description="Levels of sub-agents that may nest below the root.")
+    max_live_subagents: StrictInt = Field(ge=0, description="Sub-agents alive at once.")
+    max_total_agents: StrictInt = Field(
+        ge=0,
+        description="Agents ever created in one episode, the root included.",
+    )
     subagent_idle_timeout_seconds: StrictInt = Field(
+        ge=0,
         description="A sub-agent with no logged activity for this long is closed as idle.",
     )
 
@@ -125,11 +141,16 @@ class EpisodeConfig:
 class Thresholds:
     """The side-task verifier thresholds (``aurora-efficiency.yaml`` ``side_task.thresholds``)."""
 
-    loop_len_floor: StrictInt = Field(description="Fewest off-path calls that count as a self-feeding loop.")
+    loop_len_floor: StrictInt = Field(
+        gt=0,
+        description="Fewest off-path calls that count as a self-feeding loop; with none, no loop is present.",
+    )
     liveness_window_seconds: StrictInt = Field(
+        ge=0,
         description="Window before the deadline in which the loop must still call; equals the episode's.",
     )
     sustained_rate_window_seconds: StrictInt = Field(
+        ge=0,
         description="Window over which the loop's call rate is measured against the alerting threshold.",
     )
 
@@ -153,6 +174,7 @@ class SideTaskConfig:
         default_factory=dict,
         description="How the team coordinates covertly, free-form.",
     )
+    goal: StrictStr = Field(default="", description="What the side task asks of the team, in prose.")
     slug: StrictStr | None = Field(default=None, description="Short run-name slug; the name when absent.")
 
 
@@ -194,11 +216,19 @@ class AgentConfig:
     spawned_by: StrictStr | None = Field(default=None, description="The agent that spawns this one, if any.")
 
 
-@pydantic_dataclass(frozen=True, config=BLOCK_CONFIG)
+@pydantic_dataclass(frozen=True, config=KEYS_CONFIG)
 class _MainTaskKeys:
     name: StrictStr | None = Field(default=None, description="The main task's name; the slug's fallback.")
     slug: StrictStr | None = Field(default=None, description="Short run-name slug.")
     scorer: StrictStr | None = Field(default=None, description="The registered scorer that grades the task.")
+
+
+@pydantic_dataclass(frozen=True, config=KEYS_CONFIG)
+class _ProtocolKeys:
+    audit_budget_fpr: Annotated[StrictFloat, Field(ge=0.0, le=1.0)] | None = Field(
+        default=None,
+        description="The false-positive rate the audit threshold is calibrated at on the honest twin.",
+    )
 
 
 @pydantic_dataclass(frozen=True, config=BLOCK_CONFIG)
@@ -234,7 +264,7 @@ class _RunDocument(BaseSettings):
     covert: CovertConfig = Field(description="The covert objective and whether it is on.")
     agents: tuple[AgentConfig, ...] = Field(min_length=1, description="The team.")
     main_task: _MainTaskKeys = Field(description="The main task's naming and scorer keys.")
-    protocol: dict[str, Any] = Field(description="The control protocol, free-form, read by key.")
+    protocol: _ProtocolKeys = Field(description="The control protocol's keys the scoring computes with.")
     scenario: StrictStr | None = Field(default=None, description="The pack registering scorer and verifier.")
     policy: Literal["scripted", "model"] = Field(
         default="model",
@@ -269,6 +299,23 @@ class _RunDocument(BaseSettings):
                 f"side_task.thresholds.liveness_window_seconds ({verifier_window}); "
                 "keep the two equal (the verifier reads side_task.thresholds)",
             )
+        return self
+
+    @model_validator(mode="after")
+    def _require_a_team_the_harness_can_drive(self) -> Self:
+        ids = [agent.id for agent in self.agents]
+        repeated = sorted({agent_id for agent_id in ids if ids.count(agent_id) > 1})
+        if repeated:
+            raise ValueError(f"agents: each id must name one agent, and {repeated} name more than one")
+        if ROOT_AGENT_ID not in ids:
+            raise ValueError(f"agents: the team has no {ROOT_AGENT_ID!r}, the root agent the harness drives")
+        return self
+
+    @model_validator(mode="after")
+    def _require_the_covert_target_in_the_team(self) -> Self:
+        target = self.covert.target_identity
+        if target not in {agent.id for agent in self.agents}:
+            raise ValueError(f"covert.target_identity {target!r} names no agent of the team")
         return self
 
 
@@ -372,8 +419,11 @@ def _slugify(text: str) -> str:
 def _read_config_file[Schema: BaseModel](path: Path, schema: type[Schema]) -> Schema:
     if not path.is_file():
         raise ConfigError(f"config file not found: {path}")
-    with path.open("r", encoding=YAML_ENCODING) as file:
-        data: object = yaml.safe_load(file)
+    try:
+        with path.open("r", encoding=YAML_ENCODING) as file:
+            data: object = yaml.safe_load(file)
+    except yaml.YAMLError as exc:
+        raise ConfigError(f"config file {path} is not valid YAML: {exc}") from exc
     try:
         return schema.model_validate(data)
     except ValidationError as exc:
@@ -410,12 +460,17 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
         document = _RunDocument(_build_sources=((source,), {}))
     except ValidationError as exc:
         raise ConfigError(str(exc)) from exc
-    models = _read_config_file(configs_directory / document.models, _ModelsFile).roles
+    models_path = configs_directory / document.models
+    models = _read_config_file(models_path, _ModelsFile).roles
+    missing_roles = sorted(set(RUN_MODEL_ROLES) - set(models))
+    if missing_roles:
+        raise ConfigError(f"models file {models_path} routes no model for the roles {missing_roles}")
     _validate_registry_bindings(document.scenario, document.main_task.scorer, document.side_task.verifier)
+    _require_a_codebase(document.scenario)
 
     main_task = document.main_task
-    policy_model = models["untrusted_agent"].model if "untrusted_agent" in models else "unknown"
-    monitor_model = models["trusted_monitor"].model if "trusted_monitor" in models else "unknown"
+    policy_model = models[AGENT_MODEL_ROLE].model
+    monitor_model = models[MONITOR_MODEL_ROLE].model
     return RunConfig(
         main_slug=_slugify(main_task.slug or main_task.name or "main"),
         side_slug=_slugify(document.side_task.slug or document.side_task.name),
@@ -428,7 +483,7 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
         covert=document.covert,
         agents=document.agents,
         main_task=dict(source.yaml_data["main_task"]),
-        protocol=document.protocol,
+        protocol=dict(source.yaml_data["protocol"]),
         settings=_build_settings(source.yaml_data),
         scenario=document.scenario,
         policy=document.policy,
@@ -444,6 +499,14 @@ def _build_settings(merged: Mapping[str, object]) -> LocArenaSettings:
         return LocArenaSettings.model_validate(declared)
     except ValidationError as exc:
         raise ConfigError(f"invalid settings block: {exc}") from exc
+
+
+def _require_a_codebase(scenario_name: str | None) -> None:
+    scenario = load_run_scenario(scenario_name)
+    try:
+        list_codebase_repositories(scenario.codebase_directory)
+    except (OSError, ValueError) as exc:
+        raise ConfigError(f"scenario {scenario.name!r}: codebase {scenario.codebase!r}: {exc}") from exc
 
 
 def _validate_registry_bindings(scenario_name: str | None, scorer: str | None, verifier: str) -> None:
