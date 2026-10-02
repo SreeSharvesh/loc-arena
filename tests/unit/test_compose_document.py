@@ -47,6 +47,7 @@ from loc_arena.stack.constants import (
     build_sandbox_service_name,
 )
 from loc_arena.stack.settings import LocArenaSettings
+from loc_arena.topology import load_stack_topology
 
 CONFIG = load_run_config(REFERENCE_RUN_CONFIG)
 SERVICES = render_compose(CONFIG)["services"]
@@ -61,16 +62,18 @@ def _networks(service: ComposeService) -> set[str]:
 
 
 def _render_grader_built_from(codebase: str) -> ComposeService:
-    spec = ServiceSpec.from_config("grader", CONFIG.raw["services"]["grader"])
-    topology = RunTopology(
+    agent_ids = tuple(agent.id for agent in CONFIG.agents)
+    topology = load_stack_topology(CONFIG.raw, agent_ids)
+    spec = ServiceSpec(name="grader", config_name="grader", declaration=topology.services["grader"])
+    run = RunTopology(
         settings=CONFIG.settings,
-        volumes=(),
-        secret_sources={},
+        topology=topology,
+        agent_ids=agent_ids,
         service_names={},
         grading=None,
         codebase=codebase,
     )
-    return render_service(spec, topology)
+    return render_service(spec, run)
 
 
 def _render_edited(edit: RawConfigEdit) -> None:
@@ -322,23 +325,45 @@ def test_a_run_whose_scenario_codebase_is_no_directory_is_refused(
 @pytest.mark.parametrize(
     ("edit", "error"),
     [
-        (lambda raw: raw["services"]["gateway_edge"].update(read_only_root_filesytem=True), "unknown keys"),
+        (
+            lambda raw: raw["services"]["gateway_edge"].update(read_only_root_filesytem=True),
+            r"services\.gateway_edge\.read_only_root_filesytem\s+Extra inputs",
+        ),
         (
             lambda raw: raw["services"]["gateway_edge"].update(port_setting="max_request_bytes"),
-            "port_setting",
+            r"services\.gateway_edge\s+Value error, port_setting must name a port",
         ),
-        (lambda raw: raw["services"]["gateway_edge"].update(image="edge"), "image must be"),
+        (
+            lambda raw: raw["services"]["gateway_edge"].update(image="edge"),
+            r"services\.gateway_edge\.image\s+Input should be 'app' or 'sandbox'",
+        ),
         (
             lambda raw: raw["services"]["runner"]["depends_on_healthy"].append("gateway-core"),
-            "unknown service",
+            r"services\.runner\.depends_on_healthy\.3\s+Value error, unknown service 'gateway-core'",
         ),
-        (lambda raw: raw["services"]["runner"]["secrets"].append("provider_key"), "undeclared secret"),
-        (lambda raw: raw["volumes"]["sealed_log"]["read_only"].append("evidence-reader"), "unknown service"),
-        (lambda raw: raw["volumes"].update(repos={"read_write": ["sandbox"]}), "no mount path"),
-        (lambda raw: raw["services"]["sandbox"].update(command=["bash"]), "takes no command"),
+        (
+            lambda raw: raw["services"]["runner"]["secrets"].append("provider_key"),
+            r"services\.runner\.secrets\.1\s+Value error, unknown secret 'provider_key'",
+        ),
+        (
+            lambda raw: raw["services"]["sandbox"]["networks"].append("agent_net"),
+            r"services\.sandbox\.networks\.1\s+Value error, unknown network 'agent_net'",
+        ),
+        (
+            lambda raw: raw["volumes"]["sealed_log"]["read_only"].append("evidence-reader"),
+            r"volumes\.sealed_log\.read_only\.1\.service\s+Value error, unknown service 'evidence-reader'",
+        ),
+        (
+            lambda raw: raw["volumes"].update(repos={"read_write": ["sandbox"]}),
+            r"volumes\.repos is an extra volume .*: it needs a mount_path and a size_bytes",
+        ),
+        (
+            lambda raw: raw["services"]["sandbox"].update(command=["bash"]),
+            r"services\.sandbox\s+Value error, an app is served by uvicorn, so it takes no command",
+        ),
     ],
 )
-def test_a_typo_in_the_topology_is_an_error(edit: RawConfigEdit, error: str) -> None:
+def test_a_typo_in_the_topology_is_an_error_naming_its_path(edit: RawConfigEdit, error: str) -> None:
     with pytest.raises(ValueError, match=error):
         _render_edited(edit)
 
