@@ -11,15 +11,21 @@ from dataclasses import dataclass, field
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from loc_arena.gateway.core import ProviderResult
+from loc_arena.gateway.openrouter_provider import OpenRouterProvider
 from loc_arena.stack.settings import ProviderSettings
+from pydantic import SecretStr
 
-CANARY_KEY = "sk-or-v1-canary-p1-provider-test-key"  # fake: a real key never reaches these tests
+CANARY_KEY = "sk-or-v1-canary-p1-provider-test-key"
 MODEL = "vendor/model"
+PROMPT = "hi"
+MESSAGES = [{"role": "user", "content": PROMPT}]
+TEMPERATURE = 0.5
+MAX_TOKENS = 16
 TRICKLE_INTERVAL_SECONDS = 0.1  # one byte every 100 ms: each chunk resets httpx's read timeout
 TRICKLE_MAX_CHUNKS = 100  # a trickle the client never hangs up on ends after ~10 s, so no test can hang
-TRICKLE_DECLARED_BYTES = 1_000_000  # the Content-Length the trickled reply promises and never delivers
-SHUTDOWN_POLL_SECONDS = 0.01  # how soon serve_forever notices shutdown() (its default is 0.5 s)
-# The usage a completion reports unless a test gives its own.
+TRICKLE_DECLARED_BYTES = 1_000_000
+SHUTDOWN_POLL_SECONDS = 0.01
 USAGE: Mapping[str, int] = {"prompt_tokens": 11, "completion_tokens": 7, "total_tokens": 18}
 
 
@@ -52,15 +58,13 @@ class StubOpenRouter(ThreadingHTTPServer):
         super().__init__(("127.0.0.1", 0), StubOpenRouterHandler)
         self.pending_replies = list(replies)
         self.received: list[ReceivedRequest] = []
-        self.client_hung_up = threading.Event()  # set when a client closes a trickled reply's connection
+        self.client_hung_up = threading.Event()
 
     @property
     def url(self) -> str:
-        """The base URL the provider is pointed at (the SDK's server_url)."""
         return f"http://127.0.0.1:{self.server_address[1]}/api/v1"
 
     def take_reply(self) -> ScriptedReply:
-        """The next scripted reply; the last one answers every later request."""
         return self.pending_replies.pop(0) if len(self.pending_replies) > 1 else self.pending_replies[0]
 
 
@@ -73,7 +77,6 @@ class StubOpenRouterHandler(BaseHTTPRequestHandler):
         """Keep test output quiet."""
 
     def do_POST(self) -> None:  # noqa: N802 - http.server's handler naming
-        """Record the request, then send the next scripted reply."""
         body = self.rfile.read(int(self.headers["Content-Length"])).decode()
         self.server.received.append(ReceivedRequest(self.path, self.headers["Authorization"], body))
         reply = self.server.take_reply()
@@ -101,7 +104,6 @@ class StubOpenRouterHandler(BaseHTTPRequestHandler):
 
 @contextmanager
 def serve_openrouter(*replies: ScriptedReply) -> Iterator[StubOpenRouter]:
-    """Run a stub on a background thread for the ``with`` block, then stop it and join its threads."""
     server = StubOpenRouter(replies)
     serving = threading.Thread(target=server.serve_forever, args=(SHUTDOWN_POLL_SECONDS,))
     serving.start()
@@ -114,7 +116,6 @@ def serve_openrouter(*replies: ScriptedReply) -> Iterator[StubOpenRouter]:
 
 
 def fast_settings(stub: StubOpenRouter) -> ProviderSettings:
-    """Provider settings pointed at ``stub``, with millisecond backoffs so a retry costs no test time."""
     return ProviderSettings(
         server_url=stub.url,
         backoff_initial_interval_milliseconds=1,
@@ -130,11 +131,6 @@ def completion(
     usage: Mapping[str, object] | None = USAGE,
     tool_calls: Sequence[Mapping[str, object]] | None = None,
 ) -> str:
-    """A chat completion body as OpenRouter sends it, with ``content`` as the first choice's text.
-
-    ``usage`` is the reply's usage object (``None`` leaves it out); ``tool_calls``, when given, are the first
-    choice's tool calls.
-    """
     message: dict[str, object] = {"role": "assistant", "content": content}
     if tool_calls is not None:
         message["tool_calls"] = list(tool_calls)
@@ -158,5 +154,12 @@ def completion(
 
 
 def error_body(status: HTTPStatus, message: str) -> str:
-    """An OpenRouter error body (openrouter.ai/docs/api_reference/errors-and-debugging)."""
     return json.dumps({"error": {"code": status.value, "message": message}})
+
+
+def stub_provider(stub: StubOpenRouter, settings: ProviderSettings | None = None) -> OpenRouterProvider:
+    return OpenRouterProvider(settings or fast_settings(stub), SecretStr(CANARY_KEY))
+
+
+def generate(stub: StubOpenRouter, settings: ProviderSettings | None = None) -> ProviderResult:
+    return stub_provider(stub, settings).generate(MODEL, MESSAGES, TEMPERATURE, MAX_TOKENS, None)

@@ -51,3 +51,16 @@ The control key guards every control route and every mirror write. It is a compo
 ## Event logs
 
 A log gives each recorded draft its `episode_id`, `seq` and `fp`, so no writer picks its own seq. `AppendOnlyLog` holds one lock for writes.
+
+## OpenRouter provider
+
+Four layers bound a call, inner to outer:
+
+1. `_DeadlineTransport` gives every HTTP request a wall-clock deadline, reply body included. httpx's timeouts (the SDK's `timeout_ms`) bound each phase and restart with every chunk received ([httpx timeouts](https://www.python-httpx.org/advanced/timeouts/)), so a reply that trickles in outlasts them. `asyncio.timeout` cancels the request, and httpx closes its connection.
+2. The SDK's `RetryConfig` retries 5XX and connection errors, a request cut by its deadline included: `chat.send_async` retries `["5XX"]`, and the SDK's `utils/retries.py` retries `httpx.TimeoutException`.
+3. stamina retries a 429 only, after its Retry-After in seconds ([OpenRouter errors](https://openrouter.ai/docs/api_reference/errors-and-debugging)), capped at `rate_limit_max_wait_seconds`. `_wait_before_retrying` returns `False` to stop, `True` for stamina's own backoff when the Retry-After is unusable, or the capped wait.
+4. `asyncio.timeout` cuts the whole call at `backoff_max_elapsed_time_milliseconds`. The SDK checks its own maximum elapsed time only between attempts, and waits out a 5XX's Retry-After uncapped (`_get_sleep_interval` in `utils/retries.py`).
+
+`generate` runs its own event loop, so synchronous code calls it (a FastAPI `def` route runs in a worker thread); the loop, its threads and every connection close with the call. Every failure raises `ProviderError` or a subclass: `ProviderTimeoutError` past the request deadline or the call's budget, `ProviderReplyError` for a 200 without a usable completion, and `ProviderError` for the rest.
+
+The SDK sends the message and tool fields its schema declares, `cache_control` on a content part or on a tool among them, and silently drops any other key: `cache_control` on a message itself, `name` on a tool message, `index` on a tool call. An empty tool list is left out of the request. OpenRouter sends an error body with a 200 when the model fails after the headers were sent. OpenRouter includes usage in every response ([usage accounting](https://openrouter.ai/docs/cookbook/administration/usage-accounting)) and the batch quota counts its tokens, so a reply without usage is refused. A reply without a cached token count reports 0 cached tokens. `tests/unit/test_openrouter_sdk.py` pins each SDK field the provider reads, so a failure there names the SDK.

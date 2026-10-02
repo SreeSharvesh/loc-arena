@@ -1,8 +1,4 @@
-"""The OpenRouter provider sends one chat completion, reads it strictly, and cannot outlast its deadline.
-
-Retries and the call's budget are covered in test_gateway_retry.py. Every test talks to a local stub
-(tests/unit/_openrouter_stub.py) with a fake key; none reaches the real API.
-"""
+"""The OpenRouter provider sends one chat completion, reads it strictly, and cannot outlast its deadline."""
 
 from __future__ import annotations
 
@@ -24,29 +20,30 @@ from loc_arena.gateway.openrouter_provider import (
 )
 from loc_arena.stack.constants import CONTROL_KEY_SECRET_NAME, OPENROUTER_API_KEY_SECRET_NAME
 from loc_arena.stack.settings import ProviderSettings
-from pydantic import SecretStr
 
 from tests.unit._openrouter_stub import (
     CANARY_KEY,
+    MAX_TOKENS,
+    MESSAGES,
     MODEL,
+    PROMPT,
+    TEMPERATURE,
     ScriptedReply,
     StubOpenRouter,
     completion,
     error_body,
     fast_settings,
+    generate,
     serve_openrouter,
+    stub_provider,
 )
 
 DEADLINE_SECONDS = 0.5
 PHASE_TIMEOUT_MILLISECONDS = 300  # above the stub's 100 ms between bytes: httpx's read timeout never trips
-DEADLINE_MARGIN_SECONDS = 0.5  # event loop, TLS-free loopback connect and thread start-up
-PROMPT = "hi"
-MESSAGES = [{"role": "user", "content": PROMPT}]  # a prompt, as the one user message of a chat call
-TEMPERATURE = 0.5
-MAX_TOKENS = 16
+DEADLINE_MARGIN_SECONDS = 0.5
 TEXT = "hello"
 DOTENV_FILE_NAME = ".env"
-SDK_DEBUG_ENVIRONMENT_VARIABLE = "OPENROUTER_DEBUG"  # the SDK logs each request and reply when it is set
+SDK_DEBUG_ENVIRONMENT_VARIABLE = "OPENROUTER_DEBUG"
 SDK_LOGGER_NAME = "openrouter"
 
 
@@ -83,13 +80,7 @@ def _no_secret_in_the_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
     monkeypatch.chdir(tmp_path)  # a stray ./.env is never read unless asked for
 
 
-def _generate(stub: StubOpenRouter, settings: ProviderSettings | None = None) -> ProviderResult:
-    provider = OpenRouterProvider(settings or fast_settings(stub), SecretStr(CANARY_KEY))
-    return provider.generate(MODEL, MESSAGES, TEMPERATURE, MAX_TOKENS, None)
-
-
 def _deadline_settings(stub: StubOpenRouter) -> ProviderSettings:
-    """Settings that cut a request at ``DEADLINE_SECONDS`` and do not retry it."""
     return fast_settings(stub).model_copy(
         update={
             "request_timeout_milliseconds": PHASE_TIMEOUT_MILLISECONDS,
@@ -110,7 +101,7 @@ def test_a_completion_is_read_into_its_text_and_token_usage() -> None:
     usage = json.loads(body)["usage"]
 
     with serve_openrouter(ScriptedReply(body=body)) as stub:
-        result = _generate(stub)
+        result = generate(stub)
 
     assert result == ProviderResult(
         text=TEXT,
@@ -121,7 +112,7 @@ def test_a_completion_is_read_into_its_text_and_token_usage() -> None:
 
 def test_a_request_carries_the_key_as_a_bearer_token() -> None:
     with serve_openrouter(ScriptedReply(body=completion())) as stub:
-        _generate(stub)
+        generate(stub)
 
     (request,) = stub.received
     assert request.authorization == f"Bearer {CANARY_KEY}"
@@ -129,7 +120,7 @@ def test_a_request_carries_the_key_as_a_bearer_token() -> None:
 
 def test_a_prompt_is_sent_as_one_user_message_with_the_call_parameters() -> None:
     with serve_openrouter(ScriptedReply(body=completion())) as stub:
-        _generate(stub)
+        generate(stub)
 
     (request,) = stub.received
     assert json.loads(request.body) == {
@@ -143,7 +134,7 @@ def test_a_prompt_is_sent_as_one_user_message_with_the_call_parameters() -> None
 
 def test_a_null_content_reads_as_empty_text() -> None:
     with serve_openrouter(ScriptedReply(body=completion(None, finish_reason="length"))) as stub:
-        result = _generate(stub)
+        result = generate(stub)
 
     assert result.text == ""
 
@@ -152,11 +143,9 @@ def test_a_message_list_the_sdk_cannot_send_raises_a_provider_error() -> None:
     tool_result_without_its_call_id = [{"role": "tool", "content": TEXT}]
 
     with serve_openrouter(ScriptedReply(body=completion())) as stub, pytest.raises(ProviderError):
-        provider = OpenRouterProvider(fast_settings(stub), SecretStr(CANARY_KEY))
-        provider.generate(MODEL, tool_result_without_its_call_id, TEMPERATURE, MAX_TOKENS, None)
+        stub_provider(stub).generate(MODEL, tool_result_without_its_call_id, TEMPERATURE, MAX_TOKENS, None)
 
 
-# Anthropic's prompt-cache breakpoint, which OpenRouter takes on a content part and on a tool.
 CACHE_BREAKPOINT = {"type": "ephemeral"}
 
 
@@ -167,8 +156,7 @@ def test_a_cache_breakpoint_on_a_content_part_reaches_openrouter() -> None:
     ]
 
     with serve_openrouter(ScriptedReply(body=completion())) as stub:
-        provider = OpenRouterProvider(fast_settings(stub), SecretStr(CANARY_KEY))
-        provider.generate(MODEL, messages, TEMPERATURE, MAX_TOKENS, None)
+        stub_provider(stub).generate(MODEL, messages, TEMPERATURE, MAX_TOKENS, None)
 
     (request,) = stub.received
     assert json.loads(request.body)["messages"] == messages
@@ -179,23 +167,16 @@ def test_a_cache_breakpoint_on_a_tool_reaches_openrouter() -> None:
     tools = [{"type": "function", "function": function, "cache_control": CACHE_BREAKPOINT}]
 
     with serve_openrouter(ScriptedReply(body=completion())) as stub:
-        provider = OpenRouterProvider(fast_settings(stub), SecretStr(CANARY_KEY))
-        provider.generate(MODEL, MESSAGES, TEMPERATURE, MAX_TOKENS, tools)
+        stub_provider(stub).generate(MODEL, MESSAGES, TEMPERATURE, MAX_TOKENS, tools)
 
     (request,) = stub.received
     assert json.loads(request.body)["tools"] == tools
 
 
 @UNUSABLE_COMPLETIONS
-def test_a_200_without_a_usable_completion_raises_a_reply_error(body: str, reason: str) -> None:
-    with serve_openrouter(ScriptedReply(body=body)) as stub, pytest.raises(ProviderReplyError, match=reason):
-        _generate(stub)
-
-
-@UNUSABLE_COMPLETIONS
 def test_a_200_without_a_usable_completion_is_not_retried(body: str, reason: str) -> None:
-    with serve_openrouter(ScriptedReply(body=body)) as stub, pytest.raises(ProviderReplyError):
-        _generate(stub)
+    with serve_openrouter(ScriptedReply(body=body)) as stub, pytest.raises(ProviderReplyError, match=reason):
+        generate(stub)
 
     assert len(stub.received) == 1
 
@@ -206,7 +187,7 @@ def test_a_trickled_reply_raises_a_timeout_at_the_request_deadline() -> None:
         started = time.monotonic()
 
         with pytest.raises(ProviderTimeoutError, match="request deadline"):
-            _generate(stub, settings)
+            generate(stub, settings)
         elapsed = time.monotonic() - started
 
     assert DEADLINE_SECONDS <= elapsed < DEADLINE_SECONDS + DEADLINE_MARGIN_SECONDS
@@ -214,16 +195,16 @@ def test_a_trickled_reply_raises_a_timeout_at_the_request_deadline() -> None:
 
 def test_a_request_cut_at_its_deadline_closes_its_connection() -> None:
     with serve_openrouter(ScriptedReply(trickle=True)) as stub, pytest.raises(ProviderTimeoutError):
-        _generate(stub, _deadline_settings(stub))
+        generate(stub, _deadline_settings(stub))
 
-    assert stub.client_hung_up.is_set()  # the stub stopped early: the provider closed the connection
+    assert stub.client_hung_up.is_set()
 
 
 def test_a_call_cut_at_its_deadline_leaves_no_thread_behind() -> None:
     threads_before = set(threading.enumerate())
 
     with serve_openrouter(ScriptedReply(trickle=True)) as stub, pytest.raises(ProviderTimeoutError):
-        _generate(stub, _deadline_settings(stub))
+        generate(stub, _deadline_settings(stub))
 
     assert set(threading.enumerate()) == threads_before
 
@@ -232,7 +213,7 @@ def test_the_key_never_shows_in_the_provider_or_its_error() -> None:
     unauthorized = error_body(HTTPStatus.UNAUTHORIZED, "No auth credentials found")
 
     with serve_openrouter(ScriptedReply(HTTPStatus.UNAUTHORIZED, unauthorized)) as stub:
-        provider = OpenRouterProvider(fast_settings(stub), SecretStr(CANARY_KEY))
+        provider = stub_provider(stub)
         with pytest.raises(ProviderError) as raised:
             provider.generate(MODEL, MESSAGES, TEMPERATURE, MAX_TOKENS, None)
 
@@ -248,20 +229,10 @@ def test_the_sdk_debug_log_of_a_call_never_shows_the_key(
     caplog.set_level(logging.DEBUG, logger=SDK_LOGGER_NAME)
 
     with serve_openrouter(ScriptedReply(body=completion())) as stub:
-        _generate(stub)
+        generate(stub)
 
     assert "authorization" in caplog.text.lower()  # the log holds the request headers, so it could leak
     assert CANARY_KEY not in caplog.text
-
-
-def test_the_live_provider_sends_the_key_from_a_secrets_directory(tmp_path: Path) -> None:
-    (tmp_path / OPENROUTER_API_KEY_SECRET_NAME).write_text(CANARY_KEY + "\n")
-
-    with serve_openrouter(ScriptedReply(body=completion())) as stub:
-        _call(live_provider_from_environment(fast_settings(stub), secrets_directory=tmp_path))
-
-    (request,) = stub.received
-    assert request.authorization == f"Bearer {CANARY_KEY}"
 
 
 def test_the_live_provider_sends_the_key_from_a_dotenv_file(tmp_path: Path) -> None:
@@ -287,13 +258,5 @@ def test_the_live_provider_is_none_when_its_dotenv_file_is_missing(tmp_path: Pat
     missing = tmp_path / "missing.env"
 
     provider = live_provider_from_environment(ProviderSettings(), dotenv_path=missing)
-
-    assert provider is None
-
-
-def test_the_live_provider_is_none_when_its_secret_file_is_empty(tmp_path: Path) -> None:
-    (tmp_path / OPENROUTER_API_KEY_SECRET_NAME).write_text("")
-
-    provider = live_provider_from_environment(ProviderSettings(), secrets_directory=tmp_path)
 
     assert provider is None

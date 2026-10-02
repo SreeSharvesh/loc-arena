@@ -13,33 +13,25 @@ from http import HTTPStatus
 
 import pytest
 import stamina
-from loc_arena.gateway.core import ProviderResult
-from loc_arena.gateway.openrouter_provider import OpenRouterProvider, ProviderError, ProviderTimeoutError
-from loc_arena.stack.settings import ProviderSettings
-from pydantic import SecretStr
+from loc_arena.gateway.openrouter_provider import ProviderError, ProviderTimeoutError
 
 from tests.unit._openrouter_stub import (
-    CANARY_KEY,
-    MODEL,
     ScriptedReply,
-    StubOpenRouter,
     completion,
     error_body,
     fast_settings,
+    generate,
     serve_openrouter,
 )
 
-PROMPT = "hi"
-TEMPERATURE = 0.0
-MAX_TOKENS = 16
 RETRIED_TEXT = "done"
 BUDGET_MILLISECONDS = 1_000
 MILLISECONDS_PER_SECOND = 1_000
 DEADLINE_SECONDS = 0.3
 RETRY_BUDGET_MILLISECONDS = 3_000  # room for a request cut at its deadline plus the retry that succeeds
-BUDGET_MARGIN_SECONDS = 0.5  # event loop and loopback connections
+BUDGET_MARGIN_SECONDS = 0.5
 RETRY_AFTER_ABOVE_THE_CAP = "7"  # seconds: far above fast_settings' cap, so waiting it would show
-RETRY_AFTER_BELOW_THE_CAP_SECONDS = 0.005  # under fast_settings' 0.01 s cap, so it is waited as given
+RETRY_AFTER_BELOW_THE_CAP_SECONDS = 0.005
 RETRY_AFTER_ONE_HOUR = "3600"
 PERSISTENT_RATE_LIMIT_ATTEMPTS = 3
 UNAVAILABLE = ScriptedReply(
@@ -51,11 +43,10 @@ RETRIED_COMPLETION = ScriptedReply(body=completion(RETRIED_TEXT))
 
 @pytest.fixture
 def retry_waits() -> Iterator[list[float]]:
-    """The waits stamina schedules before each retry, from its instrumentation hook."""
     waits: list[float] = []
     stamina.instrumentation.set_on_retry_hooks([lambda details: waits.append(details.wait_for)])
     yield waits
-    stamina.instrumentation.set_on_retry_hooks(None)  # back to stamina's default hooks
+    stamina.instrumentation.set_on_retry_hooks(None)
 
 
 def _rate_limited(headers: Mapping[str, str]) -> ScriptedReply:
@@ -66,14 +57,9 @@ def _rate_limited(headers: Mapping[str, str]) -> ScriptedReply:
     )
 
 
-def _generate(stub: StubOpenRouter, settings: ProviderSettings | None = None) -> ProviderResult:
-    provider = OpenRouterProvider(settings or fast_settings(stub), SecretStr(CANARY_KEY))
-    return provider.generate(MODEL, [{"role": "user", "content": PROMPT}], TEMPERATURE, MAX_TOKENS, None)
-
-
 def test_a_server_error_followed_by_a_completion_returns_the_completion() -> None:
     with serve_openrouter(UNAVAILABLE, RETRIED_COMPLETION) as stub:
-        result = _generate(stub)
+        result = generate(stub)
 
     assert result.text == RETRIED_TEXT
 
@@ -85,7 +71,7 @@ def test_a_refusal_other_than_a_rate_limit_is_not_retried() -> None:
         serve_openrouter(ScriptedReply(HTTPStatus.UNAUTHORIZED, unauthorized)) as stub,
         pytest.raises(ProviderError),
     ):
-        _generate(stub)
+        generate(stub)
 
     assert len(stub.received) == 1
 
@@ -94,7 +80,7 @@ def test_a_rate_limit_followed_by_a_completion_returns_the_completion() -> None:
     rate_limit = _rate_limited({"Retry-After": RETRY_AFTER_ABOVE_THE_CAP})
 
     with serve_openrouter(rate_limit, RETRIED_COMPLETION) as stub:
-        result = _generate(stub)
+        result = generate(stub)
 
     assert result.text == RETRIED_TEXT
 
@@ -104,7 +90,7 @@ def test_a_retry_after_above_the_cap_is_waited_as_the_cap(retry_waits: list[floa
 
     with serve_openrouter(rate_limit, RETRIED_COMPLETION) as stub:
         settings = fast_settings(stub)
-        _generate(stub, settings)
+        generate(stub, settings)
 
     assert retry_waits == [pytest.approx(settings.rate_limit_max_wait_seconds)]
 
@@ -113,7 +99,7 @@ def test_a_retry_after_below_the_cap_is_waited_as_given(retry_waits: list[float]
     rate_limit = _rate_limited({"Retry-After": str(RETRY_AFTER_BELOW_THE_CAP_SECONDS)})
 
     with serve_openrouter(rate_limit, RETRIED_COMPLETION) as stub:
-        _generate(stub)
+        generate(stub)
 
     assert retry_waits == [pytest.approx(RETRY_AFTER_BELOW_THE_CAP_SECONDS)]
 
@@ -129,7 +115,7 @@ def test_a_rate_limit_without_a_usable_retry_after_is_retried_after_a_capped_bac
 ) -> None:
     with serve_openrouter(_rate_limited(headers), RETRIED_COMPLETION) as stub:
         settings = fast_settings(stub)
-        _generate(stub, settings)
+        generate(stub, settings)
 
     (wait,) = retry_waits
     assert 0 < wait <= settings.rate_limit_max_wait_seconds
@@ -139,7 +125,7 @@ def test_a_persistent_rate_limit_raises_a_provider_error() -> None:
     rate_limit = _rate_limited({"Retry-After": RETRY_AFTER_ABOVE_THE_CAP})
 
     with serve_openrouter(rate_limit) as stub, pytest.raises(ProviderError, match="Rate limit exceeded"):
-        _generate(stub)
+        generate(stub)
 
 
 def test_a_persistent_rate_limit_is_attempted_as_often_as_configured() -> None:
@@ -150,7 +136,7 @@ def test_a_persistent_rate_limit_is_attempted_as_often_as_configured() -> None:
         settings = fast_settings(stub).model_copy(update=attempts)
 
         with pytest.raises(ProviderError):
-            _generate(stub, settings)
+            generate(stub, settings)
 
     assert len(stub.received) == PERSISTENT_RATE_LIMIT_ATTEMPTS
 
@@ -164,13 +150,12 @@ def test_a_request_cut_by_its_deadline_is_retried() -> None:
                 "backoff_max_elapsed_time_milliseconds": RETRY_BUDGET_MILLISECONDS,
             },
         )
-        result = _generate(stub, settings)
+        result = generate(stub, settings)
 
     assert result.text == RETRIED_TEXT
 
 
 def test_no_retry_after_stretches_the_call_past_its_budget() -> None:
-    # The SDK waits out a 5XX's Retry-After uncapped; the call's budget cuts that wait short.
     retry_after_one_hour = {"Retry-After": RETRY_AFTER_ONE_HOUR}
     unavailable_for_an_hour = ScriptedReply(UNAVAILABLE.status, UNAVAILABLE.body, retry_after_one_hour)
     budget_seconds = BUDGET_MILLISECONDS / MILLISECONDS_PER_SECOND
@@ -181,7 +166,7 @@ def test_no_retry_after_stretches_the_call_past_its_budget() -> None:
         started = time.monotonic()
 
         with pytest.raises(ProviderTimeoutError, match="budget"):
-            _generate(stub, settings)
+            generate(stub, settings)
         elapsed = time.monotonic() - started
 
     assert budget_seconds <= elapsed < budget_seconds + BUDGET_MARGIN_SECONDS

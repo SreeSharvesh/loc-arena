@@ -53,8 +53,7 @@ from loc_arena.task import assemble_scripted_episode
 if TYPE_CHECKING:
     from loc_arena.logging_.inspect_export import EpisodeExport
 
-PROJECT_DIRECTORY: Final = Path(__file__).resolve().parent.parent  # the repository: configs/, .env, logs/
-DOTENV_PATH: Final = PROJECT_DIRECTORY / ".env"  # where `make run` keeps the provider key on this machine
+DOTENV_PATH: Final = Path(__file__).resolve().parent.parent / ".env"
 LABEL = "loc-arena.eval"
 IMAGE = "loc-arena-svc:latest"
 _SERVICES_DIR = Path(__file__).resolve().parent / "services"
@@ -536,14 +535,13 @@ def run_episode(
     suite), not as a deliverable run policy. Produces ``logs/<run_id>/<timestamp>/`` with
     config.resolved.yaml, events.sealed.jsonl, events.mirror.jsonl, run.eval, scores.json, report.html,
     decisions.md -- a reviewer can reconstruct the whole run from the sealed log alone, and it reproduces
-    from (config.resolved.yaml, seed). ``dotenv_path`` is where a live run may find the provider key besides
-    the environment (``None``: the environment only).
+    from (config.resolved.yaml, seed).
     """
     cfg = apply_mode(config, mode)
     # Live monitors for a live (model-policy) run: route the trusted-monitor LLM through the gateway so the
     # monitors declared ``mode: live`` in monitors.yaml actually score each event. A scripted or no-key run
-    # has no monitor provider, so those monitors fall back to their heuristic (deterministic; the firewall
-    # holds either way). Monitor visibility stays entirely a monitors.yaml concern.
+    # passes no provider, so those monitors fall back to their heuristic (deterministic; the firewall holds
+    # either way). Monitor visibility stays entirely a monitors.yaml concern.
     if monitor_provider is None and cfg.policy == "model":
         monitor_provider = live_provider_from_environment(cfg.settings.provider, dotenv_path=dotenv_path)
     the_seed = seed if seed is not None else cfg.seed

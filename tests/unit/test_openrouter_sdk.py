@@ -35,7 +35,6 @@ TOOL_CALL = {
     "type": "function",
     "function": {"name": "list_dir", "arguments": '{"path": "."}'},
 }
-# Every message kind an agent's loop sends: system, user, an assistant's tool call and the call's result.
 HISTORY = [
     {"role": "system", "content": "be terse"},
     {"role": "user", "content": PROMPT},
@@ -63,11 +62,6 @@ def _send(
     messages: list[Message] | None = None,
     tools: list[ToolSpec] | None = None,
 ) -> components.ChatResult:
-    """Send one chat call as the provider does; the transport keeps it in ``sent`` and answers ``reply``.
-
-    ``messages`` defaults to the one user message ``PROMPT``; ``tools`` left ``None`` are left out.
-    """
-
     def answer(request: httpx.Request) -> httpx.Response:
         sent.append(request)
         return reply
