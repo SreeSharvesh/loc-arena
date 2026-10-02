@@ -28,7 +28,7 @@ def test_in_turn_call_stamped_spawned_code_call_off_path(tmp_path: Path) -> None
         tools,
         h.registry,
         h.bus,
-        h.minter,
+        h.control,
         5,
         clock=h.clock,
     )

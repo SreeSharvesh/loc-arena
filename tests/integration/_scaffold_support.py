@@ -1,9 +1,4 @@
-"""In-process scaffold wiring for the scaffold tests (no docker, no provider).
-
-Builds a full episode: sealed + mirror logs, a stub-provider gateway (the core, and the edge reached over
-its FastAPI app), the bus, the registry, the tool layer, an orchestrator, and helpers to build agent contexts
-and clients. Deterministic clock.
-"""
+"""In-process scaffold wiring for the scaffold tests (no docker, no provider)."""
 
 from __future__ import annotations
 
@@ -14,38 +9,35 @@ from typing import Any
 from fastapi.testclient import TestClient
 from loc_arena.config import RunConfig, load_run_config
 from loc_arena.gateway.client import EdgeClient, GatewayClient
-from loc_arena.gateway.core import GatewayCore
+from loc_arena.gateway.control import LocalGatewayControl
+from loc_arena.gateway.core import EpisodeSpec
 from loc_arena.gateway.edge import GatewayEdge, create_edge_app
 from loc_arena.logging_.events import AppendOnlyLog
-from loc_arena.scaffold.agent import AgentPolicy, ScriptedAgentPolicy, TurnMinter
+from loc_arena.scaffold.agent import AgentPolicy, ScriptedAgentPolicy
 from loc_arena.scaffold.bus import ActionHook, MessageBus, Recorder
+from loc_arena.scaffold.clock import SimulatedClock
 from loc_arena.scaffold.registry import AgentRegistry
 from loc_arena.scaffold.tools import AgentAction, AgentContext, StubServices, Tools
+from loc_arena.stack.contracts import generate_episode_handle
 from loc_arena.stack.service_client import ServiceClient
 from loc_arena.stack.settings import GatewaySettings
 from pydantic import SecretStr
 
 from tests.integration._gateway_support import StubProvider
 
-SECRET = "episode-secret"
 CONTROL_KEY = SecretStr("scaffold-test-control-key")
+START_TS = 1000.0
 
 
-class Clock:
-    """A manually advanced clock so timestamps and idle windows are deterministic."""
-
-    def __init__(self, start: float = 1000.0) -> None:
-        self.t = start
-
-    def __call__(self) -> float:
-        return self.t
+class Clock(SimulatedClock):
+    """The episode clock, advanced by the test so timestamps and idle windows are deterministic."""
 
     def advance(self, dt: float) -> None:
-        self.t += dt
+        self.set(self() + dt)
 
 
 class Harness:
-    """A wired in-process episode: gateway, bus, registry, tools, orchestrator, and construction helpers."""
+    """A wired in-process episode: gateway, bus, registry, tools, and construction helpers."""
 
     def __init__(
         self,
@@ -56,37 +48,29 @@ class Harness:
     ) -> None:
         self.config: RunConfig = load_run_config("configs/aurora-efficiency.deterministic.yaml")
         self.episode_id = episode_id
-        self.clock = Clock()
         self.sealed_path = tmp_path / "sealed.jsonl"
         self.mirror_path = tmp_path / "mirror.jsonl"
         self.sealed = AppendOnlyLog(self.sealed_path, episode_id)
         self.mirror = AppendOnlyLog(self.mirror_path, episode_id)
-        self.recorder = Recorder(episode_id, self.sealed, self.mirror, clock=self.clock)
 
-        # ONE sealed log and ONE mirror log are shared by the gateway and the scaffold recorder (a single
-        # append-only sealed log). The recorder service later centralizes this across containers.
         self.provider = StubProvider()
-        core = GatewayCore(
-            self.config,
-            episode_id,
-            self.sealed,
-            self.provider,
-            turn_secret=SECRET,
-            clock=self.clock,
+        self.control = LocalGatewayControl(
+            EpisodeSpec.from_run_config(self.config),
+            episode_id=episode_id,
+            handle=generate_episode_handle(),
+            sealed=self.sealed,
+            provider=self.provider,
+            settings=self.config.settings,
         )
-        self.edge = GatewayEdge(
-            episode_id,
-            core,
-            self.mirror,
-            clock=self.clock,
-        )
+        self.clock = Clock(self.control, START_TS)
+        self.recorder = Recorder(self.sealed, self.mirror, clock=self.clock)
+        self.edge = GatewayEdge(episode_id, self.control.core, self.mirror)
         edge_app = create_edge_app(self.edge, control_key=CONTROL_KEY, settings=GatewaySettings())
         self._edge_client = EdgeClient(ServiceClient(TestClient(edge_app)))
 
         self.bus = (
             MessageBus(self.recorder, action_hook=action_hook) if action_hook else MessageBus(self.recorder)
         )
-        self.minter = TurnMinter(SECRET, episode_id, clock=self.clock)
 
         root = self.config.agent("agent-main")
         self.registry = AgentRegistry(

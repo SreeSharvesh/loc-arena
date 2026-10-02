@@ -64,11 +64,18 @@ def test_a_server_error_followed_by_a_completion_returns_the_completion() -> Non
     assert result.text == RETRIED_TEXT
 
 
-def test_a_refusal_other_than_a_rate_limit_is_not_retried() -> None:
-    unauthorized = error_body(HTTPStatus.UNAUTHORIZED, "No auth credentials found")
+@pytest.mark.parametrize(
+    ("status", "message"),
+    [
+        (HTTPStatus.UNAUTHORIZED, "No auth credentials found"),
+        (HTTPStatus.BAD_REQUEST, "Input must have at least 1 token"),  # what an empty prompt gets
+    ],
+)
+def test_a_refusal_other_than_a_rate_limit_is_not_retried(status: HTTPStatus, message: str) -> None:
+    refusal = error_body(status, message)
 
     with (
-        serve_openrouter(ScriptedReply(HTTPStatus.UNAUTHORIZED, unauthorized)) as stub,
+        serve_openrouter(ScriptedReply(status, refusal)) as stub,
         pytest.raises(ProviderError),
     ):
         generate(stub)

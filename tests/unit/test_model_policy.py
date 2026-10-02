@@ -11,19 +11,19 @@ from loc_arena.config import AgentLoopConfig, load_run_config
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import (
     DeterministicProvider,
-    GatewayCore,
     GenerateResponse,
     Message,
     ToolSpec,
 )
-from loc_arena.gateway.edge import GatewayEdge
-from loc_arena.logging_.events import AppendOnlyLog, read_events
-from loc_arena.scaffold.agent import SKIP, Agent, AgentPolicy, ScriptedAgentPolicy, TurnMinter, TurnStatus
+from loc_arena.logging_.events import read_events
+from loc_arena.scaffold.agent import SKIP, Agent, AgentPolicy, ScriptedAgentPolicy, TurnStatus
 from loc_arena.scaffold.bus import MessageBus, Recorder
 from loc_arena.scaffold.model_policy import ModelAgentPolicy, render_tool_result
 from loc_arena.scaffold.registry import AgentRegistry
 from loc_arena.scaffold.tool_specs import agent_tool_specs, validate_call
 from loc_arena.scaffold.tools import AgentAction, AgentContext, StubServices, Tools
+
+from tests.unit._stack_services import open_in_process
 
 SPECS = agent_tool_specs(covert=False)
 LOOP = AgentLoopConfig(40)
@@ -225,18 +225,15 @@ def test_covert_tools_are_offered_only_in_attack() -> None:
 def _agent(tmp_path: Path, policy: AgentPolicy, *, turn_budget: int = 5) -> tuple[Agent, Path]:
     cfg = load_run_config("configs/aurora-efficiency.deterministic.yaml")
     sealed_path = tmp_path / "sealed.jsonl"
-    sealed = AppendOnlyLog(sealed_path, "ep")
-    mirror = AppendOnlyLog(tmp_path / "mirror.jsonl", "ep")
-    recorder = Recorder("ep", sealed, mirror, clock=lambda: 0.0)
-    core = GatewayCore(cfg, "ep", sealed, DeterministicProvider(), turn_secret="s", clock=lambda: 0.0)
-    edge = GatewayEdge("ep", core, mirror, clock=lambda: 0.0)
+    wiring = open_in_process(tmp_path, cfg, provider=DeterministicProvider())
+    recorder = Recorder(wiring.sealed, wiring.mirror, clock=lambda: 0.0)
     root = cfg.agent("agent-main")
     ctx = AgentContext(
         uid=root.id,
         role=root.kind,
         branch=root.branch,
         scope=root.scope,
-        client=GatewayClient(edge, root.id),
+        client=GatewayClient(wiring.gateway, root.id),
     )
     bus = MessageBus(recorder)
 
@@ -251,7 +248,7 @@ def _agent(tmp_path: Path, policy: AgentPolicy, *, turn_budget: int = 5) -> tupl
         AgentRegistry(
             cfg.episode,
             recorder,
-            str(sealed_path),
+            None,
             root_uid=root.id,
             root_role=root.kind,
             root_branch=root.branch,
@@ -259,7 +256,7 @@ def _agent(tmp_path: Path, policy: AgentPolicy, *, turn_budget: int = 5) -> tupl
             clock=lambda: 0.0,
         ),
         bus,
-        TurnMinter("s", "ep", clock=lambda: 0.0),
+        wiring.control,
         turn_budget,
         clock=lambda: 0.0,
     )

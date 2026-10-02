@@ -5,9 +5,18 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
-from loc_arena.logging_.agent_trace import AgentTrace, ModelCall, TurnRecord, TurnRef, open_episode_logs
+from loc_arena.gateway.wiring import TracedEventLog
+from loc_arena.logging_.agent_trace import (
+    AgentTrace,
+    ModelCall,
+    TurnRecord,
+    TurnRef,
+    export_runner_episode,
+    merge_runner_episode,
+)
 from loc_arena.logging_.events import AppendOnlyLog, Event, EventKind
 from loc_arena.scaffold.bus import Recorder
+from loc_arena.stack.contracts import ModelCallRecord, RunnerEpisodeExport
 
 
 def test_constructs_with_an_injected_wall_clock() -> None:
@@ -171,11 +180,11 @@ def test_an_edge_prompt_copy_after_a_sealed_inference_record_has_no_twin() -> No
     assert dict(trace.finish(last_sealed_seq=40).mirror_to_sealed) == {}
 
 
-def test_real_recorder_dual_writes_pair_up_through_the_log_subscribers(tmp_path: Path) -> None:
+def test_real_recorder_dual_writes_pair_up_through_the_traced_logs(tmp_path: Path) -> None:
     trace = AgentTrace()
-    sealed = AppendOnlyLog(tmp_path / "sealed.jsonl", "ep-trace", on_append=trace.on_sealed_append)
-    mirror = AppendOnlyLog(tmp_path / "mirror.jsonl", "ep-trace", on_append=trace.on_mirror_append)
-    recorder = Recorder("ep-trace", sealed, mirror, clock=lambda: 1.0)
+    sealed = TracedEventLog(AppendOnlyLog(tmp_path / "sealed.jsonl", "ep-trace"), trace.on_sealed_append)
+    mirror = TracedEventLog(AppendOnlyLog(tmp_path / "mirror.jsonl", "ep-trace"), trace.on_mirror_append)
+    recorder = Recorder(sealed, mirror, clock=lambda: 1.0)
     recorder.sealed(actor_uid="agent-main", actor_role="orchestrator", kind="spawn", payload={})
     with trace.turn("agent-main", 0):
         recorder.dual(actor_uid="agent-main", actor_role="orchestrator", kind="action", payload={"a": 1})
@@ -219,20 +228,91 @@ def test_events_differing_only_in_parent_task_are_not_twins() -> None:
     assert dict(trace.finish(last_sealed_seq=40).mirror_to_sealed) == {}
 
 
-def test_open_episode_logs_subscribes_the_trace_only_when_traced(tmp_path: Path) -> None:
-    trace, sealed, _mirror = open_episode_logs(
-        tmp_path / "s.jsonl",
-        tmp_path / "m.jsonl",
-        "ep-trace",
-        traced=True,
+def test_a_model_reply_puts_its_sealed_and_mirror_seqs_in_the_bound_turn() -> None:
+    trace = AgentTrace()
+    with trace.turn("distill-agent", 3):
+        trace.on_model_reply((7, 8), (4,))
+
+    finished = trace.finish(last_sealed_seq=8)
+
+    turn = TurnRef("distill-agent", 3)
+    assert (dict(finished.sealed_lane), dict(finished.mirror_lane)) == ({7: turn, 8: turn}, {4: turn})
+
+
+def test_a_model_reply_records_the_phase_its_turn_was_in() -> None:
+    trace = AgentTrace()
+    with trace.turn("agent-main", 0):
+        trace.on_model_reply((0,), ())
+        trace.mark_executing()
+        trace.on_model_reply((1,), ())
+
+    finished = trace.finish(last_sealed_seq=1)
+
+    assert dict(finished.phases) == {0: "deciding", 1: "executing"}
+
+
+def _traced_turns() -> AgentTrace:
+    """Turn 0 of agent-main recorded seqs 1 and 4, turn 0 of eval-agent seq 6; seq 0 is World."""
+    trace = AgentTrace(wall_clock=_ticking_clock())
+    trace.on_sealed_append(_event(0))
+    with trace.turn("agent-main", 0):
+        trace.on_model_reply((1,), ())
+        trace.on_sealed_append(_event(4))
+    with trace.turn("eval-agent", 0):
+        trace.on_sealed_append(_event(6))
+    return trace
+
+
+def _export() -> RunnerEpisodeExport:
+    return export_runner_episode(
+        _traced_turns().finish(last_sealed_seq=6),
+        handle="0123456789abcdef",
+        episode_id="ep-trace",
+        deadline_ts=10_000.0,
+        last_sealed_seq=6,
+        verdicts=(),
     )
-    assert trace is not None
-    sealed.append(_event(0))
-    assert dict(trace.finish(last_sealed_seq=0).sealed_lane) == {0: None}
-    untraced, _sealed, _ = open_episode_logs(
-        tmp_path / "s2.jsonl",
-        tmp_path / "m2.jsonl",
-        "ep-trace",
-        traced=False,
+
+
+def _merged(sealed_seqs: range) -> dict[int, TurnRef | None]:
+    return dict(merge_runner_episode(_export(), (), sealed_seqs).sealed_lane)
+
+
+def test_the_merge_gives_an_unseen_seq_inside_one_turn_that_turn() -> None:
+    lanes = _merged(range(7))
+
+    assert (lanes[2], lanes[3]) == (TurnRef("agent-main", 0), TurnRef("agent-main", 0))
+
+
+def test_the_merge_gives_an_unseen_seq_between_two_turns_to_world() -> None:
+    lanes = _merged(range(7))
+
+    assert lanes[5] is None
+
+
+def test_the_merge_keeps_the_lanes_the_runner_saw() -> None:
+    lanes = _merged(range(7))
+
+    assert {seq: lanes[seq] for seq in (0, 1, 4, 6)} == {
+        0: None,
+        1: TurnRef("agent-main", 0),
+        4: TurnRef("agent-main", 0),
+        6: TurnRef("eval-agent", 0),
+    }
+
+
+def test_the_merge_gives_each_sealed_model_call_the_phase_the_runner_saw() -> None:
+    record = ModelCallRecord(
+        sealed_seq=1,
+        identity="agent-main",
+        role="untrusted_agent",
+        model_input="covert\n\nbrief",
+        output="reply",
+        wall_ts=5.0,
     )
-    assert untraced is None
+
+    merged = merge_runner_episode(_export(), (record,), range(7))
+
+    assert merged.model_calls == (
+        ModelCall("deciding", "agent-main", "untrusted_agent", "covert\n\nbrief", "reply", 1, 5.0),
+    )

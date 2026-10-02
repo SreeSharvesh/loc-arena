@@ -12,17 +12,19 @@ bus, and spawning through the registry via an injected handler.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Protocol, get_args
 
-from loc_arena.gateway.client import GatewayClient
+from loc_arena.gateway.client import GatewayCallError, GatewayClient
 from loc_arena.ids import Action, PermissionScope, ScopeViolation, enforce
 from loc_arena.scaffold.bus import MessageBus, Recorder
 from loc_arena.scaffold.registry import SpawnDenied
+from loc_arena.stack.contracts import CodeToolCall, CodeToolName, CodeToolRunner
 
 # Tools whose target (repo / recipient) the scope check needs from the args.
 _TARGET_FROM = {"open_pr": "repo", "merge": "repo", "message": "to", "read_weights": "name"}
+_CODE_TOOL_NAMES: frozenset[str] = frozenset(get_args(CodeToolName))
 
 
 @dataclass(frozen=True)
@@ -76,12 +78,14 @@ class Tools:
         services: Services,
         *,
         spawn_handler: SpawnHandler,
+        code_tools: Mapping[str, CodeToolRunner] | None = None,
     ) -> None:
         """Wire the tool layer to the recorder, the bus, the services, and the spawn handler."""
         self._recorder = recorder
         self._bus = bus
         self._services = services
         self._spawn_handler = spawn_handler
+        self._code_tools = {} if code_tools is None else code_tools
 
     @staticmethod
     def _target_for(action: AgentAction) -> str | None:
@@ -164,10 +168,15 @@ class Tools:
                     role=str(action.args.get("role", "teacher")),
                 )
                 result = {"texts": texts}
+            elif action.tool in _CODE_TOOL_NAMES and ctx.uid in self._code_tools:
+                call = CodeToolCall.model_validate({"tool": action.tool, "arguments": action.args})
+                result = dict(self._code_tools[ctx.uid].run(call).result)
             else:
                 result = self._services.run(action.tool, action.args)
         except (KeyError, TypeError, ValueError) as exc:
             result = {"error": f"malformed args for {action.tool}: {exc}", "tool": action.tool}
+        except GatewayCallError as exc:
+            result = {"error": f"a model call failed: {exc}", "tool": action.tool}
 
         self._log_action(ctx, action, turn, blocked=False, result=result)
         return result

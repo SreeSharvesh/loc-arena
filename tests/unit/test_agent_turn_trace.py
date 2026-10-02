@@ -4,18 +4,17 @@ from pathlib import Path
 
 from loc_arena.config import load_run_config
 from loc_arena.gateway.client import GatewayClient
-from loc_arena.gateway.core import DeterministicProvider, GatewayCore
-from loc_arena.gateway.edge import GatewayEdge
 from loc_arena.logging_.agent_trace import AgentTrace, EpisodeTrace, TurnRef
-from loc_arena.logging_.events import AppendOnlyLog, read_events
-from loc_arena.scaffold.agent import Agent, ScriptedAgentPolicy, TurnMinter
+from loc_arena.logging_.events import read_events
+from loc_arena.scaffold.agent import Agent, ScriptedAgentPolicy
 from loc_arena.scaffold.bus import MessageBus, Recorder
+from loc_arena.scaffold.clock import SimulatedClock
 from loc_arena.scaffold.registry import AgentRegistry
 from loc_arena.scaffold.tools import AgentAction, AgentContext, StubServices, Tools
 
+from tests.unit._stack_services import open_in_process
+
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
-SECRET = "turn-trace-secret"
-EP = "ep-agent"
 
 
 def _no_spawn(ctx: AgentContext, args: dict[str, object], turn: int) -> dict[str, object]:
@@ -24,38 +23,31 @@ def _no_spawn(ctx: AgentContext, args: dict[str, object], turn: int) -> dict[str
 
 def _run_turns(tmp_path: Path, actions: list[AgentAction], turns: int) -> tuple[EpisodeTrace, Path]:
     trace = AgentTrace()
-    sealed_path = tmp_path / "sealed.jsonl"
-    sealed = AppendOnlyLog(sealed_path, EP, on_append=trace.on_sealed_append)
-    mirror = AppendOnlyLog(tmp_path / "mirror.jsonl", EP, on_append=trace.on_mirror_append)
-    recorder = Recorder(EP, sealed, mirror, clock=lambda: 0.0)
-    core = GatewayCore(
+    wiring = open_in_process(
+        tmp_path,
         CFG,
-        EP,
-        sealed,
-        DeterministicProvider(),
-        turn_secret=SECRET,
-        clock=lambda: 0.0,
         trace=trace,
     )
-    edge = GatewayEdge(EP, core, mirror, clock=lambda: 0.0)
+    clock = SimulatedClock(wiring.control, 0.0)
+    recorder = Recorder(wiring.sealed, wiring.mirror, clock=clock)
     root = CFG.agent("agent-main")
     ctx = AgentContext(
         uid=root.id,
         role=root.kind,
         branch=root.branch,
         scope=root.scope,
-        client=GatewayClient(edge, root.id),
+        client=GatewayClient(wiring.gateway, root.id),
     )
     bus = MessageBus(recorder)
     registry = AgentRegistry(
         CFG.episode,
         recorder,
-        str(sealed_path),
+        str(tmp_path / "sealed.jsonl"),
         root_uid=root.id,
         root_role=root.kind,
         root_branch=root.branch,
         root_scope=root.scope,
-        clock=lambda: 0.0,
+        clock=clock,
     )
     agent = Agent(
         ctx,
@@ -63,14 +55,14 @@ def _run_turns(tmp_path: Path, actions: list[AgentAction], turns: int) -> tuple[
         Tools(recorder, bus, StubServices(), spawn_handler=_no_spawn),
         registry,
         bus,
-        TurnMinter(SECRET, EP, clock=lambda: 0.0),
+        wiring.control,
         turn_budget=turns,
-        clock=lambda: 0.0,
+        clock=clock,
         trace=trace,
     )
     for _ in range(turns):
         agent.run_turn()
-    return trace.finish(last_sealed_seq=sealed.last_seq), sealed_path
+    return trace.finish(last_sealed_seq=wiring.control.close()), tmp_path / "sealed.jsonl"
 
 
 def test_events_a_turn_writes_carry_that_turn(tmp_path: Path) -> None:

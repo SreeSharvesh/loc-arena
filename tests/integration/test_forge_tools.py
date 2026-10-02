@@ -33,7 +33,6 @@ def _wire(tmp_path: Path) -> tuple[Tools, AgentContext, Forge, Path]:
     mirror_path = tmp_path / "mirror.jsonl"
     clk = _Clock()
     recorder = Recorder(
-        "ep-forge",
         AppendOnlyLog(sealed_path, "ep-forge"),
         AppendOnlyLog(mirror_path, "ep-forge"),
         clock=clk,

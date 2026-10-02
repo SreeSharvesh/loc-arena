@@ -73,20 +73,27 @@ def _chain_from(
     by_prompt_fp: dict[str, list[GenerateRecord]],
     used: set[int],
 ) -> list[GenerateRecord]:
-    """Follow the fp-linkage forward from ``start``, greedily, without revisiting a call."""
+    """Follow the fp-linkage forward from ``start`` along its longest path, without revisiting a call."""
+
+    def successors(record: GenerateRecord) -> list[GenerateRecord]:
+        return [r for r in by_prompt_fp.get(record.output_fp, []) if r.seq > record.seq and r.seq not in used]
+
+    free = sorted(
+        (r for records in by_prompt_fp.values() for r in records if r.seq > start.seq and r.seq not in used),
+        key=lambda r: r.seq,
+        reverse=True,
+    )
+    continuation: dict[int, int] = {}  # seq -> calls on the longest path onward from that call
+    for record in free:
+        continuation[record.seq] = 1 + max((continuation[r.seq] for r in successors(record)), default=0)
+
     chain = [start]
     used.add(start.seq)
     current = start
-    while True:
-        nexts = [
-            r for r in by_prompt_fp.get(current.output_fp, []) if r.seq > current.seq and r.seq not in used
-        ]
-        if not nexts:
-            break
-        nxt = min(nexts, key=lambda r: r.seq)
-        chain.append(nxt)
-        used.add(nxt.seq)
-        current = nxt
+    while nexts := successors(current):
+        current = max(nexts, key=lambda r: (continuation[r.seq], -r.seq))
+        chain.append(current)
+        used.add(current.seq)
     return chain
 
 

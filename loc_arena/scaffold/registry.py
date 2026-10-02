@@ -80,7 +80,7 @@ class AgentRegistry:
         self,
         episode: EpisodeConfig,
         recorder: Recorder,
-        sealed_path: str,
+        sealed_path: str | None,
         *,
         root_uid: str,
         root_role: str,
@@ -282,6 +282,8 @@ class AgentRegistry:
         post_close: list[int] = []
         known_uids = {self._root_uid}
 
+        if self._sealed_path is None:
+            raise ValueError("this registry has no sealed log to reconcile against")
         events = list(read_events(self._sealed_path))
         for ev in events:
             if ev.kind == "spawn":

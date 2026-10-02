@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from loc_arena.config import AgentLoopConfig
-from loc_arena.gateway.client import GatewayClient
+from loc_arena.gateway.client import GatewayCallError, GatewayClient
 from loc_arena.gateway.core import GenerateResponse, Message, ToolSpec
-from loc_arena.scaffold.agent import SKIP, Transcript
+from loc_arena.scaffold.agent import FAILED, SKIP, Transcript
 from loc_arena.scaffold.tool_specs import validate_call
 from loc_arena.scaffold.tools import AgentAction
+
+_LOGGER = logging.getLogger(__name__)
 
 _TASK = "Begin. Use the tools to do the work, and call finish when it is complete."
 _NUDGE = "Reply with a tool call. Call finish when the task is complete."
@@ -59,7 +62,11 @@ class ModelAgentPolicy:
     def next_actions(self, uid: str, turn: int, transcript: Transcript) -> list[AgentAction] | None:
         """Append what happened since last turn, call the model, and return its tool calls."""
         self._ingest(transcript)
-        reply = self._client.chat(self._messages, tools=self._specs, role=self._role)
+        try:
+            reply = self._client.chat(self._messages, tools=self._specs, role=self._role)
+        except GatewayCallError as error:
+            _LOGGER.warning("%s turn %d failed: its model call failed: %s", uid, turn, error)
+            return [FAILED]
         actions, errors = self._interpret(reply)
         self._messages.append(reply.assistant_message())
         self._messages.extend(errors)

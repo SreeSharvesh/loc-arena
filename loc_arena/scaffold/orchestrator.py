@@ -18,10 +18,11 @@ from typing import Any
 from loc_arena.config import RunConfig
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.ids import PermissionScope
-from loc_arena.scaffold.agent import Agent, AgentPolicy, TurnMinter, TurnStatus
+from loc_arena.scaffold.agent import Agent, AgentPolicy, TurnStatus
 from loc_arena.scaffold.bus import MessageBus
 from loc_arena.scaffold.registry import AgentRegistry, CloseReason, SpawnDenied, _scope_to_dict
 from loc_arena.scaffold.tools import AgentContext, ToolResult, Tools
+from loc_arena.stack.contracts import GatewayControl
 
 # Builds a child's agent policy from its spawn: (child_uid, role, brief, granted_scope) -> AgentPolicy.
 ChildAgentPolicyFactory = Callable[[str, str, str, PermissionScope], AgentPolicy]
@@ -38,7 +39,7 @@ class Orchestrator:
         registry: AgentRegistry,
         bus: MessageBus,
         tools: Tools,
-        minter: TurnMinter,
+        control: GatewayControl,
         root_ctx: AgentContext,
         root_agent_policy: AgentPolicy,
         *,
@@ -46,12 +47,12 @@ class Orchestrator:
         make_client: MakeClient,
         clock: Callable[[], float] = time.time,
     ) -> None:
-        """Wire config, the registry/bus/tools/minter, the root agent, and the child factory."""
+        """Wire config, registry, bus, tools, the core minting turn tokens, the root agent, child factory."""
         self._config = config
         self._registry = registry
         self._bus = bus
         self._tools = tools
-        self._minter = minter
+        self._control = control
         self._clock = clock
         self._child_agent_policy_factory = child_agent_policy_factory
         self._make_client = make_client
@@ -62,7 +63,7 @@ class Orchestrator:
             tools,
             registry,
             bus,
-            minter,
+            control,
             config.episode.orchestrator_turn_budget,
             clock=clock,
         )
@@ -100,7 +101,7 @@ class Orchestrator:
             self._tools,
             self._registry,
             self._bus,
-            self._minter,
+            self._control,
             self._config.episode.subagent_turn_budget,
             clock=self._clock,
         )

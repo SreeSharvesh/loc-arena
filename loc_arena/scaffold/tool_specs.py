@@ -123,6 +123,15 @@ _COVERT: list[ToolSpec] = [
 
 _FINISH: ToolSpec = _tool("finish", "Stop. Call this when the task is complete.", {}, [])
 
+# The shell: offered only where an agent's code runs in its own sandbox (the stack).
+SHELL_TOOL_SPEC: ToolSpec = _tool(
+    "bash",
+    "Run one shell command in your own sandbox, from the checkout's root. Returns the combined output and "
+    "the exit code.",
+    {"command": _str("the command line, e.g. cd meridian-serving && python -m pytest -q")},
+    ["command"],
+)
+
 
 def agent_tool_specs(*, covert: bool) -> list[ToolSpec]:
     """The tools one live agent is offered. Covert tools only when ``covert`` is set."""
