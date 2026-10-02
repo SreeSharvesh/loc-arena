@@ -67,7 +67,6 @@ def checkout_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 @pytest.fixture
 def workspace(checkout_root: Path) -> Workspace:
-    """A workspace as the execution app builds it in a sandbox: with the shell."""
     return Workspace(Checkout(checkout_root, (REPOSITORY,)), SETTINGS, shell_enabled=True)
 
 
@@ -98,16 +97,13 @@ def _wait_until_gone(pid: int) -> bool:
 
 @pytest.fixture
 def detached_pid_file(checkout_root: Path) -> Iterator[Path]:
-    """Where a command writes the pid of each process it detaches, one per line; killed after the test."""
     pid_file = checkout_root / "detached.pid"
     yield pid_file
     kill_recorded_processes(pid_file)
 
 
-# --- confinement ---
 @pytest.fixture
 def outside_file(checkout_root: Path) -> Path:
-    """A file next to the checkout, and a symlink to it inside the checkout (``link.txt``)."""
     outside = checkout_root.parent / "outside.txt"
     outside.write_text("secret")
     (checkout_root / "link.txt").symlink_to(outside)
@@ -165,7 +161,6 @@ def test_a_search_skips_a_file_linked_from_outside(workspace: Workspace, checkou
     assert result["matches"] == [{"file": SEEDED_MODULE, "line": 1, "text": "VALUE = 1  # needle"}]
 
 
-# --- file tools and their caps ---
 def test_a_read_returns_at_most_the_cap(workspace: Workspace, checkout_root: Path) -> None:
     (checkout_root / "long.txt").write_text("0123456789abcdef")
 
@@ -238,7 +233,6 @@ def test_every_allowlisted_tool_answers_a_call_without_arguments(workspace: Work
     assert result.result  # an answer, an error or not: never an exception
 
 
-# --- the suite ---
 def test_run_tests_reports_a_passing_suite(workspace: Workspace) -> None:
     result = _run(workspace, "run_tests", repo=REPOSITORY)
 
@@ -284,7 +278,6 @@ def test_a_failing_benchmark_reports_the_end_of_its_stderr(workspace: Workspace)
     assert "No module named 'meridian_common'" in str(result["stderr"])
 
 
-# --- bash ---
 def test_bash_returns_the_exit_code(workspace: Workspace) -> None:
     result = _bash(workspace, "exit 3")
 
@@ -352,10 +345,8 @@ def test_a_process_bash_detaches_keeps_running(workspace: Workspace, detached_pi
     assert _is_alive(int(detached_pid_file.read_text()))
 
 
-# --- the shell gate ---
 @pytest.fixture
 def shell_less_workspace(checkout_root: Path) -> Workspace:
-    """A workspace as the host builds it (STACK=0): without the shell."""
     return Workspace(Checkout(checkout_root, (REPOSITORY,)), SETTINGS)
 
 
@@ -376,7 +367,6 @@ def test_bash_without_the_shell_starts_no_process(
     assert not (checkout_root / "marker").exists()
 
 
-# --- the app's routes ---
 @pytest.fixture
 def company(tmp_path: Path) -> Path:
     root = tmp_path / "company"
@@ -386,7 +376,6 @@ def company(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def served_checkout(tmp_path: Path) -> Path:
-    """The sandbox's checkout, empty until an episode opens the workspace."""
     root = tmp_path / "workspace"
     root.mkdir()
     return root
@@ -401,7 +390,6 @@ def served(served_checkout: Path, company: Path) -> Iterator[TestClient]:
 
 @pytest.fixture
 def opened(served: TestClient) -> TestClient:
-    """The app with the workspace opened for ``HANDLE``."""
     assert served.post(WORKSPACES_ROUTE, json={"handle": HANDLE}).status_code == HTTPStatus.CREATED
     return served
 
@@ -462,7 +450,6 @@ def test_an_unknown_tool_or_a_malformed_handle_is_refused_with_422(
 
 @pytest.fixture
 def served_by_the_factory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
-    """The app as uvicorn builds it in a sandbox, from the environment compose renders."""
     settings = LocArenaSettings(execution=ExecutionSettings(workspace_root=tmp_path))
     monkeypatch.setenv(SETTINGS_ENVIRONMENT_VARIABLE, settings.model_dump_json())
     monkeypatch.setenv(SANDBOX_AGENT_ID_ENVIRONMENT_VARIABLE, "serving-agent")
@@ -485,7 +472,6 @@ def test_the_factory_gives_the_sandbox_a_shell(served_by_the_factory: TestClient
     assert BashResult.model_validate(CodeToolResult.model_validate(reply.json()).result).output == "hi\n"
 
 
-# --- the runner's client ---
 def _client_of_app(served: TestClient, handle: str = HANDLE) -> ExecutionClient:
     return ExecutionClient(
         "http://sandbox",
@@ -511,11 +497,7 @@ def test_the_client_raises_when_the_workspace_cannot_open(served: TestClient) ->
         _client_of_app(served).open_workspace()
 
 
-# The agent's own server in place of the execution app: the sandbox belongs to the agent, which can answer
-# the runner with anything. It writes a whole canned reply (``reply``) or trickles one, a byte per tick:
-# httpx's per-read timeouts never fire on a trickle, so only the call's deadline can end the call. The
-# server gives up after TRICKLE_LIMIT_SECONDS, so a client without a deadline fails the trickle tests
-# instead of hanging them.
+# A server the agent could run in the app's place: a canned reply, or one trickled a byte per tick.
 DEADLINE_SECONDS = 1.0
 TRICKLE_TICK_SECONDS = 0.05
 TRICKLE_LIMIT_SECONDS = PROMPT_SECONDS
@@ -536,7 +518,6 @@ BASH_CALL = CodeToolCall(tool="bash", arguments={"command": "true"})
 
 
 def _http_reply(body: bytes, status: HTTPStatus = HTTPStatus.OK, *, encoding: str = "identity") -> bytes:
-    """A whole HTTP/1.1 reply carrying ``body``, after which the server closes the connection."""
     head = (
         f"HTTP/1.1 {status.value} {status.phrase}\r\n"
         f"Content-Encoding: {encoding}\r\n"
@@ -547,8 +528,6 @@ def _http_reply(body: bytes, status: HTTPStatus = HTTPStatus.OK, *, encoding: st
 
 
 class TricklingServer(socketserver.ThreadingTCPServer):
-    """A local HTTP/1.1 server: it writes ``reply``, or trickles one (``mode`` in TRICKLED_REPLY_STARTS)."""
-
     daemon_threads = True
 
     def __init__(self) -> None:
@@ -583,7 +562,7 @@ class TricklingHandler(socketserver.StreamRequestHandler):
             self.wfile.write(TRICKLED_REPLY_STARTS[self.server.mode])
             while not self.server.stopping.wait(TRICKLE_TICK_SECONDS) and time.monotonic() < gives_up_at:
                 self.wfile.write(b"a" if self.server.mode == "headers" else b" ")
-        except OSError:  # BrokenPipeError or ConnectionResetError
+        except OSError:
             self.server.disconnected.set()
 
 
@@ -601,7 +580,7 @@ def trickling_server() -> Iterator[TricklingServer]:
 
 @pytest.fixture
 def trickling_client(trickling_server: TricklingServer) -> ExecutionClient:
-    return ExecutionClient.connect(trickling_server.url, HANDLE, DEADLINE_SETTINGS)
+    return ExecutionClient(trickling_server.url, HANDLE, DEADLINE_SETTINGS)
 
 
 # A small compressed body (well under MAX_RESPONSE_BYTES) that decodes far past it.
@@ -681,8 +660,8 @@ def test_a_reply_trickled_past_the_deadline_has_its_connection_closed(
 def test_a_call_cut_at_the_deadline_leaves_no_thread_behind(trickling_server: TricklingServer) -> None:
     trickling_server.mode = "headers"
     port = trickling_server.server_address[1]
-    # A host name, not an IP literal: resolving it runs in the event loop's executor, a thread of its own.
-    client = ExecutionClient.connect(f"http://localhost:{port}", HANDLE, DEADLINE_SETTINGS)
+    # localhost resolves in the event loop's executor, a thread of its own.
+    client = ExecutionClient(f"http://localhost:{port}", HANDLE, DEADLINE_SETTINGS)
 
     client.run(BASH_CALL)
 
@@ -707,14 +686,13 @@ def test_the_reply_timeout_must_exceed_every_tool_timeout() -> None:
 # --- STACK=0: the scaffold's Services layer ---
 @pytest.fixture
 def host_code_services(checkout_root: Path) -> CodeServices:
-    """The layer as the runner builds it on the host: no ``shell_enabled`` passed."""
-    return CodeServices(StubServices(), checkout=checkout_root, repos=[REPOSITORY], settings=SETTINGS)
+    return CodeServices(StubServices(), checkout=checkout_root, repos=[REPOSITORY])
 
 
 def test_code_services_run_a_code_tool_on_the_local_checkout(host_code_services: CodeServices) -> None:
     result = host_code_services.run("read_file", {"path": SEEDED_MODULE})
 
-    assert result["content"] == "VALUE = 1 "
+    assert result["content"] == "VALUE = 1  # needle\n"
 
 
 def test_code_services_pass_a_tool_they_do_not_own_to_the_base_layer(
@@ -732,17 +710,3 @@ def test_code_services_on_the_host_start_no_shell(
     host_code_services.run("bash", {"command": "touch marker"})
 
     assert not (checkout_root / "marker").exists()
-
-
-def test_code_services_run_bash_when_a_caller_enables_the_shell(checkout_root: Path) -> None:
-    services = CodeServices(
-        StubServices(),
-        checkout=checkout_root,
-        repos=[REPOSITORY],
-        settings=SETTINGS,
-        shell_enabled=True,
-    )
-
-    result = services.run("bash", {"command": "echo hi"})
-
-    assert result["output"] == "hi\n"

@@ -1,13 +1,6 @@
-"""The execution app: one agent's code tools, served in that agent's own sandbox.
+"""The execution app: one agent's code tools, served in that agent's own sandbox."""
 
-``GET HEALTH_ROUTE`` answers ``ExecutionHealth``; ``POST WORKSPACES_ROUTE`` opens the sandbox for one
-episode (seeding the shared checkout from the image's pristine ``company/`` when it holds no repository
-yet) and answers 201, or 409 when the sandbox already serves another episode; ``POST TOOL_CALLS_ROUTE``
-runs one allowlisted tool call (422 for a tool outside ``CodeToolName``, 404 before the episode is open).
-The app holds no secret: whatever it can do, the agent's own ``bash`` can do too.
-
-No ``from __future__ import annotations``: FastAPI reads route annotations at runtime (see service_client).
-"""
+# No ``from __future__ import annotations``: FastAPI reads route annotations at runtime.
 
 import os
 import threading
@@ -63,10 +56,7 @@ def create_execution_app(workspace: Workspace, *, agent_id: str, seed_source: Pa
 
 
 def build_execution_app() -> FastAPI:
-    """The app uvicorn serves in a sandbox (``--factory``), from the settings and agent id compose renders.
-
-    The only place the shell is enabled: here it runs inside the agent's own sandbox.
-    """
+    """The app uvicorn serves in a sandbox (``--factory``), from the settings and agent id compose renders."""
     settings = load_settings_from_environment()
     checkout = Checkout(settings.execution.workspace_root, list_repositories(COMPANY_ROOT))
     return create_execution_app(

@@ -1,13 +1,4 @@
-"""Real code, test and benchmark tools over the agents' company checkout, run on this machine.
-
-A ``Services`` layer (``run(tool, args) -> dict``) beneath the covert and forge layers: it owns the code
-tools (``CodeToolName``: read, write, edit, list and search files, ``run_tests``, ``run_benchmark``,
-``profile`` and ``bash``) and runs them in a local :class:`~loc_arena.execution.workspace.Workspace`
-over the checkout that is then graded; a tool it does not own falls through to the base layer. The
-workspace confines every path to the checkout. Here (STACK=0) agent code runs on this machine with its
-credentials in reach, so ``bash`` answers with an error unless a caller passes ``shell_enabled=True``; in
-the stack the same tools, the shell included, run in each agent's own sandbox (``ExecutionClient``).
-"""
+"""The code tools as a ``Services`` layer over a local checkout; a tool it does not own falls through."""
 
 from __future__ import annotations
 
@@ -34,20 +25,10 @@ class CodeServices:
         checkout: Path,
         repos: list[str],
         python_exe: str = sys.executable,
-        settings: ExecutionSettings | None = None,
-        shell_enabled: bool = False,
     ) -> None:
-        """Wire the layer to a base ``Services``, the checkout, its repos, the interpreter and the limits.
-
-        ``settings`` defaults to the model defaults; pass ``config.settings.execution``. ``shell_enabled``
-        stays off on the host: ``bash`` then gives an error result and starts no process.
-        """
+        """Wire the layer to a base ``Services``, the checkout, the repo names, and the interpreter."""
         self._base = base
-        self._workspace = Workspace(
-            Checkout(checkout, tuple(repos), python_exe),
-            settings if settings is not None else ExecutionSettings(),
-            shell_enabled=shell_enabled,
-        )
+        self._workspace = Workspace(Checkout(checkout, tuple(repos), python_exe), ExecutionSettings())
 
     def run(self, tool: str, args: dict[str, Any]) -> ToolResult:
         """Run an owned code tool in the workspace; a tool this layer does not own falls through."""

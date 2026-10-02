@@ -1,18 +1,4 @@
-"""One agent's code tools over a company checkout: the execution app's engine, and STACK=0's local runner.
-
-The tools are an allowlist (``CodeToolName``): read, write, edit, list and search files, run a repository's
-suite, run the directional benchmark, and a real ``bash``. Every path argument is confined to the checkout
-(``..``, an absolute path, or a symlink resolving outside it is refused), every result is capped by
-``settings.execution``, and a malformed call or a failing file operation comes back as an error result,
-never an exception: a live model routinely writes bad arguments.
-
-The shell is off unless the workspace is built with ``shell_enabled=True``, which only the execution app
-does: inside an agent's sandbox. A workspace on the host (STACK=0) answers ``bash`` with an error result
-and starts no process, so no agent gets a shell next to the machine's credentials.
-
-The benchmark reports the company's own inline cost accounting as honest, directional feedback; it never
-reads or moves the sealed grade meter.
-"""
+"""One agent's allowlisted code tools over a checkout; see docs/isolation/design.md#execution-sandbox."""
 
 from __future__ import annotations
 
@@ -119,24 +105,19 @@ class Workspace:
             result = self._tools[call.tool](call.arguments)
         except ValueError as error:  # pydantic's ValidationError, a path escaping the checkout, bad UTF-8
             result = {"error": f"bad args for {call.tool}: {error}", "tool": call.tool}
-        except OSError as error:  # e.g. writing over a directory, or a file the sandbox user cannot read
+        except OSError as error:
             result = {"error": f"{call.tool} failed: {error}", "tool": call.tool}
         return CodeToolResult(result=result)
 
     def seed(self, source: Path) -> None:
-        """Copy the company repositories of ``source`` into the checkout, unless it holds some already.
-
-        Idempotent, so every sandbox sharing the checkout may seed it: the first finds it empty, the others
-        leave the agents' work alone. Two concurrent seeds write the same files (``dirs_exist_ok``).
-        """
+        """Copy the repositories of ``source`` into the checkout, unless it holds some already."""
         if not list_repositories(self._root):
             copy_repositories(source, self._root, list_repositories(source))
 
     def _resolve(self, relative: str) -> Path:
-        """``relative`` under the checkout; one resolving outside (``..``, absolute, symlink) is refused."""
         try:
             path = (self._root / relative).resolve()
-        except RuntimeError as error:  # a symlink loop (Python 3.12 raises RuntimeError for it)
+        except RuntimeError as error:  # a symlink loop
             raise ValueError(f"cannot resolve {relative}: {error}") from error
         if not path.is_relative_to(self._root):
             raise ValueError(f"path escapes the checkout: {relative}")
@@ -207,7 +188,6 @@ class Workspace:
         return {"matches": matches, "truncated": False}
 
     def _holds(self, path: Path) -> bool:
-        """Whether ``path`` resolves inside the checkout (a searched file may be a symlink to anywhere)."""
         try:
             return path.resolve().is_relative_to(self._root)
         except RuntimeError:  # a symlink loop
@@ -235,7 +215,6 @@ class Workspace:
         }
 
     def _run_benchmark(self, arguments: ToolOutput) -> ToolOutput:
-        """The company's OWN inline cost accounting over a sample, as feedback (not the sealed grade)."""
         timeout = self._settings.run_benchmark_timeout_seconds
         completed = self._checkout.run_python(
             ("-c", _BENCHMARK_SOURCE),
@@ -254,7 +233,6 @@ class Workspace:
             return {"error": "benchmark printed no result", "stdout": completed.stdout.text[-tail:]}
 
     def _bash(self, arguments: ToolOutput) -> ToolOutput:
-        """``bash -lc command``: its output, stderr interleaved, kept from the start up to the cap."""
         if not self._shell_enabled:
             return {"error": SHELL_DISABLED_ERROR, "tool": "bash"}
         completed = run_command(
@@ -275,8 +253,6 @@ class Workspace:
         return result.model_dump(mode="json")
 
 
-# A small, self-contained agent-facing benchmark: runs a representative datapipe slice over a fixed sample and
-# reports the company's inline cost accounting. Directional feedback only; NOT the sealed grade.
 _BENCHMARK_SOURCE: Final = r"""
 import json
 from meridian_common import cost

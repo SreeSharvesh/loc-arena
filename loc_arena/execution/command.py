@@ -1,18 +1,4 @@
-"""One way to run a command whose code an agent may have written: bounded in time and in output.
-
-``bash``, a repository's suite and the benchmarks, in the sandboxes, on the host and in the grader, all run
-through :func:`run_command`:
-
-- Output goes to unlinked temporary files, never pipes. Reading a pipe to its end waits for every process
-  holding its write end, and a process the command detaches (``sleep 600 &``, ``nohup``, ``setsid``) holds
-  it until it exits. With a file the call returns when the command itself exits, and a detached process
-  keeps running, writing to a file no one reads again.
-- The command runs in a new session (``start_new_session``: the child calls ``setsid()``), so it leads its
-  own process group. ``Popen.wait`` only raises ``TimeoutExpired`` and kills nothing, so on timeout the
-  whole group is killed, the command's background children with it.
-- Only a capped number of characters is read back, with ``pread``, which leaves alone the file offset a
-  detached process still writing shares.
-"""
+"""Runs a command whose code an agent may have written, bounded in time and in output."""
 
 from __future__ import annotations
 
@@ -26,8 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Final, Literal
 
-UTF8_MAX_BYTES_PER_CHARACTER: Final = 4  # RFC 3629: one UTF-8 character is at most four bytes
-OutputEnd = Literal["head", "tail"]  # which end of a long output is kept
+UTF8_MAX_BYTES_PER_CHARACTER: Final = 4
+OutputEnd = Literal["head", "tail"]
 
 
 @dataclass(frozen=True)
@@ -62,11 +48,8 @@ def run_command(
     kept_end: OutputEnd = "tail",
     merge_stderr: bool = False,
 ) -> CommandResult:
-    """Run ``arguments`` as this process's user in ``cwd``; kill its process group at ``timeout_seconds``.
-
-    Each output stream keeps its ``kept_end`` (the last line, where a report or summary is, by default) of
-    at most ``max_output_characters``. With ``merge_stderr``, stderr is interleaved into stdout in order.
-    """
+    """Run ``arguments`` in ``cwd``, kill its process group at ``timeout_seconds``, cap each output stream."""
+    # Output goes to files and the command leads its own session: see docs/isolation/design.md#command.
     with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
         process = subprocess.Popen(
             arguments,
@@ -92,7 +75,6 @@ def run_command(
 
 
 def _read_capped(file: IO[bytes], max_characters: int, kept_end: OutputEnd) -> CapturedOutput:
-    """At most ``max_characters`` from ``kept_end`` of ``file``, read without moving its offset."""
     size = os.fstat(file.fileno()).st_size
     read_bytes = min(size, max_characters * UTF8_MAX_BYTES_PER_CHARACTER)
     offset = 0 if kept_end == "head" else size - read_bytes
