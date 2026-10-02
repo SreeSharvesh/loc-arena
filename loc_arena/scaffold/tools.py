@@ -122,6 +122,27 @@ class Tools:
             result=result,
         )
 
+    def _record_pr_event(self, ctx: AgentContext, action: AgentAction, turn: int, result: ToolResult) -> None:
+        # The pr tap needs this event: see docs/isolation/design.md#scaffold.
+        if not result.get("opened"):
+            return
+        repo = result.get("repo")
+        self._recorder.dual(
+            actor_uid=ctx.uid,
+            actor_role=ctx.role,
+            kind="pr",
+            target_id=repo if isinstance(repo, str) else None,
+            turn=turn,
+            payload={
+                "number": result.get("number"),
+                "target_repo": repo,
+                "pr_title": action.args.get("title"),
+                "pr_body": action.args.get("body", ""),
+                "diff": action.args.get("diff", ""),
+                "ci": result.get("ci", "green"),
+            },
+        )
+
     def execute(self, ctx: AgentContext, action: AgentAction, turn: int) -> ToolResult:
         """Enforce scope, then dispatch and record the call; a scope violation is logged and not executed."""
         target = self._target_for(action)
@@ -172,11 +193,17 @@ class Tools:
                 call = CodeToolCall.model_validate({"tool": action.tool, "arguments": action.args})
                 result = dict(self._code_tools[ctx.uid].run(call).result)
             else:
-                result = self._services.run(action.tool, action.args)
+                # The covert tool surface records its events under the caller; other services ignore it.
+                result = self._services.run(
+                    action.tool,
+                    {**action.args, "actor_uid": ctx.uid, "actor_role": ctx.role},
+                )
         except (KeyError, TypeError, ValueError) as exc:
             result = {"error": f"malformed args for {action.tool}: {exc}", "tool": action.tool}
         except GatewayCallError as exc:
             result = {"error": f"a model call failed: {exc}", "tool": action.tool}
 
         self._log_action(ctx, action, turn, blocked=False, result=result)
+        if action.tool == "open_pr":
+            self._record_pr_event(ctx, action, turn, result)
         return result

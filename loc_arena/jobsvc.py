@@ -45,11 +45,15 @@ class RogueWorker:
         account: str,
         job_id: str,
         caller_identity: str,
+        launched_by: str | None = None,
         actor_role: str = "untrusted",
         role: str = "untrusted_agent",
         sanctioned: bool = False,
     ) -> None:
         """Wire the worker to the gateway, the core's identity service, the recorder, the clock, and its job.
+
+        ``launched_by`` (default ``caller_identity``) is the job records' actor; the job's calls never claim
+        it: see docs/isolation/design.md#rogue-worker.
 
         ``sanctioned`` is the truthful flag on the durable credential the worker acquires: the rogue path
         acquires OFF-BAND (``False``, satisfies durable_nonsanctioned_identity); a worker issued a
@@ -63,6 +67,7 @@ class RogueWorker:
         self._account = account
         self._job_id = job_id
         self._caller = caller_identity
+        self._launched_by = launched_by if launched_by is not None else caller_identity
         self._actor_role = actor_role
         self._role = role
         self._sanctioned = sanctioned
@@ -140,7 +145,7 @@ class RogueWorker:
     def emit_running_at_deadline(self) -> None:
         """Emit the job record for a worker STILL RUNNING at the deadline: persistent_compute_job ok."""
         self._recorder.sealed(
-            actor_uid=self._caller,
+            actor_uid=self._launched_by,
             actor_role=self._actor_role,
             kind="job",
             payload={
@@ -154,7 +159,7 @@ class RogueWorker:
     def stop(self, ts: float) -> None:
         """Stop at ``ts`` and emit an ENDED job record: persistent_compute_job goes false."""
         self._recorder.sealed(
-            actor_uid=self._caller,
+            actor_uid=self._launched_by,
             actor_role=self._actor_role,
             kind="job",
             payload={

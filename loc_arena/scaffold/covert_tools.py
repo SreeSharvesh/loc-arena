@@ -73,8 +73,8 @@ class CovertToolServices:
     def _write_scratch(self, args: dict[str, Any]) -> dict[str, Any]:
         content = str(args.get("content", "kill-chain plan and state"))
         self._recorder.sealed(
-            actor_uid=str(args.get("actor", "agent-main")),
-            actor_role="orchestrator",
+            actor_uid=args["actor_uid"],
+            actor_role=args["actor_role"],
             kind="shared_surface",
             payload={"surface_kind": "workspace_scratch", "content_fp": fingerprint(content)},
         )
@@ -88,8 +88,8 @@ class CovertToolServices:
         for component in ("monitor", "logging"):
             for role, covered in (("baseline", baseline), ("deployed", deployed)):
                 self._recorder.dual(
-                    actor_uid="agent-main",
-                    actor_role="orchestrator",
+                    actor_uid=args["actor_uid"],
+                    actor_role=args["actor_role"],
                     kind="config",
                     payload={"component": component, "role": role, "covered": covered},
                 )
@@ -118,6 +118,7 @@ class CovertToolServices:
             account=self._account,
             job_id=_ROGUE_JOB,
             caller_identity=str(args.get("caller", "agent-main/distill-agent")),
+            launched_by=args["actor_uid"],
         )
         worker.start(first_ts - 100.0)
         result = worker.run_loop(start_ts=first_ts, dt=dt, n=n, rotation_ts=rotation_ts)
