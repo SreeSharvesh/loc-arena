@@ -8,24 +8,7 @@ partial override of a nested block such as ``episode:`` keeps the base block's o
 returns one frozen ``RunConfig``. Fails loud on a missing or malformed field; no default lives here,
 defaults live in the YAML.
 
-Reading. pydantic-settings' ``YamlConfigSettingsSource`` reads the run file and the files it ``extends``,
-base first, with ``deep_merge=True``. Its documentation ("Other settings source",
-https://pydantic.dev/docs/validation/latest/concepts/pydantic_settings/) says several files "are merged
-shallowly in increasing order of priority. To enable deep merging, set `deep_merge=True` on the source
-directly", an option "not available through the `SettingsConfigDict`": a mapping in a later file merges
-into the same key of an earlier one, any other value replaces it. The run document is built from that
-source alone, passed as ``_build_sources`` ("Pre-initialized sources and init kwargs to use for building
-instantiation values", ``BaseSettings`` in https://pydantic.dev/docs/validation/latest/api/pydantic_settings/),
-so no environment variable, dotenv file or secrets directory can change a run. Checked against
-pydantic-settings 2.15.0: the latest release on PyPI, installed here and the floor in ``pyproject.toml``.
-
-Validating. Each block is a frozen pydantic dataclass with a description per field: a dataclass, not a
-``BaseModel``, because callers derive variants with ``dataclasses.replace`` (the honest twin), which
-re-validates. Their scalars are pydantic's ``Strict*`` types, so YAML ``"30"`` or ``true`` is never coerced
-into an int in these blocks; the settings groups keep ``LocArenaSettings``' own types, which do coerce. A key
-no block declares is ignored, except in an agent's ``scope`` (``PermissionScope.from_dict`` rejects it) and
-in the settings groups (``LocArenaSettings`` forbids it). A missing or invalid field is a
-``ConfigError`` naming its path.
+See docs/isolation/design.md#run-config.
 """
 
 from __future__ import annotations
@@ -60,7 +43,7 @@ from loc_arena.registry import SCORER_REGISTRY, VERIFIER_REGISTRY, is_scorer, is
 from loc_arena.stack.settings import LocArenaSettings
 
 YAML_ENCODING: Final = "utf-8"
-BLOCK_CONFIG: Final = ConfigDict(extra="ignore")  # a key no block declares is ignored, as it always was
+BLOCK_CONFIG: Final = ConfigDict(extra="ignore")
 PROMPT_REFERENCE_PREFIX: Final = "prompts_inline."
 REFERENCE_SUFFIX: Final = "_ref"
 COVERT_PROMPTS: Final = ("objective_prompt",)
@@ -73,14 +56,10 @@ class ConfigError(ValueError):
 
 
 # --------------------------------------------------------------------------------------------------------
-# Field validators (pydantic reports the ValueErrors they raise under the field's path)
+# Field validators
 # --------------------------------------------------------------------------------------------------------
 def _parse_scope(raw: object) -> PermissionScope:
-    """Parse an agent's ``scope`` with ``PermissionScope.from_dict``, which owns its rules.
-
-    A scope already built (``dataclasses.replace`` passes one) is kept as it is.
-    """
-    if isinstance(raw, PermissionScope):
+    if isinstance(raw, PermissionScope):  # dataclasses.replace passes the built scope
         return raw
     if not isinstance(raw, dict):
         raise ValueError(f"scope must be a mapping, got {type(raw).__name__}")
@@ -98,7 +77,6 @@ def _require_landing_formulas(landing: dict[str, str]) -> dict[str, str]:
 
 
 def _prompt_alias(field_name: str) -> AliasChoices:
-    """Read a prompt from its ``<field>_ref`` key (the YAML), or by name (``dataclasses.replace``)."""
     return AliasChoices(f"{field_name}{REFERENCE_SUFFIX}", field_name)
 
 
@@ -218,8 +196,6 @@ class AgentConfig:
 
 @pydantic_dataclass(frozen=True, config=BLOCK_CONFIG)
 class _MainTaskKeys:
-    """The ``main_task`` keys the loader itself reads; ``RunConfig.main_task`` keeps the whole block."""
-
     name: StrictStr | None = Field(default=None, description="The main task's name; the slug's fallback.")
     slug: StrictStr | None = Field(default=None, description="Short run-name slug.")
     scorer: StrictStr | None = Field(default=None, description="The registered scorer that grades the task.")
@@ -227,8 +203,6 @@ class _MainTaskKeys:
 
 @pydantic_dataclass(frozen=True, config=BLOCK_CONFIG)
 class _LoggingConfig:
-    """The ``logging:`` block."""
-
     agent_transcript: StrictBool = Field(
         default=False,
         description="Whether each run bundle holds every agent's Inspect .eval and transcript.",
@@ -239,24 +213,18 @@ class _LoggingConfig:
 # The files
 # --------------------------------------------------------------------------------------------------------
 class _ExtendsKey(BaseModel):
-    """The one key a config file is read for before the merge: the file it extends."""
-
     model_config = ConfigDict(frozen=True, extra="ignore", title="config file")
 
     extends: StrictStr | None = Field(default=None, description="The config file this one deep-merges onto.")
 
 
 class _ModelsFile(BaseModel):
-    """The models file: role -> model routing."""
-
     model_config = ConfigDict(frozen=True, extra="ignore", title="models file")
 
     roles: dict[str, ModelSpec] = Field(description="The model each role calls, by role.")
 
 
 class _RunDocument(BaseSettings):
-    """The merged run file, validated; ``load_run_config`` adds the models, the settings and the run names."""
-
     model_config = SettingsConfigDict(frozen=True, extra="ignore", case_sensitive=True, title="run config")
 
     models: StrictStr = Field(description="The models file, in the configs directory.")
@@ -278,7 +246,6 @@ class _RunDocument(BaseSettings):
     @model_validator(mode="before")
     @classmethod
     def _resolve_prompt_references(cls, data: object) -> object:
-        """Put the ``prompts_inline`` text in place of each ``*_ref`` (a settings model takes no context)."""
         if not isinstance(data, dict):
             return data
         prompts = data.get("prompts_inline")
@@ -294,7 +261,6 @@ class _RunDocument(BaseSettings):
 
     @model_validator(mode="after")
     def _require_one_liveness_window(self) -> Self:
-        """The verifier reads side_task.thresholds; the episode's liveness window must agree with it."""
         episode_window = self.episode.liveness_window_seconds
         verifier_window = self.side_task.thresholds.liveness_window_seconds
         if episode_window != verifier_window:
@@ -312,10 +278,6 @@ def _with_prompts_resolved(
     inline_prompts: object,
     where: str,
 ) -> object:
-    """``block`` with each prompt's ``<field>_ref`` holding its text, and a prompt written inline dropped.
-
-    Only a reference sets a prompt; anything but a mapping is left for pydantic to report at ``where``.
-    """
     if not isinstance(block, dict):
         return block
     references = {f"{field_name}{REFERENCE_SUFFIX}" for field_name in prompt_fields}
@@ -328,7 +290,6 @@ def _with_prompts_resolved(
 
 
 def _resolve_prompt_reference(reference: object, inline_prompts: object, where: str) -> object:
-    """The ``prompts_inline`` entry a reference names; the field it fills checks its type."""
     if not isinstance(reference, str) or not reference.startswith(PROMPT_REFERENCE_PREFIX):
         raise ValueError(f"{where}: only prompts_inline.* references are resolved here, got {reference!r}")
     name = reference.removeprefix(PROMPT_REFERENCE_PREFIX)
@@ -369,7 +330,7 @@ class RunConfig:
     policy: str = "scripted"  # "scripted" (deterministic default) | "model" (live model-driven)
     agent_transcript: bool = False
     agent_loop: AgentLoopConfig = _EMPTY_AGENT_LOOP
-    raw: dict[str, Any] = dataclasses.field(default_factory=dict)  # the merged YAML, references unresolved
+    raw: dict[str, Any] = dataclasses.field(default_factory=dict)
 
     def agent(self, agent_id: str) -> AgentConfig:
         """Return the agent config with this id, or raise ``ConfigError``."""
@@ -409,7 +370,6 @@ def _slugify(text: str) -> str:
 # Loading
 # --------------------------------------------------------------------------------------------------------
 def _read_config_file[Schema: BaseModel](path: Path, schema: type[Schema]) -> Schema:
-    """Read one config file into ``schema``; a missing file fails loud (the settings source would skip it)."""
     if not path.is_file():
         raise ConfigError(f"config file not found: {path}")
     with path.open("r", encoding=YAML_ENCODING) as file:
@@ -421,12 +381,6 @@ def _read_config_file[Schema: BaseModel](path: Path, schema: type[Schema]) -> Sc
 
 
 def _extends_chain(run_file: Path, configs_directory: Path) -> list[Path]:
-    """The run file and the files it ``extends``, base first, so each file deep-merges onto the ones before.
-
-    A config may extend another that itself extends a base (``aurora-efficiency.deterministic.yaml`` ->
-    ``aurora-efficiency.yaml`` -> ``env.default.yaml``). Each file is read here to find its ``extends``,
-    which also fails loud on a missing or non-mapping file. Guards against an extends cycle.
-    """
     chain = [run_file]
     seen: set[str] = set()
     while (base_name := _read_config_file(chain[0], _ExtendsKey).extends) is not None:
