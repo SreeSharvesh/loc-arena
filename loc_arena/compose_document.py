@@ -59,9 +59,7 @@ REFERENCE_RUN_CONFIG: Final = PROJECT_DIRECTORY / "configs" / "aurora-efficiency
 REFERENCE_COMPOSE_FILE: Final = PROJECT_DIRECTORY / "compose.yaml"
 SECRET_FILE_MODE: Final = 0o400  # an environment-sourced secret is readable by its owner, the service's user
 LISTEN_HOST: Final = "0.0.0.0"  # every interface of the container: its networks decide who can connect
-# An extra volume is a tmpfs mounted by Docker's local volume driver, one mount shared by every container
-# using it (`docker volume create --opt type=tmpfs --opt device=tmpfs --opt o=size=...,uid=...`,
-# docs.docker.com/reference/cli/docker/volume/create). Its owner writes; others granted it read.
+# An extra volume: a tmpfs of Docker's local driver, shared by the containers that mount it.
 EXTRA_VOLUME_DRIVER: Final = "local"
 EXTRA_VOLUME_FILESYSTEM: Final = "tmpfs"
 EXTRA_VOLUME_MODE: Final = 0o755
@@ -125,10 +123,7 @@ class RunTopology:
 
     settings: LocArenaSettings
     topology: StackTopology
-    agent_ids: tuple[
-        str,
-        ...,
-    ]  # the run's agents, in order: each per-agent network or volume has their copies
+    agent_ids: tuple[str, ...]
     service_names: Mapping[str, tuple[str, ...]]  # a config name -> the compose services rendered from it
     grading: GradingInputs | None  # None when the run names no scenario
     codebase: str
@@ -151,25 +146,13 @@ def _render_healthcheck(port: int, docker: DockerSettings) -> ComposeHealthcheck
     }
 
 
-def _render_secret_source(source: SecretDeclaration) -> ComposeSecret:
-    secret: ComposeSecret = {}
-    if source.file is not None:
-        secret["file"] = source.file
-    if source.environment is not None:
-        secret["environment"] = source.environment
-    return secret
-
-
 @dataclass(frozen=True)
-class NumericUser:
-    """A service's ``uid:gid``, both numeric: what a file or a tmpfs it must own is handed to."""
-
+class _NumericUser:
     uid: str
     gid: str
 
     @classmethod
-    def parse(cls, user: str | None) -> NumericUser | None:
-        """``user`` as a numeric uid and gid, or None when it is absent or names a user."""
+    def parse(cls, user: str | None) -> _NumericUser | None:
         uid, _, gid = (user or "").partition(":")
         return cls(uid, gid) if uid.isdigit() and gid.isdigit() else None
 
@@ -184,7 +167,7 @@ def _render_secret_grant(spec: ServiceSpec, name: str, source: SecretDeclaration
             f"{spec.name} has a read-only root, where compose refuses to write the environment-sourced "
             f"secret {name!r}: give it a file source",
         )
-    owner = NumericUser.parse(declaration.user)
+    owner = _NumericUser.parse(declaration.user)
     if owner is None:
         raise ValueError(
             f"{spec.name} needs a numeric user uid:gid to own the secret {name!r}, got {declaration.user!r}",
@@ -194,14 +177,12 @@ def _render_secret_grant(spec: ServiceSpec, name: str, source: SecretDeclaration
 
 
 def _is_granted(grantee: Grantee, spec: ServiceSpec, topology: StackTopology) -> bool:
-    """Whether ``grantee`` names ``spec``'s entry, or chooses the agent whose per-agent copy ``spec`` is."""
     if isinstance(grantee, AgentSelection):
         return spec.agent_id is not None and spec.agent_id in topology.select_agents(grantee)
     return grantee == spec.config_name
 
 
 def _read_volume_access(name: str, spec: ServiceSpec, topology: StackTopology) -> VolumeAccess | None:
-    """How ``spec`` may use volume ``name``, or None when no grant reaches it."""
     volume = topology.volumes[name]
     writes = any(_is_granted(grantee, spec, topology) for grantee in volume.read_write)
     reads = any(_is_granted(grantee, spec, topology) for grantee in volume.read_only)
@@ -218,11 +199,6 @@ def _list_copies(
     agent_id: str | None,
     agent_ids: Sequence[str],
 ) -> dict[str, str | None]:
-    """The copies of network or volume ``name`` that a service gets, each with the agent it belongs to.
-
-    A shared resource is its one self; of a per-agent one, an agent's per-agent service (``agent_id``) gets
-    that agent's copy, and any other service every copy.
-    """
     if not per_agent:
         return {name: None}
     owners = [agent_id] if agent_id is not None else agent_ids
@@ -230,11 +206,6 @@ def _list_copies(
 
 
 def _render_volume_mounts(name: str, spec: ServiceSpec, run: RunTopology) -> list[ComposeServiceVolume]:
-    """The mounts of volume ``name`` in ``spec``, none without a grant.
-
-    A service that is no agent's own copy mounts every copy of a per-agent volume, one per agent's directory
-    under the mount path.
-    """
     access = _read_volume_access(name, spec, run.topology)
     if access is None:
         return []
@@ -286,7 +257,6 @@ def _render_environment(spec: ServiceSpec, run: RunTopology) -> dict[str, str]:
 
 
 def _list_networks(spec: ServiceSpec, run: RunTopology) -> list[str]:
-    """The networks ``spec`` joins: its entry's, then those granted to its agent; as the copies it gets."""
     topology = run.topology
     names = list(spec.declaration.networks)
     names += [
@@ -380,7 +350,7 @@ def render_service(spec: ServiceSpec, run: RunTopology) -> ComposeService:
     }
     _apply_process(service, declaration, run.settings)
     if declaration.profiles:
-        service["profiles"] = list(declaration.profiles)  # on-demand (`docker compose run`), not part of `up`
+        service["profiles"] = list(declaration.profiles)
     if declaration.secrets:
         service["secrets"] = [
             _render_secret_grant(spec, name, run.topology.secrets[name]) for name in declaration.secrets
@@ -437,7 +407,6 @@ def read_codebase(config: RunConfig) -> str:
 
 
 def _render_volume(name: str, specs: Sequence[ServiceSpec], topology: StackTopology) -> ComposeVolume:
-    """A top-level volume. An extra one is a tmpfs owned by its writers' user, who must all be one."""
     labels = {LABEL: "1"}
     size_bytes = topology.volumes[name].size_bytes
     if size_bytes is None:
@@ -445,7 +414,7 @@ def _render_volume(name: str, specs: Sequence[ServiceSpec], topology: StackTopol
     writers = {
         spec.declaration.user for spec in specs if _read_volume_access(name, spec, topology) == "read_write"
     }
-    owner = NumericUser.parse(writers.pop()) if len(writers) == 1 else None
+    owner = _NumericUser.parse(writers.pop()) if len(writers) == 1 else None
     if owner is None:
         raise ValueError(
             f"volumes.{name} is owned by its writers' user: it needs writers that all run as one numeric "
@@ -496,7 +465,8 @@ def render_compose(config: RunConfig) -> ComposeDocument:
     }
     if topology.secrets:
         document["secrets"] = {
-            name: _render_secret_source(source) for name, source in topology.secrets.items()
+            name: ComposeSecret(**source.model_dump(exclude_none=True))
+            for name, source in topology.secrets.items()
         }
     return document
 

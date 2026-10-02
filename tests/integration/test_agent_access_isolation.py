@@ -1,10 +1,4 @@
-"""Grants to chosen agents hold in a real stack: a volume only a group holds, and a network per sandbox.
-
-The stack comes from a run file an experiment would write: a board volume granted to a group of two agents,
-and agent-net rendered once per agent. Network separation is asserted by membership plus name resolution,
-which Docker's embedded DNS answers only for containers sharing a network (deterministic, unlike TCP
-reachability on Docker Desktop: see _docker_support); the volume by the kernel's mount table.
-"""
+"""Grants to chosen agents hold in a real stack: a volume only a group holds, and a network per sandbox."""
 
 from __future__ import annotations
 

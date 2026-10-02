@@ -1,25 +1,4 @@
-"""The stack's topology as the run config declares it: services, networks, volumes, secrets, agent groups.
-
-The ``services:``, ``networks:``, ``volumes:``, ``secrets:`` and ``agent_groups:`` blocks of the resolved run
-config (see ``configs/env.default.yaml``) are validated once, at this boundary, into frozen pydantic models;
-:mod:`loc_arena.compose_document` renders them into the compose file. A wrong or unknown key fails, and so
-does a reference to a name the topology or the run does not declare (a service's network, secret or
-dependency, a volume's service, an agent id, a group): the error names the path of the bad entry
-(``volumes.board.read_write.0.agents.groups.1``), since a typo would otherwise silently drop a mount, a grant
-or a hardening option.
-
-Networks and volumes are granted to services by config name (``sandbox`` naming every agent's sandbox) or to
-chosen agents, by id or by named group (an :class:`AgentSelection`), which selects those agents' copies of
-the ``per_agent`` services. A ``per_agent`` network or volume is itself rendered once per agent, as
-``<name>-<agent id>`` (:func:`build_agent_copy_name`): an agent's copy of a per-agent service gets only that
-agent's copy of it, and any other service granted it gets every copy.
-
-References are checked against the declared names, which :func:`load_stack_topology` passes to pydantic as
-the validation context (docs.pydantic.dev/latest/concepts/validators/#validation-context); a grant is either
-a service name or an agent selection, told apart before validation by a callable discriminator
-(docs.pydantic.dev/latest/concepts/unions/#discriminated-unions-with-callable-discriminator), so a bad entry
-gets one error, not one per union member.
-"""
+"""The stack's topology as the run config declares it: services, networks, volumes, secrets, agent groups."""
 
 from __future__ import annotations
 
@@ -44,17 +23,15 @@ from pydantic import (
 from loc_arena.stack.constants import MIRROR_MOUNT_PATH, SEALED_MOUNT_PATH, WORKSPACE_MOUNT_PATH
 from loc_arena.stack.settings import GatewaySettings
 
-# Where each of the stack's own volumes is mounted: the paths its services' code reads and writes, which the
-# images create owned by their non-root user (./Dockerfile), so Docker hands each fresh volume to that user.
+# The images create these paths owned by their non-root user, so Docker hands each fresh volume to that user.
 STACK_VOLUME_MOUNT_PATHS: Final[Mapping[str, Path]] = {
     "sealed_log": SEALED_MOUNT_PATH,
     "mirror_log": MIRROR_MOUNT_PATH,
     "checkout": WORKSPACE_MOUNT_PATH,
 }
-PORT_SETTING_SUFFIX: Final = "_port"  # a port_setting names a port field of settings.gateway
+PORT_SETTING_SUFFIX: Final = "_port"
 
 type ImageName = Literal["app", "sandbox"]  # the ./Dockerfile targets a service can run
-type ServiceRole = Literal["sealed", "tamperable", "trusted"]
 
 
 @dataclass(frozen=True)
@@ -64,7 +41,7 @@ class DeclaredNames:
     services: frozenset[str]
     networks: frozenset[str]
     secrets: frozenset[str]
-    agents: frozenset[str]  # the ids of the run's agents (the run config's agents:)
+    agents: frozenset[str]
     groups: frozenset[str]
 
 
@@ -75,8 +52,6 @@ def _read_declared_names(info: ValidationInfo) -> DeclaredNames:
 
 
 def _reference_to(kind: str, declared: Callable[[DeclaredNames], frozenset[str]]) -> AfterValidator:
-    """A validator accepting only a name that the topology declares as a ``kind``."""
-
     def check_reference(name: str, info: ValidationInfo) -> str:
         known = declared(_read_declared_names(info))
         if name not in known:
@@ -105,15 +80,8 @@ class TopologyEntry(BaseModel):
 
 
 class ServiceDeclaration(TopologyEntry):
-    """One ``services:`` entry: what a container runs, what it joins and holds, and how it is hardened.
+    """One ``services:`` entry; an absent key takes the neutral default: no network, no secret, no limit."""
 
-    An absent key takes the neutral default: no network, no secret, no limit.
-    """
-
-    role: ServiceRole | None = Field(
-        default=None,
-        description="For the reader of the config only: the layer the service belongs to.",
-    )
     image: ImageName = Field(description="The ./Dockerfile target the service runs.")
     app: str | None = Field(
         default=None,
@@ -141,10 +109,7 @@ class ServiceDeclaration(TopologyEntry):
     )
     mounts_grading_harness: bool = Field(
         default=False,
-        description=(
-            "Binds each settings.grading.harness_file_names file and the measure.py of the run's scenario "
-            "read-only, and names the run's scorer in LOC_ARENA_MAIN_TASK_SCORER."
-        ),
+        description="Binds the scenario's harness files and measure.py read-only; names the run's scorer.",
     )
     command: tuple[str, ...] = Field(default=(), description="The command of a service with no app.")
     init: bool = Field(default=False, description="Runs an init process that reaps detached processes.")
@@ -171,7 +136,6 @@ class ServiceDeclaration(TopologyEntry):
 
     @model_validator(mode="after")
     def _check_process(self) -> Self:
-        """An app is served by uvicorn on a port of settings.gateway, so it takes a port and no command."""
         if (self.app is None) != (self.port_setting is None):
             raise ValueError("an app needs a port_setting, and a port_setting an app")
         if self.app is not None and self.command:
@@ -201,11 +165,9 @@ class AgentSelection(TopologyEntry):
 
 
 def _read_grantee_kind(grantee: object) -> str:
-    """Which member of ``Grantee`` a raw grant is: a mapping chooses agents, anything else names a service."""
     return "agents" if isinstance(grantee, Mapping | AgentSelection) else "service"
 
 
-# Who a grant goes to: a service by config name (a per-agent service: every agent's copy), or chosen agents.
 type Grantee = Annotated[
     Annotated[ServiceReference, Tag("service")] | Annotated[AgentSelection, Tag("agents")],
     Discriminator(_read_grantee_kind),
@@ -221,11 +183,7 @@ class NetworkDeclaration(TopologyEntry):
     )
     per_agent: bool = Field(
         default=False,
-        description=(
-            "Rendered once per agent, as <name>-<agent id>: an agent's sandbox joins its own copy only, and "
-            "any other service listing it (the edge, the runner) joins every copy, so the sandboxes share no "
-            "network yet each still reaches the edge and is reached by the runner."
-        ),
+        description="Rendered once per agent, as <name>-<agent id>: a sandbox joins its own, others all.",
     )
     sandboxes: AgentSelection | None = Field(
         default=None,
@@ -234,12 +192,7 @@ class NetworkDeclaration(TopologyEntry):
 
 
 class VolumeDeclaration(TopologyEntry):
-    """One ``volumes:`` entry: a named volume, who writes it and who reads it.
-
-    The stack's own volumes (``STACK_VOLUME_MOUNT_PATHS``) are mounted where its code expects them. Any other
-    is an extra volume: memory-backed (a tmpfs of ``size_bytes``) and owned by its writers' user, because
-    Docker creates a volume at a path the images lack as root, where the non-root services cannot write.
-    """
+    """One ``volumes:`` entry: a named volume, who writes it and who reads it."""
 
     read_write: tuple[Grantee, ...] = Field(
         default=(),
@@ -251,10 +204,7 @@ class VolumeDeclaration(TopologyEntry):
     )
     per_agent: bool = Field(
         default=False,
-        description=(
-            "Rendered once per agent, as <name>-<agent id>: an agent's sandbox mounts its own copy at "
-            "mount_path, and any other service granted it mounts every copy, at <mount_path>/<agent id>."
-        ),
+        description="Rendered once per agent: a sandbox mounts its own copy, others all at <path>/<id>.",
     )
     mount_path: PurePosixPath | None = Field(
         default=None,
@@ -264,14 +214,7 @@ class VolumeDeclaration(TopologyEntry):
         default=None,
         description="The size of an extra volume's tmpfs; its pages count against the writer's mem_limit.",
     )
-    recorded_in_mirror: bool = Field(
-        default=False,
-        description=(
-            "Whether the monitors' mirror log records what is written to it. Only false is supported: "
-            "the mirror records each tool call with its arguments and result (loc_arena/scaffold/tools.py), "
-            "never a volume's content, so a write by a process an agent left running is not seen."
-        ),
-    )
+    recorded_in_mirror: bool = Field(default=False, description="Unsupported: true is refused.")
 
     @field_validator("mount_path")
     @classmethod
@@ -284,11 +227,7 @@ class VolumeDeclaration(TopologyEntry):
     @classmethod
     def _check_not_recorded(cls, recorded: bool) -> bool:
         if recorded:
-            raise ValueError(
-                "recording a volume in the mirror is not built: it needs a reader of the volume that writes "
-                "each change as a mirror event, e.g. the runner diffing it after every tool call and "
-                "recording the diff through its Recorder (loc_arena/scaffold/bus.py)",
-            )
+            raise ValueError("recording a volume in the mirror is not built: it records tool calls only")
         return recorded
 
 
@@ -326,7 +265,6 @@ class StackTopology(TopologyEntry):
     @field_validator("volumes")
     @classmethod
     def _check_mount_paths(cls, volumes: dict[str, VolumeDeclaration]) -> dict[str, VolumeDeclaration]:
-        """The stack's own volumes keep their fixed path; an extra one declares its path and tmpfs size."""
         for name, volume in volumes.items():
             declares_storage = volume.mount_path is not None or volume.size_bytes is not None
             if name in STACK_VOLUME_MOUNT_PATHS and declares_storage:
@@ -345,7 +283,6 @@ class StackTopology(TopologyEntry):
 
     @model_validator(mode="after")
     def _check_agent_copy_names(self, info: ValidationInfo) -> Self:
-        """No agent's copy of a per-agent network or volume takes the name of a declared one."""
         agents = _read_declared_names(info).agents
         for block, entries in (("networks", self.networks), ("volumes", self.volumes)):
             for name, entry in entries.items():
@@ -367,17 +304,12 @@ class StackTopology(TopologyEntry):
 
 
 def _declared_keys(raw: Mapping[str, object], block: str) -> frozenset[str]:
-    """The names declared under ``block`` of ``raw``: none when it is no mapping (the model then says why)."""
     entries = raw.get(block)
     return frozenset(str(name) for name in entries) if isinstance(entries, Mapping) else frozenset()
 
 
 def load_stack_topology(raw: Mapping[str, object], agent_ids: Collection[str]) -> StackTopology:
-    """Validate the topology blocks of the resolved run config ``raw``; other keys are left to their owners.
-
-    ``agent_ids`` are the run's agents, which grants and groups may name. Raises pydantic's
-    ``ValidationError`` (a ``ValueError``) naming the path of every bad entry.
-    """
+    """Validate the topology blocks of the resolved run config ``raw`` for a run of ``agent_ids``."""
     declared = DeclaredNames(
         services=_declared_keys(raw, "services"),
         networks=_declared_keys(raw, "networks"),

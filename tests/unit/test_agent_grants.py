@@ -1,8 +1,4 @@
-"""Networks and volumes granted to chosen agents, to named groups of agents, or once per agent.
-
-Each experiment is a run file extending the reference run config, as a researcher would write it, loaded by
-the real config loader and rendered.
-"""
+"""Networks and volumes granted to chosen agents, to named groups of agents, or once per agent."""
 
 from __future__ import annotations
 
@@ -23,7 +19,6 @@ PER_AGENT_NETWORKS = "networks: {agent-net: {per_agent: true}}\n"
 
 
 def _render_experiment(tmp_path: Path, overlay: str) -> ComposeDocument:
-    """Render a run file holding ``overlay`` that extends the reference run config."""
     run_file = tmp_path / "experiment.yaml"
     run_file.write_text(f"extends: {REFERENCE_RUN_CONFIG.name}\n{overlay}")
     return render_compose(load_run_config(run_file, configs_dir=REFERENCE_RUN_CONFIG.parent))
@@ -34,7 +29,6 @@ def _board(grants: str) -> str:
 
 
 def _mounts_of(document: ComposeDocument, source: str) -> dict[str, bool]:
-    """Each service mounting volume ``source``, with whether it mounts it read-only."""
     return {
         name: mount["read_only"]
         for name, service in document["services"].items()
