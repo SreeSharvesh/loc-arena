@@ -199,14 +199,8 @@ def _model_event(call: ModelCall, span_id: str | None) -> ModelEvent:
 
 
 def _model_output(call: ModelCall) -> ModelOutput:
-    """The call's completion with the token counts, cached tokens and cost the provider reported for it.
-
-    The provider's ``prompt_tokens`` include its ``cached_tokens``. Inspect counts cached prompt tokens in
-    ``input_tokens_cache_read`` alone and leaves them out of ``input_tokens``, as its own OpenAI and
-    OpenRouter providers do, so each prompt token is counted once.
-    """
     usage = ModelUsage(
-        input_tokens=call.usage.prompt_tokens - call.usage.cached_tokens,
+        input_tokens=call.usage.prompt_tokens - call.usage.cached_tokens,  # Inspect counts cached ones apart
         output_tokens=call.usage.completion_tokens,
         total_tokens=call.usage.prompt_tokens + call.usage.completion_tokens,
         input_tokens_cache_read=call.usage.cached_tokens,

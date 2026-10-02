@@ -18,7 +18,7 @@ from loc_arena.stack.settings import ProviderSettings
 from loc_arena.stack.stack_secrets import StackSecrets
 
 MILLISECONDS_PER_SECOND: Final = 1000
-TRUNCATION_MARKER: Final = " [cut]"  # ends an error message cut at error_message_max_characters
+TRUNCATION_MARKER: Final = " [cut]"
 
 
 class ProviderTimeoutError(ProviderError):
@@ -103,18 +103,18 @@ class OpenRouterProvider:
             raise ProviderTimeoutError(f"{model}: {error}") from error
         except errors.ResponseValidationError as error:
             max_characters = self._settings.error_message_max_characters
-            raise build_unusable_reply_error(model, error, max_characters) from error
+            raise _unusable_reply_error(model, error, max_characters) from error
         except ValidationError as error:  # the SDK refused to build the request; its text quotes the messages
             reason = f"the SDK cannot send these messages or tools ({error.error_count()} errors)"
             raise ProviderError(f"{model}: {reason}") from error
         except errors.OpenRouterError as error:
-            message = cut_message(error.message, self._settings.error_message_max_characters)
+            message = _cut_message(error.message, self._settings.error_message_max_characters)
             raise ProviderError(
                 f"{model}: {type(error).__name__} (HTTP {error.status_code}): {message}",
                 status_code=error.status_code,
             ) from error
         except (errors.NoResponseError, httpx.HTTPError) as error:
-            message = cut_message(str(error), self._settings.error_message_max_characters)
+            message = _cut_message(str(error), self._settings.error_message_max_characters)
             raise ProviderError(f"{model}: {type(error).__name__}: {message}") from error
         return _read_completion(model, reply)
 
@@ -163,24 +163,22 @@ class OpenRouterProvider:
         return True
 
 
-def build_unusable_reply_error(
+def _unusable_reply_error(
     model: str,
     error: errors.ResponseValidationError,
     max_characters: int,
 ) -> ProviderReplyError:
-    """Say why a reply is no chat completion, quoting OpenRouter's error and its code when the body is one."""
     try:
         detail = _ErrorBody.model_validate_json(error.body).error
     except ValidationError:
         reason = f"{model} answered {error.status_code} with a body that is not a chat completion"
         return ProviderReplyError(reason)
-    message = cut_message(detail.message, max_characters)
+    message = _cut_message(detail.message, max_characters)
     reason = f"{model} answered {error.status_code} with error {detail.code}: {message}"
     return ProviderReplyError(reason, status_code=detail.code)
 
 
-def cut_message(message: str, max_characters: int) -> str:
-    """``message``, or its first ``max_characters`` characters and ``TRUNCATION_MARKER`` when it is longer."""
+def _cut_message(message: str, max_characters: int) -> str:
     return message if len(message) <= max_characters else message[:max_characters] + TRUNCATION_MARKER
 
 

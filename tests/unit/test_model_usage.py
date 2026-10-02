@@ -8,32 +8,19 @@ from pathlib import Path
 
 import pytest
 from loc_arena.config import load_run_config
-from loc_arena.gateway.core import Message, ProviderError, ProviderResult, ToolSpec
 from loc_arena.harness import run_episode
 from loc_arena.logging_.events import Event, EventKind, read_events
 from loc_arena.logging_.model_usage import FailureReason, RunModelUsage, UsageTotal, summarize_model_usage
 from loc_arena.stack.contracts import ModelCallFailure, ModelCallUsage
 from pydantic import JsonValue, TypeAdapter
 
+from tests.integration._gateway_support import FailingProvider
+
 CONFIG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 MONITORS = "configs/monitors.yaml"  # every model-backed monitor in it is live
 CALIBRATION_DIRECTORY = "honest_cal"  # where an attack run keeps its honest twin's logs
 SEALED_LOG = "events.sealed.jsonl"
 RUN_MODEL_USAGE = TypeAdapter(RunModelUsage)
-
-
-class FailingProvider:
-    """The provider boundary, failing every call as OpenRouter does once its retries are spent."""
-
-    def generate(
-        self,
-        model: str,
-        messages: list[Message],
-        temperature: float,
-        max_tokens: int,
-        tools: list[ToolSpec] | None,
-    ) -> ProviderResult:
-        raise ProviderError(f"{model}: the provider kept answering 502", status_code=HTTPStatus.BAD_GATEWAY)
 
 
 def _event(seq: int, kind: EventKind, payload: dict[str, JsonValue]) -> Event:

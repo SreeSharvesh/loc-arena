@@ -135,7 +135,7 @@ def test_the_in_process_trace_keeps_the_exact_input_of_each_provider_call(tmp_pa
 
 def test_a_failed_call_in_process_is_sealed_in_the_lane_of_the_turn_that_made_it(tmp_path: Path) -> None:
     trace = AgentTrace()
-    wiring = _in_process(tmp_path, provider=FailingProvider(), trace=trace)
+    wiring = open_in_process(tmp_path, CONFIG, provider=FailingProvider(), trace=trace)
 
     with trace.turn("agent-main", 0), pytest.raises(GatewayCallError):
         wiring.gateway.generate(CALL)

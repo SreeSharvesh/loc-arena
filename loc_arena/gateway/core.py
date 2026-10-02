@@ -202,9 +202,6 @@ class Provider(Protocol):
         ...
 
 
-DETERMINISTIC_CALL_COST: Final = 0.0  # the deterministic provider calls no paid API
-
-
 class DeterministicProvider:
     """A deterministic, no-network provider for scripted/dev runs: a unique completion per call.
 
@@ -232,12 +229,12 @@ class DeterministicProvider:
             text=f"gen#{number}",
             prompt_tokens=self._pt,
             completion_tokens=self._ct,
-            cost=DETERMINISTIC_CALL_COST,
+            cost=0.0,
         )
 
 
 # --------------------------------------------------------------------------------------------------------
-# What the core reads of its run, and who observes its provider calls
+# What the core reads of its run, and who made each call
 # --------------------------------------------------------------------------------------------------------
 @dataclass(frozen=True)
 class EpisodeSpec:
@@ -460,10 +457,6 @@ class GatewayCore:
         *,
         ts: float,
     ) -> None:
-        """Seal a call the provider failed as an ``inference_error``: who made it, and why it failed.
-
-        ``prompt_fp`` is over the submitted input, as for a completed call.
-        """
         failure = ModelCallFailure(status_code=error.status_code, message=str(error))
         draft = EventDraft(
             ts=ts,
@@ -492,7 +485,7 @@ class GatewayCore:
                 model_input=model_input,
                 output=_render_output(result),
                 sealed_seq=seq,
-                usage=_usage_of(result),
+                usage=ModelCallUsage.model_validate(result, from_attributes=True),
             )
 
     # -- endpoints ---------------------------------------------------------------------------------------
@@ -582,11 +575,6 @@ def _render_input(messages: list[Message]) -> str:
     if len(messages) == 1 and messages[0]["role"] == "user" and isinstance(messages[0]["content"], str):
         return messages[0]["content"]
     return json.dumps(messages, indent=2, ensure_ascii=False)
-
-
-def _usage_of(result: ProviderResult) -> ModelCallUsage:
-    """The call's token counts and cost, as the model-call observers receive them."""
-    return ModelCallUsage.model_validate(result, from_attributes=True)
 
 
 def _render_output(result: ProviderResult) -> str:

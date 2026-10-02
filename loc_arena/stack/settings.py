@@ -179,11 +179,7 @@ class ProviderSettings(SettingsGroup):
     )
     error_message_max_characters: PositiveInt = Field(
         default=500,
-        description=(
-            "Characters of the provider's error message a failed call keeps (in its sealed inference_error "
-            "record); a longer one is cut and marked. The SDK's fallback error quotes up to 10,000 "
-            "characters of the reply body."
-        ),
+        description="Characters of the provider's error message a failed call's sealed record keeps.",
     )
 
 

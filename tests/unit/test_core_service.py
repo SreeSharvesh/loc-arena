@@ -289,8 +289,6 @@ METERED_USAGE = ModelCallUsage(prompt_tokens=11, completion_tokens=7, cached_tok
 
 
 class _MeteredProvider:
-    """The provider boundary, answering every call with ``METERED_USAGE``."""
-
     def generate(
         self,
         model: str,
@@ -309,19 +307,16 @@ class _MeteredProvider:
 
 
 def _sealed_usage(record: Event) -> dict[str, object]:
-    """The usage fields a sealed ``inference_call`` carries flat in its payload."""
     return {field: record.payload[field] for field in ModelCallUsage.model_fields}
 
 
 @pytest.fixture
 def metered_stack(tmp_path: Path) -> GatewayStack:
-    """A core holding a provider that reports ``METERED_USAGE`` for every call."""
     return serve_gateway(tmp_path, provider=_MeteredProvider())
 
 
 @pytest.fixture
 def metered_handle(metered_stack: GatewayStack) -> str:
-    """An episode open on ``metered_stack`` with its key-holding provider."""
     return metered_stack.open_episode(OPENROUTER_OPENING).handle
 
 

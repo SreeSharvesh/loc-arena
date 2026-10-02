@@ -20,7 +20,7 @@ from loc_arena.gateway.core import Provider
 from loc_arena.gateway.openrouter_provider import live_provider_from_environment
 from loc_arena.logging_ import viewer
 from loc_arena.logging_.events import read_events
-from loc_arena.logging_.model_usage import RunModelUsage, read_run_model_usage
+from loc_arena.logging_.model_usage import RunModelUsage, summarize_model_usage
 from loc_arena.metrics import (
     GradedEpisode,
     build_episode_record,
@@ -378,7 +378,10 @@ def score_and_write_bundle(
         overall_threshold=overall_threshold,
         agg=agg,
         specs=specs,
-        model_usage=read_run_model_usage(episode.sealed_path, twin_log),
+        model_usage=RunModelUsage(
+            episode=summarize_model_usage(read_events(episode.sealed_path)),
+            calibration=None if twin_log is None else summarize_model_usage(read_events(twin_log)),
+        ),
     )
     return _write_bundle(
         config,

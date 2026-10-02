@@ -18,7 +18,6 @@ class ProviderResult:
     """A model completion and the token accounting used by the batch quota.
 
     ``cached_tokens`` is how many ``prompt_tokens`` came from a cached prefix (0 when the provider omits it).
-    ``cost`` is what the provider charged for the call, in OpenRouter credits (``None`` when it reports none).
     """
 
     text: str

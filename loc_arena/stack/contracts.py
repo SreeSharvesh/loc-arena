@@ -209,11 +209,7 @@ class AppendAck(ContractModel):
 
 
 class ModelCallUsage(ContractModel):
-    """What one completed provider call consumed, as the provider reported it.
-
-    ``cached_tokens`` is how many of the ``prompt_tokens`` came from a cached prefix. ``cost`` is in
-    OpenRouter credits (US dollars), ``None`` when the provider reported no cost.
-    """
+    """What one completed provider call consumed, as the provider reported it."""
 
     prompt_tokens: int
     completion_tokens: int
@@ -222,12 +218,7 @@ class ModelCallUsage(ContractModel):
 
 
 class ModelCallFailure(ContractModel):
-    """Why one provider call failed, as the core seals it in the call's ``inference_error`` record.
-
-    ``status_code`` is the provider's HTTP status or error code, ``None`` when it gave none (a timeout, a lost
-    connection); ``message`` is the provider's error, whose OpenRouter part the provider cuts at
-    ``provider.error_message_max_characters``.
-    """
+    """Why one provider call failed, as the core seals it in the call's ``inference_error`` record."""
 
     status_code: int | None
     message: str
@@ -441,7 +432,7 @@ class CoreRelay(Protocol):
 
 
 class ModelCallObserver(Protocol):
-    """Told of each provider call as the core made it: ``AgentTrace`` in process, the ledger in the stack."""
+    """Told of each provider call as the core made it."""
 
     def on_model_call(
         self,

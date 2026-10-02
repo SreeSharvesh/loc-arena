@@ -1,12 +1,4 @@
-"""What a run's model calls consumed and how many failed, per model role, read from each episode's sealed log.
-
-The gateway core seals every provider call it completes as one ``inference_call`` event carrying the call's
-``model_role`` and, flat beside it, its ``prompt_tokens``, ``completion_tokens``, ``cached_tokens`` and
-``cost``, and every call the provider fails as one ``inference_error`` event carrying its ``model_role`` and
-``failure`` (the provider's status and message). ``summarize_model_usage`` totals them per role
-(``untrusted_agent``, ``trusted_monitor``, ``teacher``) and over all roles, and groups the failures by reason;
-``scores.json`` carries a run's totals under ``model_usage``, and ``report.html`` shows them.
-"""
+"""What a run's model calls consumed and how many failed, per model role, from each episode's sealed log."""
 
 from __future__ import annotations
 
@@ -14,19 +6,15 @@ import math
 from collections import Counter
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
 
-from loc_arena.logging_.events import Event, read_events
+from loc_arena.logging_.events import Event
 from loc_arena.stack.contracts import ModelCallFailure, ModelCallUsage
 
 
 class SealedModelCall(BaseModel):
-    """The fields of a sealed ``inference_call`` payload that the totals read, validated on reading.
-
-    The payload's other fields (the stamps the verifier reads) are ignored here.
-    """
+    """The fields of a sealed ``inference_call`` payload that the totals read, validated on reading."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -53,12 +41,7 @@ class SealedModelCallFailure(BaseModel):
 
 @dataclass(frozen=True)
 class UsageTotal:
-    """How many calls completed and failed, and what the completed ones consumed.
-
-    ``cached_tokens`` is how many of the ``prompt_tokens`` came from a cached prefix. ``cost`` is in
-    OpenRouter credits (US dollars), ``None`` when a completed call reported no cost, so the total is
-    unknown.
-    """
+    """How many calls completed and failed, and what the completed ones consumed."""
 
     completed_calls: int
     failed_calls: int
@@ -80,10 +63,7 @@ class FailureReason:
 
 @dataclass(frozen=True)
 class EpisodeModelUsage:
-    """One episode's model usage, per model role and over all roles.
-
-    ``failure_reasons`` says why calls failed, the most frequent reason first.
-    """
+    """One episode's model usage, per role and over all roles, and why calls failed, most frequent first."""
 
     by_role: dict[str, UsageTotal]
     total: UsageTotal
@@ -92,10 +72,7 @@ class EpisodeModelUsage:
 
 @dataclass(frozen=True)
 class RunModelUsage:
-    """A run's model usage: its episode's, and its honest calibration twin's when that is a second episode.
-
-    ``calibration`` is ``None`` in honest mode, where the episode is its own calibration twin.
-    """
+    """A run's model usage: its episode's, and its honest twin's (``None`` in honest mode)."""
 
     episode: EpisodeModelUsage
     calibration: EpisodeModelUsage | None
@@ -129,15 +106,6 @@ def _total_role(
 ) -> UsageTotal:
     usages = [call.usage for call in calls if call.model_role == role]
     return total_usage(usages, failed_calls=sum(failed.model_role == role for failed in failures))
-
-
-def read_run_model_usage(episode_log: Path, calibration_log: Path | None) -> RunModelUsage:
-    """The usage of a run: its episode's, sealed at ``episode_log``, and its twin's, at ``calibration_log``.
-
-    ``calibration_log`` is ``None`` when the episode is its own calibration twin (honest mode).
-    """
-    calibration = None if calibration_log is None else summarize_model_usage(read_events(calibration_log))
-    return RunModelUsage(episode=summarize_model_usage(read_events(episode_log)), calibration=calibration)
 
 
 def total_usage(usages: Sequence[ModelCallUsage], *, failed_calls: int) -> UsageTotal:

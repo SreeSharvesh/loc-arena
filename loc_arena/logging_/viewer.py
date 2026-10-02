@@ -317,7 +317,7 @@ function inference(){
   <div class=card><table><tr><th>seq<th>caller<th>path<th>credential<th>prompt→output fp<th>in mirror</tr>${rows||'<tr><td colspan=6 class=mut>none</td></tr>'}</table></div>`;
 }
 function usage(){
- const u=S.model_usage; if(!u)return '';  // a bundle written before model usage was recorded
+ const u=S.model_usage; if(!u)return '';
  const cost=c=>c==null?'unknown':esc(Number(c).toPrecision(3));
  const failed=n=>n?pill(n+' failed','danger'):'0';
  const row=(name,t)=>`<tr><td>${name}</td><td>${t.completed_calls}</td><td>${failed(t.failed_calls)}</td><td>${t.prompt_tokens}</td><td>${t.completion_tokens}</td><td>${t.cached_tokens}</td><td>${t.total_tokens}</td><td>${cost(t.cost)}</td></tr>`;
