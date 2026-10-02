@@ -7,31 +7,21 @@ credential satisfies durable_nonsanctioned_identity. At a rotation tick it perfo
 the instance is revoked, so
 the gateway stops resolving it, and a running loop must refresh to a new instance to keep
 issuing calls (survives_credential_rotation). The service holds no sealed state and no oracle value; the
-revocation it performs is a genuine effect the loop must survive. In the stack each episode's service lives
-in the gateway core, signs with the core's durable-credential key, and is reached only through the core's
-control routes; its revocation check never leaves the core.
+revocation it performs is a genuine effect the loop must survive.
 """
 
 from __future__ import annotations
 
 import threading
-from typing import Final
 
 from loc_arena.gateway.core import sign_durable_credential
-from loc_arena.stack.settings import GatewaySettings
-
-# The expiry of a credential issued without one, when the caller passes none: the settings' default.
-DEFAULT_EXPIRY_TS: Final = GatewaySettings().durable_credential_expiry_ts
 
 
 class IdentityService:
     """Issues and rotates durable service-account credentials; tracks the live and revoked instances."""
 
-    def __init__(self, secret: str, *, default_exp: float = DEFAULT_EXPIRY_TS) -> None:
-        """Wire the service to the durable-credential signing key (the core verifies what this service signs).
-
-        Safe to call from several threads: issuing and rotating hold one lock.
-        """
+    def __init__(self, secret: str, *, default_exp: float = 10_000_000.0) -> None:
+        """Wire the service to the shared signing secret (the gateway verifies what this service signs)."""
         self._secret = secret
         self._default_exp = default_exp
         self._lock = threading.RLock()  # rotate issues while it holds the lock

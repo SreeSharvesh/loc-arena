@@ -11,7 +11,6 @@ from loc_arena.config import AgentLoopConfig, load_run_config
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import (
     DeterministicProvider,
-    DirectTransport,
     GatewayCore,
     GenerateResponse,
     Message,
@@ -230,7 +229,7 @@ def _agent(tmp_path: Path, policy: AgentPolicy, *, turn_budget: int = 5) -> tupl
     mirror = AppendOnlyLog(tmp_path / "mirror.jsonl", "ep")
     recorder = Recorder("ep", sealed, mirror, clock=lambda: 0.0)
     core = GatewayCore(cfg, "ep", sealed, DeterministicProvider(), turn_secret="s", clock=lambda: 0.0)
-    edge = GatewayEdge("ep", DirectTransport(core), mirror, clock=lambda: 0.0)
+    edge = GatewayEdge("ep", core, mirror, clock=lambda: 0.0)
     root = cfg.agent("agent-main")
     ctx = AgentContext(
         uid=root.id,

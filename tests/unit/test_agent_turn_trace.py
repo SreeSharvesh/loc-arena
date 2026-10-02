@@ -4,7 +4,7 @@ from pathlib import Path
 
 from loc_arena.config import load_run_config
 from loc_arena.gateway.client import GatewayClient
-from loc_arena.gateway.core import DeterministicProvider, DirectTransport, GatewayCore
+from loc_arena.gateway.core import DeterministicProvider, GatewayCore
 from loc_arena.gateway.edge import GatewayEdge
 from loc_arena.logging_.agent_trace import AgentTrace, EpisodeTrace, TurnRef
 from loc_arena.logging_.events import AppendOnlyLog, read_events
@@ -37,7 +37,7 @@ def _run_turns(tmp_path: Path, actions: list[AgentAction], turns: int) -> tuple[
         clock=lambda: 0.0,
         trace=trace,
     )
-    edge = GatewayEdge(EP, DirectTransport(core), mirror, clock=lambda: 0.0)
+    edge = GatewayEdge(EP, core, mirror, clock=lambda: 0.0)
     root = CFG.agent("agent-main")
     ctx = AgentContext(
         uid=root.id,

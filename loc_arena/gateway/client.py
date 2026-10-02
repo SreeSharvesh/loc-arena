@@ -1,16 +1,4 @@
-"""The model clients of the runner's scaffold: the gateway edge over HTTP, and each agent's identity on it.
-
-Enforces mandatory routing: the scaffold reaches a model only through the gateway edge, which relays to
-the sealed core. ``EdgeClient`` is the edge as a ``Servable`` over agent-net (in process the edge object is
-the ``Servable`` itself). ``GatewayClient`` is what an agent's turn and its tools call: it carries the
-agent's caller identity and, inside a sanctioned turn, the token the core minted for that turn, so code
-running outside a turn has no token and its calls are off-path. ``batch_generate`` registers a sanctioned,
-quota-limited batch.
-
-A failed call surfaces as one error, ``GatewayCallError``, whichever side failed: the provider (in process
-``ProviderError``; over HTTP the edge's 502), or the gateway refusing the call (in process FastAPI's
-``HTTPException``, e.g. an unknown role or the batch quota; over HTTP the edge's status).
-"""
+"""The model clients of the runner's scaffold: the gateway edge over HTTP, and each agent's identity on it."""
 
 from __future__ import annotations
 
@@ -31,7 +19,6 @@ from loc_arena.stack.contracts import (
 from loc_arena.stack.model_call import GenerateRequest, GenerateResponse, Message, ToolSpec
 from loc_arena.stack.service_client import ServiceClient
 
-# What a model call through the gateway raises when it fails, in process and over HTTP.
 GATEWAY_FAILURES: Final = (ProviderError, HTTPException, httpx.HTTPError)
 
 

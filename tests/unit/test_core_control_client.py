@@ -16,16 +16,6 @@ from loc_arena.stack.service_client import ServiceClient
 from tests.unit._gateway_stack import OPENING, GatewayStack, serve_gateway
 
 
-@pytest.fixture
-def stack(tmp_path: Path) -> GatewayStack:
-    return serve_gateway(tmp_path)
-
-
-@pytest.fixture
-def control(stack: GatewayStack) -> CoreControlClient:
-    return CoreControlClient.open_episode(stack.control, OPENING)
-
-
 def _generate(stack: GatewayStack, request: GenerateRequest) -> CoreGenerateResponse:
     return ServiceClient(stack.core).post_model(GENERATE_ROUTE, request, CoreGenerateResponse)
 

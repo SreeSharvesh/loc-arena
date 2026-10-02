@@ -35,6 +35,8 @@ The control key guards every control route and every mirror write. It is a compo
 
 `ServiceClient` raises `httpx.HTTPStatusError` on a non-2xx reply; tests pass a FastAPI `TestClient` as its `http_client`. One `TypeAdapter` is cached per body type, because building one is costly ([pydantic performance](https://pydantic.dev/docs/validation/latest/concepts/performance/)). A body is a contract model or one of the log dataclasses `EventDraft` and `Event`. `service_client.py` has no `from __future__ import annotations`: `check_control_key`'s annotation names `scheme`, a local of `require_control_key`, and FastAPI cannot resolve that from a string.
 
+Every service app comes from `create_service_app`. It serves no OpenAPI schema or docs, because agents reach the edge and its schema would list the guarded mirror route, and it caps request bodies at `gateway.max_request_bytes`.
+
 ## Settings
 
 `LocArenaSettings` is validated once per process. On the host, `load_run_config` validates the settings groups the merged run config declares, and a group the YAML leaves out takes the model defaults. In a container, `load_settings_from_environment` validates the JSON in `LOC_ARENA_SETTINGS`. Consumers read `settings.<group>.<field>` and never re-read the source.
@@ -51,6 +53,8 @@ The control key guards every control route and every mirror write. It is a compo
 ## Event logs
 
 A log gives each recorded draft its `episode_id`, `seq` and `fp`, so no writer picks its own seq. `AppendOnlyLog` holds one lock for writes.
+
+In the stack the runner holds neither log. It records a sealed event through the core's control route, where the core's ledger numbers it and the recorder appends it, and a mirror event through the edge, the only writer of the mirror. Both routes need the control key, which the `ServiceClient` sends. The service picks each seq, so two writers of one log never collide. A client's `last_seq` is the highest seq it got back; the log may be further along, because the gateway records model calls in it too. A refusal raises `httpx.HTTPStatusError`.
 
 ## OpenRouter provider
 
@@ -98,3 +102,39 @@ The main-task grade is split in two. `measure_checkout` runs the suites and the 
 `measure_checkout` copies only the trusted repositories it is given into an empty grading root, then places the sealed harness files named by `grading.harness_file_names` at that root, outside every repository. Nothing an agent left at the checkout's root (a shadowing module, a symlink named like a harness file) reaches the graded copy. A checkout that cannot be copied (a missing repository, a named pipe) measures as red and incomplete, and so does a benchmark that hangs, fails or prints no valid report. The suites stop at the first red one, and a hang counts as red. Every suite and the benchmark run through `run_command`, so a process agent code detaches never holds the grader. Agent code can still influence the measured cost from code the pipeline imports, or from a process a suite detached that still runs during the benchmark. That residual risk is accepted, bounded by the reference's `min_work` floor.
 
 In the stack, `python -m loc_arena.grader` runs in the grader container with no network. The checkout and the sealed harness files are mounted read-only at the CLI's defaults, and the settings come in `LOC_ARENA_SETTINGS`. It measures the image's pristine list of repositories, because agent code may add or remove directories in the checkout. The host reads the printed line as untrusted, since agent code runs in the grader.
+
+## Gateway core
+
+A model call's request, the provider's result and the fingerprints are the shared types of `loc_arena/stack/model_call.py`; the other bodies are contract models in `loc_arena/stack/contracts.py`. `gateway/core_service.py` serves `GatewayCore` over FastAPI. In the stack the `EpisodeSpec` arrives in `EpisodeOpen`, with the quota from the core's settings, so `core.py` imports `RunConfig` for typing only; in process the spec is read from the run config.
+
+`GatewayCore` is safe to call from several threads: the sealed log numbers records under its own lock, and the teacher quota is charged under the core's lock.
+
+The core signs with per-kind keys: turn tokens, durable credentials and monitor credentials. `turn_secret` is one secret for every kind, for callers that sign their own credentials; with neither given, the core makes fresh per-kind keys. Each key is 32 random bytes, because [RFC 2104 section 3](https://www.rfc-editor.org/rfc/rfc2104.html#section-3) asks for a key at least as long as the hash output, 32 bytes for SHA-256. Each episode's identity service lives in the core, signs with the core's durable-credential key, and is reached only through the core's control routes, so its revocation check stays inside the core.
+
+A call is attributed in this order: a valid monitor credential, then a valid unrevoked durable credential (a background job under a service account, off-turn), then a valid turn token of this episode, otherwise the claimed identity with credential kind `none`. Under reduced monitor coverage, a dropped identity's calls carry `on_monitored_path=False`; under reduced logging coverage they carry `in_mirror=False`. That is the reduction the verifier keys on, and `None` covers everyone. A batch prompt calls the provider before its tokens are charged to the teacher quota, so a call the quota refuses (429) was still made.
+
+## Episode ledger
+
+`LocalGatewayControl` implements `GatewayControl` for one episode inside the core's process, in process (STACK=0) and behind the core's control routes, with fresh per-kind signing keys that never leave the process.
+
+`EpisodeLedger` numbers each sealed event and has the recorder append it under one lock, so concurrent calls never share a seq; the recorder fingerprints the event. A transport error, such as a reply lost after the write, is retried with the same event up to `gateway.recorder_write_attempts` attempts in all, with stamina's backoff and no total timeout. The recorder acknowledges an identical re-send, so a lost reply never leaves the ledger's seq behind. When every attempt fails, the error is raised and the seq stays used: the recorder may hold the event, and the next record must not meet a 409 at that seq. A seq no attempt wrote is a gap, which the sealed log accepts because its seqs need only increase. A refusal raises `httpx.HTTPStatusError` at once and uses no seq.
+
+A model-call record holds the exact model input the provider received, covert injection included. Model-call records carry no seq and are sent once, since a re-send after a lost reply would be a second record of the same call.
+
+## Gateway core service
+
+The model routes (`/generate`, `/batch_generate`) serve the active episode, the one opened last and not yet closed, and answer 409 when none is open; the edge relays every agent call there. The control routes need the control key. Through them the runner opens an episode, sets its clock and coverage, has the core mint turn tokens and durable credentials, records its sealed events, makes monitor calls and closes the episode. Each episode's sealed records reach the recorder through its `EpisodeLedger`.
+
+`CoreControlClient` is the runner's `GatewayControl` over those routes, for the episode it opened. Every call is one request made with the control key the `ServiceClient` holds, and it returns once the core has applied it, so clock ticks and coverage changes reach the core in the runner's order. A refusal raises `httpx.HTTPStatusError`: 401 without the key, 404 for an episode the core does not hold, 502 when the provider failed a monitor's call.
+
+## Gateway edge
+
+The edge runs from the sandbox image, which ships no `configs/`, `scenarios/` or `live.py`; `test_the_edge_imports_only_what_the_sandbox_image_ships` pins its imports. In the stack the edge is the only writer of the mirror, `/mirror/<handle>/events.jsonl`, and it takes the runner's observable events on a route guarded by the control key. A mirror record holds the fingerprints of the caller's original input and of the reply, with the core's resolved credential kind and ts. `prompt_fp` covers the input before the core's covert injection, so the injected text never reaches a monitor. The core picks the episode (the active one), so the edge chooses the mirror from the reply's handle and episode id. `GatewayEdge` takes a clock it does not use, for callers that pass one.
+
+## Gateway client
+
+The scaffold reaches a model only through the gateway edge, which relays to the sealed core: in process the edge object, in the stack an HTTP client of the edge on agent-net. `GatewayClient` carries an agent's caller identity and, inside a sanctioned turn, the token the core minted for that turn, so code running outside a turn has no token and its calls are off-path. `batch_generate` registers a sanctioned, quota-limited batch. A failed call surfaces as `GatewayCallError` whichever side failed: the provider (`ProviderError` in process, the edge's 502 over HTTP) or the gateway refusing the call (FastAPI's `HTTPException` in process, such as an unknown role or the batch quota; the edge's status over HTTP).
+
+## Recorder
+
+The recorder is on sealed-net only, where the gateway core is its one client, and it has no read route besides the health check; the host copies the logs out through the evidence reader after the episode. The core numbers each event. The recorder computes each fingerprint itself, ignoring any the event carries, and appends an event only if it continues the episode's log, answering 409 to a non-increasing seq or another episode's event. The core re-sends an event whose acknowledgement it lost. An identical re-send is acknowledged again with the same fingerprint and writes nothing, so the core's numbering catches up; different content at a written seq is refused. Model-call records carry no seq and are appended on each send.

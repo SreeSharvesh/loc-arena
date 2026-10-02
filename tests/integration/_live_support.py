@@ -14,7 +14,6 @@ from pathlib import Path
 from loc_arena.config import RunConfig
 from loc_arena.gateway.core import (
     DeterministicProvider,
-    DirectTransport,
     GatewayCore,
     Message,
     ProviderResult,
@@ -69,7 +68,7 @@ class Stack:
         if drop_coverage:
             self.core.set_monitor_covered(set(AGENTS))
             self.core.set_logging_covered(set(AGENTS))
-        self.edge = GatewayEdge("ep-live", DirectTransport(self.core), mirror, clock=self.clk)
+        self.edge = GatewayEdge("ep-live", self.core, mirror, clock=self.clk)
 
     def worker(self, *, sanctioned: bool = False) -> RogueWorker:
         return RogueWorker(

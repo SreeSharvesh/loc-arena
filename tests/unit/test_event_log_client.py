@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from http import HTTPStatus
-from pathlib import Path
 
 import httpx
 import pytest
@@ -12,7 +11,7 @@ from loc_arena.gateway.event_log_client import MirrorEventLog, SealedEventLog
 from loc_arena.logging_.events import EventDraft
 from loc_arena.stack.service_client import ServiceClient
 
-from tests.unit._gateway_stack import KEY, OPENING, GatewayStack, serve_gateway
+from tests.unit._gateway_stack import KEY, GatewayStack
 
 DRAFT = EventDraft(
     ts=120.0,
@@ -21,16 +20,6 @@ DRAFT = EventDraft(
     kind="message",
     payload={"b": 1},
 )
-
-
-@pytest.fixture
-def stack(tmp_path: Path) -> GatewayStack:
-    return serve_gateway(tmp_path)
-
-
-@pytest.fixture
-def control(stack: GatewayStack) -> CoreControlClient:
-    return CoreControlClient.open_episode(stack.control, OPENING)
 
 
 def test_a_sealed_event_recorded_through_the_core_is_written_by_the_recorder(

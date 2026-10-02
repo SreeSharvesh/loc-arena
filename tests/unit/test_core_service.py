@@ -20,7 +20,6 @@ from loc_arena.gateway.edge import EpisodeMirror, GatewayEdge, MirroringRelay
 from loc_arena.gateway.openrouter_provider import ProviderError
 from loc_arena.logging_.agent_trace import AgentTrace
 from loc_arena.logging_.events import AppendOnlyLog, Event, EventDraft, read_events
-from loc_arena.stack import stack_secrets
 from loc_arena.stack.constants import (
     CLOCK_ROUTE,
     CLOSE_ROUTE,
@@ -34,9 +33,7 @@ from loc_arena.stack.constants import (
     MODEL_CALLS_FILE_NAME,
     MONITOR_CALLS_ROUTE,
     MONITOR_MODEL_ROLE,
-    OPENROUTER_API_KEY_SECRET_NAME,
     SEALED_EVENTS_ROUTE,
-    SETTINGS_ENVIRONMENT_VARIABLE,
     TURN_TOKENS_ROUTE,
 )
 from loc_arena.stack.contracts import (
@@ -84,23 +81,12 @@ RUN_CONFIG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 
 
 @pytest.fixture
-def stack(tmp_path: Path) -> GatewayStack:
-    return serve_gateway(tmp_path)
-
-
-@pytest.fixture
-def opened(stack: GatewayStack) -> EpisodeOpened:
-    return stack.open_episode()
-
-
-@pytest.fixture
 def handle(opened: EpisodeOpened) -> str:
     return opened.handle
 
 
 @pytest.fixture
 def turn_token(stack: GatewayStack, handle: str) -> str:
-    """A turn token for agent-main's turn 1, minted at ``TOKEN_MINTED_AT``."""
     _set_clock(stack, handle, TOKEN_MINTED_AT)
     request = TurnTokenRequest(agent_uid="agent-main", turn=1)
     return stack.control.post_model(TURN_TOKENS_ROUTE.format(handle=handle), request, IssuedToken).token
@@ -108,19 +94,16 @@ def turn_token(stack: GatewayStack, handle: str) -> str:
 
 @pytest.fixture
 def durable(stack: GatewayStack, handle: str) -> DurableCredentialIssued:
-    """A durable credential for ``DURABLE_ACCOUNT``, issued off-band (not for a sanctioned request)."""
     return _issue_durable(stack, handle, rotate=False)
 
 
 @pytest.fixture
 def rotated(stack: GatewayStack, handle: str, durable: DurableCredentialIssued) -> DurableCredentialIssued:
-    """The credential a rotation issues in place of ``durable``."""
     return _issue_durable(stack, handle, rotate=True)
 
 
 @pytest.fixture
 def closed_handle(stack: GatewayStack, handle: str) -> str:
-    """An episode that served one generate, sealed at seq 0, then closed."""
     _generate(stack, REQUEST)
     _close(stack, handle)
     return handle
@@ -139,7 +122,6 @@ def _set_clock(stack: GatewayStack, handle: str, now: float) -> None:
 
 
 def _set_coverage(stack: GatewayStack, handle: str, component: CoverageComponent) -> None:
-    """Deploy ``component`` coverage over ``COVERED_CALLER`` only, so it drops ``DROPPED_CALLER``."""
     update = CoverageUpdate(component=component, covered=frozenset({COVERED_CALLER}))
     stack.control.send("PUT", COVERAGE_ROUTE.format(handle=handle), update)
 
@@ -532,7 +514,6 @@ def test_a_durable_call_is_sealed_with_whether_its_credential_was_sanctioned(
 
 # --- concurrency ---
 def _generate_concurrently(stack: GatewayStack) -> list[CoreGenerateResponse]:
-    """Make ``CONCURRENT_CALLS`` generate calls from eight threads at once; their replies."""
     requests = [
         GenerateRequest(prompt=f"p{index}", caller_identity="agent-main") for index in range(CONCURRENT_CALLS)
     ]
@@ -556,8 +537,6 @@ def test_concurrent_calls_are_sealed_in_seq_order(stack: GatewayStack, handle: s
 # --- every episode starts afresh ---
 @dataclass(frozen=True)
 class EarlierEpisode:
-    """An episode whose turn token and durable credential served one call before the run opened anew."""
-
     handle: str
     turn_token: str
     durable_token: str
@@ -690,13 +669,11 @@ class _RefusingProvider:
 
 @pytest.fixture
 def refusing_stack(tmp_path: Path) -> GatewayStack:
-    """A core holding a provider that refuses every call."""
     return serve_gateway(tmp_path, provider=_RefusingProvider())
 
 
 @pytest.fixture
 def refusing_handle(refusing_stack: GatewayStack) -> str:
-    """An episode open on ``refusing_stack`` with the key-holding provider."""
     return refusing_stack.open_episode(OPENROUTER_OPENING).handle
 
 
@@ -745,18 +722,7 @@ def test_the_episode_spec_of_a_run_config_carries_its_teacher_token_quota() -> N
 
 # --- the core as uvicorn builds it ---
 @pytest.fixture
-def secrets_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """An empty stand-in for the core container's /run/secrets, with its settings variable set."""
-    for name in (OPENROUTER_API_KEY_SECRET_NAME, CONTROL_KEY_SECRET_NAME):
-        monkeypatch.delenv(name.upper(), raising=False)
-    monkeypatch.setenv(SETTINGS_ENVIRONMENT_VARIABLE, LocArenaSettings().model_dump_json())
-    monkeypatch.setattr(stack_secrets, "DOCKER_SECRETS_DIRECTORY", tmp_path)
-    return tmp_path
-
-
-@pytest.fixture
 def built_core(secrets_directory: Path) -> TestClient:
-    """The core built from the environment, holding the control key and no provider key."""
     (secrets_directory / CONTROL_KEY_SECRET_NAME).write_text(KEY.get_secret_value())
     return TestClient(build_core_app())
 
@@ -786,12 +752,11 @@ def test_the_built_core_serves_no_schema(built_core: TestClient) -> None:
 
 
 def test_the_in_process_wiring_meets_the_runner_protocols(tmp_path: Path) -> None:
-    # STACK=0: the runner's own logs and trace, the same control and edge code as the services.
     trace = AgentTrace()
     sealed = AppendOnlyLog(tmp_path / "sealed.jsonl", "ep", on_append=trace.on_sealed_append)
     mirror = AppendOnlyLog(tmp_path / "mirror.jsonl", "ep", on_append=trace.on_mirror_append)
     spec = EpisodeSpec(models=OPENING.models, covert=OPENING.covert, teacher_token_quota=100)
-    episode = LocalGatewayControl.open(
+    episode = LocalGatewayControl(
         spec,
         episode_id="ep",
         handle="0123456789abcdef",
@@ -801,8 +766,8 @@ def test_the_in_process_wiring_meets_the_runner_protocols(tmp_path: Path) -> Non
         observer=trace,
     )
     control: GatewayControl = episode
-    gateway: Servable = GatewayEdge("ep", episode.core, mirror)  # task.py's and live.py's form
-    service_edge: Servable = MirroringRelay(episode.core, EpisodeMirror("ep", mirror))  # the service's
+    gateway: Servable = GatewayEdge("ep", episode.core, mirror)
+    service_edge: Servable = MirroringRelay(episode.core, EpisodeMirror("ep", mirror))
 
     control.set_clock(300.0)
     token = control.mint_turn_token("agent-main", 1)

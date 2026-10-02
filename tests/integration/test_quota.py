@@ -17,7 +17,6 @@ EP = "ep-quota"
 
 def _core_with_quota(tmp_path: Path, quota: int, *, tokens_per_call: int) -> GatewayCore:
     cfg = load_run_config("configs/aurora-efficiency.deterministic.yaml")
-    # The quota is the settings' inference.batch_generate.teacher_token_quota (config over code).
     batch_generate = BatchGenerateSettings(teacher_token_quota=quota)
     inference = cfg.settings.inference.model_copy(update={"batch_generate": batch_generate})
     cfg = dataclasses.replace(cfg, settings=cfg.settings.model_copy(update={"inference": inference}))

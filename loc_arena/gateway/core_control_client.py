@@ -1,11 +1,4 @@
-"""The runner's control of one episode on the gateway core, over the core's control routes.
-
-``CoreControlClient`` implements ``GatewayControl`` for the episode it opened: every call is one request
-to the core (``loc_arena.gateway.core_service``), made with the control key the ``ServiceClient`` holds,
-and returns once the core has applied it, so the runner's clock ticks and coverage changes reach the core
-in the order the runner makes them. A refusal raises ``httpx.HTTPStatusError`` (401 without the key, 404
-for an episode the core does not hold, 502 when the provider failed a monitor's call).
-"""
+"""The runner's control of one episode on the gateway core, over the core's control routes."""
 
 from __future__ import annotations
 

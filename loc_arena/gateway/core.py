@@ -6,15 +6,13 @@ log the agent cannot reach), and fingerprinted, append-only logging (each call i
 monotonic seq). It stamps a
 ``turn_id`` iff the call carries a valid signed scaffold turn token, a ``batch_id`` iff the call arrives
 via ``/batch_generate``, injects the covert objective server-side for ``covert.target_identity`` only,
-resolves the model by role from the episode's model routes, and writes the sealed record ``{seq, ts,
+resolves the model by role from ``models.cheap.yaml``, and writes the sealed record ``{seq, ts,
 episode_id, caller_identity, turn_id, batch_id, prompt_fp, output_fp, model_role}`` (plus the
 ``credential_kind`` the verifier reads). ``/batch_generate`` is stateless (no loop) and enforces the
 teacher token quota.
 
 Turn-token signing and the ``Provider`` abstraction live here (not new files) to preserve the locked
-gateway layout. A model call's request, the provider's result and the fingerprints are the shared types of
-:mod:`loc_arena.stack.model_call`; the other bodies are the contract models of
-:mod:`loc_arena.stack.contracts`; the FastAPI service around it is :mod:`loc_arena.gateway.core_service`.
+gateway layout.
 """
 
 from __future__ import annotations
@@ -37,12 +35,10 @@ from fastapi import HTTPException
 from pydantic import SecretStr
 
 from loc_arena.logging_.events import EventDraft, EventLog
-from loc_arena.stack.constants import BATCH_GENERATE_ROUTE, GENERATE_ROUTE
 from loc_arena.stack.contracts import (
     BatchGenerateRequest,
     BatchGenerateResponse,
     CoreGenerateResponse,
-    CoreRelay,
     CovertInjection,
     CredentialKind,
     ModelRoute,
@@ -56,12 +52,9 @@ from loc_arena.stack.model_call import (
     input_fingerprint,
     output_fingerprint,
 )
-from loc_arena.stack.model_call import (
-    GenerateResponse as GenerateResponse,  # re-exported: the agent policy and its tests import it from here
-)
+from loc_arena.stack.model_call import GenerateResponse as GenerateResponse
 
 if TYPE_CHECKING:
-    # Typing only: the core container builds its spec from EpisodeOpen, never from a run config.
     from loc_arena.config import RunConfig
 
 
@@ -158,7 +151,6 @@ def verify_monitor_credential(secret: str, token: str, now: float) -> dict[str, 
     return payload
 
 
-# RFC 2104 section 3: an HMAC key should be at least as long as the hash output (32 bytes for SHA-256).
 SIGNING_KEY_BYTES: Final = 32
 
 
@@ -178,12 +170,6 @@ class SigningKeys:
             durable=SecretStr(secrets.token_hex(SIGNING_KEY_BYTES)),
             monitor=SecretStr(secrets.token_hex(SIGNING_KEY_BYTES)),
         )
-
-    @classmethod
-    def shared(cls, secret: str) -> Self:
-        """One secret for every kind: the in-process wiring, which signs its turn and durable credentials."""
-        key = SecretStr(secret)
-        return cls(turn=key, durable=key, monitor=key)
 
 
 # --------------------------------------------------------------------------------------------------------
@@ -235,11 +221,7 @@ class DeterministicProvider:
 # --------------------------------------------------------------------------------------------------------
 @dataclass(frozen=True)
 class EpisodeSpec:
-    """What a GatewayCore reads of its run: each model role's route, the covert injection, the batch quota.
-
-    In the stack they arrive in ``EpisodeOpen`` (the quota from the core's settings); in process they come
-    from the run config (:meth:`from_run_config`).
-    """
+    """What a GatewayCore reads of its run: each model role's route, the covert injection, the batch quota."""
 
     models: Mapping[str, ModelRoute]
     covert: CovertInjection
@@ -290,13 +272,11 @@ class CallAttribution:
 # The core
 # --------------------------------------------------------------------------------------------------------
 class GatewayCore:
-    """The sealed core logic of one episode (framework-independent so it is testable without HTTP).
+    """The sealed core logic (framework-independent so it is testable without HTTP).
 
-    Holds the injected provider (the only egress), the sealed ``EventLog`` (which assigns each seq), the
-    per-kind signing keys, and the batch token counter. Resolves identity and stamps, injects the covert
-    objective for the target identity only, calls the provider, and records exactly one sealed event per
-    model call. Safe to call from several threads: the log numbers records under its own lock and the
-    quota is charged under this core's.
+    Holds the injected provider (the only egress), the sealed ``EventLog``, the per-kind signing
+    keys, and the batch token counter. Resolves identity and stamps, injects the covert objective for
+    the target identity only, calls the provider, and writes exactly one sealed record per model call.
     """
 
     def __init__(
@@ -313,41 +293,33 @@ class GatewayCore:
         is_revoked: Callable[[str], bool] | None = None,
         trace: ModelCallObserver | None = None,
     ) -> None:
-        """Wire the core to its run, episode, sealed log, provider, keys and clock; everyone is covered.
+        """Wire the core to its config, episode, sealed log, provider, keys, and clock.
 
-        ``signing_keys`` are the per-kind keys (fresh ones are generated when neither they nor
-        ``turn_secret`` is given); ``turn_secret`` is the in-process wiring's one shared secret, for callers
-        that sign turn, durable and monitor credentials themselves. ``episode_handle`` names the episode in
-        every reply (a fresh one if ``None``). ``is_revoked`` is the identity service's REAL revocation
+        ``is_revoked`` is the identity service's REAL revocation
         check: a credential instance revoked at a rotation tick no longer resolves to its durable identity,
         so the running loop must refresh to a new instance to keep issuing calls
-        (survives_credential_rotation). ``trace`` observes every provider call.
+        (survives_credential_rotation).
         """
-        if signing_keys is not None and turn_secret is not None:
-            raise ValueError("pass signing_keys or turn_secret, not both")
-        if signing_keys is None:
-            signing_keys = SigningKeys.generate() if turn_secret is None else SigningKeys.shared(turn_secret)
+        if signing_keys is None and turn_secret is not None:
+            key = SecretStr(turn_secret)
+            signing_keys = SigningKeys(turn=key, durable=key, monitor=key)
         self._spec = config if isinstance(config, EpisodeSpec) else EpisodeSpec.from_run_config(config)
         self._episode_id = episode_id
         self._episode_handle = episode_handle or generate_episode_handle()
         self._sealed = sealed_log
         self._provider = provider
-        self._keys = signing_keys
+        self._keys = signing_keys or SigningKeys.generate()
         self._clock = clock
         self._batch_numbers = itertools.count(1)  # next() on a count is atomic in CPython
         self._teacher_tokens_used = 0
         self._quota_lock = threading.Lock()
-        self._monitor_covered: frozenset[str] | None = None  # None covers everyone (the baseline)
+        self._monitor_covered: frozenset[str] | None = None
         self._logging_covered: frozenset[str] | None = None
         self._is_revoked = is_revoked or (lambda _instance: False)
         self._trace = trace
 
     def set_monitor_covered(self, covered: AbstractSet[str] | None) -> None:
-        """Set the deployed monitor coverage (the environment applies reduced_monitor_coverage).
-
-        A dropped identity's calls carry ``on_monitored_path=False`` in the sealed record (and, for logging,
-        ``in_mirror=False``): exactly the coverage reduction the verifier keys on. ``None`` covers everyone.
-        """
+        """Set the deployed monitor coverage (the environment applies reduced_monitor_coverage)."""
         self._monitor_covered = None if covered is None else frozenset(covered)
 
     def set_logging_covered(self, covered: AbstractSet[str] | None) -> None:
@@ -358,7 +330,6 @@ class GatewayCore:
     def _covered(covered: frozenset[str] | None, identity: str) -> bool:
         return covered is None or identity in covered
 
-    # -- credentials the core signs itself ---------------------------------------------------------------
     def mint_turn_token(self, agent_uid: str, turn: int, *, expires_at: float) -> str:
         """A turn token marking ``agent_uid``'s calls in ``turn`` as sanctioned until ``expires_at``."""
         turn_key = self._keys.turn.get_secret_value()
@@ -370,12 +341,6 @@ class GatewayCore:
 
     # -- identity + stamps -------------------------------------------------------------------------------
     def _resolve(self, request: GenerateRequest, now: float) -> CallAttribution:
-        """Resolve who the call is attributed to.
-
-        A valid monitor credential wins; then a valid, unrevoked durable credential (a background/rogue job
-        running under a service account, off-turn); then a valid turn token (a sanctioned turn); otherwise
-        the claimed identity with no credential.
-        """
         if request.monitor_credential:
             payload = verify_monitor_credential(
                 self._keys.monitor.get_secret_value(),
@@ -398,7 +363,7 @@ class GatewayCore:
                     None,
                     "durable_identity",
                     credential_id=str(payload["instance"]),
-                    issued_for_sanctioned_request=bool(payload.get("sanctioned", False)),  # read TRUTHFULLY
+                    issued_for_sanctioned_request=bool(payload.get("sanctioned", False)),
                 )
         if request.turn_token:
             payload = verify_turn_token(self._keys.turn.get_secret_value(), request.turn_token, now)
@@ -428,7 +393,6 @@ class GatewayCore:
         return route
 
     def _charge_quota(self, tokens: int) -> None:
-        """Count a batch call's tokens against the teacher quota, or refuse it (429) past the quota."""
         with self._quota_lock:
             if self._teacher_tokens_used + tokens > self._spec.teacher_token_quota:
                 raise HTTPException(
@@ -449,7 +413,7 @@ class GatewayCore:
         ts: float,
         in_mirror: bool,
     ) -> int:
-        """Record one sealed inference-call event, with the call's token counts, and return its seq.
+        """Write one sealed inference-call record and return its seq.
 
         ``prompt_fp`` is over the agent-submitted input (pre-injection), so covert text is never
         fingerprinted here and the self-feeding loop linkage the verifier relies on stays clean. The
@@ -495,7 +459,7 @@ class GatewayCore:
 
     # -- endpoints ---------------------------------------------------------------------------------------
     def generate(self, request: GenerateRequest) -> CoreGenerateResponse:
-        """Serve one generate call: resolve, inject, call the provider, record the sealed event."""
+        """Serve one generate call: resolve, inject, call the provider, write the sealed record."""
         ts = self._clock()
         caller = self._resolve(request, ts)
         route = self._route_for(request.role)
@@ -529,10 +493,7 @@ class GatewayCore:
         )
 
     def batch_generate(self, request: BatchGenerateRequest) -> BatchGenerateResponse:
-        """Serve a stateless batch call under the teacher token quota; one sealed record per prompt.
-
-        Each prompt calls the provider before its tokens are charged, so a refused call (429) was still made.
-        """
+        """Serve a stateless batch call under the teacher token quota; one sealed record per prompt."""
         batch_id = f"batch-{next(self._batch_numbers)}"
         route = self._route_for(request.role)
         caller = CallAttribution(request.caller_identity, None, "batch_id", batch_id=batch_id)
@@ -582,32 +543,3 @@ def _render_output(result: ProviderResult) -> str:
     if not result.tool_calls:
         return result.text
     return json.dumps(result.assistant_message(), indent=2, ensure_ascii=False)
-
-
-class DirectTransport:
-    """An in-process ``Transport`` dispatching straight to the core or the edge (no sockets).
-
-    Used by scripted/dev episode assembly so agent code can go through the tamperable edge to the core
-    exactly as in the running stack, without standing up FastAPI. It is also a ``CoreRelay``, so the
-    in-process wiring can hand it to ``GatewayEdge`` as its core. The stack uses HTTP clients instead.
-    """
-
-    def __init__(self, target: CoreRelay) -> None:
-        """Wire the transport to the core or edge it dispatches to."""
-        self._target = target
-
-    def generate(self, request: GenerateRequest, /) -> CoreGenerateResponse:
-        """Serve one model call on the target."""
-        return self._target.generate(request)
-
-    def batch_generate(self, request: BatchGenerateRequest, /) -> BatchGenerateResponse:
-        """Serve one batch on the target."""
-        return self._target.batch_generate(request)
-
-    def post_json(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
-        """Dispatch ``/generate`` or ``/batch_generate`` to the target; return the model-dumped reply."""
-        if path == GENERATE_ROUTE:
-            return self.generate(GenerateRequest(**body)).model_dump()
-        if path == BATCH_GENERATE_ROUTE:
-            return self.batch_generate(BatchGenerateRequest(**body)).model_dump()
-        raise ValueError(f"DirectTransport: unknown path {path!r}")

@@ -14,7 +14,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 from loc_arena.config import RunConfig, load_run_config
 from loc_arena.gateway.client import EdgeClient, GatewayClient
-from loc_arena.gateway.core import DirectTransport, GatewayCore
+from loc_arena.gateway.core import GatewayCore
 from loc_arena.gateway.edge import GatewayEdge, create_edge_app
 from loc_arena.logging_.events import AppendOnlyLog
 from loc_arena.scaffold.agent import AgentPolicy, ScriptedAgentPolicy, TurnMinter
@@ -76,7 +76,7 @@ class Harness:
         )
         self.edge = GatewayEdge(
             episode_id,
-            DirectTransport(core),
+            core,
             self.mirror,
             clock=self.clock,
         )

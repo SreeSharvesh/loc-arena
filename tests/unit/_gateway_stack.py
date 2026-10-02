@@ -1,7 +1,4 @@
-"""The gateway services wired in process for the service tests: recorder <- core <- edge, over TestClient.
-
-No sockets, no provider (episodes use the deterministic stub), no key but the test control key.
-"""
+"""The gateway services wired in process for the service tests: recorder <- core <- edge, over TestClient."""
 
 from __future__ import annotations
 
@@ -36,8 +33,6 @@ OPENING = EpisodeOpen(
 
 @dataclass(frozen=True)
 class GatewayStack:
-    """The three apps and the clients a test drives them with."""
-
     sealed_root: Path
     mirror_root: Path
     control: ServiceClient  # the runner's client of the core: control key on every request
@@ -55,10 +50,6 @@ class GatewayStack:
 
 
 def serve_gateway(tmp_path: Path, *, provider: Provider | None = None) -> GatewayStack:
-    """Serve the recorder, the core recording to it, and the edge relaying to the core, under ``tmp_path``.
-
-    ``provider`` is the core's key-holding provider (``None``: the core holds no key).
-    """
     settings = LocArenaSettings()
     sealed_root, mirror_root = tmp_path / "sealed", tmp_path / "mirror"
     recorder_app = create_recorder_app(SealedDirectory(sealed_root), settings=settings.gateway)

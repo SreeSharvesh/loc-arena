@@ -25,12 +25,6 @@ NEXT_DRAFT = EventDraft(ts=2.0, actor_uid="agent-main", actor_role="untrusted", 
 
 
 class FailingTransport(httpx.BaseTransport):
-    """Forwards each request to the recorder; the first ``failures`` of them end in a transport error.
-
-    A failing request is ``delivered`` (the recorder writes it, only its reply is lost) or never reaches
-    the recorder at all.
-    """
-
     def __init__(self, recorder: TestClient, failures: int, *, delivered: bool = True) -> None:
         """Forward to ``recorder``, failing the first ``failures`` requests after or before delivery."""
         self._recorder = recorder
@@ -39,7 +33,6 @@ class FailingTransport(httpx.BaseTransport):
         self.requests = 0
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
-        """Forward ``request``, or raise an ``httpx.TransportError`` in place of the reply while failing."""
         self.requests += 1
         failing = self.requests <= self._failures
         if failing and not self._delivered:
@@ -52,7 +45,6 @@ class FailingTransport(httpx.BaseTransport):
 
 @pytest.fixture(autouse=True)
 def no_backoff() -> Iterator[None]:
-    """No waits between attempts; the configured number of attempts still applies (``cap=True``)."""
     with stamina.set_testing(True, attempts=100, cap=True):
         yield
 
@@ -83,7 +75,6 @@ def transport_losing_every_reply(recorder: TestClient) -> FailingTransport:
 
 @pytest.fixture
 def ledger_after_every_reply_was_lost(transport_losing_every_reply: FailingTransport) -> EpisodeLedger:
-    """A ledger whose first record the recorder wrote, every reply to it lost."""
     ledger = _ledger_over(transport_losing_every_reply)
     with suppress(httpx.TransportError):
         ledger.record(DRAFT)
@@ -92,7 +83,6 @@ def ledger_after_every_reply_was_lost(transport_losing_every_reply: FailingTrans
 
 @pytest.fixture
 def ledger_after_the_recorder_was_never_reached(recorder: TestClient) -> EpisodeLedger:
-    """A ledger whose first record never reached the recorder, over every attempt."""
     transport = FailingTransport(recorder, failures=SETTINGS.recorder_write_attempts, delivered=False)
     ledger = _ledger_over(transport)
     with suppress(httpx.TransportError):
@@ -102,7 +92,6 @@ def ledger_after_the_recorder_was_never_reached(recorder: TestClient) -> Episode
 
 @pytest.fixture
 def recorder_owned_by_another_episode(recorder: TestClient) -> TestClient:
-    """The recorder with ``HANDLE`` bound to another episode: it answers 409 to this episode's events."""
     EpisodeLedger(ServiceClient(recorder), HANDLE, "another-ep", settings=SETTINGS).record(DRAFT)
     return recorder
 

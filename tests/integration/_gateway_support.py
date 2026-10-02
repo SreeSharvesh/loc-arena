@@ -1,7 +1,4 @@
-"""Test doubles for the gateway: deterministic stub providers (the only egress, replaced).
-
-No docker and no network: the stubs replace the only egress.
-"""
+"""Test doubles for the gateway: deterministic stub providers."""
 
 from __future__ import annotations
 

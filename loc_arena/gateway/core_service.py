@@ -1,15 +1,6 @@
-"""The gateway core as a FastAPI service: one GatewayCore per episode handle, and the control routes.
+"""The gateway core as a FastAPI service: one GatewayCore per episode handle, and the control routes."""
 
-The model routes (``/generate``, ``/batch_generate``) serve the ACTIVE episode, the one opened last and
-not yet closed, and answer 409 when there is none; the edge relays every agent call there. The control
-routes need the control key: the runner opens an episode, sets its clock and coverage, has the core mint
-turn tokens and durable credentials, records its sealed events, makes monitor calls and closes it. Each
-episode's sealed records reach the recorder through its ``EpisodeLedger``.
-
-No ``from __future__ import annotations``: the routes' dependency annotations name types local to
-:func:`create_core_app`, which FastAPI must resolve at runtime (see :mod:`loc_arena.stack.service_client`).
-"""
-
+# No ``from __future__ import annotations``: FastAPI must resolve the route-local dependency aliases.
 import threading
 from http import HTTPStatus
 from typing import Annotated
@@ -17,8 +8,6 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import SecretStr
-from starlette.middleware import Middleware
-from starlette.middleware.body_limit import RequestBodyLimitMiddleware
 
 from loc_arena.gateway.control import EpisodeLedger, LocalGatewayControl
 from loc_arena.gateway.core import DeterministicProvider, EpisodeSpec, Provider
@@ -61,7 +50,7 @@ from loc_arena.stack.contracts import (
     build_episode_id,
     generate_episode_handle,
 )
-from loc_arena.stack.service_client import ServiceClient, require_control_key
+from loc_arena.stack.service_client import ServiceClient, create_service_app, require_control_key
 from loc_arena.stack.settings import LocArenaSettings, load_settings_from_environment
 from loc_arena.stack.stack_secrets import load_container_secrets
 
@@ -88,14 +77,19 @@ class CoreEpisodes:
         """Whether the core holds a provider key, so an episode may use the ``openrouter`` provider."""
         return self._provider is not None
 
-    @property
-    def active(self) -> LocalGatewayControl | None:
-        """The episode the model routes serve, if one is open."""
-        return self._active
+    def find(self, handle: EpisodeHandle) -> LocalGatewayControl:
+        """The episode ``handle`` names; 404 if the core never opened it."""
+        episode = self._episodes.get(handle)
+        if episode is None:
+            raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=f"no episode {handle}")
+        return episode
 
-    def find(self, handle: str) -> LocalGatewayControl | None:
-        """The episode ``handle`` names, if the core opened it."""
-        return self._episodes.get(handle)
+    def find_active(self) -> LocalGatewayControl:
+        """The episode the model routes serve; 409 if none is open."""
+        episode = self._active
+        if episode is None:
+            raise HTTPException(status_code=HTTPStatus.CONFLICT, detail="no episode is active")
+        return episode
 
     def open(self, opening: EpisodeOpen) -> EpisodeOpened:
         """Open a fresh episode (new handle, keys, clock, quota) and make it the active one."""
@@ -108,7 +102,7 @@ class CoreEpisodes:
             covert=opening.covert,
             teacher_token_quota=self.settings.inference.batch_generate.teacher_token_quota,
         )
-        episode = LocalGatewayControl.open(
+        episode = LocalGatewayControl(
             spec,
             episode_id=episode_id,
             handle=handle,
@@ -142,27 +136,11 @@ class CoreEpisodes:
 def create_core_app(episodes: CoreEpisodes, *, control_key: SecretStr) -> FastAPI:
     """Wire the core's model routes and control routes (control key) onto a FastAPI app."""
     gateway = episodes.settings.gateway
-    app = FastAPI(
-        title="loc-arena gateway core",
-        openapi_url=None,
-        middleware=[Middleware(RequestBodyLimitMiddleware, max_body_size=gateway.max_request_bytes)],
-    )
+    app = create_service_app("loc-arena gateway core", gateway.max_request_bytes)
     control = APIRouter(dependencies=[Depends(require_control_key(control_key, gateway.control_key_header))])
 
-    def find_episode(handle: EpisodeHandle) -> LocalGatewayControl:
-        episode = episodes.find(handle)
-        if episode is None:
-            raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=f"no episode {handle}")
-        return episode
-
-    def find_active_episode() -> LocalGatewayControl:
-        episode = episodes.active
-        if episode is None:
-            raise HTTPException(status_code=HTTPStatus.CONFLICT, detail="no episode is active")
-        return episode
-
-    Episode = Annotated[LocalGatewayControl, Depends(find_episode)]  # noqa: N806 - a type alias
-    ActiveEpisode = Annotated[LocalGatewayControl, Depends(find_active_episode)]  # noqa: N806 - a type alias
+    Episode = Annotated[LocalGatewayControl, Depends(episodes.find)]  # noqa: N806 - a type alias
+    ActiveEpisode = Annotated[LocalGatewayControl, Depends(episodes.find_active)]  # noqa: N806 - a type alias
 
     @app.exception_handler(ProviderError)
     def report_provider_failure(request: Request, error: ProviderError) -> JSONResponse:

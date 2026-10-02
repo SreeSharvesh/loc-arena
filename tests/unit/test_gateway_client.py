@@ -2,26 +2,13 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-import pytest
 from fastapi.testclient import TestClient
 from loc_arena.gateway.client import EdgeClient, GatewayClient
 from loc_arena.gateway.core_control_client import CoreControlClient
 from loc_arena.stack.contracts import GenerateRequest
 from loc_arena.stack.service_client import ServiceClient
 
-from tests.unit._gateway_stack import OPENING, GatewayStack, serve_gateway
-
-
-@pytest.fixture
-def stack(tmp_path: Path) -> GatewayStack:
-    return serve_gateway(tmp_path)
-
-
-@pytest.fixture
-def control(stack: GatewayStack) -> CoreControlClient:
-    return CoreControlClient.open_episode(stack.control, OPENING)
+from tests.unit._gateway_stack import GatewayStack
 
 
 def _edge(edge: TestClient) -> EdgeClient:

@@ -13,7 +13,6 @@ import pytest
 from fastapi.testclient import TestClient
 from loc_arena.gateway.edge import build_edge_app
 from loc_arena.logging_.events import Event, EventDraft, fingerprint
-from loc_arena.stack import stack_secrets
 from loc_arena.stack.constants import (
     BATCH_GENERATE_ROUTE,
     CLOCK_ROUTE,
@@ -22,7 +21,6 @@ from loc_arena.stack.constants import (
     GENERATE_ROUTE,
     HEALTH_ROUTE,
     MIRROR_EVENTS_ROUTE,
-    SETTINGS_ENVIRONMENT_VARIABLE,
     TURN_TOKENS_ROUTE,
 )
 from loc_arena.stack.contracts import (
@@ -46,7 +44,6 @@ from pydantic import SecretStr
 from tests.unit._gateway_stack import KEY, OPENING, GatewayStack, serve_gateway
 
 REPOSITORY_ROOT = Path(__file__).parents[2]
-# What the sandbox image ships of this repository, besides loc_arena.stack: the edge imports no more.
 SANDBOX_MODULES = frozenset(
     {
         "loc_arena",
@@ -63,7 +60,6 @@ UNLOGGED_CALLER = "batch-runner"  # outside the logging coverage the tests deplo
 BATCH_PROMPTS = ("a", "b")
 FIRST_MIRROR_SEQ = 0
 MIRROR_DRAFT = EventDraft(ts=3.0, actor_uid="agent-main", actor_role="orchestrator", kind="message")
-# A chat call: a history, the tools it offers, and the one tool call the provider answers with.
 CHAT_HISTORY: list[Message] = [
     {"role": "system", "content": "you are an engineer"},
     {"role": "user", "content": "list the files"},
@@ -81,8 +77,6 @@ TOKEN_FIELDS = frozenset({"prompt_tokens", "completion_tokens", "cached_tokens"}
 
 
 class ToolCallingProvider:
-    """Answers a call that offers tools with one tool call, with fixed token counts (no network)."""
-
     def generate(
         self,
         model: str,
@@ -102,36 +96,13 @@ class ToolCallingProvider:
 
 
 @pytest.fixture
-def stack(tmp_path: Path) -> GatewayStack:
-    return serve_gateway(tmp_path)
-
-
-@pytest.fixture
-def opened(stack: GatewayStack) -> EpisodeOpened:
-    return stack.open_episode()
-
-
-@pytest.fixture
 def chat_stack(tmp_path: Path) -> GatewayStack:
-    """A gateway whose core holds a provider that answers offered tools with a tool call."""
     return serve_gateway(tmp_path, provider=ToolCallingProvider())
 
 
 @pytest.fixture
 def chat_opened(chat_stack: GatewayStack) -> EpisodeOpened:
-    """An episode open on ``chat_stack`` with its key-holding provider."""
     return chat_stack.open_episode(OPENING.model_copy(update={"provider": "openrouter"}))
-
-
-@pytest.fixture
-def secrets_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """An empty stand-in for the edge container's /run/secrets, with its settings variable set."""
-    directory = tmp_path / "run-secrets"
-    directory.mkdir()
-    monkeypatch.delenv(CONTROL_KEY_SECRET_NAME.upper(), raising=False)
-    monkeypatch.setenv(SETTINGS_ENVIRONMENT_VARIABLE, LocArenaSettings().model_dump_json())
-    monkeypatch.setattr(stack_secrets, "DOCKER_SECRETS_DIRECTORY", directory)
-    return directory
 
 
 def _relay(stack: GatewayStack, request: GenerateRequest) -> RelayedGenerateResponse:
@@ -139,7 +110,6 @@ def _relay(stack: GatewayStack, request: GenerateRequest) -> RelayedGenerateResp
 
 
 def _relay_chat(stack: GatewayStack) -> RelayedGenerateResponse:
-    """Relay the covert target's chat call, which offers tools, through the edge's and the core's apps."""
     request = GenerateRequest(messages=CHAT_HISTORY, tools=CHAT_TOOLS, caller_identity=COVERT_TARGET)
     return _relay(stack, request)
 
@@ -150,7 +120,6 @@ def _relay_batch(stack: GatewayStack) -> RelayedBatchGenerateResponse:
 
 
 def _relay_unlogged_call(stack: GatewayStack, handle: str) -> RelayedGenerateResponse:
-    """Deploy logging that covers the covert target only, then relay a call from outside that coverage."""
     update = CoverageUpdate(component="logging", covered=frozenset({COVERT_TARGET}))
     stack.control.send("PUT", COVERAGE_ROUTE.format(handle=handle), update)
     return _relay(stack, GenerateRequest(prompt="loop", caller_identity=UNLOGGED_CALLER))

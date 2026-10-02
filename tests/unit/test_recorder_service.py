@@ -53,7 +53,6 @@ def _post(recorder: TestClient, event: Event, route: str = EVENTS) -> httpx.Resp
 
 
 def _serve(sealed_root: Path, settings: GatewaySettings | None = None) -> TestClient:
-    """A recorder over ``sealed_root``; a second one over the same root stands for a restart."""
     app = create_recorder_app(SealedDirectory(sealed_root), settings=settings or GatewaySettings())
     return TestClient(app)
 
@@ -73,7 +72,6 @@ def recorder_holding_the_first_event(recorder: TestClient) -> TestClient:
     return recorder
 
 
-# --- appending events ---
 def test_an_event_continuing_the_log_is_appended(
     recorder_holding_the_first_event: TestClient,
     tmp_path: Path,
@@ -121,7 +119,6 @@ def test_different_content_at_a_written_seq_leaves_the_log_alone(
     assert [event.ts for event in read_events(tmp_path / HANDLE / EVENTS_FILE_NAME)] == [1.0]
 
 
-# --- a re-send after a lost acknowledgement ---
 def test_an_identical_resend_is_acknowledged_with_the_same_fingerprint(recorder: TestClient) -> None:
     first = AppendAck.model_validate_json(_post(recorder, _event(0)).content)
 
@@ -160,7 +157,6 @@ def test_an_identical_resend_is_acknowledged_after_a_restart(
     assert AppendAck.model_validate_json(reply.content).fp == _event(0).compute_fp()
 
 
-# --- one episode per handle ---
 def test_another_episodes_event_is_refused_with_409(recorder_holding_the_first_event: TestClient) -> None:
     reply = _post(recorder_holding_the_first_event, _event(1, episode_id="another-ep"))
 
@@ -189,7 +185,6 @@ def test_a_restarted_recorder_continues_the_episodes_log(
     assert _written_seqs(tmp_path) == [0, 1]
 
 
-# --- model calls ---
 def test_a_model_call_record_is_appended_whole_each_time_it_is_sent(
     recorder: TestClient,
     tmp_path: Path,
@@ -227,7 +222,6 @@ def test_a_body_over_the_request_limit_writes_nothing(
     assert not (tmp_path / HANDLE).exists()
 
 
-# --- no way to read the logs back ---
 def test_the_only_read_route_is_the_health_check(recorder: TestClient) -> None:
     routes = [route for route in recorder.app.routes if isinstance(route, APIRoute)]
 
@@ -261,7 +255,6 @@ def test_a_malformed_handle_is_refused_with_422(recorder: TestClient) -> None:
 
 @pytest.fixture
 def recorder_built_from_the_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    """The recorder as uvicorn builds it, from settings with a small body limit; logs under ``tmp_path``."""
     settings = LocArenaSettings(gateway=GatewaySettings(max_request_bytes=SMALL_BODY_LIMIT))
     monkeypatch.setenv(SETTINGS_ENVIRONMENT_VARIABLE, settings.model_dump_json())
     monkeypatch.setattr(f"{build_recorder_app.__module__}.SEALED_MOUNT_PATH", tmp_path)

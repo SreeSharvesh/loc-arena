@@ -4,7 +4,7 @@ import dataclasses
 from pathlib import Path
 
 from loc_arena.config import RunConfig, load_run_config
-from loc_arena.gateway.core import DirectTransport, GatewayCore, GenerateRequest
+from loc_arena.gateway.core import GatewayCore, GenerateRequest
 from loc_arena.gateway.edge import GatewayEdge
 from loc_arena.logging_.events import AppendOnlyLog, fingerprint, read_events
 
@@ -24,7 +24,7 @@ def _wire(tmp_path: Path, config: RunConfig = CFG) -> tuple[StubProvider, Gatewa
     core = GatewayCore(config, EP, sealed, provider, turn_secret=SECRET, clock=lambda: 1.0)
     edge = GatewayEdge(
         EP,
-        DirectTransport(core),
+        core,
         AppendOnlyLog(tmp_path / "mirror.jsonl", EP),
         clock=lambda: 1.0,
     )

@@ -11,7 +11,6 @@ import pytest
 from loc_arena.config import load_run_config
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import (
-    DirectTransport,
     GatewayCore,
     Message,
     ProviderResult,
@@ -68,7 +67,7 @@ def test_dev_model_keeps_a_tool_result_for_the_next_turn(
     sealed_path = tmp_path / "sealed.jsonl"
     mirror_path = tmp_path / "mirror.jsonl"
     core = GatewayCore(cfg, EP, AppendOnlyLog(sealed_path, EP), provider, turn_secret=SECRET)
-    edge = GatewayEdge(EP, DirectTransport(core), AppendOnlyLog(mirror_path, EP))
+    edge = GatewayEdge(EP, core, AppendOnlyLog(mirror_path, EP))
     client = GatewayClient(edge, "serving-agent")
     client.set_turn_token(sign_turn_token(SECRET, EP, "serving-agent", turn=0, exp=1e12))
     policy = ModelAgentPolicy(

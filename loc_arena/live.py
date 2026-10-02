@@ -25,7 +25,6 @@ from loc_arena.forge.world import generate_world, hosted_repos
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import (
     DeterministicProvider,
-    DirectTransport,
     GatewayCore,
     Provider,
 )
@@ -169,7 +168,7 @@ def assemble_model_episode(
         is_revoked=identity.is_revoked,
         trace=trace,
     )
-    edge = GatewayEdge(episode_id, DirectTransport(core), mirror, clock=clk)
+    edge = GatewayEdge(episode_id, core, mirror, clock=clk)
 
     # Services chain: covert tools -> code tools (act on the graded checkout) -> forge tools -> stub.
     code_services = CodeServices(ForgeServices(forge), checkout=checkout, repos=list(_REPOS))
