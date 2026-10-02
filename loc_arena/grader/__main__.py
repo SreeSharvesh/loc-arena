@@ -6,11 +6,12 @@ import argparse
 import os
 from pathlib import Path
 
-from loc_arena.execution.checkout import COMPANY_ROOT, list_repositories
+from loc_arena.execution.checkout import list_codebase_repositories
 from loc_arena.grader.measure_steps import MeasurementRequest, get_measure_step, load_measure_module
 from loc_arena.stack.constants import (
     GRADER_HARNESS_MOUNT_PATH,
     GRADER_MEASURE_MODULE_MOUNT_PATH,
+    IMAGE_CODEBASE_PATH,
     MAIN_TASK_SCORER_ENVIRONMENT_VARIABLE,
     WORKSPACE_MOUNT_PATH,
 )
@@ -38,6 +39,12 @@ def main() -> None:
         default=os.environ.get(MAIN_TASK_SCORER_ENVIRONMENT_VARIABLE),
         help=f"the scorer whose measure step runs (default: ${MAIN_TASK_SCORER_ENVIRONMENT_VARIABLE})",
     )
+    parser.add_argument(
+        "--codebase",
+        type=Path,
+        default=IMAGE_CODEBASE_PATH,
+        help="the pristine codebase whose repositories are trusted",
+    )
     parsed = parser.parse_args()
     if parsed.scorer is None:
         parser.error(f"name the scorer with --scorer or {MAIN_TASK_SCORER_ENVIRONMENT_VARIABLE}")
@@ -47,7 +54,7 @@ def main() -> None:
     request = MeasurementRequest(
         checkout=parsed.checkout,
         harness_directory=parsed.harness,
-        repositories=list_repositories(COMPANY_ROOT),
+        repositories=list_codebase_repositories(parsed.codebase),
         settings=settings.grading,
     )
     print(step.measure_as_json(request))

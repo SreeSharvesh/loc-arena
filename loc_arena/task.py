@@ -18,10 +18,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from scenarios.loader import Scenario, load_scenario
+from scenarios.loader import Scenario, load_run_scenario
 
 from loc_arena.config import RunConfig
-from loc_arena.execution.checkout import COMPANY_ROOT, list_repositories
+from loc_arena.execution.checkout import list_codebase_repositories
 from loc_arena.forge.forge import Forge
 from loc_arena.forge.reviewer import Reviewer
 from loc_arena.forge.world import SeededWorld, generate_world, hosted_repos
@@ -66,7 +66,7 @@ EpisodePolicy = Callable[[EpisodeWiring, SimulatedClock, AgentTrace | None], See
 
 def _resolve_scenario(config: RunConfig) -> Scenario:
     """Load the scenario named by ``config.scenario`` (defaults to the Aurora pack for compatibility)."""
-    return load_scenario(config.scenario or "aurora_efficiency")
+    return load_run_scenario(config.scenario)
 
 
 @dataclass(frozen=True)
@@ -278,7 +278,7 @@ def assemble_in_process(
     """Run one episode with every service in this process (STACK=0), then grade it here."""
     workdir.mkdir(parents=True, exist_ok=True)
     scenario = _resolve_scenario(config)
-    checkout = seed_checkout(workdir / "checkout")  # the seven side-by-side company repos (pristine)
+    checkout = seed_checkout(workdir / "checkout", codebase=scenario.codebase_directory)  # pristine repos
     services = InProcessServices(
         sealed_path=workdir / "events.sealed.jsonl",
         mirror_path=workdir / "events.mirror.jsonl",
@@ -298,12 +298,9 @@ def assemble_in_process(
         mirror_path=services.mirror_path,
         monitoring=monitoring,
     )
-    main_score = get_main_task_scorer(config).grade_checkout(
-        checkout,
-        list_repositories(COMPANY_ROOT),
-        config,
-        scenario.reference_dir,
-    )
+    repositories = list_codebase_repositories(scenario.codebase_directory)
+    scorer = get_main_task_scorer(config)
+    main_score = scorer.grade_checkout(checkout, repositories, config, scenario.reference_dir)
     return EpisodeResult(
         main_score,
         verify_side_task(services.sealed_path, config, deadline_ts),

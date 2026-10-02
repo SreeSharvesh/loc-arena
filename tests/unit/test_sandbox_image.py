@@ -12,19 +12,28 @@ import sys
 from pathlib import Path
 
 import pytest
-from loc_arena.stack.constants import MIRROR_MOUNT_PATH, SEALED_MOUNT_PATH, WORKSPACE_MOUNT_PATH
-from scenarios.loader import SCENARIOS_ROOT
+from loc_arena.stack.constants import (
+    CODEBASE_BUILD_ARGUMENT,
+    IMAGE_CODEBASE_PATH,
+    MIRROR_MOUNT_PATH,
+    SEALED_MOUNT_PATH,
+    WORKSPACE_MOUNT_PATH,
+)
+from scenarios.loader import DEFAULT_CODEBASE, SCENARIOS_ROOT, load_scenario
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 DOCKERFILE = REPOSITORY_ROOT / "Dockerfile"
+DOCKERIGNORE = REPOSITORY_ROOT / ".dockerignore"
+CODEBASE_REFERENCE = f"${{{CODEBASE_BUILD_ARGUMENT}}}"  # how a COPY names the codebase build argument
+SCENARIO_NAMES = sorted(path.parent.name for path in SCENARIOS_ROOT.glob("*/scenario.yaml"))
 SANDBOX_MODULES = (
     "loc_arena.execution.app",
     "loc_arena.execution.client",
     "loc_arena.grader.__main__",
 )
-# Every path the sandbox stage may copy: the company seed, the code of the execution app, the grader and
-# the edge, and their package __init__ files. Anything else, above all configs/, scenarios/ (the sealed
-# reference) and live.py (covert briefs), stays out of the image agents' code runs in.
+# Every path the sandbox stage may copy: the codebase (company/ by default), the code of the execution app,
+# the grader and the edge, and their package __init__ files. Anything else, above all configs/, scenarios/
+# (the sealed reference) and live.py (covert briefs), stays out of the image agents' code runs in.
 SANDBOX_IMAGE_ALLOWLIST = frozenset(
     {
         "company/",
@@ -85,13 +94,32 @@ def _stages() -> dict[str, list[str]]:
     return stages
 
 
+def _codebase_default() -> str:
+    """The default of the CODEBASE build argument, declared once before the first stage."""
+    for line in DOCKERFILE.read_text().splitlines():
+        if line.startswith("FROM "):
+            break
+        if line.startswith(f"ARG {CODEBASE_BUILD_ARGUMENT}="):
+            return line.split("=", 1)[1]
+    raise AssertionError(f"no {CODEBASE_BUILD_ARGUMENT} default before the first FROM")
+
+
+def _copies(stage: list[str]) -> list[list[str]]:
+    """Each COPY of the build context in ``stage``: its sources, then its destination."""
+    return [line.split()[1:] for line in stage if line.startswith("COPY ") and "--from" not in line]
+
+
 def _copied_sources(stage: list[str]) -> list[str]:
+    """What the stage copies from the build context, the codebase argument at its default."""
     return [
-        source
-        for line in stage
-        if line.startswith("COPY ") and "--from" not in line
-        for source in line.split()[1:-1]
+        source.replace(CODEBASE_REFERENCE, _codebase_default())
+        for copy in _copies(stage)
+        for source in copy[:-1]
     ]
+
+
+def _codebase_destinations(stage: list[str]) -> list[str]:
+    return [copy[-1] for copy in _copies(stage) if copy[:-1] == [f"{CODEBASE_REFERENCE}/"]]
 
 
 def test_sandbox_code_imports_only_what_the_sandbox_image_ships() -> None:
@@ -127,6 +155,37 @@ def test_the_sandbox_stage_copies_only_allowlisted_paths() -> None:
     unlisted = [source for source in sources if source not in SANDBOX_IMAGE_ALLOWLIST]
 
     assert unlisted == []
+
+
+def test_the_dockerfile_default_codebase_is_the_one_compose_passes_no_build_argument_for() -> None:
+    default = _codebase_default()
+
+    assert default == DEFAULT_CODEBASE
+
+
+def test_the_sandbox_image_holds_the_codebase_where_its_containers_read_it() -> None:
+    (workdir,) = (line.split()[1] for line in _stages()["base"] if line.startswith("WORKDIR "))
+
+    destinations = [
+        Path(workdir) / destination for destination in _codebase_destinations(_stages()["sandbox"])
+    ]
+
+    assert destinations == [IMAGE_CODEBASE_PATH]
+
+
+def test_the_app_image_holds_the_codebase_at_its_project_path_as_on_the_host() -> None:
+    destinations = _codebase_destinations(_stages()["app"])
+
+    assert destinations == [f"{CODEBASE_REFERENCE}/"]
+
+
+@pytest.mark.parametrize("scenario_name", SCENARIO_NAMES)
+def test_a_scenario_codebase_is_in_the_docker_build_context(scenario_name: str) -> None:
+    allowlisted = {line[1:] for line in DOCKERIGNORE.read_text().splitlines() if line.startswith("!")}
+
+    top_directory = load_scenario(scenario_name).codebase.split("/")[0]
+
+    assert top_directory in allowlisted
 
 
 def test_both_images_create_every_volume_mount_point_owned_by_nonroot() -> None:

@@ -447,12 +447,17 @@ def test_an_unknown_tool_or_a_malformed_handle_is_refused_with_422(
 
 
 @pytest.fixture
-def served_by_the_factory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
-    settings = LocArenaSettings(execution=ExecutionSettings(workspace_root=tmp_path))
+def served_by_the_factory(
+    tmp_path: Path,
+    company: Path,
+    served_checkout: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[TestClient]:
+    settings = LocArenaSettings(execution=ExecutionSettings(workspace_root=served_checkout))
     monkeypatch.setenv(SETTINGS_ENVIRONMENT_VARIABLE, settings.model_dump_json())
     monkeypatch.setenv(SANDBOX_AGENT_ID_ENVIRONMENT_VARIABLE, "serving-agent")
     monkeypatch.setenv("HOME", str(tmp_path))  # `bash -l` reads no profile of the machine's user
-    with TestClient(build_execution_app()) as client:
+    with TestClient(build_execution_app(codebase=company)) as client:
         yield client
 
 

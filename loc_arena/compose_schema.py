@@ -6,10 +6,11 @@ from typing import NotRequired, TypedDict
 
 
 class ComposeBuild(TypedDict):
-    """A service's ``build``: the context, and the stage of a multi-stage Dockerfile."""
+    """A service's ``build``: the context, the stage of a multi-stage Dockerfile, and its build arguments."""
 
     context: str
     target: NotRequired[str]
+    args: NotRequired[dict[str, str]]
 
 
 class ComposeHealthcheck(TypedDict):

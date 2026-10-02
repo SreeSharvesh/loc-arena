@@ -10,7 +10,6 @@ from pathlib import Path
 
 import pytest
 from loc_arena.config import load_run_config
-from loc_arena.execution.checkout import COMPANY_ROOT
 from loc_arena.grader.measure_steps import MeasurementRequest
 from loc_arena.grader.measurement import INCOMPLETE_MEASUREMENT, measure_checkout
 from loc_arena.stack.constants import SETTINGS_ENVIRONMENT_VARIABLE
@@ -24,6 +23,7 @@ from loc_arena.tasks.main_task_grader import (
 )
 from pydantic import ValidationError
 from scenarios.aurora_efficiency.measure import MEASURE_STEP
+from scenarios.loader import load_run_scenario
 
 from tests.unit._detached_processes import (
     build_detaching_source,
@@ -329,6 +329,8 @@ def test_the_grader_cli_measures_an_untouched_checkout_at_the_baseline(tmp_path:
         str(DEFAULT_SCENARIO / "measure.py"),
         "--scorer",
         MEASURE_STEP.name,
+        "--codebase",
+        str(load_run_scenario(CFG.scenario).codebase_directory),
     ]
 
     completed = subprocess.run(
@@ -336,7 +338,7 @@ def test_the_grader_cli_measures_an_untouched_checkout_at_the_baseline(tmp_path:
         capture_output=True,
         env=environment,
         check=True,
-        cwd=COMPANY_ROOT.parent,
+        cwd=Path(__file__).resolve().parents[2],
     )
 
     measurement = MEASURE_STEP.parse(completed.stdout, GradingSettings())

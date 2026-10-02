@@ -2,9 +2,10 @@
 
 A second scenario pack is a directory with ``scenario.yaml``, ``measure.py`` (registers its scorer's measure
 step, with a measurement shaped its own way), ``main.py`` (pairs that step with its score step and registers
-the scorer) and ``side.py`` (registers a verifier). Pointing a run config at it by name is all it takes: no
+the scorer) and ``side.py`` (registers a verifier); its ``scenario.yaml`` names the codebase the agents work
+on, here one whose repositories are not Meridian's. Pointing a run config at it by name is all it takes: no
 file under ``loc_arena/`` is edited. The same pair grades in process, on the host from what a grader printed,
-and in the grader CLI, which runs the measure step the scorer's name picks.
+and in the grader CLI, which runs the measure step the scorer's name picks over the codebase's repositories.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from pathlib import Path
 import pytest
 import scenarios.loader
 from loc_arena.config import RunConfig, load_run_config
+from loc_arena.execution.checkout import list_codebase_repositories
 from loc_arena.forge.world import SeededWorld, generate_world
 from loc_arena.gateway.core import DeterministicProvider
 from loc_arena.grader.measure_steps import get_measure_step
@@ -25,15 +27,25 @@ from loc_arena.logging_.agent_trace import AgentTrace
 from loc_arena.registry import get_scorer, get_verifier, is_scorer, is_verifier
 from loc_arena.scaffold.clock import SimulatedClock
 from loc_arena.stack.constants import MAIN_TASK_SCORER_ENVIRONMENT_VARIABLE, SETTINGS_ENVIRONMENT_VARIABLE
-from loc_arena.stack.contracts import EpisodeLanes, EpisodeWiring, GenerateRequest, RunnerEpisodeExport
+from loc_arena.stack.contracts import (
+    CodeToolCall,
+    CodeToolResult,
+    EpisodeLanes,
+    EpisodeWiring,
+    GenerateRequest,
+    RunnerEpisodeExport,
+)
 from loc_arena.stack_episode import _grade_on_host
 from loc_arena.task import assemble_in_process
+from loc_arena.tasks.main_task_grader import seed_checkout
 from scenarios.loader import Scenario, load_scenario
 
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 PACK = "toy_scenario"
 SCORER = "toy_python_files"
-PYTHON_FILES = 3  # the toy checkout's Python files
+CODEBASE = "toy-codebase"  # the pack's codebase, in its project directory
+CODEBASE_FILES = {"api/api.py": "", "api/test_api.py": "def test_api():\n    pass\n", "web/web.py": ""}
+PYTHON_FILES = len(CODEBASE_FILES)  # the Python files of the codebase's repositories
 TARGET = 2  # the toy reference: the Python files a checkout needs to pass
 FAILED_COUNT = -1  # the toy measurement an unusable grader output stands for
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -51,7 +63,8 @@ class PythonFileCount(ContractModel):
 
 
 def count_python_files(request: MeasurementRequest) -> PythonFileCount:
-    return PythonFileCount(python_files=len(list(request.checkout.rglob("*.py"))))
+    repositories = [request.checkout / repository for repository in request.repositories]
+    return PythonFileCount(python_files=sum(len(list(root.rglob("*.py"))) for root in repositories))
 
 
 MEASURE_STEP = register_measure_step(
@@ -100,24 +113,27 @@ def verify(events, config, deadline_ts):
 """
 
 
-def _write_pack(root: Path) -> None:
-    pack = root / PACK
+def _write_project(project: Path) -> None:
+    pack = project / "scenarios" / PACK
     (pack / "reference").mkdir(parents=True)
     (pack / "reference" / "target.txt").write_text(str(TARGET))
     (pack / "scenario.yaml").write_text(
-        f"name: {PACK}\nscorer: {SCORER}\nverifier: toy_verifier\nseed_repo: toy-repo\n",
+        f"name: {PACK}\nscorer: {SCORER}\nverifier: toy_verifier\nseed_repo: api\ncodebase: {CODEBASE}\n",
     )
     (pack / "measure.py").write_text(MEASURE_PY)
     (pack / "main.py").write_text(MAIN_PY)
     (pack / "side.py").write_text(SIDE_PY)
+    for relative, content in CODEBASE_FILES.items():
+        (project / CODEBASE / relative).parent.mkdir(parents=True, exist_ok=True)
+        (project / CODEBASE / relative).write_text(content)
 
 
 @pytest.fixture(scope="module")
 def scenarios_root(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    root = tmp_path_factory.mktemp("scenarios")
-    _write_pack(root)
-    load_scenario(PACK, root=root)
-    return root
+    project = tmp_path_factory.mktemp("project")
+    _write_project(project)
+    load_scenario(PACK, root=project / "scenarios")
+    return project / "scenarios"
 
 
 @pytest.fixture
@@ -137,12 +153,11 @@ def toy_config(scenarios_root: Path, monkeypatch: pytest.MonkeyPatch) -> RunConf
 
 
 @pytest.fixture
-def checkout(tmp_path: Path) -> Path:
-    """A checkout of two repositories holding ``PYTHON_FILES`` Python files."""
-    for relative in ("repo-a/a.py", "repo-a/b.py", "repo-b/c.py"):
-        (tmp_path / "checkout" / relative).parent.mkdir(parents=True, exist_ok=True)
-        (tmp_path / "checkout" / relative).write_text("")
-    return tmp_path / "checkout"
+def checkout(scenario: Scenario, tmp_path: Path) -> Path:
+    checkout = seed_checkout(tmp_path / "checkout", codebase=scenario.codebase_directory)
+    (checkout / "stray").mkdir()
+    (checkout / "stray" / "planted.py").write_text("")
+    return checkout
 
 
 def test_loading_a_new_pack_registers_its_scorer_by_name(scenario: Scenario) -> None:
@@ -158,7 +173,9 @@ def test_loading_a_new_pack_registers_its_verifier_by_name(scenario: Scenario) -
 
 
 def test_a_new_scorer_grades_a_checkout_in_process(scenario: Scenario, checkout: Path) -> None:
-    score = get_scorer(SCORER).grade_checkout(checkout, ("repo-a", "repo-b"), CFG, scenario.reference_dir)
+    repositories = list_codebase_repositories(scenario.codebase_directory)
+
+    score = get_scorer(SCORER).grade_checkout(checkout, repositories, CFG, scenario.reference_dir)
 
     assert (score.outputs, score.gate_passed) == ({"python_files": PYTHON_FILES}, True)
 
@@ -185,7 +202,30 @@ def test_an_in_process_episode_grades_with_the_scorer_the_run_config_names(
         deadline_ts=toy_config.settings.clock.deadline_ts,
     )
 
-    assert result.main_score.gate_reason == "toy"
+    assert result.main_score.outputs == {"python_files": PYTHON_FILES}
+
+
+def test_an_in_process_agent_runs_the_suite_of_a_repository_of_the_new_codebase(
+    toy_config: RunConfig,
+    tmp_path: Path,
+) -> None:
+    results: list[CodeToolResult] = []
+
+    def testing_policy(wiring: EpisodeWiring, clock: SimulatedClock, trace: AgentTrace | None) -> SeededWorld:
+        wiring.gateway.generate(GenerateRequest(prompt="status", caller_identity="agent-main"))
+        run_tests = CodeToolCall(tool="run_tests", arguments={"repo": "api"})
+        results.append(wiring.code_tools["agent-main"].run(run_tests))
+        return generate_world(toy_config, load_scenario(PACK), toy_config.seed)
+
+    assemble_in_process(
+        toy_config,
+        tmp_path / "episode",
+        testing_policy,
+        provider=DeterministicProvider(),
+        deadline_ts=toy_config.settings.clock.deadline_ts,
+    )
+
+    assert results[0].result.get("passed") is True
 
 
 def test_the_host_phase_grades_with_the_scorer_the_run_config_names(
@@ -235,6 +275,8 @@ def test_the_grader_cli_runs_the_measure_step_its_scorer_names(scenario: Scenari
         str(scenario.reference_dir),
         "--measure-module",
         str(scenario.measure_module),
+        "--codebase",
+        str(scenario.codebase_directory),
     ]
 
     completed = subprocess.run(command, capture_output=True, env=environment, check=True, cwd=REPOSITORY_ROOT)

@@ -2,8 +2,9 @@
 # Two images from one uv.lock (Docker "Multi-stage builds": named stages, `--target`, a stage built FROM an
 # earlier one):
 # - `sandbox` (loc-arena-sandbox): each agent's sandbox (the execution app), the gateway edge and the grader.
-#   Only what they import: company/, loc_arena/{stack,execution,grader}, gateway/edge.py, logging_/events.py
-#   and the package __init__ files; no configs/, no scenarios/ (sealed reference), no live.py (covert briefs).
+#   Only what they import: the codebase, loc_arena/{stack,execution,grader}, gateway/edge.py,
+#   logging_/events.py and the package __init__ files; no configs/, no scenarios/ (sealed reference), no
+#   live.py (covert briefs).
 # - `app` (loc-arena-app): the episode runner and gateway_core. It stays the LAST stage, so a plain
 #   `docker build` (no --target) still builds it.
 # Pattern from Astral's uv Docker guide (docs.astral.sh/uv/guides/integration/docker): pinned uv, a
@@ -11,6 +12,16 @@
 # (UV_PYTHON_DOWNLOADS=0), the venv on PATH. The dev group stays in: agents and the grader run pytest.
 # .dockerignore is an allowlist, so .env, .venv and logs never enter the build context. /app stays
 # root-owned so code running in a container cannot rewrite the harness or the venv.
+#
+# CODEBASE is the directory of repositories the agents work on, as the run's scenario names it (scenario.yaml
+# `codebase:`, relative to this build context). The sandbox image holds it at /app/company, where the
+# sandboxes and the grader read it (loc_arena/stack/constants.py IMAGE_CODEBASE_PATH); the app image, which
+# runs the host's code, holds it at its project path, as on the host. Declared once before the first FROM
+# for its default; each stage that copies it redeclares it without a value to use that default (Dockerfile
+# reference, "Understand how ARG and FROM interact"), after base's dependency sync, since build arguments
+# invalidate the cache (docs.docker.com/build/cache/invalidation). Compose passes it as a build `args` entry
+# (docs.docker.com/reference/compose-file/build/#args) only for a codebase other than this default.
+ARG CODEBASE=company
 FROM python:3.12-slim-trixie@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f AS base
 COPY --from=ghcr.io/astral-sh/uv:0.12.19@sha256:04d046b13e60d6bcec73cbc5e1cad25d680dea90c8573340950a0ac2d1aef424 /uv /uvx /bin/
 
@@ -36,7 +47,8 @@ ENV PATH="/app/.venv/bin:$PATH"
 # The project is not installed here: `python -m` and uvicorn (--app-dir defaults to the working directory)
 # import loc_arena from WORKDIR /app.
 FROM base AS sandbox
-COPY company/ company/
+ARG CODEBASE
+COPY ${CODEBASE}/ company/
 COPY loc_arena/__init__.py loc_arena/
 COPY loc_arena/stack/ loc_arena/stack/
 COPY loc_arena/execution/ loc_arena/execution/
@@ -48,7 +60,8 @@ USER nonroot
 FROM base AS app
 COPY pyproject.toml uv.lock README.md ./
 COPY loc_arena/ loc_arena/
-COPY company/ company/
+ARG CODEBASE
+COPY ${CODEBASE}/ ${CODEBASE}/
 COPY scenarios/ scenarios/
 COPY configs/ configs/
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked

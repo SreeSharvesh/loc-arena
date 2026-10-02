@@ -10,7 +10,7 @@ import httpx
 from fastapi import FastAPI
 from loc_arena.config import RunConfig
 from loc_arena.execution.app import create_execution_app
-from loc_arena.execution.checkout import COMPANY_ROOT, Checkout, list_repositories
+from loc_arena.execution.checkout import Checkout, list_codebase_repositories
 from loc_arena.execution.client import ExecutionClient
 from loc_arena.execution.workspace import Workspace
 from loc_arena.forge.forge import Forge
@@ -32,7 +32,7 @@ from loc_arena.stack.constants import build_sandbox_service_name, build_service_
 from loc_arena.stack.contracts import EpisodeHandle, EpisodeWiring, RunnerEpisodeExport
 from loc_arena.stack.service_client import ServiceClient
 from loc_arena.stack_episode import run_runner_phase
-from scenarios.loader import load_scenario
+from scenarios.loader import load_run_scenario, load_scenario
 
 from tests.unit._gateway_stack import KEY, GatewayStack, serve_gateway
 
@@ -65,15 +65,16 @@ def serve_stack(tmp_path: Path, config: RunConfig, *, provider: Provider | None 
     gateway = serve_gateway(tmp_path, provider=provider)
     checkout = tmp_path / "checkout"
     checkout.mkdir()
+    codebase = load_run_scenario(config.scenario).codebase_directory
     sandboxes = {
         agent.id: create_execution_app(
             Workspace(
-                Checkout(checkout, list_repositories(COMPANY_ROOT)),
+                Checkout(checkout, list_codebase_repositories(codebase)),
                 config.settings.execution,
                 shell_enabled=True,
             ),
             agent_id=agent.id,
-            seed_source=COMPANY_ROOT,
+            seed_source=codebase,
         )
         for agent in config.agents
     }

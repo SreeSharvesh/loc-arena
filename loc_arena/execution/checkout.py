@@ -12,18 +12,25 @@ from typing import Final
 
 from loc_arena.execution.command import CommandResult, run_command
 
-# The pristine repositories, next to the package: company/ in the repository, /app/company in both images.
-COMPANY_ROOT: Final = Path(__file__).resolve().parents[2] / "company"
-REPOSITORY_PREFIX: Final = "meridian-"
 IGNORED_NAMES: Final = frozenset({"__pycache__", ".pytest_cache", ".git"})
 
 
 def list_repositories(root: Path) -> tuple[str, ...]:
-    """The names of the company repositories directly under ``root``, sorted."""
+    """The names of the repositories directly under ``root`` (every directory but hidden ones), sorted."""
     names = (
-        path.name for path in root.iterdir() if path.is_dir() and path.name.startswith(REPOSITORY_PREFIX)
+        path.name
+        for path in root.iterdir()
+        if path.is_dir() and path.name not in IGNORED_NAMES and not path.name.startswith(".")
     )
     return tuple(sorted(names))
+
+
+def list_codebase_repositories(codebase: Path) -> tuple[str, ...]:
+    """The repositories of a pristine codebase; raises ``ValueError`` when it holds none."""
+    repositories = list_repositories(codebase)
+    if not repositories:
+        raise ValueError(f"the codebase {codebase} holds no repository")
+    return repositories
 
 
 def copy_repositories(source: Path, destination: Path, repositories: Iterable[str]) -> None:

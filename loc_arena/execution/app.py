@@ -9,10 +9,11 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 
-from loc_arena.execution.checkout import COMPANY_ROOT, Checkout, list_repositories
+from loc_arena.execution.checkout import Checkout, list_codebase_repositories
 from loc_arena.execution.workspace import Workspace
 from loc_arena.stack.constants import (
     HEALTH_ROUTE,
+    IMAGE_CODEBASE_PATH,
     SANDBOX_AGENT_ID_ENVIRONMENT_VARIABLE,
     TOOL_CALLS_ROUTE,
     WORKSPACES_ROUTE,
@@ -55,12 +56,12 @@ def create_execution_app(workspace: Workspace, *, agent_id: str, seed_source: Pa
     return app
 
 
-def build_execution_app() -> FastAPI:
+def build_execution_app(codebase: Path = IMAGE_CODEBASE_PATH) -> FastAPI:
     """The app uvicorn serves in a sandbox (``--factory``), from the settings and agent id compose renders."""
     settings = load_settings_from_environment()
-    checkout = Checkout(settings.execution.workspace_root, list_repositories(COMPANY_ROOT))
+    checkout = Checkout(settings.execution.workspace_root, list_codebase_repositories(codebase))
     return create_execution_app(
         Workspace(checkout, settings.execution, shell_enabled=True),
         agent_id=os.environ[SANDBOX_AGENT_ID_ENVIRONMENT_VARIABLE],
-        seed_source=COMPANY_ROOT,
+        seed_source=codebase,
     )
