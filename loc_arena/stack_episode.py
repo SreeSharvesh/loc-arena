@@ -33,7 +33,6 @@ from loc_arena.gateway.wiring import (
     open_episode_wiring,
     read_episode_mode,
 )
-from loc_arena.grader.measurement import parse_measurement
 from loc_arena.harness import (
     DEFAULT_MONITORS_PATH,
     DOTENV_PATH,
@@ -50,6 +49,7 @@ from loc_arena.logging_.agent_trace import (
     merge_runner_episode,
 )
 from loc_arena.monitors.registry import MonitorVerdict
+from loc_arena.registry import get_main_task_scorer
 from loc_arena.runner import EpisodeMonitoring, finish_episode
 from loc_arena.scaffold.clock import SimulatedClock
 from loc_arena.stack.constants import (
@@ -62,15 +62,10 @@ from loc_arena.stack.constants import (
     SEALED_MOUNT_PATH,
     build_sandbox_service_name,
 )
-from loc_arena.stack.contracts import (
-    GradeMeasurement,
-    MonitorVerdictRecord,
-    RunnerEpisodeExport,
-    build_episode_id,
-)
+from loc_arena.stack.contracts import MonitorVerdictRecord, RunnerEpisodeExport, build_episode_id
 from loc_arena.stack.stack_secrets import StackSecrets, load_container_secrets
 from loc_arena.task import _resolve_scenario, run_scripted_policy
-from loc_arena.tasks.main_task_grader import MainTaskScore, load_grade_reference, score_measurement
+from loc_arena.tasks.main_task_grader import MainTaskScore
 from loc_arena.tasks.side_task_verifier import verify_sealed_events
 from loc_arena.verifier.side_task import KillChainVerdict
 
@@ -82,12 +77,6 @@ _RUNNER_DIRECTORY: Final = "runner"
 _EVIDENCE_DIRECTORY: Final = "evidence"
 _SEALED_DIRECTORY: Final = "sealed"
 _MIRROR_DIRECTORY: Final = "mirror"
-_FAILED_MEASUREMENT: Final = GradeMeasurement(
-    suite_green=False,
-    pipeline_completed=False,
-    cost=None,
-    outputs={},
-)
 
 
 def run_runner_phase(
@@ -197,14 +186,14 @@ def run_stack_episode(
         run_compose_checked(stack, ["stop", *sandboxes, _EDGE_SERVICE], "freezing the sandboxes and the edge")
         _copy_evidence(stack, export.handle, staging=staging / _EVIDENCE_DIRECTORY, directory=directory)
         staging.rmdir()  # both staged copies were collected and removed
-        measurement = _measure_checkout(stack, config)
+        grader_output = _run_grader(stack, config)
     finally:
         teardown(stack)
     evidence = directory / _EVIDENCE_DIRECTORY
     return _grade_on_host(
         config,
         export,
-        measurement,
+        grader_output,
         sealed_directory=evidence / _SEALED_DIRECTORY,
         mirror_path=evidence / _MIRROR_DIRECTORY / EVENTS_FILE_NAME,
     )
@@ -247,9 +236,8 @@ def _copy_evidence(stack: EpisodeStack, handle: str, *, staging: Path, directory
     _report_dropped(collect_run_output(staging, directory / _EVIDENCE_DIRECTORY), "the copied logs")
 
 
-def _measure_checkout(stack: EpisodeStack, config: RunConfig) -> GradeMeasurement:
+def _run_grader(stack: EpisodeStack, config: RunConfig) -> bytes:
     # See docs/isolation/design.md#grader-output.
-    grading = config.settings.grading
     with tempfile.TemporaryFile() as output:
         result = run_one_off(
             stack,
@@ -262,21 +250,13 @@ def _measure_checkout(stack: EpisodeStack, config: RunConfig) -> GradeMeasuremen
             tail = result.stderr[-stack.settings.error_output_characters :]
             raise HarnessError(f"the grader exited with {result.returncode}:\n{tail}")
         output.seek(0)
-        printed = output.read(grading.max_output_bytes + 1)
-    try:
-        return parse_measurement(printed, grading)
-    except ValueError as error:  # pydantic's ValidationError included
-        print(
-            f"the grader printed no valid measurement ({error}); graded as a broken pipeline",
-            file=sys.stderr,
-        )
-        return _FAILED_MEASUREMENT
+        return output.read(config.settings.grading.max_output_bytes + 1)
 
 
 def _grade_on_host(
     config: RunConfig,
     export: RunnerEpisodeExport,
-    measurement: GradeMeasurement,
+    grader_output: bytes,
     *,
     sealed_directory: Path,
     mirror_path: Path,
@@ -292,9 +272,9 @@ def _grade_on_host(
     if config.agent_transcript:
         model_calls = read_model_call_log(sealed_directory / MODEL_CALLS_FILE_NAME, max_bytes)
         trace = merge_runner_episode(export, model_calls, (event.seq for event in sealed_events))
-    reference = load_grade_reference(_resolve_scenario(config).reference_dir)
+    reference_directory = _resolve_scenario(config).reference_dir
     return StackEpisode(
-        main_score=score_measurement(measurement, reference, config),
+        main_score=get_main_task_scorer(config).grade_output(grader_output, config, reference_directory),
         verdict=verify_sealed_events(sealed_events, config, export.deadline_ts),
         sealed_path=sealed_path,
         mirror_path=mirror_path,

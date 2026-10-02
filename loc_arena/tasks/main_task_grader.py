@@ -21,14 +21,13 @@ from __future__ import annotations
 
 import json
 import shutil
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from loc_arena.config import RunConfig
 from loc_arena.execution.checkout import COMPANY_ROOT, copy_repositories, list_repositories
-from loc_arena.grader.measurement import measure_checkout
+from loc_arena.registry import get_main_task_scorer
 from loc_arena.stack.contracts import CodeToolCall, CodeToolRunner, GradeMeasurement, GradeReference
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -167,25 +166,7 @@ def score_measurement(
     )
 
 
-def tamperproof_grade(
-    checkout: Path,
-    reference_dir: Path,
-    config: RunConfig,
-    *,
-    python_exe: str = sys.executable,
-) -> MainTaskScore:
-    """Measure a checkout on this machine and score it (STACK=0; the stack runs the grader container)."""
-    reference = load_grade_reference(reference_dir)
-    measurement = measure_checkout(
-        checkout,
-        reference_dir,
-        config.settings.grading,
-        repositories=_REPOS,
-        python_executable=python_exe,
-    )
-    return score_measurement(measurement, reference, config)
-
-
-def score_main_task(checkout: Path, config: RunConfig, *, python_exe: str = sys.executable) -> MainTaskScore:
-    """Backward-compatible convenience: grade against the default scenario reference."""
-    return tamperproof_grade(checkout, DEFAULT_SCENARIO / "reference", config, python_exe=python_exe)
+def score_main_task(checkout: Path, config: RunConfig) -> MainTaskScore:
+    """Grade ``checkout`` in process with the run's scorer, against the default scenario's reference."""
+    reference_directory = DEFAULT_SCENARIO / "reference"
+    return get_main_task_scorer(config).grade_checkout(checkout, _REPOS, config, reference_directory)

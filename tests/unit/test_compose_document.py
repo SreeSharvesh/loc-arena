@@ -13,10 +13,10 @@ from loc_arena.compose_document import (
     REFERENCE_COMPOSE_FILE,
     REFERENCE_RUN_CONFIG,
     SECRET_FILE_MODE,
-    ComposeService,
     render_compose,
     render_reference_compose_file,
 )
+from loc_arena.compose_schema import ComposeService
 from loc_arena.config import load_run_config
 from loc_arena.stack.constants import (
     CONTROL_KEY_FILE_ENVIRONMENT_VARIABLE,
@@ -25,8 +25,10 @@ from loc_arena.stack.constants import (
     GATEWAY_EDGE_HOSTNAME,
     GATEWAY_EDGE_URL_ENVIRONMENT_VARIABLE,
     GRADER_HARNESS_MOUNT_PATH,
+    GRADER_MEASURE_MODULE_MOUNT_PATH,
     HEALTH_ROUTE,
     IMAGE_TAG_ENVIRONMENT_VARIABLE,
+    MAIN_TASK_SCORER_ENVIRONMENT_VARIABLE,
     MIRROR_MOUNT_PATH,
     OPENROUTER_API_KEY_SECRET_NAME,
     RECORDER_HOSTNAME,
@@ -232,7 +234,7 @@ def test_every_container_receives_the_run_settings_verbatim() -> None:
         assert LocArenaSettings.model_validate_json(interpolated) == config.settings
 
 
-def test_the_grader_reads_the_checkout_and_the_harness_files_only() -> None:
+def test_the_grader_reads_the_checkout_the_harness_files_and_the_measure_module_only() -> None:
     mounts = SERVICES["grader"]["volumes"]
     assert all(mount["read_only"] for mount in mounts)
     volumes = [mount for mount in mounts if mount["type"] == "volume"]
@@ -242,12 +244,39 @@ def test_the_grader_reads_the_checkout_and_the_harness_files_only() -> None:
     binds = [mount for mount in mounts if mount["type"] == "bind"]
     file_names = CONFIG.settings.grading.harness_file_names
     assert [mount["target"] for mount in binds] == [
-        (GRADER_HARNESS_MOUNT_PATH / n).as_posix() for n in file_names
+        *((GRADER_HARNESS_MOUNT_PATH / n).as_posix() for n in file_names),
+        GRADER_MEASURE_MODULE_MOUNT_PATH.as_posix(),
     ]
     for mount in binds:  # one file each (never reference/, which holds the sealed expected outputs)
         assert mount["bind"] == {"create_host_path": False}
         assert (PROJECT_DIRECTORY / mount["source"]).is_file()
         assert mount["source"].startswith("./")  # relative: the same render on every machine
+
+
+def test_the_grader_is_given_the_measure_module_of_the_run_scenario() -> None:
+    binds = [mount for mount in SERVICES["grader"]["volumes"] if mount["type"] == "bind"]
+
+    sources = {
+        mount["source"] for mount in binds if mount["target"] == GRADER_MEASURE_MODULE_MOUNT_PATH.as_posix()
+    }
+
+    assert sources == {f"./scenarios/{CONFIG.scenario}/measure.py"}
+
+
+def test_the_grader_is_told_the_run_scorer() -> None:
+    environment = SERVICES["grader"]["environment"]
+
+    assert environment[MAIN_TASK_SCORER_ENVIRONMENT_VARIABLE] == CONFIG.main_task["scorer"]
+
+
+def test_only_the_grader_is_told_the_run_scorer() -> None:
+    told = {
+        name
+        for name, service in SERVICES.items()
+        if MAIN_TASK_SCORER_ENVIRONMENT_VARIABLE in service["environment"]
+    }
+
+    assert told == {"grader"}
 
 
 @pytest.mark.parametrize(

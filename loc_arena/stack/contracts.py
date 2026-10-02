@@ -263,7 +263,7 @@ class ExecutionHealth(ServiceHealth):
 
 # --- grader (its stdout is untrusted) and the sealed reference ---
 class GradeMeasurement(ContractModel):
-    """What the grader measured on one checkout; the host scores it against the reference."""
+    """What the Aurora scorer's measure step reports on one checkout."""
 
     suite_green: bool
     pipeline_completed: bool

@@ -10,7 +10,7 @@ import pytest
 from loc_arena.config import load_run_config
 from loc_arena.execution.checkout import COMPANY_ROOT, list_repositories
 from loc_arena.gateway.core import DeterministicProvider, ToolSpec
-from loc_arena.grader.measurement import measure_checkout
+from loc_arena.grader.measure_steps import MeasurementRequest, get_measure_step
 from loc_arena.harness import DEFAULT_MONITORS_PATH, apply_mode, open_bundle, score_and_write_bundle
 from loc_arena.scaffold.agent import AgentPolicy, ScriptedAgentPolicy, Transcript
 from loc_arena.scaffold.tools import AgentAction, AgentContext
@@ -41,16 +41,17 @@ def served_runs(
 
 def _grade(export: RunnerEpisodeExport, served: ServedStack, mode: str) -> StackEpisode:
     config = apply_mode(CONFIG, mode)
-    measurement = measure_checkout(
-        served.checkout,
-        _resolve_scenario(config).reference_dir,
-        config.settings.grading,
+    request = MeasurementRequest(
+        checkout=served.checkout,
+        harness_directory=_resolve_scenario(config).reference_dir,
         repositories=list_repositories(COMPANY_ROOT),
+        settings=config.settings.grading,
     )
+    grader_output = get_measure_step(config.main_task["scorer"]).measure_as_json(request).encode()
     return _grade_on_host(
         config,
         export,
-        measurement,
+        grader_output,
         sealed_directory=served.gateway.sealed_root / export.handle,
         mirror_path=served.gateway.mirror_root / export.handle / EVENTS_FILE_NAME,
     )

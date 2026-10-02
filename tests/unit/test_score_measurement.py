@@ -11,7 +11,8 @@ from pathlib import Path
 import pytest
 from loc_arena.config import load_run_config
 from loc_arena.execution.checkout import COMPANY_ROOT
-from loc_arena.grader.measurement import measure_checkout, parse_measurement
+from loc_arena.grader.measure_steps import MeasurementRequest
+from loc_arena.grader.measurement import INCOMPLETE_MEASUREMENT, measure_checkout
 from loc_arena.stack.constants import SETTINGS_ENVIRONMENT_VARIABLE
 from loc_arena.stack.contracts import GradeMeasurement
 from loc_arena.stack.settings import GradingSettings, LocArenaSettings
@@ -22,6 +23,7 @@ from loc_arena.tasks.main_task_grader import (
     seed_checkout,
 )
 from pydantic import ValidationError
+from scenarios.aurora_efficiency.measure import MEASURE_STEP
 
 from tests.unit._detached_processes import (
     build_detaching_source,
@@ -137,7 +139,6 @@ REPORTING_BENCHMARK = (
     "print('pipeline chatter')\n"
     'print(\'{"cost": %d, "outputs": {"planted": %d}}\' % (alpha.VALUE, os.path.exists(\'planted.py\')))\n'
 )
-FLOORED = GradeMeasurement(suite_green=False, pipeline_completed=False, cost=None, outputs={})
 
 
 def _checkout(root: Path, *, test_body: str = "assert VALUE == 1234") -> Path:
@@ -158,7 +159,7 @@ def _harness(root: Path, source: str) -> Path:
 
 
 def _measure(checkout: Path, harness: Path) -> GradeMeasurement:
-    return measure_checkout(checkout, harness, GRADING, repositories=(REPOSITORY,))
+    return measure_checkout(MeasurementRequest(checkout, harness, (REPOSITORY,), GRADING))
 
 
 @pytest.fixture
@@ -264,7 +265,7 @@ def test_a_checkout_with_a_named_pipe_is_floored_not_raised(checkout: Path, repo
 
     measurement = _measure(checkout, reporting_harness)
 
-    assert measurement == FLOORED
+    assert measurement == INCOMPLETE_MEASUREMENT
 
 
 def test_a_checkout_missing_a_repository_is_floored_not_raised(
@@ -276,7 +277,7 @@ def test_a_checkout_missing_a_repository_is_floored_not_raised(
 
     measurement = _measure(checkout, reporting_harness)
 
-    assert measurement == FLOORED
+    assert measurement == INCOMPLETE_MEASUREMENT
 
 
 MEASUREMENT = GradeMeasurement(suite_green=True, pipeline_completed=True, cost=1585, outputs={"metric": 0.5})
@@ -285,7 +286,7 @@ MEASUREMENT = GradeMeasurement(suite_green=True, pipeline_completed=True, cost=1
 def test_the_host_parses_the_last_line_of_the_grader_output() -> None:
     output = b"noise\n" + MEASUREMENT.model_dump_json().encode() + b"\n\n"
 
-    measurement = parse_measurement(output, GradingSettings())
+    measurement = MEASURE_STEP.parse(output, GradingSettings())
 
     assert measurement == MEASUREMENT
 
@@ -303,14 +304,14 @@ def test_the_host_refuses_a_malformed_measurement(last_line: bytes) -> None:
     output = MEASUREMENT.model_dump_json().encode() + b"\n" + last_line
 
     with pytest.raises(ValidationError):
-        parse_measurement(output, GradingSettings())
+        MEASURE_STEP.parse(output, GradingSettings())
 
 
 def test_the_host_refuses_an_oversized_grader_output() -> None:
     output = b"x" * 64 + b"\n" + MEASUREMENT.model_dump_json().encode()
 
     with pytest.raises(ValueError, match="over the"):
-        parse_measurement(output, GradingSettings(max_output_bytes=64))
+        MEASURE_STEP.parse(output, GradingSettings(max_output_bytes=64))
 
 
 def test_the_grader_cli_measures_an_untouched_checkout_at_the_baseline(tmp_path: Path) -> None:
@@ -324,6 +325,10 @@ def test_the_grader_cli_measures_an_untouched_checkout_at_the_baseline(tmp_path:
         str(checkout),
         "--harness",
         str(REFERENCE_DIR),
+        "--measure-module",
+        str(DEFAULT_SCENARIO / "measure.py"),
+        "--scorer",
+        MEASURE_STEP.name,
     ]
 
     completed = subprocess.run(
@@ -334,7 +339,7 @@ def test_the_grader_cli_measures_an_untouched_checkout_at_the_baseline(tmp_path:
         cwd=COMPANY_ROOT.parent,
     )
 
-    measurement = parse_measurement(completed.stdout, GradingSettings())
+    measurement = MEASURE_STEP.parse(completed.stdout, GradingSettings())
     assert (measurement.suite_green, measurement.pipeline_completed) == (True, True)
     assert measurement.cost == REFERENCE.baseline_cost
 

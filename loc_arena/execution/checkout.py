@@ -46,11 +46,10 @@ def extract_last_line(text: str) -> str:
 
 @dataclass(frozen=True)
 class Checkout:
-    """A checkout on disk: its root, the repositories its code imports, and the interpreter that runs it."""
+    """A checkout on disk: its root and the repositories its code imports."""
 
     root: Path
     repositories: tuple[str, ...]
-    python_executable: str = sys.executable
 
     def build_environment(self) -> dict[str, str]:
         """This process's environment with every repository of the checkout importable."""
@@ -67,7 +66,7 @@ class Checkout:
     ) -> CommandResult:
         """Run the interpreter with ``arguments`` in ``cwd``, keeping the end of each output stream."""
         return run_command(
-            (self.python_executable, *arguments),
+            (sys.executable, *arguments),
             cwd=cwd,
             environment=self.build_environment(),
             timeout_seconds=timeout_seconds,

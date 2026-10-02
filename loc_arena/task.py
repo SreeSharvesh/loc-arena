@@ -21,6 +21,7 @@ from pathlib import Path
 from scenarios.loader import Scenario, load_scenario
 
 from loc_arena.config import RunConfig
+from loc_arena.execution.checkout import COMPANY_ROOT, list_repositories
 from loc_arena.forge.forge import Forge
 from loc_arena.forge.reviewer import Reviewer
 from loc_arena.forge.world import SeededWorld, generate_world, hosted_repos
@@ -31,7 +32,7 @@ from loc_arena.logging_.agent_trace import AgentTrace, EpisodeTrace
 from loc_arena.logging_.events import fingerprint
 from loc_arena.monitors.registry import MonitorVerdict
 from loc_arena.npcs.coworker import run_coworker, run_world_activity
-from loc_arena.registry import get_scorer
+from loc_arena.registry import get_main_task_scorer
 from loc_arena.runner import EpisodeMonitoring, finish_episode
 from loc_arena.scaffold.bus import Recorder
 from loc_arena.scaffold.clock import SimulatedClock
@@ -297,7 +298,12 @@ def assemble_in_process(
         mirror_path=services.mirror_path,
         monitoring=monitoring,
     )
-    main_score = get_scorer(str(config.main_task["scorer"]))(checkout, config, scenario.reference_dir)
+    main_score = get_main_task_scorer(config).grade_checkout(
+        checkout,
+        list_repositories(COMPANY_ROOT),
+        config,
+        scenario.reference_dir,
+    )
     return EpisodeResult(
         main_score,
         verify_side_task(services.sealed_path, config, deadline_ts),

@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 
 from loc_arena.execution.checkout import COMPANY_ROOT, list_repositories
-from loc_arena.grader.measurement import measure_checkout
-from loc_arena.stack.constants import GRADER_HARNESS_MOUNT_PATH, WORKSPACE_MOUNT_PATH
+from loc_arena.grader.measure_steps import MeasurementRequest, get_measure_step, load_measure_module
+from loc_arena.stack.constants import (
+    GRADER_HARNESS_MOUNT_PATH,
+    GRADER_MEASURE_MODULE_MOUNT_PATH,
+    MAIN_TASK_SCORER_ENVIRONMENT_VARIABLE,
+    WORKSPACE_MOUNT_PATH,
+)
 from loc_arena.stack.settings import load_settings_from_environment
 
 
@@ -21,15 +27,30 @@ def main() -> None:
         default=GRADER_HARNESS_MOUNT_PATH,
         help="the directory holding the sealed harness files",
     )
-    parsed = parser.parse_args()
-    settings = load_settings_from_environment()
-    measurement = measure_checkout(
-        parsed.checkout,
-        parsed.harness,
-        settings.grading,
-        repositories=list_repositories(COMPANY_ROOT),
+    parser.add_argument(
+        "--measure-module",
+        type=Path,
+        default=GRADER_MEASURE_MODULE_MOUNT_PATH,
+        help="the scenario's measure.py, which registers its measure steps",
     )
-    print(measurement.model_dump_json())
+    parser.add_argument(
+        "--scorer",
+        default=os.environ.get(MAIN_TASK_SCORER_ENVIRONMENT_VARIABLE),
+        help=f"the scorer whose measure step runs (default: ${MAIN_TASK_SCORER_ENVIRONMENT_VARIABLE})",
+    )
+    parsed = parser.parse_args()
+    if parsed.scorer is None:
+        parser.error(f"name the scorer with --scorer or {MAIN_TASK_SCORER_ENVIRONMENT_VARIABLE}")
+    settings = load_settings_from_environment()
+    load_measure_module(parsed.measure_module)
+    step = get_measure_step(parsed.scorer)
+    request = MeasurementRequest(
+        checkout=parsed.checkout,
+        harness_directory=parsed.harness,
+        repositories=list_repositories(COMPANY_ROOT),
+        settings=settings.grading,
+    )
+    print(step.measure_as_json(request))
 
 
 if __name__ == "__main__":

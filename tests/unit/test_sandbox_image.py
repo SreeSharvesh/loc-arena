@@ -1,4 +1,9 @@
-"""The images ship only what their code imports, run as nonroot, and hand every fresh volume to nonroot."""
+"""The images ship only what their code imports, run as nonroot, and hand every fresh volume to nonroot.
+
+The grader also runs scenario code the image does not ship: each scenario's ``measure.py``, bound read-only
+into the grader at run time. It must import only what the sandbox image ships, which the probe below checks
+by loading it exactly as the grader CLI does.
+"""
 
 from __future__ import annotations
 
@@ -6,7 +11,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 from loc_arena.stack.constants import MIRROR_MOUNT_PATH, SEALED_MOUNT_PATH, WORKSPACE_MOUNT_PATH
+from scenarios.loader import SCENARIOS_ROOT
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 DOCKERFILE = REPOSITORY_ROOT / "Dockerfile"
@@ -31,9 +38,10 @@ SANDBOX_IMAGE_ALLOWLIST = frozenset(
         "loc_arena/logging_/events.py",
     },
 )
+MEASURE_MODULES = sorted(SCENARIOS_ROOT.glob("*/measure.py"))  # bound into the grader, one per scenario
 # Imported in a fresh interpreter behind a finder that refuses every loc_arena module outside the sandbox's
 # packages (config, live, scenarios, ...) and every scenario pack.
-IMPORT_PROBE = """
+SANDBOX_ONLY_FINDER = """
 import importlib.abc
 import sys
 
@@ -54,9 +62,15 @@ class SandboxOnly(importlib.abc.MetaPathFinder):
 
 
 sys.meta_path.insert(0, SandboxOnly())
-for module in sys.argv[1:]:
-    __import__(module)
 """
+IMPORT_PROBE = SANDBOX_ONLY_FINDER + "for module in sys.argv[1:]:\n    __import__(module)\n"
+# A scenario's measure.py, loaded by path as the grader CLI loads its mounted copy.
+MEASURE_MODULE_PROBE = (
+    SANDBOX_ONLY_FINDER
+    + "from pathlib import Path\n"
+    + "from loc_arena.grader.measure_steps import load_measure_module\n"
+    + "load_measure_module(Path(sys.argv[1]))\n"
+)
 
 
 def _stages() -> dict[str, list[str]]:
@@ -82,6 +96,15 @@ def _copied_sources(stage: list[str]) -> list[str]:
 
 def test_sandbox_code_imports_only_what_the_sandbox_image_ships() -> None:
     command = [sys.executable, "-c", IMPORT_PROBE, *SANDBOX_MODULES]
+
+    completed = subprocess.run(command, capture_output=True, text=True, cwd=REPOSITORY_ROOT, check=False)
+
+    assert completed.returncode == 0, completed.stderr
+
+
+@pytest.mark.parametrize("measure_module", MEASURE_MODULES, ids=lambda path: path.parent.name)
+def test_a_scenario_measure_module_imports_only_what_the_sandbox_image_ships(measure_module: Path) -> None:
+    command = [sys.executable, "-c", MEASURE_MODULE_PROBE, str(measure_module)]
 
     completed = subprocess.run(command, capture_output=True, text=True, cwd=REPOSITORY_ROOT, check=False)
 

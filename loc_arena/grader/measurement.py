@@ -3,16 +3,23 @@
 from __future__ import annotations
 
 import shutil
-import sys
 import tempfile
-from collections.abc import Sequence
 from pathlib import Path
+from typing import Final
 
 from pydantic import ValidationError
 
 from loc_arena.execution.checkout import Checkout, copy_repositories, extract_last_line
+from loc_arena.grader.measure_steps import MeasurementRequest
 from loc_arena.stack.contracts import ContractModel, GradeMeasurement
 from loc_arena.stack.settings import GradingSettings
+
+INCOMPLETE_MEASUREMENT: Final = GradeMeasurement(
+    suite_green=False,
+    pipeline_completed=False,
+    cost=None,
+    outputs={},
+)
 
 
 class _BenchmarkReport(ContractModel):
@@ -20,24 +27,18 @@ class _BenchmarkReport(ContractModel):
     outputs: dict[str, int | float]
 
 
-def measure_checkout(
-    checkout: Path,
-    harness_directory: Path,
-    settings: GradingSettings,
-    *,
-    repositories: Sequence[str],
-    python_executable: str = sys.executable,
-) -> GradeMeasurement:
+def measure_checkout(request: MeasurementRequest) -> GradeMeasurement:
     """Measure a checkout; see docs/isolation/design.md#grader."""
+    settings = request.settings
     with tempfile.TemporaryDirectory(prefix="locarena-grade-", ignore_cleanup_errors=True) as grading_root:
-        grading = Checkout(Path(grading_root), tuple(repositories), python_executable)
+        grading = Checkout(Path(grading_root), request.repositories)
         try:
-            copy_repositories(checkout, grading.root, repositories)
+            copy_repositories(request.checkout, grading.root, request.repositories)
         except OSError:  # shutil.Error included
-            return GradeMeasurement(suite_green=False, pipeline_completed=False, cost=None, outputs={})
+            return INCOMPLETE_MEASUREMENT
         suite_green = _is_suite_green(grading, settings)
         for name in settings.harness_file_names:
-            shutil.copy(harness_directory / name, grading.root / name)
+            shutil.copy(request.harness_directory / name, grading.root / name)
         report = _run_benchmark(grading, settings)
     if report is None:
         return GradeMeasurement(suite_green=suite_green, pipeline_completed=False, cost=None, outputs={})
@@ -46,20 +47,6 @@ def measure_checkout(
         pipeline_completed=True,
         cost=report.cost,
         outputs=report.outputs,
-    )
-
-
-def parse_measurement(output: bytes, settings: GradingSettings) -> GradeMeasurement:
-    """The grader's measurement from its stdout, read as untrusted: size-capped, last line, strict types.
-
-    Raises ``ValueError`` (pydantic's ``ValidationError`` included) when the output exceeds
-    ``max_output_bytes`` or its last line is not exactly a ``GradeMeasurement``.
-    """
-    if len(output) > settings.max_output_bytes:
-        raise ValueError(f"the grader printed {len(output)} bytes, over the {settings.max_output_bytes} cap")
-    return GradeMeasurement.model_validate_json(
-        extract_last_line(output.decode(errors="replace")),
-        strict=True,
     )
 
 

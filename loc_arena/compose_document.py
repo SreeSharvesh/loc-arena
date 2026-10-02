@@ -6,20 +6,31 @@ import dataclasses
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final, NotRequired, TypedDict
+from typing import Final
 
 import yaml
 from scenarios.loader import load_scenario
 
+from loc_arena.compose_schema import (
+    ComposeDocument,
+    ComposeHealthcheck,
+    ComposeSecret,
+    ComposeService,
+    ComposeServiceSecret,
+    ComposeServiceVolume,
+)
 from loc_arena.config import RunConfig, load_run_config
+from loc_arena.registry import get_main_task_scorer
 from loc_arena.stack.constants import (
     CONTROL_KEY_FILE_ENVIRONMENT_VARIABLE,
     GATEWAY_CORE_HOSTNAME,
     GATEWAY_EDGE_HOSTNAME,
     GATEWAY_EDGE_URL_ENVIRONMENT_VARIABLE,
     GRADER_HARNESS_MOUNT_PATH,
+    GRADER_MEASURE_MODULE_MOUNT_PATH,
     HEALTH_ROUTE,
     IMAGE_TAG_ENVIRONMENT_VARIABLE,
+    MAIN_TASK_SCORER_ENVIRONMENT_VARIABLE,
     MIRROR_MOUNT_PATH,
     RECORDER_HOSTNAME,
     SANDBOX_AGENT_ID_ENVIRONMENT_VARIABLE,
@@ -51,118 +62,6 @@ _HOSTNAME_BY_SERVICE: Final = {
     "gateway_edge": GATEWAY_EDGE_HOSTNAME,
     "recorder": RECORDER_HOSTNAME,
 }
-
-
-class ComposeBuild(TypedDict):
-    """A service's ``build``: the context, and the stage of a multi-stage Dockerfile."""
-
-    context: str
-    target: NotRequired[str]
-
-
-class ComposeHealthcheck(TypedDict):
-    """A service ``healthcheck``."""
-
-    test: list[str]
-    interval: str
-    timeout: str
-    retries: int
-    start_period: str
-
-
-class ComposeDependency(TypedDict):
-    """One ``depends_on`` entry (long syntax)."""
-
-    condition: str
-
-
-class ComposeNetworkAttachment(TypedDict, total=False):
-    """A service's attachment to one network (long syntax)."""
-
-    aliases: list[str]
-
-
-class ComposeServiceSecret(TypedDict):
-    """One secret grant (long syntax). Compose applies uid, gid and mode to an environment source only."""
-
-    source: str
-    target: str
-    uid: NotRequired[str]
-    gid: NotRequired[str]
-    mode: NotRequired[str]  # octal digits: compose-go parses a string mode in base 8
-
-
-class ComposeBindOptions(TypedDict):
-    """A bind mount's options."""
-
-    create_host_path: bool
-
-
-class ComposeServiceVolume(TypedDict):
-    """One mount of a service (long syntax)."""
-
-    type: str
-    source: str
-    target: str
-    read_only: bool
-    bind: NotRequired[ComposeBindOptions]
-
-
-class ComposeService(TypedDict, total=False):
-    """The service fields this harness renders."""
-
-    image: str
-    build: ComposeBuild
-    pull_policy: str
-    command: list[str]
-    init: bool
-    profiles: list[str]
-    user: str
-    environment: dict[str, str]
-    labels: dict[str, str]
-    restart: str
-    secrets: list[ComposeServiceSecret]
-    networks: list[str] | dict[str, ComposeNetworkAttachment]
-    network_mode: str
-    volumes: list[ComposeServiceVolume]
-    healthcheck: ComposeHealthcheck
-    depends_on: dict[str, ComposeDependency]
-    read_only: bool
-    tmpfs: list[str]
-    cap_drop: list[str]
-    security_opt: list[str]
-    mem_limit: str
-    cpus: float
-    pids_limit: int
-
-
-class ComposeNetwork(TypedDict):
-    """A top-level network."""
-
-    internal: bool
-    labels: dict[str, str]
-
-
-class ComposeVolume(TypedDict):
-    """A top-level named volume."""
-
-    labels: dict[str, str]
-
-
-class ComposeSecret(TypedDict, total=False):
-    """A top-level secret: its value comes from a file or from the compose process's environment."""
-
-    file: str
-    environment: str
-
-
-class ComposeDocument(TypedDict, total=False):
-    """The rendered compose document."""
-
-    services: dict[str, ComposeService]
-    networks: dict[str, ComposeNetwork]
-    volumes: dict[str, ComposeVolume]
-    secrets: dict[str, ComposeSecret]
 
 
 IMAGES: Final = {"app": APP_IMAGE, "sandbox": SANDBOX_IMAGE}
@@ -330,6 +229,15 @@ class VolumeSpec:
 
 
 @dataclass(frozen=True)
+class GradingInputs:
+    """What the grader gets from the run's scenario: its harness files, measure module and scorer name."""
+
+    harness_directory: str  # relative (./...), so the render is the same on every machine
+    measure_module: str
+    scorer: str
+
+
+@dataclass(frozen=True)
 class RunTopology:
     """What rendering one service needs from the rest of the run."""
 
@@ -337,7 +245,7 @@ class RunTopology:
     volumes: tuple[VolumeSpec, ...]
     secret_sources: Mapping[str, ComposeSecret]
     service_names: Mapping[str, tuple[str, ...]]  # a config name -> the compose services rendered from it
-    harness_directory: str | None  # the scenario's sealed reference directory, relative to the project
+    grading: GradingInputs | None  # None when the run names no scenario
 
 
 def _escape_interpolation(value: str) -> str:
@@ -375,21 +283,35 @@ def _render_secret_grant(spec: ServiceSpec, name: str, source: ComposeSecret) ->
     return grant
 
 
+def _render_file_bind(source: str, target: Path) -> ComposeServiceVolume:
+    return {
+        "type": "bind",
+        "source": source,
+        "target": target.as_posix(),
+        "read_only": True,
+        # a missing file fails the run instead of mounting a new, empty directory in its place
+        "bind": {"create_host_path": False},
+    }
+
+
 def _render_mounts(spec: ServiceSpec, topology: RunTopology) -> list[ComposeServiceVolume]:
     mounts = [mount for volume in topology.volumes if (mount := volume.render_mount(spec)) is not None]
-    if not spec.mounts_grading_harness or topology.harness_directory is None:
+    grading = topology.grading
+    if not spec.mounts_grading_harness or grading is None:
         return mounts
-    return mounts + [
-        {
-            "type": "bind",
-            "source": f"{topology.harness_directory}/{file_name}",
-            "target": (GRADER_HARNESS_MOUNT_PATH / file_name).as_posix(),
-            "read_only": True,
-            # a missing file fails the run instead of mounting a new, empty directory in its place
-            "bind": {"create_host_path": False},
-        }
+    harness = [
+        _render_file_bind(f"{grading.harness_directory}/{file_name}", GRADER_HARNESS_MOUNT_PATH / file_name)
         for file_name in topology.settings.grading.harness_file_names
     ]
+    return [*mounts, *harness, _render_file_bind(grading.measure_module, GRADER_MEASURE_MODULE_MOUNT_PATH)]
+
+
+def _render_environment(spec: ServiceSpec, topology: RunTopology) -> dict[str, str]:
+    environment = dict(spec.environment)
+    if spec.mounts_grading_harness and topology.grading is not None:
+        environment[MAIN_TASK_SCORER_ENVIRONMENT_VARIABLE] = topology.grading.scorer
+    environment[SETTINGS_ENVIRONMENT_VARIABLE] = topology.settings.model_dump_json()
+    return {name: _escape_interpolation(value) for name, value in environment.items()}
 
 
 def _attach_networks(service: ComposeService, spec: ServiceSpec) -> None:
@@ -441,12 +363,11 @@ def _apply_limits_and_hardening(service: ComposeService, spec: ServiceSpec, dock
 
 def render_service(spec: ServiceSpec, topology: RunTopology) -> ComposeService:
     """Render one compose service."""
-    environment = {**spec.environment, SETTINGS_ENVIRONMENT_VARIABLE: topology.settings.model_dump_json()}
     service: ComposeService = {
         "image": f"{IMAGES[spec.image]}:{_IMAGE_TAG}",
         "build": {"context": ".", "target": spec.image},
         "pull_policy": LOCAL_IMAGE_PULL_POLICY,
-        "environment": {name: _escape_interpolation(value) for name, value in environment.items()},
+        "environment": _render_environment(spec, topology),
         "labels": {LABEL: "1"},
         "restart": "no",
     }
@@ -499,11 +420,19 @@ def _check_references(
             raise ValueError(f"volumes.{volume.name} names the unknown service {service!r}")
 
 
-def _relative_harness_directory(config: RunConfig) -> str | None:
+def _relative_to_project(path: Path) -> str:
+    return f"./{path.relative_to(PROJECT_DIRECTORY).as_posix()}"
+
+
+def _read_grading_inputs(config: RunConfig) -> GradingInputs | None:
     if config.scenario is None:
         return None
-    reference_directory = load_scenario(config.scenario).reference_dir
-    return f"./{reference_directory.relative_to(PROJECT_DIRECTORY).as_posix()}"
+    scenario = load_scenario(config.scenario)
+    return GradingInputs(
+        harness_directory=_relative_to_project(scenario.reference_dir),
+        measure_module=_relative_to_project(scenario.measure_module),
+        scorer=get_main_task_scorer(config).name,
+    )
 
 
 def render_compose(config: RunConfig) -> ComposeDocument:
@@ -526,7 +455,7 @@ def render_compose(config: RunConfig) -> ComposeDocument:
             )
             for template in templates
         },
-        harness_directory=_relative_harness_directory(config),
+        grading=_read_grading_inputs(config),
     )
     document: ComposeDocument = {
         "services": {spec.name: render_service(spec, topology) for spec in specs},

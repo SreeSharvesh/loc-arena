@@ -28,7 +28,7 @@ from loc_arena.stack.contracts import (
     MonitorVerdictRecord,
     RunnerEpisodeExport,
 )
-from loc_arena.stack_episode import StackEpisode, _grade_on_host, _measure_checkout, run_stack_episode
+from loc_arena.stack_episode import StackEpisode, _grade_on_host, run_stack_episode
 
 from tests.unit._golden import GOLDEN
 
@@ -129,12 +129,11 @@ def _evidence(tmp_path: Path) -> dict[str, str]:
     return {"sealed": str(sealed), "mirror": str(mirror)}
 
 
-@pytest.fixture
-def stack_episode(docker: FakeDocker, tmp_path: Path) -> StackEpisode:
+def _run_stack_episode(docker: FakeDocker, tmp_path: Path, grader_stdout: str) -> StackEpisode:
     docker.play(
         export=_golden_export().model_dump_json(),
         copies=_evidence(tmp_path),
-        grader_stdout=MEASUREMENT.model_dump_json() + "\n",
+        grader_stdout=grader_stdout,
     )
     config = dataclasses.replace(CONFIG, agent_transcript=False)
     return run_stack_episode(
@@ -145,6 +144,11 @@ def stack_episode(docker: FakeDocker, tmp_path: Path) -> StackEpisode:
         robust=True,
         provider_key=None,
     )
+
+
+@pytest.fixture
+def stack_episode(docker: FakeDocker, tmp_path: Path) -> StackEpisode:
+    return _run_stack_episode(docker, tmp_path, MEASUREMENT.model_dump_json() + "\n")
 
 
 def _subcommands(docker: FakeDocker) -> list[str]:
@@ -226,35 +230,33 @@ def test_a_runner_past_its_wall_clock_limit_is_removed(stack: EpisodeStack, dock
     assert removal.arguments == ["rm", "--force", run.arguments[run.arguments.index("--name") + 1]]
 
 
-def test_the_graders_last_line_is_its_measurement(stack: EpisodeStack, docker: FakeDocker) -> None:
-    docker.play(grader_stdout="a suite printed this\n" + MEASUREMENT.model_dump_json() + "\n")
+def test_the_host_scores_the_graders_last_line(docker: FakeDocker, tmp_path: Path) -> None:
+    grader_stdout = "a suite printed this\n" + MEASUREMENT.model_dump_json() + "\n"
 
-    measurement = _measure_checkout(stack, CONFIG)
+    episode = _run_stack_episode(docker, tmp_path, grader_stdout)
 
-    assert measurement == MEASUREMENT
+    assert episode.main_score.achieved_cost == MEASUREMENT.cost
 
 
 def test_a_grader_line_that_is_no_measurement_is_graded_as_a_broken_pipeline(
-    stack: EpisodeStack,
     docker: FakeDocker,
+    tmp_path: Path,
 ) -> None:
-    docker.play(grader_stdout='{"suite_green": true}\n')
+    episode = _run_stack_episode(docker, tmp_path, '{"suite_green": true}\n')
 
-    measurement = _measure_checkout(stack, CONFIG)
-
-    assert measurement.pipeline_completed is False
+    assert episode.main_score.gate_reason == "grade_error"
 
 
 def test_a_grader_printing_past_its_output_cap_is_graded_as_a_broken_pipeline(
-    stack: EpisodeStack,
     docker: FakeDocker,
+    tmp_path: Path,
 ) -> None:
     cap = CONFIG.settings.grading.max_output_bytes
-    docker.play(grader_stdout="x" * cap + "\n" + MEASUREMENT.model_dump_json() + "\n")
+    grader_stdout = "x" * cap + "\n" + MEASUREMENT.model_dump_json() + "\n"
 
-    measurement = _measure_checkout(stack, CONFIG)
+    episode = _run_stack_episode(docker, tmp_path, grader_stdout)
 
-    assert measurement.pipeline_completed is False
+    assert episode.main_score.gate_reason == "grade_error"
 
 
 def test_the_host_freezes_the_sandboxes_and_the_edge_before_it_copies_the_logs(
@@ -308,7 +310,7 @@ def test_the_host_refuses_a_sealed_log_holding_another_episodes_events(tmp_path:
         _grade_on_host(
             CONFIG,
             export,
-            MEASUREMENT,
+            MEASUREMENT.model_dump_json().encode(),
             sealed_directory=Path(evidence["sealed"]),
             mirror_path=Path(evidence["mirror"]) / "events.jsonl",
         )
