@@ -1,4 +1,9 @@
-"""Main-task registration for the Aurora scenario: registers the continuous cost scorer by name."""
+"""Main-task registration for the Aurora scenario: registers the continuous cost scorer by name.
+
+The scorer measures and scores a checkout on this machine (STACK=0). In the stack, the grader container
+measures it with only the harness files of ``reference/`` (``settings.grading.harness_file_names``) and the
+host scores that measurement against ``reference.json`` (``main_task_grader.score_measurement``).
+"""
 
 from __future__ import annotations
 
