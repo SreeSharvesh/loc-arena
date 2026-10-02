@@ -1,11 +1,4 @@
-"""The one root settings object: every tunable of the stack, grouped, typed and described (config over code).
-
-``LocArenaSettings`` is validated once: on the host by ``load_run_config`` from the merged run config (a
-block the YAML leaves out takes the model defaults, which equal the values the code used before they moved
-here), and in a container from the ``LOC_ARENA_SETTINGS`` variable compose renders
-(:func:`load_settings_from_environment`). Consumers read ``settings.<group>.<field>`` and never re-read
-the source.
-"""
+"""Every tunable of the stack, in frozen groups under ``LocArenaSettings``."""
 
 from __future__ import annotations
 
@@ -68,37 +61,21 @@ class DockerSettings(SettingsGroup):
         default=4000,
         description="Characters from the end of a failed command's stderr kept in the raised error.",
     )
-    default_service_port: Port = Field(
-        default=8000,
-        description="Port a service listens on when its config block names none.",
-    )
     evidence_max_bytes: PositiveInt = Field(
         default=1024 * MEBIBYTE,
         description="Largest evidence file (sealed events, model calls, mirror) the host parses.",
     )
     agent_tmpfs_size_bytes: PositiveInt = Field(
         default=512 * MEBIBYTE,
-        description=(
-            "Size cap of each tmpfs (/tmp) in a container running agents' code (the sandboxes, the grader). "
-            "bash writes every command's output there, and a process it detached may keep writing; the "
-            "tmpfs counts against the container's memory limit."
-        ),
+        description="Size cap of the /tmp tmpfs of each container that runs agents' code.",
     )
     runner_phase_timeout_seconds: PositiveFloat = Field(
         default=10_800.0,
-        description=(
-            "Wall-clock limit of an episode's runner phase (the scaffold, the close and the monitors, in the "
-            "runner container); past it the runner is killed and the run fails. Above the episode's "
-            "wall_clock_seconds, which the agents' work is sized for."
-        ),
+        description="Wall-clock limit of the runner phase; past it the runner is killed and the run fails.",
     )
     grader_timeout_seconds: PositiveFloat = Field(
         default=2_700.0,
-        description=(
-            "Wall-clock limit of the grader measuring one checkout; past it the grader is killed and the run "
-            "fails. Above its own worst case: every repository's suite at grading.suite_timeout_seconds, "
-            "then the benchmark."
-        ),
+        description="Wall-clock limit of one grader run; past it the grader is killed and the run fails.",
     )
 
 
@@ -136,10 +113,7 @@ class GatewaySettings(SettingsGroup):
     )
     recorder_write_attempts: PositiveInt = Field(
         default=3,
-        description=(
-            "Attempts at writing one sealed event while the recorder's reply is lost (a transport error), "
-            "the first included. The recorder acknowledges an identical re-send without writing it twice."
-        ),
+        description="Attempts at one sealed write while the recorder's reply is lost, the first included.",
     )
     turn_token_ttl_seconds: PositiveFloat = Field(
         default=300.0,
@@ -169,24 +143,15 @@ class ProviderSettings(SettingsGroup):
     )
     request_timeout_milliseconds: PositiveInt = Field(
         default=60_000,
-        description=(
-            "httpx timeout of each phase of one request (the SDK's timeout_ms): connect, write, pool, and "
-            "each wait for the next bytes of the reply, so a reply that trickles in never trips it."
-        ),
+        description="httpx timeout of each phase of one request (the SDK's timeout_ms).",
     )
     request_deadline_seconds: PositiveFloat = Field(
         default=150.0,
-        description=(
-            "Wall-clock limit on one request, reply body included. A request cut by it counts as a "
-            "connection error; half the call's budget, so one retry can still finish."
-        ),
+        description="Wall-clock limit on one request, reply body included.",
     )
     backoff_initial_interval_milliseconds: PositiveInt = Field(
         default=2_000,
-        description=(
-            "First wait before retrying a 5XX (the SDK's BackoffStrategy.initial_interval), or a 429 that "
-            "carries no Retry-After."
-        ),
+        description="First wait before retrying a 5XX, or a 429 without Retry-After.",
     )
     backoff_max_interval_milliseconds: PositiveInt = Field(
         default=30_000,
@@ -194,17 +159,11 @@ class ProviderSettings(SettingsGroup):
     )
     backoff_exponent: PositiveFloat = Field(
         default=2.0,
-        description=(
-            "Growth factor of the wait between 5XX retries (BackoffStrategy.exponent), and between 429 "
-            "retries without Retry-After."
-        ),
+        description="Growth factor of the wait between 5XX retries, and 429 retries without Retry-After.",
     )
     backoff_max_elapsed_time_milliseconds: PositiveInt = Field(
         default=300_000,
-        description=(
-            "Budget of one call, every retry included: the SDK retries no 5XX past it (max_elapsed_time) "
-            "and the call is cut at it. Keep it below gateway.relay_timeout_seconds."
-        ),
+        description="Budget of one call, every retry included; the call is cut at it.",
     )
     retry_connection_errors: bool = Field(
         default=True,
@@ -286,10 +245,7 @@ class ExecutionSettings(SettingsGroup):
     )
     reply_timeout_seconds: PositiveFloat = Field(
         default=360.0,
-        description=(
-            "Seconds one call to a sandbox may take in total, connecting and reading the whole reply "
-            "included; above every tool timeout. The runner cuts the call and closes the connection there."
-        ),
+        description="Seconds one call to a sandbox may take in total, reading the whole reply included.",
     )
 
     @model_validator(mode="after")
@@ -329,10 +285,7 @@ class GradingSettings(SettingsGroup):
     )
     max_captured_output_characters: PositiveInt = Field(
         default=65_536,
-        description=(
-            "Characters the grader keeps from the end of each output stream of a suite or benchmark run; "
-            "the benchmark's report, its last stdout line, must fit."
-        ),
+        description="Characters the grader keeps from the end of each suite or benchmark output stream.",
     )
 
     @model_validator(mode="after")

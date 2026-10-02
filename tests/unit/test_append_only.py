@@ -90,7 +90,6 @@ def _draft(ts: float) -> EventDraft:
 
 
 def _record_concurrently(log: AppendOnlyLog) -> list[Event]:
-    """Record ``CONCURRENT_RECORDS`` drafts from a pool of writer threads; the events, in draft order."""
     with ThreadPoolExecutor(max_workers=CONCURRENT_WRITERS) as pool:
         return list(pool.map(lambda index: log.record(_draft(float(index))), range(CONCURRENT_RECORDS)))
 

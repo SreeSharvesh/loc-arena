@@ -1,10 +1,4 @@
-"""The openrouter SDK (it caps pydantic<2.13) still behaves as the gateway reads it, on pyproject's pydantic.
-
-The gateway's model provider sends one chat call with ``chat.send_async`` and reads the reply's first choice
-and token usage, a refusal's ``status_code`` and ``retry-after`` header, and an unusable reply's
-``status_code`` and ``body``. Each test pins one of those against an in-process transport, so a failure here
-names the SDK rather than the provider.
-"""
+"""The openrouter SDK, on pyproject's overridden pydantic, still behaves as loc_arena reads it."""
 
 from __future__ import annotations
 

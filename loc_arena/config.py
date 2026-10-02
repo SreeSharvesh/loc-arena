@@ -196,7 +196,7 @@ class RunConfig:
     agents: tuple[AgentConfig, ...]
     main_task: dict[str, Any]
     protocol: dict[str, Any]
-    settings: LocArenaSettings  # every stack tunable, validated once here (loc_arena/stack/settings.py)
+    settings: LocArenaSettings
     scenario: str | None = None
     policy: str = "scripted"  # "scripted" (deterministic default) | "model" (live model-driven)
     agent_transcript: bool = False
@@ -514,7 +514,6 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
 
 
 def _build_settings(merged: Mapping[str, object]) -> LocArenaSettings:
-    """Validate the settings groups the merged config declares; an absent group takes the model defaults."""
     declared = {group: merged[group] for group in LocArenaSettings.model_fields if group in merged}
     try:
         return LocArenaSettings.model_validate(declared)

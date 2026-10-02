@@ -116,7 +116,7 @@ class Event:
     tool: str | None = None
     result: dict[str, Any] | None = None
     fp: str = ""
-    # Read by pydantic only, when an HTTP route receives an event: an unknown field is an error, not dropped.
+    # pydantic reads this when an HTTP route parses an event: it refuses an unknown field.
     __pydantic_config__ = {"extra": "forbid"}
 
     def __post_init__(self) -> None:
@@ -151,10 +151,7 @@ class Event:
 
 @dataclass(frozen=True)
 class EventDraft:
-    """An event before a log records it: every ``Event`` field except ``episode_id``, ``seq`` and ``fp``.
-
-    The log it is recorded to supplies those three, so a writer can never pick its own seq.
-    """
+    """An event before a log records it: every ``Event`` field except ``episode_id``, ``seq`` and ``fp``."""
 
     ts: float
     actor_uid: str
@@ -188,8 +185,8 @@ class AppendOnlyLog:
     Bound to one ``episode_id`` and one file. ``append`` refuses an event from another episode, an
     out-of-order ``seq`` (``<=`` the last written), or a wrong episode; it never rewrites an existing line
     and flushes each line durably (``fsync``) so a crash cannot lose a committed event. Use one instance
-    for the sealed file and another for the mirror file. Writes hold one lock, so ``record`` (which assigns
-    the seq itself) is safe from several threads; ``next_seq`` then ``append`` is safe for one writer only.
+    for the sealed file and another for the mirror file.
+    ``record`` is safe from several threads; ``next_seq`` then ``append`` from one writer only.
     """
 
     def __init__(
@@ -244,7 +241,6 @@ class AppendOnlyLog:
             return self._write(Event(episode_id=self._episode_id, seq=self.next_seq(), **asdict(draft)))
 
     def _write(self, event: Event) -> Event:
-        """The append itself; the caller holds the lock."""
         if event.episode_id != self._episode_id:
             raise ValueError(f"event episode {event.episode_id!r} != log episode {self._episode_id!r}")
         if event.seq <= self._last_seq:

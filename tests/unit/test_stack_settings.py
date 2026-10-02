@@ -15,7 +15,7 @@ CONFIGS = Path(__file__).parents[2] / "configs"
 BASE_RUN_CONFIG = "aurora-efficiency.yaml"
 NON_DEFAULT_PORT = 4100
 OVERRIDDEN_MAX_MATCHES = 7
-LONGER_THAN_THE_REPLY_TIMEOUT = 1_000.0  # seconds: above the default reply timeout
+LONGER_THAN_THE_REPLY_TIMEOUT = 1_000.0
 EQUAL_TIMEOUT = 10.0
 EQUAL_TOOL_TIMEOUTS = {
     "run_tests_timeout_seconds": EQUAL_TIMEOUT,
@@ -29,7 +29,6 @@ WAITS_ON_THE_PROVIDER = ("relay_timeout_seconds", "control_timeout_seconds")  # 
 
 
 def _collect_groups(model: type[BaseModel]) -> list[type[BaseModel]]:
-    """``model`` and every model nested in its fields at any depth: the root, its groups, their subgroups."""
     annotations = [field.annotation for field in model.model_fields.values()]
     nested = [a for a in annotations if isinstance(a, type) and issubclass(a, BaseModel)]
     return [model, *(group for annotation in nested for group in _collect_groups(annotation))]
@@ -38,39 +37,33 @@ def _collect_groups(model: type[BaseModel]) -> list[type[BaseModel]]:
 SETTINGS_GROUPS = _collect_groups(LocArenaSettings)
 
 
-def _group_name(group: type[BaseModel]) -> str:
-    return group.__name__
-
-
 def _block_with_a_provider_budget(budget_milliseconds: int, wait: str) -> dict[str, dict[str, JsonValue]]:
-    """A provider budget of ``budget_milliseconds``; ``wait`` is PROVIDER_BUDGET_SECONDS, others longer."""
     gateway: dict[str, JsonValue] = dict.fromkeys(WAITS_ON_THE_PROVIDER, LONGER_WAIT_SECONDS)
     gateway[wait] = PROVIDER_BUDGET_SECONDS
     return {"gateway": gateway, "provider": {"backoff_max_elapsed_time_milliseconds": budget_milliseconds}}
 
 
 def _write_run_config(directory: Path, settings_block: str) -> Path:
-    """A run config extending the reference one with ``settings_block`` (YAML) appended."""
     run_config = directory / "run.yaml"
     run_config.write_text(f"extends: {BASE_RUN_CONFIG}\n{settings_block}\n")
     return run_config
 
 
-@pytest.mark.parametrize("group", SETTINGS_GROUPS, ids=_group_name)
+@pytest.mark.parametrize("group", SETTINGS_GROUPS, ids=lambda group: group.__name__)
 def test_a_settings_group_is_frozen(group: type[BaseModel]) -> None:
     frozen = group.model_config.get("frozen")
 
     assert frozen is True
 
 
-@pytest.mark.parametrize("group", SETTINGS_GROUPS, ids=_group_name)
+@pytest.mark.parametrize("group", SETTINGS_GROUPS, ids=lambda group: group.__name__)
 def test_a_settings_group_forbids_unknown_keys(group: type[BaseModel]) -> None:
     extra = group.model_config.get("extra")
 
     assert extra == "forbid"
 
 
-@pytest.mark.parametrize("group", SETTINGS_GROUPS, ids=_group_name)
+@pytest.mark.parametrize("group", SETTINGS_GROUPS, ids=lambda group: group.__name__)
 def test_every_field_of_a_settings_group_is_described(group: type[BaseModel]) -> None:
     undescribed = [name for name, field in group.model_fields.items() if not field.description]
 

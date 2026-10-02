@@ -40,7 +40,6 @@ REFERENCE_FILE = (
 HANDLE = "0123456789abcdef"
 HANDLE_ROUTE = "/episodes/{handle}"
 GENERATED_HANDLE_COUNT = 32
-# RFC 1123 section 2.1: a hostname label is at most 63 characters, lowercase here (Docker's DNS ignores case).
 RFC_1123_LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
 RFC_1123_LABEL_MAX_LENGTH = 63
 LONGEST_AGENT_ID = "a" * (RFC_1123_LABEL_MAX_LENGTH - len(SANDBOX_SERVICE_PREFIX))
@@ -80,7 +79,6 @@ MIRROR_DRAFT = EventDraft(ts=1.0, actor_uid="agent-main", actor_role="untrusted"
 
 @pytest.fixture
 def handle_echo() -> TestClient:
-    """An app with one route taking an ``EpisodeHandle`` path parameter, as the stack's handle routes do."""
     app = FastAPI()
 
     @app.get(HANDLE_ROUTE)

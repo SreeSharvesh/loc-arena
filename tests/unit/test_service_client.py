@@ -44,8 +44,6 @@ SERVER_START_POLL_SECONDS = 0.01
 
 @dataclass(frozen=True)
 class GuardedService:
-    """A test app whose control routes need the key, and the times its clock route was sent."""
-
     app: FastAPI
     clock: list[float]
 
@@ -84,7 +82,6 @@ def service(tmp_path: Path) -> GuardedService:
 
 @pytest.fixture
 def service_url(service: GuardedService) -> Iterator[str]:
-    """The service's base URL, served by uvicorn on a loopback socket until the test ends."""
     listening = socket.socket()
     listening.bind((LOOPBACK_HOST, 0))
     server = uvicorn.Server(uvicorn.Config(service.app, log_level="warning"))

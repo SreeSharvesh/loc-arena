@@ -1,9 +1,4 @@
-"""The model-call types the gateway's core, its edge and its clients share.
-
-A request (one prompt or a chat history, with optional tools), the provider's result, the core's reply, and
-the two fingerprints the sealed and mirror logs record for a call. They live in :mod:`loc_arena.stack`, which
-the sandbox image ships whole, so the edge can import them without the core's module.
-"""
+"""The model-call types the gateway's core, its edge and its clients share."""
 
 from __future__ import annotations
 

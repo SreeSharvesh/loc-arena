@@ -23,7 +23,6 @@ def _no_secret_in_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def container_secrets_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """An empty stand-in for the container's /run/secrets; the working directory is its parent."""
     directory = tmp_path / "run-secrets"
     directory.mkdir()
     monkeypatch.setattr(stack_secrets, "DOCKER_SECRETS_DIRECTORY", directory)

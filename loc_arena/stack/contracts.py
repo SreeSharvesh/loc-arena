@@ -1,14 +1,4 @@
-"""Every body the stack's services exchange, and the interfaces its packages implement or consume.
-
-The bodies defined here are frozen pydantic models that reject unknown fields (``ContractModel`` and the
-core's and the edge's generate replies), so each service validates what it receives at its boundary. A model
-call's request and reply are the gateway's own ``GenerateRequest`` and ``GenerateResponse``, imported from
-:mod:`loc_arena.stack.model_call` as they are written there: plain pydantic models, mutable, which ignore an
-unknown field. The core's and the edge's replies extend that reply here. Log events stay the standard-library
-dataclasses of :mod:`loc_arena.logging_.events` (``Event``, ``EventDraft``, and the ``EventLog`` protocol,
-imported from there). This module imports only the standard library, pydantic, ``events`` and ``model_call``:
-it ships in the sandbox image.
-"""
+"""Every body the stack's services exchange, and the interfaces its packages implement or consume."""
 
 from __future__ import annotations
 
@@ -23,13 +13,11 @@ from loc_arena.logging_.events import EventDraft, EventLog
 from loc_arena.stack.constants import EPISODE_HANDLE_BYTES, EPISODE_HANDLE_PATTERN
 from loc_arena.stack.model_call import GenerateRequest, GenerateResponse
 
-# Validated as a model field and as a FastAPI path parameter: 16 lowercase hex characters, nothing else.
 EpisodeHandle = Annotated[str, StringConstraints(pattern=EPISODE_HANDLE_PATTERN)]
 EpisodeMode = Literal["attack", "honest"]
 CoverageComponent = Literal["monitor", "logging"]
 CredentialKind = Literal["turn_token", "batch_id", "durable_identity", "monitor", "none"]
 Phase = Literal["deciding", "executing"]  # an agent turn's phase, as in logging_.agent_trace
-# The owned code tools (scaffold/code_services.py) plus a real shell: an allowlist, not generic execution.
 CodeToolName = Literal[
     "read_file",
     "write_file",
@@ -50,25 +38,26 @@ def generate_episode_handle() -> str:
 
 
 class ContractModel(BaseModel):
-    """Base of every body: immutable, and an unknown field is rejected rather than dropped."""
+    """Base of every body: immutable, and an unknown field is a validation error."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
 
-# --- gateway core and edge: model calls ---
-class CoreHealth(ContractModel):
-    """The core's health: up, and whether it holds a provider key."""
+class ServiceHealth(ContractModel):
+    """A service's health: up."""
 
     ok: bool
+
+
+# --- gateway core and edge: model calls ---
+class CoreHealth(ServiceHealth):
+    """The core's health: up, and whether it holds a provider key."""
+
     provider_configured: bool
 
 
 class CoreGenerateResponse(GenerateResponse):
-    """The core's reply: the model call's reply, plus the episode that recorded it and the core's clock.
-
-    ``ts`` is the core's clock at the call, which the edge's mirror record reuses. Frozen and closed to
-    unknown fields like every body here.
-    """
+    """The core's reply: the model call's reply, plus the episode that recorded it and the core's clock."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -109,7 +98,7 @@ class RelayedBatchGenerateResponse(BatchGenerateResponse):
 
 
 # --- gateway core: control routes (control key) ---
-ProviderKind = Literal["openrouter", "deterministic"]  # the key-holding egress, or the no-network stub
+ProviderKind = Literal["openrouter", "deterministic"]
 
 
 def build_episode_id(run_config_name: str, mode: EpisodeMode) -> str:
@@ -134,11 +123,7 @@ class CovertInjection(ContractModel):
 
 
 class EpisodeOpen(ContractModel):
-    """Open an episode on the core; it becomes the active one that off-path calls are recorded under.
-
-    The core ships without ``configs/``, so the run config's model routes and covert injection travel here;
-    ``provider`` picks the key-holding egress or, for scripted runs, the deterministic stub.
-    """
+    """Open an episode on the core; it becomes the active one that off-path calls are recorded under."""
 
     run_config_name: str
     mode: EpisodeMode
@@ -241,12 +226,6 @@ class MirrorAppend(ContractModel):
     draft: EventDraft
 
 
-class ServiceHealth(ContractModel):
-    """The edge's or the recorder's health: up."""
-
-    ok: bool
-
-
 # --- execution app (one per agent sandbox) ---
 class WorkspaceCreate(ContractModel):
     """Prepare the sandbox's workspace for an episode."""
@@ -276,10 +255,9 @@ class BashResult(ContractModel):
     timed_out: bool
 
 
-class ExecutionHealth(ContractModel):
+class ExecutionHealth(ServiceHealth):
     """The execution app's health: up, and the agent whose sandbox it serves."""
 
-    ok: bool
     agent_id: str
 
 
@@ -350,10 +328,7 @@ class EpisodeLanes(ContractModel):
 
 
 class RunnerEpisodeExport(ContractModel):
-    """What the runner knows of one episode that the sealed logs do not: verdicts, turns and their lanes.
-
-    ``phases`` maps the sealed seq of each model call to the phase of the turn that made it.
-    """
+    """What the runner knows of one episode that the sealed logs do not: verdicts, turns and their lanes."""
 
     handle: EpisodeHandle
     episode_id: str
@@ -449,10 +424,7 @@ class CodeToolRunner(Protocol):
 
 @dataclass(frozen=True)
 class EpisodeWiring:
-    """Everything the runner's scaffold talks to for one episode, the same shape in process and in the stack.
-
-    ``code_tools`` maps each agent id to the runner of its own sandbox.
-    """
+    """Everything the scaffold talks to for one episode, the same shape in process and in the stack."""
 
     handle: EpisodeHandle
     gateway: Servable

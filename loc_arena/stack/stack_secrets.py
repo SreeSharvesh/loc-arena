@@ -1,12 +1,4 @@
-"""The stack's two secrets, loaded with pydantic-settings from the sources each caller names.
-
-A container reads the compose secret files in ``/run/secrets`` (:func:`load_container_secrets`);
-pydantic-settings reads a secrets directory by field name, so each field equals a ``*_SECRET_NAME``
-constant. Environment variables take priority over a dotenv file and a secrets directory (docs.pydantic.dev,
-pydantic-settings "Dotenv (.env) support" and "Secrets"). Pass ``_env_file`` and ``_secrets_dir``
-explicitly: ``None`` reads nothing from that source. An empty value (a compose secret whose variable was
-unset) reads as ``None``.
-"""
+"""The stack's two secrets, loaded with pydantic-settings from the sources each caller names."""
 
 from __future__ import annotations
 
