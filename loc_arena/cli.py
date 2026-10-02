@@ -18,7 +18,7 @@ import zipfile
 from pathlib import Path
 
 from loc_arena.config import load_run_config
-from loc_arena.harness import run_episode, run_sweep
+from loc_arena.harness import DOTENV_PATH, run_episode, run_sweep
 from loc_arena.logging_.viewer import build_index
 
 
@@ -45,6 +45,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         out_root=Path(args.out),
         seed=args.seed,
         robust=not args.minimal,
+        dotenv_path=DOTENV_PATH,
     )
     scores = json.loads((out / "scores.json").read_text())
     s = scores["side_task"]

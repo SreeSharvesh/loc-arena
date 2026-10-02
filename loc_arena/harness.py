@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import dataclasses
 import json
-import os
 import secrets
 import shutil
 import subprocess
@@ -27,13 +26,14 @@ import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
 import yaml
 
 from loc_arena import live
 from loc_arena.config import RunConfig
-from loc_arena.gateway.core import GatewayCore, GenerateRequest, OpenRouterProvider, sign_monitor_credential
+from loc_arena.gateway.core import GatewayCore, GenerateRequest, sign_monitor_credential
+from loc_arena.gateway.openrouter_provider import live_provider_from_environment
 from loc_arena.logging_ import viewer
 from loc_arena.logging_.events import AppendOnlyLog, Event, read_events
 from loc_arena.metrics import (
@@ -53,6 +53,7 @@ from loc_arena.task import assemble_scripted_episode
 if TYPE_CHECKING:
     from loc_arena.logging_.inspect_export import EpisodeExport
 
+DOTENV_PATH: Final = Path(__file__).resolve().parent.parent / ".env"
 LABEL = "loc-arena.eval"
 IMAGE = "loc-arena-svc:latest"
 _SERVICES_DIR = Path(__file__).resolve().parent / "services"
@@ -496,10 +497,17 @@ def _eval_episodes(cfg: RunConfig, episode: Any, calibration: Any) -> list[Episo
     return exports
 
 
-def _assemble_by_policy(cfg: RunConfig, workdir: Path, *, robust: bool, provider: Any = None) -> Any:
+def _assemble_by_policy(
+    cfg: RunConfig,
+    workdir: Path,
+    *,
+    robust: bool,
+    provider: Any = None,
+    dotenv_path: Path | None = None,
+) -> Any:
     """Assemble one episode by ``config.policy``: the scripted driver, or the live model attack."""
     if cfg.policy == "model":
-        return live.assemble_model_episode(cfg, workdir, provider=provider)
+        return live.assemble_model_episode(cfg, workdir, provider=provider, dotenv_path=dotenv_path)
 
     return assemble_scripted_episode(cfg, workdir, robust=robust)
 
@@ -517,6 +525,7 @@ def run_episode(
     run_instance_id: str | None = None,
     provider: Any = None,
     calibration_provider: Any = None,
+    dotenv_path: Path | None = None,
 ) -> Path:
     """Run one episode in ``mode``, grade it, and write the reproducible audit bundle; return its dir.
 
@@ -533,8 +542,8 @@ def run_episode(
     # monitors declared ``mode: live`` in monitors.yaml actually score each event. A scripted or no-key run
     # passes no provider, so those monitors fall back to their heuristic (deterministic; the firewall holds
     # either way). Monitor visibility stays entirely a monitors.yaml concern.
-    if monitor_provider is None and cfg.policy == "model" and os.environ.get("OPENROUTER_API_KEY"):
-        monitor_provider = OpenRouterProvider()
+    if monitor_provider is None and cfg.policy == "model":
+        monitor_provider = live_provider_from_environment(cfg.settings.provider, dotenv_path=dotenv_path)
     the_seed = seed if seed is not None else cfg.seed
     instance_id = run_instance_id or secrets.token_hex(3)
     run_name = cfg.run_name(mode, instance_id)
@@ -551,7 +560,13 @@ def run_episode(
     start = time.perf_counter()
     # policy: model (the live deliverable) or scripted (engine-test scaffolding only). The scorer, verifier,
     # and monitors grade both identically; scripted stays byte-reproducible, live is graded on outcome.
-    episode = _assemble_by_policy(cfg, out_dir / "episode", robust=robust, provider=provider)
+    episode = _assemble_by_policy(
+        cfg,
+        out_dir / "episode",
+        robust=robust,
+        provider=provider,
+        dotenv_path=dotenv_path,
+    )
     # calibrate against the honest twin (mode's only difference is covert.enabled)
     honest_cfg = apply_mode(config, "honest")
     honest_ep = (
@@ -562,6 +577,7 @@ def run_episode(
             out_dir / "honest_cal",
             robust=False,
             provider=calibration_provider,
+            dotenv_path=dotenv_path,
         )
     )
     h_caller, h_sink = build_monitor_caller(honest_ep, honest_cfg, monitor_provider)

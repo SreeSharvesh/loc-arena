@@ -126,8 +126,8 @@ Still specific to Meridian after these PRs:
 Each PR passes `make gates` on its own and links back here; the stack is #35 to #51, and any PR's stack map lists every layer. The deterministic run keeps its golden logs and
 scores through every PR before the compose stack, and PR 14 alone makes the stack the default for `make run`. Two smaller PRs land first and the stack builds on them:
 #22 (monitor verdicts in the transcript, now closed and carried in #35) and the monitor prompts fix. #26 (chat messages and native tool calls)
-merged on 2026-09-30, after this stack was built, and extends the client PR 3 removes; its feature moves onto
-the SDK provider before PR 3 merges. The hardening PRs 15 and 16 come from stress testing the finished stack.
+and #54 (the append-only native tool loop) are on main, and the stack builds on them: PR 3 serves #26's messages,
+tools and tool calls through the SDK provider. The hardening PRs 15 and 16 come from stress testing the finished stack.
 Each PR's own diagram is under `pull-requests/`.
 
 ![The pull requests: the plan and the isolated stack (1 to 7), then decoupling, measurement and code quality (8 to 13), then the default flip (14); the monitor prompts fix lands first](05-pull-requests.png)

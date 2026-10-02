@@ -21,12 +21,10 @@ import base64
 import hashlib
 import hmac
 import json
-import os
 import time
 from collections.abc import Callable
 from typing import Any, Protocol
 
-import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
@@ -42,22 +40,6 @@ from loc_arena.stack.model_call import (
     input_fingerprint,
     output_fingerprint,
 )
-
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-
-_MAX_RETRIES = 5  # bounded retries on a rate-limited (429) or transient (5xx) provider response
-_BACKOFF_BASE_SECONDS = 2.0  # exponential backoff base; the nth retry waits ~base * 2**n, capped at 30s
-
-
-def _retry_delay_seconds(resp: httpx.Response, attempt: int) -> float:
-    """Seconds to wait before the next retry: the provider's ``Retry-After`` if given, else backoff."""
-    retry_after = resp.headers.get("Retry-After")
-    if retry_after is not None:
-        try:
-            return min(float(retry_after), 30.0)
-        except ValueError:
-            pass
-    return min(_BACKOFF_BASE_SECONDS * (2.0**attempt), 30.0)
 
 
 # --------------------------------------------------------------------------------------------------------
@@ -169,86 +151,6 @@ class Provider(Protocol):
     ) -> ProviderResult:
         """Call the model and return its completion plus token counts."""
         ...
-
-
-class OpenRouterProvider:
-    """The real egress: calls OpenRouter with the single ``OPENROUTER_API_KEY`` (never logged)."""
-
-    def __init__(self, api_key: str | None = None, *, timeout: float = 60.0) -> None:
-        """Read the key from env if not given; hold an httpx client for the provider call."""
-        key = api_key if api_key is not None else os.environ.get("OPENROUTER_API_KEY")
-        if not key:
-            raise RuntimeError("OPENROUTER_API_KEY is not set; the gateway core cannot egress")
-        self._key = key
-        self._timeout = timeout
-
-    def _post_with_retries(
-        self,
-        model: str,
-        messages: list[Message],
-        temperature: float,
-        max_tokens: int,
-        tools: list[ToolSpec] | None,
-    ) -> httpx.Response:
-        """POST the completion, retrying 429/5xx with backoff; return the final response for the caller."""
-        body: dict[str, Any] = {
-            "model": model,
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-        }
-        if tools:
-            body["tools"] = tools
-        headers = {"Authorization": f"Bearer {self._key}", "Content-Type": "application/json"}
-        last: httpx.Response | None = None
-        for attempt in range(_MAX_RETRIES + 1):
-            resp = httpx.post(OPENROUTER_URL, headers=headers, json=body, timeout=self._timeout)
-            if resp.status_code != 429 and resp.status_code < 500:
-                return resp
-            last = resp
-            if attempt == _MAX_RETRIES:
-                break
-            time.sleep(_retry_delay_seconds(resp, attempt))
-        assert last is not None
-        return last
-
-    def generate(
-        self,
-        model: str,
-        messages: list[Message],
-        temperature: float,
-        max_tokens: int,
-        tools: list[ToolSpec] | None,
-    ) -> ProviderResult:
-        """POST a chat completion to OpenRouter and parse the text and any native tool calls.
-
-        Retries a rate-limited (429) or transient server (5xx) response a bounded number of times with
-        exponential backoff, honoring a ``Retry-After`` header when the provider sends one, so a burst of
-        calls against a rate-limited model does not abort the whole episode. A non-transient error, or a
-        429/5xx that persists past the retry budget, still raises.
-        """
-        resp = self._post_with_retries(model, messages, temperature, max_tokens, tools)
-        resp.raise_for_status()
-        data = resp.json()
-        # Some models (e.g. reasoning models) can return a null ``content`` when the whole reply went to a
-        # separate reasoning field, the model declined, or the reply is tool calls only -- coerce to "".
-        message = data["choices"][0].get("message", {})
-        text = message.get("content") or ""
-        usage = data.get("usage", {})
-        details = usage.get("prompt_tokens_details") or {}
-        cached = int(details.get("cached_tokens", 0)) if isinstance(details, dict) else 0
-        return ProviderResult(
-            text=text,
-            prompt_tokens=int(usage.get("prompt_tokens", _estimate_tokens(json.dumps(messages)))),
-            completion_tokens=int(usage.get("completion_tokens", _estimate_tokens(text))),
-            tool_calls=message.get("tool_calls") or None,
-            cached_tokens=cached,
-        )
-
-
-def _estimate_tokens(text: str) -> int:
-    """A cheap deterministic token estimate (~4 chars/token) for when the provider omits usage."""
-    return max(1, len(text) // 4)
 
 
 class DeterministicProvider:

@@ -1,31 +1,27 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
-import pytest
 from loc_arena.config import load_run_config
 from loc_arena.gateway.client import GatewayClient
-from loc_arena.gateway.core import DirectTransport, GatewayCore, OpenRouterProvider, sign_turn_token
+from loc_arena.gateway.core import DirectTransport, GatewayCore, sign_turn_token
 from loc_arena.gateway.edge import GatewayEdge
+from loc_arena.gateway.openrouter_provider import OpenRouterProvider
 from loc_arena.logging_.events import AppendOnlyLog, read_events
 from loc_arena.scaffold.model_policy import ModelAgentPolicy
 from loc_arena.scaffold.tool_specs import agent_tool_specs
-
-_LIVE = os.environ.get("LOC_ARENA_LIVE") == "1" and bool(os.environ.get("OPENROUTER_API_KEY"))
-pytestmark = pytest.mark.skipif(
-    not _LIVE,
-    reason="live model disabled (set LOC_ARENA_LIVE=1 + OPENROUTER_API_KEY)",
-)
 
 EP = "ep-live-model"
 SECRET = "s"
 
 
-def test_live_model_turn_is_stamped_and_parses_a_tool_call(tmp_path: Path) -> None:
+def test_live_model_turn_is_stamped_and_parses_a_tool_call(
+    tmp_path: Path,
+    live_provider: OpenRouterProvider,
+) -> None:
     cfg = load_run_config("configs/aurora-efficiency.deterministic.yaml")
     sealed = AppendOnlyLog(tmp_path / "sealed.jsonl", EP)
-    core = GatewayCore(cfg, EP, sealed, OpenRouterProvider(), turn_secret=SECRET, clock=lambda: 100.0)
+    core = GatewayCore(cfg, EP, sealed, live_provider, turn_secret=SECRET, clock=lambda: 100.0)
     edge = GatewayEdge(
         EP,
         DirectTransport(core),

@@ -2,42 +2,61 @@
 
 from __future__ import annotations
 
+import json
+from collections.abc import Iterator
 from typing import Any
 
-import httpx
 import pytest
-from loc_arena.gateway import core
+
+from tests.unit._openrouter_stub import (
+    ScriptedReply,
+    StubOpenRouter,
+    completion,
+    serve_openrouter,
+    stub_provider,
+)
 
 TOOL_CALL = {"id": "call_1", "type": "function", "function": {"name": "bash", "arguments": '{"cmd": "ls"}'}}
 TOOLS = [{"type": "function", "function": {"name": "bash", "parameters": {"type": "object"}}}]
 MESSAGES = [{"role": "system", "content": "be terse"}, {"role": "user", "content": "list files"}]
 
 
+class _RequestBodies:
+    def __init__(self, stub: StubOpenRouter) -> None:
+        self._stub = stub
+
+    def __len__(self) -> int:
+        return len(self._stub.received)
+
+    def __getitem__(self, index: int) -> dict[str, Any]:
+        return json.loads(self._stub.received[index].body)
+
+    def __iter__(self) -> Iterator[dict[str, Any]]:
+        return (json.loads(request.body) for request in self._stub.received)
+
+
+@pytest.fixture
+def stub() -> Iterator[StubOpenRouter]:
+    with serve_openrouter(ScriptedReply(body=completion())) as server:
+        yield server
+
+
 def _capture(
-    monkeypatch: pytest.MonkeyPatch,
+    stub: StubOpenRouter,
     message: dict[str, Any],
     *,
     usage: dict[str, Any] | None = None,
-) -> list[dict[str, Any]]:
-    bodies: list[dict[str, Any]] = []
-    reported = usage if usage is not None else {"prompt_tokens": 3, "completion_tokens": 2}
-
-    def fake_post(*_args: object, json: dict[str, Any], **_kwargs: object) -> httpx.Response:
-        bodies.append(json)
-        return httpx.Response(
-            status_code=200,
-            json={"choices": [{"message": message}], "usage": reported},
-            request=httpx.Request("POST", core.OPENROUTER_URL),
-        )
-
-    monkeypatch.setattr("loc_arena.gateway.core.httpx.post", fake_post)
-    return bodies
+) -> _RequestBodies:
+    reported = usage if usage is not None else {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5}
+    reply = completion(message["content"], tool_calls=message.get("tool_calls"), usage=reported)
+    stub.pending_replies = [ScriptedReply(body=reply)]
+    return _RequestBodies(stub)
 
 
-def test_sends_messages_and_tools_and_parses_tool_calls(monkeypatch: pytest.MonkeyPatch) -> None:
-    bodies = _capture(monkeypatch, {"role": "assistant", "content": None, "tool_calls": [TOOL_CALL]})
+def test_sends_messages_and_tools_and_parses_tool_calls(stub: StubOpenRouter) -> None:
+    bodies = _capture(stub, {"role": "assistant", "content": None, "tool_calls": [TOOL_CALL]})
 
-    result = core.OpenRouterProvider(api_key="k").generate("m", MESSAGES, 0.0, 16, TOOLS)
+    result = stub_provider(stub).generate("m", MESSAGES, 0.0, 16, TOOLS)
 
     (body,) = bodies
     assert body["messages"] == MESSAGES
@@ -47,28 +66,29 @@ def test_sends_messages_and_tools_and_parses_tool_calls(monkeypatch: pytest.Monk
     assert result.assistant_message() == {"role": "assistant", "content": "", "tool_calls": [TOOL_CALL]}
 
 
-def test_records_cached_tokens(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_records_cached_tokens(stub: StubOpenRouter) -> None:
     _capture(
-        monkeypatch,
+        stub,
         {"role": "assistant", "content": "done"},
         usage={
             "prompt_tokens": 11,
             "completion_tokens": 4,
+            "total_tokens": 15,
             "prompt_tokens_details": {"cached_tokens": 7},
         },
     )
 
-    result = core.OpenRouterProvider(api_key="k").generate("m", MESSAGES, 0.0, 16, None)
+    result = stub_provider(stub).generate("m", MESSAGES, 0.0, 16, None)
 
     assert result.prompt_tokens == 11
     assert result.completion_tokens == 4
     assert result.cached_tokens == 7
 
 
-def test_omits_tools_and_tool_calls_when_absent(monkeypatch: pytest.MonkeyPatch) -> None:
-    bodies = _capture(monkeypatch, {"role": "assistant", "content": "done"})
+def test_omits_tools_and_tool_calls_when_absent(stub: StubOpenRouter) -> None:
+    bodies = _capture(stub, {"role": "assistant", "content": "done"})
 
-    result = core.OpenRouterProvider(api_key="k").generate("m", MESSAGES, 0.0, 16, None)
+    result = stub_provider(stub).generate("m", MESSAGES, 0.0, 16, None)
 
     assert "tools" not in bodies[0]
     assert result.tool_calls is None
