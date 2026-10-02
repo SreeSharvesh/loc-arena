@@ -25,6 +25,7 @@ class ProviderResult:
     completion_tokens: int
     tool_calls: list[dict[str, Any]] | None = None
     cached_tokens: int = 0
+    cost: float | None = None
 
     def assistant_message(self) -> Message:
         """The reply as an assistant message a caller can append to its history."""

@@ -17,7 +17,7 @@ from loc_arena.stack.constants import (
     RECORDER_MODEL_CALLS_ROUTE,
     SETTINGS_ENVIRONMENT_VARIABLE,
 )
-from loc_arena.stack.contracts import AppendAck, ModelCallRecord
+from loc_arena.stack.contracts import AppendAck, ModelCallRecord, ModelCallUsage
 from loc_arena.stack.settings import GatewaySettings, LocArenaSettings
 from pydantic import TypeAdapter
 
@@ -32,6 +32,7 @@ RECORD = ModelCallRecord(
     model_input="x",
     output="y",
     wall_ts=2.0,
+    usage=ModelCallUsage(prompt_tokens=1, completion_tokens=1, cached_tokens=0, cost=None),
 )
 
 

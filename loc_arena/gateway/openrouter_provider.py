@@ -13,15 +13,12 @@ from openrouter import OpenRouter, components, errors
 from openrouter.utils import BackoffStrategy, RetryConfig
 from pydantic import BaseModel, SecretStr, ValidationError
 
-from loc_arena.gateway.core import Message, ProviderResult, ToolSpec
+from loc_arena.gateway.core import Message, ProviderError, ProviderResult, ToolSpec
 from loc_arena.stack.settings import ProviderSettings
 from loc_arena.stack.stack_secrets import StackSecrets
 
 MILLISECONDS_PER_SECOND: Final = 1000
-
-
-class ProviderError(RuntimeError):
-    """A model call failed: refused, still failing after every retry, or answered without a completion."""
+TRUNCATION_MARKER: Final = " [cut]"
 
 
 class ProviderTimeoutError(ProviderError):
@@ -105,12 +102,20 @@ class OpenRouterProvider:
         except httpx.TimeoutException as error:
             raise ProviderTimeoutError(f"{model}: {error}") from error
         except errors.ResponseValidationError as error:
-            raise ProviderReplyError(_describe_unusable_reply(model, error)) from error
+            max_characters = self._settings.error_message_max_characters
+            raise _unusable_reply_error(model, error, max_characters) from error
         except ValidationError as error:  # the SDK refused to build the request; its text quotes the messages
             reason = f"the SDK cannot send these messages or tools ({error.error_count()} errors)"
             raise ProviderError(f"{model}: {reason}") from error
-        except (errors.OpenRouterError, errors.NoResponseError, httpx.HTTPError) as error:
-            raise ProviderError(f"{model}: {type(error).__name__}: {error}") from error
+        except errors.OpenRouterError as error:
+            message = _cut_message(error.message, self._settings.error_message_max_characters)
+            raise ProviderError(
+                f"{model}: {type(error).__name__} (HTTP {error.status_code}): {message}",
+                status_code=error.status_code,
+            ) from error
+        except (errors.NoResponseError, httpx.HTTPError) as error:
+            message = _cut_message(str(error), self._settings.error_message_max_characters)
+            raise ProviderError(f"{model}: {type(error).__name__}: {message}") from error
         return _read_completion(model, reply)
 
     async def _complete(
@@ -158,12 +163,23 @@ class OpenRouterProvider:
         return True
 
 
-def _describe_unusable_reply(model: str, error: errors.ResponseValidationError) -> str:
+def _unusable_reply_error(
+    model: str,
+    error: errors.ResponseValidationError,
+    max_characters: int,
+) -> ProviderReplyError:
     try:
         detail = _ErrorBody.model_validate_json(error.body).error
     except ValidationError:
-        return f"{model} answered {error.status_code} with a body that is not a chat completion"
-    return f"{model} answered {error.status_code} with error {detail.code}: {detail.message}"
+        reason = f"{model} answered {error.status_code} with a body that is not a chat completion"
+        return ProviderReplyError(reason)
+    message = _cut_message(detail.message, max_characters)
+    reason = f"{model} answered {error.status_code} with error {detail.code}: {message}"
+    return ProviderReplyError(reason, status_code=detail.code)
+
+
+def _cut_message(message: str, max_characters: int) -> str:
+    return message if len(message) <= max_characters else message[:max_characters] + TRUNCATION_MARKER
 
 
 def _read_completion(model: str, reply: components.ChatResult) -> ProviderResult:
@@ -179,12 +195,14 @@ def _read_completion(model: str, reply: components.ChatResult) -> ProviderResult
         raise ProviderReplyError(f"{model} answered with content parts, not text")
     # Null content: a reasoning model spent max_tokens on reasoning; the turn is empty.
     details = reply.usage.prompt_tokens_details
+    cost = reply.usage.cost
     return ProviderResult(
         text=content or "",
         prompt_tokens=reply.usage.prompt_tokens,
         completion_tokens=reply.usage.completion_tokens,
         tool_calls=[call.model_dump() for call in choice.message.tool_calls or []] or None,
         cached_tokens=(details.cached_tokens or 0) if details else 0,
+        cost=cost if isinstance(cost, float) else None,  # absent (the SDK's UNSET) or null: unknown
     )
 
 

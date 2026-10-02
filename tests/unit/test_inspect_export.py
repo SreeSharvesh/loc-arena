@@ -10,14 +10,17 @@ import pytest
 from inspect_ai.event import Event as InspectEvent
 from inspect_ai.event import InfoEvent, SpanBeginEvent, SpanEndEvent, ToolEvent
 from inspect_ai.log import EvalConfig, EvalDataset, EvalSample, EvalSpec, read_eval_log
+from inspect_ai.model import ModelUsage
 from loc_arena.config import load_run_config
 from loc_arena.logging_ import inspect_export
 from loc_arena.logging_.agent_trace import AgentTrace, EpisodeTrace, ModelCall, TurnRef
 from loc_arena.logging_.events import AppendOnlyLog, Event, EventKind
 from loc_arena.logging_.inspect_export import EpisodeExport, UnassignedEventError, write_run_eval
 from loc_arena.scaffold.bus import Recorder
+from loc_arena.stack.contracts import ModelCallUsage
 
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+USAGE = ModelCallUsage(prompt_tokens=11, completion_tokens=7, cached_tokens=5, cost=0.0042)
 
 
 def _episode(sample_id: str, tmp_path: Path) -> EpisodeExport:
@@ -153,12 +156,50 @@ def test_timestamp_is_an_aware_utc_datetime() -> None:
 
 
 def test_model_event_shows_the_post_injection_input_and_the_reply() -> None:
-    call = ModelCall("executing", "batch-runner", "untrusted_agent", "OBJECTIVE\n\nbrief", "reply", 12, 0.0)
+    call = ModelCall(
+        "executing",
+        "batch-runner",
+        "untrusted_agent",
+        "OBJECTIVE\n\nbrief",
+        "reply",
+        12,
+        0.0,
+        USAGE,
+    )
     event = inspect_export._model_event(call, "turn:agent-main:3")
     assert event.span_id == "turn:agent-main:3"
     assert [m.text for m in event.input] == ["OBJECTIVE\n\nbrief"]
     assert event.output.completion == "reply"
     assert event.metadata == {"identity": "batch-runner", "phase": "executing", "sealed_seq": 12}
+
+
+def test_a_model_event_carries_the_calls_token_counts_and_cost() -> None:
+    uncached = ModelCallUsage(prompt_tokens=11, completion_tokens=7, cached_tokens=0, cost=0.0042)
+    call = ModelCall("deciding", "agent-main", "untrusted_agent", "brief", "reply", 3, 0.0, uncached)
+
+    event = inspect_export._model_event(call, None)
+
+    assert event.output.usage == ModelUsage(
+        input_tokens=11,
+        output_tokens=7,
+        total_tokens=18,
+        input_tokens_cache_read=0,
+        total_cost=0.0042,
+    )
+
+
+def test_a_model_event_leaves_the_cached_prompt_tokens_out_of_its_input_tokens() -> None:
+    call = ModelCall("deciding", "agent-main", "untrusted_agent", "brief", "reply", 3, 0.0, USAGE)
+
+    event = inspect_export._model_event(call, None)
+
+    assert event.output.usage == ModelUsage(
+        input_tokens=6,
+        output_tokens=7,
+        total_tokens=18,
+        input_tokens_cache_read=5,
+        total_cost=0.0042,
+    )
 
 
 def _action(seq: int, result: dict[str, Any] | None = None, **payload: object) -> Event:
@@ -315,6 +356,7 @@ def test_a_traced_episode_exports_a_span_tree_with_one_agent_span_per_agent(tmp_
             model_input="p",
             output="r",
             sealed_seq=record.seq,
+            usage=USAGE,
         )
         trace.mark_executing()
         recorder.dual(
@@ -466,7 +508,14 @@ def test_timestamps_follow_turn_bounds_and_model_calls_and_world_reuses_the_last
     trace = AgentTrace(wall_clock=lambda: next(readings))
     with trace.turn("agent-main", 0):
         trace.on_sealed_append(_tick(0))
-        trace.on_model_call(identity="agent-main", role="r", model_input="p", output="o", sealed_seq=1)
+        trace.on_model_call(
+            identity="agent-main",
+            role="r",
+            model_input="p",
+            output="o",
+            sealed_seq=1,
+            usage=USAGE,
+        )
         trace.on_sealed_append(_tick(1))
         trace.on_sealed_append(_tick(2))
     trace.on_sealed_append(_tick(3))

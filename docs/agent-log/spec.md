@@ -36,7 +36,7 @@ write a scripted PR stamped `agent-main` outside any turn (`coworker.py:219-280`
 | `Phase` | `"deciding"` or `"executing"` | agent policy choosing this turn's actions vs the tool layer running |
 | `TurnRef` | `agent_uid`, `turn` | one agent turn; under the live round-robin driver `turn` is also the round index |
 | `TurnRecord` | `ref`, `wall_start`, `wall_end` | wall-clock bounds of a completed turn; the episode clock is simulated and jumps |
-| `ModelCall` | `phase`, `identity`, `role`, `model_input`, `output`, `sealed_seq`, `wall_ts` | one provider call as the core made it; `model_input` is after covert injection; its turn is `sealed_lane[sealed_seq]`; `phase` is `None` outside a turn |
+| `ModelCall` | `phase`, `identity`, `role`, `model_input`, `output`, `sealed_seq`, `wall_ts`, `usage` | one provider call as the core made it; `model_input` is after covert injection; its turn is `sealed_lane[sealed_seq]`; `phase` is `None` outside a turn; `usage` is its prompt, completion and cached token counts and its cost |
 | `EpisodeTrace` | `turns`, `sealed_lane`, `mirror_lane`, `mirror_to_sealed`, `phases`, `model_calls`, `last_sealed_seq` | finished read-only trace; lane maps give `TurnRef` or `None` (World); `mirror_to_sealed` pairs dual-recorded twins, since the two logs number independently; `phases` maps each scaffold model call's sealed seq to its phase |
 
 ## `AgentTrace` contract
@@ -49,7 +49,8 @@ write a scripted PR stamped `agent-main` outside any turn (`coworker.py:219-280`
 | `on_sealed_append(event)` | the episode wiring's traced sealed log, for each event the scaffold records | tags `event.seq` with the bound turn or World | never on purpose; a miss surfaces as an unassigned seq in the exporter |
 | `on_mirror_append(event)` | the episode wiring's traced mirror log, for each event the scaffold records | tags `event.seq`; pairs it with the most recent unpaired sealed event when the two are equal in every field but `seq` and `fp` (`Recorder.dual` writes sealed then mirror); a sealed event twins at most one mirror event; edge prompt copies get a lane but no twin | never on purpose |
 | `on_model_reply(sealed_seqs, mirror_seqs)` | the episode wiring's gateway, after each model call the scaffold makes | tags the call's sealed and mirror seqs with the bound turn, and its sealed seqs with the bound phase | - |
-| `on_model_call(*, identity, role, model_input, output, sealed_seq)` | `GatewayCore.generate` / `batch_generate` in process (the episode core's observer), after the sealed record is written | records a `ModelCall` with the bound phase | - |
+| `on_model_call(*, identity, role, model_input, output, sealed_seq, usage)` | `GatewayCore.generate` / `batch_generate` in process (the episode core's observer), after the sealed record is written | records a `ModelCall` with the bound phase | - |
+| `on_model_call_failed(*, sealed_seq)` | `GatewayCore.generate` / `batch_generate` in process, after a provider failure is sealed as an `inference_error` | tags that sealed seq with the bound turn and phase, as `on_model_reply` does for a reply | - |
 | `finish(last_sealed_seq)` | harness, when assembly returns | returns a read-only `EpisodeTrace` snapshot; `last_sealed_seq` is the boundary for I3/I4, so anything observed later is post-episode by construction | `RuntimeError` if a turn is still bound |
 
 `gateway.wiring.open_episode_wiring(..., trace=...)` subscribes the trace to the episode's two logs and its
@@ -77,7 +78,7 @@ One `.eval` per run. Each episode becomes one sample: `episode` (the graded run)
 | `SpanBeginEvent(type="episode", name=<sample id>, id="episode:<sample id>")` | the sample's root span: first and last event; parent of every agent span and span of every World event, because Inspect's viewer attaches parentless spans and span-less events to whatever span is open |
 | `SpanBeginEvent(type="agent", name=<uid>, id="agent:<uid>", parent_id=<root>)` | opened at the agent's first turn; all agent spans close at the end of the sample |
 | `SpanBeginEvent(type="turn", name="turn <n>", id="turn:<uid>:<n>", parent_id="agent:<uid>")` | one per turn that wrote at least one sealed event; opened and closed around that turn's contiguous run of sealed seqs; a turn appearing in two runs raises `ValueError` |
-| `ModelEvent` | a sealed `inference_call` whose seq has a `ModelCall`; input is the post-injection prompt, output the reply, `metadata` holds identity, phase and seq |
+| `ModelEvent` | a sealed `inference_call` whose seq has a `ModelCall`; input is the post-injection prompt, output the reply with its usage (tokens, cached tokens and cost; its `input_tokens` leave out the cached prompt tokens, which Inspect counts in `input_tokens_cache_read`), `metadata` holds identity, phase and seq |
 | `ToolEvent` | a sealed `action`; `function` = tool, `arguments` = payload args, `error` (type `permission`) set when the payload or the result says blocked; `metadata` holds the sealed `seq` and the `mirror_seq` of its mirror twin (`None` when it has none), since monitor verdicts name mirror seqs and the two logs number independently |
 | `InfoEvent(source=<kind>)` | every other sealed event (messages, spawns, NPC activity, monitor records after the boundary); `data` holds the sealed `seq` and the twin's `mirror_seq` like a `ToolEvent` |
 | event `span_id` | the turn span of the event's lane, or the root span for World |

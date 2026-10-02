@@ -11,7 +11,7 @@ import httpx
 import stamina
 from pydantic import SecretStr
 
-from loc_arena.gateway.core import EpisodeSpec, GatewayCore, ModelCallObserver, Provider, SigningKeys
+from loc_arena.gateway.core import EpisodeSpec, GatewayCore, Provider, SigningKeys
 from loc_arena.identity import IdentityService
 from loc_arena.logging_.events import Event, EventDraft, EventLog
 from loc_arena.stack.constants import MONITOR_MODEL_ROLE, RECORDER_EVENTS_ROUTE, RECORDER_MODEL_CALLS_ROUTE
@@ -21,7 +21,9 @@ from loc_arena.stack.contracts import (
     CredentialRotation,
     DurableCredential,
     GenerateRequest,
+    ModelCallObserver,
     ModelCallRecord,
+    ModelCallUsage,
 )
 from loc_arena.stack.service_client import ServiceClient
 from loc_arena.stack.settings import GatewaySettings, LocArenaSettings
@@ -78,6 +80,7 @@ class EpisodeLedger:
         model_input: str,
         output: str,
         sealed_seq: int,
+        usage: ModelCallUsage,
     ) -> None:
         """Send one provider call to the sealed model-call log, unretried: a re-send would record it twice."""
         record = ModelCallRecord(
@@ -87,8 +90,12 @@ class EpisodeLedger:
             model_input=model_input,
             output=output,
             wall_ts=time.time(),
+            usage=usage,
         )
         self._recorder.send("POST", self._model_calls_route, record)
+
+    def on_model_call_failed(self, *, sealed_seq: int) -> None:
+        """Add nothing: a failed call's record is its sealed ``inference_error``; this log holds replies."""
 
 
 class LocalGatewayControl:

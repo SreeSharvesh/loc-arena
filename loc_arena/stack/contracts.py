@@ -208,6 +208,22 @@ class AppendAck(ContractModel):
     fp: str
 
 
+class ModelCallUsage(ContractModel):
+    """What one completed provider call consumed, as the provider reported it."""
+
+    prompt_tokens: int
+    completion_tokens: int
+    cached_tokens: int
+    cost: float | None
+
+
+class ModelCallFailure(ContractModel):
+    """Why one provider call failed, as the core seals it in the call's ``inference_error`` record."""
+
+    status_code: int | None
+    message: str
+
+
 class ModelCallRecord(ContractModel):
     """One provider call as the core made it (covert injection included), for the sealed model-call log."""
 
@@ -217,6 +233,7 @@ class ModelCallRecord(ContractModel):
     model_input: str
     output: str
     wall_ts: float
+    usage: ModelCallUsage
 
 
 class MirrorAppend(ContractModel):
@@ -411,6 +428,27 @@ class CoreRelay(Protocol):
 
     def batch_generate(self, request: BatchGenerateRequest, /) -> BatchGenerateResponse:
         """Serve one batch and record each prompt sealed."""
+        ...
+
+
+class ModelCallObserver(Protocol):
+    """Told of each provider call as the core made it."""
+
+    def on_model_call(
+        self,
+        *,
+        identity: str,
+        role: str,
+        model_input: str,
+        output: str,
+        sealed_seq: int,
+        usage: ModelCallUsage,
+    ) -> None:
+        """Record one call: its resolved identity, role, exact model input, output, sealed seq and usage."""
+        ...
+
+    def on_model_call_failed(self, *, sealed_seq: int) -> None:
+        """Note a call the provider failed, sealed at ``sealed_seq`` as an ``inference_error``."""
         ...
 
 

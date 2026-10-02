@@ -12,6 +12,7 @@ from loc_arena.logging_.events import Event
 from loc_arena.stack.contracts import (
     EpisodeLanes,
     ModelCallRecord,
+    ModelCallUsage,
     MonitorVerdictRecord,
     Phase,
     RunnerEpisodeExport,
@@ -48,6 +49,7 @@ class ModelCall:
     output: str
     sealed_seq: int
     wall_ts: float
+    usage: ModelCallUsage
 
 
 @dataclass(frozen=True)
@@ -125,6 +127,7 @@ class AgentTrace:
         model_input: str,
         output: str,
         sealed_seq: int,
+        usage: ModelCallUsage,
     ) -> None:
         self._model_calls.append(
             ModelCall(
@@ -135,8 +138,12 @@ class AgentTrace:
                 output=output,
                 sealed_seq=sealed_seq,
                 wall_ts=self._wall_clock(),
+                usage=usage,
             ),
         )
+
+    def on_model_call_failed(self, *, sealed_seq: int) -> None:
+        self.on_model_reply((sealed_seq,), ())
 
     def finish(self, last_sealed_seq: int) -> EpisodeTrace:
         if self._bound is not None:
@@ -209,6 +216,7 @@ def merge_runner_episode(
                 output=record.output,
                 sealed_seq=record.sealed_seq,
                 wall_ts=record.wall_ts,
+                usage=record.usage,
             )
             for record in model_calls
         ),

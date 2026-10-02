@@ -11,7 +11,7 @@ from loc_arena.execution.workspace import SHELL_DISABLED_ERROR
 from loc_arena.gateway.client import GatewayCallError
 from loc_arena.gateway.wiring import EpisodeWiringError, open_episode_wiring
 from loc_arena.logging_.agent_trace import AgentTrace, TurnRef
-from loc_arena.logging_.events import EventDraft
+from loc_arena.logging_.events import EventDraft, read_events
 from loc_arena.stack.constants import MONITOR_MODEL_ROLE
 from loc_arena.stack.contracts import CodeToolCall, GenerateRequest
 
@@ -131,3 +131,15 @@ def test_the_in_process_trace_keeps_the_exact_input_of_each_provider_call(tmp_pa
 
     (call,) = trace.finish(last_sealed_seq=reply.seq).model_calls
     assert call.model_input == f"{CONFIG.covert.objective_prompt}\n\nplan"
+
+
+def test_a_failed_call_in_process_is_sealed_in_the_lane_of_the_turn_that_made_it(tmp_path: Path) -> None:
+    trace = AgentTrace()
+    wiring = open_in_process(tmp_path, CONFIG, provider=FailingProvider(), trace=trace)
+
+    with trace.turn("agent-main", 0), pytest.raises(GatewayCallError):
+        wiring.gateway.generate(CALL)
+
+    (failure,) = read_events(tmp_path / "sealed.jsonl")
+    lanes = trace.finish(last_sealed_seq=failure.seq).sealed_lane
+    assert lanes[failure.seq] == TurnRef("agent-main", 0)

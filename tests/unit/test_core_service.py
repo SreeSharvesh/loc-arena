@@ -21,6 +21,7 @@ from loc_arena.gateway.openrouter_provider import ProviderError
 from loc_arena.logging_.agent_trace import AgentTrace
 from loc_arena.logging_.events import AppendOnlyLog, Event, EventDraft, read_events
 from loc_arena.stack.constants import (
+    BATCH_GENERATE_ROUTE,
     CLOCK_ROUTE,
     CLOSE_ROUTE,
     CONTROL_KEY_SECRET_NAME,
@@ -38,6 +39,7 @@ from loc_arena.stack.constants import (
 )
 from loc_arena.stack.contracts import (
     BatchGenerateRequest,
+    BatchGenerateResponse,
     ClockUpdate,
     CoreGenerateResponse,
     CoreHealth,
@@ -50,7 +52,9 @@ from loc_arena.stack.contracts import (
     GatewayControl,
     GenerateRequest,
     IssuedToken,
+    ModelCallFailure,
     ModelCallRecord,
+    ModelCallUsage,
     MonitorCall,
     MonitorCallResult,
     Servable,
@@ -278,6 +282,74 @@ def test_another_callers_model_input_carries_no_covert_objective(stack: GatewayS
 
     (call,) = _model_calls(stack, handle)
     assert call.model_input == "work"
+
+
+# --- the usage of a call ---
+METERED_USAGE = ModelCallUsage(prompt_tokens=11, completion_tokens=7, cached_tokens=5, cost=0.0042)
+
+
+class _MeteredProvider:
+    def generate(
+        self,
+        model: str,
+        messages: list[Message],
+        temperature: float,
+        max_tokens: int,
+        tools: list[ToolSpec] | None,
+    ) -> ProviderResult:
+        return ProviderResult(
+            text="metered",
+            prompt_tokens=METERED_USAGE.prompt_tokens,
+            completion_tokens=METERED_USAGE.completion_tokens,
+            cached_tokens=METERED_USAGE.cached_tokens,
+            cost=METERED_USAGE.cost,
+        )
+
+
+def _sealed_usage(record: Event) -> dict[str, object]:
+    return {field: record.payload[field] for field in ModelCallUsage.model_fields}
+
+
+@pytest.fixture
+def metered_stack(tmp_path: Path) -> GatewayStack:
+    return serve_gateway(tmp_path, provider=_MeteredProvider())
+
+
+@pytest.fixture
+def metered_handle(metered_stack: GatewayStack) -> str:
+    return metered_stack.open_episode(OPENROUTER_OPENING).handle
+
+
+def test_a_generates_sealed_record_carries_the_calls_usage(
+    metered_stack: GatewayStack,
+    metered_handle: str,
+) -> None:
+    _generate(metered_stack, REQUEST)
+
+    (record,) = metered_stack.sealed_events(metered_handle)
+    assert _sealed_usage(record) == METERED_USAGE.model_dump()
+
+
+def test_each_sealed_record_of_a_batch_carries_its_calls_usage(
+    metered_stack: GatewayStack,
+    metered_handle: str,
+) -> None:
+    batch = BatchGenerateRequest(prompts=("a", "b"), caller_identity="coworker")
+
+    ServiceClient(metered_stack.core).post_model(BATCH_GENERATE_ROUTE, batch, BatchGenerateResponse)
+
+    usages = [_sealed_usage(record) for record in metered_stack.sealed_events(metered_handle)]
+    assert usages == [METERED_USAGE.model_dump()] * len(batch.prompts)
+
+
+def test_a_model_call_record_carries_the_calls_usage(
+    metered_stack: GatewayStack,
+    metered_handle: str,
+) -> None:
+    _generate(metered_stack, REQUEST)
+
+    (call,) = _model_calls(metered_stack, metered_handle)
+    assert call.usage == METERED_USAGE
 
 
 # --- closing an episode ---
@@ -655,6 +727,13 @@ def test_a_keyless_core_reports_no_provider_in_its_health(stack: GatewayStack) -
 
 
 # --- a provider that fails ---
+REFUSAL_STATUS = HTTPStatus.BAD_GATEWAY
+
+
+def _refusal(model: str) -> str:
+    return f"{model} refused the call"
+
+
 class _RefusingProvider:
     def generate(
         self,
@@ -664,7 +743,7 @@ class _RefusingProvider:
         max_tokens: int,
         tools: list[ToolSpec] | None,
     ) -> ProviderResult:
-        raise ProviderError(f"{model} refused the call")
+        raise ProviderError(_refusal(model), status_code=REFUSAL_STATUS)
 
 
 @pytest.fixture
@@ -690,10 +769,42 @@ def test_a_provider_failure_is_answered_with_502(refusing_stack: GatewayStack) -
     assert status == HTTPStatus.BAD_GATEWAY
 
 
-def test_a_provider_failure_is_sealed_nowhere(refusing_stack: GatewayStack, refusing_handle: str) -> None:
+def test_a_provider_failure_is_sealed_with_the_providers_status_and_message(
+    refusing_stack: GatewayStack,
+    refusing_handle: str,
+) -> None:
     _status_of_generate(refusing_stack, REQUEST)
 
-    assert not (refusing_stack.sealed_root / refusing_handle).exists()
+    (record,) = refusing_stack.sealed_events(refusing_handle)
+    assert (record.kind, record.payload["failure"]) == (
+        "inference_error",
+        ModelCallFailure(
+            status_code=REFUSAL_STATUS,
+            message=_refusal(OPENING.models[REQUEST.role].model),
+        ).model_dump(),
+    )
+
+
+def test_a_provider_failures_sealed_record_names_the_calls_model_role(
+    refusing_stack: GatewayStack,
+    refusing_handle: str,
+) -> None:
+    _status_of_generate(refusing_stack, REQUEST)
+
+    (record,) = refusing_stack.sealed_events(refusing_handle)
+    assert record.payload["model_role"] == REQUEST.role
+
+
+def test_a_failed_batch_call_is_sealed_with_the_providers_status(
+    refusing_stack: GatewayStack,
+    refusing_handle: str,
+) -> None:
+    batch = BatchGenerateRequest(prompts=("a",), caller_identity="coworker")
+
+    refusing_stack.core.post(BATCH_GENERATE_ROUTE, json=batch.model_dump())
+
+    (record,) = refusing_stack.sealed_events(refusing_handle)
+    assert (record.kind, record.payload["failure"]["status_code"]) == ("inference_error", REFUSAL_STATUS)
 
 
 # --- the episode spec of a run config ---

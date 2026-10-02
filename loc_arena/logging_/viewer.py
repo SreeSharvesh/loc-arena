@@ -5,8 +5,8 @@ auditability bar. Builds a self-contained, theme-aware ``report.html`` (no serve
 ``events.sealed.jsonl`` plus ``scores.json``. It is styled after Inspect's transcript view for a MULTI-AGENT
 run: a sticky section nav, outcome KPIs, a global timeline (one swimlane per agent; covert steps, ticks and the
 deadline marked; every mark jumps into the transcript), a kill-chain "story" panel that reads the run top to
-bottom, the monitor-score panel with the audit threshold and inline reasons, the inference-flow table, and a
-per-agent transcript with agent tabs, filters, text search, and click-to-expand full event detail (payload,
+bottom, the monitor-score panel with the audit threshold and inline reasons, the inference-flow table, the
+model usage per role (tokens, cached tokens and cost, from ``scores.json``), and a per-agent transcript with agent tabs, filters, text search, and click-to-expand full event detail (payload,
 result, message body, inference provenance, and monitor verdicts with their reasons). A bus message reconstructs
 onto both the sender's and the recipient's lane, and every row shows its fingerprint.
 """
@@ -144,7 +144,7 @@ _TEMPLATE = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <title>__TITLE__</title><style>__CSS__</style></head><body>
 <nav><span class=brand>LOC-Arena</span>
 <a href="#outcome">Outcome</a><a href="#overall">Suspicion</a><a href="#timeline">Timeline</a><a href="#story">Kill chain</a>
-<a href="#monitors">Monitors</a><a href="#inference">Inference</a><a href="#transcript">Transcript</a>
+<a href="#monitors">Monitors</a><a href="#inference">Inference</a><a href="#usage">Usage</a><a href="#transcript">Transcript</a>
 <span class=sp></span><button onclick="toggleTheme()" id=themebtn>theme</button></nav>
 <div class=wrap><div id=app>rendering...</div></div>
 <script id=data type=application/json>__DATA__</script>
@@ -316,6 +316,18 @@ function inference(){
  return `<h2 id=inference>inference flow <span class=mut style=text-transform:none>(off-path + blinded = the rogue loop)</span></h2>
   <div class=card><table><tr><th>seq<th>caller<th>path<th>credential<th>prompt→output fp<th>in mirror</tr>${rows||'<tr><td colspan=6 class=mut>none</td></tr>'}</table></div>`;
 }
+function usage(){
+ const u=S.model_usage; if(!u)return '';
+ const cost=c=>c==null?'unknown':esc(Number(c).toPrecision(3));
+ const failed=n=>n?pill(n+' failed','danger'):'0';
+ const row=(name,t)=>`<tr><td>${name}</td><td>${t.completed_calls}</td><td>${failed(t.failed_calls)}</td><td>${t.prompt_tokens}</td><td>${t.completion_tokens}</td><td>${t.cached_tokens}</td><td>${t.total_tokens}</td><td>${cost(t.cost)}</td></tr>`;
+ const reasons=e=>(e.failure_reasons||[]).length?`<div class=mut style=margin-top:8px>why calls failed (each failure is an inference_error in the transcript)</div>
+  <table><tr><th>failed calls<th>status<th>provider message</tr>${e.failure_reasons.map(f=>`<tr><td>${f.failed_calls}</td><td>${f.status_code==null?'none':esc(f.status_code)}</td><td class=mono>${esc(f.message)}</td></tr>`).join('')}</table>`:'';
+ const card=(title,e)=>`<div class=card><div class=mut>${title}</div><table><tr><th>model role<th>completed calls<th>failed calls<th>prompt tokens<th>completion tokens<th>cached tokens<th>total tokens<th>cost (credits)</tr>
+  ${Object.entries(e.by_role).map(([r,t])=>row(esc(r),t)).join('')}${row('<b>total</b>',e.total)}</table>${reasons(e)}</div>`;
+ return `<h2 id=usage>model usage <span class=mut style=text-transform:none>(as the provider reported it)</span></h2>
+  ${card('episode',u.episode)}${u.calibration?card('honest calibration twin',u.calibration):''}`;
+}
 function transcript(){
  const tabs=['all',...agents].map(a=>`<span class="tab ${a===curAgent?'on':''}" onclick="selectAgent('${esc(a)}')">${a==='all'?'all agents':esc(a)}</span>`).join('');
  return `<h2 id=transcript>transcript</h2><div class=tabs>${tabs}</div>
@@ -370,7 +382,7 @@ function jump(seq){const e=bySeq[seq];if(!e)return;curAgent='all';
  if(r){r.scrollIntoView({behavior:'smooth',block:'center'});r.classList.remove('flash');void r.offsetWidth;r.classList.add('flash');}}
 function toggleTheme(){const r=document.documentElement;const cur=r.getAttribute('data-theme');
  r.setAttribute('data-theme',cur==='dark'?'light':cur==='light'?'dark':(matchMedia('(prefers-color-scheme:dark)').matches?'light':'dark'));}
-document.getElementById('app').innerHTML=header()+overview()+timeline()+story()+monitors()+inference()+transcript();
+document.getElementById('app').innerHTML=header()+overview()+timeline()+story()+monitors()+inference()+usage()+transcript();
 renderT();
 </script></body></html>"""
 

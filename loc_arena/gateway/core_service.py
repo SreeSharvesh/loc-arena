@@ -10,8 +10,8 @@ from fastapi.responses import JSONResponse
 from pydantic import SecretStr
 
 from loc_arena.gateway.control import EpisodeLedger, LocalGatewayControl
-from loc_arena.gateway.core import DeterministicProvider, EpisodeSpec, Provider
-from loc_arena.gateway.openrouter_provider import OpenRouterProvider, ProviderError
+from loc_arena.gateway.core import DeterministicProvider, EpisodeSpec, Provider, ProviderError
+from loc_arena.gateway.openrouter_provider import OpenRouterProvider
 from loc_arena.logging_.events import Event, EventDraft
 from loc_arena.stack.constants import (
     BATCH_GENERATE_ROUTE,

@@ -41,6 +41,9 @@ from loc_arena.stack.contracts import (
     CoreGenerateResponse,
     CovertInjection,
     CredentialKind,
+    ModelCallFailure,
+    ModelCallObserver,
+    ModelCallUsage,
     ModelRoute,
     generate_episode_handle,
 )
@@ -175,6 +178,15 @@ class SigningKeys:
 # --------------------------------------------------------------------------------------------------------
 # Provider abstraction: the ONLY component that egresses to a model. Injected, so tests use a stub.
 # --------------------------------------------------------------------------------------------------------
+class ProviderError(RuntimeError):
+    """A model call failed: refused, still failing after every retry, or answered without a completion."""
+
+    def __init__(self, message: str, *, status_code: int | None = None) -> None:
+        """Fail with ``message``; ``status_code`` is the provider's status or error code, if it gave one."""
+        super().__init__(message)
+        self.status_code = status_code
+
+
 class Provider(Protocol):
     """Anything that can turn a message list into a completion. Only the core holds one."""
 
@@ -186,7 +198,7 @@ class Provider(Protocol):
         max_tokens: int,
         tools: list[ToolSpec] | None,
     ) -> ProviderResult:
-        """Call the model and return its completion plus token counts."""
+        """Call the model and return its completion plus token counts; ``ProviderError`` when it fails."""
         ...
 
 
@@ -213,11 +225,16 @@ class DeterministicProvider:
     ) -> ProviderResult:
         """Return a unique deterministic completion and the fixed token counts."""
         number = next(self._call_numbers)
-        return ProviderResult(text=f"gen#{number}", prompt_tokens=self._pt, completion_tokens=self._ct)
+        return ProviderResult(
+            text=f"gen#{number}",
+            prompt_tokens=self._pt,
+            completion_tokens=self._ct,
+            cost=0.0,
+        )
 
 
 # --------------------------------------------------------------------------------------------------------
-# What the core reads of its run, and who observes its provider calls
+# What the core reads of its run, and who made each call
 # --------------------------------------------------------------------------------------------------------
 @dataclass(frozen=True)
 class EpisodeSpec:
@@ -238,22 +255,6 @@ class EpisodeSpec:
             covert=CovertInjection.model_validate(config.covert, from_attributes=True),
             teacher_token_quota=config.settings.inference.batch_generate.teacher_token_quota,
         )
-
-
-class ModelCallObserver(Protocol):
-    """Told of each provider call as the core made it: ``AgentTrace`` in process, the ledger in the stack."""
-
-    def on_model_call(
-        self,
-        *,
-        identity: str,
-        role: str,
-        model_input: str,
-        output: str,
-        sealed_seq: int,
-    ) -> None:
-        """Record one call: its resolved identity, role, exact model input, output and sealed seq."""
-        ...
 
 
 @dataclass(frozen=True)
@@ -443,18 +444,48 @@ class GatewayCore:
                 "prompt_tokens": result.prompt_tokens,
                 "completion_tokens": result.completion_tokens,
                 "cached_tokens": result.cached_tokens,
+                "cost": result.cost,
             },
         )
         return self._sealed.record(draft).seq
 
-    def _observe(self, identity: str, role: str, model_input: str, output: str, sealed_seq: int) -> None:
+    def _seal_failure(
+        self,
+        caller: CallAttribution,
+        request: GenerateRequest,
+        error: ProviderError,
+        *,
+        ts: float,
+    ) -> None:
+        failure = ModelCallFailure(status_code=error.status_code, message=str(error))
+        draft = EventDraft(
+            ts=ts,
+            actor_uid=caller.identity,
+            actor_role="untrusted",
+            kind="inference_error",
+            payload={
+                "caller_identity": caller.identity,
+                "turn_id": caller.turn_id,
+                "batch_id": caller.batch_id,
+                "credential_kind": caller.credential_kind,
+                "prompt_fp": input_fingerprint(request),
+                "model_role": request.role,
+                "failure": failure.model_dump(),
+            },
+        )
+        seq = self._sealed.record(draft).seq
+        if self._trace is not None:
+            self._trace.on_model_call_failed(sealed_seq=seq)
+
+    def _observe(self, identity: str, role: str, model_input: str, result: ProviderResult, seq: int) -> None:
         if self._trace is not None:
             self._trace.on_model_call(
                 identity=identity,
                 role=role,
                 model_input=model_input,
-                output=output,
-                sealed_seq=sealed_seq,
+                output=_render_output(result),
+                sealed_seq=seq,
+                usage=ModelCallUsage.model_validate(result, from_attributes=True),
             )
 
     # -- endpoints ---------------------------------------------------------------------------------------
@@ -465,16 +496,20 @@ class GatewayCore:
         route = self._route_for(request.role)
         temperature = route.temperature if request.temperature is None else request.temperature
         model_input = self._inject_covert(caller.identity, request.chat_messages())
-        result = self._provider.generate(
-            route.model,
-            model_input,
-            temperature,
-            route.max_tokens,
-            request.tools,
-        )
+        try:
+            result = self._provider.generate(
+                route.model,
+                model_input,
+                temperature,
+                route.max_tokens,
+                request.tools,
+            )
+        except ProviderError as error:
+            self._seal_failure(caller, request, error, ts=ts)
+            raise
         in_mirror = self._covered(self._logging_covered, caller.identity)
         seq = self._record(caller, request, result, ts=ts, in_mirror=in_mirror)
-        self._observe(caller.identity, request.role, _render_input(model_input), _render_output(result), seq)
+        self._observe(caller.identity, request.role, _render_input(model_input), result, seq)
         return CoreGenerateResponse(
             text=result.text,
             turn_id=caller.turn_id,
@@ -503,17 +538,21 @@ class GatewayCore:
         for prompt in request.prompts:
             # One prompt as a prompt request: its sealed fingerprints are the bare prompt and completion.
             call = GenerateRequest(prompt=prompt, caller_identity=request.caller_identity, role=request.role)
-            result = self._provider.generate(
-                route.model,
-                [{"role": "user", "content": prompt}],
-                route.temperature,
-                route.max_tokens,
-                None,
-            )
+            try:
+                result = self._provider.generate(
+                    route.model,
+                    [{"role": "user", "content": prompt}],
+                    route.temperature,
+                    route.max_tokens,
+                    None,
+                )
+            except ProviderError as error:
+                self._seal_failure(caller, call, error, ts=ts)
+                raise
             self._charge_quota(result.prompt_tokens + result.completion_tokens)
             in_mirror = self._covered(self._logging_covered, caller.identity)
             seq = self._record(caller, call, result, ts=ts, in_mirror=in_mirror)
-            self._observe(caller.identity, request.role, prompt, result.text, seq)
+            self._observe(caller.identity, request.role, prompt, result, seq)
             texts.append(result.text)
             seqs.append(seq)
         return BatchGenerateResponse(

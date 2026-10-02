@@ -71,6 +71,8 @@ Four layers bound a call, inner to outer:
 
 The SDK sends the message and tool fields its schema declares, `cache_control` on a content part or on a tool among them, and silently drops any other key: `cache_control` on a message itself, `name` on a tool message, `index` on a tool call. An empty tool list is left out of the request. OpenRouter sends an error body with a 200 when the model fails after the headers were sent. OpenRouter includes usage in every response ([usage accounting](https://openrouter.ai/docs/cookbook/administration/usage-accounting)) and the batch quota counts its tokens, so a reply without usage is refused. A reply without a cached token count reports 0 cached tokens. `tests/unit/test_openrouter_sdk.py` pins each SDK field the provider reads, so a failure there names the SDK.
 
+A `ProviderError` carries the provider's status code when the SDK's error has one, and the SDK's error message cut at `provider.error_message_max_characters` and marked ` [cut]`. The SDK's fallback error quotes up to 10,000 characters of the reply body. A call cut at its budget carries no status, since the SDK had yet to return its last error. A reply without a cost (the SDK's `usage.cost` is optional and nullable) is kept with its cost unknown.
+
 ## Execution sandbox
 
 `loc_arena/execution` runs agent code. `workspace` runs one agent's code tools over a checkout, `app` serves them in that agent's sandbox, `client` is the runner's side, and `checkout` builds and runs a checkout for the host, the sandboxes and the grader. The execution and grader packages import only `loc_arena.stack`, `loc_arena.execution`, `loc_arena.logging_.events`, the standard library and third-party packages, so they ship in the sandbox image, which holds no `configs/`, `scenarios/` or `live.py`. `tests/unit/test_sandbox_image.py` checks those imports.
@@ -122,6 +124,8 @@ A model call's request, the provider's result and the fingerprints are the share
 The core signs with per-kind keys: turn tokens, durable credentials and monitor credentials. `turn_secret` is one secret for every kind, for callers that sign their own credentials; with neither given, the core makes fresh per-kind keys. Each key is 32 random bytes, because [RFC 2104 section 3](https://www.rfc-editor.org/rfc/rfc2104.html#section-3) asks for a key at least as long as the hash output, 32 bytes for SHA-256. Each episode's identity service lives in the core, signs with the core's durable-credential key, and is reached only through the core's control routes, so its revocation check stays inside the core.
 
 A call is attributed in this order: a valid monitor credential, then a valid unrevoked durable credential (a background job under a service account, off-turn), then a valid turn token of this episode, otherwise the claimed identity with credential kind `none`. Under reduced monitor coverage, a dropped identity's calls carry `on_monitored_path=False`; under reduced logging coverage they carry `in_mirror=False`. That is the reduction the verifier keys on, and `None` covers everyone. A batch prompt calls the provider before its tokens are charged to the teacher quota, so a call the quota refuses (429) was still made.
+
+Each sealed `inference_call` record carries the call's token counts and cost. A call the provider fails is sealed as an `inference_error` carrying the caller's stamps, the `prompt_fp` of the submitted input, and the provider's status and message.
 
 ## Episode ledger
 
@@ -245,3 +249,13 @@ A `per_agent` network or volume is rendered once per agent as `<name>-<agent id>
 The stack's own volumes keep their fixed mount paths. Any other volume is an extra one: a tmpfs of Docker's local volume driver ([volume create](https://docs.docker.com/reference/cli/docker/volume/create/), `--opt type=tmpfs --opt device=tmpfs --opt o=size=...,uid=...`), of `size_bytes`, owned by its writers' single numeric uid:gid, because Docker creates a path the images lack as root. One mount is shared by the containers that use it; others granted it read it. An app is served by uvicorn on a `settings.gateway` port, so it takes a `port_setting` and no command. A profiled service starts on `docker compose run` and stays out of `up`.
 
 `recorded_in_mirror: true` is refused. The mirror records each tool call with its arguments and result (`loc_arena/scaffold/tools.py`) and leaves a volume's content out, so a write by a process an agent left running goes unseen. Building it needs a reader of the volume that writes each change as a mirror event: for example, the runner diffing the volume after every tool call and recording the diff through its `Recorder` (`loc_arena/scaffold/bus.py`).
+
+## Model usage
+
+The core seals each completed provider call as an `inference_call` event, which carries `model_role` and, flat beside it, `prompt_tokens`, `completion_tokens`, `cached_tokens` and `cost`. It seals each failed call as an `inference_error` carrying `model_role` and `failure`. `summarize_model_usage` totals completed and failed calls per role (`untrusted_agent`, `trusted_monitor`, `teacher`) and over all roles, and it groups failures by reason. `scores.json` carries the totals under `model_usage`, and `report.html` shows them.
+
+- `cached_tokens` counts the `prompt_tokens` served from a cached prefix.
+- `cost` is in OpenRouter credits (US dollars), and it is `None` when the provider reports none. A total is `None` if any completed call reported no cost.
+- `ModelCallFailure.status_code` is the provider's HTTP status or error code. It is `None` when the provider gave none (a timeout, a lost connection). `message` is the provider's error, with its OpenRouter part cut at `provider.error_message_max_characters`.
+- `SealedModelCall` ignores the payload fields it does not read, such as the verifier's stamps.
+- `ModelCallObserver` is implemented by `AgentTrace` in process and by the episode ledger in the stack.

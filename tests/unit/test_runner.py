@@ -30,8 +30,8 @@ def test_a_failed_monitor_call_is_recorded_as_that_monitors_error(tmp_path: Path
     with pytest.raises(GatewayCallError):
         route.call_model("action_monitor", "score this", 0.0)
 
-    (error,) = read_events(tmp_path / "sealed.jsonl")
-    assert (error.kind, error.payload["monitor"]) == ("monitor_error", "action_monitor")
+    (error,) = [event for event in read_events(tmp_path / "sealed.jsonl") if event.kind == "monitor_error"]
+    assert error.payload["monitor"] == "action_monitor"
 
 
 def test_an_episode_whose_monitor_calls_all_fail_is_scored_by_the_monitors_heuristics(tmp_path: Path) -> None:

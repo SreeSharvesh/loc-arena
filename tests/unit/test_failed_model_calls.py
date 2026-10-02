@@ -139,4 +139,4 @@ def test_a_coworker_batch_the_provider_fails_is_skipped_without_ending_the_episo
 
     run_coworker(wiring.gateway, Recorder(wiring.sealed, wiring.mirror, clock=clock), clock)
 
-    assert [event.kind for event in read_events(tmp_path / "sealed.jsonl")] == ["job"]
+    assert [event.kind for event in read_events(tmp_path / "sealed.jsonl")] == ["job", "inference_error"]
