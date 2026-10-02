@@ -8,12 +8,13 @@ import secrets
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO, Final
 
-from pydantic import SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from loc_arena.compose_document import PROJECT_DIRECTORY, dump_compose_document, render_compose
 from loc_arena.config import RunConfig
@@ -36,11 +37,16 @@ class HarnessError(RuntimeError):
     """A docker/compose operation failed."""
 
 
-def docker_available() -> bool:
-    """True iff a docker daemon is reachable (integration tests skip-guard on this)."""
+def docker_available(settings: DockerSettings | None = None) -> bool:
+    """Whether a docker daemon answers ``docker info`` within ``settings.daemon_check_timeout_seconds``."""
     if shutil.which("docker") is None:
         return False
-    return subprocess.run(["docker", "info"], capture_output=True).returncode == 0
+    timeout_seconds = (settings or DockerSettings()).daemon_check_timeout_seconds
+    try:
+        result = subprocess.run(["docker", "info"], capture_output=True, timeout=timeout_seconds)
+    except subprocess.TimeoutExpired:  # subprocess.run has killed the client
+        return False
+    return result.returncode == 0
 
 
 @dataclass
@@ -82,6 +88,7 @@ def run_compose(
     capture: bool = True,
     timeout_seconds: float | None = None,
     stdout: IO[bytes] | None = None,
+    new_session: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     """Run ``docker compose`` on the stack's project; ``stdout``, when given, receives its output."""
     command = [
@@ -113,6 +120,7 @@ def run_compose(
         check=check,
         env=environment,
         timeout=timeout_seconds,
+        start_new_session=new_session,
     )
 
 
@@ -160,19 +168,53 @@ def up(
         # Every profile, so the runner's and the grader's images (their build targets) are built as well.
         run_compose_checked(stack, ["--profile", "*", "build"], "building the stack's images")
         wait = ["up", "-d", "--wait", "--wait-timeout", str(docker.up_wait_timeout_seconds)]
-        run_compose_checked(stack, wait, "bringing the stack up healthy")
+        result = run_compose(stack, wait, check=False)
+        if result.returncode != 0:
+            waiting = ", ".join(_services_not_healthy(stack)) or "none reported"
+            tail = result.stderr[-docker.error_output_characters :]
+            raise HarnessError(f"bringing the stack up healthy failed; not healthy: {waiting}\n{tail}")
     except BaseException:
         teardown(stack)
         raise
     return stack
 
 
+_NOT_HEALTHY: Final = frozenset({"starting", "unhealthy"})  # compose ps Health values short of healthy
+
+
+class _ComposeService(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+    service: str = Field(alias="Service")
+    state: str = Field(alias="State")
+    health: str = Field(default="", alias="Health")
+
+
+def _services_not_healthy(stack: EpisodeStack) -> list[str]:
+    # Compose names a service only when it turned unhealthy, never one still starting at the timeout.
+    result = run_compose(stack, ["ps", "--all", "--format", "json"], check=False)
+    rows = [_ComposeService.model_validate_json(line) for line in result.stdout.splitlines() if line.strip()]
+    return sorted(row.service for row in rows if row.state != "running" or row.health in _NOT_HEALTHY)
+
+
 def teardown(stack: EpisodeStack) -> None:
     """Remove this project's containers, networks, volumes, images and control key file; idempotent."""
     down_timeout = str(stack.settings.down_timeout_seconds)
     down = ["--profile", "*", "down", "-v", "--remove-orphans", "--rmi", "all", "-t", down_timeout]
-    run_compose(stack, down, check=False)
+    timeout_seconds = stack.settings.teardown_timeout_seconds
+    try:
+        result = run_compose(stack, down, check=False, timeout_seconds=timeout_seconds, new_session=True)
+    except subprocess.TimeoutExpired:
+        failure: str | None = f"`docker compose down` did not finish within {timeout_seconds} s"
+    else:
+        failure = result.stderr[-stack.settings.error_output_characters :] if result.returncode != 0 else None
     shutil.rmtree(stack.control_key_file.parent, ignore_errors=True)
+    if failure is not None:  # reports on stderr only: the error that led here stays the one raised
+        print(
+            f"tearing down {stack.project} failed, so its containers, networks, volumes or images may be "
+            f"left; scripts/teardown.sh removes them:\n{failure}",
+            file=sys.stderr,
+        )
 
 
 def run_one_off(

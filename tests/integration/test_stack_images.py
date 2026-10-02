@@ -5,6 +5,7 @@ from __future__ import annotations
 import secrets
 import subprocess
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 from loc_arena.compose_document import APP_IMAGE, IMAGES, SANDBOX_IMAGE
@@ -44,8 +45,8 @@ def _image_of_a_one_off_container(stack: EpisodeStack, service: str) -> str:
 
 
 @pytest.fixture
-def own_stack() -> Iterator[EpisodeStack]:
-    stack = up(CONFIG, project=f"locarena-images-{secrets.token_hex(3)}")
+def own_stack(tmp_path: Path) -> Iterator[EpisodeStack]:
+    stack = up(CONFIG, project=f"locarena-images-{secrets.token_hex(3)}", workdir=tmp_path)
     try:
         yield stack
     finally:

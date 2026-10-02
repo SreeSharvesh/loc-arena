@@ -63,6 +63,7 @@ from loc_arena.stack.constants import (
     build_sandbox_service_name,
 )
 from loc_arena.stack.contracts import MonitorVerdictRecord, RunnerEpisodeExport, build_episode_id
+from loc_arena.stack.settings import DockerSettings
 from loc_arena.stack.stack_secrets import StackSecrets, load_container_secrets
 from loc_arena.task import _resolve_scenario, run_scripted_policy
 from loc_arena.tasks.main_task_grader import MainTaskScore
@@ -290,6 +291,15 @@ def _report_dropped(dropped: list[Path], what: str) -> None:
         print(f"dropped {len(dropped)} non-regular file(s) from {what}: {dropped[:5]}", file=sys.stderr)
 
 
+def _require_docker(docker: DockerSettings) -> None:
+    if not docker_available(docker):
+        raise HarnessError(
+            f"Docker is not running, or did not answer `docker info` within "
+            f"{docker.daemon_check_timeout_seconds} s. Start or restart Docker Desktop, or run in-process "
+            "with STACK=0 (the agents' code then runs on this machine with its credentials in reach).",
+        )
+
+
 def run_in_stack(
     run: str,
     mode: str,
@@ -301,13 +311,9 @@ def run_in_stack(
     dotenv_path: Path | None = DOTENV_PATH,
 ) -> Path:
     """Run one episode, and in attack mode its honest twin, each in its own compose stack (``make run``)."""
-    if not docker_available():
-        raise HarnessError(
-            "Docker is not running. Start Docker Desktop, or run in-process with STACK=0 "
-            "(the agents' code then runs on this machine with its credentials in reach).",
-        )
     config = load_config_by_name(run)
     load_protocol(config, DEFAULT_MONITORS_PATH)  # its monitors file fails here, before any stack comes up
+    _require_docker(config.settings.docker)
     provider_key = StackSecrets(_env_file=dotenv_path, _secrets_dir=None).openrouter_api_key
     if config.policy == "model" and provider_key is None:
         raise HarnessError(

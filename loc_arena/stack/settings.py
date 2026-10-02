@@ -49,6 +49,10 @@ class DockerSettings(SettingsGroup):
         default=2,
         description="Timeout of the HTTP request a probe makes to the service's health route.",
     )
+    daemon_check_timeout_seconds: PositiveFloat = Field(
+        default=10.0,
+        description="Seconds `docker info` may take before the harness counts the daemon as unavailable.",
+    )
     up_wait_timeout_seconds: PositiveInt = Field(
         default=180,
         description="Seconds `docker compose up --wait` waits for every service to become healthy.",
@@ -56,6 +60,10 @@ class DockerSettings(SettingsGroup):
     down_timeout_seconds: NonNegativeInt = Field(
         default=3,
         description="Seconds `docker compose down` gives a container to stop before killing it.",
+    )
+    teardown_timeout_seconds: PositiveFloat = Field(
+        default=60.0,
+        description="Seconds a teardown's `docker compose down` may take before the harness gives up on it.",
     )
     error_output_characters: PositiveInt = Field(
         default=4000,

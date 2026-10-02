@@ -30,12 +30,13 @@ type ProbeResult = dict[str, bool | int | str | None]  # the JSON line a probe p
 
 
 @pytest.fixture(scope="module")
-def stack() -> Iterator[EpisodeStack]:
+def stack(tmp_path_factory: pytest.TempPathFactory) -> Iterator[EpisodeStack]:
     if not docker_available():
         pytest.skip("docker daemon unavailable")
     episode_stack = up(
         CFG,
         project=f"locarena-runner-iso-{secrets.token_hex(3)}",
+        workdir=tmp_path_factory.mktemp("stack"),
         secret_environment={OPENROUTER_API_KEY_SECRET_NAME.upper(): SecretStr(CANARY)},
     )
     try:

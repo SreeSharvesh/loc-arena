@@ -6,8 +6,12 @@ import dataclasses
 import json
 import os
 import re
+import signal
 import stat
+import subprocess
 import sys
+import tempfile
+import time
 from pathlib import Path
 
 import pytest
@@ -37,9 +41,22 @@ HANDLE = "0123456789abcdef"
 MEASUREMENT = GradeMeasurement(suite_green=True, pipeline_completed=True, cost=3335, outputs={"metric": 1.0})
 # The tag grammar of pkg.go.dev/github.com/distribution/reference.
 IMAGE_TAG = re.compile(r"[\w][\w.-]{0,127}")
+# `loc-arena run --stack` in a process of its own, reading no .env: argv[1] names the run, argv[2] the output.
+RUN_STACK_CLI = (
+    "import functools, sys\n"
+    "from loc_arena import cli, stack_episode\n"
+    "cli.run_in_stack = functools.partial(stack_episode.run_in_stack, dotenv_path=None)\n"
+    "sys.exit(cli.main(['run', '--run', sys.argv[1], '--stack', '--out', sys.argv[2]]))\n"
+)
+RUNNER_SECONDS = 60  # the stand-in's runner outlasts the test, so only the signal ends the run
+CALL_WAIT_SECONDS = 30
+POLL_SECONDS = 0.1
+DOWN_SECONDS = 2  # the stand-in's teardown lasts long enough for a second signal to land during it
+HUNG_DOWN_SECONDS = 10  # a teardown on a daemon that does not answer, well past the bound the test sets
 
 FAKE_DOCKER = """#!{python}
-import json, os, pathlib, shutil, sys, time
+import json, os, pathlib, shutil, signal, sys, time
+signal.signal(signal.SIGINT, signal.default_int_handler)  # as compose does, even when started with it ignored
 arguments = sys.argv[1:]
 scenario = json.loads(pathlib.Path(os.environ["FAKE_DOCKER_SCENARIO"]).read_text())
 with open(os.environ["FAKE_DOCKER_LOG"], "a") as log:
@@ -49,6 +66,9 @@ with open(os.environ["FAKE_DOCKER_LOG"], "a") as log:
         "image_tag": os.environ.get("LOC_ARENA_IMAGE_TAG"),
     }}
     log.write(json.dumps(call) + "\\n")
+if scenario.get("fail") in arguments:
+    sys.stderr.write("Cannot connect to the Docker daemon\\n")
+    sys.exit(1)
 if "run" in arguments:
     time.sleep(scenario.get("run_seconds", 0))
     if "grader" in arguments:
@@ -56,9 +76,14 @@ if "run" in arguments:
     if "--volume" in arguments:
         output = pathlib.Path(arguments[arguments.index("--volume") + 1].split(":")[0])
         (output / "{export_name}").write_text(scenario["export"])
+if "ps" in arguments:
+    sys.stdout.write(scenario.get("ps", ""))
 if "cp" in arguments:
     source, destination = arguments[-2:]
     shutil.copytree(scenario["copies"][source.split(":/")[1].split("/")[0]], destination)
+if "down" in arguments:
+    time.sleep(scenario.get("down_seconds", 0))
+    pathlib.Path(os.environ["FAKE_DOCKER_LOG"] + ".down-finished").touch()
 """
 
 
@@ -79,6 +104,14 @@ class FakeDocker:
 
     def calls(self) -> list[DockerCall]:
         return [DockerCall(**json.loads(line)) for line in self.log.read_text().splitlines()]
+
+
+@pytest.fixture(autouse=True)
+def _control_keys_in_tmp_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # up writes a key file per stack and only teardown deletes it
+    keys = tmp_path / "keys"
+    keys.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(keys))
 
 
 @pytest.fixture
@@ -202,10 +235,62 @@ def test_the_stack_images_are_built_for_every_profile(stack: EpisodeStack, docke
     assert first.arguments[-3:] == ["--profile", "*", "build"]
 
 
+STUCK_SERVICES = (
+    '{"Service": "recorder", "State": "running", "Health": "starting"}\n'
+    '{"Service": "gateway_core", "State": "running", "Health": "healthy"}\n'
+)
+
+
+def test_a_stack_that_never_turns_healthy_names_the_services_still_waiting(
+    docker: FakeDocker,
+    tmp_path: Path,
+) -> None:
+    docker.play(fail="--wait", ps=STUCK_SERVICES)
+
+    with pytest.raises(HarnessError) as failure:
+        up(CONFIG, project="locarena-unit", workdir=tmp_path / "stack")
+
+    assert "not healthy: recorder\n" in str(failure.value)
+
+
 def test_teardown_deletes_the_control_key_file(stack: EpisodeStack) -> None:
     teardown(stack)
 
     assert not stack.control_key_file.exists()
+
+
+def test_a_teardown_docker_refuses_names_the_project_it_left_behind(
+    stack: EpisodeStack,
+    docker: FakeDocker,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    docker.play(fail="down")
+
+    teardown(stack)
+
+    assert stack.project in capsys.readouterr().err
+
+
+def test_a_teardown_the_daemon_never_answers_gives_up_and_names_the_project(
+    stack: EpisodeStack,
+    docker: FakeDocker,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    docker.play(down_seconds=HUNG_DOWN_SECONDS)
+    bounded = stack.settings.model_copy(update={"teardown_timeout_seconds": 1})
+
+    teardown(dataclasses.replace(stack, settings=bounded))
+
+    assert stack.project in capsys.readouterr().err
+
+
+def test_a_teardown_docker_completes_prints_nothing(
+    stack: EpisodeStack,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    teardown(stack)
+
+    assert capsys.readouterr().err == ""
 
 
 def test_the_control_key_file_is_readable_by_every_container_user() -> None:
@@ -314,3 +399,68 @@ def test_the_host_refuses_a_sealed_log_holding_another_episodes_events(tmp_path:
             sealed_directory=Path(evidence["sealed"]),
             mirror_path=Path(evidence["mirror"]) / "events.jsonl",
         )
+
+
+def _wait_for_subcommand(docker: FakeDocker, subcommand: str) -> None:
+    deadline = time.monotonic() + CALL_WAIT_SECONDS
+    while subcommand not in _subcommands(docker):
+        assert time.monotonic() < deadline, f"no compose {subcommand} within {CALL_WAIT_SECONDS} s"
+        time.sleep(POLL_SECONDS)
+
+
+def _end_a_stack_run_by_signal(docker: FakeDocker, tmp_path: Path, signal_number: signal.Signals) -> str:
+    docker.play(run_seconds=RUNNER_SECONDS)
+    command = [sys.executable, "-c", RUN_STACK_CLI, "aurora-efficiency.deterministic", str(tmp_path / "runs")]
+    with subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True) as run:
+        _wait_for_subcommand(docker, "run")
+        run.send_signal(signal_number)
+        _, stderr = run.communicate(timeout=CALL_WAIT_SECONDS)
+    return stderr
+
+
+ENDING_SIGNALS = pytest.mark.parametrize(
+    "signal_number",
+    [signal.SIGINT, signal.SIGTERM, signal.SIGHUP],
+    ids=lambda number: number.name,
+)
+
+
+@ENDING_SIGNALS
+def test_a_stack_run_ended_by_a_signal_tears_its_stack_down(
+    docker: FakeDocker,
+    tmp_path: Path,
+    signal_number: signal.Signals,
+) -> None:
+    _end_a_stack_run_by_signal(docker, tmp_path, signal_number)
+
+    assert _subcommands(docker)[-1] == "down"
+
+
+@ENDING_SIGNALS
+def test_a_stack_run_ended_by_a_signal_reports_it_in_one_line(
+    docker: FakeDocker,
+    tmp_path: Path,
+    signal_number: signal.Signals,
+) -> None:
+    stderr = _end_a_stack_run_by_signal(docker, tmp_path, signal_number)
+
+    assert stderr == f"error: stopped by {signal_number.name}\n"
+
+
+def test_a_second_signal_during_teardown_lets_the_teardown_finish(docker: FakeDocker, tmp_path: Path) -> None:
+    docker.play(run_seconds=RUNNER_SECONDS, down_seconds=DOWN_SECONDS)
+    command = [sys.executable, "-c", RUN_STACK_CLI, "aurora-efficiency.deterministic", str(tmp_path / "runs")]
+
+    with subprocess.Popen(
+        command,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    ) as run:
+        _wait_for_subcommand(docker, "run")
+        os.killpg(run.pid, signal.SIGINT)  # a terminal's Ctrl-C signals the whole process group
+        _wait_for_subcommand(docker, "down")
+        os.killpg(run.pid, signal.SIGINT)
+        run.wait(timeout=CALL_WAIT_SECONDS)
+
+    assert Path(f"{docker.log}.down-finished").exists()

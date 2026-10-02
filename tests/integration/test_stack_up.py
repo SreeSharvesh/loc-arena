@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import secrets
+from pathlib import Path
 
 import pytest
 from loc_arena.compose_document import render_compose
@@ -19,9 +20,9 @@ EXPECTED = {
 }
 
 
-def test_up_brings_every_service_up_healthy() -> None:
+def test_up_brings_every_service_up_healthy(tmp_path: Path) -> None:
     # up(--wait) fails when any service does not become healthy
-    stack = up(CONFIG, project=f"locarena-stackup-{secrets.token_hex(3)}")
+    stack = up(CONFIG, project=f"locarena-stackup-{secrets.token_hex(3)}", workdir=tmp_path)
     try:
         running = stack.running_services()
     finally:
@@ -30,8 +31,8 @@ def test_up_brings_every_service_up_healthy() -> None:
     assert running == EXPECTED
 
 
-def test_teardown_leaves_no_container_of_the_project() -> None:
-    stack = up(CONFIG, project=f"locarena-stackup-{secrets.token_hex(3)}")
+def test_teardown_leaves_no_container_of_the_project(tmp_path: Path) -> None:
+    stack = up(CONFIG, project=f"locarena-stackup-{secrets.token_hex(3)}", workdir=tmp_path)
 
     teardown(stack)
 
