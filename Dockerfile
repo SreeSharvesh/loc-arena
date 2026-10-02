@@ -1,9 +1,11 @@
 # syntax=docker/dockerfile:1
-# The sandbox image, built from uv.lock (Docker "Multi-stage builds": named stages, `--target`, a stage built
-# FROM an earlier one):
+# Two images from one uv.lock (Docker "Multi-stage builds": named stages, `--target`, a stage built FROM an
+# earlier one):
 # - `sandbox` (loc-arena-sandbox): each agent's sandbox (the execution app), the gateway edge and the grader.
 #   Only what they import: company/, loc_arena/{stack,execution,grader}, gateway/edge.py, logging_/events.py
 #   and the package __init__ files; no configs/, no scenarios/ (sealed reference), no live.py (covert briefs).
+# - `app` (loc-arena-app): the episode runner and gateway_core. It stays the LAST stage, so a plain
+#   `docker build` (no --target) still builds it.
 # Pattern from Astral's uv Docker guide (docs.astral.sh/uv/guides/integration/docker): pinned uv, a
 # dependency-only sync cached separately from the project, the system Python in every stage
 # (UV_PYTHON_DOWNLOADS=0), the venv on PATH. The dev group stays in: agents and the grader run pytest.
@@ -17,11 +19,11 @@ ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=0 PYTHONUNBUFFER
 RUN groupadd --system --gid 999 nonroot \
  && useradd --system --gid 999 --uid 999 --no-log-init --create-home nonroot
 
-# The mount point of every named volume (sealed_log, mirror_log, checkout), owned by nonroot in every image.
+# The mount point of every named volume (sealed_log, mirror_log, checkout), owned by nonroot in both images.
 # Docker fills an empty volume from the image at its first mount ("Mounting a volume over existing data"),
 # and that copy gives the volume's root the mount point's owner and mode (moby CopyImagePathContent calls
 # containerd continuity fs.CopyDir, which applies them to the destination root). So whichever image's
-# container first mounts a fresh volume, the services writing it, all uid 999, can write it.
+# container first mounts a fresh volume, the recorder, the edge and the sandboxes, all uid 999, can write it.
 RUN install --directory --owner=nonroot --group=nonroot /workspace /sealed /mirror
 
 WORKDIR /app
@@ -42,3 +44,13 @@ COPY loc_arena/grader/ loc_arena/grader/
 COPY loc_arena/gateway/__init__.py loc_arena/gateway/edge.py loc_arena/gateway/
 COPY loc_arena/logging_/__init__.py loc_arena/logging_/events.py loc_arena/logging_/
 USER nonroot
+
+FROM base AS app
+COPY pyproject.toml uv.lock README.md ./
+COPY loc_arena/ loc_arena/
+COPY company/ company/
+COPY scenarios/ scenarios/
+COPY configs/ configs/
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked
+USER nonroot
+CMD ["python", "-m", "loc_arena.cli", "--help"]

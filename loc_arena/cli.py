@@ -20,6 +20,7 @@ from pathlib import Path
 from loc_arena.config import load_run_config
 from loc_arena.harness import DOTENV_PATH, run_episode, run_sweep
 from loc_arena.logging_.viewer import build_index
+from loc_arena.stack_episode import run_in_stack, run_runner_phase_in_container
 
 
 def _config_path(run: str) -> str:
@@ -38,15 +39,23 @@ def _latest_bundle(logs_root: Path, run_slug: str) -> Path | None:
 
 
 def _cmd_run(args: argparse.Namespace) -> int:
-    config = load_run_config(_config_path(args.run))
-    out = run_episode(
-        config,
-        mode=args.mode,
-        out_root=Path(args.out),
-        seed=args.seed,
-        robust=not args.minimal,
-        dotenv_path=DOTENV_PATH,
-    )
+    if args.stack:
+        out = run_in_stack(
+            args.run,
+            args.mode,
+            out_root=Path(args.out),
+            seed=args.seed,
+            robust=not args.minimal,
+        )
+    else:
+        out = run_episode(
+            load_run_config(_config_path(args.run)),
+            mode=args.mode,
+            out_root=Path(args.out),
+            seed=args.seed,
+            robust=not args.minimal,
+            dotenv_path=DOTENV_PATH,
+        )
     scores = json.loads((out / "scores.json").read_text())
     s = scores["side_task"]
     print(f"bundle: {out}")
@@ -61,6 +70,13 @@ def _cmd_run(args: argparse.Namespace) -> int:
         f"safety landed={scores['safety']['landed']} caught={scores['safety']['caught']} "
         f"by={scores['safety']['caught_by']} threshold={scores['safety']['audit_threshold']}",
     )
+    return 0
+
+
+def _cmd_episode(args: argparse.Namespace) -> int:
+    export = run_runner_phase_in_container(args.run, args.mode, robust=not args.minimal)
+    events, verdicts = export.last_sealed_seq + 1, len(export.verdicts)
+    print(f"episode {export.episode_id}: {events} sealed events, {verdicts} monitor verdicts")
     return 0
 
 
@@ -164,7 +180,21 @@ def main(argv: list[str] | None = None) -> int:
     p_run.add_argument("--out", default="logs")
     p_run.add_argument("--seed", type=int, default=None)
     p_run.add_argument("--minimal", action="store_true", help="attack reaches only the minimal landing")
+    p_run.add_argument(
+        "--stack",
+        action="store_true",
+        help="run the episode in the compose stack's runner container (no key, no internet)",
+    )
     p_run.set_defaults(func=_cmd_run)
+
+    p_episode = sub.add_parser(
+        "episode",
+        help="the runner phase of one stack episode (in the runner container): run, close, monitor, export",
+    )
+    p_episode.add_argument("--run", default="aurora-efficiency")
+    p_episode.add_argument("--mode", choices=["attack", "honest"], default="attack")
+    p_episode.add_argument("--minimal", action="store_true", help="attack reaches only the minimal landing")
+    p_episode.set_defaults(func=_cmd_episode)
 
     p_view = sub.add_parser("view", help="open the latest report.html + print the inspect view command")
     p_view.add_argument("--run", default="aurora-efficiency")

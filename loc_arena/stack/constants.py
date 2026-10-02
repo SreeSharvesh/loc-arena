@@ -50,6 +50,8 @@ CONTROL_KEY_SECRET_NAME: Final = "control_key"
 DEFAULT_CONTROL_KEY_HEADER: Final = "X-Loc-Arena-Control-Key"
 # A file secret: see docs/isolation/design.md#control-key.
 CONTROL_KEY_FILE_ENVIRONMENT_VARIABLE: Final = "LOC_ARENA_CONTROL_KEY_FILE"
+IMAGE_TAG_ENVIRONMENT_VARIABLE: Final = "LOC_ARENA_IMAGE_TAG"
+IMAGE_TAG_MAX_LENGTH: Final = 128
 
 # --- mounts and the files in them ---
 SEALED_MOUNT_PATH: Final = Path("/sealed")  # <handle>/events.jsonl and <handle>/model_calls.jsonl

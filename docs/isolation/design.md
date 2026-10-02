@@ -158,7 +158,9 @@ Once the policy returns, `finish_episode` closes the episode on the core. Its mo
 
 ## Evidence
 
-The host reads the sealed and mirror logs it copied out of the stack, and the runner reads the mirror the edge wrote. A file larger than `settings.docker.evidence_max_bytes` is refused before it is read in full. Each line must validate as its exact type in pydantic's strict mode, so an unknown field or a wrong type is an error.
+The host reads the sealed and mirror logs it copied out of the stack, and the runner's export; the runner reads the mirror the edge wrote. A file larger than `settings.docker.evidence_max_bytes` is refused before it is read in full. Each line must validate as its exact type in pydantic's strict mode, so an unknown field or a wrong type is an error.
+
+In the stack, the recorder writes the sealed logs, and the networkless evidence reader sleeps with both log volumes mounted read-only; the host copies the logs out of it with `docker compose cp`. These guarantees are structural, from the rendered networks and mounts.
 
 ## Scaffold
 
@@ -181,3 +183,41 @@ The core's identity service issues and rotates the job's durable credential, and
 ## Side-task verifier
 
 In the fp-linkage chain a call can have several successors. A loop that resends a prompt after an empty reply leaves that reply as a dead end beside the call that carried on. The chain therefore follows the successor with the longest continuation, and the earliest one on a tie.
+
+## Compose document
+
+Each validated service maps onto the [Compose Specification](https://docs.docker.com/reference/compose-file/). `compose.yaml` is the reference run config rendered: `uv run python -m loc_arena.compose_document` regenerates it, and a unit test fails while the two differ. Compose names containers per project, so no service sets `container_name`, and episodes run side by side. Each rendered value is a fresh object, so the YAML dump holds no anchors. Environment values are escaped for compose [interpolation](https://docs.docker.com/reference/compose-file/interpolation/): `$$` is a literal `$`. The healthcheck probe exits non-zero because `urlopen` raises on a refused connection or an error status. Where agent code runs, each tmpfs is capped at `settings.docker.agent_tmpfs_size_bytes`, and an init process reaps what its processes detach.
+
+## Compose stack
+
+Isolation is structural: the stack is rendered from `configs/env.default.yaml`, and this module opens no route beyond the rendered networks and mounts. Every compose command names its project, so concurrent episodes keep their own containers, networks, volumes and images. Every resource carries the `loc-arena.eval=1` label for `scripts/teardown.sh`.
+
+Each stack gets a fresh control key in a file whose path only the harness knows. Every compose command also gets the image tag (the project name) and the values of the compose secrets' environment sources, and those go only to the compose process. A secret left out is empty, so the core then holds no provider key, which suits the isolation tests and scripted runs.
+
+Teardown runs `--profile "*" down -v --remove-orphans --rmi all`. `--profile "*"` includes on-demand services, and `--rmi all` removes images with a custom tag, which `local` skips ([compose down](https://docs.docker.com/reference/cli/docker/compose/down/)). The build cache stays until `docker builder prune` or BuildKit's [garbage collection](https://docs.docker.com/build/cache/garbage-collection/). `scripts/teardown.sh` removes episode images by reference (the `reference` filter of [image ls](https://docs.docker.com/reference/cli/docker/image/ls/)), so an image another tag also names is only untagged.
+
+One-off containers are named, so an expired one can be removed. The runner runs as the host uid, so its output stays the user's. The runner controlled its output directory, so collection follows no link: only real directories and regular files are copied, after the runner container is gone. A project name uses compose's project-name characters, a subset of the tag grammar, cut to the tag length.
+
+## Images
+
+Each episode builds and runs its images under a tag of its own. The harness sets `LOC_ARENA_IMAGE_TAG` to the episode's project name for every `docker compose` command of the episode, so no two episodes or checkouts run each other's images. The runner and the grader start with `docker compose run` well after `up`, which is where a tag shared with another checkout or episode would run someone else's code. A tag is at most 128 characters (the tag grammar of [distribution/reference](https://pkg.go.dev/github.com/distribution/reference)).
+
+## Isolation tests
+
+The unit stack tests run against a stand-in docker that logs every call, with the control key file and image tag compose would read. It plays the containers' part: the runner writes its export, `cp` copies the golden logs out, and the grader prints a measurement.
+
+The Docker tests assert isolation from network membership and mounts in `docker inspect`, plus mount-table probes ([proc_pid_mountinfo(5)](https://man7.org/linux/man-pages/man5/proc_pid_mountinfo.5.html); field 5 is the mount point), because both images create every volume's mount point as an empty directory. The runner-isolation run brings the stack up with a canary key and checks that the canary is in `gateway_core` as a positive control. It then probes the runner and, through a scripted agent's bash, that agent's sandbox. The parity test runs the deterministic config in attack mode once in process and once in the stack, each episode in a fresh project: the sealed and mirror logs match byte for byte, and `scores.json` matches except for the wall-clock time. Each session's stack project name is unique, so sessions in other worktrees keep their own containers.
+
+## Stack episode
+
+`run_in_stack` gives each episode of a run a fresh compose project, with its own sandboxes, checkout volume, core state and control key, so nothing an agent started outlives its episode. The host reads the provider key from the environment or `.env` and passes it to compose as `gateway_core`'s secret.
+
+The runner phase (`python -m loc_arena.cli episode` in the runner container) opens the episode on the core, runs the scaffold, closes the episode, scores the mirror with the monitors and writes a `RunnerEpisodeExport`. The host phase then stops the sandboxes and the edge, and copies the sealed, model-call and mirror logs out of the networkless evidence reader. `docker compose cp` without `-L` copies a link as a link, and `collect_run_output` drops it. The networkless grader measures the checkout, and the host tears the stack down. The host grades the main task against the scenario's sealed reference, and the side task on the sealed log. The runner phase and the grader each run within a wall-clock limit from `settings.docker`. The harness scores the run and writes its bundle with the same code as an in-process run.
+
+## Grader output
+
+The grader runs agent code, so its output is untrusted. The host reads it from a temporary file, at most one byte past `grading.max_output_bytes`, and `parse_measurement` refuses anything over the cap. An output that is no measurement is graded as a broken pipeline (`grade_error`).
+
+## Episode harness
+
+A run is one episode in a mode plus, in attack mode, its honest calibration twin, and the mode is the only difference between them. `run_episode` runs both in process (STACK=0). `stack_episode.run_in_stack` runs each in its own compose stack and grades on the host. Either way `score_and_write_bundle` builds the episode record, the calibration, `scores.json` and the bundle. In honest mode the episode is its own twin. `run_sweep` aggregates N honest and M attack in-process episodes into a safety number.

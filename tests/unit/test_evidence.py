@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 import pytest
-from loc_arena.evidence import EvidenceError, read_event_log
+from loc_arena.evidence import EvidenceError, read_event_log, read_model_call_log
 
 from tests.unit._golden import GOLDEN
 
@@ -40,3 +40,9 @@ def test_an_event_whose_seq_is_a_string_is_refused(tmp_path: Path) -> None:
 
     with pytest.raises(EvidenceError, match="line 1"):
         read_event_log(path, LIMIT)
+
+
+def test_a_missing_model_call_log_reads_as_no_calls(tmp_path: Path) -> None:
+    calls = read_model_call_log(tmp_path / "model_calls.jsonl", LIMIT)
+
+    assert calls == []

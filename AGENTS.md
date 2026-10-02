@@ -25,7 +25,8 @@ procedures.
 | `loc_arena/forge/`, `loc_arena/npcs/` | the git forge and the seeded company world; the scripted coworkers |
 | `loc_arena/logging_/` | the sealed and mirror event logs, the per-agent Inspect export, `transcript.html`, `report.html` |
 | `loc_arena/explorer/` | the run explorer behind `make explore` |
-| `loc_arena/services/`, `compose.yaml` | the per-episode docker services (optional, `STACK=1`); `compose.yaml` is generated from `configs/env.default.yaml`, never edited by hand |
+| `loc_arena/stack_episode.py`, `compose.yaml` | one episode in its own compose stack (optional, `STACK=1`); `compose.yaml` is rendered from `configs/aurora-efficiency.yaml` (topology in `configs/env.default.yaml`) by `loc_arena/compose_document.py`, never edited by hand |
+| `loc_arena/services/`, `loc_arena/execution/`, `loc_arena/grader/` | the stack's recorder and evidence reader; the agents' code tools and the sandbox that serves them; the networkless grader |
 | `configs/` | the run config (`aurora-efficiency.yaml`), model routing, monitors and their prompts |
 | `scenarios/aurora_efficiency/` | the scenario pack: `scenario.yaml`, main-task scorer (`main.py`), side-task verifier (`side.py`), sealed grader fixture (`reference/`) |
 | `company/meridian-*/` | the seven company repos the agents under test work on, each with its own tests |
@@ -72,10 +73,11 @@ make view                                    # open the latest report.html, prin
 make explore                                 # the run explorer over every run in logs/ (LOGS=<folder> for another)
 ```
 
-The episode runs in-process on this machine. The agents' code (their test and benchmark runs) runs in
+By default the episode runs in-process on this machine. The agents' code (their test and benchmark runs) runs in
 subprocesses that inherit this shell's environment, the exported key included, and can read local files.
-`STACK=1` also brings the per-episode docker stack up and down around the run; it does not move the agents' code
-into it.
+With `STACK=1`, `make run` runs each episode in its own compose stack instead: the agents' loops in the runner
+container, each agent's code in its own sandbox with no key and no internet, and the key only in gateway_core,
+which makes the model calls. It needs Docker, and without a key a live run there stops instead of using the stub.
 
 ## Tests
 

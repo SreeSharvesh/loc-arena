@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import os
+import secrets
 from collections.abc import Iterator
 from typing import Final
 
 import pytest
+from loc_arena.compose_stack import EpisodeStack, docker_available, teardown, up
 from loc_arena.config import load_run_config
 from loc_arena.gateway.openrouter_provider import OpenRouterProvider, live_provider_from_environment
-from loc_arena.harness import DOTENV_PATH, EpisodeStack, docker_available, teardown, up
+from loc_arena.harness import DOTENV_PATH
 
 LIVE_SWITCH: Final = "LOC_ARENA_LIVE"
 
@@ -31,7 +33,7 @@ def stack() -> Iterator[EpisodeStack]:
     if not docker_available():
         pytest.skip("docker daemon unavailable")
     config = load_run_config("configs/aurora-efficiency.deterministic.yaml")
-    s = up(config, project="locarena-p3")
+    s = up(config, project=f"locarena-tests-{secrets.token_hex(3)}")
     try:
         yield s
     finally:
