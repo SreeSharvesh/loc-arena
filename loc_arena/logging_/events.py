@@ -15,10 +15,11 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import threading
 from collections.abc import Callable, Iterator
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 
 EventKind = Literal[
     "action",
@@ -115,6 +116,8 @@ class Event:
     tool: str | None = None
     result: dict[str, Any] | None = None
     fp: str = ""
+    # pydantic reads this when an HTTP route parses an event: it refuses an unknown field.
+    __pydantic_config__ = {"extra": "forbid"}
 
     def __post_init__(self) -> None:
         """Validate the kind, seq bound, and required identifiers."""
@@ -146,6 +149,36 @@ class Event:
         return Event(**data)
 
 
+@dataclass(frozen=True)
+class EventDraft:
+    """An event before a log records it: every ``Event`` field except ``episode_id``, ``seq`` and ``fp``."""
+
+    ts: float
+    actor_uid: str
+    actor_role: str
+    kind: EventKind
+    payload: dict[str, Any] = field(default_factory=dict)
+    target_id: str | None = None
+    turn: int = 0
+    parent_task: str | None = None
+    tool: str | None = None
+    result: dict[str, Any] | None = None
+    __pydantic_config__ = {"extra": "forbid"}
+
+
+class EventLog(Protocol):
+    """Where a writer records events; the log assigns each seq (``AppendOnlyLog``, or its HTTP client)."""
+
+    @property
+    def last_seq(self) -> int:
+        """The highest seq recorded so far, or -1 if none."""
+        ...
+
+    def record(self, draft: EventDraft, /) -> Event:
+        """Give ``draft`` the next seq, append it, and return the written event."""
+        ...
+
+
 class AppendOnlyLog:
     """A per-episode, append-only JSONL writer with a monotonic ``seq`` (fingerprinted, append-only).
 
@@ -153,6 +186,7 @@ class AppendOnlyLog:
     out-of-order ``seq`` (``<=`` the last written), or a wrong episode; it never rewrites an existing line
     and flushes each line durably (``fsync``) so a crash cannot lose a committed event. Use one instance
     for the sealed file and another for the mirror file.
+    ``record`` is safe from several threads; ``next_seq`` then ``append`` from one writer only.
     """
 
     def __init__(
@@ -172,6 +206,7 @@ class AppendOnlyLog:
         self._episode_id = episode_id
         self._on_append = on_append
         self._last_seq = -1
+        self._lock = threading.Lock()
         self._path.parent.mkdir(parents=True, exist_ok=True)
         # Recover the last seq if the file already exists (append across process restarts).
         if self._path.exists():
@@ -197,6 +232,15 @@ class AppendOnlyLog:
         Raises ``ValueError`` on an episode mismatch or a non-increasing ``seq``, leaving the file
         unchanged.
         """
+        with self._lock:
+            return self._write(event)
+
+    def record(self, draft: EventDraft) -> Event:
+        """Append ``draft`` at the next seq, chosen and written under the lock; return the written event."""
+        with self._lock:
+            return self._write(Event(episode_id=self._episode_id, seq=self.next_seq(), **asdict(draft)))
+
+    def _write(self, event: Event) -> Event:
         if event.episode_id != self._episode_id:
             raise ValueError(f"event episode {event.episode_id!r} != log episode {self._episode_id!r}")
         if event.seq <= self._last_seq:

@@ -27,3 +27,6 @@ venv/
 *.swp
 .idea/
 .vscode/
+
+# Claude Code personal project instructions (code.claude.com/docs/en/memory: "Local instructions")
+CLAUDE.local.md

@@ -12,15 +12,18 @@ defaults live in the YAML.
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import yaml
+from pydantic import ValidationError
 from scenarios.loader import load_scenario
 
 from loc_arena.ids import PermissionScope
 from loc_arena.registry import SCORER_REGISTRY, VERIFIER_REGISTRY, is_scorer, is_verifier
+from loc_arena.stack.settings import LocArenaSettings
 
 
 class ConfigError(ValueError):
@@ -193,6 +196,7 @@ class RunConfig:
     agents: tuple[AgentConfig, ...]
     main_task: dict[str, Any]
     protocol: dict[str, Any]
+    settings: LocArenaSettings
     scenario: str | None = None
     policy: str = "scripted"  # "scripted" (deterministic default) | "model" (live model-driven)
     agent_transcript: bool = False
@@ -500,12 +504,21 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
         agents=agents,
         main_task=dict(main_task),
         protocol=dict(protocol),
+        settings=_build_settings(merged),
         scenario=scenario_name,
         policy=policy,
         agent_transcript=agent_transcript,
         agent_loop=agent_loop,
         raw=merged,
     )
+
+
+def _build_settings(merged: Mapping[str, object]) -> LocArenaSettings:
+    declared = {group: merged[group] for group in LocArenaSettings.model_fields if group in merged}
+    try:
+        return LocArenaSettings.model_validate(declared)
+    except ValidationError as exc:
+        raise ConfigError(f"invalid settings block: {exc}") from exc
 
 
 def _validate_registry_bindings(scenario_name: str | None, main_task: dict[str, Any], verifier: str) -> None:
