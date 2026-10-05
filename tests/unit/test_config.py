@@ -1,23 +1,31 @@
 from __future__ import annotations
 
+import dataclasses
 import shutil
 from pathlib import Path
-from typing import Any
 
 import pytest
-from loc_arena.config import ConfigError, deep_merge, load_run_config
+from loc_arena.config import ConfigError, load_run_config
 
 RUN = "configs/aurora-efficiency.deterministic.yaml"
+OVERRIDDEN_IDLE_TIMEOUT_SECONDS = 301
+INLINE_PROMPT_AGENT = (
+    "agents: [{id: inline-agent, kind: k, trust: untrusted, branch: b, scope: {}, "
+    "system_prompt: inline text}]\n"
+)
 
 
-def test_deep_merge_keeps_base_keys_on_partial_nested_override() -> None:
-    base: dict[str, Any] = {"episode": {"budget": 150, "wall": 9000, "caps": 2}, "other": 1}
-    override: dict[str, Any] = {"episode": {"caps": 4}}
-    merged = deep_merge(base, override)
-    assert merged["episode"] == {"budget": 150, "wall": 9000, "caps": 4}
-    assert merged["other"] == 1
-    # inputs are not mutated
-    assert base["episode"]["caps"] == 2
+def test_a_partial_nested_override_keeps_the_base_blocks_other_keys(tmp_path: Path) -> None:
+    base_episode = load_run_config(RUN).episode
+    override = f"episode: {{subagent_idle_timeout_seconds: {OVERRIDDEN_IDLE_TIMEOUT_SECONDS}}}\n"
+    run = _run_extending(tmp_path, override)
+
+    episode = load_run_config(run).episode
+
+    assert episode == dataclasses.replace(
+        base_episode,
+        subagent_idle_timeout_seconds=OVERRIDDEN_IDLE_TIMEOUT_SECONDS,
+    )
 
 
 def test_episode_deep_merge() -> None:
@@ -91,18 +99,88 @@ def test_agent_transcript_can_be_turned_off(tmp_path: Path) -> None:
 
 
 def _run_with_logging(tmp_path: Path, logging_block: str) -> Path:
+    return _run_extending(tmp_path, f"logging:\n{logging_block}")
+
+
+def _run_extending(tmp_path: Path, overrides: str) -> Path:
+    """A run file in a copy of configs/ that extends RUN with ``overrides``."""
     shutil.copytree("configs", tmp_path / "configs")
-    run = tmp_path / "configs" / "transcript.yaml"
-    run.write_text(f"extends: {Path(RUN).name}\nlogging:\n{logging_block}")
+    run = tmp_path / "configs" / "run.yaml"
+    run.write_text(f"extends: {Path(RUN).name}\n{overrides}")
     return run
 
 
 def test_agent_transcript_must_be_a_bool(tmp_path: Path) -> None:
     run = _run_with_logging(tmp_path, "  agent_transcript: 'yes'\n")
-    with pytest.raises(ConfigError, match="logging.agent_transcript must be a bool"):
+    with pytest.raises(ConfigError, match=r"logging\.agent_transcript\s+Input should be a valid boolean"):
         load_run_config(run)
 
 
 def test_agent_transcript_can_be_turned_on(tmp_path: Path) -> None:
     run = _run_with_logging(tmp_path, "  agent_transcript: true\n")
     assert load_run_config(run).agent_transcript is True
+
+
+def test_a_quoted_integer_is_a_config_error_naming_its_field(tmp_path: Path) -> None:
+    run = _run_extending(tmp_path, "episode: {max_spawn_depth: '1'}\n")
+
+    with pytest.raises(ConfigError, match=r"episode\.max_spawn_depth\s+Input should be a valid integer"):
+        load_run_config(run)
+
+
+def test_a_boolean_for_an_integer_is_a_config_error_naming_its_field(tmp_path: Path) -> None:
+    run = _run_extending(tmp_path, "episode: {max_spawn_depth: true}\n")
+
+    with pytest.raises(ConfigError, match=r"episode\.max_spawn_depth\s+Input should be a valid integer"):
+        load_run_config(run)
+
+
+def test_a_block_that_is_not_a_mapping_is_a_config_error_naming_it(tmp_path: Path) -> None:
+    run = _run_extending(tmp_path, "covert: 3\n")
+
+    with pytest.raises(ConfigError, match=r"covert\s+Input should be a dictionary"):
+        load_run_config(run)
+
+
+def test_an_unknown_key_in_a_block_is_ignored(tmp_path: Path) -> None:
+    base_episode = load_run_config(RUN).episode
+    run = _run_extending(tmp_path, "episode: {unknown_cap: 3}\n")
+
+    episode = load_run_config(run).episode
+
+    assert episode == base_episode
+
+
+def test_an_environment_variable_named_like_a_field_does_not_change_the_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    expected_seed = load_run_config(RUN).seed
+    monkeypatch.setenv("seed", str(expected_seed + 1))
+
+    seed = load_run_config(RUN).seed
+
+    assert seed == expected_seed
+
+
+def test_a_missing_extends_base_is_a_config_error(tmp_path: Path) -> None:
+    run = tmp_path / "run.yaml"
+    run.write_text("extends: missing.yaml\n")
+
+    with pytest.raises(ConfigError, match="config file not found"):
+        load_run_config(run)
+
+
+def test_a_prompt_written_inline_instead_of_referenced_is_ignored(tmp_path: Path) -> None:
+    run = _run_extending(tmp_path, INLINE_PROMPT_AGENT)
+
+    agent = load_run_config(run).agent("inline-agent")
+
+    assert agent.system_prompt is None
+
+
+def test_replacing_a_covert_field_keeps_the_resolved_objective_prompt() -> None:
+    covert = load_run_config(RUN).covert
+
+    honest = dataclasses.replace(covert, enabled=False)
+
+    assert honest.objective_prompt == covert.objective_prompt
