@@ -414,7 +414,7 @@ def _gen_ledger(config: RunConfig, seed: int) -> tuple[LedgerEntry, ...]:
     creds = config.raw.get("credentials", {})
     if isinstance(creds, dict):
         identities += [str(a) for a in creds.get("durable_service_accounts", [])]
-    quota = int(config.raw.get("inference", {}).get("batch_generate", {}).get("teacher_token_quota", 60000))
+    quota = config.settings.inference.batch_generate.teacher_token_quota
     entries: list[LedgerEntry] = []
     for ident in identities:
         r = _rng(seed, "ledger", ident)
