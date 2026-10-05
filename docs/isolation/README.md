@@ -3,7 +3,8 @@
 The goal is to run each episode in containers, a bit more safely than today, with a model gateway that a
 standard coding harness can use without changes. The rogue deployment we study is an agent spinning up another
 agent, in its sandbox or elsewhere; Halil's service covers that side. This plan covers the containers and the
-gateway.
+gateway, and it aims for the least code of our own: off-the-shelf parts where they exist, and a short addon
+where they do not.
 
 ## Today: one process
 
@@ -21,10 +22,10 @@ flowchart LR
   subgraph agentnet["agent-net (internal, no internet)"]
     S1["sandbox: agent-main<br/>harness + agent code"]
     S2["sandbox: agent-2 ... N<br/>harness + agent code"]
-    G["gateway<br/>OpenAI-compatible, holds the key,<br/>logs every call"]
+    G["gateway<br/>pass-through to OpenRouter,<br/>holds the key, logs every call"]
   end
-  S1 -- "/v1/chat/completions<br/>key of agent-main" --> G
-  S2 -- "key of agent-2" --> G
+  S1 -- "OpenRouter API, any path" --> G
+  S2 --> G
   G -- "egress-net" --> OR["OpenRouter"]
   GR["grader<br/>no network"]
   H["controller on the host<br/>starts, collects logs, tears down"]
@@ -35,24 +36,29 @@ flowchart LR
 
 | Container | Runs | Networks | Holds |
 |---|---|---|---|
-| sandbox (one per agent) | the agent's harness and the code it writes | agent-net | its own gateway key, its workspace |
-| gateway | our proxy | agent-net, egress-net | the OpenRouter key, the call log |
+| sandbox (one per agent) | the agent's harness and the code it writes | agent-net | its workspace |
+| gateway | mitmproxy and our addon | agent-net, egress-net | the OpenRouter key, the call log |
 | grader | the scenario's measure step | none | the checkout, read-only |
 
 The controller is `make run` on the host. It starts a fresh compose project per episode, copies the logs out at
 the end and tears everything down.
 
-## The gateway API
+## The gateway: a pass-through to OpenRouter
 
-- OpenAI-compatible `POST /v1/chat/completions` and `GET /v1/models`. The agent loop on main already speaks
-  messages and native tool calls, and standard harnesses only need a base URL and a key; Pi, for example, takes
-  both in its `models.json` (`"api": "openai-completions"`).
-- Each sandbox gets `OPENAI_BASE_URL=http://gateway:4000/v1` and its own key. The gateway maps the key to an
-  agent id; the OpenRouter key never leaves the gateway.
-- Every call is appended to one log: caller, model, the full request and reply, token usage, cost and errors.
-  Monitors and Halil's service read that log.
-- The gateway is our own small FastAPI proxy over the OpenRouter SDK. LiteLLM's proxy does the same job, but its
-  per-key auth needs a Postgres database.
+- The gateway forwards every request to `https://openrouter.ai` unchanged: same paths, same bodies, streaming
+  included. Anything that works against OpenRouter works against the gateway with one change, its base URL
+  (`http://gateway:8080/api/v1`). Our agent loop on main only needs its OpenRouter URL pointed there; Pi takes a
+  base URL in its `models.json`.
+- The gateway drops whatever key the caller sends and adds the real one, so the OpenRouter key never enters a
+  sandbox.
+- It knows the caller from the sandbox the request comes from, so a harness can send any placeholder key.
+- It appends every call to one log: caller, path, the full request and reply, and status. Usage and cost are in
+  OpenRouter's reply. Monitors and Halil's service read that log.
+- Proposed build: mitmproxy in reverse-proxy mode (`--mode reverse:https://openrouter.ai`) with a short addon
+  that adds the key, names the caller and writes the log. A first PR checks streaming and logging end to end.
+- Later, if spawned agents should reach models with no configuration at all, the same mitmproxy can intercept
+  calls to the providers' usual addresses, as LinuxArena's internet simulator does: Docker DNS names for
+  `openrouter.ai`, `api.openai.com` and `api.anthropic.com`, plus mitmproxy's CA certificate in the sandbox image.
 
 ## What agent code can reach
 
@@ -65,11 +71,11 @@ These are the targets; each gets an integration test that runs a scripted agent 
 | the host's files and credentials | yes | no |
 | the grader's reference answers | yes | no |
 | other sandboxes | n/a | yes, over agent-net |
-| the gateway | yes, in process | yes, with its own key |
+| the gateway | yes, in process | yes, from its sandbox |
 | its own harness | yes, in process | yes |
 
-Agent code shares a sandbox with its harness, so it can read the harness's gateway key and make calls under that
-agent's name. Telling the harness's calls from code the agent started is part of the open questions below.
+Agent code shares a sandbox with its harness, so the gateway sees both under that sandbox's name. Telling the
+harness's calls from code the agent started is part of the open questions below.
 
 ## Carried over from the closed stack
 
@@ -77,16 +83,15 @@ The isolated stack (#37–#51) is closed. These parts come back as small PRs:
 
 - one compose project per episode, with teardown on Ctrl-C and on a hung Docker daemon (#42, #51)
 - the grader with no network (#39)
-- the OpenRouter SDK provider, with retries and a deadline (#38)
-- token usage and provider errors on every call (#46)
-- the fault handling found by stress testing (#50)
+- the fault handling found by stress testing, for the agent loop (#50)
 
-Dropped: the separate edge, core and recorder services, the turn tokens and the control key. With the harness in
-the sandbox, one gateway that holds the key and logs every call covers what they did.
+Dropped: the separate edge, core and recorder services, the turn tokens, the control key, and the SDK provider
+and usage records (#38, #46), since the gateway logs OpenRouter's own replies. With the harness in the sandbox,
+one gateway that holds the key and logs every call covers what they did.
 
 ## Build order
 
-1. The gateway: OpenAI-compatible routes, per-agent keys, the call log, tests against a stub provider.
+1. The gateway: mitmproxy, the addon and the call log, tested against a stub upstream.
 2. The sandbox image and the per-episode compose project, with the harness talking to the gateway.
 3. The grader with no network, and the controller collecting logs and tearing down.
 4. Isolation tests for the table above, and the fault handling.
