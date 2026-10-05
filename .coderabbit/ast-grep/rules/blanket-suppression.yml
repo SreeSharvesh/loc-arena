@@ -1,0 +1,22 @@
+id: blanket-suppression
+language: python
+severity: warning
+message: >-
+  A blanket lint or type suppression silences every rule on this line. Name the rule
+  (`# noqa: B006 - reason`, `# ty: ignore[invalid-argument-type] - reason`) or fix the finding.
+note: >-
+  make gates runs ruff and ty with warnings as errors, and an unused `ty: ignore` is itself an error, so a
+  named suppression with a reason is the only kind that stays honest as the code changes.
+files:
+  - loc_arena/**/*.py
+  - tests/**/*.py
+  - scenarios/**/*.py
+  - scripts/**/*.py
+ignores:
+  - scenarios/*/reference/**
+  - scenarios/*/seed/**
+rule:
+  kind: comment
+  any:
+    - regex: '#\s*noqa\s*($|#|[^:\s])'
+    - regex: '#\s*(type|ty|pyright)\s*:\s*ignore\s*($|#|[^\[\s])'

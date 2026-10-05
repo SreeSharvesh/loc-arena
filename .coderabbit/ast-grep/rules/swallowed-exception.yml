@@ -1,0 +1,38 @@
+id: swallowed-exception
+language: python
+severity: warning
+message: >-
+  This handler catches every exception and drops it without saying why. A failure that disappears here shows
+  up later as a wrong score or a silent gap in the logs.
+note: >-
+  Catch the narrowest exception type you expect, then handle it, re-raise it, or log it. If dropping a broad
+  catch is deliberate, add a comment on the except line that says why the failure is safe to ignore.
+files:
+  - loc_arena/**/*.py
+  - scenarios/**/*.py
+  - scripts/**/*.py
+ignores:
+  - scenarios/*/reference/**
+  - scenarios/*/seed/**
+rule:
+  kind: except_clause
+  all:
+    - any:
+        - regex: '^except\s*:'
+        - regex: '^except\s*\(?\s*(Exception|BaseException)\b'
+    - has:
+        kind: block
+        all:
+          - has:
+              any:
+                - kind: pass_statement
+                - kind: expression_statement
+                  has:
+                    kind: ellipsis
+          - not:
+              has:
+                nthChild: 2
+    - not:
+        has:
+          kind: comment
+          stopBy: end
