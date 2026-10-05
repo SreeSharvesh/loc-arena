@@ -7,7 +7,7 @@ with the least code of our own:
 - keep the configuration templates: `configs/env.default.yaml` stays the source of the compose file, rendered by
   `render_compose` as today, and the run configs stay as they are;
 - keep the network separation to the minimum that protects the key and the record: two networks;
-- use off-the-shelf parts where they exist, and a short addon where they do not.
+- use off-the-shelf parts where they exist, and small pieces of our own where they do not.
 
 The rogue deployment we study is an agent spinning up another agent, in its sandbox or elsewhere; a separate
 service covers that side.
@@ -45,10 +45,10 @@ flowchart LR
 ```yaml
 services:
   gateway:                  # the only container with the key and the internet
-    image: mitmproxy/mitmproxy            # pinned by digest
-    command: mitmdump --mode reverse:https://openrouter.ai --listen-port 8080 -s /addon/gateway.py
+    build: .
+    command: python -m loc_arena.gateway.proxy --upstream https://openrouter.ai --port 8080
     secrets: [openrouter_api_key]
-    volumes: [./gateway:/addon:ro, sealed:/sealed]
+    volumes: [sealed:/sealed]
     networks: [agent-net, egress-net]
   episode:                  # today's run, unchanged, with the shell on
     build: .
@@ -83,7 +83,9 @@ sealed call log, and `docker compose down -v`.
 - It drops whatever key the caller sends and adds the real one, read from the compose secret.
 - It appends every call to a log in a volume only the gateway mounts, and that log is the sealed record. Our agent
   loop sends the whole conversation on every call, so the log also holds each tool call and its result.
-- Build: mitmproxy in reverse-proxy mode and a short addon that adds the key and writes the log.
+- Build: our own small proxy, about 100 lines of FastAPI and httpx: forward the request, stream the reply back
+  while copying it, swap the key, append the call to the log. Every reviewer can read all of it, and it adds no
+  new dependency. LinuxArena's internet simulator is its own code too.
 
 ## Steps
 
@@ -101,7 +103,8 @@ Later, if wanted, each closer to LinuxArena:
 - a sandbox per agent for tool calls, so agent code cannot reach its harness or the other agents;
 - the simulated services (forge, cluster, siem and the rest) as their own containers;
 - the gateway intercepting the providers' usual addresses, the way LinuxArena's internet simulator does, so agents
-  an agent spawns reach models with no configuration.
+  an agent spawns reach models with no configuration. mitmproxy, the usual tool for intercepting HTTPS traffic, can
+  take over the gateway at that point.
 
 ## What agent code can reach
 
