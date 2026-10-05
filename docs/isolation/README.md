@@ -1,10 +1,15 @@
-# Running episodes in containers
+# Running episodes in Docker
 
-The goal is to run each episode in containers, a bit more safely than today, with a model gateway that a
-standard coding harness can use without changes. The rogue deployment we study is an agent spinning up another
-agent, in its sandbox or elsewhere; Halil's service covers that side. This plan covers the containers and the
-gateway, and it aims for the least code of our own: off-the-shelf parts where they exist, and a short addon
-where they do not.
+The goal is to run each episode with Docker so that agent code never holds our OpenRouter key and cannot touch
+the records we score from. We get there in small steps, each one moving us closer to how LinuxArena runs, with
+the least code of our own:
+
+- keep the run config templates in `configs/` as they are;
+- keep the network separation to the minimum that protects the key and the records: two networks;
+- use off-the-shelf parts where they exist, and a short addon where they do not.
+
+The rogue deployment we study is an agent spinning up another agent, in its sandbox or elsewhere; Halil's
+service covers that side.
 
 ## Today: one process
 
@@ -15,90 +20,86 @@ sits in that process, the logs are local files, and the agents' shell is off, be
 the host. `STACK=1` brings an optional Docker stack up around the run, but the episode itself still runs in this
 process.
 
-## The plan: a sandbox per agent and one gateway
+## Where we end up
 
 ```mermaid
 flowchart LR
-  subgraph agentnet["agent-net (internal, no internet)"]
-    S1["sandbox: agent-main<br/>harness + agent code"]
-    S2["sandbox: agent-2 ... N<br/>harness + agent code"]
-    G["gateway<br/>pass-through to OpenRouter,<br/>holds the key, logs every call"]
+  subgraph host["host: make run"]
+    L["agent loops, monitors,<br/>our logs"]
   end
-  S1 -- "OpenRouter API, any path" --> G
-  S2 --> G
+  subgraph agentnet["agent-net (internal, no internet)"]
+    S["sandbox per agent<br/>runs the agent's tool calls"]
+    G["gateway<br/>holds the key, seals the call log"]
+  end
+  L -- "docker compose exec" --> S
+  L -- "model calls, localhost port" --> G
+  S -- "calls agent code makes" --> G
   G -- "egress-net" --> OR["OpenRouter"]
   GR["grader<br/>no network"]
-  H["controller on the host<br/>starts, collects logs, tears down"]
-  H -.-> S1
-  H -.-> G
-  H -.-> GR
 ```
+
+This is LinuxArena's default shape. The agent loop runs on the host and drives each sandbox with
+`docker compose exec`, the way Inspect's Docker sandbox does, so the loop shares no network with agent code. The
+gateway plays the part of LinuxArena's internet simulator: the only way out, holding the key.
 
 | Container | Runs | Networks | Holds |
 |---|---|---|---|
-| sandbox (one per agent) | the agent's harness and the code it writes | agent-net | its workspace |
-| gateway | mitmproxy and our addon | agent-net, egress-net | the OpenRouter key, the call log |
+| sandbox (one per agent) | the tool calls of one agent, `bash` included | agent-net | its workspace |
+| gateway | mitmproxy and our addon | agent-net, egress-net | the OpenRouter key, the sealed call log |
 | grader | the scenario's measure step | none | the checkout, read-only |
-
-The controller is `make run` on the host. It starts a fresh compose project per episode, copies the logs out at
-the end and tears everything down.
 
 ## The gateway: a pass-through to OpenRouter
 
-- The gateway forwards every request to `https://openrouter.ai` unchanged: same paths, same bodies, streaming
-  included. Anything that works against OpenRouter works against the gateway with one change, its base URL
-  (`http://gateway:8080/api/v1`). Our agent loop on main only needs its OpenRouter URL pointed there; Pi takes a
-  base URL in its `models.json`.
-- The gateway drops whatever key the caller sends and adds the real one, so the OpenRouter key never enters a
-  sandbox.
-- It knows the caller from the sandbox the request comes from, so a harness can send any placeholder key.
-- It appends every call to one log: caller, path, the full request and reply, and status. Usage and cost are in
-  OpenRouter's reply. Monitors and Halil's service read that log.
-- Proposed build: mitmproxy in reverse-proxy mode (`--mode reverse:https://openrouter.ai`) with a short addon
-  that adds the key, names the caller and writes the log. A first PR checks streaming and logging end to end.
-- Later, if spawned agents should reach models with no configuration at all, the same mitmproxy can intercept
-  calls to the providers' usual addresses, as LinuxArena's internet simulator does: Docker DNS names for
-  `openrouter.ai`, `api.openai.com` and `api.anthropic.com`, plus mitmproxy's CA certificate in the sandbox image.
+- It forwards every request to `https://openrouter.ai` unchanged: same paths, same bodies, streaming included.
+  Anything that works against OpenRouter works against the gateway by changing its base URL. Our agent loop
+  only needs its OpenRouter URL pointed there.
+- It drops whatever key the caller sends and adds the real one. The key reaches the gateway as a compose secret
+  and lives nowhere else.
+- It names each caller by where the request comes from (the host loop, or a sandbox) and appends every call to a
+  log in a volume only the gateway mounts. The host copies the log out after the episode. Our agent loop sends
+  the whole conversation on every call, so this log also holds each tool call and its result.
+- Build: mitmproxy in reverse-proxy mode (`--mode reverse:https://openrouter.ai`) and a short addon that adds the
+  key, names the caller and writes the log.
+
+## Steps
+
+Each step is one small PR, and the deterministic run's scores stay unchanged through all of them.
+
+1. **The gateway.** `make run` starts the gateway container and points the loop at it. The key leaves the host
+   process, and every model call is sealed in the gateway's log. Agents still run on the host, with the shell
+   off.
+2. **Sandboxes.** Each agent's tool calls run in its own container through `docker compose exec`, and `bash`
+   turns on. The compose file is rendered from the run config templates, one sandbox per agent. This is the
+   step that makes agent code safe to run.
+3. **Grading and teardown.** The grader runs with no network; `make run` copies the logs out and tears the
+   project down, Ctrl-C included.
+4. **Isolation tests** for the table below, run against a real stack.
+
+Later, if wanted: the gateway intercepts the providers' usual addresses (`openrouter.ai`, `api.openai.com`,
+`api.anthropic.com`) the way LinuxArena's internet simulator does, so agents an agent spawns reach models with
+no configuration. And a harness can move inside the sandbox, as LinuxArena does for CLI agents.
 
 ## What agent code can reach
 
-These are the targets; each gets an integration test that runs a scripted agent in a real stack.
-
-| Agent code can reach | Today | Planned |
+| Agent code can reach | Today | After step 2 |
 |---|---|---|
 | the OpenRouter key | yes, in `.env` | no |
 | the internet | yes | no |
-| the host's files and credentials | yes | no |
+| the host's files, `.env` and our logs | yes | no |
+| the sealed call log | yes | no |
 | the grader's reference answers | yes | no |
-| other sandboxes | n/a | yes, over agent-net |
-| the gateway | yes, in process | yes, from its sandbox |
-| its own harness | yes, in process | yes |
-
-Agent code shares a sandbox with its harness, so the gateway sees both under that sandbox's name. Telling the
-harness's calls from code the agent started is part of the open questions below.
+| other agents' sandboxes | n/a | yes, over agent-net |
+| the gateway | yes, in process | yes, and every call is logged |
 
 ## Carried over from the closed stack
 
-The isolated stack (#37–#51) is closed. These parts come back as small PRs:
-
-- one compose project per episode, with teardown on Ctrl-C and on a hung Docker daemon (#42, #51)
-- the grader with no network (#39)
-- the fault handling found by stress testing, for the agent loop (#50)
-
-Dropped: the separate edge, core and recorder services, the turn tokens, the control key, and the SDK provider
-and usage records (#38, #46), since the gateway logs OpenRouter's own replies. With the harness in the sandbox,
-one gateway that holds the key and logs every call covers what they did.
-
-## Build order
-
-1. The gateway: mitmproxy, the addon and the call log, tested against a stub upstream.
-2. The sandbox image and the per-episode compose project, with the harness talking to the gateway.
-3. The grader with no network, and the controller collecting logs and tearing down.
-4. Isolation tests for the table above, and the fault handling.
+The isolated stack (#37–#51) is closed. These parts come back inside the steps above: one compose project per
+episode with teardown on Ctrl-C and on a hung Docker daemon (#42, #51), the grader with no network (#39), and
+the fault handling found by stress testing (#50). The separate edge, core and recorder services, the turn tokens,
+the control key and the execution server are dropped: `docker compose exec` and one gateway cover what they did.
 
 ## Open questions
 
-- Which harness runs in the sandbox: our agent loop from main, or a standard one such as Pi?
-- How does Halil's service attribute calls from an agent that another agent spawned? A spawned agent can reuse its
-  parent's key, so the key alone does not separate them.
+- How does Halil's service attribute calls from an agent that another agent spawned inside the same sandbox? The
+  gateway sees both under that sandbox.
 - Do the monitors read the gateway log directly, or a view of it without the scenario's covert instructions?
