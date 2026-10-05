@@ -3,7 +3,7 @@
 The goal is to run every episode on Docker Compose so that agent code never holds our OpenRouter key and cannot
 touch the record we score from, and so that a setting can give each agent its own sandbox and permissions and
 bring its own live services. We get there in small steps, each one moving us closer to how LinuxArena runs, with
-the least code of our own:
+the least code of our own that still keeps quality and maintainability:
 
 - keep the configuration templates: `configs/env.default.yaml` and the run configs stay the source of the compose
   file, rendered by `render_compose` as today;
