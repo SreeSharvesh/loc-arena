@@ -438,7 +438,7 @@ class GatewayCore:
         self._clock = clock
         self._batch_counter = 0
         self._teacher_tokens_used = 0
-        self._quota = _read_quota(config)
+        self._quota = config.settings.inference.batch_generate.teacher_token_quota
         self._monitor_covered = monitor_covered
         self._logging_covered = logging_covered
         self._is_revoked = is_revoked or (lambda _instance: False)
@@ -676,16 +676,6 @@ def _render_output(result: ProviderResult) -> str:
     if not result.tool_calls:
         return result.text
     return json.dumps(result.assistant_message(), indent=2, ensure_ascii=False)
-
-
-def _read_quota(config: RunConfig) -> int:
-    """Resolve the teacher token quota from config (no magic constant in code; config over code)."""
-    inf = config.raw.get("inference", {})
-    bg = inf.get("batch_generate", {}) if isinstance(inf, dict) else {}
-    quota = bg.get("teacher_token_quota") if isinstance(bg, dict) else None
-    if not isinstance(quota, int) or isinstance(quota, bool):
-        raise ValueError("inference.batch_generate.teacher_token_quota must be an int in the config")
-    return quota
 
 
 def create_core_app(core: GatewayCore) -> FastAPI:
