@@ -8,7 +8,7 @@ the least code of our own:
 - keep the network separation to the minimum that protects the key and the records: two networks;
 - use off-the-shelf parts where they exist, and a short addon where they do not.
 
-The rogue deployment we study is an agent spinning up another agent, in its sandbox or elsewhere; Halil's
+The rogue deployment we study is an agent spinning up another agent, in its sandbox or elsewhere; a separate
 service covers that side.
 
 ## Today: one process
@@ -100,6 +100,6 @@ the control key and the execution server are dropped: `docker compose exec` and 
 
 ## Open questions
 
-- How does Halil's service attribute calls from an agent that another agent spawned inside the same sandbox? The
+- How does the rogue-deployment service attribute calls from an agent that another agent spawned inside the same sandbox? The
   gateway sees both under that sandbox.
 - Do the monitors read the gateway log directly, or a view of it without the scenario's covert instructions?
