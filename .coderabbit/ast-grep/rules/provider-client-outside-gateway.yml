@@ -29,3 +29,20 @@ rule:
       has:
         field: module_name
         matches: is-client-module
+    # `from urllib import request` and `from http import client` name the client after the parent module.
+    - kind: import_from_statement
+      all:
+        - has:
+            field: module_name
+            regex: ^urllib$
+        - has:
+            field: name
+            regex: ^request(\s|$)
+    - kind: import_from_statement
+      all:
+        - has:
+            field: module_name
+            regex: ^http$
+        - has:
+            field: name
+            regex: ^client(\s|$)

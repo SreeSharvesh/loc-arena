@@ -99,7 +99,8 @@ into it.
 
 ## Code review
 
-CodeRabbit reviews every pull request, stacked ones included, and reads this file as review criteria.
+CodeRabbit reviews each pull request once it leaves draft, stacked ones included, and reads this file as review
+criteria. It skips titles containing `[WIP]`, `WIP:` or `DO NOT MERGE`.
 
 - Treat each finding as a claim to verify against the code: fix what holds, and reply on the thread with the
   reason for what does not. The "Prompt for AI Agents" block under a finding is where to start.
