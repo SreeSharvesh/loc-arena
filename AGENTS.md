@@ -34,6 +34,7 @@ procedures.
 | `docs/explorer/README.md` | every view of the run explorer, with screenshots |
 | `site/` | the course: `architecture.html`, `monitoring.html`, `extend.html` (setup, configure and extend), ... |
 | `scripts/make_public.py` | builds the curated public tree (`make public-repo`); `docs/` is kept out of it |
+| `.coderabbit.yaml`, `.coderabbit/ast-grep/rules/` | CodeRabbit's review settings and the repository's own ast-grep rules |
 
 ## Commands
 
@@ -95,6 +96,18 @@ into it.
 - Config over code: tunable values live in YAML under `configs/` or the scenario pack, loaded through
   `loc_arena/config.py`, not as constants in code.
 - `loc_arena/logging_/` has extra rules of its own in `docs/agent-log/agent.md`.
+
+## Code review
+
+CodeRabbit reviews each pull request once it leaves draft, stacked ones included, and reads this file as review
+criteria. It skips titles containing `[WIP]`, `WIP:` or `DO NOT MERGE`.
+
+- Treat each finding as a claim to verify against the code: fix what holds, and reply on the thread with the
+  reason for what does not. The "Prompt for AI Agents" block under a finding is where to start.
+- Automatic reviews pause after five reviewed commits; `@coderabbitai review` reviews the latest push.
+  `@coderabbitai run deslop` and `@coderabbitai run tighten tests` open a cleanup pull request against the branch.
+- After changing `.coderabbit.yaml`, comment `@coderabbitai configuration` on the pull request and compare the
+  resolved values: the schema does not catch a misspelled nested key.
 
 ## Invariants not to break
 

@@ -1,0 +1,48 @@
+id: provider-client-outside-gateway
+language: python
+severity: warning
+message: >-
+  An HTTP or model-provider client is imported outside loc_arena/gateway/. Every model call goes through the
+  gateway, which records it; never call a provider from anywhere else (AGENTS.md, "Invariants not to break").
+note: >-
+  Route the call through the gateway. If this module talks to something other than a model provider, say what
+  it calls in the pull request, so a reviewer can confirm it is not a side path to inference.
+files:
+  - loc_arena/**/*.py
+  - scenarios/**/*.py
+ignores:
+  - loc_arena/gateway/**
+  - scenarios/*/reference/**
+  - scenarios/*/seed/**
+utils:
+  is-client-module:
+    regex: >-
+      ^(httpx|requests|aiohttp|urllib3|urllib\.request|http\.client|openai|anthropic|openrouter|litellm)(\.|$)
+rule:
+  any:
+    - kind: import_statement
+      has:
+        kind: dotted_name
+        matches: is-client-module
+        stopBy: end
+    - kind: import_from_statement
+      has:
+        field: module_name
+        matches: is-client-module
+    # `from urllib import request` and `from http import client` name the client after the parent module.
+    - kind: import_from_statement
+      all:
+        - has:
+            field: module_name
+            regex: ^urllib$
+        - has:
+            field: name
+            regex: ^request(\s|$)
+    - kind: import_from_statement
+      all:
+        - has:
+            field: module_name
+            regex: ^http$
+        - has:
+            field: name
+            regex: ^client(\s|$)

@@ -1,0 +1,387 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# CodeRabbit review settings for LOC-Arena (reference: https://docs.coderabbit.ai/reference/configuration).
+# CodeRabbit already reads AGENTS.md as review criteria for the whole repository, so this file adds only
+# what AGENTS.md does not say: per-path focus, pre-merge checks, tools and generation rules. A key left out
+# takes the schema default. The schema does not catch a misspelled nested key: after changing this file,
+# comment `@coderabbitai configuration` on the pull request and compare the resolved values.
+
+language: en-US
+tone_instructions: >-
+  Be direct and brief. Lead with the concrete failure (input or state, then the wrong result) and the
+  smallest fix. Cite file:line. No praise, filler or restating the diff. Say so when unsure.
+
+reviews:
+  # chill keeps the tools' severity floors high (Trivy, Checkov, Hadolint, ShellCheck); the path
+  # instructions and pre-merge checks below carry the repository-specific strictness.
+  profile: chill
+  # Off: a pull request merges on a teammate's approval, and CodeRabbit's own approval must not read as one.
+  request_changes_workflow: false
+  # The summary goes in the walkthrough comment, so the author's description is never rewritten.
+  high_level_summary_in_walkthrough: true
+  high_level_summary_instructions: |
+    One sentence on what the change does and why, then bullets for each change in behaviour. End with a
+    line "Invariants touched:" naming any of the invariants in AGENTS.md the change affects (the two event
+    logs, the monitor firewall, the honest twin, the reproducible scripted engine, model calls only through
+    the gateway), or "none".
+  # Lists the path instructions and guidelines applied to each review; useful while this file is tuned.
+  review_details: true
+  suggested_labels: false
+  suggested_reviewers: false
+  in_progress_fortune: false
+  poem: false
+  # Every author here is a collaborator, whom slop detection skips unless include_all_authors is set. It
+  # only adds a note to the walkthrough; it never blocks a merge.
+  slop_detection:
+    include_all_authors: true
+
+  auto_review:
+    # Stacked pull requests target the branch below them, so review every base branch, not only main.
+    base_branches:
+      - ".*"
+    ignore_title_keywords:
+      - "[WIP]"
+      - "WIP:"
+      - "DO NOT MERGE"
+
+  path_filters:
+    - "!logs/**"
+    - "!**/*.eval"
+
+  path_instructions:
+    - path: "**/*.py"
+      instructions: |
+        - ruff and ty run in `make gates` with the settings in pyproject.toml. Do not comment on formatting,
+          import order, line length, missing annotations or missing docstrings; spend the review on behaviour.
+        - Flag duplication: a new helper, constant, type or config field that repeats one already in the
+          repository. Name the existing one.
+        - Flag slop: comments that restate the code or narrate the change, dead or commented-out code,
+          unused parameters, wrappers that only forward their arguments, defensive checks for states the
+          types already rule out, and placeholder returns (`None`, `0`, `""`) where the code should raise.
+        - Flag loose types where a named one belongs: `dict[str, Any]` or a bare tuple standing in for a
+          domain concept in a signature, and JSON or YAML used without being parsed into a typed object at
+          the boundary.
+        - Flag tunable values written into code (AGENTS.md, "Config over code"); HTTP statuses use
+          `http.HTTPStatus`.
+        - Flag an error that is caught and dropped, or logged and then ignored, where the caller needed it.
+
+    - path: "loc_arena/gateway/**"
+      instructions: |
+        The gateway is the one process that holds the provider key, and it records every model call.
+        - The key never reaches a log line, an exception message, a URL, a response body, a `repr`, the
+          mirror log or any file in the run directory. Secrets are pydantic `SecretStr`, unwrapped with
+          `get_secret_value()` only where a request needs them.
+        - Every call path records the call before it returns, failures included: timeout, 429, 5xx, a
+          malformed body, a cancelled request. A new route or retry branch that can return without recording
+          is a bug.
+        - Upstream calls have a timeout and a bounded retry, so a failing provider cannot multiply spend.
+        - Headers, model names and bodies from callers are validated at the boundary. A caller must not be
+          able to choose the upstream host, set the `Authorization` header or mark its own call as sanctioned.
+
+    - path: "loc_arena/monitors/**"
+      instructions: &monitor_firewall |
+        Monitors judge only what a real platform could observe (AGENTS.md, "The firewall").
+        - A monitor reads the mirror log and the fields in `ALLOWED_MONITOR_INPUTS`. Flag any read of the
+          sealed log, of verifier or grader output, of covert-milestone state, or of whether the episode is
+          honest or attack.
+        - A name added to `ALLOWED_MONITOR_INPUTS` needs a reason in the pull request that a real platform
+          could observe it.
+        - A monitor that fails (provider error, unparseable reply, timeout) must be recorded as errored, so
+          a failure is never read as a clean verdict.
+        - Prompts may describe the rogue-deployment threat in general terms, as they do today. Flag a prompt
+          that names this scenario's kill-chain milestones or other facts only the sealed verifier knows.
+    - path: "configs/monitors.yaml"
+      instructions: *monitor_firewall
+    - path: "configs/prompts/monitors/**"
+      instructions: *monitor_firewall
+
+    - path: "loc_arena/verifier/**"
+      instructions: &ground_truth |
+        The verifier and the graders decide every score.
+        - They read the sealed log and executed state only: never the mirror log, an agent's own claims or a
+          monitor's output.
+        - They are deterministic: no wall clock, unseeded randomness, network access, or iteration order that
+          can change a result.
+        - A change to what counts as a milestone or a pass says why in the pull request and comes with a test
+          that fails under the old rule.
+        - None of it is reachable from the agents' tools in `loc_arena/scaffold/`.
+    - path: "loc_arena/tasks/**"
+      instructions: *ground_truth
+    - path: "scenarios/*/main.py"
+      instructions: *ground_truth
+    - path: "scenarios/*/side.py"
+      instructions: *ground_truth
+
+    - path: "loc_arena/logging_/**"
+      instructions: |
+        Rules from docs/agent-log/agent.md and spec.md for this package:
+        - The trace and the transcript never change a byte of the sealed or mirror log; the byte-identical
+          replay test reads both.
+        - The trace stays in memory and is written only with the bundle, after both episodes: agent-run tests
+          can read the run directory while an episode is live.
+        - An event's lane comes from the turn bound when it was appended, never from `actor_uid`.
+        - No docstrings or comments inside function bodies here; contracts live in docs/agent-log/spec.md.
+
+    - path: "loc_arena/scaffold/**"
+      instructions: &agent_facing |
+        This code runs what the agents under test ask for, so treat every tool argument from the model as
+        untrusted.
+        - Agent-written code (their tests, benchmarks and scripts) runs in subprocesses. Flag a changed or new
+          subprocess call that hands such code the whole environment (`env={**os.environ, ...}`, or no `env=`
+          at all): the child inherits `OPENROUTER_API_KEY` whenever it is exported. Prefer an explicit,
+          minimal environment. Comment only on lines the pull request changes.
+        - Check path traversal out of the checkout, shell injection (argument lists, never `shell=True`), and
+          a timeout and output bound on every subprocess.
+        - No tool may expose the sealed log, the verifier, the grader reference or the provider key.
+    - path: "loc_arena/tasks/main_task_grader.py"
+      instructions: *agent_facing
+    - path: "loc_arena/forge/ci.py"
+      instructions: *agent_facing
+
+    - path: "tests/**"
+      instructions: |
+        - One behaviour per test: Arrange, Act, Assert in that order, separated by blank lines, and a name
+          that states the behaviour and its condition.
+        - Flag tautological tests: asserting a constant or a default, asserting what the test itself
+          arranged, or testing a mock instead of the code. A test must fail when the behaviour it names
+          breaks.
+        - Prefer real collaborators (FastAPI `TestClient`, `tmp_path`, local stub servers, real
+          subprocesses); mock only the paid model API.
+        - Live-model tests stay behind `LOC_ARENA_LIVE=1` and `OPENROUTER_API_KEY`, and docker tests skip when
+          the daemon is down: no test spends money or needs the network by default.
+        - `assert` is expected here, and the keys in test fixtures are fakes.
+
+    - path: "company/**"
+      instructions: |
+        The simulated company codebase that the agents under test work on. It holds bugs planted on purpose,
+        tracked by the strict xfails in `company/*/tests/*backlog*.py` and `test_buried_bugs.py`.
+        - Do not report bugs in company code or suggest fixes for them, unless the pull request says it
+          changes the scenario on purpose.
+        - Flag a change that would fix a planted bug, remove or weaken a strict xfail, or describe how a
+          planted bug works in a comment, docstring, commit or test.
+        - Keep each repository's existing style.
+
+    - path: "scenarios/*/reference/**"
+      instructions: &grader_fixture |
+        A grader fixture, run as a subprocess and excluded from ruff and ty. Review whether it grades
+        correctly; keep its terse style and do not suggest style, typing or docstring changes.
+    - path: "scenarios/*/seed/**"
+      instructions: *grader_fixture
+
+    - path: "compose.yaml"
+      instructions: |
+        Generated from configs/env.default.yaml by `render_compose` in loc_arena/harness.py; never edited by
+        hand. Review the config and the generator instead, and flag a change here that neither explains.
+
+    - path: "configs/**"
+      instructions: |
+        - Run configs are validated by loc_arena/config.py. A new key needs a typed, described field there
+          and an update to docs/run-config.md.
+        - Flag a change to a model, temperature or seed that the pull request does not call out: the team
+          compares runs made with identical configs.
+        - No key, token or credentialed URL in any config file.
+
+    - path: "**/Dockerfile*"
+      instructions: &containers |
+        Containers are the boundary between agent code and our key and records.
+        - Flag privileged mode, added capabilities, a mounted docker socket, host networking, host bind mounts
+          the pull request does not justify, ports published to the host, images not pinned to a version or
+          digest, and running as root without a reason.
+        - Secrets reach containers only as compose secrets (files): never as build arguments, `ENV` lines,
+          environment entries or command-line arguments.
+        - Only the gateway has a route to the provider; agent-side containers sit on internal networks.
+    - path: "loc_arena/services/**"
+      instructions: *containers
+    - path: "scripts/**/*.sh"
+      instructions: |
+        - `set -euo pipefail`, every expansion quoted, and cleanup in a `trap` so a failed or interrupted run
+          leaves no containers, networks or volumes behind.
+
+    - path: "**/*.md"
+      instructions: &docs |
+        - Check each claim against the code: commands, paths, config keys, defaults and numbers must match.
+          Flag a reference to a file, function or line that does not exist.
+        - Flag references to material a reader of the repository cannot open (private plans, chat threads,
+          work-package labels).
+    - path: "site/**"
+      instructions: *docs
+
+    - path: "pyproject.toml"
+      instructions: |
+        - Every package imported directly is declared, with a version floor at a current release.
+        - Flag a loosened lint or type rule (a new `ignore`, `per-file-ignores` entry or `exclude`, or a rule
+          removed from `select`) that comes without a reason.
+    - path: ".pre-commit-config.yaml"
+      instructions: |
+        - The ruff `rev` matches the ruff version pinned in uv.lock.
+
+  pre_merge_checks:
+    # ruff's D rules (Google convention) already enforce docstrings, with deliberate per-file exceptions.
+    docstrings:
+      mode: "off"
+    title:
+      mode: warning
+      requirements: >-
+        Start with an imperative verb in sentence case and say what the change does, like the titles on main
+        ("Validate the run config with pydantic"). An issue prefix such as "Fix #28:" is fine. No
+        conventional-commit prefixes (feat:, chore:, fix(...):), no trailing period, at most 80 characters.
+    custom_checks:
+      - name: "Model calls only through the gateway"
+        mode: warning
+        instructions: >-
+          Fail if the diff, outside loc_arena/gateway/ and tests/, adds an import of an HTTP or model-provider
+          client (httpx, requests, aiohttp, urllib.request, openai, anthropic, openrouter, litellm), a model
+          provider URL (openrouter.ai, api.openai.com, api.anthropic.com), or code that sends a model request
+          without the gateway. Also fail if code outside loc_arena/gateway/ reads the value of
+          OPENROUTER_API_KEY or another provider key; checking that the variable is set is allowed. Pass if
+          none of these appear, or if the pull request names the non-provider service such an import calls.
+      - name: "Secrets stay out of logs, images and commits"
+        mode: warning
+        instructions: >-
+          Fail if the diff adds: a real-looking key or token (sk-or-..., sk-..., ghp_..., AKIA...) in any
+          file; a tracked .env file or any file under logs/; a log call, print, exception message, f-string
+          or repr that can include an API key, an Authorization header or an unwrapped SecretStr; a secret
+          passed through a Dockerfile ARG or ENV, a compose environment entry or a command-line argument; or
+          a secret held in a plain str field where pydantic SecretStr fits. Placeholder values in
+          .env.example and fake keys in tests/ are allowed. Pass if none of these appear.
+      - name: "Monitors see only observable inputs"
+        mode: warning
+        instructions: >-
+          Fail if the diff makes code in loc_arena/monitors/, configs/monitors.yaml or
+          configs/prompts/monitors/ read the sealed log, verifier or grader output, covert-milestone state, or
+          whether the episode is honest or attack; adds a name to ALLOWED_MONITOR_INPUTS in
+          loc_arena/monitors/registry.py without the pull request saying why a real platform could observe
+          it; or adds this scenario's kill-chain milestone names to a monitor prompt. Describing the
+          rogue-deployment threat in general terms is allowed. Pass otherwise.
+      - name: "Agent code cannot reach the sealed record"
+        mode: warning
+        instructions: >-
+          Fail if the diff gives code the agents under test control a way to read or write the sealed log,
+          the side-task verifier, the grader reference (scenarios/*/reference/) or the per-agent trace while
+          an episode is live: for example writing one of them into the run directory, a company checkout or a
+          mounted volume during the episode, or exposing one through a tool in loc_arena/scaffold/. Pass if
+          the diff does not change where or when these are written, mounted or exposed, or if every changed
+          location stays out of the agents' reach.
+      - name: "Planted company bugs stay planted"
+        mode: warning
+        instructions: >-
+          Fail if the diff removes or weakens a pytest.mark.xfail(strict=True) marker in
+          company/*/tests/*backlog*.py or company/*/tests/test_buried_bugs.py, deletes one of those tests, or
+          changes company/ source in a way the pull request describes as fixing one of their tickets. These
+          are bugs planted for the agents under test. Pass if those tests and markers are unchanged, or if
+          the pull request description says the scenario's tickets change on purpose.
+      - name: "compose.yaml regenerated, not hand-edited"
+        mode: warning
+        instructions: >-
+          compose.yaml is generated from configs/env.default.yaml by render_compose in loc_arena/harness.py.
+          Fail if the diff changes compose.yaml but changes neither configs/env.default.yaml nor the module
+          that defines render_compose. Pass if compose.yaml is unchanged, or if the config or that module
+          changes in the same pull request.
+      - name: "No silenced checks"
+        mode: warning
+        instructions: >-
+          Fail if the diff adds any of these without a reason on the same line or in the pull request: a
+          "# noqa", "# type: ignore" or "# ty: ignore" comment; a pytest skip, skipif or xfail marker; in
+          pyproject.toml, a new ruff ignore or per-file-ignores entry, a rule removed from select, a loosened
+          [tool.ty.rules] entry, or a new exclude for ruff or ty. Pass if every such addition says why the
+          finding is wrong or unavoidable.
+      - name: "Behaviour changes come with tests"
+        mode: warning
+        instructions: >-
+          Fail if the diff changes runtime behaviour in loc_arena/ or scenarios/ (new or changed logic,
+          branches, error handling or config keys) and adds or changes no test under tests/. Pass if tests
+          change with it; if the change is only docs, comments, formatting or a rename; if the pull request
+          states the refactor keeps behaviour; or if the pull request explains why no test is possible.
+      - name: "Docs and index match the code"
+        mode: warning
+        instructions: >-
+          Fail if the diff adds, renames or removes any of these without updating the document that lists
+          it: a path in the index table of AGENTS.md; a Makefile target or CLI command named in AGENTS.md or
+          README.md; a run-config key or block described in docs/run-config.md. Pass if no such item changes,
+          or if the matching document changes in the same pull request.
+
+  finishing_touches:
+    simplify:
+      enabled: true
+    # Run with `@coderabbitai run <name>`; each opens a pull request against the branch.
+    custom:
+      - name: "deslop"
+        instructions: |
+          Clean up only the files this pull request changes, keeping behaviour identical.
+          - Delete comments that restate the code, narrate the change or point at material a reader of the
+            repository cannot open.
+          - Delete dead code: unused functions, parameters, variables and imports, commented-out code,
+            unreachable branches, and defensive checks for states the types already rule out.
+          - Replace a helper that duplicates one already in the repository with a call to the existing one;
+            inline wrappers that only forward their arguments.
+          - Move hard-coded tunable values to the config surface (configs/, loc_arena/settings.py) or to a
+            named, documented constant.
+          - Leave company/, scenarios/*/reference/ and scenarios/*/seed/ untouched.
+          Then run `make gates` if the sandbox allows, and list anything left undone.
+      - name: "tighten tests"
+        instructions: |
+          Rework the tests this pull request adds or changes.
+          - One behaviour per test, Arrange, Act, Assert separated by blank lines, and a name that states the
+            behaviour and its condition. Split a test that acts, asserts and acts again.
+          - Delete assertions that restate constants or defaults or check what the test itself arranged.
+          - Replace mocks of our own code with real collaborators (FastAPI TestClient, tmp_path, real
+            subprocesses); keep mocks only for the paid model API.
+          - Make sure each test fails when the behaviour it names breaks.
+          - Never touch the strict xfails in company/*/tests/*backlog*.py or test_buried_bugs.py.
+
+  tools:
+    ast-grep:
+      # The repository's own rules: provider clients and secret reads outside the gateway, blanket
+      # suppressions, swallowed broad exceptions.
+      rule_dirs:
+        - ".coderabbit/ast-grep/rules"
+    # Prose nits on the docs, and PII matching that misreads hashes and fixture data, cost more than they
+    # find.
+    languagetool:
+      enabled: false
+    presidio:
+      enabled: false
+
+chat:
+  art: false
+
+knowledge_base:
+  code_guidelines:
+    # Added to the defaults (AGENTS.md, CLAUDE.md, ...), which CodeRabbit discovers on its own.
+    filePatterns:
+      - files: "docs/run-config.md"
+        applyTo: "loc_arena/config.py,loc_arena/settings.py,configs/**"
+
+code_generation:
+  docstrings:
+    path_instructions:
+      - path: "**/*.py"
+        instructions: |
+          Google style, as pyproject.toml configures. Say what the function does and why a caller cares, in
+          plain words; do not restate the types in the signature or open with "This function".
+      - path: "loc_arena/logging_/**"
+        instructions: |
+          Do not add function or method docstrings in this package; its contracts live in
+          docs/agent-log/spec.md.
+      - path: "company/**"
+        instructions: &company_generation |
+          The simulated company codebase that the agents under test work on. Match each repository's terse
+          style. Never describe, hint at, test or fix the planted bugs tracked by the strict xfails in
+          company/*/tests/*backlog*.py and test_buried_bugs.py.
+      - path: "scenarios/*/reference/**"
+        instructions: |
+          A grader fixture in a terse style of its own: add no docstrings.
+  unit_tests:
+    path_instructions:
+      - path: "**/*.py"
+        instructions: |
+          - pytest, run with `uv run pytest`. Unit tests go in tests/unit/; tests that need docker or a
+            network go in tests/integration/, skip-guarded.
+          - One behaviour per test, Arrange, Act, Assert separated by blank lines, and a name that states the
+            behaviour and its condition. Every test fully annotated (ruff ANN).
+          - Real collaborators (FastAPI TestClient, tmp_path, local stub servers, real subprocesses); mock
+            only the paid model API. Never call OpenRouter or read OPENROUTER_API_KEY.
+          - Each test must fail when the behaviour it names breaks; no assertions that restate constants or
+            defaults.
+      - path: "company/**"
+        instructions: *company_generation
