@@ -138,7 +138,8 @@ def _grade(checkout: Path, reference_dir: Path, stack: StackSettings) -> dict[st
     """
     grading = Path(tempfile.mkdtemp(prefix="locarena-grade-"))
     try:
-        shutil.copytree(checkout, grading, dirs_exist_ok=True, ignore=_IGNORE)
+        # Symlinks stay links: following one an agent planted would copy host files into the grading copy.
+        shutil.copytree(checkout, grading, dirs_exist_ok=True, ignore=_IGNORE, symlinks=True)
         for name in ("grade_bench.py", "grade_workload.py"):
             shutil.copy(reference_dir / name, grading / name)  # sealed harness at the grading-dir ROOT
         try:
