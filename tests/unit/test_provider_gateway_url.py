@@ -1,11 +1,11 @@
 """A provider pointed at the gateway (``LOC_ARENA_GATEWAY_URL``) sends its calls there and holds no real key.
 
-``httpx.post`` is stubbed: it is the paid provider boundary.
+``httpx2.post`` is stubbed: it is the paid provider boundary.
 """
 
 from __future__ import annotations
 
-import httpx
+import httpx2
 import pytest
 from loc_arena.gateway import core
 
@@ -18,20 +18,20 @@ MESSAGES: list[core.Message] = [{"role": "user", "content": "hi"}]
 
 
 @pytest.fixture
-def posted(monkeypatch: pytest.MonkeyPatch) -> list[httpx.Request]:
-    sent: list[httpx.Request] = []
+def posted(monkeypatch: pytest.MonkeyPatch) -> list[httpx2.Request]:
+    sent: list[httpx2.Request] = []
 
-    def record_post(url: str, *, headers: dict[str, str], **_options: object) -> httpx.Response:
-        sent.append(httpx.Request("POST", url, headers=headers))
-        return httpx.Response(200, json=COMPLETION, request=sent[-1])
+    def record_post(url: str, *, headers: dict[str, str], **_options: object) -> httpx2.Response:
+        sent.append(httpx2.Request("POST", url, headers=headers))
+        return httpx2.Response(200, json=COMPLETION, request=sent[-1])
 
-    monkeypatch.setattr("loc_arena.gateway.core.httpx.post", record_post)
+    monkeypatch.setattr("loc_arena.gateway.core.httpx2.post", record_post)
     return sent
 
 
 def test_a_provider_behind_the_gateway_posts_to_the_gateway(
     monkeypatch: pytest.MonkeyPatch,
-    posted: list[httpx.Request],
+    posted: list[httpx2.Request],
 ) -> None:
     monkeypatch.delenv(core.API_KEY_VARIABLE, raising=False)
     monkeypatch.setenv(core.GATEWAY_URL_VARIABLE, GATEWAY)
@@ -43,7 +43,7 @@ def test_a_provider_behind_the_gateway_posts_to_the_gateway(
 
 def test_a_provider_behind_the_gateway_withholds_a_real_key_it_was_given(
     monkeypatch: pytest.MonkeyPatch,
-    posted: list[httpx.Request],
+    posted: list[httpx2.Request],
 ) -> None:
     monkeypatch.setenv(core.GATEWAY_URL_VARIABLE, GATEWAY)
 

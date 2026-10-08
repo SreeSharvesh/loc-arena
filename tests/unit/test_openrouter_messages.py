@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-import httpx
+import httpx2
 import pytest
 from loc_arena.gateway import core
 
@@ -22,15 +22,15 @@ def _capture(
     bodies: list[dict[str, Any]] = []
     reported = usage if usage is not None else {"prompt_tokens": 3, "completion_tokens": 2}
 
-    def fake_post(*_args: object, json: dict[str, Any], **_kwargs: object) -> httpx.Response:
+    def fake_post(*_args: object, json: dict[str, Any], **_kwargs: object) -> httpx2.Response:
         bodies.append(json)
-        return httpx.Response(
+        return httpx2.Response(
             status_code=200,
             json={"choices": [{"message": message}], "usage": reported},
-            request=httpx.Request("POST", core.OPENROUTER_URL),
+            request=httpx2.Request("POST", core.OPENROUTER_URL),
         )
 
-    monkeypatch.setattr("loc_arena.gateway.core.httpx.post", fake_post)
+    monkeypatch.setattr("loc_arena.gateway.core.httpx2.post", fake_post)
     return bodies
 
 

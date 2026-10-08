@@ -22,7 +22,7 @@ from http import HTTPMethod, HTTPStatus
 from pathlib import Path
 
 import anyio
-import httpx
+import httpx2
 import uvicorn
 from fastapi import FastAPI, Request, Response
 from fastapi.concurrency import run_in_threadpool
@@ -37,7 +37,7 @@ from loc_arena.settings import GatewaySettings
 DROPPED_REQUEST_HEADERS = frozenset(
     {"authorization", "host", "content-length", "connection", "accept-encoding"},
 )
-# Response headers that described the upstream's encoding of a body httpx has already decoded.
+# Response headers that described the upstream's encoding of a body httpx2 has already decoded.
 DROPPED_RESPONSE_HEADERS = frozenset(
     {"content-length", "content-encoding", "transfer-encoding", "connection"},
 )
@@ -117,10 +117,10 @@ def create_proxy_app(
     settings: GatewaySettings,
     api_key: SecretStr,
     *,
-    upstream_client: httpx.AsyncClient | None = None,
+    upstream_client: httpx2.AsyncClient | None = None,
 ) -> FastAPI:
     """The gateway app: allowed requests go to the upstream under the key; every call lands in the log."""
-    client = upstream_client or httpx.AsyncClient(
+    client = upstream_client or httpx2.AsyncClient(
         base_url=str(settings.upstream),
         timeout=settings.timeout_seconds,
     )
@@ -143,7 +143,11 @@ def create_proxy_app(
         await record(request, body, status, bytes(refusal.body), complete=False)
         return refusal
 
-    async def relay(request: Request, body: bytes, upstream_response: httpx.Response) -> AsyncIterator[bytes]:
+    async def relay(
+        request: Request,
+        body: bytes,
+        upstream_response: httpx2.Response,
+    ) -> AsyncIterator[bytes]:
         chunks: list[bytes] = []
         complete = False
         try:
@@ -176,7 +180,7 @@ def create_proxy_app(
         )
         try:
             upstream_response = await client.send(upstream_request, stream=True)
-        except httpx.HTTPError as error:
+        except httpx2.HTTPError as error:
             message = f"upstream unreachable: {type(error).__name__}"
             return await refuse(request, body, HTTPStatus.BAD_GATEWAY, message)
         except asyncio.CancelledError:

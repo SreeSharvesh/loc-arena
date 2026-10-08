@@ -225,7 +225,7 @@ reviews:
         mode: warning
         instructions: >-
           Fail if the diff, outside loc_arena/gateway/ and tests/, adds an import of an HTTP or model-provider
-          client (httpx, requests, aiohttp, urllib.request, openai, anthropic, openrouter, litellm), a model
+          client (httpx2, httpx, requests, aiohttp, urllib.request, openai, anthropic, openrouter, litellm), a model
           provider URL (openrouter.ai, api.openai.com, api.anthropic.com), or code that sends a model request
           without the gateway. Also fail if code outside loc_arena/gateway/ reads the value of
           OPENROUTER_API_KEY or another provider key; checking that the variable is set is allowed. Pass if

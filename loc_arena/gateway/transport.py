@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-import httpx
+import httpx2
 
 
 class Transport(Protocol):
@@ -30,7 +30,7 @@ class HttpxTransport:
 
     def post_json(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
         """POST ``body`` as JSON to ``base_url + path`` and return the decoded reply."""
-        resp = httpx.post(f"{self._base_url}{path}", json=body, timeout=self._timeout)
+        resp = httpx2.post(f"{self._base_url}{path}", json=body, timeout=self._timeout)
         resp.raise_for_status()
         result: dict[str, Any] = resp.json()
         return result

@@ -17,7 +17,7 @@ ignores:
 utils:
   is-client-module:
     regex: >-
-      ^(httpx|requests|aiohttp|urllib3|urllib\.request|http\.client|openai|anthropic|openrouter|litellm)(\.|$)
+      ^(httpx2?|requests|aiohttp|urllib3|urllib\.request|http\.client|openai|anthropic|openrouter|litellm)(\.|$)
 rule:
   any:
     - kind: import_statement

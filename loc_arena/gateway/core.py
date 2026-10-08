@@ -27,7 +27,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-import httpx
+import httpx2
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, model_validator
 
@@ -58,7 +58,7 @@ _MAX_RETRIES = 5  # bounded retries on a rate-limited (429) or transient (5xx) p
 _BACKOFF_BASE_SECONDS = 2.0  # exponential backoff base; the nth retry waits ~base * 2**n, capped at 30s
 
 
-def _retry_delay_seconds(resp: httpx.Response, attempt: int) -> float:
+def _retry_delay_seconds(resp: httpx2.Response, attempt: int) -> float:
     """Seconds to wait before the next retry: the provider's ``Retry-After`` if given, else backoff."""
     retry_after = resp.headers.get("Retry-After")
     if retry_after is not None:
@@ -233,7 +233,7 @@ class OpenRouterProvider:
         temperature: float,
         max_tokens: int,
         tools: list[ToolSpec] | None,
-    ) -> httpx.Response:
+    ) -> httpx2.Response:
         """POST the completion, retrying 429/5xx with backoff; return the final response for the caller."""
         body: dict[str, Any] = {
             "model": model,
@@ -244,9 +244,9 @@ class OpenRouterProvider:
         if tools:
             body["tools"] = tools
         headers = {"Authorization": f"Bearer {self._key}", "Content-Type": "application/json"}
-        last: httpx.Response | None = None
+        last: httpx2.Response | None = None
         for attempt in range(_MAX_RETRIES + 1):
-            resp = httpx.post(self._url, headers=headers, json=body, timeout=self._timeout)
+            resp = httpx2.post(self._url, headers=headers, json=body, timeout=self._timeout)
             if resp.status_code != 429 and resp.status_code < 500:
                 return resp
             last = resp

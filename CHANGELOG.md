@@ -26,6 +26,8 @@ log has the details.
 
 ### Fixed
 
+- **HTTP client.** The gateway and the provider use httpx2, the continuation of httpx maintained by Pydantic, so
+  security fixes keep reaching the one process that holds the key.
 - **The rogue loop** keeps running after an empty model reply. (#63)
 
 ### Security
