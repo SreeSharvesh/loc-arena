@@ -2,7 +2,7 @@
 
 A caller sends an OpenRouter request with any key; the upstream sees only the gateway's key, the reply comes
 back unchanged, and the call log holds the caller, the request and the reply, never the key. The paid upstream
-is the one stub (``httpx.MockTransport``); the app, its call log and the caller's name lookup are real.
+is the one stub (``httpx2.MockTransport``); the app, its call log and the caller's name lookup are real.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from http import HTTPStatus
 from pathlib import Path
 
 import anyio
-import httpx
+import httpx2
 import pytest
 import uvicorn
 from fastapi import FastAPI
@@ -32,35 +32,35 @@ COMPLETION = {
 }
 STREAM = b'data: {"choices":[{"delta":{"content":"h"}}]}\n\ndata: {"choices":[{"delta":{"content":"i"}}]}\n\n'
 
-Upstream = Callable[[httpx.Request], httpx.Response]
+Upstream = Callable[[httpx2.Request], httpx2.Response]
 
 
-def reply_with_completion(_request: httpx.Request) -> httpx.Response:
-    return httpx.Response(HTTPStatus.OK, json=COMPLETION)
+def reply_with_completion(_request: httpx2.Request) -> httpx2.Response:
+    return httpx2.Response(HTTPStatus.OK, json=COMPLETION)
 
 
-def record_into(seen: list[httpx.Request]) -> Upstream:
-    def reply_and_keep(request: httpx.Request) -> httpx.Response:
+def record_into(seen: list[httpx2.Request]) -> Upstream:
+    def reply_and_keep(request: httpx2.Request) -> httpx2.Response:
         seen.append(request)
         return reply_with_completion(request)
 
     return reply_and_keep
 
 
-def refuse_connection(request: httpx.Request) -> httpx.Response:
-    raise httpx.ConnectError("refused", request=request)
+def refuse_connection(request: httpx2.Request) -> httpx2.Response:
+    raise httpx2.ConnectError("refused", request=request)
 
 
-class BrokenStream(httpx.AsyncByteStream):
+class BrokenStream(httpx2.AsyncByteStream):
     """A reply stream that sends one chunk and then loses the connection."""
 
     async def __aiter__(self) -> AsyncIterator[bytes]:
         """Send the first chunk of ``STREAM``, then fail as a dropped connection does."""
         yield STREAM[:20]
-        raise httpx.ReadError("connection lost")
+        raise httpx2.ReadError("connection lost")
 
 
-class SlowStream(httpx.AsyncByteStream):
+class SlowStream(httpx2.AsyncByteStream):
     """A reply stream that sends one chunk, then takes its time over the rest."""
 
     async def __aiter__(self) -> AsyncIterator[bytes]:
@@ -72,7 +72,7 @@ class SlowStream(httpx.AsyncByteStream):
 
 def build_gateway_app(tmp_path: Path, upstream: Upstream) -> FastAPI:
     settings = GatewaySettings(call_log=tmp_path / "calls.jsonl")
-    client = httpx.AsyncClient(base_url=str(settings.upstream), transport=httpx.MockTransport(upstream))
+    client = httpx2.AsyncClient(base_url=str(settings.upstream), transport=httpx2.MockTransport(upstream))
     return create_proxy_app(settings, SecretStr(KEY), upstream_client=client)
 
 
@@ -94,7 +94,7 @@ def served_gateway(tmp_path: Path) -> Iterator[str]:
     """The gateway under a real server (the test client cannot hang up mid-stream), at its base URL."""
     server = uvicorn.Server(
         uvicorn.Config(
-            build_gateway_app(tmp_path, lambda _request: httpx.Response(HTTPStatus.OK, stream=SlowStream())),
+            build_gateway_app(tmp_path, lambda _request: httpx2.Response(HTTPStatus.OK, stream=SlowStream())),
             port=0,
         ),
     )
@@ -113,7 +113,7 @@ def read_calls(tmp_path: Path) -> list[GatewayCall]:
 
 
 def test_the_upstream_receives_the_gateway_key_in_place_of_the_callers(tmp_path: Path) -> None:
-    seen: list[httpx.Request] = []
+    seen: list[httpx2.Request] = []
     gateway = open_gateway(tmp_path, record_into(seen))
 
     gateway.post(CHAT, json=BODY, headers={"Authorization": "Bearer caller-key"})
@@ -148,7 +148,7 @@ def test_the_call_log_never_holds_the_key(tmp_path: Path) -> None:
 
 
 def test_a_path_outside_the_allowlist_never_reaches_the_upstream(tmp_path: Path) -> None:
-    seen: list[httpx.Request] = []
+    seen: list[httpx2.Request] = []
     gateway = open_gateway(tmp_path, record_into(seen))
 
     reply = gateway.get("/api/v1/credits")
@@ -166,7 +166,7 @@ def test_a_refused_path_is_recorded_as_incomplete(tmp_path: Path) -> None:
 
 
 def test_a_forged_host_header_cannot_redirect_the_call(tmp_path: Path) -> None:
-    seen: list[httpx.Request] = []
+    seen: list[httpx2.Request] = []
     gateway = open_gateway(tmp_path, record_into(seen))
 
     gateway.post(CHAT, json=BODY, headers={"Host": "elsewhere.test"})
@@ -178,7 +178,7 @@ def test_a_streamed_reply_reaches_the_caller_unchanged(tmp_path: Path) -> None:
     sse = {"content-type": "text/event-stream"}
     gateway = open_gateway(
         tmp_path,
-        lambda _request: httpx.Response(HTTPStatus.OK, content=STREAM, headers=sse),
+        lambda _request: httpx2.Response(HTTPStatus.OK, content=STREAM, headers=sse),
     )
 
     with gateway.stream("POST", CHAT, json={**BODY, "stream": True}) as reply:
@@ -188,7 +188,7 @@ def test_a_streamed_reply_reaches_the_caller_unchanged(tmp_path: Path) -> None:
 
 
 def test_a_reply_stream_that_breaks_off_is_recorded_as_incomplete(tmp_path: Path) -> None:
-    gateway = open_gateway(tmp_path, lambda _request: httpx.Response(HTTPStatus.OK, stream=BrokenStream()))
+    gateway = open_gateway(tmp_path, lambda _request: httpx2.Response(HTTPStatus.OK, stream=BrokenStream()))
 
     with gateway.stream("POST", CHAT, json=BODY) as reply:
         b"".join(reply.iter_bytes())
@@ -231,7 +231,7 @@ def test_a_caller_hanging_up_mid_stream_is_recorded_as_incomplete(
     tmp_path: Path,
     served_gateway: str,
 ) -> None:
-    with httpx.stream("POST", served_gateway + CHAT, json=BODY) as reply:
+    with httpx2.stream("POST", served_gateway + CHAT, json=BODY) as reply:
         next(reply.iter_raw())
 
     [call] = wait_for_calls(tmp_path)
