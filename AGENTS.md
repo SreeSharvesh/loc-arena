@@ -52,7 +52,14 @@ The deterministic config is a test fixture for the engine; its scores are not re
 ## Rules
 
 - **More with less.** Every added line earns its place. When code you touch can be merged or simplified without
-  changing behaviour, do it in the same change. Prefer a maintained library over hand-rolled code.
+  changing behaviour, do it in the same change.
+- **Canonical, maintained libraries.** Reach for the standard tool before writing your own: pydantic and
+  pydantic-settings for validation and settings, stamina or tenacity for retries, FastAPI and httpx for HTTP, and a
+  service's official SDK when there is one and it fits. Never an obscure or unmaintained package. Declare what you
+  import, with a current release as the floor.
+- **Canonical terms.** Use the established language of ML, software engineering, technical AI safety and AI
+  control (untrusted and trusted model, monitor, audit budget, honest and attack policy, main and side task)
+  instead of coining new terms. Define a term once if a reader might not know it.
 - **Names.** Functions are verbs, classes and modules are nouns. No shorthands (`environment`, not `env`).
 - **Config over code.** A tunable value never needs a code change: it lives in a group of the root settings
   (`loc_arena/settings.py`, read from `configs/*.yaml`), with a description per field. Secrets are compose
