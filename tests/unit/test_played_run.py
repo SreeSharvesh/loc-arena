@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import MappingProxyType
 
-from loc_arena.harness import PlayedRun
+import pytest
+from loc_arena.config import load_run_config
+from loc_arena.harness import PlayedRun, locate_run
 from loc_arena.logging_.agent_trace import EpisodeTrace, ModelCall, TurnRecord, TurnRef
 
 TURN = TurnRef("agent-main", 0)
@@ -28,3 +31,14 @@ def test_a_played_run_written_as_json_reads_back_with_the_traces_it_was_given() 
         TRACE,
         TRACE,
     )
+
+
+@pytest.mark.parametrize("instance_id", ["../../outside", "a/b", "a\\b", ""])
+def test_a_run_instance_that_could_leave_the_output_directory_is_refused(
+    tmp_path: Path,
+    instance_id: str,
+) -> None:
+    config = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+
+    with pytest.raises(ValueError, match="letters and digits"):
+        locate_run(config, "attack", instance_id, tmp_path)

@@ -343,7 +343,11 @@ PLAYED_FILE = "played.json"
 
 
 def locate_run(config: RunConfig, mode: str, instance_id: str, out_root: Path) -> Path:
-    """The directory of one run: ``out_root/<run_slug>/<run_name>``."""
+    """The directory of one run, ``out_root/<run_slug>/<run_name>``; its instance id is letters and digits."""
+    if not instance_id.isalnum():
+        raise ValueError(
+            f"a run instance id is letters and digits, so it cannot leave {out_root}: {instance_id!r}",
+        )
     return out_root / config.run_slug / config.run_name(mode, instance_id)
 
 
