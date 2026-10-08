@@ -68,3 +68,11 @@ def test_without_a_gateway_or_a_key_no_live_provider_is_configured(monkeypatch: 
     configured = core.is_live_provider_configured()
 
     assert not configured
+
+
+def test_subprocesses_running_agent_code_do_not_inherit_the_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(core.API_KEY_VARIABLE, "sk-real")
+
+    environment = core.environment_without_key()
+
+    assert core.API_KEY_VARIABLE not in environment

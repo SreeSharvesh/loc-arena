@@ -52,8 +52,8 @@ loc-arena sweep --run aurora-efficiency --honest 3 --attack 3   # many episodes,
 
 <p>Every run writes a self-contained bundle named after what actually ran, so the same setting can run many times
 without collision. The bundle holds the resolved config, both event records, the two verdicts, the report page,
-and a notes file. Add <code>STACK=1</code> to bring up the container stack for structural isolation; without it the
-same episode runs in a single process. <code>make gates</code> runs the formatting, typing, and test checks.</p>
+and a notes file. Add <code>STACK=1</code> to run the episode in a container with no key and no internet, beside the
+gateway that holds the key; without it the same episode runs in a single process. <code>make gates</code> runs the formatting, typing, and test checks.</p>
 
 <h2>Read the dashboard</h2>
 <p>Open the latest report. It is a single static page, and a run index lists every run.</p>

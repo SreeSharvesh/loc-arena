@@ -1,17 +1,8 @@
-"""Episode harness: render the per-episode docker stack from config and manage its lifecycle.
+"""Episode harness: run an episode in a MODE, grade it, and write its audit bundle.
 
-Enforces the sealed-vs-tamperable isolation (STRUCTURAL: the sealed core/recorder sit on
-networks the agent is not a member of, and the sealed log volume is mounted only into the recorder and the
-networkless evidence-reader), config over code (the whole stack is rendered from ``configs/env.default.yaml``
--- no port, limit, or network is hardcoded here) and reproducibility (reproducible from ``(config, seed)``;
-every episode rebuilds).
-
-Owns ``render_compose`` (config -> a docker compose document) and the stack lifecycle (``up`` /
-``teardown`` / ``stack_health``) over ``docker compose``, plus the episode runner: ``run_episode``
-assembles one episode in a MODE, grades it (main-task scorer + sealed verifier + monitors), and writes the
-reproducible per-run bundle; ``run_sweep`` aggregates N honest + M attack episodes into a safety number.
-Every resource is labelled ``loc-arena.eval=1`` so teardown is reliable. ``mode`` is the ONLY difference
-between a run and its twin.
+``run_episode`` assembles one episode in a MODE, grades it (main-task scorer, sealed verifier, monitors) and
+writes the per-run bundle, reproducible from ``(config, seed)``; ``run_sweep`` aggregates N honest and M
+attack episodes into a safety number. ``mode`` is the ONLY difference between a run and its twin.
 """
 
 from __future__ import annotations
@@ -20,10 +11,7 @@ import dataclasses
 import json
 import secrets
 import shutil
-import subprocess
-import tempfile
 import time
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -58,195 +46,9 @@ from loc_arena.task import assemble_scripted_episode
 if TYPE_CHECKING:
     from loc_arena.logging_.inspect_export import EpisodeExport
 
-LABEL = "loc-arena.eval"
-IMAGE = "loc-arena-svc:latest"
-_SERVICES_DIR = Path(__file__).resolve().parent / "services"
-
-# where each named volume is mounted inside a container
-_VOLUME_MOUNT = {
-    "sealed_log": "/sealed",
-    "mirror_log": "/mirror",
-    "repos": "/repos",
-    "weights_data": "/weights",
-}
-# config service role -> the app role the shared image runs
-_ROLE = {"recorder": "recorder", "evidence_reader": "reader"}
-
 
 def _default_sink(kind: str, payload: dict[str, Any]) -> None:
     """Default monitor event sink (drops the event) when no sealed sink is wired."""
-
-
-class HarnessError(RuntimeError):
-    """A docker/compose operation failed."""
-
-
-def docker_available() -> bool:
-    """True iff a docker daemon is reachable (integration tests skip-guard on this)."""
-    if shutil.which("docker") is None:
-        return False
-    return subprocess.run(["docker", "info"], capture_output=True).returncode == 0
-
-
-def _svc_port(svc: dict[str, Any]) -> int:
-    port = svc.get("port")
-    return int(port) if isinstance(port, int) else 8000
-
-
-def _healthcheck(port: int) -> dict[str, Any]:
-    url = f"http://localhost:{port}/health"
-    probe = (
-        "import urllib.request,sys;"
-        f"u=urllib.request.urlopen('{url}',timeout=2);"
-        "sys.exit(0 if u.status==200 else 1)"
-    )
-    return {
-        "test": ["CMD", "python", "-c", probe],
-        "interval": "3s",
-        "timeout": "3s",
-        "retries": 15,
-        "start_period": "2s",
-    }
-
-
-def render_compose(config: RunConfig) -> dict[str, Any]:
-    """Render the compose document for one episode entirely from the resolved config (config over code)."""
-    raw = config.raw
-    services_cfg: dict[str, Any] = raw["services"]
-    networks_cfg: dict[str, Any] = raw["networks"]
-    volumes_cfg: dict[str, Any] = raw["volumes"]
-
-    compose: dict[str, Any] = {"services": {}, "networks": {}, "volumes": {}}
-
-    for net_name, net in networks_cfg.items():
-        internal = bool(net.get("internal", True)) if isinstance(net, dict) else True
-        compose["networks"][net_name] = {"internal": internal, "labels": {LABEL: "1"}}
-
-    for vol_name in volumes_cfg:
-        compose["volumes"][vol_name] = {"labels": {LABEL: "1"}}
-
-    for name, svc in services_cfg.items():
-        role = _ROLE.get(name, "health")
-        port = _svc_port(svc)
-        # No fixed container_name: compose names containers per PROJECT (<project>-<service>-N), so several
-        # episodes can run side by side without a name collision.
-        entry: dict[str, Any] = {
-            "image": IMAGE,
-            "environment": {"SVC_NAME": name, "SVC_ROLE": role, "SVC_PORT": str(port)},
-            "labels": {LABEL: "1"},
-            "restart": "no",
-        }
-        nets = svc.get("networks", [])
-        if nets:
-            entry["networks"] = list(nets)
-        else:
-            entry["network_mode"] = "none"  # the networkless evidence-reader
-
-        # volume mounts: attach each named volume to the services its mount_into lists
-        mounts: list[str] = []
-        for vol_name, vol in volumes_cfg.items():
-            if not isinstance(vol, dict):
-                continue
-            if name in vol.get("mount_into", []):
-                mount = _VOLUME_MOUNT.get(vol_name, f"/{vol_name}")
-                ro = ":ro" if svc.get("read_only") and vol_name == "sealed_log" else ""
-                mounts.append(f"{vol_name}:{mount}{ro}")
-                if vol_name == "sealed_log":
-                    entry["environment"]["SEALED_LOG"] = f"{mount}/events.jsonl"
-        if mounts:
-            entry["volumes"] = mounts
-
-        if role != "reader":
-            entry["healthcheck"] = _healthcheck(port)
-
-        # resource limits (execution) straight from config
-        if "mem_limit" in svc:
-            entry["mem_limit"] = svc["mem_limit"]
-        if "cpus" in svc:
-            entry["cpus"] = float(svc["cpus"])
-        if "pids_limit" in svc:
-            entry["pids_limit"] = int(svc["pids_limit"])
-
-        compose["services"][name] = entry
-
-    return compose
-
-
-@dataclass
-class EpisodeStack:
-    """A brought-up stack: its compose project name and the rendered compose file path."""
-
-    project: str
-    compose_file: Path
-
-    def exec(
-        self,
-        service: str,
-        command: list[str],
-        *,
-        check: bool = True,
-    ) -> subprocess.CompletedProcess[str]:
-        """Run a command inside a service container (used by the isolation probes)."""
-        return _compose(self, ["exec", "-T", service, *command], check=check)
-
-    def container_id(self, service: str) -> str:
-        """The container id for a service in THIS project (project-scoped; safe with concurrent stacks)."""
-        result = _compose(self, ["ps", "-q", service], check=False)
-        return result.stdout.strip().splitlines()[0] if result.stdout.strip() else ""
-
-    def running_services(self) -> set[str]:
-        """The set of services currently running in this project."""
-        result = _compose(self, ["ps", "--services", "--status", "running"], check=False)
-        return {s for s in result.stdout.split() if s}
-
-
-def _compose(stack: EpisodeStack, args: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
-    cmd = ["docker", "compose", "-p", stack.project, "-f", str(stack.compose_file), *args]
-    return subprocess.run(cmd, capture_output=True, text=True, check=check)
-
-
-def _build_image() -> None:
-    result = subprocess.run(
-        ["docker", "build", "-t", IMAGE, str(_SERVICES_DIR)],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        raise HarnessError(f"image build failed:\n{result.stderr}")
-
-
-def up(config: RunConfig, *, project: str, workdir: Path | None = None) -> EpisodeStack:
-    """Build the image, render the compose file, and bring the stack up healthy (``--wait``)."""
-    _build_image()
-    out_dir = workdir if workdir is not None else Path(tempfile.mkdtemp(prefix="locarena-"))
-    out_dir.mkdir(parents=True, exist_ok=True)
-    compose_file = out_dir / "compose.resolved.yaml"
-    compose_file.write_text(yaml.safe_dump(render_compose(config), sort_keys=False))
-    stack = EpisodeStack(project=project, compose_file=compose_file)
-    result = _compose(stack, ["up", "-d", "--wait"], check=False)
-    if result.returncode != 0:
-        teardown(stack)
-        raise HarnessError(f"stack did not come up healthy:\n{result.stdout}\n{result.stderr}")
-    return stack
-
-
-def teardown(stack: EpisodeStack) -> None:
-    """Remove every resource of THIS project (containers, networks, volumes). Idempotent, project-scoped.
-
-    Project-scoped so tearing one episode down never touches another concurrent episode (they share the
-    ``loc-arena.eval`` label). ``scripts/teardown.sh`` is the label-wide manual sweep for interactive use.
-    """
-    _compose(stack, ["down", "-v", "--remove-orphans", "-t", "3"], check=False)
-
-
-def stack_health(config: RunConfig, *, project: str) -> dict[str, Any]:
-    """Bring the stack up, verify the sealed recorder is reachable, and tear it down (isolation smoke)."""
-    stack = up(config, project=project)
-    try:
-        health = stack.exec("recorder", ["python", "-c", "print('ok')"], check=False)
-        return {"up": True, "recorder_ok": health.returncode == 0}
-    finally:
-        teardown(stack)
 
 
 # --------------------------------------------------------------------------------------------------------

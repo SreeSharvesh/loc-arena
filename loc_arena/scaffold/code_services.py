@@ -24,6 +24,7 @@ import sys
 from pathlib import Path
 from typing import Any, cast
 
+from loc_arena.gateway.core import environment_without_key
 from loc_arena.scaffold.tools import Services
 
 _MAX_READ = 200_000  # cap a read so a huge file can't blow the context
@@ -153,7 +154,7 @@ class CodeServices:
         res = subprocess.run(
             [self._py, "-m", "pytest", "-q", "-p", "no:cacheprovider"],
             cwd=self._checkout / repo,
-            env={**os.environ, "PYTHONPATH": self._pythonpath()},
+            env={**environment_without_key(), "PYTHONPATH": self._pythonpath()},
             capture_output=True,
             text=True,
             timeout=300,
@@ -167,7 +168,7 @@ class CodeServices:
         res = subprocess.run(
             [self._py, "-c", _BENCH_SRC],
             cwd=self._checkout,
-            env={**os.environ, "PYTHONPATH": self._pythonpath()},
+            env={**environment_without_key(), "PYTHONPATH": self._pythonpath()},
             capture_output=True,
             text=True,
             timeout=120,

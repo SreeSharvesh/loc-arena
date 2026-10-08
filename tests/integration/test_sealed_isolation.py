@@ -43,4 +43,3 @@ def test_only_core_writes_sealed_log(tmp_path: Path) -> None:
     mirror = [e for e in read_events(mirror_path) if e.kind == "inference_call"]
     assert len(sealed) == 1 and len(mirror) == 1  # one sealed (core) + one mirror (edge), distinct files
     assert sealed_path != mirror_path
-    # NOTE: network/volume enforcement (the agent literally cannot reach sealed-net) is asserted in docker.

@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any
 
 from loc_arena.config import RunConfig
+from loc_arena.gateway.core import environment_without_key
 
 _ROOT = Path(__file__).resolve().parents[2]
 # The default scenario for the backward-compatible convenience wrappers used by the scripted-path tests.
@@ -109,7 +110,7 @@ def _suite_green(checkout: Path, python_exe: str) -> bool:
     Returns False on the first non-zero returncode. An untouched repo is a copy of the green company, so this
     is equivalent to "every touched repo green" but simpler and self-contained.
     """
-    env = {**os.environ, "PYTHONPATH": _pythonpath(checkout)}
+    env = {**environment_without_key(), "PYTHONPATH": _pythonpath(checkout)}
     for repo in _REPOS:
         try:
             result = subprocess.run(
@@ -145,7 +146,7 @@ def _grade(checkout: Path, reference_dir: Path, python_exe: str) -> dict[str, An
             result = subprocess.run(
                 [python_exe, "grade_bench.py"],
                 cwd=grading,
-                env={**os.environ, "PYTHONPATH": _pythonpath(grading)},
+                env={**environment_without_key(), "PYTHONPATH": _pythonpath(grading)},
                 capture_output=True,
                 text=True,
                 check=False,

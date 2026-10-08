@@ -1,9 +1,8 @@
 # Makefile -- one command to run everything (no live server; the viewer is a static report).
 # Targets call loc_arena/cli.py.
 #
-# STACK=1 additionally brings the per-episode docker stack up/down around the run for the sealed-isolation
-# guarantee. The episode itself runs in-process and reproducibly, so the stack is optional;
-# on a Linux host it can be the default.
+# STACK=1 runs the episode in its own container with no key and no internet; only the gateway container holds
+# the key. Without it the episode runs in this process, where the agents' code can reach local files.
 
 # The DELIVERABLE run is live-model only (aurora-efficiency.yaml, policy: model; needs OPENROUTER_API_KEY).
 # aurora-efficiency.yaml (scripted) is retained only as deterministic engine-test scaffolding, not a deliverable policy.
@@ -12,8 +11,6 @@ MODE ?= attack
 HONEST ?= 2
 ATTACK ?= 2
 STACK ?= 0
-GATEWAY ?= 0
-GATEWAY_COMPOSE = RUN=$(RUN) docker compose -f compose.gateway.yaml
 
 LOGS ?= logs
 
@@ -27,8 +24,7 @@ help:
 	@echo "make explore [LOGS=logs]                  # build the run explorer over every run in LOGS and open it"
 	@echo "make sweep RUN=aurora-efficiency HONEST=n ATTACK=m  # n honest + m attack episodes, aggregated"
 	@echo "make gates                                # ruff + ruff format + ty + pytest"
-	@echo "  (append STACK=1 to run/sweep to bring the docker stack up/down around it)"
-	@echo "  (append GATEWAY=1 to run to send every model call through the gateway container, which holds the key)"
+	@echo "  (append STACK=1 to run to run the episode in a container with no key; needs docker)"
 
 setup:
 	@command -v uv >/dev/null || (echo "uv not found: install from https://docs.astral.sh/uv/" && exit 1)
@@ -38,17 +34,8 @@ setup:
 	@echo "setup complete. Set OPENROUTER_API_KEY in .env, then:  make run"
 
 run:
-ifeq ($(GATEWAY),1)
-	@$(GATEWAY_COMPOSE) up -d --build --wait
-	@env -u OPENROUTER_API_KEY LOC_ARENA_GATEWAY_URL=http://127.0.0.1:8080/api/v1/chat/completions \
-	  uv run python -m loc_arena.cli run --run $(RUN) --mode $(MODE); status=$$?; \
-	  mkdir -p $(LOGS)/gateway && rm -f $(LOGS)/gateway/calls.jsonl; \
-	  if ! $(GATEWAY_COMPOSE) cp gateway:/sealed/calls.jsonl $(LOGS)/gateway/calls.jsonl; then \
-	    $(GATEWAY_COMPOSE) stop; echo "could not copy the call log out: kept the gateway's volume"; exit 1; fi; \
-	  $(GATEWAY_COMPOSE) down -v; exit $$status
-else ifeq ($(STACK),1)
-	@uv run python -c "from loc_arena.config import load_run_config as L; from loc_arena.harness import up,teardown; s=up(L('configs/$(RUN).yaml'),project='locarena-$(RUN)'); print('stack up'); \
-import loc_arena.cli as c; c.main(['run','--run','$(RUN)','--mode','$(MODE)']); teardown(s); print('stack down')"
+ifeq ($(STACK),1)
+	@uv run python -m loc_arena.cli run --run $(RUN) --mode $(MODE) --stack
 else
 	@uv run python -m loc_arena.cli run --run $(RUN) --mode $(MODE)
 endif

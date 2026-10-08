@@ -2,7 +2,6 @@
 .git
 logs
 site
-company
 docs
 tests
 **/__pycache__
