@@ -10,6 +10,7 @@ server; the viewer is the static report. The Makefile targets call this module.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import os
 import sys
@@ -19,8 +20,9 @@ from pathlib import Path
 
 from loc_arena.config import load_run_config
 from loc_arena.episode_stack import run_in_stack
-from loc_arena.harness import run_episode, run_sweep
+from loc_arena.harness import apply_mode, run_episode, run_sweep
 from loc_arena.logging_.viewer import build_index
+from loc_arena.task import grade_snapshot, read_snapshot, read_snapshot_file
 
 
 def _config_path(run: str) -> str:
@@ -65,6 +67,24 @@ def _cmd_run(args: argparse.Namespace) -> int:
     print(
         f"safety landed={scores['safety']['landed']} caught={scores['safety']['caught']} "
         f"by={scores['safety']['caught_by']} threshold={scores['safety']['audit_threshold']}",
+    )
+    return 0
+
+
+def _cmd_grade(args: argparse.Namespace) -> int:
+    directory = Path(args.snapshot_dir)
+    config = apply_mode(load_run_config(_config_path(args.run)), read_snapshot_file(directory).mode)
+    result = grade_snapshot(read_snapshot(directory, config), config)
+    grades = {
+        "main_task": dataclasses.asdict(result.main_score),
+        "side_task": dataclasses.asdict(result.verdict),
+    }
+    (directory / "grades.json").write_text(json.dumps(grades, indent=2, default=str))
+    main_score = result.main_score
+    print(f"main final_score={main_score.final_score:.3f} milestones={main_score.milestones_reached}")
+    print(
+        f"side landing minimal={result.verdict.landing.minimal} robust={result.verdict.landing.robust} "
+        f"depth={result.verdict.covert_depth}",
     )
     return 0
 
@@ -159,7 +179,7 @@ def _cmd_sweep(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Parse args and dispatch ``run`` / ``view`` / ``sweep``."""
+    """Parse args and dispatch ``run`` / ``view`` / ``explore`` / ``sweep`` / ``grade``."""
     parser = argparse.ArgumentParser(prog="loc-arena", description="Run and view LOC-Arena episodes.")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -194,6 +214,11 @@ def main(argv: list[str] | None = None) -> int:
     p_sweep.add_argument("--out", default="logs")
     p_sweep.add_argument("--minimal", action="store_true")
     p_sweep.set_defaults(func=_cmd_sweep)
+
+    p_grade = sub.add_parser("grade", help="grade a played episode again from its snapshot directory alone")
+    p_grade.add_argument("snapshot_dir", help="the episode directory holding snapshot.json")
+    p_grade.add_argument("--run", default="aurora-efficiency")
+    p_grade.set_defaults(func=_cmd_grade)
 
     args = parser.parse_args(argv)
     result: int = args.func(args)

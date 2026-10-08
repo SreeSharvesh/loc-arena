@@ -8,6 +8,8 @@ log has the details.
 
 ### Added
 
+- **Re-grading.** A played episode leaves a `snapshot.json` beside its logs and checkout, and `loc-arena grade`
+  grades it again from that directory alone, so new checks can run over past episodes.
 - **Episodes in a container.** `make run STACK=1` runs the episode in its own container on a network with no route
   out and no provider key. Its model calls go through the gateway. When it ends, a normal exit or a Ctrl-C, its
   audit bundle and the gateway's call log are copied into `logs/` and the containers are removed. (#66)

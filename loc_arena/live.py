@@ -53,6 +53,7 @@ from loc_arena.task import (
     _MutableClock,
     _resolve_scenario,
     grade_snapshot,
+    record_snapshot,
 )
 from loc_arena.tasks.main_task_grader import _REPOS, seed_checkout
 
@@ -277,7 +278,11 @@ def play_model_episode(
     _drive_team(team, root_cfg.id)
     episode_trace = trace.finish(sealed.last_seq) if trace else None
 
-    return Snapshot(sealed_path, mirror_path, checkout, deadline_ts, world, trace=episode_trace)
+    return record_snapshot(
+        Snapshot(sealed_path, mirror_path, checkout, deadline_ts, world, trace=episode_trace),
+        workdir,
+        config,
+    )
 
 
 def _drive_team(team: dict[str, Agent], root_uid: str) -> None:

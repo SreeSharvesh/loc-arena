@@ -16,7 +16,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
+from pydantic import BaseModel, ConfigDict
 from scenarios.loader import Scenario, load_scenario
 
 from loc_arena.config import RunConfig
@@ -107,6 +109,60 @@ class Snapshot:
     deadline_ts: float
     world: SeededWorld
     trace: EpisodeTrace | None = None
+
+
+class SnapshotFile(BaseModel):
+    """``snapshot.json``: where a played episode left its logs and checkout, relative to its directory."""
+
+    model_config = ConfigDict(frozen=True)
+
+    sealed_path: Path
+    mirror_path: Path
+    checkout: Path
+    deadline_ts: float
+    mode: Literal["attack", "honest"]
+
+
+_SNAPSHOT_FILE = "snapshot.json"
+
+
+def record_snapshot(snapshot: Snapshot, workdir: Path, config: RunConfig) -> Snapshot:
+    """Write ``snapshot.json`` into ``workdir`` so the episode can be graded from that directory alone."""
+    snapshot_file = SnapshotFile(
+        sealed_path=snapshot.sealed_path.relative_to(workdir),
+        mirror_path=snapshot.mirror_path.relative_to(workdir),
+        checkout=snapshot.checkout.relative_to(workdir),
+        deadline_ts=snapshot.deadline_ts,
+        mode="attack" if config.covert.enabled else "honest",
+    )
+    (workdir / _SNAPSHOT_FILE).write_text(snapshot_file.model_dump_json(indent=2))
+    return snapshot
+
+
+def read_snapshot_file(directory: Path) -> SnapshotFile:
+    """Parse the ``snapshot.json`` a played episode left in ``directory``."""
+    return SnapshotFile.model_validate_json((directory / _SNAPSHOT_FILE).read_text())
+
+
+def resolve_inside(directory: Path, stored: Path) -> Path:
+    """``stored`` resolved against ``directory``; refused outside it, since grading runs what it points at."""
+    resolved = (directory / stored).resolve()
+    if not resolved.is_relative_to(directory.resolve()):
+        raise ValueError(f"{_SNAPSHOT_FILE} points outside its episode directory: {stored}")
+    return resolved
+
+
+def read_snapshot(directory: Path, config: RunConfig) -> Snapshot:
+    """Rebuild the ``Snapshot`` of the episode in ``directory``; the world is regenerated from the config."""
+    snapshot_file = read_snapshot_file(directory)
+    return Snapshot(
+        resolve_inside(directory, snapshot_file.sealed_path),
+        resolve_inside(directory, snapshot_file.mirror_path),
+        resolve_inside(directory, snapshot_file.checkout),
+        snapshot_file.deadline_ts,
+        generate_world(config, _resolve_scenario(config), config.seed),
+        trace=None,
+    )
 
 
 def grade_snapshot(snapshot: Snapshot, config: RunConfig) -> EpisodeResult:
@@ -355,4 +411,8 @@ def play_scripted_episode(
     if config.covert.enabled:
         _covert_chain(core, edge, recorder, identity, config, clk, deadline_ts, robust=robust)
     episode_trace = trace.finish(sealed.last_seq) if trace else None
-    return Snapshot(sealed_path, mirror_path, checkout, deadline_ts, world, trace=episode_trace)
+    return record_snapshot(
+        Snapshot(sealed_path, mirror_path, checkout, deadline_ts, world, trace=episode_trace),
+        workdir,
+        config,
+    )
