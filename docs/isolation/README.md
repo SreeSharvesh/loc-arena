@@ -26,8 +26,8 @@ the run; the episode itself stays in this process.
 
 ![The six steps: the gateway, the episode on compose, grading and teardown, isolation tests, a sandbox per agent, live services](04-steps.png)
 
-The deterministic run's scores stay unchanged through every step. Steps 1 and 2 have shipped (#65, #66); steps 3 to
-6 describe what comes next.
+The deterministic run's scores stay unchanged through every step. Steps 1 to 4 have shipped; steps 5 and 6
+describe what comes next.
 
 1. **The gateway.** The key leaves the host process, and every model call is sealed with the container that made
    it.
