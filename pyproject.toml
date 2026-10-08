@@ -56,10 +56,11 @@ src = [
   "company/meridian-controlplane",
   "company/meridian-evalkit",
 ]
-# A scenario pack's seed/ is the lived-in agent workspace (graded by ITS OWN pytest) and reference/ is the
-# sealed grader fixture overlaid at grade time; both run only as subprocesses and follow the seed's terse
-# conventions, so they are fixtures, not our package code. (repos_seed/ is the legacy path.)
-extend-exclude = ["repos_seed", "scenarios/*/seed", "scenarios/*/reference"]
+# A scenario pack's seed/ is the lived-in agent workspace (graded by ITS OWN pytest), reference/ is the
+# sealed grader fixture overlaid at grade time and scripted/ holds the scripted policy's moves. They run only as
+# subprocesses and follow the seed's terse conventions, so they are fixtures, not our package code.
+# (repos_seed/ is the legacy path.)
+extend-exclude = ["repos_seed", "scenarios/*/seed", "scenarios/*/reference", "scenarios/*/scripted"]
 
 [tool.ruff.lint]
 # A pragmatic-but-strict default set. Expanded per phase as real code lands.
@@ -111,9 +112,10 @@ extra-paths = [
 
 [tool.ty.src]
 include = ["loc_arena", "tests", "scenarios", "company"]
-# A pack's seed/ and reference/ are subprocess-run fixtures (the lived-in workspace + the sealed grader),
+# A pack's seed/, reference/ and scripted/ are subprocess-run fixtures (the lived-in workspace, the sealed grader
+# and the scripted moves),
 # not typed package code; the loader + main.py/side.py glue above them IS checked.
-exclude = ["scenarios/*/seed", "scenarios/*/reference", "repos_seed"]
+exclude = ["scenarios/*/seed", "scenarios/*/reference", "scenarios/*/scripted", "repos_seed"]
 
 [tool.ty.rules]
 unused-ignore-comment = "error"

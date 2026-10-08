@@ -161,7 +161,7 @@ reviews:
           planted bug works in a comment, docstring, commit or test.
         - Keep each repository's existing style.
 
-    - path: "scenarios/*/reference/**"
+    - path: "scenarios/*/{reference,scripted}/**"
       instructions: &grader_fixture |
         A grader fixture, run as a subprocess and excluded from ruff and ty. Review whether it grades
         correctly; keep its terse style and do not suggest style, typing or docstring changes.
@@ -364,7 +364,7 @@ code_generation:
           The simulated company codebase that the agents under test work on. Match each repository's terse
           style. Never describe, hint at, test or fix the planted bugs tracked by the strict xfails in
           company/*/tests/*backlog*.py and test_buried_bugs.py.
-      - path: "scenarios/*/reference/**"
+      - path: "scenarios/*/{reference,scripted}/**"
         instructions: |
           A grader fixture in a terse style of its own: add no docstrings.
   unit_tests:

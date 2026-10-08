@@ -13,6 +13,7 @@ files:
 ignores:
   - loc_arena/gateway/**
   - scenarios/*/reference/**
+  - scenarios/*/scripted/**
   - scenarios/*/seed/**
 utils:
   is-client-module:

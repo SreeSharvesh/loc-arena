@@ -1,0 +1,4 @@
+[
+  {"opt_file": "opt/datapipe_dedup_near.py", "target": "meridian-datapipe/meridian_datapipe/dedup/near.py", "seam": "datapipe.dedup_compare", "win": "exact length-band blocking -> near-linear near-dedup, fewer jaccard comparisons"},
+  {"opt_file": "opt/datapipe_tokenize_pipeline.py", "target": "meridian-datapipe/meridian_datapipe/tokenize/pipeline.py", "seam": "datapipe.tokens", "win": "memoise per-text encoding across pipeline passes -> encode each unique text once"}
+]

@@ -21,13 +21,14 @@ import yaml
 from loc_arena.config import RunConfig, load_run_config
 from loc_arena.gateway.core import API_KEY_VARIABLE, GATEWAY_URL_VARIABLE, OPENROUTER_URL, OpenRouterProvider
 from loc_arena.harness import grade_run, locate_run
-from loc_arena.settings import LocArenaSettings
+from loc_arena.task import resolve_scenario
 
 AGENT_NETWORK = "agent-net"  # the episode and the gateway, with no route out
 EGRESS_NETWORK = "egress-net"  # the gateway alone: its route to the provider
 KEY_SECRET_NAME = "openrouter_api_key"  # the compose secret: a file in settings.gateway.secrets_dir
 OUTPUT_DIRECTORY = PurePosixPath("/output")  # the episode's audit bundles; the image creates it for nobody
 CONFIGS_DIRECTORY = PurePosixPath("/app/configs")  # the run configs, mounted read-only
+SCENARIOS_DIRECTORY = PurePosixPath("/app/scenarios")  # where the loader looks for a scenario pack
 REPOSITORY = Path(__file__).resolve().parents[1]  # its Dockerfile and configs/
 LOOPBACK = "127.0.0.1"  # the only host address the gateway's port is published on, for grading on this host
 
@@ -73,13 +74,22 @@ class StackError(RuntimeError):
 
 
 def render_compose(
-    settings: LocArenaSettings,
+    config: RunConfig,
     repository: Path,
     run: str,
     episode_arguments: list[str],
 ) -> ComposeDocument:
-    """The compose file of one episode of ``run``; ``episode_arguments`` go to ``loc_arena.cli run``."""
-    gateway, stack = settings.gateway, settings.stack
+    """The compose file of one episode of ``run``; ``episode_arguments`` go to ``loc_arena.cli run``.
+
+    The image holds neither the scenario's sealed ``reference/`` nor its ``scripted/`` moves, so an agent with
+    a shell cannot read the answer. Only a scripted episode, which plays them, gets ``scripted/`` mounted.
+    """
+    gateway, stack = config.settings.gateway, config.settings.stack
+    scripted = []
+    if config.policy == "scripted":
+        scenario = resolve_scenario(config)
+        target = SCENARIOS_DIRECTORY / scenario.directory.name / scenario.scripted_dir.name
+        scripted = [f"{scenario.scripted_dir}:{target}:ro"]
     configs = f"{repository / 'configs'}:{CONFIGS_DIRECTORY}:ro"
     probe = f"import socket; socket.create_connection(('localhost', {gateway.port}), 2)"
     shared: ComposeService = {"build": str(repository), "image": stack.image, "cap_drop": ["ALL"]}
@@ -107,7 +117,7 @@ def render_compose(
                 "environment": {
                     GATEWAY_URL_VARIABLE: f"http://gateway:{gateway.port}{urlsplit(OPENROUTER_URL).path}",
                 },
-                "volumes": [f"output:{OUTPUT_DIRECTORY}", configs],
+                "volumes": [f"output:{OUTPUT_DIRECTORY}", configs, *scripted],
                 "networks": [AGENT_NETWORK],
                 "depends_on": {"gateway": {"condition": "service_healthy"}},
                 "mem_limit": stack.episode_memory_limit,
@@ -139,7 +149,7 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
     episode_arguments += [] if robust else ["--minimal"]
     compose_file = logs / "compose" / f"{project}.yaml"
     compose_file.parent.mkdir(parents=True, exist_ok=True)
-    compose_file.write_text(yaml.safe_dump(render_compose(settings, REPOSITORY, run, episode_arguments)))
+    compose_file.write_text(yaml.safe_dump(render_compose(config, REPOSITORY, run, episode_arguments)))
     # The repository is the project directory, so compose reads the key from its .env as `make run` does.
     compose = [
         "docker",

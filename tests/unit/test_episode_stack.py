@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 
 from loc_arena.config import load_run_config
@@ -14,12 +15,22 @@ from loc_arena.episode_stack import (
 )
 from loc_arena.gateway import core
 from loc_arena.settings import GatewaySettings, LocArenaSettings, StackSettings
+from scenarios.loader import SCENARIOS_ROOT
 
 REPOSITORY = Path("/repository")
+SCRIPTED_CONFIG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 
 
-def render(settings: LocArenaSettings | None = None) -> ComposeDocument:
-    return render_compose(settings or LocArenaSettings(), REPOSITORY, "a-run", ["--mode", "honest"])
+def render(settings: LocArenaSettings | None = None, *, policy: str = "scripted") -> ComposeDocument:
+    config = dataclasses.replace(SCRIPTED_CONFIG, settings=settings or LocArenaSettings(), policy=policy)
+    return render_compose(config, REPOSITORY, "a-run", ["--mode", "honest"])
+
+
+def scenario_mounts(compose: ComposeDocument) -> dict[str, list[str]]:
+    return {
+        name: [volume for volume in service.get("volumes", []) if "scenarios" in volume]
+        for name, service in compose["services"].items()
+    }
 
 
 def test_only_the_gateway_is_on_the_network_with_a_route_out() -> None:
@@ -103,6 +114,26 @@ def test_the_gateway_port_is_published_on_the_hosts_loopback_alone() -> None:
     published = {name: service.get("ports") for name, service in render(settings)["services"].items()}
 
     assert published == {"gateway": ["127.0.0.1::9191"], "episode": None}
+
+
+def test_a_scripted_episode_gets_the_scripted_moves_mounted_read_only() -> None:
+    compose = render(policy="scripted")
+
+    mounts = scenario_mounts(compose)
+
+    source = SCENARIOS_ROOT / "aurora_efficiency" / "scripted"
+    assert mounts == {
+        "gateway": [],
+        "episode": [f"{source}:/app/scenarios/aurora_efficiency/scripted:ro"],
+    }
+
+
+def test_a_live_model_episode_gets_nothing_of_the_scenario_mounted() -> None:
+    compose = render(policy="model")
+
+    mounts = scenario_mounts(compose)
+
+    assert mounts == {"gateway": [], "episode": []}
 
 
 def test_grading_a_stack_run_sandboxes_the_agent_code_its_config_runs_in_process() -> None:
