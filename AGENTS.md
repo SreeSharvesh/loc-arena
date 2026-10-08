@@ -32,81 +32,57 @@ procedures.
 | `tests/unit/`, `tests/integration/` | the engine's test suite |
 | `docs/agent-log/` | per-agent logging: `spec.md` (what it guarantees) and `agent.md` (how to work on it) |
 | `docs/explorer/README.md` | every view of the run explorer, with screenshots |
+| `CHANGELOG.md` | what each system does for a run and how that changed, under Unreleased until a release |
 | `site/` | the course: `architecture.html`, `monitoring.html`, `extend.html` (setup, configure and extend), ... |
 | `scripts/make_public.py` | builds the curated public tree (`make public-repo`); `docs/` is kept out of it |
 | `.coderabbit.yaml`, `.coderabbit/ast-grep/rules/` | CodeRabbit's review settings and the repository's own ast-grep rules |
 
 ## Commands
 
-The toolchain is `uv` on Python 3.12 (`requires-python = ">=3.12,<3.13"`).
-
 ```sh
-make setup                                   # check uv, sync dependencies, validate the configs
-make gates                                   # ruff check, ruff format --check, ty check, pytest; run before every push
+make setup        # check uv (Python 3.12), sync dependencies, validate the configs
+make gates        # ruff, ruff format --check, ty, pytest: run before every push
+uv run python -m loc_arena.cli run --run aurora-efficiency.deterministic --out /tmp/runs   # offline, ~10 s, no spend
+make run MODE=attack STACK=1   # live models: the episode in a container with no key; the key in .env
 ```
 
-Narrower loops while working:
+The deterministic config is a test fixture for the engine; its scores are not results. `make run` without
+`STACK=1` runs in this process, where the agents' code can read local files.
 
-```sh
-uv run pytest tests/unit/test_config.py -q   # one file
-uv run pytest -q -k explorer                 # tests whose name matches
-uv run ruff check --fix . && uv run ruff format .
-uv run ty check
-```
+## Rules
 
-Run an episode and read it. Offline, with no key and no spend, in about ten seconds. The scripted config is a test
-fixture that exercises the engine; its scores are not results to report:
-
-```sh
-uv run python -m loc_arena.cli run --run aurora-efficiency.deterministic --mode attack --out /tmp/loc-arena-runs
-uv run python -m loc_arena.cli explore /tmp/loc-arena-runs --no-open  # -> /tmp/loc-arena-runs/explorer/index.html
-```
-
-Live model. These call OpenRouter and spend money. Nothing reads `.env` on its own, so export the key first
-(`set -a; . ./.env; set +a`). Without the key in the environment the run does not fail: it falls back to a
-deterministic stub provider.
-
-```sh
-make run MODE=attack                         # or MODE=honest; bundle in logs/<run_slug>/<run_name>/
-make sweep HONEST=2 ATTACK=2                 # n honest + m attack episodes, aggregated into one safety number
-make view                                    # open the latest report.html, print the `inspect view` command
-make explore                                 # the run explorer over every run in logs/ (LOGS=<folder> for another)
-```
-
-Without `STACK=1` the episode runs in-process on this machine, and the agents' code (their test and benchmark
-runs) can read local files. With `STACK=1` the episode runs in a container on a network with no route out; only
-the gateway container holds the key.
-
-## Tests
-
-- `make gates` runs `tests/` and every `company/*/tests` with no key and no network.
-- Docker tests skip when the daemon is down. Live-model tests (`tests/integration/test_live_*.py`,
-  `test_llm_monitor_live.py`) run only with `LOC_ARENA_LIVE=1` and `OPENROUTER_API_KEY` set, and they spend money.
-- The strict xfails in `company/*/tests/*backlog*.py` and `test_buried_bugs.py` are the company's open tickets:
-  bugs planted for the agents under test. Do not fix them, or the scenario loses its work.
-
-## Conventions
-
-- Ruff (`pyproject.toml`): line length 110, Google docstrings, every def fully annotated (`ANN`), trailing commas on
-  multi-line calls (`COM812`), imports at module top (`PLC0415`; the lazy `inspect_ai` imports in `cli.py` and
-  `harness.py` are per-file exceptions, because it loads about 1200 modules).
-- ty must be clean, warnings included; an unused `ty: ignore` is an error.
-- `scenarios/*/reference/` is a grader fixture run as a subprocess, excluded from ruff and ty; keep its style.
-- Config over code: tunable values live in YAML under `configs/` or the scenario pack, loaded through
-  `loc_arena/config.py`, not as constants in code.
-- `loc_arena/logging_/` has extra rules of its own in `docs/agent-log/agent.md`.
+- **More with less.** Every added line earns its place. When code you touch can be merged or simplified without
+  changing behaviour, do it in the same change.
+- **Canonical, maintained libraries.** Reach for the standard tool before writing your own: pydantic and
+  pydantic-settings for validation and settings, stamina or tenacity for retries, FastAPI and httpx for HTTP, and a
+  service's official SDK when there is one and it fits. Never an obscure or unmaintained package. Declare what you
+  import, with a current release as the floor.
+- **Canonical terms.** Use the established language of ML, software engineering, technical AI safety and AI
+  control (untrusted and trusted model, monitor, audit budget, honest and attack policy, main and side task)
+  instead of coining new terms. Define a term once if a reader might not know it.
+- **Names.** Functions are verbs, classes and modules are nouns. No shorthands (`environment`, not `env`).
+- **Config over code.** A tunable value never needs a code change: it lives in a group of the root settings
+  (`loc_arena/settings.py`, read from `configs/*.yaml`), with a description per field. Secrets are compose
+  secrets, read as `SecretStr`.
+- **Types.** Parse YAML, JSON and HTTP bodies into typed objects at the boundary. No `dict[str, Any]` in a
+  signature where a named type belongs. HTTP statuses use `http.HTTPStatus`.
+- **Tests.** One behaviour per test, Arrange-Act-Assert, named after the behaviour and its condition. A test must
+  fail when that behaviour breaks: break the code once and watch it fail. Use real collaborators; stub only the
+  paid model API.
+- **Docs.** Keep them to what a reader needs now; they are never a changelog. A change to what a system does gets
+  one line in `CHANGELOG.md` under Unreleased, written as what the system now does and why.
+- **Commits and comments** say what and why in their own words, never pointing at material a reader cannot open.
+- **Planted bugs.** The strict xfails in `company/*/tests/*backlog*.py` and `test_buried_bugs.py` are the
+  company's open tickets for the agents under test. Do not fix them.
+- **Live tests** (`tests/integration/test_live_*.py`, `test_llm_monitor_live.py`) run only with `LOC_ARENA_LIVE=1`
+  and a key, and they spend money. Docker tests skip when the daemon is down.
+- **Logging** under `loc_arena/logging_/` has its own rules in `docs/agent-log/agent.md`.
 
 ## Code review
 
-CodeRabbit reviews each pull request once it leaves draft, stacked ones included, and reads this file as review
-criteria. It skips titles containing `[WIP]`, `WIP:` or `DO NOT MERGE`.
-
-- Treat each finding as a claim to verify against the code: fix what holds, and reply on the thread with the
-  reason for what does not. The "Prompt for AI Agents" block under a finding is where to start.
-- Automatic reviews pause after five reviewed commits; `@coderabbitai review` reviews the latest push.
-  `@coderabbitai run deslop` and `@coderabbitai run tighten tests` open a cleanup pull request against the branch.
-- After changing `.coderabbit.yaml`, comment `@coderabbitai configuration` on the pull request and compare the
-  resolved values: the schema does not catch a misspelled nested key.
+CodeRabbit reviews each pull request out of draft and reads this file as its criteria. Treat each finding as a
+claim to verify: fix what holds, and reply on the thread why the rest does not. `@coderabbitai review` reviews
+the latest push. After changing `.coderabbit.yaml`, comment `@coderabbitai configuration` and check the values.
 
 ## Invariants not to break
 

@@ -287,6 +287,14 @@ reviews:
           it: a path in the index table of AGENTS.md; a Makefile target or CLI command named in AGENTS.md or
           README.md; a run-config key or block described in docs/run-config.md. Pass if no such item changes,
           or if the matching document changes in the same pull request.
+      - name: "Changelog records what systems now do"
+        mode: warning
+        instructions: >-
+          Fail if the diff adds a feature, setting, scenario, monitor, command or other capability, removes
+          one, or changes what a system does for a run (a guarantee, a security property, a fix a user would
+          notice), anywhere outside tests/ and docs/, and CHANGELOG.md gains no line under Unreleased. Also fail if a new line names classes,
+          functions or files instead of the system and what it now does. Pass for refactors, tests and docs that
+          change no behaviour.
 
   finishing_touches:
     simplify:
