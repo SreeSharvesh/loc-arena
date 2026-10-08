@@ -47,6 +47,11 @@ log has the details.
 
 ### Security
 
+- **What agent code cannot reach is tested against the real stack.** Where Docker and the stack image are
+  present, the tests bring an episode's compose project up and probe, through the agents' own shell in the
+  sandbox: no provider key, no route beyond agent-net, no outside name resolved, no way to the host, no mount
+  but the checkouts, and no grader answers. The one route agent code has, to the gateway, is recorded under
+  the sandbox's name.
 - **Agent-written code never sees the provider key.** Tests and benchmarks the agents run, and the grading of
   their work, run without the key in their environment, in-process runs included. (#66)
 - **Agent-written code in a stack run runs only in a sandbox container.** The agents' `bash`, `run_tests` and
