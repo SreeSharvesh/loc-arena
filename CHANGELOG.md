@@ -19,6 +19,9 @@ log has the details.
 
 ### Changed
 
+- **Grading.** An episode plays, then is graded from what it left: its event logs and its repo checkout, read by
+  the main-task scorer and the side-task verifier the run config names. Grading no longer runs inside play,
+  which lets it move to its own container next.
 - **The episode stack.** The placeholder service stack is replaced by two containers, the gateway and the episode,
   rendered from the run config's `gateway:` and `stack:` settings. (#66)
 - **Run configuration.** Run configs are validated as typed, described settings with one root object and named

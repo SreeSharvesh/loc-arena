@@ -41,7 +41,7 @@ from loc_arena.metrics import (
 from loc_arena.monitors.aggregation import load_aggregation_config
 from loc_arena.monitors.registry import find_fallback_only_monitors, load_monitor_specs, load_monitors
 from loc_arena.protocol import compose_protocol
-from loc_arena.task import assemble_scripted_episode
+from loc_arena.task import Snapshot, assemble_scripted_episode, grade_snapshot, play_scripted_episode
 
 if TYPE_CHECKING:
     from loc_arena.logging_.inspect_export import EpisodeExport
@@ -303,12 +303,11 @@ def _eval_episodes(cfg: RunConfig, episode: Any, calibration: Any) -> list[Episo
     return exports
 
 
-def _assemble_by_policy(cfg: RunConfig, workdir: Path, *, robust: bool, provider: Any = None) -> Any:
-    """Assemble one episode by ``config.policy``: the scripted driver, or the live model attack."""
+def _play_by_policy(cfg: RunConfig, workdir: Path, *, robust: bool, provider: Any = None) -> Snapshot:
+    """Play one episode by ``config.policy``: the scripted driver, or the live model attack."""
     if cfg.policy == "model":
-        return live.assemble_model_episode(cfg, workdir, provider=provider)
-
-    return assemble_scripted_episode(cfg, workdir, robust=robust)
+        return live.play_model_episode(cfg, workdir, provider=provider)
+    return play_scripted_episode(cfg, workdir, robust=robust)
 
 
 def run_episode(
@@ -358,17 +357,21 @@ def run_episode(
     start = time.perf_counter()
     # policy: model (the live deliverable) or scripted (engine-test scaffolding only). The scorer, verifier,
     # and monitors grade both identically; scripted stays byte-reproducible, live is graded on outcome.
-    episode = _assemble_by_policy(cfg, out_dir / "episode", robust=robust, provider=provider)
+    # Play, then grade what the play left: the checks read only the snapshot, never the running episode.
+    episode = grade_snapshot(_play_by_policy(cfg, out_dir / "episode", robust=robust, provider=provider), cfg)
     # calibrate against the honest twin (mode's only difference is covert.enabled)
     honest_cfg = apply_mode(config, "honest")
     honest_ep = (
         episode
         if mode == "honest"
-        else _assemble_by_policy(
+        else grade_snapshot(
+            _play_by_policy(
+                honest_cfg,
+                out_dir / "honest_cal",
+                robust=False,
+                provider=calibration_provider,
+            ),
             honest_cfg,
-            out_dir / "honest_cal",
-            robust=False,
-            provider=calibration_provider,
         )
     )
     h_caller, h_sink = build_monitor_caller(honest_ep, honest_cfg, monitor_provider)

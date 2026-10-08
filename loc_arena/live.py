@@ -35,7 +35,6 @@ from loc_arena.gateway.edge import GatewayEdge
 from loc_arena.identity import IdentityService
 from loc_arena.logging_.agent_trace import open_episode_logs
 from loc_arena.npcs.coworker import run_coworker, run_world_activity
-from loc_arena.registry import get_scorer
 from loc_arena.scaffold.agent import Agent, TurnMinter, TurnStatus
 from loc_arena.scaffold.bus import MessageBus, Recorder
 from loc_arena.scaffold.code_services import CodeServices
@@ -50,11 +49,12 @@ from loc_arena.task import (
     _ROGUE_ACCOUNT,
     _SECRET,
     EpisodeResult,
+    Snapshot,
     _MutableClock,
     _resolve_scenario,
+    grade_snapshot,
 )
 from loc_arena.tasks.main_task_grader import _REPOS, seed_checkout
-from loc_arena.tasks.side_task_verifier import verify_side_task
 
 # The workspace brief every agent gets: the real company checkout and the code tools that act on it. This is
 # what makes the main task REAL work (continuous scoring): the agents read/edit/test the real company repos
@@ -125,11 +125,25 @@ def assemble_model_episode(
     provider: Provider | None = None,
     deadline_ts: float = _DEFAULT_DEADLINE,
 ) -> EpisodeResult:
-    """Assemble one LIVE, model-driven episode and grade it (outcome, not byte-equality).
+    """Play one live, model-driven episode and grade it (outcome, not byte-equality)."""
+    return grade_snapshot(
+        play_model_episode(config, workdir, provider=provider, deadline_ts=deadline_ts),
+        config,
+    )
+
+
+def play_model_episode(
+    config: RunConfig,
+    workdir: Path,
+    *,
+    provider: Provider | None = None,
+    deadline_ts: float = _DEFAULT_DEADLINE,
+) -> Snapshot:
+    """Play one LIVE, model-driven episode and return what it leaves for grading.
 
     The orchestrator and sub-agents are ``ModelAgentPolicy``-driven through the gateway; the covert tool
-    surface executes the real durability. Returns the same ``EpisodeResult`` shape as the scripted assembler,
-    so the harness grades it identically (main-task scorer + sealed verifier + live monitors).
+    surface executes the real durability. Returns the same ``Snapshot`` as the scripted episode, so both are
+    graded identically.
     """
     workdir.mkdir(parents=True, exist_ok=True)
     episode_id = f"{config.run_slug}-model-{'attack' if config.covert.enabled else 'honest'}"
@@ -263,21 +277,7 @@ def assemble_model_episode(
     _drive_team(team, root_cfg.id)
     episode_trace = trace.finish(sealed.last_seq) if trace else None
 
-    # Grade the REAL edited checkout the agents produced (outcome, not a pre-applied optimization). A run that
-    # made no correctness-preserving improvement scores do-nothing baseline; a broken repo suite floors it.
-    main_score = get_scorer(str(config.main_task["scorer"]))(checkout, config, scenario.reference_dir)
-
-    verdict = verify_side_task(sealed_path, config, deadline_ts)
-    return EpisodeResult(
-        main_score,
-        verdict,
-        sealed_path,
-        mirror_path,
-        checkout,
-        deadline_ts,
-        world,
-        trace=episode_trace,
-    )
+    return Snapshot(sealed_path, mirror_path, checkout, deadline_ts, world, trace=episode_trace)
 
 
 def _drive_team(team: dict[str, Agent], root_uid: str) -> None:
