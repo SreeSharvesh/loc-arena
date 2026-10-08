@@ -15,6 +15,8 @@ from loc_arena.config import load_run_config
 from loc_arena.settings import StackSettings
 from loc_arena.tasks.main_task_grader import _suite_green, score_main_task, seed_checkout
 
+DOCKER_CHECK_TIMEOUT_SECONDS = 10
+HOST_ONLY_VARIABLE = "LOC_ARENA_TEST_HOST_ONLY"
 SANDBOX = StackSettings(sandbox_agent_code=True)
 CONFIG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 SANDBOXED_CONFIG = dataclasses.replace(CONFIG, settings=CONFIG.settings.model_copy(update={"stack": SANDBOX}))
@@ -26,8 +28,9 @@ def image_exists() -> bool:
             ["docker", "image", "inspect", SANDBOX.image],
             capture_output=True,
             check=False,
+            timeout=DOCKER_CHECK_TIMEOUT_SECONDS,
         )
-    except FileNotFoundError:
+    except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
     return inspected.returncode == 0
 
@@ -43,6 +46,7 @@ def run_in_sandbox(
     tmp_path: Path,
     *,
     timeout_seconds: float = 60,
+    stack: StackSettings = SANDBOX,
 ) -> subprocess.CompletedProcess[str]:
     return run_agent_code(
         ["-c", code],
@@ -50,7 +54,7 @@ def run_in_sandbox(
         mount=tmp_path,
         pythonpath=str(tmp_path),
         timeout_seconds=timeout_seconds,
-        stack=SANDBOX,
+        stack=stack,
     )
 
 
@@ -83,13 +87,36 @@ def test_a_timeout_removes_the_sandbox_container(tmp_path: Path) -> None:
     assert leftover.stdout.strip() == ""
 
 
-def test_the_setting_moves_the_suites_and_the_benchmark_into_the_container(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("limit_file", "stack", "expected"),
+    [
+        ("memory.max", StackSettings(sandbox_agent_code=True, episode_memory_limit="64m"), "67108864"),
+        ("pids.max", StackSettings(sandbox_agent_code=True, episode_pids_limit=50), "50"),
+        ("cpu.max", StackSettings(sandbox_agent_code=True, episode_cpus=0.5), "50000 100000"),
+    ],
+)
+def test_the_sandbox_applies_the_episode_resource_limits(
+    tmp_path: Path,
+    limit_file: str,
+    stack: StackSettings,
+    expected: str,
+) -> None:
+    code = f"print(open('/sys/fs/cgroup/{limit_file}').read().strip())"
+
+    result = run_in_sandbox(code, tmp_path, stack=stack)
+
+    assert result.stdout.strip() == expected
+
+
+def test_the_setting_moves_the_suites_and_the_benchmark_into_the_container(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     checkout = seed_checkout(tmp_path / "checkout")
-    common_package = checkout / "meridian-common" / "meridian_common" / "__init__.py"
-    common_package.write_text(
-        common_package.read_text()
-        + "\nimport os\nif not os.path.exists('/.dockerenv'):\n    raise ImportError\n",
-    )
+    package = checkout / "meridian-common" / "meridian_common" / "__init__.py"
+    raise_on_host = f"\nimport os\nif '{HOST_ONLY_VARIABLE}' in os.environ:\n    raise ImportError\n"
+    package.write_text(package.read_text() + raise_on_host)
+    monkeypatch.setenv(HOST_ONLY_VARIABLE, "1")  # a local run forwards it; the container gets only PYTHONPATH
 
     score = score_main_task(checkout, SANDBOXED_CONFIG)
 

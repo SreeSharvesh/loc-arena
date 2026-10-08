@@ -96,6 +96,10 @@ class StackSettings(SettingsGroup):
     )
     gateway_health_retries: PositiveInt = Field(default=15, description="Failed probes before giving up.")
     episode_pids_limit: PositiveInt = Field(default=4096, description="Processes the episode may run.")
+    agent_code_output_limit_bytes: PositiveInt = Field(
+        default=1_000_000,
+        description="Bytes of an agent-code run's stdout and of its stderr kept, counted from the end.",
+    )
     sandbox_agent_code: bool = Field(
         default=False,
         description="Run the agents' repo tests and the sealed benchmark in a throwaway container of `image` "
