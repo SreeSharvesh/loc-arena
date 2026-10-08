@@ -1,0 +1,11 @@
+.venv
+.git
+logs
+site
+company
+scenarios
+docs
+tests
+**/__pycache__
+.env
+*.env

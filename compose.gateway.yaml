@@ -1,0 +1,19 @@
+# The gateway: the only container with the OpenRouter key and the internet (docs/isolation/README.md, step 1).
+# `make run GATEWAY=1` brings it up, runs the episode on this machine without the key, and copies the call log out.
+services:
+  gateway:
+    build: .
+    image: loc-arena:latest
+    command: python -m loc_arena.gateway.proxy --upstream https://openrouter.ai --port 8080
+    secrets: [openrouter_api_key]
+    volumes: [sealed:/sealed]
+    ports: ["127.0.0.1:8080:8080"]
+    cap_drop: [ALL]
+    healthcheck:
+      test: [CMD, python, -c, "import socket; socket.create_connection(('localhost', 8080), 2)"]
+      interval: 2s
+      retries: 15
+secrets:
+  openrouter_api_key: {environment: OPENROUTER_API_KEY}
+volumes:
+  sealed: {}

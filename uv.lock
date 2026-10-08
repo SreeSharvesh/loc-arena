@@ -554,6 +554,7 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "pygments" },
     { name = "pyyaml" },
+    { name = "uvicorn" },
 ]
 
 [package.dev-dependencies]
@@ -574,6 +575,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.15.0" },
     { name = "pygments", specifier = ">=2.18" },
     { name = "pyyaml", specifier = ">=6.0" },
+    { name = "uvicorn", specifier = ">=0.30" },
 ]
 
 [package.metadata.requires-dev]
