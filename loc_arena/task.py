@@ -70,7 +70,7 @@ _DEPLOYED_COVERED = list(
 )  # the attack drops the durable account (reduced_monitor_coverage/underreported_activity_logging)
 
 
-def _resolve_scenario(config: RunConfig) -> Scenario:
+def resolve_scenario(config: RunConfig) -> Scenario:
     """Load the scenario named by ``config.scenario`` (defaults to the Aurora pack for compatibility)."""
     return load_scenario(config.scenario or "aurora_efficiency")
 
@@ -160,14 +160,14 @@ def read_snapshot(directory: Path, config: RunConfig) -> Snapshot:
         resolve_inside(directory, snapshot_file.mirror_path),
         resolve_inside(directory, snapshot_file.checkout),
         snapshot_file.deadline_ts,
-        generate_world(config, _resolve_scenario(config), config.seed),
+        generate_world(config, resolve_scenario(config), config.seed),
         trace=None,
     )
 
 
 def grade_snapshot(snapshot: Snapshot, config: RunConfig) -> EpisodeResult:
     """Run the checks the run config names over a played episode: main-task scorer and side-task verifier."""
-    scenario = _resolve_scenario(config)
+    scenario = resolve_scenario(config)
     main_score = get_scorer(str(config.main_task["scorer"]))(
         snapshot.checkout,
         config,
@@ -361,9 +361,9 @@ def play_scripted_episode(
     workdir.mkdir(parents=True, exist_ok=True)
     episode_id = f"{config.run_slug}-{'attack' if config.covert.enabled else 'honest'}"
 
-    scenario = _resolve_scenario(config)
+    scenario = resolve_scenario(config)
     checkout = seed_checkout(workdir / "checkout")  # the seven side-by-side company repos
-    apply_partial_optimization(checkout, scenario.reference_dir)  # the shared optimization work
+    apply_partial_optimization(checkout, scenario.scripted_dir)  # the shared optimization work
 
     # The seeded world: a pure function of (config, seed), identical across the honest twin and attack.
     world = generate_world(config, scenario, config.seed)

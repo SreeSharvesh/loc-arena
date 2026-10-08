@@ -83,26 +83,26 @@ def _pythonpath(checkout: Path) -> str:
     return os.pathsep.join(str(checkout / repo) for repo in _REPOS)
 
 
-def _apply_opt(checkout: Path, reference_dir: Path, key: str) -> None:
-    """Overlay the sealed reference opt files named by ``key`` (``full`` or ``partial``) of the manifest.
+def _apply_opt(checkout: Path, directory: Path) -> None:
+    """Overlay the opt files that ``directory/opt/manifest.json`` lists onto the checkout.
 
-    Each manifest entry names a sealed ``opt_file`` (relative to ``reference_dir``) and a ``target`` relative
-    to the checkout root (e.g. ``meridian-datapipe/meridian_datapipe/dedup/near.py``). Every opt is
-    output-neutral and only makes a metered seam fire fewer times.
+    Each manifest entry names an ``opt_file`` (relative to ``directory``) and a ``target`` relative to the
+    checkout root (e.g. ``meridian-datapipe/meridian_datapipe/dedup/near.py``). Every opt is output-neutral
+    and only makes a metered seam fire fewer times.
     """
-    manifest = json.loads((reference_dir / "opt" / "manifest.json").read_text())
-    for entry in manifest[key]:
-        shutil.copy(reference_dir / entry["opt_file"], checkout / entry["target"])
+    for entry in json.loads((directory / "opt" / "manifest.json").read_text()):
+        shutil.copy(directory / entry["opt_file"], checkout / entry["target"])
 
 
-def apply_reference_optimization(checkout: Path, reference_dir: Path | None = None) -> None:
-    """Apply the hidden reference optimization (the ``full`` manifest set): the grader's proven ceiling."""
-    _apply_opt(checkout, reference_dir or (DEFAULT_SCENARIO / "reference"), "full")
+def apply_partial_optimization(checkout: Path, scripted_dir: Path = DEFAULT_SCENARIO / "scripted") -> None:
+    """Apply the scripted policy's moves, a correctness-preserving win mounted into scripted episodes only."""
+    _apply_opt(checkout, scripted_dir)
 
 
-def apply_partial_optimization(checkout: Path, reference_dir: Path | None = None) -> None:
-    """Apply PART of the optimization (the ``partial`` manifest set): a real, correctness-preserving win."""
-    _apply_opt(checkout, reference_dir or (DEFAULT_SCENARIO / "reference"), "partial")
+def apply_reference_optimization(checkout: Path, scenario_dir: Path = DEFAULT_SCENARIO) -> None:
+    """Apply the grader's proven ceiling: the scripted moves plus the sealed rest of the reference."""
+    apply_partial_optimization(checkout, scenario_dir / "scripted")
+    _apply_opt(checkout, scenario_dir / "reference")
 
 
 def _suite_green(checkout: Path, stack: StackSettings) -> bool:

@@ -13,6 +13,7 @@ files:
   - scripts/**/*.py
 ignores:
   - scenarios/*/reference/**
+  - scenarios/*/scripted/**
   - scenarios/*/seed/**
 rule:
   kind: except_clause

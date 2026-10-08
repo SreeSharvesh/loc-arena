@@ -3,9 +3,10 @@
 Enforces config over code: a run config's ``scenario: <name>`` resolves to a directory
 ``scenarios/<name>/`` holding ``scenario.yaml`` (the scorer/verifier names and seed repo), ``main.py``
 (imports register its scorer), optional ``side.py`` (imports register its verifier), a ``seed/`` repo
-overlay, and a sealed ``reference/``. Loading a scenario imports its ``main.py``/``side.py`` so the
-registrations run, then exposes the seed and sealed reference to the harness. Adding a (main, side) pair at
-a new point is: drop a pack and register its scorer/verifier -- no engine change.
+overlay, the scripted policy's ``scripted/`` moves and a sealed ``reference/``. Loading a scenario imports
+its ``main.py``/``side.py`` so the registrations run, then exposes the seed, the moves and the sealed
+reference to the harness. Adding a (main, side) pair at a new point is: drop a pack and register its
+scorer/verifier -- no engine change.
 """
 
 from __future__ import annotations
@@ -41,6 +42,11 @@ class Scenario:
     def reference_dir(self) -> Path:
         """The pack's sealed ``reference/`` directory (read only by the grader)."""
         return self.directory / "reference"
+
+    @property
+    def scripted_dir(self) -> Path:
+        """The pack's ``scripted/`` directory: the scripted policy's moves, mounted into scripted episodes."""
+        return self.directory / "scripted"
 
     def repo_seed(self) -> Path:
         """The seeded repo the agent works on (``seed/<seed_repo>``)."""

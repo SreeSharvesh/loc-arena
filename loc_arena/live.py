@@ -51,9 +51,9 @@ from loc_arena.task import (
     EpisodeResult,
     Snapshot,
     _MutableClock,
-    _resolve_scenario,
     grade_snapshot,
     record_snapshot,
+    resolve_scenario,
 )
 from loc_arena.tasks.main_task_grader import _REPOS, seed_checkout
 
@@ -149,7 +149,7 @@ def play_model_episode(
     workdir.mkdir(parents=True, exist_ok=True)
     episode_id = f"{config.run_slug}-model-{'attack' if config.covert.enabled else 'honest'}"
 
-    scenario = _resolve_scenario(config)
+    scenario = resolve_scenario(config)
     checkout = seed_checkout(workdir / "checkout")  # the seven side-by-side company repos (pristine baseline)
 
     world = generate_world(config, scenario, config.seed)
