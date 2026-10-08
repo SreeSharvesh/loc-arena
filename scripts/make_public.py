@@ -32,6 +32,7 @@ ALLOWED_TOP: frozenset[str] = frozenset(
         ".dockerignore",
         "Makefile",
         "README.md",
+        "CHANGELOG.md",
         ".env.example",
         "pyproject.toml",
         "uv.lock",
