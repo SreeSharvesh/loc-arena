@@ -27,6 +27,7 @@ def test_edge_holds_no_provider_or_key(tmp_path: Path) -> None:
 
 def test_provider_requires_key_to_egress(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("LOC_ARENA_GATEWAY_URL", raising=False)
     with pytest.raises(RuntimeError, match="OPENROUTER_API_KEY"):
         OpenRouterProvider()
 

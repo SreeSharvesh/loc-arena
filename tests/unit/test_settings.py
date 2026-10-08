@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
-from loc_arena.config import ConfigError, load_run_config
+from loc_arena.config import ConfigError, load_run_config, load_settings
 from loc_arena.settings import LocArenaSettings
 from pydantic import BaseModel, JsonValue, ValidationError
 
@@ -71,6 +71,14 @@ def test_a_settings_value_in_a_run_config_overrides_the_default(tmp_path: Path) 
     settings = load_run_config(run_config, CONFIGS).settings
 
     assert settings.inference.batch_generate.teacher_token_quota == OVERRIDDEN_QUOTA
+
+
+def test_the_settings_alone_load_with_a_run_configs_override(tmp_path: Path) -> None:
+    run_config = _write_run_config(tmp_path, "gateway: {port: 9090}")
+
+    settings = load_settings(run_config, CONFIGS)
+
+    assert settings.gateway.port == 9090
 
 
 def test_an_unknown_settings_key_in_a_run_config_is_a_config_error(tmp_path: Path) -> None:

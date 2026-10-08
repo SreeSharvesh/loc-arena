@@ -1,0 +1,20 @@
+# The gateway: the only container with the OpenRouter key and the internet.
+# `make run GATEWAY=1` brings it up, runs the episode on this machine without the key, copies this run's call log
+# to logs/gateway/calls.jsonl and removes the container and its volume.
+services:
+  gateway:
+    build: .
+    image: loc-arena:latest
+    command: [python, -m, loc_arena.gateway.proxy, "configs/${RUN:-aurora-efficiency}.yaml"]   # its gateway: group
+    secrets: [openrouter_api_key]
+    volumes: [sealed:/sealed, ./configs:/app/configs:ro]
+    ports: ["127.0.0.1:8080:8080"]
+    cap_drop: [ALL]
+    healthcheck:
+      test: [CMD, python, -c, "import socket; socket.create_connection(('localhost', 8080), 2)"]
+      interval: 2s
+      retries: 15
+secrets:
+  openrouter_api_key: {environment: OPENROUTER_API_KEY}
+volumes:
+  sealed: {}

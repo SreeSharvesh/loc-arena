@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import dataclasses
 import json
-import os
 import secrets
 import shutil
 import subprocess
@@ -33,7 +32,13 @@ import yaml
 
 from loc_arena import live
 from loc_arena.config import RunConfig
-from loc_arena.gateway.core import GatewayCore, GenerateRequest, OpenRouterProvider, sign_monitor_credential
+from loc_arena.gateway.core import (
+    GatewayCore,
+    GenerateRequest,
+    OpenRouterProvider,
+    is_live_provider_configured,
+    sign_monitor_credential,
+)
 from loc_arena.logging_ import viewer
 from loc_arena.logging_.events import AppendOnlyLog, Event, read_events
 from loc_arena.metrics import (
@@ -533,7 +538,7 @@ def run_episode(
     # monitors declared ``mode: live`` in monitors.yaml actually score each event. A scripted or no-key run
     # passes no provider, so those monitors fall back to their heuristic (deterministic; the firewall holds
     # either way). Monitor visibility stays entirely a monitors.yaml concern.
-    if monitor_provider is None and cfg.policy == "model" and os.environ.get("OPENROUTER_API_KEY"):
+    if monitor_provider is None and cfg.policy == "model" and is_live_provider_configured():
         monitor_provider = OpenRouterProvider()
     the_seed = seed if seed is not None else cfg.seed
     instance_id = run_instance_id or secrets.token_hex(3)
