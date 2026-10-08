@@ -101,10 +101,16 @@ def test_the_sandbox_applies_the_episode_resource_limits(
     stack: StackSettings,
     expected: str,
 ) -> None:
-    code = f"print(open('/sys/fs/cgroup/{limit_file}').read().strip())"
+    code = (
+        "import os; "
+        "print(open('/sys/fs/cgroup/" + limit_file + "').read().strip() "
+        "if os.path.exists('/sys/fs/cgroup/cgroup.controllers') else 'cgroup-v1')"
+    )
 
     result = run_in_sandbox(code, tmp_path, stack=stack)
 
+    if result.stdout.strip() == "cgroup-v1":
+        pytest.skip("the limit files read here exist only under cgroup v2")
     assert result.stdout.strip() == expected
 
 
