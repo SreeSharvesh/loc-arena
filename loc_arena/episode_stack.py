@@ -118,8 +118,8 @@ def render_compose(
 def run_in_stack(run: str, episode_arguments: list[str], logs: Path) -> int:
     """Run one episode of ``run`` (a config in ``configs/``) in its own compose project; return its exit code.
 
-    Its bundle and the gateway's call log are copied into ``logs`` and the project is removed, on Ctrl-C too.
-    When a copy fails the project is kept, so nothing recorded is lost.
+    Whatever the episode and the gateway recorded is copied into ``logs`` before the project is removed, after
+    a Ctrl-C too. When a copy fails the project is kept, stopped, so nothing recorded is lost.
     """
     run = Path(run).name.removesuffix(".yaml")
     project = f"locarena-{secrets.token_hex(3)}"
@@ -140,23 +140,26 @@ def run_in_stack(run: str, episode_arguments: list[str], logs: Path) -> int:
     ]
     call_log = logs / "gateway" / f"{project}.calls.jsonl"
     call_log.parent.mkdir(parents=True, exist_ok=True)
-    keep_project = False
+    copies = [
+        [*compose, "cp", f"episode:{OUTPUT_DIRECTORY}/.", str(logs)],
+        [*compose, "cp", f"gateway:{settings.gateway.call_log}", str(call_log)],
+    ]
+    created = False
     try:
+        if subprocess.run([*compose, "create", "--build"]).returncode != 0:
+            raise StackError("could not build or create the episode's containers: see compose's output above")
+        created = True
         # --exit-code-from stops the gateway when the episode exits
-        episode = subprocess.run(
-            [*compose, "up", "--build", "--attach", "episode", "--exit-code-from", "episode"],
-        )
-        copies = [
-            [*compose, "cp", f"episode:{OUTPUT_DIRECTORY}/.", str(logs)],
-            [*compose, "cp", f"gateway:{settings.gateway.call_log}", str(call_log)],
-        ]
-        if any(subprocess.run(copy).returncode != 0 for copy in copies):
-            keep_project = True
-            subprocess.run([*compose, "stop"])
-            raise StackError(
-                f"could not copy the logs out (see compose's output above): kept project {project}",
-            )
-        return episode.returncode
+        return subprocess.run(
+            [*compose, "up", "--attach", "episode", "--exit-code-from", "episode"],
+        ).returncode
     finally:
-        if not keep_project:
-            subprocess.run([*compose, "down", "--volumes", "--remove-orphans"])
+        never_started = [*compose, "ps", "--all", "--status", "created", "--quiet", "episode"]
+        started = created and not subprocess.run(never_started, capture_output=True, text=True).stdout.strip()
+        if started and not all(subprocess.run(copy).returncode == 0 for copy in copies):
+            subprocess.run([*compose, "stop"])
+            raise StackError(f"could not copy every log out: kept compose project {project} and its volumes")
+        subprocess.run([*compose, "down", "--volumes", "--remove-orphans"])
+        if created and not started:
+            message = f"the episode never started: is {API_KEY_VARIABLE} set in .env or the shell? See above"
+            raise StackError(message)
