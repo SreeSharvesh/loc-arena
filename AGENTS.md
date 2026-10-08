@@ -68,9 +68,14 @@ The deterministic config is a test fixture for the engine; its scores are not re
   secrets, read as `SecretStr`.
 - **Types.** Parse YAML, JSON and HTTP bodies into typed objects at the boundary. No `dict[str, Any]` in a
   signature where a named type belongs. HTTP statuses use `http.HTTPStatus`.
-- **Tests.** One behaviour per test, Arrange-Act-Assert, named after the behaviour and its condition. A test must
-  fail when that behaviour breaks: break the code once and watch it fail. Use real collaborators; stub only the
-  paid model API.
+- **Tests.** Every test earns its place: it protects a behaviour a caller relies on, an invariant, or a bug that
+  happened; fewer, stronger tests beat many weak ones, and a test that duplicates another's coverage or restates
+  the code is deleted. Test at public seams (public functions, the CLI, the HTTP interface), never a private
+  function or a side channel. One behaviour per test, Arrange-Act-Assert, named after the behaviour and its
+  condition. Expected values come from an independent source (a known literal, a worked example, the golden run),
+  never recomputed the way the code does. A test must fail when its behaviour breaks: break the code once and watch
+  it fail. Keep tests DRY: shared setup in fixtures, data-only variations in one parametrized test. Use real
+  collaborators; stub only the paid model API.
 - **Docs.** Keep them to what a reader needs now; they are never a changelog. A change to what a system does gets
   one line in `CHANGELOG.md` under Unreleased, written as what the system now does and why.
 - **Commits and comments** say what and why in their own words, never pointing at material a reader cannot open.
