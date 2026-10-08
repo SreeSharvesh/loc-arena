@@ -279,8 +279,11 @@ def listen_on_host(agent_net_gateway: str, resolve_in_gateway: Callable[[str], s
 
 
 def run_docker(*arguments: str, **options: Any) -> subprocess.CompletedProcess[str]:
-    """Run ``docker`` with ``arguments``; raise when it fails."""
-    return subprocess.run(["docker", *arguments], capture_output=True, text=True, check=True, **options)
+    """Run ``docker`` with ``arguments``; raise with its stderr when it fails."""
+    done = subprocess.run(["docker", *arguments], capture_output=True, text=True, check=False, **options)
+    if done.returncode:
+        raise RuntimeError(f"docker {shlex.join(arguments[:6])} exited {done.returncode}: {done.stderr}")
+    return done
 
 
 @pytest.fixture(scope="module")
