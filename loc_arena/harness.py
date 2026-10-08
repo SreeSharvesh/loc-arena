@@ -36,7 +36,7 @@ from loc_arena.gateway.core import (
     GatewayCore,
     GenerateRequest,
     OpenRouterProvider,
-    live_provider_configured,
+    is_live_provider_configured,
     sign_monitor_credential,
 )
 from loc_arena.logging_ import viewer
@@ -538,7 +538,7 @@ def run_episode(
     # monitors declared ``mode: live`` in monitors.yaml actually score each event. A scripted or no-key run
     # passes no provider, so those monitors fall back to their heuristic (deterministic; the firewall holds
     # either way). Monitor visibility stays entirely a monitors.yaml concern.
-    if monitor_provider is None and cfg.policy == "model" and live_provider_configured():
+    if monitor_provider is None and cfg.policy == "model" and is_live_provider_configured():
         monitor_provider = OpenRouterProvider()
     the_seed = seed if seed is not None else cfg.seed
     instance_id = run_instance_id or secrets.token_hex(3)

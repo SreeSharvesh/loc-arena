@@ -3,7 +3,6 @@
 logs
 site
 company
-scenarios
 docs
 tests
 **/__pycache__

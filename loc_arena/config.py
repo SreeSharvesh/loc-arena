@@ -400,12 +400,7 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
     """
     run_file = Path(run_path)
     configs_directory = Path(configs_dir) if configs_dir is not None else run_file.parent
-    source = YamlConfigSettingsSource(
-        _RunDocument,
-        _extends_chain(run_file, configs_directory),
-        yaml_file_encoding=YAML_ENCODING,
-        deep_merge=True,
-    )
+    source = _merge_extends_chain(run_file, configs_directory)
     try:
         document = _RunDocument(_build_sources=((source,), {}))
     except ValidationError as exc:
@@ -435,6 +430,22 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
         agent_transcript=document.logging.agent_transcript,
         agent_loop=document.agent_loop,
         raw=source.yaml_data,
+    )
+
+
+def load_settings(run_path: str | Path, configs_dir: str | Path | None = None) -> LocArenaSettings:
+    """Load only the settings groups of a run file and the files it extends (the gateway needs no more)."""
+    return _build_settings(_merge_extends_chain(run_path, configs_dir).yaml_data)
+
+
+def _merge_extends_chain(run_path: str | Path, configs_dir: str | Path | None) -> YamlConfigSettingsSource:
+    run_file = Path(run_path)
+    configs_directory = Path(configs_dir) if configs_dir is not None else run_file.parent
+    return YamlConfigSettingsSource(
+        _RunDocument,
+        _extends_chain(run_file, configs_directory),
+        yaml_file_encoding=YAML_ENCODING,
+        deep_merge=True,
     )
 
 

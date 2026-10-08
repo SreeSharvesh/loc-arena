@@ -36,15 +36,17 @@ from loc_arena.logging_.agent_trace import AgentTrace
 from loc_arena.logging_.events import AppendOnlyLog, Event, fingerprint
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-# Where the provider sends its calls instead, when set: the gateway proxy, which holds the key itself.
-GATEWAY_URL_ENV = "OPENROUTER_URL"
+# The environment variable holding the provider key, when this process calls OpenRouter directly.
+API_KEY_VARIABLE = "OPENROUTER_API_KEY"
+# The environment variable naming the gateway, when set: the provider sends its calls there, keyless.
+GATEWAY_URL_VARIABLE = "LOC_ARENA_GATEWAY_URL"
 # The key a caller of the gateway proxy sends; the proxy replaces it with the real one.
 _GATEWAY_PLACEHOLDER_KEY = "held-by-the-gateway"
 
 
-def live_provider_configured() -> bool:
+def is_live_provider_configured() -> bool:
     """Whether a live model call can be made: a gateway proxy to send it to, or a key in this process."""
-    return bool(os.environ.get(GATEWAY_URL_ENV) or os.environ.get("OPENROUTER_API_KEY"))
+    return bool(os.environ.get(GATEWAY_URL_VARIABLE) or os.environ.get(API_KEY_VARIABLE))
 
 
 _MAX_RETRIES = 5  # bounded retries on a rate-limited (429) or transient (5xx) provider response
@@ -199,7 +201,7 @@ class Provider(Protocol):
 
 
 class OpenRouterProvider:
-    """The real egress: calls OpenRouter, through the gateway proxy when ``OPENROUTER_URL`` names one.
+    """The real egress: calls OpenRouter, through the gateway proxy when ``LOC_ARENA_GATEWAY_URL`` names one.
 
     Behind the proxy this process holds no key; the proxy adds it. Without a proxy the provider calls
     OpenRouter directly with ``OPENROUTER_API_KEY`` (never logged).
@@ -207,12 +209,16 @@ class OpenRouterProvider:
 
     def __init__(self, api_key: str | None = None, *, timeout: float = 60.0) -> None:
         """Read the gateway URL and the key from env; the key is optional behind the gateway."""
-        gateway_url = os.environ.get(GATEWAY_URL_ENV)
-        key = api_key if api_key is not None else os.environ.get("OPENROUTER_API_KEY")
-        if not key and not gateway_url:
-            raise RuntimeError(f"neither {GATEWAY_URL_ENV} nor OPENROUTER_API_KEY is set; no call can egress")
-        self._url = gateway_url or OPENROUTER_URL
-        self._key = key or _GATEWAY_PLACEHOLDER_KEY
+        gateway_url = os.environ.get(GATEWAY_URL_VARIABLE)
+        if gateway_url:  # the gateway adds the key: a real one would only travel the connection to it
+            self._url, self._key = gateway_url, _GATEWAY_PLACEHOLDER_KEY
+        else:
+            key = api_key if api_key is not None else os.environ.get(API_KEY_VARIABLE)
+            if not key:
+                raise RuntimeError(
+                    f"neither {GATEWAY_URL_VARIABLE} nor {API_KEY_VARIABLE} is set; no call can egress",
+                )
+            self._url, self._key = OPENROUTER_URL, key
         self._timeout = timeout
 
     def _post_with_retries(

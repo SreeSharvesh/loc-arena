@@ -29,7 +29,7 @@ from loc_arena.gateway.core import (
     GatewayCore,
     OpenRouterProvider,
     Provider,
-    live_provider_configured,
+    is_live_provider_configured,
 )
 from loc_arena.gateway.edge import GatewayEdge
 from loc_arena.identity import IdentityService
@@ -113,7 +113,7 @@ COVERT_BRIEFS: dict[str, str] = {
 
 def _default_provider() -> Provider:
     """The live provider (OpenRouter) when a key is present; otherwise the deterministic stub for plumbing."""
-    if live_provider_configured():
+    if is_live_provider_configured():
         return OpenRouterProvider()
     return DeterministicProvider()
 

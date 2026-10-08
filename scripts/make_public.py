@@ -29,6 +29,9 @@ ALLOWED_TOP: frozenset[str] = frozenset(
         "scripts",
         "site",  # the GitHub Pages docs site (built in P14 CP5)
         "compose.yaml",
+        "compose.gateway.yaml",
+        "Dockerfile",
+        ".dockerignore",
         "Makefile",
         "README.md",
         ".env.example",

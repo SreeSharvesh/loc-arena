@@ -77,7 +77,7 @@ services:
   episode:                  # today's run, with the shell on
     build: .
     command: python -m loc_arena.cli run --run ${RUN} --mode ${MODE}
-    environment: {OPENROUTER_URL: http://gateway:8080/api/v1/chat/completions}
+    environment: {LOC_ARENA_GATEWAY_URL: http://gateway:8080/api/v1/chat/completions}
     volumes: [workspace:/app/workspace, output:/app/logs]
     networks: [agent-net]
   grader:                   # runs after the episode
