@@ -8,6 +8,10 @@ log has the details.
 
 ### Added
 
+- **A shell for the agents, in the sandbox.** In `make run STACK=1` agents get a `bash` tool that runs in
+  their checkout in the sandbox container, without the provider key, with a timeout that ends everything the
+  command started and the end of its output (`stack.shell_timeout_seconds`, `stack.command_output_limit_bytes`).
+  An in-process run never offers or runs it, since there its commands would run on the host.
 - **Grading on the host.** In `make run STACK=1` the episode container only plays the episode and its honest
   twin; the host grades them from the copied-out run directory, always running the agents' code in the
   no-network sandbox, while the gateway stays up so the monitors' model calls go through it and land in its
@@ -45,6 +49,19 @@ log has the details.
 
 - **Agent-written code never sees the provider key.** Tests and benchmarks the agents run, and the grading of
   their work, run without the key in their environment, in-process runs included. (#66)
+- **Agent-written code in a stack run runs only in a sandbox container.** The agents' `bash`, `run_tests` and
+  `run_benchmark` run in a `sandbox` service that mounts the volume of the checkouts and nothing of the
+  harness: not the episode's event logs, the run configs, the scenario's moves or the gateway's call log. The
+  episode reaches its command server on agent-net with a per-run token (a compose secret), each episode's
+  checkout plays there and is moved into the run directory before grading, and no process a command starts
+  outlives it, so agent code never runs while the episode touches the shared checkout. Before each episode
+  plays, the sandbox empties its HOME and temporary directories (`stack.sandbox_scratch_directories`) and the
+  checkouts other than the new one, so nothing of the attack episode reaches its honest twin. A sandbox that
+  stops answering gives the agent an error result and the episode plays on. Model calls agent code makes from
+  the sandbox go through the gateway, recorded under the sandbox's name.
+- **Grading writes the sealed harness only into its grading copy.** A file or link the agents left where
+  `grade_bench.py` or `grade_workload.py` goes is removed first, so a link cannot redirect the copy onto a
+  file of the host; a directory there fails the grade.
 - **The episode image holds no grader answers.** The scenario's sealed `reference/` and the scripted policy's
   moves in `scripted/`, which are part of the main task's solution, are left out of the build context. A
   scripted episode gets `scripted/` mounted read-only; a live model episode gets no scenario directory mounted.

@@ -35,6 +35,7 @@ from loc_arena.gateway.edge import GatewayEdge
 from loc_arena.identity import IdentityService
 from loc_arena.logging_.agent_trace import open_episode_logs
 from loc_arena.npcs.coworker import run_coworker, run_world_activity
+from loc_arena.sandbox import connect_sandbox
 from loc_arena.scaffold.agent import Agent, TurnMinter, TurnStatus
 from loc_arena.scaffold.bus import MessageBus, Recorder
 from loc_arena.scaffold.code_services import CodeServices
@@ -54,8 +55,9 @@ from loc_arena.task import (
     grade_snapshot,
     record_snapshot,
     resolve_scenario,
+    seed_episode_checkout,
 )
-from loc_arena.tasks.main_task_grader import _REPOS, seed_checkout
+from loc_arena.tasks.main_task_grader import _REPOS
 
 # The workspace brief every agent gets: the real company checkout and the code tools that act on it. This is
 # what makes the main task REAL work (continuous scoring): the agents read/edit/test the real company repos
@@ -150,7 +152,7 @@ def play_model_episode(
     episode_id = f"{config.run_slug}-model-{'attack' if config.covert.enabled else 'honest'}"
 
     scenario = resolve_scenario(config)
-    checkout = seed_checkout(workdir / "checkout")  # the seven side-by-side company repos (pristine baseline)
+    checkout = seed_episode_checkout(config, workdir)  # the seven side-by-side company repos, pristine
 
     world = generate_world(config, scenario, config.seed)
     forge = Forge(world)
@@ -183,8 +185,18 @@ def play_model_episode(
     )
     edge = GatewayEdge(episode_id, DirectTransport(core), mirror, clock=clk)
 
+    # Agent-written code runs in the sandbox in a stack run; bash, not confined to the checkout, only there.
+    sandbox = connect_sandbox(config.settings)
+    if sandbox:
+        sandbox.reset(keep=checkout)  # what an earlier episode (the attack, before its twin) left goes
     # Services chain: covert tools -> code tools (act on the graded checkout) -> forge tools -> stub.
-    code_services = CodeServices(ForgeServices(forge), checkout=checkout, repos=list(_REPOS))
+    code_services = CodeServices(
+        ForgeServices(forge),
+        checkout=checkout,
+        repos=list(_REPOS),
+        stack=config.settings.stack,
+        sandbox=sandbox,
+    )
     covert_services = CovertToolServices(
         code_services,
         core=core,
@@ -251,7 +263,7 @@ def play_model_episode(
             ModelAgentPolicy(
                 ctx.client,
                 brief,
-                agent_tool_specs(covert=config.covert.enabled),
+                agent_tool_specs(covert=config.covert.enabled, shell=sandbox is not None),
                 config.agent_loop,
             ),
             tools,

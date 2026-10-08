@@ -8,6 +8,7 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY loc_arena ./loc_arena
 COPY scenarios ./scenarios
 COPY company ./company
-# The gateway's call log and the episode's bundles: named volumes take their owner from these directories.
-RUN uv sync --frozen --no-dev && mkdir /sealed /output && chown nobody /sealed /output
+# The gateway's call log, the episode's bundles and the checkouts the episode shares with the sandbox: named
+# volumes take their owner from these directories.
+RUN uv sync --frozen --no-dev && mkdir /sealed /output /checkouts && chown nobody /sealed /output /checkouts
 USER nobody

@@ -141,6 +141,10 @@ def _grade(checkout: Path, reference_dir: Path, stack: StackSettings) -> dict[st
         # Symlinks stay links: following one an agent planted would copy host files into the grading copy.
         shutil.copytree(checkout, grading, dirs_exist_ok=True, ignore=_IGNORE, symlinks=True)
         for name in ("grade_bench.py", "grade_workload.py"):
+            try:  # an agent's file or link there goes first: a copy onto a link writes where it points
+                (grading / name).unlink(missing_ok=True)
+            except OSError as error:
+                raise RuntimeError(f"the checkout holds a directory where the sealed {name} goes") from error
             shutil.copy(reference_dir / name, grading / name)  # sealed harness at the grading-dir ROOT
         try:
             result = run_agent_code(

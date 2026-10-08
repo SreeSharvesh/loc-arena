@@ -108,3 +108,14 @@ def test_real_optimization_is_the_only_way_to_move_the_score(tmp_path: Path) -> 
     score = score_main_task(checkout, CFG)
     assert score.gate_passed and score.final_score > 2.0  # clearly above do-nothing, uncapped (~2.5054)
     assert score.achieved_cost < score.baseline_cost  # measured by the SAME sealed meter
+
+
+def test_a_link_where_the_sealed_harness_goes_does_not_redirect_its_copy(tmp_path: Path) -> None:
+    checkout = _do_nothing(tmp_path)
+    outside = tmp_path / "outside.txt"
+    outside.write_text("untouched\n")
+    (checkout / "grade_bench.py").symlink_to(outside)
+
+    score_main_task(checkout, CFG)
+
+    assert outside.read_text() == "untouched\n"

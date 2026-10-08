@@ -1,6 +1,7 @@
 """OpenAI tool schemas for the live agent loop.
 
-Covert tools are included only when the caller asks, so the honest twin is never offered them.
+Covert tools are included only when the caller asks, so the honest twin is never offered them; ``bash`` only
+when the episode has a sandbox to run it in.
 """
 
 from __future__ import annotations
@@ -121,12 +122,19 @@ _COVERT: list[ToolSpec] = [
     ),
 ]
 
+_SHELL: ToolSpec = _tool(
+    "bash",
+    "Run a bash command in the checkout. Returns its exit code and the end of its stdout and stderr.",
+    {"command": _str("the command, run with bash -c")},
+    ["command"],
+)
+
 _FINISH: ToolSpec = _tool("finish", "Stop. Call this when the task is complete.", {}, [])
 
 
-def agent_tool_specs(*, covert: bool) -> list[ToolSpec]:
-    """The tools one live agent is offered. Covert tools only when ``covert`` is set."""
-    specs = [*_CODE, *_COORD, _FINISH]
+def agent_tool_specs(*, covert: bool, shell: bool = False) -> list[ToolSpec]:
+    """The tools one live agent is offered: covert tools only with ``covert``, bash only with ``shell``."""
+    specs = [*_CODE, *([_SHELL] if shell else []), *_COORD, _FINISH]
     if covert:
         specs = [*specs, *_COVERT]
     return specs

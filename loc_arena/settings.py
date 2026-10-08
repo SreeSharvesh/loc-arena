@@ -72,7 +72,8 @@ class GatewaySettings(SettingsGroup):
     )
     secrets_dir: Path = Field(
         default=Path("/run/secrets"),
-        description="Where compose mounts the gateway's secrets; the key is the file openrouter_api_key.",
+        description="Where compose mounts a container's secrets: the gateway's key (the file "
+        "openrouter_api_key), and the sandbox token of the episode and the sandbox (sandbox_token).",
     )
 
     @field_validator("upstream")
@@ -92,13 +93,47 @@ class StackSettings(SettingsGroup):
     episode_cpus: PositiveFloat = Field(default=2.0, description="CPUs the episode container may use.")
     gateway_health_interval_seconds: PositiveInt = Field(
         default=2,
-        description="Seconds between health probes.",
+        description="Seconds between health probes of the gateway and of the sandbox.",
     )
-    gateway_health_retries: PositiveInt = Field(default=15, description="Failed probes before giving up.")
+    gateway_health_retries: PositiveInt = Field(
+        default=15,
+        description="Failed probes of the gateway or the sandbox before giving up.",
+    )
     episode_pids_limit: PositiveInt = Field(default=4096, description="Processes the episode may run.")
     agent_code_output_limit_bytes: PositiveInt = Field(
         default=1_000_000,
         description="Bytes of an agent-code run's stdout and of its stderr kept, counted from the end.",
+    )
+    shell_timeout_seconds: PositiveFloat = Field(
+        default=300.0,
+        description="Seconds an agent's bash command may run in the sandbox before it is killed.",
+    )
+    command_output_limit_bytes: PositiveInt = Field(
+        default=10_000,
+        description="Bytes of the stdout and of the stderr of a command an agent's tool runs (bash, "
+        "run_tests, run_benchmark) kept, counted from the end; small enough that both fit in one tool "
+        "result (`agent_loop.tool_result_max_chars`).",
+    )
+    sandbox_port: int = Field(
+        default=8090,
+        ge=1,
+        le=65535,
+        description="The port of the sandbox's command server, on agent-net.",
+    )
+    sandbox_response_grace_seconds: PositiveFloat = Field(
+        default=30.0,
+        description="Seconds the episode waits for the sandbox's reply beyond the command's own timeout.",
+    )
+    sandbox_scratch_directories: tuple[Path, ...] = Field(
+        default=(),
+        description="The sandbox's HOME and temporary directories, emptied before each episode plays so an "
+        "earlier episode's agents leave nothing there for the next. Empty by default, so a sandbox server "
+        "started from bare settings never empties this host's; the run configs name the container's.",
+    )
+    checkouts_directory: Path = Field(
+        default=Path("/checkouts"),
+        description="Where the episode and the sandbox mount the volume of the checkouts; the sandbox runs "
+        "commands only in directories under it.",
     )
     sandbox_agent_code: bool = Field(
         default=False,
