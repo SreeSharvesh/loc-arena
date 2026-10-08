@@ -83,7 +83,8 @@ def open_gateway(tmp_path: Path, upstream: Upstream) -> TestClient:
 
 def wait_for_calls(tmp_path: Path, timeout_seconds: float = 5.0) -> list[GatewayCall]:
     deadline = time.monotonic() + timeout_seconds
-    while not (tmp_path / "calls.jsonl").exists() and time.monotonic() < deadline:
+    call_log = tmp_path / "calls.jsonl"
+    while not (call_log.exists() and call_log.read_text().endswith("\n")) and time.monotonic() < deadline:
         time.sleep(0.02)
     return read_calls(tmp_path)
 
