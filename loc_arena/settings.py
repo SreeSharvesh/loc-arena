@@ -103,7 +103,7 @@ class StackSettings(SettingsGroup):
     sandbox_agent_code: bool = Field(
         default=False,
         description="Run the agents' repo tests and the sealed benchmark in a throwaway container of `image` "
-        "with no network, instead of in the grading process.",
+        "with no network, instead of in the grading process. A stack run's grading on the host always does.",
     )
 
 

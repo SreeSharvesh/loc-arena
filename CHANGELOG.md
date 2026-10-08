@@ -8,6 +8,10 @@ log has the details.
 
 ### Added
 
+- **Grading on the host.** In `make run STACK=1` the episode container only plays the episode and its honest
+  twin; the host grades them from the copied-out run directory, always running the agents' code in the
+  no-network sandbox, while the gateway stays up so the monitors' model calls go through it and land in its
+  call log.
 - **Agent code in a sandbox.** With `stack.sandbox_agent_code`, the grader runs the agents' repo tests and the
   benchmark in a throwaway container with no network, so their code never runs on the host.
 - **Re-grading.** A played episode leaves a `snapshot.json` beside its logs and checkout, and `loc-arena grade`

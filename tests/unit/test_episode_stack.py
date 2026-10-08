@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from loc_arena.episode_stack import AGENT_NETWORK, EGRESS_NETWORK, ComposeDocument, render_compose
+from loc_arena.config import load_run_config
+from loc_arena.episode_stack import (
+    AGENT_NETWORK,
+    EGRESS_NETWORK,
+    ComposeDocument,
+    render_compose,
+    sandbox_agent_code,
+)
 from loc_arena.gateway import core
 from loc_arena.settings import GatewaySettings, LocArenaSettings, StackSettings
 
@@ -88,3 +95,20 @@ def test_the_image_and_episode_limits_come_from_the_stack_settings() -> None:
 
     limits = (episode["image"], episode["cpus"], episode["mem_limit"], episode["pids_limit"])
     assert limits == ("other:tag", 0.5, "1g", 64)
+
+
+def test_the_gateway_port_is_published_on_the_hosts_loopback_alone() -> None:
+    settings = LocArenaSettings(gateway=GatewaySettings(port=9191))
+
+    published = {name: service.get("ports") for name, service in render(settings)["services"].items()}
+
+    assert published == {"gateway": ["127.0.0.1::9191"], "episode": None}
+
+
+def test_grading_a_stack_run_sandboxes_the_agent_code_its_config_runs_in_process() -> None:
+    config = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+    assert not config.settings.stack.sandbox_agent_code
+
+    graded_with = sandbox_agent_code(config)
+
+    assert graded_with.settings.stack.sandbox_agent_code

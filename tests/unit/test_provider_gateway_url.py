@@ -52,6 +52,18 @@ def test_a_provider_behind_the_gateway_withholds_a_real_key_it_was_given(
     assert "sk-real" not in posted[0].headers["authorization"]
 
 
+def test_a_provider_given_a_gateway_url_posts_there_despite_a_key_in_the_environment(
+    monkeypatch: pytest.MonkeyPatch,
+    posted: list[httpx2.Request],
+) -> None:
+    monkeypatch.setenv(core.API_KEY_VARIABLE, "sk-real")
+    monkeypatch.delenv(core.GATEWAY_URL_VARIABLE, raising=False)
+
+    core.OpenRouterProvider(gateway_url=GATEWAY).generate("m", MESSAGES, 0.0, 8, None)
+
+    assert str(posted[0].url) == GATEWAY
+
+
 def test_a_gateway_url_alone_configures_a_live_provider(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(core.API_KEY_VARIABLE, raising=False)
     monkeypatch.setenv(core.GATEWAY_URL_VARIABLE, GATEWAY)
