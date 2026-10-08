@@ -22,8 +22,6 @@ from loc_arena.episode_stack import run_in_stack
 from loc_arena.harness import run_episode, run_sweep
 from loc_arena.logging_.viewer import build_index
 
-REPOSITORY = Path(__file__).resolve().parents[1]  # the repository root: its Dockerfile and configs/
-
 
 def _config_path(run: str) -> str:
     return run if run.endswith(".yaml") else f"configs/{run}.yaml"
@@ -45,7 +43,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         episode_arguments = ["--mode", args.mode]
         episode_arguments += ["--seed", str(args.seed)] if args.seed is not None else []
         episode_arguments += ["--minimal"] if args.minimal else []
-        return run_in_stack(args.run, episode_arguments, Path(args.out), REPOSITORY)
+        return run_in_stack(args.run, episode_arguments, Path(args.out))
     config = load_run_config(_config_path(args.run))
     out = run_episode(
         config,

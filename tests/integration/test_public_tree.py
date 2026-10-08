@@ -33,7 +33,7 @@ def test_public_tree_excludes_internals_and_keeps_the_essentials(tmp_path: Path)
         "configs",
         "scenarios",
         "tests",
-        "compose.yaml",
+        "Dockerfile",
         "Makefile",
         "README.md",
         ".env.example",

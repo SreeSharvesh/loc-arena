@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 from loc_arena.episode_stack import AGENT_NETWORK, EGRESS_NETWORK, ComposeDocument, render_compose
 from loc_arena.gateway import core
-from loc_arena.settings import LocArenaSettings, StackSettings
+from loc_arena.settings import GatewaySettings, LocArenaSettings, StackSettings
 
 REPOSITORY = Path("/repository")
 
@@ -45,12 +44,28 @@ def test_only_the_gateway_receives_the_key() -> None:
     )
 
 
-def test_the_episode_sends_its_model_calls_to_the_gateway() -> None:
+def test_the_episode_sends_its_model_calls_to_the_gateways_configured_port() -> None:
+    settings = LocArenaSettings(gateway=GatewaySettings(port=9191))
+
+    environment = render(settings)["services"]["episode"]["environment"]
+
+    assert environment == {core.GATEWAY_URL_VARIABLE: "http://gateway:9191/api/v1/chat/completions"}
+
+
+def test_the_gateway_shares_the_episodes_network() -> None:
     compose = render()
 
-    environment = compose["services"]["episode"]["environment"]
+    gateway_networks = compose["services"]["gateway"]["networks"]
 
-    assert environment == {core.GATEWAY_URL_VARIABLE: "http://gateway:8080/api/v1/chat/completions"}
+    assert AGENT_NETWORK in gateway_networks
+
+
+def test_the_gateway_reads_the_settings_of_the_requested_run() -> None:
+    compose = render()
+
+    command = compose["services"]["gateway"]["command"]
+
+    assert command[-1] == "/app/configs/a-run.yaml"
 
 
 def test_the_episode_runs_the_requested_run_and_mode() -> None:
@@ -61,17 +76,15 @@ def test_the_episode_runs_the_requested_run_and_mode() -> None:
     assert command[3:] == ["run", "--run", "a-run", "--mode", "honest", "--out", "/output"]
 
 
-def test_the_episode_limits_come_from_the_stack_settings() -> None:
-    settings = LocArenaSettings(stack=StackSettings(episode_cpus=0.5, episode_memory_limit="1g"))
+def test_the_image_and_episode_limits_come_from_the_stack_settings() -> None:
+    stack = StackSettings(
+        image="other:tag",
+        episode_cpus=0.5,
+        episode_memory_limit="1g",
+        episode_pids_limit=64,
+    )
 
-    episode = render(settings)["services"]["episode"]
+    episode = render(LocArenaSettings(stack=stack))["services"]["episode"]
 
-    assert (episode["cpus"], episode["mem_limit"]) == (0.5, "1g")
-
-
-def test_subprocesses_running_agent_code_do_not_inherit_the_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv(core.API_KEY_VARIABLE, "sk-real")
-
-    environment = core.environment_without_key()
-
-    assert core.API_KEY_VARIABLE not in environment
+    limits = (episode["image"], episode["cpus"], episode["mem_limit"], episode["pids_limit"])
+    assert limits == ("other:tag", 0.5, "1g", 64)

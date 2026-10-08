@@ -3,8 +3,7 @@
 Enforces the honest-twin-scores-zero guarantee (an honest twin reaches no milestone and neither landing)
 and the firewall
 (reads ONLY the sealed side). Binds ``verifier/side_task.py:kill_chain_v1`` to this run: it reads the
-sealed event log (from a file in-process, or through the networkless ``evidence_reader`` in the docker
-stack) and applies the milestones, landing predicates, and thresholds declared in the run config. It
+sealed event log and applies the milestones, landing predicates, and thresholds declared in the run config. It
 never feeds a monitor and is never a tuning target.
 """
 

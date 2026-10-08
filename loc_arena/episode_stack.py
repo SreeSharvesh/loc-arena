@@ -12,19 +12,20 @@ import secrets
 import subprocess
 from pathlib import Path, PurePosixPath
 from typing import TypedDict
+from urllib.parse import urlsplit
 
 import yaml
 
 from loc_arena.config import load_settings
-from loc_arena.gateway.core import API_KEY_VARIABLE, GATEWAY_URL_VARIABLE
+from loc_arena.gateway.core import API_KEY_VARIABLE, GATEWAY_URL_VARIABLE, OPENROUTER_URL
 from loc_arena.settings import LocArenaSettings
 
 AGENT_NETWORK = "agent-net"  # the episode and the gateway, with no route out
 EGRESS_NETWORK = "egress-net"  # the gateway alone: its route to the provider
-KEY_SECRET = "openrouter_api_key"  # the compose secret, a file in the gateway's settings.gateway.secrets_dir
+KEY_SECRET_NAME = "openrouter_api_key"  # the compose secret: a file in settings.gateway.secrets_dir
 OUTPUT_DIRECTORY = PurePosixPath("/output")  # the episode's audit bundles; the image creates it for nobody
 CONFIGS_DIRECTORY = PurePosixPath("/app/configs")  # the run configs, mounted read-only
-CHAT_COMPLETIONS = "api/v1/chat/completions"
+REPOSITORY = Path(__file__).resolve().parents[1]  # its Dockerfile and configs/
 
 
 class Healthcheck(TypedDict):
@@ -82,10 +83,14 @@ def render_compose(
             "gateway": {
                 **shared,
                 "command": ["python", "-m", "loc_arena.gateway.proxy", f"{CONFIGS_DIRECTORY}/{run}.yaml"],
-                "secrets": [KEY_SECRET],
+                "secrets": [KEY_SECRET_NAME],
                 "volumes": [f"sealed:{gateway.call_log.parent}", configs],
                 "networks": [AGENT_NETWORK, EGRESS_NETWORK],
-                "healthcheck": {"test": ["CMD", "python", "-c", probe], "interval": "2s", "retries": 15},
+                "healthcheck": {
+                    "test": ["CMD", "python", "-c", probe],
+                    "interval": f"{stack.gateway_health_interval_seconds}s",
+                    "retries": stack.gateway_health_retries,
+                },
             },
             "episode": {
                 **shared,
@@ -93,7 +98,9 @@ def render_compose(
                     *["python", "-m", "loc_arena.cli", "run", "--run", run, *episode_arguments],
                     *["--out", str(OUTPUT_DIRECTORY)],
                 ],
-                "environment": {GATEWAY_URL_VARIABLE: f"http://gateway:{gateway.port}/{CHAT_COMPLETIONS}"},
+                "environment": {
+                    GATEWAY_URL_VARIABLE: f"http://gateway:{gateway.port}{urlsplit(OPENROUTER_URL).path}",
+                },
                 "volumes": [f"output:{OUTPUT_DIRECTORY}", configs],
                 "networks": [AGENT_NETWORK],
                 "depends_on": {"gateway": {"condition": "service_healthy"}},
@@ -104,31 +111,52 @@ def render_compose(
         },
         "networks": {AGENT_NETWORK: {"internal": True}, EGRESS_NETWORK: {"internal": False}},
         "volumes": {"sealed": {}, "output": {}},
-        "secrets": {KEY_SECRET: {"environment": API_KEY_VARIABLE}},
+        "secrets": {KEY_SECRET_NAME: {"environment": API_KEY_VARIABLE}},
     }
 
 
-def run_in_stack(run: str, episode_arguments: list[str], logs: Path, repository: Path) -> int:
-    """Run one episode in its own compose project, copy its logs into ``logs``, and return its exit code."""
+def run_in_stack(run: str, episode_arguments: list[str], logs: Path) -> int:
+    """Run one episode of ``run`` (a config in ``configs/``) in its own compose project; return its exit code.
+
+    Its bundle and the gateway's call log are copied into ``logs`` and the project is removed, on Ctrl-C too.
+    When a copy fails the project is kept, so nothing recorded is lost.
+    """
+    run = Path(run).name.removesuffix(".yaml")
     project = f"locarena-{secrets.token_hex(3)}"
-    settings = load_settings(repository / "configs" / f"{run}.yaml")
+    settings = load_settings(REPOSITORY / "configs" / f"{run}.yaml")
     compose_file = logs / "compose" / f"{project}.yaml"
     compose_file.parent.mkdir(parents=True, exist_ok=True)
-    document = render_compose(settings, repository, run, episode_arguments)
-    compose_file.write_text(yaml.safe_dump(document, sort_keys=False))
-    compose = ["docker", "compose", "-p", project, "-f", str(compose_file)]
-
-    # --exit-code-from stops the gateway when the episode exits
-    up = [*compose, "up", "--build", "--attach", "episode", "--exit-code-from", "episode"]
-    episode = subprocess.run(up)
+    compose_file.write_text(yaml.safe_dump(render_compose(settings, REPOSITORY, run, episode_arguments)))
+    # The repository is the project directory, so compose reads the key from its .env as `make run` does.
+    compose = [
+        "docker",
+        "compose",
+        "-p",
+        project,
+        "-f",
+        str(compose_file),
+        "--project-directory",
+        str(REPOSITORY),
+    ]
     call_log = logs / "gateway" / f"{project}.calls.jsonl"
     call_log.parent.mkdir(parents=True, exist_ok=True)
-    copies = [
-        [*compose, "cp", f"episode:{OUTPUT_DIRECTORY}/.", str(logs)],
-        [*compose, "cp", f"gateway:{settings.gateway.call_log}", str(call_log)],
-    ]
-    if any(subprocess.run(copy).returncode != 0 for copy in copies):
-        subprocess.run([*compose, "stop"])
-        raise StackError(f"could not copy the logs out: kept compose project {project} and its volumes")
-    subprocess.run([*compose, "down", "--volumes", "--remove-orphans"])
-    return episode.returncode
+    keep_project = False
+    try:
+        # --exit-code-from stops the gateway when the episode exits
+        episode = subprocess.run(
+            [*compose, "up", "--build", "--attach", "episode", "--exit-code-from", "episode"],
+        )
+        copies = [
+            [*compose, "cp", f"episode:{OUTPUT_DIRECTORY}/.", str(logs)],
+            [*compose, "cp", f"gateway:{settings.gateway.call_log}", str(call_log)],
+        ]
+        if any(subprocess.run(copy).returncode != 0 for copy in copies):
+            keep_project = True
+            subprocess.run([*compose, "stop"])
+            raise StackError(
+                f"could not copy the logs out (see compose's output above): kept project {project}",
+            )
+        return episode.returncode
+    finally:
+        if not keep_project:
+            subprocess.run([*compose, "down", "--volumes", "--remove-orphans"])

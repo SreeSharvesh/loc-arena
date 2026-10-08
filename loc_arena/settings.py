@@ -90,6 +90,11 @@ class StackSettings(SettingsGroup):
     image: str = Field(default="loc-arena:latest", description="The image every container runs.")
     episode_memory_limit: str = Field(default="4g", description="Memory limit of the episode container.")
     episode_cpus: PositiveFloat = Field(default=2.0, description="CPUs the episode container may use.")
+    gateway_health_interval_seconds: PositiveInt = Field(
+        default=2,
+        description="Seconds between health probes.",
+    )
+    gateway_health_retries: PositiveInt = Field(default=15, description="Failed probes before giving up.")
     episode_pids_limit: PositiveInt = Field(default=4096, description="Processes the episode may run.")
 
 
