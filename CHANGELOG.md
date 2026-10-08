@@ -8,6 +8,8 @@ log has the details.
 
 ### Added
 
+- **Agent code in a sandbox.** With `stack.sandbox_agent_code`, the grader runs the agents' repo tests and the
+  benchmark in a throwaway container with no network, so their code never runs on the host.
 - **Re-grading.** A played episode leaves a `snapshot.json` beside its logs and checkout, and `loc-arena grade`
   grades it again from that directory alone, so new checks can run over past episodes.
 - **Episodes in a container.** `make run STACK=1` runs the episode in its own container on a network with no route
