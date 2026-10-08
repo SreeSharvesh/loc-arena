@@ -14,8 +14,8 @@ log has the details.
 - **The gateway container.** Holds the OpenRouter key alone, forwards OpenRouter-shaped requests on allowed paths
   to its one https upstream, and records every call with the container that made it, complete or not. Any harness
   that speaks OpenRouter works by changing its base URL. (#65)
-- **Code review.** CodeRabbit reviews every pull request against `AGENTS.md` and the repository's own ast-grep
-  rules. (#64)
+- **Code review.** CodeRabbit reviews each pull request out of draft, unless its title marks it as work in
+  progress, against `AGENTS.md` and the repository's own ast-grep rules. (#64)
 
 ### Changed
 
