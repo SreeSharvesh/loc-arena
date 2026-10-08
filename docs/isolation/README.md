@@ -16,7 +16,7 @@ the run; the episode itself stays in this process.
 
 ## After step 4: safe runs
 
-![After step 4: one compose project per episode; the episode container and the gateway on agent-net, the gateway alone on egress-net, the grader with no network](02-safe-runs.png)
+![After step 4: one compose project per episode; the episode container and the gateway on agent-net, the gateway alone on egress-net](02-safe-runs.png)
 
 ## After step 6: a sandbox per agent and live services
 
@@ -26,14 +26,17 @@ the run; the episode itself stays in this process.
 
 ![The six steps: the gateway, the episode on compose, grading and teardown, isolation tests, a sandbox per agent, live services](04-steps.png)
 
-The deterministic run's scores stay unchanged through every step.
+The deterministic run's scores stay unchanged through every step. Steps 1 and 2 have shipped (#65, #66); steps 3 to
+6 describe what comes next.
 
 1. **The gateway.** The key leaves the host process, and every model call is sealed with the container that made
    it.
-2. **The episode on compose.** Today's run moves into a container on agent-net with no key and no internet, and
-   `bash` turns on.
-3. **Grading and teardown.** The grader runs with no network. `make run` records Docker's own events for the project,
-   copies the logs out and tears down, Ctrl-C included.
+2. **The episode on compose.** Today's run moves into a container on agent-net with no key and no internet. When
+   it ends, Ctrl-C included, its logs are copied out and the project is torn down; if a copy fails, the project
+   is kept so nothing recorded is lost.
+3. **Grading on the host, as in LinuxArena.** Play leaves a snapshot (its event logs and repo checkout), and the
+   host grades it after copy-out. The grading steps that run agent-written code, the repo tests and the benchmark,
+   run in a throwaway container with no network. The episode image holds no grader answers, and `bash` turns on.
 4. **Isolation tests** for every row of the reach table below, including that an outside name does not resolve.
 5. **A sandbox per agent, with permissions.** One `sandbox-<agent id>` per agent. The agent loop stays in the
    episode container and sends each tool call to the agent's sandbox through the execution server from the closed
@@ -60,11 +63,12 @@ sends the whole conversation on every call, so the sealed log also holds each to
 
 ## The compose file
 
-`render_compose` turns `configs/env.default.yaml` into `compose.yaml`; `make run` brings it up under the episode's
-own project name, runs the grader, copies the logs and the sealed call log out, and tears it down.
+`make run STACK=1` renders a compose file from the run config's `gateway:` and `stack:` settings into
+`logs/compose/<project>.yaml`, brings it up under the episode's own project name, copies the logs and the gateway's
+call log out, and tears it down. From step 3 it also grades the snapshot on the host.
 
 <details>
-<summary>The rendered compose file after step 3</summary>
+<summary>A sketch of the rendered compose file (abridged)</summary>
 
 ```yaml
 services:
@@ -80,12 +84,6 @@ services:
     environment: {LOC_ARENA_GATEWAY_URL: http://gateway:8080/api/v1/chat/completions}
     volumes: [workspace:/app/workspace, output:/app/logs]
     networks: [agent-net]
-  grader:                   # runs after the episode
-    build: .
-    command: python -m loc_arena.grader
-    network_mode: none
-    volumes: [workspace:/app/workspace:ro, output:/app/logs]
-    profiles: [grade]
 networks:
   agent-net: {internal: true}
   egress-net: {}
@@ -103,8 +101,9 @@ volumes: {sealed: {}, workspace: {}, output: {}}
 ## Recycled and shipped on its own
 
 From the closed stack (#37–#51), these come back inside the steps: the image build with the scenario's codebase
-(#44), one compose project per episode with teardown on Ctrl-C and on a hung Docker daemon (#42, #51), the grader
-with no network and the execution server (#39), and per-agent networks and volumes (#45). The separate edge, core
+(#44), one compose project per episode with teardown on Ctrl-C (shipped in step 2) and on a hung Docker daemon
+(#42, #51; still to come), the execution
+server (#39), and per-agent networks and volumes (#45). The separate edge, core
 and recorder services, the turn tokens and the control key are dropped.
 
 These do not depend on Docker and land as their own small PRs: the run config validated with pydantic (#48), one
