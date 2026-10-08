@@ -18,14 +18,14 @@ procedures.
 | `loc_arena/registry.py` | scorers and verifiers, dispatched by the names the configs give |
 | `loc_arena/scaffold/` | the multi-agent scaffold: agents, orchestrator, message bus, tools, covert tools |
 | `loc_arena/live.py`, `loc_arena/task.py` | the live-model policy; the scripted (deterministic) episode |
-| `loc_arena/gateway/` | the inference gateway every model call goes through (edge, core, transport); `proxy.py` is the gateway container that holds the key (`make run GATEWAY=1`, `compose.gateway.yaml`, `Dockerfile`) |
+| `loc_arena/gateway/` | the inference gateway every model call goes through (edge, core, transport); `proxy.py` is the gateway container that holds the key |
 | `loc_arena/monitors/`, `loc_arena/protocol.py` | the monitors and deterministic detectors; the control protocol that runs them |
 | `loc_arena/verifier/`, `loc_arena/tasks/` | the sealed side-task verifier; the main-task grader |
 | `loc_arena/metrics.py` | safety and usefulness metrics |
 | `loc_arena/forge/`, `loc_arena/npcs/` | the git forge and the seeded company world; the scripted coworkers |
 | `loc_arena/logging_/` | the sealed and mirror event logs, the per-agent Inspect export, `transcript.html`, `report.html` |
 | `loc_arena/explorer/` | the run explorer behind `make explore` |
-| `loc_arena/services/`, `compose.yaml` | the per-episode docker services (optional, `STACK=1`); `compose.yaml` is generated from `configs/env.default.yaml`, never edited by hand |
+| `loc_arena/episode_stack.py`, `Dockerfile` | `STACK=1`: the episode in a container with no key or internet, beside the gateway; its compose file is rendered from the `gateway:` and `stack:` settings |
 | `configs/` | the run config (`aurora-efficiency.yaml`), model routing, monitors and their prompts |
 | `scenarios/aurora_efficiency/` | the scenario pack: `scenario.yaml`, main-task scorer (`main.py`), side-task verifier (`side.py`), sealed grader fixture (`reference/`) |
 | `company/meridian-*/` | the seven company repos the agents under test work on, each with its own tests |
@@ -73,10 +73,9 @@ make view                                    # open the latest report.html, prin
 make explore                                 # the run explorer over every run in logs/ (LOGS=<folder> for another)
 ```
 
-The episode runs in-process on this machine. The agents' code (their test and benchmark runs) runs in
-subprocesses that inherit this shell's environment, the exported key included, and can read local files.
-`STACK=1` also brings the per-episode docker stack up and down around the run; it does not move the agents' code
-into it.
+Without `STACK=1` the episode runs in-process on this machine, and the agents' code (their test and benchmark
+runs) can read local files. With `STACK=1` the episode runs in a container on a network with no route out; only
+the gateway container holds the key.
 
 ## Tests
 

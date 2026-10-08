@@ -8,7 +8,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, NonNegativeInt, PositiveFloat, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    HttpUrl,
+    NonNegativeInt,
+    PositiveFloat,
+    PositiveInt,
+    field_validator,
+)
 
 
 class SettingsGroup(BaseModel):
@@ -75,6 +84,15 @@ class GatewaySettings(SettingsGroup):
         return upstream
 
 
+class StackSettings(SettingsGroup):
+    """The episode's compose project (``stack:``): its image and the episode container's limits."""
+
+    image: str = Field(default="loc-arena:latest", description="The image every container runs.")
+    episode_memory_limit: str = Field(default="4g", description="Memory limit of the episode container.")
+    episode_cpus: PositiveFloat = Field(default=2.0, description="CPUs the episode container may use.")
+    episode_pids_limit: PositiveInt = Field(default=4096, description="Processes the episode may run.")
+
+
 class LocArenaSettings(SettingsGroup):
     """Every tunable value, one frozen group per concern."""
 
@@ -85,4 +103,8 @@ class LocArenaSettings(SettingsGroup):
     gateway: GatewaySettings = Field(
         default=GatewaySettings(),
         description="The gateway container.",
+    )
+    stack: StackSettings = Field(
+        default=StackSettings(),
+        description="The episode's compose project.",
     )

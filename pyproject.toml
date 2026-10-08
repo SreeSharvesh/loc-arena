@@ -11,6 +11,7 @@ dependencies = [
   "anyio>=4.15.1",
   "httpx>=0.27",
   "uvicorn>=0.54.0",
+  "pytest>=9.1.1",  # the episode and the grader run the company repos' tests
   "inspect-ai>=0.3.239,<0.4",
   "pygments>=2.18",
   "pydantic>=2.13.5",
@@ -32,7 +33,6 @@ packages = ["loc_arena"]
 dev = [
   "ruff>=0.6",
   "ty>=0.0.84",
-  "pytest>=8.0",
   "types-PyYAML>=6.0",
   "types-pygments>=2.18",
 ]

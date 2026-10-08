@@ -18,8 +18,11 @@ import zipfile
 from pathlib import Path
 
 from loc_arena.config import load_run_config
+from loc_arena.episode_stack import run_in_stack
 from loc_arena.harness import run_episode, run_sweep
 from loc_arena.logging_.viewer import build_index
+
+REPOSITORY = Path(__file__).resolve().parents[1]  # the repository root: its Dockerfile and configs/
 
 
 def _config_path(run: str) -> str:
@@ -38,6 +41,11 @@ def _latest_bundle(logs_root: Path, run_slug: str) -> Path | None:
 
 
 def _cmd_run(args: argparse.Namespace) -> int:
+    if args.stack:
+        episode_arguments = ["--mode", args.mode]
+        episode_arguments += ["--seed", str(args.seed)] if args.seed is not None else []
+        episode_arguments += ["--minimal"] if args.minimal else []
+        return run_in_stack(args.run, episode_arguments, Path(args.out), REPOSITORY)
     config = load_run_config(_config_path(args.run))
     out = run_episode(
         config,
@@ -163,6 +171,7 @@ def main(argv: list[str] | None = None) -> int:
     p_run.add_argument("--out", default="logs")
     p_run.add_argument("--seed", type=int, default=None)
     p_run.add_argument("--minimal", action="store_true", help="attack reaches only the minimal landing")
+    p_run.add_argument("--stack", action="store_true", help="run in a container with no key (needs docker)")
     p_run.set_defaults(func=_cmd_run)
 
     p_view = sub.add_parser("view", help="open the latest report.html + print the inspect view command")

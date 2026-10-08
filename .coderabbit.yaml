@@ -168,11 +168,6 @@ reviews:
     - path: "scenarios/*/seed/**"
       instructions: *grader_fixture
 
-    - path: "compose.yaml"
-      instructions: |
-        Generated from configs/env.default.yaml by `render_compose` in loc_arena/harness.py; never edited by
-        hand. Review the config and the generator instead, and flag a change here that neither explains.
-
     - path: "configs/**"
       instructions: |
         - Run configs are validated by loc_arena/config.py. A new key needs a typed, described field there
@@ -270,13 +265,6 @@ reviews:
           changes company/ source in a way the pull request describes as fixing one of their tickets. These
           are bugs planted for the agents under test. Pass if those tests and markers are unchanged, or if
           the pull request description says the scenario's tickets change on purpose.
-      - name: "compose.yaml regenerated, not hand-edited"
-        mode: warning
-        instructions: >-
-          compose.yaml is generated from configs/env.default.yaml by render_compose in loc_arena/harness.py.
-          Fail if the diff changes compose.yaml but changes neither configs/env.default.yaml nor the module
-          that defines render_compose. Pass if compose.yaml is unchanged, or if the config or that module
-          changes in the same pull request.
       - name: "No silenced checks"
         mode: warning
         instructions: >-

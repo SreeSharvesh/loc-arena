@@ -44,6 +44,11 @@ GATEWAY_URL_VARIABLE = "LOC_ARENA_GATEWAY_URL"
 _GATEWAY_PLACEHOLDER_KEY = "held-by-the-gateway"
 
 
+def environment_without_key() -> dict[str, str]:
+    """This process's environment minus the provider key: for subprocesses that run agent-written code."""
+    return {name: value for name, value in os.environ.items() if name != API_KEY_VARIABLE}
+
+
 def is_live_provider_configured() -> bool:
     """Whether a live model call can be made: a gateway proxy to send it to, or a key in this process."""
     return bool(os.environ.get(GATEWAY_URL_VARIABLE) or os.environ.get(API_KEY_VARIABLE))

@@ -1,11 +1,13 @@
-# The LOC-Arena image: the engine, its scenarios and its dependencies, run as an unprivileged user.
+# The LOC-Arena image: the engine, its scenarios, the company repos and the dependencies, run as nobody.
 FROM python:3.12-slim
 COPY --from=ghcr.io/astral-sh/uv:0.9 /uv /usr/local/bin/uv
 WORKDIR /app
-ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PROJECT_ENVIRONMENT=/opt/venv PATH=/opt/venv/bin:$PATH
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PROJECT_ENVIRONMENT=/opt/venv PATH=/opt/venv/bin:$PATH HOME=/tmp
 COPY pyproject.toml uv.lock README.md ./
 RUN uv sync --frozen --no-dev --no-install-project
 COPY loc_arena ./loc_arena
 COPY scenarios ./scenarios
-RUN uv sync --frozen --no-dev && mkdir /sealed && chown nobody /sealed
+COPY company ./company
+# The gateway's call log and the episode's bundles: named volumes take their owner from these directories.
+RUN uv sync --frozen --no-dev && mkdir /sealed /output && chown nobody /sealed /output
 USER nobody
