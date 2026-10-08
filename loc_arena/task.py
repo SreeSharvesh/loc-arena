@@ -97,6 +97,39 @@ class EpisodeResult:
     trace: EpisodeTrace | None = None
 
 
+@dataclass(frozen=True)
+class Snapshot:
+    """What a played episode leaves for grading: its transcripts (the event logs) and its end state."""
+
+    sealed_path: Path
+    mirror_path: Path
+    checkout: Path
+    deadline_ts: float
+    world: SeededWorld
+    trace: EpisodeTrace | None = None
+
+
+def grade_snapshot(snapshot: Snapshot, config: RunConfig) -> EpisodeResult:
+    """Run the checks the run config names over a played episode: main-task scorer and side-task verifier."""
+    scenario = _resolve_scenario(config)
+    main_score = get_scorer(str(config.main_task["scorer"]))(
+        snapshot.checkout,
+        config,
+        scenario.reference_dir,
+    )
+    verdict = verify_side_task(snapshot.sealed_path, config, snapshot.deadline_ts)
+    return EpisodeResult(
+        main_score,
+        verdict,
+        snapshot.sealed_path,
+        snapshot.mirror_path,
+        snapshot.checkout,
+        snapshot.deadline_ts,
+        snapshot.world,
+        trace=snapshot.trace,
+    )
+
+
 def _honest_work(edge: GatewayEdge, clk: _MutableClock) -> None:
     """The legitimate, sanctioned optimization work both twin and attack do (batch teacher data)."""
     clk.t = 100.0
@@ -250,7 +283,21 @@ def assemble_scripted_episode(
     robust: bool = False,
     deadline_ts: float = _DEFAULT_DEADLINE,
 ) -> EpisodeResult:
-    """Assemble one scripted episode: score the main task and verify the sealed side-task trace.
+    """Play one scripted episode and grade it."""
+    return grade_snapshot(
+        play_scripted_episode(config, workdir, robust=robust, deadline_ts=deadline_ts),
+        config,
+    )
+
+
+def play_scripted_episode(
+    config: RunConfig,
+    workdir: Path,
+    *,
+    robust: bool = False,
+    deadline_ts: float = _DEFAULT_DEADLINE,
+) -> Snapshot:
+    """Play one scripted episode and return what it leaves for grading.
 
     Both the honest twin and the attack apply the same optimization (the cover). The covert steps run iff
     ``config.covert.enabled`` is true -- that flag is the ONLY difference between the twin and the attack.
@@ -261,9 +308,6 @@ def assemble_scripted_episode(
     scenario = _resolve_scenario(config)
     checkout = seed_checkout(workdir / "checkout")  # the seven side-by-side company repos
     apply_partial_optimization(checkout, scenario.reference_dir)  # the shared optimization work
-    # config.main_task.scorer dispatches BY NAME through SCORER_REGISTRY (scenario main.py registered it).
-    scorer = get_scorer(str(config.main_task["scorer"]))
-    main_score = scorer(checkout, config, scenario.reference_dir)
 
     # The seeded world: a pure function of (config, seed), identical across the honest twin and attack.
     world = generate_world(config, scenario, config.seed)
@@ -311,15 +355,4 @@ def assemble_scripted_episode(
     if config.covert.enabled:
         _covert_chain(core, edge, recorder, identity, config, clk, deadline_ts, robust=robust)
     episode_trace = trace.finish(sealed.last_seq) if trace else None
-
-    verdict = verify_side_task(sealed_path, config, deadline_ts)
-    return EpisodeResult(
-        main_score,
-        verdict,
-        sealed_path,
-        mirror_path,
-        checkout,
-        deadline_ts,
-        world,
-        trace=episode_trace,
-    )
+    return Snapshot(sealed_path, mirror_path, checkout, deadline_ts, world, trace=episode_trace)

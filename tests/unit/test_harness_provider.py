@@ -15,20 +15,22 @@ from loc_arena.logging_.agent_trace import AgentTrace
 LIVE = dataclasses.replace(load_run_config("configs/aurora-efficiency.deterministic.yaml"), policy="model")
 
 
-def test_assemble_by_policy_hands_the_provider_to_the_live_assembler(
+def test_play_by_policy_hands_the_provider_to_the_live_episode(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     seen: dict[str, Any] = {}
 
-    def fake_assemble(config: object, workdir: Path, *, provider: object = None) -> str:
+    def fake_play(config: object, workdir: Path, *, provider: object = None) -> str:
         seen["provider"] = provider
-        return "episode"
+        return "snapshot"
 
-    monkeypatch.setattr(live, "assemble_model_episode", fake_assemble)
+    monkeypatch.setattr(live, "play_model_episode", fake_play)
     marker = object()
-    assert harness._assemble_by_policy(LIVE, tmp_path, robust=False, provider=marker) == "episode"
-    assert seen["provider"] is marker
+
+    played = harness._play_by_policy(LIVE, tmp_path, robust=False, provider=marker)
+
+    assert (played, seen["provider"]) == ("snapshot", marker)
 
 
 def _bundle_inputs(tmp_path: Path) -> SimpleNamespace:
@@ -131,12 +133,13 @@ def test_run_episode_gives_the_honest_twin_its_own_provider(
     def capture(cfg: object, workdir: Path, *, robust: bool, provider: Any = None) -> SimpleNamespace:
         seen[workdir.name] = provider
         if workdir.name == "honest_cal":
-            raise _StopAfterAssemblyError
+            raise _StopAfterPlayError
         return SimpleNamespace()
 
-    monkeypatch.setattr(harness, "_assemble_by_policy", capture)
+    monkeypatch.setattr(harness, "_play_by_policy", capture)
+    monkeypatch.setattr(harness, "grade_snapshot", lambda snapshot, _cfg: snapshot)
     graded, twin = object(), object()
-    with pytest.raises(_StopAfterAssemblyError):
+    with pytest.raises(_StopAfterPlayError):
         harness.run_episode(
             LIVE,
             mode="attack",
@@ -147,7 +150,7 @@ def test_run_episode_gives_the_honest_twin_its_own_provider(
     assert seen == {"episode": graded, "honest_cal": twin}
 
 
-class _StopAfterAssemblyError(Exception):
+class _StopAfterPlayError(Exception):
     pass
 
 
