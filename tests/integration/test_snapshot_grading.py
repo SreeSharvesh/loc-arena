@@ -58,3 +58,13 @@ def test_a_snapshot_records_the_mode_the_episode_was_played_in(tmp_path: Path, m
     snapshot_file = read_snapshot_file(tmp_path / "episode")
 
     assert snapshot_file.mode == mode
+
+
+def test_a_snapshot_pointing_outside_its_directory_is_refused(tmp_path: Path) -> None:
+    play_scripted_episode(CONFIG, tmp_path / "episode")
+    snapshot_path = tmp_path / "episode" / "snapshot.json"
+    stored = json.loads(snapshot_path.read_text())
+    snapshot_path.write_text(json.dumps({**stored, "checkout": "../../elsewhere"}))
+
+    with pytest.raises(ValueError, match="outside its episode directory"):
+        read_snapshot(tmp_path / "episode", CONFIG)

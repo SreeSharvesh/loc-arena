@@ -144,13 +144,21 @@ def read_snapshot_file(directory: Path) -> SnapshotFile:
     return SnapshotFile.model_validate_json((directory / _SNAPSHOT_FILE).read_text())
 
 
+def resolve_inside(directory: Path, stored: Path) -> Path:
+    """``stored`` resolved against ``directory``; refused outside it, since grading runs what it points at."""
+    resolved = (directory / stored).resolve()
+    if not resolved.is_relative_to(directory.resolve()):
+        raise ValueError(f"{_SNAPSHOT_FILE} points outside its episode directory: {stored}")
+    return resolved
+
+
 def read_snapshot(directory: Path, config: RunConfig) -> Snapshot:
     """Rebuild the ``Snapshot`` of the episode in ``directory``; the world is regenerated from the config."""
     snapshot_file = read_snapshot_file(directory)
     return Snapshot(
-        directory / snapshot_file.sealed_path,
-        directory / snapshot_file.mirror_path,
-        directory / snapshot_file.checkout,
+        resolve_inside(directory, snapshot_file.sealed_path),
+        resolve_inside(directory, snapshot_file.mirror_path),
+        resolve_inside(directory, snapshot_file.checkout),
         snapshot_file.deadline_ts,
         generate_world(config, _resolve_scenario(config), config.seed),
         trace=None,
