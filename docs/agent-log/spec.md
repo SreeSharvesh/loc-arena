@@ -19,7 +19,7 @@ to the World lane (NPCs, ticks, orchestrator closes).
 | # | Invariant | Reason |
 |---|---|---|
 | I1 | Sealed and mirror log bytes never change | the verifier, the monitors and the byte-identical repro test (`test_end_to_end.py:72-76`) read them |
-| I2 | The trace is held in memory and written only in `_write_bundle`, after both episodes | agent-run `run_tests` can read the run directory while an episode is live |
+| I2 | The trace is held in memory until both episodes have played, then written only to `played.json` (for grading) and by `_write_bundle` | agent-run `run_tests` can read the run directory while an episode is live |
 | I3 | Every sealed seq up to the episode boundary maps to exactly one lane; the exporter raises otherwise | `AppendOnlyLog.on_append` swallows subscriber exceptions (`events.py:212-216`) |
 | I4 | Sealed events after the boundary are post-episode and go to World | monitor calls are appended later by a second writer with no subscriber (`harness.py:667`) |
 | I5 | Everything sits behind `logging.agent_transcript` (on by default since the last PR of the stack) | flag-off runs keep the JSON placeholder and no transcript |

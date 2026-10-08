@@ -29,7 +29,7 @@ What to build is in `spec.md`; this file is how to build it.
 | Never | Because |
 |---|---|
 | write to the sealed or mirror log from the trace | I1 in `spec.md` |
-| write the trace to disk before `_write_bundle` | I2: agent-run code can read the run directory |
+| write the trace to disk before both episodes have played | I2: agent-run code can read the run directory |
 | assign a lane from `actor_uid` | NPC events are stamped with agent uids outside any turn |
 | hook the post-episode `GatewayCore` or `AppendOnlyLog` (`harness.py:667-668`) | monitor worker threads write there concurrently |
 

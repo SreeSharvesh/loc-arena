@@ -212,9 +212,15 @@ class OpenRouterProvider:
     OpenRouter directly with ``OPENROUTER_API_KEY`` (never logged).
     """
 
-    def __init__(self, api_key: str | None = None, *, timeout: float = 60.0) -> None:
-        """Read the gateway URL and the key from env; the key is optional behind the gateway."""
-        gateway_url = os.environ.get(GATEWAY_URL_VARIABLE)
+    def __init__(
+        self,
+        api_key: str | None = None,
+        *,
+        timeout: float = 60.0,
+        gateway_url: str | None = None,
+    ) -> None:
+        """Send to ``gateway_url``, else to the gateway the environment names, else to OpenRouter keyed."""
+        gateway_url = gateway_url or os.environ.get(GATEWAY_URL_VARIABLE)
         if gateway_url:  # the gateway adds the key: a real one would only travel the connection to it
             self._url, self._key = gateway_url, _GATEWAY_PLACEHOLDER_KEY
         else:

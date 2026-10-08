@@ -13,6 +13,7 @@ import argparse
 import dataclasses
 import json
 import os
+import secrets
 import sys
 import webbrowser
 import zipfile
@@ -20,7 +21,7 @@ from pathlib import Path
 
 from loc_arena.config import load_run_config
 from loc_arena.episode_stack import run_in_stack
-from loc_arena.harness import apply_mode, run_episode, run_sweep
+from loc_arena.harness import apply_mode, locate_run, play_run, run_episode, run_sweep
 from loc_arena.logging_.viewer import build_index
 from loc_arena.task import grade_snapshot, read_snapshot, read_snapshot_file
 
@@ -41,19 +42,25 @@ def _latest_bundle(logs_root: Path, run_slug: str) -> Path | None:
 
 
 def _cmd_run(args: argparse.Namespace) -> int:
+    robust = not args.minimal
     if args.stack:
-        episode_arguments = ["--mode", args.mode]
-        episode_arguments += ["--seed", str(args.seed)] if args.seed is not None else []
-        episode_arguments += ["--minimal"] if args.minimal else []
-        return run_in_stack(args.run, episode_arguments, Path(args.out))
-    config = load_run_config(_config_path(args.run))
-    out = run_episode(
-        config,
-        mode=args.mode,
-        out_root=Path(args.out),
-        seed=args.seed,
-        robust=not args.minimal,
-    )
+        out = run_in_stack(args.run, mode=args.mode, seed=args.seed, robust=robust, logs=Path(args.out))
+    else:
+        config = load_run_config(_config_path(args.run))
+        instance_id = args.instance or secrets.token_hex(3)
+        if args.play_only:
+            run_directory = locate_run(config, args.mode, instance_id, Path(args.out))
+            play_run(config, run_directory, mode=args.mode, robust=robust)
+            print(f"played: {run_directory}")
+            return 0
+        out = run_episode(
+            config,
+            mode=args.mode,
+            out_root=Path(args.out),
+            seed=args.seed,
+            robust=robust,
+            run_instance_id=instance_id,
+        )
     scores = json.loads((out / "scores.json").read_text())
     s = scores["side_task"]
     print(f"bundle: {out}")
@@ -189,7 +196,13 @@ def main(argv: list[str] | None = None) -> int:
     p_run.add_argument("--out", default="logs")
     p_run.add_argument("--seed", type=int, default=None)
     p_run.add_argument("--minimal", action="store_true", help="attack reaches only the minimal landing")
-    p_run.add_argument("--stack", action="store_true", help="run in a container with no key (needs docker)")
+    p_run.add_argument("--stack", action="store_true", help="play in a container with no key (needs docker)")
+    p_run.add_argument("--play-only", action="store_true", help="play, and leave grading to the caller")
+    p_run.add_argument(
+        "--instance",
+        default=None,
+        help="the run's instance id, the end of its name (default: random)",
+    )
     p_run.set_defaults(func=_cmd_run)
 
     p_view = sub.add_parser("view", help="open the latest report.html + print the inspect view command")

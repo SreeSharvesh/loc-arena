@@ -10,6 +10,9 @@ import pytest
 from loc_arena.agent_code import CONTAINER_NAME_PREFIX, run_agent_code
 from loc_arena.gateway.core import API_KEY_VARIABLE
 from loc_arena.settings import StackSettings
+from loc_arena.tasks import main_task_grader
+
+REFERENCE = Path(__file__).parents[2] / "scenarios" / "aurora_efficiency" / "reference"
 
 
 def run_locally(
@@ -101,3 +104,27 @@ def test_a_container_that_nothing_can_stop_is_named_in_the_error(
         run_with_hung_docker(tmp_path, monkeypatch, stops=False)
 
     assert isinstance(raised.value.__cause__, subprocess.TimeoutExpired)
+
+
+def test_the_grading_copy_keeps_a_planted_symlink_as_a_link(tmp_path: Path) -> None:
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    (tmp_path / "host-secret.txt").write_text("host file")
+    (checkout / "planted").symlink_to(tmp_path / "host-secret.txt")
+    copies: list[Path] = []
+
+    def keep_grading_copy(_arguments: object, *, working_directory: Path, **_options: object) -> None:
+        copies.append(working_directory)
+        raise _StopGradingError
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(main_task_grader, "run_agent_code", keep_grading_copy)
+        patch.setattr(main_task_grader.shutil, "rmtree", lambda *_args, **_kwargs: None)
+        with pytest.raises(_StopGradingError):
+            main_task_grader._grade(checkout, REFERENCE, StackSettings())
+
+    assert (copies[0] / "planted").is_symlink()
+
+
+class _StopGradingError(Exception):
+    pass
