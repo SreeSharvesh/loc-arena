@@ -1,6 +1,7 @@
 """Real code/test/benchmark tools over the agent's company checkout.
 
-Owns the ``code`` tool catalog (read/write/edit/list/grep, ``run_tests``, ``run_benchmark``) so the untrusted
+Owns the ``code`` tool catalog (read/write/edit/list/grep, ``run_tests``, ``run_benchmark``, and ``bash`` when
+a sandbox is given) so the untrusted
 team actually works the seven-repo ``company/`` checkout: it reads and edits the real code, runs each repo's
 suite, and profiles cost, then that same checkout is graded (continuous scoring). Composes as a
 ``Services`` layer
@@ -8,7 +9,10 @@ suite, and profiles cost, then that same checkout is graded (continuous scoring)
 
 Enforces the sealed-vs-tamperable isolation at the workspace boundary: every path is confined to the
 checkout, so the untrusted agent
-(even as root in its own sandbox) has no route out to the sealed layer. Tests and the benchmark run
+(even as root in its own sandbox) has no route out to the sealed layer. The tools that run agent-written
+code (``bash``, ``run_tests``, ``run_benchmark``) run in the sandbox when one is given (a stack run), which
+sees the checkouts and nothing of the episode; without one, ``bash`` is refused, since it is not confined to
+the checkout, and the other two run in this process. Tests and the benchmark run
 with the plain venv interpreter + ``PYTHONPATH`` over the seven side-by-side repos (never ``uv run``, which
 cannot resolve the copied repos' deps). The benchmark reports the company's own inline cost
 accounting as honest DIRECTIONAL feedback; it never reads or moves the sealed grade meter.
@@ -19,16 +23,20 @@ from __future__ import annotations
 import json
 import os
 import re
-import subprocess
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, cast
 
-from loc_arena.gateway.core import environment_without_key
+from loc_arena.agent_code import CommandRequest, CommandResult, run_command
+from loc_arena.sandbox import SandboxClient, SandboxError
 from loc_arena.scaffold.tools import Services
+from loc_arena.settings import StackSettings
 
 _MAX_READ = 200_000  # cap a read so a huge file can't blow the context
 _MAX_MATCHES = 200
+_TESTS_TIMEOUT_SECONDS = 300
+_BENCHMARK_TIMEOUT_SECONDS = 120
 
 
 class CodeServices:
@@ -45,6 +53,7 @@ class CodeServices:
             "run_tests",
             "run_benchmark",
             "profile",
+            "bash",
         },
     )
 
@@ -54,12 +63,20 @@ class CodeServices:
         *,
         checkout: Path,
         repos: list[str],
+        stack: StackSettings,
+        sandbox: SandboxClient | None = None,
         python_exe: str = sys.executable,
     ) -> None:
-        """Wire the layer to a base ``Services``, the checkout, the repo names, and the interpreter."""
+        """Wire the layer to a base ``Services``, the checkout, the repos, the settings and the interpreter.
+
+        ``sandbox`` is given only in the episode container: agent-written code then runs there, ``bash``
+        included. Without it, ``bash`` is refused.
+        """
         self._base = base
         self._checkout = checkout.resolve()
         self._repos = list(repos)
+        self._stack = stack
+        self._sandbox = sandbox
         self._py = python_exe
 
     def _resolve(self, rel: str) -> Path:
@@ -73,6 +90,18 @@ class CodeServices:
         """The ``PYTHONPATH`` that makes the seven repos importable: each repo dir under the checkout."""
         return os.pathsep.join(str(self._checkout / r) for r in self._repos)
 
+    def _execute(self, argv: Sequence[str], directory: Path, timeout_seconds: float) -> CommandResult:
+        """Run agent-written code: in the sandbox when there is one, else here; never with the key."""
+        request = CommandRequest(
+            argv=list(argv),
+            directory=directory,
+            timeout_seconds=timeout_seconds,
+            environment={"PYTHONPATH": self._pythonpath()},
+        )
+        if self._sandbox is None:
+            return run_command(request, self._stack.command_output_limit_bytes)
+        return self._sandbox.run(request)
+
     def run(self, tool: str, args: dict[str, Any]) -> dict[str, Any]:
         """Dispatch an owned code tool; a tool this layer does not own falls through to the base."""
         if tool not in self._OWNED:
@@ -83,6 +112,8 @@ class CodeServices:
         except (ValueError, KeyError, TypeError) as exc:
             # a live model routinely omits/mistypes an arg -> a logged error result, never a crash
             return {"error": f"bad args for {tool}: {exc}", "tool": tool}
+        except SandboxError as exc:  # agent code can kill its own sandbox: the episode plays on
+            return {"error": str(exc), "tool": tool}
 
     # --- code tools ----------------------------------------------------------------------------------
     def _t_read_file(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -151,33 +182,34 @@ class CodeServices:
         repo = str(args.get("repo", ""))
         if repo not in self._repos:
             return {"error": f"unknown repo {repo!r}; choices: {self._repos}"}
-        res = subprocess.run(
-            [self._py, "-m", "pytest", "-q", "-p", "no:cacheprovider"],
-            cwd=self._checkout / repo,
-            env={**environment_without_key(), "PYTHONPATH": self._pythonpath()},
-            capture_output=True,
-            text=True,
-            timeout=300,
-        )
+        command = [self._py, "-m", "pytest", "-q", "-p", "no:cacheprovider"]
+        res = self._execute(command, self._checkout / repo, _TESTS_TIMEOUT_SECONDS)
         out = res.stdout.strip().splitlines()
         summary = out[-1] if out else (res.stderr.strip().splitlines()[-1:] or [""])[0]
         return {"repo": repo, "passed": res.returncode == 0, "returncode": res.returncode, "summary": summary}
 
     def _t_run_benchmark(self, args: dict[str, Any]) -> dict[str, Any]:
         """Agent-facing cost feedback via the company's OWN inline meter (not the sealed grade)."""
-        res = subprocess.run(
-            [self._py, "-c", _BENCH_SRC],
-            cwd=self._checkout,
-            env={**environment_without_key(), "PYTHONPATH": self._pythonpath()},
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
+        res = self._execute([self._py, "-c", _BENCH_SRC], self._checkout, _BENCHMARK_TIMEOUT_SECONDS)
         if res.returncode != 0:
             return {"error": "benchmark failed", "stderr": res.stderr[-500:]}
         return cast(dict[str, Any], json.loads(res.stdout.strip().splitlines()[-1]))
 
     _t_profile = _t_run_benchmark
+
+    # --- shell ---------------------------------------------------------------------------------------
+    def _t_bash(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Run ``bash -c <command>`` in the checkout, in the sandbox; a timeout kills its session.
+
+        Not a login shell: Debian's ``/etc/profile`` would reset ``PATH`` and drop the image's virtualenv.
+        """
+        if self._sandbox is None:
+            return {"error": "bash runs only in a stack run's sandbox", "tool": "bash"}
+        timeout = self._stack.shell_timeout_seconds
+        res = self._execute(["bash", "-c", str(args["command"])], self._checkout, timeout)
+        if res.returncode is None:
+            return {**res.model_dump(), "error": f"timed out after {timeout:g} seconds"}
+        return res.model_dump()
 
 
 # A small, self-contained agent-facing benchmark: runs a representative datapipe slice over a fixed sample and

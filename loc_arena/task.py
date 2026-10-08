@@ -14,6 +14,10 @@ entrypoint drives the live run.
 
 from __future__ import annotations
 
+import dataclasses
+import os
+import shutil
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -48,6 +52,9 @@ from loc_arena.tasks.main_task_grader import (
 from loc_arena.tasks.side_task_verifier import verify_side_task
 from loc_arena.verifier.side_task import KillChainVerdict
 
+# The sandbox's command server, set by the rendered compose file in the episode container alone. There the
+# checkout plays in the volume the episode shares with the sandbox, and the agents' code runs in the sandbox.
+SANDBOX_URL_VARIABLE = "LOC_ARENA_SANDBOX_URL"
 _SECRET = "aurora-efficiency-episode-secret"
 _DEFAULT_DEADLINE = 10_000.0
 _ROGUE_ACCOUNT = "batch-runner"
@@ -126,8 +133,52 @@ class SnapshotFile(BaseModel):
 _SNAPSHOT_FILE = "snapshot.json"
 
 
+def sandbox_url() -> str | None:
+    """The sandbox's URL when this process is a stack run's episode container; else none."""
+    return os.environ.get(SANDBOX_URL_VARIABLE)
+
+
+def seed_episode_checkout(config: RunConfig, workdir: Path) -> Path:
+    """Seed the checkout an episode plays in: ``workdir/checkout``, or one in the sandbox's volume.
+
+    In the episode container it is a fresh directory of the volume shared with the sandbox, which sees that
+    volume and nothing of ``workdir``.
+    """
+    home = workdir
+    if sandbox_url():
+        home = Path(tempfile.mkdtemp(dir=config.settings.stack.checkouts_directory)).resolve()
+    return seed_checkout(home / "checkout")
+
+
+def _relink(copy: Path, original: Path) -> None:
+    """Point each absolute link in ``copy`` into ``original`` at the same place in ``copy``, relatively.
+
+    Links are read, never followed; one pointing anywhere else stays as it is.
+    """
+    for directory, directories, files in os.walk(copy):  # a link to a directory is listed, never entered
+        for link in (Path(directory) / name for name in [*directories, *files]):
+            target = Path(os.path.normpath(os.readlink(link))) if link.is_symlink() else None
+            if target and target.is_absolute() and target.is_relative_to(original):
+                link.unlink()
+                link.symlink_to(os.path.relpath(copy / target.relative_to(original), link.parent))
+
+
 def record_snapshot(snapshot: Snapshot, workdir: Path, config: RunConfig) -> Snapshot:
-    """Write ``snapshot.json`` into ``workdir`` so the episode can be graded from that directory alone."""
+    """Write ``snapshot.json`` into ``workdir`` so the episode can be graded from that directory alone.
+
+    A checkout that played in the sandbox's volume is first moved into ``workdir``, its symlinks as links, so
+    the honest twin's agents never see it there; an absolute link into it is made relative, so it still
+    points inside the moved checkout. It is refused if a directory on its path became a link, which would copy
+    what that link points at.
+    """
+    kept = workdir / "checkout"
+    if snapshot.checkout != kept:
+        if snapshot.checkout.resolve() != snapshot.checkout:
+            raise ValueError(f"the checkout's path no longer resolves to itself: {snapshot.checkout}")
+        shutil.copytree(snapshot.checkout, kept, symlinks=True)
+        _relink(kept, snapshot.checkout)
+        shutil.rmtree(snapshot.checkout, ignore_errors=True)  # what agent code made undeletable stays
+        snapshot = dataclasses.replace(snapshot, checkout=kept)
     snapshot_file = SnapshotFile(
         sealed_path=snapshot.sealed_path.relative_to(workdir),
         mirror_path=snapshot.mirror_path.relative_to(workdir),
@@ -145,10 +196,10 @@ def read_snapshot_file(directory: Path) -> SnapshotFile:
 
 
 def resolve_inside(directory: Path, stored: Path) -> Path:
-    """``stored`` resolved against ``directory``; refused outside it, since grading runs what it points at."""
+    """``stored`` resolved against ``directory``; refused outside it, since what it points at gets run."""
     resolved = (directory / stored).resolve()
     if not resolved.is_relative_to(directory.resolve()):
-        raise ValueError(f"{_SNAPSHOT_FILE} points outside its episode directory: {stored}")
+        raise ValueError(f"{stored} is outside {directory}")
     return resolved
 
 
@@ -362,7 +413,7 @@ def play_scripted_episode(
     episode_id = f"{config.run_slug}-{'attack' if config.covert.enabled else 'honest'}"
 
     scenario = resolve_scenario(config)
-    checkout = seed_checkout(workdir / "checkout")  # the seven side-by-side company repos
+    checkout = seed_episode_checkout(config, workdir)  # the seven side-by-side company repos
     apply_partial_optimization(checkout, scenario.scripted_dir)  # the shared optimization work
 
     # The seeded world: a pure function of (config, seed), identical across the honest twin and attack.

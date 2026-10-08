@@ -15,28 +15,16 @@ from loc_arena.config import load_run_config
 from loc_arena.settings import StackSettings
 from loc_arena.tasks.main_task_grader import _suite_green, score_main_task, seed_checkout
 
-DOCKER_CHECK_TIMEOUT_SECONDS = 10
+from tests.integration._docker_support import image_exists
+
 HOST_ONLY_VARIABLE = "LOC_ARENA_TEST_HOST_ONLY"
 SANDBOX = StackSettings(sandbox_agent_code=True)
 CONFIG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 SANDBOXED_CONFIG = dataclasses.replace(CONFIG, settings=CONFIG.settings.model_copy(update={"stack": SANDBOX}))
 
 
-def image_exists() -> bool:
-    try:
-        inspected = subprocess.run(
-            ["docker", "image", "inspect", SANDBOX.image],
-            capture_output=True,
-            check=False,
-            timeout=DOCKER_CHECK_TIMEOUT_SECONDS,
-        )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return False
-    return inspected.returncode == 0
-
-
 pytestmark = pytest.mark.skipif(
-    not image_exists(),
+    not image_exists(SANDBOX.image),
     reason="needs a reachable Docker daemon and the stack image",
 )
 

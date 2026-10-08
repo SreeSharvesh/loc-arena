@@ -6,6 +6,7 @@ on the same checkout (#70), while the side-task verdict over the sealed log is d
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import shutil
 from pathlib import Path
@@ -14,7 +15,13 @@ import pytest
 from loc_arena import cli
 from loc_arena.config import load_run_config
 from loc_arena.harness import apply_mode
-from loc_arena.task import grade_snapshot, play_scripted_episode, read_snapshot, read_snapshot_file
+from loc_arena.task import (
+    grade_snapshot,
+    play_scripted_episode,
+    read_snapshot,
+    read_snapshot_file,
+    record_snapshot,
+)
 
 CONFIG = apply_mode(load_run_config("configs/aurora-efficiency.deterministic.yaml"), "attack")
 
@@ -66,5 +73,49 @@ def test_a_snapshot_pointing_outside_its_directory_is_refused(tmp_path: Path) ->
     stored = json.loads(snapshot_path.read_text())
     snapshot_path.write_text(json.dumps({**stored, "checkout": "../../elsewhere"}))
 
-    with pytest.raises(ValueError, match="outside its episode directory"):
+    with pytest.raises(ValueError, match="elsewhere is outside"):
         read_snapshot(tmp_path / "episode", CONFIG)
+
+
+def test_a_checkout_played_in_the_sandboxs_volume_is_moved_into_its_episode_directory_links_kept(
+    tmp_path: Path,
+) -> None:
+    played = play_scripted_episode(CONFIG, tmp_path / "episode")
+    in_volume = tmp_path / "checkouts" / "checkout"
+    shutil.move(played.checkout, in_volume)
+    (in_volume / "a-link").symlink_to("meridian-common")
+    played_there = dataclasses.replace(played, checkout=in_volume)
+
+    kept = record_snapshot(played_there, tmp_path / "episode", CONFIG).checkout
+
+    assert (kept, (kept / "a-link").readlink(), in_volume.exists()) == (
+        tmp_path / "episode" / "checkout",
+        Path("meridian-common"),
+        False,
+    )
+
+
+def test_a_checkout_whose_path_became_a_link_is_refused(tmp_path: Path) -> None:
+    played = play_scripted_episode(CONFIG, tmp_path / "episode")
+    shutil.move(played.checkout, tmp_path / "elsewhere")
+    (tmp_path / "checkouts").symlink_to(tmp_path / "elsewhere")
+    played_through_a_link = dataclasses.replace(played, checkout=tmp_path / "checkouts")
+
+    with pytest.raises(ValueError, match="no longer resolves to itself"):
+        record_snapshot(played_through_a_link, tmp_path / "episode", CONFIG)
+
+
+def test_an_absolute_link_into_the_moved_checkout_points_into_it_relatively_and_others_stay(
+    tmp_path: Path,
+) -> None:
+    played = play_scripted_episode(CONFIG, tmp_path / "episode")
+    in_volume = tmp_path / "checkouts" / "checkout"
+    shutil.move(played.checkout, in_volume)
+    (in_volume / "meridian-common" / "to-serving").symlink_to(in_volume / "meridian-serving")
+    (in_volume / "to-elsewhere").symlink_to(tmp_path / "elsewhere")
+    played_there = dataclasses.replace(played, checkout=in_volume)
+
+    kept = record_snapshot(played_there, tmp_path / "episode", CONFIG).checkout
+
+    targets = ((kept / "meridian-common" / "to-serving").readlink(), (kept / "to-elsewhere").readlink())
+    assert targets == (Path("../meridian-serving"), tmp_path / "elsewhere")

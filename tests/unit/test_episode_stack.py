@@ -1,10 +1,11 @@
-"""The rendered compose file keeps the key and the route out in the gateway, the episode on agent-net."""
+"""The rendered compose file: the key and the route out in the gateway alone, the logs out of the sandbox."""
 
 from __future__ import annotations
 
 import dataclasses
 from pathlib import Path
 
+import pytest
 from loc_arena.config import load_run_config
 from loc_arena.episode_stack import (
     AGENT_NETWORK,
@@ -15,6 +16,7 @@ from loc_arena.episode_stack import (
 )
 from loc_arena.gateway import core
 from loc_arena.settings import GatewaySettings, LocArenaSettings, StackSettings
+from loc_arena.task import SANDBOX_URL_VARIABLE
 from scenarios.loader import SCENARIOS_ROOT
 
 REPOSITORY = Path("/repository")
@@ -43,31 +45,72 @@ def test_only_the_gateway_is_on_the_network_with_a_route_out() -> None:
     assert (on_egress, compose["networks"][EGRESS_NETWORK]["internal"]) == (["gateway"], False)
 
 
-def test_the_episode_is_only_on_the_network_with_no_route_out() -> None:
+@pytest.mark.parametrize("service", ["episode", "sandbox"])
+def test_the_episode_and_its_sandbox_are_only_on_the_network_with_no_route_out(service: str) -> None:
     compose = render()
 
-    episode_networks = compose["services"]["episode"]["networks"]
+    networks = compose["services"][service]["networks"]
 
-    assert (episode_networks, compose["networks"][AGENT_NETWORK]["internal"]) == ([AGENT_NETWORK], True)
+    assert (networks, compose["networks"][AGENT_NETWORK]["internal"]) == ([AGENT_NETWORK], True)
 
 
-def test_only_the_gateway_receives_the_key() -> None:
+def test_each_service_mounts_only_the_volumes_it_needs() -> None:
+    compose = render(policy="model")
+
+    sources = {
+        name: sorted(volume.split(":")[0] for volume in service["volumes"])
+        for name, service in compose["services"].items()
+    }
+
+    assert sources == {
+        "gateway": ["/repository/configs", "sealed"],
+        "sandbox": ["checkouts"],
+        "episode": ["/repository/configs", "checkouts", "output"],
+    }
+
+
+def test_each_secret_goes_only_to_the_services_that_need_it() -> None:
     compose = render()
 
-    holders = [name for name, service in compose["services"].items() if service.get("secrets")]
+    holders = {name: service.get("secrets") for name, service in compose["services"].items()}
 
     assert (holders, compose["secrets"]) == (
-        ["gateway"],
-        {"openrouter_api_key": {"environment": "OPENROUTER_API_KEY"}},
+        {"gateway": ["openrouter_api_key"], "sandbox": ["sandbox_token"], "episode": ["sandbox_token"]},
+        {
+            "openrouter_api_key": {"environment": "OPENROUTER_API_KEY"},
+            "sandbox_token": {"environment": "LOC_ARENA_SANDBOX_TOKEN"},
+        },
     )
 
 
-def test_the_episode_sends_its_model_calls_to_the_gateways_configured_port() -> None:
-    settings = LocArenaSettings(gateway=GatewaySettings(port=9191))
+def test_every_service_drops_every_capability() -> None:
+    compose = render()
+
+    dropped = {name: service["cap_drop"] for name, service in compose["services"].items()}
+
+    assert dropped == {"gateway": ["ALL"], "sandbox": ["ALL"], "episode": ["ALL"]}
+
+
+def test_the_episode_sends_its_model_calls_to_the_gateway_and_its_code_to_the_sandbox() -> None:
+    settings = LocArenaSettings(gateway=GatewaySettings(port=9191), stack=StackSettings(sandbox_port=9292))
 
     environment = render(settings)["services"]["episode"]["environment"]
 
-    assert environment == {core.GATEWAY_URL_VARIABLE: "http://gateway:9191/api/v1/chat/completions"}
+    assert environment == {
+        core.GATEWAY_URL_VARIABLE: "http://gateway:9191/api/v1/chat/completions",
+        SANDBOX_URL_VARIABLE: "http://sandbox:9292",
+    }
+
+
+def test_the_sandbox_gets_the_runs_settings_in_its_command() -> None:
+    settings = LocArenaSettings(stack=StackSettings(sandbox_port=9292, shell_timeout_seconds=7))
+
+    command = render(settings)["services"]["sandbox"]["command"]
+
+    assert (command[:3], LocArenaSettings.model_validate_json(command[-1])) == (
+        ["python", "-m", "loc_arena.sandbox"],
+        settings,
+    )
 
 
 def test_the_gateway_shares_the_episodes_network() -> None:
@@ -94,7 +137,8 @@ def test_the_episode_runs_the_requested_run_and_mode() -> None:
     assert command[3:] == ["run", "--run", "a-run", "--mode", "honest", "--out", "/output"]
 
 
-def test_the_image_and_episode_limits_come_from_the_stack_settings() -> None:
+@pytest.mark.parametrize("service", ["episode", "sandbox"])
+def test_the_image_and_limits_of_the_episode_and_the_sandbox_come_from_the_settings(service: str) -> None:
     stack = StackSettings(
         image="other:tag",
         episode_cpus=0.5,
@@ -102,9 +146,9 @@ def test_the_image_and_episode_limits_come_from_the_stack_settings() -> None:
         episode_pids_limit=64,
     )
 
-    episode = render(LocArenaSettings(stack=stack))["services"]["episode"]
+    rendered = render(LocArenaSettings(stack=stack))["services"][service]
 
-    limits = (episode["image"], episode["cpus"], episode["mem_limit"], episode["pids_limit"])
+    limits = (rendered["image"], rendered["cpus"], rendered["mem_limit"], rendered["pids_limit"])
     assert limits == ("other:tag", 0.5, "1g", 64)
 
 
@@ -113,7 +157,7 @@ def test_the_gateway_port_is_published_on_the_hosts_loopback_alone() -> None:
 
     published = {name: service.get("ports") for name, service in render(settings)["services"].items()}
 
-    assert published == {"gateway": ["127.0.0.1::9191"], "episode": None}
+    assert published == {"gateway": ["127.0.0.1::9191"], "sandbox": None, "episode": None}
 
 
 def test_a_scripted_episode_gets_the_scripted_moves_mounted_read_only() -> None:
@@ -124,6 +168,7 @@ def test_a_scripted_episode_gets_the_scripted_moves_mounted_read_only() -> None:
     source = SCENARIOS_ROOT / "aurora_efficiency" / "scripted"
     assert mounts == {
         "gateway": [],
+        "sandbox": [],
         "episode": [f"{source}:/app/scenarios/aurora_efficiency/scripted:ro"],
     }
 
@@ -133,7 +178,7 @@ def test_a_live_model_episode_gets_nothing_of_the_scenario_mounted() -> None:
 
     mounts = scenario_mounts(compose)
 
-    assert mounts == {"gateway": [], "episode": []}
+    assert mounts == {"gateway": [], "sandbox": [], "episode": []}
 
 
 def test_grading_a_stack_run_sandboxes_the_agent_code_its_config_runs_in_process() -> None:
@@ -143,3 +188,11 @@ def test_grading_a_stack_run_sandboxes_the_agent_code_its_config_runs_in_process
     graded_with = sandbox_agent_code(config)
 
     assert graded_with.settings.stack.sandbox_agent_code
+
+
+def test_a_sandbox_its_agents_killed_comes_back() -> None:
+    compose = render()
+
+    restart = compose["services"]["sandbox"]["restart"]
+
+    assert restart == "unless-stopped"
