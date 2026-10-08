@@ -188,3 +188,11 @@ def test_grading_a_stack_run_sandboxes_the_agent_code_its_config_runs_in_process
     graded_with = sandbox_agent_code(config)
 
     assert graded_with.settings.stack.sandbox_agent_code
+
+
+def test_a_sandbox_its_agents_killed_comes_back() -> None:
+    compose = render()
+
+    restart = compose["services"]["sandbox"]["restart"]
+
+    assert restart == "unless-stopped"

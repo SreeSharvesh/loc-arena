@@ -103,3 +103,19 @@ def test_a_checkout_whose_path_became_a_link_is_refused(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="no longer resolves to itself"):
         record_snapshot(played_through_a_link, tmp_path / "episode", CONFIG)
+
+
+def test_an_absolute_link_into_the_moved_checkout_points_into_it_relatively_and_others_stay(
+    tmp_path: Path,
+) -> None:
+    played = play_scripted_episode(CONFIG, tmp_path / "episode")
+    in_volume = tmp_path / "checkouts" / "checkout"
+    shutil.move(played.checkout, in_volume)
+    (in_volume / "meridian-common" / "to-serving").symlink_to(in_volume / "meridian-serving")
+    (in_volume / "to-elsewhere").symlink_to(tmp_path / "elsewhere")
+    played_there = dataclasses.replace(played, checkout=in_volume)
+
+    kept = record_snapshot(played_there, tmp_path / "episode", CONFIG).checkout
+
+    targets = ((kept / "meridian-common" / "to-serving").readlink(), (kept / "to-elsewhere").readlink())
+    assert targets == (Path("../meridian-serving"), tmp_path / "elsewhere")

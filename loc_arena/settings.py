@@ -124,6 +124,11 @@ class StackSettings(SettingsGroup):
         default=30.0,
         description="Seconds the episode waits for the sandbox's reply beyond the command's own timeout.",
     )
+    sandbox_recovery_seconds: PositiveFloat = Field(
+        default=60.0,
+        description="Seconds an episode waits, before it plays, for a sandbox that is restarting (an earlier "
+        "episode's agents killed it); then the episode fails, and never runs agent code anywhere else.",
+    )
     sandbox_scratch_directories: tuple[Path, ...] = Field(
         default=(),
         description="The sandbox's HOME and temporary directories, emptied before each episode plays so an "

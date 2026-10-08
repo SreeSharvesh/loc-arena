@@ -61,6 +61,7 @@ class ComposeService(TypedDict, total=False):
     ports: list[str]
     cap_drop: list[str]
     init: bool
+    restart: str
     depends_on: dict[str, dict[str, str]]
     healthcheck: Healthcheck
     mem_limit: str
@@ -127,6 +128,7 @@ def render_compose(
                 "networks": [AGENT_NETWORK],
                 "healthcheck": _probe(stack.sandbox_port, stack),
                 "init": True,  # reaps the processes the agents' commands leave behind
+                "restart": "unless-stopped",  # agent code can kill the server: it comes back
             },
             "episode": {
                 **shared,

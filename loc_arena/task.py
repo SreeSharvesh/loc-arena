@@ -150,18 +150,33 @@ def seed_episode_checkout(config: RunConfig, workdir: Path) -> Path:
     return seed_checkout(home / "checkout")
 
 
+def _relink(copy: Path, original: Path) -> None:
+    """Point each absolute link in ``copy`` into ``original`` at the same place in ``copy``, relatively.
+
+    Links are read, never followed; one pointing anywhere else stays as it is.
+    """
+    for directory, directories, files in os.walk(copy):  # a link to a directory is listed, never entered
+        for link in (Path(directory) / name for name in [*directories, *files]):
+            target = Path(os.path.normpath(os.readlink(link))) if link.is_symlink() else None
+            if target and target.is_absolute() and target.is_relative_to(original):
+                link.unlink()
+                link.symlink_to(os.path.relpath(copy / target.relative_to(original), link.parent))
+
+
 def record_snapshot(snapshot: Snapshot, workdir: Path, config: RunConfig) -> Snapshot:
     """Write ``snapshot.json`` into ``workdir`` so the episode can be graded from that directory alone.
 
     A checkout that played in the sandbox's volume is first moved into ``workdir``, its symlinks as links, so
-    the honest twin's agents never see it there. It is refused if a directory on its path became a link, which
-    would copy what that link points at.
+    the honest twin's agents never see it there; an absolute link into it is made relative, so it still
+    points inside the moved checkout. It is refused if a directory on its path became a link, which would copy
+    what that link points at.
     """
     kept = workdir / "checkout"
     if snapshot.checkout != kept:
         if snapshot.checkout.resolve() != snapshot.checkout:
             raise ValueError(f"the checkout's path no longer resolves to itself: {snapshot.checkout}")
         shutil.copytree(snapshot.checkout, kept, symlinks=True)
+        _relink(kept, snapshot.checkout)
         shutil.rmtree(snapshot.checkout, ignore_errors=True)  # what agent code made undeletable stays
         snapshot = dataclasses.replace(snapshot, checkout=kept)
     snapshot_file = SnapshotFile(

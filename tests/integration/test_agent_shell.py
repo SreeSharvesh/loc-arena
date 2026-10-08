@@ -6,6 +6,7 @@ The sandbox is the real command server, served on this host's loopback; the mode
 from __future__ import annotations
 
 import dataclasses
+import socket
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -19,7 +20,7 @@ from loc_arena.config import RunConfig, load_run_config
 from loc_arena.gateway.core import Message, ProviderResult, ToolSpec
 from loc_arena.harness import apply_mode
 from loc_arena.live import play_model_episode
-from loc_arena.sandbox import create_sandbox_app
+from loc_arena.sandbox import SandboxClient, SandboxError, create_sandbox_app
 from loc_arena.scaffold.code_services import CodeServices
 from loc_arena.scaffold.tools import StubServices
 from loc_arena.settings import GatewaySettings, StackSettings
@@ -75,9 +76,9 @@ class PlayedEpisode:
 class ServedSandbox:
     """The sandbox's command server on this host's loopback, until stopped."""
 
-    def __init__(self, stack: StackSettings) -> None:
-        """Start serving ``stack``'s checkouts."""
-        self._server = uvicorn.Server(uvicorn.Config(create_sandbox_app(stack, SecretStr(TOKEN)), port=0))
+    def __init__(self, stack: StackSettings, port: int = 0) -> None:
+        """Start serving ``stack``'s checkouts on ``port``, any free one by default."""
+        self._server = uvicorn.Server(uvicorn.Config(create_sandbox_app(stack, SecretStr(TOKEN)), port=port))
         self._thread = threading.Thread(target=self._server.run, daemon=True)
         self._thread.start()
         while not self._server.started:
@@ -183,3 +184,43 @@ def test_an_episode_with_a_sandbox_starts_without_what_an_earlier_one_left(tmp_p
 
     left = (list((tmp_path / "scratch").iterdir()), (tmp_path / "checkouts" / "an-earlier-episode").exists())
     assert left == ([], False)
+
+
+def free_port() -> int:
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+def client_of(port: int, recovery_seconds: float) -> SandboxClient:
+    return SandboxClient(f"http://127.0.0.1:{port}", SecretStr(TOKEN), 5, recovery_seconds, 0.1)
+
+
+@pytest.fixture
+def returning_sandbox(tmp_path: Path) -> Iterator[tuple[Path, int]]:
+    """A sandbox down at first, as a restarting one is, serving the checkouts half a second later."""
+    stack = with_sandbox(HONEST, tmp_path).settings.stack
+    port = free_port()
+    returned: list[ServedSandbox] = []
+    starting = threading.Timer(0.5, lambda: returned.append(ServedSandbox(stack, port)))
+    starting.start()
+    yield tmp_path / "checkouts", port
+    starting.join()
+    returned[0].stop()
+
+
+def test_a_reset_waits_for_a_sandbox_that_is_coming_back(returning_sandbox: tuple[Path, int]) -> None:
+    checkouts, port = returning_sandbox
+    (checkouts / "an-earlier-episode").mkdir()
+    (checkouts / "this-episode").mkdir()
+
+    client_of(port, recovery_seconds=10).reset(keep=checkouts / "this-episode")
+
+    assert sorted(path.name for path in checkouts.iterdir()) == ["this-episode"]
+
+
+def test_a_reset_fails_closed_when_the_sandbox_never_comes_back(tmp_path: Path) -> None:
+    client = client_of(free_port(), recovery_seconds=0.5)
+
+    with pytest.raises(SandboxError, match="ConnectError"):
+        client.reset(keep=tmp_path)

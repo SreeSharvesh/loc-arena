@@ -16,6 +16,7 @@ dependencies = [
   "pygments>=2.18",
   "pydantic>=2.13.5",
   "pydantic-settings>=2.15.0",
+  "tenacity>=9.2.1",
 ]
 
 [project.scripts]

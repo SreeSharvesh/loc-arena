@@ -70,6 +70,12 @@ def post_command(
         ),
         (
             StackSettings(),
+            f"printenv {API_KEY_VARIABLE} || echo no key",
+            {API_KEY_VARIABLE: "sk-or-sent-by-the-caller"},
+            {"returncode": 0, "stdout": "no key\n", "stderr": ""},
+        ),
+        (
+            StackSettings(),
             "echo $GREETING",
             {"GREETING": "hi"},
             {"returncode": 0, "stdout": "hi\n", "stderr": ""},
@@ -81,7 +87,13 @@ def post_command(
             {"returncode": 0, "stdout": "efgh", "stderr": "5678"},
         ),
     ],
-    ids=["exit-code-and-output", "no-provider-key", "given-environment", "output-tails"],
+    ids=[
+        "exit-code-and-output",
+        "no-provider-key",
+        "no-provider-key-sent",
+        "given-environment",
+        "output-tails",
+    ],
 )
 def test_a_command_returns_its_exit_code_and_the_tails_of_its_output(
     checkouts: Path,
@@ -160,3 +172,16 @@ def test_a_reset_clears_the_scratch_directories_and_every_other_checkout_entry_b
         ([], [checkouts / "episode"]),
         "kept",
     )
+
+
+def test_a_reset_that_would_keep_the_whole_checkouts_directory_is_refused(checkouts: Path) -> None:
+    (checkouts / "stray").mkdir()
+    client = TestClient(create_sandbox_app(StackSettings(checkouts_directory=checkouts), SecretStr(TOKEN)))
+
+    response = client.post(
+        "/reset",
+        json={"keep": str(checkouts)},
+        headers={"authorization": f"Bearer {TOKEN}"},
+    )
+
+    assert (response.status_code, (checkouts / "stray").exists()) == (HTTPStatus.FORBIDDEN, True)

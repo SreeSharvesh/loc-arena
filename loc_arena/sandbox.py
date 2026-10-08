@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Annotated
 
 import httpx2
+import tenacity
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -104,6 +105,8 @@ def create_sandbox_app(
         """Remove what an earlier episode could leave: scratch files, every other entry of the checkouts."""
         keep = confine(request.keep)
         root = stack.checkouts_directory.resolve()
+        if keep == root:
+            raise HTTPException(HTTPStatus.FORBIDDEN, "keep one checkout below the checkouts, not all")
         scratch = [entry for directory in stack.sandbox_scratch_directories for entry in directory.iterdir()]
         others = [entry for entry in root.iterdir() if entry != keep and entry not in keep.parents]
         for entry in [*scratch, *others]:
@@ -134,6 +137,8 @@ class SandboxClient:
     url: str
     token: SecretStr
     response_grace_seconds: float
+    recovery_seconds: float
+    probe_interval_seconds: float
 
     def run(self, request: CommandRequest) -> CommandResult:
         """Run ``request`` in the sandbox and return what it did; raise ``SandboxError`` if it cannot."""
@@ -141,8 +146,19 @@ class SandboxClient:
         return CommandResult.model_validate_json(response.content)
 
     def reset(self, keep: Path) -> None:
-        """Clear what an earlier episode left in the sandbox, all but ``keep``, the new episode's checkout."""
-        self._post(RESET_PATH, ResetRequest(keep=keep), self.response_grace_seconds)
+        """Clear what an earlier episode left in the sandbox, all but ``keep``, the new episode's checkout.
+
+        A sandbox an earlier episode's agents killed is restarting: wait up to ``recovery_seconds`` for it to
+        answer, then raise ``SandboxError``, so agent code never runs anywhere else.
+        """
+        for attempt in tenacity.Retrying(
+            retry=tenacity.retry_if_exception(_is_unreachable),
+            stop=tenacity.stop_after_delay(self.recovery_seconds),
+            wait=tenacity.wait_fixed(self.probe_interval_seconds),
+            reraise=True,
+        ):
+            with attempt:
+                self._post(RESET_PATH, ResetRequest(keep=keep), self.response_grace_seconds)
 
     def _post(self, path: str, body: BaseModel, timeout_seconds: float) -> httpx2.Response:
         try:
@@ -161,6 +177,11 @@ class SandboxClient:
         return response
 
 
+def _is_unreachable(error: BaseException) -> bool:
+    """Whether ``error`` is a sandbox that did not answer at all, as one restarting does."""
+    return isinstance(error, SandboxError) and isinstance(error.__cause__, httpx2.TransportError)
+
+
 def connect_sandbox(settings: LocArenaSettings) -> SandboxClient | None:
     """The sandbox's client in the episode container; none elsewhere, where agent code runs here."""
     url = sandbox_url()
@@ -170,6 +191,8 @@ def connect_sandbox(settings: LocArenaSettings) -> SandboxClient | None:
         url,
         SandboxSecrets(_secrets_dir=settings.gateway.secrets_dir).sandbox_token,
         settings.stack.sandbox_response_grace_seconds,
+        settings.stack.sandbox_recovery_seconds,
+        settings.stack.gateway_health_interval_seconds,
     )
 
 

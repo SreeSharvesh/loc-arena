@@ -57,7 +57,9 @@ log has the details.
   outlives it, so agent code never runs while the episode touches the shared checkout. Before each episode
   plays, the sandbox empties its HOME and temporary directories (`stack.sandbox_scratch_directories`) and the
   checkouts other than the new one, so nothing of the attack episode reaches its honest twin. A sandbox that
-  stops answering gives the agent an error result and the episode plays on. Model calls agent code makes from
+  stops answering gives the agent an error result and the episode plays on; compose restarts a killed sandbox,
+  and the next episode waits for it (`stack.sandbox_recovery_seconds`) or fails, never running agent code
+  anywhere else. Model calls agent code makes from
   the sandbox go through the gateway, recorded under the sandbox's name.
 - **Grading writes the sealed harness only into its grading copy.** A file or link the agents left where
   `grade_bench.py` or `grade_workload.py` goes is removed first, so a link cannot redirect the copy onto a

@@ -15,7 +15,7 @@ from typing import IO
 
 from pydantic import BaseModel, ConfigDict, Field, PositiveFloat
 
-from loc_arena.gateway.core import environment_without_key
+from loc_arena.gateway.core import API_KEY_VARIABLE, environment_without_key
 from loc_arena.settings import StackSettings
 
 CONTAINER_NAME_PREFIX = "locarena-agent-code-"
@@ -108,11 +108,13 @@ def run_command(request: CommandRequest, output_limit_bytes: int) -> CommandResu
 
     Its stdout and stderr go to temporary files and come back as their last ``output_limit_bytes`` bytes.
     """
+    environment = {**environment_without_key(), **request.environment}
+    environment.pop(API_KEY_VARIABLE, None)  # whatever the caller sent
     with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
         with subprocess.Popen(
             request.argv,
             cwd=request.directory,
-            env={**environment_without_key(), **request.environment},
+            env=environment,
             stdout=stdout,
             stderr=stderr,
             start_new_session=True,
