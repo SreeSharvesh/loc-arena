@@ -10,8 +10,13 @@ REPOSITORY = Path(__file__).resolve().parents[2]
 
 
 def _is_ignored(path: PurePosixPath, patterns: list[str]) -> bool:
-    """Whether the path or one of its parent directories matches a pattern."""
-    return any(fnmatch(str(parent), pattern) for parent in [path, *path.parents] for pattern in patterns)
+    """Whether the path or a parent matches a pattern, segment by segment as Docker does."""
+    prefixes = [path.parts[: length + 1] for length in range(len(path.parts))]
+    return any(
+        len(prefix) == len(segments) and all(map(fnmatch, prefix, segments))
+        for prefix in prefixes
+        for segments in (PurePosixPath(pattern).parts for pattern in patterns)
+    )
 
 
 def test_the_image_holds_no_scenario_subfolder_that_could_give_the_answer_away() -> None:

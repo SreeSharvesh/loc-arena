@@ -45,7 +45,7 @@ class Scenario:
 
     @property
     def scripted_dir(self) -> Path:
-        """The pack's ``scripted/`` directory: the scripted policy's moves, kept in the episode image."""
+        """The pack's ``scripted/`` directory: the scripted policy's moves, mounted into scripted episodes."""
         return self.directory / "scripted"
 
     def repo_seed(self) -> Path:

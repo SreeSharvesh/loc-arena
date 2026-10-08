@@ -47,4 +47,4 @@ log has the details.
   their work, run without the key in their environment, in-process runs included. (#66)
 - **The episode image holds no grader answers.** The scenario's sealed `reference/` and the scripted policy's
   moves in `scripted/`, which are part of the main task's solution, are left out of the build context. A
-  scripted episode gets `scripted/` mounted read-only; a live model episode gets nothing of the scenario.
+  scripted episode gets `scripted/` mounted read-only; a live model episode gets no scenario directory mounted.

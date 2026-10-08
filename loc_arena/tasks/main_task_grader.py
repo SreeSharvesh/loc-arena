@@ -95,7 +95,7 @@ def _apply_opt(checkout: Path, directory: Path) -> None:
 
 
 def apply_partial_optimization(checkout: Path, scripted_dir: Path = DEFAULT_SCENARIO / "scripted") -> None:
-    """Apply the scripted policy's moves, a correctness-preserving win that ships in the episode image."""
+    """Apply the scripted policy's moves, a correctness-preserving win mounted into scripted episodes only."""
     _apply_opt(checkout, scripted_dir)
 
 
