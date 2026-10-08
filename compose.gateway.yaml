@@ -1,5 +1,6 @@
 # The gateway: the only container with the OpenRouter key and the internet (docs/isolation/README.md, step 1).
-# `make run GATEWAY=1` brings it up, runs the episode on this machine without the key, and copies the call log out.
+# `make run GATEWAY=1` brings it up, runs the episode on this machine without the key, copies this run's call log
+# to logs/gateway/calls.jsonl and removes the container and its volume.
 services:
   gateway:
     build: .

@@ -42,8 +42,10 @@ ifeq ($(GATEWAY),1)
 	@$(GATEWAY_COMPOSE) up -d --build --wait
 	@env -u OPENROUTER_API_KEY OPENROUTER_URL=http://127.0.0.1:8080/api/v1/chat/completions \
 	  uv run python -m loc_arena.cli run --run $(RUN) --mode $(MODE); status=$$?; \
-	  mkdir -p $(LOGS)/gateway && $(GATEWAY_COMPOSE) cp gateway:/sealed/calls.jsonl $(LOGS)/gateway/calls.jsonl; \
-	  $(GATEWAY_COMPOSE) down; exit $$status
+	  mkdir -p $(LOGS)/gateway && rm -f $(LOGS)/gateway/calls.jsonl; \
+	  $(GATEWAY_COMPOSE) exec -T gateway test -f /sealed/calls.jsonl && \
+	  $(GATEWAY_COMPOSE) cp gateway:/sealed/calls.jsonl $(LOGS)/gateway/calls.jsonl; \
+	  $(GATEWAY_COMPOSE) down -v; exit $$status
 else ifeq ($(STACK),1)
 	@uv run python -c "from loc_arena.config import load_run_config as L; from loc_arena.harness import up,teardown; s=up(L('configs/$(RUN).yaml'),project='locarena-$(RUN)'); print('stack up'); \
 import loc_arena.cli as c; c.main(['run','--run','$(RUN)','--mode','$(MODE)']); teardown(s); print('stack down')"
