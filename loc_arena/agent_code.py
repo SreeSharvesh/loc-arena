@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import subprocess
 import sys
@@ -10,14 +11,18 @@ import uuid
 from collections.abc import Sequence
 from pathlib import Path
 
+import tenacity
 from sandbox_server.command import read_tail
 
 from loc_arena.gateway.core import environment_without_key
 from loc_arena.settings import StackSettings
 
 CONTAINER_NAME_PREFIX = "locarena-agent-code-"
-# How long `docker kill`, then `docker rm --force`, may take to stop a container whose run timed out.
+# How long `docker rm --force` may take, and then how long Docker may take to stop listing the container.
 CLEANUP_TIMEOUT_SECONDS = 10
+CLEANUP_POLL_SECONDS = 0.2
+# What `docker container inspect` reports for a container that is gone, depending on the Docker CLI version.
+GONE_CONTAINER_MESSAGES = ("No such container", "No such object")
 
 
 def run_agent_code(
@@ -77,18 +82,39 @@ def run_agent_code(
 
 
 def _stop_container(container_name: str) -> bool:
-    """Kill the container, or else force-remove it; whether it is gone (a container already gone counts)."""
-    for command in (["docker", "kill", container_name], ["docker", "rm", "--force", container_name]):
-        try:
-            stopped = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=CLEANUP_TIMEOUT_SECONDS,
-            )
-        except subprocess.TimeoutExpired:
-            continue
-        if stopped.returncode == 0 or "No such container" in stopped.stderr:
-            return True
-    return False
+    """Force-remove the container, then wait until Docker no longer has it; whether it is gone.
+
+    A killed ``--rm`` container is removed asynchronously, so a successful kill or removal call alone does not
+    mean the container is gone yet.
+    """
+    with contextlib.suppress(subprocess.TimeoutExpired):
+        subprocess.run(
+            ["docker", "rm", "--force", container_name],
+            capture_output=True,
+            check=False,
+            timeout=CLEANUP_TIMEOUT_SECONDS,
+        )
+    wait_until_gone = tenacity.Retrying(
+        stop=tenacity.stop_after_delay(CLEANUP_TIMEOUT_SECONDS),
+        wait=tenacity.wait_fixed(CLEANUP_POLL_SECONDS),
+        retry=tenacity.retry_if_result(lambda gone: not gone),
+        retry_error_callback=lambda _state: False,
+    )
+    return wait_until_gone(_is_container_gone, container_name)
+
+
+def _is_container_gone(container_name: str) -> bool:
+    """Whether Docker reports no container named ``container_name``."""
+    try:
+        inspected = subprocess.run(
+            ["docker", "container", "inspect", container_name],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=CLEANUP_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        return False
+    return inspected.returncode != 0 and any(
+        message in inspected.stderr for message in GONE_CONTAINER_MESSAGES
+    )
