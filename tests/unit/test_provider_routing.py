@@ -21,6 +21,11 @@ from loc_arena.logging_.events import AppendOnlyLog
 
 MESSAGES = [{"role": "user", "content": "hello"}]
 TIMEOUT_SECONDS = 5.0  # the posts are stubbed: no call waits
+PINNED_MODEL = "deepseek/deepseek-v4.1-flash"
+UNLISTED_MODEL = "meta-llama/llama-3.1-8b-instruct"
+MODEL_PROVIDERS = {
+    PINNED_MODEL: ProviderPreferences(order=["together", "baseten", "deepseek"], allow_fallbacks=False),
+}
 
 
 def _capture_post(
@@ -44,70 +49,61 @@ def _capture_post(
     return bodies
 
 
-def test_sends_provider_and_reasoning_when_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_call_carries_its_models_providers_and_its_roles_reasoning(monkeypatch: pytest.MonkeyPatch) -> None:
     bodies = _capture_post(monkeypatch)
-    provider = OpenRouterProvider(api_key="test-key", timeout=TIMEOUT_SECONDS)
+    provider = OpenRouterProvider(
+        api_key="test-key",
+        timeout=TIMEOUT_SECONDS,
+        model_providers=MODEL_PROVIDERS,
+    )
     spec = ModelSpec(
-        model="deepseek/deepseek-v4.1-flash",
+        model=PINNED_MODEL,
         temperature=1.0,
         max_tokens=8192,
-        provider=ProviderPreferences(
-            order=["together", "baseten", "deepseek"],
-            allow_fallbacks=False,
-        ),
         reasoning=ReasoningPreferences(effort="high"),
     )
 
-    provider.generate("deepseek/deepseek-v4.1-flash", MESSAGES, 1.0, 8192, None, spec=spec)
+    provider.generate(PINNED_MODEL, MESSAGES, 1.0, 8192, None, spec=spec)
 
     assert bodies == [
         {
-            "model": "deepseek/deepseek-v4.1-flash",
+            "model": PINNED_MODEL,
             "messages": MESSAGES,
             "temperature": 1.0,
             "max_tokens": 8192,
-            "provider": {
-                "order": ["together", "baseten", "deepseek"],
-                "allow_fallbacks": False,
-            },
+            "provider": {"order": ["together", "baseten", "deepseek"], "allow_fallbacks": False},
             "reasoning": {"effort": "high"},
         },
     ]
 
 
-def test_omits_provider_and_reasoning_when_absent(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_call_to_a_model_with_no_providers_listed_is_left_to_openrouter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     bodies = _capture_post(monkeypatch)
-    provider = OpenRouterProvider(api_key="test-key", timeout=TIMEOUT_SECONDS)
-    spec = ModelSpec(
-        model="meta-llama/llama-3.1-8b-instruct",
-        temperature=0.0,
-        max_tokens=4096,
+    provider = OpenRouterProvider(
+        api_key="test-key",
+        timeout=TIMEOUT_SECONDS,
+        model_providers=MODEL_PROVIDERS,
     )
+    spec = ModelSpec(model=UNLISTED_MODEL, temperature=0.0, max_tokens=4096)
 
-    provider.generate("meta-llama/llama-3.1-8b-instruct", MESSAGES, 0.0, 4096, None, spec=spec)
+    provider.generate(UNLISTED_MODEL, MESSAGES, 0.0, 4096, None, spec=spec)
 
-    assert bodies == [
-        {
-            "model": "meta-llama/llama-3.1-8b-instruct",
-            "messages": MESSAGES,
-            "temperature": 0.0,
-            "max_tokens": 4096,
-        },
-    ]
+    assert bodies == [{"model": UNLISTED_MODEL, "messages": MESSAGES, "temperature": 0.0, "max_tokens": 4096}]
 
 
 def test_models_file_rejects_unknown_field_under_provider_naming_it(tmp_path: Path) -> None:
     shutil.copytree("configs", tmp_path / "configs")
     models_file = tmp_path / "configs" / "models.custom.yaml"
     models_file.write_text(
+        "providers:\n"
+        "  deepseek/deepseek-v4.1-flash: {order: [together], bogus_routing_field: true}\n"
         "roles:\n"
         "  untrusted_agent:\n"
         "    model: deepseek/deepseek-v4.1-flash\n"
         "    temperature: 1.0\n"
-        "    max_tokens: 8192\n"
-        "    provider:\n"
-        "      order: [together]\n"
-        "      bogus_routing_field: true\n",
+        "    max_tokens: 8192\n",
     )
     run_file = tmp_path / "configs" / "run.yaml"
     run_file.write_text("extends: aurora-efficiency.deterministic.yaml\nmodels: models.custom.yaml\n")
@@ -170,6 +166,12 @@ def test_fast_run_disables_agent_reasoning_while_inheriting_other_roles() -> Non
 
     fast = load_run_config("configs/aurora-efficiency.fast.yaml")
 
-    assert fast.models["untrusted_agent"].reasoning == ReasoningPreferences(effort="none") and {
-        role: spec for role, spec in fast.models.items() if role != "untrusted_agent"
-    } == {role: spec for role, spec in base.models.items() if role != "untrusted_agent"}
+    assert (
+        fast.models["untrusted_agent"].reasoning,
+        {role: spec for role, spec in fast.models.items() if role != "untrusted_agent"},
+        fast.model_providers,
+    ) == (
+        ReasoningPreferences(effort="none"),
+        {role: spec for role, spec in base.models.items() if role != "untrusted_agent"},
+        base.model_providers,
+    )

@@ -23,7 +23,7 @@ import hmac
 import json
 import os
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from http import HTTPStatus
 from typing import Any, Protocol
@@ -32,7 +32,7 @@ import httpx2
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
-from loc_arena.config import ModelSpec, RunConfig
+from loc_arena.config import ModelSpec, ProviderPreferences, RunConfig
 from loc_arena.logging_.agent_trace import AgentTrace
 from loc_arena.logging_.events import AppendOnlyLog, Event, fingerprint
 
@@ -258,12 +258,15 @@ class OpenRouterProvider:
         *,
         timeout: float,
         gateway_url: str | None = None,
+        model_providers: Mapping[str, ProviderPreferences] | None = None,
     ) -> None:
         """Send to ``gateway_url``, else to the gateway the environment names, else to OpenRouter keyed.
 
         ``timeout`` bounds one request; callers pass ``gateway.timeout_seconds``, so a reply the gateway still
-        waits for is never abandoned, paid for, and sent again.
+        waits for is never abandoned, paid for, and sent again. ``model_providers`` names the OpenRouter
+        providers that serve each model, by model id; a call to a model with none lets OpenRouter route it.
         """
+        self._model_providers = dict(model_providers or {})
         gateway_url = gateway_url or os.environ.get(GATEWAY_URL_VARIABLE)
         if gateway_url:  # the gateway adds the key: a real one would only travel the connection to it
             self._url, self._key = gateway_url, _GATEWAY_PLACEHOLDER_KEY
@@ -295,11 +298,10 @@ class OpenRouterProvider:
         }
         if tools:
             body["tools"] = tools
-        if spec is not None:
-            if spec.provider is not None:
-                body["provider"] = spec.provider.model_dump(exclude_none=True)
-            if spec.reasoning is not None:
-                body["reasoning"] = spec.reasoning.model_dump(exclude_none=True)
+        if (providers := self._model_providers.get(model)) is not None:
+            body["provider"] = providers.model_dump(exclude_none=True)
+        if spec is not None and spec.reasoning is not None:
+            body["reasoning"] = spec.reasoning.model_dump(exclude_none=True)
         headers = {"Authorization": f"Bearer {self._key}", "Content-Type": "application/json"}
         last: httpx2.Response | None = None
         for attempt in range(_MAX_RETRIES + 1):

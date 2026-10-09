@@ -117,10 +117,6 @@ class ModelSpec:
     max_tokens: StrictInt = Field(
         description="Output cap of one call (reasoning plus tool arguments), not the context window.",
     )
-    provider: ProviderPreferences | None = Field(
-        default=None,
-        description="OpenRouter provider-routing preferences for this role.",
-    )
     reasoning: ReasoningPreferences | None = Field(
         default=None,
         description="OpenRouter reasoning token settings for this role.",
@@ -271,6 +267,10 @@ class _ModelsFile(BaseModel):
     model_config = ConfigDict(frozen=True, extra="ignore", title="models file")
 
     roles: dict[str, ModelSpec] = Field(description="The model each role calls, by role.")
+    providers: dict[str, ProviderPreferences] = Field(
+        default_factory=dict,
+        description="The OpenRouter providers serving each model, by model id; its roles use them.",
+    )
 
 
 class _RunDocument(BaseSettings):
@@ -377,6 +377,7 @@ class RunConfig:
     policy: str = "scripted"  # "scripted" (deterministic default) | "model" (live model-driven)
     agent_transcript: bool = False
     raw: dict[str, Any] = dataclasses.field(default_factory=dict)
+    model_providers: dict[str, ProviderPreferences] = dataclasses.field(default_factory=dict)
 
     def agent(self, agent_id: str) -> AgentConfig:
         """Return the agent config with this id, or raise ``ConfigError``."""
@@ -453,9 +454,10 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
         raise ConfigError(str(exc)) from exc
     models_source = _merge_extends_chain(configs_directory / document.models, configs_directory)
     try:
-        models = _ModelsFile.model_validate(models_source.yaml_data).roles
+        models_file = _ModelsFile.model_validate(models_source.yaml_data)
     except ValidationError as exc:
         raise ConfigError(f"models file {document.models} is invalid: {exc}") from exc
+    models = models_file.roles
     _validate_registry_bindings(document.scenario, document.main_task.scorer, document.side_task.verifier)
 
     main_task = document.main_task
@@ -480,6 +482,7 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
         agent_transcript=document.logging.agent_transcript,
         agent_loop=document.agent_loop,
         raw=source.yaml_data,
+        model_providers=models_file.providers,
     )
 
 

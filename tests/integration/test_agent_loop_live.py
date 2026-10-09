@@ -62,14 +62,7 @@ class _RecordingProvider:
 def test_dev_model_keeps_a_tool_result_for_the_next_turn(tmp_path: Path) -> None:
     cfg = load_run_config("configs/aurora-efficiency.deterministic.yaml")
     model_id = _DEV.removeprefix("openrouter/")
-    # The agent role's provider pinning and reasoning are for its own model; the development model may be
-    # served elsewhere, so the test sends neither.
-    cfg.models["untrusted_agent"] = replace(
-        cfg.models["untrusted_agent"],
-        model=model_id,
-        provider=None,
-        reasoning=None,
-    )
+    cfg.models["untrusted_agent"] = replace(cfg.models["untrusted_agent"], model=model_id)
     provider = _RecordingProvider(OpenRouterProvider(timeout=cfg.settings.gateway.timeout_seconds))
     sealed_path = tmp_path / "sealed.jsonl"
     mirror_path = tmp_path / "mirror.jsonl"

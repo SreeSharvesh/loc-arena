@@ -279,4 +279,5 @@ def _build_monitor_provider(config: RunConfig, compose: list[str]) -> OpenRouter
     return OpenRouterProvider(
         timeout=config.settings.gateway.timeout_seconds,
         gateway_url=f"http://{published.stdout.strip()}{urlsplit(OPENROUTER_URL).path}",
+        model_providers=config.model_providers,
     )

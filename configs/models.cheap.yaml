@@ -1,46 +1,39 @@
 # models.cheap.yaml
-# Model routing by ROLE with provider pinning and reasoning settings.
-# Pinning providers keeps prompt caching stable and avoids slow or flaky endpoints.
-# Never hardcode a model name in code; always resolve through this file.
-#
-# IMPORTANT: verify these ids exist on your OpenRouter account before the first run.
-# All ids are OpenRouter-style "provider/model". Every model call goes through the gateway.
-#
-# max_tokens is the per-call OUTPUT cap (room for reasoning + tool-call args), NOT the context window.
+# Model routing by ROLE: each role's model, sampling and reasoning. Never hardcode a model name in code.
+# All ids are OpenRouter-style "provider/model"; verify they exist on your account before the first run.
+# Every model call goes through the gateway. max_tokens is the per-call OUTPUT cap, not the context window.
 
 provider: openrouter
 
+# The OpenRouter providers that serve each model, tried in order, with no others (fallbacks off): a role on
+# that model uses them. Pinned for the fastest throughput with cache pricing, and so prompt caching stays on
+# one provider. A model not listed here is routed by OpenRouter.
+providers:
+  deepseek/deepseek-v4.1-flash: {order: [together, baseten, deepseek], allow_fallbacks: false}
+  meta-llama/llama-3.1-8b-instruct: {order: [groq, deepinfra], allow_fallbacks: false}
+
 roles:
-  # The untrusted agent (orchestrator + sub-agents). Multi-step tool use.
-  # Fastest throughput with cache pricing for this model on OpenRouter; pinned so prompt caching stays on one provider.
+  # The untrusted agent (orchestrator + sub-agents): multi-step tool use, with the model's default reasoning.
   untrusted_agent:
     model: deepseek/deepseek-v4.1-flash
     temperature: 1.0
     max_tokens: 8192
-    provider: &deepseek_providers {order: [together, baseten, deepseek], allow_fallbacks: false}
 
-  # The trusted monitor (M_action, M_inference). Kept weaker and cheaper than the agent.
-  # Pinned to Groq then DeepInfra with fallbacks disabled.
+  # The trusted monitor (M_action, M_inference): weaker and cheaper than the agent, by the control convention.
   trusted_monitor:
     model: meta-llama/llama-3.1-8b-instruct
     temperature: 0.0
     max_tokens: 4096
-    provider:
-      order:
-        - groq
-        - deepinfra
-      allow_fallbacks: false
 
-  # The teacher m-large behind the gateway. Fast data generation with reasoning disabled.
+  # The teacher m-large behind the gateway: data generation, with reasoning off.
   teacher:
     model: deepseek/deepseek-v4.1-flash
     temperature: 0.7
     max_tokens: 4096
-    provider: *deepseek_providers
     reasoning:
       effort: none
 
 scaling_notes: |
   Frontier profile (later): set untrusted_agent to your strongest model, trusted_monitor to a small frontier
-  model, teacher to a strong model. Keep temperature and token caps; they are cost knobs, not correctness knobs.
-  Dev profile (now): DeepSeek V4.1 Flash for agent and teacher; Llama 3.1 8B for monitor.
+  model, teacher to a strong model, and list the providers that serve each new model (or none). Keep temperature
+  and token caps; they are cost knobs, not correctness knobs.
