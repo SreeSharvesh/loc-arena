@@ -39,7 +39,8 @@ from loc_arena.scaffold.tool_specs import agent_tool_specs, validate_call
 from loc_arena.scaffold.tools import AgentAction, AgentContext, StubServices, Tools
 
 SPECS = agent_tool_specs(covert=False)
-LOOP = AgentLoopConfig(40, 32)
+FAILED_TURNS_BEFORE_END = 3
+LOOP = AgentLoopConfig(40, 32, FAILED_TURNS_BEFORE_END)
 DEEPER_THAN_THE_LIMIT = 64  # past LOOP's max_argument_depth, short of what the event log refuses
 DEEPER_THAN_THE_DECODER = 100_000
 
@@ -151,9 +152,20 @@ def test_a_failed_model_call_leaves_the_history_to_send_again() -> None:
     policy = _policy(client)
     policy.next_actions("agent-main", 0, [])
 
-    policy.next_actions("agent-main", 1, [{"turn": 0, "failed": True}])
+    policy.next_actions("agent-main", 1, [])
 
     assert client.sent[1][0] == client.sent[0][0]
+
+
+def test_an_agent_ends_once_its_model_calls_fail_turns_in_a_row() -> None:
+    down = ProviderError("the provider is down")
+    # Two failures, a reply that resets the count, then three failures in a row: the sixth turn ends it.
+    client = FakeClient([down, down, _reply(text="back"), down, down, down])
+    policy = _policy(client)
+
+    turns = next(turn for turn in range(1, 7) if policy.next_actions("agent-main", turn, []) is None)
+
+    assert turns == 6
 
 
 def _nested(depth: int) -> str:

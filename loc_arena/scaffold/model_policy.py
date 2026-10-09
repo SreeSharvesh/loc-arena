@@ -62,6 +62,8 @@ class ModelAgentPolicy:
             {"role": "user", "content": _TASK},
         ]
         self._seen = 0
+        self._failed_in_a_row = 0
+        self._missing_ids = itertools.count()
 
     def next_actions(self, uid: str, turn: int, transcript: Transcript) -> list[AgentAction] | None:
         """Append what happened since last turn, call the model, and return its tool calls."""
@@ -69,8 +71,10 @@ class ModelAgentPolicy:
         try:
             reply = self._client.chat(self._messages, tools=self._specs, role=self._role)
         except ProviderError as error:  # the next turn sends the same history, plus what arrived meanwhile
+            self._failed_in_a_row += 1
             _LOGGER.warning("%s's model call failed, so turn %d is spent: %s", uid, turn, error)
-            return [FAILED]
+            return None if self._failed_in_a_row >= self._loop.failed_turns_before_end else [FAILED]
+        self._failed_in_a_row = 0
         actions, errors = self._interpret(reply)
         self._messages.append(reply.assistant_message())
         self._messages.extend(errors)
@@ -98,7 +102,7 @@ class ModelAgentPolicy:
         errors: list[Message] = []
         for call in reply.tool_calls or []:
             # A live endpoint refuses a history whose tool message answers an id no call carries.
-            call_id = call["id"] = str(call.get("id") or self._unused_call_id(reply))
+            call_id = call["id"] = str(call.get("id") or f"missing-{next(self._missing_ids)}")
             function = call.get("function")
             if not isinstance(function, dict):
                 function = {}
@@ -124,11 +128,6 @@ class ModelAgentPolicy:
                 continue
             actions.append(AgentAction(tool=name, args=args, call_id=call_id))
         return actions, errors
-
-    def _unused_call_id(self, reply: GenerateResponse) -> str:
-        calls = [*(reply.tool_calls or []), *(c for m in self._messages for c in m.get("tool_calls", []))]
-        taken = {str(call.get("id")) for call in calls}
-        return next(call_id for n in itertools.count() if (call_id := f"missing-{n}") not in taken)
 
 
 def _recordable(args: object, max_depth: int) -> bool:

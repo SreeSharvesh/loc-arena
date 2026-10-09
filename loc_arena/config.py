@@ -105,6 +105,10 @@ class AgentLoopConfig:
         description="Deepest nesting of a tool call's arguments that runs; a deeper call gets a tool error, "
         "since the event log cannot record arguments nested a few hundred levels deep.",
     )
+    failed_turns_before_end: StrictInt = Field(
+        description="Turns in a row whose model call failed, each after the provider's retries, before the "
+        "agent ends; its other turns are spent and its history sent again.",
+    )
 
 
 @pydantic_dataclass(frozen=True, config=BLOCK_CONFIG)
@@ -305,7 +309,7 @@ def _resolve_prompt_reference(reference: object, inline_prompts: object, where: 
 # --------------------------------------------------------------------------------------------------------
 # The resolved run
 # --------------------------------------------------------------------------------------------------------
-_EMPTY_AGENT_LOOP = AgentLoopConfig(0, 0)
+_EMPTY_AGENT_LOOP = AgentLoopConfig(0, 0, 0)
 
 
 @dataclasses.dataclass(frozen=True)
