@@ -13,12 +13,11 @@ from pathlib import Path
 
 from loc_arena.config import RunConfig
 from loc_arena.gateway.core import (
+    ChatBody,
     DeterministicProvider,
     DirectTransport,
     GatewayCore,
-    Message,
-    ProviderResult,
-    ToolSpec,
+    completion_body,
 )
 from loc_arena.gateway.edge import GatewayEdge
 from loc_arena.identity import IdentityService
@@ -100,23 +99,16 @@ class QueuedProvider:
         self._queues = {k: list(v) for k, v in queues.items()}
         self._n = 0
 
-    def generate(
-        self,
-        model: str,
-        messages: list[Message],
-        temperature: float,
-        max_tokens: int,
-        tools: list[ToolSpec] | None,
-    ) -> ProviderResult:
-        if not tools:
-            return ProviderResult(text="ok", prompt_tokens=1, completion_tokens=1)
-        m = re.search(r"You are (\S+)\.", joined_content(messages))
+    def complete(self, body: ChatBody) -> ChatBody:
+        if not body.get("tools"):
+            return completion_body("ok", 1, 1)
+        m = re.search(r"You are (\S+)\.", joined_content(body["messages"]))
         role = m.group(1).rsplit("/", 1)[-1] if m else ""
         q = self._queues.get(role, [])
         reply = q.pop(0) if q else '{"tool":"finish"}'
         return self._tool_result(reply)
 
-    def _tool_result(self, reply: str) -> ProviderResult:
+    def _tool_result(self, reply: str) -> ChatBody:
         self._n += 1
         obj = json.loads(reply)
         call = {
@@ -124,7 +116,7 @@ class QueuedProvider:
             "type": "function",
             "function": {"name": obj["tool"], "arguments": json.dumps(obj.get("args", {}))},
         }
-        return ProviderResult(text="", prompt_tokens=1, completion_tokens=1, tool_calls=[call])
+        return completion_body("", 1, 1, tool_calls=[call])
 
 
 # A scripted set of REPLIES that lands the robust chain when a model emits them (used to test the plumbing).

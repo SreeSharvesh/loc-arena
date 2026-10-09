@@ -11,18 +11,33 @@ a first-class signal.
 
 from __future__ import annotations
 
+import json
 import time
 from collections.abc import Callable
+from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse, Response
 
 from loc_arena.gateway.core import (
+    STAMP_BATCH_ID,
+    STAMP_CALLER,
+    STAMP_CREDENTIAL,
+    STAMP_IN_MIRROR,
+    STAMP_SEQ,
+    STAMP_TURN_ID,
     BatchGenerateRequest,
     BatchGenerateResponse,
+    CallCredentials,
+    ChatBody,
+    CompletedCall,
     GenerateRequest,
     GenerateResponse,
-    input_fingerprint,
-    output_fingerprint,
+    Message,
+    ToolSpec,
+    fingerprints_for,
+    header_value,
+    parse_completion,
 )
 from loc_arena.gateway.transport import Transport
 from loc_arena.logging_.events import AppendOnlyLog, Event, fingerprint
@@ -82,23 +97,78 @@ class GatewayEdge:
             ),
         )
 
-    def generate(self, req: GenerateRequest) -> GenerateResponse:
-        """Relay a generate call to the core; mirror it unless the deployed logging drops it."""
-        reply = self._core.post_json("/generate", req.model_dump())
-        resp = GenerateResponse.model_validate(reply)
-        # the deployed logging covers this call; a blinded call (underreported_activity_logging) is not
-        # mirrored
-        if resp.in_mirror:
+    def complete(self, body: ChatBody, creds: CallCredentials) -> CompletedCall:
+        """Relay a chat completion to the core and mirror it from the caller's original messages.
+
+        The core's stamp headers never leave this method: the returned call carries an empty relay header
+        map, so a caller of the edge sees only the provider response.
+        """
+        reply = self._core.exchange("/v1/chat/completions", body, creds.headers())
+        turn_id = header_value(reply.headers, STAMP_TURN_ID)
+        batch_id = header_value(reply.headers, STAMP_BATCH_ID)
+        credential_kind = header_value(reply.headers, STAMP_CREDENTIAL) or "none"
+        caller = header_value(reply.headers, STAMP_CALLER) or creds.caller_identity
+        in_mirror = header_value(reply.headers, STAMP_IN_MIRROR) != "false"
+        seq_text = header_value(reply.headers, STAMP_SEQ)
+        messages = body.get("messages")
+        submitted: list[Message] = messages if isinstance(messages, list) else []
+        tools = body.get("tools")
+        tool_list: list[ToolSpec] | None = tools if isinstance(tools, list) else None
+        result = parse_completion({"messages": submitted}, reply.body)
+        if in_mirror:
+            prompt_fp, output_fp = fingerprints_for(submitted, tool_list, result.text, result.tool_calls)
+            role = body.get("model")
             self._write_mirror(
-                caller_identity=resp.caller_identity or req.caller_identity,
-                turn_id=resp.turn_id,
-                batch_id=resp.batch_id,
-                credential_kind=resp.credential_kind,
-                prompt_fp=input_fingerprint(req),
-                output_fp=output_fingerprint(req, resp.text, resp.tool_calls),
-                model_role=req.role,
+                caller_identity=caller,
+                turn_id=turn_id,
+                batch_id=batch_id,
+                credential_kind=credential_kind,
+                prompt_fp=prompt_fp,
+                output_fp=output_fp,
+                model_role=role if isinstance(role, str) else "",
             )
-        return resp
+        return CompletedCall(
+            response=reply.body,
+            result=result,
+            seq=int(seq_text) if seq_text is not None else 0,
+            turn_id=turn_id,
+            batch_id=batch_id,
+            caller_identity=caller,
+            credential_kind=credential_kind,
+            in_mirror=in_mirror,
+            relay_headers={},
+        )
+
+    def generate(self, req: GenerateRequest) -> GenerateResponse:
+        """Relay a generate call as a chat completion; mirror it unless the deployed logging drops it."""
+        body: ChatBody = {"model": req.role, "messages": req.chat_messages()}
+        if req.tools:
+            body["tools"] = req.tools
+        if req.temperature is not None:
+            body["temperature"] = req.temperature
+        done = self.complete(
+            body,
+            CallCredentials(
+                caller_identity=req.caller_identity,
+                turn_token=req.turn_token,
+                durable_credential=req.durable_credential,
+                origin_job_id=req.origin_job_id,
+                monitor_credential=req.monitor_credential,
+            ),
+        )
+        return GenerateResponse(
+            text=done.result.text,
+            turn_id=done.turn_id,
+            batch_id=done.batch_id,
+            seq=done.seq,
+            caller_identity=done.caller_identity,
+            credential_kind=done.credential_kind,
+            in_mirror=done.in_mirror,
+            tool_calls=done.result.tool_calls,
+            prompt_tokens=done.result.prompt_tokens,
+            completion_tokens=done.result.completion_tokens,
+            cached_tokens=done.result.cached_tokens,
+        )
 
     def batch_generate(self, req: BatchGenerateRequest) -> BatchGenerateResponse:
         """Relay a batch call to the core and mirror one record per prompt."""
@@ -117,6 +187,36 @@ class GatewayEdge:
         return resp
 
 
+def chat_completion_stream(completion: dict[str, Any]) -> str:
+    """A finished chat completion replayed as one server-sent event stream.
+
+    The core does not stream, so the whole reply goes in one delta, then a chunk with the finish reason
+    and usage, then ``[DONE]``.
+    """
+    (choice,) = completion["choices"]
+    message = choice["message"]
+    delta: dict[str, Any] = dict(message)
+    delta["role"] = "assistant"
+    if message.get("tool_calls"):
+        delta["tool_calls"] = [{"index": i, **call} for i, call in enumerate(message["tool_calls"])]
+    head = {
+        "id": completion.get("id", "chatcmpl"),
+        "object": "chat.completion.chunk",
+        "created": completion.get("created", 0),
+        "model": completion.get("model", ""),
+    }
+    finish = choice.get("finish_reason") or ("tool_calls" if message.get("tool_calls") else "stop")
+    chunks = [
+        {**head, "choices": [{"index": 0, "delta": delta, "finish_reason": None}]},
+        {
+            **head,
+            "choices": [{"index": 0, "delta": {}, "finish_reason": finish}],
+            "usage": completion.get("usage"),
+        },
+    ]
+    return "".join(f"data: {json.dumps(chunk)}\n\n" for chunk in chunks) + "data: [DONE]\n\n"
+
+
 def create_edge_app(edge: GatewayEdge) -> FastAPI:
     """Wire the edge's endpoints onto a FastAPI app (what the agents point at)."""
     app = FastAPI(title="loc-arena gateway edge")
@@ -128,5 +228,15 @@ def create_edge_app(edge: GatewayEdge) -> FastAPI:
     @app.post("/batch_generate", response_model=BatchGenerateResponse)
     def _batch_generate(req: BatchGenerateRequest) -> BatchGenerateResponse:
         return edge.batch_generate(req)
+
+    @app.post("/v1/chat/completions", response_model=None)
+    async def _chat(request: Request) -> JSONResponse | Response:
+        payload = await request.json()
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="JSON object required")
+        done = edge.complete(payload, CallCredentials.from_headers(request.headers))
+        if payload.get("stream") is True:
+            return Response(chat_completion_stream(done.response), media_type="text/event-stream")
+        return JSONResponse(done.response)
 
     return app

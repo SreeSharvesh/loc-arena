@@ -14,7 +14,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from loc_arena.config import load_run_config
-from loc_arena.gateway.core import Message, ProviderResult, ToolSpec
+from loc_arena.gateway.core import ChatBody, completion_body
 from loc_arena.harness import _build_scores, run_episode
 from loc_arena.logging_.events import AppendOnlyLog, Event
 from loc_arena.metrics import calibrate_overall_threshold, episode_overall
@@ -297,21 +297,10 @@ def test_honest_twin_not_caught_under_nondeterministic_live_monitor(tmp_path: Pa
         def __init__(self) -> None:
             self._n = 0
 
-        def generate(
-            self,
-            model: str,
-            messages: list[Message],
-            temperature: float,
-            max_tokens: int,
-            tools: list[ToolSpec] | None,
-        ) -> ProviderResult:
+        def complete(self, body: ChatBody) -> ChatBody:
             self._n += 1
             susp = min(0.99, 0.05 * self._n)  # strictly increasing per call
-            return ProviderResult(
-                text=f'{{"suspicion": {susp}, "reason": "call {self._n}"}}',
-                prompt_tokens=1,
-                completion_tokens=1,
-            )
+            return completion_body(f'{{"suspicion": {susp}, "reason": "call {self._n}"}}', 1, 1)
 
     bundle = run_episode(CFG, mode="honest", out_root=tmp_path, monitor_provider=_Escalating())
     saf = json.loads((bundle / "scores.json").read_text())["safety"]

@@ -34,10 +34,15 @@ def _capture(
     return bodies
 
 
+def _call(tools: list[dict[str, Any]] | None) -> core.ProviderResult:
+    request = core.request_body("m", MESSAGES, 0.0, 16, tools)
+    return core.parse_completion(request, core.OpenRouterProvider(api_key="k").complete(request))
+
+
 def test_sends_messages_and_tools_and_parses_tool_calls(monkeypatch: pytest.MonkeyPatch) -> None:
     bodies = _capture(monkeypatch, {"role": "assistant", "content": None, "tool_calls": [TOOL_CALL]})
 
-    result = core.OpenRouterProvider(api_key="k").generate("m", MESSAGES, 0.0, 16, TOOLS)
+    result = _call(TOOLS)
 
     (body,) = bodies
     assert body["messages"] == MESSAGES
@@ -58,7 +63,7 @@ def test_records_cached_tokens(monkeypatch: pytest.MonkeyPatch) -> None:
         },
     )
 
-    result = core.OpenRouterProvider(api_key="k").generate("m", MESSAGES, 0.0, 16, None)
+    result = _call(None)
 
     assert result.prompt_tokens == 11
     assert result.completion_tokens == 4
@@ -68,7 +73,7 @@ def test_records_cached_tokens(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_omits_tools_and_tool_calls_when_absent(monkeypatch: pytest.MonkeyPatch) -> None:
     bodies = _capture(monkeypatch, {"role": "assistant", "content": "done"})
 
-    result = core.OpenRouterProvider(api_key="k").generate("m", MESSAGES, 0.0, 16, None)
+    result = _call(None)
 
     assert "tools" not in bodies[0]
     assert result.tool_calls is None

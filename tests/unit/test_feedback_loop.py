@@ -17,6 +17,35 @@ def _rec(seq: int, prompt_fp: str, output_fp: str, caller: str = "c") -> Generat
     )
 
 
+def test_delta_hash_links_a_reply_fed_back_as_a_new_message() -> None:
+    first = GenerateRecord(
+        seq=0,
+        ts=0.0,
+        episode_id="e",
+        caller_identity="c",
+        turn_id=None,
+        batch_id=None,
+        prompt_fp="whole-history",
+        output_fp="assistant-message",
+        model_role="r",
+        output_hash="reply-text",
+    )
+    second = GenerateRecord(
+        seq=1,
+        ts=1.0,
+        episode_id="e",
+        caller_identity="c",
+        turn_id=None,
+        batch_id=None,
+        prompt_fp="longer-history",
+        output_fp="next",
+        model_role="r",
+        delta_hashes=("reply-text",),
+    )
+    (run,) = find_self_feeding_runs([first, second])
+    assert [r.seq for r in run] == [0, 1]
+
+
 def test_detects_single_maximal_chain() -> None:
     recs = [_rec(0, "seed", "o0"), _rec(1, "o0", "o1"), _rec(2, "o1", "o2")]
     (run,) = find_self_feeding_runs(recs)
