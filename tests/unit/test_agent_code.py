@@ -67,10 +67,14 @@ def test_output_beyond_the_limit_is_cut_from_the_front_keeping_the_last_line(tmp
     assert (len(result.stdout), result.stdout.endswith("the last line\n")) == (100, True)
 
 
-def docker_stub(directory: Path, *, stops: bool) -> Path:
+# What `docker container inspect` prints for a container that is gone, by Docker CLI version.
+GONE_MESSAGES = ("Error: No such container: x", "Error: No such object: x")
+
+
+def docker_stub(directory: Path, *, stops: bool, gone_message: str = GONE_MESSAGES[0]) -> Path:
     """A `docker` on PATH that hangs on `run`, and on `rm` and `container inspect` unless ``stops``."""
     stub = directory / "docker"
-    gone = 'echo "Error: No such container" >&2; exit 1'
+    gone = f'echo "{gone_message}" >&2; exit 1'
     stub.write_text(
         "#!/bin/sh\n"
         f'[ "$1" = rm ] && {"exit 0" if stops else "exec sleep 30"}\n'
@@ -81,8 +85,15 @@ def docker_stub(directory: Path, *, stops: bool) -> Path:
     return directory
 
 
-def run_with_hung_docker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, stops: bool) -> None:
-    monkeypatch.setenv("PATH", f"{docker_stub(tmp_path, stops=stops)}:{os.environ['PATH']}")
+def run_with_hung_docker(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    stops: bool,
+    gone_message: str = GONE_MESSAGES[0],
+) -> None:
+    stub = docker_stub(tmp_path, stops=stops, gone_message=gone_message)
+    monkeypatch.setenv("PATH", f"{stub}:{os.environ['PATH']}")
     monkeypatch.setattr("loc_arena.agent_code.CLEANUP_TIMEOUT_SECONDS", 0.5)
     run_agent_code(
         ["-c", "pass"],
@@ -94,12 +105,14 @@ def run_with_hung_docker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, sto
     )
 
 
+@pytest.mark.parametrize("gone_message", GONE_MESSAGES)
 def test_a_timed_out_container_is_force_removed_before_the_timeout_is_raised(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    gone_message: str,
 ) -> None:
     with pytest.raises(subprocess.TimeoutExpired):
-        run_with_hung_docker(tmp_path, monkeypatch, stops=True)
+        run_with_hung_docker(tmp_path, monkeypatch, stops=True, gone_message=gone_message)
 
 
 def test_a_container_that_nothing_can_stop_is_named_in_the_error(

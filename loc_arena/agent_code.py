@@ -23,6 +23,8 @@ CONTAINER_NAME_PREFIX = "locarena-agent-code-"
 # How long `docker rm --force` may take, and then how long Docker may take to stop listing the container.
 CLEANUP_TIMEOUT_SECONDS = 10
 CLEANUP_POLL_SECONDS = 0.2
+# What `docker container inspect` reports for a container that is gone, depending on the Docker CLI version.
+GONE_CONTAINER_MESSAGES = ("No such container", "No such object")
 
 
 def run_agent_code(
@@ -175,4 +177,6 @@ def _is_container_gone(container_name: str) -> bool:
         )
     except subprocess.TimeoutExpired:
         return False
-    return inspected.returncode != 0 and "No such container" in inspected.stderr
+    return inspected.returncode != 0 and any(
+        message in inspected.stderr for message in GONE_CONTAINER_MESSAGES
+    )
