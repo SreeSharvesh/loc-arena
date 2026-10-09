@@ -25,6 +25,30 @@ CLEANUP_POLL_SECONDS = 0.2
 GONE_CONTAINER_MESSAGES = ("No such container", "No such object")
 
 
+class MissingImageError(Exception):
+    """Docker lacks the image agent code runs in, so grading stops instead of scoring the agents' work."""
+
+
+def require_sandbox_image(stack: StackSettings) -> None:
+    """With ``stack.sandbox_agent_code``, raise ``MissingImageError`` unless Docker has the sandbox image."""
+    if not stack.sandbox_agent_code:
+        return
+    try:
+        inspected = subprocess.run(
+            ["docker", "image", "inspect", stack.sandbox_image],
+            capture_output=True,
+            check=False,
+            timeout=CLEANUP_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise MissingImageError(f"could not ask Docker for {stack.sandbox_image}: {error}") from error
+    if inspected.returncode != 0:
+        raise MissingImageError(
+            f"Docker has no image {stack.sandbox_image}, which grading runs the agents' code in: build the "
+            "Dockerfile's `sandbox` target and tag it as stack.sandbox_image",
+        )
+
+
 def run_agent_code(
     arguments: Sequence[str],
     *,
@@ -36,17 +60,18 @@ def run_agent_code(
 ) -> subprocess.CompletedProcess[str]:
     """Run ``python <arguments>`` over code the agents wrote and return the finished process.
 
-    With ``stack.sandbox_agent_code`` the process runs in a throwaway container of ``stack.image``: no
-    network, no capabilities, the episode's memory, CPU and process limits, the host user's uid and gid, and
-    only ``mount`` visible, at the same absolute path so ``pythonpath`` stays valid. Otherwise it runs in this
-    process's interpreter with the provider key removed from its environment. Its stdout and stderr go to
-    temporary files and come back as their last ``stack.agent_code_output_limit_bytes`` bytes. A timeout stops
-    the container, so a hung process never outlives its caller, and re-raises ``subprocess.TimeoutExpired``.
+    With ``stack.sandbox_agent_code`` the process runs in a throwaway container of ``stack.sandbox_image``,
+    which holds no harness and no scenarios: no network, no capabilities, the episode's memory, CPU and
+    process limits, the host user's uid and gid, and only ``mount`` visible, at the same absolute path so
+    ``pythonpath`` stays valid. Otherwise it runs in this process's interpreter with the provider key removed
+    from its environment. Its stdout and stderr go to temporary files and come back as their last
+    ``stack.agent_code_output_limit_bytes`` bytes. A timeout stops the container, so a hung process never
+    outlives its caller, and re-raises ``subprocess.TimeoutExpired``.
     """
     container_name = f"{CONTAINER_NAME_PREFIX}{uuid.uuid4().hex}"
     if stack.sandbox_agent_code:
         command = [
-            "docker", "run", "--rm", "--network", "none", "--cap-drop", "ALL",
+            "docker", "run", "--rm", "--pull", "never", "--network", "none", "--cap-drop", "ALL",
             "--memory", stack.episode_memory_limit,
             "--cpus", str(stack.episode_cpus),
             "--pids-limit", str(stack.episode_pids_limit),
@@ -55,7 +80,7 @@ def run_agent_code(
             "--volume", f"{mount}:{mount}",
             "--workdir", str(working_directory),
             "--env", f"PYTHONPATH={pythonpath}",
-            stack.image, "python", *arguments,
+            stack.sandbox_image, "python", *arguments,
         ]  # fmt: skip
         directory, environment = None, None
     else:

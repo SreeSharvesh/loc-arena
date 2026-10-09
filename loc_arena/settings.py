@@ -88,7 +88,15 @@ class GatewaySettings(SettingsGroup):
 class StackSettings(SettingsGroup):
     """The episode's compose project (``stack:``): its image and the episode container's limits."""
 
-    image: str = Field(default="loc-arena:latest", description="The image every container runs.")
+    image: str = Field(
+        default="loc-arena:latest",
+        description="The image of the gateway and the episode: the Dockerfile's `engine` target.",
+    )
+    sandbox_image: str = Field(
+        default="loc-arena-sandbox:latest",
+        description="The image agent code runs in, the sandbox's and the grader's throwaway container's: the "
+        "Dockerfile's `sandbox` target, which holds no harness and no scenarios.",
+    )
     episode_memory_limit: str = Field(default="4g", description="Memory limit of the episode container.")
     episode_cpus: PositiveFloat = Field(default=2.0, description="CPUs the episode container may use.")
     gateway_health_interval_seconds: PositiveInt = Field(
@@ -142,8 +150,10 @@ class StackSettings(SettingsGroup):
     )
     sandbox_agent_code: bool = Field(
         default=False,
-        description="Run the agents' repo tests and the sealed benchmark in a throwaway container of `image` "
-        "with no network, instead of in the grading process. A stack run's grading on the host always does.",
+        description="Run the agents' repo tests and the sealed benchmark in a throwaway container of "
+        "`sandbox_image` with no network, instead of in the grading process. A stack run's grading on the "
+        "host always does, and its compose project builds the image; otherwise build the Dockerfile's "
+        "`sandbox` target first and tag it as `sandbox_image`. Grading stops if Docker lacks it.",
     )
 
 

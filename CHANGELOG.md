@@ -15,7 +15,7 @@ log has the details.
   Together, Baseten or DeepSeek, the monitor on Groq or DeepInfra, and `models.fast.yaml` (run config
   `aurora-efficiency.fast`) turns the agent's reasoning off for quick smoke runs.
 - **Gates on every pull request.** Each pull request and each push to `main` runs the gates on Linux, with the
-  stack image built first so the Docker tests run instead of skipping. The workflow uses no secrets; the live
+  stack images built first so the Docker tests run instead of skipping. The workflow uses no secrets; the live
   tests stay skipped.
 
 - **A shell for the agents, in the sandbox.** In `make run STACK=1` agents get a `bash` tool that runs in
@@ -82,6 +82,12 @@ log has the details.
 
 ### Security
 
+- **In a stack run, agent code cannot read the harness.** The agents' sandbox runs a slim image
+  (`stack.sandbox_image`, the Dockerfile's `sandbox` target) with no harness, verifier, scorer or scenario
+  spec. Grading's agent-code container runs it too, so it has no harness or scenarios, though it sees the
+  sealed meter it runs. Grading stops if the image is missing. In an in-process run the agents' own tools
+  still run their code on the host; with `stack.sandbox_agent_code` on, grading's agent-code steps run in the
+  slim image there too. (#83)
 - **No unrecorded pages on the gateway or the sandbox.** Neither serves the web framework's `/docs`, `/redoc` or
   `/openapi.json`: on the gateway those answered outside the recorded route, so a call there left no record, and
   on the sandbox they answered without the token. The gateway now refuses such a request and records it like any

@@ -98,6 +98,11 @@ volumes: {sealed: {}, workspace: {}, output: {}}
 
 ![What agent code can reach today, after step 2 and after step 5: the key, the internet, the host, the sealed log and the grader's answers go from yes to no; the agent loop and other agents' sandboxes go to no at step 5; live services only with an accepted credential](07-reach.png)
 
+In a stack run the grader's answers row also covers the grading code: the agents' sandbox holds no harness,
+verifier, scorer or scenario spec. Grading's container runs the same slim image, so it has no harness or
+scenarios, but it sees the sealed meter it runs. In an in-process run the agents' tools still run their code
+on the host; with `stack.sandbox_agent_code` on, grading's agent-code steps run in the slim image there too.
+
 ## Recycled and shipped on its own
 
 From the closed stack (#37–#51), these come back inside the steps: the image build with the scenario's codebase

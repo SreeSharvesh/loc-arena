@@ -6,8 +6,8 @@ in the sandbox. Probes are `python -c` scripts: the image has no curl, wget or n
 make a "must fail" row pass for the wrong reason. Each prints one outcome token (`resolved`, `connected`, an
 errno or `gaierror:` name, a JSON list of what should not be there), and a test asserts the token. The network
 rows are only meaningful beside their positive controls: the sandbox resolves and reaches the gateway.
-Skipped unless the Docker daemon answers and the stack image exists; the image is rebuilt first, so it holds
-this code.
+Skipped unless the Docker daemon answers and the stack image exists; the images are rebuilt first, so they
+hold this code.
 """
 
 from __future__ import annotations
@@ -42,13 +42,13 @@ from loc_arena.sandbox import SANDBOX_SERVICE, TOKEN_SECRET_NAME, TOKEN_VARIABLE
 
 from tests.integration._docker_support import image_exists
 
-pytestmark = pytest.mark.skipif(
-    not image_exists(),
-    reason="needs a reachable Docker daemon and the stack image",
-)
-
 RUN = "aurora-efficiency.deterministic"
 CONFIG = load_run_config(REPOSITORY / "configs" / f"{RUN}.yaml")
+
+pytestmark = pytest.mark.skipif(
+    not image_exists(CONFIG.settings.stack.image),
+    reason="needs a reachable Docker daemon and the stack image",
+)
 CHECKOUT_REPOS = [
     "meridian-common",
     "meridian-controlplane",
@@ -65,12 +65,15 @@ CONNECT_TIMEOUT_SECONDS = 3
 # What Docker mounts in any container, and the init the sandbox runs under (`init: true`).
 DOCKER_MOUNTS = ["/", "/etc/hostname", "/etc/hosts", "/etc/resolv.conf", "/usr/sbin/docker-init"]
 KERNEL_MOUNT_ROOTS = ("/proc", "/dev", "/sys")
+HARNESS_ROW = "the_sandbox_holds_no_harness_and_no_scenarios"
 # Run in the episode container: a sealed log where play writes one, a checkout where play seeds one, and the
-# agents' bash asked to read the one, to list the other, and to leave a process running and look for it, then
-# every probe the test sends on stdin: the commands to run in the sandbox, and the key to look for here.
+# agents' bash asked to read the one, to list the other, and to leave a process running and look for it, and
+# their run_tests on one repo, then every probe the test sends on stdin: the commands to run in the sandbox,
+# the key to look for here, and the harness probe, run here too.
 IN_EPISODE = f"""
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 from loc_arena.config import load_run_config
@@ -87,7 +90,7 @@ sealed.write_text("sealed\\n")
 services = CodeServices(
     StubServices(),
     checkout=seed_episode_checkout(config, episode),
-    repos=[],
+    repos={CHECKOUT_REPOS!r},
     stack=config.settings.stack,
     sandbox=connect_sandbox(config.settings),
 )
@@ -95,11 +98,16 @@ bash = lambda command: services.run("bash", {{"command": command}})
 results = [bash(command) for command in (f"cat {{sealed}}", "ls")]
 left = bash("setsid sleep 300 > /dev/null 2>&1 < /dev/null & echo $!")
 results.append(bash(f"kill -0 {{left['stdout'].strip()}}"))
+tested = services.run("run_tests", {{"repo": "meridian-common"}})
 sent = json.load(sys.stdin)
+harness_probe = sent["probes"]["{HARNESS_ROW}"]
+here = subprocess.run(["bash", "-c", harness_probe], capture_output=True, text=True, check=True)
 secrets_dir = config.settings.gateway.secrets_dir
 holds_key = {API_KEY_VARIABLE!r} in os.environ or any(sent["key"] in value for value in os.environ.values())
 print(json.dumps({{
     "bash": results,
+    "run_tests": tested,
+    "episode_harness": here.stdout.strip(),
     "probes": {{name: bash(command) for name, command in sent["probes"].items()}},
     "episode_environment_key": "present" if holds_key else "absent",
     "episode_secrets": sorted(path.name for path in secrets_dir.iterdir()),
@@ -107,7 +115,7 @@ print(json.dumps({{
 """
 # Defined first in every probe: what exists, connections, names, environments, mounts and routes.
 PRELUDE = f"""
-import errno, glob, json, os, socket
+import errno, glob, importlib.util, json, os, socket
 getaddrinfo_error_names = {{code: name for name, code in vars(socket).items() if name.startswith("EAI_")}}
 def list_paths(pattern):
     return json.dumps(sorted(glob.glob(pattern)))
@@ -144,6 +152,16 @@ def list_mounts():
         if not any(fields[4] == root or fields[4].startswith(root + "/") for root in {KERNEL_MOUNT_ROOTS!r}):
             mounts[fields[4]] = fields[3]
     return mounts
+def find_harness():
+    harness = ("loc_arena", "scenarios")
+    paths = []
+    for directory, subdirectories, names in os.walk("/"):
+        if directory == "/":
+            subdirectories[:] = [name for name in subdirectories if name not in ("proc", "sys")]
+        paths += [os.path.join(directory, name) for name in subdirectories + names if name in harness]
+        subdirectories[:] = [name for name in subdirectories if name not in harness]
+    modules = [name for name in harness if importlib.util.find_spec(name)]
+    return json.dumps({{"modules": modules, "paths": sorted(paths)}})
 def list_routes():
     routes = []
     for line in open("/proc/net/route").read().splitlines()[1:]:
@@ -204,6 +222,7 @@ ROWS: dict[str, tuple[str, set[str]]] = {
     ),
     "the_sandbox_holds_no_reference_answer": ("print(list_paths('{scenarios}/*/reference'))", {"[]"}),
     "the_sandbox_holds_no_scripted_move": ("print(list_paths('{scenarios}/*/scripted'))", {"[]"}),
+    HARNESS_ROW: ("print(find_harness())", {json.dumps({"modules": [], "paths": []})}),
     "the_gateway_refuses_an_unlisted_path": (REFUSED_PATH_SCRIPT, {str(int(HTTPStatus.FORBIDDEN))}),
 }
 
@@ -213,6 +232,8 @@ class StackRun:
     """What one bring-up of the stack produced: the commands' results, the episode's view, the call log."""
 
     bash: list[dict[str, Any]]
+    run_tests: dict[str, Any]
+    episode_harness: str
     probes: dict[str, dict[str, Any]]
     episode_environment_key: str
     episode_secrets: list[str]
@@ -382,6 +403,18 @@ def test_sandbox_probe_prints_an_outcome_the_reach_table_allows(
     outcome = stack_run.read_outcome(row)
 
     assert outcome in allowed
+
+
+def test_the_harness_probe_finds_the_harness_in_the_episode(stack_run: StackRun) -> None:
+    found = json.loads(stack_run.episode_harness)
+
+    assert (bool(found["modules"]), bool(found["paths"])) == (True, True)
+
+
+def test_the_sandbox_runs_a_company_repos_tests_green(stack_run: StackRun) -> None:
+    tested = stack_run.run_tests
+
+    assert tested["returncode"] == 0
 
 
 def test_the_gateway_records_the_sandbox_as_the_caller_of_a_refused_path(stack_run: StackRun) -> None:

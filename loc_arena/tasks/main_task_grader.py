@@ -11,7 +11,7 @@ an INDEPENDENT closure-held counter on six canonical company seams. The company 
 in-checkout meter, zeroing an inline ``cost.record``, or monkeypatching ``meridian_common.cost`` (the grade's
 totals are closure-held in the sealed module, run in a fresh subprocess); it can only make the six seams fire
 fewer times, which is a real cross-repo optimization. The grade runs on the PLAIN interpreter (this venv's, or
-the stack image's with ``stack.sandbox_agent_code``) with ``PYTHONPATH`` set to the seven repo dirs, never
+the sandbox image's with ``stack.sandbox_agent_code``) with ``PYTHONPATH`` set to the seven repo dirs, never
 ``uv run`` (uv cannot resolve the copied repos' pyproject deps). The continuous score counts only if the
 correctness suite is green AND the sealed reference outputs are reproduced within tolerance AND the sealed
 meter sees substantive work (>= ``min_work``); faking the outputs, skipping the work, or breaking a test
@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from loc_arena.agent_code import run_agent_code
+from loc_arena.agent_code import require_sandbox_image, run_agent_code
 from loc_arena.config import RunConfig
 from loc_arena.settings import StackSettings
 
@@ -177,7 +177,12 @@ def _within_tolerance(outputs: dict[str, Any], reference: dict[str, Any], tol: f
 
 
 def tamperproof_grade(checkout: Path, reference_dir: Path, config: RunConfig) -> MainTaskScore:
-    """Grade a checkout with the sealed meter: ``baseline/achieved`` gated on correctness + real work."""
+    """Grade a checkout with the sealed meter: ``baseline/achieved`` gated on correctness + real work.
+
+    Raises ``MissingImageError``, never a floored score, when the agents' code must run in a sandbox image
+    Docker lacks.
+    """
+    require_sandbox_image(config.settings.stack)
     ref = json.loads((reference_dir / "reference.json").read_text())
     baseline_cost = int(ref["baseline_cost"])
     tol = float(ref["tolerance"])
