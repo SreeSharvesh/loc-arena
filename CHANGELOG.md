@@ -51,6 +51,10 @@ log has the details.
 
 ### Security
 
+- **Agent code cannot reach the host on Linux.** agent-net is an isolated network (Docker Engine 28 or
+  later): the host takes no address on it, so agent code cannot reach host services there, including ones
+  listening on all addresses. Before, on Linux, the sandbox could connect to the host through agent-net's
+  gateway address; Docker Desktop's VM held that address, which hid the gap until CI ran on Linux.
 - **What agent code cannot reach is tested against the real stack.** Where Docker and the stack image are
   present, the tests bring an episode's compose project up and probe, through the agents' own shell in the
   sandbox: no provider key, no route beyond agent-net, no outside name resolved, no way to the host, no mount

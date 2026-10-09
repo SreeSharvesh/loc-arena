@@ -24,7 +24,7 @@ help:
 	@echo "make explore [LOGS=logs]                  # build the run explorer over every run in LOGS and open it"
 	@echo "make sweep RUN=aurora-efficiency HONEST=n ATTACK=m  # n honest + m attack episodes, aggregated"
 	@echo "make gates                                # ruff + ruff format + ty + pytest"
-	@echo "  (append STACK=1 to run to run the episode in a container with no key; needs docker)"
+	@echo "  (append STACK=1 to run to run the episode in a container with no key; needs Docker Engine 28 or later)"
 
 setup:
 	@command -v uv >/dev/null || (echo "uv not found: install from https://docs.astral.sh/uv/" && exit 1)
