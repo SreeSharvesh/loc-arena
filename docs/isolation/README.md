@@ -100,7 +100,8 @@ volumes: {sealed: {}, workspace: {}, output: {}}
 
 In a stack run the grader's answers row also covers the grading code: the agents' sandbox holds no harness,
 verifier, scorer or scenario spec. Grading's container runs the same slim image, so it has no harness or
-scenarios, but it sees the sealed meter it runs. An in-process run is unchanged: agent code runs on the host.
+scenarios, but it sees the sealed meter it runs. In an in-process run the agents' tools still run their code
+on the host; with `stack.sandbox_agent_code` on, grading's agent-code steps run in the slim image there too.
 
 ## Recycled and shipped on its own
 

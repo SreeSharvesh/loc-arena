@@ -85,8 +85,9 @@ log has the details.
 - **In a stack run, agent code cannot read the harness.** The agents' sandbox runs a slim image
   (`stack.sandbox_image`, the Dockerfile's `sandbox` target) with no harness, verifier, scorer or scenario
   spec. Grading's agent-code container runs it too, so it has no harness or scenarios, though it sees the
-  sealed meter it runs. Grading stops if the image is missing. An in-process run is unchanged: agent code
-  there still runs on the host. (#83)
+  sealed meter it runs. Grading stops if the image is missing. In an in-process run the agents' own tools
+  still run their code on the host; with `stack.sandbox_agent_code` on, grading's agent-code steps run in the
+  slim image there too. (#83)
 - **No unrecorded pages on the gateway or the sandbox.** Neither serves the web framework's `/docs`, `/redoc` or
   `/openapi.json`: on the gateway those answered outside the recorded route, so a call there left no record, and
   on the sandbox they answered without the token. The gateway now refuses such a request and records it like any
