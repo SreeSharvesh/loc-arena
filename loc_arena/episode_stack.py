@@ -25,7 +25,7 @@ import yaml
 from loc_arena.config import RunConfig, load_run_config
 from loc_arena.gateway.core import API_KEY_VARIABLE, GATEWAY_URL_VARIABLE, OPENROUTER_URL, OpenRouterProvider
 from loc_arena.harness import grade_run, locate_run
-from loc_arena.sandbox import SANDBOX_SERVICE, TOKEN_SECRET_NAME, TOKEN_VARIABLE
+from loc_arena.sandbox import SANDBOX_SERVICE, TOKEN_SECRET_NAME, TOKEN_VARIABLE, build_server_settings
 from loc_arena.settings import StackSettings
 from loc_arena.task import SANDBOX_URL_VARIABLE, resolve_scenario
 
@@ -129,8 +129,13 @@ def render_compose(
             SANDBOX_SERVICE: {
                 **shared,
                 **limits,
-                # It mounts no config, so it gets the run's settings in its command.
-                "command": ["python", "-m", "loc_arena.sandbox", config.settings.model_dump_json()],
+                # It mounts no config, so it gets its settings in its command.
+                "command": [
+                    "python",
+                    "-m",
+                    "sandbox_server",
+                    build_server_settings(config.settings).model_dump_json(),
+                ],
                 "secrets": [TOKEN_SECRET_NAME],
                 "volumes": [checkouts],
                 "networks": [AGENT_NETWORK],

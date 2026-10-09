@@ -5,6 +5,9 @@ The app, its runner and the processes it starts are real; the checkouts root is 
 
 from __future__ import annotations
 
+import json
+import subprocess
+import sys
 import time
 from http import HTTPStatus
 from pathlib import Path
@@ -12,19 +15,35 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from loc_arena.gateway.core import API_KEY_VARIABLE
-from loc_arena.sandbox import create_sandbox_app
-from loc_arena.settings import StackSettings
 from pydantic import SecretStr
+from sandbox_server.command import API_KEY_VARIABLE
+from sandbox_server.server import ServerSettings, create_sandbox_app
 
 TOKEN = "a-sandbox-token-of-at-least-thirty-two-characters"
 MARKER = "command-ran"
+OUTPUT_LIMIT_BYTES = 10_000
 
 
 @pytest.fixture
 def checkouts(tmp_path: Path) -> Path:
     (tmp_path / "checkouts" / "episode").mkdir(parents=True)
     return tmp_path / "checkouts"
+
+
+def serve(
+    checkouts: Path,
+    output_limit_bytes: int = OUTPUT_LIMIT_BYTES,
+    scratch: Path | None = None,
+) -> TestClient:
+    """The command server over ``checkouts``, whose scratch directories are ``scratch`` if given."""
+    settings = ServerSettings(
+        port=8090,
+        checkouts_directory=checkouts,
+        scratch_directories=(scratch,) if scratch else (),
+        output_limit_bytes=output_limit_bytes,
+        secrets_dir=checkouts.parent / "secrets",
+    )
+    return TestClient(create_sandbox_app(settings, SecretStr(TOKEN)))
 
 
 def post_command(
@@ -35,12 +54,10 @@ def post_command(
     token: str | None = TOKEN,
     timeout_seconds: float = 10,
     environment: dict[str, str] | None = None,
-    stack: StackSettings | None = None,
+    output_limit_bytes: int = OUTPUT_LIMIT_BYTES,
 ) -> tuple[int, Any]:
     """The status and the parsed body of a request to run ``command`` with bash."""
-    stack = (stack or StackSettings()).model_copy(update={"checkouts_directory": checkouts})
-    client = TestClient(create_sandbox_app(stack, SecretStr(TOKEN)))
-    response = client.post(
+    response = serve(checkouts, output_limit_bytes).post(
         "/run",
         json={
             "argv": ["bash", "-c", command],
@@ -54,34 +71,34 @@ def post_command(
 
 
 @pytest.mark.parametrize(
-    ("stack", "command", "environment", "expected"),
+    ("output_limit_bytes", "command", "environment", "expected"),
     [
         (
-            StackSettings(),
+            OUTPUT_LIMIT_BYTES,
             "echo hello; echo oops >&2; exit 3",
             {},
             {"returncode": 3, "stdout": "hello\n", "stderr": "oops\n"},
         ),
         (
-            StackSettings(),
+            OUTPUT_LIMIT_BYTES,
             f"printenv {API_KEY_VARIABLE} || echo no key",
             {},
             {"returncode": 0, "stdout": "no key\n", "stderr": ""},
         ),
         (
-            StackSettings(),
+            OUTPUT_LIMIT_BYTES,
             f"printenv {API_KEY_VARIABLE} || echo no key",
             {API_KEY_VARIABLE: "sk-or-sent-by-the-caller"},
             {"returncode": 0, "stdout": "no key\n", "stderr": ""},
         ),
         (
-            StackSettings(),
+            OUTPUT_LIMIT_BYTES,
             "echo $GREETING",
             {"GREETING": "hi"},
             {"returncode": 0, "stdout": "hi\n", "stderr": ""},
         ),
         (
-            StackSettings(command_output_limit_bytes=4),
+            4,
             "printf abcdefgh; printf 12345678 >&2",
             {},
             {"returncode": 0, "stdout": "efgh", "stderr": "5678"},
@@ -98,14 +115,19 @@ def post_command(
 def test_a_command_returns_its_exit_code_and_the_tails_of_its_output(
     checkouts: Path,
     monkeypatch: pytest.MonkeyPatch,
-    stack: StackSettings,
+    output_limit_bytes: int,
     command: str,
     environment: dict[str, str],
     expected: dict[str, object],
 ) -> None:
     monkeypatch.setenv(API_KEY_VARIABLE, "sk-or-not-a-real-key")
 
-    _status, result = post_command(checkouts, command, environment=environment, stack=stack)
+    _status, result = post_command(
+        checkouts,
+        command,
+        environment=environment,
+        output_limit_bytes=output_limit_bytes,
+    )
 
     assert result == expected
 
@@ -158,8 +180,7 @@ def test_a_reset_clears_the_scratch_directories_and_every_other_checkout_entry_b
     (checkouts / "pytest.ini").write_text("[pytest]")
     (checkouts / "episode" / "checkout").mkdir()
     (checkouts / "episode" / "checkout" / "kept.py").write_text("kept")
-    stack = StackSettings(checkouts_directory=checkouts, sandbox_scratch_directories=(scratch,))
-    client = TestClient(create_sandbox_app(stack, SecretStr(TOKEN)))
+    client = serve(checkouts, scratch=scratch)
 
     client.post(
         "/reset",
@@ -176,12 +197,22 @@ def test_a_reset_clears_the_scratch_directories_and_every_other_checkout_entry_b
 
 def test_a_reset_that_would_keep_the_whole_checkouts_directory_is_refused(checkouts: Path) -> None:
     (checkouts / "stray").mkdir()
-    client = TestClient(create_sandbox_app(StackSettings(checkouts_directory=checkouts), SecretStr(TOKEN)))
 
-    response = client.post(
+    response = serve(checkouts).post(
         "/reset",
         json={"keep": str(checkouts)},
         headers={"authorization": f"Bearer {TOKEN}"},
     )
 
     assert (response.status_code, (checkouts / "stray").exists()) == (HTTPStatus.FORBIDDEN, True)
+
+
+def test_the_command_server_loads_nothing_of_the_harness() -> None:
+    code = (
+        "import sys, json, sandbox_server, sandbox_server.server;"
+        "print(json.dumps([name for name in sys.modules if name.startswith(('loc_arena', 'scenarios'))]))"
+    )
+
+    loaded = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
+
+    assert json.loads(loaded.stdout) == []

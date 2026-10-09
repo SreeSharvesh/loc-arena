@@ -31,14 +31,13 @@ from typing import Any, Protocol
 import httpx2
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field, ValidationError, model_validator
+from sandbox_server.command import API_KEY_VARIABLE
 
 from loc_arena.config import ModelSpec, ProviderPreferences, RunConfig
 from loc_arena.logging_.agent_trace import AgentTrace
 from loc_arena.logging_.events import AppendOnlyLog, Event, fingerprint
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-# The environment variable holding the provider key, when this process calls OpenRouter directly.
-API_KEY_VARIABLE = "OPENROUTER_API_KEY"
 # The environment variable naming the gateway, when set: the provider sends its calls there, keyless.
 GATEWAY_URL_VARIABLE = "LOC_ARENA_GATEWAY_URL"
 # The key a caller of the gateway proxy sends; the proxy replaces it with the real one.

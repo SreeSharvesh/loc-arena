@@ -20,12 +20,13 @@ from loc_arena.config import ModelSpec, RunConfig, load_run_config
 from loc_arena.gateway.core import Message, ProviderResult, ToolSpec
 from loc_arena.harness import apply_mode
 from loc_arena.live import play_model_episode
-from loc_arena.sandbox import SandboxClient, SandboxError, create_sandbox_app
+from loc_arena.sandbox import SandboxClient, SandboxError, build_server_settings
 from loc_arena.scaffold.code_services import CodeServices
 from loc_arena.scaffold.tools import StubServices
-from loc_arena.settings import GatewaySettings, StackSettings
+from loc_arena.settings import GatewaySettings, LocArenaSettings, StackSettings
 from loc_arena.task import SANDBOX_URL_VARIABLE
 from pydantic import SecretStr
+from sandbox_server.server import ServerSettings, create_sandbox_app
 
 from tests.integration._live_support import QueuedProvider
 
@@ -78,9 +79,11 @@ class PlayedEpisode:
 class ServedSandbox:
     """The sandbox's command server on this host's loopback, until stopped."""
 
-    def __init__(self, stack: StackSettings, port: int = 0) -> None:
-        """Start serving ``stack``'s checkouts on ``port``, any free one by default."""
-        self._server = uvicorn.Server(uvicorn.Config(create_sandbox_app(stack, SecretStr(TOKEN)), port=port))
+    def __init__(self, settings: ServerSettings, port: int = 0) -> None:
+        """Start serving ``settings``' checkouts on ``port``, any free one by default."""
+        self._server = uvicorn.Server(
+            uvicorn.Config(create_sandbox_app(settings, SecretStr(TOKEN)), port=port),
+        )
         self._thread = threading.Thread(target=self._server.run, daemon=True)
         self._thread.start()
         while not self._server.started:
@@ -94,9 +97,9 @@ class ServedSandbox:
 
 
 @contextmanager
-def serve_sandbox(stack: StackSettings) -> Iterator[ServedSandbox]:
-    """The sandbox's command server, stopped on leaving."""
-    sandbox = ServedSandbox(stack)
+def serve_sandbox(settings: LocArenaSettings) -> Iterator[ServedSandbox]:
+    """The sandbox's command server for a run's ``settings``, stopped on leaving."""
+    sandbox = ServedSandbox(build_server_settings(settings))
     try:
         yield sandbox
     finally:
@@ -131,7 +134,7 @@ def episode(request: pytest.FixtureRequest, tmp_path_factory: pytest.TempPathFac
             snapshot = play_model_episode(HONEST, root / "run", provider=provider)
         else:
             config = with_sandbox(HONEST, root)
-            with serve_sandbox(config.settings.stack) as sandbox:
+            with serve_sandbox(config.settings) as sandbox:
                 patch.setenv(SANDBOX_URL_VARIABLE, sandbox.url)
                 snapshot = play_model_episode(config, root / "run", provider=provider)
     return PlayedEpisode(request.param, provider.offered, snapshot.checkout)
@@ -162,7 +165,10 @@ def test_bash_without_a_sandbox_is_refused(tmp_path: Path) -> None:
 
 def test_a_sandbox_that_died_gives_the_agent_an_error_result_and_the_episode_plays_on(tmp_path: Path) -> None:
     config = with_sandbox(HONEST, tmp_path)
-    with serve_sandbox(config.settings.stack) as sandbox, pytest.MonkeyPatch.context() as patch:
+    with (
+        serve_sandbox(config.settings) as sandbox,
+        pytest.MonkeyPatch.context() as patch,
+    ):
         patch.setenv(SANDBOX_URL_VARIABLE, sandbox.url)
         bash = f'{{"tool":"bash","args":{{"command":"touch {MARKER}"}}}}'
         provider = RecordingProvider({"agent-main": [bash]}, before_first_turn=sandbox.stop)
@@ -179,7 +185,10 @@ def test_an_episode_with_a_sandbox_starts_without_what_an_earlier_one_left(tmp_p
     config = with_sandbox(HONEST, tmp_path)
     (tmp_path / "checkouts" / "an-earlier-episode").mkdir()
     (tmp_path / "scratch" / "planted.py").write_text("planted")
-    with serve_sandbox(config.settings.stack) as sandbox, pytest.MonkeyPatch.context() as patch:
+    with (
+        serve_sandbox(config.settings) as sandbox,
+        pytest.MonkeyPatch.context() as patch,
+    ):
         patch.setenv(SANDBOX_URL_VARIABLE, sandbox.url)
 
         play_model_episode(config, tmp_path / "run", provider=RecordingProvider({}))
@@ -201,10 +210,10 @@ def client_of(port: int, recovery_seconds: float) -> SandboxClient:
 @pytest.fixture
 def returning_sandbox(tmp_path: Path) -> Iterator[tuple[Path, int]]:
     """A sandbox down at first, as a restarting one is, serving the checkouts half a second later."""
-    stack = with_sandbox(HONEST, tmp_path).settings.stack
+    settings = build_server_settings(with_sandbox(HONEST, tmp_path).settings)
     port = free_port()
     returned: list[ServedSandbox] = []
-    starting = threading.Timer(0.5, lambda: returned.append(ServedSandbox(stack, port)))
+    starting = threading.Timer(0.5, lambda: returned.append(ServedSandbox(settings, port)))
     starting.start()
     yield tmp_path / "checkouts", port
     starting.join()

@@ -29,6 +29,7 @@ def test_public_tree_excludes_internals_and_keeps_the_essentials(tmp_path: Path)
     # the public tree keeps the code, configs, scenarios, tests, the committed golden example, and the README
     for included in (
         "loc_arena",
+        "sandbox_server",
         "company",
         "configs",
         "scenarios",

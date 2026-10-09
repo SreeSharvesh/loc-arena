@@ -9,6 +9,7 @@ note: >-
   catch is deliberate, add a comment on the except line that says why the failure is safe to ignore.
 files:
   - loc_arena/**/*.py
+  - sandbox_server/**/*.py
   - scenarios/**/*.py
   - scripts/**/*.py
 ignores:

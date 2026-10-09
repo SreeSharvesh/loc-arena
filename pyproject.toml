@@ -27,7 +27,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["loc_arena"]
+packages = ["loc_arena", "sandbox_server"]
 
 [dependency-groups]
 # Dev toolchain. Kept minimal for the skeleton; phases add their own runtime deps (Inspect, FastAPI, ...).
@@ -112,7 +112,7 @@ extra-paths = [
 ]
 
 [tool.ty.src]
-include = ["loc_arena", "tests", "scenarios", "company"]
+include = ["loc_arena", "sandbox_server", "tests", "scenarios", "company"]
 # A pack's seed/, reference/ and scripted/ are subprocess-run fixtures (the lived-in workspace, the sealed grader
 # and the scripted moves),
 # not typed package code; the loader + main.py/side.py glue above them IS checked.

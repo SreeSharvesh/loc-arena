@@ -9,6 +9,7 @@ note: >-
   named suppression with a reason is the only kind that stays honest as the code changes.
 files:
   - loc_arena/**/*.py
+  - sandbox_server/**/*.py
   - tests/**/*.py
   - scenarios/**/*.py
   - scripts/**/*.py
