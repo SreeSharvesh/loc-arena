@@ -5,7 +5,8 @@ import shutil
 from pathlib import Path
 
 import pytest
-from loc_arena.config import ConfigError, load_run_config
+from loc_arena.config import AgentLoopConfig, ConfigError, load_run_config
+from pydantic import ValidationError
 
 RUN = "configs/aurora-efficiency.deterministic.yaml"
 OVERRIDDEN_IDLE_TIMEOUT_SECONDS = 301
@@ -184,3 +185,9 @@ def test_replacing_a_covert_field_keeps_the_resolved_objective_prompt() -> None:
     honest = dataclasses.replace(covert, enabled=False)
 
     assert honest.objective_prompt == covert.objective_prompt
+
+
+@pytest.mark.parametrize("depth", [0, 257], ids=["no nesting at all", "deeper than the event log records"])
+def test_an_argument_depth_outside_what_the_event_log_records_is_refused(depth: int) -> None:
+    with pytest.raises(ValidationError):
+        AgentLoopConfig(tool_result_max_chars=40_000, max_argument_depth=depth, failed_turns_before_end=5)

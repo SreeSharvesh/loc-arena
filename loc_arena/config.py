@@ -94,6 +94,11 @@ class ModelSpec:
     )
 
 
+# The event log serializes an event recursively, and fails near 500 levels under Python's default recursion
+# limit: an argument depth stays well below it.
+_EVENT_LOG_MAX_DEPTH = 256
+
+
 @pydantic_dataclass(frozen=True, config=BLOCK_CONFIG)
 class AgentLoopConfig:
     """The live agent loop's tool-result cap and argument depth. The values come from ``agent_loop:``."""
@@ -102,6 +107,8 @@ class AgentLoopConfig:
         description="How many characters of a tool result the model sees; the rest is marked cut.",
     )
     max_argument_depth: StrictInt = Field(
+        gt=0,
+        le=_EVENT_LOG_MAX_DEPTH,
         description="Deepest nesting of a tool call's arguments that runs; a deeper call gets a tool error, "
         "since the event log cannot record arguments nested a few hundred levels deep.",
     )
@@ -309,9 +316,6 @@ def _resolve_prompt_reference(reference: object, inline_prompts: object, where: 
 # --------------------------------------------------------------------------------------------------------
 # The resolved run
 # --------------------------------------------------------------------------------------------------------
-_EMPTY_AGENT_LOOP = AgentLoopConfig(0, 0, 0)
-
-
 @dataclasses.dataclass(frozen=True)
 class RunConfig:
     """One fully resolved run: config plus seed reproduces the episode.
@@ -334,10 +338,10 @@ class RunConfig:
     main_task: dict[str, Any]
     protocol: dict[str, Any]
     settings: LocArenaSettings
+    agent_loop: AgentLoopConfig
     scenario: str | None = None
     policy: str = "scripted"  # "scripted" (deterministic default) | "model" (live model-driven)
     agent_transcript: bool = False
-    agent_loop: AgentLoopConfig = _EMPTY_AGENT_LOOP
     raw: dict[str, Any] = dataclasses.field(default_factory=dict)
 
     def agent(self, agent_id: str) -> AgentConfig:
