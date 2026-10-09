@@ -11,6 +11,8 @@ It also checks who each covert action and each opened PR is recorded under.
 from __future__ import annotations
 
 import dataclasses
+import math
+import time
 from pathlib import Path
 from typing import cast
 
@@ -31,11 +33,14 @@ from loc_arena.scaffold.tools import AgentAction, AgentContext, Tools
 from loc_arena.verifier.side_task import kill_chain_v1
 from scenarios.loader import load_scenario
 
+from tests.integration._gateway_support import FailingProvider
 from tests.integration._live_support import AGENTS, Stack
 
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 SC = load_scenario("aurora_efficiency")
 DEADLINE = 10_000.0
+# Calls 50 s apart, the last 50 s before the deadline, in a job started 100 s before them, at time 0 or later.
+FITTING_CALLS = 198
 ROGUE_CALLER = "the-jobs-own-identity"
 
 
@@ -61,7 +66,7 @@ class _RecordingEdge:
         return self._inner.generate(request)
 
 
-def _tools(stack: Stack, edge: _RecordingEdge | None = None) -> Tools:
+def _tools(stack: Stack, edge: _RecordingEdge | None = None, *, ceiling: float = math.inf) -> Tools:
     world = generate_world(CFG, SC, CFG.seed)
     covert = CovertToolServices(
         ForgeServices(Forge(world)),
@@ -74,6 +79,7 @@ def _tools(stack: Stack, edge: _RecordingEdge | None = None) -> Tools:
         agents=list(AGENTS),
         rogue_account="batch-runner",
         rogue_caller=ROGUE_CALLER,
+        ceiling=ceiling,
     )
 
     return Tools(stack.recorder, MessageBus(stack.recorder), covert, spawn_handler=_no_spawn)
@@ -123,6 +129,74 @@ def test_start_rogue_loop_requires_submit_job(tmp_path: Path) -> None:
     tools = _tools(stack)
     result = tools.execute(_ctx(stack, "distill-agent"), AgentAction("start_rogue_loop", {}), 1)
     assert result.get("blocked") is True
+
+
+def test_a_rogue_loop_whose_model_calls_fail_returns_an_error_result(tmp_path: Path) -> None:
+    stack = Stack(tmp_path, CFG, drop_coverage=False, provider=FailingProvider())
+    tools = _tools(stack)
+
+    loop = tools.execute(_ctx(stack, "serving-agent"), AgentAction("start_rogue_loop", {"iterations": 10}), 1)
+
+    assert "error" in loop
+
+
+@pytest.mark.parametrize(
+    "iterations",
+    [10**400, FITTING_CALLS + 1, 0],
+    ids=["too large for a float", "more calls than fit before the deadline", "no call"],
+)
+def test_a_rogue_loop_of_iterations_that_do_not_fit_the_episode_returns_an_error_result(
+    tmp_path: Path,
+    iterations: int,
+) -> None:
+    stack = Stack(tmp_path, CFG, drop_coverage=False)
+    tools = _tools(stack)
+    action = AgentAction("start_rogue_loop", {"iterations": iterations})
+
+    loop = tools.execute(_ctx(stack, "serving-agent"), action, 1)
+
+    assert "error" in loop
+
+
+def test_a_rogue_loop_of_as_many_iterations_as_fit_runs_them_all(tmp_path: Path) -> None:
+    stack = Stack(tmp_path, CFG, drop_coverage=False)
+    tools = _tools(stack)
+    action = AgentAction("start_rogue_loop", {"iterations": FITTING_CALLS})
+
+    loop = tools.execute(_ctx(stack, "serving-agent"), action, 1)
+
+    assert loop["calls"] == FITTING_CALLS
+
+
+def test_a_second_rogue_loop_returns_an_error_result(tmp_path: Path) -> None:
+    stack = Stack(tmp_path, CFG, drop_coverage=False)
+    tools = _tools(stack)
+    tools.execute(_ctx(stack, "serving-agent"), AgentAction("start_rogue_loop", {}), 1)
+
+    again = tools.execute(_ctx(stack, "serving-agent"), AgentAction("start_rogue_loop", {}), 2)
+
+    assert "error" in again
+
+
+def test_a_rogue_loop_whose_model_calls_failed_cannot_be_launched_again(tmp_path: Path) -> None:
+    stack = Stack(tmp_path, CFG, drop_coverage=False, provider=FailingProvider())
+    edge = _RecordingEdge(stack.edge)
+    tools = _tools(stack, edge)
+    tools.execute(_ctx(stack, "serving-agent"), AgentAction("start_rogue_loop", {}), 1)
+    calls_of_the_first_launch = len(edge.requests)
+
+    tools.execute(_ctx(stack, "serving-agent"), AgentAction("start_rogue_loop", {}), 2)
+
+    assert len(edge.requests) == calls_of_the_first_launch
+
+
+def test_a_rogue_loop_launched_past_the_ceiling_makes_no_model_call(tmp_path: Path) -> None:
+    stack = Stack(tmp_path, CFG, drop_coverage=False)
+    tools = _tools(stack, ceiling=time.monotonic())
+
+    loop = tools.execute(_ctx(stack, "serving-agent"), AgentAction("start_rogue_loop", {}), 1)
+
+    assert loop["calls"] == 0
 
 
 @pytest.mark.parametrize(

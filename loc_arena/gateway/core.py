@@ -25,11 +25,12 @@ import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from http import HTTPStatus
 from typing import Any, Protocol
 
 import httpx2
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from loc_arena.config import RunConfig
 from loc_arena.logging_.agent_trace import AgentTrace
@@ -54,6 +55,43 @@ def is_live_provider_configured() -> bool:
     return bool(os.environ.get(GATEWAY_URL_VARIABLE) or os.environ.get(API_KEY_VARIABLE))
 
 
+class ProviderError(Exception):
+    """A model call the provider failed: an error status past the retries, no connection, or no completion."""
+
+
+class _ChatMessage(BaseModel):
+    """The reply's message: text (null when the model answered only with tool calls) and its tool calls."""
+
+    content: str | None = None
+    tool_calls: list[dict[str, Any]] | None = None
+
+
+class _ChatChoice(BaseModel):
+    message: _ChatMessage
+    finish_reason: str | None = None  # "error": the provider failed mid-reply
+
+
+class _PromptTokensDetails(BaseModel):
+    cached_tokens: int | None = None
+
+
+class _Usage(BaseModel):
+    """The reply's token counts; a count the provider leaves out or sends as null is estimated."""
+
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    prompt_tokens_details: _PromptTokensDetails | None = None
+
+
+class _ChatCompletion(BaseModel):
+    """The part of an OpenRouter chat completion the gateway reads; a reply without it is a failed call."""
+
+    choices: list[_ChatChoice] = Field(min_length=1)
+    usage: _Usage | None = None
+
+
+# A refused key, no credits, or a model with no endpoint: the run is misconfigured, and stops at once.
+_MISCONFIGURED = frozenset({HTTPStatus.UNAUTHORIZED, HTTPStatus.PAYMENT_REQUIRED, HTTPStatus.NOT_FOUND})
 _MAX_RETRIES = 5  # bounded retries on a rate-limited (429) or transient (5xx) provider response
 _BACKOFF_BASE_SECONDS = 2.0  # exponential backoff base; the nth retry waits ~base * 2**n, capped at 30s
 
@@ -216,10 +254,14 @@ class OpenRouterProvider:
         self,
         api_key: str | None = None,
         *,
-        timeout: float = 60.0,
+        timeout: float,
         gateway_url: str | None = None,
     ) -> None:
-        """Send to ``gateway_url``, else to the gateway the environment names, else to OpenRouter keyed."""
+        """Send to ``gateway_url``, else to the gateway the environment names, else to OpenRouter keyed.
+
+        ``timeout`` bounds one request; callers pass ``gateway.timeout_seconds``, so a reply the gateway still
+        waits for is never abandoned, paid for, and sent again.
+        """
         gateway_url = gateway_url or os.environ.get(GATEWAY_URL_VARIABLE)
         if gateway_url:  # the gateway adds the key: a real one would only travel the connection to it
             self._url, self._key = gateway_url, _GATEWAY_PLACEHOLDER_KEY
@@ -275,24 +317,36 @@ class OpenRouterProvider:
         Retries a rate-limited (429) or transient server (5xx) response a bounded number of times with
         exponential backoff, honoring a ``Retry-After`` header when the provider sends one, so a burst of
         calls against a rate-limited model does not abort the whole episode. A non-transient error, or a
-        429/5xx that persists past the retry budget, still raises.
+        429/5xx that persists past the retry budget, no connection, or a reply that is no chat completion
+        with text content raises ``ProviderError``; a refused key, no credits or an unknown model raises the
+        ``httpx2.HTTPStatusError`` itself, since every later call would fail the same way.
         """
-        resp = self._post_with_retries(model, messages, temperature, max_tokens, tools)
-        resp.raise_for_status()
-        data = resp.json()
+        try:
+            resp = self._post_with_retries(model, messages, temperature, max_tokens, tools)
+            resp.raise_for_status()
+            completion = _ChatCompletion.model_validate_json(resp.content)
+        except httpx2.HTTPStatusError as error:
+            if error.response.status_code in _MISCONFIGURED:
+                raise
+            raise ProviderError(f"{model}: {error}") from error
+        except (httpx2.HTTPError, ValidationError) as error:
+            raise ProviderError(f"{model}: {error}") from error
+        choice = completion.choices[0]
+        if choice.finish_reason == "error":
+            raise ProviderError(f"{model}: the provider failed mid-reply")
         # Some models (e.g. reasoning models) can return a null ``content`` when the whole reply went to a
         # separate reasoning field, the model declined, or the reply is tool calls only -- coerce to "".
-        message = data["choices"][0].get("message", {})
-        text = message.get("content") or ""
-        usage = data.get("usage", {})
-        details = usage.get("prompt_tokens_details") or {}
-        cached = int(details.get("cached_tokens", 0)) if isinstance(details, dict) else 0
+        text = choice.message.content or ""
+        usage = completion.usage or _Usage()
+        details = usage.prompt_tokens_details or _PromptTokensDetails()
+        prompt_tokens = usage.prompt_tokens
+        completion_tokens = usage.completion_tokens
         return ProviderResult(
             text=text,
-            prompt_tokens=int(usage.get("prompt_tokens", _estimate_tokens(json.dumps(messages)))),
-            completion_tokens=int(usage.get("completion_tokens", _estimate_tokens(text))),
-            tool_calls=message.get("tool_calls") or None,
-            cached_tokens=cached,
+            prompt_tokens=_estimate_tokens(json.dumps(messages)) if prompt_tokens is None else prompt_tokens,
+            completion_tokens=_estimate_tokens(text) if completion_tokens is None else completion_tokens,
+            tool_calls=choice.message.tool_calls or None,
+            cached_tokens=details.cached_tokens or 0,
         )
 
 
@@ -470,6 +524,7 @@ class GatewayCore:
         self._secret = turn_secret
         self._clock = clock
         self._batch_counter = 0
+        self.failed_calls = 0  # calls the provider failed past its retries
         self._teacher_tokens_used = 0
         self._quota = config.settings.inference.batch_generate.teacher_token_quota
         self._monitor_covered = monitor_covered
@@ -592,6 +647,20 @@ class GatewayCore:
         self._sealed.append(event)
         return seq
 
+    def _call_provider(
+        self,
+        model: str,
+        messages: list[Message],
+        temperature: float,
+        max_tokens: int,
+        tools: list[ToolSpec] | None,
+    ) -> ProviderResult:
+        try:
+            return self._provider.generate(model, messages, temperature, max_tokens, tools)
+        except ProviderError:
+            self.failed_calls += 1
+            raise
+
     # -- endpoints ---------------------------------------------------------------------------------------
     def generate(self, req: GenerateRequest) -> GenerateResponse:
         """Serve one generate call: resolve, inject, call the provider, write the sealed record."""
@@ -601,7 +670,7 @@ class GatewayCore:
         if req.temperature is not None:
             temperature = req.temperature
         model_input = self._inject_covert(identity, req.chat_messages())
-        result = self._provider.generate(model, model_input, temperature, max_tokens, req.tools)
+        result = self._call_provider(model, model_input, temperature, max_tokens, req.tools)
         seq = self._write_record(
             identity=identity,
             turn_id=turn_id,
@@ -648,7 +717,7 @@ class GatewayCore:
         texts: list[str] = []
         seqs: list[int] = []
         for prompt in req.prompts:
-            result = self._provider.generate(
+            result = self._call_provider(
                 model,
                 [{"role": "user", "content": prompt}],
                 temperature,

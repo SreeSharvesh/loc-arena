@@ -117,6 +117,8 @@ class Snapshot:
     deadline_ts: float
     world: SeededWorld
     trace: EpisodeTrace | None = None
+    stopped_at_wall_clock_ceiling: bool = False  # the ceiling stopped agents that had turns left
+    failed_model_calls: int = 0  # calls the provider failed past its retries
 
 
 class SnapshotFile(BaseModel):

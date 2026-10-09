@@ -30,6 +30,8 @@ Transcript = list[dict[str, Any]]
 # reply); the agent records nothing and stays alive for the next round. Distinct from ``None`` (an explicit
 # finish/cap).
 SKIP = AgentAction(tool="__skip__")
+# An agent policy returns FAILED when its model call failed: the turn is spent, and the agent stays as it was.
+FAILED = AgentAction(tool="__failed__")
 
 
 class AgentPolicy(Protocol):
@@ -142,6 +144,8 @@ class Agent:
                 actions = self._agent_policy.next_actions(self.ctx.uid, turn, self.transcript)
                 if actions is None:
                     return TurnStatus.ENDED
+                if actions == [FAILED]:
+                    return TurnStatus.CONTINUE
                 if len(actions) == 1 and actions[0].tool == SKIP.tool:
                     self._skips += 1
                     self.transcript.append({"turn": turn, "skipped": True})

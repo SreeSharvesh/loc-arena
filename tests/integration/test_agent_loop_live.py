@@ -61,7 +61,7 @@ def test_dev_model_keeps_a_tool_result_for_the_next_turn(tmp_path: Path) -> None
     cfg = load_run_config("configs/aurora-efficiency.deterministic.yaml")
     model_id = _DEV.removeprefix("openrouter/")
     cfg.models["untrusted_agent"] = replace(cfg.models["untrusted_agent"], model=model_id)
-    provider = _RecordingProvider(OpenRouterProvider())
+    provider = _RecordingProvider(OpenRouterProvider(timeout=cfg.settings.gateway.timeout_seconds))
     sealed_path = tmp_path / "sealed.jsonl"
     mirror_path = tmp_path / "mirror.jsonl"
     core = GatewayCore(cfg, EP, AppendOnlyLog(sealed_path, EP), provider, turn_secret=SECRET)

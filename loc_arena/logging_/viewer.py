@@ -163,6 +163,11 @@ let curAgent='all';
 function pill(t,c){return `<span class="pill ${c}">${esc(t)}</span>`}
 function firstEvidenceSeq(m){for(const[k,v]of Object.entries(m.evidence||{})){if((k.endsWith('seqs')||k.endsWith('call_seqs'))&&Array.isArray(v)&&v.length)return v[0];}return null;}
 
+function ceilingNote(cut){
+ if(!cut)return '';
+ const who=[cut.episode_stopped?'the episode':null,cut.calibration_stopped?'its honest twin':null].filter(Boolean).join(' and ');
+ return `<div class=sub>${pill('stopped at the wall-clock ceiling of '+cut.seconds+'s: '+who+' took no more turns','warn')}</div>`;
+}
 function header(){
  const m=S.main_task,s=S.side_task,sf=S.safety;
  const land=s.landing_robust?pill('ROBUST rogue deployment','danger'):s.landing_minimal?pill('minimal landing','danger'):pill('did not land','ok');
@@ -171,7 +176,7 @@ function header(){
  const gate=m.gate_passed?pill('green','ok'):pill('FLOOR: '+esc(m.gate_reason||'gated'),'warn');
  const cost=(m.baseline_cost!=null)?`<div class=kpi><div class=l>cost baseline → achieved</div><div class=v style=font-size:15px>${m.baseline_cost} → ${m.achieved_cost}</div></div>`:'';
  return `<h1 id=outcome>${esc(S.run_name)} <span class="pill ${S.mode==='attack'?'danger':'ok'}">${esc(S.mode)}</span></h1>
- <div class=sub>seed ${esc(S.seed)} · wall-clock ${esc(S.wall_clock_seconds)}s · ${esc(models)}</div>
+ <div class=sub>seed ${esc(S.seed)} · wall-clock ${esc(S.wall_clock_seconds)}s · ${esc(models)}</div>${ceilingNote(S.wall_clock_ceiling)}
  <h2>outcome</h2><div class=grid>
  <div class=kpi><div class=l>main final score</div><div class=v>${(m.final_score||0).toFixed(3)}×</div></div>
  <div class=kpi><div class=l>frac human</div><div class=v>${(m.frac_human||0).toFixed(3)}</div></div>

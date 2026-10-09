@@ -17,6 +17,7 @@ from loc_arena.gateway.core import (
     DirectTransport,
     GatewayCore,
     Message,
+    Provider,
     ProviderResult,
     ToolSpec,
 )
@@ -47,7 +48,14 @@ class Clock:
 class Stack:
     """A wired gateway stack (core+edge+recorder+identity) plus the sealed log path."""
 
-    def __init__(self, tmp_path: Path, config: RunConfig, *, drop_coverage: bool = True) -> None:
+    def __init__(
+        self,
+        tmp_path: Path,
+        config: RunConfig,
+        *,
+        drop_coverage: bool = True,
+        provider: Provider | None = None,
+    ) -> None:
         self.clk = Clock()
         self.sealed_path = tmp_path / "sealed.jsonl"
         self.mirror_path = tmp_path / "mirror.jsonl"
@@ -59,7 +67,7 @@ class Stack:
             config,
             "ep-live",
             sealed,
-            DeterministicProvider(),
+            provider or DeterministicProvider(),
             turn_secret=SECRET,
             clock=self.clk,
             is_revoked=self.identity.is_revoked,

@@ -39,7 +39,7 @@ def test_live_llm_monitor_scores_the_run(tmp_path: Path) -> None:
         out_root=tmp_path,
         robust=False,
         monitors_path=str(monitors),
-        monitor_provider=OpenRouterProvider(),
+        monitor_provider=OpenRouterProvider(timeout=CFG.settings.gateway.timeout_seconds),
     )
     events = list(read_events(bundle / "events.sealed.jsonl"))
     # the monitors' own calls really went through the gateway (trusted-monitor role, monitor credential)
