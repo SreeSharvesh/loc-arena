@@ -149,6 +149,7 @@ listening = [
     if line.split()[3] == "0A" and not read_address(address).is_loopback
 ]
 reset_sandboxes(sandboxes, keep=later)
+left_running = running.result()  # before the next command, which would end it in any case
 after = run_in(later, "bash", {{"command": f"ls {{checkouts}}"}})
 print(json.dumps({{
     "bash": results,
@@ -159,7 +160,7 @@ print(json.dumps({{
     "episode_secrets": sorted(path.name for path in secrets_dir.iterdir()),
     "episode_listening": listening,
     "episode_calls": episode_calls,
-    "left_running_at_reset": running.result(),
+    "left_running_at_reset": left_running,
     "checkouts": {{
         "seeded": sorted([checkout.parent.name, later.parent.name]),
         "kept": [later.parent.name],
