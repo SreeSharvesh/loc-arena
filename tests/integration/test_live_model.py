@@ -25,7 +25,14 @@ SECRET = "s"
 def test_live_model_turn_is_stamped_and_parses_a_tool_call(tmp_path: Path) -> None:
     cfg = load_run_config("configs/aurora-efficiency.deterministic.yaml")
     sealed = AppendOnlyLog(tmp_path / "sealed.jsonl", EP)
-    core = GatewayCore(cfg, EP, sealed, OpenRouterProvider(), turn_secret=SECRET, clock=lambda: 100.0)
+    core = GatewayCore(
+        cfg,
+        EP,
+        sealed,
+        OpenRouterProvider(timeout=cfg.settings.gateway.timeout_seconds),
+        turn_secret=SECRET,
+        clock=lambda: 100.0,
+    )
     edge = GatewayEdge(
         EP,
         DirectTransport(core),

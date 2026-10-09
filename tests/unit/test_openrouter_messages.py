@@ -8,6 +8,8 @@ import httpx2
 import pytest
 from loc_arena.gateway import core
 
+TIMEOUT_SECONDS = 1.0  # stubbed posts never wait
+
 TOOL_CALL = {"id": "call_1", "type": "function", "function": {"name": "bash", "arguments": '{"cmd": "ls"}'}}
 TOOLS = [{"type": "function", "function": {"name": "bash", "parameters": {"type": "object"}}}]
 MESSAGES = [{"role": "system", "content": "be terse"}, {"role": "user", "content": "list files"}]
@@ -38,7 +40,13 @@ def _capture(
 def test_sends_messages_and_tools_and_parses_tool_calls(monkeypatch: pytest.MonkeyPatch) -> None:
     bodies = _capture(monkeypatch, {"role": "assistant", "content": None, "tool_calls": [TOOL_CALL]})
 
-    result = core.OpenRouterProvider(api_key="k").generate("m", MESSAGES, 0.0, 16, TOOLS)
+    result = core.OpenRouterProvider(api_key="k", timeout=TIMEOUT_SECONDS).generate(
+        "m",
+        MESSAGES,
+        0.0,
+        16,
+        TOOLS,
+    )
 
     (body,) = bodies
     assert body["messages"] == MESSAGES
@@ -59,7 +67,13 @@ def test_records_cached_tokens(monkeypatch: pytest.MonkeyPatch) -> None:
         },
     )
 
-    result = core.OpenRouterProvider(api_key="k").generate("m", MESSAGES, 0.0, 16, None)
+    result = core.OpenRouterProvider(api_key="k", timeout=TIMEOUT_SECONDS).generate(
+        "m",
+        MESSAGES,
+        0.0,
+        16,
+        None,
+    )
 
     assert result.prompt_tokens == 11
     assert result.completion_tokens == 4
@@ -69,7 +83,13 @@ def test_records_cached_tokens(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_omits_tools_and_tool_calls_when_absent(monkeypatch: pytest.MonkeyPatch) -> None:
     bodies = _capture(monkeypatch, {"role": "assistant", "content": "done"})
 
-    result = core.OpenRouterProvider(api_key="k").generate("m", MESSAGES, 0.0, 16, None)
+    result = core.OpenRouterProvider(api_key="k", timeout=TIMEOUT_SECONDS).generate(
+        "m",
+        MESSAGES,
+        0.0,
+        16,
+        None,
+    )
 
     assert "tools" not in bodies[0]
     assert result.tool_calls is None
@@ -109,7 +129,7 @@ def test_a_reply_that_is_no_chat_completion_raises_a_provider_error(
         request=httpx2.Request("POST", core.OPENROUTER_URL),
     )
     monkeypatch.setattr("loc_arena.gateway.core.httpx2.post", lambda *_args, **_kwargs: reply)
-    provider = core.OpenRouterProvider(api_key="k")
+    provider = core.OpenRouterProvider(api_key="k", timeout=TIMEOUT_SECONDS)
 
     with pytest.raises(core.ProviderError):
         provider.generate("m", MESSAGES, 0.0, 16, TOOLS)
@@ -133,6 +153,12 @@ def test_a_null_token_count_reads_as_missing(
 ) -> None:
     _capture(monkeypatch, {"role": "assistant", "content": "done"}, usage=usage)
 
-    result = core.OpenRouterProvider(api_key="k").generate("m", MESSAGES, 0.0, 16, None)
+    result = core.OpenRouterProvider(api_key="k", timeout=TIMEOUT_SECONDS).generate(
+        "m",
+        MESSAGES,
+        0.0,
+        16,
+        None,
+    )
 
     assert (result.prompt_tokens, result.completion_tokens, result.cached_tokens) == expected

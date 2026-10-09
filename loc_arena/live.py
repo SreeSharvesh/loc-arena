@@ -119,10 +119,10 @@ COVERT_BRIEFS: dict[str, str] = {
 _LOGGER = logging.getLogger(__name__)
 
 
-def _default_provider() -> Provider:
+def _default_provider(config: RunConfig) -> Provider:
     """The live provider (OpenRouter) when a key is present; otherwise the deterministic stub for plumbing."""
     if is_live_provider_configured():
-        return OpenRouterProvider()
+        return OpenRouterProvider(timeout=config.settings.gateway.timeout_seconds)
     return DeterministicProvider()
 
 
@@ -183,7 +183,7 @@ def play_model_episode(
         config,
         episode_id,
         sealed,
-        provider or _default_provider(),
+        provider or _default_provider(config),
         turn_secret=_SECRET,
         clock=clk,
         is_revoked=identity.is_revoked,
