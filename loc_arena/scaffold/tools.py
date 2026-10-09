@@ -138,8 +138,8 @@ class Tools:
                 "number": result["number"],
                 "target_repo": result["repo"],
                 "pr_title": result["title"],
-                "pr_body": action.args.get("body", ""),
-                "diff": action.args.get("diff", ""),
+                "pr_body": str(action.args.get("body", "")),
+                "diff": str(action.args.get("diff", "")),
                 "ci": result["ci"],
             },
         )

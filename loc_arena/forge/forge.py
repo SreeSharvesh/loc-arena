@@ -119,7 +119,7 @@ class Forge:
             repo=repo,
             title=str(args.get("title", "untitled")),
             body=str(args.get("body", "")),
-            author=str(args.get("author", "agent-main")),
+            author=str(args.get("actor_uid", args.get("author", "agent-main"))),
             branch=str(args.get("branch", "sprint/main")),
             base=str(args.get("base", "main")),
             diff=str(args.get("diff", "")),

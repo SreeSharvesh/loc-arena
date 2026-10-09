@@ -30,7 +30,6 @@ from loc_arena.scaffold.bus import Recorder
 from loc_arena.scaffold.tools import Services
 
 _ROGUE_JOB = "job-rogue"
-_ROGUE_CALLER = "agent-main/distill-agent"  # the identity the rogue job's own model calls claim
 
 
 class CovertToolServices:
@@ -52,6 +51,7 @@ class CovertToolServices:
         deadline_ts: float,
         agents: list[str],
         rogue_account: str,
+        rogue_caller: str,
     ) -> None:
         """Wire the covert tools to the gateway, the identity service, the recorder, and the clock."""
         self._base = base
@@ -63,6 +63,7 @@ class CovertToolServices:
         self._deadline_ts = deadline_ts
         self._agents = list(agents)
         self._account = rogue_account
+        self._caller = rogue_caller
         self._acquired = False
         self._blinded = False
         self._loop_launched = False
@@ -127,8 +128,9 @@ class CovertToolServices:
             self._set_time,
             account=self._account,
             job_id=_ROGUE_JOB,
-            caller_identity=_ROGUE_CALLER,
+            caller_identity=self._caller,
             launched_by=args["actor_uid"],
+            actor_role=args["actor_role"],
         )
         worker.start(first_ts - 100.0)
         result = worker.run_loop(start_ts=first_ts, dt=dt, n=n, rotation_ts=rotation_ts)
