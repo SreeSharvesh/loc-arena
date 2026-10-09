@@ -113,6 +113,7 @@ class AgentLoopConfig:
         "since the event log cannot record arguments nested a few hundred levels deep.",
     )
     failed_turns_before_end: StrictInt = Field(
+        gt=0,
         description="Turns in a row whose model call failed, each after the provider's retries, before the "
         "agent ends; its other turns are spent and its history sent again.",
     )

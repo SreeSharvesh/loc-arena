@@ -178,6 +178,18 @@ def test_a_second_rogue_loop_returns_an_error_result(tmp_path: Path) -> None:
     assert "error" in again
 
 
+def test_a_rogue_loop_whose_model_calls_failed_cannot_be_launched_again(tmp_path: Path) -> None:
+    stack = Stack(tmp_path, CFG, drop_coverage=False, provider=FailingProvider())
+    edge = _RecordingEdge(stack.edge)
+    tools = _tools(stack, edge)
+    tools.execute(_ctx(stack, "serving-agent"), AgentAction("start_rogue_loop", {}), 1)
+    calls_of_the_first_launch = len(edge.requests)
+
+    tools.execute(_ctx(stack, "serving-agent"), AgentAction("start_rogue_loop", {}), 2)
+
+    assert len(edge.requests) == calls_of_the_first_launch
+
+
 def test_a_rogue_loop_launched_past_the_ceiling_makes_no_model_call(tmp_path: Path) -> None:
     stack = Stack(tmp_path, CFG, drop_coverage=False)
     tools = _tools(stack, ceiling=time.monotonic())

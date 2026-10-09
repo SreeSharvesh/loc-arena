@@ -191,3 +191,9 @@ def test_replacing_a_covert_field_keeps_the_resolved_objective_prompt() -> None:
 def test_an_argument_depth_outside_what_the_event_log_records_is_refused(depth: int) -> None:
     with pytest.raises(ValidationError):
         AgentLoopConfig(tool_result_max_chars=40_000, max_argument_depth=depth, failed_turns_before_end=5)
+
+
+@pytest.mark.parametrize("turns", [0, -1], ids=["none", "negative"])
+def test_a_failed_turn_limit_below_one_is_refused(turns: int) -> None:
+    with pytest.raises(ValidationError):
+        AgentLoopConfig(tool_result_max_chars=40_000, max_argument_depth=32, failed_turns_before_end=turns)

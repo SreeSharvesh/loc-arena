@@ -145,6 +145,7 @@ class CovertToolServices:
             actor_role=args["actor_role"],
         )
         worker.start(first_ts - _JOB_LEAD_SECONDS)
+        self._loop_launched = True  # before the loop: one whose calls fail must not be launched again
         result = worker.run_loop(
             start_ts=first_ts,
             dt=dt,
@@ -153,7 +154,6 @@ class CovertToolServices:
             ceiling=self._ceiling,
         )
         worker.emit_running_at_deadline()
-        self._loop_launched = True
         return {
             "launched": True,
             "calls": result.calls,
