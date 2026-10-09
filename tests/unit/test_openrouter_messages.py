@@ -11,6 +11,7 @@ from loc_arena.gateway import core
 TOOL_CALL = {"id": "call_1", "type": "function", "function": {"name": "bash", "arguments": '{"cmd": "ls"}'}}
 TOOLS = [{"type": "function", "function": {"name": "bash", "parameters": {"type": "object"}}}]
 MESSAGES = [{"role": "system", "content": "be terse"}, {"role": "user", "content": "list files"}]
+ESTIMATED_PROMPT_TOKENS = 21  # the 86 characters of MESSAGES as JSON, at about 4 per token
 
 
 def _capture(
@@ -84,6 +85,8 @@ def test_omits_tools_and_tool_calls_when_absent(monkeypatch: pytest.MonkeyPatch)
         b'{"choices": [{"message": {"content": [{"type": "text", "text": "hi"}]}}]}',
         b'{"choices": [{"message": {"content": null, "tool_calls": {"id": "call_1"}}}]}',
         b'{"choices": [{"message": {"content": null, "tool_calls": ["call_1"]}}]}',
+        b'{"choices": [{"finish_reason": "stop"}]}',
+        b'{"choices": [{"message": {"content": ""}, "finish_reason": "error"}]}',
     ],
     ids=[
         "not JSON",
@@ -92,6 +95,8 @@ def test_omits_tools_and_tool_calls_when_absent(monkeypatch: pytest.MonkeyPatch)
         "non-text content",
         "tool calls not a list",
         "a tool call not an object",
+        "no message",
+        "an error mid-reply",
     ],
 )
 def test_a_reply_that_is_no_chat_completion_raises_a_provider_error(
@@ -108,3 +113,26 @@ def test_a_reply_that_is_no_chat_completion_raises_a_provider_error(
 
     with pytest.raises(core.ProviderError):
         provider.generate("m", MESSAGES, 0.0, 16, TOOLS)
+
+
+@pytest.mark.parametrize(
+    ("usage", "expected"),
+    [
+        ({"prompt_tokens": None, "completion_tokens": 4}, (ESTIMATED_PROMPT_TOKENS, 4, 0)),
+        (
+            {"prompt_tokens": 11, "completion_tokens": 4, "prompt_tokens_details": {"cached_tokens": None}},
+            (11, 4, 0),
+        ),
+    ],
+    ids=["null prompt tokens", "null cached tokens"],
+)
+def test_a_null_token_count_reads_as_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    usage: dict[str, Any],
+    expected: tuple[int, int, int],
+) -> None:
+    _capture(monkeypatch, {"role": "assistant", "content": "done"}, usage=usage)
+
+    result = core.OpenRouterProvider(api_key="k").generate("m", MESSAGES, 0.0, 16, None)
+
+    assert (result.prompt_tokens, result.completion_tokens, result.cached_tokens) == expected

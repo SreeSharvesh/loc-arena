@@ -67,14 +67,27 @@ class _ChatMessage(BaseModel):
 
 
 class _ChatChoice(BaseModel):
-    message: _ChatMessage = _ChatMessage()
+    message: _ChatMessage
+    finish_reason: str | None = None  # "error": the provider failed mid-reply
+
+
+class _PromptTokensDetails(BaseModel):
+    cached_tokens: int | None = None
+
+
+class _Usage(BaseModel):
+    """The reply's token counts; a count the provider leaves out or sends as null is estimated."""
+
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    prompt_tokens_details: _PromptTokensDetails | None = None
 
 
 class _ChatCompletion(BaseModel):
     """The part of an OpenRouter chat completion the gateway reads; a reply without it is a failed call."""
 
     choices: list[_ChatChoice] = Field(min_length=1)
-    usage: dict[str, Any] | None = None
+    usage: _Usage | None = None
 
 
 # A refused key, no credits, or a model with no endpoint: the run is misconfigured, and stops at once.
@@ -314,19 +327,22 @@ class OpenRouterProvider:
             raise ProviderError(f"{model}: {error}") from error
         except (httpx2.HTTPError, ValidationError) as error:
             raise ProviderError(f"{model}: {error}") from error
+        choice = completion.choices[0]
+        if choice.finish_reason == "error":
+            raise ProviderError(f"{model}: the provider failed mid-reply")
         # Some models (e.g. reasoning models) can return a null ``content`` when the whole reply went to a
         # separate reasoning field, the model declined, or the reply is tool calls only -- coerce to "".
-        message = completion.choices[0].message
-        text = message.content or ""
-        usage = completion.usage or {}
-        details = usage.get("prompt_tokens_details") or {}
-        cached = int(details.get("cached_tokens", 0)) if isinstance(details, dict) else 0
+        text = choice.message.content or ""
+        usage = completion.usage or _Usage()
+        details = usage.prompt_tokens_details or _PromptTokensDetails()
+        prompt_tokens = usage.prompt_tokens
+        completion_tokens = usage.completion_tokens
         return ProviderResult(
             text=text,
-            prompt_tokens=int(usage.get("prompt_tokens", _estimate_tokens(json.dumps(messages)))),
-            completion_tokens=int(usage.get("completion_tokens", _estimate_tokens(text))),
-            tool_calls=message.tool_calls or None,
-            cached_tokens=cached,
+            prompt_tokens=_estimate_tokens(json.dumps(messages)) if prompt_tokens is None else prompt_tokens,
+            completion_tokens=_estimate_tokens(text) if completion_tokens is None else completion_tokens,
+            tool_calls=choice.message.tool_calls or None,
+            cached_tokens=details.cached_tokens or 0,
         )
 
 
