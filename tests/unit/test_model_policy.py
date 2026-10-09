@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import copy
 import json
+import sys
+from collections.abc import Sequence
 from pathlib import Path
 from typing import cast
 
+import pytest
 from loc_arena.config import AgentLoopConfig, load_run_config
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import (
@@ -15,11 +18,20 @@ from loc_arena.gateway.core import (
     GatewayCore,
     GenerateResponse,
     Message,
+    ProviderError,
     ToolSpec,
 )
 from loc_arena.gateway.edge import GatewayEdge
 from loc_arena.logging_.events import AppendOnlyLog, read_events
-from loc_arena.scaffold.agent import SKIP, Agent, AgentPolicy, ScriptedAgentPolicy, TurnMinter, TurnStatus
+from loc_arena.scaffold.agent import (
+    FAILED,
+    SKIP,
+    Agent,
+    AgentPolicy,
+    ScriptedAgentPolicy,
+    TurnMinter,
+    TurnStatus,
+)
 from loc_arena.scaffold.bus import MessageBus, Recorder
 from loc_arena.scaffold.model_policy import ModelAgentPolicy, render_tool_result
 from loc_arena.scaffold.registry import AgentRegistry
@@ -27,7 +39,10 @@ from loc_arena.scaffold.tool_specs import agent_tool_specs, validate_call
 from loc_arena.scaffold.tools import AgentAction, AgentContext, StubServices, Tools
 
 SPECS = agent_tool_specs(covert=False)
-LOOP = AgentLoopConfig(40)
+FAILED_TURNS_BEFORE_END = 3
+LOOP = AgentLoopConfig(40, 32, FAILED_TURNS_BEFORE_END)
+DEEPER_THAN_THE_LIMIT = 64  # past LOOP's max_argument_depth, short of what the event log refuses
+DEEPER_THAN_THE_DECODER = 100_000
 
 
 def _reply(
@@ -55,9 +70,9 @@ def _call(call_id: str, name: str, args: dict[str, object]) -> dict[str, object]
 
 
 class FakeClient:
-    """Records each chat request and returns the next scripted reply."""
+    """Records each chat request and returns the next scripted reply, or raises it when it is an error."""
 
-    def __init__(self, replies: list[GenerateResponse]) -> None:
+    def __init__(self, replies: Sequence[GenerateResponse | ProviderError]) -> None:
         """Hold the replies to return, in order."""
         self._replies = list(replies)
         self.sent: list[tuple[list[Message], list[ToolSpec] | None]] = []
@@ -71,7 +86,10 @@ class FakeClient:
     ) -> GenerateResponse:
         del role
         self.sent.append((copy.deepcopy(messages), tools))
-        return self._replies.pop(0)
+        reply = self._replies.pop(0)
+        if isinstance(reply, ProviderError):
+            raise reply
+        return reply
 
 
 def _policy(client: FakeClient, *, loop: AgentLoopConfig = LOOP) -> ModelAgentPolicy:
@@ -129,6 +147,77 @@ def test_text_only_reply_yields_the_turn_with_a_nudge() -> None:
     assert client.sent[1][0][-1] == {"role": "user", "content": nudge}
 
 
+def test_a_failed_model_call_leaves_the_history_to_send_again() -> None:
+    client = FakeClient([ProviderError("the provider is down"), _reply(text="back")])
+    policy = _policy(client)
+    policy.next_actions("agent-main", 0, [])
+
+    policy.next_actions("agent-main", 1, [])
+
+    assert client.sent[1][0] == client.sent[0][0]
+
+
+def test_an_agent_ends_once_its_model_calls_fail_turns_in_a_row() -> None:
+    down = ProviderError("the provider is down")
+    # Two failures, a reply that resets the count, then three failures in a row: the sixth turn ends it.
+    client = FakeClient([down, down, _reply(text="back"), down, down, down])
+    policy = _policy(client)
+
+    turns = next(turn for turn in range(1, 7) if policy.next_actions("agent-main", turn, []) is None)
+
+    assert turns == 6
+
+
+def _nested(depth: int) -> str:
+    return '{"path": ".", "x": ' + "[" * depth + "]" * depth + "}"
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        '{"path": ".", "x": ' + "9" * (sys.get_int_max_str_digits() + 1) + "}",
+        _nested(DEEPER_THAN_THE_DECODER),
+        _nested(DEEPER_THAN_THE_LIMIT),
+        '{"path": ".", "x": NaN}',
+        '{"path": "\\ud800"}',
+    ],
+    ids=[
+        "an integer past the digit limit",
+        "nested past the decoder",
+        "nested past the limit",
+        "NaN",
+        "a lone surrogate",
+    ],
+)
+def test_arguments_the_event_log_cannot_record_yield_the_turn(arguments: str) -> None:
+    call: dict[str, object] = {
+        "id": "c1",
+        "type": "function",
+        "function": {"name": "list_dir", "arguments": arguments},
+    }
+    client = FakeClient([_reply(tool_calls=[call])])
+
+    actions = _policy(client).next_actions("agent-main", 0, [])
+
+    assert actions == [SKIP]
+
+
+def test_a_call_without_an_id_is_answered_under_the_id_its_reply_carries() -> None:
+    call: dict[str, object] = {
+        "type": "function",
+        "function": {"name": "list_dir", "arguments": '{"path": "."}'},
+    }
+    client = FakeClient([_reply(tool_calls=[call]), _reply(text="done")])
+    policy = _policy(client)
+    first = policy.next_actions("agent-main", 0, []) or []
+
+    policy.next_actions("agent-main", 1, [{"call_id": first[0].call_id, "result": {"content": "a.py"}}])
+
+    sent = client.sent[1][0]
+    called = [tool_call.get("id") for message in sent for tool_call in message.get("tool_calls", [])]
+    assert [message["tool_call_id"] for message in sent if message["role"] == "tool"] == called
+
+
 def test_several_calls_in_one_reply_are_all_returned() -> None:
     client = FakeClient(
         [_reply(tool_calls=[_call("a", "read_file", {"path": "a"}), _call("b", "list_dir", {"path": "."})])],
@@ -151,6 +240,14 @@ def test_validate_call_rejects_unknown_and_missing_and_mistyped() -> None:
     assert "integer" in (validate_call("start_rogue_loop", {"iterations": True}, covert) or "")
     assert "start_rogue_loop" in (validate_call("start_rogue_loop", {}, SPECS) or "")
     assert validate_call("finish", {}, SPECS) is None
+
+
+def test_an_agent_is_offered_a_pull_request_body_to_write() -> None:
+    mistyped_body = {"repo": "meridian-serving", "body": 7}
+
+    error = validate_call("open_pr", mistyped_body, SPECS)
+
+    assert error == "arg 'body' for open_pr must be a string"
 
 
 def test_bus_message_is_appended_and_results_keep_their_call_id() -> None:
@@ -312,3 +409,14 @@ def test_a_real_action_resets_the_skip_streak(tmp_path: Path) -> None:
     )
     assert agent.run() is TurnStatus.ENDED
     assert agent.turn == 8
+
+
+def test_an_agent_whose_model_calls_failed_acts_on_its_next_reply(tmp_path: Path) -> None:
+    agent, sealed_path = _agent(
+        tmp_path,
+        ScriptedAgentPolicy([FAILED, FAILED, FAILED, FAILED, AgentAction("list_dir", {"path": "."})]),
+    )
+
+    agent.run()
+
+    assert [e.tool for e in read_events(sealed_path) if e.kind == "action"] == ["list_dir"]

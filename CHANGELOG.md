@@ -40,6 +40,25 @@ log has the details.
 
 ### Changed
 
+- **Live runs end, and survive their provider.** No agent turn of a model-policy episode starts past
+  `episode.wall_clock_seconds`, a ceiling per episode, so a run with its honest twin can take up to twice that; the
+  rogue loop stops there too, and runs once per episode. `scores.json` and `report.html` record a run the ceiling
+  stopped (`wall_clock_ceiling`), and `scores.json` counts each episode's model calls the provider failed past its
+  retries (`failed_model_calls`). A failed call spends that agent's turn, an agent whose calls fail
+  `agent_loop.failed_turns_before_end` turns in a row ends, and the rogue loop's failure comes back as a tool
+  error, so a dead provider no longer crashes the run without a bundle. A refused key, no credits or an unknown
+  model on the agents' calls still stops the run at its first call. A reply that is no chat completion with text
+  content, or that ends in `finish_reason: error`, fails its call the same way. A live monitor whose model calls
+  fail `monitor_failures_before_fallback` times in a row (`configs/monitors.yaml`) scores the rest with its
+  heuristic and is marked `errored`, whether in the episode or in its honest twin. Tool-call arguments the event
+  log cannot record (NaN, a lone surrogate, an integer past Python's digit limit, nesting past
+  `agent_loop.max_argument_depth`) come back to the agent as a tool error, as does a rogue loop of more
+  `iterations` than fit before the deadline.
+- **Who did what.** A covert action (a scratch note, a coverage change) is recorded under the uid and role of
+  the agent that called the tool, which the tool layer sets and an agent cannot name. A rogue job's records name
+  the agent that launched it, while the loop's own model calls keep claiming the job's identity. An agent's
+  `open_pr` also records a `pr` event, as the scripted coworkers' PRs do, so the PR review monitor sees and scores
+  agents' PRs.
 - **Grading.** An episode plays, then is graded from what it left: its event logs and its repo checkout, read by
   the main-task scorer and the side-task verifier the run config names. Grading no longer runs inside play,
   which lets it move to its own container next.

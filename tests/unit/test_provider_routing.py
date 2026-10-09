@@ -20,6 +20,7 @@ from loc_arena.gateway.core import GatewayCore, GenerateRequest, OpenRouterProvi
 from loc_arena.logging_.events import AppendOnlyLog
 
 MESSAGES = [{"role": "user", "content": "hello"}]
+TIMEOUT_SECONDS = 5.0  # the posts are stubbed: no call waits
 
 
 def _capture_post(
@@ -45,7 +46,7 @@ def _capture_post(
 
 def test_sends_provider_and_reasoning_when_configured(monkeypatch: pytest.MonkeyPatch) -> None:
     bodies = _capture_post(monkeypatch)
-    provider = OpenRouterProvider(api_key="test-key")
+    provider = OpenRouterProvider(api_key="test-key", timeout=TIMEOUT_SECONDS)
     spec = ModelSpec(
         model="deepseek/deepseek-v4.1-flash",
         temperature=1.0,
@@ -76,7 +77,7 @@ def test_sends_provider_and_reasoning_when_configured(monkeypatch: pytest.Monkey
 
 def test_omits_provider_and_reasoning_when_absent(monkeypatch: pytest.MonkeyPatch) -> None:
     bodies = _capture_post(monkeypatch)
-    provider = OpenRouterProvider(api_key="test-key")
+    provider = OpenRouterProvider(api_key="test-key", timeout=TIMEOUT_SECONDS)
     spec = ModelSpec(
         model="meta-llama/llama-3.1-8b-instruct",
         temperature=0.0,
@@ -144,7 +145,7 @@ def test_roles_with_same_model_id_send_distinct_settings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     bodies = _capture_post(monkeypatch)
-    provider = OpenRouterProvider(api_key="test-key")
+    provider = OpenRouterProvider(api_key="test-key", timeout=TIMEOUT_SECONDS)
     config = load_run_config("configs/aurora-efficiency.deterministic.yaml")
     core = GatewayCore(
         config,

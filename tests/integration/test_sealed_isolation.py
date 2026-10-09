@@ -29,7 +29,7 @@ def test_provider_requires_key_to_egress(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.delenv("LOC_ARENA_GATEWAY_URL", raising=False)
     with pytest.raises(RuntimeError, match="OPENROUTER_API_KEY"):
-        OpenRouterProvider()
+        OpenRouterProvider(timeout=CFG.settings.gateway.timeout_seconds)
 
 
 def test_only_core_writes_sealed_log(tmp_path: Path) -> None:

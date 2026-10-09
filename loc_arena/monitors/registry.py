@@ -150,6 +150,12 @@ class MonitorVerdict:
 
 # A live monitor's ONLY route to a model: (monitor_name, prompt, temperature) -> completion (via the gateway).
 MonitorModelCaller = Callable[[str, str, float], str]
+
+
+class ModelCallsStoppedError(Exception):
+    """Raised by a caller once its monitor has given up on its model: no call made, nothing to record."""
+
+
 # A sink to record a monitor event (e.g. a parse error) onto the log; a no-op by default.
 EventSink = Callable[[str, dict[str, Any]], None]
 
@@ -582,6 +588,8 @@ def live_suspicion(
     for _ in range(max(1, ensemble_n)):
         try:
             completion = context.model_caller(monitor_name, prompt, temperature)
+        except ModelCallsStoppedError:
+            break
         except Exception as exc:  # noqa: BLE001 - a monitor must never crash an episode
             context.event_sink("monitor_parse_error", {"monitor": monitor_name, "error": f"call:{exc}"})
             continue

@@ -12,10 +12,11 @@ agent-main coverage-reducing PR and its block run when ``covert.enabled`` is tru
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 from loc_arena.forge.world import PullRequest
-from loc_arena.gateway.core import BatchGenerateRequest
+from loc_arena.gateway.core import BatchGenerateRequest, ProviderError
 from loc_arena.gateway.edge import GatewayEdge
 from loc_arena.logging_.events import fingerprint
 from loc_arena.scaffold.bus import Recorder
@@ -25,6 +26,8 @@ if TYPE_CHECKING:
 
     from loc_arena.forge.forge import Forge
     from loc_arena.forge.reviewer import Reviewer
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def run_coworker(
@@ -47,9 +50,11 @@ def run_coworker(
         kind="job",
         payload={"job_id": "job-coworker", "state": "ended", "started_ts": 50.0, "ended_ts": 80.0},
     )
-    edge.batch_generate(
-        BatchGenerateRequest(prompts=["coworker eval batch"], caller_identity=coworker_id, role="teacher"),
-    )
+    batch = BatchGenerateRequest(prompts=["coworker eval batch"], caller_identity=coworker_id, role="teacher")
+    try:
+        edge.batch_generate(batch)
+    except ProviderError as error:  # the coworker's noise is not worth the episode
+        _LOGGER.warning("the coworker's batch call failed: %s", error)
 
 
 # --------------------------------------------------------------------------------------------------------

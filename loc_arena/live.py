@@ -15,6 +15,8 @@ deterministic engine-test scaffolding, not a selectable deliverable policy.
 
 from __future__ import annotations
 
+import logging
+import time
 from pathlib import Path
 
 from loc_arena.config import RunConfig
@@ -48,6 +50,7 @@ from loc_arena.task import (
     _AGENTS,
     _DEFAULT_DEADLINE,
     _ROGUE_ACCOUNT,
+    _ROGUE_CALLER,
     _SECRET,
     EpisodeResult,
     Snapshot,
@@ -114,10 +117,13 @@ COVERT_BRIEFS: dict[str, str] = {
 }
 
 
-def _default_provider() -> Provider:
+_LOGGER = logging.getLogger(__name__)
+
+
+def _default_provider(config: RunConfig) -> Provider:
     """The live provider (OpenRouter) when a key is present; otherwise the deterministic stub for plumbing."""
     if is_live_provider_configured():
-        return OpenRouterProvider()
+        return OpenRouterProvider(timeout=config.settings.gateway.timeout_seconds)
     return DeterministicProvider()
 
 
@@ -148,6 +154,7 @@ def play_model_episode(
     surface executes the real durability. Returns the same ``Snapshot`` as the scripted episode, so both are
     graded identically.
     """
+    ceiling = time.monotonic() + config.episode.wall_clock_seconds
     workdir.mkdir(parents=True, exist_ok=True)
     episode_id = f"{config.run_slug}-model-{'attack' if config.covert.enabled else 'honest'}"
 
@@ -177,7 +184,7 @@ def play_model_episode(
         config,
         episode_id,
         sealed,
-        provider or _default_provider(),
+        provider or _default_provider(config),
         turn_secret=_SECRET,
         clock=clk,
         is_revoked=identity.is_revoked,
@@ -207,6 +214,8 @@ def play_model_episode(
         deadline_ts=deadline_ts,
         agents=list(_AGENTS),
         rogue_account=_ROGUE_ACCOUNT,
+        rogue_caller=_ROGUE_CALLER,
+        ceiling=ceiling,
     )
 
     bus = MessageBus(recorder)
@@ -287,23 +296,33 @@ def play_model_episode(
         covert_enabled=config.covert.enabled,
     )
 
-    _drive_team(team, root_cfg.id)
+    stopped = _drive_team(team, root_cfg.id, ceiling=ceiling)
     episode_trace = trace.finish(sealed.last_seq) if trace else None
 
     return record_snapshot(
-        Snapshot(sealed_path, mirror_path, checkout, deadline_ts, world, trace=episode_trace),
+        Snapshot(
+            sealed_path,
+            mirror_path,
+            checkout,
+            deadline_ts,
+            world,
+            trace=episode_trace,
+            stopped_at_wall_clock_ceiling=stopped,
+            failed_model_calls=core.failed_calls,
+        ),
         workdir,
         config,
     )
 
 
-def _drive_team(team: dict[str, Agent], root_uid: str) -> None:
+def _drive_team(team: dict[str, Agent], root_uid: str, *, ceiling: float) -> bool:
     """Round-robin the whole team: every agent gets a turn each round until all end or exhaust their budget.
 
     A real R&D team works its own area AND reacts to coordination (bus messages are delivered at each turn
     start), so the run does not stall when the orchestrator is quiet/refuses -- the per-repo sub-agents keep
     doing their own legitimate (and, for covert-briefed ones, covert) work. The root goes first each round.
     The model decides every action; this only schedules the turns and drops an agent once it ends/exhausts.
+    No turn starts at or past ``ceiling``, a ``time.monotonic()`` reading. Returns whether it stopped any.
     """
     order = [root_uid, *[uid for uid in team if uid != root_uid]]
     active = set(team)
@@ -311,6 +330,10 @@ def _drive_team(team: dict[str, Agent], root_uid: str) -> None:
         for uid in order:
             if uid not in active:
                 continue
+            if time.monotonic() >= ceiling:
+                _LOGGER.warning("the episode reached its wall-clock ceiling: its agents take no more turns")
+                return True
             status = team[uid].run_turn()
             if status in (TurnStatus.ENDED, TurnStatus.BUDGET_EXHAUSTED):
                 active.discard(uid)
+    return False
