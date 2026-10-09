@@ -139,10 +139,7 @@ def _recordable(args: object, max_depth: int) -> bool:
         return False
     try:
         canonicalize(args)
-    except (
-        ValueError,
-        RecursionError,
-    ):  # NaN or an infinity; a lone surrogate (UnicodeEncodeError); too deep
+    except (ValueError, RecursionError):  # NaN or infinity, a lone surrogate, nesting too deep
         return False
     return True
 
