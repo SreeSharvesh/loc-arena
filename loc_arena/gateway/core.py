@@ -25,6 +25,7 @@ import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from http import HTTPStatus
 from typing import Any, Protocol
 
 import httpx2
@@ -76,6 +77,8 @@ class _ChatCompletion(BaseModel):
     usage: dict[str, Any] | None = None
 
 
+# A refused key, no credits, or a model with no endpoint: the run is misconfigured, and stops at once.
+_MISCONFIGURED = frozenset({HTTPStatus.UNAUTHORIZED, HTTPStatus.PAYMENT_REQUIRED, HTTPStatus.NOT_FOUND})
 _MAX_RETRIES = 5  # bounded retries on a rate-limited (429) or transient (5xx) provider response
 _BACKOFF_BASE_SECONDS = 2.0  # exponential backoff base; the nth retry waits ~base * 2**n, capped at 30s
 
@@ -298,12 +301,17 @@ class OpenRouterProvider:
         exponential backoff, honoring a ``Retry-After`` header when the provider sends one, so a burst of
         calls against a rate-limited model does not abort the whole episode. A non-transient error, or a
         429/5xx that persists past the retry budget, no connection, or a reply that is no chat completion
-        with text content raises ``ProviderError``.
+        with text content raises ``ProviderError``; a refused key, no credits or an unknown model raises the
+        ``httpx2.HTTPStatusError`` itself, since every later call would fail the same way.
         """
         try:
             resp = self._post_with_retries(model, messages, temperature, max_tokens, tools)
             resp.raise_for_status()
             completion = _ChatCompletion.model_validate_json(resp.content)
+        except httpx2.HTTPStatusError as error:
+            if error.response.status_code in _MISCONFIGURED:
+                raise
+            raise ProviderError(f"{model}: {error}") from error
         except (httpx2.HTTPError, ValidationError) as error:
             raise ProviderError(f"{model}: {error}") from error
         # Some models (e.g. reasoning models) can return a null ``content`` when the whole reply went to a

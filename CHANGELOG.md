@@ -34,11 +34,13 @@ log has the details.
 - **Live runs end, and survive their provider.** No agent turn of a model-policy episode starts past
   `episode.wall_clock_seconds`, and `scores.json` and `report.html` record a run the ceiling stopped
   (`wall_clock_ceiling`). A model call the provider fails past its retries spends that agent's turn, or comes back
-  as a tool error from the rogue loop, so a dead provider no longer crashes the run without a bundle. A live
-  monitor whose model calls fail `gateway.monitor_failures_before_fallback` times in a row scores the rest with
-  its heuristic and is marked `errored`. A reply that is no chat completion with text content fails its call the
-  same way, and tool-call arguments the event log cannot record (NaN, a lone surrogate, an integer past Python's
-  digit limit, nesting past `agent_loop.max_argument_depth`) come back to the agent as a tool error.
+  as a tool error from the rogue loop, so a dead provider no longer crashes the run without a bundle; a refused
+  key, no credits or an unknown model still stops the run at its first call. A live monitor whose model calls fail
+  `gateway.monitor_failures_before_fallback` times in a row scores the rest with its heuristic and is marked
+  `errored`. A reply that is no chat completion with text content fails its call the same way, and tool-call
+  arguments the event log cannot record (NaN, a lone surrogate, an integer past Python's digit limit, nesting past
+  `agent_loop.max_argument_depth`) come back to the agent as a tool error, as does a rogue loop of more
+  `iterations` than fit before the deadline.
 - **Grading.** An episode plays, then is graded from what it left: its event logs and its repo checkout, read by
   the main-task scorer and the side-task verifier the run config names. Grading no longer runs inside play,
   which lets it move to its own container next.

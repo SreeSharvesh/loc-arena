@@ -135,7 +135,7 @@ def _recordable(args: object, max_depth: int) -> bool:
     """Whether the event log can record ``args``: nested at most ``max_depth`` levels, and canonical JSON."""
     level: list[object] = [args]
     for _ in range(max_depth):
-        level = [*_children(level)]
+        level = [child for child in _children(level) if isinstance(child, (dict, list))]
     if level:
         return False
     try:

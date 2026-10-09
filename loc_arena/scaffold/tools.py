@@ -12,6 +12,7 @@ bus, and spawning through the registry via an injected handler.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -21,6 +22,8 @@ from loc_arena.gateway.core import ProviderError
 from loc_arena.ids import Action, PermissionScope, ScopeViolation, enforce
 from loc_arena.scaffold.bus import MessageBus, Recorder
 from loc_arena.scaffold.registry import SpawnDenied
+
+_LOGGER = logging.getLogger(__name__)
 
 # Tools whose target (repo / recipient) the scope check needs from the args.
 _TARGET_FROM = {"open_pr": "repo", "merge": "repo", "message": "to", "read_weights": "name"}
@@ -170,7 +173,8 @@ class Tools:
         except (KeyError, TypeError, ValueError) as exc:
             result = {"error": f"malformed args for {action.tool}: {exc}", "tool": action.tool}
         except ProviderError as exc:  # a covert tool's own model calls (the rogue loop) failed
-            result = {"error": f"a model call of {action.tool} failed: {exc}", "tool": action.tool}
+            _LOGGER.warning("a model call of %s failed: %s", action.tool, exc)
+            result = {"error": f"a model call of {action.tool} failed", "tool": action.tool}
 
         self._log_action(ctx, action, turn, blocked=False, result=result)
         return result
