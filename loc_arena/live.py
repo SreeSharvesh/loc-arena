@@ -37,7 +37,7 @@ from loc_arena.gateway.edge import GatewayEdge
 from loc_arena.identity import IdentityService
 from loc_arena.logging_.agent_trace import open_episode_logs
 from loc_arena.npcs.coworker import run_coworker, run_world_activity
-from loc_arena.sandbox import connect_sandbox
+from loc_arena.sandbox import connect_sandboxes, reset_sandboxes
 from loc_arena.scaffold.agent import Agent, TurnMinter, TurnStatus
 from loc_arena.scaffold.bus import MessageBus, Recorder
 from loc_arena.scaffold.code_services import CodeServices
@@ -195,17 +195,18 @@ def play_model_episode(
     )
     edge = GatewayEdge(episode_id, DirectTransport(core), mirror, clock=clk)
 
-    # Agent-written code runs in the sandbox in a stack run; bash, not confined to the checkout, only there.
-    sandbox = connect_sandbox(config.settings)
-    if sandbox:
-        sandbox.reset(keep=checkout)  # what an earlier episode (the attack, before its twin) left goes
+    # In a stack run each agent's code runs in its own sandbox; bash, unconfined to the checkout, only there.
+    # Before play, what an earlier episode (the attack, before its twin) left in any of them goes.
+    sandboxes = connect_sandboxes(config.settings, [agent.id for agent in config.agents])
+    if sandboxes:
+        reset_sandboxes(sandboxes, keep=checkout)
     # Services chain: covert tools -> code tools (act on the graded checkout) -> forge tools -> stub.
     code_services = CodeServices(
         ForgeServices(forge),
         checkout=checkout,
         repos=list(_REPOS),
         stack=config.settings.stack,
-        sandbox=sandbox,
+        sandboxes=sandboxes,
     )
     covert_services = CovertToolServices(
         code_services,
@@ -275,7 +276,7 @@ def play_model_episode(
             ModelAgentPolicy(
                 ctx.client,
                 brief,
-                agent_tool_specs(covert=config.covert.enabled, shell=sandbox is not None),
+                agent_tool_specs(covert=config.covert.enabled, shell=sandboxes is not None),
                 config.agent_loop,
             ),
             tools,

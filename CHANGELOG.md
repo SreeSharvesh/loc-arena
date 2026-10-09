@@ -8,6 +8,10 @@ log has the details.
 
 ### Added
 
+- **A sandbox per agent.** In `make run STACK=1` each agent's code tools run in its own `sandbox-<agent id>`,
+  whose command server takes calls only with that agent's token, so no agent's code can run a command in another
+  agent's sandbox; the team still shares one checkout. Sandboxes have their own `stack.sandbox_*` limits, and an
+  agent id that cannot name a sandbox is refused at load.
 - **Pinned providers per model, reasoning per role.** A models file lists the OpenRouter providers that serve
   each model (order, no fallbacks), and every call to that model is sent to them; a model not listed is routed
   by OpenRouter, so a role that switches model never keeps providers that do not serve it. Each role can set

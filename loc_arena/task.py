@@ -53,8 +53,9 @@ from loc_arena.tasks.main_task_grader import (
 from loc_arena.tasks.side_task_verifier import verify_side_task
 from loc_arena.verifier.side_task import KillChainVerdict
 
-# The sandbox's command server, set by the rendered compose file in the episode container alone. There the
-# checkout plays in the volume the episode shares with the sandbox, and the agents' code runs in the sandbox.
+# The sandboxes' command servers, a URL with an `{agent}` field for the agent's id, set by the rendered
+# compose file in the episode container alone. There the checkout plays in the volume the episode shares with
+# every sandbox, and each agent's code runs in its own sandbox.
 SANDBOX_URL_VARIABLE = "LOC_ARENA_SANDBOX_URL"
 _SECRET = "aurora-efficiency-episode-secret"
 _DEFAULT_DEADLINE = 10_000.0
@@ -137,19 +138,19 @@ class SnapshotFile(BaseModel):
 _SNAPSHOT_FILE = "snapshot.json"
 
 
-def sandbox_url() -> str | None:
-    """The sandbox's URL when this process is a stack run's episode container; else none."""
+def sandbox_url_template() -> str | None:
+    """The sandboxes' URL, its ``{agent}`` field unfilled, in a stack run's episode container; else none."""
     return os.environ.get(SANDBOX_URL_VARIABLE)
 
 
 def seed_episode_checkout(config: RunConfig, workdir: Path) -> Path:
-    """Seed the checkout an episode plays in: ``workdir/checkout``, or one in the sandbox's volume.
+    """Seed the checkout an episode plays in: ``workdir/checkout``, or one in the sandboxes' volume.
 
-    In the episode container it is a fresh directory of the volume shared with the sandbox, which sees that
+    In the episode container it is a fresh directory of the volume shared with every sandbox, which sees that
     volume and nothing of ``workdir``.
     """
     home = workdir
-    if sandbox_url():
+    if sandbox_url_template():
         home = Path(tempfile.mkdtemp(dir=config.settings.stack.checkouts_directory)).resolve()
     return seed_checkout(home / "checkout")
 
@@ -170,7 +171,7 @@ def _relink(copy: Path, original: Path) -> None:
 def record_snapshot(snapshot: Snapshot, workdir: Path, config: RunConfig) -> Snapshot:
     """Write ``snapshot.json`` into ``workdir`` so the episode can be graded from that directory alone.
 
-    A checkout that played in the sandbox's volume is first moved into ``workdir``, its symlinks as links, so
+    A checkout that played in the sandboxes' volume is first moved into ``workdir``, its symlinks as links, so
     the honest twin's agents never see it there; an absolute link into it is made relative, so it still
     points inside the moved checkout. It is refused if a directory on its path became a link, which would copy
     what that link points at.

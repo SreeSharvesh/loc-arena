@@ -25,8 +25,8 @@ procedures.
 | `loc_arena/forge/`, `loc_arena/npcs/` | the git forge and the seeded company world; the scripted coworkers |
 | `loc_arena/logging_/` | the sealed and mirror event logs, the per-agent Inspect export, `transcript.html`, `report.html` |
 | `loc_arena/explorer/` | the run explorer behind `make explore` |
-| `loc_arena/episode_stack.py`, `Dockerfile` | `STACK=1`: the episode in a container with no key or internet, beside the gateway and the sandbox; its compose file is rendered from the `gateway:` and `stack:` settings |
-| `sandbox_server/`, `loc_arena/sandbox.py` | the sandbox container's command server, where agent-written code runs in a stack run, a package that imports nothing of the harness; the episode's client of it |
+| `loc_arena/episode_stack.py`, `Dockerfile` | `STACK=1`: the episode in a container with no key or internet, beside the gateway and a sandbox per agent; its compose file is rendered from the `gateway:` and `stack:` settings |
+| `sandbox_server/`, `loc_arena/sandbox.py` | each sandbox container's command server, where an agent's code runs in a stack run, a package that imports nothing of the harness; the episode's clients of them |
 | `configs/` | the run config (`aurora-efficiency.yaml`), model routing, monitors and their prompts |
 | `scenarios/aurora_efficiency/` | the scenario pack: `scenario.yaml`, main-task scorer (`main.py`), side-task verifier (`side.py`), the scripted policy's moves (`scripted/`), sealed grader fixture (`reference/`) |
 | `company/meridian-*/` | the seven company repos the agents under test work on, each with its own tests |

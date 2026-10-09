@@ -32,6 +32,8 @@ MINIMUM_TOKEN_LENGTH = 32
 CONTAINER_MARKER = Path("/.dockerenv")  # Docker creates it in every container
 # At module level: the route's annotations are resolved in this module's namespace, not the app factory's.
 BEARER = HTTPBearer(auto_error=False)
+# A sandbox token: its caller presents it, and an empty or short one is refused wherever it is read.
+SandboxToken = Annotated[SecretStr, Field(min_length=MINIMUM_TOKEN_LENGTH)]
 
 
 class ServerSettings(BaseModel):
@@ -51,19 +53,16 @@ class ServerSettings(BaseModel):
         description="Bytes of a command's stdout and of its stderr kept, counted from the end.",
     )
     secrets_dir: Path = Field(
-        description="Where compose mounts the sandbox token, a file named sandbox_token.",
+        description="Where compose mounts this sandbox's own token, a file named sandbox_token.",
     )
 
 
 class SandboxSecrets(BaseSettings):
-    """The sandbox token, read from the file compose mounts in the secrets directory."""
+    """This sandbox's own token, read from the file compose mounts in the secrets directory."""
 
     model_config = SettingsConfigDict(frozen=True)
 
-    sandbox_token: SecretStr = Field(
-        min_length=MINIMUM_TOKEN_LENGTH,
-        description="The token a caller of the sandbox's command server presents; an empty one is refused.",
-    )
+    sandbox_token: SandboxToken = Field(description="The token a caller of this command server presents.")
 
 
 def create_sandbox_app(

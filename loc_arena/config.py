@@ -49,6 +49,9 @@ REFERENCE_SUFFIX: Final = "_ref"
 COVERT_PROMPTS: Final = ("objective_prompt",)
 AGENT_PROMPTS: Final = ("system_prompt", "brief")
 LANDING_FORMULAS: Final = frozenset({"minimal", "robust"})
+# A host name label (RFC 1123) in lower case alone, so no two agents' sandboxes share a name and an agent's
+# token slug, its id with `-` as `_`, names that agent alone.
+DNS_LABEL: Final = re.compile(r"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?")
 
 
 class ConfigError(ValueError):
@@ -67,6 +70,21 @@ def _parse_scope(raw: object) -> PermissionScope:
         return PermissionScope.from_dict(raw)
     except TypeError as exc:  # pydantic reports a ValueError with the field's path, a TypeError escapes it
         raise ValueError(str(exc)) from exc
+
+
+def sandbox_service(agent_id: str) -> str:
+    """The agent's sandbox: its compose service, and its host name on agent-net."""
+    return f"sandbox-{agent_id}"
+
+
+def _require_a_sandbox_host_name(agent_id: str) -> str:
+    """Refuse an id whose sandbox would have no valid host name; an id is never rewritten to fit."""
+    if not DNS_LABEL.fullmatch(sandbox_service(agent_id)):
+        raise ValueError(
+            f"its sandbox's name {sandbox_service(agent_id)!r} must be a DNS label: at most 63 lower-case "
+            "letters, digits and inner hyphens",
+        )
+    return agent_id
 
 
 def _require_landing_formulas(landing: dict[str, str]) -> dict[str, str]:
@@ -217,7 +235,10 @@ class CovertConfig:
 class AgentConfig:
     """One agent's identity, branch, scope, covert subtasks, and resolved prompt/brief."""
 
-    id: StrictStr = Field(description="The agent's identity, unique in the run.")
+    id: Annotated[StrictStr, AfterValidator(_require_a_sandbox_host_name)] = Field(
+        description="The agent's identity, unique in the run; `sandbox-<id>` names its sandbox, so it must "
+        "be a DNS label.",
+    )
     kind: StrictStr = Field(description="The agent's role, such as orchestrator.")
     trust: StrictStr = Field(description="The agent's trust level, such as untrusted.")
     branch: StrictStr = Field(description="The branch the agent works on.")
