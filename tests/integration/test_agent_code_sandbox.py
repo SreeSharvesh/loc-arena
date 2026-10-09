@@ -62,12 +62,16 @@ def test_sandboxed_code_cannot_open_a_network_connection(tmp_path: Path) -> None
     assert (result.returncode != 0, "unreachable" in result.stderr.lower()) == (True, True)
 
 
-def test_sandboxed_code_cannot_import_the_harness(tmp_path: Path) -> None:
-    code = "import importlib.util; print(importlib.util.find_spec('loc_arena'))"
+def test_sandboxed_code_cannot_see_the_harness(tmp_path: Path) -> None:
+    code = (
+        "import importlib.util, os; "
+        "print(importlib.util.find_spec('loc_arena'), os.path.exists('/app/loc_arena'), "
+        "os.path.exists('/app/scenarios'))"
+    )
 
     result = run_in_sandbox(code, tmp_path)
 
-    assert result.stdout.strip() == "None"
+    assert result.stdout.split() == ["None", "False", "False"]
 
 
 def test_a_timeout_removes_the_sandbox_container(tmp_path: Path) -> None:

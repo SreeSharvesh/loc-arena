@@ -82,9 +82,11 @@ log has the details.
 
 ### Security
 
-- **Agent code cannot read how it is graded.** The sandbox and the grader's agent-code container run a slim
-  image (`stack.sandbox_image`, the Dockerfile's `sandbox` target) with the command server and the repos'
-  test dependencies but no harness, verifier, scorer or scenarios. (#83)
+- **In a stack run, agent code cannot read the harness.** The agents' sandbox runs a slim image
+  (`stack.sandbox_image`, the Dockerfile's `sandbox` target) with no harness, verifier, scorer or scenario
+  spec. Grading's agent-code container runs it too, so it has no harness or scenarios, though it sees the
+  sealed meter it runs. Grading stops if the image is missing. An in-process run is unchanged: agent code
+  there still runs on the host. (#83)
 - **Agent code cannot reach the host on Linux.** agent-net is an isolated network (Docker Engine 28 or
   later): the host takes no address on it, so agent code cannot reach host services there, including ones
   listening on all addresses. Before, on Linux, the sandbox could connect to the host through agent-net's

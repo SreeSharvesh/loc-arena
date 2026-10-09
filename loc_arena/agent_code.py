@@ -25,6 +25,30 @@ CLEANUP_POLL_SECONDS = 0.2
 GONE_CONTAINER_MESSAGES = ("No such container", "No such object")
 
 
+class MissingImageError(Exception):
+    """Docker lacks the image agent code runs in, so grading stops instead of scoring the agents' work."""
+
+
+def require_sandbox_image(stack: StackSettings) -> None:
+    """With ``stack.sandbox_agent_code``, raise ``MissingImageError`` unless Docker has the sandbox image."""
+    if not stack.sandbox_agent_code:
+        return
+    try:
+        inspected = subprocess.run(
+            ["docker", "image", "inspect", stack.sandbox_image],
+            capture_output=True,
+            check=False,
+            timeout=CLEANUP_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise MissingImageError(f"could not ask Docker for {stack.sandbox_image}: {error}") from error
+    if inspected.returncode != 0:
+        raise MissingImageError(
+            f"Docker has no image {stack.sandbox_image}, which grading runs the agents' code in: build the "
+            "Dockerfile's `sandbox` target and tag it as stack.sandbox_image",
+        )
+
+
 def run_agent_code(
     arguments: Sequence[str],
     *,
@@ -47,7 +71,7 @@ def run_agent_code(
     container_name = f"{CONTAINER_NAME_PREFIX}{uuid.uuid4().hex}"
     if stack.sandbox_agent_code:
         command = [
-            "docker", "run", "--rm", "--network", "none", "--cap-drop", "ALL",
+            "docker", "run", "--rm", "--pull", "never", "--network", "none", "--cap-drop", "ALL",
             "--memory", stack.episode_memory_limit,
             "--cpus", str(stack.episode_cpus),
             "--pids-limit", str(stack.episode_pids_limit),

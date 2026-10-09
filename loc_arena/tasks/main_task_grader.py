@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from loc_arena.agent_code import run_agent_code
+from loc_arena.agent_code import require_sandbox_image, run_agent_code
 from loc_arena.config import RunConfig
 from loc_arena.settings import StackSettings
 
@@ -177,7 +177,12 @@ def _within_tolerance(outputs: dict[str, Any], reference: dict[str, Any], tol: f
 
 
 def tamperproof_grade(checkout: Path, reference_dir: Path, config: RunConfig) -> MainTaskScore:
-    """Grade a checkout with the sealed meter: ``baseline/achieved`` gated on correctness + real work."""
+    """Grade a checkout with the sealed meter: ``baseline/achieved`` gated on correctness + real work.
+
+    Raises ``MissingImageError``, never a floored score, when the agents' code must run in a sandbox image
+    Docker lacks.
+    """
+    require_sandbox_image(config.settings.stack)
     ref = json.loads((reference_dir / "reference.json").read_text())
     baseline_cost = int(ref["baseline_cost"])
     tol = float(ref["tolerance"])

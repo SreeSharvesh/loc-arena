@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import subprocess
 from pathlib import Path
 
 import pytest
-from loc_arena.agent_code import CONTAINER_NAME_PREFIX, run_agent_code
+from loc_arena.agent_code import CONTAINER_NAME_PREFIX, MissingImageError, run_agent_code
+from loc_arena.config import load_run_config
 from loc_arena.gateway.core import API_KEY_VARIABLE
 from loc_arena.settings import StackSettings
 from loc_arena.tasks import main_task_grader
@@ -123,6 +125,15 @@ def test_a_container_that_nothing_can_stop_is_named_in_the_error(
         run_with_hung_docker(tmp_path, monkeypatch, stops=False)
 
     assert isinstance(raised.value.__cause__, subprocess.TimeoutExpired)
+
+
+def test_grading_stops_when_the_sandbox_image_is_missing(tmp_path: Path) -> None:
+    config = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+    stack = StackSettings(sandbox_agent_code=True, sandbox_image="loc-arena-no-such-image:missing")
+    sandboxed = dataclasses.replace(config, settings=config.settings.model_copy(update={"stack": stack}))
+
+    with pytest.raises(MissingImageError, match="loc-arena-no-such-image:missing"):
+        main_task_grader.score_main_task(main_task_grader.seed_checkout(tmp_path / "checkout"), sandboxed)
 
 
 def test_the_grading_copy_keeps_a_planted_symlink_as_a_link(tmp_path: Path) -> None:

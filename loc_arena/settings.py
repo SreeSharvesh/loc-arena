@@ -152,8 +152,8 @@ class StackSettings(SettingsGroup):
         default=False,
         description="Run the agents' repo tests and the sealed benchmark in a throwaway container of "
         "`sandbox_image` with no network, instead of in the grading process. A stack run's grading on the "
-        "host always does, and its compose project builds the image; otherwise build it first with "
-        "`docker build --target sandbox -t loc-arena-sandbox:latest .`.",
+        "host always does, and its compose project builds the image; otherwise build the Dockerfile's "
+        "`sandbox` target first and tag it as `sandbox_image`. Grading stops if Docker lacks it.",
     )
 
 
