@@ -4,8 +4,9 @@ The gateway is the only container with the provider key and a route out (agent-n
 episode container plays (``loc_arena.cli run --play-only``) on agent-net alone, so its model calls can only go
 to the gateway. Each agent's code runs in its own sandbox, ``sandbox-<agent id>``, also on agent-net alone,
 which mounts only the volume of the checkouts: never the episode's logs, the run configs or the gateway's call
-log. Each sandbox holds only its own token, so no agent's code can run a command in another agent's sandbox;
-the shared checkout stays a channel between them by design. When the episode exits,
+log. Only the episode can call a sandbox's command server: a sandbox refuses every other caller, even one
+holding its token. Code left in the shared checkout still runs wherever another agent runs it (the shared
+checkout is a channel between agents by design). When the episode exits,
 its run directory is copied out and graded on this host, with the agents' code sandboxed, while the gateway
 still runs for the monitors' model calls. Then the gateway's call log is copied out and the project is
 removed with its volumes. If a copy fails, the project is kept so nothing is lost.
@@ -31,6 +32,7 @@ from loc_arena.sandbox import TOKEN_FILE, build_server_settings, token_secret_na
 from loc_arena.settings import StackSettings
 from loc_arena.task import SANDBOX_URL_VARIABLE, resolve_scenario
 
+EPISODE_SERVICE = "episode"  # the agent loop's compose service: the one caller every sandbox serves
 AGENT_NETWORK = "agent-net"  # the episode, the sandboxes and the gateway, with no route out
 EGRESS_NETWORK = "egress-net"  # the gateway alone: its route to the provider
 KEY_SECRET_NAME = "openrouter_api_key"  # the compose secret: a file in settings.gateway.secrets_dir
@@ -72,6 +74,7 @@ class ComposeService(TypedDict, total=False):
 
     build: ComposeBuild
     image: str
+    pull_policy: str
     command: list[str]
     environment: dict[str, str]
     secrets: list[str | ServiceSecret]
@@ -141,8 +144,11 @@ def render_compose(
                 "ports": [f"{LOOPBACK}::{gateway.port}"],  # an ephemeral host port
                 "healthcheck": _probe(gateway.port, stack),
             },
-            **{sandbox_service(agent): _render_sandbox(config, repository, agent) for agent in agent_ids},
-            "episode": {
+            **{
+                sandbox_service(agent): _render_sandbox(config, repository, agent, builds=index == 0)
+                for index, agent in enumerate(agent_ids)
+            },
+            EPISODE_SERVICE: {
                 **engine,
                 "mem_limit": stack.episode_memory_limit,
                 "cpus": stack.episode_cpus,
@@ -178,18 +184,25 @@ def render_compose(
     }
 
 
-def _render_sandbox(config: RunConfig, repository: Path, agent_id: str) -> ComposeService:
-    """The sandbox of ``agent_id``: its code's container, which holds that agent's token alone."""
+def _render_sandbox(config: RunConfig, repository: Path, agent_id: str, *, builds: bool) -> ComposeService:
+    """The sandbox of ``agent_id``: its code's container, which holds that agent's token alone.
+
+    One sandbox ``builds`` the image they all run, so compose builds it once; the others never pull it.
+    """
     stack = config.settings.stack
+    built = _build_from(repository, SANDBOX_TARGET, stack.sandbox_image)
+    if not builds:
+        del built["build"]
+        built["pull_policy"] = "never"
     return {
-        **_build_from(repository, SANDBOX_TARGET, stack.sandbox_image),
+        **built,
         "mem_limit": stack.sandbox_memory_limit,
         "cpus": stack.sandbox_cpus,
         "pids_limit": stack.sandbox_pids_limit,
         # It mounts no config, so it gets its settings in its command.
         "command": [
             *["python", "-m", "sandbox_server"],
-            build_server_settings(config.settings).model_dump_json(),
+            build_server_settings(config.settings, trusted_caller=EPISODE_SERVICE).model_dump_json(),
         ],
         # Under the one name every sandbox's command server reads.
         "secrets": [{"source": token_secret_name(agent_id), "target": TOKEN_FILE}],
@@ -255,7 +268,7 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
     run_compose = functools.partial(subprocess.run, env={**os.environ, **tokens})
     call_log = logs / "gateway" / f"{project}.calls.jsonl"
     call_log.parent.mkdir(parents=True, exist_ok=True)
-    copy_output = [*compose, "cp", f"episode:{OUTPUT_DIRECTORY}/.", str(logs)]
+    copy_output = [*compose, "cp", f"{EPISODE_SERVICE}:{OUTPUT_DIRECTORY}/.", str(logs)]
     copy_call_log = [*compose, "cp", f"gateway:{settings.gateway.call_log}", str(call_log)]
     created = output_copied = False
     try:
@@ -265,9 +278,8 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
         # Started on its own, the gateway outlives the episode: the monitors call it while this host grades.
         if run_compose([*compose, "up", "--detach", "--wait", "gateway"]).returncode != 0:
             raise StackError("the gateway did not become healthy: see compose's output above")
-        exit_code = run_compose(
-            [*compose, "up", "--attach", "episode", "--exit-code-from", "episode", "episode"],
-        ).returncode
+        play = ["up", "--attach", EPISODE_SERVICE, "--exit-code-from", EPISODE_SERVICE, EPISODE_SERVICE]
+        exit_code = run_compose([*compose, *play]).returncode
         output_copied = run_compose(copy_output).returncode == 0
         if not output_copied:
             raise StackError("could not copy the episode's run directory out, so it was not graded")
@@ -281,7 +293,7 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
             monitor_provider=_build_monitor_provider(config, compose),
         )
     finally:
-        never_started = [*compose, "ps", "--all", "--status", "created", "--quiet", "episode"]
+        never_started = [*compose, "ps", "--all", "--status", "created", "--quiet", EPISODE_SERVICE]
         started = created and not run_compose(never_started, capture_output=True, text=True).stdout.strip()
         pending = [copy_call_log] if output_copied else [copy_output, copy_call_log]
         if started and not all(run_compose(copy).returncode == 0 for copy in pending):

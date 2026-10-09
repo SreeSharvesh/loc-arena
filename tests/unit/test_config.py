@@ -222,3 +222,11 @@ def test_an_agent_id_whose_sandbox_name_is_63_characters_loads(tmp_path: Path) -
     agents = load_run_config(run).agents
 
     assert [agent.id for agent in agents] == [agent_id]
+
+
+def test_a_repeated_agent_id_is_refused_at_load_naming_it(tmp_path: Path) -> None:
+    agents = ONE_AGENT.format(agent_id="twin").removeprefix("agents: [").removesuffix("]\n")
+    run = _run_extending(tmp_path, f"agents: [{agents}, {agents}]\n")
+
+    with pytest.raises(ConfigError, match="twin"):
+        load_run_config(run)

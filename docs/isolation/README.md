@@ -98,9 +98,10 @@ volumes: {sealed: {}, workspace: {}, output: {}}
 
 ![What agent code can reach today, after step 2 and after step 5: the key, the internet, the host, the sealed log and the grader's answers go from yes to no; the agent loop and other agents' sandboxes go to no at step 5; live services only with an accepted credential](07-reach.png)
 
-In a stack run each agent's code runs in its own sandbox, `sandbox-<agent id>`, which holds only its own token,
-so there is no direct call to another agent's sandbox; the shared checkout stays a channel by design. No sandbox
-reaches the agent loop, which listens on no port. The grader's answers row also covers the grading code: no
+In a stack run each agent's code runs in its own sandbox, `sandbox-<agent id>`. Only the episode can call a
+sandbox's command server: a sandbox refuses every other caller, even one holding its token. Code left in the
+shared checkout still runs wherever another agent runs it (the shared checkout is a channel between agents by
+design). No sandbox reaches the agent loop, which listens on no port. The grader's answers row also covers the grading code: no
 sandbox holds the harness, a verifier, a scorer or a scenario spec. Grading's container runs the same slim
 image, so it has no harness or scenarios, but it sees the sealed meter it runs. In an in-process run the agents'
 tools still run their code on the host; with `stack.sandbox_agent_code` on, grading's agent-code steps run in

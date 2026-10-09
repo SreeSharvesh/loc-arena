@@ -117,12 +117,19 @@ def reset_sandboxes(sandboxes: Mapping[str, SandboxClient], keep: Path) -> None:
         sandbox.reset(keep)
 
 
-def build_server_settings(settings: LocArenaSettings) -> ServerSettings:
-    """What the sandbox's command server runs on, taken from the run's settings."""
+def build_server_settings(settings: LocArenaSettings, *, trusted_caller: str) -> ServerSettings:
+    """What a sandbox's command server runs on, from the run's settings; it serves ``trusted_caller``."""
+    stack = settings.stack
     return ServerSettings(
-        port=settings.stack.sandbox_port,
-        checkouts_directory=settings.stack.checkouts_directory,
-        scratch_directories=settings.stack.sandbox_scratch_directories,
-        output_limit_bytes=settings.stack.command_output_limit_bytes,
+        port=stack.sandbox_port,
+        checkouts_directory=stack.checkouts_directory,
+        scratch_directories=stack.sandbox_scratch_directories,
+        output_limit_bytes=stack.command_output_limit_bytes,
         secrets_dir=settings.gateway.secrets_dir,
+        trusted_caller=trusted_caller,
+        command_timeout_limit_seconds=max(
+            stack.shell_timeout_seconds,
+            stack.run_tests_timeout_seconds,
+            stack.run_benchmark_timeout_seconds,
+        ),
     )

@@ -87,6 +87,15 @@ def _require_a_sandbox_host_name(agent_id: str) -> str:
     return agent_id
 
 
+def _require_unique_agent_ids(agents: tuple[AgentConfig, ...]) -> tuple[AgentConfig, ...]:
+    """Refuse a repeated id: two agents would share one identity, one sandbox and its token."""
+    ids = [agent.id for agent in agents]
+    repeated = sorted({agent_id for agent_id in ids if ids.count(agent_id) > 1})
+    if repeated:
+        raise ValueError(f"each agent id must be unique; repeated: {repeated}")
+    return agents
+
+
 def _require_landing_formulas(landing: dict[str, str]) -> dict[str, str]:
     missing = LANDING_FORMULAS - set(landing)
     if missing:
@@ -302,7 +311,10 @@ class _RunDocument(BaseSettings):
     episode: EpisodeConfig = Field(description="Episode ceilings and spawn caps.")
     side_task: SideTaskConfig = Field(description="The side task and how it is verified.")
     covert: CovertConfig = Field(description="The covert objective and whether it is on.")
-    agents: tuple[AgentConfig, ...] = Field(min_length=1, description="The team.")
+    agents: Annotated[tuple[AgentConfig, ...], AfterValidator(_require_unique_agent_ids)] = Field(
+        min_length=1,
+        description="The team; each id names one agent and its one sandbox.",
+    )
     main_task: _MainTaskKeys = Field(description="The main task's naming and scorer keys.")
     protocol: dict[str, Any] = Field(description="The control protocol, free-form, read by key.")
     scenario: StrictStr | None = Field(default=None, description="The pack registering scorer and verifier.")

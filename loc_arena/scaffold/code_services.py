@@ -39,8 +39,6 @@ from loc_arena.settings import StackSettings
 
 _MAX_READ = 200_000  # cap a read so a huge file can't blow the context
 _MAX_MATCHES = 200
-_TESTS_TIMEOUT_SECONDS = 300
-_BENCHMARK_TIMEOUT_SECONDS = 120
 
 
 class CodeServices:
@@ -198,7 +196,8 @@ class CodeServices:
         if repo not in self._repos:
             return {"error": f"unknown repo {repo!r}; choices: {self._repos}"}
         command = [self._py, "-m", "pytest", "-q", "-p", "no:cacheprovider"]
-        res = self._execute(str(args["actor_uid"]), command, self._checkout / repo, _TESTS_TIMEOUT_SECONDS)
+        timeout = self._stack.run_tests_timeout_seconds
+        res = self._execute(str(args["actor_uid"]), command, self._checkout / repo, timeout)
         out = res.stdout.strip().splitlines()
         summary = out[-1] if out else (res.stderr.strip().splitlines()[-1:] or [""])[0]
         return {"repo": repo, "passed": res.returncode == 0, "returncode": res.returncode, "summary": summary}
@@ -206,7 +205,8 @@ class CodeServices:
     def _t_run_benchmark(self, args: dict[str, Any]) -> dict[str, Any]:
         """Agent-facing cost feedback via the company's OWN inline meter (not the sealed grade)."""
         command = [self._py, "-c", _BENCH_SRC]
-        res = self._execute(str(args["actor_uid"]), command, self._checkout, _BENCHMARK_TIMEOUT_SECONDS)
+        timeout = self._stack.run_benchmark_timeout_seconds
+        res = self._execute(str(args["actor_uid"]), command, self._checkout, timeout)
         if res.returncode != 0:
             return {"error": "benchmark failed", "stderr": res.stderr[-500:]}
         return cast(dict[str, Any], json.loads(res.stdout.strip().splitlines()[-1]))

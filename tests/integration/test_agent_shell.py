@@ -31,6 +31,7 @@ from sandbox_server.server import ServerSettings, create_sandbox_app
 
 from tests.integration._live_support import QueuedProvider
 
+LOOPBACK = "127.0.0.1"  # where the test's sandbox is served, and so its one trusted caller
 HONEST = apply_mode(load_run_config("configs/aurora-efficiency.deterministic.yaml"), "honest")
 MARKER = "bash-ran"
 TOKEN = "a-sandbox-token-of-at-least-thirty-two-characters"
@@ -83,13 +84,13 @@ class ServedSandbox:
     def __init__(self, settings: ServerSettings, port: int = 0) -> None:
         """Start serving ``settings``' checkouts on ``port``, any free one by default."""
         self._server = uvicorn.Server(
-            uvicorn.Config(create_sandbox_app(settings, SecretStr(TOKEN)), port=port),
+            uvicorn.Config(create_sandbox_app(settings, SecretStr(TOKEN)), host=LOOPBACK, port=port),
         )
         self._thread = threading.Thread(target=self._server.run, daemon=True)
         self._thread.start()
         while not self._server.started:
             time.sleep(0.01)
-        self.url = f"http://127.0.0.1:{self._server.servers[0].sockets[0].getsockname()[1]}"
+        self.url = f"http://{LOOPBACK}:{self._server.servers[0].sockets[0].getsockname()[1]}"
 
     def stop(self) -> None:
         """Stop serving: from now on nothing listens at ``url``."""
@@ -100,7 +101,7 @@ class ServedSandbox:
 @contextmanager
 def serve_sandbox(settings: LocArenaSettings) -> Iterator[ServedSandbox]:
     """The sandbox's command server for a run's ``settings``, stopped on leaving."""
-    sandbox = ServedSandbox(build_server_settings(settings))
+    sandbox = ServedSandbox(build_server_settings(settings, trusted_caller=LOOPBACK))
     try:
         yield sandbox
     finally:
@@ -222,7 +223,7 @@ def test_an_episode_with_a_sandbox_starts_without_what_an_earlier_one_left(tmp_p
 
 def free_port() -> int:
     with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
+        probe.bind((LOOPBACK, 0))
         return probe.getsockname()[1]
 
 
@@ -233,7 +234,7 @@ def client_of(url: str, recovery_seconds: float) -> SandboxClient:
 @pytest.fixture
 def returning_sandbox(tmp_path: Path) -> Iterator[tuple[Path, int]]:
     """A sandbox down at first, as a restarting one is, serving the checkouts half a second later."""
-    settings = build_server_settings(with_sandbox(HONEST, tmp_path).settings)
+    settings = build_server_settings(with_sandbox(HONEST, tmp_path).settings, trusted_caller=LOOPBACK)
     port = free_port()
     returned: list[ServedSandbox] = []
     starting = threading.Timer(0.5, lambda: returned.append(ServedSandbox(settings, port)))
@@ -248,13 +249,13 @@ def test_a_reset_waits_for_a_sandbox_that_is_coming_back(returning_sandbox: tupl
     (checkouts / "an-earlier-episode").mkdir()
     (checkouts / "this-episode").mkdir()
 
-    client_of(f"http://127.0.0.1:{port}", recovery_seconds=10).reset(keep=checkouts / "this-episode")
+    client_of(f"http://{LOOPBACK}:{port}", recovery_seconds=10).reset(keep=checkouts / "this-episode")
 
     assert sorted(path.name for path in checkouts.iterdir()) == ["this-episode"]
 
 
 def test_a_reset_fails_closed_when_the_sandbox_never_comes_back(tmp_path: Path) -> None:
-    client = client_of(f"http://127.0.0.1:{free_port()}", recovery_seconds=0.5)
+    client = client_of(f"http://{LOOPBACK}:{free_port()}", recovery_seconds=0.5)
 
     with pytest.raises(SandboxError, match="ConnectError"):
         client.reset(keep=tmp_path)

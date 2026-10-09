@@ -1,6 +1,7 @@
-"""The sandbox's command server: a command in a checkout for a token holder, nowhere else; a reset between.
+"""The sandbox's command server: a command in a checkout for its trusted caller with the token; resets.
 
-The app, its runner and the processes it starts are real; the checkouts root is a temporary directory.
+The app, its runner and the processes it starts are real; the checkouts root is a temporary directory, and the
+trusted caller is this host's loopback address.
 """
 
 from __future__ import annotations
@@ -22,6 +23,9 @@ from sandbox_server.server import ServerSettings, create_sandbox_app
 TOKEN = "a-sandbox-token-of-at-least-thirty-two-characters"
 MARKER = "command-ran"
 OUTPUT_LIMIT_BYTES = 10_000
+TRUSTED_CALLER = "127.0.0.1"
+OTHER_CALLER = "192.0.2.7"  # an address reserved for documentation: no name resolves to it here
+TIMEOUT_LIMIT_SECONDS = 30.0
 
 
 @pytest.fixture
@@ -34,16 +38,19 @@ def serve(
     checkouts: Path,
     output_limit_bytes: int = OUTPUT_LIMIT_BYTES,
     scratch: Path | None = None,
+    caller: str = TRUSTED_CALLER,
 ) -> TestClient:
-    """The command server over ``checkouts``, whose scratch directories are ``scratch`` if given."""
+    """The command server over ``checkouts``, as ``caller`` reaches it, with ``scratch`` if given."""
     settings = ServerSettings(
         port=8090,
         checkouts_directory=checkouts,
         scratch_directories=(scratch,) if scratch else (),
         output_limit_bytes=output_limit_bytes,
         secrets_dir=checkouts.parent / "secrets",
+        trusted_caller=TRUSTED_CALLER,
+        command_timeout_limit_seconds=TIMEOUT_LIMIT_SECONDS,
     )
-    return TestClient(create_sandbox_app(settings, SecretStr(TOKEN)))
+    return TestClient(create_sandbox_app(settings, SecretStr(TOKEN)), client=(caller, 50000))
 
 
 def post_command(
@@ -55,9 +62,10 @@ def post_command(
     timeout_seconds: float = 10,
     environment: dict[str, str] | None = None,
     output_limit_bytes: int = OUTPUT_LIMIT_BYTES,
+    caller: str = TRUSTED_CALLER,
 ) -> tuple[int, Any]:
-    """The status and the parsed body of a request to run ``command`` with bash."""
-    response = serve(checkouts, output_limit_bytes).post(
+    """The status and the parsed body of a request from ``caller`` to run ``command`` with bash."""
+    response = serve(checkouts, output_limit_bytes, caller=caller).post(
         "/run",
         json={
             "argv": ["bash", "-c", command],
@@ -143,6 +151,20 @@ def test_a_caller_without_the_token_is_refused_and_nothing_runs(checkouts: Path,
     status, _result = post_command(checkouts, f"touch {MARKER}", token=token)
 
     assert (status, (checkouts / "episode" / MARKER).exists()) == (HTTPStatus.UNAUTHORIZED, False)
+
+
+def test_a_caller_other_than_the_trusted_one_is_refused_even_with_the_token_and_nothing_runs(
+    checkouts: Path,
+) -> None:
+    status, _result = post_command(checkouts, f"touch {MARKER}", caller=OTHER_CALLER)
+
+    assert (status, (checkouts / "episode" / MARKER).exists()) == (HTTPStatus.FORBIDDEN, False)
+
+
+def test_a_command_with_a_timeout_over_the_limit_is_refused_and_nothing_runs(checkouts: Path) -> None:
+    status, _result = post_command(checkouts, f"touch {MARKER}", timeout_seconds=TIMEOUT_LIMIT_SECONDS + 1)
+
+    assert (status, (checkouts / "episode" / MARKER).exists()) == (HTTPStatus.UNPROCESSABLE_ENTITY, False)
 
 
 @pytest.mark.parametrize("path", ["/docs", "/redoc", "/openapi.json"])

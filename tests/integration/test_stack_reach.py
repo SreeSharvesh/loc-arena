@@ -7,8 +7,8 @@ are `python -c` scripts: the image has no curl, wget or nc, and a missing binary
 pass for the wrong reason. Each prints one outcome token (`resolved`, `connected`, an errno or `gaierror:`
 name, an HTTP status, a JSON list of what should not be there), and a test asserts the token. The "no" rows
 are only meaningful beside their positive controls: the sandbox resolves and reaches the gateway and another
-agent's sandbox, and that sandbox runs a command for its own token. Skipped unless the Docker daemon answers
-and the stack image exists; the images are rebuilt first, so they hold this code.
+agent's sandbox, and the episode runs a command there with that sandbox's token. Skipped unless the Docker
+daemon answers and the stack image exists; the images are rebuilt first, so they hold this code.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ import json
 import os
 import secrets
 import shlex
+import signal
 import socket
 import subprocess
 from collections.abc import Callable
@@ -42,7 +43,7 @@ from loc_arena.episode_stack import (
 from loc_arena.gateway.core import API_KEY_VARIABLE
 from loc_arena.gateway.proxy import GatewayCall
 from loc_arena.sandbox import TOKEN_FILE
-from sandbox_server.wire import RESET_PATH, RUN_PATH, CommandRequest, ResetRequest
+from sandbox_server.wire import RESET_PATH, RUN_PATH, CommandRequest
 
 from tests.integration._docker_support import image_exists
 
@@ -74,20 +75,26 @@ KERNEL_MOUNT_ROOTS = ("/proc", "/dev", "/sys")
 HARNESS_ROW = "the_sandbox_holds_no_harness_and_no_scenarios"
 REFUSED_PATH_ROW = "the_gateway_refuses_an_unlisted_path"
 OWN_TOKEN_ROW = "the_sandbox_holds_only_its_own_token"
-# Run in the episode container, as agent-main unless named: bash reads a sealed log, lists a seeded checkout,
-# leaves a process and looks for it; run_tests; every probe sent on stdin, and the refused gateway path again
-# as serving-agent; the key and the harness probe looked for here, and what listens here beyond loopback
-# (Docker's resolver listens on 127.0.0.11). Last, as a reset removes every other checkout: a second one
-# seeded, the checkouts listed, every sandbox reset keeping the second, the checkouts listed again.
+LEFT_RUNNING_SECONDS = 60  # a command still running when its sandbox is reset, unless the reset ends it
+COMMAND_START_SECONDS = 2  # long enough for that command to have started
+# In the episode, as agent-main unless named: bash reads a sealed log, lists the checkout, leaves a process;
+# run_tests; the probes from stdin, the refused path again as serving-agent; the episode's own calls to that
+# sandbox, with its token and a wrong one. Last, as a reset removes every other checkout: a second one seeded
+# and listed; a command left running while what listens here beyond loopback is read (Docker's resolver is on
+# 127.0.0.11); every sandbox reset keeping the second; the checkouts listed again.
 IN_EPISODE = f"""
+import concurrent.futures
+import dataclasses
 import ipaddress
 import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 from loc_arena.config import load_run_config
-from loc_arena.sandbox import connect_sandboxes, reset_sandboxes
+from loc_arena.sandbox import SandboxError, connect_sandboxes, reset_sandboxes
+from sandbox_server.wire import CommandRequest
 from loc_arena.scaffold.code_services import CodeServices
 from loc_arena.scaffold.tools import StubServices
 from loc_arena.task import seed_episode_checkout
@@ -120,9 +127,20 @@ secrets_dir = config.settings.gateway.secrets_dir
 holds_key = {API_KEY_VARIABLE!r} in os.environ or any(sent["key"] in value for value in os.environ.values())
 probes = {{name: bash(command) for name, command in sent["probes"].items()}}
 bash(sent["probes"]["{REFUSED_PATH_ROW}"], {OTHER_AGENT!r})
+checkouts = config.settings.stack.checkouts_directory
+true = CommandRequest(argv=["true"], directory=checkouts, timeout_seconds={CONNECT_TIMEOUT_SECONDS})
+episode_calls = {{"own_token": sandboxes[{OTHER_AGENT!r}].run(true).returncode}}
+try:
+    dataclasses.replace(sandboxes[{OTHER_AGENT!r}], token=sandboxes[{AGENT!r}].token).run(true)
+except SandboxError as error:
+    episode_calls["wrong_token"] = error.__cause__.response.status_code
 def read_address(hexadecimal):
     words = [hexadecimal[start:start + 8] for start in range(0, len(hexadecimal), 8)]
     return ipaddress.ip_address(b"".join(int(word, 16).to_bytes(4, "little") for word in words))
+later = seed_episode_checkout(config, episode)
+before = bash(f"ls {{checkouts}}")
+running = concurrent.futures.ThreadPoolExecutor(1).submit(bash, "sleep {LEFT_RUNNING_SECONDS}")
+time.sleep({COMMAND_START_SECONDS})
 listening = [
     f"{{read_address(address)}}:{{int(port, 16)}}"
     for table in ("/proc/net/tcp", "/proc/net/tcp6")
@@ -130,9 +148,6 @@ listening = [
     for address, port in [line.split()[1].split(":")]
     if line.split()[3] == "0A" and not read_address(address).is_loopback
 ]
-checkouts = config.settings.stack.checkouts_directory
-later = seed_episode_checkout(config, episode)
-before = bash(f"ls {{checkouts}}")
 reset_sandboxes(sandboxes, keep=later)
 after = run_in(later, "bash", {{"command": f"ls {{checkouts}}"}})
 print(json.dumps({{
@@ -143,6 +158,8 @@ print(json.dumps({{
     "episode_environment_key": "present" if holds_key else "absent",
     "episode_secrets": sorted(path.name for path in secrets_dir.iterdir()),
     "episode_listening": listening,
+    "episode_calls": episode_calls,
+    "left_running_at_reset": running.result(),
     "checkouts": {{
         "seeded": sorted([checkout.parent.name, later.parent.name]),
         "kept": [later.parent.name],
@@ -235,24 +252,16 @@ ROWS: dict[str, tuple[str, set[str]]] = {
         {"connected"},
     ),
     "no_process_environment_holds_the_key": ("print(search_environments({key}))", {"absent"}),
-    "no_process_environment_holds_another_agents_token": (
-        "print(json.dumps(sorted(set(search_environments(token) for token in {other_tokens}))))",
-        {json.dumps(["absent"])},
-    ),
-    "another_agents_sandbox_refuses_this_agents_token_and_none": (
+    # With that sandbox's own token too, which agent code could copy through the shared checkout. The run
+    # would leave a marker; the reset keeps the probe's checkout, the only one yet.
+    "another_agents_sandbox_refuses_this_sandbox_with_any_token": (
         "own = open('{secrets_dir}/{token_file}').read()\n"
-        "calls = [('{run_path}', {run_body}), ('{reset_path}', {reset_body})]\n"
+        "calls = [('{run_path}', {run_body}), ('{reset_path}', json.dumps({{'keep': os.getcwd()}}))]\n"
         "url = 'http://{other_sandbox}:{sandbox_port}'\n"
-        "print(json.dumps([post(url + path, body, token) for path, body in calls for token in (own, None)]))",
-        {json.dumps([HTTPStatus.UNAUTHORIZED] * 4)},
-    ),
-    # Its reset keeps the probe's checkout, the only one yet, so it empties only that sandbox's scratch.
-    "another_agents_sandbox_runs_and_resets_for_its_own_token": (
-        "keep = json.dumps({{'keep': os.getcwd()}})\n"
-        "url = 'http://{other_sandbox}:{sandbox_port}'\n"
-        "calls = [('{run_path}', {run_body}), ('{reset_path}', keep)]\n"
-        "print(json.dumps([post(url + path, body, {other_token}) for path, body in calls]))",
-        {json.dumps([HTTPStatus.OK] * 2)},
+        "tokens = [{other_token}, own, None]\n"
+        "statuses = [post(url + path, body, token) for path, body in calls for token in tokens]\n"
+        "print(json.dumps([statuses, os.path.exists('{marker}')]))",
+        {json.dumps([[HTTPStatus.FORBIDDEN] * 6, False])},
     ),
     "the_sandbox_cannot_reach_the_agent_loop": (
         "print(json.dumps([resolve('episode'), attempt('episode', {sandbox_port})]))",
@@ -315,6 +324,8 @@ class StackRun:
     episode_environment_key: str
     episode_secrets: list[str]
     episode_listening: list[str]
+    episode_calls: dict[str, int]
+    left_running_at_reset: dict[str, Any]
     checkouts: dict[str, list[str]]
     calls: list[GatewayCall]
     tokens: dict[str, str]
@@ -345,8 +356,9 @@ def build_probes(
 ) -> dict[str, str]:
     """The sandbox command of each row of ``ROWS`` and ``SCRIPTS_CHECKED_APART``, by the row's name."""
     gateway, stack = CONFIG.settings.gateway, CONFIG.settings.stack
+    marker = stack.checkouts_directory / "ran-for-another-sandbox"
     run = CommandRequest(
-        argv=["true"],
+        argv=["touch", str(marker)],
         directory=stack.checkouts_directory,
         timeout_seconds=CONNECT_TIMEOUT_SECONDS,
     )
@@ -372,9 +384,8 @@ def build_probes(
         "run_path": RUN_PATH,
         "reset_path": RESET_PATH,
         "run_body": repr(run.model_dump_json()),
-        "reset_body": repr(ResetRequest(keep=stack.checkouts_directory / "a-checkout").model_dump_json()),
+        "marker": marker,
         "other_token": repr(tokens[OTHER_AGENT]),
-        "other_tokens": repr([token.encode() for agent, token in tokens.items() if agent != AGENT]),
     }
     scripts = {row: script for row, (script, _) in ROWS.items()} | SCRIPTS_CHECKED_APART
     return {
@@ -549,6 +560,20 @@ def test_a_reset_of_every_sandbox_leaves_only_the_checkout_it_keeps(stack_run: S
     listed = (checkouts["before_reset"], checkouts["after_reset"])
 
     assert listed == (checkouts["seeded"], checkouts["kept"])
+
+
+def test_the_episode_runs_a_command_in_another_agents_sandbox_only_with_that_sandboxs_token(
+    stack_run: StackRun,
+) -> None:
+    calls = stack_run.episode_calls
+
+    assert calls == {"own_token": 0, "wrong_token": HTTPStatus.UNAUTHORIZED}
+
+
+def test_a_reset_ends_a_command_still_running_in_the_sandbox(stack_run: StackRun) -> None:
+    ended = stack_run.left_running_at_reset
+
+    assert ended["returncode"] == -signal.SIGKILL
 
 
 def test_nothing_listens_in_the_episode_container_beyond_its_loopback(stack_run: StackRun) -> None:

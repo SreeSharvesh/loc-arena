@@ -120,6 +120,14 @@ class StackSettings(SettingsGroup):
         default=300.0,
         description="Seconds an agent's bash command may run in its sandbox before it is killed.",
     )
+    run_tests_timeout_seconds: PositiveFloat = Field(
+        default=300.0,
+        description="Seconds an agent's run_tests may run before its whole session is killed.",
+    )
+    run_benchmark_timeout_seconds: PositiveFloat = Field(
+        default=120.0,
+        description="Seconds an agent's run_benchmark may run before its whole session is killed.",
+    )
     command_output_limit_bytes: PositiveInt = Field(
         default=10_000,
         description="Bytes of the stdout and of the stderr of a command an agent's tool runs (bash, "

@@ -162,6 +162,9 @@ def test_every_sandbox_gets_the_settings_its_command_server_needs_in_its_command
             checkouts_directory=Path("/the/checkouts"),
             sandbox_scratch_directories=(Path("/the/home"), Path("/the/tmp")),
             command_output_limit_bytes=77,
+            shell_timeout_seconds=40,
+            run_tests_timeout_seconds=50,
+            run_benchmark_timeout_seconds=30,
         ),
     )
 
@@ -175,6 +178,8 @@ def test_every_sandbox_gets_the_settings_its_command_server_needs_in_its_command
             scratch_directories=(Path("/the/home"), Path("/the/tmp")),
             output_limit_bytes=77,
             secrets_dir=Path("/the/secrets"),
+            trusted_caller="episode",
+            command_timeout_limit_seconds=50,
         ),
     )
 
@@ -203,18 +208,26 @@ def test_the_episode_runs_the_requested_run_and_mode() -> None:
     assert command[3:] == ["run", "--run", "a-run", "--mode", "honest", "--out", "/output"]
 
 
-def test_each_service_builds_its_own_target_as_its_image() -> None:
+def test_each_service_runs_its_targets_image_and_one_sandbox_builds_the_sandboxes() -> None:
     stack = StackSettings(image="engine:tag", sandbox_image="sandbox:tag")
 
     services = render(LocArenaSettings(stack=stack))["services"]
 
-    built = {name: (service["build"], service["image"]) for name, service in services.items()}
+    built = {name: (service.get("build"), service["image"]) for name, service in services.items()}
     assert built == {
         "gateway": ({"context": "/repository", "target": "engine"}, "engine:tag"),
         "sandbox-agent-main": ({"context": "/repository", "target": "sandbox"}, "sandbox:tag"),
-        "sandbox-serving-agent": ({"context": "/repository", "target": "sandbox"}, "sandbox:tag"),
+        "sandbox-serving-agent": (None, "sandbox:tag"),
         "episode": ({"context": "/repository", "target": "engine"}, "engine:tag"),
     }
+
+
+def test_a_sandbox_that_does_not_build_the_image_never_pulls_it() -> None:
+    services = render()["services"]
+
+    policy = services["sandbox-serving-agent"].get("pull_policy")
+
+    assert policy == "never"
 
 
 @pytest.mark.parametrize(
