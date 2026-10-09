@@ -169,10 +169,10 @@ def test_a_refused_path_is_recorded_as_incomplete(tmp_path: Path) -> None:
 def test_a_framework_page_is_refused_and_recorded_like_any_other_path(tmp_path: Path, path: str) -> None:
     gateway = open_gateway(tmp_path, reply_with_completion)
 
-    gateway.get(path)
+    reply = gateway.get(path)
 
     [call] = read_calls(tmp_path)
-    assert (call.path, call.status) == (path, HTTPStatus.FORBIDDEN)
+    assert (reply.status_code, call.path, call.status) == (HTTPStatus.FORBIDDEN, path, HTTPStatus.FORBIDDEN)
 
 
 def test_a_forged_host_header_cannot_redirect_the_call(tmp_path: Path) -> None:
