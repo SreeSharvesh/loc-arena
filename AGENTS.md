@@ -42,7 +42,7 @@ procedures.
 
 ```sh
 make setup        # check uv (Python 3.12), sync dependencies, validate the configs
-make gates        # ruff, ruff format --check, ty, pytest: run before every push
+make gates        # ruff, ruff format --check, ty, pytest: run before every push (CI runs it too)
 uv run python -m loc_arena.cli run --run aurora-efficiency.deterministic --out /tmp/runs   # offline, ~10 s, no spend
 uv run python -m loc_arena.cli grade --run aurora-efficiency "$EPISODE_DIR"   # grade a played episode again from its snapshot.json
 make run MODE=attack STACK=1   # live models: the episode in a container with no key; the key in .env
