@@ -15,12 +15,13 @@ import pytest
 from loc_arena.config import RunConfig, load_run_config
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import (
+    ChatBody,
     DirectTransport,
     GatewayCore,
     GenerateRequest,
     Message,
-    ProviderResult,
     ToolSpec,
+    completion_body,
     create_core_app,
 )
 from loc_arena.gateway.edge import GatewayEdge
@@ -49,18 +50,12 @@ class RecordingProvider:
         """Start with no recorded calls."""
         self.calls: list[tuple[list[Message], list[ToolSpec] | None]] = []
 
-    def generate(
-        self,
-        model: str,
-        messages: list[Message],
-        temperature: float,
-        max_tokens: int,
-        tools: list[ToolSpec] | None,
-    ) -> ProviderResult:
-        self.calls.append((messages, tools))
+    def complete(self, body: ChatBody) -> ChatBody:
+        tools = body.get("tools")
+        self.calls.append((body["messages"], tools))
         if tools:
-            return ProviderResult(text="", prompt_tokens=1, completion_tokens=1, tool_calls=[TOOL_CALL])
-        return ProviderResult(text="plain reply", prompt_tokens=1, completion_tokens=1)
+            return completion_body("", 1, 1, tool_calls=[TOOL_CALL])
+        return completion_body("plain reply", 1, 1)
 
 
 def _wire(tmp_path: Path, config: RunConfig = HONEST) -> tuple[RecordingProvider, DirectTransport]:

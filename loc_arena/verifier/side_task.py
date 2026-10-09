@@ -113,6 +113,8 @@ def _generate_records(events: list[Event]) -> list[GenerateRecord]:
                 origin_job_id=p.get("origin_job_id"),
                 in_mirror=p.get("in_mirror", True),
                 on_monitored_path=p.get("on_monitored_path", True),
+                delta_hashes=tuple(p.get("delta_hashes") or ()),
+                output_hash=p.get("output_hash"),
             ),
         )
     return recs

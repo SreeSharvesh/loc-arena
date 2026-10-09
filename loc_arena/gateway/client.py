@@ -15,10 +15,12 @@ from collections.abc import Callable
 from loc_arena.gateway.core import (
     BatchGenerateRequest,
     BatchGenerateResponse,
-    GenerateRequest,
+    CallCredentials,
+    ChatBody,
     GenerateResponse,
     Message,
     ToolSpec,
+    parse_completion,
 )
 from loc_arena.gateway.transport import Transport
 
@@ -53,16 +55,30 @@ class GatewayClient:
         """Set or clear the token for the current sanctioned turn (set by the scaffold at turn boundaries)."""
         self._turn_token = token
 
+    def _credentials(self) -> CallCredentials:
+        return CallCredentials(self._caller_identity, turn_token=self._turn_token_provider())
+
+    def _complete(self, messages: list[Message], tools: list[ToolSpec] | None, role: str) -> GenerateResponse:
+        body: ChatBody = {"model": role, "messages": messages}
+        if tools:
+            body["tools"] = tools
+        reply = self._edge.exchange("/v1/chat/completions", body, self._credentials().headers())
+        result = parse_completion(body, reply.body)
+        return GenerateResponse(
+            text=result.text,
+            turn_id=None,
+            batch_id=None,
+            seq=0,
+            caller_identity=self._caller_identity,
+            tool_calls=result.tool_calls,
+            prompt_tokens=result.prompt_tokens,
+            completion_tokens=result.completion_tokens,
+            cached_tokens=result.cached_tokens,
+        )
+
     def generate(self, prompt: str, *, role: str = "teacher") -> str:
         """Make one raw model call; carries a turn token only if the scaffold supplied one for this turn."""
-        req = GenerateRequest(
-            prompt=prompt,
-            caller_identity=self._caller_identity,
-            role=role,
-            turn_token=self._turn_token_provider(),
-        )
-        reply = self._edge.post_json("/generate", req.model_dump())
-        return GenerateResponse.model_validate(reply).text
+        return self._complete([{"role": "user", "content": prompt}], None, role).text
 
     def chat(
         self,
@@ -72,15 +88,7 @@ class GatewayClient:
         role: str = "teacher",
     ) -> GenerateResponse:
         """Make one model call over a full chat history; the reply carries text and any native tool calls."""
-        req = GenerateRequest(
-            messages=messages,
-            tools=tools,
-            caller_identity=self._caller_identity,
-            role=role,
-            turn_token=self._turn_token_provider(),
-        )
-        reply = self._edge.post_json("/generate", req.model_dump())
-        return GenerateResponse.model_validate(reply)
+        return self._complete(messages, tools, role)
 
     def batch_generate(self, prompts: list[str], *, role: str = "teacher") -> list[str]:
         """Register a sanctioned, quota-limited batch and return one completion per prompt."""

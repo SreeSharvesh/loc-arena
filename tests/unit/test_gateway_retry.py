@@ -10,6 +10,8 @@ import httpx2
 import pytest
 from loc_arena.gateway import core
 
+_REQUEST = core.request_body("some/model", [{"role": "user", "content": "hi"}], 0.0, 16, None)
+
 
 def _response(status: int, *, content: str = "ok") -> httpx2.Response:
     body = {
@@ -31,9 +33,9 @@ def test_retries_a_429_then_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("loc_arena.gateway.core.time.sleep", lambda _s: None)  # no real waiting
     provider = core.OpenRouterProvider(api_key="test-key")
 
-    result = provider.generate("some/model", [{"role": "user", "content": "hi"}], 0.0, 16, None)
+    result = provider.complete(_REQUEST)
 
-    assert result.text == "done"
+    assert result["choices"][0]["message"]["content"] == "done"
     assert len(calls) == 3  # two 429s were retried, the third succeeded
 
 
@@ -49,7 +51,7 @@ def test_persistent_429_raises_after_the_retry_budget(monkeypatch: pytest.Monkey
     provider = core.OpenRouterProvider(api_key="test-key")
 
     with pytest.raises(httpx2.HTTPStatusError):
-        provider.generate("some/model", [{"role": "user", "content": "hi"}], 0.0, 16, None)
+        provider.complete(_REQUEST)
 
     assert len(calls) == core._MAX_RETRIES + 1  # one initial attempt plus the retry budget
 

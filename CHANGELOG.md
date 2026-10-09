@@ -31,6 +31,10 @@ log has the details.
 
 ### Changed
 
+- **The gateway's protocol.** The gateway core serves OpenAI Chat Completions bodies on `/v1/chat/completions`,
+  with the caller's identity in request headers, so anything that speaks Chat Completions can call it unchanged.
+  Its sealed model-call records also note which earlier replies a call's new messages repeat, so the
+  self-feeding check links a loop that feeds a reply back as a new message.
 - **Grading.** An episode plays, then is graded from what it left: its event logs and its repo checkout, read by
   the main-task scorer and the side-task verifier the run config names. Grading no longer runs inside play,
   which lets it move to its own container next.

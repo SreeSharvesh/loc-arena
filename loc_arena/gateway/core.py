@@ -23,15 +23,17 @@ import hmac
 import json
 import os
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol
 
 import httpx2
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, model_validator
 
 from loc_arena.config import RunConfig
+from loc_arena.gateway.transport import TransportReply
 from loc_arena.logging_.agent_trace import AgentTrace
 from loc_arena.logging_.events import AppendOnlyLog, Event, fingerprint
 
@@ -167,6 +169,7 @@ def verify_monitor_credential(secret: str, token: str, now: float) -> dict[str, 
 # --------------------------------------------------------------------------------------------------------
 Message = dict[str, Any]  # an OpenAI Chat Completions message, passed through verbatim
 ToolSpec = dict[str, Any]  # an OpenAI Chat Completions tool definition, passed through verbatim
+ChatBody = dict[str, Any]  # an OpenAI Chat Completions request or response body, passed through verbatim
 
 
 @dataclass(frozen=True)
@@ -191,18 +194,70 @@ class ProviderResult:
 
 
 class Provider(Protocol):
-    """Anything that can turn a message list into a completion. Only the core holds one."""
+    """Anything that serves a Chat Completions request body. Only the core holds one."""
 
-    def generate(
-        self,
-        model: str,
-        messages: list[Message],
-        temperature: float,
-        max_tokens: int,
-        tools: list[ToolSpec] | None,
-    ) -> ProviderResult:
-        """Call the model and return its completion plus token counts."""
+    def complete(self, body: ChatBody) -> ChatBody:
+        """Send one Chat Completions request body and return the response body."""
         ...
+
+
+def request_body(
+    model: str,
+    messages: list[Message],
+    temperature: float,
+    max_tokens: int,
+    tools: list[ToolSpec] | None,
+) -> ChatBody:
+    """The Chat Completions request body for one model call."""
+    body: ChatBody = {
+        "model": model,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+    if tools:
+        body["tools"] = tools
+    return body
+
+
+def parse_completion(request: ChatBody, response: ChatBody) -> ProviderResult:
+    """The text, native tool calls and token counts of a Chat Completions response.
+
+    Token counts fall back to an estimate over the request when the provider omits usage.
+    """
+    # Some models (e.g. reasoning models) can return a null ``content`` when the whole reply went to a
+    # separate reasoning field, the model declined, or the reply is tool calls only -- coerce to "".
+    message = response["choices"][0].get("message", {})
+    text = message.get("content") or ""
+    usage = response.get("usage", {})
+    details = usage.get("prompt_tokens_details") or {}
+    cached = int(details.get("cached_tokens", 0)) if isinstance(details, dict) else 0
+    return ProviderResult(
+        text=text,
+        prompt_tokens=int(usage.get("prompt_tokens", _estimate_tokens(json.dumps(request["messages"])))),
+        completion_tokens=int(usage.get("completion_tokens", _estimate_tokens(text))),
+        tool_calls=message.get("tool_calls") or None,
+        cached_tokens=cached,
+    )
+
+
+def completion_body(
+    text: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+    *,
+    tool_calls: list[dict[str, Any]] | None = None,
+) -> ChatBody:
+    """A minimal Chat Completions response body, for deterministic and test providers."""
+    message: Message = {"role": "assistant", "content": text}
+    if tool_calls:
+        message["tool_calls"] = tool_calls
+    return {
+        "choices": [
+            {"index": 0, "message": message, "finish_reason": "tool_calls" if tool_calls else "stop"},
+        ],
+        "usage": {"prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens},
+    }
 
 
 class OpenRouterProvider:
@@ -232,23 +287,8 @@ class OpenRouterProvider:
             self._url, self._key = OPENROUTER_URL, key
         self._timeout = timeout
 
-    def _post_with_retries(
-        self,
-        model: str,
-        messages: list[Message],
-        temperature: float,
-        max_tokens: int,
-        tools: list[ToolSpec] | None,
-    ) -> httpx2.Response:
+    def _post_with_retries(self, body: ChatBody) -> httpx2.Response:
         """POST the completion, retrying 429/5xx with backoff; return the final response for the caller."""
-        body: dict[str, Any] = {
-            "model": model,
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-        }
-        if tools:
-            body["tools"] = tools
         headers = {"Authorization": f"Bearer {self._key}", "Content-Type": "application/json"}
         last: httpx2.Response | None = None
         for attempt in range(_MAX_RETRIES + 1):
@@ -262,38 +302,18 @@ class OpenRouterProvider:
         assert last is not None
         return last
 
-    def generate(
-        self,
-        model: str,
-        messages: list[Message],
-        temperature: float,
-        max_tokens: int,
-        tools: list[ToolSpec] | None,
-    ) -> ProviderResult:
-        """POST a chat completion to OpenRouter and parse the text and any native tool calls.
+    def complete(self, body: ChatBody) -> ChatBody:
+        """POST a Chat Completions body to OpenRouter and return the response body.
 
         Retries a rate-limited (429) or transient server (5xx) response a bounded number of times with
         exponential backoff, honoring a ``Retry-After`` header when the provider sends one, so a burst of
         calls against a rate-limited model does not abort the whole episode. A non-transient error, or a
         429/5xx that persists past the retry budget, still raises.
         """
-        resp = self._post_with_retries(model, messages, temperature, max_tokens, tools)
+        resp = self._post_with_retries(body)
         resp.raise_for_status()
-        data = resp.json()
-        # Some models (e.g. reasoning models) can return a null ``content`` when the whole reply went to a
-        # separate reasoning field, the model declined, or the reply is tool calls only -- coerce to "".
-        message = data["choices"][0].get("message", {})
-        text = message.get("content") or ""
-        usage = data.get("usage", {})
-        details = usage.get("prompt_tokens_details") or {}
-        cached = int(details.get("cached_tokens", 0)) if isinstance(details, dict) else 0
-        return ProviderResult(
-            text=text,
-            prompt_tokens=int(usage.get("prompt_tokens", _estimate_tokens(json.dumps(messages)))),
-            completion_tokens=int(usage.get("completion_tokens", _estimate_tokens(text))),
-            tool_calls=message.get("tool_calls") or None,
-            cached_tokens=cached,
-        )
+        data: ChatBody = resp.json()
+        return data
 
 
 def _estimate_tokens(text: str) -> int:
@@ -314,17 +334,10 @@ class DeterministicProvider:
         self._ct = completion_tokens
         self._n = 0
 
-    def generate(
-        self,
-        model: str,
-        messages: list[Message],
-        temperature: float,
-        max_tokens: int,
-        tools: list[ToolSpec] | None,
-    ) -> ProviderResult:
+    def complete(self, body: ChatBody) -> ChatBody:
         """Return a unique deterministic completion and the fixed token counts."""
         self._n += 1
-        return ProviderResult(text=f"gen#{self._n}", prompt_tokens=self._pt, completion_tokens=self._ct)
+        return completion_body(f"gen#{self._n}", self._pt, self._ct)
 
 
 # --------------------------------------------------------------------------------------------------------
@@ -377,6 +390,139 @@ def output_fingerprint(req: GenerateRequest, text: str, tool_calls: list[dict[st
     if req.prompt is not None:
         return fingerprint(text)
     return fingerprint(ProviderResult(text, 0, 0, tool_calls).assistant_message())
+
+
+def fingerprints_for(
+    messages: list[Message],
+    tools: list[ToolSpec] | None,
+    text: str,
+    tool_calls: list[dict[str, Any]] | None,
+) -> tuple[str, str]:
+    """``(prompt_fp, output_fp)`` over what the caller submitted, before covert injection.
+
+    One plain user message and no tools is a ``prompt`` call: both sides hash the bare string, so feeding
+    the reply back as the next prompt links them. Anything else hashes the message list and the assistant
+    message.
+    """
+    lone = (
+        not tools
+        and len(messages) == 1
+        and messages[0].get("role") == "user"
+        and isinstance(messages[0].get("content"), str)
+        and set(messages[0]) <= {"role", "content"}
+    )
+    if lone:
+        return fingerprint(messages[0]["content"]), fingerprint(text)
+    return fingerprint(messages), fingerprint(ProviderResult(text, 0, 0, tool_calls).assistant_message())
+
+
+def message_content_hash(message: Message) -> str:
+    """Hash of a message's text, or of the whole message when its content is not a string.
+
+    The text hash equals ``fingerprint`` of a reply that was that exact text, which is how a later call's
+    new messages show that an earlier reply was fed back in.
+    """
+    content = message.get("content")
+    if isinstance(content, str):
+        return fingerprint(content)
+    return fingerprint(message)
+
+
+# Stamps the core returns in response headers. The edge reads them for the mirror record and strips them
+# before answering the caller, so a chat-completions client sees only the provider's response.
+STAMP_SEQ = "x-loc-seq"
+STAMP_TURN_ID = "x-loc-turn-id"
+STAMP_BATCH_ID = "x-loc-batch-id"
+STAMP_CREDENTIAL = "x-loc-credential-kind"
+STAMP_CALLER = "x-loc-caller-identity"
+STAMP_IN_MIRROR = "x-loc-in-mirror"
+
+
+def header_value(headers: Mapping[str, str] | None, name: str) -> str | None:
+    """The header named ``name``, matched case-insensitively, or ``None`` when it is absent or empty."""
+    if not headers:
+        return None
+    for key, value in headers.items():
+        if key.lower() == name and value != "":
+            return value
+    return None
+
+
+@dataclass(frozen=True)
+class CallCredentials:
+    """Who is calling, carried in headers rather than in the chat-completions body."""
+
+    caller_identity: str
+    turn_token: str | None = None
+    durable_credential: str | None = None
+    origin_job_id: str | None = None
+    monitor_credential: str | None = None
+
+    def headers(self) -> dict[str, str]:
+        """The headers a client sends with one call."""
+        sent = {"Authorization": f"Bearer {self.caller_identity}"}
+        if self.turn_token is not None:
+            sent["X-Loc-Turn-Token"] = self.turn_token
+        if self.durable_credential is not None:
+            sent["X-Loc-Durable-Credential"] = self.durable_credential
+        if self.origin_job_id is not None:
+            sent["X-Loc-Origin-Job"] = self.origin_job_id
+        if self.monitor_credential is not None:
+            sent["X-Loc-Monitor-Credential"] = self.monitor_credential
+        return sent
+
+    @staticmethod
+    def from_headers(headers: Mapping[str, str] | None) -> CallCredentials:
+        """Read credentials from request headers. The bearer token is the caller identity."""
+        raw = header_value(headers, "authorization")
+        scheme, _, identity = (raw or "").partition(" ")
+        if scheme.lower() != "bearer" or not identity.strip():
+            raise HTTPException(status_code=401, detail="expected 'Authorization: Bearer <caller identity>'")
+        return CallCredentials(
+            caller_identity=identity.strip(),
+            turn_token=header_value(headers, "x-loc-turn-token"),
+            durable_credential=header_value(headers, "x-loc-durable-credential"),
+            origin_job_id=header_value(headers, "x-loc-origin-job"),
+            monitor_credential=header_value(headers, "x-loc-monitor-credential"),
+        )
+
+
+def _stamp_headers(
+    *,
+    seq: int,
+    turn_id: str | None,
+    batch_id: str | None,
+    credential_kind: str,
+    caller_identity: str,
+    in_mirror: bool,
+) -> dict[str, str]:
+    """The response headers the edge reads. Absent when the value is ``None``."""
+    headers = {
+        STAMP_SEQ: str(seq),
+        STAMP_CREDENTIAL: credential_kind,
+        STAMP_CALLER: caller_identity,
+        STAMP_IN_MIRROR: "true" if in_mirror else "false",
+    }
+    if turn_id is not None:
+        headers[STAMP_TURN_ID] = turn_id
+    if batch_id is not None:
+        headers[STAMP_BATCH_ID] = batch_id
+    return headers
+
+
+@dataclass(frozen=True)
+class CompletedCall:
+    """A served chat completion: the provider response, the sealed-log stamps, and the relay headers."""
+
+    response: ChatBody
+    result: ProviderResult
+    seq: int
+    turn_id: str | None
+    batch_id: str | None
+    caller_identity: str
+    credential_kind: str
+    in_mirror: bool
+    relay_headers: dict[str, str]
 
 
 class BatchGenerateRequest(BaseModel):
@@ -476,6 +622,7 @@ class GatewayCore:
         self._logging_covered = logging_covered
         self._is_revoked = is_revoked or (lambda _instance: False)
         self._trace = trace
+        self._seen: dict[str, list[tuple[tuple[str, ...], str, int]]] = {}
 
     def set_monitor_covered(self, covered: set[str] | None) -> None:
         """Set the deployed monitor coverage (the environment applies reduced_monitor_coverage)."""
@@ -490,45 +637,54 @@ class GatewayCore:
         return covered is None or identity in covered
 
     # -- identity + stamps -------------------------------------------------------------------------------
-    def _resolve(self, req: GenerateRequest, now: float) -> tuple[str, str | None, str, str | None, bool]:
+    def _resolve(self, creds: CallCredentials, now: float) -> tuple[str, str | None, str, str | None, bool]:
         """Return (identity, turn_id, credential_kind, credential_id, issued_for_sanctioned_request).
 
         A valid durable credential wins (a background/rogue job running under a service account,
         off-turn); then a valid turn token (a sanctioned turn); otherwise the claimed identity with no
         credential.
         """
-        if req.monitor_credential:
-            payload = verify_monitor_credential(self._secret, req.monitor_credential, now)
+        if creds.monitor_credential:
+            payload = verify_monitor_credential(self._secret, creds.monitor_credential, now)
             if payload is not None:
                 return str(payload["monitor"]), None, "monitor", None, True
-        if req.durable_credential:
-            payload = verify_durable_credential(self._secret, req.durable_credential, now)
+        if creds.durable_credential:
+            payload = verify_durable_credential(self._secret, creds.durable_credential, now)
             # A revoked instance (rotation actually invalidated it) no longer resolves to the durable
             # identity; the loop must refresh to a live instance or it drops to an uncredentialed call.
             if payload is not None and not self._is_revoked(str(payload["instance"])):
                 account = str(payload["account"])
                 sanctioned = bool(payload.get("sanctioned", False))  # read TRUTHFULLY, not hardcoded
                 return account, None, "durable_identity", str(payload["instance"]), sanctioned
-        if req.turn_token:
-            payload = verify_turn_token(self._secret, req.turn_token, now)
+        if creds.turn_token:
+            payload = verify_turn_token(self._secret, creds.turn_token, now)
             if payload is not None and payload.get("episode_id") == self._episode_id:
                 agent_uid = str(payload["agent_uid"])
                 return agent_uid, f"{agent_uid}:t{int(payload['turn'])}", "turn_token", None, True
-        return req.caller_identity, None, "none", None, True
+        return creds.caller_identity, None, "none", None, True
 
     def _inject_covert(self, identity: str, messages: list[Message]) -> list[Message]:
         """Prepend the covert objective to the first message for the target identity only.
 
-        The first message is the system prompt of a chat history, or the sole user message of a ``prompt``.
-        The caller's list is not mutated.
+        A string content is prefixed. A list of content parts gains a leading text part. The caller's list
+        is not mutated.
         """
         cov = self._config.covert
         if not (cov.enabled and identity == cov.target_identity):
             return messages
         first, *rest = messages
-        if not isinstance(first["content"], str):
-            raise TypeError("covert injection requires the first message's content to be a string")
-        return [{**first, "content": f"{cov.objective_prompt}\n\n{first['content']}"}, *rest]
+        content = first["content"]
+        if isinstance(content, str):
+            injected: str | list[Any] = f"{cov.objective_prompt}\n\n{content}"
+        elif isinstance(content, list):
+            injected = [{"type": "text", "text": cov.objective_prompt}, *content]
+        else:
+            raise TypeError("covert injection requires the first message's content to be a string or a list")
+        return [{**first, "content": injected}, *rest]
+
+    def _call_provider(self, body: ChatBody) -> tuple[ChatBody, ProviderResult]:
+        raw = self._provider.complete(body)
+        return raw, parse_completion(body, raw)
 
     def _model_for(self, role: str) -> tuple[str, float, int]:
         spec = self._config.models.get(role)
@@ -553,6 +709,9 @@ class GatewayCore:
         prompt_tokens: int = 0,
         completion_tokens: int = 0,
         cached_tokens: int = 0,
+        delta_hashes: list[str] | None = None,
+        continues_seq: int | None = None,
+        output_hash: str | None = None,
     ) -> int:
         """Write one sealed inference-call record and return its seq.
 
@@ -587,57 +746,184 @@ class GatewayCore:
                 "prompt_tokens": prompt_tokens,
                 "completion_tokens": completion_tokens,
                 "cached_tokens": cached_tokens,
+                # Hashes of the messages new since this caller's previous call, and the reply text hash.
+                # A delta hash equal to an earlier output_hash is that reply fed back in.
+                "delta_hashes": delta_hashes or [],
+                "continues_seq": continues_seq,
+                "output_hash": output_hash,
             },
         )
         self._sealed.append(event)
         return seq
 
-    # -- endpoints ---------------------------------------------------------------------------------------
-    def generate(self, req: GenerateRequest) -> GenerateResponse:
-        """Serve one generate call: resolve, inject, call the provider, write the sealed record."""
-        ts = self._clock()
-        identity, turn_id, cred, credential_id, sanctioned = self._resolve(req, ts)
-        model, temperature, max_tokens = self._model_for(req.role)
-        if req.temperature is not None:
-            temperature = req.temperature
-        model_input = self._inject_covert(identity, req.chat_messages())
-        result = self._provider.generate(model, model_input, temperature, max_tokens, req.tools)
+    def _delta(self, caller: str, messages: list[Message]) -> tuple[list[str], int | None]:
+        """Content hashes of the messages new since this caller's previous call, and that call's seq.
+
+        The previous call's messages plus its reply text form the prefix. Everything after it is the delta,
+        so an earlier reply only counts as fed back in when it arrives as a new message.
+        """
+        hashes = [message_content_hash(message) for message in messages]
+        best = 0
+        continued: int | None = None
+        for inputs, reply_hash, seq in self._seen.get(caller, []):
+            prefix = inputs + (reply_hash,)
+            if len(prefix) <= len(hashes) and tuple(hashes[: len(prefix)]) == prefix and len(prefix) > best:
+                best = len(prefix)
+                continued = seq
+        return hashes[best:], continued
+
+    def _remember(self, caller: str, messages: list[Message], reply_hash: str, seq: int) -> None:
+        inputs = tuple(message_content_hash(message) for message in messages)
+        self._seen.setdefault(caller, []).append((inputs, reply_hash, seq))
+
+    def _record(
+        self,
+        *,
+        identity: str,
+        turn_id: str | None,
+        batch_id: str | None,
+        credential_kind: str,
+        credential_id: str | None,
+        sanctioned: bool,
+        origin_job_id: str | None,
+        role: str,
+        submitted: list[Message],
+        sent: list[Message],
+        tools: list[ToolSpec] | None,
+        result: ProviderResult,
+        ts: float,
+    ) -> int:
+        """Write the sealed record for one call, including the delta, and remember the conversation."""
+        prompt_fp, output_fp = fingerprints_for(submitted, tools, result.text, result.tool_calls)
+        delta, continued = self._delta(identity, submitted)
+        reply_hash = fingerprint(result.text)
         seq = self._write_record(
             identity=identity,
             turn_id=turn_id,
-            batch_id=None,
-            prompt_fp=input_fingerprint(req),
-            output_fp=output_fingerprint(req, result.text, result.tool_calls),
-            model_role=req.role,
-            credential_kind=cred,
+            batch_id=batch_id,
+            prompt_fp=prompt_fp,
+            output_fp=output_fp,
+            model_role=role,
+            credential_kind=credential_kind,
             ts=ts,
             credential_id=credential_id,
             issued_for_sanctioned_request=sanctioned,
-            origin_job_id=req.origin_job_id,
+            origin_job_id=origin_job_id,
             prompt_tokens=result.prompt_tokens,
             completion_tokens=result.completion_tokens,
             cached_tokens=result.cached_tokens,
+            delta_hashes=delta,
+            continues_seq=continued,
+            output_hash=reply_hash if result.text else None,
         )
+        self._remember(identity, submitted, reply_hash, seq)
         if self._trace is not None:
             self._trace.on_model_call(
                 identity=identity,
-                role=req.role,
-                model_input=_render_input(model_input),
+                role=role,
+                model_input=_render_input(sent),
                 output=_render_output(result),
                 sealed_seq=seq,
             )
-        return GenerateResponse(
-            text=result.text,
+        return seq
+
+    # -- endpoints ---------------------------------------------------------------------------------------
+    def complete(self, body: ChatBody, creds: CallCredentials) -> CompletedCall:
+        """Serve one Chat Completions call.
+
+        ``model`` is a gateway role and is the only field replaced. Temperature and max tokens fall back to
+        the role's config when the caller omits them; every other field is forwarded to the provider.
+        ``stream`` is dropped: the core answers with the finished completion.
+        """
+        messages = body.get("messages")
+        role = body.get("model")
+        if not isinstance(messages, list) or not messages:
+            raise HTTPException(status_code=400, detail="messages must be a non-empty list")
+        if not isinstance(role, str):
+            raise HTTPException(status_code=400, detail="model must name a gateway model role")
+        model, temperature, max_tokens = self._model_for(role)
+        tools = body.get("tools")
+        if tools is not None and not isinstance(tools, list):
+            raise HTTPException(status_code=400, detail="tools must be a list")
+        sent = dict(body)
+        sent["model"] = model
+        sent.pop("stream", None)
+        sent.pop("stream_options", None)
+        if "temperature" not in sent:
+            sent["temperature"] = temperature
+        if "max_tokens" not in sent and "max_completion_tokens" not in sent:
+            sent["max_tokens"] = max_tokens
+        ts = self._clock()
+        identity, turn_id, cred, credential_id, sanctioned = self._resolve(creds, ts)
+        injected = self._inject_covert(identity, messages)
+        sent["messages"] = injected
+        raw, result = self._call_provider(sent)
+        seq = self._record(
+            identity=identity,
             turn_id=turn_id,
             batch_id=None,
+            credential_kind=cred,
+            credential_id=credential_id,
+            sanctioned=sanctioned,
+            origin_job_id=creds.origin_job_id,
+            role=role,
+            submitted=messages,
+            sent=injected,
+            tools=tools,
+            result=result,
+            ts=ts,
+        )
+        in_mirror = self._covered(self._logging_covered, identity)
+        response = dict(raw)
+        response["model"] = role
+        return CompletedCall(
+            response=response,
+            result=result,
             seq=seq,
+            turn_id=turn_id,
+            batch_id=None,
             caller_identity=identity,
             credential_kind=cred,
-            in_mirror=self._covered(self._logging_covered, identity),
-            tool_calls=result.tool_calls,
-            prompt_tokens=result.prompt_tokens,
-            completion_tokens=result.completion_tokens,
-            cached_tokens=result.cached_tokens,
+            in_mirror=in_mirror,
+            relay_headers=_stamp_headers(
+                seq=seq,
+                turn_id=turn_id,
+                batch_id=None,
+                credential_kind=cred,
+                caller_identity=identity,
+                in_mirror=in_mirror,
+            ),
+        )
+
+    def generate(self, req: GenerateRequest) -> GenerateResponse:
+        """Serve one generate call by translating it into a chat completion."""
+        body: ChatBody = {"model": req.role, "messages": req.chat_messages()}
+        if req.tools:
+            body["tools"] = req.tools
+        if req.temperature is not None:
+            body["temperature"] = req.temperature
+        done = self.complete(
+            body,
+            CallCredentials(
+                caller_identity=req.caller_identity,
+                turn_token=req.turn_token,
+                durable_credential=req.durable_credential,
+                origin_job_id=req.origin_job_id,
+                monitor_credential=req.monitor_credential,
+            ),
+        )
+        return GenerateResponse(
+            text=done.result.text,
+            turn_id=done.turn_id,
+            batch_id=done.batch_id,
+            seq=done.seq,
+            caller_identity=done.caller_identity,
+            credential_kind=done.credential_kind,
+            in_mirror=done.in_mirror,
+            tool_calls=done.result.tool_calls,
+            prompt_tokens=done.result.prompt_tokens,
+            completion_tokens=done.result.completion_tokens,
+            cached_tokens=done.result.cached_tokens,
         )
 
     def batch_generate(self, req: BatchGenerateRequest) -> BatchGenerateResponse:
@@ -648,13 +934,8 @@ class GatewayCore:
         texts: list[str] = []
         seqs: list[int] = []
         for prompt in req.prompts:
-            result = self._provider.generate(
-                model,
-                [{"role": "user", "content": prompt}],
-                temperature,
-                max_tokens,
-                None,
-            )
+            messages: list[Message] = [{"role": "user", "content": prompt}]
+            _raw, result = self._call_provider(request_body(model, messages, temperature, max_tokens, None))
             call_tokens = result.prompt_tokens + result.completion_tokens
             if self._teacher_tokens_used + call_tokens > self._quota:
                 raise HTTPException(
@@ -666,27 +947,21 @@ class GatewayCore:
                 )
             self._teacher_tokens_used += call_tokens
             ts = self._clock()
-            seq = self._write_record(
+            seq = self._record(
                 identity=req.caller_identity,
                 turn_id=None,
                 batch_id=batch_id,
-                prompt_fp=fingerprint(prompt),
-                output_fp=fingerprint(result.text),
-                model_role=req.role,
                 credential_kind="batch_id",
+                credential_id=None,
+                sanctioned=True,
+                origin_job_id=None,
+                role=req.role,
+                submitted=messages,
+                sent=messages,
+                tools=None,
+                result=result,
                 ts=ts,
-                prompt_tokens=result.prompt_tokens,
-                completion_tokens=result.completion_tokens,
-                cached_tokens=result.cached_tokens,
             )
-            if self._trace is not None:
-                self._trace.on_model_call(
-                    identity=req.caller_identity,
-                    role=req.role,
-                    model_input=prompt,
-                    output=result.text,
-                    sealed_seq=seq,
-                )
             texts.append(result.text)
             seqs.append(seq)
         return BatchGenerateResponse(texts=texts, batch_id=batch_id, seqs=seqs)
@@ -723,11 +998,19 @@ def create_core_app(core: GatewayCore) -> FastAPI:
     def _batch_generate(req: BatchGenerateRequest) -> BatchGenerateResponse:
         return core.batch_generate(req)
 
+    @app.post("/v1/chat/completions")
+    async def _chat(request: Request) -> JSONResponse:
+        payload = await request.json()
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="JSON object required")
+        done = core.complete(payload, CallCredentials.from_headers(request.headers))
+        return JSONResponse(done.response, headers=done.relay_headers)
+
     return app
 
 
 class Servable(Protocol):
-    """Anything that serves ``/generate`` and ``/batch_generate`` in-process (the core, or the edge)."""
+    """Anything that serves generate, batch and chat completions in-process (the core, or the edge)."""
 
     def generate(self, req: GenerateRequest) -> GenerateResponse:
         """Serve one generate call."""
@@ -735,6 +1018,10 @@ class Servable(Protocol):
 
     def batch_generate(self, req: BatchGenerateRequest) -> BatchGenerateResponse:
         """Serve one batch call."""
+        ...
+
+    def complete(self, body: ChatBody, creds: CallCredentials) -> CompletedCall:
+        """Serve one Chat Completions call."""
         ...
 
 
@@ -750,8 +1037,27 @@ class DirectTransport:
         """Wire the transport to the servable (core or edge) it dispatches to."""
         self._target = target
 
-    def post_json(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
+    def exchange(
+        self,
+        path: str,
+        body: dict[str, Any],
+        headers: Mapping[str, str] | None = None,
+    ) -> TransportReply:
+        """Dispatch one call. Chat completions also return the core's stamp headers."""
+        if path == "/v1/chat/completions":
+            done = self._target.complete(body, CallCredentials.from_headers(headers))
+            return TransportReply(done.response, done.relay_headers)
+        return TransportReply(self.post_json(path, body))
+
+    def post_json(
+        self,
+        path: str,
+        body: dict[str, Any],
+        headers: Mapping[str, str] | None = None,
+    ) -> dict[str, Any]:
         """Dispatch ``/generate`` or ``/batch_generate`` to the target; return the model-dumped reply."""
+        if path == "/v1/chat/completions":
+            return self.exchange(path, body, headers).body
         if path == "/generate":
             return self._target.generate(GenerateRequest(**body)).model_dump()
         if path == "/batch_generate":

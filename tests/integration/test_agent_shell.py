@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 import uvicorn
 from loc_arena.config import RunConfig, load_run_config
-from loc_arena.gateway.core import Message, ProviderResult, ToolSpec
+from loc_arena.gateway.core import ChatBody
 from loc_arena.harness import apply_mode
 from loc_arena.live import play_model_episode
 from loc_arena.sandbox import SandboxClient, SandboxError, create_sandbox_app
@@ -48,20 +48,15 @@ class RecordingProvider(QueuedProvider):
         self.tool_results: list[str] = []
         self._before_first_turn: Callable[[], None] | None = before_first_turn
 
-    def generate(
-        self,
-        model: str,
-        messages: list[Message],
-        temperature: float,
-        max_tokens: int,
-        tools: list[ToolSpec] | None,
-    ) -> ProviderResult:
+    def complete(self, body: ChatBody) -> ChatBody:
+        tools = body.get("tools") or []
         if tools and self._before_first_turn:
             self._before_first_turn()
             self._before_first_turn = None
-        self.offered |= {tool["function"]["name"] for tool in tools or []}
+        self.offered |= {tool["function"]["name"] for tool in tools}
+        messages = body["messages"]
         self.tool_results += [str(message["content"]) for message in messages if message["role"] == "tool"]
-        return super().generate(model, messages, temperature, max_tokens, tools)
+        return super().complete(body)
 
 
 @dataclass(frozen=True)

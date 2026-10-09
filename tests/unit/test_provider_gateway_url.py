@@ -14,7 +14,7 @@ COMPLETION = {
     "choices": [{"message": {"content": "hi"}}],
     "usage": {"prompt_tokens": 1, "completion_tokens": 1},
 }
-MESSAGES: list[core.Message] = [{"role": "user", "content": "hi"}]
+REQUEST = core.request_body("m", [{"role": "user", "content": "hi"}], 0.0, 8, None)
 
 
 @pytest.fixture
@@ -36,7 +36,7 @@ def test_a_provider_behind_the_gateway_posts_to_the_gateway(
     monkeypatch.delenv(core.API_KEY_VARIABLE, raising=False)
     monkeypatch.setenv(core.GATEWAY_URL_VARIABLE, GATEWAY)
 
-    core.OpenRouterProvider().generate("m", MESSAGES, 0.0, 8, None)
+    core.OpenRouterProvider().complete(REQUEST)
 
     assert str(posted[0].url) == GATEWAY
 
@@ -47,7 +47,7 @@ def test_a_provider_behind_the_gateway_withholds_a_real_key_it_was_given(
 ) -> None:
     monkeypatch.setenv(core.GATEWAY_URL_VARIABLE, GATEWAY)
 
-    core.OpenRouterProvider(api_key="sk-real").generate("m", MESSAGES, 0.0, 8, None)
+    core.OpenRouterProvider(api_key="sk-real").complete(REQUEST)
 
     assert "sk-real" not in posted[0].headers["authorization"]
 
@@ -59,7 +59,7 @@ def test_a_provider_given_a_gateway_url_posts_there_despite_a_key_in_the_environ
     monkeypatch.setenv(core.API_KEY_VARIABLE, "sk-real")
     monkeypatch.delenv(core.GATEWAY_URL_VARIABLE, raising=False)
 
-    core.OpenRouterProvider(gateway_url=GATEWAY).generate("m", MESSAGES, 0.0, 8, None)
+    core.OpenRouterProvider(gateway_url=GATEWAY).complete(REQUEST)
 
     assert str(posted[0].url) == GATEWAY
 

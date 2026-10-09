@@ -7,11 +7,12 @@ in-process.
 from __future__ import annotations
 
 import itertools
+from collections.abc import Mapping
 from typing import Any
 
 from fastapi import FastAPI
-from loc_arena.gateway.core import Message, ProviderResult, ToolSpec
-from loc_arena.gateway.transport import Transport
+from loc_arena.gateway.core import ChatBody, Message, completion_body
+from loc_arena.gateway.transport import TransportReply
 from starlette.testclient import TestClient
 
 
@@ -33,30 +34,36 @@ class StubProvider:
         self._ct = completion_tokens
         self._n = 0
 
-    def generate(
-        self,
-        model: str,
-        messages: list[Message],
-        temperature: float,
-        max_tokens: int,
-        tools: list[ToolSpec] | None,
-    ) -> ProviderResult:
-        self.inputs.append(joined_content(messages))
+    def complete(self, body: ChatBody) -> ChatBody:
+        self.inputs.append(joined_content(body["messages"]))
         self._n += 1
-        return ProviderResult(text=f"out#{self._n}", prompt_tokens=self._pt, completion_tokens=self._ct)
+        return completion_body(f"out#{self._n}", self._pt, self._ct)
 
 
-class AppTransport(Transport):
+class AppTransport:
     """A ``Transport`` that drives a FastAPI app in-process via Starlette's TestClient (no sockets)."""
 
     def __init__(self, app: FastAPI) -> None:
         self._client = TestClient(app)
 
-    def post_json(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
-        resp = self._client.post(path, json=body)
+    def exchange(
+        self,
+        path: str,
+        body: dict[str, Any],
+        headers: Mapping[str, str] | None = None,
+    ) -> TransportReply:
+        resp = self._client.post(path, json=body, headers=dict(headers) if headers else None)
         resp.raise_for_status()
         result: dict[str, Any] = resp.json()
-        return result
+        return TransportReply(result, resp.headers)
+
+    def post_json(
+        self,
+        path: str,
+        body: dict[str, Any],
+        headers: Mapping[str, str] | None = None,
+    ) -> dict[str, Any]:
+        return self.exchange(path, body, headers).body
 
 
 class JsonVerdictProvider:
@@ -65,33 +72,15 @@ class JsonVerdictProvider:
     def __init__(self, suspicion: float = 0.9, reason: str = "stub verdict") -> None:
         self._text = f'{{"suspicion": {suspicion}, "reason": "{reason}"}}'
 
-    def generate(
-        self,
-        model: str,
-        messages: list[Message],
-        temperature: float,
-        max_tokens: int,
-        tools: list[ToolSpec] | None,
-    ) -> ProviderResult:
-        return ProviderResult(text=self._text, prompt_tokens=1, completion_tokens=1)
+    def complete(self, body: ChatBody) -> ChatBody:
+        return completion_body(self._text, 1, 1)
 
 
 class MalformedProvider:
     """A provider that returns an unparseable completion (to exercise the monitor parse-error fallback)."""
 
-    def generate(
-        self,
-        model: str,
-        messages: list[Message],
-        temperature: float,
-        max_tokens: int,
-        tools: list[ToolSpec] | None,
-    ) -> ProviderResult:
-        return ProviderResult(
-            text="I think this looks fine, no JSON here.",
-            prompt_tokens=1,
-            completion_tokens=1,
-        )
+    def complete(self, body: ChatBody) -> ChatBody:
+        return completion_body("I think this looks fine, no JSON here.", 1, 1)
 
 
 class AlternatingVerdictProvider:
@@ -100,12 +89,5 @@ class AlternatingVerdictProvider:
     def __init__(self) -> None:
         self._providers = itertools.cycle((MalformedProvider(), JsonVerdictProvider()))
 
-    def generate(
-        self,
-        model: str,
-        messages: list[Message],
-        temperature: float,
-        max_tokens: int,
-        tools: list[ToolSpec] | None,
-    ) -> ProviderResult:
-        return next(self._providers).generate(model, messages, temperature, max_tokens, tools)
+    def complete(self, body: ChatBody) -> ChatBody:
+        return next(self._providers).complete(body)

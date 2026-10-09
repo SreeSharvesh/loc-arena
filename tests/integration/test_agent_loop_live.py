@@ -11,12 +11,11 @@ import pytest
 from loc_arena.config import load_run_config
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import (
+    ChatBody,
     DirectTransport,
     GatewayCore,
     Message,
     OpenRouterProvider,
-    ProviderResult,
-    ToolSpec,
     sign_turn_token,
 )
 from loc_arena.gateway.edge import GatewayEdge
@@ -44,17 +43,10 @@ class _RecordingProvider:
         self._inner = inner
         self.calls: list[tuple[str, list[Message]]] = []
 
-    def generate(
-        self,
-        model: str,
-        messages: list[Message],
-        temperature: float,
-        max_tokens: int,
-        tools: list[ToolSpec] | None,
-    ) -> ProviderResult:
+    def complete(self, body: ChatBody) -> ChatBody:
         """Record the request and return the provider's completion."""
-        self.calls.append((model, copy.deepcopy(messages)))
-        return self._inner.generate(model, messages, temperature, max_tokens, tools)
+        self.calls.append((body["model"], copy.deepcopy(body["messages"])))
+        return self._inner.complete(body)
 
 
 def test_dev_model_keeps_a_tool_result_for_the_next_turn(tmp_path: Path) -> None:
