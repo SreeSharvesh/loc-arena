@@ -17,7 +17,7 @@ import time
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, TypedDict
+from typing import TYPE_CHECKING, Any
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -323,12 +323,25 @@ def _play_by_policy(cfg: RunConfig, workdir: Path, *, robust: bool, provider: An
     return play_scripted_episode(cfg, workdir, robust=robust)
 
 
-class WallClockCeiling(TypedDict):
-    """The ceiling a run was stopped at, in seconds, and which of its episodes it stopped."""
+class WallClockCeiling(BaseModel):
+    """``scores.json``'s ``wall_clock_ceiling``: the ceiling in seconds, and which episodes it stopped."""
 
-    seconds: int
-    episode_stopped: bool
-    calibration_stopped: bool | None
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    seconds: int = Field(description="The play config's episode.wall_clock_seconds.")
+    episode_stopped: bool = Field(description="Whether it stopped the episode's agents with turns left.")
+    calibration_stopped: bool | None = Field(
+        description="Whether it stopped the honest twin's: none in honest mode, which has no twin.",
+    )
+
+
+class FailedModelCalls(BaseModel):
+    """``scores.json``'s ``failed_model_calls``: calls the provider failed, past its retries, per episode."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    episode: int = Field(description="Failed calls of the episode.")
+    calibration: int | None = Field(description="Of the honest twin: none in honest mode, which has no twin.")
 
 
 class PlayedRun(BaseModel):
@@ -347,24 +360,14 @@ class PlayedRun(BaseModel):
     calibration_trace: EpisodeTrace | None = Field(
         description="The honest twin's per-agent trace: none in honest mode, where the episode is the twin.",
     )
-    episode_stopped_at_wall_clock_ceiling: bool = Field(
-        default=False,
-        description="Whether the wall-clock ceiling stopped the episode's agents with turns left.",
-    )
-    calibration_stopped_at_wall_clock_ceiling: bool | None = Field(
+    wall_clock_ceiling: WallClockCeiling | None = Field(
         default=None,
-        description="Whether it stopped the honest twin's agents: none in honest mode, which has no twin.",
+        description="The ceiling, when it stopped the episode or its twin; none otherwise.",
     )
-
-    def wall_clock_ceiling(self, seconds: int) -> WallClockCeiling | None:
-        """``scores.json``'s ``wall_clock_ceiling``: only for a run it stopped; others stay as they were."""
-        if not (self.episode_stopped_at_wall_clock_ceiling or self.calibration_stopped_at_wall_clock_ceiling):
-            return None
-        return WallClockCeiling(
-            seconds=seconds,
-            episode_stopped=self.episode_stopped_at_wall_clock_ceiling,
-            calibration_stopped=self.calibration_stopped_at_wall_clock_ceiling,
-        )
+    failed_model_calls: FailedModelCalls = Field(
+        default=FailedModelCalls(episode=0, calibration=None),
+        description="Model calls the provider failed in each episode.",
+    )
 
 
 PLAYED_FILE = "played.json"
@@ -411,8 +414,17 @@ def play_run(
         play_seconds=time.perf_counter() - start,
         episode_trace=episode.trace,
         calibration_trace=twin.trace if twin else None,
-        episode_stopped_at_wall_clock_ceiling=episode.stopped_at_wall_clock_ceiling,
-        calibration_stopped_at_wall_clock_ceiling=twin.stopped_at_wall_clock_ceiling if twin else None,
+        wall_clock_ceiling=WallClockCeiling(
+            seconds=config.episode.wall_clock_seconds,
+            episode_stopped=episode.stopped_at_wall_clock_ceiling,
+            calibration_stopped=twin.stopped_at_wall_clock_ceiling if twin else None,
+        )
+        if episode.stopped_at_wall_clock_ceiling or (twin and twin.stopped_at_wall_clock_ceiling)
+        else None,
+        failed_model_calls=FailedModelCalls(
+            episode=episode.failed_model_calls,
+            calibration=twin.failed_model_calls if twin else None,
+        ),
     )
     (run_directory / PLAYED_FILE).write_text(played.model_dump_json())
 
@@ -511,8 +523,9 @@ def grade_run(
         agg=agg,
         specs=specs,
     )
-    if ceiling := played.wall_clock_ceiling(cfg.episode.wall_clock_seconds):
-        scores["wall_clock_ceiling"] = ceiling
+    scores["failed_model_calls"] = played.failed_model_calls.model_dump()
+    if played.wall_clock_ceiling:  # only for a run it stopped, so every other run's scores keep their shape
+        scores["wall_clock_ceiling"] = played.wall_clock_ceiling.model_dump()
 
     return _write_bundle(
         cfg,

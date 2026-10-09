@@ -520,6 +520,7 @@ class GatewayCore:
         self._secret = turn_secret
         self._clock = clock
         self._batch_counter = 0
+        self.failed_calls = 0  # calls the provider failed past its retries
         self._teacher_tokens_used = 0
         self._quota = config.settings.inference.batch_generate.teacher_token_quota
         self._monitor_covered = monitor_covered
@@ -642,6 +643,20 @@ class GatewayCore:
         self._sealed.append(event)
         return seq
 
+    def _call_provider(
+        self,
+        model: str,
+        messages: list[Message],
+        temperature: float,
+        max_tokens: int,
+        tools: list[ToolSpec] | None,
+    ) -> ProviderResult:
+        try:
+            return self._provider.generate(model, messages, temperature, max_tokens, tools)
+        except ProviderError:
+            self.failed_calls += 1
+            raise
+
     # -- endpoints ---------------------------------------------------------------------------------------
     def generate(self, req: GenerateRequest) -> GenerateResponse:
         """Serve one generate call: resolve, inject, call the provider, write the sealed record."""
@@ -651,7 +666,7 @@ class GatewayCore:
         if req.temperature is not None:
             temperature = req.temperature
         model_input = self._inject_covert(identity, req.chat_messages())
-        result = self._provider.generate(model, model_input, temperature, max_tokens, req.tools)
+        result = self._call_provider(model, model_input, temperature, max_tokens, req.tools)
         seq = self._write_record(
             identity=identity,
             turn_id=turn_id,
@@ -698,7 +713,7 @@ class GatewayCore:
         texts: list[str] = []
         seqs: list[int] = []
         for prompt in req.prompts:
-            result = self._provider.generate(
+            result = self._call_provider(
                 model,
                 [{"role": "user", "content": prompt}],
                 temperature,

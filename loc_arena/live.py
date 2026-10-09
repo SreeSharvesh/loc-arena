@@ -296,8 +296,20 @@ def play_model_episode(
     stopped = _drive_team(team, root_cfg.id, ceiling=ceiling)
     episode_trace = trace.finish(sealed.last_seq) if trace else None
 
-    snapshot = Snapshot(sealed_path, mirror_path, checkout, deadline_ts, world, episode_trace, stopped)
-    return record_snapshot(snapshot, workdir, config)
+    return record_snapshot(
+        Snapshot(
+            sealed_path,
+            mirror_path,
+            checkout,
+            deadline_ts,
+            world,
+            trace=episode_trace,
+            stopped_at_wall_clock_ceiling=stopped,
+            failed_model_calls=core.failed_calls,
+        ),
+        workdir,
+        config,
+    )
 
 
 def _drive_team(team: dict[str, Agent], root_uid: str, *, ceiling: float) -> bool:
