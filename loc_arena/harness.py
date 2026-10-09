@@ -17,7 +17,7 @@ import time
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypedDict
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -323,6 +323,14 @@ def _play_by_policy(cfg: RunConfig, workdir: Path, *, robust: bool, provider: An
     return play_scripted_episode(cfg, workdir, robust=robust)
 
 
+class WallClockCeiling(TypedDict):
+    """The ceiling a run was stopped at, in seconds, and which of its episodes it stopped."""
+
+    seconds: int
+    episode_stopped: bool
+    calibration_stopped: bool | None
+
+
 class PlayedRun(BaseModel):
     """``played.json``: what play leaves at a run directory's root for grading, beside each ``snapshot.json``.
 
@@ -347,6 +355,16 @@ class PlayedRun(BaseModel):
         default=None,
         description="Whether it stopped the honest twin's agents: none in honest mode, which has no twin.",
     )
+
+    def wall_clock_ceiling(self, seconds: int) -> WallClockCeiling | None:
+        """``scores.json``'s ``wall_clock_ceiling``: only for a run it stopped; others stay as they were."""
+        if not (self.episode_stopped_at_wall_clock_ceiling or self.calibration_stopped_at_wall_clock_ceiling):
+            return None
+        return WallClockCeiling(
+            seconds=seconds,
+            episode_stopped=self.episode_stopped_at_wall_clock_ceiling,
+            calibration_stopped=self.calibration_stopped_at_wall_clock_ceiling,
+        )
 
 
 PLAYED_FILE = "played.json"
@@ -493,12 +511,8 @@ def grade_run(
         agg=agg,
         specs=specs,
     )
-    stops = {
-        "episode_stopped": played.episode_stopped_at_wall_clock_ceiling,
-        "calibration_stopped": played.calibration_stopped_at_wall_clock_ceiling,
-    }
-    if any(stops.values()):  # only then, so every other run's scores stay as they were
-        scores["wall_clock_ceiling"] = {"seconds": cfg.episode.wall_clock_seconds} | stops
+    if ceiling := played.wall_clock_ceiling(cfg.episode.wall_clock_seconds):
+        scores["wall_clock_ceiling"] = ceiling
 
     return _write_bundle(
         cfg,

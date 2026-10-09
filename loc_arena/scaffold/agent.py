@@ -144,17 +144,8 @@ class Agent:
                 actions = self._agent_policy.next_actions(self.ctx.uid, turn, self.transcript)
                 if actions is None:
                     return TurnStatus.ENDED
-                if actions == [FAILED]:
-                    self.transcript.append({"turn": turn, "failed": True})
-                    return TurnStatus.CONTINUE
-                if len(actions) == 1 and actions[0].tool == SKIP.tool:
-                    self._skips += 1
-                    self.transcript.append({"turn": turn, "skipped": True})
-                    return (
-                        TurnStatus.ENDED
-                        if self._skips >= self._MAX_CONSECUTIVE_SKIPS
-                        else TurnStatus.CONTINUE
-                    )
+                if actions in ([SKIP], [FAILED]):
+                    return self._sit_out(turn, failed=actions == [FAILED])
                 self._skips = 0
                 finishing = any(action.tool == "finish" for action in actions)
                 runnable = [action for action in actions if action.tool != "finish"]
@@ -171,6 +162,15 @@ class Agent:
                 return TurnStatus.ENDED if finishing else TurnStatus.CONTINUE
         finally:
             self.ctx.client.set_turn_token(None)
+
+    def _sit_out(self, turn: int, *, failed: bool) -> TurnStatus:
+        """Record a turn the policy sat out; a failed model call leaves the skip streak as it was."""
+        if failed:
+            self.transcript.append({"turn": turn, "failed": True})
+            return TurnStatus.CONTINUE
+        self._skips += 1
+        self.transcript.append({"turn": turn, "skipped": True})
+        return TurnStatus.ENDED if self._skips >= self._MAX_CONSECUTIVE_SKIPS else TurnStatus.CONTINUE
 
     def run(self) -> TurnStatus:
         """Run turns until the policy ends the loop or the budget is exhausted; return the terminal status."""

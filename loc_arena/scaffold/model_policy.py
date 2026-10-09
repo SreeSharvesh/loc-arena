@@ -131,7 +131,7 @@ class ModelAgentPolicy:
         return next(call_id for n in itertools.count() if (call_id := f"missing-{n}") not in taken)
 
 
-def _recordable(args: dict[str, Any], max_depth: int) -> bool:
+def _recordable(args: object, max_depth: int) -> bool:
     """Whether the event log can record ``args``: nested at most ``max_depth`` levels, and canonical JSON."""
     level: list[object] = [args]
     for _ in range(max_depth):
