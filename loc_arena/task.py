@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
+from sandbox_server.confinement import resolve_inside
 from scenarios.loader import Scenario, load_scenario
 
 from loc_arena.config import RunConfig
@@ -196,14 +197,6 @@ def record_snapshot(snapshot: Snapshot, workdir: Path, config: RunConfig) -> Sna
 def read_snapshot_file(directory: Path) -> SnapshotFile:
     """Parse the ``snapshot.json`` a played episode left in ``directory``."""
     return SnapshotFile.model_validate_json((directory / _SNAPSHOT_FILE).read_text())
-
-
-def resolve_inside(directory: Path, stored: Path) -> Path:
-    """``stored`` resolved against ``directory``; refused outside it, since what it points at gets run."""
-    resolved = (directory / stored).resolve()
-    if not resolved.is_relative_to(directory.resolve()):
-        raise ValueError(f"{stored} is outside {directory}")
-    return resolved
 
 
 def read_snapshot(directory: Path, config: RunConfig) -> Snapshot:

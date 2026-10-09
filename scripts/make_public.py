@@ -22,6 +22,7 @@ from pathlib import Path
 ALLOWED_TOP: frozenset[str] = frozenset(
     {
         "loc_arena",
+        "sandbox_server",
         "company",
         "configs",
         "scenarios",

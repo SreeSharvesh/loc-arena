@@ -28,7 +28,10 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, cast
 
-from loc_arena.agent_code import CommandRequest, CommandResult, run_command
+from sandbox_server.command import run_command
+from sandbox_server.wire import CommandRequest, CommandResult
+
+from loc_arena.gateway.core import environment_without_key
 from loc_arena.sandbox import SandboxClient, SandboxError
 from loc_arena.scaffold.tools import Services
 from loc_arena.settings import StackSettings
@@ -99,7 +102,7 @@ class CodeServices:
             environment={"PYTHONPATH": self._pythonpath()},
         )
         if self._sandbox is None:
-            return run_command(request, self._stack.command_output_limit_bytes)
+            return run_command(request, self._stack.command_output_limit_bytes, environment_without_key())
         return self._sandbox.run(request)
 
     def run(self, tool: str, args: dict[str, Any]) -> dict[str, Any]:

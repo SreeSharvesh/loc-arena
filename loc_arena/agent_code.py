@@ -1,22 +1,20 @@
-"""Agent-written code: the one place it is run, here, in the sandbox, or in a throwaway container."""
+"""Agent-written code run by the grader: in this process's interpreter or in a throwaway container."""
 
 from __future__ import annotations
 
 import contextlib
 import os
-import signal
 import subprocess
 import sys
 import tempfile
 import uuid
 from collections.abc import Sequence
 from pathlib import Path
-from typing import IO
 
 import tenacity
-from pydantic import BaseModel, ConfigDict, Field, PositiveFloat
+from sandbox_server.command import read_tail
 
-from loc_arena.gateway.core import API_KEY_VARIABLE, environment_without_key
+from loc_arena.gateway.core import environment_without_key
 from loc_arena.settings import StackSettings
 
 CONTAINER_NAME_PREFIX = "locarena-agent-code-"
@@ -81,66 +79,6 @@ def run_agent_code(
         limit = stack.agent_code_output_limit_bytes
         output = (read_tail(stdout, limit), read_tail(stderr, limit))
         return subprocess.CompletedProcess(command, finished.returncode, *output)
-
-
-class CommandRequest(BaseModel):
-    """A command an agent's tool runs over the checkout: what, where, for how long."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    argv: list[str] = Field(min_length=1, description="The program and its arguments.")
-    directory: Path = Field(description="The working directory.")
-    timeout_seconds: PositiveFloat = Field(description="Seconds before its whole session is killed.")
-    environment: dict[str, str] = Field(
-        default_factory=dict,
-        description="Variables set on top of the runner's environment, which never holds the provider key.",
-    )
-
-
-class CommandResult(BaseModel):
-    """What a command did: its exit code (none when it was killed at the timeout) and its output's tails."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    returncode: int | None = Field(description="The exit code; none when the timeout killed the command.")
-    stdout: str = Field(description="The end of its stdout.")
-    stderr: str = Field(description="The end of its stderr.")
-
-
-def run_command(request: CommandRequest, output_limit_bytes: int) -> CommandResult:
-    """Run ``request`` without the provider key; a timeout kills its whole session, children included.
-
-    Its stdout and stderr go to temporary files and come back as their last ``output_limit_bytes`` bytes.
-    """
-    environment = {**environment_without_key(), **request.environment}
-    environment.pop(API_KEY_VARIABLE, None)  # whatever the caller sent
-    with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
-        with subprocess.Popen(
-            request.argv,
-            cwd=request.directory,
-            env=environment,
-            stdout=stdout,
-            stderr=stderr,
-            start_new_session=True,
-        ) as process:
-            try:
-                returncode: int | None = process.wait(timeout=request.timeout_seconds)
-            except subprocess.TimeoutExpired:
-                with contextlib.suppress(ProcessLookupError):  # the whole session ended meanwhile
-                    os.killpg(process.pid, signal.SIGKILL)
-                returncode = None
-        return CommandResult(
-            returncode=returncode,
-            stdout=read_tail(stdout, output_limit_bytes),
-            stderr=read_tail(stderr, output_limit_bytes),
-        )
-
-
-def read_tail(stream: IO[bytes], limit: int) -> str:
-    """The last ``limit`` bytes written to ``stream``, decoded."""
-    stream.seek(0, os.SEEK_END)
-    stream.seek(max(0, stream.tell() - limit))
-    return stream.read().decode(errors="replace")
 
 
 def _stop_container(container_name: str) -> bool:

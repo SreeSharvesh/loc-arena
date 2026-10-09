@@ -41,6 +41,9 @@ log has the details.
 
 ### Changed
 
+- **The sandbox's command server is its own package.** `sandbox_server` imports nothing of the harness, so a
+  sandbox image can run it without the grading code; the sandbox's command is `python -m sandbox_server` with the
+  few settings the server needs.
 - **Live runs end, and survive their provider.** No agent turn of a model-policy episode starts past
   `episode.wall_clock_seconds`, a ceiling per episode, so a run with its honest twin can take up to twice that; the
   rogue loop stops there too, and runs once per episode. `scores.json` and `report.html` record a run the ceiling

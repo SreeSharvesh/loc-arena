@@ -9,6 +9,7 @@ note: >-
   it calls in the pull request, so a reviewer can confirm it is not a side path to inference.
 files:
   - loc_arena/**/*.py
+  - sandbox_server/**/*.py
   - scenarios/**/*.py
 ignores:
   - loc_arena/gateway/**

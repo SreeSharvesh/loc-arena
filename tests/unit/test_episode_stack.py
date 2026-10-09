@@ -17,6 +17,7 @@ from loc_arena.episode_stack import (
 from loc_arena.gateway import core
 from loc_arena.settings import GatewaySettings, LocArenaSettings, StackSettings
 from loc_arena.task import SANDBOX_URL_VARIABLE
+from sandbox_server.server import ServerSettings
 from scenarios.loader import SCENARIOS_ROOT
 
 REPOSITORY = Path("/repository")
@@ -102,14 +103,28 @@ def test_the_episode_sends_its_model_calls_to_the_gateway_and_its_code_to_the_sa
     }
 
 
-def test_the_sandbox_gets_the_runs_settings_in_its_command() -> None:
-    settings = LocArenaSettings(stack=StackSettings(sandbox_port=9292, shell_timeout_seconds=7))
+def test_the_sandbox_gets_the_settings_its_command_server_needs_in_its_command() -> None:
+    settings = LocArenaSettings(
+        gateway=GatewaySettings(secrets_dir=Path("/the/secrets")),
+        stack=StackSettings(
+            sandbox_port=9292,
+            checkouts_directory=Path("/the/checkouts"),
+            sandbox_scratch_directories=(Path("/the/home"), Path("/the/tmp")),
+            command_output_limit_bytes=77,
+        ),
+    )
 
     command = render(settings)["services"]["sandbox"]["command"]
 
-    assert (command[:3], LocArenaSettings.model_validate_json(command[-1])) == (
-        ["python", "-m", "loc_arena.sandbox"],
-        settings,
+    assert (command[:3], ServerSettings.model_validate_json(command[-1])) == (
+        ["python", "-m", "sandbox_server"],
+        ServerSettings(
+            port=9292,
+            checkouts_directory=Path("/the/checkouts"),
+            scratch_directories=(Path("/the/home"), Path("/the/tmp")),
+            output_limit_bytes=77,
+            secrets_dir=Path("/the/secrets"),
+        ),
     )
 
 
