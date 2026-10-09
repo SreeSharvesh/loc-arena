@@ -8,6 +8,10 @@ log has the details.
 
 ### Added
 
+- **Gates on every pull request.** Each pull request and each push to `main` runs the gates on Linux, with the
+  stack image built first so the Docker tests run instead of skipping. The workflow uses no secrets; the live
+  tests stay skipped.
+
 - **A shell for the agents, in the sandbox.** In `make run STACK=1` agents get a `bash` tool that runs in
   their checkout in the sandbox container, without the provider key, with a timeout that ends everything the
   command started and the end of its output (`stack.shell_timeout_seconds`, `stack.command_output_limit_bytes`).
