@@ -39,6 +39,8 @@ REPOSITORY = Path(__file__).resolve().parents[1]  # its Dockerfile and configs/
 TOKEN_BYTES = 32  # the sandbox token's entropy
 GATEWAY_MODE_OPTION = "com.docker.network.bridge.gateway_mode_ipv4"
 LOOPBACK = "127.0.0.1"  # the only host address the gateway's port is published on, for grading on this host
+ENGINE_TARGET = "engine"  # the Dockerfile's stage of the gateway and the episode
+SANDBOX_TARGET = "sandbox"  # the Dockerfile's stage of the sandbox: no harness, no scenarios
 
 
 class Healthcheck(TypedDict):
@@ -49,10 +51,17 @@ class Healthcheck(TypedDict):
     retries: int
 
 
+class ComposeBuild(TypedDict):
+    """A compose build: the Dockerfile's directory and the stage to build."""
+
+    context: str
+    target: str
+
+
 class ComposeService(TypedDict, total=False):
     """The compose keys a rendered service uses."""
 
-    build: str
+    build: ComposeBuild
     image: str
     command: list[str]
     environment: dict[str, str]
@@ -98,8 +107,9 @@ def render_compose(
 ) -> ComposeDocument:
     """The compose file of one episode of ``run``; ``episode_arguments`` go to ``loc_arena.cli run``.
 
-    The image holds neither the scenario's sealed ``reference/`` nor its ``scripted/`` moves, so an agent with
-    a shell cannot read the answer. Only a scripted episode, which plays them, gets ``scripted/`` mounted.
+    The images hold neither the scenario's sealed ``reference/`` nor its ``scripted/`` moves, so an agent with
+    a shell cannot read the answer. Only a scripted episode, which plays them, gets ``scripted/`` mounted. The
+    sandbox's image holds no harness and no scenarios either, so agent code cannot read how it is graded.
     """
     gateway, stack = config.settings.gateway, config.settings.stack
     scripted = []
@@ -109,7 +119,7 @@ def render_compose(
         scripted = [f"{scenario.scripted_dir}:{target}:ro"]
     configs = f"{repository / 'configs'}:{CONFIGS_DIRECTORY}:ro"
     checkouts = f"checkouts:{stack.checkouts_directory}"
-    shared: ComposeService = {"build": str(repository), "image": stack.image, "cap_drop": ["ALL"]}
+    engine = _build_from(repository, ENGINE_TARGET, stack.image)
     limits: ComposeService = {
         "mem_limit": stack.episode_memory_limit,
         "cpus": stack.episode_cpus,
@@ -118,7 +128,7 @@ def render_compose(
     return {
         "services": {
             "gateway": {
-                **shared,
+                **engine,
                 "command": ["python", "-m", "loc_arena.gateway.proxy", f"{CONFIGS_DIRECTORY}/{run}.yaml"],
                 "secrets": [KEY_SECRET_NAME],
                 "volumes": [f"sealed:{gateway.call_log.parent}", configs],
@@ -127,7 +137,7 @@ def render_compose(
                 "healthcheck": _probe(gateway.port, stack),
             },
             SANDBOX_SERVICE: {
-                **shared,
+                **_build_from(repository, SANDBOX_TARGET, stack.sandbox_image),
                 **limits,
                 # It mounts no config, so it gets its settings in its command.
                 "command": [
@@ -144,7 +154,7 @@ def render_compose(
                 "restart": "unless-stopped",  # agent code can kill the server: it comes back
             },
             "episode": {
-                **shared,
+                **engine,
                 **limits,
                 "command": [
                     *["python", "-m", "loc_arena.cli", "run", "--run", run, *episode_arguments],
@@ -175,6 +185,11 @@ def render_compose(
             TOKEN_SECRET_NAME: {"environment": TOKEN_VARIABLE},
         },
     }
+
+
+def _build_from(repository: Path, target: str, image: str) -> ComposeService:
+    """A service with no capability, run as ``image``: the Dockerfile stage ``target`` in ``repository``."""
+    return {"build": {"context": str(repository), "target": target}, "image": image, "cap_drop": ["ALL"]}
 
 
 def _probe(port: int, stack: StackSettings) -> Healthcheck:

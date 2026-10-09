@@ -15,7 +15,7 @@ log has the details.
   Together, Baseten or DeepSeek, the monitor on Groq or DeepInfra, and `models.fast.yaml` (run config
   `aurora-efficiency.fast`) turns the agent's reasoning off for quick smoke runs.
 - **Gates on every pull request.** Each pull request and each push to `main` runs the gates on Linux, with the
-  stack image built first so the Docker tests run instead of skipping. The workflow uses no secrets; the live
+  stack images built first so the Docker tests run instead of skipping. The workflow uses no secrets; the live
   tests stay skipped.
 
 - **A shell for the agents, in the sandbox.** In `make run STACK=1` agents get a `bash` tool that runs in
@@ -82,6 +82,9 @@ log has the details.
 
 ### Security
 
+- **Agent code cannot read how it is graded.** The sandbox and the grader's agent-code container run a slim
+  image (`stack.sandbox_image`, the Dockerfile's `sandbox` target) with the command server and the repos'
+  test dependencies but no harness, verifier, scorer or scenarios. (#83)
 - **Agent code cannot reach the host on Linux.** agent-net is an isolated network (Docker Engine 28 or
   later): the host takes no address on it, so agent code cannot reach host services there, including ones
   listening on all addresses. Before, on Linux, the sandbox could connect to the host through agent-net's

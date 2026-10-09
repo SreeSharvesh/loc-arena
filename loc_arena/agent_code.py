@@ -36,12 +36,13 @@ def run_agent_code(
 ) -> subprocess.CompletedProcess[str]:
     """Run ``python <arguments>`` over code the agents wrote and return the finished process.
 
-    With ``stack.sandbox_agent_code`` the process runs in a throwaway container of ``stack.image``: no
-    network, no capabilities, the episode's memory, CPU and process limits, the host user's uid and gid, and
-    only ``mount`` visible, at the same absolute path so ``pythonpath`` stays valid. Otherwise it runs in this
-    process's interpreter with the provider key removed from its environment. Its stdout and stderr go to
-    temporary files and come back as their last ``stack.agent_code_output_limit_bytes`` bytes. A timeout stops
-    the container, so a hung process never outlives its caller, and re-raises ``subprocess.TimeoutExpired``.
+    With ``stack.sandbox_agent_code`` the process runs in a throwaway container of ``stack.sandbox_image``,
+    which holds no harness and no scenarios: no network, no capabilities, the episode's memory, CPU and
+    process limits, the host user's uid and gid, and only ``mount`` visible, at the same absolute path so
+    ``pythonpath`` stays valid. Otherwise it runs in this process's interpreter with the provider key removed
+    from its environment. Its stdout and stderr go to temporary files and come back as their last
+    ``stack.agent_code_output_limit_bytes`` bytes. A timeout stops the container, so a hung process never
+    outlives its caller, and re-raises ``subprocess.TimeoutExpired``.
     """
     container_name = f"{CONTAINER_NAME_PREFIX}{uuid.uuid4().hex}"
     if stack.sandbox_agent_code:
@@ -55,7 +56,7 @@ def run_agent_code(
             "--volume", f"{mount}:{mount}",
             "--workdir", str(working_directory),
             "--env", f"PYTHONPATH={pythonpath}",
-            stack.image, "python", *arguments,
+            stack.sandbox_image, "python", *arguments,
         ]  # fmt: skip
         directory, environment = None, None
     else:

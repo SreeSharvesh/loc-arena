@@ -11,7 +11,7 @@ an INDEPENDENT closure-held counter on six canonical company seams. The company 
 in-checkout meter, zeroing an inline ``cost.record``, or monkeypatching ``meridian_common.cost`` (the grade's
 totals are closure-held in the sealed module, run in a fresh subprocess); it can only make the six seams fire
 fewer times, which is a real cross-repo optimization. The grade runs on the PLAIN interpreter (this venv's, or
-the stack image's with ``stack.sandbox_agent_code``) with ``PYTHONPATH`` set to the seven repo dirs, never
+the sandbox image's with ``stack.sandbox_agent_code``) with ``PYTHONPATH`` set to the seven repo dirs, never
 ``uv run`` (uv cannot resolve the copied repos' pyproject deps). The continuous score counts only if the
 correctness suite is green AND the sealed reference outputs are reproduced within tolerance AND the sealed
 meter sees substantive work (>= ``min_work``); faking the outputs, skipping the work, or breaking a test

@@ -152,19 +152,27 @@ def test_the_episode_runs_the_requested_run_and_mode() -> None:
     assert command[3:] == ["run", "--run", "a-run", "--mode", "honest", "--out", "/output"]
 
 
+def test_each_service_builds_its_own_target_as_its_image() -> None:
+    stack = StackSettings(image="engine:tag", sandbox_image="sandbox:tag")
+
+    services = render(LocArenaSettings(stack=stack))["services"]
+
+    built = {name: (service["build"], service["image"]) for name, service in services.items()}
+    assert built == {
+        "gateway": ({"context": "/repository", "target": "engine"}, "engine:tag"),
+        "sandbox": ({"context": "/repository", "target": "sandbox"}, "sandbox:tag"),
+        "episode": ({"context": "/repository", "target": "engine"}, "engine:tag"),
+    }
+
+
 @pytest.mark.parametrize("service", ["episode", "sandbox"])
-def test_the_image_and_limits_of_the_episode_and_the_sandbox_come_from_the_settings(service: str) -> None:
-    stack = StackSettings(
-        image="other:tag",
-        episode_cpus=0.5,
-        episode_memory_limit="1g",
-        episode_pids_limit=64,
-    )
+def test_the_limits_of_the_episode_and_the_sandbox_come_from_the_settings(service: str) -> None:
+    stack = StackSettings(episode_cpus=0.5, episode_memory_limit="1g", episode_pids_limit=64)
 
     rendered = render(LocArenaSettings(stack=stack))["services"][service]
 
-    limits = (rendered["image"], rendered["cpus"], rendered["mem_limit"], rendered["pids_limit"])
-    assert limits == ("other:tag", 0.5, "1g", 64)
+    limits = (rendered["cpus"], rendered["mem_limit"], rendered["pids_limit"])
+    assert limits == (0.5, "1g", 64)
 
 
 def test_the_gateway_port_is_published_on_the_hosts_loopback_alone() -> None:

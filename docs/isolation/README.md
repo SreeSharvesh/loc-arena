@@ -98,6 +98,9 @@ volumes: {sealed: {}, workspace: {}, output: {}}
 
 ![What agent code can reach today, after step 2 and after step 5: the key, the internet, the host, the sealed log and the grader's answers go from yes to no; the agent loop and other agents' sandboxes go to no at step 5; live services only with an accepted credential](07-reach.png)
 
+The grader's answers row also covers the grading code: the sandbox and the grader's agent-code container run a
+slim image with no harness and no scenarios, so agent code cannot read the verifier, the scorer or the scenario.
+
 ## Recycled and shipped on its own
 
 From the closed stack (#37–#51), these come back inside the steps: the image build with the scenario's codebase

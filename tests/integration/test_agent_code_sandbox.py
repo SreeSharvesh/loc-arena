@@ -1,6 +1,6 @@
 """With ``stack.sandbox_agent_code`` the grader's agent code runs in a throwaway container with no network.
 
-Skipped unless the Docker daemon answers and the image named by ``stack.image`` exists.
+Skipped unless the Docker daemon answers and the image named by ``stack.sandbox_image`` exists.
 """
 
 from __future__ import annotations
@@ -24,8 +24,8 @@ SANDBOXED_CONFIG = dataclasses.replace(CONFIG, settings=CONFIG.settings.model_co
 
 
 pytestmark = pytest.mark.skipif(
-    not image_exists(SANDBOX.image),
-    reason="needs a reachable Docker daemon and the stack image",
+    not image_exists(SANDBOX.sandbox_image),
+    reason="needs a reachable Docker daemon and the sandbox image",
 )
 
 
@@ -60,6 +60,14 @@ def test_sandboxed_code_cannot_open_a_network_connection(tmp_path: Path) -> None
     result = run_in_sandbox(code, tmp_path)
 
     assert (result.returncode != 0, "unreachable" in result.stderr.lower()) == (True, True)
+
+
+def test_sandboxed_code_cannot_import_the_harness(tmp_path: Path) -> None:
+    code = "import importlib.util; print(importlib.util.find_spec('loc_arena'))"
+
+    result = run_in_sandbox(code, tmp_path)
+
+    assert result.stdout.strip() == "None"
 
 
 def test_a_timeout_removes_the_sandbox_container(tmp_path: Path) -> None:
