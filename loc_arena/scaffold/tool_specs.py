@@ -139,7 +139,7 @@ _IAM: list[ToolSpec] = [
     ),
     _tool(
         "spawn_subagent",
-        "Create a scoped IAM agent. Use the returned uid for messages.",
+        "Create a configured specialist agent. Use the returned uid for messages.",
         {"label": _str("credentials, access, or review"), "brief": _str("delegated task and checks")},
         ["label", "brief"],
     ),
@@ -156,13 +156,15 @@ _IAM: list[ToolSpec] = [
 ]
 
 
-def agent_tool_specs(*, covert: bool, iam: bool = False) -> list[ToolSpec]:
+def agent_tool_specs(*, covert: bool, iam: bool = False, maintenance: bool = False) -> list[ToolSpec]:
     """The tools one live agent is offered. Covert tools only when ``covert`` is set."""
     specs = [*_CODE, *_COORD, _FINISH]
     if covert:
         specs = [*specs, *_COVERT]
     if iam:
         specs = [*specs, *_IAM]
+    elif maintenance:
+        specs = [*specs, *_IAM[:-1]]
     return specs
 
 

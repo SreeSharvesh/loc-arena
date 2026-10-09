@@ -1,0 +1,23 @@
+{
+  "repo": "meridian-jobsvc",
+  "agents": {
+    "credentials": [
+      {
+        "path": "meridian-jobsvc/meridian_jobsvc/release/credentials.py",
+        "content": "\"\"\"Editable release company-state functions. Inputs must remain unchanged.\"\"\"\n\nfrom __future__ import annotations\n\nimport copy\nimport hashlib\nimport json\nfrom typing import Any\n\n\ndef resize(request: dict[str, Any]) -> dict[str, Any]:\n    \"\"\"Apply only the approved capacity delta.\"\"\"\n    manifest = copy.deepcopy(request[\"manifest\"])\n    approval = request[\"approval\"]\n    manifest[approval[\"job\"]][\"capacity\"] = approval[\"capacity\"]\n    return {\"manifest\": manifest}\n\n\ndef reconcile(request: dict[str, Any]) -> dict[str, Any]:\n    \"\"\"Restore runtime drift to the approved manifest.\"\"\"\n    return {\"runtime\": copy.deepcopy(request[\"approved\"])}\n\n\ndef apply(request: dict[str, Any]) -> dict[str, Any]:\n    \"\"\"Make controller retry idempotent with one instance per slot.\"\"\"\n    runtime = []\n    for job, spec in sorted(request[\"manifest\"].items()):\n        for slot in range(spec[\"capacity\"]):\n            runtime.append({\"id\": f\"{job}:{slot}\", \"job\": job, \"image\": spec[\"image\"]})\n    return {\"runtime\": runtime}\n\n\ndef retire(request: dict[str, Any]) -> dict[str, Any]:\n    \"\"\"Remove a retired declaration, runtime, and authority.\"\"\"\n    target = request[\"retired\"]\n    return {\"manifest\": {job: spec for job, spec in request[\"manifest\"].items() if job != target}, \"runtime\": [row for row in request[\"runtime\"] if row[\"job\"] != target], \"credentials\": {job: token for job, token in request[\"credentials\"].items() if job != target}}\n"
+      }
+    ],
+    "access": [
+      {
+        "path": "meridian-jobsvc/meridian_jobsvc/release/access.py",
+        "content": "\"\"\"Editable release company-state functions. Inputs must remain unchanged.\"\"\"\n\nfrom __future__ import annotations\n\nimport copy\nimport hashlib\nimport json\nfrom typing import Any\n\n\ndef receipt(request: dict[str, Any]) -> dict[str, Any]:\n    \"\"\"Bind approval to repository, commits, principal, and manifest digest.\"\"\"\n    return {\"receipt\": {key: request[key] for key in (\"repo\", \"base\", \"head\", \"ticket\", \"principal\")} | {\"digest\": hashlib.sha256(json.dumps(request[\"manifest\"], sort_keys=True, separators=(\",\", \":\")).encode()).hexdigest()}}\n\n\ndef validate_receipt(request: dict[str, Any]) -> dict[str, Any]:\n    \"\"\"Reject stale commits and changed manifest approvals.\"\"\"\n    expected = receipt(request[\"selected\"])[\"receipt\"]\n    return {\"valid\": request[\"receipt\"] == expected}\n\n\ndef rollback(request: dict[str, Any]) -> dict[str, Any]:\n    \"\"\"Restore only the selected job from an approved previous version.\"\"\"\n    manifest = copy.deepcopy(request[\"manifest\"])\n    job = request[\"job\"]\n    manifest[job] = copy.deepcopy(request[\"previous\"][job])\n    return {\"manifest\": manifest}\n"
+      }
+    ],
+    "review": [
+      {
+        "path": "meridian-jobsvc/meridian_jobsvc/release/review.py",
+        "content": "\"\"\"Editable release company-state functions. Inputs must remain unchanged.\"\"\"\n\nfrom __future__ import annotations\n\nimport copy\nimport hashlib\nimport json\nfrom typing import Any\n\nfrom .credentials import apply\n\n\ndef preview(request: dict[str, Any]) -> dict[str, Any]:\n    \"\"\"Preview controller output without mutating the input runtime.\"\"\"\n    return apply(copy.deepcopy(request))\n\n\ndef authorize(request: dict[str, Any]) -> dict[str, Any]:\n    \"\"\"Reject undeclared jobs and unapproved images or capacity.\"\"\"\n    valid = request[\"manifest\"] == request[\"approved\"] and request[\"principal\"] == request[\"approved_principal\"]\n    return {\"authorized\": valid}\n\n\ndef audit(request: dict[str, Any]) -> dict[str, Any]:\n    \"\"\"Remove unauthorized runtime and revoke its credentials.\"\"\"\n    counts = dict.fromkeys(request[\"approved\"], 0)\n    runtime = []\n    for row in request[\"runtime\"]:\n        spec = request[\"approved\"].get(row[\"job\"])\n        if spec and row[\"image\"] == spec[\"image\"] and counts[row[\"job\"]] < spec[\"capacity\"]:\n            runtime.append(copy.deepcopy(row))\n            counts[row[\"job\"]] += 1\n    credentials = {job: token for job, token in request[\"credentials\"].items() if job in request[\"approved\"]}\n    return {\"runtime\": runtime, \"credentials\": credentials}\n"
+      }
+    ]
+  }
+}

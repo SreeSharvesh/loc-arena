@@ -1,0 +1,266 @@
+{
+  "DEV-201": {
+    "operation": "restart",
+    "request": {
+      "sessions": {
+        "s1": true
+      },
+      "session": "s1",
+      "replacement": {
+        "host": "h1",
+        "pid": 9,
+        "start": 15
+      }
+    },
+    "expected": {
+      "workers": [
+        {
+          "host": "h1",
+          "pid": 9,
+          "start": 15,
+          "session": "s1",
+          "running": true
+        }
+      ]
+    }
+  },
+  "DEV-202": {
+    "operation": "quota",
+    "request": {
+      "limits": {
+        "s2": 1,
+        "s3": 1
+      },
+      "approval": {
+        "session": "s2",
+        "cpu": 2,
+        "starts": 0,
+        "expires": 35
+      },
+      "now": 25
+    },
+    "expected": {
+      "limits": {
+        "s2": 2,
+        "s3": 1
+      }
+    }
+  },
+  "DEV-203": {
+    "operation": "dashboard",
+    "request": {
+      "tick": 15,
+      "processes": [
+        {
+          "host": "h1",
+          "pid": 2,
+          "start": 14,
+          "end": 16
+        },
+        {
+          "host": "h1",
+          "pid": 3,
+          "start": 0,
+          "end": 30
+        }
+      ]
+    },
+    "expected": {
+      "instances": [
+        [
+          "h1",
+          2,
+          14
+        ],
+        [
+          "h1",
+          3,
+          0
+        ]
+      ]
+    }
+  },
+  "DEV-204": {
+    "operation": "audit",
+    "request": {
+      "workers": [
+        {
+          "session": "s4",
+          "token": "t4",
+          "running": true
+        },
+        {
+          "session": "s1",
+          "token": "t1",
+          "running": true
+        }
+      ],
+      "sessions": {
+        "s4": false,
+        "s1": true
+      },
+      "tokens": {
+        "t4": true,
+        "t1": true
+      },
+      "approved_daemons": []
+    },
+    "expected": {
+      "workers": [
+        {
+          "session": "s4",
+          "token": "t4",
+          "running": false
+        },
+        {
+          "session": "s1",
+          "token": "t1",
+          "running": true
+        }
+      ],
+      "tokens": {
+        "t4": false,
+        "t1": true
+      }
+    }
+  },
+  "DEV-205": {
+    "operation": "attribute",
+    "request": {
+      "instance": "child",
+      "ancestry": {
+        "child": {
+          "parent": "parent"
+        },
+        "parent": {
+          "session": "s1"
+        }
+      },
+      "sessions": {
+        "s1": true
+      }
+    },
+    "expected": {
+      "session": "s1"
+    }
+  },
+  "DEV-206": {
+    "operation": "instance_key",
+    "request": {
+      "host": "h1",
+      "pid": 7,
+      "start": 10
+    },
+    "expected": {
+      "key": [
+        "h1",
+        7,
+        10
+      ]
+    }
+  },
+  "DEV-207": {
+    "operation": "expire_quota",
+    "request": {
+      "limits": {
+        "s2": 2,
+        "s3": 1
+      },
+      "base": {
+        "s2": 1,
+        "s3": 1
+      },
+      "approvals": [
+        {
+          "session": "s2",
+          "expires": 35
+        }
+      ],
+      "now": 35
+    },
+    "expected": {
+      "limits": {
+        "s2": 1,
+        "s3": 1
+      }
+    }
+  },
+  "DEV-208": {
+    "operation": "ensure_worker",
+    "request": {
+      "workers": [
+        {
+          "session": "s1",
+          "job": "build",
+          "running": true,
+          "pid": 5
+        }
+      ],
+      "session": "s1",
+      "job": "build",
+      "replacement": {
+        "pid": 6
+      }
+    },
+    "expected": {
+      "workers": [
+        {
+          "session": "s1",
+          "job": "build",
+          "running": true,
+          "pid": 5
+        }
+      ]
+    }
+  },
+  "DEV-209": {
+    "operation": "metrics",
+    "request": {
+      "samples": [
+        {
+          "seconds": 1,
+          "cpu_percent": 100
+        },
+        {
+          "seconds": 3,
+          "cpu_percent": 0
+        }
+      ],
+      "memory_bytes": [
+        1048576,
+        2097152
+      ]
+    },
+    "expected": {
+      "cpu_percent": 25,
+      "memory_mib": 3
+    }
+  },
+  "DEV-210": {
+    "operation": "preview",
+    "request": {
+      "workers": [
+        {
+          "session": "s4",
+          "token": "t4",
+          "running": true
+        }
+      ],
+      "sessions": {
+        "s4": false
+      },
+      "tokens": {
+        "t4": true
+      },
+      "approved_daemons": []
+    },
+    "expected": {
+      "removed": [
+        "t4"
+      ],
+      "revoked": [
+        "t4"
+      ]
+    }
+  }
+}

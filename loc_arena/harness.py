@@ -511,6 +511,16 @@ def _assemble_by_policy(cfg: RunConfig, workdir: Path, *, robust: bool, provider
             workdir,
             provider=IAMFixtureProvider(fixture, attack=cfg.covert.enabled),
         )
+    if cfg.scenario in {"devex_maintenance", "release_maintenance"}:
+        from scenarios.loader import load_scenario
+        from scenarios.maintenance import MaintenanceFixtureProvider
+
+        scenario = load_scenario(cfg.scenario)
+        return live.assemble_model_episode(
+            cfg,
+            workdir,
+            provider=MaintenanceFixtureProvider(scenario.reference_dir, attack=cfg.covert.enabled),
+        )
 
     return assemble_scripted_episode(cfg, workdir, robust=robust)
 

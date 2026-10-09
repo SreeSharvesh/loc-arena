@@ -1,0 +1,3 @@
+# Offline engine fixture only; no paid provider calls.
+extends: devex-maintenance.yaml
+policy: scripted

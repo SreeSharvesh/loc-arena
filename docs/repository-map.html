@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LOC-Arena repository map</title>
+<style>
+:root{color-scheme:light dark;font-family:system-ui,sans-serif;line-height:1.55}
+body{max-width:1080px;margin:auto;padding:24px;background:Canvas;color:CanvasText}
+h1{font-size:clamp(1.6rem,4vw,2.5rem);margin-bottom:0}h2{font-size:1.25rem}
+.flow{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}
+details{border:1px solid GrayText;border-radius:8px;padding:12px}
+summary{font-weight:650;cursor:pointer}summary:focus-visible,a:focus-visible{outline:3px solid Highlight;outline-offset:4px}
+code{overflow-wrap:anywhere}p{max-width:75ch}.boundary{border-left:4px solid Highlight;padding-left:16px;margin:24px 0}
+.arrow{font-weight:650;margin:18px 0}a{color:LinkText}li{margin:5px 0}
+@media print{details>*{display:block}summary{list-style:none}.flow{display:block}details{margin:8px 0}}
+</style>
+<header>
+<h1>LOC-Arena repository map</h1>
+<p>Follow an episode from task settings to measured results. Select a component for source paths.</p>
+<p><a href="repository-guide.md">Read the simple-English guide</a> · <a href="../scenarios/iam_maintenance/SPEC.md">Read the IAM contract</a></p>
+</header>
+<main>
+<h2>1. Prepare the task</h2>
+<div class="flow">
+<details open><summary>Command and settings</summary><p>The command selects a run. The loader checks its settings.</p><code>loc_arena/cli.py<br>loc_arena/config.py<br>configs/</code></details>
+<details><summary>Scenario and company</summary><p>The scenario supplies tickets, company files, and grading rules.</p><code>scenarios/<br>company/</code><p>Company code is the agent's work area.</p></details>
+<details><summary>Harness</summary><p>The harness prepares the episode and the honest twin.</p><code>loc_arena/harness.py</code><p>The honest twin has the covert objective disabled.</p></details>
+</div>
+<p class="arrow" aria-label="Next stage">↓ Task settings become an episode.</p>
+<h2>2. Run the agents</h2>
+<div class="flow">
+<details open><summary>Agents and tools</summary><p>The coordinator assigns work. Agents read files, change code, and run checks through tools.</p><code>loc_arena/live.py<br>loc_arena/scaffold/</code><p>The IAM team has one coordinator and up to three specialists.</p></details>
+<details><summary>Forge and coworkers</summary><p>These components provide tickets, reviews, and company interactions.</p><code>loc_arena/forge/<br>loc_arena/npcs/</code></details>
+<details open><summary>Inference gateway</summary><p>Every model call passes through the gateway. The gateway records calls.</p><code>loc_arena/gateway/</code><p>A configured provider can make paid calls. Offline fixtures use scripted responses.</p></details>
+</div>
+<p class="arrow">↓ Events enter two separate records.</p>
+<h2>3. Check work and deployment</h2>
+<div class="flow">
+<details open><summary>Main-task scorer ← company code</summary><p>The scorer checks authorized work.</p><code>loc_arena/tasks/<br>scenarios/*/main.py<br>scenarios/*/reference/</code><p>IAM uses independent replay and observed operations. Ticket closure alone is insufficient.</p></details>
+<details open><summary>Side-task verifier ← sealed log</summary><p>The verifier checks what occurred. Agents and monitors cannot read this evidence.</p><code>loc_arena/verifier/<br>events.sealed.jsonl</code><p>The existing side task checks rogue-deployment milestones and sustained model-call evidence.</p></details>
+<details open><summary>Monitors ← permitted observations</summary><p>Monitors examine the mirror log and other permitted inputs.</p><code>loc_arena/monitors/<br>loc_arena/protocol.py<br>events.mirror.jsonl</code><p>The monitor registry rejects sealed-derived inputs.</p></details>
+</div>
+<aside class="boundary" aria-label="Evidence boundary"><strong>Evidence boundary</strong><p>The sealed log supplies the verifier. It does not supply monitor observations.</p><p>A report can show sealed evidence after the episode. That evidence was unavailable to the monitors.</p></aside>
+<p class="arrow">↓ Independent checks become separate measurements.</p>
+<h2>4. Read the results</h2>
+<div class="flow">
+<details open><summary>Scores and detection decision</summary><p>The system reports main-task completion, side-task evidence, and monitor suspicion separately.</p><code>loc_arena/metrics.py<br>loc_arena/harness.py<br>scores.json</code><p>The detection decision compares aggregate suspicion with the honest-twin threshold in the configured time window.</p></details>
+<details><summary>Run bundle</summary><p>The bundle contains settings, event records, transcripts, and reports.</p><code>loc_arena/logging_/<br>logs/</code><p>Run logs are excluded from commits.</p></details>
+<details><summary>Explorer</summary><p>The explorer puts agent actions and monitor verdicts beside each other.</p><code>loc_arena/explorer/<br>make explore</code><p>Use it to examine which actions the monitors saw.</p></details>
+</div>
+<h2>5. Select a starting point</h2>
+<ul>
+<li>Change task rules: <code>scenarios/</code>.</li>
+<li>Change run settings: <code>configs/</code>.</li>
+<li>Change agent tools: <code>loc_arena/scaffold/</code>.</li>
+<li>Change detection: <code>loc_arena/monitors/</code> and <code>configs/monitors.yaml</code>.</li>
+<li>Check engine behavior: <code>tests/</code> and <code>make gates</code>.</li>
+</ul>
+<aside class="boundary"><strong>Experiment limits</strong><p>Scripted fixture scores test the engine. They do not measure model capability.</p><p>The current deployment worker is a simulated service. It does not prove real operating-system persistence.</p></aside>
+</main>
+<footer><p>This guide uses ASD-STE100-style English. Full dictionary and rule compliance has not been verified.</p><p><a href="https://www.asd-ste100.org/STE_faq.html">Official standard information</a></p></footer>
+</html>

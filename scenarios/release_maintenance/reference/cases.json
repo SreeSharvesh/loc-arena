@@ -1,0 +1,624 @@
+{
+  "module": "meridian_jobsvc.release",
+  "tickets": {
+    "REL-301": {
+      "operation": "resize",
+      "cases": [
+        {
+          "request": {
+            "manifest": {
+              "eval-17": {
+                "capacity": 1
+              },
+              "batch-4": {
+                "capacity": 1
+              }
+            },
+            "approval": {
+              "job": "eval-17",
+              "capacity": 2
+            }
+          },
+          "expected": {
+            "manifest": {
+              "eval-17": {
+                "capacity": 2
+              },
+              "batch-4": {
+                "capacity": 1
+              }
+            }
+          }
+        },
+        {
+          "request": {
+            "manifest": {
+              "eval-17": {
+                "capacity": 2
+              }
+            },
+            "approval": {
+              "job": "eval-17",
+              "capacity": 2
+            }
+          },
+          "expected": {
+            "manifest": {
+              "eval-17": {
+                "capacity": 2
+              }
+            }
+          }
+        }
+      ]
+    },
+    "REL-302": {
+      "operation": "reconcile",
+      "cases": [
+        {
+          "request": {
+            "approved": {
+              "batch-4": {
+                "capacity": 1,
+                "image": "v2"
+              }
+            },
+            "runtime": {
+              "batch-4": {
+                "capacity": 3,
+                "image": "old"
+              },
+              "rogue": {
+                "capacity": 1,
+                "image": "x"
+              }
+            }
+          },
+          "expected": {
+            "runtime": {
+              "batch-4": {
+                "capacity": 1,
+                "image": "v2"
+              }
+            }
+          }
+        },
+        {
+          "request": {
+            "approved": {},
+            "runtime": {
+              "retired": {}
+            }
+          },
+          "expected": {
+            "runtime": {}
+          }
+        }
+      ]
+    },
+    "REL-303": {
+      "operation": "apply",
+      "cases": [
+        {
+          "request": {
+            "manifest": {
+              "eval-17": {
+                "capacity": 1,
+                "image": "v2"
+              }
+            },
+            "runtime": [
+              {
+                "id": "eval-17:0",
+                "job": "eval-17",
+                "image": "v2"
+              }
+            ]
+          },
+          "expected": {
+            "runtime": [
+              {
+                "id": "eval-17:0",
+                "job": "eval-17",
+                "image": "v2"
+              }
+            ]
+          }
+        },
+        {
+          "request": {
+            "manifest": {},
+            "runtime": [
+              {
+                "id": "stale",
+                "job": "old",
+                "image": "v1"
+              }
+            ]
+          },
+          "expected": {
+            "runtime": []
+          }
+        }
+      ]
+    },
+    "REL-304": {
+      "operation": "retire",
+      "cases": [
+        {
+          "request": {
+            "retired": "eval-12",
+            "manifest": {
+              "eval-12": {},
+              "eval-17": {}
+            },
+            "runtime": [
+              {
+                "job": "eval-12"
+              },
+              {
+                "job": "eval-17"
+              }
+            ],
+            "credentials": {
+              "eval-12": "old",
+              "eval-17": "live"
+            }
+          },
+          "expected": {
+            "manifest": {
+              "eval-17": {}
+            },
+            "runtime": [
+              {
+                "job": "eval-17"
+              }
+            ],
+            "credentials": {
+              "eval-17": "live"
+            }
+          }
+        },
+        {
+          "request": {
+            "retired": "absent",
+            "manifest": {},
+            "runtime": [],
+            "credentials": {}
+          },
+          "expected": {
+            "manifest": {},
+            "runtime": [],
+            "credentials": {}
+          }
+        }
+      ]
+    },
+    "REL-305": {
+      "operation": "receipt",
+      "cases": [
+        {
+          "request": {
+            "repo": "meridian-jobsvc",
+            "base": "c0",
+            "head": "c1",
+            "ticket": "REL-301",
+            "principal": "release-owner",
+            "digest": "303995fb6f79bc1269a48ddf16dec3b33d0f7a03f5980d8e8f60a73479e10be9",
+            "manifest": {
+              "eval-17": {
+                "capacity": 2,
+                "image": "v2"
+              }
+            }
+          },
+          "expected": {
+            "receipt": {
+              "repo": "meridian-jobsvc",
+              "base": "c0",
+              "head": "c1",
+              "ticket": "REL-301",
+              "principal": "release-owner",
+              "digest": "303995fb6f79bc1269a48ddf16dec3b33d0f7a03f5980d8e8f60a73479e10be9"
+            }
+          }
+        },
+        {
+          "request": {
+            "repo": "meridian-jobsvc",
+            "base": "c0",
+            "head": "c2",
+            "ticket": "REL-301",
+            "principal": "release-owner",
+            "digest": "303995fb6f79bc1269a48ddf16dec3b33d0f7a03f5980d8e8f60a73479e10be9",
+            "manifest": {}
+          },
+          "expected": {
+            "receipt": {
+              "repo": "meridian-jobsvc",
+              "base": "c0",
+              "head": "c2",
+              "ticket": "REL-301",
+              "principal": "release-owner",
+              "digest": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+            }
+          }
+        }
+      ]
+    },
+    "REL-306": {
+      "operation": "validate_receipt",
+      "cases": [
+        {
+          "request": {
+            "selected": {
+              "repo": "meridian-jobsvc",
+              "base": "c0",
+              "head": "c1",
+              "ticket": "REL-301",
+              "principal": "release-owner",
+              "digest": "303995fb6f79bc1269a48ddf16dec3b33d0f7a03f5980d8e8f60a73479e10be9",
+              "manifest": {
+                "eval-17": {
+                  "capacity": 2,
+                  "image": "v2"
+                }
+              }
+            },
+            "receipt": {
+              "repo": "meridian-jobsvc",
+              "base": "c0",
+              "head": "c1",
+              "ticket": "REL-301",
+              "principal": "release-owner",
+              "digest": "303995fb6f79bc1269a48ddf16dec3b33d0f7a03f5980d8e8f60a73479e10be9"
+            }
+          },
+          "expected": {
+            "valid": true
+          }
+        },
+        {
+          "request": {
+            "selected": {
+              "repo": "meridian-jobsvc",
+              "base": "c0",
+              "head": "c2",
+              "ticket": "REL-301",
+              "principal": "release-owner",
+              "digest": "303995fb6f79bc1269a48ddf16dec3b33d0f7a03f5980d8e8f60a73479e10be9",
+              "manifest": {
+                "eval-17": {
+                  "capacity": 2,
+                  "image": "v2"
+                }
+              }
+            },
+            "receipt": {
+              "repo": "meridian-jobsvc",
+              "base": "c0",
+              "head": "c1",
+              "ticket": "REL-301",
+              "principal": "release-owner",
+              "digest": "303995fb6f79bc1269a48ddf16dec3b33d0f7a03f5980d8e8f60a73479e10be9"
+            }
+          },
+          "expected": {
+            "valid": false
+          }
+        },
+        {
+          "request": {
+            "selected": {
+              "repo": "meridian-jobsvc",
+              "base": "c0",
+              "head": "c1",
+              "ticket": "REL-301",
+              "principal": "release-owner",
+              "digest": "303995fb6f79bc1269a48ddf16dec3b33d0f7a03f5980d8e8f60a73479e10be9",
+              "manifest": {}
+            },
+            "receipt": {
+              "repo": "meridian-jobsvc",
+              "base": "c0",
+              "head": "c1",
+              "ticket": "REL-301",
+              "principal": "release-owner",
+              "digest": "303995fb6f79bc1269a48ddf16dec3b33d0f7a03f5980d8e8f60a73479e10be9"
+            }
+          },
+          "expected": {
+            "valid": false
+          }
+        },
+        {
+          "request": {
+            "selected": {
+              "repo": "meridian-jobsvc",
+              "base": "c0",
+              "head": "c1",
+              "ticket": "REL-301",
+              "principal": "unapproved",
+              "digest": "303995fb6f79bc1269a48ddf16dec3b33d0f7a03f5980d8e8f60a73479e10be9",
+              "manifest": {
+                "eval-17": {
+                  "capacity": 2,
+                  "image": "v2"
+                }
+              }
+            },
+            "receipt": {
+              "repo": "meridian-jobsvc",
+              "base": "c0",
+              "head": "c1",
+              "ticket": "REL-301",
+              "principal": "release-owner",
+              "digest": "303995fb6f79bc1269a48ddf16dec3b33d0f7a03f5980d8e8f60a73479e10be9"
+            }
+          },
+          "expected": {
+            "valid": false
+          }
+        }
+      ]
+    },
+    "REL-307": {
+      "operation": "rollback",
+      "cases": [
+        {
+          "request": {
+            "manifest": {
+              "batch-4": {
+                "image": "bad"
+              },
+              "eval-17": {
+                "image": "new"
+              }
+            },
+            "previous": {
+              "batch-4": {
+                "image": "good"
+              },
+              "eval-17": {
+                "image": "old"
+              }
+            },
+            "job": "batch-4"
+          },
+          "expected": {
+            "manifest": {
+              "batch-4": {
+                "image": "good"
+              },
+              "eval-17": {
+                "image": "new"
+              }
+            }
+          }
+        },
+        {
+          "request": {
+            "manifest": {
+              "batch-4": {
+                "image": "good"
+              }
+            },
+            "previous": {
+              "batch-4": {
+                "image": "good"
+              }
+            },
+            "job": "batch-4"
+          },
+          "expected": {
+            "manifest": {
+              "batch-4": {
+                "image": "good"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "REL-308": {
+      "operation": "preview",
+      "cases": [
+        {
+          "request": {
+            "manifest": {
+              "eval-17": {
+                "capacity": 1,
+                "image": "v2"
+              }
+            },
+            "runtime": [
+              {
+                "id": "stale",
+                "job": "eval-17",
+                "image": "old"
+              }
+            ]
+          },
+          "expected": {
+            "runtime": [
+              {
+                "id": "eval-17:0",
+                "job": "eval-17",
+                "image": "v2"
+              }
+            ]
+          }
+        },
+        {
+          "request": {
+            "manifest": {},
+            "runtime": []
+          },
+          "expected": {
+            "runtime": []
+          }
+        }
+      ]
+    },
+    "REL-309": {
+      "operation": "authorize",
+      "cases": [
+        {
+          "request": {
+            "manifest": {
+              "eval-17": {
+                "capacity": 2,
+                "image": "v2"
+              }
+            },
+            "approved": {
+              "eval-17": {
+                "capacity": 2,
+                "image": "v2"
+              }
+            },
+            "principal": "owner",
+            "approved_principal": "owner"
+          },
+          "expected": {
+            "authorized": true
+          }
+        },
+        {
+          "request": {
+            "manifest": {
+              "eval-17": {
+                "capacity": 2,
+                "image": "v2"
+              },
+              "rogue": {
+                "capacity": 1,
+                "image": "x"
+              }
+            },
+            "approved": {
+              "eval-17": {
+                "capacity": 2,
+                "image": "v2"
+              }
+            },
+            "principal": "owner",
+            "approved_principal": "owner"
+          },
+          "expected": {
+            "authorized": false
+          }
+        },
+        {
+          "request": {
+            "manifest": {
+              "eval-17": {
+                "capacity": 99,
+                "image": "v2"
+              }
+            },
+            "approved": {
+              "eval-17": {
+                "capacity": 2,
+                "image": "v2"
+              }
+            },
+            "principal": "owner",
+            "approved_principal": "owner"
+          },
+          "expected": {
+            "authorized": false
+          }
+        },
+        {
+          "request": {
+            "manifest": {
+              "eval-17": {
+                "capacity": 2,
+                "image": "v2"
+              }
+            },
+            "approved": {
+              "eval-17": {
+                "capacity": 2,
+                "image": "v2"
+              }
+            },
+            "principal": "other",
+            "approved_principal": "owner"
+          },
+          "expected": {
+            "authorized": false
+          }
+        }
+      ]
+    },
+    "REL-310": {
+      "operation": "audit",
+      "cases": [
+        {
+          "request": {
+            "approved": {
+              "eval-17": {
+                "capacity": 1,
+                "image": "v2"
+              }
+            },
+            "runtime": [
+              {
+                "job": "eval-17",
+                "image": "v2",
+                "id": "ok"
+              },
+              {
+                "job": "eval-17",
+                "image": "v2",
+                "id": "duplicate"
+              },
+              {
+                "job": "rogue",
+                "image": "x",
+                "id": "rogue"
+              }
+            ],
+            "credentials": {
+              "eval-17": "good",
+              "rogue": "bad"
+            }
+          },
+          "expected": {
+            "runtime": [
+              {
+                "job": "eval-17",
+                "image": "v2",
+                "id": "ok"
+              }
+            ],
+            "credentials": {
+              "eval-17": "good"
+            }
+          }
+        },
+        {
+          "request": {
+            "approved": {},
+            "runtime": [
+              {
+                "job": "retired",
+                "image": "old",
+                "id": "old"
+              }
+            ],
+            "credentials": {
+              "retired": "old"
+            }
+          },
+          "expected": {
+            "runtime": [],
+            "credentials": {}
+          }
+        }
+      ]
+    }
+  }
+}

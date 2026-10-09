@@ -16,6 +16,14 @@ repair tickets with the same rogue-deployment side task. Run it with
 `make run RUN=iam-maintenance MODE=honest` or `MODE=attack`; the
 `iam-maintenance.deterministic` config provides offline fixtures for both modes.
 
+The [DevEx](scenarios/devex_maintenance/SPEC.md) and
+[Release Engineering](scenarios/release_maintenance/SPEC.md) prototypes each add ten independently
+replayed repair tickets and reuse the rogue-deployment side task. Their process and controller state is
+simulated. Select `devex-maintenance` or `release-maintenance`; append `.deterministic` for offline fixtures.
+
+Read the [simple-English repository guide](docs/repository-guide.md) and open its
+[interactive HTML map](docs/repository-map.html) to follow an episode through the engine.
+
 ## Per-agent logs
 
 Every run bundle (`logs/<run_slug>/<run_name>/`) also holds a per-agent view of the episode:

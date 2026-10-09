@@ -1,0 +1,493 @@
+{
+  "module": "meridian_controlplane.devex",
+  "tickets": {
+    "DEV-201": {
+      "operation": "restart",
+      "cases": [
+        {
+          "request": {
+            "sessions": {
+              "s1": true
+            },
+            "session": "s1",
+            "replacement": {
+              "host": "h1",
+              "pid": 9,
+              "start": 15
+            }
+          },
+          "expected": {
+            "workers": [
+              {
+                "host": "h1",
+                "pid": 9,
+                "start": 15,
+                "session": "s1",
+                "running": true
+              }
+            ]
+          }
+        },
+        {
+          "request": {
+            "sessions": {
+              "s1": false
+            },
+            "session": "s1",
+            "replacement": {
+              "pid": 9
+            }
+          },
+          "expected": {
+            "workers": []
+          }
+        }
+      ]
+    },
+    "DEV-202": {
+      "operation": "quota",
+      "cases": [
+        {
+          "request": {
+            "limits": {
+              "s2": 1,
+              "s3": 1
+            },
+            "approval": {
+              "session": "s2",
+              "cpu": 2,
+              "starts": 0,
+              "expires": 35
+            },
+            "now": 25
+          },
+          "expected": {
+            "limits": {
+              "s2": 2,
+              "s3": 1
+            }
+          }
+        },
+        {
+          "request": {
+            "limits": {
+              "s2": 1,
+              "s3": 1
+            },
+            "approval": {
+              "session": "s2",
+              "cpu": 2,
+              "starts": 0,
+              "expires": 35
+            },
+            "now": 35
+          },
+          "expected": {
+            "limits": {
+              "s2": 1,
+              "s3": 1
+            }
+          }
+        }
+      ]
+    },
+    "DEV-203": {
+      "operation": "dashboard",
+      "cases": [
+        {
+          "request": {
+            "tick": 15,
+            "processes": [
+              {
+                "host": "h1",
+                "pid": 2,
+                "start": 14,
+                "end": 16
+              },
+              {
+                "host": "h1",
+                "pid": 3,
+                "start": 0,
+                "end": 30
+              }
+            ]
+          },
+          "expected": {
+            "instances": [
+              [
+                "h1",
+                2,
+                14
+              ],
+              [
+                "h1",
+                3,
+                0
+              ]
+            ]
+          }
+        },
+        {
+          "request": {
+            "tick": 16,
+            "processes": [
+              {
+                "host": "h1",
+                "pid": 2,
+                "start": 14,
+                "end": 16
+              }
+            ]
+          },
+          "expected": {
+            "instances": []
+          }
+        }
+      ]
+    },
+    "DEV-204": {
+      "operation": "audit",
+      "cases": [
+        {
+          "request": {
+            "workers": [
+              {
+                "session": "s4",
+                "token": "t4",
+                "running": true
+              },
+              {
+                "session": "s1",
+                "token": "t1",
+                "running": true
+              }
+            ],
+            "sessions": {
+              "s4": false,
+              "s1": true
+            },
+            "tokens": {
+              "t4": true,
+              "t1": true
+            },
+            "approved_daemons": []
+          },
+          "expected": {
+            "workers": [
+              {
+                "session": "s4",
+                "token": "t4",
+                "running": false
+              },
+              {
+                "session": "s1",
+                "token": "t1",
+                "running": true
+              }
+            ],
+            "tokens": {
+              "t4": false,
+              "t1": true
+            }
+          }
+        },
+        {
+          "request": {
+            "workers": [
+              {
+                "session": null,
+                "principal": "build-daemon",
+                "token": "td",
+                "running": true
+              }
+            ],
+            "sessions": {},
+            "tokens": {
+              "td": true
+            },
+            "approved_daemons": [
+              "build-daemon"
+            ]
+          },
+          "expected": {
+            "workers": [
+              {
+                "session": null,
+                "principal": "build-daemon",
+                "token": "td",
+                "running": true
+              }
+            ],
+            "tokens": {
+              "td": true
+            }
+          }
+        }
+      ]
+    },
+    "DEV-205": {
+      "operation": "attribute",
+      "cases": [
+        {
+          "request": {
+            "instance": "child",
+            "ancestry": {
+              "child": {
+                "parent": "parent"
+              },
+              "parent": {
+                "session": "s1"
+              }
+            },
+            "sessions": {
+              "s1": true
+            }
+          },
+          "expected": {
+            "session": "s1"
+          }
+        },
+        {
+          "request": {
+            "instance": "a",
+            "ancestry": {
+              "a": {
+                "parent": "b"
+              },
+              "b": {
+                "parent": "a",
+                "session": "closed"
+              }
+            },
+            "sessions": {
+              "closed": false
+            }
+          },
+          "expected": {
+            "session": null
+          }
+        }
+      ]
+    },
+    "DEV-206": {
+      "operation": "instance_key",
+      "cases": [
+        {
+          "request": {
+            "host": "h1",
+            "pid": 7,
+            "start": 10
+          },
+          "expected": {
+            "key": [
+              "h1",
+              7,
+              10
+            ]
+          }
+        },
+        {
+          "request": {
+            "host": "h2",
+            "pid": 7,
+            "start": 25
+          },
+          "expected": {
+            "key": [
+              "h2",
+              7,
+              25
+            ]
+          }
+        }
+      ]
+    },
+    "DEV-207": {
+      "operation": "expire_quota",
+      "cases": [
+        {
+          "request": {
+            "limits": {
+              "s2": 2,
+              "s3": 1
+            },
+            "base": {
+              "s2": 1,
+              "s3": 1
+            },
+            "approvals": [
+              {
+                "session": "s2",
+                "expires": 35
+              }
+            ],
+            "now": 35
+          },
+          "expected": {
+            "limits": {
+              "s2": 1,
+              "s3": 1
+            }
+          }
+        },
+        {
+          "request": {
+            "limits": {
+              "s2": 2,
+              "s3": 1
+            },
+            "base": {
+              "s2": 1,
+              "s3": 1
+            },
+            "approvals": [
+              {
+                "session": "s2",
+                "expires": 35
+              }
+            ],
+            "now": 34
+          },
+          "expected": {
+            "limits": {
+              "s2": 2,
+              "s3": 1
+            }
+          }
+        }
+      ]
+    },
+    "DEV-208": {
+      "operation": "ensure_worker",
+      "cases": [
+        {
+          "request": {
+            "workers": [
+              {
+                "session": "s1",
+                "job": "build",
+                "running": true,
+                "pid": 5
+              }
+            ],
+            "session": "s1",
+            "job": "build",
+            "replacement": {
+              "pid": 6
+            }
+          },
+          "expected": {
+            "workers": [
+              {
+                "session": "s1",
+                "job": "build",
+                "running": true,
+                "pid": 5
+              }
+            ]
+          }
+        },
+        {
+          "request": {
+            "workers": [],
+            "session": "s1",
+            "job": "build",
+            "replacement": {
+              "pid": 6
+            }
+          },
+          "expected": {
+            "workers": [
+              {
+                "session": "s1",
+                "job": "build",
+                "running": true,
+                "pid": 6
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "DEV-209": {
+      "operation": "metrics",
+      "cases": [
+        {
+          "request": {
+            "samples": [
+              {
+                "seconds": 1,
+                "cpu_percent": 100
+              },
+              {
+                "seconds": 3,
+                "cpu_percent": 0
+              }
+            ],
+            "memory_bytes": [
+              1048576,
+              2097152
+            ]
+          },
+          "expected": {
+            "cpu_percent": 25,
+            "memory_mib": 3
+          }
+        },
+        {
+          "request": {
+            "samples": [],
+            "memory_bytes": []
+          },
+          "expected": {
+            "cpu_percent": 0,
+            "memory_mib": 0
+          }
+        }
+      ]
+    },
+    "DEV-210": {
+      "operation": "preview",
+      "cases": [
+        {
+          "request": {
+            "workers": [
+              {
+                "session": "s4",
+                "token": "t4",
+                "running": true
+              }
+            ],
+            "sessions": {
+              "s4": false
+            },
+            "tokens": {
+              "t4": true
+            },
+            "approved_daemons": []
+          },
+          "expected": {
+            "removed": [
+              "t4"
+            ],
+            "revoked": [
+              "t4"
+            ]
+          }
+        },
+        {
+          "request": {
+            "workers": [],
+            "sessions": {},
+            "tokens": {},
+            "approved_daemons": []
+          },
+          "expected": {
+            "removed": [],
+            "revoked": []
+          }
+        }
+      ]
+    }
+  }
+}

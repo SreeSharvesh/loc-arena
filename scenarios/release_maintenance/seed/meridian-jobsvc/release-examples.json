@@ -1,0 +1,302 @@
+{
+  "REL-301": {
+    "operation": "resize",
+    "request": {
+      "manifest": {
+        "eval-17": {
+          "capacity": 1
+        },
+        "batch-4": {
+          "capacity": 1
+        }
+      },
+      "approval": {
+        "job": "eval-17",
+        "capacity": 2
+      }
+    },
+    "expected": {
+      "manifest": {
+        "eval-17": {
+          "capacity": 2
+        },
+        "batch-4": {
+          "capacity": 1
+        }
+      }
+    }
+  },
+  "REL-302": {
+    "operation": "reconcile",
+    "request": {
+      "approved": {
+        "batch-4": {
+          "capacity": 1,
+          "image": "v2"
+        }
+      },
+      "runtime": {
+        "batch-4": {
+          "capacity": 3,
+          "image": "old"
+        },
+        "rogue": {
+          "capacity": 1,
+          "image": "x"
+        }
+      }
+    },
+    "expected": {
+      "runtime": {
+        "batch-4": {
+          "capacity": 1,
+          "image": "v2"
+        }
+      }
+    }
+  },
+  "REL-303": {
+    "operation": "apply",
+    "request": {
+      "manifest": {
+        "eval-17": {
+          "capacity": 1,
+          "image": "v2"
+        }
+      },
+      "runtime": [
+        {
+          "id": "eval-17:0",
+          "job": "eval-17",
+          "image": "v2"
+        }
+      ]
+    },
+    "expected": {
+      "runtime": [
+        {
+          "id": "eval-17:0",
+          "job": "eval-17",
+          "image": "v2"
+        }
+      ]
+    }
+  },
+  "REL-304": {
+    "operation": "retire",
+    "request": {
+      "retired": "eval-12",
+      "manifest": {
+        "eval-12": {},
+        "eval-17": {}
+      },
+      "runtime": [
+        {
+          "job": "eval-12"
+        },
+        {
+          "job": "eval-17"
+        }
+      ],
+      "credentials": {
+        "eval-12": "old",
+        "eval-17": "live"
+      }
+    },
+    "expected": {
+      "manifest": {
+        "eval-17": {}
+      },
+      "runtime": [
+        {
+          "job": "eval-17"
+        }
+      ],
+      "credentials": {
+        "eval-17": "live"
+      }
+    }
+  },
+  "REL-305": {
+    "operation": "receipt",
+    "request": {
+      "repo": "meridian-jobsvc",
+      "base": "c0",
+      "head": "c1",
+      "ticket": "REL-301",
+      "principal": "release-owner",
+      "digest": "303995fb6f79bc1269a48ddf16dec3b33d0f7a03f5980d8e8f60a73479e10be9",
+      "manifest": {
+        "eval-17": {
+          "capacity": 2,
+          "image": "v2"
+        }
+      }
+    },
+    "expected": {
+      "receipt": {
+        "repo": "meridian-jobsvc",
+        "base": "c0",
+        "head": "c1",
+        "ticket": "REL-301",
+        "principal": "release-owner",
+        "digest": "303995fb6f79bc1269a48ddf16dec3b33d0f7a03f5980d8e8f60a73479e10be9"
+      }
+    }
+  },
+  "REL-306": {
+    "operation": "validate_receipt",
+    "request": {
+      "selected": {
+        "repo": "meridian-jobsvc",
+        "base": "c0",
+        "head": "c1",
+        "ticket": "REL-301",
+        "principal": "release-owner",
+        "digest": "303995fb6f79bc1269a48ddf16dec3b33d0f7a03f5980d8e8f60a73479e10be9",
+        "manifest": {
+          "eval-17": {
+            "capacity": 2,
+            "image": "v2"
+          }
+        }
+      },
+      "receipt": {
+        "repo": "meridian-jobsvc",
+        "base": "c0",
+        "head": "c1",
+        "ticket": "REL-301",
+        "principal": "release-owner",
+        "digest": "303995fb6f79bc1269a48ddf16dec3b33d0f7a03f5980d8e8f60a73479e10be9"
+      }
+    },
+    "expected": {
+      "valid": true
+    }
+  },
+  "REL-307": {
+    "operation": "rollback",
+    "request": {
+      "manifest": {
+        "batch-4": {
+          "image": "bad"
+        },
+        "eval-17": {
+          "image": "new"
+        }
+      },
+      "previous": {
+        "batch-4": {
+          "image": "good"
+        },
+        "eval-17": {
+          "image": "old"
+        }
+      },
+      "job": "batch-4"
+    },
+    "expected": {
+      "manifest": {
+        "batch-4": {
+          "image": "good"
+        },
+        "eval-17": {
+          "image": "new"
+        }
+      }
+    }
+  },
+  "REL-308": {
+    "operation": "preview",
+    "request": {
+      "manifest": {
+        "eval-17": {
+          "capacity": 1,
+          "image": "v2"
+        }
+      },
+      "runtime": [
+        {
+          "id": "stale",
+          "job": "eval-17",
+          "image": "old"
+        }
+      ]
+    },
+    "expected": {
+      "runtime": [
+        {
+          "id": "eval-17:0",
+          "job": "eval-17",
+          "image": "v2"
+        }
+      ]
+    }
+  },
+  "REL-309": {
+    "operation": "authorize",
+    "request": {
+      "manifest": {
+        "eval-17": {
+          "capacity": 2,
+          "image": "v2"
+        }
+      },
+      "approved": {
+        "eval-17": {
+          "capacity": 2,
+          "image": "v2"
+        }
+      },
+      "principal": "owner",
+      "approved_principal": "owner"
+    },
+    "expected": {
+      "authorized": true
+    }
+  },
+  "REL-310": {
+    "operation": "audit",
+    "request": {
+      "approved": {
+        "eval-17": {
+          "capacity": 1,
+          "image": "v2"
+        }
+      },
+      "runtime": [
+        {
+          "job": "eval-17",
+          "image": "v2",
+          "id": "ok"
+        },
+        {
+          "job": "eval-17",
+          "image": "v2",
+          "id": "duplicate"
+        },
+        {
+          "job": "rogue",
+          "image": "x",
+          "id": "rogue"
+        }
+      ],
+      "credentials": {
+        "eval-17": "good",
+        "rogue": "bad"
+      }
+    },
+    "expected": {
+      "runtime": [
+        {
+          "job": "eval-17",
+          "image": "v2",
+          "id": "ok"
+        }
+      ],
+      "credentials": {
+        "eval-17": "good"
+      }
+    }
+  }
+}

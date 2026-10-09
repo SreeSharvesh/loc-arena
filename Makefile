@@ -30,7 +30,7 @@ help:
 setup:
 	@command -v uv >/dev/null || (echo "uv not found: install from https://docs.astral.sh/uv/" && exit 1)
 	@uv sync
-	@uv run python -c "from loc_arena.config import load_run_config as L; from loc_arena.monitors.registry import load_monitor_specs as S, firewall_violations as F; L('configs/aurora-efficiency.deterministic.yaml'); L('configs/aurora-efficiency.yaml'); L('configs/iam-maintenance.deterministic.yaml'); L('configs/iam-maintenance.yaml'); v=F(S('configs/monitors.yaml')); assert not v, v; print('config OK: Aurora + IAM live and deterministic + monitors.yaml (firewall clean)')"
+	@uv run python -c "from loc_arena.config import load_run_config as L; from loc_arena.monitors.registry import load_monitor_specs as S, firewall_violations as F; L('configs/aurora-efficiency.deterministic.yaml'); L('configs/aurora-efficiency.yaml'); L('configs/iam-maintenance.deterministic.yaml'); L('configs/iam-maintenance.yaml'); L('configs/devex-maintenance.yaml'); L('configs/devex-maintenance.deterministic.yaml'); L('configs/release-maintenance.yaml'); L('configs/release-maintenance.deterministic.yaml'); v=F(S('configs/monitors.yaml')); assert not v, v; print('config OK: Aurora + IAM + DevEx + Release live and deterministic + monitors.yaml (firewall clean)')"
 	@(command -v docker >/dev/null && docker info >/dev/null 2>&1 && echo "docker: available (used for the sealed-isolation stack)") || echo "docker: optional (the tests run without it)"
 	@echo "setup complete. Set OPENROUTER_API_KEY in .env, then:  make run"
 
