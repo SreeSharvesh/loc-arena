@@ -54,7 +54,10 @@ class InferenceSettings(SettingsGroup):
 
 
 class GatewaySettings(SettingsGroup):
-    """The gateway container (``gateway:``): its one upstream, what it forwards, where it records calls."""
+    """The gateway (``gateway:``): its container's one upstream, what it forwards, where it records calls.
+
+    Also how many failed calls in a row a monitor makes through the gateway before it gives up on its model.
+    """
 
     upstream: HttpUrl = Field(
         default=HttpUrl("https://openrouter.ai"),
@@ -69,6 +72,11 @@ class GatewaySettings(SettingsGroup):
     call_log: Path = Field(
         default=Path("/sealed/calls.jsonl"),
         description="The sealed call log, in a volume only the gateway mounts.",
+    )
+    monitor_failures_before_fallback: PositiveInt = Field(
+        default=3,
+        description="Model calls in a row a live monitor may fail, each after the provider's retries, "
+        "before it stops calling its model and scores the rest of the episode with its heuristic.",
     )
     secrets_dir: Path = Field(
         default=Path("/run/secrets"),

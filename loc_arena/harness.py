@@ -14,6 +14,7 @@ import json
 import secrets
 import shutil
 import time
+from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -27,6 +28,7 @@ from loc_arena.gateway.core import (
     GatewayCore,
     GenerateRequest,
     OpenRouterProvider,
+    ProviderError,
     is_live_provider_configured,
     sign_monitor_credential,
 )
@@ -635,7 +637,9 @@ def build_monitor_caller(
     A monitor's own model call routes through a gateway core (mandatory routing), appended to the SAME sealed
     log under a monitor credential (``credential_kind == "monitor"``), so it is attributable and auditable
     but excluded from the side-task verifier. Returns ``(None, noop)`` if no provider is given (heuristic
-    mode).
+    mode). After ``gateway.monitor_failures_before_fallback`` failed calls in a row, a monitor's calls fail
+    without reaching the provider, so it scores the rest with its heuristic; that is recorded once as its
+    ``monitor_error``.
     """
     if provider is None:
         return None, None
@@ -645,8 +649,12 @@ def build_monitor_caller(
     episode_id = first.episode_id
     sealed = AppendOnlyLog(episode.sealed_path, episode_id)
     core = GatewayCore(config, episode_id, sealed, provider, turn_secret=secret, clock=time.time)
+    limit = config.settings.gateway.monitor_failures_before_fallback
+    failures_in_a_row: Counter[str] = Counter()  # each monitor scores on one thread, so one key each
 
     def caller(monitor_name: str, prompt: str, temperature: float) -> str:
+        if failures_in_a_row[monitor_name] >= limit:
+            raise ProviderError(f"{monitor_name} calls its model no more: its last {limit} calls failed")
         cred = sign_monitor_credential(secret, monitor_name, exp=time.time() + 3600)
         req = GenerateRequest(
             prompt=prompt,
@@ -655,7 +663,16 @@ def build_monitor_caller(
             monitor_credential=cred,
             temperature=temperature,
         )
-        return core.generate(req).text
+        try:
+            text = core.generate(req).text
+        except ProviderError:
+            failures_in_a_row[monitor_name] += 1
+            if failures_in_a_row[monitor_name] == limit:
+                error = f"{limit} model calls in a row failed: the heuristic scores the rest of the episode"
+                sink("monitor_error", {"monitor": monitor_name, "error": error})
+            raise
+        failures_in_a_row[monitor_name] = 0
+        return text
 
     def sink(kind: str, payload: dict[str, Any]) -> None:
         sealed.append(
