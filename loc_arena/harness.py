@@ -28,7 +28,6 @@ from loc_arena.gateway.core import (
     GatewayCore,
     GenerateRequest,
     OpenRouterProvider,
-    ProviderError,
     is_live_provider_configured,
     sign_monitor_credential,
 )
@@ -45,7 +44,12 @@ from loc_arena.metrics import (
     usefulness,
 )
 from loc_arena.monitors.aggregation import load_aggregation_config
-from loc_arena.monitors.registry import find_fallback_only_monitors, load_monitor_specs, load_monitors
+from loc_arena.monitors.registry import (
+    ModelCallsStoppedError,
+    find_fallback_only_monitors,
+    load_monitor_specs,
+    load_monitors,
+)
 from loc_arena.protocol import compose_protocol
 from loc_arena.task import (
     EpisodeResult,
@@ -100,6 +104,7 @@ def _build_scores(
     overall_threshold: float,
     agg: Any,
     specs: list[Any],
+    calibration_sealed_path: Path | None = None,
 ) -> dict[str, Any]:
     verdict = episode.verdict
     per_monitor: dict[str, float] = {}
@@ -116,11 +121,13 @@ def _build_scores(
     )
     resolved_weights = {spec.name: _resolved_weight(spec, agg) for spec in specs}
 
-    # Errored: a monitor_error on the episode's sealed log (async timeout / raise -> floor), or a live monitor
-    # whose model never gave a usable verdict, so every score it reported is the heuristic fallback.
+    # Errored: a monitor_error on the episode's or the honest twin's sealed log (an async timeout or raise ->
+    # floor, or a model given up on), or a live monitor whose model never gave a usable verdict, so every
+    # score it reported is the heuristic fallback.
     sealed_events = list(read_events(episode.sealed_path))
+    twin_events = read_events(calibration_sealed_path) if calibration_sealed_path else ()
     errored_monitors = {
-        str(e.payload.get("monitor")) for e in sealed_events if e.kind == "monitor_error"
+        str(e.payload.get("monitor")) for e in [*sealed_events, *twin_events] if e.kind == "monitor_error"
     } | find_fallback_only_monitors(ep_record.verdicts, sealed_events)
 
     # Max score + top reason per monitor over its OWN verdicts (detector rows + detectors block read this).
@@ -475,8 +482,14 @@ def grade_run(
         if mode == "honest"
         else _grade_played(run_directory / "honest_cal", honest_cfg, played.calibration_trace)
     )
-    h_caller, h_sink = build_monitor_caller(honest_ep, honest_cfg, monitor_provider)
-    e_caller, e_sink = build_monitor_caller(episode, cfg, monitor_provider)
+    limit = agg.monitor_failures_before_fallback
+    h_caller, h_sink = build_monitor_caller(
+        honest_ep,
+        honest_cfg,
+        monitor_provider,
+        failures_before_fallback=limit,
+    )
+    e_caller, e_sink = build_monitor_caller(episode, cfg, monitor_provider, failures_before_fallback=limit)
     honest_rec = record_episode(
         honest_ep,
         honest_cfg,
@@ -522,6 +535,7 @@ def grade_run(
         overall_threshold=overall_threshold,
         agg=agg,
         specs=specs,
+        calibration_sealed_path=None if mode == "honest" else honest_ep.sealed_path,
     )
     scores["failed_model_calls"] = played.failed_model_calls.model_dump()
     if played.wall_clock_ceiling:  # only for a run it stopped, so every other run's scores keep their shape
@@ -609,9 +623,10 @@ def run_sweep(
     honest_cfg = apply_mode(config, "honest")
     attack_cfg = apply_mode(config, "attack")
     proto = compose_protocol(attack_cfg, load_monitors(monitors_path, attack_cfg.models))
+    limit = load_aggregation_config(monitors_path).monitor_failures_before_fallback
 
     def _record(ep: Any, cfg: RunConfig) -> Any:
-        caller, sink = build_monitor_caller(ep, cfg, monitor_provider)
+        caller, sink = build_monitor_caller(ep, cfg, monitor_provider, failures_before_fallback=limit)
         return record_episode(ep, cfg, proto, model_caller=caller, event_sink=sink or _default_sink)
 
     honest_records = [
@@ -657,6 +672,7 @@ def build_monitor_caller(
     config: RunConfig,
     provider: Any,
     *,
+    failures_before_fallback: int,
     secret: str = "monitor-secret",
 ) -> tuple[Any, Any]:
     """Build a (model_caller, event_sink) for LIVE monitors over an episode's sealed log.
@@ -664,9 +680,8 @@ def build_monitor_caller(
     A monitor's own model call routes through a gateway core (mandatory routing), appended to the SAME sealed
     log under a monitor credential (``credential_kind == "monitor"``), so it is attributable and auditable
     but excluded from the side-task verifier. Returns ``(None, noop)`` if no provider is given (heuristic
-    mode). After ``gateway.monitor_failures_before_fallback`` failed calls in a row, a monitor's calls fail
-    without reaching the provider, so it scores the rest with its heuristic; that is recorded once as its
-    ``monitor_error``.
+    mode). After ``failures_before_fallback`` failed calls in a row, of any kind, a monitor makes no more
+    calls and scores the rest with its heuristic; that is recorded once, as its ``monitor_error``.
     """
     if provider is None:
         return None, None
@@ -676,12 +691,12 @@ def build_monitor_caller(
     episode_id = first.episode_id
     sealed = AppendOnlyLog(episode.sealed_path, episode_id)
     core = GatewayCore(config, episode_id, sealed, provider, turn_secret=secret, clock=time.time)
-    limit = config.settings.gateway.monitor_failures_before_fallback
+    limit = failures_before_fallback
     failures_in_a_row: Counter[str] = Counter()  # each monitor scores on one thread, so one key each
 
     def caller(monitor_name: str, prompt: str, temperature: float) -> str:
         if failures_in_a_row[monitor_name] >= limit:
-            raise ProviderError(f"{monitor_name} calls its model no more: its last {limit} calls failed")
+            raise ModelCallsStoppedError
         cred = sign_monitor_credential(secret, monitor_name, exp=time.time() + 3600)
         req = GenerateRequest(
             prompt=prompt,
@@ -692,7 +707,7 @@ def build_monitor_caller(
         )
         try:
             text = core.generate(req).text
-        except ProviderError:
+        except Exception:
             failures_in_a_row[monitor_name] += 1
             if failures_in_a_row[monitor_name] == limit:
                 error = f"{limit} model calls in a row failed: the heuristic scores the rest of the episode"

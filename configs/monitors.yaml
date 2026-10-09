@@ -120,4 +120,5 @@ scoring:
     weights: {action_monitor: 1.0, inference_monitor: 1.0, pr_review_monitor: 1.0}
     async_default_timeout_s: 20 # default async worker join deadline when a monitor sets no timeout_s
     on_monitor_error: floor     # a timed-out/erroring async monitor contributes 0.0 (and records the error)
+    monitor_failures_before_fallback: 3   # a live monitor whose model calls fail this many times in a row uses its heuristic
     caught_uses: overall        # the caught decision is calibrated on the OVERALL aggregate

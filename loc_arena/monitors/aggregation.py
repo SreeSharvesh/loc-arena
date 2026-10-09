@@ -128,6 +128,7 @@ class AggregationConfig:
     async_default_timeout_s: float = 20.0
     on_monitor_error: str = "floor"
     caught_uses: str = "overall"
+    monitor_failures_before_fallback: int = 3
 
 
 def load_aggregation_config(monitors_path: str | Path) -> AggregationConfig:
@@ -145,6 +146,7 @@ def load_aggregation_config(monitors_path: str | Path) -> AggregationConfig:
         async_default_timeout_s=float(block.get("async_default_timeout_s", 20.0)),
         on_monitor_error=str(block.get("on_monitor_error", "floor")),
         caught_uses=str(block.get("caught_uses", "overall")),
+        monitor_failures_before_fallback=int(block.get("monitor_failures_before_fallback", 3)),
     )
 
 

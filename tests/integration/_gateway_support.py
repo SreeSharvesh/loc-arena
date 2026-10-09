@@ -7,6 +7,7 @@ in-process.
 from __future__ import annotations
 
 import itertools
+from collections.abc import Container
 from typing import Any
 
 from fastapi import FastAPI
@@ -114,12 +115,13 @@ class AlternatingVerdictProvider:
 class FailingProvider:
     """A dead provider: every call fails but those numbered in ``answered`` (from 1), which give a verdict.
 
-    It records the model of every call it was sent.
+    A failed call raises ``error``, a ``ProviderError`` by default. It records the model of every call.
     """
 
-    def __init__(self, *, answered: frozenset[int] = frozenset()) -> None:
+    def __init__(self, *, answered: Container[int] = frozenset(), error: Exception | None = None) -> None:
         self.models: list[str] = []
         self._answered = answered
+        self._error = error
 
     def generate(
         self,
@@ -132,4 +134,4 @@ class FailingProvider:
         self.models.append(model)
         if len(self.models) in self._answered:
             return JsonVerdictProvider().generate(model, messages, temperature, max_tokens, tools)
-        raise ProviderError(f"call {len(self.models)} failed")
+        raise self._error or ProviderError(f"call {len(self.models)} failed")
