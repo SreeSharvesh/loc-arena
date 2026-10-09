@@ -1,7 +1,8 @@
-"""The command server: runs a command in a directory under the checkouts for a holder of the sandbox token.
+"""The command server: runs a command in a directory under the checkouts for the episode, holding the token.
 
 It sees the volume of the checkouts and nothing else of the episode: not the event logs, not the run configs,
-not the provider key.
+not the provider key. It takes calls from the episode alone, so agent code that reads this sandbox's token can
+still not call it, from here or from another sandbox.
 """
 
 from __future__ import annotations
@@ -12,15 +13,16 @@ import hmac
 import os
 import shutil
 import signal
+import socket
 from collections.abc import Callable
 from http import HTTPStatus
 from pathlib import Path
 from typing import Annotated
 
 import uvicorn
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, ConfigDict, Field, PositiveInt, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, PositiveFloat, PositiveInt, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from sandbox_server.command import run_command
@@ -32,6 +34,8 @@ MINIMUM_TOKEN_LENGTH = 32
 CONTAINER_MARKER = Path("/.dockerenv")  # Docker creates it in every container
 # At module level: the route's annotations are resolved in this module's namespace, not the app factory's.
 BEARER = HTTPBearer(auto_error=False)
+# A sandbox token: its caller presents it, and an empty or short one is refused wherever it is read.
+SandboxToken = Annotated[SecretStr, Field(min_length=MINIMUM_TOKEN_LENGTH)]
 
 
 class ServerSettings(BaseModel):
@@ -51,31 +55,41 @@ class ServerSettings(BaseModel):
         description="Bytes of a command's stdout and of its stderr kept, counted from the end.",
     )
     secrets_dir: Path = Field(
-        description="Where compose mounts the sandbox token, a file named sandbox_token.",
+        description="Where compose mounts this sandbox's own token, a file named sandbox_token.",
+    )
+    trusted_caller: str = Field(
+        description="The host name of the one caller served, the episode: a request from an address it does "
+        "not resolve to is refused, whatever token it holds.",
+    )
+    command_timeout_limit_seconds: PositiveFloat = Field(
+        description="The longest timeout a command may ask for: the longest of the episode tools' timeouts.",
     )
 
 
 class SandboxSecrets(BaseSettings):
-    """The sandbox token, read from the file compose mounts in the secrets directory."""
+    """This sandbox's own token, read from the file compose mounts in the secrets directory."""
 
     model_config = SettingsConfigDict(frozen=True)
 
-    sandbox_token: SecretStr = Field(
-        min_length=MINIMUM_TOKEN_LENGTH,
-        description="The token a caller of the sandbox's command server presents; an empty one is refused.",
-    )
+    sandbox_token: SandboxToken = Field(description="The token a caller of this command server presents.")
 
 
 def create_sandbox_app(
     settings: ServerSettings,
     token: SecretStr,
     *,
-    after_command: Callable[[], None] | None = None,
+    end_leftovers: Callable[[], None] = lambda: None,
 ) -> FastAPI:
-    """The command server: runs a command under ``settings.checkouts_directory`` for a holder of ``token``.
+    """The command server: runs a command under ``settings.checkouts_directory`` for its trusted caller.
 
-    ``after_command`` runs once each command has ended; in the container it ends what the command left behind.
+    The caller must also hold ``token``. ``end_leftovers`` runs once each command has ended and before each
+    reset; in the container it ends every process the commands left behind.
     """
+
+    def admit(request: Request) -> None:
+        # Looked up on each request: the episode's address is known only once it is up.
+        if request.client is None or request.client.host not in resolve_addresses(settings.trusted_caller):
+            raise HTTPException(HTTPStatus.FORBIDDEN, "only the episode may call this command server")
 
     def authenticate(credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(BEARER)]) -> None:
         presented = credentials.credentials.encode() if credentials else b""
@@ -88,20 +102,27 @@ def create_sandbox_app(
         except ValueError as error:
             raise HTTPException(HTTPStatus.FORBIDDEN, str(error)) from error
 
-    # No framework pages: they would answer without the token.
-    app = FastAPI(dependencies=[Depends(authenticate)], docs_url=None, redoc_url=None, openapi_url=None)
+    # No framework pages: they would answer without the token. The caller is checked first, then its token.
+    app = FastAPI(
+        dependencies=[Depends(admit), Depends(authenticate)],
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+    )
 
     @app.post(RUN_PATH)
     def run(request: CommandRequest) -> CommandResult:
+        if request.timeout_seconds > settings.command_timeout_limit_seconds:
+            raise HTTPException(HTTPStatus.UNPROCESSABLE_ENTITY, "the timeout is over this server's limit")
         confined = request.model_copy(update={"directory": confine(request.directory)})
         result = run_command(confined, settings.output_limit_bytes, os.environ)
-        if after_command:
-            after_command()
+        end_leftovers()
         return result
 
     @app.post(RESET_PATH)
     def reset(request: ResetRequest) -> None:
-        """Remove what an earlier episode could leave: scratch files, every other entry of the checkouts."""
+        """Remove what an earlier episode could leave: processes, scratch files, other checkout entries."""
+        end_leftovers()
         keep = confine(request.keep)
         root = settings.checkouts_directory.resolve()
         if keep == root:
@@ -118,8 +139,16 @@ def create_sandbox_app(
     return app
 
 
+def resolve_addresses(host: str) -> set[str]:
+    """The addresses ``host`` resolves to now; none when it does not resolve."""
+    try:
+        return {str(address[4][0]) for address in socket.getaddrinfo(host, None)}
+    except socket.gaierror:
+        return set()
+
+
 def end_leftover_processes() -> None:
-    """Kill every process in the container but its init and this server: all the last command left behind.
+    """Kill every process in the container but its init and this server: all the commands left behind.
 
     So no agent code runs between two commands, while the episode reads and writes the shared checkout: a
     process left running could swap a directory for a link to the episode's own files between the episode's
@@ -137,5 +166,5 @@ def main() -> None:
     if not CONTAINER_MARKER.exists():
         parser.error("it runs only in its container: after each command it kills every other process")
     token = SandboxSecrets(_secrets_dir=settings.secrets_dir).sandbox_token
-    app = create_sandbox_app(settings, token, after_command=end_leftover_processes)
+    app = create_sandbox_app(settings, token, end_leftovers=end_leftover_processes)
     uvicorn.run(app, host=ALL_INTERFACES, port=settings.port)

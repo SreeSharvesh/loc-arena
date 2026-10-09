@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 RUN = "configs/aurora-efficiency.deterministic.yaml"
 OVERRIDDEN_IDLE_TIMEOUT_SECONDS = 301
+ONE_AGENT = "agents: [{{id: {agent_id}, kind: k, trust: untrusted, branch: b, scope: {{}}}}]\n"
 INLINE_PROMPT_AGENT = (
     "agents: [{id: inline-agent, kind: k, trust: untrusted, branch: b, scope: {}, "
     "system_prompt: inline text}]\n"
@@ -197,3 +198,35 @@ def test_an_argument_depth_outside_what_the_event_log_records_is_refused(depth: 
 def test_a_failed_turn_limit_below_one_is_refused(turns: int) -> None:
     with pytest.raises(ValidationError):
         AgentLoopConfig(tool_result_max_chars=40_000, max_argument_depth=32, failed_turns_before_end=turns)
+
+
+@pytest.mark.parametrize(
+    "agent_id",
+    ["Agent-Main", "agent_main", "agent-main/serving-agent", "agent-", "a" * 56],
+    ids=["upper case", "underscore", "slash", "trailing hyphen", "64 characters with its prefix"],
+)
+def test_an_agent_id_whose_sandbox_name_is_no_dns_label_is_refused_at_load(
+    tmp_path: Path,
+    agent_id: str,
+) -> None:
+    run = _run_extending(tmp_path, ONE_AGENT.format(agent_id=agent_id))
+
+    with pytest.raises(ConfigError, match=r"agents\.0\.id"):
+        load_run_config(run)
+
+
+def test_an_agent_id_whose_sandbox_name_is_63_characters_loads(tmp_path: Path) -> None:
+    agent_id = "a" * 55
+    run = _run_extending(tmp_path, ONE_AGENT.format(agent_id=agent_id))
+
+    agents = load_run_config(run).agents
+
+    assert [agent.id for agent in agents] == [agent_id]
+
+
+def test_a_repeated_agent_id_is_refused_at_load_naming_it(tmp_path: Path) -> None:
+    agents = ONE_AGENT.format(agent_id="twin").removeprefix("agents: [").removesuffix("]\n")
+    run = _run_extending(tmp_path, f"agents: [{agents}, {agents}]\n")
+
+    with pytest.raises(ConfigError, match="twin"):
+        load_run_config(run)

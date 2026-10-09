@@ -73,7 +73,8 @@ class GatewaySettings(SettingsGroup):
     secrets_dir: Path = Field(
         default=Path("/run/secrets"),
         description="Where compose mounts a container's secrets: the gateway's key (the file "
-        "openrouter_api_key), and the sandbox token of the episode and the sandbox (sandbox_token).",
+        "openrouter_api_key), each sandbox's own token (sandbox_token), and in the episode every agent's "
+        "sandbox token (sandbox_token_<agent id with - as _>).",
     )
 
     @field_validator("upstream")
@@ -86,7 +87,7 @@ class GatewaySettings(SettingsGroup):
 
 
 class StackSettings(SettingsGroup):
-    """The episode's compose project (``stack:``): its image and the episode container's limits."""
+    """The episode's compose project (``stack:``): its images, and the episode's and the sandboxes' limits."""
 
     image: str = Field(
         default="loc-arena:latest",
@@ -94,18 +95,21 @@ class StackSettings(SettingsGroup):
     )
     sandbox_image: str = Field(
         default="loc-arena-sandbox:latest",
-        description="The image agent code runs in, the sandbox's and the grader's throwaway container's: the "
-        "Dockerfile's `sandbox` target, which holds no harness and no scenarios.",
+        description="The image agent code runs in, every agent's sandbox's and the grader's throwaway "
+        "container's: the Dockerfile's `sandbox` target, which holds no harness and no scenarios.",
     )
     episode_memory_limit: str = Field(default="4g", description="Memory limit of the episode container.")
     episode_cpus: PositiveFloat = Field(default=2.0, description="CPUs the episode container may use.")
+    sandbox_memory_limit: str = Field(default="2g", description="Memory limit of each agent's sandbox.")
+    sandbox_cpus: PositiveFloat = Field(default=2.0, description="CPUs each agent's sandbox may use.")
+    sandbox_pids_limit: PositiveInt = Field(default=1024, description="Processes an agent's sandbox may run.")
     gateway_health_interval_seconds: PositiveInt = Field(
         default=2,
-        description="Seconds between health probes of the gateway and of the sandbox.",
+        description="Seconds between health probes of the gateway and of each sandbox.",
     )
     gateway_health_retries: PositiveInt = Field(
         default=15,
-        description="Failed probes of the gateway or the sandbox before giving up.",
+        description="Failed probes of the gateway or of a sandbox before giving up.",
     )
     episode_pids_limit: PositiveInt = Field(default=4096, description="Processes the episode may run.")
     agent_code_output_limit_bytes: PositiveInt = Field(
@@ -114,7 +118,15 @@ class StackSettings(SettingsGroup):
     )
     shell_timeout_seconds: PositiveFloat = Field(
         default=300.0,
-        description="Seconds an agent's bash command may run in the sandbox before it is killed.",
+        description="Seconds an agent's bash command may run in its sandbox before it is killed.",
+    )
+    run_tests_timeout_seconds: PositiveFloat = Field(
+        default=300.0,
+        description="Seconds an agent's run_tests may run before its whole session is killed.",
+    )
+    run_benchmark_timeout_seconds: PositiveFloat = Field(
+        default=120.0,
+        description="Seconds an agent's run_benchmark may run before its whole session is killed.",
     )
     command_output_limit_bytes: PositiveInt = Field(
         default=10_000,
@@ -126,26 +138,26 @@ class StackSettings(SettingsGroup):
         default=8090,
         ge=1,
         le=65535,
-        description="The port of the sandbox's command server, on agent-net.",
+        description="The port of each sandbox's command server, on agent-net.",
     )
     sandbox_response_grace_seconds: PositiveFloat = Field(
         default=30.0,
-        description="Seconds the episode waits for the sandbox's reply beyond the command's own timeout.",
+        description="Seconds the episode waits for a sandbox's reply beyond the command's own timeout.",
     )
     sandbox_recovery_seconds: PositiveFloat = Field(
         default=60.0,
-        description="Seconds an episode waits, before it plays, for a sandbox that is restarting (an earlier "
-        "episode's agents killed it); then the episode fails, and never runs agent code anywhere else.",
+        description="Seconds an episode waits, before it plays, for each sandbox that is restarting (an "
+        "earlier episode's agents killed it); then the episode fails, and runs agent code nowhere else.",
     )
     sandbox_scratch_directories: tuple[Path, ...] = Field(
         default=(),
-        description="The sandbox's HOME and temporary directories, emptied before each episode plays so an "
+        description="Each sandbox's HOME and temporary directories, emptied before each episode plays so an "
         "earlier episode's agents leave nothing there for the next. Empty by default, so a sandbox server "
         "started from bare settings never empties this host's; the run configs name the container's.",
     )
     checkouts_directory: Path = Field(
         default=Path("/checkouts"),
-        description="Where the episode and the sandbox mount the volume of the checkouts; the sandbox runs "
+        description="Where the episode and every sandbox mount the volume of the checkouts; a sandbox runs "
         "commands only in directories under it.",
     )
     sandbox_agent_code: bool = Field(

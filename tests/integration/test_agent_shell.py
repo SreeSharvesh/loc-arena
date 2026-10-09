@@ -1,6 +1,7 @@
-"""Agents get bash only with a sandbox, and their commands run there; a dead sandbox is an error result.
+"""Agents get bash only with sandboxes, and commands run in their own; a dead sandbox is an error result.
 
-The sandbox is the real command server, served on this host's loopback; the model is a canned provider.
+Every agent's sandbox is the one real command server, served on this host's loopback, each agent with its own
+token file; the model is a canned provider.
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ from loc_arena.config import ModelSpec, RunConfig, load_run_config
 from loc_arena.gateway.core import Message, ProviderResult, ToolSpec
 from loc_arena.harness import apply_mode
 from loc_arena.live import play_model_episode
-from loc_arena.sandbox import SandboxClient, SandboxError, build_server_settings
+from loc_arena.sandbox import SandboxClient, SandboxError, build_server_settings, token_secret_name
 from loc_arena.scaffold.code_services import CodeServices
 from loc_arena.scaffold.tools import StubServices
 from loc_arena.settings import GatewaySettings, LocArenaSettings, StackSettings
@@ -30,6 +31,7 @@ from sandbox_server.server import ServerSettings, create_sandbox_app
 
 from tests.integration._live_support import QueuedProvider
 
+LOOPBACK = "127.0.0.1"  # where the test's sandbox is served, and so its one trusted caller
 HONEST = apply_mode(load_run_config("configs/aurora-efficiency.deterministic.yaml"), "honest")
 MARKER = "bash-ran"
 TOKEN = "a-sandbox-token-of-at-least-thirty-two-characters"
@@ -82,13 +84,13 @@ class ServedSandbox:
     def __init__(self, settings: ServerSettings, port: int = 0) -> None:
         """Start serving ``settings``' checkouts on ``port``, any free one by default."""
         self._server = uvicorn.Server(
-            uvicorn.Config(create_sandbox_app(settings, SecretStr(TOKEN)), port=port),
+            uvicorn.Config(create_sandbox_app(settings, SecretStr(TOKEN)), host=LOOPBACK, port=port),
         )
         self._thread = threading.Thread(target=self._server.run, daemon=True)
         self._thread.start()
         while not self._server.started:
             time.sleep(0.01)
-        self.url = f"http://127.0.0.1:{self._server.servers[0].sockets[0].getsockname()[1]}"
+        self.url = f"http://{LOOPBACK}:{self._server.servers[0].sockets[0].getsockname()[1]}"
 
     def stop(self) -> None:
         """Stop serving: from now on nothing listens at ``url``."""
@@ -99,7 +101,7 @@ class ServedSandbox:
 @contextmanager
 def serve_sandbox(settings: LocArenaSettings) -> Iterator[ServedSandbox]:
     """The sandbox's command server for a run's ``settings``, stopped on leaving."""
-    sandbox = ServedSandbox(build_server_settings(settings))
+    sandbox = ServedSandbox(build_server_settings(settings, trusted_caller=LOOPBACK))
     try:
         yield sandbox
     finally:
@@ -107,11 +109,12 @@ def serve_sandbox(settings: LocArenaSettings) -> Iterator[ServedSandbox]:
 
 
 def with_sandbox(config: RunConfig, root: Path) -> RunConfig:
-    """``config`` with its checkouts, scratch directory and secrets (the sandbox token) under ``root``."""
+    """``config`` with its checkouts, scratch directory and secrets (every agent's token) under ``root``."""
     (root / "checkouts").mkdir()
     (root / "scratch").mkdir()
     (root / "secrets").mkdir()
-    (root / "secrets" / "sandbox_token").write_text(TOKEN)
+    for agent in config.agents:
+        (root / "secrets" / token_secret_name(agent.id)).write_text(TOKEN)
     settings = config.settings.model_copy(
         update={
             "stack": StackSettings(
@@ -163,6 +166,27 @@ def test_bash_without_a_sandbox_is_refused(tmp_path: Path) -> None:
     )
 
 
+def test_bash_of_an_agent_with_no_sandbox_is_refused_and_runs_nowhere(tmp_path: Path) -> None:
+    config = with_sandbox(HONEST, tmp_path)
+    checkout = tmp_path / "checkouts" / "checkout"
+    checkout.mkdir()
+    with serve_sandbox(config.settings) as sandbox:
+        services = CodeServices(
+            StubServices(),
+            checkout=checkout,
+            repos=[],
+            stack=config.settings.stack,
+            sandboxes={"agent-main": client_of(sandbox.url, recovery_seconds=1)},
+        )
+
+        result = services.run("bash", {"command": f"touch {MARKER}", "actor_uid": "serving-agent"})
+
+    assert (result, (checkout / MARKER).exists()) == (
+        {"error": "serving-agent has no sandbox, so its command did not run", "tool": "bash"},
+        False,
+    )
+
+
 def test_a_sandbox_that_died_gives_the_agent_an_error_result_and_the_episode_plays_on(tmp_path: Path) -> None:
     config = with_sandbox(HONEST, tmp_path)
     with (
@@ -199,18 +223,18 @@ def test_an_episode_with_a_sandbox_starts_without_what_an_earlier_one_left(tmp_p
 
 def free_port() -> int:
     with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
+        probe.bind((LOOPBACK, 0))
         return probe.getsockname()[1]
 
 
-def client_of(port: int, recovery_seconds: float) -> SandboxClient:
-    return SandboxClient(f"http://127.0.0.1:{port}", SecretStr(TOKEN), 5, recovery_seconds, 0.1)
+def client_of(url: str, recovery_seconds: float) -> SandboxClient:
+    return SandboxClient(url, SecretStr(TOKEN), 5, recovery_seconds, 0.1)
 
 
 @pytest.fixture
 def returning_sandbox(tmp_path: Path) -> Iterator[tuple[Path, int]]:
     """A sandbox down at first, as a restarting one is, serving the checkouts half a second later."""
-    settings = build_server_settings(with_sandbox(HONEST, tmp_path).settings)
+    settings = build_server_settings(with_sandbox(HONEST, tmp_path).settings, trusted_caller=LOOPBACK)
     port = free_port()
     returned: list[ServedSandbox] = []
     starting = threading.Timer(0.5, lambda: returned.append(ServedSandbox(settings, port)))
@@ -225,13 +249,13 @@ def test_a_reset_waits_for_a_sandbox_that_is_coming_back(returning_sandbox: tupl
     (checkouts / "an-earlier-episode").mkdir()
     (checkouts / "this-episode").mkdir()
 
-    client_of(port, recovery_seconds=10).reset(keep=checkouts / "this-episode")
+    client_of(f"http://{LOOPBACK}:{port}", recovery_seconds=10).reset(keep=checkouts / "this-episode")
 
     assert sorted(path.name for path in checkouts.iterdir()) == ["this-episode"]
 
 
 def test_a_reset_fails_closed_when_the_sandbox_never_comes_back(tmp_path: Path) -> None:
-    client = client_of(free_port(), recovery_seconds=0.5)
+    client = client_of(f"http://{LOOPBACK}:{free_port()}", recovery_seconds=0.5)
 
     with pytest.raises(SandboxError, match="ConnectError"):
         client.reset(keep=tmp_path)
