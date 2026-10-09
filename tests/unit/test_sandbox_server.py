@@ -145,6 +145,15 @@ def test_a_caller_without_the_token_is_refused_and_nothing_runs(checkouts: Path,
     assert (status, (checkouts / "episode" / MARKER).exists()) == (HTTPStatus.UNAUTHORIZED, False)
 
 
+@pytest.mark.parametrize("path", ["/docs", "/redoc", "/openapi.json"])
+def test_the_command_server_serves_no_framework_page(checkouts: Path, path: str) -> None:
+    server = serve(checkouts)
+
+    reply = server.get(path)
+
+    assert reply.status_code == HTTPStatus.NOT_FOUND
+
+
 @pytest.mark.parametrize("escape", ["outside", "dot-dot", "symlink"])
 def test_a_directory_outside_the_checkouts_is_refused_and_nothing_runs(
     tmp_path: Path,
