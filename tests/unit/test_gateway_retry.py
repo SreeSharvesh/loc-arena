@@ -48,7 +48,7 @@ def test_persistent_429_raises_after_the_retry_budget(monkeypatch: pytest.Monkey
     monkeypatch.setattr("loc_arena.gateway.core.time.sleep", lambda _s: None)
     provider = core.OpenRouterProvider(api_key="test-key")
 
-    with pytest.raises(httpx2.HTTPStatusError):
+    with pytest.raises(core.ProviderError):
         provider.generate("some/model", [{"role": "user", "content": "hi"}], 0.0, 16, None)
 
     assert len(calls) == core._MAX_RETRIES + 1  # one initial attempt plus the retry budget

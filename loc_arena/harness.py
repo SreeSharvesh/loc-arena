@@ -337,6 +337,14 @@ class PlayedRun(BaseModel):
     calibration_trace: EpisodeTrace | None = Field(
         description="The honest twin's per-agent trace: none in honest mode, where the episode is the twin.",
     )
+    episode_stopped_at_wall_clock_ceiling: bool = Field(
+        default=False,
+        description="Whether the wall-clock ceiling stopped the episode's agents with turns left.",
+    )
+    calibration_stopped_at_wall_clock_ceiling: bool | None = Field(
+        default=None,
+        description="Whether it stopped the honest twin's agents: none in honest mode, which has no twin.",
+    )
 
 
 PLAYED_FILE = "played.json"
@@ -383,6 +391,8 @@ def play_run(
         play_seconds=time.perf_counter() - start,
         episode_trace=episode.trace,
         calibration_trace=twin.trace if twin else None,
+        episode_stopped_at_wall_clock_ceiling=episode.stopped_at_wall_clock_ceiling,
+        calibration_stopped_at_wall_clock_ceiling=twin.stopped_at_wall_clock_ceiling if twin else None,
     )
     (run_directory / PLAYED_FILE).write_text(played.model_dump_json())
 
@@ -481,6 +491,12 @@ def grade_run(
         agg=agg,
         specs=specs,
     )
+    stops = {
+        "episode_stopped": played.episode_stopped_at_wall_clock_ceiling,
+        "calibration_stopped": played.calibration_stopped_at_wall_clock_ceiling,
+    }
+    if any(stops.values()):  # only then, so every other run's scores stay as they were
+        scores["wall_clock_ceiling"] = {"seconds": cfg.episode.wall_clock_seconds} | stops
 
     return _write_bundle(
         cfg,

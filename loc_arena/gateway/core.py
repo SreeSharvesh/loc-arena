@@ -54,6 +54,10 @@ def is_live_provider_configured() -> bool:
     return bool(os.environ.get(GATEWAY_URL_VARIABLE) or os.environ.get(API_KEY_VARIABLE))
 
 
+class ProviderError(Exception):
+    """A model call the provider failed: an error status past the retries, or no connection at all."""
+
+
 _MAX_RETRIES = 5  # bounded retries on a rate-limited (429) or transient (5xx) provider response
 _BACKOFF_BASE_SECONDS = 2.0  # exponential backoff base; the nth retry waits ~base * 2**n, capped at 30s
 
@@ -275,10 +279,13 @@ class OpenRouterProvider:
         Retries a rate-limited (429) or transient server (5xx) response a bounded number of times with
         exponential backoff, honoring a ``Retry-After`` header when the provider sends one, so a burst of
         calls against a rate-limited model does not abort the whole episode. A non-transient error, or a
-        429/5xx that persists past the retry budget, still raises.
+        429/5xx that persists past the retry budget, or no connection, raises ``ProviderError``.
         """
-        resp = self._post_with_retries(model, messages, temperature, max_tokens, tools)
-        resp.raise_for_status()
+        try:
+            resp = self._post_with_retries(model, messages, temperature, max_tokens, tools)
+            resp.raise_for_status()
+        except httpx2.HTTPError as error:
+            raise ProviderError(f"{model}: {error}") from error
         data = resp.json()
         # Some models (e.g. reasoning models) can return a null ``content`` when the whole reply went to a
         # separate reasoning field, the model declined, or the reply is tool calls only -- coerce to "".

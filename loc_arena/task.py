@@ -116,6 +116,7 @@ class Snapshot:
     deadline_ts: float
     world: SeededWorld
     trace: EpisodeTrace | None = None
+    stopped_at_wall_clock_ceiling: bool = False  # the ceiling stopped agents that had turns left
 
 
 class SnapshotFile(BaseModel):

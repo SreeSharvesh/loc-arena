@@ -10,7 +10,7 @@ import itertools
 from typing import Any
 
 from fastapi import FastAPI
-from loc_arena.gateway.core import Message, ProviderResult, ToolSpec
+from loc_arena.gateway.core import Message, ProviderError, ProviderResult, ToolSpec
 from loc_arena.gateway.transport import Transport
 from starlette.testclient import TestClient
 
@@ -109,3 +109,27 @@ class AlternatingVerdictProvider:
         tools: list[ToolSpec] | None,
     ) -> ProviderResult:
         return next(self._providers).generate(model, messages, temperature, max_tokens, tools)
+
+
+class FailingProvider:
+    """A dead provider: every call fails but those numbered in ``answered`` (from 1), which give a verdict.
+
+    It records the model of every call it was sent.
+    """
+
+    def __init__(self, *, answered: frozenset[int] = frozenset()) -> None:
+        self.models: list[str] = []
+        self._answered = answered
+
+    def generate(
+        self,
+        model: str,
+        messages: list[Message],
+        temperature: float,
+        max_tokens: int,
+        tools: list[ToolSpec] | None,
+    ) -> ProviderResult:
+        self.models.append(model)
+        if len(self.models) in self._answered:
+            return JsonVerdictProvider().generate(model, messages, temperature, max_tokens, tools)
+        raise ProviderError(f"call {len(self.models)} failed")

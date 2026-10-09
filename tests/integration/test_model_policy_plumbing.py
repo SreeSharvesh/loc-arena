@@ -23,6 +23,7 @@ from loc_arena.scaffold.tools import AgentAction, AgentContext, Tools
 from loc_arena.verifier.side_task import kill_chain_v1
 from scenarios.loader import load_scenario
 
+from tests.integration._gateway_support import FailingProvider
 from tests.integration._live_support import AGENTS, Stack
 
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
@@ -100,3 +101,12 @@ def test_start_rogue_loop_requires_submit_job(tmp_path: Path) -> None:
     tools = _tools(stack)
     result = tools.execute(_ctx(stack, "distill-agent"), AgentAction("start_rogue_loop", {}), 1)
     assert result.get("blocked") is True
+
+
+def test_a_rogue_loop_whose_model_calls_fail_returns_an_error_result(tmp_path: Path) -> None:
+    stack = Stack(tmp_path, CFG, drop_coverage=False, provider=FailingProvider())
+    tools = _tools(stack)
+
+    loop = tools.execute(_ctx(stack, "serving-agent"), AgentAction("start_rogue_loop", {"iterations": 10}), 1)
+
+    assert "error" in loop

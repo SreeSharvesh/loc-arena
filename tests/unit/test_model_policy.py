@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+from collections.abc import Sequence
 from pathlib import Path
 from typing import cast
 
@@ -15,11 +16,20 @@ from loc_arena.gateway.core import (
     GatewayCore,
     GenerateResponse,
     Message,
+    ProviderError,
     ToolSpec,
 )
 from loc_arena.gateway.edge import GatewayEdge
 from loc_arena.logging_.events import AppendOnlyLog, read_events
-from loc_arena.scaffold.agent import SKIP, Agent, AgentPolicy, ScriptedAgentPolicy, TurnMinter, TurnStatus
+from loc_arena.scaffold.agent import (
+    FAILED,
+    SKIP,
+    Agent,
+    AgentPolicy,
+    ScriptedAgentPolicy,
+    TurnMinter,
+    TurnStatus,
+)
 from loc_arena.scaffold.bus import MessageBus, Recorder
 from loc_arena.scaffold.model_policy import ModelAgentPolicy, render_tool_result
 from loc_arena.scaffold.registry import AgentRegistry
@@ -55,9 +65,9 @@ def _call(call_id: str, name: str, args: dict[str, object]) -> dict[str, object]
 
 
 class FakeClient:
-    """Records each chat request and returns the next scripted reply."""
+    """Records each chat request and returns the next scripted reply, or raises it when it is an error."""
 
-    def __init__(self, replies: list[GenerateResponse]) -> None:
+    def __init__(self, replies: Sequence[GenerateResponse | ProviderError]) -> None:
         """Hold the replies to return, in order."""
         self._replies = list(replies)
         self.sent: list[tuple[list[Message], list[ToolSpec] | None]] = []
@@ -71,7 +81,10 @@ class FakeClient:
     ) -> GenerateResponse:
         del role
         self.sent.append((copy.deepcopy(messages), tools))
-        return self._replies.pop(0)
+        reply = self._replies.pop(0)
+        if isinstance(reply, ProviderError):
+            raise reply
+        return reply
 
 
 def _policy(client: FakeClient, *, loop: AgentLoopConfig = LOOP) -> ModelAgentPolicy:
@@ -127,6 +140,16 @@ def test_text_only_reply_yields_the_turn_with_a_nudge() -> None:
     policy.next_actions("agent-main", 1, [{"turn": 0, "skipped": True}])
     nudge = "Reply with a tool call. Call finish when the task is complete."
     assert client.sent[1][0][-1] == {"role": "user", "content": nudge}
+
+
+def test_a_failed_model_call_leaves_the_history_to_send_again() -> None:
+    client = FakeClient([ProviderError("the provider is down"), _reply(text="back")])
+    policy = _policy(client)
+    policy.next_actions("agent-main", 0, [])
+
+    policy.next_actions("agent-main", 1, [{"turn": 0, "failed": True}])
+
+    assert client.sent[1][0] == client.sent[0][0]
 
 
 def test_several_calls_in_one_reply_are_all_returned() -> None:
@@ -312,3 +335,14 @@ def test_a_real_action_resets_the_skip_streak(tmp_path: Path) -> None:
     )
     assert agent.run() is TurnStatus.ENDED
     assert agent.turn == 8
+
+
+def test_an_agent_whose_model_calls_failed_acts_on_its_next_reply(tmp_path: Path) -> None:
+    agent, sealed_path = _agent(
+        tmp_path,
+        ScriptedAgentPolicy([FAILED, FAILED, FAILED, FAILED, AgentAction("list_dir", {"path": "."})]),
+    )
+
+    agent.run()
+
+    assert [e.tool for e in read_events(sealed_path) if e.kind == "action"] == ["list_dir"]
