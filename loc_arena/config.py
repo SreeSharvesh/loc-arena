@@ -96,10 +96,14 @@ class ModelSpec:
 
 @pydantic_dataclass(frozen=True, config=BLOCK_CONFIG)
 class AgentLoopConfig:
-    """The live agent loop's tool-result cap. The value comes from ``agent_loop:``."""
+    """The live agent loop's tool-result cap and argument depth. The values come from ``agent_loop:``."""
 
     tool_result_max_chars: StrictInt = Field(
         description="How many characters of a tool result the model sees; the rest is marked cut.",
+    )
+    max_argument_depth: StrictInt = Field(
+        description="Deepest nesting of a tool call's arguments that runs; a deeper call gets a tool error, "
+        "since the event log cannot record arguments nested a few hundred levels deep.",
     )
 
 
@@ -241,7 +245,7 @@ class _RunDocument(BaseSettings):
         description="'model' (the live untrusted model drives the agents) or 'scripted' (deterministic).",
     )
     logging: _LoggingConfig = Field(default=_LoggingConfig(), description="What each run bundle records.")
-    agent_loop: AgentLoopConfig = Field(description="The live agent loop's tool-result cap.")
+    agent_loop: AgentLoopConfig = Field(description="The live agent loop's limits.")
 
     @model_validator(mode="before")
     @classmethod
@@ -301,7 +305,7 @@ def _resolve_prompt_reference(reference: object, inline_prompts: object, where: 
 # --------------------------------------------------------------------------------------------------------
 # The resolved run
 # --------------------------------------------------------------------------------------------------------
-_EMPTY_AGENT_LOOP = AgentLoopConfig(0)
+_EMPTY_AGENT_LOOP = AgentLoopConfig(0, 0)
 
 
 @dataclasses.dataclass(frozen=True)

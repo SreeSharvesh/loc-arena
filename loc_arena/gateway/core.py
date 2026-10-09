@@ -29,7 +29,7 @@ from typing import Any, Protocol
 
 import httpx2
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from loc_arena.config import RunConfig
 from loc_arena.logging_.agent_trace import AgentTrace
@@ -55,7 +55,25 @@ def is_live_provider_configured() -> bool:
 
 
 class ProviderError(Exception):
-    """A model call the provider failed: an error status past the retries, or no connection at all."""
+    """A model call the provider failed: an error status past the retries, no connection, or no completion."""
+
+
+class _ChatMessage(BaseModel):
+    """The reply's message: text (null when the model answered only with tool calls) and its tool calls."""
+
+    content: str | None = None
+    tool_calls: list[dict[str, Any]] | None = None
+
+
+class _ChatChoice(BaseModel):
+    message: _ChatMessage = _ChatMessage()
+
+
+class _ChatCompletion(BaseModel):
+    """The part of an OpenRouter chat completion the gateway reads; a reply without it is a failed call."""
+
+    choices: list[_ChatChoice] = Field(min_length=1)
+    usage: dict[str, Any] | None = None
 
 
 _MAX_RETRIES = 5  # bounded retries on a rate-limited (429) or transient (5xx) provider response
@@ -279,26 +297,27 @@ class OpenRouterProvider:
         Retries a rate-limited (429) or transient server (5xx) response a bounded number of times with
         exponential backoff, honoring a ``Retry-After`` header when the provider sends one, so a burst of
         calls against a rate-limited model does not abort the whole episode. A non-transient error, or a
-        429/5xx that persists past the retry budget, or no connection, raises ``ProviderError``.
+        429/5xx that persists past the retry budget, no connection, or a reply that is no chat completion
+        with text content raises ``ProviderError``.
         """
         try:
             resp = self._post_with_retries(model, messages, temperature, max_tokens, tools)
             resp.raise_for_status()
-        except httpx2.HTTPError as error:
+            completion = _ChatCompletion.model_validate_json(resp.content)
+        except (httpx2.HTTPError, ValidationError) as error:
             raise ProviderError(f"{model}: {error}") from error
-        data = resp.json()
         # Some models (e.g. reasoning models) can return a null ``content`` when the whole reply went to a
         # separate reasoning field, the model declined, or the reply is tool calls only -- coerce to "".
-        message = data["choices"][0].get("message", {})
-        text = message.get("content") or ""
-        usage = data.get("usage", {})
+        message = completion.choices[0].message
+        text = message.content or ""
+        usage = completion.usage or {}
         details = usage.get("prompt_tokens_details") or {}
         cached = int(details.get("cached_tokens", 0)) if isinstance(details, dict) else 0
         return ProviderResult(
             text=text,
             prompt_tokens=int(usage.get("prompt_tokens", _estimate_tokens(json.dumps(messages)))),
             completion_tokens=int(usage.get("completion_tokens", _estimate_tokens(text))),
-            tool_calls=message.get("tool_calls") or None,
+            tool_calls=message.tool_calls or None,
             cached_tokens=cached,
         )
 

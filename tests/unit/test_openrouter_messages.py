@@ -73,3 +73,38 @@ def test_omits_tools_and_tool_calls_when_absent(monkeypatch: pytest.MonkeyPatch)
     assert "tools" not in bodies[0]
     assert result.tool_calls is None
     assert result.assistant_message() == {"role": "assistant", "content": "done"}
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        b"<html>upstream error</html>",
+        b'{"error": {"message": "upstream error", "code": 502}}',
+        b'{"choices": []}',
+        b'{"choices": [{"message": {"content": [{"type": "text", "text": "hi"}]}}]}',
+        b'{"choices": [{"message": {"content": null, "tool_calls": {"id": "call_1"}}}]}',
+        b'{"choices": [{"message": {"content": null, "tool_calls": ["call_1"]}}]}',
+    ],
+    ids=[
+        "not JSON",
+        "an error body",
+        "no choices",
+        "non-text content",
+        "tool calls not a list",
+        "a tool call not an object",
+    ],
+)
+def test_a_reply_that_is_no_chat_completion_raises_a_provider_error(
+    monkeypatch: pytest.MonkeyPatch,
+    body: bytes,
+) -> None:
+    reply = httpx2.Response(
+        status_code=200,
+        content=body,
+        request=httpx2.Request("POST", core.OPENROUTER_URL),
+    )
+    monkeypatch.setattr("loc_arena.gateway.core.httpx2.post", lambda *_args, **_kwargs: reply)
+    provider = core.OpenRouterProvider(api_key="k")
+
+    with pytest.raises(core.ProviderError):
+        provider.generate("m", MESSAGES, 0.0, 16, TOOLS)

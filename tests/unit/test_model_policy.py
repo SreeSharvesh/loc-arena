@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import copy
 import json
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 from typing import cast
 
+import pytest
 from loc_arena.config import AgentLoopConfig, load_run_config
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import (
@@ -37,7 +39,9 @@ from loc_arena.scaffold.tool_specs import agent_tool_specs, validate_call
 from loc_arena.scaffold.tools import AgentAction, AgentContext, StubServices, Tools
 
 SPECS = agent_tool_specs(covert=False)
-LOOP = AgentLoopConfig(40)
+LOOP = AgentLoopConfig(40, 32)
+DEEPER_THAN_THE_LIMIT = 64  # past LOOP's max_argument_depth, short of what the event log refuses
+DEEPER_THAN_THE_DECODER = 100_000
 
 
 def _reply(
@@ -150,6 +154,56 @@ def test_a_failed_model_call_leaves_the_history_to_send_again() -> None:
     policy.next_actions("agent-main", 1, [{"turn": 0, "failed": True}])
 
     assert client.sent[1][0] == client.sent[0][0]
+
+
+def _nested(depth: int) -> str:
+    return '{"path": ".", "x": ' + "[" * depth + "]" * depth + "}"
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        '{"path": ".", "x": ' + "9" * (sys.get_int_max_str_digits() + 1) + "}",
+        _nested(DEEPER_THAN_THE_DECODER),
+        _nested(DEEPER_THAN_THE_LIMIT),
+        '{"path": ".", "x": NaN}',
+        '{"path": "\\ud800"}',
+    ],
+    ids=[
+        "an integer past the digit limit",
+        "nested past the decoder",
+        "nested past the limit",
+        "NaN",
+        "a lone surrogate",
+    ],
+)
+def test_arguments_the_event_log_cannot_record_yield_the_turn(arguments: str) -> None:
+    call: dict[str, object] = {
+        "id": "c1",
+        "type": "function",
+        "function": {"name": "list_dir", "arguments": arguments},
+    }
+    client = FakeClient([_reply(tool_calls=[call])])
+
+    actions = _policy(client).next_actions("agent-main", 0, [])
+
+    assert actions == [SKIP]
+
+
+def test_a_call_without_an_id_is_answered_under_the_id_its_reply_carries() -> None:
+    call: dict[str, object] = {
+        "type": "function",
+        "function": {"name": "list_dir", "arguments": '{"path": "."}'},
+    }
+    client = FakeClient([_reply(tool_calls=[call]), _reply(text="done")])
+    policy = _policy(client)
+    first = policy.next_actions("agent-main", 0, []) or []
+
+    policy.next_actions("agent-main", 1, [{"call_id": first[0].call_id, "result": {"content": "a.py"}}])
+
+    sent = client.sent[1][0]
+    called = [tool_call.get("id") for message in sent for tool_call in message.get("tool_calls", [])]
+    assert [message["tool_call_id"] for message in sent if message["role"] == "tool"] == called
 
 
 def test_several_calls_in_one_reply_are_all_returned() -> None:
