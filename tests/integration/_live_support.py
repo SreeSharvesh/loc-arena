@@ -11,7 +11,7 @@ import json
 import re
 from pathlib import Path
 
-from loc_arena.config import RunConfig
+from loc_arena.config import ModelSpec, RunConfig
 from loc_arena.gateway.core import (
     DeterministicProvider,
     DirectTransport,
@@ -107,6 +107,8 @@ class QueuedProvider:
         temperature: float,
         max_tokens: int,
         tools: list[ToolSpec] | None,
+        *,
+        spec: ModelSpec | None = None,
     ) -> ProviderResult:
         if not tools:
             return ProviderResult(text="ok", prompt_tokens=1, completion_tokens=1)

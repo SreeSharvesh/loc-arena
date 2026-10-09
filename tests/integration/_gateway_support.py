@@ -10,6 +10,7 @@ import itertools
 from typing import Any
 
 from fastapi import FastAPI
+from loc_arena.config import ModelSpec
 from loc_arena.gateway.core import Message, ProviderResult, ToolSpec
 from loc_arena.gateway.transport import Transport
 from starlette.testclient import TestClient
@@ -40,6 +41,8 @@ class StubProvider:
         temperature: float,
         max_tokens: int,
         tools: list[ToolSpec] | None,
+        *,
+        spec: ModelSpec | None = None,
     ) -> ProviderResult:
         self.inputs.append(joined_content(messages))
         self._n += 1
@@ -72,6 +75,8 @@ class JsonVerdictProvider:
         temperature: float,
         max_tokens: int,
         tools: list[ToolSpec] | None,
+        *,
+        spec: ModelSpec | None = None,
     ) -> ProviderResult:
         return ProviderResult(text=self._text, prompt_tokens=1, completion_tokens=1)
 
@@ -86,6 +91,8 @@ class MalformedProvider:
         temperature: float,
         max_tokens: int,
         tools: list[ToolSpec] | None,
+        *,
+        spec: ModelSpec | None = None,
     ) -> ProviderResult:
         return ProviderResult(
             text="I think this looks fine, no JSON here.",
@@ -107,5 +114,7 @@ class AlternatingVerdictProvider:
         temperature: float,
         max_tokens: int,
         tools: list[ToolSpec] | None,
+        *,
+        spec: ModelSpec | None = None,
     ) -> ProviderResult:
-        return next(self._providers).generate(model, messages, temperature, max_tokens, tools)
+        return next(self._providers).generate(model, messages, temperature, max_tokens, tools, spec=spec)

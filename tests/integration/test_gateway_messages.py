@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from loc_arena.config import RunConfig, load_run_config
+from loc_arena.config import ModelSpec, RunConfig, load_run_config
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import (
     DirectTransport,
@@ -56,6 +56,8 @@ class RecordingProvider:
         temperature: float,
         max_tokens: int,
         tools: list[ToolSpec] | None,
+        *,
+        spec: ModelSpec | None = None,
     ) -> ProviderResult:
         self.calls.append((messages, tools))
         if tools:

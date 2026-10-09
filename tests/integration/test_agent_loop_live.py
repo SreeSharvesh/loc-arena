@@ -8,7 +8,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from loc_arena.config import load_run_config
+from loc_arena.config import ModelSpec, load_run_config
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import (
     DirectTransport,
@@ -51,10 +51,12 @@ class _RecordingProvider:
         temperature: float,
         max_tokens: int,
         tools: list[ToolSpec] | None,
+        *,
+        spec: ModelSpec | None = None,
     ) -> ProviderResult:
         """Record the request and return the provider's completion."""
         self.calls.append((model, copy.deepcopy(messages)))
-        return self._inner.generate(model, messages, temperature, max_tokens, tools)
+        return self._inner.generate(model, messages, temperature, max_tokens, tools, spec=spec)
 
 
 def test_dev_model_keeps_a_tool_result_for_the_next_turn(tmp_path: Path) -> None:

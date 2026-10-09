@@ -8,6 +8,8 @@ log has the details.
 
 ### Added
 
+- **Provider routing and reasoning.** Model roles configure OpenRouter provider preferences (order and fallback allowances) and reasoning controls, passed through the gateway per role to pin providers and stabilize prompt caching.
+
 - **Gates on every pull request.** Each pull request and each push to `main` runs the gates on Linux, with the
   stack image built first so the Docker tests run instead of skipping. The workflow uses no secrets; the live
   tests stay skipped.

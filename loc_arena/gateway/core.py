@@ -31,7 +31,7 @@ import httpx2
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, model_validator
 
-from loc_arena.config import RunConfig
+from loc_arena.config import ModelSpec, RunConfig
 from loc_arena.logging_.agent_trace import AgentTrace
 from loc_arena.logging_.events import AppendOnlyLog, Event, fingerprint
 
@@ -200,6 +200,8 @@ class Provider(Protocol):
         temperature: float,
         max_tokens: int,
         tools: list[ToolSpec] | None,
+        *,
+        spec: ModelSpec | None = None,
     ) -> ProviderResult:
         """Call the model and return its completion plus token counts."""
         ...
@@ -239,6 +241,8 @@ class OpenRouterProvider:
         temperature: float,
         max_tokens: int,
         tools: list[ToolSpec] | None,
+        *,
+        spec: ModelSpec | None = None,
     ) -> httpx2.Response:
         """POST the completion, retrying 429/5xx with backoff; return the final response for the caller."""
         body: dict[str, Any] = {
@@ -249,6 +253,11 @@ class OpenRouterProvider:
         }
         if tools:
             body["tools"] = tools
+        if spec is not None:
+            if spec.provider is not None:
+                body["provider"] = spec.provider.model_dump(exclude_none=True)
+            if spec.reasoning is not None:
+                body["reasoning"] = spec.reasoning.model_dump(exclude_none=True)
         headers = {"Authorization": f"Bearer {self._key}", "Content-Type": "application/json"}
         last: httpx2.Response | None = None
         for attempt in range(_MAX_RETRIES + 1):
@@ -269,6 +278,8 @@ class OpenRouterProvider:
         temperature: float,
         max_tokens: int,
         tools: list[ToolSpec] | None,
+        *,
+        spec: ModelSpec | None = None,
     ) -> ProviderResult:
         """POST a chat completion to OpenRouter and parse the text and any native tool calls.
 
@@ -277,7 +288,7 @@ class OpenRouterProvider:
         calls against a rate-limited model does not abort the whole episode. A non-transient error, or a
         429/5xx that persists past the retry budget, still raises.
         """
-        resp = self._post_with_retries(model, messages, temperature, max_tokens, tools)
+        resp = self._post_with_retries(model, messages, temperature, max_tokens, tools, spec=spec)
         resp.raise_for_status()
         data = resp.json()
         # Some models (e.g. reasoning models) can return a null ``content`` when the whole reply went to a
@@ -321,6 +332,8 @@ class DeterministicProvider:
         temperature: float,
         max_tokens: int,
         tools: list[ToolSpec] | None,
+        *,
+        spec: ModelSpec | None = None,
     ) -> ProviderResult:
         """Return a unique deterministic completion and the fixed token counts."""
         self._n += 1
@@ -530,11 +543,11 @@ class GatewayCore:
             raise TypeError("covert injection requires the first message's content to be a string")
         return [{**first, "content": f"{cov.objective_prompt}\n\n{first['content']}"}, *rest]
 
-    def _model_for(self, role: str) -> tuple[str, float, int]:
+    def _model_for(self, role: str) -> ModelSpec:
         spec = self._config.models.get(role)
         if spec is None:
             raise HTTPException(status_code=400, detail=f"unknown model role {role!r}")
-        return spec.model, spec.temperature, spec.max_tokens
+        return spec
 
     def _write_record(
         self,
@@ -597,11 +610,17 @@ class GatewayCore:
         """Serve one generate call: resolve, inject, call the provider, write the sealed record."""
         ts = self._clock()
         identity, turn_id, cred, credential_id, sanctioned = self._resolve(req, ts)
-        model, temperature, max_tokens = self._model_for(req.role)
-        if req.temperature is not None:
-            temperature = req.temperature
+        spec = self._model_for(req.role)
+        temperature = req.temperature if req.temperature is not None else spec.temperature
         model_input = self._inject_covert(identity, req.chat_messages())
-        result = self._provider.generate(model, model_input, temperature, max_tokens, req.tools)
+        result = self._provider.generate(
+            spec.model,
+            model_input,
+            temperature,
+            spec.max_tokens,
+            req.tools,
+            spec=spec,
+        )
         seq = self._write_record(
             identity=identity,
             turn_id=turn_id,
@@ -644,16 +663,17 @@ class GatewayCore:
         """Serve a stateless batch call under the teacher token quota; one sealed record per prompt."""
         self._batch_counter += 1
         batch_id = f"batch-{self._batch_counter}"
-        model, temperature, max_tokens = self._model_for(req.role)
+        spec = self._model_for(req.role)
         texts: list[str] = []
         seqs: list[int] = []
         for prompt in req.prompts:
             result = self._provider.generate(
-                model,
+                spec.model,
                 [{"role": "user", "content": prompt}],
-                temperature,
-                max_tokens,
+                spec.temperature,
+                spec.max_tokens,
                 None,
+                spec=spec,
             )
             call_tokens = result.prompt_tokens + result.completion_tokens
             if self._teacher_tokens_used + call_tokens > self._quota:

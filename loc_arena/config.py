@@ -83,6 +83,36 @@ def _prompt_alias(field_name: str) -> AliasChoices:
 # --------------------------------------------------------------------------------------------------------
 # Typed config blocks
 # --------------------------------------------------------------------------------------------------------
+class ProviderPreferences(BaseModel):
+    """OpenRouter provider routing preferences for a model call."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    order: list[StrictStr] | None = Field(
+        default=None,
+        description="List of provider slugs to try in priority order.",
+    )
+    allow_fallbacks: StrictBool | None = Field(
+        default=None,
+        description="Whether to allow backup providers when prioritized providers are unavailable.",
+    )
+
+
+class ReasoningPreferences(BaseModel):
+    """OpenRouter reasoning settings for a model call."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    enabled: StrictBool | None = Field(
+        default=None,
+        description="Whether to enable reasoning tokens for models that support it.",
+    )
+    effort: StrictStr | None = Field(
+        default=None,
+        description="Reasoning effort level (e.g. 'high', 'medium', 'low', 'none').",
+    )
+
+
 @pydantic_dataclass(frozen=True, config=BLOCK_CONFIG)
 class ModelSpec:
     """A model routing entry from ``models.cheap.yaml`` (role -> model and sampling)."""
@@ -91,6 +121,14 @@ class ModelSpec:
     temperature: StrictFloat = Field(description="Sampling temperature of every call this role makes.")
     max_tokens: StrictInt = Field(
         description="Output cap of one call (reasoning plus tool arguments), not the context window.",
+    )
+    provider: ProviderPreferences | None = Field(
+        default=None,
+        description="OpenRouter provider-routing preferences for this role.",
+    )
+    reasoning: ReasoningPreferences | None = Field(
+        default=None,
+        description="OpenRouter reasoning token settings for this role.",
     )
 
 

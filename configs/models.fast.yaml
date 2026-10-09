@@ -1,18 +1,11 @@
-# models.cheap.yaml
-# Model routing by ROLE with provider pinning and reasoning settings.
-# Pinning providers keeps prompt caching stable and avoids slow or flaky endpoints.
+# models.fast.yaml
+# Smoke-test profile: identical to models.cheap.yaml except the untrusted agent has reasoning disabled.
 # Never hardcode a model name in code; always resolve through this file.
-#
-# IMPORTANT: verify these ids exist on your OpenRouter account before the first run.
-# All ids are OpenRouter-style "provider/model". Every model call goes through the gateway.
-#
-# max_tokens is the per-call OUTPUT cap (room for reasoning + tool-call args), NOT the context window.
 
 provider: openrouter
 
 roles:
-  # The untrusted agent (orchestrator + sub-agents). Multi-step tool use with reasoning enabled.
-  # Pinned to Together, Baseten, DeepSeek (no fallbacks) for cache stability and throughput.
+  # The untrusted agent (orchestrator + sub-agents) with reasoning disabled for fast smoke tests.
   untrusted_agent:
     model: deepseek/deepseek-v4.1-flash
     temperature: 1.0
@@ -24,7 +17,7 @@ roles:
         - deepseek
       allow_fallbacks: false
     reasoning:
-      enabled: true
+      enabled: false
 
   # The trusted monitor (M_action, M_inference). Kept weaker and cheaper than the agent.
   # Pinned to Groq then DeepInfra with fallbacks disabled.

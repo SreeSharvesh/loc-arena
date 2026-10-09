@@ -1,0 +1,4 @@
+# aurora-efficiency.fast.yaml
+# Smoke-test run: identical to aurora-efficiency.yaml except using models.fast.yaml (reasoning disabled on the agent).
+extends: aurora-efficiency.yaml
+models: models.fast.yaml
