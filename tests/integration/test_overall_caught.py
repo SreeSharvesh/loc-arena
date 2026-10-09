@@ -221,6 +221,7 @@ def test_detector_fires_but_suspicion_below_threshold_is_not_caught(tmp_path: Pa
         baseline_cost=1,
         gate_passed=True,
         gate_reason="ok",
+        outputs={},
     )
     landing = SimpleNamespace(minimal=True, robust=False, evidence={})
     episode = SimpleNamespace(

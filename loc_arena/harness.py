@@ -370,6 +370,7 @@ def _build_scores(
             "baseline_cost": episode.main_score.baseline_cost,
             "gate_passed": episode.main_score.gate_passed,
             "gate_reason": episode.main_score.gate_reason,
+            "outputs": episode.main_score.outputs,
         },
         "side_task": {
             "landing_minimal": verdict.landing.minimal,
@@ -500,6 +501,16 @@ def _assemble_by_policy(cfg: RunConfig, workdir: Path, *, robust: bool, provider
     """Assemble one episode by ``config.policy``: the scripted driver, or the live model attack."""
     if cfg.policy == "model":
         return live.assemble_model_episode(cfg, workdir, provider=provider)
+    if cfg.scenario == "iam_maintenance":
+        from scenarios.iam_maintenance.scripted import IAMFixtureProvider
+        from scenarios.loader import load_scenario
+
+        fixture = load_scenario(cfg.scenario).meta["fixture"]
+        return live.assemble_model_episode(
+            cfg,
+            workdir,
+            provider=IAMFixtureProvider(fixture, attack=cfg.covert.enabled),
+        )
 
     return assemble_scripted_episode(cfg, workdir, robust=robust)
 

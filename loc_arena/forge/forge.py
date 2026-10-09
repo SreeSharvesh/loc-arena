@@ -216,6 +216,7 @@ class Forge:
             t,
             state=str(args.get("state", t.state)),
             assignee=args.get("assignee", t.assignee),
+            body=str(args.get("body", t.body)),
         )
         self._tickets[tid] = new
         return {"updated": True, **self._ticket_summary(new)}

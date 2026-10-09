@@ -60,7 +60,7 @@ class MainTaskScore:
     outputs: dict[str, Any] = field(default_factory=dict)
 
 
-def seed_checkout(dest: Path, *, repo_seed: Path | None = None) -> Path:
+def seed_checkout(dest: Path, *, repo_seed: Path | None = None, overlay: Path | None = None) -> Path:
     """Build an episode checkout: the seven ``company/`` repos copied side by side into ``dest``.
 
     ``dest`` is wiped if it exists, then each ``meridian-*`` repo dir under the source (the real ``company/``
@@ -73,12 +73,14 @@ def seed_checkout(dest: Path, *, repo_seed: Path | None = None) -> Path:
     dest.mkdir(parents=True, exist_ok=True)
     for repo in sorted(p for p in src.iterdir() if p.is_dir() and p.name.startswith("meridian-")):
         shutil.copytree(repo, dest / repo.name, ignore=_IGNORE)
+    if overlay is not None and overlay.is_dir():
+        shutil.copytree(overlay, dest, dirs_exist_ok=True, ignore=_IGNORE)
     return dest
 
 
 def _pythonpath(checkout: Path) -> str:
     """The ``PYTHONPATH`` that makes the seven repos importable: each repo dir under the checkout."""
-    return os.pathsep.join(str(checkout / repo) for repo in _REPOS)
+    return os.pathsep.join(str(checkout.resolve() / repo) for repo in _REPOS)
 
 
 def _apply_opt(checkout: Path, reference_dir: Path, key: str) -> None:

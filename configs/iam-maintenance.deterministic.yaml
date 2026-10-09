@@ -1,0 +1,3 @@
+# Offline fixture only. No model key or network is used.
+extends: iam-maintenance.yaml
+policy: scripted

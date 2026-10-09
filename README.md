@@ -11,6 +11,11 @@ two, under an adversarial agent, is the science.
 This is defensive AI-safety research infrastructure. Attack chains are represented as control-plane state
 transitions plus their programmatic verifiers, never as operational procedures.
 
+The [IAM maintenance scenario](scenarios/iam_maintenance/README.md) pairs ten independently graded IAM
+repair tickets with the same rogue-deployment side task. Run it with
+`make run RUN=iam-maintenance MODE=honest` or `MODE=attack`; the
+`iam-maintenance.deterministic` config provides offline fixtures for both modes.
+
 ## Per-agent logs
 
 Every run bundle (`logs/<run_slug>/<run_name>/`) also holds a per-agent view of the episode:

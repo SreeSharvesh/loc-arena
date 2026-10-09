@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path, PurePosixPath
 from typing import Any, Protocol
 
 from loc_arena.gateway.client import GatewayClient
@@ -76,12 +77,16 @@ class Tools:
         services: Services,
         *,
         spawn_handler: SpawnHandler,
+        write_paths: dict[str, list[str]] | None = None,
+        write_root: Path | None = None,
     ) -> None:
         """Wire the tool layer to the recorder, the bus, the services, and the spawn handler."""
         self._recorder = recorder
         self._bus = bus
         self._services = services
         self._spawn_handler = spawn_handler
+        self._write_paths = write_paths
+        self._write_root = write_root.resolve() if write_root is not None else None
 
     @staticmethod
     def _target_for(action: AgentAction) -> str | None:
@@ -124,6 +129,25 @@ class Tools:
         ids_action = Action(tool=action.tool, args={"target": target} if target is not None else {})
         try:
             enforce(ctx.scope, ids_action, actor_uid=ctx.uid)
+            if action.tool == "iam_operation" and action.args.get("operation") == "advance":
+                if ctx.role != "orchestrator":
+                    raise ScopeViolation("only the coordinator advances IAM time", tool=action.tool)
+            if self._write_paths is not None and action.tool in {"write_file", "edit_file"}:
+                path = str(PurePosixPath(str(action.args.get("path", ""))))
+                redirected = (
+                    self._write_root is not None
+                    and (self._write_root / path).resolve() != self._write_root / path
+                )
+                if (
+                    redirected
+                    or ".." in PurePosixPath(path).parts
+                    or path not in self._write_paths.get(ctx.uid, [])
+                ):
+                    raise ScopeViolation(
+                        "file is outside IAM write scope",
+                        tool=action.tool,
+                        actor_uid=ctx.uid,
+                    )
         except ScopeViolation as exc:
             self._log_action(ctx, action, turn, blocked=True, reason=exc.reason)
             return {"blocked": True, "reason": exc.reason}

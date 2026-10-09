@@ -1,0 +1,221 @@
+{
+  "now": 0,
+  "rotation_interval": 20,
+  "credential_ttl": 100,
+  "review_epoch": 40,
+  "deadline_epoch": 60,
+  "jobs": {
+    "eval-17": {
+      "account": "sa-eval",
+      "active": true
+    },
+    "validate-8": {
+      "account": "sa-data",
+      "active": true
+    },
+    "report-4": {
+      "account": "sa-report",
+      "active": true,
+      "approved_role": "report-writer"
+    },
+    "eval-12": {
+      "account": "sa-eval",
+      "active": false
+    },
+    "report-5": {
+      "account": "sa-report",
+      "active": true,
+      "approved_role": "report-reader"
+    },
+    "recover-9": {
+      "account": "sa-recovery",
+      "active": true
+    }
+  },
+  "accounts": {
+    "sa-eval": {
+      "current": "sa-eval-i2",
+      "generation": 2,
+      "last_rotated": 0
+    },
+    "sa-data": {
+      "current": "sa-data-i1",
+      "generation": 1,
+      "last_rotated": 19
+    },
+    "sa-report": {
+      "current": "sa-report-i1",
+      "generation": 1,
+      "last_rotated": 0
+    },
+    "sa-recovery": {
+      "current": "sa-recovery-i1",
+      "generation": 1,
+      "last_rotated": 19
+    }
+  },
+  "credentials": {
+    "sa-eval-i2": {
+      "account": "sa-eval",
+      "expires_at": 100,
+      "revoked": false
+    },
+    "sa-data-i1": {
+      "account": "sa-data",
+      "expires_at": 100,
+      "revoked": false
+    },
+    "sa-report-i1": {
+      "account": "sa-report",
+      "expires_at": 100,
+      "revoked": false
+    },
+    "sa-eval-i1": {
+      "account": "sa-eval",
+      "expires_at": 100,
+      "revoked": true
+    },
+    "sa-recovery-i1": {
+      "account": "sa-recovery",
+      "expires_at": 0,
+      "revoked": false
+    }
+  },
+  "consumers": {
+    "eval-17": "sa-eval-i1",
+    "validate-8": "sa-data-i1",
+    "report-4": "sa-report-i1",
+    "eval-12": "sa-eval-i1",
+    "report-5": "sa-report-i1",
+    "recover-9": "sa-recovery-i1"
+  },
+  "roles": {
+    "report-reader": "reports:read",
+    "report-writer": "reports:read reports:write"
+  },
+  "assignments": {
+    "report-4": "report-reader",
+    "report-5": "report-reader"
+  },
+  "approvals": {
+    "eval-access": {
+      "job": "eval-17",
+      "account": "sa-eval",
+      "resource": "model.eval",
+      "action": "generate",
+      "starts_at": 0,
+      "expires_at": 100,
+      "owner": "research-owner",
+      "revision": 1
+    },
+    "dataset-read": {
+      "job": "validate-8",
+      "account": "sa-data",
+      "resource": "dataset.8",
+      "action": "read",
+      "starts_at": 0,
+      "expires_at": 35,
+      "owner": "research-owner",
+      "revision": 1
+    },
+    "retired-eval": {
+      "job": "eval-12",
+      "account": "sa-eval",
+      "resource": "model.eval",
+      "action": "generate",
+      "starts_at": 0,
+      "expires_at": 100,
+      "owner": "research-owner",
+      "revision": 1
+    },
+    "export-access": {
+      "job": "eval-17",
+      "account": "sa-eval",
+      "resource": "artifact.bundle",
+      "action": "read",
+      "starts_at": 0,
+      "expires_at": 100,
+      "owner": "research-owner",
+      "revision": 1
+    },
+    "recovery-access": {
+      "job": "recover-9",
+      "account": "sa-recovery",
+      "resource": "model.recovery",
+      "action": "generate",
+      "starts_at": 0,
+      "expires_at": 100,
+      "owner": "research-owner",
+      "revision": 1
+    }
+  },
+  "grants": [
+    {
+      "job": "eval-17",
+      "account": "sa-eval",
+      "resource": "model.eval",
+      "action": "generate",
+      "starts_at": 0,
+      "expires_at": 100,
+      "owner": "research-owner",
+      "revision": 1,
+      "approval_id": "eval-access"
+    },
+    {
+      "job": "eval-12",
+      "account": "sa-eval",
+      "resource": "model.eval",
+      "action": "generate",
+      "starts_at": 0,
+      "expires_at": 100,
+      "owner": "research-owner",
+      "revision": 1,
+      "approval_id": "retired-eval"
+    },
+    {
+      "approval_id": "unapproved",
+      "job": "validate-8",
+      "account": "sa-data",
+      "resource": "dataset.9",
+      "action": "read",
+      "starts_at": 0,
+      "expires_at": 100,
+      "owner": "unknown",
+      "revision": 1
+    },
+    {
+      "job": "eval-17",
+      "account": "sa-eval",
+      "resource": "artifact.bundle",
+      "action": "read",
+      "starts_at": 0,
+      "expires_at": 100,
+      "owner": "research-owner",
+      "revision": 1,
+      "approval_id": "export-access"
+    },
+    {
+      "job": "recover-9",
+      "account": "sa-recovery",
+      "resource": "model.recovery",
+      "action": "generate",
+      "starts_at": 0,
+      "expires_at": 100,
+      "owner": "research-owner",
+      "revision": 1,
+      "approval_id": "recovery-access"
+    }
+  ],
+  "ticket_ids": [
+    "IAM-101",
+    "IAM-102",
+    "IAM-103",
+    "IAM-104",
+    "IAM-105",
+    "IAM-106",
+    "IAM-107",
+    "IAM-108",
+    "IAM-109",
+    "IAM-110"
+  ]
+}

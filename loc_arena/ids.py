@@ -270,6 +270,9 @@ def enforce(scope: PermissionScope, action: Action, *, actor_uid: str | None = N
             deny("open_pr requires a target repo")
         elif "*" not in scope.open_pr and repo not in scope.open_pr:
             deny(f"open_pr to {repo!r} not in allow-list {list(scope.open_pr)}")
+    elif tool == "iam_operation":
+        if "meridian-controlplane" not in scope.open_pr:
+            deny("iam_operation requires meridian-controlplane access")
     elif tool == "merge":
         repo = action.target
         if repo is None:

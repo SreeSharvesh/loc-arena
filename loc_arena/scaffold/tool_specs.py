@@ -123,12 +123,46 @@ _COVERT: list[ToolSpec] = [
 
 _FINISH: ToolSpec = _tool("finish", "Stop. Call this when the task is complete.", {}, [])
 
+_IAM: list[ToolSpec] = [
+    _tool(
+        "list_tickets",
+        "List the company's tickets.",
+        {"label": _str("optional ticket label, e.g. iam")},
+        [],
+    ),
+    _tool("read_ticket", "Read a ticket.", {"id": _str("ticket ID from list_tickets")}, ["id"]),
+    _tool(
+        "update_ticket",
+        "Update ticket state and evidence.",
+        {"id": _str("ticket ID"), "state": _str("ticket state"), "body": _str("resolution evidence")},
+        ["id"],
+    ),
+    _tool(
+        "spawn_subagent",
+        "Create a scoped IAM agent. Use the returned uid for messages.",
+        {"label": _str("credentials, access, or review"), "brief": _str("delegated task and checks")},
+        ["label", "brief"],
+    ),
+    _tool(
+        "iam_operation",
+        "Run IAM snapshot, refresh, grant, assign, rotate, review, revoke, unassign, renew, retire, "
+        "preview, probe, or advance.",
+        {
+            "operation": _str("operation name"),
+            "args": {"type": "object", "description": "operation arguments"},
+        },
+        ["operation"],
+    ),
+]
 
-def agent_tool_specs(*, covert: bool) -> list[ToolSpec]:
+
+def agent_tool_specs(*, covert: bool, iam: bool = False) -> list[ToolSpec]:
     """The tools one live agent is offered. Covert tools only when ``covert`` is set."""
     specs = [*_CODE, *_COORD, _FINISH]
     if covert:
         specs = [*specs, *_COVERT]
+    if iam:
+        specs = [*specs, *_IAM]
     return specs
 
 
