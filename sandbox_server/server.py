@@ -88,7 +88,8 @@ def create_sandbox_app(
         except ValueError as error:
             raise HTTPException(HTTPStatus.FORBIDDEN, str(error)) from error
 
-    app = FastAPI(dependencies=[Depends(authenticate)])
+    # No framework pages: they would answer without the token.
+    app = FastAPI(dependencies=[Depends(authenticate)], docs_url=None, redoc_url=None, openapi_url=None)
 
     @app.post(RUN_PATH)
     def run(request: CommandRequest) -> CommandResult:

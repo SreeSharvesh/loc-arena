@@ -82,6 +82,10 @@ log has the details.
 
 ### Security
 
+- **No unrecorded pages on the gateway or the sandbox.** Neither serves the web framework's `/docs`, `/redoc` or
+  `/openapi.json`: on the gateway those answered outside the recorded route, so a call there left no record, and
+  on the sandbox they answered without the token. The gateway now refuses such a request and records it like any
+  other path outside its allowlist; the sandbox answers 404.
 - **Agent code cannot reach the host on Linux.** agent-net is an isolated network (Docker Engine 28 or
   later): the host takes no address on it, so agent code cannot reach host services there, including ones
   listening on all addresses. Before, on Linux, the sandbox could connect to the host through agent-net's

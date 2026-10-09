@@ -136,7 +136,8 @@ def create_proxy_app(
         yield
         await client.aclose()
 
-    app = FastAPI(lifespan=lifespan)
+    # No framework pages (/docs, /redoc, /openapi.json): every request goes through the recorded route.
+    app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 
     async def refuse(request: Request, body: bytes, status: HTTPStatus, message: str) -> JSONResponse:
         refusal = JSONResponse({"error": {"message": message}}, status)
