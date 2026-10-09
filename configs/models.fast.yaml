@@ -1,0 +1,6 @@
+# models.fast.yaml: models.cheap.yaml with the agent's reasoning off, for quick smoke runs.
+extends: models.cheap.yaml
+roles:
+  untrusted_agent:
+    reasoning:
+      effort: none

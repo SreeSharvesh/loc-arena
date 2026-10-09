@@ -83,6 +83,31 @@ def _prompt_alias(field_name: str) -> AliasChoices:
 # --------------------------------------------------------------------------------------------------------
 # Typed config blocks
 # --------------------------------------------------------------------------------------------------------
+class ProviderPreferences(BaseModel):
+    """OpenRouter provider routing preferences for a model call."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    order: list[StrictStr] | None = Field(
+        default=None,
+        description="List of provider slugs to try in priority order.",
+    )
+    allow_fallbacks: StrictBool | None = Field(
+        default=None,
+        description="Whether to allow backup providers when prioritized providers are unavailable.",
+    )
+
+
+class ReasoningPreferences(BaseModel):
+    """OpenRouter reasoning settings for a model call."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    effort: Literal["max", "xhigh", "high", "medium", "low", "minimal", "none"] = Field(
+        description="Reasoning effort level ('none' disables reasoning).",
+    )
+
+
 @pydantic_dataclass(frozen=True, config=BLOCK_CONFIG)
 class ModelSpec:
     """A model routing entry from ``models.cheap.yaml`` (role -> model and sampling)."""
@@ -91,6 +116,10 @@ class ModelSpec:
     temperature: StrictFloat = Field(description="Sampling temperature of every call this role makes.")
     max_tokens: StrictInt = Field(
         description="Output cap of one call (reasoning plus tool arguments), not the context window.",
+    )
+    reasoning: ReasoningPreferences | None = Field(
+        default=None,
+        description="OpenRouter reasoning token settings for this role.",
     )
 
 
@@ -238,6 +267,10 @@ class _ModelsFile(BaseModel):
     model_config = ConfigDict(frozen=True, extra="ignore", title="models file")
 
     roles: dict[str, ModelSpec] = Field(description="The model each role calls, by role.")
+    providers: dict[str, ProviderPreferences] = Field(
+        default_factory=dict,
+        description="The OpenRouter providers serving each model, by model id; its roles use them.",
+    )
 
 
 class _RunDocument(BaseSettings):
@@ -344,6 +377,7 @@ class RunConfig:
     policy: str = "scripted"  # "scripted" (deterministic default) | "model" (live model-driven)
     agent_transcript: bool = False
     raw: dict[str, Any] = dataclasses.field(default_factory=dict)
+    model_providers: dict[str, ProviderPreferences] = dataclasses.field(default_factory=dict)
 
     def agent(self, agent_id: str) -> AgentConfig:
         """Return the agent config with this id, or raise ``ConfigError``."""
@@ -418,7 +452,12 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
         document = _RunDocument(_build_sources=((source,), {}))
     except ValidationError as exc:
         raise ConfigError(str(exc)) from exc
-    models = _read_config_file(configs_directory / document.models, _ModelsFile).roles
+    models_source = _merge_extends_chain(configs_directory / document.models, configs_directory)
+    try:
+        models_file = _ModelsFile.model_validate(models_source.yaml_data)
+    except ValidationError as exc:
+        raise ConfigError(f"models file {document.models} is invalid: {exc}") from exc
+    models = models_file.roles
     _validate_registry_bindings(document.scenario, document.main_task.scorer, document.side_task.verifier)
 
     main_task = document.main_task
@@ -443,6 +482,7 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
         agent_transcript=document.logging.agent_transcript,
         agent_loop=document.agent_loop,
         raw=source.yaml_data,
+        model_providers=models_file.providers,
     )
 
 

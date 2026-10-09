@@ -16,7 +16,7 @@ from loc_arena.live import play_model_episode
 from tests.integration._gateway_support import FailingProvider
 
 LIVE = dataclasses.replace(load_run_config("configs/aurora-efficiency.deterministic.yaml"), policy="model")
-AGENT_MODEL = LIVE.models["untrusted_agent"].model
+AGENT_SPEC = LIVE.models["untrusted_agent"]  # the teacher may share its model id, never its spec
 # A clock that reads 0 when the episode starts and one second more at each later reading: with a ceiling of 3
 # seconds, the turns checked at 1 and 2 seconds start, and the check at 3 stops the team.
 CEILING_SECONDS = 3
@@ -58,7 +58,7 @@ def test_an_episode_starts_no_turn_once_the_clock_passes_its_ceiling(
 
     play_model_episode(_with_ceiling(CEILING_SECONDS), tmp_path, provider=provider)
 
-    assert provider.models.count(AGENT_MODEL) == TURNS_BEFORE_THE_CEILING
+    assert provider.specs.count(AGENT_SPEC) == TURNS_BEFORE_THE_CEILING
 
 
 def test_a_run_stopped_at_its_ceiling_records_it_in_its_scores(tmp_path: Path) -> None:

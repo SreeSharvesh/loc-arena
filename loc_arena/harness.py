@@ -459,7 +459,10 @@ def grade_run(
     """
     cfg = apply_mode(config, mode)
     if monitor_provider is None and cfg.policy == "model" and is_live_provider_configured():
-        monitor_provider = OpenRouterProvider(timeout=cfg.settings.gateway.timeout_seconds)
+        monitor_provider = OpenRouterProvider(
+            timeout=cfg.settings.gateway.timeout_seconds,
+            model_providers=cfg.model_providers,
+        )
     the_seed = seed if seed is not None else cfg.seed
     run_name = run_directory.name
     played = PlayedRun.model_validate_json((run_directory / PLAYED_FILE).read_text())

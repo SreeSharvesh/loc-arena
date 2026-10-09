@@ -123,7 +123,10 @@ _LOGGER = logging.getLogger(__name__)
 def _default_provider(config: RunConfig) -> Provider:
     """The live provider (OpenRouter) when a key is present; otherwise the deterministic stub for plumbing."""
     if is_live_provider_configured():
-        return OpenRouterProvider(timeout=config.settings.gateway.timeout_seconds)
+        return OpenRouterProvider(
+            timeout=config.settings.gateway.timeout_seconds,
+            model_providers=config.model_providers,
+        )
     return DeterministicProvider()
 
 

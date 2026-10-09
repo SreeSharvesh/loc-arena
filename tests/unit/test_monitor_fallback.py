@@ -59,7 +59,7 @@ def test_a_monitor_stops_calling_its_model_after_its_calls_fail_in_a_row(
 
     _score(sealed_path, provider, CALLS_ATTEMPTED)
 
-    assert len(provider.models) == CALLS_SENT
+    assert len(provider.specs) == CALLS_SENT
 
 
 def test_a_monitor_that_stops_calling_its_model_records_it_once(sealed_path: Path) -> None:

@@ -11,6 +11,7 @@ from collections.abc import Container
 from typing import Any
 
 from fastapi import FastAPI
+from loc_arena.config import ModelSpec
 from loc_arena.gateway.core import Message, ProviderError, ProviderResult, ToolSpec
 from loc_arena.gateway.transport import Transport
 from starlette.testclient import TestClient
@@ -41,6 +42,8 @@ class StubProvider:
         temperature: float,
         max_tokens: int,
         tools: list[ToolSpec] | None,
+        *,
+        spec: ModelSpec | None = None,
     ) -> ProviderResult:
         self.inputs.append(joined_content(messages))
         self._n += 1
@@ -73,6 +76,8 @@ class JsonVerdictProvider:
         temperature: float,
         max_tokens: int,
         tools: list[ToolSpec] | None,
+        *,
+        spec: ModelSpec | None = None,
     ) -> ProviderResult:
         return ProviderResult(text=self._text, prompt_tokens=1, completion_tokens=1)
 
@@ -87,6 +92,8 @@ class MalformedProvider:
         temperature: float,
         max_tokens: int,
         tools: list[ToolSpec] | None,
+        *,
+        spec: ModelSpec | None = None,
     ) -> ProviderResult:
         return ProviderResult(
             text="I think this looks fine, no JSON here.",
@@ -108,18 +115,20 @@ class AlternatingVerdictProvider:
         temperature: float,
         max_tokens: int,
         tools: list[ToolSpec] | None,
+        *,
+        spec: ModelSpec | None = None,
     ) -> ProviderResult:
-        return next(self._providers).generate(model, messages, temperature, max_tokens, tools)
+        return next(self._providers).generate(model, messages, temperature, max_tokens, tools, spec=spec)
 
 
 class FailingProvider:
     """A dead provider: every call fails but those numbered in ``answered`` (from 1), which give a verdict.
 
-    A failed call raises ``error``, a ``ProviderError`` by default. It records the model of every call.
+    A failed call raises ``error``, a ``ProviderError`` by default. It records the role's spec of every call.
     """
 
     def __init__(self, *, answered: Container[int] = frozenset(), error: Exception | None = None) -> None:
-        self.models: list[str] = []
+        self.specs: list[ModelSpec | None] = []
         self._answered = answered
         self._error = error
 
@@ -130,8 +139,10 @@ class FailingProvider:
         temperature: float,
         max_tokens: int,
         tools: list[ToolSpec] | None,
+        *,
+        spec: ModelSpec | None = None,
     ) -> ProviderResult:
-        self.models.append(model)
-        if len(self.models) in self._answered:
+        self.specs.append(spec)
+        if len(self.specs) in self._answered:
             return JsonVerdictProvider().generate(model, messages, temperature, max_tokens, tools)
-        raise self._error or ProviderError(f"call {len(self.models)} failed")
+        raise self._error or ProviderError(f"call {len(self.specs)} failed")
