@@ -8,6 +8,10 @@ log has the details.
 
 ### Added
 
+- **Gates on every pull request.** Each pull request and each push to `main` runs the gates on Linux, with the
+  stack image built first so the Docker tests run instead of skipping. The workflow uses no secrets; the live
+  tests stay skipped.
+
 - **A shell for the agents, in the sandbox.** In `make run STACK=1` agents get a `bash` tool that runs in
   their checkout in the sandbox container, without the provider key, with a timeout that ends everything the
   command started and the end of its output (`stack.shell_timeout_seconds`, `stack.command_output_limit_bytes`).
@@ -45,6 +49,11 @@ log has the details.
   log cannot record (NaN, a lone surrogate, an integer past Python's digit limit, nesting past
   `agent_loop.max_argument_depth`) come back to the agent as a tool error, as does a rogue loop of more
   `iterations` than fit before the deadline.
+- **Who did what.** A covert action (a scratch note, a coverage change) is recorded under the uid and role of
+  the agent that called the tool, which the tool layer sets and an agent cannot name. A rogue job's records name
+  the agent that launched it, while the loop's own model calls keep claiming the job's identity. An agent's
+  `open_pr` also records a `pr` event, as the scripted coworkers' PRs do, so the PR review monitor sees and scores
+  agents' PRs.
 - **Grading.** An episode plays, then is graded from what it left: its event logs and its repo checkout, read by
   the main-task scorer and the side-task verifier the run config names. Grading no longer runs inside play,
   which lets it move to its own container next.
@@ -61,6 +70,10 @@ log has the details.
 
 ### Security
 
+- **Agent code cannot reach the host on Linux.** agent-net is an isolated network (Docker Engine 28 or
+  later): the host takes no address on it, so agent code cannot reach host services there, including ones
+  listening on all addresses. Before, on Linux, the sandbox could connect to the host through agent-net's
+  gateway address; Docker Desktop's VM held that address, which hid the gap until CI ran on Linux.
 - **What agent code cannot reach is tested against the real stack.** Where Docker and the stack image are
   present, the tests bring an episode's compose project up and probe, through the agents' own shell in the
   sandbox: no provider key, no route beyond agent-net, no outside name resolved, no way to the host, no mount

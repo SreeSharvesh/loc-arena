@@ -242,6 +242,14 @@ def test_validate_call_rejects_unknown_and_missing_and_mistyped() -> None:
     assert validate_call("finish", {}, SPECS) is None
 
 
+def test_an_agent_is_offered_a_pull_request_body_to_write() -> None:
+    mistyped_body = {"repo": "meridian-serving", "body": 7}
+
+    error = validate_call("open_pr", mistyped_body, SPECS)
+
+    assert error == "arg 'body' for open_pr must be a string"
+
+
 def test_bus_message_is_appended_and_results_keep_their_call_id() -> None:
     client = FakeClient(
         [

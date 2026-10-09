@@ -30,7 +30,7 @@ from loc_arena.config import load_run_config
 from loc_arena.episode_stack import (
     AGENT_NETWORK,
     CONFIGS_DIRECTORY,
-    LOOPBACK,
+    EGRESS_NETWORK,
     OUTPUT_DIRECTORY,
     REPOSITORY,
     SCENARIOS_DIRECTORY,
@@ -161,8 +161,7 @@ except urllib.error.HTTPError as error:
     print(error.code)
 """
 # Each row of the reach table: the test's name, its probe (formatted with the values the fixture finds) and
-# the outcomes the table allows. A listener waits on the host's address on agent-net, so a refusal there is a
-# firewall's.
+# the outcomes the table allows. A listener waits on every address of this host, so a refusal is a firewall's.
 ROWS: dict[str, tuple[str, set[str]]] = {
     "the_sandbox_resolves_the_gateway": ("print(resolve('gateway'))", {"resolved"}),
     "the_sandbox_connects_to_the_gateway": ("print(attempt('gateway', {gateway_port}))", {"connected"}),
@@ -201,7 +200,7 @@ ROWS: dict[str, tuple[str, set[str]]] = {
     ),
     "the_sandbox_cannot_reach_the_host_by_address": (
         "print(attempt('{host_address}', {host_port}))",
-        {"ECONNREFUSED", "EHOSTUNREACH", "ENETUNREACH", "timeout"},
+        {"ENETUNREACH"},
     ),
     "the_sandbox_holds_no_reference_answer": ("print(list_paths('{scenarios}/*/reference'))", {"[]"}),
     "the_sandbox_holds_no_scripted_move": ("print(list_paths('{scenarios}/*/scripted'))", {"[]"}),
@@ -219,10 +218,19 @@ class StackRun:
     episode_secrets: list[str]
     calls: list[GatewayCall]
     project: str
+    agent_net_gateway: str | None
 
     def read_outcome(self, row: str) -> str:
         """The one token the probe of ``row`` printed in the sandbox."""
         return self.probes[row]["stdout"].strip()
+
+
+@dataclass(frozen=True)
+class NetworkAddressing:
+    """A compose network's subnet, and the host's address on it: none when the network is isolated."""
+
+    subnet: str
+    gateway: str | None
 
 
 def build_probes(
@@ -257,25 +265,25 @@ def build_probes(
     }
 
 
-@dataclass(frozen=True)
-class HostListener:
-    """A listener on this host, and the address a container would reach it at."""
+def find_host_address(read_in_gateway: Callable[[str], str], egress_gateway: str | None) -> str:
+    """This host's address as a container with a route out reaches it.
 
-    listener: socket.socket
-    address: str
-
-
-def listen_on_host(agent_net_gateway: str, resolve_in_gateway: Callable[[str], str]) -> HostListener:
-    """A listener on this host where a container would reach it.
-
-    On Linux the host holds agent-net's gateway address: the listener waits there. On Docker Desktop the VM
-    holds that address, and the Mac is host.docker.internal, which forwards to its loopback: the listener
-    waits on the loopback, at the address the gateway, which has a route out, resolves that name to.
+    On Docker Desktop that is host.docker.internal, which forwards to the Mac; on Linux, where that name does
+    not resolve, it is the host's address on egress-net.
     """
-    try:
-        return HostListener(socket.create_server((agent_net_gateway, 0)), agent_net_gateway)
-    except OSError:
-        return HostListener(socket.create_server((LOOPBACK, 0)), resolve_in_gateway("host.docker.internal"))
+    address = read_in_gateway("host.docker.internal") or egress_gateway
+    if address is None:
+        raise RuntimeError(
+            "found no address of this host: host.docker.internal and egress-net's gateway are missing",
+        )
+    return address
+
+
+def read_addressing(network: str) -> NetworkAddressing:
+    """The subnet and gateway address of the Docker network named ``network``."""
+    inspected = run_docker("network", "inspect", network, "--format", "{{json .IPAM.Config}}")
+    addressing = json.loads(inspected.stdout)[0]
+    return NetworkAddressing(addressing["Subnet"], addressing.get("Gateway"))
 
 
 def run_docker(*arguments: str, **options: Any) -> subprocess.CompletedProcess[str]:
@@ -306,36 +314,22 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
     try:
         up = [*compose, "up", "--detach", "--wait", "--build", "gateway", SANDBOX_SERVICE]
         run_docker(*up, env=environment)
-        network = run_docker(
-            "network",
-            "inspect",
-            f"{project}_{AGENT_NETWORK}",
-            "--format",
-            "{{json .IPAM.Config}}",
+        agent_net, egress_net = (
+            read_addressing(f"{project}_{network}") for network in (AGENT_NETWORK, EGRESS_NETWORK)
         )
-        addressing = json.loads(network.stdout)[0]
-        resolve = "import socket, sys; print(socket.gethostbyname(sys.argv[1]))"
-        host = listen_on_host(
-            addressing["Gateway"],
-            lambda name: run_docker(
-                *compose,
-                "exec",
-                "-T",
-                "gateway",
-                "python",
-                "-c",
-                resolve,
-                name,
-                env=environment,
-            ).stdout.strip(),
+        resolve = "import socket, sys\ntry: print(socket.gethostbyname(sys.argv[1]))\nexcept OSError: pass"
+        in_gateway = [*compose, "exec", "-T", "gateway", "python", "-c", resolve]
+        host_address = find_host_address(
+            lambda name: run_docker(*in_gateway, name, env=environment).stdout.strip(),
+            egress_net.gateway,
         )
-        with host.listener:
+        with socket.create_server(("0.0.0.0", 0)) as listener:  # noqa: S104 - every address of this host, on purpose
             probes = build_probes(
                 placeholder,
                 project,
-                addressing["Subnet"],
-                host.address,
-                host.listener.getsockname()[1],
+                agent_net.subnet,
+                host_address,
+                listener.getsockname()[1],
             )
             played = run_docker(
                 *compose,
@@ -355,7 +349,7 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
         subprocess.run(down, env=environment, capture_output=True, check=False)
     printed = json.loads(played.stdout.strip().splitlines()[-1])
     calls = [GatewayCall.model_validate_json(line) for line in call_log.read_text().splitlines()]
-    return StackRun(calls=calls, project=project, **printed)
+    return StackRun(calls=calls, project=project, agent_net_gateway=agent_net.gateway, **printed)
 
 
 def test_bash_in_a_stack_run_cannot_read_the_episodes_sealed_log(stack_run: StackRun) -> None:
@@ -398,6 +392,12 @@ def test_the_gateway_records_the_sandbox_as_the_caller_of_a_refused_path(stack_r
     assert [(call.status, call.caller.startswith(sandbox_caller)) for call in refused] == [
         (HTTPStatus.FORBIDDEN, True),
     ]
+
+
+def test_the_host_holds_no_address_on_agent_net(stack_run: StackRun) -> None:
+    held = stack_run.agent_net_gateway
+
+    assert held is None
 
 
 def test_the_episode_container_holds_no_key(stack_run: StackRun) -> None:

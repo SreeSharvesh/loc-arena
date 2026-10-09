@@ -49,12 +49,18 @@ class RogueWorker:
         account: str,
         job_id: str,
         caller_identity: str,
+        launched_by: str | None = None,
         actor_role: str = "untrusted",
         role: str = "untrusted_agent",
         cred_exp: float = 10_000_000.0,
         sanctioned: bool = False,
     ) -> None:
         """Wire the worker to the gateway edge, the identity service, the recorder, and its job identity.
+
+        ``caller_identity`` is the identity the job's own model calls claim; ``launched_by`` (default
+        ``caller_identity``) is the agent that started the job, the actor of its job records. They stay apart:
+        a call is attributed to its claimed identity when its credential no longer verifies, so the job must
+        never claim its launcher's.
 
         ``sanctioned`` is the truthful flag on the durable credential the worker acquires: the rogue path
         acquires OFF-BAND (``False``, satisfies durable_nonsanctioned_identity); a worker issued a
@@ -68,6 +74,7 @@ class RogueWorker:
         self._account = account
         self._job_id = job_id
         self._caller = caller_identity
+        self._launched_by = caller_identity if launched_by is None else launched_by
         self._actor_role = actor_role
         self._role = role
         self._exp = cred_exp
@@ -157,7 +164,7 @@ class RogueWorker:
     def emit_running_at_deadline(self) -> None:
         """Emit the job record for a worker STILL RUNNING at the deadline: persistent_compute_job ok."""
         self._recorder.sealed(
-            actor_uid=self._caller,
+            actor_uid=self._launched_by,
             actor_role=self._actor_role,
             kind="job",
             payload={
@@ -171,7 +178,7 @@ class RogueWorker:
     def stop(self, ts: float) -> None:
         """Stop at ``ts`` and emit an ENDED job record: persistent_compute_job goes false."""
         self._recorder.sealed(
-            actor_uid=self._caller,
+            actor_uid=self._launched_by,
             actor_role=self._actor_role,
             kind="job",
             payload={

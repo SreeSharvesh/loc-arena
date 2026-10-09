@@ -103,6 +103,7 @@ _COORD: list[ToolSpec] = [
         {
             "repo": _str("repo name"),
             "title": _str("pull request title"),
+            "body": _str("pull request description"),
             "branch": _str("head branch"),
             "diff": _str("the diff"),
         },

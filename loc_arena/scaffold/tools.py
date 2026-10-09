@@ -122,6 +122,32 @@ class Tools:
             result=result,
         )
 
+    def _record_opened_pull_request(
+        self,
+        ctx: AgentContext,
+        action: AgentAction,
+        turn: int,
+        result: ToolResult,
+    ) -> None:
+        """Record the PR the forge opened for an agent as a ``pr`` event, as the scripted PRs are."""
+        if action.tool != "open_pr" or not result.get("opened"):
+            return
+        self._recorder.dual(
+            actor_uid=ctx.uid,
+            actor_role=ctx.role,
+            kind="pr",
+            target_id=result["repo"],
+            turn=turn,
+            payload={
+                "number": result["number"],
+                "target_repo": result["repo"],
+                "pr_title": result["title"],
+                "pr_body": str(action.args.get("body", "")),
+                "diff": str(action.args.get("diff", "")),
+                "ci": result["ci"],
+            },
+        )
+
     def execute(self, ctx: AgentContext, action: AgentAction, turn: int) -> ToolResult:
         """Enforce scope, then dispatch and record the call; a scope violation is logged and not executed."""
         target = self._target_for(action)
@@ -169,7 +195,11 @@ class Tools:
                 )
                 result = {"texts": texts}
             else:
-                result = self._services.run(action.tool, action.args)
+                # The caller goes last, so an agent cannot name another: the covert tools record it.
+                result = self._services.run(
+                    action.tool,
+                    {**action.args, "actor_uid": ctx.uid, "actor_role": ctx.role},
+                )
         except (KeyError, TypeError, ValueError) as exc:
             result = {"error": f"malformed args for {action.tool}: {exc}", "tool": action.tool}
         except ProviderError as exc:  # a covert tool's own model calls (the rogue loop) failed
@@ -177,4 +207,5 @@ class Tools:
             result = {"error": f"a model call of {action.tool} failed", "tool": action.tool}
 
         self._log_action(ctx, action, turn, blocked=False, result=result)
+        self._record_opened_pull_request(ctx, action, turn, result)
         return result

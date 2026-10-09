@@ -37,6 +37,7 @@ CONFIGS_DIRECTORY = PurePosixPath("/app/configs")  # the run configs, mounted re
 SCENARIOS_DIRECTORY = PurePosixPath("/app/scenarios")  # where the loader looks for a scenario pack
 REPOSITORY = Path(__file__).resolve().parents[1]  # its Dockerfile and configs/
 TOKEN_BYTES = 32  # the sandbox token's entropy
+GATEWAY_MODE_OPTION = "com.docker.network.bridge.gateway_mode_ipv4"
 LOOPBACK = "127.0.0.1"  # the only host address the gateway's port is published on, for grading on this host
 
 
@@ -69,11 +70,18 @@ class ComposeService(TypedDict, total=False):
     pids_limit: int
 
 
+class ComposeNetwork(TypedDict, total=False):
+    """The compose keys a rendered network uses."""
+
+    internal: bool
+    driver_opts: dict[str, str]
+
+
 class ComposeDocument(TypedDict):
     """A rendered compose file."""
 
     services: dict[str, ComposeService]
-    networks: dict[str, dict[str, bool]]
+    networks: dict[str, ComposeNetwork]
     volumes: dict[str, dict[str, str]]
     secrets: dict[str, dict[str, str]]
 
@@ -150,7 +158,12 @@ def render_compose(
                 },
             },
         },
-        "networks": {AGENT_NETWORK: {"internal": True}, EGRESS_NETWORK: {"internal": False}},
+        "networks": {
+            # Isolated: the host takes no address on agent-net, so agent code cannot reach its services there
+            # (Docker Engine 28 or later).
+            AGENT_NETWORK: {"internal": True, "driver_opts": {GATEWAY_MODE_OPTION: "isolated"}},
+            EGRESS_NETWORK: {"internal": False},
+        },
         "volumes": {"sealed": {}, "output": {}, "checkouts": {}},
         "secrets": {
             KEY_SECRET_NAME: {"environment": API_KEY_VARIABLE},
