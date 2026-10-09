@@ -68,9 +68,15 @@ def test_output_beyond_the_limit_is_cut_from_the_front_keeping_the_last_line(tmp
 
 
 def docker_stub(directory: Path, *, stops: bool) -> Path:
-    """A `docker` that hangs on `run` and `kill`, and on `rm` unless ``stops``; a real executable on PATH."""
+    """A `docker` on PATH that hangs on `run`, and on `rm` and `container inspect` unless ``stops``."""
     stub = directory / "docker"
-    stub.write_text(f'#!/bin/sh\n[ "$1" = rm ] && {"exit 0" if stops else "exec sleep 30"}\nexec sleep 30\n')
+    gone = 'echo "Error: No such container" >&2; exit 1'
+    stub.write_text(
+        "#!/bin/sh\n"
+        f'[ "$1" = rm ] && {"exit 0" if stops else "exec sleep 30"}\n'
+        f'[ "$1" = container ] && {{ {gone if stops else "exec sleep 30"}; }}\n'
+        "exec sleep 30\n",
+    )
     stub.chmod(0o755)
     return directory
 
@@ -88,7 +94,7 @@ def run_with_hung_docker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, sto
     )
 
 
-def test_a_container_that_kill_cannot_stop_is_force_removed(
+def test_a_timed_out_container_is_force_removed_before_the_timeout_is_raised(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

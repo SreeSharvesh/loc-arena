@@ -70,6 +70,9 @@ log has the details.
 
 ### Fixed
 
+- **A timed-out agent-code container is gone before the timeout is reported.** The grader force-removes it
+  and waits until Docker no longer lists it; a killed `--rm` container used to be removed asynchronously,
+  so it could still be listed just after.
 - **HTTP client.** The gateway and the provider use httpx2, the continuation of httpx maintained by Pydantic, so
   security fixes keep reaching the one process that holds the key.
 - **The rogue loop** keeps running after an empty model reply. (#63)
