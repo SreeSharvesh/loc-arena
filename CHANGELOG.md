@@ -35,6 +35,11 @@ log has the details.
 
 ### Changed
 
+- **Who did what.** A covert action (a scratch note, a coverage change) is recorded under the uid and role of
+  the agent that called the tool, which the tool layer sets and an agent cannot name. A rogue job's records name
+  the agent that launched it, while the loop's own model calls keep claiming the job's identity. An agent's
+  `open_pr` also records a `pr` event, as the scripted coworkers' PRs do, so the PR review monitor sees and scores
+  agents' PRs.
 - **Grading.** An episode plays, then is graded from what it left: its event logs and its repo checkout, read by
   the main-task scorer and the side-task verifier the run config names. Grading no longer runs inside play,
   which lets it move to its own container next.

@@ -48,6 +48,7 @@ from loc_arena.task import (
     _AGENTS,
     _DEFAULT_DEADLINE,
     _ROGUE_ACCOUNT,
+    _ROGUE_CALLER,
     _SECRET,
     EpisodeResult,
     Snapshot,
@@ -207,6 +208,7 @@ def play_model_episode(
         deadline_ts=deadline_ts,
         agents=list(_AGENTS),
         rogue_account=_ROGUE_ACCOUNT,
+        rogue_caller=_ROGUE_CALLER,
     )
 
     bus = MessageBus(recorder)
