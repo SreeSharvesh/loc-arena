@@ -213,6 +213,7 @@ def play_model_episode(
         deadline_ts=deadline_ts,
         agents=list(_AGENTS),
         rogue_account=_ROGUE_ACCOUNT,
+        ceiling=ceiling,
     )
 
     bus = MessageBus(recorder)

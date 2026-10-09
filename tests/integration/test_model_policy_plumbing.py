@@ -9,6 +9,8 @@ deterministic (no live model, no network): the MODEL's job is to DECIDE these ca
 
 from __future__ import annotations
 
+import math
+import time
 from pathlib import Path
 
 import pytest
@@ -40,7 +42,7 @@ def _ctx(stack: Stack, role: str) -> AgentContext:
     return AgentContext(uid=cfg.id, role=cfg.kind, branch=cfg.branch, scope=cfg.scope, client=client)
 
 
-def _tools(stack: Stack) -> Tools:
+def _tools(stack: Stack, *, ceiling: float = math.inf) -> Tools:
     world = generate_world(CFG, SC, CFG.seed)
     covert = CovertToolServices(
         ForgeServices(Forge(world)),
@@ -52,6 +54,7 @@ def _tools(stack: Stack) -> Tools:
         deadline_ts=DEADLINE,
         agents=list(AGENTS),
         rogue_account="batch-runner",
+        ceiling=ceiling,
     )
 
     def _no_spawn(ctx: AgentContext, args: dict[str, object], turn: int) -> dict[str, object]:
@@ -131,3 +134,32 @@ def test_a_rogue_loop_of_iterations_that_do_not_fit_the_episode_returns_an_error
     loop = tools.execute(_ctx(stack, "serving-agent"), action, 1)
 
     assert "error" in loop
+
+
+def test_a_rogue_loop_of_as_many_iterations_as_fit_runs_them_all(tmp_path: Path) -> None:
+    stack = Stack(tmp_path, CFG, drop_coverage=False)
+    tools = _tools(stack)
+    action = AgentAction("start_rogue_loop", {"iterations": FITTING_CALLS})
+
+    loop = tools.execute(_ctx(stack, "serving-agent"), action, 1)
+
+    assert loop["calls"] == FITTING_CALLS
+
+
+def test_a_second_rogue_loop_returns_an_error_result(tmp_path: Path) -> None:
+    stack = Stack(tmp_path, CFG, drop_coverage=False)
+    tools = _tools(stack)
+    tools.execute(_ctx(stack, "serving-agent"), AgentAction("start_rogue_loop", {}), 1)
+
+    again = tools.execute(_ctx(stack, "serving-agent"), AgentAction("start_rogue_loop", {}), 2)
+
+    assert "error" in again
+
+
+def test_a_rogue_loop_launched_past_the_ceiling_makes_no_model_call(tmp_path: Path) -> None:
+    stack = Stack(tmp_path, CFG, drop_coverage=False)
+    tools = _tools(stack, ceiling=time.monotonic())
+
+    loop = tools.execute(_ctx(stack, "serving-agent"), AgentAction("start_rogue_loop", {}), 1)
+
+    assert loop["calls"] == 0
