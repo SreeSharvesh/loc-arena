@@ -43,7 +43,7 @@ def _capture_post(
     return bodies
 
 
-def test_posts_provider_and_reasoning_when_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_sends_provider_and_reasoning_when_configured(monkeypatch: pytest.MonkeyPatch) -> None:
     bodies = _capture_post(monkeypatch)
     provider = OpenRouterProvider(api_key="test-key")
     spec = ModelSpec(
@@ -54,7 +54,7 @@ def test_posts_provider_and_reasoning_when_configured(monkeypatch: pytest.Monkey
             order=["together", "baseten", "deepseek"],
             allow_fallbacks=False,
         ),
-        reasoning=ReasoningPreferences(enabled=True),
+        reasoning=ReasoningPreferences(effort="high"),
     )
 
     provider.generate("deepseek/deepseek-v4.1-flash", MESSAGES, 1.0, 8192, None, spec=spec)
@@ -69,7 +69,7 @@ def test_posts_provider_and_reasoning_when_configured(monkeypatch: pytest.Monkey
                 "order": ["together", "baseten", "deepseek"],
                 "allow_fallbacks": False,
             },
-            "reasoning": {"enabled": True},
+            "reasoning": {"effort": "high"},
         },
     ]
 
@@ -85,8 +85,14 @@ def test_omits_provider_and_reasoning_when_absent(monkeypatch: pytest.MonkeyPatc
 
     provider.generate("meta-llama/llama-3.1-8b-instruct", MESSAGES, 0.0, 4096, None, spec=spec)
 
-    assert "provider" not in bodies[0]
-    assert "reasoning" not in bodies[0]
+    assert bodies == [
+        {
+            "model": "meta-llama/llama-3.1-8b-instruct",
+            "messages": MESSAGES,
+            "temperature": 0.0,
+            "max_tokens": 4096,
+        },
+    ]
 
 
 def test_models_file_rejects_unknown_field_under_provider_naming_it(tmp_path: Path) -> None:
@@ -105,8 +111,10 @@ def test_models_file_rejects_unknown_field_under_provider_naming_it(tmp_path: Pa
     run_file = tmp_path / "configs" / "run.yaml"
     run_file.write_text("extends: aurora-efficiency.deterministic.yaml\nmodels: models.custom.yaml\n")
 
-    with pytest.raises(ConfigError, match=r"bogus_routing_field"):
+    with pytest.raises(ConfigError) as exc_info:
         load_run_config(run_file)
+
+    assert "bogus_routing_field" in str(exc_info.value)
 
 
 def test_models_file_rejects_unknown_field_under_reasoning_naming_it(tmp_path: Path) -> None:
@@ -119,14 +127,16 @@ def test_models_file_rejects_unknown_field_under_reasoning_naming_it(tmp_path: P
         "    temperature: 1.0\n"
         "    max_tokens: 8192\n"
         "    reasoning:\n"
-        "      enabled: true\n"
+        "      effort: high\n"
         "      bogus_reasoning_field: 42\n",
     )
     run_file = tmp_path / "configs" / "run.yaml"
     run_file.write_text("extends: aurora-efficiency.deterministic.yaml\nmodels: models.custom.yaml\n")
 
-    with pytest.raises(ConfigError, match=r"bogus_reasoning_field"):
+    with pytest.raises(ConfigError) as exc_info:
         load_run_config(run_file)
+
+    assert "bogus_reasoning_field" in str(exc_info.value)
 
 
 def test_roles_with_same_model_id_send_distinct_settings(
@@ -143,11 +153,22 @@ def test_roles_with_same_model_id_send_distinct_settings(
         provider,
         turn_secret="secret",
     )
+    requests = (
+        GenerateRequest(prompt="agent call", caller_identity="agent", role="untrusted_agent"),
+        GenerateRequest(prompt="teacher call", caller_identity="teacher", role="teacher"),
+    )
 
-    core.generate(GenerateRequest(prompt="agent call", caller_identity="agent", role="untrusted_agent"))
-    core.generate(GenerateRequest(prompt="teacher call", caller_identity="teacher", role="teacher"))
+    for request in requests:
+        core.generate(request)
 
-    assert len(bodies) == 2
-    assert bodies[0]["model"] == bodies[1]["model"]
-    assert bodies[0]["reasoning"] == {"enabled": True}
-    assert bodies[1]["reasoning"] == {"enabled": False}
+    assert [body.get("reasoning") for body in bodies] == [None, {"effort": "none"}]
+
+
+def test_fast_run_disables_agent_reasoning_while_inheriting_other_roles() -> None:
+    base = load_run_config("configs/aurora-efficiency.yaml")
+
+    fast = load_run_config("configs/aurora-efficiency.fast.yaml")
+
+    assert fast.models["untrusted_agent"].reasoning == ReasoningPreferences(effort="none") and {
+        role: spec for role, spec in fast.models.items() if role != "untrusted_agent"
+    } == {role: spec for role, spec in base.models.items() if role != "untrusted_agent"}

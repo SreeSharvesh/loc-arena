@@ -8,8 +8,11 @@ log has the details.
 
 ### Added
 
-- **Provider routing and reasoning.** Model roles configure OpenRouter provider preferences (order and fallback allowances) and reasoning controls, passed through the gateway per role to pin providers and stabilize prompt caching.
-
+- **Provider routing per model role.** Each role in a models file can pin its OpenRouter providers (order, no
+  fallbacks) and set reasoning effort; the gateway sends them with every call of that role. The agent now runs
+  `deepseek/deepseek-v4.1-flash` (V4 Flash is deprecated) on Together, Baseten or DeepSeek, the monitor on
+  Groq or DeepInfra, and `models.fast.yaml` (run config `aurora-efficiency.fast`) turns the agent's reasoning
+  off for quick smoke runs.
 - **Gates on every pull request.** Each pull request and each push to `main` runs the gates on Linux, with the
   stack image built first so the Docker tests run instead of skipping. The workflow uses no secrets; the live
   tests stay skipped.

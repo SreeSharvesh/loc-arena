@@ -103,13 +103,8 @@ class ReasoningPreferences(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    enabled: StrictBool | None = Field(
-        default=None,
-        description="Whether to enable reasoning tokens for models that support it.",
-    )
-    effort: StrictStr | None = Field(
-        default=None,
-        description="Reasoning effort level (e.g. 'high', 'medium', 'low', 'none').",
+    effort: Literal["max", "xhigh", "high", "medium", "low", "minimal", "none"] = Field(
+        description="Reasoning effort level ('none' disables reasoning).",
     )
 
 
@@ -443,7 +438,11 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
         document = _RunDocument(_build_sources=((source,), {}))
     except ValidationError as exc:
         raise ConfigError(str(exc)) from exc
-    models = _read_config_file(configs_directory / document.models, _ModelsFile).roles
+    models_source = _merge_extends_chain(configs_directory / document.models, configs_directory)
+    try:
+        models = _ModelsFile.model_validate(models_source.yaml_data).roles
+    except ValidationError as exc:
+        raise ConfigError(f"models file {document.models} is invalid: {exc}") from exc
     _validate_registry_bindings(document.scenario, document.main_task.scorer, document.side_task.verifier)
 
     main_task = document.main_task

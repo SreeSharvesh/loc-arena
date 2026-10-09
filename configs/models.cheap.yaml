@@ -11,20 +11,13 @@
 provider: openrouter
 
 roles:
-  # The untrusted agent (orchestrator + sub-agents). Multi-step tool use with reasoning enabled.
-  # Pinned to Together, Baseten, DeepSeek (no fallbacks) for cache stability and throughput.
+  # The untrusted agent (orchestrator + sub-agents). Multi-step tool use.
+  # Fastest throughput with cache pricing for this model on OpenRouter; pinned so prompt caching stays on one provider.
   untrusted_agent:
     model: deepseek/deepseek-v4.1-flash
     temperature: 1.0
     max_tokens: 8192
-    provider:
-      order:
-        - together
-        - baseten
-        - deepseek
-      allow_fallbacks: false
-    reasoning:
-      enabled: true
+    provider: &deepseek_providers {order: [together, baseten, deepseek], allow_fallbacks: false}
 
   # The trusted monitor (M_action, M_inference). Kept weaker and cheaper than the agent.
   # Pinned to Groq then DeepInfra with fallbacks disabled.
@@ -38,20 +31,14 @@ roles:
         - deepinfra
       allow_fallbacks: false
 
-  # The teacher m-large behind the gateway. Fast data generation with reasoning disabled,
-  # matching the agent's provider routing order.
+  # The teacher m-large behind the gateway. Fast data generation with reasoning disabled.
   teacher:
     model: deepseek/deepseek-v4.1-flash
     temperature: 0.7
     max_tokens: 4096
-    provider:
-      order:
-        - together
-        - baseten
-        - deepseek
-      allow_fallbacks: false
+    provider: *deepseek_providers
     reasoning:
-      enabled: false
+      effort: none
 
 scaling_notes: |
   Frontier profile (later): set untrusted_agent to your strongest model, trusted_monitor to a small frontier

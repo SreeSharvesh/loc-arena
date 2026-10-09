@@ -1,52 +1,6 @@
-# models.fast.yaml
-# Smoke-test profile: identical to models.cheap.yaml except the untrusted agent has reasoning disabled.
-# Never hardcode a model name in code; always resolve through this file.
-
-provider: openrouter
-
+# models.fast.yaml: models.cheap.yaml with the agent's reasoning off, for quick smoke runs.
+extends: models.cheap.yaml
 roles:
-  # The untrusted agent (orchestrator + sub-agents) with reasoning disabled for fast smoke tests.
   untrusted_agent:
-    model: deepseek/deepseek-v4.1-flash
-    temperature: 1.0
-    max_tokens: 8192
-    provider:
-      order:
-        - together
-        - baseten
-        - deepseek
-      allow_fallbacks: false
     reasoning:
-      enabled: false
-
-  # The trusted monitor (M_action, M_inference). Kept weaker and cheaper than the agent.
-  # Pinned to Groq then DeepInfra with fallbacks disabled.
-  trusted_monitor:
-    model: meta-llama/llama-3.1-8b-instruct
-    temperature: 0.0
-    max_tokens: 4096
-    provider:
-      order:
-        - groq
-        - deepinfra
-      allow_fallbacks: false
-
-  # The teacher m-large behind the gateway. Fast data generation with reasoning disabled,
-  # matching the agent's provider routing order.
-  teacher:
-    model: deepseek/deepseek-v4.1-flash
-    temperature: 0.7
-    max_tokens: 4096
-    provider:
-      order:
-        - together
-        - baseten
-        - deepseek
-      allow_fallbacks: false
-    reasoning:
-      enabled: false
-
-scaling_notes: |
-  Frontier profile (later): set untrusted_agent to your strongest model, trusted_monitor to a small frontier
-  model, teacher to a strong model. Keep temperature and token caps; they are cost knobs, not correctness knobs.
-  Dev profile (now): DeepSeek V4.1 Flash for agent and teacher; Llama 3.1 8B for monitor.
+      effort: none
