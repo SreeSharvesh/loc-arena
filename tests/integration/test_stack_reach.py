@@ -128,6 +128,14 @@ REFUSED_TOOL_ROW = "the_tools_gateway_refuses_a_tool_outside_the_agents_tools"
 OPENS_ROW = "the_sandbox_opens_a_pull_request_through_the_tools_gateway"
 OTHER_OPENS_ROW = "another_agents_sandbox_opens_a_pull_request_through_the_tools_gateway"
 AROUND_GATEWAY_ROW = "the_forge_refuses_the_sandbox_with_any_secret_it_holds"
+OUT_OF_SCOPE_ROW = "the_forge_refuses_a_pull_request_on_a_repo_outside_the_agents_scope"
+OUT_OF_SCOPE_ARGUMENTS = {
+    "repo": "monitor-policy",
+    "title": "trim logging",
+}  # serving-agent's is meridian-serving
+OUT_OF_SCOPE_REFUSAL = (
+    "Error executing tool open_pr: open_pr to 'monitor-policy' not in allow-list ['meridian-serving']"
+)
 GRANT_CHAIN = "grant_then_read"
 COPY_CHAIN = "copy_identity_then_read"
 COPY_KEY_CHAIN = "copy_tools_gateway_key_then_list"
@@ -362,14 +370,18 @@ LIST_TOOLS = (
 )
 
 
-def write_open_pr_script(agent: str) -> str:
-    """The probe that opens a pull request through the tools gateway, titled after ``agent``."""
-    call = {"name": "open_pr", "arguments": {"repo": OPENED_REPO, "title": f"opened-by-{agent}"}}
+def write_open_pr_script(arguments: dict[str, str], printed: str) -> str:
+    """The probe that calls open_pr through the tools gateway with ``arguments``, then prints ``printed``."""
+    call = {"name": "open_pr", "arguments": arguments}
     escaped = repr(call).replace("{", "{{").replace("}", "}}")  # the probes are formatted with str.format
-    return (
-        f"reply = call_mcp('{{tools_url}}', {OWN_KEY}, 'tools/call', {escaped})\n"
-        "print(json.dumps(reply.get('result', {{}}).get('isError', reply)))"
-    )
+    return f"reply = call_mcp('{{tools_url}}', {OWN_KEY}, 'tools/call', {escaped})\n{printed}"
+
+
+def write_open_pr_by(agent: str) -> str:
+    """The probe that opens a pull request titled after ``agent``; prints whether the result is an error."""
+    arguments = {"repo": OPENED_REPO, "title": f"opened-by-{agent}"}
+    printed = "print(json.dumps(reply.get('result', {{}}).get('isError', reply)))"
+    return write_open_pr_script(arguments, printed)
 
 
 def write_grant_script(body: str) -> str:
@@ -458,8 +470,18 @@ ROWS: dict[str, tuple[str, set[str]]] = {
     # The tools gateway. The agents' own pull requests are the controls of its refusals and the forge's.
     OWN_TOOLS_ROW: (LIST_TOOLS, {json.dumps(["open_pr"])}),
     NO_TOOLS_ROW: (LIST_TOOLS, {"[]"}),
-    OPENS_ROW: (write_open_pr_script(AGENT), {"false"}),
-    OTHER_OPENS_ROW: (write_open_pr_script(OTHER_AGENT), {"false"}),
+    OPENS_ROW: (write_open_pr_by(AGENT), {"false"}),
+    OTHER_OPENS_ROW: (write_open_pr_by(OTHER_AGENT), {"false"}),
+    # The forge's own check, beside it: a repo outside the agent's scope.open_pr allow-list.
+    OUT_OF_SCOPE_ROW: (
+        write_open_pr_script(
+            OUT_OF_SCOPE_ARGUMENTS,
+            "result = reply.get('result', {{}})\n"
+            "texts = [block.get('text') for block in result.get('content', [])]\n"
+            "print(json.dumps([result.get('isError'), texts]))",
+        ),
+        {json.dumps([True, [OUT_OF_SCOPE_REFUSAL]])},
+    ),
     REFUSED_TOOL_ROW: (
         f"reply = call_mcp('{{tools_url}}', {OWN_KEY}, 'tools/call', "
         "{{'name': 'open_pr', 'arguments': {{'repo': 'meridian-controlplane'}}}})\n"
@@ -494,6 +516,7 @@ ROW_AGENTS = {
     NO_TOOLS_ROW: AGENT_WITHOUT_TOOLS,
     REFUSED_TOOL_ROW: AGENT_WITHOUT_TOOLS,
     OTHER_OPENS_ROW: OTHER_AGENT,
+    OUT_OF_SCOPE_ROW: OTHER_AGENT,
 }
 ROW_SERVICES = {
     "the_notes_board_cannot_resolve_the_providers_name": NOTES.name,
@@ -580,6 +603,8 @@ class ForgeLogLine(BaseModel):
     agent: str | None = Field(validation_alias="gen_ai.agent.name")
     tool: str = Field(validation_alias="gen_ai.tool.name")
     arguments: dict[str, Any] = Field(validation_alias="gen_ai.tool.call.arguments")
+    result: dict[str, Any] | None = Field(default=None, validation_alias="gen_ai.tool.call.result")
+    error: str | None = Field(default=None, validation_alias="error.type")
 
 
 @dataclass(frozen=True)
@@ -1108,7 +1133,9 @@ def test_the_forge_log_names_the_agent_whose_sandbox_made_each_call_through_the_
 ) -> None:
     logged = stack_run.forge_log
 
-    calls = sorted((line.agent, line.tool, line.arguments.get("title")) for line in logged)
+    calls = sorted(
+        (line.agent, line.tool, line.arguments.get("title")) for line in logged if line.error is None
+    )
 
     assert calls == [(agent, "open_pr", f"opened-by-{agent}") for agent in sorted([AGENT, OTHER_AGENT])]
 
@@ -1145,3 +1172,17 @@ def test_the_tools_gateway_log_holds_no_sandbox_token_and_no_identity(stack_run:
     secrets_held = [*stack_run.tokens.values(), *stack_run.forge_identities.values()]
 
     assert [secret for secret in secrets_held if secret in logged] == []
+
+
+def test_the_forge_log_records_its_refusal_of_a_repo_outside_the_agents_scope_as_a_tool_error(
+    stack_run: StackRun,
+) -> None:
+    logged = stack_run.forge_log
+
+    refused = [
+        (line.agent, line.tool, line.error, line.result)
+        for line in logged
+        if line.arguments == OUT_OF_SCOPE_ARGUMENTS
+    ]
+
+    assert refused == [(OTHER_AGENT, "open_pr", "tool_error", None)]
