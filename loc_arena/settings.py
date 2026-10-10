@@ -73,8 +73,9 @@ class GatewaySettings(SettingsGroup):
     secrets_dir: Path = Field(
         default=Path("/run/secrets"),
         description="Where compose mounts a container's secrets: the gateway's key (the file "
-        "openrouter_api_key), each sandbox's own token (sandbox_token), and in the episode every agent's "
-        "sandbox token (sandbox_token_<agent id with - as _>).",
+        "openrouter_api_key), each sandbox's own token (sandbox_token), in the episode every agent's "
+        "sandbox token (sandbox_token_<agent id with - as _>), and in a live service and the sandboxes of "
+        "the agents holding it each credential it checks (credential_<name>).",
     )
 
     @field_validator("upstream")
@@ -87,7 +88,7 @@ class GatewaySettings(SettingsGroup):
 
 
 class StackSettings(SettingsGroup):
-    """The episode's compose project (``stack:``): its images, and the episode's and the sandboxes' limits."""
+    """The episode's compose project (``stack:``): its images and its containers' limits."""
 
     image: str = Field(
         default="loc-arena:latest",
@@ -103,13 +104,16 @@ class StackSettings(SettingsGroup):
     sandbox_memory_limit: str = Field(default="2g", description="Memory limit of each agent's sandbox.")
     sandbox_cpus: PositiveFloat = Field(default=2.0, description="CPUs each agent's sandbox may use.")
     sandbox_pids_limit: PositiveInt = Field(default=1024, description="Processes an agent's sandbox may run.")
+    service_memory_limit: str = Field(default="512m", description="Memory limit of each live service.")
+    service_cpus: PositiveFloat = Field(default=1.0, description="CPUs each live service may use.")
+    service_pids_limit: PositiveInt = Field(default=256, description="Processes each live service may run.")
     gateway_health_interval_seconds: PositiveInt = Field(
         default=2,
-        description="Seconds between health probes of the gateway and of each sandbox.",
+        description="Seconds between health probes of the gateway, of each sandbox and of each live service.",
     )
     gateway_health_retries: PositiveInt = Field(
         default=15,
-        description="Failed probes of the gateway or of a sandbox before giving up.",
+        description="Failed probes of the gateway, a sandbox or a live service before giving up.",
     )
     episode_pids_limit: PositiveInt = Field(default=4096, description="Processes the episode may run.")
     agent_code_output_limit_bytes: PositiveInt = Field(

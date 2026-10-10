@@ -36,7 +36,14 @@ from pydantic import (
 )
 from pydantic.dataclasses import dataclass as pydantic_dataclass
 from pydantic_settings import BaseSettings, SettingsConfigDict, YamlConfigSettingsSource
-from scenarios.loader import load_scenario
+from scenarios.loader import (
+    DNS_LABEL,
+    CredentialName,
+    LiveService,
+    Scenario,
+    accepted_credentials,
+    load_scenario,
+)
 
 from loc_arena.ids import PermissionScope
 from loc_arena.registry import SCORER_REGISTRY, VERIFIER_REGISTRY, is_scorer, is_verifier
@@ -49,9 +56,6 @@ REFERENCE_SUFFIX: Final = "_ref"
 COVERT_PROMPTS: Final = ("objective_prompt",)
 AGENT_PROMPTS: Final = ("system_prompt", "brief")
 LANDING_FORMULAS: Final = frozenset({"minimal", "robust"})
-# A host name label (RFC 1123) in lower case alone, so no two agents' sandboxes share a name and an agent's
-# token slug, its id with `-` as `_`, names that agent alone.
-DNS_LABEL: Final = re.compile(r"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?")
 
 
 class ConfigError(ValueError):
@@ -78,7 +82,11 @@ def sandbox_service(agent_id: str) -> str:
 
 
 def _require_a_sandbox_host_name(agent_id: str) -> str:
-    """Refuse an id whose sandbox would have no valid host name; an id is never rewritten to fit."""
+    """Refuse an id whose sandbox would have no valid host name; an id is never rewritten to fit.
+
+    A DNS label is in lower case alone, so no two agents' sandboxes share a name and an agent's token slug,
+    its id with `-` as `_`, names that agent alone.
+    """
     if not DNS_LABEL.fullmatch(sandbox_service(agent_id)):
         raise ValueError(
             f"its sandbox's name {sandbox_service(agent_id)!r} must be a DNS label: at most 63 lower-case "
@@ -240,6 +248,17 @@ class CovertConfig:
     )
 
 
+@pydantic_dataclass(frozen=True, config=ConfigDict(extra="forbid"))
+class AgentSandboxConfig:
+    """What an agent's sandbox holds beyond its own token (an agent's ``sandbox:`` block)."""
+
+    credentials: tuple[CredentialName, ...] = Field(
+        default=(),
+        description="The credentials of live services mounted into this agent's sandbox alone, each at "
+        "<secrets_dir>/credential_<name>; each must be one a live service of the run's scenario accepts.",
+    )
+
+
 @pydantic_dataclass(frozen=True, config=BLOCK_CONFIG)
 class AgentConfig:
     """One agent's identity, branch, scope, covert subtasks, and resolved prompt/brief."""
@@ -267,6 +286,10 @@ class AgentConfig:
         description="The agent's brief, resolved from brief_ref.",
     )
     spawned_by: StrictStr | None = Field(default=None, description="The agent that spawns this one, if any.")
+    sandbox: AgentSandboxConfig = Field(
+        default_factory=AgentSandboxConfig,
+        description="What the agent's sandbox holds in a stack run; an unknown key is an error.",
+    )
 
 
 @pydantic_dataclass(frozen=True, config=BLOCK_CONFIG)
@@ -411,6 +434,7 @@ class RunConfig:
     agent_transcript: bool = False
     raw: dict[str, Any] = dataclasses.field(default_factory=dict)
     model_providers: dict[str, ProviderPreferences] = dataclasses.field(default_factory=dict)
+    live_services: tuple[LiveService, ...] = ()  # the scenario's: each its own container in a stack run
 
     def agent(self, agent_id: str) -> AgentConfig:
         """Return the agent config with this id, or raise ``ConfigError``."""
@@ -491,7 +515,13 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
     except ValidationError as exc:
         raise ConfigError(f"models file {document.models} is invalid: {exc}") from exc
     models = models_file.roles
-    _validate_registry_bindings(document.scenario, document.main_task.scorer, document.side_task.verifier)
+    scenario = _validate_registry_bindings(
+        document.scenario,
+        document.main_task.scorer,
+        document.side_task.verifier,
+    )
+    live_services = scenario.live_services if scenario is not None else ()
+    _require_accepted_credentials(document.agents, live_services, document.scenario)
 
     main_task = document.main_task
     policy_model = models["untrusted_agent"].model if "untrusted_agent" in models else "unknown"
@@ -516,6 +546,7 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
         agent_loop=document.agent_loop,
         raw=source.yaml_data,
         model_providers=models_file.providers,
+        live_services=live_services,
     )
 
 
@@ -543,8 +574,28 @@ def _build_settings(merged: Mapping[str, object]) -> LocArenaSettings:
         raise ConfigError(f"invalid settings block: {exc}") from exc
 
 
-def _validate_registry_bindings(scenario_name: str | None, scorer: str | None, verifier: str) -> None:
-    """Load the scenario pack (running its registrations) and validate the scorer/verifier names.
+def _require_accepted_credentials(
+    agents: tuple[AgentConfig, ...],
+    live_services: tuple[LiveService, ...],
+    scenario_name: str | None,
+) -> None:
+    """Refuse a credential no live service of the scenario accepts: a typo must not pass silently."""
+    accepted = accepted_credentials(live_services)
+    for agent in agents:
+        unknown = [credential for credential in agent.sandbox.credentials if credential not in accepted]
+        if unknown:
+            raise ConfigError(
+                f"agent {agent.id!r} holds credentials {unknown} that no live service of scenario "
+                f"{scenario_name!r} accepts; accepted: {list(accepted)}",
+            )
+
+
+def _validate_registry_bindings(
+    scenario_name: str | None,
+    scorer: str | None,
+    verifier: str,
+) -> Scenario | None:
+    """Load the scenario pack (running its registrations), validate the scorer/verifier names; return it.
 
     ``config.main_task.scorer`` and ``config.side_task.verifier`` dispatch BY NAME through the
     ``SCORER_REGISTRY`` / ``VERIFIER_REGISTRY``. The scenario pack's ``main.py`` / ``side.py`` register
@@ -554,9 +605,10 @@ def _validate_registry_bindings(scenario_name: str | None, scorer: str | None, v
     # Baseline registrations (importing side_task registers kill_chain_v1; lazy to avoid an import cycle).
     from loc_arena.verifier import side_task as _side_task  # noqa: F401, PLC0415
 
+    scenario = None
     if scenario_name is not None:
         try:
-            load_scenario(scenario_name)
+            scenario = load_scenario(scenario_name)
         except Exception as exc:  # surface a missing/broken pack as a config error
             raise ConfigError(f"scenario {scenario_name!r} failed to load: {exc}") from exc
 
@@ -569,3 +621,4 @@ def _validate_registry_bindings(scenario_name: str | None, scorer: str | None, v
     if not is_verifier(verifier):
         known = ", ".join(sorted(VERIFIER_REGISTRY)) or "(none registered)"
         raise ConfigError(f"side_task.verifier {verifier!r} is not a registered verifier; known: {known}")
+    return scenario

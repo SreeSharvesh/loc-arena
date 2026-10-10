@@ -7,19 +7,132 @@ overlay, the scripted policy's ``scripted/`` moves and a sealed ``reference/``. 
 its ``main.py``/``side.py`` so the registrations run, then exposes the seed, the moves and the sealed
 reference to the harness. Adding a (main, side) pair at a new point is: drop a pack and register its
 scorer/verifier -- no engine change.
+
+A pack's ``services:`` declares the services its world has. An entry with ``build`` or ``image`` is live: a
+stack run gives it its own container on agent-net, reached at ``http://<name>:<port>``. Any other entry stays
+simulated, and the stack ignores it.
 """
 
 from __future__ import annotations
 
 import importlib.util
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any, Final, Self
 
 import yaml
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictInt,
+    StrictStr,
+    StringConstraints,
+    ValidationError,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
+from sandbox_server.confinement import resolve_inside
 
 SCENARIOS_ROOT = Path(__file__).resolve().parent
+# A host name label (RFC 1123) in lower case alone: what names a compose service and its host on agent-net.
+DNS_LABEL: Final = re.compile(r"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?")
+# The stack's own services (loc_arena.episode_stack): a live service may not take their names.
+STACK_SERVICES: Final = frozenset({"gateway", "episode"})
+SANDBOX_PREFIX: Final = "sandbox-"
+# Never in a service's build context: the sealed answer and the scripted moves, which agents must not reach.
+SEALED_DIRECTORIES: Final = ("reference", "scripted")
+PACK_DIRECTORY: Final = "pack_directory"  # the validation context key: the pack a build path resolves in
+CredentialName = Annotated[str, StringConstraints(strict=True, pattern=r"^[a-z0-9-]+$")]
+
+
+def _require_a_service_name(name: str) -> str:
+    """Refuse a name that is no host name, or that would take the place of one of the stack's services."""
+    if not DNS_LABEL.fullmatch(name):
+        raise ValueError("it must be a DNS label: at most 63 lower-case letters, digits and inner hyphens")
+    if name in STACK_SERVICES or name.startswith(SANDBOX_PREFIX):
+        raise ValueError(f"it is taken by the stack: {sorted(STACK_SERVICES)} and {SANDBOX_PREFIX}<agent id>")
+    return name
+
+
+class ScenarioService(BaseModel):
+    """One entry of a pack's ``services:``, as written; ``build`` or ``image`` makes it live."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    name: Annotated[StrictStr, AfterValidator(_require_a_service_name)] = Field(
+        description="The compose service and its host name on agent-net: the entry's key.",
+    )
+    build: Path | None = Field(
+        default=None,
+        description="A directory under the pack holding a Dockerfile; resolved to its absolute path.",
+    )
+    image: StrictStr | None = Field(default=None, min_length=1, description="A ready image to run instead.")
+    command: tuple[StrictStr, ...] | None = Field(
+        default=None,
+        min_length=1,
+        description="What the container runs; the image's own command when absent.",
+    )
+    port: StrictInt | None = Field(default=None, ge=1, le=65535, description="Where the service listens.")
+    healthcheck: tuple[StrictStr, ...] | None = Field(
+        default=None,
+        min_length=1,
+        description="The compose healthcheck test; a probe of the port when absent.",
+    )
+    accepts: tuple[CredentialName, ...] = Field(
+        default=(),
+        description="The credentials the service checks; none: open to everything on agent-net.",
+    )
+    description: StrictStr = Field(default="", description="What the agents of a stack run are told it is.")
+
+    @field_validator("build")
+    @classmethod
+    def _resolve_build(cls, build: Path | None, info: ValidationInfo) -> Path | None:
+        """The absolute build directory: under the pack, outside its sealed parts, with a Dockerfile."""
+        if build is None:
+            return None
+        if info.context is None:
+            raise ValueError("a build directory resolves only against its pack, given as the context")
+        pack = info.context[PACK_DIRECTORY].resolve()
+        resolved = resolve_inside(pack, build)
+        if resolved == pack or any(resolved.is_relative_to(pack / sealed) for sealed in SEALED_DIRECTORIES):
+            raise ValueError(
+                f"{build} must be a directory under the pack, outside {list(SEALED_DIRECTORIES)}",
+            )
+        if not (resolved / "Dockerfile").is_file():
+            raise ValueError(f"{build} holds no Dockerfile")
+        return resolved
+
+    @model_validator(mode="after")
+    def _require_one_source_and_a_port_when_live(self) -> Self:
+        """Refuse an entry with both build and image, or a live one with no port."""
+        if self.build is not None and self.image is not None:
+            raise ValueError("give build or image, not both")
+        if (self.build is not None or self.image is not None) and self.port is None:
+            raise ValueError("a live service (build or image) needs a port")
+        return self
+
+
+@dataclass(frozen=True)
+class LiveService:
+    """A service a stack run gives its own container on agent-net."""
+
+    name: str
+    source: Path | str  # the absolute build directory, or the ready image
+    port: int
+    command: tuple[str, ...] | None
+    healthcheck: tuple[str, ...] | None
+    accepts: tuple[str, ...]
+    description: str
+
+
+def accepted_credentials(services: tuple[LiveService, ...]) -> tuple[str, ...]:
+    """Every credential some of ``services`` checks, each once, in declaration order."""
+    return tuple(dict.fromkeys(credential for service in services for credential in service.accepts))
 
 
 @dataclass(frozen=True)
@@ -32,6 +145,7 @@ class Scenario:
     verifier: str
     seed_repo: str
     meta: dict[str, Any]
+    live_services: tuple[LiveService, ...] = ()
 
     @property
     def seed_dir(self) -> Path:
@@ -72,6 +186,35 @@ def _import_pack_module(directory: Path, module: str) -> None:
         raise
 
 
+def _parse_live_services(directory: Path, declared: object) -> tuple[LiveService, ...]:
+    """The live entries of ``declared``, a pack's ``services:``; a ValueError names an invalid entry."""
+    if not isinstance(declared, dict):
+        raise ValueError(f"scenario {directory.name}: services must map each name to its entry")
+    live = []
+    for name, entry in declared.items():
+        try:
+            service = ScenarioService.model_validate(
+                {**(entry or {}), "name": name},
+                context={PACK_DIRECTORY: directory},
+            )
+        except (ValidationError, TypeError) as error:
+            raise ValueError(f"scenario {directory.name}: service {name!r} is invalid: {error}") from error
+        source = service.build or service.image
+        if source is not None and service.port is not None:  # a live entry with no port was refused above
+            live.append(
+                LiveService(
+                    name=service.name,
+                    source=source,
+                    port=service.port,
+                    command=service.command,
+                    healthcheck=service.healthcheck,
+                    accepts=service.accepts,
+                    description=service.description,
+                ),
+            )
+    return tuple(live)
+
+
 def load_scenario(name: str, *, root: Path | None = None) -> Scenario:
     """Load a scenario pack by name: run its registrations and return its ``Scenario`` handle."""
     directory = (root or SCENARIOS_ROOT) / name
@@ -88,4 +231,5 @@ def load_scenario(name: str, *, root: Path | None = None) -> Scenario:
         verifier=str(meta["verifier"]),
         seed_repo=str(meta.get("seed_repo", "meridian-serving")),
         meta=meta,
+        live_services=_parse_live_services(directory, meta.get("services") or {}),
     )

@@ -31,4 +31,5 @@ def test_the_image_holds_no_scenario_subfolder_that_could_give_the_answer_away()
 
     in_image = [PurePosixPath(path) for path in tracked if not _is_ignored(PurePosixPath(path), patterns)]
 
-    assert sorted({path.parts[2] for path in in_image if len(path.parts) > 3}) == []
+    # Only the live services' build directories: the episode, loading the pack, checks each has a Dockerfile.
+    assert sorted({path.parts[2] for path in in_image if len(path.parts) > 3}) == ["services"]
