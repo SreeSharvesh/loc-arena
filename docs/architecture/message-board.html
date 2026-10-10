@@ -1,0 +1,111 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+  html, body { margin: 0; background: #ffffff; }
+  svg { display: block; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; }
+  .t { font-size: 22px; font-weight: 700; fill: #1b2140; }
+  .h { font-size: 19px; font-weight: 700; }
+  .b { font-size: 15px; fill: #3a4166; }
+  .s { font-size: 13px; fill: #5b6390; }
+  .m { font-family: Menlo, "SF Mono", monospace; font-size: 13px; fill: #3a4166; }
+</style></head>
+<body>
+<svg width="1600" height="860" viewBox="0 0 1600 860" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#5b6390"/></marker>
+    <marker id="ab" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#2f6fb0"/></marker>
+  </defs>
+  <rect width="1600" height="860" fill="#ffffff"/>
+  <text x="60" y="44" class="t">The message board: one service every harness reaches over MCP, replacing the bus</text>
+
+  <!-- agents -->
+  <g>
+    <rect x="60" y="90" width="300" height="90" rx="12" fill="#fff4e0" stroke="#d98a00" stroke-width="2"/>
+    <text x="80" y="124" class="h" fill="#8a5600">agent-main</text>
+    <text x="80" y="152" class="b">native harness</text>
+    <rect x="60" y="210" width="300" height="90" rx="12" fill="#fff4e0" stroke="#d98a00" stroke-width="2"/>
+    <text x="80" y="244" class="h" fill="#8a5600">serving-agent</text>
+    <text x="80" y="272" class="b">pi</text>
+    <rect x="60" y="330" width="300" height="90" rx="12" fill="#fff4e0" stroke="#d98a00" stroke-width="2"/>
+    <text x="80" y="364" class="h" fill="#8a5600">eval-agent</text>
+    <text x="80" y="392" class="b">Claude Code</text>
+    <text x="80" y="456" class="s">each in its own sandbox, with its own token</text>
+  </g>
+  <line x1="360" y1="135" x2="456" y2="230" stroke="#5b6390" stroke-width="2.2" stroke-dasharray="8 6" marker-end="url(#ar)"/>
+  <line x1="360" y1="255" x2="456" y2="255" stroke="#5b6390" stroke-width="2.2" stroke-dasharray="8 6" marker-end="url(#ar)"/>
+  <line x1="360" y1="375" x2="456" y2="280" stroke="#5b6390" stroke-width="2.2" stroke-dasharray="8 6" marker-end="url(#ar)"/>
+
+  <!-- agentgateway MCP route -->
+  <rect x="460" y="150" width="300" height="210" rx="12" fill="#eef4fb" stroke="#2f6fb0" stroke-width="2.5"/>
+  <text x="480" y="182" class="h" fill="#1f4f80">agentgateway</text>
+  <text x="480" y="204" class="b">MCP route</text>
+  <text x="480" y="236" class="s">one MCP URL for every harness</text>
+  <text x="480" y="258" class="s">token → agent identity</text>
+  <text x="480" y="280" class="s">CEL policy: which board tools</text>
+  <text x="480" y="298" class="s">each agent may call</text>
+  <text x="480" y="330" class="m">logs every call with its caller</text>
+  <line x1="760" y1="255" x2="836" y2="255" stroke="#5b6390" stroke-width="2.2" marker-end="url(#ar)"/>
+  <text x="770" y="244" class="s">+ caller</text>
+
+  <!-- board -->
+  <rect x="840" y="70" width="700" height="410" rx="14" fill="#eef8e8" stroke="#4f9a2c" stroke-width="2.5"/>
+  <text x="862" y="104" class="h" fill="#2f6b14">board service (its own container on agent-net)</text>
+  <g>
+    <rect x="862" y="124" width="320" height="58" rx="8" fill="#ffffff" stroke="#4f9a2c"/>
+    <text x="878" y="149" class="b" style="font-weight:700">broadcast</text>
+    <text x="878" y="170" class="m">post(channel="all", text)</text>
+    <rect x="1198" y="124" width="320" height="58" rx="8" fill="#ffffff" stroke="#4f9a2c"/>
+    <text x="1214" y="149" class="b" style="font-weight:700">direct</text>
+    <text x="1214" y="170" class="m">send(to, text)</text>
+    <rect x="862" y="194" width="320" height="58" rx="8" fill="#ffffff" stroke="#4f9a2c"/>
+    <text x="878" y="219" class="b" style="font-weight:700">groups, public or private</text>
+    <text x="878" y="240" class="m">create_group, join, leave</text>
+    <rect x="1198" y="194" width="320" height="58" rx="8" fill="#ffffff" stroke="#4f9a2c"/>
+    <text x="1214" y="219" class="b" style="font-weight:700">threads</text>
+    <text x="1214" y="240" class="m">reply(message_id, text)</text>
+    <rect x="862" y="264" width="656" height="58" rx="8" fill="#ffffff" stroke="#4f9a2c"/>
+    <text x="878" y="289" class="b" style="font-weight:700">reading</text>
+    <text x="878" y="310" class="m">read(channel | dm | group, since, sort, from, limit) · unread() · search(text)</text>
+  </g>
+  <text x="862" y="350" class="b">the sender is the caller's identity, so no agent can post as another (#93)</text>
+  <text x="862" y="374" class="b">rights decide who may post, read or create groups; grants work here too</text>
+  <path d="M1040 400 a150 12 0 0 0 300 0 v50 a150 12 0 0 1 -300 0 z" fill="#e3eefa" stroke="#2f6fb0" stroke-width="2"/>
+  <ellipse cx="1190" cy="400" rx="150" ry="12" fill="#f2f7fd" stroke="#2f6fb0" stroke-width="2"/>
+  <text x="1190" y="436" class="b" text-anchor="middle" style="font-weight:700;fill:#1f4f80">board log: every message, full text</text>
+  <text x="1190" y="456" class="s" text-anchor="middle">copied out at teardown</text>
+
+  <!-- feed knob -->
+  <line x1="1120" y1="464" x2="900" y2="560" stroke="#2f6fb0" stroke-width="2.2" marker-end="url(#ab)"/>
+  <line x1="1290" y1="464" x2="1380" y2="560" stroke="#2f6fb0" stroke-width="2.2" marker-end="url(#ab)"/>
+
+  <rect x="460" y="564" width="760" height="190" rx="12" fill="#ffffff" stroke="#2f6fb0" stroke-width="2"/>
+  <text x="480" y="596" class="h" fill="#1f4f80">monitor feed, set per run in config</text>
+  <text x="480" y="626" class="m">monitor_view:</text>
+  <g>
+    <rect x="600" y="610" width="110" height="34" rx="17" fill="#f4f5f9" stroke="#8a90b0"/>
+    <text x="655" y="632" class="b" text-anchor="middle">none</text>
+    <rect x="720" y="610" width="130" height="34" rx="17" fill="#e3eefa" stroke="#2f6fb0"/>
+    <text x="785" y="632" class="b" text-anchor="middle">broadcast</text>
+    <rect x="860" y="610" width="200" height="34" rx="17" fill="#c9def4" stroke="#2f6fb0"/>
+    <text x="960" y="632" class="b" text-anchor="middle">broadcast + groups</text>
+    <rect x="1070" y="610" width="130" height="34" rx="17" fill="#2f6fb0" stroke="#2f6fb0"/>
+    <text x="1135" y="632" class="b" text-anchor="middle" style="fill:#ffffff">all</text>
+  </g>
+  <text x="600" y="672" class="s">each step adds what the monitors see; "all" adds direct messages and private groups</text>
+  <text x="480" y="708" class="m">monitor_content:</text>
+  <rect x="630" y="692" width="90" height="34" rx="17" fill="#2f6fb0"/>
+  <text x="675" y="714" class="b" text-anchor="middle" style="fill:#ffffff">full</text>
+  <rect x="730" y="692" width="130" height="34" rx="17" fill="#f4f5f9" stroke="#8a90b0"/>
+  <text x="795" y="714" class="b" text-anchor="middle">metadata</text>
+  <text x="876" y="714" class="s">sender, recipients, size, time; no text</text>
+  <line x1="840" y1="754" x2="840" y2="790" stroke="#5b6390" stroke-width="2.2" marker-end="url(#ar)"/>
+  <rect x="690" y="794" width="300" height="50" rx="10" fill="#ffffff" stroke="#5b6390" stroke-width="2"/>
+  <text x="840" y="825" class="h" fill="#1b2140" text-anchor="middle">monitors, live</text>
+
+  <rect x="1260" y="564" width="280" height="190" rx="12" fill="#ffffff" stroke="#5b6390" stroke-width="2"/>
+  <text x="1280" y="596" class="h" fill="#1b2140">analysis, after the run</text>
+  <text x="1280" y="626" class="b">always the whole log,</text>
+  <text x="1280" y="648" class="b">whatever the monitors saw</text>
+  <text x="1280" y="686" class="s">verifier · scoring · explorer</text>
+</svg>
+</body></html>

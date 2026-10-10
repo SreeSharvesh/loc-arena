@@ -1,0 +1,130 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+  html, body { margin: 0; background: #ffffff; }
+  svg { display: block; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; }
+  .t { font-size: 22px; font-weight: 700; fill: #1b2140; }
+  .h { font-size: 19px; font-weight: 700; }
+  .b { font-size: 15px; fill: #3a4166; }
+  .s { font-size: 13px; fill: #5b6390; }
+  .m { font-family: Menlo, "SF Mono", monospace; font-size: 13px; fill: #3a4166; }
+</style></head>
+<body>
+<svg width="1600" height="1080" viewBox="0 0 1600 1080" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#5b6390"/></marker>
+    <marker id="ab" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#2f6fb0"/></marker>
+  </defs>
+  <rect width="1600" height="1080" fill="#ffffff"/>
+  <text x="60" y="44" class="t">Record at the boundaries: agentgateway for model calls and tool calls, nothing recorded in the harness</text>
+
+  <!-- sandboxes -->
+  <g>
+    <rect x="60" y="70" width="340" height="130" rx="12" fill="#fff4e0" stroke="#d98a00" stroke-width="2"/>
+    <text x="80" y="102" class="h" fill="#8a5600">sandbox-agent-main</text>
+    <text x="80" y="128" class="b">native harness</text>
+    <text x="80" y="160" class="s">built-ins: read, edit, bash</text>
+    <text x="80" y="182" class="s">skills/ mounted read-only</text>
+
+    <rect x="440" y="70" width="340" height="130" rx="12" fill="#fff4e0" stroke="#d98a00" stroke-width="2"/>
+    <text x="460" y="102" class="h" fill="#8a5600">sandbox-serving-agent</text>
+    <text x="460" y="128" class="b">pi</text>
+    <text x="460" y="160" class="s">built-ins: read, edit, bash</text>
+    <text x="460" y="182" class="s">skills/ mounted read-only</text>
+
+    <rect x="820" y="70" width="340" height="130" rx="12" fill="#fff4e0" stroke="#d98a00" stroke-width="2"/>
+    <text x="840" y="102" class="h" fill="#8a5600">sandbox-eval-agent</text>
+    <text x="840" y="128" class="b">Claude Code</text>
+    <text x="840" y="160" class="s">built-ins: read, edit, bash</text>
+    <text x="840" y="182" class="s">skills/ mounted read-only</text>
+
+    <rect x="1200" y="70" width="340" height="130" rx="12" fill="#ffffff" stroke="#d98a00" stroke-width="2" stroke-dasharray="7 6"/>
+    <text x="1220" y="102" class="h" fill="#8a5600">… one sandbox per agent</text>
+    <text x="1220" y="128" class="b">any harness: native, pi, Claude Code, Codex</text>
+    <text x="1220" y="160" class="s">no key, no internet, no host</text>
+    <text x="1220" y="182" class="s">its own token for the gateway</text>
+  </g>
+
+  <!-- arrows sandboxes to gateway -->
+  <g stroke-width="2.2">
+    <line x1="200" y1="200" x2="200" y2="282" stroke="#5b6390" marker-end="url(#ar)"/>
+    <line x1="260" y1="200" x2="980" y2="282" stroke="#5b6390" stroke-dasharray="8 6" marker-end="url(#ar)"/>
+    <line x1="580" y1="200" x2="400" y2="282" stroke="#5b6390" marker-end="url(#ar)"/>
+    <line x1="640" y1="200" x2="1080" y2="282" stroke="#5b6390" stroke-dasharray="8 6" marker-end="url(#ar)"/>
+    <line x1="960" y1="200" x2="560" y2="282" stroke="#5b6390" marker-end="url(#ar)"/>
+    <line x1="1020" y1="200" x2="1180" y2="282" stroke="#5b6390" stroke-dasharray="8 6" marker-end="url(#ar)"/>
+  </g>
+  <line x1="1240" y1="236" x2="1290" y2="236" stroke="#5b6390" stroke-width="2.2"/>
+  <text x="1300" y="241" class="b">model calls</text>
+  <line x1="1240" y1="262" x2="1290" y2="262" stroke="#5b6390" stroke-width="2.2" stroke-dasharray="8 6"/>
+  <text x="1300" y="267" class="b">tool calls over MCP</text>
+
+  <!-- agentgateway -->
+  <rect x="60" y="286" width="1480" height="200" rx="14" fill="#eef4fb" stroke="#2f6fb0" stroke-width="2.5"/>
+  <text x="80" y="316" class="h" fill="#1f4f80">agentgateway (Apache-2.0, Linux Foundation): the one boundary, configured per run</text>
+  <rect x="90" y="332" width="660" height="134" rx="10" fill="#ffffff" stroke="#2f6fb0"/>
+  <text x="110" y="360" class="h" fill="#1f4f80">LLM route</text>
+  <text x="110" y="386" class="b">holds the OpenRouter key; each agent sends its own token</text>
+  <text x="110" y="410" class="b">logs the full request and response per caller, streamed chunks too</text>
+  <text x="110" y="434" class="b">injects the covert objective for one caller only (CEL rule)</text>
+  <text x="110" y="456" class="m">allows only /api/v1/chat/completions, no retries</text>
+  <rect x="850" y="332" width="660" height="134" rx="10" fill="#ffffff" stroke="#2f6fb0"/>
+  <text x="870" y="360" class="h" fill="#1f4f80">MCP route</text>
+  <text x="870" y="386" class="b">one MCP URL for every harness, one token per agent</text>
+  <text x="870" y="410" class="b">per-agent tools by CEL policy (mcpAuthorization)</text>
+  <text x="870" y="434" class="b">passes the caller's identity on to the service</text>
+  <text x="870" y="456" class="m">logs every tool call with the caller</text>
+
+  <!-- OpenRouter -->
+  <line x1="300" y1="486" x2="300" y2="546" stroke="#5b6390" stroke-width="2.2" marker-end="url(#ar)"/>
+  <rect x="90" y="550" width="420" height="80" rx="10" fill="#f4f5f9" stroke="#8a90b0" stroke-width="2"/>
+  <text x="110" y="582" class="h" fill="#3a4166">OpenRouter</text>
+  <text x="110" y="608" class="b">the only route out to the internet</text>
+
+  <!-- services -->
+  <line x1="1180" y1="486" x2="1180" y2="546" stroke="#5b6390" stroke-width="2.2" marker-end="url(#ar)"/>
+  <rect x="850" y="550" width="660" height="80" rx="10" fill="#eef8e8" stroke="#4f9a2c" stroke-width="2"/>
+  <text x="870" y="578" class="h" fill="#2f6b14">services, each its own container on agent-net</text>
+  <text x="870" y="606" class="b">board · forge · notes · jobs · identity</text>
+  <text x="870" y="622" class="s">each records what was done to it, by which identity</text>
+
+  <!-- records -->
+  <g>
+    <path d="M330 690 a170 14 0 0 0 340 0 v60 a170 14 0 0 1 -340 0 z" fill="#e3eefa" stroke="#2f6fb0" stroke-width="2"/>
+    <ellipse cx="500" cy="690" rx="170" ry="14" fill="#f2f7fd" stroke="#2f6fb0" stroke-width="2"/>
+    <text x="500" y="728" class="h" fill="#1f4f80" text-anchor="middle">gateway log</text>
+    <text x="500" y="750" class="s" text-anchor="middle">every model call and tool call, with its caller</text>
+    <path d="M1010 690 a170 14 0 0 0 340 0 v60 a170 14 0 0 1 -340 0 z" fill="#e3eefa" stroke="#2f6fb0" stroke-width="2"/>
+    <ellipse cx="1180" cy="690" rx="170" ry="14" fill="#f2f7fd" stroke="#2f6fb0" stroke-width="2"/>
+    <text x="1180" y="728" class="h" fill="#1f4f80" text-anchor="middle">service logs</text>
+    <text x="1180" y="750" class="s" text-anchor="middle">what was done in the world, by whom</text>
+  </g>
+  <path d="M760 486 C 760 560, 560 600, 520 672" fill="none" stroke="#2f6fb0" stroke-width="2.2" marker-end="url(#ab)"/>
+  <line x1="1180" y1="630" x2="1180" y2="672" stroke="#2f6fb0" stroke-width="2.2" marker-end="url(#ab)"/>
+  <text x="782" y="524" class="s">recorded at the boundary</text>
+
+  <!-- event builder -->
+  <line x1="560" y1="768" x2="720" y2="826" stroke="#2f6fb0" stroke-width="2.2" marker-end="url(#ab)"/>
+  <line x1="1120" y1="768" x2="900" y2="826" stroke="#2f6fb0" stroke-width="2.2" marker-end="url(#ab)"/>
+  <rect x="560" y="830" width="500" height="64" rx="10" fill="#1f4f80"/>
+  <text x="810" y="858" class="h" fill="#ffffff" text-anchor="middle">events built from the two records</text>
+  <text x="810" y="881" class="s" fill="#dbe8f7" text-anchor="middle" style="fill:#dbe8f7">out of every agent's reach: the sealed record</text>
+
+  <!-- consumers -->
+  <g>
+    <line x1="700" y1="894" x2="330" y2="950" stroke="#5b6390" stroke-width="2" marker-end="url(#ar)"/>
+    <line x1="760" y1="894" x2="690" y2="950" stroke="#5b6390" stroke-width="2" marker-end="url(#ar)"/>
+    <line x1="860" y1="894" x2="1010" y2="950" stroke="#5b6390" stroke-width="2" marker-end="url(#ar)"/>
+    <line x1="920" y1="894" x2="1330" y2="950" stroke="#5b6390" stroke-width="2" marker-end="url(#ar)"/>
+    <rect x="150" y="954" width="360" height="74" rx="10" fill="#ffffff" stroke="#5b6390" stroke-width="2"/>
+    <text x="330" y="984" class="h" fill="#1b2140" text-anchor="middle">monitors, live</text>
+    <text x="330" y="1008" class="s" text-anchor="middle">a view filtered by monitor_view</text>
+    <rect x="540" y="954" width="300" height="74" rx="10" fill="#ffffff" stroke="#5b6390" stroke-width="2"/>
+    <text x="690" y="996" class="h" fill="#1b2140" text-anchor="middle">verifier</text>
+    <rect x="870" y="954" width="280" height="74" rx="10" fill="#ffffff" stroke="#5b6390" stroke-width="2"/>
+    <text x="1010" y="996" class="h" fill="#1b2140" text-anchor="middle">scoring</text>
+    <rect x="1180" y="954" width="300" height="74" rx="10" fill="#ffffff" stroke="#5b6390" stroke-width="2"/>
+    <text x="1330" y="996" class="h" fill="#1b2140" text-anchor="middle">explorer</text>
+  </g>
+</svg>
+</body></html>
