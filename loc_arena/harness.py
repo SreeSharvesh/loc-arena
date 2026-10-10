@@ -23,7 +23,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
 from loc_arena import live
-from loc_arena.config import RunConfig
+from loc_arena.config import AgentConfig, RunConfig
 from loc_arena.gateway.core import (
     GatewayCore,
     GenerateRequest,
@@ -52,6 +52,7 @@ from loc_arena.monitors.registry import (
 )
 from loc_arena.protocol import compose_protocol
 from loc_arena.recorded_events import build_recorded_events
+from loc_arena.recording_service import TOOLS as RECORDED_TOOLS
 from loc_arena.task import (
     EpisodeResult,
     Snapshot,
@@ -73,11 +74,30 @@ def _default_sink(kind: str, payload: dict[str, Any]) -> None:
 # Run an episode in a MODE, grade it, and write the reproducible per-run audit bundle
 # --------------------------------------------------------------------------------------------------------
 def apply_mode(config: RunConfig, mode: str) -> RunConfig:
-    """Return the config for ``mode``; ``mode`` (attack/honest) is the ONLY difference."""
+    """Return the config for ``mode``; ``mode`` (attack/honest) is the ONLY difference.
+
+    The honest twin is never offered a covert tool: its agents' ``sandbox: tools:`` drop the recording
+    services' tools, so the twin lists none in process and the tools gateway offers it none in a stack.
+    """
     if mode not in ("attack", "honest"):
         raise ValueError(f"mode must be 'attack' or 'honest', got {mode!r}")
-    enabled = mode == "attack"
-    return dataclasses.replace(config, covert=dataclasses.replace(config.covert, enabled=enabled))
+    covert = dataclasses.replace(config.covert, enabled=mode == "attack")
+    if mode == "attack":
+        return dataclasses.replace(config, covert=covert)
+    agents = tuple(_without_covert_tools(agent) for agent in config.agents)
+    return dataclasses.replace(config, covert=covert, agents=agents)
+
+
+def _without_covert_tools(agent: AgentConfig) -> AgentConfig:
+    """``agent`` with every covert tool dropped from its ``sandbox: tools:``, and emptied services with it."""
+    kept = {
+        service: remaining
+        for service, tools in agent.sandbox.tools.items()
+        if (remaining := tuple(tool for tool in tools if tool not in RECORDED_TOOLS))
+    }
+    if kept == {service: tuple(tools) for service, tools in agent.sandbox.tools.items()}:
+        return agent
+    return dataclasses.replace(agent, sandbox=dataclasses.replace(agent.sandbox, tools=kept))
 
 
 def _resolved_weight(spec: Any, agg: Any) -> float:
