@@ -34,15 +34,10 @@ from urllib.parse import urlsplit
 import yaml
 from scenarios.loader import LiveService
 
-from loc_arena.config import (
-    RunConfig,
-    identity_variable,
-    load_run_config,
-    require_distinct_identity_variables,
-    sandbox_service,
-)
+from loc_arena.config import RunConfig, load_run_config, sandbox_service
 from loc_arena.gateway.core import API_KEY_VARIABLE, GATEWAY_URL_VARIABLE, OPENROUTER_URL, OpenRouterProvider
 from loc_arena.harness import grade_run, locate_run
+from loc_arena.identity_variables import find_shared_identity_variable, identity_variable
 from loc_arena.sandbox import IDENTITY_PREFIX, TOKEN_FILE, build_server_settings, token_secret_name
 from loc_arena.settings import StackSettings
 from loc_arena.task import SANDBOX_URL_VARIABLE, resolve_scenario
@@ -59,6 +54,10 @@ TOKEN_BYTES = 32  # the entropy of each sandbox token and of each agent's identi
 VOCABULARY_VARIABLE = "LOC_ARENA_VOCABULARY"  # the rights a live service's scenario declares: a JSON list
 RIGHTS_VARIABLE = "LOC_ARENA_RIGHTS"  # a live service's starting rights: JSON {agent id: [right, ...]}
 TRANSITIVE_VARIABLE = "LOC_ARENA_TRANSITIVE"  # "true" when a live service lets the grant right be granted
+NEVER_STARTED = (
+    f"the episode never started: is {API_KEY_VARIABLE} set in .env or the shell, or did a live service fail "
+    "to become healthy? See above and the copied logs in {logs}"
+)
 GATEWAY_MODE_OPTION = "com.docker.network.bridge.gateway_mode_ipv4"
 LOOPBACK = "127.0.0.1"  # the only host address the gateway's port is published on, for grading on this host
 ENGINE_TARGET = "engine"  # the Dockerfile's stage of the gateway and the episode
@@ -158,7 +157,8 @@ def issue_identities(config: RunConfig) -> tuple[Identity, ...]:
 
     Refuses names that would make two identities share one host variable, as the config load does.
     """
-    require_distinct_identity_variables(config.agents, config.live_services)
+    if shared := find_shared_identity_variable((agent.id for agent in config.agents), config.live_services):
+        raise StackError(shared)
     return tuple(
         Identity(service.name, agent.id)
         for service in config.live_services
@@ -420,12 +420,9 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
     for directory in (call_log.parent, service_logs):
         directory.mkdir(parents=True, exist_ok=True)
     copy_output = [*compose, "cp", f"{EPISODE_SERVICE}:{OUTPUT_DIRECTORY}/.", str(logs)]
-    copy_service_logs: list[tuple[list[str], Path | None]] = [
-        (
-            [*compose, "logs", "--no-color", "--no-log-prefix", service.name],
-            service_logs / f"{service.name}.log",
-        )
-        for service in config.live_services
+    copy_service_logs = [
+        ([*compose, "logs", "--no-color", "--no-log-prefix", name], service_logs / f"{name}.log")
+        for name in (service.name for service in config.live_services)
     ]
     copy_logs = [
         ([*compose, "cp", f"gateway:{settings.gateway.call_log}", str(call_log)], None),
@@ -467,11 +464,7 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
             raise StackError(f"could not copy every log out: kept compose project {project} and its volumes")
         run_compose([*compose, "down", "--volumes", "--remove-orphans"])
         if created and not started:
-            message = (
-                f"the episode never started: is {API_KEY_VARIABLE} set in .env or the shell, or did a live "
-                f"service fail to become healthy? See above and the copied logs in {service_logs}"
-            )
-            raise StackError(message)
+            raise StackError(NEVER_STARTED.format(logs=service_logs))
 
 
 def sandbox_agent_code(config: RunConfig) -> RunConfig:

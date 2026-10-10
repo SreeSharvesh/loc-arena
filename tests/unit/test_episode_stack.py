@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import IO
 
 import pytest
-from loc_arena.config import ConfigError, load_run_config
+from loc_arena.config import load_run_config
 from loc_arena.episode_stack import (
     AGENT_NETWORK,
     EGRESS_NETWORK,
@@ -529,7 +529,7 @@ def test_identities_that_would_share_one_host_variable_are_refused_naming_both(
         live_services=(notes, dataclasses.replace(notes, name="notes-agent")),
     )
 
-    with pytest.raises(ConfigError, match=r"\('notes', 'agent-main'\), \('notes-agent', 'main'\)"):
+    with pytest.raises(StackError, match=r"\('notes', 'agent-main'\), \('notes-agent', 'main'\)"):
         render_compose(config, REPOSITORY, "a-run", [])
 
 
