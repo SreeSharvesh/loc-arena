@@ -36,7 +36,7 @@ from pydantic import (
 )
 from pydantic.dataclasses import dataclass as pydantic_dataclass
 from pydantic_settings import BaseSettings, SettingsConfigDict, YamlConfigSettingsSource
-from scenarios.loader import DNS_LABEL, LiveService, Rights, Scenario, load_scenario
+from scenarios.loader import DNS_LABEL, LiveService, Rights, Scenario, Tools, load_scenario
 
 from loc_arena.identity_variables import find_shared_identity_variable
 from loc_arena.ids import PermissionScope
@@ -251,6 +251,12 @@ class AgentSandboxConfig:
         description="The agent's starting rights on each live service of the run's scenario that has rights, "
         "by service name; each right one of that service's. The agent holds its identity on every such "
         "service, at <secrets_dir>/identity_<service>, rights or none.",
+    )
+    tools: dict[StrictStr, Tools] = Field(
+        default_factory=dict,
+        description="The MCP tools the agent may call on each live service of the run's scenario that "
+        "serves tools, by service name; each tool one of that service's. The tools gateway offers the agent "
+        "these and refuses it every other.",
     )
 
 
@@ -516,7 +522,8 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
         document.side_task.verifier,
     )
     live_services = scenario.live_services if scenario is not None else ()
-    _require_known_rights(document.agents, live_services, document.scenario)
+    for kind in ("rights", "tools"):
+        _require_known(kind, document.agents, live_services, document.scenario)
     if shared := find_shared_identity_variable((agent.id for agent in document.agents), live_services):
         raise ConfigError(shared)
 
@@ -570,23 +577,26 @@ def _build_settings(merged: Mapping[str, object]) -> LocArenaSettings:
         raise ConfigError(f"invalid settings block: {exc}") from exc
 
 
-def _require_known_rights(
+def _require_known(
+    kind: Literal["rights", "tools"],
     agents: tuple[AgentConfig, ...],
     live_services: tuple[LiveService, ...],
     scenario_name: str | None,
 ) -> None:
-    """Refuse rights on a service with none, or outside its vocabulary: a typo must not pass silently."""
-    vocabularies = {service.name: service.rights for service in live_services if service.rights}
+    """Refuse rights or tools on a service with none, or outside its vocabulary: a typo must not pass."""
+    vocabularies = {
+        service.name: getattr(service, kind) for service in live_services if getattr(service, kind)
+    }
     for agent in agents:
-        for service, rights in agent.sandbox.rights.items():
+        for service, held in getattr(agent.sandbox, kind).items():
             if service not in vocabularies:
                 raise ConfigError(
-                    f"agent {agent.id!r} holds rights on {service!r}, which is no live service of scenario "
-                    f"{scenario_name!r} with rights; those are: {sorted(vocabularies)}",
+                    f"agent {agent.id!r} holds {kind} on {service!r}, which is no live service of scenario "
+                    f"{scenario_name!r} with {kind}; those are: {sorted(vocabularies)}",
                 )
-            if unknown := [right for right in rights if right not in vocabularies[service]]:
+            if unknown := [name for name in held if name not in vocabularies[service]]:
                 raise ConfigError(
-                    f"agent {agent.id!r} holds rights {unknown} on {service!r}, which has only "
+                    f"agent {agent.id!r} holds {kind} {unknown} on {service!r}, which has only "
                     f"{list(vocabularies[service])}",
                 )
 

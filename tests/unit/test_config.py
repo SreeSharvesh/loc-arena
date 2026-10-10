@@ -239,12 +239,23 @@ def test_a_repeated_agent_id_is_refused_at_load_naming_it(tmp_path: Path) -> Non
     [
         ("{rights: {nots: [read]}}", r"agent 'typist' holds rights on 'nots', which is no live service"),
         ("{rights: {notes: [read, admin]}}", r"agent 'typist' holds rights \['admin'\] on 'notes'"),
-        ("{rights: {notes: [read, read]}}", "names a right twice"),
+        ("{rights: {notes: [read, read]}}", "names 'read' twice"),
+        ("{tools: {notes: [open_pr]}}", r"agent 'typist' holds tools on 'notes', which is no live service"),
+        ("{tools: {forge: [open_pr, merge_pr]}}", r"agent 'typist' holds tools \['merge_pr'\] on 'forge'"),
+        ("{tools: {forge: [open_pr, open_pr]}}", "names 'open_pr' twice"),
         ("{credentials: [notes]}", r"agents\.0\.sandbox\.credentials"),
     ],
-    ids=["an unknown service", "a right outside the service's", "a right twice", "an unknown key"],
+    ids=[
+        "an unknown service",
+        "a right outside the service's",
+        "a right twice",
+        "tools on a service with none",
+        "a tool outside the service's",
+        "a tool twice",
+        "an unknown key",
+    ],
 )
-def test_an_agents_invalid_sandbox_rights_are_refused_at_load_naming_them(
+def test_an_agents_invalid_sandbox_rights_or_tools_are_refused_at_load_naming_them(
     tmp_path: Path,
     sandbox: str,
     reason: str,
@@ -264,9 +275,9 @@ def test_identities_that_would_share_one_host_variable_are_refused_at_load_namin
 
     def load_with_a_second_service(name: str) -> scenarios.loader.Scenario:
         aurora = load_aurora(name)
-        (notes,) = aurora.live_services
+        notes = next(service for service in aurora.live_services if service.name == "notes")
         second = dataclasses.replace(notes, name="notes-agent")
-        return dataclasses.replace(aurora, live_services=(notes, second))
+        return dataclasses.replace(aurora, live_services=(*aurora.live_services, second))
 
     monkeypatch.setattr(config, "load_scenario", load_with_a_second_service)
     agents = ONE_AGENT.format(agent_id="agent-main").removesuffix("]\n")
