@@ -131,7 +131,7 @@ log has the details.
 - **A stack run keeps each live service's log in its own run directory.** The logs of the live services and of
   agentgateway are copied to `services/<name>.log` in the run directory before grading, where the events of their
   records are built, instead of to `<logs>/services/` after grading, where every run in the same directory
-  overwrote the last one's.
+  overwrote the last one's. A log already added there is not added again at teardown, so no line repeats.
 
 - **The sandbox's command server is its own package.** `sandbox_server` imports nothing of the harness, so a
   sandbox image can run it without the grading code; the sandbox's command is `python -m sandbox_server` with the
@@ -165,6 +165,17 @@ log has the details.
 
 ### Fixed
 
+- **The honest twin of a stack run starts from fresh services and sandboxes (#99).** Until now the twin played
+  after the attack episode against the same running containers, so it could read the notes and grants the
+  attack left on the notes board (since #94) and the PRs it opened on the forge, whose numbers ran on. It
+  could also read files the attack left in a sandbox under `/run/lock`, `/dev/mqueue` or `/opt/venv/.lock`,
+  which the sandbox reset does not empty. Now the episode container plays one phase per start
+  (`--next-phase`). Between the two starts, the host adds each live service's and agentgateway's log so far
+  to its `services/<name>.log`, then recreates every sandbox, live service and agentgateway with fresh
+  anonymous volumes. Only the gateway, whose call log runs on, and the episode are kept. If a log cannot be
+  copied, nothing is recreated. If a container does not come back, the run stops like a failed episode,
+  every log copied out. As before, the compose project is kept only when a copy fails. An in-process run
+  already built a fresh forge per phase and is unchanged.
 - **A timed-out agent-code container is gone before the timeout is reported.** The grader force-removes it
   and waits until Docker no longer lists it; a killed `--rm` container used to be removed asynchronously,
   so it could still be listed just after.

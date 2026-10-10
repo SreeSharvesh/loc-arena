@@ -14,7 +14,9 @@ are only meaningful beside their positive controls: the sandbox resolves and rea
 agent's sandbox, a reader's sandbox reads the notes board, an agent granted a right then uses it, the gateway
 resolves the provider and routes out, and the episode runs a command in a sandbox with that sandbox's token.
 Steps that depend on one another (a grant and the read after it, an identity copied between sandboxes) run in
-order as a chain in the same episode, after every probe, so no probe sees the rights a chain changes. Skipped
+order as a chain in the same episode, after every probe, so no probe sees the rights a chain changes. Last,
+agent-main leaves a note, a pull request, a file and a message, `renew_services` recreates the containers as a run does
+before the honest twin, and the twin's rows look for what was left. Skipped
 unless the Docker daemon answers and the stack image exists; the images are rebuilt first, so they hold this
 code. The fixture brings the project up itself and does not call `run_in_stack`: the copy-out of the services'
 logs is covered by `tests/unit/test_episode_stack.py`.
@@ -53,6 +55,7 @@ from loc_arena.episode_stack import (
     SCENARIOS_DIRECTORY,
     issue_identities,
     render_compose,
+    renew_services,
     token_variable,
 )
 from loc_arena.gateway.core import API_KEY_VARIABLE
@@ -447,6 +450,63 @@ def write_grant_script(body: str) -> str:
     return f"print(post('{{notes_url}}/grants', {{{body}}}, {identity}))"
 
 
+# What the episode leaves behind, then what the honest twin finds, as agent-main's bash in its sandbox:
+# between the two phases renew_services recreates every container but the gateway and the episode, as a run
+# does.
+LEFT_NOTE = "left-by-episode"
+LEFT_FILE = "/run/lock/left-by-episode"  # a path nobody can write that a sandbox reset does not empty
+AS_AGENT = "{{'authorization': 'Bearer ' + open('{secrets_dir}/{identity_file}').read().strip()}}"
+PRINT_NUMBER = "print(reply['result']['structuredContent']['number'])"
+READ_NOTES_TEXT = (
+    f"request = urllib.request.Request('{{notes_url}}{{path}}', headers={AS_AGENT})\n"
+    f"print(urllib.request.urlopen(request, timeout={CONNECT_TIMEOUT_SECONDS}).read().decode())"
+)
+EPISODE_LEAVES = {
+    "note": (
+        f"request = urllib.request.Request('{{notes_url}}/notes/{LEFT_NOTE}', b'left', {AS_AGENT}, "
+        "method='PUT')\n"
+        f"print(urllib.request.urlopen(request, timeout={CONNECT_TIMEOUT_SECONDS}).status)"
+    ),
+    "pull_request": write_open_pr_script({"repo": OPENED_REPO, "title": LEFT_NOTE}, PRINT_NUMBER),
+    "file": f"open('{LEFT_FILE}', 'w').write('left')\nprint(list_paths('/run/lock/*'))",
+    # agent-main messages itself, then reads its messages
+    "message": write_board_call("send", {"to": AGENT, "body": LEFT_NOTE})
+    + "\n"
+    + write_board_call("read", {}),
+}
+TWIN_FINDS = {
+    "notes": READ_NOTES_TEXT.replace("{path}", "/notes"),
+    "grants": READ_NOTES_TEXT.replace("{path}", "/grants"),
+    "pull_request": write_open_pr_script({"repo": OPENED_REPO, "title": "opened-by-the-twin"}, PRINT_NUMBER),
+    "files": "print(list_paths('/run/lock/*'))",
+    "messages": write_board_call("read", {}),
+    "refused_path": REFUSED_PATH_SCRIPT,
+}
+# In one phase of the episode: each command from stdin as agent-main's bash, in a checkout seeded for it.
+IN_PHASE = f"""
+import json, sys
+from pathlib import Path
+from loc_arena.config import load_run_config
+from loc_arena.sandbox import connect_sandboxes
+from loc_arena.scaffold.code_services import CodeServices
+from loc_arena.scaffold.tools import StubServices
+from loc_arena.task import seed_episode_checkout
+
+config = load_run_config("{CONFIGS_DIRECTORY}/{RUN}.yaml")
+sandboxes = connect_sandboxes(config.settings, [agent.id for agent in config.agents])
+checkout = seed_episode_checkout(config, Path("{OUTPUT_DIRECTORY}"))
+services = CodeServices(
+    StubServices(),
+    checkout=checkout,
+    repos={CHECKOUT_REPOS!r},
+    stack=config.settings.stack,
+    sandboxes=sandboxes,
+)
+bash = lambda command: services.run("bash", {{"command": command, "actor_uid": {AGENT!r}}})["stdout"].strip()
+print(json.dumps({{name: bash(command) for name, command in json.load(sys.stdin).items()}}))
+"""
+
+
 # Each row of the reach table: the test's name, its probe (formatted with the values the fixture finds) and
 # the outcomes the table allows. A listener waits on every address of this host, so a refusal is a firewall's.
 ROWS: dict[str, tuple[str, set[str]]] = {
@@ -697,6 +757,9 @@ class StackRun:
     board_log: list[ToolRecord]
     board_identities: dict[str, str]
     sandbox_addresses: dict[str, str]
+    left_by_episode: dict[str, str]
+    found_by_twin: dict[str, str]
+    calls_after_twin: list[GatewayCall]
 
     def read_outcome(self, row: str) -> str:
         """The one token the probe of ``row`` printed, in the sandbox or the service container it ran in."""
@@ -730,10 +793,11 @@ def build_probes(
     agent_subnet: str,
     host_address: str,
     host_port: int,
-) -> tuple[dict[str, str], dict[str, list[tuple[str, str]]]]:
+) -> tuple[dict[str, str], dict[str, list[tuple[str, str]]], tuple[dict[str, str], dict[str, str]]]:
     """The sandbox command of each row of ``ROWS`` and ``SCRIPTS_CHECKED_APART`` by the row's name.
 
-    Also the steps (agent, command) of each chain of ``CHAINS``, by the chain's name.
+    Also the steps (agent, command) of each chain of ``CHAINS``, by the chain's name, and the commands of
+    ``EPISODE_LEAVES`` and ``TWIN_FINDS``.
     """
     gateway, stack = CONFIG.settings.gateway, CONFIG.settings.stack
     marker = stack.checkouts_directory / "ran-for-another-sandbox"
@@ -782,7 +846,9 @@ def build_probes(
         chain: [(agent, write_command(script, values)) for agent, script in steps]
         for chain, steps in CHAINS.items()
     }
-    return commands, chains
+    leaves = {name: write_command(script, values) for name, script in EPISODE_LEAVES.items()}
+    finds = {name: write_command(script, values) for name, script in TWIN_FINDS.items()}
+    return commands, chains, (leaves, finds)
 
 
 def write_command(script: str, values: dict[str, Any]) -> str:
@@ -884,7 +950,7 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
             egress_net.gateway,
         )
         with socket.create_server(("0.0.0.0", 0)) as listener:  # noqa: S104 - every address of this host, on purpose
-            probes, chains = build_probes(
+            probes, chains, (leaves, finds) = build_probes(
                 placeholder,
                 tokens,
                 project,
@@ -944,12 +1010,25 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
             for agent, sandbox in zip(tokens, sandboxes, strict=True)
         }
         mounts = read_mounts(project)
+
+        def play_phase(commands: dict[str, str]) -> dict[str, str]:
+            in_episode = [*compose, "run", "--rm", "--use-aliases", "-T", EPISODE_SERVICE, "python", "-c"]
+            played_phase = run_docker(*in_episode, IN_PHASE, input=json.dumps(commands), env=environment)
+            return json.loads(played_phase.stdout.strip().splitlines()[-1])
+
+        left_by_episode = play_phase(leaves)
+        (directory / "services").mkdir()
+        renew_services(STACK_CONFIG, ["docker", *compose], directory / "services", environment)
+        found_by_twin = play_phase(finds)
+        call_log_after_twin = directory / "calls-after-twin.jsonl"
+        run_docker(*compose, "cp", f"gateway:{gateway.call_log}", str(call_log_after_twin), env=environment)
     finally:
         down = ["docker", *compose, "down", "--volumes", "--remove-orphans"]
         subprocess.run(down, env=environment, capture_output=True, check=False)
     printed = json.loads(played.stdout.strip().splitlines()[-1])
     printed["probes"] |= in_services
     calls = [GatewayCall.model_validate_json(line) for line in call_log.read_text().splitlines()]
+    after_twin = call_log_after_twin.read_text().splitlines()
     return StackRun(
         calls=calls,
         tokens=tokens,
@@ -970,6 +1049,9 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
         board_log=board_log,
         board_identities=board_identities,
         sandbox_addresses=sandbox_addresses,
+        left_by_episode=left_by_episode,
+        found_by_twin=found_by_twin,
+        calls_after_twin=[GatewayCall.model_validate_json(line) for line in after_twin],
         **printed,
     )
 
@@ -1365,3 +1447,50 @@ def test_a_client_of_either_protocol_era_calls_the_forge_and_the_board_through_t
         ["open_pr", "read", "send", "unread"],
         [],
     )
+
+
+def test_the_honest_twin_reads_no_note_the_episode_wrote(stack_run: StackRun) -> None:
+    written, listed = stack_run.left_by_episode["note"], stack_run.found_by_twin["notes"]
+
+    assert (written, listed) == (str(HTTPStatus.CREATED.value), "[]")
+
+
+def test_the_honest_twin_holds_the_rights_its_run_config_seeds_whatever_the_episode_granted(
+    stack_run: StackRun,
+) -> None:
+    rights = json.loads(stack_run.found_by_twin["grants"])
+
+    assert rights == {agent.id: sorted(agent.sandbox.rights.get(NOTES.name, ())) for agent in CONFIG.agents}
+
+
+def test_the_honest_twins_first_pull_request_takes_the_number_the_episodes_first_took(
+    stack_run: StackRun,
+) -> None:
+    opened = [
+        line.result for line in stack_run.forge_log if line.result and line.result["repo"] == OPENED_REPO
+    ]
+    episode_numbers = [result["number"] for result in opened if isinstance(result["number"], int)]
+
+    numbers = (int(stack_run.left_by_episode["pull_request"]), int(stack_run.found_by_twin["pull_request"]))
+
+    assert numbers == (episode_numbers[0] + len(episode_numbers), episode_numbers[0])
+
+
+def test_the_honest_twin_reads_no_message_the_episode_sent(stack_run: StackRun) -> None:
+    sent, read = stack_run.left_by_episode["message"].splitlines()[-1], stack_run.found_by_twin["messages"]
+
+    assert ([AGENT, LEFT_NOTE] in json.loads(sent), json.loads(read)) == (True, [])
+
+
+def test_a_file_the_episode_left_in_its_sandbox_is_gone_for_the_honest_twin(stack_run: StackRun) -> None:
+    left, found = stack_run.left_by_episode["file"], stack_run.found_by_twin["files"]
+
+    assert (json.loads(left), json.loads(found)) == ([LEFT_FILE], [])
+
+
+def test_the_gateways_call_log_runs_on_across_the_episode_and_the_honest_twin(stack_run: StackRun) -> None:
+    after_twin = stack_run.calls_after_twin
+
+    split = (after_twin[: len(stack_run.calls)], [call.path for call in after_twin[len(stack_run.calls) :]])
+
+    assert split == (stack_run.calls, [f"/{NOT_ALLOWED_PATH}"])
