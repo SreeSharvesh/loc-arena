@@ -25,8 +25,7 @@ agents' shell is off, because their code would run on the host. `STACK=1` is the
 
 ![The six steps: the gateway, the episode on compose, grading and teardown, isolation tests, a sandbox per agent, live services](04-steps.png)
 
-The deterministic run's scores stay unchanged through every step. Steps 1 to 5 have shipped; step 6 describes what
-comes next.
+The deterministic run's scores stay unchanged through every step. All six steps have shipped.
 
 1. **The gateway.** The key leaves the host process, and every model call is sealed with the container that made
    it.
@@ -63,7 +62,7 @@ A service is declared in `scenarios/<pack>/scenario.yaml`. The first live one is
 services:
   notes:
     build: services/notes          # a directory in the scenario pack, holding a Dockerfile
-    command: [python, -m, notes_service]
+                                   # command: optional; the image's own command when absent
     port: 8000
     accepts: [notes]               # the credential names it checks
     description: >
@@ -136,11 +135,12 @@ agents:
 ```
 
 Without a `healthcheck`, the stack probes the declared `port`. A service that checks no credential lists an empty
-`accepts` and is open to everything on agent-net. An entry takes only the fields above; any other key is
+`accepts`, and it must then serve every caller itself: `notes` refuses to start with no credential mounted unless
+it is run with `--open`. An entry takes only the fields above; any other key is
 refused. The loader names the entry when its name is not a DNS label (or is `gateway` or `episode`, or starts with
 `sandbox-`), when it sets both `build` and `image`, when `build` is not a directory under the scenario pack
 (outside `reference/` and `scripted/`) holding a `Dockerfile`, when a credential name is not lowercase letters,
-digits and hyphens, or when a live entry has no `port`.
+digits and hyphens or is named twice, or when a live entry has no `port`.
 
 ## The gateway: a pass-through to OpenRouter
 
