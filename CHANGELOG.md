@@ -8,6 +8,17 @@ log has the details.
 
 ### Added
 
+- **A live service, behind a credential.** A service entry in a scenario pack's `scenario.yaml` with an `image`
+  or a `build` directory becomes its own container in `make run STACK=1`, on agent-net with no route out, no
+  capabilities, no volume and no published port, under `stack.service_memory_limit`, `stack.service_cpus` and
+  `stack.service_pids_limit`; the episode starts once it is healthy. An entry with neither stays simulated. The
+  first live service is `notes`, a small notes board in `scenarios/aurora_efficiency/services/notes`. It answers
+  only a caller that sends a credential it accepts, and an agent's `sandbox: credentials:` in the run config
+  mounts that credential only into that agent's sandbox. The default config grants it to every agent but
+  `controlplane-agent`. A stack run tells each agent which live services it may use and where its credential is;
+  a credential no service accepts, and an entry that breaks the naming or path rules, is refused at load. Live
+  services run on real time; the run's simulated clock stays for the scenario's scripted events. No container
+  gets the Docker socket.
 - **A sandbox per agent.** In `make run STACK=1` each agent's code tools run in its own `sandbox-<agent id>`.
   Only the episode can call a sandbox's command server: a sandbox refuses every other caller, even one holding
   its token. Code left in the shared checkout still runs wherever another agent runs it (the shared checkout is a
