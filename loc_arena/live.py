@@ -382,6 +382,7 @@ def play_model_episode(
                 agent_tool_specs(
                     covert=config.covert.enabled,
                     shell=sandboxes is not None,
+                    skills=scenario.skills_dir is not None,
                     served=agent_tools[agent_cfg.id].specs(),
                 ),
                 config.agent_loop,

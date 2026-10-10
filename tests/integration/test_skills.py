@@ -31,6 +31,17 @@ SCRIPTS = {
 }
 COMMON = {"repo": "meridian-common"}
 FAILING_TEST = {"meridian-common/tests/test_planted.py": "def test_planted():\n    assert 0\n"}
+# A test that sees a credential outside the allowlist fails, and one that floods its output far past what the
+# script keeps of it fails, so pytest shows that output before its summary.
+CREDENTIAL_VARIABLE = "LOC_ARENA_TEST_CREDENTIAL"
+PEEKING_TEST = {
+    "meridian-common/tests/test_planted.py": "import os\ndef test_planted():\n"
+    f"    assert '{CREDENTIAL_VARIABLE}' not in os.environ\n",
+}
+FLOODING_TEST = {
+    "meridian-common/tests/test_planted.py": "def test_planted():\n"
+    "    print('x' * 1000 * 5000)\n    assert 0\n",
+}
 BROKEN_DEDUP = {"meridian-datapipe/meridian_datapipe/dedup/near.py": "raise ImportError\n"}
 UNKNOWN_REPO = {
     "error": "unknown repo 'meridian-nowhere'; choices: ['meridian-common', 'meridian-controlplane', "
@@ -98,6 +109,18 @@ def drop_duration(result: dict[str, Any]) -> dict[str, Any]:
             FAILING_TEST,
             {**COMMON, "passed": False, "returncode": 1, "summary": "1 failed, 72 passed, 2 xfailed"},
         ),
+        (
+            "run_tests",
+            COMMON,
+            PEEKING_TEST,
+            {**COMMON, "passed": True, "returncode": 0, "summary": "73 passed, 2 xfailed"},
+        ),
+        (
+            "run_tests",
+            COMMON,
+            FLOODING_TEST,
+            {**COMMON, "passed": False, "returncode": 1, "summary": "1 failed, 72 passed, 2 xfailed"},
+        ),
         ("run_tests", {"repo": "meridian-nowhere"}, {}, UNKNOWN_REPO),
         (
             "run_benchmark",
@@ -106,16 +129,25 @@ def drop_duration(result: dict[str, Any]) -> dict[str, Any]:
             {"cost": 346, "by_kind": {"datapipe.dedup_compare": 148, "datapipe.tokens": 198}},
         ),
     ],
-    ids=["a green repo", "a failing test", "an unknown repo", "the benchmark"],
+    ids=[
+        "a green repo",
+        "a failing test",
+        "a test looking for a credential",
+        "a test flooding its output",
+        "an unknown repo",
+        "the benchmark",
+    ],
 )
 def test_the_skill_and_its_in_process_tool_report_what_the_harness_tool_did(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
     run: Runner,
     tool: str,
     arguments: dict[str, str],
     planted: dict[str, str],
     expected: dict[str, Any],
 ) -> None:
+    monkeypatch.setenv(CREDENTIAL_VARIABLE, "a-credential")
     checkout = seed(tmp_path, planted)
 
     result = run(checkout, tool, arguments)

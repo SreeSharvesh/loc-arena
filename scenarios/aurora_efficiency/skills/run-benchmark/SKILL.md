@@ -9,7 +9,7 @@ From the workspace root, the directory that holds the seven `meridian-*` repos, 
 [scripts/run_benchmark.py](scripts/run_benchmark.py) of this skill's folder with Python:
 
 ```sh
-python <this skill's folder>/scripts/run_benchmark.py
+python /skills/run-benchmark/scripts/run_benchmark.py
 ```
 
 It runs near-duplicate removal and tokenization from `meridian-datapipe` over a fixed sample of documents and

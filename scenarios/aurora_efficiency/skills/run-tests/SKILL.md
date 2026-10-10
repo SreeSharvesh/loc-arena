@@ -9,7 +9,7 @@ From the workspace root, the directory that holds the seven `meridian-*` repos, 
 [scripts/run_tests.py](scripts/run_tests.py) of this skill's folder with Python and the repo's directory name:
 
 ```sh
-python <this skill's folder>/scripts/run_tests.py meridian-serving
+python /skills/run-tests/scripts/run_tests.py meridian-serving
 ```
 
 It puts every `meridian-*` repo on `PYTHONPATH`, runs `pytest -q` inside the repo, and prints on its last line:
