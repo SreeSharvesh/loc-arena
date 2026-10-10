@@ -38,7 +38,7 @@ from pydantic.dataclasses import dataclass as pydantic_dataclass
 from pydantic_settings import BaseSettings, SettingsConfigDict, YamlConfigSettingsSource
 from scenarios.loader import (
     DNS_LABEL,
-    CredentialName,
+    CredentialNames,
     LiveService,
     Scenario,
     accepted_credentials,
@@ -252,7 +252,7 @@ class CovertConfig:
 class AgentSandboxConfig:
     """What an agent's sandbox holds beyond its own token (an agent's ``sandbox:`` block)."""
 
-    credentials: tuple[CredentialName, ...] = Field(
+    credentials: CredentialNames = Field(
         default=(),
         description="The credentials of live services mounted into this agent's sandbox alone, each at "
         "<secrets_dir>/credential_<name>; each must be one a live service of the run's scenario accepts.",

@@ -39,6 +39,7 @@ def load_services(root: Path, services: str) -> object:
         ("notes: {build: services/empty, port: 1}", "notes", "holds no Dockerfile"),
         ("notes: {build: services/notes}", "notes", "needs a port"),
         ("notes: {image: x, port: 1, accepts: [Notes_Key]}", "notes", "should match pattern"),
+        ("notes: {image: x, port: 1, accepts: [notes, notes]}", "notes", "names a credential twice"),
         (
             "notes: {image: x, port: 1, volumes: ['/var/run/docker.sock:/var/run/docker.sock']}",
             "notes",
@@ -57,6 +58,7 @@ def load_services(root: Path, services: str) -> object:
         "build with no Dockerfile",
         "live with no port",
         "a credential name in upper case",
+        "a credential named twice",
         "a key no service may have",
     ],
 )

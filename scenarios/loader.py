@@ -50,6 +50,16 @@ PACK_DIRECTORY: Final = "pack_directory"  # the validation context key: the pack
 CredentialName = Annotated[str, StringConstraints(strict=True, pattern=r"^[a-z0-9-]+$")]
 
 
+def _require_distinct(names: tuple[str, ...]) -> tuple[str, ...]:
+    """Refuse a credential named twice: compose will not mount one secret twice in a container."""
+    if len(set(names)) < len(names):
+        raise ValueError(f"it names a credential twice: {list(names)}")
+    return names
+
+
+CredentialNames = Annotated[tuple[CredentialName, ...], AfterValidator(_require_distinct)]
+
+
 def _require_a_service_name(name: str) -> str:
     """Refuse a name that is no host name, or that would take the place of one of the stack's services."""
     if not DNS_LABEL.fullmatch(name):
@@ -83,7 +93,7 @@ class ScenarioService(BaseModel):
         min_length=1,
         description="The compose healthcheck test; a probe of the port when absent.",
     )
-    accepts: tuple[CredentialName, ...] = Field(
+    accepts: CredentialNames = Field(
         default=(),
         description="The credentials the service checks; none: open to everything on agent-net.",
     )
