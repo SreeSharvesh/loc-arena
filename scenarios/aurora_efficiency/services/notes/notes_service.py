@@ -1,331 +1,172 @@
-"""In-memory notes HTTP service behind bearer-token credential authentication."""
+"""The team's notes board: a dummy live service that proves agents reach a service on agent-net.
 
-from __future__ import annotations
+It accepts the credentials compose mounts into it, every ``credential_<name>`` file in the secrets directory,
+and nothing else. With none mounted it refuses to start unless told to run open, so a missing mount fails
+closed. Standard library only: the image holds this one file.
+"""
 
 import argparse
 import hmac
 import json
-import logging
 import re
 import sys
 import threading
-import urllib.parse
 from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import cast
 
-DEFAULT_PORT: int = 8000
-DEFAULT_SECRETS_DIR: Path = Path("/run/secrets")
-DEFAULT_MAX_NOTES: int = 100
-DEFAULT_MAX_NOTE_BYTES: int = 65536
-BEARER_PREFIX: str = "Bearer "
-CREDENTIAL_PREFIX: str = "credential_"
-HEALTH_PATH: str = "/health"
-NOTES_PATH: str = "/notes"
-NOTES_PREFIX: str = "/notes/"
-NONE_CREDENTIAL: str = "none"
-TEXT_CONTENT_TYPE: str = "text/plain; charset=utf-8"
-JSON_CONTENT_TYPE: str = "application/json"
-KEY_PATTERN: re.Pattern[str] = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
-
-logger: logging.Logger = logging.getLogger("notes_service")
+CREDENTIAL_PREFIX = "credential_"  # compose mounts the credential `<name>` as this prefix plus the name
+BEARER = "Bearer "
+HEALTH_PATH = "/health"  # the one path open to every caller, for the healthcheck
+NOTES_PATH = "/notes"
+KEY = re.compile(r"[A-Za-z0-9._-]{1,64}")
+NO_CREDENTIAL = "none"
 
 
 @dataclass(frozen=True)
-class NotesServiceSettings:
-    """Configuration settings for the notes HTTP service."""
+class Settings:
+    """Where the service listens, the credentials it accepts by name, and how much it holds."""
 
-    port: int = DEFAULT_PORT
-    secrets_dir: Path = DEFAULT_SECRETS_DIR
-    accepted_credentials: tuple[str, ...] = ()
-    max_notes: int = DEFAULT_MAX_NOTES
-    max_note_bytes: int = DEFAULT_MAX_NOTE_BYTES
-
-    def __post_init__(self) -> None:
-        """Normalize collection and path field types."""
-        if not isinstance(self.accepted_credentials, tuple):
-            object.__setattr__(self, "accepted_credentials", tuple(self.accepted_credentials))
-        if not isinstance(self.secrets_dir, Path):
-            object.__setattr__(self, "secrets_dir", Path(self.secrets_dir))
+    port: int
+    credentials: dict[str, bytes]
+    max_notes: int
+    max_note_bytes: int
 
 
 class NotesServer(ThreadingHTTPServer):
-    """Threading HTTP server holding in-memory notes and auth state."""
+    """The notes, held in memory for the life of the episode."""
 
-    def __init__(
-        self,
-        server_address: tuple[str, int],
-        request_handler_class: type[BaseHTTPRequestHandler],
-        settings: NotesServiceSettings,
-        credentials: dict[str, bytes],
-    ) -> None:
-        """Initialize the notes server with settings and loaded credentials."""
-        super().__init__(server_address, request_handler_class)
-        self.settings: NotesServiceSettings = settings
-        self.credentials: dict[str, bytes] = credentials
+    def __init__(self, settings: Settings) -> None:
+        """Listen on every address of the container, on ``settings.port``."""
+        super().__init__(("0.0.0.0", settings.port), NotesHandler)  # noqa: S104 - agent-net is its only network
+        self.settings = settings
         self.notes: dict[str, str] = {}
-        self.notes_lock: threading.Lock = threading.Lock()
+        self.lock = threading.Lock()
 
 
-def validate_content_length(raw_length: str | None, max_bytes: int) -> tuple[HTTPStatus | None, int]:
-    """Validate Content-Length header against missing, negative or excessive size."""
-    if raw_length is None:
-        return HTTPStatus.LENGTH_REQUIRED, 0
-    try:
-        length = int(raw_length)
-        if length < 0:
-            return HTTPStatus.BAD_REQUEST, 0
-    except ValueError:
-        return HTTPStatus.BAD_REQUEST, 0
-    if length > max_bytes:
-        return HTTPStatus.REQUEST_ENTITY_TOO_LARGE, 0
-    return None, length
+class NotesHandler(BaseHTTPRequestHandler):
+    """``GET /notes`` lists keys; ``GET``, ``PUT`` and ``DELETE /notes/<key>`` act on one note."""
 
-
-def try_persist_note(server: NotesServer, key: str, text: str) -> HTTPStatus:
-    """Persist note in server memory dictionary obeying maximum capacity."""
-    with server.notes_lock:
-        if key not in server.notes and len(server.notes) >= server.settings.max_notes:
-            return HTTPStatus.INSUFFICIENT_STORAGE
-        is_created = key not in server.notes
-        server.notes[key] = text
-    return HTTPStatus.CREATED if is_created else HTTPStatus.OK
-
-
-class NotesRequestHandler(BaseHTTPRequestHandler):
-    """Request handler implementing notes API with token authentication."""
-
-    def log_message(self, format: str, *args: object) -> None:
-        """Suppress default BaseHTTPRequestHandler stderr logging."""
-
-    def send_error(
-        self,
-        code: int,
-        message: str | None = None,
-        explain: str | None = None,
-    ) -> None:
-        """Send plain error response and log to stdout."""
-        status = HTTPStatus(code)
-        body = f"{status.value} {status.phrase}\n".encode()
-        self.send_response_bytes(status, body, NONE_CREDENTIAL)
-
-    def send_response_bytes(
-        self,
-        status: HTTPStatus,
-        body: bytes,
-        credential_name: str,
-        content_type: str = TEXT_CONTENT_TYPE,
-    ) -> None:
-        """Send an HTTP response with headers and log one line to stdout."""
-        self.send_response(status.value)
-        if status != HTTPStatus.NO_CONTENT:
-            self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Connection", "close")
-        self.end_headers()
-        if body:
-            self.wfile.write(body)
-        logger.info("%s %s %d %s", self.command, self.path, status.value, credential_name)
-
-    def authenticate_request(self) -> tuple[bool, str]:
-        """Authenticate bearer token against accepted credentials."""
-        server = cast(NotesServer, self.server)
-        if not server.credentials:
-            return True, NONE_CREDENTIAL
-
-        auth_header = self.headers.get("Authorization")
-        if not auth_header or not auth_header.startswith(BEARER_PREFIX):
-            return False, NONE_CREDENTIAL
-
-        token_bytes = auth_header[len(BEARER_PREFIX) :].strip().encode()
-        for cred_name, expected_token_bytes in server.credentials.items():
-            if hmac.compare_digest(token_bytes, expected_token_bytes):
-                return True, cred_name
-
-        return False, NONE_CREDENTIAL
-
-    def route_health(self) -> None:
-        """Serve health check probe."""
-        if self.command != "GET":
-            self.send_response_bytes(HTTPStatus.METHOD_NOT_ALLOWED, b"Method Not Allowed\n", NONE_CREDENTIAL)
+    def do_GET(self) -> None:
+        """Answer the healthcheck, list the keys, or read one note."""
+        if self.path == HEALTH_PATH:
+            self._send(HTTPStatus.OK, b"ok")
             return
-        self.send_response_bytes(HTTPStatus.OK, b"ok", NONE_CREDENTIAL)
-
-    def route_notes_collection(self, credential_name: str) -> None:
-        """Serve listing of all note keys."""
-        if self.command != "GET":
-            self.send_response_bytes(HTTPStatus.METHOD_NOT_ALLOWED, b"Method Not Allowed\n", credential_name)
+        server, caller, key = self._admit()
+        if caller is None:
             return
-
-        server = cast(NotesServer, self.server)
-        with server.notes_lock:
-            keys = sorted(server.notes.keys())
-        body = json.dumps(keys).encode()
-        self.send_response_bytes(HTTPStatus.OK, body, credential_name, JSON_CONTENT_TYPE)
-
-    def store_note_content(self, key: str, credential_name: str) -> None:
-        """Read and persist note payload obeying byte and capacity bounds."""
-        server = cast(NotesServer, self.server)
-        error_status, content_length = validate_content_length(
-            self.headers.get("Content-Length"),
-            server.settings.max_note_bytes,
-        )
-        if error_status is not None:
-            self.send_response_bytes(error_status, b"Invalid length\n", credential_name)
+        with server.lock:
+            text = server.notes.get(key) if key else json.dumps(sorted(server.notes))
+        if text is None:
+            self._send(HTTPStatus.NOT_FOUND)
             return
+        self._send(HTTPStatus.OK, text.encode())
 
-        with server.notes_lock:
-            if key not in server.notes and len(server.notes) >= server.settings.max_notes:
-                self.send_response_bytes(
-                    HTTPStatus.INSUFFICIENT_STORAGE,
-                    b"Max notes reached\n",
-                    credential_name,
-                )
-                return
-
-        body_bytes = self.rfile.read(content_length)
-        try:
-            note_text = body_bytes.decode()
-        except UnicodeDecodeError:
-            self.send_response_bytes(HTTPStatus.BAD_REQUEST, b"Invalid UTF-8 payload\n", credential_name)
+    def do_PUT(self) -> None:
+        """Write one note, within the size and count bounds."""
+        server, caller, key = self._admit()
+        if caller is None:
             return
-
-        status = try_persist_note(server, key, note_text)
-        self.send_response_bytes(status, b"", credential_name)
-
-    def route_note_item(self, key: str, credential_name: str) -> None:
-        """Dispatch requests targeted at a specific note key."""
-        if not KEY_PATTERN.fullmatch(key):
-            self.send_response_bytes(HTTPStatus.BAD_REQUEST, b"Invalid note key\n", credential_name)
+        if not key:
+            self._send(HTTPStatus.METHOD_NOT_ALLOWED)
             return
-
-        server = cast(NotesServer, self.server)
-        if self.command == "GET":
-            with server.notes_lock:
-                note_content = server.notes.get(key)
-            if note_content is None:
-                self.send_response_bytes(HTTPStatus.NOT_FOUND, b"Note not found\n", credential_name)
-                return
-            self.send_response_bytes(HTTPStatus.OK, note_content.encode(), credential_name)
-        elif self.command == "PUT":
-            self.store_note_content(key, credential_name)
-        elif self.command == "DELETE":
-            with server.notes_lock:
-                existed = server.notes.pop(key, None) is not None
-            if existed:
-                self.send_response_bytes(HTTPStatus.NO_CONTENT, b"", credential_name)
+        declared = self.headers.get("Content-Length", "")
+        if not declared.isdigit():
+            self._send(HTTPStatus.LENGTH_REQUIRED)
+            return
+        if int(declared) > server.settings.max_note_bytes:
+            self._send(HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
+            return
+        text = self.rfile.read(int(declared)).decode(errors="replace")
+        with server.lock:
+            created = key not in server.notes
+            if created and len(server.notes) >= server.settings.max_notes:
+                status = HTTPStatus.INSUFFICIENT_STORAGE
             else:
-                self.send_response_bytes(HTTPStatus.NOT_FOUND, b"Note not found\n", credential_name)
-        else:
-            self.send_response_bytes(HTTPStatus.METHOD_NOT_ALLOWED, b"Method Not Allowed\n", credential_name)
+                server.notes[key] = text
+                status = HTTPStatus.CREATED if created else HTTPStatus.OK
+        self._send(status)
 
-    def dispatch_request(self) -> None:
-        """Route parsed request to corresponding handler endpoint."""
-        clean_path = urllib.parse.urlparse(self.path).path
-        if clean_path == HEALTH_PATH:
-            self.route_health()
+    def do_DELETE(self) -> None:
+        """Remove one note."""
+        server, caller, key = self._admit()
+        if caller is None:
             return
+        with server.lock:
+            removed = server.notes.pop(key, None) is not None
+        self._send(HTTPStatus.NO_CONTENT if removed else HTTPStatus.NOT_FOUND)
 
-        is_authenticated, credential_name = self.authenticate_request()
-        if not is_authenticated:
-            self.send_response_bytes(HTTPStatus.UNAUTHORIZED, b"Unauthorized\n", NONE_CREDENTIAL)
-            return
+    def _admit(self) -> tuple[NotesServer, str | None, str]:
+        """The server, the caller's credential name (``None`` once refused), and the note key."""
+        server = cast("NotesServer", self.server)
+        caller = _credential_name(self.headers.get("Authorization", ""), server.settings.credentials)
+        if caller is None:
+            self._send(HTTPStatus.UNAUTHORIZED)
+            return server, None, ""
+        if self.path == NOTES_PATH:
+            return server, caller, ""
+        key = self.path.removeprefix(f"{NOTES_PATH}/")
+        if key == self.path or not KEY.fullmatch(key):
+            self._send(HTTPStatus.NOT_FOUND)
+            return server, None, ""
+        return server, caller, key
 
-        if clean_path == NOTES_PATH:
-            self.route_notes_collection(credential_name)
-        elif clean_path.startswith(NOTES_PREFIX):
-            key = clean_path[len(NOTES_PREFIX) :]
-            self.route_note_item(key, credential_name)
-        else:
-            self.send_response_bytes(HTTPStatus.NOT_FOUND, b"Not Found\n", credential_name)
+    def _send(self, status: HTTPStatus, body: bytes = b"") -> None:
+        """Send ``status`` and ``body``; ``log_request`` logs it."""
+        self.send_response(status)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
-    def handle_one_request(self) -> None:
-        """Parse one HTTP request and dispatch to routes."""
-        self.raw_requestline = self.rfile.readline(65537)
-        if len(self.raw_requestline) > 65536:
-            self.requestline = ""
-            self.request_version = ""
-            self.command = ""
-            self.send_response_bytes(HTTPStatus.REQUEST_URI_TOO_LONG, b"URI Too Long\n", NONE_CREDENTIAL)
-            return
-        if not self.raw_requestline:
-            self.close_connection = True
-            return
-        if not self.parse_request():
-            return
-        self.dispatch_request()
-        self.wfile.flush()
-
-
-def configure_logging() -> None:
-    """Configure stdout logging for the notes service."""
-    if not logger.handlers:
-        handler = logging.StreamHandler(sys.stdout)
-        handler.setFormatter(logging.Formatter("%(message)s"))
-        logger.addHandler(handler)
-        logger.setLevel(logging.INFO)
+    def log_request(self, code: int | str = "-", size: int | str = "-") -> None:
+        """One line per request on stdout: method, path, status, and the credential's name."""
+        caller = _credential_name(
+            self.headers.get("Authorization", ""),
+            cast("NotesServer", self.server).settings.credentials,
+        )
+        print(self.command, self.path, code, caller or NO_CREDENTIAL, flush=True)
 
 
-def read_credentials(secrets_dir: Path, accepted_credentials: tuple[str, ...]) -> dict[str, bytes]:
-    """Read and strip accepted credential files from secrets directory."""
-    credentials: dict[str, bytes] = {}
-    for credential_name in accepted_credentials:
-        credential_file = secrets_dir / f"{CREDENTIAL_PREFIX}{credential_name}"
-        if not credential_file.is_file():
-            raise FileNotFoundError(
-                f"Missing credential file for accepted credential {credential_name!r}: {credential_file}",
-            )
-        token = credential_file.read_text(encoding="utf-8").strip()
-        credentials[credential_name] = token.encode()
-    return credentials
+def _credential_name(authorization: str, credentials: dict[str, bytes]) -> str | None:
+    """The name of the accepted credential ``authorization`` carries; any caller when none is accepted."""
+    if not credentials:
+        return NO_CREDENTIAL
+    if not authorization.startswith(BEARER):
+        return None
+    sent = authorization.removeprefix(BEARER).encode()
+    return next((name for name, value in credentials.items() if hmac.compare_digest(sent, value)), None)
 
 
-def create_server(settings: NotesServiceSettings) -> NotesServer:
-    """Build a configured NotesServer instance from settings."""
-    configure_logging()
-    credentials = read_credentials(settings.secrets_dir, settings.accepted_credentials)
-    server_address = ("0.0.0.0", settings.port)
-    return NotesServer(server_address, NotesRequestHandler, settings, credentials)
+def read_credentials(secrets_directory: Path) -> dict[str, bytes]:
+    """Every credential mounted in ``secrets_directory``, by name."""
+    return {
+        path.name.removeprefix(CREDENTIAL_PREFIX): path.read_bytes().strip()
+        for path in sorted(secrets_directory.glob(f"{CREDENTIAL_PREFIX}*"))
+    }
 
 
-build_server = create_server
-
-
-def parse_arguments(arguments: list[str] | None = None) -> NotesServiceSettings:
-    """Parse command-line arguments into NotesServiceSettings."""
-    parser = argparse.ArgumentParser(description="In-memory notes HTTP service.")
-    parser.add_argument("--port", type=int, default=DEFAULT_PORT)
-    parser.add_argument("--secrets-dir", type=Path, default=DEFAULT_SECRETS_DIR)
-    parser.add_argument("--accept", action="append", default=[], dest="accepted_credentials")
-    parser.add_argument("--max-notes", type=int, default=DEFAULT_MAX_NOTES)
-    parser.add_argument("--max-note-bytes", type=int, default=DEFAULT_MAX_NOTE_BYTES)
-    parsed = parser.parse_args(arguments)
-    return NotesServiceSettings(
-        port=parsed.port,
-        secrets_dir=parsed.secrets_dir,
-        accepted_credentials=tuple(parsed.accepted_credentials),
-        max_notes=parsed.max_notes,
-        max_note_bytes=parsed.max_note_bytes,
+def parse_settings(arguments: list[str]) -> Settings:
+    """The settings from the command line; a service with no credential mounted must be told ``--open``."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--secrets-dir", type=Path, default=Path("/run/secrets"))
+    parser.add_argument(
+        "--open",
+        action="store_true",
+        help="Serve every caller when no credential is mounted.",
     )
-
-
-def main() -> None:
-    """Run the notes service CLI."""
-    settings = parse_arguments()
-    try:
-        server = create_server(settings)
-    except Exception as error:
-        sys.stderr.write(f"Startup error: {error}\n")
-        sys.exit(1)
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        server.server_close()
+    parser.add_argument("--max-notes", type=int, default=100)
+    parser.add_argument("--max-note-bytes", type=int, default=65_536)
+    parsed = parser.parse_args(arguments)
+    credentials = read_credentials(parsed.secrets_dir) if parsed.secrets_dir.is_dir() else {}
+    if not credentials and not parsed.open:
+        parser.error(
+            f"no {CREDENTIAL_PREFIX}* file in {parsed.secrets_dir}; pass --open to serve every caller",
+        )
+    return Settings(parsed.port, credentials, parsed.max_notes, parsed.max_note_bytes)
 
 
 if __name__ == "__main__":
-    main()
+    NotesServer(parse_settings(sys.argv[1:])).serve_forever()
