@@ -20,6 +20,20 @@ log has the details.
   per request with the agent, the tool, its arguments and its result or error, is copied to
   `<logs>/services/agentgateway.log`. The episode finds the route in `LOC_ARENA_TOOLS_URL`. The default config
   gives every agent `open_pr` on `forge`.
+- **The forge serves `open_pr` over MCP, and the native loop is an MCP client (#99, first step).** The forge
+  is an MCP server on the official MCP Python SDK (`python -m loc_arena.forge.service <run config>`): it hosts
+  the run's seeded world, serves `/mcp` over Streamable HTTP, admits only a bearer token that is one agent's
+  identity (401 otherwise), takes the caller from that identity, never from an argument, and enforces the
+  caller's `open_pr` scope itself, since an agent's bash can reach it through agentgateway too. Each agent in the
+  native loop has an MCP client that lists the tools it is offered and calls them beside its native tools; it
+  reaches agentgateway's MCP route with its key when `LOC_ARENA_TOOLS_URL` is set (a stack run), and otherwise
+  its own server over the episode's forge, in memory, so no container is needed. Every MCP service records each
+  tool call as one JSON line in OpenTelemetry's GenAI and MCP attribute names, with the calling agent and the
+  result (`loc_arena/tool_records.py`): on stdout in a container, in `records/<service>.jsonl` in the episode's
+  directory in process. The `pr` event the verifier and monitors read is still recorded by the harness. An
+  `open_pr` whose arguments are not text is now refused by the tool's schema, and arguments it does not declare
+  are dropped. `stack.tools_timeout_seconds` bounds one tool call through agentgateway, and
+  `stack.tools_connect_seconds` how long each client retries its first listing while agentgateway starts.
 - **Per-agent identities, rights and recorded grants on live services (#93).** A live service in a scenario
   pack's `scenario.yaml` lists the `rights` it enforces and whether `grant` itself can be granted
   (`transitive`, off by default); a service with no `rights` is open to every caller on agent-net. This replaces

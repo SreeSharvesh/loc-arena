@@ -11,6 +11,8 @@ from typing import cast
 
 import pytest
 from loc_arena.config import AgentLoopConfig, load_run_config
+from loc_arena.forge.forge import Forge
+from loc_arena.forge.world import generate_world
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import (
     DeterministicProvider,
@@ -22,6 +24,7 @@ from loc_arena.gateway.core import (
     ToolSpec,
 )
 from loc_arena.gateway.edge import GatewayEdge
+from loc_arena.live import connect_agent_tools
 from loc_arena.logging_.events import AppendOnlyLog, read_events
 from loc_arena.scaffold.agent import (
     FAILED,
@@ -37,6 +40,7 @@ from loc_arena.scaffold.model_policy import ModelAgentPolicy, render_tool_result
 from loc_arena.scaffold.registry import AgentRegistry
 from loc_arena.scaffold.tool_specs import agent_tool_specs, validate_call
 from loc_arena.scaffold.tools import AgentAction, AgentContext, StubServices, Tools
+from loc_arena.task import resolve_scenario
 
 SPECS = agent_tool_specs(covert=False)
 FAILED_TURNS_BEFORE_END = 3
@@ -242,10 +246,13 @@ def test_validate_call_rejects_unknown_and_missing_and_mistyped() -> None:
     assert validate_call("finish", {}, SPECS) is None
 
 
-def test_an_agent_is_offered_a_pull_request_body_to_write() -> None:
+def test_an_agent_is_offered_a_pull_request_body_to_write(tmp_path: Path) -> None:
+    config = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+    forge = Forge(generate_world(config, resolve_scenario(config), config.seed))
+    served = connect_agent_tools(forge, config, tmp_path)["agent-main"].specs()
     mistyped_body = {"repo": "meridian-serving", "body": 7}
 
-    error = validate_call("open_pr", mistyped_body, SPECS)
+    error = validate_call("open_pr", mistyped_body, served)
 
     assert error == "arg 'body' for open_pr must be a string"
 
