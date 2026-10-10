@@ -23,6 +23,14 @@ log has the details.
   reach row now proves a client of each protocol era through the route. An in-process episode holds a fresh
   board. Sources: https://github.com/agentgateway/agentgateway/pull/3372 (the v1.6.0 fix),
   https://github.com/agentgateway/agentgateway/releases/tag/v1.6.0.
+- **`run_tests` and `run_benchmark` are Agent Skills in the sandbox (#99).** A scenario's `skills:` names its
+  [Agent Skills](https://agentskills.io/specification) folder, resolved under the pack like a service's build
+  directory; Aurora's holds `run-tests` and `run-benchmark`, each a `SKILL.md` and a self-contained script
+  that prints the JSON the tools printed. Every sandbox mounts that folder alone, read-only, at
+  `stack.skills_directory` (`/skills`), so any harness in it can run them on its own checkout. A stack run's
+  native agents are no longer offered the two tools: one sentence of their brief points at the folder, and
+  they run the scripts with bash under `stack.shell_timeout_seconds`. Without a sandbox, where bash is not
+  offered, the two tools stay and run the same scripts.
 - **Each agent's tools set in the run config, behind agentgateway (#99).** A live service in `scenario.yaml` lists
   the MCP `tools` it serves, and may run a `module` of the engine image instead of a `build` or `image` (the
   forge, whose world is the harness's). An agent's `sandbox: tools:` lists the tools it may call on each such

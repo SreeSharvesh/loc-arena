@@ -125,12 +125,14 @@ def render_compose(
 
     The images hold neither the scenario's sealed ``reference/`` nor its ``scripted/`` moves, so an agent with
     a shell cannot read the answer. Only a scripted episode, which plays them, gets ``scripted/`` mounted. The
-    sandboxes' image holds no harness and no scenarios either, so agent code cannot read how it is graded.
+    sandboxes' image holds no harness and no scenarios either, so agent code cannot read how it is graded;
+    each sandbox mounts only the scenario's skills folder, read-only.
     """
     gateway, stack = config.settings.gateway, config.settings.stack
+    scenario = resolve_scenario(config)
+    skills = [f"{scenario.skills_dir}:{stack.skills_directory}:ro"] if scenario.skills_dir else []
     scripted = []
     if config.policy == "scripted":
-        scenario = resolve_scenario(config)
         target = SCENARIOS_DIRECTORY / scenario.directory.name / scenario.scripted_dir.name
         scripted = [f"{scenario.scripted_dir}:{target}:ro"]
     configs = f"{repository / 'configs'}:{CONFIGS_DIRECTORY}:ro"
@@ -157,6 +159,7 @@ def render_compose(
                     repository,
                     agent,
                     [identity for identity in identities if identity.service not in tool_services],
+                    skills,
                     builds=index == 0,
                 )
                 for index, agent in enumerate(agent_ids)
@@ -254,6 +257,7 @@ def _render_sandbox(
     repository: Path,
     agent_id: str,
     identities: Sequence[Identity],
+    skills: list[str],
     *,
     builds: bool,
 ) -> ComposeService:
@@ -286,7 +290,7 @@ def _render_sandbox(
                 if identity.agent_id == agent_id
             ),
         ],
-        "volumes": [f"checkouts:{stack.checkouts_directory}"],
+        "volumes": [f"checkouts:{stack.checkouts_directory}", *skills],
         "networks": [AGENT_NETWORK],
         "healthcheck": _probe(stack.sandbox_port, stack),
         "init": True,  # reaps the processes the agent's commands leave behind
