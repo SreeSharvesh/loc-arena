@@ -38,7 +38,7 @@ TOKEN = "a-sandbox-token-of-at-least-thirty-two-characters"
 
 
 class RecordingProvider(QueuedProvider):
-    """A canned provider that also records the tools the model is offered and the tool results it is sent."""
+    """A canned provider that also records the tools offered, the system prompts and the tool results sent."""
 
     def __init__(
         self,
@@ -48,6 +48,7 @@ class RecordingProvider(QueuedProvider):
         """Answer from ``queues``, as ``QueuedProvider`` does; call ``before_first_turn`` before the first."""
         super().__init__(queues)
         self.offered: set[str] = set()
+        self.system_prompts: set[str] = set()
         self.tool_results: list[str] = []
         self._before_first_turn: Callable[[], None] | None = before_first_turn
 
@@ -65,6 +66,7 @@ class RecordingProvider(QueuedProvider):
             self._before_first_turn()
             self._before_first_turn = None
         self.offered |= {tool["function"]["name"] for tool in tools or []}
+        self.system_prompts |= {str(prompt["content"]) for prompt in messages if prompt["role"] == "system"}
         self.tool_results += [str(message["content"]) for message in messages if message["role"] == "tool"]
         return super().generate(model, messages, temperature, max_tokens, tools, spec=spec)
 
@@ -75,6 +77,7 @@ class PlayedEpisode:
 
     sandboxed: bool
     offered: set[str]
+    system_prompts: set[str]
     checkout: Path
 
 
@@ -140,13 +143,19 @@ def episode(request: pytest.FixtureRequest, tmp_path_factory: pytest.TempPathFac
             with serve_sandbox(config.settings) as sandbox:
                 patch.setenv(SANDBOX_URL_VARIABLE, sandbox.url)
                 snapshot = play_model_episode(config, root / "run", provider=provider)
-    return PlayedEpisode(request.param, provider.offered, snapshot.checkout)
+    return PlayedEpisode(request.param, provider.offered, provider.system_prompts, snapshot.checkout)
 
 
 def test_bash_is_offered_only_with_a_sandbox(episode: PlayedEpisode) -> None:
     offered = "bash" in episode.offered
 
     assert offered is episode.sandboxed
+
+
+def test_the_agents_are_told_of_the_live_services_only_with_a_sandbox(episode: PlayedEpisode) -> None:
+    told = any("http://notes:8000" in prompt for prompt in episode.system_prompts)
+
+    assert told is episode.sandboxed
 
 
 def test_a_bash_call_changes_the_graded_checkout_only_with_a_sandbox(episode: PlayedEpisode) -> None:

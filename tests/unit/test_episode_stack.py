@@ -1,4 +1,7 @@
-"""The rendered compose file: the key and the route out in the gateway alone, the logs out of any sandbox."""
+"""The rendered compose file: the key and the route out in the gateway alone, the logs out of any sandbox.
+
+The live services' credentials only in those services and in the sandboxes of the agents holding them.
+"""
 
 from __future__ import annotations
 
@@ -18,13 +21,32 @@ from loc_arena.gateway import core
 from loc_arena.settings import GatewaySettings, LocArenaSettings, StackSettings
 from loc_arena.task import SANDBOX_URL_VARIABLE
 from sandbox_server.server import ServerSettings
-from scenarios.loader import SCENARIOS_ROOT
+from scenarios.loader import SCENARIOS_ROOT, LiveService, load_scenario
 
 REPOSITORY = Path("/repository")
 SCRIPTED_CONFIG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 TWO_AGENTS = (SCRIPTED_CONFIG.agent("agent-main"), SCRIPTED_CONFIG.agent("serving-agent"))
 SANDBOXES = ["sandbox-agent-main", "sandbox-serving-agent"]
+SANDBOXES_WITH_A_NON_HOLDER = ["sandbox-agent-main", "sandbox-controlplane-agent"]
+RUN_CONFIG_SERVICES = [*SANDBOXES_WITH_A_NON_HOLDER, "episode", "gateway"]
 HEALTHY = {"condition": "service_healthy"}
+# A holder of the notes credential and an agent holding none, as the run config grants them.
+HOLDER_AND_NOT = (SCRIPTED_CONFIG.agent("agent-main"), SCRIPTED_CONFIG.agent("controlplane-agent"))
+LIVE_SERVICES = ["notes", "wiki", "board"]
+PACK = """\
+scorer: aurora_pipeline_cost
+verifier: kill_chain_v1
+services:
+  notes: {build: services/notes, port: 8000, accepts: [notes], description: the notes board}
+  wiki:
+    image: example/wiki:1
+    command: [wiki, serve]
+    port: 9000
+    healthcheck: [CMD, wiki, ping]
+    accepts: [wiki, wiki-admin]
+  board: {build: services/board, port: 7000}
+  ticketboard: {port: 8090}
+"""
 
 
 def render(settings: LocArenaSettings | None = None, *, policy: str = "scripted") -> ComposeDocument:
@@ -33,6 +55,35 @@ def render(settings: LocArenaSettings | None = None, *, policy: str = "scripted"
         settings=settings or LocArenaSettings(),
         policy=policy,
         agents=TWO_AGENTS,
+        live_services=(),
+    )
+    return render_compose(config, REPOSITORY, "a-run", ["--mode", "honest"])
+
+
+@pytest.fixture
+def pack(tmp_path: Path) -> Path:
+    directory = tmp_path / "pack"
+    for built in ("notes", "board"):
+        (directory / "services" / built).mkdir(parents=True)
+        (directory / "services" / built / "Dockerfile").write_text("FROM scratch\n")
+    (directory / "scenario.yaml").write_text(PACK)
+    return directory.resolve()
+
+
+@pytest.fixture
+def live_services(pack: Path) -> tuple[LiveService, ...]:
+    return load_scenario(pack.name, root=pack.parent).live_services
+
+
+def render_live(
+    services: tuple[LiveService, ...],
+    settings: LocArenaSettings | None = None,
+) -> ComposeDocument:
+    config = dataclasses.replace(
+        SCRIPTED_CONFIG,
+        settings=settings or LocArenaSettings(),
+        agents=HOLDER_AND_NOT,
+        live_services=services,
     )
     return render_compose(config, REPOSITORY, "a-run", ["--mode", "honest"])
 
@@ -304,3 +355,136 @@ def test_a_sandbox_its_agent_killed_comes_back(sandbox: str) -> None:
     restart = compose["services"][sandbox]["restart"]
 
     assert restart == "unless-stopped"
+
+
+def test_a_live_service_built_from_its_pack_runs_bounded_on_agent_net_alone_with_what_it_checks(
+    pack: Path,
+    live_services: tuple[LiveService, ...],
+) -> None:
+    stack = StackSettings(service_memory_limit="300m", service_cpus=0.5, service_pids_limit=64)
+
+    notes = render_live(live_services, LocArenaSettings(stack=stack))["services"]["notes"]
+
+    assert notes == {
+        "build": {"context": f"{pack}/services/notes"},
+        "image": "loc-arena-service-notes:latest",
+        "cap_drop": ["ALL"],
+        "mem_limit": "300m",
+        "cpus": 0.5,
+        "pids_limit": 64,
+        "networks": ["agent-net"],
+        "secrets": [{"source": "credential_notes", "target": "credential_notes"}],
+        "healthcheck": {
+            "test": [
+                "CMD",
+                "python",
+                "-c",
+                "import socket; socket.create_connection(('localhost', 8000), 2)",
+            ],
+            "interval": "2s",
+            "retries": 15,
+        },
+        "init": True,
+    }
+
+
+def test_a_live_service_from_a_ready_image_runs_its_command_and_healthcheck(
+    live_services: tuple[LiveService, ...],
+) -> None:
+    compose = render_live(live_services)
+
+    wiki = compose["services"]["wiki"]
+
+    assert (wiki["image"], wiki.get("build"), wiki["command"], wiki["healthcheck"]["test"]) == (
+        "example/wiki:1",
+        None,
+        ["wiki", "serve"],
+        ["CMD", "wiki", "ping"],
+    )
+
+
+def test_every_live_service_is_only_on_the_network_with_no_route_out(
+    live_services: tuple[LiveService, ...],
+) -> None:
+    compose = render_live(live_services)
+
+    networks = {name: compose["services"][name]["networks"] for name in LIVE_SERVICES}
+
+    assert networks == {"notes": [AGENT_NETWORK], "wiki": [AGENT_NETWORK], "board": [AGENT_NETWORK]}
+
+
+def test_each_sandbox_holds_only_the_credentials_its_agent_is_granted(
+    live_services: tuple[LiveService, ...],
+) -> None:
+    compose = render_live(live_services)
+
+    mounted = {name: compose["services"][name]["secrets"] for name in SANDBOXES_WITH_A_NON_HOLDER}
+
+    assert mounted == {
+        "sandbox-agent-main": [
+            {"source": "sandbox_token_agent_main", "target": "sandbox_token"},
+            {"source": "credential_notes", "target": "credential_notes"},
+        ],
+        "sandbox-controlplane-agent": [
+            {"source": "sandbox_token_controlplane_agent", "target": "sandbox_token"},
+        ],
+    }
+
+
+def test_neither_the_gateway_nor_the_episode_holds_a_credential(
+    live_services: tuple[LiveService, ...],
+) -> None:
+    compose = render_live(live_services)
+
+    holders = {name: compose["services"][name]["secrets"] for name in ("gateway", "episode")}
+
+    assert holders == {
+        "gateway": ["openrouter_api_key"],
+        "episode": ["sandbox_token_agent_main", "sandbox_token_controlplane_agent"],
+    }
+
+
+def test_compose_reads_each_credential_from_its_own_host_variable(
+    live_services: tuple[LiveService, ...],
+) -> None:
+    compose = render_live(live_services)
+
+    credentials = {
+        name: source for name, source in compose["secrets"].items() if name.startswith("credential_")
+    }
+
+    assert credentials == {
+        "credential_notes": {"environment": "LOC_ARENA_CREDENTIAL_NOTES"},
+        "credential_wiki": {"environment": "LOC_ARENA_CREDENTIAL_WIKI"},
+        "credential_wiki-admin": {"environment": "LOC_ARENA_CREDENTIAL_WIKI_ADMIN"},
+    }
+
+
+def test_the_episode_starts_once_every_live_service_is_healthy(
+    live_services: tuple[LiveService, ...],
+) -> None:
+    compose = render_live(live_services)
+
+    awaited = compose["services"]["episode"]["depends_on"]
+
+    assert awaited == {
+        "gateway": HEALTHY,
+        "sandbox-agent-main": HEALTHY,
+        "sandbox-controlplane-agent": HEALTHY,
+        "notes": HEALTHY,
+        "wiki": HEALTHY,
+        "board": HEALTHY,
+    }
+
+
+def test_the_run_config_gives_notes_its_container_and_its_credential_to_all_but_controlplane_agent() -> None:
+    config = load_run_config("configs/aurora-efficiency.yaml")
+
+    compose = render_compose(config, REPOSITORY, "aurora-efficiency", [])
+
+    services = compose["services"]
+    holds = {name: "credential_notes" in str(services[name]["secrets"]) for name in RUN_CONFIG_SERVICES}
+    assert ("notes" in services, holds) == (
+        True,
+        {"sandbox-agent-main": True, "sandbox-controlplane-agent": False, "episode": False, "gateway": False},
+    )

@@ -11,8 +11,7 @@ more only when a setting needs them.
 ![Today: agent loops, gateway, monitors and grading in one Python process, next to the key and the logs](01-today.png)
 
 `make run` runs every agent, the gateway, the monitors and the grader in one Python process, next to the key. The
-agents' shell is off, because their code would run on the host. `STACK=1` brings placeholder services up around
-the run; the episode itself stays in this process.
+agents' shell is off, because their code would run on the host. `STACK=1` is the safe run described below.
 
 ## After step 4: safe runs
 
@@ -26,8 +25,7 @@ the run; the episode itself stays in this process.
 
 ![The six steps: the gateway, the episode on compose, grading and teardown, isolation tests, a sandbox per agent, live services](04-steps.png)
 
-The deterministic run's scores stay unchanged through every step. Steps 1 to 4 have shipped; steps 5 and 6
-describe what comes next.
+The deterministic run's scores stay unchanged through every step. All six steps have shipped.
 
 1. **The gateway.** The key leaves the host process, and every model call is sealed with the container that made
    it.
@@ -41,17 +39,109 @@ describe what comes next.
 5. **A sandbox per agent, with permissions.** One `sandbox-<agent id>` per agent. The agent loop stays in the
    episode container and sends each tool call to the agent's sandbox through the execution server from the closed
    stack (#39), so agent code runs only in sandboxes. Each sandbox's execution server takes calls only with that
-   sandbox's own token.
-6. **Live services from the template.** A service entry with an `image` or `build` becomes its own container; one
-   without stays simulated, as today. Jobs run in worker containers declared the same way, and no container gets
-   the Docker socket.
+   sandbox's own token. (#92)
+6. **One live service, behind a credential.** A service entry in the scenario pack with an `image` or `build`
+   becomes its own container on agent-net; one without stays simulated, as today. The first live service is a
+   dummy, `notes`, a small notes board. Agents reach it from their sandboxes at `http://notes:8000`. It answers
+   only a caller that sends a credential it accepts, and the run config mounts that credential only into the
+   sandboxes that hold it. The service has no route out, holds no key or token, and cannot call a sandbox. No
+   container gets the Docker socket. Worker containers, per-agent networks (#45) and services that call models
+   are later work.
 
-## Steps 5 and 6 in the templates
+## Sandboxes and live services in the templates
 
 ![Template examples: a sandbox block per agent with credentials, networks and volumes; a live service entry with build, command, port, networks and the credentials it accepts](05-templates.png)
 
 Credentials are compose secrets mounted only into the sandboxes that hold them and the services that check them.
-Per-agent networks and volumes are optional, for a setting that wants a physical wall between agents (#45).
+Per-agent networks and volumes are optional and later, for a setting that wants a physical wall between agents
+(#45).
+
+A service is declared in `scenarios/<pack>/scenario.yaml`. The first live one is `notes`:
+
+```yaml
+services:
+  notes:
+    build: services/notes          # a directory in the scenario pack, holding a Dockerfile
+                                   # command: optional; the image's own command when absent
+    port: 8000
+    accepts: [notes]               # the credential names it checks
+    description: >
+      The team's notes board. Read, write and delete short notes by key.
+  ticketboard:
+    port: 8090                     # no build and no image: stays simulated, the stack ignores it
+```
+
+The run config says which agent holds which credential:
+
+```yaml
+agents:
+  - id: agent-main
+    sandbox:
+      credentials: [notes]         # mounted into this agent's sandbox only
+```
+
+`configs/aurora-efficiency.yaml` grants `notes` to every agent except `controlplane-agent`, so the default run
+shows both sides of the wall. A credential that no live service of the run's scenario accepts is refused at load,
+so a typo cannot pass.
+
+For each live service the rendered compose file holds one container with these fixed properties:
+
+- It joins agent-net and never egress-net, so it has no route out.
+- It drops every capability and runs under the stack's service limits (`service_memory_limit: 512m`,
+  `service_cpus: 1.0`, `service_pids_limit: 256`). The gateway's health interval and retries also pace each
+  service's healthcheck.
+- It mounts no volume, publishes no port and has no field that could add the Docker socket.
+- Its only secrets are the credentials it accepts. The run generates each value, like the sandbox tokens, and
+  passes it to compose through the environment, never on a command line or in a file.
+- The episode starts only after every live service reports healthy.
+
+Each agent's system prompt in a stack run lists the live services it may use: the address, the description and,
+for each credential it holds, where to read it (`/run/secrets/credential_<name>`) and how to send it
+(`Authorization: Bearer <contents>`). An agent that holds none of a service's credentials is still told the
+service exists; the service refuses it. An in-process run adds nothing, so the deterministic run is unchanged.
+
+## Time
+
+Live services run on real time, as LinuxArena's do. The framework has no fake or simulated clock. Its
+environments run real cron in their containers, and a check that needs time-dependent state writes that state
+and triggers the job itself: it backdates a row, then runs the worker or the cleanup (see Sources). The same
+holds here. The run's simulated clock stays for the scenario's scripted events, and a live service does not read
+it.
+
+## Bringing in another service
+
+Another service comes in the same way, by one more entry under `services:` in the scenario pack. A ready image
+needs no build directory:
+
+```yaml
+services:
+  notes: ...
+  database:
+    image: postgres:16
+    port: 5432
+    healthcheck: [CMD, pg_isready, -U, postgres]
+    accepts: [database]
+    description: >
+      The team's Postgres. Connect with the credential as the password.
+```
+
+The run config then grants `database` to the agents that may use it:
+
+```yaml
+agents:
+  - id: agent-main
+    sandbox:
+      credentials: [notes, database]
+```
+
+A ready image must declare its `healthcheck`, since the default probe runs `python`, which the image may lack. A
+`build` without one gets a probe of the declared `port`. A service that checks no credential lists an empty
+`accepts`, and it must then serve every caller itself: `notes` refuses to start with no credential mounted unless
+it is run with `--open`. An entry takes only the fields above; any other key is
+refused. The loader names the entry when its name is not a DNS label (or is `gateway` or `episode`, or starts with
+`sandbox-`), when it sets both `build` and `image`, when `build` is not a directory under the scenario pack
+(outside `reference/` and `scripted/`) holding a `Dockerfile`, when a credential name is not lowercase letters,
+digits and hyphens or is named twice, or when a live entry has no `port`.
 
 ## The gateway: a pass-through to OpenRouter
 
@@ -103,7 +193,11 @@ sandbox's command server: a sandbox refuses every other caller, even one holding
 shared checkout still runs wherever another agent runs it (the shared checkout is a channel between agents by
 design). No sandbox reaches the agent loop, which listens on no port. The grader's answers row also covers the grading code: no
 sandbox holds the harness, a verifier, a scorer or a scenario spec. Grading's container runs the same slim
-image, so it has no harness or scenarios, but it sees the sealed meter it runs. In an in-process run the agents'
+image, so it has no harness or scenarios, but it sees the sealed meter it runs. A live service is reached only with a
+credential: a sandbox gets an answer from it only when it holds a credential the service accepts, the episode and
+the gateway hold none, and the service has no route out and holds no key or token. It cannot run a command in a
+sandbox either, since a sandbox takes calls from the episode alone. No container in the project mounts the Docker
+socket. In an in-process run the agents'
 tools still run their code on the host; with `stack.sandbox_agent_code` on, grading's agent-code steps run in
 the slim image there too.
 
@@ -121,7 +215,20 @@ made it (#47), and the agent loop's fault handling (#50).
 
 ## Open questions
 
-- Live services run on real time, while the run uses a simulated clock. Do settings with live services move to
-  real time, or do services read the run's clock?
 - How should a model call from a process an agent started be told apart from the agent's own turns, now that the
   gateway names callers by container?
+
+## Sources
+
+- [linuxarena/control-tower](https://github.com/linuxarena/control-tower): the framework. Its source has no fake or
+  simulated clock; its sandbox for simulated environments leaves wall-clock timestamps to the model's judgment.
+- [linuxarena/ct-linuxarena](https://github.com/linuxarena/ct-linuxarena): `envs.lock.yml` lists the ten public
+  environments, each a repository `github.com/linuxarena/<name>`.
+- [linuxarena/clinical_trial](https://github.com/linuxarena/clinical_trial): `codebase/my-crontab` runs real cron in
+  the container (two jobs every 5 minutes, a report on Mondays at 09:00). Backs real time for live services.
+- [linuxarena/model_registry](https://github.com/linuxarena/model_registry):
+  `main_tasks/scheduled_model_expiration/scorer.py` sets `expires_at = NOW() - INTERVAL '1 hour'`, then triggers
+  the worker directly. Backs a check writing its own time-dependent state and running the job.
+- [linuxarena/user_tracking](https://github.com/linuxarena/user_tracking):
+  `main_tasks/story_data_retention_and_cleanup/scorer.py` inserts rows dated `NOW() - INTERVAL '60 days'`, then
+  checks the cleanup. Backs the same.

@@ -6,7 +6,10 @@ to the gateway. Each agent's code runs in its own sandbox, ``sandbox-<agent id>`
 which mounts only the volume of the checkouts: never the episode's logs, the run configs or the gateway's call
 log. Only the episode can call a sandbox's command server: a sandbox refuses every other caller, even one
 holding its token. Code left in the shared checkout still runs wherever another agent runs it (the shared
-checkout is a channel between agents by design). When the episode exits,
+checkout is a channel between agents by design). Each live service of the scenario runs in its own container
+on agent-net alone, with no volume and no published port, and holds only the credentials it checks; a
+sandbox holds a credential only when its agent's config grants it, and the episode and the gateway hold
+none. When the episode exits,
 its run directory is copied out and graded on this host, with the agents' code sandboxed, while the gateway
 still runs for the monitors' model calls. Then the gateway's call log is copied out and the project is
 removed with its volumes. If a copy fails, the project is kept so nothing is lost.
@@ -19,16 +22,18 @@ import functools
 import os
 import secrets
 import subprocess
+from collections.abc import Sequence
 from pathlib import Path, PurePosixPath
 from typing import TypedDict
 from urllib.parse import urlsplit
 
 import yaml
+from scenarios.loader import LiveService, accepted_credentials
 
 from loc_arena.config import RunConfig, load_run_config, sandbox_service
 from loc_arena.gateway.core import API_KEY_VARIABLE, GATEWAY_URL_VARIABLE, OPENROUTER_URL, OpenRouterProvider
 from loc_arena.harness import grade_run, locate_run
-from loc_arena.sandbox import TOKEN_FILE, build_server_settings, token_secret_name
+from loc_arena.sandbox import TOKEN_FILE, build_server_settings, credential_secret_name, token_secret_name
 from loc_arena.settings import StackSettings
 from loc_arena.task import SANDBOX_URL_VARIABLE, resolve_scenario
 
@@ -40,7 +45,7 @@ OUTPUT_DIRECTORY = PurePosixPath("/output")  # the episode's audit bundles; the 
 CONFIGS_DIRECTORY = PurePosixPath("/app/configs")  # the run configs, mounted read-only
 SCENARIOS_DIRECTORY = PurePosixPath("/app/scenarios")  # where the loader looks for a scenario pack
 REPOSITORY = Path(__file__).resolve().parents[1]  # its Dockerfile and configs/
-TOKEN_BYTES = 32  # each sandbox token's entropy
+TOKEN_BYTES = 32  # the entropy of each sandbox token and of each live service's credential
 GATEWAY_MODE_OPTION = "com.docker.network.bridge.gateway_mode_ipv4"
 LOOPBACK = "127.0.0.1"  # the only host address the gateway's port is published on, for grading on this host
 ENGINE_TARGET = "engine"  # the Dockerfile's stage of the gateway and the episode
@@ -62,6 +67,12 @@ class ComposeBuild(TypedDict):
     target: str
 
 
+class ServiceBuild(TypedDict):
+    """A live service's compose build: the directory of its Dockerfile, built whole."""
+
+    context: str
+
+
 class ServiceSecret(TypedDict):
     """A compose secret mounted in a service under another file name: ``target`` in its secrets directory."""
 
@@ -72,7 +83,7 @@ class ServiceSecret(TypedDict):
 class ComposeService(TypedDict, total=False):
     """The compose keys a rendered service uses."""
 
-    build: ComposeBuild
+    build: ComposeBuild | ServiceBuild
     image: str
     pull_policy: str
     command: list[str]
@@ -133,6 +144,7 @@ def render_compose(
     checkouts = f"checkouts:{stack.checkouts_directory}"
     engine = _build_from(repository, ENGINE_TARGET, stack.image)
     agent_ids = [agent.id for agent in config.agents]
+    services = config.live_services
     return {
         "services": {
             "gateway": {
@@ -148,6 +160,7 @@ def render_compose(
                 sandbox_service(agent): _render_sandbox(config, repository, agent, builds=index == 0)
                 for index, agent in enumerate(agent_ids)
             },
+            **{service.name: _render_live_service(service, stack) for service in services},
             EPISODE_SERVICE: {
                 **engine,
                 "mem_limit": stack.episode_memory_limit,
@@ -166,7 +179,11 @@ def render_compose(
                 "networks": [AGENT_NETWORK],
                 "depends_on": {
                     service: {"condition": "service_healthy"}
-                    for service in ["gateway", *map(sandbox_service, agent_ids)]
+                    for service in [
+                        "gateway",
+                        *map(sandbox_service, agent_ids),
+                        *(service.name for service in services),
+                    ]
                 },
             },
         },
@@ -180,16 +197,25 @@ def render_compose(
         "secrets": {
             KEY_SECRET_NAME: {"environment": API_KEY_VARIABLE},
             **{token_secret_name(agent): {"environment": token_variable(agent)} for agent in agent_ids},
+            **{
+                credential_secret_name(credential): {"environment": credential_variable(credential)}
+                for credential in accepted_credentials(services)
+            },
         },
     }
 
 
 def _render_sandbox(config: RunConfig, repository: Path, agent_id: str, *, builds: bool) -> ComposeService:
-    """The sandbox of ``agent_id``: its code's container, which holds that agent's token alone.
+    """The sandbox of ``agent_id``: its code's container, holding that agent's token and credentials alone.
 
-    One sandbox ``builds`` the image they all run, so compose builds it once; the others never pull it.
+    One sandbox ``builds`` the image they all run, so compose builds it once; the others never pull it. Of
+    the credentials the agent holds, only those a live service checks are mounted.
     """
     stack = config.settings.stack
+    accepted = accepted_credentials(config.live_services)
+    credentials = [
+        credential for credential in config.agent(agent_id).sandbox.credentials if credential in accepted
+    ]
     built = _build_from(repository, SANDBOX_TARGET, stack.sandbox_image)
     if not builds:
         del built["build"]
@@ -204,14 +230,48 @@ def _render_sandbox(config: RunConfig, repository: Path, agent_id: str, *, build
             *["python", "-m", "sandbox_server"],
             build_server_settings(config.settings, trusted_caller=EPISODE_SERVICE).model_dump_json(),
         ],
-        # Under the one name every sandbox's command server reads.
-        "secrets": [{"source": token_secret_name(agent_id), "target": TOKEN_FILE}],
+        # Its token under the one name every sandbox's command server reads; each credential under its own.
+        "secrets": [
+            {"source": token_secret_name(agent_id), "target": TOKEN_FILE},
+            *(_mount(credential_secret_name(credential)) for credential in credentials),
+        ],
         "volumes": [f"checkouts:{stack.checkouts_directory}"],
         "networks": [AGENT_NETWORK],
         "healthcheck": _probe(stack.sandbox_port, stack),
         "init": True,  # reaps the processes the agent's commands leave behind
         "restart": "unless-stopped",  # agent code can kill the server: it comes back
     }
+
+
+def _render_live_service(service: LiveService, stack: StackSettings) -> ComposeService:
+    """A live service: on agent-net alone with the credentials it checks; no volume, no published port."""
+    source: ComposeService = (
+        {"build": {"context": str(service.source)}, "image": f"loc-arena-service-{service.name}:latest"}
+        if isinstance(service.source, Path)
+        else {"image": service.source}
+    )
+    return {
+        **source,
+        **({"command": list(service.command)} if service.command else {}),
+        "cap_drop": ["ALL"],
+        "mem_limit": stack.service_memory_limit,
+        "cpus": stack.service_cpus,
+        "pids_limit": stack.service_pids_limit,
+        "networks": [AGENT_NETWORK],
+        "secrets": [_mount(credential_secret_name(credential)) for credential in service.accepts],
+        "healthcheck": _probe(service.port, stack, test=service.healthcheck),
+        "init": True,
+    }
+
+
+def _mount(secret: str) -> ServiceSecret:
+    """``secret`` mounted under its own name."""
+    return {"source": secret, "target": secret}
+
+
+def credential_variable(credential: str) -> str:
+    """Where compose reads ``credential`` from, on the host."""
+    return f"LOC_ARENA_{credential_secret_name(credential).upper().replace('-', '_')}"
 
 
 def token_variable(agent_id: str) -> str:
@@ -224,10 +284,11 @@ def _build_from(repository: Path, target: str, image: str) -> ComposeService:
     return {"build": {"context": str(repository), "target": target}, "image": image, "cap_drop": ["ALL"]}
 
 
-def _probe(port: int, stack: StackSettings) -> Healthcheck:
-    """A healthcheck that passes once something in the container accepts connections on ``port``."""
+def _probe(port: int, stack: StackSettings, *, test: Sequence[str] | None = None) -> Healthcheck:
+    """A healthcheck running ``test``; by default it passes once something accepts connections on ``port``."""
+    probe = ["CMD", "python", "-c", f"import socket; socket.create_connection(('localhost', {port}), 2)"]
     return {
-        "test": ["CMD", "python", "-c", f"import socket; socket.create_connection(('localhost', {port}), 2)"],
+        "test": list(test or probe),
         "interval": f"{stack.gateway_health_interval_seconds}s",
         "retries": stack.gateway_health_retries,
     }
@@ -263,9 +324,14 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
         "--project-directory",
         str(REPOSITORY),
     ]
-    # Each sandbox's token reaches compose through its environment alone: never a command line or a file.
+    # Each sandbox's token and each live service's credential reach compose through its environment alone:
+    # never a command line or a file.
     tokens = {token_variable(agent.id): secrets.token_urlsafe(TOKEN_BYTES) for agent in config.agents}
-    run_compose = functools.partial(subprocess.run, env={**os.environ, **tokens})
+    credentials = {
+        credential_variable(credential): secrets.token_urlsafe(TOKEN_BYTES)
+        for credential in accepted_credentials(config.live_services)
+    }
+    run_compose = functools.partial(subprocess.run, env={**os.environ, **tokens, **credentials})
     call_log = logs / "gateway" / f"{project}.calls.jsonl"
     call_log.parent.mkdir(parents=True, exist_ok=True)
     copy_output = [*compose, "cp", f"{EPISODE_SERVICE}:{OUTPUT_DIRECTORY}/.", str(logs)]

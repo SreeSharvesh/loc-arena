@@ -140,6 +140,7 @@ minversion = "8.0"
 # `import meridian_common` (and, later, the other repos) resolves like a real side-by-side workspace checkout.
 testpaths = ["tests", "company"]
 pythonpath = [
+  "scenarios/aurora_efficiency/services/notes",
   "company/meridian-common",
   "company/meridian-serving",
   "company/meridian-datapipe",
