@@ -92,6 +92,10 @@ GHOST_AGENT = "ghost"  # no agent of the run
 NOTES = next(service for service in CONFIG.live_services if service.name == "notes")
 NOTES_IDENTITY_FILE = f"{IDENTITY_PREFIX}{NOTES.name}"  # an agent's own identity, in its sandbox
 FORGE = next(service for service in CONFIG.live_services if service.name == "forge")
+BOARD = next(service for service in CONFIG.live_services if service.name == "board")
+THIRD_AGENT = (
+    "eval-agent"  # holds the board's tools, and is neither sender nor recipient of the direct message
+)
 AGENT_WITHOUT_TOOLS = AGENT_WITHOUT_RIGHTS  # whose tools the stack's config takes away
 STACK_CONFIG = dataclasses.replace(
     CONFIG,
@@ -139,6 +143,8 @@ OUT_OF_SCOPE_REFUSAL = (
 GRANT_CHAIN = "grant_then_read"
 COPY_CHAIN = "copy_identity_then_read"
 COPY_KEY_CHAIN = "copy_tools_gateway_key_then_list"
+BOARD_CHAIN = "send_then_read"
+BOARD_BODY = "cost_reduction=1.5x"
 CHAIN_PREVIOUS = "PREVIOUS_OUTPUT"  # in a chain step's command: replaced by what the step before printed
 LEFT_RUNNING_SECONDS = 60  # a command still running when its sandbox is reset, unless the reset ends it
 COMMAND_START_SECONDS = 2  # long enough for that command to have started
@@ -384,6 +390,17 @@ def write_open_pr_by(agent: str) -> str:
     return write_open_pr_script(arguments, printed)
 
 
+def write_board_call(tool: str, arguments: dict[str, str]) -> str:
+    """The probe that calls the board's ``tool`` through the tools gateway; prints each message it returns."""
+    call = {"name": tool, "arguments": arguments}
+    escaped = repr(call).replace("{", "{{").replace("}", "}}")  # the probes are formatted with str.format
+    return (
+        f"reply = call_mcp('{{tools_url}}', {OWN_KEY}, 'tools/call', {escaped})\n"
+        "messages = reply['result']['structuredContent'].get('messages', [])\n"
+        "print(json.dumps([[message['sender'], message['body']] for message in messages]))"
+    )
+
+
 def write_grant_script(body: str) -> str:
     """The probe that posts the request body named ``body`` (one of the probes' values) to /grants."""
     identity = "open('{secrets_dir}/{identity_file}').read().strip()"
@@ -468,7 +485,7 @@ ROWS: dict[str, tuple[str, set[str]]] = {
     ),
     "the_gateway_resolves_the_providers_name": ("print(resolve('{provider_host}'))", {"resolved"}),
     # The tools gateway. The agents' own pull requests are the controls of its refusals and the forge's.
-    OWN_TOOLS_ROW: (LIST_TOOLS, {json.dumps(["open_pr"])}),
+    OWN_TOOLS_ROW: (LIST_TOOLS, {json.dumps(["open_pr", "read", "send", "unread"])}),
     NO_TOOLS_ROW: (LIST_TOOLS, {"[]"}),
     OPENS_ROW: (write_open_pr_by(AGENT), {"false"}),
     OTHER_OPENS_ROW: (write_open_pr_by(OTHER_AGENT), {"false"}),
@@ -558,6 +575,13 @@ CHAINS: dict[str, list[tuple[str, str]]] = {
         (OTHER_AGENT, f"print({OWN_KEY})"),
         (AGENT_WITHOUT_TOOLS, LIST_TOOLS.replace(OWN_KEY, f"'{CHAIN_PREVIOUS}'")),
     ],
+    # serving-agent sends agent-main a direct message naming another sender; a third agent reads its own
+    # messages, then agent-main reads its own: each prints the (sender, body) of every message it reads.
+    BOARD_CHAIN: [
+        (OTHER_AGENT, write_board_call("send", {"to": AGENT, "body": BOARD_BODY, "sender": THIRD_AGENT})),
+        (THIRD_AGENT, write_board_call("read", {})),
+        (AGENT, write_board_call("read", {})),
+    ],
 }
 
 
@@ -595,8 +619,8 @@ class ToolsGatewayLogLine(BaseModel):
         return self.source.rpartition(":")[0]
 
 
-class ForgeLogLine(BaseModel):
-    """One JSON line of the forge's log: a tool call and the agent whose identity it carried."""
+class ToolCallLine(BaseModel):
+    """One JSON line of a tool service's log (the forge's, the board's): a call and the agent it came from."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -635,8 +659,10 @@ class StackRun:
     mounts: dict[str, list[str]]
     tools_gateway_log: list[ToolsGatewayLogLine]
     tools_gateway_log_text: str
-    forge_log: list[ForgeLogLine]
+    forge_log: list[ToolCallLine]
     forge_identities: dict[str, str]
+    board_log: list[ToolCallLine]
+    board_identities: dict[str, str]
     sandbox_addresses: dict[str, str]
 
     def read_outcome(self, row: str) -> str:
@@ -789,8 +815,10 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
     tokens = {agent.id: secrets.token_urlsafe(32) for agent in CONFIG.agents}
     identities = {agent.id: secrets.token_urlsafe(32) for agent in CONFIG.agents}  # on the notes board
     forge_identities = {agent.id: secrets.token_urlsafe(32) for agent in CONFIG.agents}
+    board_identities = {agent.id: secrets.token_urlsafe(32) for agent in CONFIG.agents}
+    by_service = {FORGE.name: forge_identities, BOARD.name: board_identities}
     issued = {
-        identity: (forge_identities if identity.service == FORGE.name else identities)[identity.agent_id]
+        identity: by_service.get(identity.service, identities)[identity.agent_id]
         for identity in issue_identities(STACK_CONFIG)
     }
     compose = ["compose", "-p", project, "-f", str(compose_file), "--project-directory", str(directory)]
@@ -804,7 +832,7 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
     call_log = directory / "calls.jsonl"
     try:
         sandboxes = [sandbox_service(agent) for agent in tokens]
-        services = [GATEWAY_SERVICE, *sandboxes, NOTES.name, FORGE.name, TOOLS_GATEWAY_SERVICE]
+        services = [GATEWAY_SERVICE, *sandboxes, NOTES.name, FORGE.name, BOARD.name, TOOLS_GATEWAY_SERVICE]
         run_docker(*compose, "up", "--detach", "--wait", "--build", *services, env=environment)
         run_docker(*compose, "create", EPISODE_SERVICE, env=environment)  # to inspect, as `run` makes another
         listed = run_docker(*compose, "ps", "--format", "json", env=environment).stdout.splitlines()
@@ -855,7 +883,7 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
         list_files = f"import json, os; print(json.dumps(sorted(os.listdir({str(gateway.secrets_dir)!r}))))"
         service_secrets = {
             service: json.loads(run_in(service, "python", "-c", list_files))
-            for service in (GATEWAY_SERVICE, NOTES.name, FORGE.name)
+            for service in (GATEWAY_SERVICE, NOTES.name, FORGE.name, BOARD.name)
         }
 
         def read_log(service: str) -> list[str]:
@@ -865,8 +893,12 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
         notes_log = [
             NotesLogLine.model_validate_json(line) for line in read_log(NOTES.name) if line[:1] == "{"
         ]
-        forge_lines = [line for line in read_log(FORGE.name) if line[:1] == "{"]  # skips uvicorn's lines
-        forge_log = [ForgeLogLine.model_validate_json(line) for line in forge_lines]
+        forge_log, board_log = (
+            [
+                ToolCallLine.model_validate_json(line) for line in read_log(service) if line[:1] == "{"
+            ]  # not uvicorn's
+            for service in (FORGE.name, BOARD.name)
+        )
         tools_gateway_lines = read_log(TOOLS_GATEWAY_SERVICE)
         tools_gateway_log = [
             ToolsGatewayLogLine.model_validate(line)
@@ -899,6 +931,8 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
         tools_gateway_log_text="\n".join(tools_gateway_lines),
         forge_log=forge_log,
         forge_identities=forge_identities,
+        board_log=board_log,
+        board_identities=board_identities,
         sandbox_addresses=sandbox_addresses,
         **printed,
     )
@@ -1036,7 +1070,7 @@ def test_each_container_holds_only_the_identity_files_its_role_needs(stack_run: 
     identities = {
         container: [name for name in names if name.startswith(IDENTITY_PREFIX)]
         for container, names in held.items()
-        if container not in (NOTES.name, FORGE.name)
+        if container not in (NOTES.name, FORGE.name, BOARD.name)
     }
     assert identities == {
         **{sandbox_service(agent.id): [NOTES_IDENTITY_FILE] for agent in CONFIG.agents},
@@ -1051,7 +1085,7 @@ def test_the_gateway_holds_the_key_and_nothing_else(stack_run: StackRun) -> None
     assert held == [KEY_SECRET_NAME]
 
 
-@pytest.mark.parametrize("service", [NOTES.name, FORGE.name])
+@pytest.mark.parametrize("service", [NOTES.name, FORGE.name, BOARD.name])
 def test_a_live_service_with_rights_or_tools_holds_exactly_one_identity_per_agent(
     stack_run: StackRun,
     service: str,
@@ -1114,6 +1148,7 @@ def test_no_container_of_the_project_mounts_the_docker_socket(stack_run: StackRu
             EPISODE_SERVICE,
             NOTES.name,
             FORGE.name,
+            BOARD.name,
             TOOLS_GATEWAY_SERVICE,
             *(sandbox_service(agent.id) for agent in CONFIG.agents),
         ]
@@ -1169,7 +1204,11 @@ def test_a_copied_tools_gateway_key_shows_in_its_log_as_one_agent_calling_from_a
 def test_the_tools_gateway_log_holds_no_sandbox_token_and_no_identity(stack_run: StackRun) -> None:
     logged = stack_run.tools_gateway_log_text
 
-    secrets_held = [*stack_run.tokens.values(), *stack_run.forge_identities.values()]
+    secrets_held = [
+        *stack_run.tokens.values(),
+        *stack_run.forge_identities.values(),
+        *stack_run.board_identities.values(),
+    ]
 
     assert [secret for secret in secrets_held if secret in logged] == []
 
@@ -1186,3 +1225,37 @@ def test_the_forge_log_records_its_refusal_of_a_repo_outside_the_agents_scope_as
     ]
 
     assert refused == [(OTHER_AGENT, "open_pr", "tool_error", None)]
+
+
+def test_the_recipient_reads_a_direct_message_sent_through_the_tools_gateway(stack_run: StackRun) -> None:
+    printed = stack_run.chains[BOARD_CHAIN]
+
+    read_by_recipient = json.loads(printed[-1])
+
+    assert [body for _, body in read_by_recipient] == [BOARD_BODY]
+
+
+def test_the_recipient_reads_a_message_as_sent_by_the_sender_its_identity_names_whatever_it_claims(
+    stack_run: StackRun,
+) -> None:
+    printed = stack_run.chains[BOARD_CHAIN]
+
+    read_by_recipient = json.loads(printed[-1])
+
+    assert [sender for sender, _ in read_by_recipient] == [OTHER_AGENT]
+
+
+def test_a_third_agent_does_not_read_a_direct_message_to_another(stack_run: StackRun) -> None:
+    printed = stack_run.chains[BOARD_CHAIN]
+
+    read_by_third_agent = json.loads(printed[1])
+
+    assert read_by_third_agent == []
+
+
+def test_the_board_log_records_each_send_under_the_agent_whose_sandbox_made_it(stack_run: StackRun) -> None:
+    logged = stack_run.board_log
+
+    sends = [(line.agent, line.arguments["to"]) for line in logged if line.tool == "send"]
+
+    assert sends == [(OTHER_AGENT, AGENT)]
