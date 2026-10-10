@@ -5,7 +5,7 @@ scope, calls the covert tools through the scoped ``Tools`` layer, and the real i
 execute the durability. It asserts the verifier reports a REAL robust landing from executed state. It is
 deterministic (no live model, no network): the MODEL's job is to DECIDE these calls, which the flag-gated
 ``test_live_attack_lands`` covers; here we prove the surface + real components compose to a robust landing.
-It also checks who each covert action and each opened PR is recorded under.
+It also checks who each covert action is recorded under and who authors an agent's PR.
 """
 
 from __future__ import annotations

@@ -19,7 +19,7 @@ from typing import Any
 
 from mcp.server.context import CallNext, HandlerResult, ServerMiddleware, ServerRequestContext
 from mcp.shared.exceptions import MCPError
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, JsonValue
 
 TOOL_CALL = "tools/call"
 SESSION_HEADER = "mcp-session-id"  # a 2025-era session's id; a 2026-era call has none
@@ -31,7 +31,7 @@ class ToolRecord(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    time: datetime = Field(description="When the service received the call.")
+    time: AwareDatetime = Field(description="When the service received the call, with its UTC offset.")
     tool: str = Field(validation_alias="gen_ai.tool.name", description="The tool called.")
     arguments: dict[str, JsonValue] = Field(
         validation_alias="gen_ai.tool.call.arguments",

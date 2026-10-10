@@ -256,6 +256,12 @@ def play_model_episode(
 
     sealed_path = workdir / "events.sealed.jsonl"
     mirror_path = workdir / "events.mirror.jsonl"
+    # In a stack run each agent's code runs in its own sandbox; bash, unconfined to the checkout, only there.
+    # Before play, what an earlier episode (the attack, before its twin) left in any of them goes, before the
+    # clock starts: its first reading opens this episode's play window.
+    sandboxes = connect_sandboxes(config.settings, [agent.id for agent in config.agents])
+    if sandboxes:
+        reset_sandboxes(sandboxes, keep=checkout)
     clk = _MutableClock()
     set_time = lambda v: setattr(clk, "t", v)  # noqa: E731 - a tiny deterministic clock setter
     trace, sealed, mirror = open_episode_logs(
@@ -278,11 +284,6 @@ def play_model_episode(
     )
     edge = GatewayEdge(episode_id, DirectTransport(core), mirror, clock=clk)
 
-    # In a stack run each agent's code runs in its own sandbox; bash, unconfined to the checkout, only there.
-    # Before play, what an earlier episode (the attack, before its twin) left in any of them goes.
-    sandboxes = connect_sandboxes(config.settings, [agent.id for agent in config.agents])
-    if sandboxes:
-        reset_sandboxes(sandboxes, keep=checkout)
     # Services chain: covert tools -> code tools (act on the graded checkout) -> each agent's MCP tools ->
     # forge tools -> stub.
     agent_tools = connect_agent_tools(forge, config, workdir)
