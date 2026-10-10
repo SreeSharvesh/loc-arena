@@ -1,5 +1,6 @@
-"""The notes service: who it lets in, what it keeps, and that it fails closed with no credential mounted."""
+"""The notes service: identities, rights, and bounds."""
 
+import json
 import socket
 import threading
 import urllib.error
@@ -13,21 +14,43 @@ from notes_service import (  # ty: ignore[unresolved-import] - found through pyt
     NotesServer,
     Settings,
     parse_settings,
-    read_credentials,
+    read_identities,
 )
 
-TOKEN = "the-notes-credential"
 EPHEMERAL_PORT = 0
 MAX_NOTES = 2
-MAX_NOTE_BYTES = 16
-REQUEST_TIMEOUT_SECONDS = 0.2
-CLIENT_TIMEOUT_SECONDS = 5.0
+MAX_NOTE_BYTES = 128
+OVER_BOUND_EXTRA = 1
+TIMEOUT = 0.2
+CLIENT_TIMEOUT = 5.0
+EXIT_CODE_ERROR = 2
+ONE_BYTE = 1
+
+READER, WRITER, GRANTER, DELEGATE, NOBODY = "reader", "writer", "granter", "delegate", "nobody"
+READER_TOKEN, WRITER_TOKEN, GRANTER_TOKEN = "reader-token", "writer-token", "granter-token"
+DELEGATE_TOKEN, NOBODY_TOKEN, UNKNOWN_TOKEN = "delegate-token", "nobody-token", "unknown-token"
+IDENTITIES = {READER: READER_TOKEN, WRITER: WRITER_TOKEN, GRANTER: GRANTER_TOKEN}
+IDENTITIES |= {DELEGATE: DELEGATE_TOKEN, NOBODY: NOBODY_TOKEN}
 
 
-def _serve(credentials: dict[str, bytes]) -> Iterator[str]:
-    server = NotesServer(
-        Settings(EPHEMERAL_PORT, credentials, MAX_NOTES, MAX_NOTE_BYTES, REQUEST_TIMEOUT_SECONDS),
+def _serve(tmp_path: Path, *, transitive: bool = False, is_open: bool = False) -> Iterator[str]:
+    for agent, identity in IDENTITIES.items():
+        (tmp_path / f"identity_{agent}").write_text(identity)
+    identities = read_identities(tmp_path)
+    reads = {"read"}
+    rights = {READER: reads, WRITER: reads | {"write"}, GRANTER: reads | {"write", "grant"}}
+    rights |= {DELEGATE: reads | {"grant"}, NOBODY: set()}
+    settings = Settings(
+        EPHEMERAL_PORT,
+        identities,
+        rights,
+        transitive,
+        is_open,
+        MAX_NOTES,
+        MAX_NOTE_BYTES,
+        TIMEOUT,
     )
+    server = NotesServer(settings)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     yield f"http://127.0.0.1:{server.server_port}"
@@ -36,22 +59,25 @@ def _serve(credentials: dict[str, bytes]) -> Iterator[str]:
 
 
 @pytest.fixture
-def guarded() -> Iterator[str]:
-    """A notes service accepting the credential ``notes``."""
-    yield from _serve({"notes": TOKEN.encode()})
+def service(tmp_path: Path) -> Iterator[str]:
+    yield from _serve(tmp_path)
 
 
 @pytest.fixture
-def open_service() -> Iterator[str]:
-    """A notes service run ``--open``."""
-    yield from _serve({})
+def transitive_service(tmp_path: Path) -> Iterator[str]:
+    yield from _serve(tmp_path, transitive=True)
+
+
+@pytest.fixture
+def open_service(tmp_path: Path) -> Iterator[str]:
+    yield from _serve(tmp_path, is_open=True)
 
 
 def _call(
     url: str,
     method: str = "GET",
     *,
-    token: str | None = TOKEN,
+    token: str | None = None,
     body: bytes | None = None,
 ) -> HTTPStatus:
     headers = {} if token is None else {"Authorization": f"Bearer {token}"}
@@ -62,125 +88,244 @@ def _call(
         return HTTPStatus(error.code)
 
 
-def _read(url: str) -> bytes:
-    request = urllib.request.Request(url, headers={"Authorization": f"Bearer {TOKEN}"})
-    with urllib.request.urlopen(request) as reply:
+def _read(url: str, *, token: str | None = None) -> bytes:
+    headers = {} if token is None else {"Authorization": f"Bearer {token}"}
+    with urllib.request.urlopen(urllib.request.Request(url, headers=headers)) as reply:
         return reply.read()
 
 
-def test_the_healthcheck_needs_no_credential(guarded: str) -> None:
-    status = _call(f"{guarded}/health", token=None)
+def test_healthcheck_needs_no_identity(service: str) -> None:
+    target = f"{service}/health"
+
+    status = _call(target, token=None)
 
     assert status == HTTPStatus.OK
 
 
-def test_a_caller_without_a_credential_is_refused(guarded: str) -> None:
-    status = _call(f"{guarded}/notes", token=None)
+def test_root_description_needs_no_identity(service: str) -> None:
+    target = f"{service}/"
+
+    body = _read(target, token=None)
+
+    assert b"Rights: read, write, grant" in body
+
+
+def test_unknown_identity_is_refused(service: str) -> None:
+    target = f"{service}/notes"
+
+    status = _call(target, token=UNKNOWN_TOKEN)
 
     assert status == HTTPStatus.UNAUTHORIZED
 
 
-def test_a_caller_with_a_wrong_credential_is_refused(guarded: str) -> None:
-    status = _call(f"{guarded}/notes", token="a-guess")
+def test_reader_is_served_on_notes(service: str) -> None:
+    target = f"{service}/notes"
 
-    assert status == HTTPStatus.UNAUTHORIZED
-
-
-def test_a_caller_with_the_accepted_credential_is_served(guarded: str) -> None:
-    status = _call(f"{guarded}/notes")
+    status = _call(target, token=READER_TOKEN)
 
     assert status == HTTPStatus.OK
 
 
-def test_an_open_service_serves_a_caller_without_a_credential(open_service: str) -> None:
-    status = _call(f"{open_service}/notes", token=None)
+def test_identity_without_rights_is_forbidden(service: str) -> None:
+    target = f"{service}/notes"
+
+    status = _call(target, token=NOBODY_TOKEN)
+
+    assert status == HTTPStatus.FORBIDDEN
+
+
+def test_reader_gets_note_written_by_writer(service: str) -> None:
+    target = f"{service}/notes/plan"
+    _call(target, "PUT", token=WRITER_TOKEN, body=b"hello")
+
+    body = _read(target, token=READER_TOKEN)
+
+    assert body == b"hello"
+
+
+def test_reader_without_write_is_forbidden_on_put(service: str) -> None:
+    target = f"{service}/notes/plan"
+
+    status = _call(target, "PUT", token=READER_TOKEN, body=b"hello")
+
+    assert status == HTTPStatus.FORBIDDEN
+
+
+def test_grants_endpoint_lists_rights(service: str) -> None:
+    target = f"{service}/grants"
+
+    grants = json.loads(_read(target, token=READER_TOKEN))
+
+    assert grants[READER] == ["read"]
+
+
+def test_grantee_reads_after_grant(service: str) -> None:
+    payload = json.dumps({"agent": NOBODY, "rights": ["read"]}).encode()
+    _call(f"{service}/grants", "POST", token=GRANTER_TOKEN, body=payload)
+
+    status = _call(f"{service}/notes", token=NOBODY_TOKEN)
 
     assert status == HTTPStatus.OK
 
 
-def test_a_note_written_reads_back(guarded: str) -> None:
-    _call(f"{guarded}/notes/plan", "PUT", body=b"batch by length")
+def test_non_granter_grant_is_forbidden(service: str) -> None:
+    payload = json.dumps({"agent": NOBODY, "rights": ["read"]}).encode()
 
-    text = _read(f"{guarded}/notes/plan")
+    status = _call(f"{service}/grants", "POST", token=WRITER_TOKEN, body=payload)
 
-    assert text == b"batch by length"
+    assert status == HTTPStatus.FORBIDDEN
 
 
-def test_the_list_holds_the_keys_written(guarded: str) -> None:
-    _call(f"{guarded}/notes/b", "PUT", body=b"2")
-    _call(f"{guarded}/notes/a", "PUT", body=b"1")
+def test_granting_grant_when_intransitive_is_forbidden(service: str) -> None:
+    payload = json.dumps({"agent": NOBODY, "rights": ["grant"]}).encode()
 
-    keys = _read(f"{guarded}/notes")
+    status = _call(f"{service}/grants", "POST", token=GRANTER_TOKEN, body=payload)
+
+    assert status == HTTPStatus.FORBIDDEN
+
+
+def test_granting_grant_when_transitive_is_served(transitive_service: str) -> None:
+    payload = json.dumps({"agent": NOBODY, "rights": ["grant"]}).encode()
+
+    status = _call(f"{transitive_service}/grants", "POST", token=GRANTER_TOKEN, body=payload)
+
+    assert status == HTTPStatus.OK
+
+
+def test_granting_right_granter_lacks_is_forbidden(service: str) -> None:
+    payload = json.dumps({"agent": NOBODY, "rights": ["write"]}).encode()
+
+    status = _call(f"{service}/grants", "POST", token=DELEGATE_TOKEN, body=payload)
+
+    assert status == HTTPStatus.FORBIDDEN
+
+
+def test_granting_to_unknown_agent_is_not_found(service: str) -> None:
+    payload = json.dumps({"agent": "ghost", "rights": ["read"]}).encode()
+
+    status = _call(f"{service}/grants", "POST", token=GRANTER_TOKEN, body=payload)
+
+    assert status == HTTPStatus.NOT_FOUND
+
+
+def test_granting_unknown_right_is_bad_request(service: str) -> None:
+    payload = json.dumps({"agent": NOBODY, "rights": ["admin"]}).encode()
+
+    status = _call(f"{service}/grants", "POST", token=GRANTER_TOKEN, body=payload)
+
+    assert status == HTTPStatus.BAD_REQUEST
+
+
+def test_revoke_removes_right(service: str) -> None:
+    payload = json.dumps({"agent": READER, "rights": ["read"]}).encode()
+    _call(f"{service}/grants", "DELETE", token=GRANTER_TOKEN, body=payload)
+
+    status = _call(f"{service}/notes", token=READER_TOKEN)
+
+    assert status == HTTPStatus.FORBIDDEN
+
+
+def test_grant_log_records_event_details(service: str, capsys: pytest.CaptureFixture[str]) -> None:
+    payload = json.dumps({"agent": NOBODY, "rights": ["read"]}).encode()
+
+    _call(f"{service}/grants", "POST", token=GRANTER_TOKEN, body=payload)
+
+    out = capsys.readouterr().out
+    event = next(json.loads(line) for line in out.splitlines() if '"event": "grant"' in line)
+    assert event["granter"] == GRANTER and event["agent"] == NOBODY and event["rights"] == ["read"]
+    assert "container" in event
+
+
+def test_refuses_to_start_with_no_identity(tmp_path: Path) -> None:
+    args = ["--secrets-dir", str(tmp_path)]
+
+    with pytest.raises(SystemExit) as exit_info:
+        parse_settings(args)
+
+    assert exit_info.value.code == EXIT_CODE_ERROR
+
+
+def test_open_service_serves_caller_without_identity(open_service: str) -> None:
+    target = f"{open_service}/notes"
+
+    status = _call(target, token=None)
+
+    assert status == HTTPStatus.OK
+
+
+def test_list_holds_keys_written(service: str) -> None:
+    _call(f"{service}/notes/b", "PUT", token=WRITER_TOKEN, body=b"2")
+    _call(f"{service}/notes/a", "PUT", token=WRITER_TOKEN, body=b"1")
+
+    keys = _read(f"{service}/notes", token=READER_TOKEN)
 
     assert keys == b'["a", "b"]'
 
 
-def test_a_note_over_the_size_bound_is_refused(guarded: str) -> None:
-    status = _call(f"{guarded}/notes/big", "PUT", body=b"x" * (MAX_NOTE_BYTES + 1))
+def test_note_over_size_bound_is_refused(service: str) -> None:
+    target = f"{service}/notes/big"
+    body = b"x" * (MAX_NOTE_BYTES + OVER_BOUND_EXTRA)
+
+    status = _call(target, "PUT", token=WRITER_TOKEN, body=body)
 
     assert status == HTTPStatus.REQUEST_ENTITY_TOO_LARGE
 
 
-def test_a_note_past_the_count_bound_is_refused(guarded: str) -> None:
+def test_note_past_count_bound_is_refused(service: str) -> None:
     for key in range(MAX_NOTES):
-        _call(f"{guarded}/notes/n{key}", "PUT", body=b"x")
+        _call(f"{service}/notes/n{key}", "PUT", token=WRITER_TOKEN, body=b"x")
 
-    status = _call(f"{guarded}/notes/one-more", "PUT", body=b"x")
+    status = _call(f"{service}/notes/extra", "PUT", token=WRITER_TOKEN, body=b"x")
 
     assert status == HTTPStatus.INSUFFICIENT_STORAGE
 
 
-def test_a_deleted_note_is_gone(guarded: str) -> None:
-    _call(f"{guarded}/notes/plan", "PUT", body=b"x")
-    _call(f"{guarded}/notes/plan", "DELETE")
+def test_deleted_note_is_gone(service: str) -> None:
+    _call(f"{service}/notes/plan", "PUT", token=WRITER_TOKEN, body=b"x")
+    _call(f"{service}/notes/plan", "DELETE", token=WRITER_TOKEN)
 
-    status = _call(f"{guarded}/notes/plan")
-
-    assert status == HTTPStatus.NOT_FOUND
-
-
-def test_a_key_outside_the_allowed_characters_is_not_a_note(guarded: str) -> None:
-    status = _call(f"{guarded}/notes/a%20b", "PUT", body=b"x")
+    status = _call(f"{service}/notes/plan", token=READER_TOKEN)
 
     assert status == HTTPStatus.NOT_FOUND
 
 
-def test_the_service_accepts_each_credential_mounted_by_its_name(tmp_path: Path) -> None:
-    (tmp_path / "credential_notes").write_text(f"{TOKEN}\n")
-    (tmp_path / "sandbox_token").write_text("not a credential")
+def test_key_outside_allowed_characters_is_not_a_note(service: str) -> None:
+    target = f"{service}/notes/a%20b"
 
-    credentials = read_credentials(tmp_path)
+    status = _call(target, "PUT", token=WRITER_TOKEN, body=b"x")
 
-    assert credentials == {"notes": TOKEN.encode()}
-
-
-def test_the_service_will_not_start_open_unless_told(tmp_path: Path) -> None:
-    arguments = ["--secrets-dir", str(tmp_path)]
-
-    with pytest.raises(SystemExit):
-        parse_settings(arguments)
+    assert status == HTTPStatus.NOT_FOUND
 
 
-def test_a_length_that_is_not_ascii_digits_is_refused(guarded: str) -> None:
-    request = urllib.request.Request(
-        f"{guarded}/notes/plan",
+def test_service_accepts_each_identity_mounted_by_its_name(tmp_path: Path) -> None:
+    (tmp_path / "identity_reader").write_text(f"{READER_TOKEN}\n")
+    (tmp_path / "sandbox_token").write_text("not an identity")
+
+    identities = read_identities(tmp_path)
+
+    assert identities == {READER: READER_TOKEN.encode()}
+
+
+def test_length_not_ascii_digits_is_refused(service: str) -> None:
+    req = urllib.request.Request(
+        f"{service}/notes/plan",
         b"x",
-        {"Authorization": f"Bearer {TOKEN}", "Content-Length": "\u00b2"},
+        {"Authorization": f"Bearer {WRITER_TOKEN}", "Content-Length": "\u00b2"},
         method="PUT",
     )
 
     with pytest.raises(urllib.error.HTTPError) as refusal:
-        urllib.request.urlopen(request)
+        urllib.request.urlopen(req)
 
     assert refusal.value.code == HTTPStatus.LENGTH_REQUIRED
 
 
-def test_a_caller_that_stalls_mid_body_loses_its_connection(guarded: str) -> None:
-    host, port = guarded.removeprefix("http://").split(":")
-    headers = f"PUT /notes/plan HTTP/1.0\r\nAuthorization: Bearer {TOKEN}\r\nContent-Length: 16\r\n\r\n"
-    with socket.create_connection((host, int(port)), timeout=CLIENT_TIMEOUT_SECONDS) as stalled:
-        stalled.sendall(f"{headers}abc".encode())
+def test_caller_that_stalls_mid_body_loses_connection(service: str) -> None:
+    host, port = service.removeprefix("http://").split(":")
+    hdr = f"PUT /notes/plan HTTP/1.0\r\nAuthorization: Bearer {WRITER_TOKEN}\r\nContent-Length: 16\r\n\r\n"
+    with socket.create_connection((host, int(port)), timeout=CLIENT_TIMEOUT) as stalled:
+        stalled.sendall(f"{hdr}abc".encode())
 
-        reply = stalled.recv(1)
+        reply = stalled.recv(ONE_BYTE)
 
     assert reply == b""
