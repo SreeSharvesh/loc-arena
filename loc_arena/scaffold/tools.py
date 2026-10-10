@@ -1,31 +1,24 @@
 """Scoped agent tool set.
 
-Enforces mandatory inference routing (inference tools go only through the gateway client), the
-PermissionScope on every call (via ``enforce``), and fingerprinted, append-only logging (every tool call
-is a fingerprinted event on the
-sealed log; a call outside scope is logged as a blocked action and NOT executed). Owns the full catalog
-from the tool catalog and ``env.default.yaml`` ``tools:``. Service-backed tools
-(tests, benchmark, git, tickets, wiki, cluster, ...) run behind the ``Services`` interface, stubbed here
-and wired to the real services later; inference goes through the gateway client, messaging through the
-board (an MCP service), and spawning through the registry via an injected handler.
+Enforces the PermissionScope on every call (via ``enforce``) and fingerprinted, append-only logging (every
+tool call is a fingerprinted event on the sealed log; a call outside scope is logged as a blocked action and
+NOT executed). A tool runs on one of two targets: the native tools act on the checkout (``CodeServices``),
+and every other tool goes over MCP to the caller's client that offers it (``McpTools``), the board included.
 """
 
 from __future__ import annotations
 
-import logging
-from collections.abc import Callable, Collection
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any
 
 import tenacity
 
 from loc_arena.gateway.client import GatewayClient
-from loc_arena.gateway.core import ProviderError
 from loc_arena.ids import Action, PermissionScope, ScopeViolation, enforce
 from loc_arena.scaffold.bus import Recorder
-from loc_arena.scaffold.registry import SpawnDenied
-
-_LOGGER = logging.getLogger(__name__)
+from loc_arena.scaffold.code_services import CodeServices
+from loc_arena.scaffold.mcp_client import McpTools
 
 # Tools whose target (repo / recipient) the scope check needs from the args.
 _TARGET_FROM = {"open_pr": "repo", "merge": "repo", "send": "to", "read_weights": "name"}
@@ -52,24 +45,6 @@ class AgentContext:
 
 
 ToolResult = dict[str, Any]
-# The spawn handler the orchestrator injects: (context, args, turn) -> result; raises SpawnDenied on a cap.
-SpawnHandler = Callable[[AgentContext, dict[str, Any], int], ToolResult]
-
-
-class Services(Protocol):
-    """The service clients, invoked by name. Stubbed early, real once the services exist."""
-
-    def run(self, tool: str, args: dict[str, Any]) -> ToolResult:
-        """Run a service-backed tool and return its structured result."""
-        ...
-
-
-class StubServices:
-    """A deterministic stand-in for the services: every call returns a canned, fingerprintable result."""
-
-    def run(self, tool: str, args: dict[str, Any]) -> ToolResult:
-        """Return a canned result for a service-backed tool."""
-        return {"stub": True, "tool": tool}
 
 
 class Tools:
@@ -78,13 +53,13 @@ class Tools:
     def __init__(
         self,
         recorder: Recorder,
-        services: Services,
+        code: CodeServices,
+        clients: Mapping[str, Sequence[McpTools]],
         *,
-        spawn_handler: SpawnHandler,
         delivery_attempts: int = 1,
         recorded_elsewhere: Collection[str] = (),
     ) -> None:
-        """Wire the tool layer to the recorder, the services, the spawn handler and the delivery attempts.
+        """Wire the tool layer to the recorder, the native tools, each agent's MCP clients by its id.
 
         A tool in ``recorded_elsewhere`` is one a service records and the post-play builder rebuilds the
         event for (the covert tools), so a successful call logs no action event here, which would double it.
@@ -92,8 +67,8 @@ class Tools:
         self._recorder = recorder
         self._delivery_attempts = delivery_attempts
         self._delivered: dict[str, int] = {}  # by agent: the id of the last message delivered to it
-        self._services = services
-        self._spawn_handler = spawn_handler
+        self._code = code
+        self._clients = clients
         self._recorded_elsewhere = frozenset(recorded_elsewhere)
 
     @staticmethod
@@ -131,6 +106,16 @@ class Tools:
             result=result,
         )
 
+    def _run(self, uid: str, tool: str, args: dict[str, Any]) -> ToolResult:
+        """Run a native tool on the checkout, else ``tool`` over MCP through ``uid``'s client offering it.
+
+        Either target answers a malformed or failed call with an error result, never an exception.
+        """
+        if tool in CodeServices.TOOLS:
+            return self._code.run(tool, {**args, "actor_uid": uid})
+        client = next((client for client in self._clients.get(uid, ()) if tool in client.names()), None)
+        return client.call(tool, args) if client else {"error": f"{tool} is not offered to you", "tool": tool}
+
     def execute(self, ctx: AgentContext, action: AgentAction, turn: int) -> ToolResult:
         """Enforce scope, then dispatch and record the call; a scope violation is logged and not executed."""
         target = self._target_for(action)
@@ -141,50 +126,12 @@ class Tools:
             self._log_action(ctx, action, turn, blocked=True, reason=exc.reason)
             return {"blocked": True, "reason": exc.reason}
 
-        if action.tool == "spawn_subagent":
-            try:
-                result = self._spawn_handler(ctx, action.args, turn)
-            except SpawnDenied as exc:
-                self._log_action(ctx, action, turn, blocked=True, reason=exc.reason)
-                return {"blocked": True, "reason": exc.reason}
-            self._log_action(ctx, action, turn, blocked=False, result=result)
-            return result
-
-        if action.tool == "send":  # the board's record of a message it takes becomes the message event
-            result = self._services.run("send", {**action.args, "actor_uid": ctx.uid, "actor_role": ctx.role})
-            if "error" in result:
-                self._log_action(ctx, action, turn, blocked=False, result=result)
-            return result
-
-        # A live model routinely emits a malformed tool call (missing/badly-typed args). That must return a
-        # logged error result, NEVER crash the run -- so guard the whole dispatch against bad args.
-        try:
-            if action.tool == "generate":
-                text = ctx.client.generate(
-                    str(action.args["prompt"]),
-                    role=str(action.args.get("role", "teacher")),
-                )
-                result = {"text": text}
-            elif action.tool == "batch_generate":
-                texts = ctx.client.batch_generate(
-                    [str(p) for p in action.args["prompts"]],
-                    role=str(action.args.get("role", "teacher")),
-                )
-                result = {"texts": texts}
-            else:
-                # The caller goes last, so an agent cannot name another: the covert tools record it.
-                result = self._services.run(
-                    action.tool,
-                    {**action.args, "actor_uid": ctx.uid, "actor_role": ctx.role},
-                )
-        except (KeyError, TypeError, ValueError) as exc:
-            result = {"error": f"malformed args for {action.tool}: {exc}", "tool": action.tool}
-        except ProviderError as exc:  # a tool's own model calls failed
-            _LOGGER.warning("a model call of %s failed: %s", action.tool, exc)
-            result = {"error": f"a model call of {action.tool} failed", "tool": action.tool}
-
-        # A tool a service records is logged from its record after play, so logging it here would double it.
-        if action.tool not in self._recorded_elsewhere:
+        result = self._run(ctx.uid, action.tool, action.args)
+        # The board's record of a message it takes becomes the message event, and a tool a service records is
+        # logged from its record after play, so logging either here would double it.
+        sent = action.tool == "send" and "error" not in result
+        recorded = sent or action.tool in self._recorded_elsewhere
+        if not recorded:
             self._log_action(ctx, action, turn, blocked=False, result=result)
         return result
 
@@ -194,16 +141,15 @@ class Tools:
         It reads after the last id it delivered, so an attempt whose answer was lost loses no message. A
         delivery that fails every attempt is recorded as the agent's ``read`` action, with its error.
         """
-        args = {"after": self.delivered_through(ctx.uid), "actor_uid": ctx.uid, "actor_role": ctx.role}
+        args = {"after": self.delivered_through(ctx.uid)}
         result = tenacity.Retrying(
             stop=tenacity.stop_after_attempt(self._delivery_attempts),
             wait=tenacity.wait_exponential(multiplier=0.25, max=2),
             retry=tenacity.retry_if_result(lambda result: "error" in result),
             retry_error_callback=lambda state: state.outcome.result() if state.outcome else {},
-        )(self._services.run, "read", args)
+        )(self._run, ctx.uid, "read", args)
         if "error" in result:
-            delivery = AgentAction("read", {"after": args["after"]})
-            self._log_action(ctx, delivery, turn, blocked=False, result=result)
+            self._log_action(ctx, AgentAction("read", args), turn, blocked=False, result=result)
         messages = result.get("messages", [])
         self._delivered[ctx.uid] = messages[-1]["id"] if messages else args["after"]
         return messages

@@ -32,8 +32,8 @@ log has the details.
   that prints the JSON the tools printed. Every sandbox mounts that folder alone, read-only, at
   `stack.skills_directory` (`/skills`), so any harness in it can run them on its own checkout. A stack run's
   native agents are no longer offered the two tools: one sentence of their brief points at the folder, and
-  they run the scripts with bash under `stack.shell_timeout_seconds`. Without a sandbox, where bash is not
-  offered, the two tools stay and run the same scripts.
+  they run the scripts with bash under `stack.shell_timeout_seconds`. An in-process run, which offers no bash,
+  offers no skills.
 - **Each agent's tools set in the run config, behind agentgateway (#99).** A live service in `scenario.yaml` lists
   the MCP `tools` it serves, and may run a `module` of the engine image instead of a `build` or `image` (the
   forge, whose world is the harness's). An agent's `sandbox: tools:` lists the tools it may call on each such
@@ -155,6 +155,12 @@ log has the details.
   progress, against `AGENTS.md` and the repository's own ast-grep rules. (#64)
 
 ### Changed
+
+- **The native loop holds no domain-tool code (#99, step 6).** It runs a tool on one of two targets: its native
+  tools on the checkout, or the MCP client of the caller that offers the tool; any other tool is refused as not
+  offered. The forge's git, ticket and wiki tools, the stub fallback, the in-process skill tools with their two
+  timeouts, the inference tools and subagent spawning leave the loop, and the orchestrator goes with them. The
+  covert briefs name no tool: an agent finds its tools in its MCP listing.
 
 - **A stack run keeps each live service's log in its own run directory.** The logs of the live services and of
   agentgateway are copied to `services/<name>.log` in the run directory before grading, where the events of their

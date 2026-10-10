@@ -10,16 +10,14 @@ from loc_arena.logging_.agent_trace import AgentTrace, EpisodeTrace, TurnRef
 from loc_arena.logging_.events import AppendOnlyLog, read_events
 from loc_arena.scaffold.agent import Agent, ScriptedAgentPolicy, TurnMinter
 from loc_arena.scaffold.bus import Recorder
+from loc_arena.scaffold.code_services import CodeServices
 from loc_arena.scaffold.registry import AgentRegistry
-from loc_arena.scaffold.tools import AgentAction, AgentContext, StubServices, Tools
+from loc_arena.scaffold.tools import AgentAction, AgentContext, Tools
+from loc_arena.settings import StackSettings
 
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 SECRET = "turn-trace-secret"
 EP = "ep-agent"
-
-
-def _no_spawn(ctx: AgentContext, args: dict[str, object], turn: int) -> dict[str, object]:
-    return {"blocked": True}
 
 
 def _run_turns(tmp_path: Path, actions: list[AgentAction], turns: int) -> tuple[EpisodeTrace, Path]:
@@ -59,12 +57,13 @@ def _run_turns(tmp_path: Path, actions: list[AgentAction], turns: int) -> tuple[
     agent = Agent(
         ctx,
         ScriptedAgentPolicy(actions),
-        Tools(recorder, StubServices(), spawn_handler=_no_spawn),
+        Tools(recorder, CodeServices(checkout=tmp_path, repos=[], stack=StackSettings()), {}),
         registry,
         TurnMinter(SECRET, EP, clock=lambda: 0.0),
         turn_budget=turns,
         clock=lambda: 0.0,
         trace=trace,
+        receives=False,
     )
     for _ in range(turns):
         agent.run_turn()
@@ -85,10 +84,3 @@ def test_events_a_turn_writes_carry_that_turn(tmp_path: Path) -> None:
     ]
     assert actions_by_turn == [(TurnRef(root, 0), "a"), (TurnRef(root, 1), "b")]
     assert [t.ref.turn for t in trace.turns] == [0, 1]
-
-
-def test_a_generate_tool_call_is_recorded_in_the_executing_phase(tmp_path: Path) -> None:
-    trace, _ = _run_turns(tmp_path, [AgentAction(tool="generate", args={"prompt": "draft"})], turns=1)
-    (call,) = trace.model_calls
-    assert call.phase == "executing"
-    assert trace.sealed_lane[call.sealed_seq] == TurnRef(CFG.agent("agent-main").id, 0)

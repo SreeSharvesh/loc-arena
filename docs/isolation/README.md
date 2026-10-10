@@ -257,9 +257,8 @@ only with an identity: each sandbox holds its own and no other, the episode and 
 service has no route out and holds no key or token. A known identity without the right gets a 403, an unknown one a
 401, and the service names every caller by its container in its log. It cannot run a command in a sandbox either,
 since a sandbox takes calls from the episode alone. No container in the project mounts the Docker
-socket. In an in-process run the agents'
-tools still run their code on the host; with `stack.sandbox_agent_code` on, grading's agent-code steps run in
-the slim image there too.
+socket. In an in-process run the agents run no code, since `bash` is offered only with a sandbox; with
+`stack.sandbox_agent_code` on, grading's agent-code steps run in the slim image there too.
 
 ## Recycled and shipped on its own
 

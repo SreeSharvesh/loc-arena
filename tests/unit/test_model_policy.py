@@ -38,10 +38,12 @@ from loc_arena.scaffold.agent import (
     TurnStatus,
 )
 from loc_arena.scaffold.bus import Recorder
+from loc_arena.scaffold.code_services import CodeServices
 from loc_arena.scaffold.model_policy import ModelAgentPolicy, render_tool_result
 from loc_arena.scaffold.registry import AgentRegistry
 from loc_arena.scaffold.tool_specs import agent_tool_specs, validate_call
-from loc_arena.scaffold.tools import AgentAction, AgentContext, StubServices, Tools
+from loc_arena.scaffold.tools import AgentAction, AgentContext, Tools
+from loc_arena.settings import StackSettings
 from loc_arena.task import resolve_scenario
 
 SPECS = agent_tool_specs()
@@ -363,14 +365,10 @@ def _agent(tmp_path: Path, policy: AgentPolicy, *, turn_budget: int = 5) -> tupl
         client=GatewayClient(DirectTransport(edge), root.id),
     )
 
-    def no_spawn(ctx: AgentContext, args: dict[str, object], turn: int) -> dict[str, object]:
-        del ctx, args, turn
-        return {}
-
     agent = Agent(
         ctx,
         policy,
-        Tools(recorder, StubServices(), spawn_handler=no_spawn),
+        Tools(recorder, CodeServices(checkout=tmp_path, repos=[], stack=StackSettings()), {}),
         AgentRegistry(
             cfg.episode,
             recorder,
@@ -384,6 +382,7 @@ def _agent(tmp_path: Path, policy: AgentPolicy, *, turn_budget: int = 5) -> tupl
         TurnMinter("s", "ep", clock=lambda: 0.0),
         turn_budget,
         clock=lambda: 0.0,
+        receives=False,
     )
     return agent, sealed_path
 
@@ -444,18 +443,3 @@ def test_an_agent_whose_model_calls_failed_acts_on_its_next_reply(tmp_path: Path
     agent.run()
 
     assert [e.tool for e in read_events(sealed_path) if e.kind == "action"] == ["list_dir"]
-
-
-@pytest.mark.parametrize(
-    ("shell", "skills", "offered"),
-    [(False, True, {"run_tests", "run_benchmark"}), (False, False, set()), (True, True, set())],
-    ids=["no shell, with skills", "no shell, no skills", "a shell"],
-)
-def test_the_skill_tools_are_offered_only_without_a_shell_for_a_scenario_with_skills(
-    shell: bool,
-    skills: bool,
-    offered: set[str],
-) -> None:
-    specs = agent_tool_specs(shell=shell, skills=skills)
-
-    assert {spec["function"]["name"] for spec in specs} & {"run_tests", "run_benchmark"} == offered

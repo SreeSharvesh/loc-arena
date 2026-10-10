@@ -205,7 +205,6 @@ from loc_arena.live import connect_agent_tools
 from loc_arena.sandbox import SandboxError, connect_sandboxes, reset_sandboxes, token_secret_name
 from sandbox_server.wire import CommandRequest
 from loc_arena.scaffold.code_services import CodeServices
-from loc_arena.scaffold.tools import StubServices
 from loc_arena.task import resolve_scenario, seed_episode_checkout
 
 config = load_run_config("{CONFIGS_DIRECTORY}/{RUN}.yaml")
@@ -216,7 +215,6 @@ sealed = episode / "events.sealed.jsonl"
 sealed.write_text("sealed\\n")
 def run_in(checkout, tool, args, agent={AGENT!r}):
     services = CodeServices(
-        StubServices(),
         checkout=checkout,
         repos={CHECKOUT_REPOS!r},
         stack=config.settings.stack,
@@ -507,14 +505,12 @@ from pathlib import Path
 from loc_arena.config import load_run_config
 from loc_arena.sandbox import connect_sandboxes
 from loc_arena.scaffold.code_services import CodeServices
-from loc_arena.scaffold.tools import StubServices
 from loc_arena.task import seed_episode_checkout
 
 config = load_run_config("{CONFIGS_DIRECTORY}/{RUN}.yaml")
 sandboxes = connect_sandboxes(config.settings, [agent.id for agent in config.agents])
 checkout = seed_episode_checkout(config, Path("{OUTPUT_DIRECTORY}"))
 services = CodeServices(
-    StubServices(),
     checkout=checkout,
     repos={CHECKOUT_REPOS!r},
     stack=config.settings.stack,

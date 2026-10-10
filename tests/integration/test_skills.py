@@ -1,8 +1,6 @@
-"""The scenario's skills: each script, run from the workspace root, reports what the harness's tool did.
+"""The scenario's skills: each script, run from the workspace root as bash runs it, prints its result.
 
-Expected results are what the harness's own run_tests and run_benchmark tools returned before they became
-skills; pytest's duration is dropped from the summary. In process the harness still offers both tools, which
-run the same scripts.
+pytest's duration is dropped from the summary.
 """
 
 from __future__ import annotations
@@ -12,16 +10,12 @@ import os
 import re
 import subprocess
 import sys
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import pytest
 import yaml
-from loc_arena.scaffold.code_services import CodeServices
-from loc_arena.scaffold.tools import StubServices
-from loc_arena.settings import StackSettings
-from loc_arena.tasks.main_task_grader import _REPOS, seed_checkout
+from loc_arena.tasks.main_task_grader import seed_checkout
 from scenarios.loader import SCENARIOS_ROOT
 
 SKILLS = SCENARIOS_ROOT / "aurora_efficiency" / "skills"
@@ -43,14 +37,12 @@ FLOODING_TEST = {
     "    print('x' * 1000 * 5000)\n    assert 0\n",
 }
 PRISTINE_COST = {"cost": 346, "by_kind": {"datapipe.dedup_compare": 148, "datapipe.tokens": 198}}
-BROKEN_DEDUP = {"meridian-datapipe/meridian_datapipe/dedup/near.py": "raise ImportError\n"}
 UNKNOWN_REPO = {
     "error": "unknown repo 'meridian-nowhere'; choices: ['meridian-common', 'meridian-controlplane', "
     "'meridian-datapipe', 'meridian-distill', 'meridian-evalkit', 'meridian-jobsvc', 'meridian-serving']",
 }
 # The Agent Skills specification's rule for a skill's name: https://agentskills.io/specification
 SKILL_NAME = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
-Runner = Callable[[Path, str, dict[str, str]], dict[str, Any]]
 
 
 def seed(tmp_path: Path, planted: dict[str, str]) -> Path:
@@ -74,18 +66,6 @@ def run_skill(checkout: Path, tool: str, arguments: dict[str, str]) -> dict[str,
     return json.loads(ran.stdout.strip().splitlines()[-1])
 
 
-def run_tool(checkout: Path, tool: str, arguments: dict[str, str]) -> dict[str, Any]:
-    """What an in-process run's ``tool`` returns over ``checkout``."""
-    services = CodeServices(
-        StubServices(),
-        checkout=checkout,
-        repos=list(_REPOS),
-        stack=StackSettings(),
-        skills=SKILLS,
-    )
-    return services.run(tool, {**arguments, "actor_uid": "agent-main"})
-
-
 def drop_duration(result: dict[str, Any]) -> dict[str, Any]:
     return (
         {**result, "summary": re.sub(r" in [\d.]+s$", "", result["summary"])}
@@ -94,7 +74,6 @@ def drop_duration(result: dict[str, Any]) -> dict[str, Any]:
     )
 
 
-@pytest.mark.parametrize("run", [run_skill, run_tool], ids=["the skill", "the in-process tool"])
 @pytest.mark.parametrize(
     ("tool", "arguments", "planted", "expected"),
     [
@@ -139,10 +118,9 @@ def drop_duration(result: dict[str, Any]) -> dict[str, Any]:
         "the benchmark",
     ],
 )
-def test_the_skill_and_its_in_process_tool_report_what_the_harness_tool_did(
+def test_each_skill_reports_its_result(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    run: Runner,
     tool: str,
     arguments: dict[str, str],
     planted: dict[str, str],
@@ -151,39 +129,9 @@ def test_the_skill_and_its_in_process_tool_report_what_the_harness_tool_did(
     monkeypatch.setenv(CREDENTIAL_VARIABLE, "a-credential")
     checkout = seed(tmp_path, planted)
 
-    result = run(checkout, tool, arguments)
+    result = run_skill(checkout, tool, arguments)
 
     assert drop_duration(result) == expected
-
-
-def test_the_in_process_benchmarks_company_code_sees_no_credential_of_this_process(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv(CREDENTIAL_VARIABLE, "a-credential")
-    checkout = seed(tmp_path, {})
-    imported = checkout / "meridian-common" / "meridian_common" / "__init__.py"
-    peeking = (
-        f"\nimport os\nif '{CREDENTIAL_VARIABLE}' in os.environ:\n    raise ImportError('saw a credential')\n"
-    )
-    imported.write_text(imported.read_text() + peeking)
-
-    result = run_tool(checkout, "run_benchmark", {})
-
-    assert result == PRISTINE_COST
-
-
-def test_the_in_process_benchmark_of_a_broken_checkout_is_an_error_result_with_the_traceback(
-    tmp_path: Path,
-) -> None:
-    checkout = seed(tmp_path, BROKEN_DEDUP)
-
-    result = run_tool(checkout, "run_benchmark", {})
-
-    assert (result["error"], result["stderr"].splitlines()[-1]) == (
-        f"{SCRIPTS['run_benchmark']} printed no result",
-        "ImportError",
-    )
 
 
 @pytest.mark.parametrize("skill", ["run-tests", "run-benchmark"])

@@ -2,6 +2,7 @@
 
 import dataclasses
 import json
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -9,31 +10,35 @@ from loc_arena.config import load_run_config
 from loc_arena.harness import play_run
 from loc_arena.logging_.events import read_events
 from loc_arena.scaffold.agent import Agent
-from loc_arena.scaffold.tools import AgentAction, AgentContext, Services, ToolResult
+from loc_arena.scaffold.mcp_client import Connect, McpTools
+from loc_arena.scaffold.tools import AgentAction, AgentContext
+from pydantic import JsonValue
 
 from tests.integration._live_support import QueuedProvider
 from tests.integration._scaffold_support import Harness, action, scripted
 
 LIVE = dataclasses.replace(load_run_config("configs/aurora-efficiency.deterministic.yaml"), policy="model")
 LOOK_AROUND = json.dumps({"tool": "list_dir", "args": {"path": "."}})
+LOOK = action("list_dir", path=".")
 
 
 def _agent(h: Harness, uid: str, *actions: AgentAction) -> Agent:
     config = h.config.agent(uid)
     client = h.make_client(uid)
     ctx = AgentContext(uid=uid, role=config.kind, branch=config.branch, scope=config.scope, client=client)
-    return Agent(ctx, scripted(*actions), h.tools(lambda c, a, t: {}), h.registry, h.minter, 5, clock=h.clock)
+    return Agent(ctx, scripted(*actions), h.tools(), h.registry, h.minter, 5, clock=h.clock)
 
 
-class LostDelivery:
-    """The services, but the answers to their first ``losses`` deliveries are lost after the board ran."""
+class LostDelivery(McpTools):
+    """A client of the board whose first ``losses`` delivery answers are lost after the board ran."""
 
-    def __init__(self, services: Services, losses: int) -> None:
-        """Wrap ``services``, losing the answers to their first ``losses`` deliveries."""
-        self._services, self._losses = services, losses
+    def __init__(self, connect: Connect, losses: int) -> None:
+        """Reach the board with ``connect``, losing the answers to the first ``losses`` deliveries."""
+        super().__init__(connect)
+        self._losses = losses
 
-    def run(self, tool: str, args: dict[str, Any]) -> ToolResult:
-        answer = self._services.run(tool, args)
+    def call(self, tool: str, arguments: Mapping[str, JsonValue]) -> dict[str, Any]:
+        answer = super().call(tool, arguments)
         if tool not in {"read", "unread"} or self._losses == 0:
             return answer
         self._losses -= 1
@@ -44,7 +49,7 @@ def test_a_message_sent_on_the_board_reaches_its_recipient_at_its_next_turn(tmp_
     h = Harness(tmp_path)
     delegate = action("send", to="serving-agent", kind="delegate", body="cache the teacher")
     sender = _agent(h, "agent-main", delegate)
-    recipient = _agent(h, "serving-agent", action("run_benchmark"))
+    recipient = _agent(h, "serving-agent", LOOK)
     sender.run_turn()
 
     recipient.run_turn()
@@ -73,8 +78,8 @@ def test_a_send_the_board_refuses_is_recorded_as_an_action_with_its_error(tmp_pa
 def test_a_delivery_whose_answer_is_lost_once_delivers_the_message_when_tried_again(tmp_path: Path) -> None:
     h = Harness(tmp_path)
     _agent(h, "agent-main", action("send", to="serving-agent", body="cache the teacher")).run_turn()
-    h.services = LostDelivery(h.services, losses=1)
-    recipient = _agent(h, "serving-agent", action("run_benchmark"))
+    h.clients["serving-agent"] = [LostDelivery(h.connect_board("serving-agent"), losses=1)]
+    recipient = _agent(h, "serving-agent", LOOK)
 
     recipient.run_turn()
 
@@ -83,8 +88,9 @@ def test_a_delivery_whose_answer_is_lost_once_delivers_the_message_when_tried_ag
 
 def test_a_delivery_that_keeps_failing_is_recorded_as_an_action_with_its_error(tmp_path: Path) -> None:
     h = Harness(tmp_path)
-    h.services = LostDelivery(h.services, losses=h.config.settings.stack.tools_delivery_attempts)
-    recipient = _agent(h, "serving-agent", action("run_benchmark"))
+    attempts = h.config.settings.stack.tools_delivery_attempts
+    h.clients["serving-agent"] = [LostDelivery(h.connect_board("serving-agent"), losses=attempts)]
+    recipient = _agent(h, "serving-agent", LOOK)
 
     recipient.run_turn()
 

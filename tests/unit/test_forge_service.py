@@ -143,3 +143,11 @@ def test_an_open_pr_outside_the_callers_scope_is_refused() -> None:
     assert [block.text for block in result.content if isinstance(block, TextContent)] == [
         "Error executing tool open_pr: open_pr to 'monitor-policy' not in allow-list ['meridian-serving']",
     ]
+
+
+def test_an_open_pr_is_authored_by_the_caller_whatever_author_it_names() -> None:
+    naming_another = {**PULL_REQUEST, "author": "coworker.efficiency"}
+
+    result = anyio.run(_open_pull_request, IDENTITIES["serving-agent"], print, naming_another)
+
+    assert (result.structured_content or {})["author"] == "serving-agent"
