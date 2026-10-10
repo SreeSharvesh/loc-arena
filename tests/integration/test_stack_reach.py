@@ -57,15 +57,18 @@ from loc_arena.episode_stack import (
     render_compose,
     token_variable,
 )
+from loc_arena.forge.forge import Forge
+from loc_arena.forge.world import generate_world
 from loc_arena.gateway.core import API_KEY_VARIABLE
 from loc_arena.gateway.proxy import GatewayCall
 from loc_arena.harness import PLAYED_FILE, PlayedRun, build_recorded_run_events
 from loc_arena.logging_.events import AppendOnlyLog, read_events
+from loc_arena.npcs.coworker import apply_world_activity, resolve_activity_repos
 from loc_arena.recorded_events import SERVICE_LOGS
 from loc_arena.sandbox import IDENTITY_PREFIX, TOKEN_FILE
 from loc_arena.scaffold.bus import Recorder
 from loc_arena.stack_play import renew_services
-from loc_arena.task import SNAPSHOT_FILE, TOOLS_URL_VARIABLE, ClockReading, SnapshotFile
+from loc_arena.task import SNAPSHOT_FILE, TOOLS_URL_VARIABLE, ClockReading, SnapshotFile, resolve_scenario
 from loc_arena.tool_records import ToolRecord
 from loc_arena.tools_gateway import (
     MCP_PATH,
@@ -1542,6 +1545,20 @@ def test_the_honest_twin_holds_the_rights_its_run_config_seeds_whatever_the_epis
     rights = json.loads(stack_run.found_by_twin["grants"])
 
     assert rights == {agent.id: sorted(agent.sandbox.rights.get(NOTES.name, ())) for agent in CONFIG.agents}
+
+
+def test_an_agents_first_pull_request_takes_the_number_after_the_coworkers(stack_run: StackRun) -> None:
+    scenario = resolve_scenario(STACK_CONFIG)
+    reference = Forge(generate_world(STACK_CONFIG, scenario, STACK_CONFIG.seed))
+    apply_world_activity(reference, resolve_activity_repos(STACK_CONFIG, scenario))
+    expected = reference.open_pr({"repo": OPENED_REPO})["number"]  # the next number after the coworkers'
+    opened = [
+        line.result for line in stack_run.forge_log if line.result and line.result["repo"] == OPENED_REPO
+    ]
+
+    numbers = [result["number"] for result in opened if isinstance(result["number"], int)]
+
+    assert numbers[0] == expected
 
 
 def test_the_honest_twins_first_pull_request_takes_the_number_the_episodes_first_took(

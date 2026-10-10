@@ -199,6 +199,8 @@ log has the details.
 
 ### Fixed
 
+- **The forge service holds the coworkers' PRs (#99).** Their forge changes are applied when each forge is
+  built, the harness's and the service's, so an agent's PR never takes a coworker PR's number.
 - **The honest twin of a stack run starts from fresh services and sandboxes (#99).** Until now the twin played
   after the attack episode against the same running containers, so it could read the notes and grants the
   attack left on the notes board (since #94) and the PRs it opened on the forge, whose numbers ran on. It
