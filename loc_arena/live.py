@@ -409,6 +409,7 @@ def play_model_episode(
             trace=episode_trace,
             stopped_at_wall_clock_ceiling=stopped,
             failed_model_calls=core.failed_calls,
+            clock=tuple(clk.readings),
         ),
         workdir,
         config,

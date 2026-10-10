@@ -11,10 +11,11 @@ on agent-net alone, with no published port. On one with rights, every agent has 
 per run: its sandbox holds that agent's alone, the service holds every agent's and the agents' starting
 rights, and the episode and the gateway hold none. A service with tools is reached through the tools gateway
 alone (``loc_arena.tools_gateway``), which with the service holds the identities on it. When the episode
-exits, its run directory is copied out and graded on this host, with the agents' code sandboxed, while the
-gateway still runs for the monitors' model calls. Then the gateway's call log and the log of each live
-service and of the tools gateway, their record of every request and grant, are copied out and the project
-is removed with its volumes. If a copy fails, the project is kept so nothing is lost.
+exits, its run directory is copied out with the log of each live service and of the tools gateway, their
+record of every request, grant and tool call, the events of those tool calls are built, and the run is graded
+on this host, with the agents' code sandboxed, while the gateway still runs for the monitors' model calls.
+Then the gateway's call log is copied out and the project is removed with its volumes. If a copy fails, the
+project is kept so nothing is lost.
 """
 
 from __future__ import annotations
@@ -37,8 +38,9 @@ from scenarios.loader import EngineModule, LiveService
 from loc_arena.compose_document import ComposeDocument, ComposeService, Healthcheck, ServiceSecret
 from loc_arena.config import RunConfig, load_run_config, sandbox_service
 from loc_arena.gateway.core import API_KEY_VARIABLE, GATEWAY_URL_VARIABLE, OPENROUTER_URL, OpenRouterProvider
-from loc_arena.harness import grade_run, locate_run
+from loc_arena.harness import build_recorded_run_events, grade_run, locate_run
 from loc_arena.identity_variables import find_shared_identity_variable, holds_identities, identity_variable
+from loc_arena.recorded_events import SERVICE_LOGS
 from loc_arena.sandbox import IDENTITY_PREFIX, TOKEN_FILE, build_server_settings, token_secret_name
 from loc_arena.settings import StackSettings
 from loc_arena.task import SANDBOX_URL_VARIABLE, TOOLS_URL_VARIABLE, resolve_scenario
@@ -421,11 +423,12 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
     """Play one episode of ``run`` (a config in ``configs/``) in its own compose project; grade it here.
 
     The episode container plays the episode and its honest twin. Its run directory is then copied into
-    ``logs`` and graded on this host with the agents' code sandboxed, while the gateway still runs, so
-    model-backed monitors reach their model through it and it records their calls. Whatever the episode, the
-    gateway and each live service recorded is copied into ``logs`` before the project is removed, after a
-    Ctrl-C too, a live service's log to ``services/<name>.log``; when the episode never started, a live
-    service that failed to become healthy leaves only that log. When a copy fails the project is kept,
+    ``logs`` with each live service's log, in ``services/<name>.log`` of the run directory; the events of the
+    services' records are built (``loc_arena.recorded_events``) and the run is graded on this host with the
+    agents' code sandboxed, while the gateway still runs, so model-backed monitors reach their model through
+    it and it records their calls. Whatever the episode, what the gateway and each live service recorded is
+    copied into ``logs`` before the project is removed, after a Ctrl-C too; when the episode never started, a
+    live service that failed to become healthy leaves only its log. When a copy fails the project is kept,
     stopped, so nothing recorded is lost. Returns the bundle's directory.
     """
     run = Path(run).name.removesuffix(".yaml")
@@ -457,7 +460,8 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
             return run_compose(command, stdout=output).returncode == 0
 
     call_log = logs / "gateway" / f"{project}.calls.jsonl"
-    service_logs = logs / "services"
+    run_directory = locate_run(config, mode, instance_id, logs)
+    service_logs = run_directory / SERVICE_LOGS
     for directory in (call_log.parent, service_logs):
         directory.mkdir(parents=True, exist_ok=True)
     copy_output = [*compose, "cp", f"{EPISODE_SERVICE}:{OUTPUT_DIRECTORY}/.", str(logs)]
@@ -469,7 +473,7 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
         ([*compose, "cp", f"gateway:{settings.gateway.call_log}", str(call_log)], None),
         *copy_service_logs,
     ]
-    created = output_copied = False
+    created = output_copied = services_copied = False
     try:
         if run_compose([*compose, "create", "--build"]).returncode != 0:
             raise StackError("could not build or create the episode's containers: see compose's output above")
@@ -484,9 +488,14 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
             raise StackError("could not copy the episode's run directory out, so it was not graded")
         if exit_code != 0:
             raise StackError(f"the episode exited with code {exit_code}: see its output above")
+        # The services' records are copied before grading: the events monitors read are built from them.
+        services_copied = all([copied(*copy) for copy in copy_service_logs])
+        if not services_copied:
+            raise StackError("could not copy every live service's log out, so the run was not graded")
+        build_recorded_run_events(config, run_directory)
         return grade_run(
             sandbox_agent_code(config),
-            locate_run(config, mode, instance_id, logs),
+            run_directory,
             mode=mode,
             seed=seed,
             monitor_provider=_build_monitor_provider(config, compose),
@@ -499,6 +508,8 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
         pending = copy_logs if output_copied else [(copy_output, None), *copy_logs]
         if not started:
             pending = copy_service_logs
+        if services_copied:
+            pending = [copy for copy in pending if copy not in copy_service_logs]
         # Every copy is tried, a failed one included, before the project is kept.
         if created and not all([copied(*copy) for copy in pending]):
             run_compose([*compose, "stop"])
