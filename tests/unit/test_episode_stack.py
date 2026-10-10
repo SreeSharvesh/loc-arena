@@ -1,12 +1,17 @@
 """The rendered compose file: the key and the route out in the gateway alone, the logs out of any sandbox.
 
-The live services' credentials only in those services and in the sandboxes of the agents holding them.
+Every agent's identity on a live service with rights in that agent's sandbox alone and in the service, which
+also gets the starting rights; a stack run copies each live service's log out before teardown.
 """
 
 from __future__ import annotations
 
 import dataclasses
+import json
+import subprocess
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import IO
 
 import pytest
 from loc_arena.config import load_run_config
@@ -14,7 +19,9 @@ from loc_arena.episode_stack import (
     AGENT_NETWORK,
     EGRESS_NETWORK,
     ComposeDocument,
+    StackError,
     render_compose,
+    run_in_stack,
     sandbox_agent_code,
 )
 from loc_arena.gateway import core
@@ -27,23 +34,23 @@ REPOSITORY = Path("/repository")
 SCRIPTED_CONFIG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 TWO_AGENTS = (SCRIPTED_CONFIG.agent("agent-main"), SCRIPTED_CONFIG.agent("serving-agent"))
 SANDBOXES = ["sandbox-agent-main", "sandbox-serving-agent"]
-SANDBOXES_WITH_A_NON_HOLDER = ["sandbox-agent-main", "sandbox-controlplane-agent"]
-RUN_CONFIG_SERVICES = [*SANDBOXES_WITH_A_NON_HOLDER, "episode", "gateway"]
+SANDBOXES_WITH_ONE_WITH_NO_RIGHT = ["sandbox-agent-main", "sandbox-controlplane-agent"]
 HEALTHY = {"condition": "service_healthy"}
-# A holder of the notes credential and an agent holding none, as the run config grants them.
-HOLDER_AND_NOT = (SCRIPTED_CONFIG.agent("agent-main"), SCRIPTED_CONFIG.agent("controlplane-agent"))
+# An agent with rights on notes and an agent with none, as the run config seeds them.
+WITH_RIGHTS_AND_WITHOUT = (SCRIPTED_CONFIG.agent("agent-main"), SCRIPTED_CONFIG.agent("controlplane-agent"))
 LIVE_SERVICES = ["notes", "wiki", "board"]
 PACK = """\
 scorer: aurora_pipeline_cost
 verifier: kill_chain_v1
 services:
-  notes: {build: services/notes, port: 8000, accepts: [notes], description: the notes board}
+  notes: {build: services/notes, port: 8000, rights: [read, write, grant], description: the notes board}
   wiki:
     image: example/wiki:1
     command: [wiki, serve]
     port: 9000
     healthcheck: [CMD, wiki, ping]
-    accepts: [wiki, wiki-admin]
+    rights: [view, edit, grant]
+    transitive: true
   board: {build: services/board, port: 7000}
   ticketboard: {port: 8090}
 """
@@ -82,7 +89,7 @@ def render_live(
     config = dataclasses.replace(
         SCRIPTED_CONFIG,
         settings=settings or LocArenaSettings(),
-        agents=HOLDER_AND_NOT,
+        agents=WITH_RIGHTS_AND_WITHOUT,
         live_services=services,
     )
     return render_compose(config, REPOSITORY, "a-run", ["--mode", "honest"])
@@ -357,7 +364,7 @@ def test_a_sandbox_its_agent_killed_comes_back(sandbox: str) -> None:
     assert restart == "unless-stopped"
 
 
-def test_a_live_service_built_from_its_pack_runs_bounded_on_agent_net_alone_with_what_it_checks(
+def test_a_live_service_built_from_its_pack_runs_bounded_on_agent_net_alone_with_every_agents_identity(
     pack: Path,
     live_services: tuple[LiveService, ...],
 ) -> None:
@@ -373,7 +380,15 @@ def test_a_live_service_built_from_its_pack_runs_bounded_on_agent_net_alone_with
         "cpus": 0.5,
         "pids_limit": 64,
         "networks": ["agent-net"],
-        "secrets": [{"source": "credential_notes", "target": "credential_notes"}],
+        "environment": {
+            "LOC_ARENA_VOCABULARY": '["read", "write", "grant"]',
+            "LOC_ARENA_RIGHTS": '{"agent-main": ["read", "write", "grant"], "controlplane-agent": []}',
+            "LOC_ARENA_TRANSITIVE": "false",
+        },
+        "secrets": [
+            {"source": "identity_notes_agent-main", "target": "identity_agent-main"},
+            {"source": "identity_notes_controlplane-agent", "target": "identity_controlplane-agent"},
+        ],
         "healthcheck": {
             "test": [
                 "CMD",
@@ -403,6 +418,45 @@ def test_a_live_service_from_a_ready_image_runs_its_command_and_healthcheck(
     )
 
 
+@pytest.mark.parametrize(("service", "transitive"), [("notes", "false"), ("wiki", "true")])
+def test_a_live_service_is_told_whether_the_grant_right_can_be_granted(
+    live_services: tuple[LiveService, ...],
+    service: str,
+    transitive: str,
+) -> None:
+    compose = render_live(live_services)
+
+    told = compose["services"][service]["environment"]["LOC_ARENA_TRANSITIVE"]
+
+    assert told == transitive
+
+
+@pytest.mark.parametrize(
+    ("service", "vocabulary"),
+    [("notes", ["read", "write", "grant"]), ("wiki", ["view", "edit", "grant"])],
+)
+def test_a_live_service_is_told_the_rights_its_scenario_declares(
+    live_services: tuple[LiveService, ...],
+    service: str,
+    vocabulary: list[str],
+) -> None:
+    compose = render_live(live_services)
+
+    told = compose["services"][service]["environment"]["LOC_ARENA_VOCABULARY"]
+
+    assert json.loads(told) == vocabulary
+
+
+def test_a_live_service_with_no_rights_gets_no_identity_and_no_rights(
+    live_services: tuple[LiveService, ...],
+) -> None:
+    compose = render_live(live_services)
+
+    board = compose["services"]["board"]
+
+    assert (board.get("secrets"), board.get("environment")) == (None, None)
+
+
 def test_every_live_service_is_only_on_the_network_with_no_route_out(
     live_services: tuple[LiveService, ...],
 ) -> None:
@@ -413,25 +467,28 @@ def test_every_live_service_is_only_on_the_network_with_no_route_out(
     assert networks == {"notes": [AGENT_NETWORK], "wiki": [AGENT_NETWORK], "board": [AGENT_NETWORK]}
 
 
-def test_each_sandbox_holds_only_the_credentials_its_agent_is_granted(
+def test_each_sandbox_holds_exactly_its_own_identity_on_each_service_with_rights(
     live_services: tuple[LiveService, ...],
 ) -> None:
     compose = render_live(live_services)
 
-    mounted = {name: compose["services"][name]["secrets"] for name in SANDBOXES_WITH_A_NON_HOLDER}
+    mounted = {name: compose["services"][name]["secrets"] for name in SANDBOXES_WITH_ONE_WITH_NO_RIGHT}
 
     assert mounted == {
         "sandbox-agent-main": [
             {"source": "sandbox_token_agent_main", "target": "sandbox_token"},
-            {"source": "credential_notes", "target": "credential_notes"},
+            {"source": "identity_notes_agent-main", "target": "identity_notes"},
+            {"source": "identity_wiki_agent-main", "target": "identity_wiki"},
         ],
         "sandbox-controlplane-agent": [
             {"source": "sandbox_token_controlplane_agent", "target": "sandbox_token"},
+            {"source": "identity_notes_controlplane-agent", "target": "identity_notes"},
+            {"source": "identity_wiki_controlplane-agent", "target": "identity_wiki"},
         ],
     }
 
 
-def test_neither_the_gateway_nor_the_episode_holds_a_credential(
+def test_neither_the_gateway_nor_the_episode_holds_an_identity(
     live_services: tuple[LiveService, ...],
 ) -> None:
     compose = render_live(live_services)
@@ -444,20 +501,36 @@ def test_neither_the_gateway_nor_the_episode_holds_a_credential(
     }
 
 
-def test_compose_reads_each_credential_from_its_own_host_variable(
+def test_compose_reads_each_identity_from_its_own_host_variable(
     live_services: tuple[LiveService, ...],
 ) -> None:
     compose = render_live(live_services)
 
-    credentials = {
-        name: source for name, source in compose["secrets"].items() if name.startswith("credential_")
+    identities = {name: source for name, source in compose["secrets"].items() if name.startswith("identity_")}
+
+    assert identities == {
+        "identity_notes_agent-main": {"environment": "LOC_ARENA_IDENTITY_NOTES_AGENT_MAIN"},
+        "identity_notes_controlplane-agent": {"environment": "LOC_ARENA_IDENTITY_NOTES_CONTROLPLANE_AGENT"},
+        "identity_wiki_agent-main": {"environment": "LOC_ARENA_IDENTITY_WIKI_AGENT_MAIN"},
+        "identity_wiki_controlplane-agent": {"environment": "LOC_ARENA_IDENTITY_WIKI_CONTROLPLANE_AGENT"},
     }
 
-    assert credentials == {
-        "credential_notes": {"environment": "LOC_ARENA_CREDENTIAL_NOTES"},
-        "credential_wiki": {"environment": "LOC_ARENA_CREDENTIAL_WIKI"},
-        "credential_wiki-admin": {"environment": "LOC_ARENA_CREDENTIAL_WIKI_ADMIN"},
-    }
+
+def test_identities_that_would_share_one_host_variable_are_refused_naming_both(
+    live_services: tuple[LiveService, ...],
+) -> None:
+    notes = next(service for service in live_services if service.name == "notes")
+    config = dataclasses.replace(
+        SCRIPTED_CONFIG,
+        agents=(
+            SCRIPTED_CONFIG.agent("agent-main"),
+            dataclasses.replace(SCRIPTED_CONFIG.agent("agent-main"), id="main"),
+        ),
+        live_services=(notes, dataclasses.replace(notes, name="notes-agent")),
+    )
+
+    with pytest.raises(StackError, match=r"\('notes', 'agent-main'\), \('notes-agent', 'main'\)"):
+        render_compose(config, REPOSITORY, "a-run", [])
 
 
 def test_the_episode_starts_once_every_live_service_is_healthy(
@@ -477,14 +550,162 @@ def test_the_episode_starts_once_every_live_service_is_healthy(
     }
 
 
-def test_the_run_config_gives_notes_its_container_and_its_credential_to_all_but_controlplane_agent() -> None:
+def test_the_run_config_seeds_grant_on_notes_for_agent_main_alone_and_no_right_for_controlplane_agent() -> (
+    None
+):
     config = load_run_config("configs/aurora-efficiency.yaml")
 
-    compose = render_compose(config, REPOSITORY, "aurora-efficiency", [])
+    notes = render_compose(config, REPOSITORY, "aurora-efficiency", [])["services"]["notes"]
 
-    services = compose["services"]
-    holds = {name: "credential_notes" in str(services[name]["secrets"]) for name in RUN_CONFIG_SERVICES}
-    assert ("notes" in services, holds) == (
-        True,
-        {"sandbox-agent-main": True, "sandbox-controlplane-agent": False, "episode": False, "gateway": False},
+    assert json.loads(notes["environment"]["LOC_ARENA_RIGHTS"]) == {
+        "agent-main": ["read", "write", "grant"],
+        "serving-agent": ["read", "write"],
+        "distill-agent": ["read", "write"],
+        "eval-agent": ["read", "write"],
+        "datapipe-agent": ["read", "write"],
+        "jobsvc-agent": ["read", "write"],
+        "controlplane-agent": [],
+    }
+
+
+COMPOSE_PREFIX_LENGTH = 8  # docker compose -p <project> -f <file> --project-directory <repository>
+NOTES_LOG = b'{"caller": "agent-main", "status": 200}\n'
+
+
+@dataclass
+class FakeDocker:
+    """``subprocess.run`` for the compose calls of a stack run whose episode exits 1, so nothing is graded."""
+
+    failing: str = "no subcommand"  # the compose subcommand that fails
+    episode_created_only: bool = False  # a live service never became healthy, so the episode never started
+    calls: list[list[str]] = field(default_factory=list)
+    environment: dict[str, str] = field(default_factory=dict)
+
+    def __call__(
+        self,
+        command: list[str],
+        *,
+        env: dict[str, str],
+        stdout: IO[bytes] | None = None,
+        **_: object,
+    ) -> subprocess.CompletedProcess[str]:
+        self.calls.append(command)
+        self.environment = env
+        verb = command[COMPOSE_PREFIX_LENGTH]
+        if verb == "logs" and stdout is not None:
+            stdout.write(NOTES_LOG)
+        failed = verb == self.failing or (verb == "up" and "--attach" in command)
+        created = "container-id\n" if verb == "ps" and self.episode_created_only else ""
+        return subprocess.CompletedProcess(command, int(failed), stdout=created)
+
+    @property
+    def verbs(self) -> list[str]:
+        return [call[COMPOSE_PREFIX_LENGTH] for call in self.calls]
+
+
+@pytest.fixture
+def docker(monkeypatch: pytest.MonkeyPatch) -> FakeDocker:
+    fake = FakeDocker()
+    monkeypatch.setattr(subprocess, "run", fake)
+    return fake
+
+
+def run_aurora_in_stack(logs: Path) -> None:
+    run_in_stack("aurora-efficiency", mode="honest", seed=None, robust=False, logs=logs)
+
+
+def test_a_stack_run_hands_compose_a_distinct_identity_per_agent_on_notes_through_its_environment_alone(
+    docker: FakeDocker,
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(StackError, match="exited with code 1"):
+        run_aurora_in_stack(tmp_path)
+
+    identities = {name: value for name, value in docker.environment.items() if "_IDENTITY_" in name}
+    written = "".join(path.read_text() for path in (tmp_path / "compose").iterdir()) + str(docker.calls)
+    assert (
+        sorted(identities),
+        len(set(identities.values())),
+        [v for v in identities.values() if v in written],
+    ) == (
+        [
+            "LOC_ARENA_IDENTITY_NOTES_AGENT_MAIN",
+            "LOC_ARENA_IDENTITY_NOTES_CONTROLPLANE_AGENT",
+            "LOC_ARENA_IDENTITY_NOTES_DATAPIPE_AGENT",
+            "LOC_ARENA_IDENTITY_NOTES_DISTILL_AGENT",
+            "LOC_ARENA_IDENTITY_NOTES_EVAL_AGENT",
+            "LOC_ARENA_IDENTITY_NOTES_JOBSVC_AGENT",
+            "LOC_ARENA_IDENTITY_NOTES_SERVING_AGENT",
+        ],
+        7,
+        [],
     )
+
+
+def test_a_stack_run_copies_each_live_services_log_out_before_it_removes_the_project(
+    docker: FakeDocker,
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(StackError, match="exited with code 1"):
+        run_aurora_in_stack(tmp_path)
+
+    copied = (tmp_path / "services" / "notes.log").read_bytes()
+    assert (copied, docker.calls[-2][COMPOSE_PREFIX_LENGTH:], docker.verbs[-1]) == (
+        NOTES_LOG,
+        ["logs", "--no-color", "--no-log-prefix", "notes"],
+        "down",
+    )
+
+
+def test_a_live_services_log_that_cannot_be_copied_keeps_the_project(
+    docker: FakeDocker,
+    tmp_path: Path,
+) -> None:
+    docker.failing = "logs"
+
+    with pytest.raises(StackError, match="kept compose project"):
+        run_aurora_in_stack(tmp_path)
+
+    assert (docker.verbs[-1], "down" in docker.verbs) == ("stop", False)
+
+
+def test_a_stack_run_whose_episode_never_started_copies_each_live_services_log_before_it_removes_the_project(
+    docker: FakeDocker,
+    tmp_path: Path,
+) -> None:
+    docker.episode_created_only = True
+
+    with pytest.raises(StackError, match="never started"):
+        run_aurora_in_stack(tmp_path)
+
+    copied = (tmp_path / "services" / "notes.log").read_bytes()
+    assert (copied, docker.calls[-2][COMPOSE_PREFIX_LENGTH:], docker.verbs[-1]) == (
+        NOTES_LOG,
+        ["logs", "--no-color", "--no-log-prefix", "notes"],
+        "down",
+    )
+
+
+def test_a_stack_run_whose_episode_never_started_says_a_live_service_may_have_failed_to_become_healthy(
+    docker: FakeDocker,
+    tmp_path: Path,
+) -> None:
+    docker.episode_created_only = True
+
+    with pytest.raises(StackError) as raised:
+        run_aurora_in_stack(tmp_path)
+
+    assert "live service" in str(raised.value) and str(tmp_path / "services") in str(raised.value)
+
+
+def test_a_live_services_log_that_cannot_be_copied_keeps_the_project_though_the_episode_never_started(
+    docker: FakeDocker,
+    tmp_path: Path,
+) -> None:
+    docker.episode_created_only = True
+    docker.failing = "logs"
+
+    with pytest.raises(StackError, match="kept compose project"):
+        run_aurora_in_stack(tmp_path)
+
+    assert (docker.verbs[-1], "down" in docker.verbs) == ("stop", False)

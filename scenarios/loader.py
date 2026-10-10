@@ -10,7 +10,9 @@ scorer/verifier -- no engine change.
 
 A pack's ``services:`` declares the services its world has. An entry with ``build`` or ``image`` is live: a
 stack run gives it its own container on agent-net, reached at ``http://<name>:<port>``. Any other entry stays
-simulated, and the stack ignores it.
+simulated, and the stack ignores it. A live entry's ``rights`` are the vocabulary it enforces: each agent of a
+stack run then gets its own identity on it, and the run config seeds each agent's starting rights. With no
+rights, it is open to everything on agent-net.
 """
 
 from __future__ import annotations
@@ -28,6 +30,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    StrictBool,
     StrictInt,
     StrictStr,
     StringConstraints,
@@ -47,17 +50,18 @@ SANDBOX_PREFIX: Final = "sandbox-"
 # Never in a service's build context: the sealed answer and the scripted moves, which agents must not reach.
 SEALED_DIRECTORIES: Final = ("reference", "scripted")
 PACK_DIRECTORY: Final = "pack_directory"  # the validation context key: the pack a build path resolves in
-CredentialName = Annotated[str, StringConstraints(strict=True, pattern=r"^[a-z0-9-]+$")]
+GRANT: Final = "grant"  # the right to give or take rights; itself grantable only on a transitive service
+Right = Annotated[str, StringConstraints(strict=True, pattern=r"^[a-z0-9-]+$")]
 
 
-def _require_distinct(names: tuple[str, ...]) -> tuple[str, ...]:
-    """Refuse a credential named twice: compose will not mount one secret twice in a container."""
-    if len(set(names)) < len(names):
-        raise ValueError(f"it names a credential twice: {list(names)}")
-    return names
+def _require_distinct(rights: tuple[str, ...]) -> tuple[str, ...]:
+    """Refuse a right named twice: a typo or a merge slip, never what was meant."""
+    if len(set(rights)) < len(rights):
+        raise ValueError(f"it names a right twice: {list(rights)}")
+    return rights
 
 
-CredentialNames = Annotated[tuple[CredentialName, ...], AfterValidator(_require_distinct)]
+Rights = Annotated[tuple[Right, ...], AfterValidator(_require_distinct)]
 
 
 def _require_a_service_name(name: str) -> str:
@@ -93,9 +97,14 @@ class ScenarioService(BaseModel):
         min_length=1,
         description="The compose healthcheck test; a probe of the port when absent.",
     )
-    accepts: CredentialNames = Field(
+    rights: Rights = Field(
         default=(),
-        description="The credentials the service checks; none: open to everything on agent-net.",
+        description="The rights the service enforces; with any, each agent gets its own identity on it, and "
+        "with none it is open to everything on agent-net.",
+    )
+    transitive: StrictBool = Field(
+        default=False,
+        description=f"Whether {GRANT!r} itself may be granted; only rights other than it when false.",
     )
     description: StrictStr = Field(default="", description="What the agents of a stack run are told it is.")
 
@@ -118,10 +127,12 @@ class ScenarioService(BaseModel):
         return resolved
 
     @model_validator(mode="after")
-    def _require_one_source_and_a_port_when_live(self) -> Self:
-        """Refuse both build and image, a live entry with no port, or a ready image with no healthcheck.
+    def _require_a_consistent_entry(self) -> Self:
+        """Refuse an entry whose parts contradict each other.
 
-        The default probe runs python, which a ready image need not hold; a build is ours to give it.
+        That is both build and image, a live entry with no port, a ready image with no healthcheck (the
+        default probe runs python, which a ready image need not hold; a build is ours to give it), or
+        transitivity with no right to grant.
         """
         if self.build is not None and self.image is not None:
             raise ValueError("give build or image, not both")
@@ -129,6 +140,8 @@ class ScenarioService(BaseModel):
             raise ValueError("a live service (build or image) needs a port")
         if self.image is not None and self.healthcheck is None:
             raise ValueError("a ready image needs a healthcheck: the default probe runs python")
+        if self.transitive and GRANT not in self.rights:
+            raise ValueError(f"transitive needs {GRANT!r} in rights: there is nothing to grant on")
         return self
 
 
@@ -141,13 +154,9 @@ class LiveService:
     port: int
     command: tuple[str, ...] | None
     healthcheck: tuple[str, ...] | None
-    accepts: tuple[str, ...]
+    rights: tuple[str, ...]  # the vocabulary it enforces; none: open, and no identity is issued
+    transitive: bool  # whether GRANT itself may be granted
     description: str
-
-
-def accepted_credentials(services: tuple[LiveService, ...]) -> tuple[str, ...]:
-    """Every credential some of ``services`` checks, each once, in declaration order."""
-    return tuple(dict.fromkeys(credential for service in services for credential in service.accepts))
 
 
 @dataclass(frozen=True)
@@ -223,7 +232,8 @@ def _parse_live_services(directory: Path, declared: object) -> tuple[LiveService
                     port=service.port,
                     command=service.command,
                     healthcheck=service.healthcheck,
-                    accepts=service.accepts,
+                    rights=service.rights,
+                    transitive=service.transitive,
                     description=service.description,
                 ),
             )

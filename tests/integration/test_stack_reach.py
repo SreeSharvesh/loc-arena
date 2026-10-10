@@ -1,17 +1,21 @@
 """What agent code can reach in a stack run: every "no" of the plan's reach table, from where agent code runs.
 
 The rendered compose project is brought up for real, once, with a sandbox per agent and the scenario's live
-service, the notes board. Inside the episode container, the agents' code tools run commands through the
-sandbox clients as a played episode does, so each probe is agent-main's bash call in its own sandbox (a row
-can name another agent); the probes across sandboxes target serving-agent's. A row can instead run in the
-notes or gateway container, by `docker compose exec`. Probes are `python -c` scripts: the images have no
-curl, wget or nc, and a missing binary would make a "must fail" row pass for the wrong reason. Each prints one
-outcome token (`resolved`, `connected`, an errno or `gaierror:` name, an HTTP status, a JSON list of what
-should not be there), and a test asserts the token. The "no" rows are only meaningful beside their positive
-controls: the sandbox resolves and reaches the gateway and another agent's sandbox, a holder's sandbox reads
-the notes board, the gateway resolves the provider and routes out, and the episode runs a command in a
-sandbox with that sandbox's token. Skipped unless the Docker daemon answers and the stack image exists; the
-images are rebuilt first, so they hold this code.
+service, the notes board, where each agent has its own identity and rights. Inside the episode container, the
+agents' code tools run commands through the sandbox clients as a played episode does, so each probe is
+agent-main's bash call in its own sandbox (a row can name another agent); the probes across sandboxes target
+serving-agent's. A row can instead run in the notes or gateway container, by `docker compose exec`. Probes are
+`python -c` scripts: the images have no curl, wget or nc, and a missing binary would make a "must fail" row
+pass for the wrong reason. Each prints one outcome token (`resolved`, `connected`, an errno or `gaierror:`
+name, an HTTP status, a JSON list of what should not be there), and a test asserts the token. The "no" rows
+are only meaningful beside their positive controls: the sandbox resolves and reaches the gateway and another
+agent's sandbox, a reader's sandbox reads the notes board, an agent granted a right then uses it, the gateway
+resolves the provider and routes out, and the episode runs a command in a sandbox with that sandbox's token.
+Steps that depend on one another (a grant and the read after it, an identity copied between sandboxes) run in
+order as a chain in the same episode, after every probe, so no probe sees the rights a chain changes. Skipped
+unless the Docker daemon answers and the stack image exists; the images are rebuilt first, so they hold this
+code. The fixture brings the project up itself and does not call `run_in_stack`: the copy-out of the services'
+logs is covered by `tests/unit/test_episode_stack.py`.
 """
 
 from __future__ import annotations
@@ -42,15 +46,15 @@ from loc_arena.episode_stack import (
     OUTPUT_DIRECTORY,
     REPOSITORY,
     SCENARIOS_DIRECTORY,
-    credential_variable,
+    issue_identities,
     render_compose,
     token_variable,
 )
 from loc_arena.gateway.core import API_KEY_VARIABLE
 from loc_arena.gateway.proxy import GatewayCall
-from loc_arena.sandbox import CREDENTIAL_PREFIX, TOKEN_FILE, credential_secret_name
+from loc_arena.sandbox import IDENTITY_PREFIX, TOKEN_FILE
+from pydantic import BaseModel, ConfigDict
 from sandbox_server.wire import RESET_PATH, RUN_PATH, CommandRequest
-from scenarios.loader import accepted_credentials
 
 from tests.integration._docker_support import image_exists
 
@@ -70,11 +74,14 @@ CHECKOUT_REPOS = [
     "meridian-jobsvc",
     "meridian-serving",
 ]
-AGENT = "agent-main"  # whose bash runs the probes, holding the notes board's credential
-OTHER_AGENT = "serving-agent"  # whose sandbox the probes across sandboxes target
-AGENT_WITHOUT_CREDENTIAL = "controlplane-agent"  # holds no live service's credential, by its config
+AGENT = "agent-main"  # whose bash runs the probes: holds read, write and grant on the notes board
+OTHER_AGENT = "serving-agent"  # a reader (read, write), whose sandbox the probes across sandboxes target
+AGENT_WITHOUT_RIGHTS = (
+    "controlplane-agent"  # holds an identity on the notes board but no right, by its config
+)
+GHOST_AGENT = "ghost"  # no agent of the run
 NOTES = next(service for service in CONFIG.live_services if service.name == "notes")
-NOTES_CREDENTIAL = credential_secret_name("notes")  # the file holding it, in a holder's sandbox
+NOTES_IDENTITY_FILE = f"{IDENTITY_PREFIX}{NOTES.name}"  # an agent's own identity, in its sandbox
 GATEWAY_SERVICE = "gateway"
 DOCKER_SOCKET = "docker.sock"
 NOT_ALLOWED_PATH = "not-an-allowed-path"  # a path outside settings.gateway.allowed_paths: nothing leaves
@@ -86,14 +93,22 @@ DOCKER_MOUNTS = ["/", "/etc/hostname", "/etc/hosts", "/etc/resolv.conf", "/usr/s
 KERNEL_MOUNT_ROOTS = ("/proc", "/dev", "/sys")
 HARNESS_ROW = "the_sandbox_holds_no_harness_and_no_scenarios"
 REFUSED_PATH_ROW = "the_gateway_refuses_an_unlisted_path"
-HOLDER_READS_ROW = "the_sandbox_of_a_holder_reads_the_notes_board_with_its_credential"
-REFUSED_WITHOUT_CREDENTIAL_ROW = "the_notes_board_refuses_a_sandbox_without_the_credential"
+READER_READS_ROW = "the_sandbox_of_a_reader_reads_the_notes_board_with_its_identity"
+REFUSED_WITHOUT_RIGHTS_ROW = "the_notes_board_refuses_an_agent_without_rights_that_sends_its_identity"
+REFUSED_GUESS_ROW = "the_notes_board_refuses_a_guessed_token"
+REFUSED_GRANT_ROW = "the_notes_board_refuses_a_grant_from_an_agent_without_the_grant_right"
+REFUSED_TRANSITIVE_ROW = "the_notes_board_refuses_to_grant_the_grant_right_when_it_is_not_transitive"
+REFUSED_GHOST_ROW = "the_notes_board_refuses_a_grant_to_an_agent_it_does_not_know"
 OWN_TOKEN_ROW = "the_sandbox_holds_only_its_own_token"
+OWN_IDENTITY_ROW = "the_sandbox_holds_only_its_own_identity"
+GRANT_CHAIN = "grant_then_read"
+COPY_CHAIN = "copy_identity_then_read"
+CHAIN_PREVIOUS = "PREVIOUS_OUTPUT"  # in a chain step's command: replaced by what the step before printed
 LEFT_RUNNING_SECONDS = 60  # a command still running when its sandbox is reset, unless the reset ends it
 COMMAND_START_SECONDS = 2  # long enough for that command to have started
 # In the episode, as agent-main unless named: bash reads a sealed log, lists the checkout, leaves a process;
-# run_tests; the probes from stdin (some as another agent), every sandbox's secrets listed, the refused path
-# again as serving-agent; the episode's own calls to that
+# run_tests; every agent's identity hashed; the probes from stdin (some as another agent) and the chains;
+# every sandbox's secrets listed, the refused path again as serving-agent; the episode's own calls to that
 # sandbox, with its token and a wrong one. Last, as a reset removes every other checkout: a second one seeded
 # and listed; a command left running while what listens here beyond loopback is read (Docker's resolver is on
 # 127.0.0.11); every sandbox reset keeping the second; the checkouts listed again.
@@ -141,7 +156,16 @@ here = subprocess.run(["bash", "-c", harness_probe], capture_output=True, text=T
 secrets_dir = config.settings.gateway.secrets_dir
 holds_key = {API_KEY_VARIABLE!r} in os.environ or any(sent["key"] in value for value in os.environ.values())
 agents = sent["agents"]
+own_identity = sent["probes"].pop("{OWN_IDENTITY_ROW}")
+own_identities = {{agent.id: bash(own_identity, agent.id)["stdout"].strip() for agent in config.agents}}
 probes = {{name: bash(command, agents.get(name, {AGENT!r})) for name, command in sent["probes"].items()}}
+chains = {{}}
+for name, steps in sent["chains"].items():
+    printed = []
+    for agent, command in steps:
+        command = command.replace({CHAIN_PREVIOUS!r}, printed[-1] if printed else "")
+        printed.append(bash(command, agent)["stdout"].strip())
+    chains[name] = printed
 sandbox_secrets = {{
     agent.id: sorted(bash(f"ls {{secrets_dir}}", agent.id)["stdout"].split()) for agent in config.agents
 }}
@@ -175,6 +199,8 @@ print(json.dumps({{
     "run_tests": tested,
     "episode_harness": here.stdout.strip(),
     "probes": probes,
+    "chains": chains,
+    "own_identities": own_identities,
     "sandbox_secrets": sandbox_secrets,
     "episode_environment_key": "present" if holds_key else "absent",
     "episode_secrets": sorted(path.name for path in secrets_dir.iterdir()),
@@ -270,6 +296,17 @@ try:
 except urllib.error.HTTPError as error:
     print(error.code)
 """
+# The notes board's calls, as the agent whose sandbox runs them: a read of the notes with its own identity, a
+# grant to another agent with it, its own identity as the sandbox holds it.
+READ_NOTES = "print(fetch('{notes_url}/notes', open('{secrets_dir}/{identity_file}').read().strip()))"
+
+
+def write_grant_script(body: str) -> str:
+    """The probe that posts the request body named ``body`` (one of the probes' values) to /grants."""
+    identity = "open('{secrets_dir}/{identity_file}').read().strip()"
+    return f"print(post('{{notes_url}}/grants', {{{body}}}, {identity}))"
+
+
 # Each row of the reach table: the test's name, its probe (formatted with the values the fixture finds) and
 # the outcomes the table allows. A listener waits on every address of this host, so a refusal is a firewall's.
 ROWS: dict[str, tuple[str, set[str]]] = {
@@ -331,15 +368,17 @@ ROWS: dict[str, tuple[str, set[str]]] = {
     "the_sandbox_holds_no_scripted_move": ("print(list_paths('{scenarios}/*/scripted'))", {"[]"}),
     HARNESS_ROW: ("print(find_harness())", {json.dumps({"modules": [], "paths": []})}),
     REFUSED_PATH_ROW: (REFUSED_PATH_SCRIPT, {str(int(HTTPStatus.FORBIDDEN))}),
-    # The live service. The holder's read is the control of the refusal beside it and of every "no" below.
-    HOLDER_READS_ROW: (
-        "print(fetch('{notes_url}/notes', open('{secrets_dir}/{credential_file}').read().strip()))",
-        {str(int(HTTPStatus.OK))},
-    ),
-    REFUSED_WITHOUT_CREDENTIAL_ROW: (
-        "print(fetch('{notes_url}/notes', None))",
+    # The live service. The reader's read is the control of the refusals beside it and of every "no" below.
+    READER_READS_ROW: (READ_NOTES, {str(int(HTTPStatus.OK))}),
+    REFUSED_WITHOUT_RIGHTS_ROW: (READ_NOTES, {str(int(HTTPStatus.FORBIDDEN))}),
+    REFUSED_GUESS_ROW: (
+        "print(fetch('{notes_url}/notes', {guessed_token}))",
         {str(int(HTTPStatus.UNAUTHORIZED))},
     ),
+    # Each beside the grant of read that works, in GRANT_CHAIN: the refusal is of the right asked for.
+    REFUSED_GRANT_ROW: (write_grant_script("grant_read"), {str(int(HTTPStatus.FORBIDDEN))}),
+    REFUSED_TRANSITIVE_ROW: (write_grant_script("grant_grant"), {str(int(HTTPStatus.FORBIDDEN))}),
+    REFUSED_GHOST_ROW: (write_grant_script("grant_ghost"), {str(int(HTTPStatus.NOT_FOUND))}),
     "the_notes_board_cannot_resolve_the_providers_name": (
         "print(resolve('{provider_host}'))",
         {"gaierror:EAI_AGAIN"},
@@ -359,7 +398,11 @@ ROWS: dict[str, tuple[str, set[str]]] = {
     ),
 }
 # Rows run as another agent than AGENT, and rows run in a service container instead of a sandbox.
-ROW_AGENTS = {REFUSED_WITHOUT_CREDENTIAL_ROW: AGENT_WITHOUT_CREDENTIAL}
+ROW_AGENTS = {
+    READER_READS_ROW: OTHER_AGENT,
+    REFUSED_WITHOUT_RIGHTS_ROW: AGENT_WITHOUT_RIGHTS,
+    REFUSED_GRANT_ROW: OTHER_AGENT,
+}
 ROW_SERVICES = {
     "the_notes_board_cannot_resolve_the_providers_name": NOTES.name,
     "the_gateway_resolves_the_providers_name": GATEWAY_SERVICE,
@@ -368,14 +411,50 @@ ROW_SERVICES = {
     "the_notes_board_environment_holds_no_key": NOTES.name,
     "the_notes_board_cannot_run_a_command_in_a_sandbox": NOTES.name,
 }
-# Rows whose outcome depends on the bring-up: agent-main's token files and its token's hash.
+# Rows whose outcome depends on the bring-up: agent-main's token and identity files and their hashes.
 SCRIPTS_CHECKED_APART = {
+    OWN_IDENTITY_ROW: (
+        "held = hashlib.sha256(open('{secrets_dir}/{identity_file}', 'rb').read()).hexdigest()\n"
+        "names = sorted(os.listdir('{secrets_dir}'))\n"
+        "names = [name for name in names if name.startswith('{identity_prefix}')]\n"
+        "print(json.dumps([names, held]))"
+    ),
     OWN_TOKEN_ROW: (
         "held = hashlib.sha256(open('{secrets_dir}/{token_file}', 'rb').read()).hexdigest()\n"
         "tokens = [name for name in sorted(os.listdir('{secrets_dir}')) if name.startswith('{token_file}')]\n"
         "print(json.dumps([tokens, held]))"
     ),
 }
+# Steps that depend on one another, each as the agent whose sandbox runs it, in order: an agent without rights
+# reads (refused), agent-main grants it read, it reads again; serving-agent prints its own identity, as an
+# agent could pass it in a message, and controlplane-agent reads the notes with that copy.
+CHAINS: dict[str, list[tuple[str, str]]] = {
+    GRANT_CHAIN: [
+        (AGENT_WITHOUT_RIGHTS, READ_NOTES),
+        (AGENT, write_grant_script("grant_read")),
+        (AGENT_WITHOUT_RIGHTS, READ_NOTES),
+    ],
+    COPY_CHAIN: [
+        (OTHER_AGENT, "print(open('{secrets_dir}/{identity_file}').read().strip())"),
+        (AGENT_WITHOUT_RIGHTS, f"print(fetch('{{notes_url}}/notes', '{CHAIN_PREVIOUS}'))"),
+    ],
+}
+
+
+class NotesLogLine(BaseModel):
+    """One JSON line of the notes board's log: a request, or a grant or revoke."""
+
+    model_config = ConfigDict(frozen=True)
+
+    caller: str | None = None
+    container: str
+    method: str | None = None
+    path: str | None = None
+    status: int | None = None
+    event: str | None = None
+    granter: str | None = None
+    agent: str | None = None
+    rights: list[str] | None = None
 
 
 @dataclass(frozen=True)
@@ -386,6 +465,8 @@ class StackRun:
     run_tests: dict[str, Any]
     episode_harness: str
     probes: dict[str, dict[str, Any]]
+    chains: dict[str, list[str]]
+    own_identities: dict[str, str]
     sandbox_secrets: dict[str, list[str]]
     episode_environment_key: str
     episode_secrets: list[str]
@@ -399,12 +480,17 @@ class StackRun:
     agent_net: str
     agent_net_gateway: str | None
     service_secrets: dict[str, list[str]]
-    notes_log: list[str]
+    notes_log: list[NotesLogLine]
+    identities: dict[str, str]
     mounts: dict[str, list[str]]
 
     def read_outcome(self, row: str) -> str:
         """The one token the probe of ``row`` printed, in the sandbox or the service container it ran in."""
         return self.probes[row]["stdout"].strip()
+
+    def locate(self, agent: str) -> str:
+        """The name the notes board records for requests from ``agent``'s sandbox: container and network."""
+        return f"{self.containers[sandbox_service(agent)]}.{self.agent_net}"
 
     def list_secrets(self) -> dict[str, list[str]]:
         """The files in the secrets directory of each container: the episode, the services, each sandbox."""
@@ -430,8 +516,11 @@ def build_probes(
     agent_subnet: str,
     host_address: str,
     host_port: int,
-) -> dict[str, str]:
-    """The sandbox command of each row of ``ROWS`` and ``SCRIPTS_CHECKED_APART``, by the row's name."""
+) -> tuple[dict[str, str], dict[str, list[tuple[str, str]]]]:
+    """The sandbox command of each row of ``ROWS`` and ``SCRIPTS_CHECKED_APART`` by the row's name.
+
+    Also the steps (agent, command) of each chain of ``CHAINS``, by the chain's name.
+    """
     gateway, stack = CONFIG.settings.gateway, CONFIG.settings.stack
     marker = stack.checkouts_directory / "ran-for-another-sandbox"
     run = CommandRequest(
@@ -464,12 +553,25 @@ def build_probes(
         "marker": marker,
         "other_token": repr(tokens[OTHER_AGENT]),
         "notes_url": f"http://{NOTES.name}:{NOTES.port}",
-        "credential_file": NOTES_CREDENTIAL,
+        "identity_file": NOTES_IDENTITY_FILE,
+        "identity_prefix": IDENTITY_PREFIX,
+        "guessed_token": repr(secrets.token_urlsafe(32)),
+        "grant_read": repr(json.dumps({"agent": AGENT_WITHOUT_RIGHTS, "rights": ["read"]})),
+        "grant_grant": repr(json.dumps({"agent": AGENT_WITHOUT_RIGHTS, "rights": ["grant"]})),
+        "grant_ghost": repr(json.dumps({"agent": GHOST_AGENT, "rights": ["read"]})),
     }
     scripts = {row: script for row, (script, _) in ROWS.items()} | SCRIPTS_CHECKED_APART
-    return {
-        row: f"python -c {shlex.quote(PRELUDE + script.format(**values))}" for row, script in scripts.items()
+    commands = {row: write_command(script, values) for row, script in scripts.items()}
+    chains = {
+        chain: [(agent, write_command(script, values)) for agent, script in steps]
+        for chain, steps in CHAINS.items()
     }
+    return commands, chains
+
+
+def write_command(script: str, values: dict[str, Any]) -> str:
+    """The shell command that runs ``script``, formatted with ``values``, after the prelude."""
+    return f"python -c {shlex.quote(PRELUDE + script.format(**values))}"
 
 
 def find_host_address(read_in_gateway: Callable[[str], str], egress_gateway: str | None) -> str:
@@ -528,15 +630,13 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
     # a match of it anywhere is unambiguous.
     placeholder = secrets.token_urlsafe(24)
     tokens = {agent.id: secrets.token_urlsafe(32) for agent in CONFIG.agents}
+    identities = {agent.id: secrets.token_urlsafe(32) for agent in CONFIG.agents}  # on the notes board
     compose = ["compose", "-p", project, "-f", str(compose_file), "--project-directory", str(directory)]
     environment = {
         **os.environ,
         API_KEY_VARIABLE: placeholder,
         **{token_variable(agent): token for agent, token in tokens.items()},
-        **{
-            credential_variable(name): secrets.token_urlsafe(32)
-            for name in accepted_credentials(CONFIG.live_services)
-        },
+        **{identity.variable: identities[identity.agent_id] for identity in issue_identities(CONFIG)},
     }
     call_log = directory / "calls.jsonl"
     try:
@@ -560,7 +660,7 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
             egress_net.gateway,
         )
         with socket.create_server(("0.0.0.0", 0)) as listener:  # noqa: S104 - every address of this host, on purpose
-            probes = build_probes(
+            probes, chains = build_probes(
                 placeholder,
                 tokens,
                 project,
@@ -579,7 +679,9 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
                 "python",
                 "-c",
                 IN_EPISODE,
-                input=json.dumps({"key": placeholder, "probes": in_sandboxes, "agents": ROW_AGENTS}),
+                input=json.dumps(
+                    {"key": placeholder, "probes": in_sandboxes, "agents": ROW_AGENTS, "chains": chains},
+                ),
                 env=environment,
             )
             in_services = {
@@ -593,7 +695,8 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
             for service in (GATEWAY_SERVICE, NOTES.name)
         }
         read_log = [*compose, "logs", "--no-log-prefix", NOTES.name]
-        notes_log = run_docker(*read_log, env=environment).stdout.splitlines()
+        logged = run_docker(*read_log, env=environment).stdout.splitlines()
+        notes_log = [NotesLogLine.model_validate_json(line) for line in logged if line.startswith("{")]
         mounts = read_mounts(project)
     finally:
         down = ["docker", *compose, "down", "--volumes", "--remove-orphans"]
@@ -609,6 +712,7 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
         agent_net_gateway=agent_net.gateway,
         service_secrets=service_secrets,
         notes_log=notes_log,
+        identities=identities,
         mounts=mounts,
         **printed,
     )
@@ -663,6 +767,16 @@ def test_the_sandbox_holds_only_its_own_token(stack_run: StackRun) -> None:
 
     own_hash = hashlib.sha256(stack_run.tokens[AGENT].encode()).hexdigest()
     assert held == json.dumps([[TOKEN_FILE], own_hash])
+
+
+def test_each_sandbox_holds_only_its_own_identity(stack_run: StackRun) -> None:
+    held = stack_run.own_identities
+
+    expected = {
+        agent: json.dumps([[NOTES_IDENTITY_FILE], hashlib.sha256(identity.encode()).hexdigest()])
+        for agent, identity in stack_run.identities.items()
+    }
+    assert held == expected
 
 
 def test_the_gateway_records_each_agents_sandbox_by_its_container_name(stack_run: StackRun) -> None:
@@ -730,19 +844,18 @@ def test_the_episode_container_holds_every_sandbox_token_and_no_other_secret(sta
     ]
 
 
-def test_a_sandbox_holds_the_notes_credential_only_when_its_agent_is_granted_it(stack_run: StackRun) -> None:
+def test_each_container_holds_only_the_identity_files_its_role_needs(stack_run: StackRun) -> None:
     held = stack_run.list_secrets()
 
-    credentials = {
-        container: [name for name in names if name.startswith(CREDENTIAL_PREFIX)]
+    identities = {
+        container: [name for name in names if name.startswith(IDENTITY_PREFIX)]
         for container, names in held.items()
+        if container != NOTES.name
     }
-    assert credentials == {
-        **{sandbox_service(agent.id): [NOTES_CREDENTIAL] for agent in CONFIG.agents},
-        sandbox_service(AGENT_WITHOUT_CREDENTIAL): [],
+    assert identities == {
+        **{sandbox_service(agent.id): [NOTES_IDENTITY_FILE] for agent in CONFIG.agents},
         EPISODE_SERVICE: [],
         GATEWAY_SERVICE: [],
-        NOTES.name: [NOTES_CREDENTIAL],
     }
 
 
@@ -752,17 +865,50 @@ def test_the_gateway_holds_the_key_and_nothing_else(stack_run: StackRun) -> None
     assert held == [KEY_SECRET_NAME]
 
 
-def test_the_notes_board_holds_exactly_its_credential(stack_run: StackRun) -> None:
+def test_the_notes_board_holds_exactly_one_identity_per_agent(stack_run: StackRun) -> None:
     held = stack_run.service_secrets[NOTES.name]
 
-    assert held == [NOTES_CREDENTIAL]
+    assert held == sorted(f"{IDENTITY_PREFIX}{agent.id}" for agent in CONFIG.agents)
 
 
-def test_the_notes_board_log_names_the_credential_each_request_carried(stack_run: StackRun) -> None:
-    log = stack_run.notes_log
+def test_an_agent_without_rights_reads_the_notes_once_agent_main_grants_it_read(stack_run: StackRun) -> None:
+    statuses = stack_run.chains[GRANT_CHAIN]
 
-    listings = sorted(line for line in log if line.startswith("GET /notes "))
-    assert listings == ["GET /notes 200 notes", "GET /notes 401 none"]
+    assert statuses == ["403", "200", "200"]
+
+
+def test_an_identity_copied_into_another_sandbox_is_accepted_there(stack_run: StackRun) -> None:
+    copied_and_status = stack_run.chains[COPY_CHAIN]
+
+    assert copied_and_status == [stack_run.identities[OTHER_AGENT], "200"]
+
+
+def test_the_notes_log_holds_the_grant_with_its_granter_and_the_container_it_came_from(
+    stack_run: StackRun,
+) -> None:
+    logged = stack_run.notes_log
+
+    events = [
+        (line.event, line.granter, line.agent, line.rights, line.container) for line in logged if line.event
+    ]
+
+    assert events == [("grant", AGENT, AGENT_WITHOUT_RIGHTS, ["read"], stack_run.locate(AGENT))]
+
+
+def test_the_notes_log_shows_a_copied_identity_as_a_caller_from_another_agents_container(
+    stack_run: StackRun,
+) -> None:
+    logged = stack_run.notes_log
+
+    mismatched = [
+        (line.caller, line.container, line.method, line.path, line.status)
+        for line in logged
+        if line.caller and line.container != stack_run.locate(line.caller)
+    ]
+
+    assert mismatched == [
+        (OTHER_AGENT, stack_run.locate(AGENT_WITHOUT_RIGHTS), "GET", "/notes", HTTPStatus.OK),
+    ]
 
 
 def test_no_container_of_the_project_mounts_the_docker_socket(stack_run: StackRun) -> None:

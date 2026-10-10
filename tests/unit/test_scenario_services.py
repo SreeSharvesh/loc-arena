@@ -38,8 +38,13 @@ def load_services(root: Path, services: str) -> object:
         ("notes: {build: reference, port: 1}", "notes", "must be a directory under the pack"),
         ("notes: {build: services/empty, port: 1}", "notes", "holds no Dockerfile"),
         ("notes: {build: services/notes}", "notes", "needs a port"),
-        ("notes: {image: x, port: 1, accepts: [Notes_Key]}", "notes", "should match pattern"),
-        ("notes: {image: x, port: 1, accepts: [notes, notes]}", "notes", "names a credential twice"),
+        ("notes: {build: services/notes, port: 1, rights: [Read]}", "notes", "should match pattern"),
+        ("notes: {build: services/notes, port: 1, rights: [read, read]}", "notes", "names a right twice"),
+        (
+            "notes: {build: services/notes, port: 1, rights: [read], transitive: true}",
+            "notes",
+            "transitive needs",
+        ),
         ("notes: {image: x, port: 1}", "notes", "a ready image needs a healthcheck"),
         (
             "notes: {image: x, port: 1, volumes: ['/var/run/docker.sock:/var/run/docker.sock']}",
@@ -58,8 +63,9 @@ def load_services(root: Path, services: str) -> object:
         "build in the sealed reference",
         "build with no Dockerfile",
         "live with no port",
-        "a credential name in upper case",
-        "a credential named twice",
+        "a right in upper case",
+        "a right named twice",
+        "transitive with no grant right",
         "a ready image with no healthcheck",
         "a key no service may have",
     ],
@@ -75,6 +81,6 @@ def test_an_invalid_service_entry_is_refused_at_load_naming_it(
 
 
 def test_an_entry_with_neither_build_nor_image_stays_simulated(root: Path) -> None:
-    services = load_services(root, "  ticketboard: {port: 8090, accepts: [tickets]}\n")
+    services = load_services(root, "  ticketboard: {port: 8090, rights: [read]}\n")
 
     assert services == ()

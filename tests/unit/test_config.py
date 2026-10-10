@@ -5,6 +5,8 @@ import shutil
 from pathlib import Path
 
 import pytest
+import scenarios.loader
+from loc_arena import config
 from loc_arena.config import AgentLoopConfig, ConfigError, load_run_config
 from pydantic import ValidationError
 
@@ -232,34 +234,46 @@ def test_a_repeated_agent_id_is_refused_at_load_naming_it(tmp_path: Path) -> Non
         load_run_config(run)
 
 
-def test_a_credential_no_live_service_accepts_is_refused_at_load_naming_it(tmp_path: Path) -> None:
-    agent = ONE_AGENT.format(agent_id="typist").replace(
-        "scope: {}",
-        "scope: {}, sandbox: {credentials: [nots]}",
-    )
+@pytest.mark.parametrize(
+    ("sandbox", "reason"),
+    [
+        ("{rights: {nots: [read]}}", r"agent 'typist' holds rights on 'nots', which is no live service"),
+        ("{rights: {notes: [read, admin]}}", r"agent 'typist' holds rights \['admin'\] on 'notes'"),
+        ("{rights: {notes: [read, read]}}", "names a right twice"),
+        ("{credentials: [notes]}", r"agents\.0\.sandbox\.credentials"),
+    ],
+    ids=["an unknown service", "a right outside the service's", "a right twice", "an unknown key"],
+)
+def test_an_agents_invalid_sandbox_rights_are_refused_at_load_naming_them(
+    tmp_path: Path,
+    sandbox: str,
+    reason: str,
+) -> None:
+    agent = ONE_AGENT.format(agent_id="typist").replace("scope: {}", f"scope: {{}}, sandbox: {sandbox}")
     run = _run_extending(tmp_path, agent)
 
-    with pytest.raises(ConfigError, match=r"agent 'typist' holds credentials \['nots'\]"):
+    with pytest.raises(ConfigError, match=reason):
         load_run_config(run)
 
 
-def test_a_credential_an_agent_holds_twice_is_refused_at_load(tmp_path: Path) -> None:
-    agent = ONE_AGENT.format(agent_id="typist").replace(
-        "scope: {}",
-        "scope: {}, sandbox: {credentials: [notes, notes]}",
+def test_identities_that_would_share_one_host_variable_are_refused_at_load_naming_both(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    load_aurora = scenarios.loader.load_scenario
+
+    def load_with_a_second_service(name: str) -> scenarios.loader.Scenario:
+        aurora = load_aurora(name)
+        (notes,) = aurora.live_services
+        second = dataclasses.replace(notes, name="notes-agent")
+        return dataclasses.replace(aurora, live_services=(notes, second))
+
+    monkeypatch.setattr(config, "load_scenario", load_with_a_second_service)
+    agents = ONE_AGENT.format(agent_id="agent-main").removesuffix("]\n")
+    run = _run_extending(
+        tmp_path,
+        f"{agents}, {{id: main, kind: k, trust: untrusted, branch: b, scope: {{}}}}]\n",
     )
-    run = _run_extending(tmp_path, agent)
 
-    with pytest.raises(ConfigError, match="names a credential twice"):
-        load_run_config(run)
-
-
-def test_an_unknown_key_in_an_agents_sandbox_block_is_refused_at_load(tmp_path: Path) -> None:
-    agent = ONE_AGENT.format(agent_id="typist").replace(
-        "scope: {}",
-        "scope: {}, sandbox: {credential: [notes]}",
-    )
-    run = _run_extending(tmp_path, agent)
-
-    with pytest.raises(ConfigError, match=r"agents\.0\.sandbox\.credential"):
+    with pytest.raises(ConfigError, match=r"\('notes', 'agent-main'\), \('notes-agent', 'main'\)"):
         load_run_config(run)
