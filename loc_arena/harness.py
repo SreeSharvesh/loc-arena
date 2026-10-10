@@ -51,6 +51,7 @@ from loc_arena.monitors.registry import (
     load_monitors,
 )
 from loc_arena.protocol import compose_protocol
+from loc_arena.recorded_events import build_recorded_events
 from loc_arena.task import (
     EpisodeResult,
     Snapshot,
@@ -319,7 +320,8 @@ def _eval_episodes(cfg: RunConfig, episode: Any, calibration: Any) -> list[Episo
     for sample_id, assembled in labelled:
         if assembled.trace is None:
             raise ValueError(f"{sample_id} was assembled without an agent trace")
-        exports.append(EpisodeExport(sample_id, assembled.trace, assembled.sealed_path, agent_order))
+        trace, sealed, mirror = assembled.trace, assembled.sealed_path, assembled.mirror_path
+        exports.append(EpisodeExport(sample_id, trace, sealed, agent_order, mirror))
     return exports
 
 
@@ -471,6 +473,16 @@ def play_run(
         ),
     )
     played_file.write_text(played.model_dump_json())
+
+
+def build_recorded_run_events(config: RunConfig, run_directory: Path) -> None:
+    """Build the events of what the services recorded during play into each played episode, before grading.
+
+    Grading never calls it, so a run graded again gains no event.
+    """
+    played = PlayedRun.model_validate_json((run_directory / PLAYED_FILE).read_text())
+    traces = {"episode": played.episode_trace, "honest_cal": played.calibration_trace}
+    build_recorded_events(run_directory, config, traces)
 
 
 def _grade_played(directory: Path, config: RunConfig, trace: EpisodeTrace | None) -> EpisodeResult:
@@ -630,6 +642,7 @@ def run_episode(
         provider=provider,
         calibration_provider=calibration_provider,
     )
+    build_recorded_run_events(config, run_directory)
     return grade_run(
         config,
         run_directory,

@@ -6,7 +6,7 @@ attributes the OpenTelemetry semantic conventions give an MCP tool call (``mcp.m
 ``gen_ai.tool.call.arguments``, ``gen_ai.tool.call.result`` on success, ``error.type`` on failure) and the
 calling agent as ``gen_ai.agent.name``, plus its ``time``. A service in a container writes it to stdout; one
 an in-process run serves writes it to ``records/<service>.jsonl`` in the episode's directory, so both runs
-leave the same lines.
+leave the same lines. ``ToolRecord`` reads one back.
 """
 
 from __future__ import annotations
@@ -19,10 +19,24 @@ from typing import Any
 
 from mcp.server.context import CallNext, HandlerResult, ServerMiddleware, ServerRequestContext
 from mcp.shared.exceptions import MCPError
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, JsonValue
 
 TOOL_CALL = "tools/call"
 SESSION_HEADER = "mcp-session-id"  # a 2025-era session's id; a 2026-era call has none
 Write = Callable[[str], None]
+
+
+class ToolRecord(BaseModel):
+    """One line of a service's record, read back: a tool call, the agent that made it, and its outcome."""
+
+    model_config = ConfigDict(frozen=True)
+
+    time: AwareDatetime  # a time without its UTC offset would fall in the wrong play window
+    tool: str = Field(validation_alias="gen_ai.tool.name")
+    arguments: dict[str, JsonValue] = Field(validation_alias="gen_ai.tool.call.arguments")
+    result: dict[str, JsonValue] | None = Field(default=None, validation_alias="gen_ai.tool.call.result")
+    error: str | None = Field(default=None, validation_alias="error.type")
+    agent: str = Field(validation_alias="gen_ai.agent.name")
 
 
 def tool_call_recorder(agent: Callable[[], str | None], write: Write) -> ServerMiddleware[Any]:

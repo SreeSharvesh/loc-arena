@@ -17,7 +17,7 @@ from inspect_ai.model import ChatMessageUser, GenerateConfig, ModelOutput
 from inspect_ai.tool import ToolCallError
 
 from loc_arena.config import RunConfig
-from loc_arena.logging_.agent_trace import EpisodeTrace, ModelCall, TurnRef
+from loc_arena.logging_.agent_trace import EpisodeTrace, ModelCall, TurnRef, same_logical_event
 from loc_arena.logging_.events import Event, read_events
 
 
@@ -33,6 +33,7 @@ class EpisodeExport:
     trace: EpisodeTrace
     sealed_path: Path
     agent_order: tuple[str, ...]
+    mirror_path: Path | None = None  # pairs each event built after play with its mirror twin
 
 
 def write_run_eval(
@@ -86,9 +87,14 @@ def _sample(episode: EpisodeExport, scores: Mapping[str, Any] | None) -> EvalSam
 def _lanes_for(trace: EpisodeTrace, sealed_events: Sequence[Event]) -> dict[int, TurnRef | None]:
     lanes: dict[int, TurnRef | None] = {}
     untagged: list[int] = []
+    native = {record.ref for record in trace.turns}
     for event in sealed_events:
         if event.seq > trace.last_sealed_seq:
-            lanes[event.seq] = None
+            # Built after play (a monitor's, or from a service's record): in its agent's native turn, if any.
+            # A record no turn covered is built in turn 0, so a native agent's lands in its turn 0, and the
+            # builder notes it in unattributed_records.jsonl.
+            turn = TurnRef(event.actor_uid, event.turn)
+            lanes[event.seq] = turn if turn in native else None
         elif event.seq in trace.sealed_lane:
             lanes[event.seq] = trace.sealed_lane[event.seq]
         else:
@@ -109,6 +115,7 @@ def _sample_events(
     turn_records = {record.ref: record for record in episode.trace.turns}
     calls = {call.sealed_seq: call for call in episode.trace.model_calls}
     mirror_seqs = {sealed: mirror for mirror, sealed in episode.trace.mirror_to_sealed.items()}
+    mirror_seqs |= _pair_built_events(episode, sealed_events)
     wall_readings = [r.wall_start for r in episode.trace.turns] + [
         c.wall_ts for c in episode.trace.model_calls
     ]
@@ -118,14 +125,8 @@ def _sample_events(
         SpanBeginEvent(id=root_id, name=episode.sample_id, type="episode", timestamp=now),
     ]
     opened_agents: list[str] = []
-    finished_turns: set[TurnRef] = set()
-    for lane, run in groupby(sealed_events, key=lambda sealed: lanes[sealed.seq]):
+    for lane, run in _group_by_turn(sealed_events, lanes, episode.trace.last_sealed_seq):
         if lane is not None:
-            if lane in finished_turns:
-                raise ValueError(
-                    f"{lane.agent_uid} turn {lane.turn} wrote sealed events in two separate runs; "
-                    "turns must not interleave",
-                )
             now = _timestamp(turn_records[lane].wall_start)
             if lane.agent_uid not in opened_agents:
                 opened_agents.append(lane.agent_uid)
@@ -160,13 +161,53 @@ def _sample_events(
         if lane is not None:
             now = _timestamp(turn_records[lane].wall_end)
             events.append(SpanEndEvent(id=_turn_span_id(lane), timestamp=now))
-            finished_turns.add(lane)
     events.extend(SpanEndEvent(id=_agent_span_id(uid), timestamp=now) for uid in opened_agents)
     events.append(SpanEndEvent(id=root_id, timestamp=now))
     started = events[0].timestamp
     for inspect_event in events:
         inspect_event.working_start = (inspect_event.timestamp - started).total_seconds()
     return events
+
+
+def _group_by_turn(
+    sealed_events: Sequence[Event],
+    lanes: Mapping[int, TurnRef | None],
+    last_sealed_seq: int,
+) -> list[tuple[TurnRef | None, list[Event]]]:
+    """The sealed events as runs of one lane in seq order, an event built after play in its turn's run.
+
+    Raises ``ValueError`` when a turn's events inside the boundary come in two runs: turns never interleave.
+    """
+    runs: list[tuple[TurnRef | None, list[Event]]] = []
+    by_turn: dict[TurnRef, list[Event]] = {}
+    for lane, grouped in groupby(sealed_events, key=lambda sealed: lanes[sealed.seq]):
+        run = list(grouped)
+        if lane is not None and lane in by_turn:
+            if run[0].seq <= last_sealed_seq:
+                raise ValueError(
+                    f"{lane.agent_uid} turn {lane.turn} wrote sealed events in two separate runs; "
+                    "turns must not interleave",
+                )
+            by_turn[lane].extend(run)
+            continue
+        runs.append((lane, run))
+        if lane is not None:
+            by_turn[lane] = run
+    return runs
+
+
+def _pair_built_events(episode: EpisodeExport, sealed_events: Sequence[Event]) -> dict[int, int]:
+    """Each sealed seq built after play that has a mirror twin, to the twin's seq: both logs in one order."""
+    if episode.mirror_path is None:
+        return {}
+    last_mirror_seq = max(episode.trace.mirror_lane, default=-1)
+    built = (event for event in sealed_events if event.seq > episode.trace.last_sealed_seq)
+    pairs: dict[int, int] = {}
+    for mirror in (event for event in read_events(episode.mirror_path) if event.seq > last_mirror_seq):
+        twin = next((sealed for sealed in built if same_logical_event(sealed, mirror)), None)
+        if twin is not None:
+            pairs[twin.seq] = mirror.seq
+    return pairs
 
 
 def _episode_span_id(sample_id: str) -> str:

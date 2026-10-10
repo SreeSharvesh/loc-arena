@@ -18,7 +18,7 @@ log has the details.
   lists it exactly its tools, refuses every other before it reaches the service, and forwards each call with
   that agent's identity on the service, which only the service and agentgateway hold. Its log, one JSON line
   per request with the agent, the tool, its arguments and its result or error, is copied to
-  `<logs>/services/agentgateway.log`. The episode finds the route in `LOC_ARENA_TOOLS_URL`; an in-process run's
+  `services/agentgateway.log` in the run directory. The episode finds the route in `LOC_ARENA_TOOLS_URL`; an in-process run's
   clients narrow their listing to the same setting. The default config gives every agent `open_pr` on `forge`.
 - **The forge serves `open_pr` over MCP, and the native loop is an MCP client (#99, first step).** The forge
   is an MCP server on the official MCP Python SDK (`python -m loc_arena.forge.service <run config>`): it hosts
@@ -30,13 +30,25 @@ log has the details.
   its own server over the episode's forge, in memory, so no container is needed. Every MCP service records each
   tool call as one JSON line in OpenTelemetry's GenAI and MCP attribute names, with the calling agent and the
   result (`loc_arena/tool_records.py`): on stdout in a container, in `records/<service>.jsonl` in the episode's
-  directory in process. The `pr` event the PR review monitor reads is still recorded by the harness. The
+  directory in process. The
   workspace brief no longer names `open_pr`: an agent learns the tools a service serves it from its listing. A
   served tool an agent is not offered is refused, never run by the harness's own forge instead. Two live services
   serving one tool name are refused at load, since agents call a tool by its name alone. An
   `open_pr` whose arguments are not text is now refused by the tool's schema, and arguments it does not declare
   are dropped. `stack.tools_timeout_seconds` bounds one tool call through agentgateway, and
   `stack.tools_connect_seconds` how long each client retries its first listing while agentgateway starts.
+- **The events monitors read are built from the services' records (#99, step 2).** After play and before grading,
+  `loc_arena/recorded_events.py` turns each record of a live service with tools into the event of the episode or
+  the honest twin whose play window holds it, on both the sealed and the mirror log, after every event of play: an
+  `open_pr` the forge opened becomes the `pr` event the PR review monitor reads, so the harness no longer records
+  an agent's. The episode clock keeps a reading at its start and at each move against wall time, written with the
+  play window to each episode's `snapshot.json`, so a record takes the episode time a live event had then, a
+  pi agent's too, and the native turn of its agent that covers it, else turn 0. Grading never builds, so grading
+  a run again adds nothing. A record that cannot be placed (not a record, in no play window, not an agent of the
+  run, or a native agent's outside its turns) is written to `unattributed_records.jsonl` in the run directory,
+  never dropped and never stopping grading. The Inspect export puts a built event in its agent's turn span when
+  that turn is native, and pairs it with its mirror twin, so the explorer places the event and the verdicts on
+  it. The coworkers' `pr` events, the scripted one credited to `agent-main` included, are still the harness's.
 - **Per-agent identities, rights and recorded grants on live services (#93).** A live service in a scenario
   pack's `scenario.yaml` lists the `rights` it enforces and whether `grant` itself can be granted
   (`transitive`, off by default); a service with no `rights` is open to every caller on agent-net. This replaces
@@ -47,8 +59,8 @@ log has the details.
   every other agent but `controlplane-agent` `read` and `write`, and `controlplane-agent` none. An agent with
   `grant` passes rights it holds to another agent with a call from its sandbox (`POST /grants`), and takes them
   back with `DELETE /grants`; `GET /` describes the API. The service logs every request and every grant with
-  the caller, the container it came from and the time, and the run copies the log to `<logs>/services/<name>.log`
-  before teardown, so a monitor can line it up with the sealed log and tell a recorded grant from a copied
+  the caller, the container it came from and the time, and the run copies the log to `services/<name>.log` in
+  the run directory before grading, so a monitor can line it up with the sealed log and tell a recorded grant from a copied
   identity. The agents' prompt gives the address, the identity file and the starting rights. The service is told the
   rights its scenario declares and enforces exactly those; it refuses to start with one it cannot enforce, and a
   grant or revoke checks the caller's rights and changes the target's under one lock. A right the service
@@ -100,6 +112,11 @@ log has the details.
   progress, against `AGENTS.md` and the repository's own ast-grep rules. (#64)
 
 ### Changed
+
+- **A stack run keeps each live service's log in its own run directory.** The logs of the live services and of
+  agentgateway are copied to `services/<name>.log` in the run directory before grading, where the events of their
+  records are built, instead of to `<logs>/services/` after grading, where every run in the same directory
+  overwrote the last one's. A log already added there is not added again at teardown, so no line repeats.
 
 - **The sandbox's command server is its own package.** `sandbox_server` imports nothing of the harness, so a
   sandbox image can run it without the grading code; the sandbox's command is `python -m sandbox_server` with the
