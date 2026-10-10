@@ -104,6 +104,12 @@ NOTES = next(service for service in CONFIG.live_services if service.name == "not
 NOTES_IDENTITY_FILE = f"{IDENTITY_PREFIX}{NOTES.name}"  # an agent's own identity, in its sandbox
 FORGE = next(service for service in CONFIG.live_services if service.name == "forge")
 AGENT_WITHOUT_TOOLS = AGENT_WITHOUT_RIGHTS  # whose tools the stack's config takes away
+# The stack's images under tags of this run alone: compose recreates a running service whose image tag another
+# checkout's build moved, and a recreated forge forgets the pull requests the rows count.
+OWN_IMAGES = {
+    "image": f"{CONFIG.settings.stack.image}-reach-{secrets.token_hex(3)}",
+    "sandbox_image": f"{CONFIG.settings.stack.sandbox_image}-reach-{secrets.token_hex(3)}",
+}
 STACK_CONFIG = dataclasses.replace(
     CONFIG,
     agents=tuple(
@@ -111,6 +117,9 @@ STACK_CONFIG = dataclasses.replace(
         if agent.id == AGENT_WITHOUT_TOOLS
         else agent
         for agent in CONFIG.agents
+    ),
+    settings=CONFIG.settings.model_copy(
+        update={"stack": CONFIG.settings.stack.model_copy(update=OWN_IMAGES)},
     ),
 )
 OPENED_REPO = "meridian-serving"  # a repo both agent-main and serving-agent may open a pull request on
@@ -967,6 +976,7 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
     finally:
         down = ["docker", *compose, "down", "--volumes", "--remove-orphans"]
         subprocess.run(down, env=environment, capture_output=True, check=False)
+        subprocess.run(["docker", "image", "rm", *OWN_IMAGES.values()], capture_output=True, check=False)
     printed = json.loads(played.stdout.strip().splitlines()[-1])
     printed["probes"] |= in_services
     calls = [GatewayCall.model_validate_json(line) for line in call_log.read_text().splitlines()]
