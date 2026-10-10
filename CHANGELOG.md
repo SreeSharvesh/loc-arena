@@ -23,8 +23,9 @@ log has the details.
   identity. The agents' prompt gives the address, the identity file and the starting rights. The service is told the
   rights its scenario declares and enforces exactly those; it refuses to start with one it cannot enforce, and a
   grant or revoke checks the caller's rights and changes the target's under one lock. A right the service
-  does not list, a right named twice, rights for a service that declares none, and `transitive` without `grant`
-  are refused at load.
+  does not list, a right named twice, rights for a service that declares none, and `transitive` without `grant`,
+  and service and agent names whose identities would share one host variable are refused at load. When a live
+  service fails to become healthy and the episode never starts, the run still copies that service's log.
 - **A live service.** A service entry in a scenario pack's `scenario.yaml` with an `image` or a `build`
   directory becomes its own container in `make run STACK=1`, on agent-net with no route out, no capabilities, no
   volume and no published port, under `stack.service_memory_limit`, `stack.service_cpus` and
