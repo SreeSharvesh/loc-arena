@@ -242,7 +242,7 @@ def test_a_repeated_agent_id_is_refused_at_load_naming_it(tmp_path: Path) -> Non
         ("{rights: {notes: [read, read]}}", "names a right twice"),
         ("{credentials: [notes]}", r"agents\.0\.sandbox\.credentials"),
     ],
-    ids=["a service with no rights", "a right outside the service's", "a right twice", "an unknown key"],
+    ids=["an unknown service", "a right outside the service's", "a right twice", "an unknown key"],
 )
 def test_an_agents_invalid_sandbox_rights_are_refused_at_load_naming_them(
     tmp_path: Path,
