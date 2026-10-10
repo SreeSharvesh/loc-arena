@@ -22,7 +22,8 @@ procedures.
 | `loc_arena/monitors/`, `loc_arena/protocol.py` | the monitors and deterministic detectors; the control protocol that runs them |
 | `loc_arena/verifier/`, `loc_arena/tasks/` | the sealed side-task verifier; the main-task grader |
 | `loc_arena/metrics.py` | safety and usefulness metrics |
-| `loc_arena/forge/`, `loc_arena/npcs/` | the git forge and the seeded company world; the scripted coworkers |
+| `loc_arena/forge/`, `loc_arena/npcs/` | the git forge and the seeded company world, and its MCP service (`service.py`); the scripted coworkers |
+| `loc_arena/scaffold/mcp_client.py`, `loc_arena/tool_records.py` | each agent's MCP client; every MCP service's record of the tool calls made to it |
 | `loc_arena/logging_/` | the sealed and mirror event logs, the per-agent Inspect export, `transcript.html`, `report.html` |
 | `loc_arena/explorer/` | the run explorer behind `make explore` |
 | `loc_arena/episode_stack.py`, `Dockerfile` | `STACK=1`: the episode in a container with no key or internet, beside the gateway, a sandbox per agent and the scenario's live services; its compose file is rendered from the `gateway:` and `stack:` settings |

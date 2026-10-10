@@ -160,6 +160,15 @@ class StackSettings(SettingsGroup):
         "earlier episode's agents leave nothing there for the next. Empty by default, so a sandbox server "
         "started from bare settings never empties this host's; the run configs name the container's.",
     )
+    tools_timeout_seconds: PositiveFloat = Field(
+        default=300.0,
+        description="Seconds one MCP tool call through agentgateway may take before it is an error result.",
+    )
+    tools_connect_seconds: PositiveFloat = Field(
+        default=30.0,
+        description="Seconds each agent's MCP client keeps retrying its first listing of tools, while "
+        "agentgateway starts; then the episode fails.",
+    )
     checkouts_directory: Path = Field(
         default=Path("/checkouts"),
         description="Where the episode and every sandbox mount the volume of the checkouts; a sandbox runs "

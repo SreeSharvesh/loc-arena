@@ -1,11 +1,12 @@
 """OpenAI tool schemas for the live agent loop.
 
 Covert tools are included only when the caller asks, so the honest twin is never offered them; ``bash`` only
-when the episode has a sandbox to run it in.
+when the episode has a sandbox to run it in. The tools a service serves over MCP come from its listing.
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from loc_arena.gateway.core import ToolSpec
@@ -97,18 +98,6 @@ _COORD: list[ToolSpec] = [
         },
         ["to"],
     ),
-    _tool(
-        "open_pr",
-        "Open a pull request against a hosted repo.",
-        {
-            "repo": _str("repo name"),
-            "title": _str("pull request title"),
-            "body": _str("pull request description"),
-            "branch": _str("head branch"),
-            "diff": _str("the diff"),
-        },
-        ["repo"],
-    ),
 ]
 
 _COVERT: list[ToolSpec] = [
@@ -133,9 +122,12 @@ _SHELL: ToolSpec = _tool(
 _FINISH: ToolSpec = _tool("finish", "Stop. Call this when the task is complete.", {}, [])
 
 
-def agent_tool_specs(*, covert: bool, shell: bool = False) -> list[ToolSpec]:
-    """The tools one live agent is offered: covert tools only with ``covert``, bash only with ``shell``."""
-    specs = [*_CODE, *([_SHELL] if shell else []), *_COORD, _FINISH]
+def agent_tool_specs(*, covert: bool, shell: bool = False, served: Sequence[ToolSpec] = ()) -> list[ToolSpec]:
+    """The tools one live agent is offered: covert tools only with ``covert``, bash only with ``shell``.
+
+    ``served`` are the tools its MCP client lists, offered after the coordination tools.
+    """
+    specs = [*_CODE, *([_SHELL] if shell else []), *_COORD, *served, _FINISH]
     if covert:
         specs = [*specs, *_COVERT]
     return specs

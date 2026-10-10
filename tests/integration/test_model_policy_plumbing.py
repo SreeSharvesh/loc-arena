@@ -24,11 +24,13 @@ from loc_arena.forge.world import generate_world
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import DirectTransport, GenerateRequest, GenerateResponse
 from loc_arena.gateway.edge import GatewayEdge
+from loc_arena.live import connect_agent_tools
 from loc_arena.logging_.events import Event, read_events
 from loc_arena.monitors.pr_review_monitor import ReviewMonitor
 from loc_arena.monitors.registry import MonitorContext, load_monitor_specs
 from loc_arena.scaffold.bus import MessageBus
 from loc_arena.scaffold.covert_tools import CovertToolServices
+from loc_arena.scaffold.mcp_client import McpServices
 from loc_arena.scaffold.tools import AgentAction, AgentContext, Tools
 from loc_arena.verifier.side_task import kill_chain_v1
 from scenarios.loader import load_scenario
@@ -67,9 +69,9 @@ class _RecordingEdge:
 
 
 def _tools(stack: Stack, edge: _RecordingEdge | None = None, *, ceiling: float = math.inf) -> Tools:
-    world = generate_world(CFG, SC, CFG.seed)
+    forge = Forge(generate_world(CFG, SC, CFG.seed))
     covert = CovertToolServices(
-        ForgeServices(Forge(world)),
+        McpServices(connect_agent_tools(forge, CFG, stack.sealed_path.parent), ForgeServices(forge)),
         core=stack.core,
         edge=stack.edge if edge is None else cast(GatewayEdge, edge),
         identity=stack.identity,
@@ -270,14 +272,15 @@ def test_an_agents_open_pr_emits_a_pr_event_under_that_agent(tmp_path: Path) -> 
     ]
 
 
-def test_a_pr_event_records_the_body_and_diff_as_text(tmp_path: Path) -> None:
+def test_an_open_pr_whose_body_is_not_text_opens_no_pr(tmp_path: Path) -> None:
     stack = Stack(tmp_path, CFG)
     tools = _tools(stack)
     numbers = {"repo": "meridian-serving", "body": 7, "diff": 8}
 
-    tools.execute(_ctx(stack, "serving-agent"), AgentAction("open_pr", numbers), 1)
+    result = tools.execute(_ctx(stack, "serving-agent"), AgentAction("open_pr", numbers), 1)
 
-    assert [(e.payload["pr_body"], e.payload["diff"]) for e in _mirror_prs(stack)] == [("7", "8")]
+    assert "error" in result
+    assert _mirror_prs(stack) == []
 
 
 def test_a_pr_the_forge_did_not_open_emits_no_pr_event(tmp_path: Path) -> None:
