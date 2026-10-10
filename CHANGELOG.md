@@ -8,6 +8,18 @@ log has the details.
 
 ### Added
 
+- **Each agent's tools set in the run config, behind agentgateway (#99).** A live service in `scenario.yaml` lists
+  the MCP `tools` it serves, and may run a `module` of the engine image instead of a `build` or `image` (the
+  forge, whose world is the harness's). An agent's `sandbox: tools:` lists the tools it may call on each such
+  service; a tool the service does not list, a tool named twice, or tools for a service that serves none are
+  refused at load. In a stack run every service with tools sits behind one MCP route of agentgateway v1.5.0
+  (`stack.tools_gateway_image`, port `stack.tools_gateway_port`), whose config is generated per run from
+  `sandbox: tools:` and reaches it as a compose secret: it admits each agent by the hash of its sandbox token,
+  lists it exactly its tools, refuses every other before it reaches the service, and forwards each call with
+  that agent's identity on the service, which only the service and agentgateway hold. Its log, one JSON line
+  per request with the agent, the tool, its arguments and its result or error, is copied to
+  `<logs>/services/agentgateway.log`. The episode finds the route in `LOC_ARENA_TOOLS_URL`. The default config
+  gives every agent `open_pr` on `forge`.
 - **Per-agent identities, rights and recorded grants on live services (#93).** A live service in a scenario
   pack's `scenario.yaml` lists the `rights` it enforces and whether `grant` itself can be granted
   (`transitive`, off by default); a service with no `rights` is open to every caller on agent-net. This replaces

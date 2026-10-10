@@ -59,3 +59,11 @@ def test_a_stack_run_tells_the_agent_each_services_address_its_identity_and_its_
         "Live services on your network, which your sandbox reaches:\n"
         f"- http://notes:8000: The team's notes board.{access}\n{CALL_A_SERVICE}"
     )
+
+
+def test_a_stack_run_tells_the_agent_nothing_of_a_service_it_reaches_through_the_tools_gateway() -> None:
+    forge = dataclasses.replace(NOTES, name="forge", rights=(), tools=("open_pr",))
+
+    section = describe_live_services([forge], {}, SECRETS, in_stack=True)
+
+    assert section == ""

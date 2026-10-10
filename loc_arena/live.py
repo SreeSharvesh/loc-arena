@@ -140,8 +140,10 @@ def describe_live_services(
 
     Empty unless ``in_stack``: only a stack run has the services, and an in-process run's prompts stay as
     they were. On a service with rights, the agent is told where its identity is and what it starts with;
-    each service describes its own API, grants included, at ``GET /``.
+    each service describes its own API, grants included, at ``GET /``. A service with tools goes untold: the
+    agent reaches it through the tools gateway, which lists the tools it may call.
     """
+    services = [service for service in services if not service.tools]
     if not in_stack or not services:
         return ""
     lines = ["Live services on your network, which your sandbox reaches:"]

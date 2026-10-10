@@ -7,13 +7,17 @@ which mounts only the volume of the checkouts: never the episode's logs, the run
 log. Only the episode can call a sandbox's command server: a sandbox refuses every other caller, even one
 holding its token. Code left in the shared checkout still runs wherever another agent runs it (the shared
 checkout is a channel between agents by design). Each live service of the scenario runs in its own container
-on agent-net alone, with no volume and no published port. On one with rights, every agent has its own
-identity, generated per run: its sandbox holds that agent's alone, the service holds every agent's and the
-agents' starting rights, and the episode and the gateway hold none. When the episode exits, its run directory
-is copied out and graded on this host, with the agents' code sandboxed, while the gateway still runs for the
-monitors' model calls. Then the gateway's call log and each live service's log, its record of every request
-and grant, are copied out and the project is removed with its volumes. If a copy fails, the project is kept
-so nothing is lost.
+on agent-net alone, with no published port. On one with rights, every agent has its own identity, generated
+per run: its sandbox holds that agent's alone, the service holds every agent's and the agents' starting
+rights, and the episode and the gateway hold none. A service with tools runs behind the tools gateway,
+agentgateway, which puts every such service on one MCP route: it admits each agent by its sandbox token,
+offers it the tools its run config lists, refuses every other, and forwards each call with that agent's
+identity on the service. Only the service and the tools gateway's config hold those identities, and that
+config reaches it as a compose secret. When the episode exits, its run directory is copied out and graded on
+this host, with the agents' code sandboxed, while the gateway still runs for the monitors' model calls. Then
+the gateway's call log and the log of each live service and of the tools gateway, their record of every
+request and grant, are copied out and the project is removed with its volumes. If a copy fails, the project
+is kept so nothing is lost.
 """
 
 from __future__ import annotations
@@ -21,26 +25,27 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import functools
+import hashlib
 import json
 import os
 import secrets
 import subprocess
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import TypedDict
 from urllib.parse import urlsplit
 
 import yaml
-from scenarios.loader import LiveService
+from scenarios.loader import EngineModule, LiveService
 
 from loc_arena.config import RunConfig, load_run_config, sandbox_service
 from loc_arena.gateway.core import API_KEY_VARIABLE, GATEWAY_URL_VARIABLE, OPENROUTER_URL, OpenRouterProvider
 from loc_arena.harness import grade_run, locate_run
-from loc_arena.identity_variables import find_shared_identity_variable, identity_variable
+from loc_arena.identity_variables import find_shared_identity_variable, holds_identities, identity_variable
 from loc_arena.sandbox import IDENTITY_PREFIX, TOKEN_FILE, build_server_settings, token_secret_name
 from loc_arena.settings import StackSettings
-from loc_arena.task import SANDBOX_URL_VARIABLE, resolve_scenario
+from loc_arena.task import SANDBOX_URL_VARIABLE, TOOLS_URL_VARIABLE, resolve_scenario
 
 EPISODE_SERVICE = "episode"  # the agent loop's compose service: the one caller every sandbox serves
 AGENT_NETWORK = "agent-net"  # the episode, the sandboxes and the gateway, with no route out
@@ -62,6 +67,10 @@ GATEWAY_MODE_OPTION = "com.docker.network.bridge.gateway_mode_ipv4"
 LOOPBACK = "127.0.0.1"  # the only host address the gateway's port is published on, for grading on this host
 ENGINE_TARGET = "engine"  # the Dockerfile's stage of the gateway and the episode
 SANDBOX_TARGET = "sandbox"  # the Dockerfile's stage of the sandboxes: no harness, no scenarios
+TOOLS_GATEWAY_SERVICE = "agentgateway"  # the tools gateway: every live service with tools, on one MCP route
+TOOLS_GATEWAY_CONFIG_SECRET = "agentgateway_config"  # its config, generated per run: a compose secret
+TOOLS_GATEWAY_CONFIG_VARIABLE = "LOC_ARENA_AGENTGATEWAY_CONFIG"  # where compose reads that config from
+MCP_PATH = "/mcp"  # the MCP route of the tools gateway and of each service with tools
 
 
 class Healthcheck(TypedDict):
@@ -153,7 +162,7 @@ class Identity:
 
 
 def issue_identities(config: RunConfig) -> tuple[Identity, ...]:
-    """Every agent's identity on each live service with rights, agents with no rights there included.
+    """Every agent's identity on each live service with rights or tools, agents with none there included.
 
     Refuses names that would make two identities share one host variable, as the config load does.
     """
@@ -162,7 +171,7 @@ def issue_identities(config: RunConfig) -> tuple[Identity, ...]:
     return tuple(
         Identity(service.name, agent.id)
         for service in config.live_services
-        if service.rights
+        if holds_identities(service)
         for agent in config.agents
     )
 
@@ -190,6 +199,7 @@ def render_compose(
     engine = _build_from(repository, ENGINE_TARGET, stack.image)
     agent_ids = [agent.id for agent in config.agents]
     services = config.live_services
+    tool_services = [service.name for service in services if service.tools]
     identities = issue_identities(config)
     return {
         "services": {
@@ -207,12 +217,24 @@ def render_compose(
                     config,
                     repository,
                     agent,
-                    identities,
+                    [identity for identity in identities if identity.service not in tool_services],
                     builds=index == 0,
                 )
                 for index, agent in enumerate(agent_ids)
             },
-            **{service.name: _render_live_service(config, service, identities) for service in services},
+            **{
+                service.name: _render_live_service(
+                    config,
+                    service,
+                    identities,
+                    {**engine, "volumes": [configs]},
+                    run,
+                )
+                for service in services
+            },
+            **(
+                {TOOLS_GATEWAY_SERVICE: _render_tools_gateway(config, tool_services)} if tool_services else {}
+            ),
             EPISODE_SERVICE: {
                 **engine,
                 "mem_limit": stack.episode_memory_limit,
@@ -225,17 +247,28 @@ def render_compose(
                 "environment": {
                     GATEWAY_URL_VARIABLE: f"http://gateway:{gateway.port}{urlsplit(OPENROUTER_URL).path}",
                     SANDBOX_URL_VARIABLE: f"http://{sandbox_service('{agent}')}:{stack.sandbox_port}",
+                    **(
+                        {
+                            TOOLS_URL_VARIABLE: f"http://{TOOLS_GATEWAY_SERVICE}:{stack.tools_gateway_port}{MCP_PATH}",
+                        }
+                        if tool_services
+                        else {}
+                    ),
                 },
                 "secrets": [token_secret_name(agent_id) for agent_id in agent_ids],
                 "volumes": [f"output:{OUTPUT_DIRECTORY}", checkouts, configs, *scripted],
                 "networks": [AGENT_NETWORK],
                 "depends_on": {
-                    service: {"condition": "service_healthy"}
-                    for service in [
-                        "gateway",
-                        *map(sandbox_service, agent_ids),
-                        *(service.name for service in services),
-                    ]
+                    **{
+                        service: {"condition": "service_healthy"}
+                        for service in [
+                            "gateway",
+                            *map(sandbox_service, agent_ids),
+                            *(service.name for service in services),
+                        ]
+                    },
+                    # Its image has no shell to probe it with: the agents' MCP clients retry their first call.
+                    **({TOOLS_GATEWAY_SERVICE: {"condition": "service_started"}} if tool_services else {}),
                 },
             },
         },
@@ -250,6 +283,11 @@ def render_compose(
             KEY_SECRET_NAME: {"environment": API_KEY_VARIABLE},
             **{token_secret_name(agent): {"environment": token_variable(agent)} for agent in agent_ids},
             **{identity.secret_name: {"environment": identity.variable} for identity in identities},
+            **(
+                {TOOLS_GATEWAY_CONFIG_SECRET: {"environment": TOOLS_GATEWAY_CONFIG_VARIABLE}}
+                if tool_services
+                else {}
+            ),
         },
     }
 
@@ -258,11 +296,11 @@ def _render_sandbox(
     config: RunConfig,
     repository: Path,
     agent_id: str,
-    identities: tuple[Identity, ...],
+    identities: Sequence[Identity],
     *,
     builds: bool,
 ) -> ComposeService:
-    """The sandbox of ``agent_id``: its code's container, holding that agent's token and identities alone.
+    """The sandbox of ``agent_id``: its code's container, holding that agent's token and ``identities`` alone.
 
     One sandbox ``builds`` the image they all run, so compose builds it once; the others never pull it.
     """
@@ -303,19 +341,28 @@ def _render_live_service(
     config: RunConfig,
     service: LiveService,
     identities: tuple[Identity, ...],
+    engine: ComposeService,
+    run: str,
 ) -> ComposeService:
-    """A live service: on agent-net alone, no volume, no published port.
+    """A live service: on agent-net alone, no published port.
 
-    One with rights holds every agent's identity, each under its agent's id, the rights its scenario declares
-    and the agents' starting rights.
+    One that runs a module of the ``engine`` service, with the run configs mounted read-only, is given the
+    path of ``run``'s config; any other mounts no volume. One with rights or tools holds every agent's
+    identity, each under its agent's id; one with rights also the rights its scenario declares and the
+    agents' starting rights.
     """
     stack = config.settings.stack
     rights = {agent.id: list(agent.sandbox.rights.get(service.name, ())) for agent in config.agents}
-    source: ComposeService = (
-        {"build": {"context": str(service.source)}, "image": f"loc-arena-service-{service.name}:latest"}
-        if isinstance(service.source, Path)
-        else {"image": service.source}
-    )
+    match service.source:
+        case Path():
+            source: ComposeService = {
+                "build": {"context": str(service.source)},
+                "image": f"loc-arena-service-{service.name}:latest",
+            }
+        case EngineModule(name=module):
+            source = {**engine, "command": ["python", "-m", module, f"{CONFIGS_DIRECTORY}/{run}.yaml"]}
+        case image:
+            source = {"image": image}
     return {
         **source,
         **({"command": list(service.command)} if service.command else {}),
@@ -331,18 +378,123 @@ def _render_live_service(
                     RIGHTS_VARIABLE: json.dumps(rights),
                     TRANSITIVE_VARIABLE: json.dumps(service.transitive),
                 },
+            }
+            if service.rights
+            else {}
+        ),
+        **(
+            {
                 "secrets": [
                     _mount(identity.secret_name, f"{IDENTITY_PREFIX}{identity.agent_id}")
                     for identity in identities
                     if identity.service == service.name
                 ],
             }
-            if service.rights
+            if holds_identities(service)
             else {}
         ),
         "healthcheck": _probe(service.port, stack, test=service.healthcheck),
         "init": True,
     }
+
+
+def _render_tools_gateway(config: RunConfig, tool_services: Sequence[str]) -> ComposeService:
+    """The tools gateway: its pinned image, on agent-net alone, bounded as a live service, config a secret.
+
+    It starts once every service it puts on its route is healthy.
+    """
+    stack = config.settings.stack
+    return {
+        "image": stack.tools_gateway_image,
+        "command": ["-f", str(config.settings.gateway.secrets_dir / TOOLS_GATEWAY_CONFIG_SECRET)],
+        "secrets": [TOOLS_GATEWAY_CONFIG_SECRET],
+        "cap_drop": ["ALL"],
+        "mem_limit": stack.service_memory_limit,
+        "cpus": stack.service_cpus,
+        "pids_limit": stack.service_pids_limit,
+        "networks": [AGENT_NETWORK],
+        "depends_on": {service: {"condition": "service_healthy"} for service in tool_services},
+    }
+
+
+def render_tools_gateway_config(
+    config: RunConfig,
+    tokens: Mapping[str, str],
+    identities: Mapping[Identity, str],
+) -> str:
+    """The tools gateway's config (agentgateway v1.5 schema) for agents with these sandbox ``tokens``.
+
+    It admits each agent by the SHA-256 of its token, so it never holds one, and logs each request as a JSON
+    line naming the agent, with a tool call's arguments and result or error. One CEL rule, generated from
+    each agent's ``sandbox.tools``, allows an agent exactly those tools; a tool it may not call is left out of
+    its tool list and refused before it reaches the service. Each service's target sets ``Authorization`` to
+    the caller's identity on that service. Admin, stats and readiness listeners are off, so nothing on
+    agent-net can read this config back.
+    """
+    tools = {agent.id: dict(agent.sandbox.tools) for agent in config.agents}
+    callers = {
+        service: {agent.id: identities[Identity(service.name, agent.id)] for agent in config.agents}
+        for service in config.live_services
+        if service.tools
+    }
+    targets = [
+        {
+            "name": service.name,
+            "mcp": {"host": f"http://{service.name}:{service.port}{MCP_PATH}"},
+            "policies": {
+                "transformations": {
+                    "request": {"set": {"authorization": f'"Bearer " + {json.dumps(caller)}[apiKey.agent]'}},
+                },
+            },
+        }
+        for service, caller in callers.items()
+    ]
+    policies = {
+        "apiKey": {
+            "mode": "strict",
+            "location": {"header": {"name": "authorization", "prefix": "Bearer "}},
+            "keys": [
+                {
+                    "keyHash": f"sha256:{hashlib.sha256(tokens[agent.id].encode()).hexdigest()}",
+                    "metadata": {"agent": agent.id},
+                }
+                for agent in config.agents
+            ],
+        },
+        # An agent with no tools on the target has no entry for it, so the rule fails to evaluate and denies.
+        "mcpAuthorization": {
+            "rules": [{"allow": f"mcp.tool.name in {json.dumps(tools)}[apiKey.agent][mcp.tool.target]"}],
+        },
+    }
+    document = {
+        "config": {
+            "adminAddr": "off",
+            "statsAddr": "off",
+            "readinessAddr": "off",
+            "logging": {"format": "json"},
+        },
+        # Beside the default MCP fields (method, target, tool name, session, source address), as its docs name
+        # them: the caller, and each tool call's arguments and result or error.
+        "frontendPolicies": {
+            "accessLog": {
+                "add": {
+                    "agent": "apiKey.agent",
+                    "tool_args": "mcp.tool.arguments",
+                    "tool_result": "mcp.tool.result",
+                    "tool_error": "mcp.tool.error",
+                },
+            },
+        },
+        "binds": [
+            {
+                "port": config.settings.stack.tools_gateway_port,
+                "listeners": [
+                    {"routes": [{"policies": policies, "backends": [{"mcp": {"targets": targets}}]}]},
+                ],
+            },
+        ],
+    }
+    return yaml.safe_dump(document, sort_keys=False)
 
 
 def _mount(secret: str, target: str) -> ServiceSecret:
@@ -404,11 +556,20 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
     ]
     # Each sandbox's token and each agent's identity on each live service reach compose through its
     # environment alone: never a command line or a file.
-    tokens = {token_variable(agent.id): secrets.token_urlsafe(TOKEN_BYTES) for agent in config.agents}
-    identities = {
-        identity.variable: secrets.token_urlsafe(TOKEN_BYTES) for identity in issue_identities(config)
+    # So does the tools gateway's config, which holds every agent's identity on each service with tools.
+    tokens = {agent.id: secrets.token_urlsafe(TOKEN_BYTES) for agent in config.agents}
+    identities = {identity: secrets.token_urlsafe(TOKEN_BYTES) for identity in issue_identities(config)}
+    tools_gateway = any(service.tools for service in config.live_services)
+    environment = {
+        **{token_variable(agent): token for agent, token in tokens.items()},
+        **{identity.variable: value for identity, value in identities.items()},
+        **(
+            {TOOLS_GATEWAY_CONFIG_VARIABLE: render_tools_gateway_config(config, tokens, identities)}
+            if tools_gateway
+            else {}
+        ),
     }
-    run_compose = functools.partial(subprocess.run, env={**os.environ, **tokens, **identities})
+    run_compose = functools.partial(subprocess.run, env={**os.environ, **environment})
 
     def copied(command: list[str], into: Path | None = None) -> bool:
         """Whether compose ran ``command``, with what it prints written ``into`` that file when given."""
@@ -420,9 +581,11 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
     for directory in (call_log.parent, service_logs):
         directory.mkdir(parents=True, exist_ok=True)
     copy_output = [*compose, "cp", f"{EPISODE_SERVICE}:{OUTPUT_DIRECTORY}/.", str(logs)]
-    copy_service_logs = [
-        ([*compose, "logs", "--no-color", "--no-log-prefix", name], service_logs / f"{name}.log")
-        for name in (service.name for service in config.live_services)
+    logged = [service.name for service in config.live_services]
+    logged += [TOOLS_GATEWAY_SERVICE] if tools_gateway else []
+    copy_service_logs: list[tuple[list[str], Path | None]] = [
+        ([*compose, "logs", "--no-color", "--no-log-prefix", service], service_logs / f"{service}.log")
+        for service in logged
     ]
     copy_logs = [
         ([*compose, "cp", f"gateway:{settings.gateway.call_log}", str(call_log)], None),
