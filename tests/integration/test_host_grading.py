@@ -10,6 +10,7 @@ import json
 import shutil
 from pathlib import Path
 
+import pytest
 from loc_arena import cli
 from loc_arena.config import load_run_config
 from loc_arena.harness import grade_run, locate_run, run_episode
@@ -23,15 +24,64 @@ def _comparable_scores(bundle: Path) -> dict[str, object]:
     return {key: value for key, value in scores.items() if key not in RUN_SPECIFIC}
 
 
-def test_a_run_played_alone_and_moved_grades_like_an_in_process_run(tmp_path: Path) -> None:
-    in_process = run_episode(CONFIG, mode="attack", out_root=tmp_path / "in-process", seed=7)
-    arguments = ["--mode", "attack", "--play-only", "--instance", "a1b2c3", "--out", str(tmp_path / "played")]
+@pytest.fixture(scope="module")
+def in_process_scores(tmp_path_factory: pytest.TempPathFactory) -> dict[str, object]:
+    return _comparable_scores(
+        run_episode(CONFIG, mode="attack", out_root=tmp_path_factory.mktemp("in-process"), seed=7),
+    )
+
+
+def _play_alone(out: Path, *options: str, mode: str = "attack") -> Path:
+    """Play the deterministic run in ``mode`` with ``options``, as ``run --play-only`` does; its directory."""
+    arguments = ["--mode", mode, "--play-only", *options, "--instance", "a1b2c3", "--out", str(out)]
     cli.main(["run", "--run", "aurora-efficiency.deterministic", *arguments])
-    played = locate_run(CONFIG, "attack", "a1b2c3", tmp_path / "played")
+    return locate_run(CONFIG, mode, "a1b2c3", out)
+
+
+def test_a_run_played_alone_and_moved_grades_like_an_in_process_run(
+    tmp_path: Path,
+    in_process_scores: dict[str, object],
+) -> None:
+    played = _play_alone(tmp_path / "played")
     moved = tmp_path / "host" / played.name
     shutil.copytree(played, moved)
     shutil.rmtree(played)
 
     bundle = grade_run(CONFIG, moved, mode="attack", seed=7)
 
-    assert _comparable_scores(bundle) == _comparable_scores(in_process)
+    assert _comparable_scores(bundle) == in_process_scores
+
+
+def test_the_first_play_of_an_attack_run_one_phase_at_a_time_leaves_the_honest_twin_unplayed(
+    tmp_path: Path,
+) -> None:
+    played = _play_alone(tmp_path, "--next-phase")
+
+    assert ((played / "episode").is_dir(), (played / "honest_cal").exists()) == (True, False)
+
+
+def test_an_attack_run_played_one_phase_at_a_time_grades_like_an_in_process_run(
+    tmp_path: Path,
+    in_process_scores: dict[str, object],
+) -> None:
+    _play_alone(tmp_path, "--next-phase")
+    played = _play_alone(tmp_path, "--next-phase")
+
+    bundle = grade_run(CONFIG, played, mode="attack", seed=7)
+
+    assert _comparable_scores(bundle) == in_process_scores
+
+
+@pytest.mark.parametrize(("mode", "phases"), [("attack", 2), ("honest", 1)])
+def test_a_run_that_played_every_phase_refuses_to_play_one_again_and_keeps_what_it_recorded(
+    tmp_path: Path,
+    mode: str,
+    phases: int,
+) -> None:
+    played = [_play_alone(tmp_path, "--next-phase", mode=mode) for _ in range(phases)][-1]
+    recorded = (played / "played.json").read_bytes()
+
+    with pytest.raises(ValueError, match="nothing left to play"):
+        _play_alone(tmp_path, "--next-phase", mode=mode)
+
+    assert (played / "played.json").read_bytes() == recorded
