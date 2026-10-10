@@ -29,7 +29,7 @@ import json
 import os
 import secrets
 import subprocess
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit
@@ -490,6 +490,30 @@ def _play_phases(
     return exit_code
 
 
+def _copy_out(
+    run_compose: Callable[..., subprocess.CompletedProcess[bytes]],
+    command: list[str],
+    into: Path | None = None,
+    *,
+    made: set[Path],
+) -> bool:
+    """Whether compose ran ``command``, with what it prints added ``into`` that file when given.
+
+    A file in ``made`` already holds its copy and gets nothing more, since its lines would repeat; one written
+    now joins ``made``.
+    """
+    if into in made:
+        return True
+    try:
+        with into.open("ab") if into else contextlib.nullcontext() as output:
+            done = run_compose(command, stdout=output).returncode == 0
+    except OSError:  # a file that cannot be written is a failed copy: the others are still tried
+        return False
+    if done and into:
+        made.add(into)
+    return done
+
+
 def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: Path) -> Path:
     """Play one episode of ``run`` (a config in ``configs/``) in its own compose project; grade it here.
 
@@ -528,14 +552,7 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
     environment = {**os.environ, **_issue_secrets(config)}
     run_compose = functools.partial(subprocess.run, env=environment)
 
-    def copied(command: list[str], into: Path | None = None) -> bool:
-        """Whether compose ran ``command``, with what it prints added ``into`` that file when given."""
-        try:
-            with into.open("ab") if into else contextlib.nullcontext() as output:
-                return run_compose(command, stdout=output).returncode == 0
-        except OSError:  # a file that cannot be written is a failed copy: the others are still tried
-            return False
-
+    copied = functools.partial(_copy_out, run_compose, made=set())
     call_log = logs / "gateway" / f"{project}.calls.jsonl"
     run_directory = locate_run(config, mode, instance_id, logs)
     service_logs = run_directory / SERVICE_LOGS
@@ -551,7 +568,6 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
         *copy_service_logs,
     ]
     created = output_copied = False
-    made: list[tuple[list[str], Path | None]] = []  # the service-log copies already added to their files
     try:
         if run_compose([*compose, "create", "--build"]).returncode != 0:
             raise StackError("could not build or create the episode's containers: see compose's output above")
@@ -566,8 +582,7 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
         if exit_code != 0:
             raise StackError(f"the episode exited with code {exit_code}: see its output above")
         # The services' records are copied before grading: the events monitors read are built from them.
-        made = [copy for copy in copy_service_logs if copied(*copy)]  # every one tried
-        if len(made) < len(copy_service_logs):
+        if not all([copied(*copy) for copy in copy_service_logs]):  # every one tried
             raise StackError("could not copy every live service's log out, so the run was not graded")
         build_recorded_run_events(config, run_directory)
         return grade_run(
@@ -585,7 +600,6 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
         pending = copy_logs if output_copied else [(copy_output, None), *copy_logs]
         if not started:
             pending = copy_service_logs
-        pending = [copy for copy in pending if copy not in made]  # a log added twice would repeat its lines
         # Every copy is tried, a failed one included, before the project is kept.
         if created and not all([copied(*copy) for copy in pending]):
             run_compose([*compose, "stop"])
