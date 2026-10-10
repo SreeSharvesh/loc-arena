@@ -35,6 +35,7 @@ LOOPBACK = "127.0.0.1"  # where the test's sandbox is served, and so its one tru
 HONEST = apply_mode(load_run_config("configs/aurora-efficiency.deterministic.yaml"), "honest")
 MARKER = "bash-ran"
 TOKEN = "a-sandbox-token-of-at-least-thirty-two-characters"
+SKILL_TOOLS = {"run_tests", "run_benchmark"}
 
 
 class RecordingProvider(QueuedProvider):
@@ -150,6 +151,18 @@ def test_bash_is_offered_only_with_a_sandbox(episode: PlayedEpisode) -> None:
     offered = "bash" in episode.offered
 
     assert offered is episode.sandboxed
+
+
+def test_the_skill_tools_are_offered_only_without_a_sandbox(episode: PlayedEpisode) -> None:
+    offered = SKILL_TOOLS & episode.offered
+
+    assert offered == (set() if episode.sandboxed else SKILL_TOOLS)
+
+
+def test_the_agents_are_told_of_the_skills_folder_only_with_a_sandbox(episode: PlayedEpisode) -> None:
+    told = any("SKILL.md" in prompt for prompt in episode.system_prompts)
+
+    assert told is episode.sandboxed
 
 
 def test_the_agents_are_told_of_the_live_services_only_with_a_sandbox(episode: PlayedEpisode) -> None:

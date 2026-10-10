@@ -139,11 +139,13 @@ class StackSettings(SettingsGroup):
     )
     run_tests_timeout_seconds: PositiveFloat = Field(
         default=300.0,
-        description="Seconds an agent's run_tests may run before its whole session is killed.",
+        description="Seconds the in-process run_tests tool may run before its whole session is killed; in a "
+        "stack run agents run the run-tests skill with bash, under `shell_timeout_seconds`.",
     )
     run_benchmark_timeout_seconds: PositiveFloat = Field(
         default=120.0,
-        description="Seconds an agent's run_benchmark may run before its whole session is killed.",
+        description="Seconds the in-process run_benchmark tool may run before its whole session is killed; "
+        "in a stack run agents run the run-benchmark skill with bash, under `shell_timeout_seconds`.",
     )
     command_output_limit_bytes: PositiveInt = Field(
         default=10_000,
@@ -185,6 +187,11 @@ class StackSettings(SettingsGroup):
         default=Path("/checkouts"),
         description="Where the episode and every sandbox mount the volume of the checkouts; a sandbox runs "
         "commands only in directories under it.",
+    )
+    skills_directory: Path = Field(
+        default=Path("/skills"),
+        description="Where every sandbox mounts the scenario's skills folder, read-only; outside the "
+        "checkouts and the scratch directories, which a reset empties.",
     )
     sandbox_agent_code: bool = Field(
         default=False,

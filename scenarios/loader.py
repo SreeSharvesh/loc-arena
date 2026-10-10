@@ -14,7 +14,8 @@ Any other entry stays simulated, and the stack ignores it. A live entry's ``righ
 enforces: each agent of a stack run then gets its own identity on it, and the run config seeds each agent's
 starting rights. A live entry's ``tools`` are the MCP tools it serves: agents reach it only through the tools
 gateway, which offers each agent the tools its run config lists and passes that agent's identity on. With
-neither, it is open to everything on agent-net.
+neither, it is open to everything on agent-net. A pack's ``skills:`` names its Agent Skills folder
+(https://agentskills.io/specification), which every sandbox mounts read-only.
 """
 
 from __future__ import annotations
@@ -56,6 +57,17 @@ GRANT: Final = "grant"  # the right to give or take rights; itself grantable onl
 Right = Annotated[str, StringConstraints(strict=True, pattern=r"^[a-z0-9-]+$")]
 # The characters and length the MCP specification allows in a tool name.
 Tool = Annotated[str, StringConstraints(strict=True, pattern=r"^[A-Za-z0-9_.-]{1,128}$")]
+
+
+def resolve_pack_directory(pack: Path, path: Path) -> Path:
+    """``path`` resolved under ``pack``: refused unless a directory under it, outside its sealed parts."""
+    pack = pack.resolve()
+    resolved = resolve_inside(pack, path)
+    if resolved == pack or any(resolved.is_relative_to(pack / sealed) for sealed in SEALED_DIRECTORIES):
+        raise ValueError(f"{path} must be a directory under the pack, outside {list(SEALED_DIRECTORIES)}")
+    if not resolved.is_dir():
+        raise ValueError(f"{path} is no directory")
+    return resolved
 
 
 def _require_distinct(names: tuple[str, ...]) -> tuple[str, ...]:
@@ -133,12 +145,7 @@ class ScenarioService(BaseModel):
             return None
         if info.context is None:
             raise ValueError("a build directory resolves only against its pack, given as the context")
-        pack = info.context[PACK_DIRECTORY].resolve()
-        resolved = resolve_inside(pack, build)
-        if resolved == pack or any(resolved.is_relative_to(pack / sealed) for sealed in SEALED_DIRECTORIES):
-            raise ValueError(
-                f"{build} must be a directory under the pack, outside {list(SEALED_DIRECTORIES)}",
-            )
+        resolved = resolve_pack_directory(info.context[PACK_DIRECTORY], build)
         if not (resolved / "Dockerfile").is_file():
             raise ValueError(f"{build} holds no Dockerfile")
         return resolved
@@ -196,6 +203,7 @@ class Scenario:
     seed_repo: str
     meta: dict[str, Any]
     live_services: tuple[LiveService, ...] = ()
+    skills_dir: Path | None = None  # the Agent Skills folder mounted read-only into every sandbox, if any
 
     @property
     def seed_dir(self) -> Path:
@@ -278,6 +286,14 @@ def _require_unique_tools(live: list[LiveService]) -> None:
             server[tool] = service.name
 
 
+def _resolve_skills(directory: Path, declared: object) -> Path | None:
+    """The pack's ``skills:`` folder, resolved like a build directory; a ValueError names a wrong one."""
+    try:
+        return None if declared is None else resolve_pack_directory(directory, Path(str(declared)))
+    except ValueError as error:
+        raise ValueError(f"scenario {directory.name}: skills {error}") from error
+
+
 def load_scenario(name: str, *, root: Path | None = None) -> Scenario:
     """Load a scenario pack by name: run its registrations and return its ``Scenario`` handle."""
     directory = (root or SCENARIOS_ROOT) / name
@@ -295,4 +311,5 @@ def load_scenario(name: str, *, root: Path | None = None) -> Scenario:
         seed_repo=str(meta.get("seed_repo", "meridian-serving")),
         meta=meta,
         live_services=_parse_live_services(directory, meta.get("services") or {}),
+        skills_dir=_resolve_skills(directory, meta.get("skills")),
     )
