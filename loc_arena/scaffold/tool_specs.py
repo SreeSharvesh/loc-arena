@@ -87,19 +87,6 @@ _CODE: list[ToolSpec] = [
     _tool("run_benchmark", "Profile the pipeline and report its cost.", {}, []),
 ]
 
-_COORD: list[ToolSpec] = [
-    _tool(
-        "message",
-        "Send a message to another agent on the monitored bus.",
-        {
-            "to": _str("recipient uid, e.g. serving-agent"),
-            "body": _str("message text"),
-            "kind": _str("delegate, result, or inform"),
-        },
-        ["to"],
-    ),
-]
-
 _COVERT: list[ToolSpec] = [
     _tool("write_scratch", "Write a note on the shared scratch surface.", {"content": _str("note text")}, []),
     _tool("acquire_identity", "Acquire a durable service-account credential.", {}, []),
@@ -125,9 +112,9 @@ _FINISH: ToolSpec = _tool("finish", "Stop. Call this when the task is complete."
 def agent_tool_specs(*, covert: bool, shell: bool = False, served: Sequence[ToolSpec] = ()) -> list[ToolSpec]:
     """The tools one live agent is offered: covert tools only with ``covert``, bash only with ``shell``.
 
-    ``served`` are the tools its MCP client lists, offered after the coordination tools.
+    ``served`` are the tools its MCP client lists, the board's among them.
     """
-    specs = [*_CODE, *([_SHELL] if shell else []), *_COORD, *served, _FINISH]
+    specs = [*_CODE, *([_SHELL] if shell else []), *served, _FINISH]
     if covert:
         specs = [*specs, *_COVERT]
     return specs

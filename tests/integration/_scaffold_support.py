@@ -1,24 +1,29 @@
 """In-process scaffold wiring for the scaffold tests (no docker, no provider).
 
-Builds a full episode: sealed + mirror logs, a stub-provider gateway (core + edge), the bus, the registry,
+Builds a full episode: sealed + mirror logs, a stub-provider gateway (core + edge), the board, the registry,
 the tool layer, an orchestrator, and helpers to build agent contexts and clients. Deterministic clock.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
 from typing import Any
 
+from loc_arena.board import Board, build_server
 from loc_arena.config import RunConfig, load_run_config
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import GatewayCore, create_core_app
 from loc_arena.gateway.edge import GatewayEdge, create_edge_app
+from loc_arena.ids import PermissionScope
 from loc_arena.logging_.events import AppendOnlyLog
 from loc_arena.scaffold.agent import AgentPolicy, ScriptedAgentPolicy, TurnMinter
-from loc_arena.scaffold.bus import ActionHook, MessageBus, Recorder
+from loc_arena.scaffold.bus import Recorder
+from loc_arena.scaffold.mcp_client import McpTools
 from loc_arena.scaffold.registry import AgentRegistry
-from loc_arena.scaffold.tools import AgentAction, AgentContext, StubServices, Tools
+from loc_arena.scaffold.tools import AgentAction, AgentContext, StubServices, ToolResult, Tools
+from loc_arena.tool_records import Write, append_to
+from mcp import Client
 
 from tests.integration._gateway_support import AppTransport, StubProvider
 
@@ -38,15 +43,45 @@ class Clock:
         self.t += dt
 
 
+class RegistryScopes(Mapping[str, PermissionScope]):
+    """Each agent's scope as the registry holds it now, so a spawned child's joins when it is spawned."""
+
+    def __init__(self, registry: AgentRegistry) -> None:
+        self._registry = registry
+
+    def __getitem__(self, uid: str) -> PermissionScope:
+        return self._registry.node(uid).scope
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._registry.tree())
+
+    def __len__(self) -> int:
+        return len(self._registry.tree())
+
+
+class BoardServices:
+    """Calls the board's tools over MCP in memory, each as the agent that calls it; stubs every other tool."""
+
+    def __init__(self, board: Board, scopes: Mapping[str, PermissionScope], write: Write) -> None:
+        self._board, self._scopes, self._write = board, scopes, write
+
+    def run(self, tool: str, args: dict[str, Any]) -> ToolResult:
+        if tool not in {"send", "read", "unread"}:
+            return StubServices().run(tool, args)
+        caller = str(args["actor_uid"])
+        server = build_server(self._board, lambda: caller, self._write, self._scopes)
+        arguments = {key: value for key, value in args.items() if key not in {"actor_uid", "actor_role"}}
+        return McpTools(lambda: Client(server)).call(tool, arguments)
+
+
 class Harness:
-    """A wired in-process episode: gateway, bus, registry, tools, orchestrator, and construction helpers."""
+    """A wired in-process episode: gateway, board, registry, tools, orchestrator, and construction helpers."""
 
     def __init__(
         self,
         tmp_path: Path,
         *,
         episode_id: str = "ep-p2",
-        action_hook: ActionHook | None = None,
     ) -> None:
         self.config: RunConfig = load_run_config("configs/aurora-efficiency.deterministic.yaml")
         self.episode_id = episode_id
@@ -76,9 +111,8 @@ class Harness:
         )
         self._edge_transport = AppTransport(create_edge_app(self.edge))
 
-        self.bus = (
-            MessageBus(self.recorder, action_hook=action_hook) if action_hook else MessageBus(self.recorder)
-        )
+        self.board = Board()
+        self.board_records = tmp_path / "records" / "board.jsonl"
         self.minter = TurnMinter(SECRET, episode_id, clock=self.clock)
 
         root = self.config.agent("agent-main")
@@ -92,7 +126,8 @@ class Harness:
             root_scope=root.scope,
             clock=self.clock,
         )
-        self.services = StubServices()
+        scopes = RegistryScopes(self.registry)
+        self.services = BoardServices(self.board, scopes, append_to(self.board_records))
 
     def make_client(self, caller_identity: str) -> GatewayClient:
         """A gateway client (pointing at the edge) for the given identity."""
@@ -100,7 +135,7 @@ class Harness:
 
     def tools(self, spawn_handler: Callable[[AgentContext, dict[str, Any], int], dict[str, Any]]) -> Tools:
         """The tool layer wired to a spawn handler."""
-        return Tools(self.recorder, self.bus, self.services, spawn_handler=spawn_handler)
+        return Tools(self.recorder, self.services, spawn_handler=spawn_handler)
 
     def root_context(self) -> AgentContext:
         """The root agent's context (agent-main), with its own gateway client."""

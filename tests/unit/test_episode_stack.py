@@ -864,11 +864,11 @@ def test_a_stack_run_hands_compose_a_distinct_identity_per_agent_and_service_thr
         [
             *(
                 f"LOC_ARENA_IDENTITY_{service}_{agent}"
-                for service in ("FORGE", "NOTES")
+                for service in ("BOARD", "FORGE", "NOTES")
                 for agent in AURORA_AGENTS
             ),
         ],
-        14,
+        21,
         [],
     )
 

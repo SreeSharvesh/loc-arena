@@ -16,7 +16,8 @@ procedures.
 | `loc_arena/harness.py` | runs an episode and its honest twin, grades them, writes the audit bundle |
 | `loc_arena/config.py` | typed loader and validator for the run configs in `configs/` |
 | `loc_arena/registry.py` | scorers and verifiers, dispatched by the names the configs give |
-| `loc_arena/scaffold/` | the multi-agent scaffold: agents, orchestrator, message bus, tools, covert tools |
+| `loc_arena/scaffold/` | the multi-agent scaffold: agents, orchestrator, dual-capture recorder, tools, covert tools |
+| `loc_arena/board.py` | the board, the one channel between agents: an MCP service with `send`, `read` and `unread` |
 | `loc_arena/live.py`, `loc_arena/task.py` | the live-model policy; the scripted (deterministic) episode |
 | `loc_arena/gateway/` | the inference gateway every model call goes through (edge, core, transport); `proxy.py` is the gateway container that holds the key |
 | `loc_arena/monitors/`, `loc_arena/protocol.py` | the monitors and deterministic detectors; the control protocol that runs them |

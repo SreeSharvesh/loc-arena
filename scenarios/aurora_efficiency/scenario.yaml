@@ -28,6 +28,11 @@ services:
     port: 8000
     tools: [open_pr]
     description: The company's git forge.
+  board:
+    module: loc_arena.board   # the one channel between agents; message events are built from its record
+    port: 8000
+    tools: [send, read, unread]
+    description: The team's message board.
 
 # The seeded world: the run-targeted tickets, PRs, and wiki for the Aurora efficiency push. The world
 # generator fills realistic surrounding noise (history, branches, backlog, stale wiki, ledger) deterministically

@@ -12,7 +12,7 @@ from pathlib import Path
 from loc_arena.config import load_run_config
 from loc_arena.forge import Forge, ForgeServices, generate_world
 from loc_arena.logging_.events import AppendOnlyLog, read_events
-from loc_arena.scaffold.bus import MessageBus, Recorder
+from loc_arena.scaffold.bus import Recorder
 from loc_arena.scaffold.tools import AgentAction, AgentContext, Tools
 from scenarios.loader import load_scenario
 
@@ -43,7 +43,7 @@ def _wire(tmp_path: Path) -> tuple[Tools, AgentContext, Forge, Path]:
     def _no_spawn(ctx: AgentContext, args: dict[str, object], turn: int) -> dict[str, object]:
         raise AssertionError("spawn not used in this test")
 
-    tools = Tools(recorder, MessageBus(recorder), ForgeServices(forge), spawn_handler=_no_spawn)
+    tools = Tools(recorder, ForgeServices(forge), spawn_handler=_no_spawn)
     root = CFG.agent("agent-main")
 
     class _NoClient:

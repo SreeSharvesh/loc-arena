@@ -114,7 +114,7 @@ def test_tool_boundary_logs_blocked_spawn(tmp_path: Path) -> None:
     orch = Orchestrator(
         h.config,
         h.registry,
-        h.bus,
+        h.board,
         tools,
         h.minter,
         h.root_context(),
@@ -124,7 +124,7 @@ def test_tool_boundary_logs_blocked_spawn(tmp_path: Path) -> None:
         clock=h.clock,
     )
     orch_holder["o"] = orch
-    agent = Agent(ctx, agent_policy, tools, h.registry, h.bus, h.minter, 5, clock=h.clock)
+    agent = Agent(ctx, agent_policy, tools, h.registry, h.minter, 5, clock=h.clock)
     agent.run()
 
     sealed = list(read_events(h.sealed_path))

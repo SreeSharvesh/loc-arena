@@ -8,6 +8,15 @@ log has the details.
 
 ### Added
 
+- **The board replaces the message bus (#99, step 3).** Agents talk only through the board, an MCP service on
+  the official MCP Python SDK (`python -m loc_arena.board <run config>`, the scenario's `board`): `send` posts a
+  message to one agent, `read` returns every message addressed to the caller, and `unread` those it has not had
+  yet, in send order. The sender is the caller's identity, never an argument, and the board enforces each
+  agent's recipient allow-list (`scope.message`) itself. The native loop's `message` tool becomes the board's
+  `send`, and each turn begins by delivering the agent's `unread` messages, as the bus did; a refused send is
+  still a blocked `action` event, and a sent one writes none. Any harness with an MCP client can now talk to the
+  team. The default config gives every agent `send`, `read` and `unread`. agentgateway offers each tool by its
+  own name (`prefixMode: never`), as an in-process run does. An in-process episode holds a fresh board.
 - **Each agent's tools set in the run config, behind agentgateway (#99).** A live service in `scenario.yaml` lists
   the MCP `tools` it serves, and may run a `module` of the engine image instead of a `build` or `image` (the
   forge, whose world is the harness's). An agent's `sandbox: tools:` lists the tools it may call on each such

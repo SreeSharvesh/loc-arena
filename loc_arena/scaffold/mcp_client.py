@@ -9,7 +9,7 @@ server is an error result for the agent, never an exception for the episode.
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncIterator, Callable, Collection, Mapping
+from collections.abc import AsyncIterator, Callable, Collection, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Any
 
@@ -110,10 +110,16 @@ class McpTools:
 
 
 class McpServices:
-    """``Services`` that send a tool an agent's MCP client offers to that client, any other to ``rest``."""
+    """``Services`` sending a tool one of an agent's MCP clients offers to that client, others to ``rest``."""
 
-    def __init__(self, clients: Mapping[str, McpTools], rest: Services, *, served: Collection[str]) -> None:
-        """Route by the calling agent's id through its client in ``clients``; fall through to ``rest``.
+    def __init__(
+        self,
+        clients: Mapping[str, Sequence[McpTools]],
+        rest: Services,
+        *,
+        served: Collection[str],
+    ) -> None:
+        """Route by the caller's id through the first of its ``clients`` offering a tool, else ``rest``.
 
         A tool in ``served``, which some service serves over MCP, never falls through: only the agents it is
         offered to may call it, so the run config alone decides who does.
@@ -123,9 +129,9 @@ class McpServices:
         self._served = frozenset(served)
 
     def run(self, tool: str, args: dict[str, Any]) -> ToolResult:
-        """Call ``tool`` over MCP, without caller fields, if the caller's client offers it, else ``rest``."""
-        client = self._clients.get(str(args.get("actor_uid")))
-        if client is not None and tool in client.names():
+        """Call ``tool`` over MCP, without caller fields, through a client of the caller offering it."""
+        clients = self._clients.get(str(args.get("actor_uid")), ())
+        if client := next((client for client in clients if tool in client.names()), None):
             return client.call(tool, {key: value for key, value in args.items() if key not in _CALLER_FIELDS})
         if tool in self._served:
             return {"error": f"{tool} is not offered to you", "tool": tool}
