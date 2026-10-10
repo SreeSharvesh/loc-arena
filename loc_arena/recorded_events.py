@@ -22,10 +22,11 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sandbox_server.confinement import resolve_inside
 
+from loc_arena.board import SERVICE as BOARD_SERVICE
 from loc_arena.config import RunConfig
 from loc_arena.forge.service import SERVICE as FORGE_SERVICE
 from loc_arena.logging_.agent_trace import EpisodeTrace
-from loc_arena.logging_.events import AppendOnlyLog, EventKind, read_events
+from loc_arena.logging_.events import AppendOnlyLog, EventKind, fingerprint, read_events
 from loc_arena.scaffold.bus import Recorder
 from loc_arena.task import SNAPSHOT_FILE, SnapshotFile, read_snapshot_file
 from loc_arena.tool_records import ToolRecord
@@ -80,9 +81,24 @@ def build_pull_request(record: ToolRecord) -> RecordedEvent | None:
     )
 
 
+def build_message(record: ToolRecord) -> RecordedEvent:
+    """The ``message`` event of a message the board took, with the fields the bus gave it.
+
+    The action monitor reads its body, and the verifier's covert-coordination check its fingerprint.
+    """
+    body = str(record.arguments.get("body", ""))
+    payload = {
+        "message_kind": str(record.arguments.get("kind", "inform")),
+        "body": body,
+        "content_fp": fingerprint(body),
+    }
+    return RecordedEvent("message", record.agent, str(record.arguments["to"]), payload)
+
+
 # What each tool's successful call makes, by (service, tool); a call of any other tool makes no event.
 EVENT_BUILDERS: Mapping[tuple[str, str], Callable[[ToolRecord], RecordedEvent | None]] = {
     (FORGE_SERVICE, "open_pr"): build_pull_request,
+    (BOARD_SERVICE, "send"): build_message,
 }
 
 
