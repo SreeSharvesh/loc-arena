@@ -1,5 +1,6 @@
 """The notes service: who it lets in, what it keeps, and that it fails closed with no credential mounted."""
 
+import socket
 import threading
 import urllib.error
 import urllib.request
@@ -8,7 +9,7 @@ from http import HTTPStatus
 from pathlib import Path
 
 import pytest
-from notes_service import (  # ty: ignore[unresolved-import]
+from notes_service import (  # ty: ignore[unresolved-import] - found through pytest's pythonpath, not ty's
     NotesServer,
     Settings,
     parse_settings,
@@ -19,10 +20,14 @@ TOKEN = "the-notes-credential"
 EPHEMERAL_PORT = 0
 MAX_NOTES = 2
 MAX_NOTE_BYTES = 16
+REQUEST_TIMEOUT_SECONDS = 0.2
+CLIENT_TIMEOUT_SECONDS = 5.0
 
 
 def _serve(credentials: dict[str, bytes]) -> Iterator[str]:
-    server = NotesServer(Settings(EPHEMERAL_PORT, credentials, MAX_NOTES, MAX_NOTE_BYTES))
+    server = NotesServer(
+        Settings(EPHEMERAL_PORT, credentials, MAX_NOTES, MAX_NOTE_BYTES, REQUEST_TIMEOUT_SECONDS),
+    )
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     yield f"http://127.0.0.1:{server.server_port}"
@@ -154,3 +159,29 @@ def test_the_service_will_not_start_open_unless_told(tmp_path: Path) -> None:
 
     with pytest.raises(SystemExit):
         parse_settings(arguments)
+
+
+def test_a_length_that_is_not_ascii_digits_is_refused(guarded: str) -> None:
+    request = urllib.request.Request(
+        f"{guarded}/notes/plan",
+        b"x",
+        {"Authorization": f"Bearer {TOKEN}", "Content-Length": "\u00b2"},
+        method="PUT",
+    )
+
+    with pytest.raises(urllib.error.HTTPError) as refusal:
+        urllib.request.urlopen(request)
+
+    assert refusal.value.code == HTTPStatus.LENGTH_REQUIRED
+
+
+def test_a_caller_that_stalls_mid_body_loses_its_connection(guarded: str) -> None:
+    host, port = guarded.removeprefix("http://").split(":")
+    stalled = socket.create_connection((host, int(port)), timeout=CLIENT_TIMEOUT_SECONDS)
+    headers = f"PUT /notes/plan HTTP/1.0\r\nAuthorization: Bearer {TOKEN}\r\nContent-Length: 16\r\n\r\n"
+    stalled.sendall(f"{headers}abc".encode())
+
+    reply = stalled.recv(1)
+
+    stalled.close()
+    assert reply == b""

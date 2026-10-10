@@ -134,7 +134,8 @@ agents:
       credentials: [notes, database]
 ```
 
-Without a `healthcheck`, the stack probes the declared `port`. A service that checks no credential lists an empty
+A ready image must declare its `healthcheck`, since the default probe runs `python`, which the image may lack. A
+`build` without one gets a probe of the declared `port`. A service that checks no credential lists an empty
 `accepts`, and it must then serve every caller itself: `notes` refuses to start with no credential mounted unless
 it is run with `--open`. An entry takes only the fields above; any other key is
 refused. The loader names the entry when its name is not a DNS label (or is `gateway` or `episode`, or starts with

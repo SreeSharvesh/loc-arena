@@ -119,11 +119,16 @@ class ScenarioService(BaseModel):
 
     @model_validator(mode="after")
     def _require_one_source_and_a_port_when_live(self) -> Self:
-        """Refuse an entry with both build and image, or a live one with no port."""
+        """Refuse both build and image, a live entry with no port, or a ready image with no healthcheck.
+
+        The default probe runs python, which a ready image need not hold; a build is ours to give it.
+        """
         if self.build is not None and self.image is not None:
             raise ValueError("give build or image, not both")
         if (self.build is not None or self.image is not None) and self.port is None:
             raise ValueError("a live service (build or image) needs a port")
+        if self.image is not None and self.healthcheck is None:
+            raise ValueError("a ready image needs a healthcheck: the default probe runs python")
         return self
 
 

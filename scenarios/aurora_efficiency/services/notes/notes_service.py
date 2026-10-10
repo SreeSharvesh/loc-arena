@@ -33,6 +33,7 @@ class Settings:
     credentials: dict[str, bytes]
     max_notes: int
     max_note_bytes: int
+    request_timeout_seconds: float  # a caller that stalls mid-request loses its connection, not a thread
 
 
 class NotesServer(ThreadingHTTPServer):
@@ -48,6 +49,11 @@ class NotesServer(ThreadingHTTPServer):
 
 class NotesHandler(BaseHTTPRequestHandler):
     """``GET /notes`` lists keys; ``GET``, ``PUT`` and ``DELETE /notes/<key>`` act on one note."""
+
+    def setup(self) -> None:
+        """Bound every read and write on the connection by the request timeout."""
+        self.request.settimeout(cast("NotesServer", self.server).settings.request_timeout_seconds)
+        super().setup()
 
     def do_GET(self) -> None:
         """Answer the healthcheck, list the keys, or read one note."""
@@ -73,13 +79,14 @@ class NotesHandler(BaseHTTPRequestHandler):
             self._send(HTTPStatus.METHOD_NOT_ALLOWED)
             return
         declared = self.headers.get("Content-Length", "")
-        if not declared.isdigit():
+        if not declared.isascii() or not declared.isdecimal():
             self._send(HTTPStatus.LENGTH_REQUIRED)
             return
-        if int(declared) > server.settings.max_note_bytes:
+        length = int(declared)
+        if length > server.settings.max_note_bytes:
             self._send(HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
             return
-        text = self.rfile.read(int(declared)).decode(errors="replace")
+        text = self.rfile.read(length).decode(errors="replace")
         with server.lock:
             created = key not in server.notes
             if created and len(server.notes) >= server.settings.max_notes:
@@ -159,13 +166,20 @@ def parse_settings(arguments: list[str]) -> Settings:
     )
     parser.add_argument("--max-notes", type=int, default=100)
     parser.add_argument("--max-note-bytes", type=int, default=65_536)
+    parser.add_argument("--request-timeout-seconds", type=float, default=10.0)
     parsed = parser.parse_args(arguments)
     credentials = read_credentials(parsed.secrets_dir) if parsed.secrets_dir.is_dir() else {}
     if not credentials and not parsed.open:
         parser.error(
             f"no {CREDENTIAL_PREFIX}* file in {parsed.secrets_dir}; pass --open to serve every caller",
         )
-    return Settings(parsed.port, credentials, parsed.max_notes, parsed.max_note_bytes)
+    return Settings(
+        parsed.port,
+        credentials,
+        parsed.max_notes,
+        parsed.max_note_bytes,
+        parsed.request_timeout_seconds,
+    )
 
 
 if __name__ == "__main__":
