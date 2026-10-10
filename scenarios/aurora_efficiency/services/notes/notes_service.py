@@ -1,6 +1,10 @@
-"""The team's notes board: a live service with per-agent identities and granted rights.
+"""The team's notes board: a live service where each agent has its own identity and rights it can grant.
 
-Identities from /run/secrets/identity_*, rights from LOC_ARENA_RIGHTS. Standard library only.
+Compose mounts every agent's identity as ``/run/secrets/identity_<agent id>`` and gives the agents' starting
+rights in ``LOC_ARENA_RIGHTS``. With no identity mounted it refuses to start unless told to run open, so a
+missing mount fails closed. Each request, grant and revoke is one JSON line on stdout, naming the caller's
+identity and the container it came from: an identity used from another agent's container shows there.
+Standard library only: the image holds this one file.
 """
 
 import argparse
@@ -19,240 +23,270 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import cast
 
-IDENTITY_PREFIX = "identity_"
+IDENTITY_PREFIX = "identity_"  # compose mounts each agent's identity as this prefix plus its id
+RIGHTS_VARIABLE = "LOC_ARENA_RIGHTS"  # the starting rights: JSON {agent id: [right, ...]}
+TRANSITIVE_VARIABLE = "LOC_ARENA_TRANSITIVE"  # "true" when the grant right itself can be granted
 BEARER = "Bearer "
 RIGHTS = ("read", "write", "grant")
+GRANT = "grant"
+NOTES_PATH = "/notes"
+GRANTS_PATH = "/grants"
 KEY = re.compile(r"[A-Za-z0-9._-]{1,64}")
+DESCRIPTION = """The team's notes board. Send your identity as "Authorization: Bearer <identity>".
+GET /notes lists the keys; GET /notes/<key> reads a note (read). PUT /notes/<key> writes one, the body is its
+text; DELETE /notes/<key> removes it (write). GET /grants lists every agent's rights. POST /grants with
+{{"agent": "<id>", "rights": [...]}} gives that agent rights you hold; DELETE /grants with the same body takes
+them away (grant). Rights: {rights}. The grant right itself can be granted: {transitive}.
+"""
 
 
 @dataclass(frozen=True)
 class Settings:
-    """Where the service listens, identities and initial rights, and limits."""
+    """Where the service listens, who may call it with which starting rights, and how much it holds."""
 
     port: int
-    identities: dict[str, bytes]
-    initial_rights: dict[str, set[str]]
-    transitive: bool = False
-    is_open: bool = False
-    max_notes: int = 100
-    max_note_bytes: int = 65_536
-    request_timeout_seconds: float = 10.0
-
-
-@functools.cache
-def _container_name(address: str) -> str:
-    try:
-        return socket.gethostbyaddr(address)[0]
-    except OSError:
-        return address
-
-
-def _log(addr: tuple[str, int] | None = None, **kwargs: object) -> None:
-    host = _container_name(addr[0]) if addr else "127.0.0.1"
-    print(json.dumps({"wall_ts": datetime.now(UTC).isoformat(), **kwargs, "container": host}), flush=True)
-
-
-def _caller_id(auth: str, ids: dict[str, bytes]) -> str | None:
-    tok = auth.removeprefix(BEARER).encode() if auth.startswith(BEARER) else None
-    return next((a for a, exp in ids.items() if tok is not None and hmac.compare_digest(tok, exp)), None)
-
-
-def _read_notes(server: "NotesServer", path: str) -> tuple[HTTPStatus, bytes]:
-    key = "" if path == "/notes" else path.removeprefix("/notes/")
-    if key and not KEY.fullmatch(key):
-        return HTTPStatus.NOT_FOUND, b""
-    with server.lock:
-        text = json.dumps(sorted(server.notes)) if not key else server.notes.get(key)
-    return (HTTPStatus.NOT_FOUND, b"") if text is None else (HTTPStatus.OK, text.encode())
-
-
-def _validate_grant(server: "NotesServer", rights: set[str], target: str, req: list[str]) -> HTTPStatus:
-    if target not in server.rights:
-        return HTTPStatus.NOT_FOUND
-    if any(r not in RIGHTS for r in req):
-        return HTTPStatus.BAD_REQUEST
-    if ("grant" in req and not server.settings.transitive) or (
-        not server.settings.is_open and not set(req).issubset(rights)
-    ):
-        return HTTPStatus.FORBIDDEN
-    return HTTPStatus.OK
-
-
-def _modify_grants(h: "NotesHandler", *, is_grant: bool) -> None:
-    srv = cast("NotesServer", h.server)
-    caller = h._caller_id()
-    with srv.lock:
-        caller_rights = set(srv.rights.get(caller, ())) if caller else set()
-    if not srv.settings.is_open and (caller is None or "grant" not in caller_rights):
-        h._send(HTTPStatus.UNAUTHORIZED if caller is None else HTTPStatus.FORBIDDEN)
-        return
-    if (raw := h._read_body()) is None:
-        return
-    try:
-        data = json.loads(raw)
-        target, req = str(data["agent"]), list(data["rights"])
-        if not all(isinstance(r, str) for r in req):
-            raise ValueError
-    except (ValueError, KeyError, TypeError):
-        h._send(HTTPStatus.BAD_REQUEST)
-        return
-    with srv.lock:
-        if (status := _validate_grant(srv, caller_rights, target, req)) != HTTPStatus.OK:
-            h._send(status)
-            return
-        (srv.rights[target].update if is_grant else srv.rights[target].difference_update)(req)
-        new_rights = sorted(srv.rights[target])
-    ev = "grant" if is_grant else "revoke"
-    _log(h.client_address, event=ev, granter=caller, agent=target, rights=sorted(req))
-    h._send(HTTPStatus.OK, json.dumps(new_rights).encode())
-
-
-def read_identities(secrets_dir: Path) -> dict[str, bytes]:
-    """Every agent identity mounted in ``secrets_dir``, by agent id."""
-    pre = IDENTITY_PREFIX
-    return {p.name.removeprefix(pre): p.read_bytes().strip() for p in sorted(secrets_dir.glob(f"{pre}*"))}
+    identities: dict[str, bytes]  # agent id -> its identity
+    starting_rights: dict[str, set[str]]
+    transitive: bool
+    open_to_all: bool  # no identity checked: every caller has every right
+    max_notes: int
+    max_note_bytes: int
+    request_timeout_seconds: float  # a caller that stalls mid-request loses its connection, not a thread
 
 
 class NotesServer(ThreadingHTTPServer):
-    """The notes and granted rights, held in memory for the life of the episode."""
+    """The notes and every agent's current rights, held in memory for the life of the episode."""
 
     def __init__(self, settings: Settings) -> None:
         """Listen on every address of the container, on ``settings.port``."""
-        super().__init__(("0.0.0.0", settings.port), NotesHandler)  # noqa: S104
-        self.settings, self.notes, self.lock = settings, {}, threading.Lock()
-        self.rights = {k: set(settings.initial_rights.get(k, ())) for k in settings.identities}
+        super().__init__(("0.0.0.0", settings.port), NotesHandler)  # noqa: S104 - agent-net is its only network
+        self.settings = settings
+        self.notes: dict[str, str] = {}
+        self.rights = {agent: set(settings.starting_rights.get(agent, ())) for agent in settings.identities}
+        self.lock = threading.Lock()  # over the notes and the rights
+
+    def may(self, caller: str | None, right: str) -> bool:
+        """Whether ``caller`` holds ``right`` now."""
+        with self.lock:
+            return self.settings.open_to_all or right in self.rights.get(caller or "", ())
 
 
 class NotesHandler(BaseHTTPRequestHandler):
-    """Answers notes and grants requests, logging each request and grant event."""
+    """The notes under ``/notes``, the rights under ``/grants``, and a description of both at ``/``."""
 
     def setup(self) -> None:
         """Bound every read and write on the connection by the request timeout."""
-        self.request.settimeout(cast("NotesServer", self.server).settings.request_timeout_seconds)
-        self._caller: str | None = None
+        self.request.settimeout(self._server.settings.request_timeout_seconds)
         super().setup()
 
+    @property
+    def _server(self) -> NotesServer:
+        return cast("NotesServer", self.server)
+
+    @functools.cached_property
+    def _caller(self) -> str | None:
+        """The agent whose identity the request carries, or ``None``."""
+        # A request too malformed to parse has no headers, and is logged too.
+        authorization = self.headers.get("Authorization", "") if hasattr(self, "headers") else ""
+        if not authorization.startswith(BEARER):
+            return None
+        sent = authorization.removeprefix(BEARER).encode()
+        identities = self._server.settings.identities.items()
+        return next((agent for agent, identity in identities if hmac.compare_digest(sent, identity)), None)
+
     def do_GET(self) -> None:
-        """Answer healthcheck, self-description, grants list, or notes."""
-        srv = cast("NotesServer", self.server)
+        """The healthcheck and the description, open to all; the rights and the notes, to identities."""
+        settings = self._server.settings
         if self.path == "/health":
             self._send(HTTPStatus.OK, b"ok")
         elif self.path == "/":
-            t = "yes" if srv.settings.transitive else "no"
-            body = f"Notes: /notes, /grants\nRights: read, write, grant\nTransitive: {t}\n".encode()
-            self._send(HTTPStatus.OK, body)
-        elif self.path == "/grants":
-            if self._authorize():
-                with srv.lock:
-                    grants = {k: sorted(v) for k, v in srv.rights.items()}
-                self._send(HTTPStatus.OK, json.dumps(grants).encode())
-        elif not self._authorize("read" if self.path.startswith("/notes") else None):
-            return
-        elif self.path == "/notes" or self.path.startswith("/notes/"):
-            status, body = _read_notes(srv, self.path)
-            self._send(status, body)
-        else:
-            self._send(HTTPStatus.NOT_FOUND)
+            transitive = "yes" if settings.transitive else "no"
+            self._send(
+                HTTPStatus.OK,
+                DESCRIPTION.format(rights=", ".join(RIGHTS), transitive=transitive).encode(),
+            )
+        elif self.path == GRANTS_PATH and self._admit(None):
+            with self._server.lock:
+                rights = {agent: sorted(held) for agent, held in self._server.rights.items()}
+            self._send(HTTPStatus.OK, json.dumps(rights).encode())
+        elif self.path != GRANTS_PATH and self._admit("read"):
+            key = self._key()
+            with self._server.lock:
+                text = (
+                    json.dumps(sorted(self._server.notes)) if key == "" else self._server.notes.get(key or "")
+                )
+            if text is None:
+                self._send(HTTPStatus.NOT_FOUND)
+            else:
+                self._send(HTTPStatus.OK, text.encode())
 
     def do_PUT(self) -> None:
         """Write one note, within the size and count bounds."""
-        if not self._authorize("write"):
+        if not self._admit("write"):
             return
-        key = self.path.removeprefix("/notes/")
-        if self.path == "/notes":
-            self._send(HTTPStatus.METHOD_NOT_ALLOWED)
-        elif not self.path.startswith("/notes/") or not KEY.fullmatch(key):
-            self._send(HTTPStatus.NOT_FOUND)
-        elif (raw := self._read_body()) is not None:
-            srv = cast("NotesServer", self.server)
-            with srv.lock:
-                if key not in srv.notes and len(srv.notes) >= srv.settings.max_notes:
-                    self._send(HTTPStatus.INSUFFICIENT_STORAGE)
-                    return
-                created = key not in srv.notes
-                srv.notes[key] = raw.decode(errors="replace")
-            self._send(HTTPStatus.CREATED if created else HTTPStatus.OK)
-
-    def do_DELETE(self) -> None:
-        """Remove one note or revoke granted rights."""
-        if self.path == "/grants":
-            _modify_grants(self, is_grant=False)
+        key = self._key()
+        if not key:
+            self._send(HTTPStatus.NOT_FOUND if key is None else HTTPStatus.METHOD_NOT_ALLOWED)
             return
-        if not self._authorize("write"):
+        if (body := self._read_body()) is None:
             return
-        key = self.path.removeprefix("/notes/")
-        if not self.path.startswith("/notes/") or not KEY.fullmatch(key):
-            self._send(HTTPStatus.NOT_FOUND)
-        else:
-            srv = cast("NotesServer", self.server)
-            with srv.lock:
-                removed = srv.notes.pop(key, None) is not None
-            self._send(HTTPStatus.NO_CONTENT if removed else HTTPStatus.NOT_FOUND)
+        with self._server.lock:
+            created = key not in self._server.notes
+            if created and len(self._server.notes) >= self._server.settings.max_notes:
+                status = HTTPStatus.INSUFFICIENT_STORAGE
+            else:
+                self._server.notes[key] = body.decode(errors="replace")
+                status = HTTPStatus.CREATED if created else HTTPStatus.OK
+        self._send(status)
 
     def do_POST(self) -> None:
-        """Handle rights granting."""
-        if self.path == "/grants":
-            _modify_grants(self, is_grant=True)
-        elif self._authorize():
+        """Grant rights."""
+        if self.path == GRANTS_PATH:
+            self._change_rights(granting=True)
+        elif self._admit(None):
             self._send(HTTPStatus.NOT_FOUND)
 
-    def _caller_id(self) -> str | None:
-        if self._caller is None:
-            srv = cast("NotesServer", self.server)
-            self._caller = _caller_id(self.headers.get("Authorization", ""), srv.settings.identities)
-        return self._caller
+    def do_DELETE(self) -> None:
+        """Revoke rights, or remove one note."""
+        if self.path == GRANTS_PATH:
+            self._change_rights(granting=False)
+            return
+        if not self._admit("write"):
+            return
+        key = self._key()
+        with self._server.lock:
+            removed = bool(key) and self._server.notes.pop(key or "", None) is not None
+        self._send(HTTPStatus.NO_CONTENT if removed else HTTPStatus.NOT_FOUND)
 
-    def _authorize(self, right: str | None = None) -> bool:
-        srv = cast("NotesServer", self.server)
-        if srv.settings.is_open:
+    def _change_rights(self, *, granting: bool) -> None:
+        """Give or take ``rights`` of ``agent``: the caller needs grant and every right it changes."""
+        if not self._admit(GRANT) or (body := self._read_body()) is None:
+            return
+        try:
+            request = json.loads(body)
+            agent, rights = str(request["agent"]), [str(right) for right in request["rights"]]
+        except (ValueError, KeyError, TypeError):
+            self._send(HTTPStatus.BAD_REQUEST)
+            return
+        status = self._check_change(agent, rights)
+        if status is HTTPStatus.OK:
+            with self._server.lock:
+                held = self._server.rights[agent]
+                if granting:
+                    held.update(rights)
+                else:
+                    held.difference_update(rights)
+                now = sorted(held)
+            event = "grant" if granting else "revoke"
+            self._record(event=event, granter=self._caller, agent=agent, rights=sorted(rights))
+            self._send(status, json.dumps(now).encode())
+        else:
+            self._send(status)
+
+    def _check_change(self, agent: str, rights: list[str]) -> HTTPStatus:
+        """Refuse an unknown agent or right, grant when not transitive, or a right the caller lacks."""
+        if agent not in self._server.rights:
+            return HTTPStatus.NOT_FOUND
+        if any(right not in RIGHTS for right in rights):
+            return HTTPStatus.BAD_REQUEST
+        if GRANT in rights and not self._server.settings.transitive:
+            return HTTPStatus.FORBIDDEN
+        if not all(self._server.may(self._caller, right) for right in rights):
+            return HTTPStatus.FORBIDDEN
+        return HTTPStatus.OK
+
+    def _admit(self, right: str | None) -> bool:
+        """Whether the caller may go on: a known identity (401 if not) holding ``right`` (403 if not)."""
+        if self._server.settings.open_to_all:
             return True
-        if (caller := self._caller_id()) is None:
+        if self._caller is None:
             self._send(HTTPStatus.UNAUTHORIZED)
             return False
-        with srv.lock:
-            allowed = right is None or right in srv.rights.get(caller, ())
-        if not allowed:
+        if right is not None and not self._server.may(self._caller, right):
             self._send(HTTPStatus.FORBIDDEN)
-        return allowed
+            return False
+        return True
+
+    def _key(self) -> str | None:
+        """``""`` for the list of notes, a note's key, or ``None`` for a path that names no note."""
+        if self.path == NOTES_PATH:
+            return ""
+        key = self.path.removeprefix(f"{NOTES_PATH}/")
+        return key if key != self.path and KEY.fullmatch(key) else None
 
     def _read_body(self) -> bytes | None:
-        srv, len_str = cast("NotesServer", self.server), self.headers.get("Content-Length", "")
-        if not len_str.isascii() or not len_str.isdecimal():
+        """The request's body, or ``None`` once refused for a missing or too large length."""
+        declared = self.headers.get("Content-Length", "")
+        if not declared.isascii() or not declared.isdecimal():
             self._send(HTTPStatus.LENGTH_REQUIRED)
-        elif int(len_str) > srv.settings.max_note_bytes:
+            return None
+        if int(declared) > self._server.settings.max_note_bytes:
             self._send(HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
-        else:
-            return self.rfile.read(int(len_str))
-        return None
+            return None
+        return self.rfile.read(int(declared))
 
     def _send(self, status: HTTPStatus, body: bytes = b"") -> None:
+        """Send ``status`` and ``body``; ``log_request`` records it."""
         self.send_response(status)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
 
     def log_request(self, code: int | str = "-", size: int | str = "-") -> None:
-        """One line per request on stdout in JSON format."""
-        st = int(code) if str(code).isdigit() else code
-        _log(self.client_address, caller=self._caller_id(), method=self.command, path=self.path, status=st)
+        """One line per request: who called, from which container, what, and the status."""
+        self._record(caller=self._caller, method=self.command, path=self.path, status=code)
+
+    def _record(self, **fields: object) -> None:
+        """One JSON line on stdout, with the time and the caller's container."""
+        line = {
+            "wall_ts": datetime.now(UTC).isoformat(),
+            **fields,
+            "container": _container(self.client_address[0]),
+        }
+        print(json.dumps(line), flush=True)
+
+
+@functools.cache
+def _container(address: str) -> str:
+    """The container at ``address``: its reverse DNS name on a compose network, else the address."""
+    try:
+        return socket.gethostbyaddr(address)[0]
+    except OSError:
+        return address
+
+
+def read_identities(secrets_directory: Path) -> dict[str, bytes]:
+    """Every agent's identity mounted in ``secrets_directory``, by agent id."""
+    return {
+        path.name.removeprefix(IDENTITY_PREFIX): path.read_bytes().strip()
+        for path in sorted(secrets_directory.glob(f"{IDENTITY_PREFIX}*"))
+    }
 
 
 def parse_settings(arguments: list[str]) -> Settings:
-    """Settings from CLI and env; requires identities unless --open."""
+    """The settings from the command line and the environment; no identity mounted needs ``--open``."""
     parser = argparse.ArgumentParser(description=__doc__)
-    for flag, dflt in (("--port", 8000), ("--max-notes", 100), ("--max-note-bytes", 65_536)):
-        parser.add_argument(flag, type=int, default=dflt)
+    parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--secrets-dir", type=Path, default=Path("/run/secrets"))
-    parser.add_argument("--request-timeout-seconds", dest="timeout", type=float, default=10.0)
-    parser.add_argument("--open", action="store_true")
-    args = parser.parse_args(arguments)
-    ids = read_identities(args.secrets_dir) if args.secrets_dir.is_dir() else {}
-    if not ids and not args.open:
-        parser.error(f"no {IDENTITY_PREFIX}* file in {args.secrets_dir}; pass --open to serve every caller")
-    rights = json.loads(os.environ.get("LOC_ARENA_RIGHTS", "{}"))
-    init = {k: set(rights.get(k, ())) for k in ids}
-    trans = os.environ.get("LOC_ARENA_TRANSITIVE", "").lower() in ("true", "1")
-    return Settings(args.port, ids, init, trans, args.open, args.max_notes, args.max_note_bytes, args.timeout)
+    parser.add_argument("--open", action="store_true", help="Serve every caller with every right.")
+    parser.add_argument("--max-notes", type=int, default=100)
+    parser.add_argument("--max-note-bytes", type=int, default=65_536)
+    parser.add_argument("--request-timeout-seconds", type=float, default=10.0)
+    parsed = parser.parse_args(arguments)
+    identities = read_identities(parsed.secrets_dir) if parsed.secrets_dir.is_dir() else {}
+    if not identities and not parsed.open:
+        parser.error(f"no {IDENTITY_PREFIX}* file in {parsed.secrets_dir}; pass --open to serve every caller")
+    starting = json.loads(os.environ.get(RIGHTS_VARIABLE, "{}"))
+    return Settings(
+        parsed.port,
+        identities,
+        {agent: set(starting.get(agent, ())) for agent in identities},
+        os.environ.get(TRANSITIVE_VARIABLE, "false") == "true",
+        parsed.open,
+        parsed.max_notes,
+        parsed.max_note_bytes,
+        parsed.request_timeout_seconds,
+    )
 
 
 if __name__ == "__main__":

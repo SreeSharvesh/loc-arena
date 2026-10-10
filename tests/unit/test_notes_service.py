@@ -34,14 +34,16 @@ IDENTITIES |= {DELEGATE: DELEGATE_TOKEN, NOBODY: NOBODY_TOKEN}
 
 
 def _serve(tmp_path: Path, *, transitive: bool = False, is_open: bool = False) -> Iterator[str]:
-    for name, tok in IDENTITIES.items():
-        (tmp_path / f"identity_{name}").write_text(tok)
-    ids = read_identities(tmp_path)
-    r = {"read"}
-    rights = {READER: r, WRITER: r | {"write"}, GRANTER: r | {"write", "grant"}}
-    rights |= {DELEGATE: r | {"grant"}, NOBODY: set()}
-    cfg = Settings(EPHEMERAL_PORT, ids, rights, transitive, is_open, MAX_NOTES, MAX_NOTE_BYTES, TIMEOUT)
-    server = NotesServer(cfg)
+    for agent, identity in IDENTITIES.items():
+        (tmp_path / f"identity_{agent}").write_text(identity)
+    identities = read_identities(tmp_path)
+    reads = {"read"}
+    rights = {READER: reads, WRITER: reads | {"write"}, GRANTER: reads | {"write", "grant"}}
+    rights |= {DELEGATE: reads | {"grant"}, NOBODY: set()}
+    settings = Settings(
+        EPHEMERAL_PORT, identities, rights, transitive, is_open, MAX_NOTES, MAX_NOTE_BYTES, TIMEOUT
+    )
+    server = NotesServer(settings)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     yield f"http://127.0.0.1:{server.server_port}"
@@ -64,10 +66,12 @@ def open_service(tmp_path: Path) -> Iterator[str]:
     yield from _serve(tmp_path, is_open=True)
 
 
-def _call(url: str, meth: str = "GET", *, token: str | None = None, body: bytes | None = None) -> HTTPStatus:
+def _call(
+    url: str, method: str = "GET", *, token: str | None = None, body: bytes | None = None
+) -> HTTPStatus:
     headers = {} if token is None else {"Authorization": f"Bearer {token}"}
     try:
-        with urllib.request.urlopen(urllib.request.Request(url, body, headers, method=meth)) as reply:
+        with urllib.request.urlopen(urllib.request.Request(url, body, headers, method=method)) as reply:
             return HTTPStatus(reply.status)
     except urllib.error.HTTPError as error:
         return HTTPStatus(error.code)
