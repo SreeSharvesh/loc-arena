@@ -1058,3 +1058,16 @@ def test_containers_that_do_not_come_back_for_the_honest_twin_stop_the_run_with_
 
     copied = (tmp_path / "services" / "notes.log").read_bytes()
     assert (copied, docker.plays, docker.verbs[-1]) == (NOTES_LOG * 2, 1, "down")
+
+
+def test_the_honest_twin_plays_in_the_episodes_container_though_its_image_tag_moved(
+    docker: FakeDocker,
+    tmp_path: Path,
+) -> None:
+    docker.plays_passing = 1
+
+    with pytest.raises(StackError, match="exited with code 1"):
+        run_aurora_in_stack(tmp_path, mode="attack")
+
+    plays = [call for call in docker.calls if "--attach" in call]
+    assert ["--no-recreate" in play for play in plays] == [True, True]

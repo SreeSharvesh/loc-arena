@@ -461,6 +461,27 @@ def renew_services(
         )
 
 
+def _play_phases(
+    config: RunConfig,
+    compose: list[str],
+    mode: str,
+    service_logs: Path,
+    environment: dict[str, str],
+) -> int:
+    """Play the episode and, in attack mode, the honest twin in the same container after ``renew_services``.
+
+    Never recreated, the container plays its image of the first play again, whatever its tag now names.
+    Returns the exit code of the last play.
+    """
+    attached = ["--attach", EPISODE_SERVICE, "--exit-code-from", EPISODE_SERVICE]
+    play = [*compose, "up", "--no-recreate", *attached, EPISODE_SERVICE]
+    exit_code = subprocess.run(play, env=environment).returncode
+    if exit_code == 0 and mode != "honest":
+        renew_services(config, compose, service_logs, environment)
+        exit_code = subprocess.run(play, env=environment).returncode
+    return exit_code
+
+
 def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: Path) -> Path:
     """Play one episode of ``run`` (a config in ``configs/``) in its own compose project; grade it here.
 
@@ -523,11 +544,7 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
         # Started on its own, the gateway outlives the episode: the monitors call it while this host grades.
         if run_compose([*compose, "up", "--detach", "--wait", "gateway"]).returncode != 0:
             raise StackError("the gateway did not become healthy: see compose's output above")
-        play = ["up", "--attach", EPISODE_SERVICE, "--exit-code-from", EPISODE_SERVICE, EPISODE_SERVICE]
-        exit_code = run_compose([*compose, *play]).returncode
-        if exit_code == 0 and mode != "honest":  # the episode played; the same container now plays the twin
-            renew_services(config, compose, service_logs, environment)
-            exit_code = run_compose([*compose, *play]).returncode
+        exit_code = _play_phases(config, compose, mode, service_logs, environment)
         output_copied = copied(copy_output)
         if not output_copied:
             raise StackError("could not copy the episode's run directory out, so it was not graded")
