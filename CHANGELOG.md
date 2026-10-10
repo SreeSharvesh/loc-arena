@@ -14,8 +14,8 @@ log has the details.
   yet, in send order. The sender is the caller's identity, never an argument, and the board enforces each
   agent's recipient allow-list (`scope.message`) itself. The native loop's `message` tool becomes the board's
   `send`, and each turn begins by delivering the agent's `unread` messages, as the bus did. A send outside the
-  agent's scope is still a blocked `action` event, one the board refuses an `action` event with its error, and
-  a sent one writes none. Any harness with an MCP client can now talk to the
+  agent's scope is still a blocked `action` event, and a send the board refuses is an `action` event with its
+  error; a message the board takes writes no `action` event. Any harness with an MCP client can now talk to the
   team. The default config gives every agent `send`, `read` and `unread`. agentgateway offers each tool by its
   own name (`prefixMode: never`), as an in-process run does, and is pinned to v1.6.0
   (`stack.tools_gateway_image`): with two services on its route, v1.5.0 found the service of a 2026-era call

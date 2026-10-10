@@ -17,6 +17,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+import tenacity
+
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import ProviderError
 from loc_arena.ids import Action, PermissionScope, ScopeViolation, enforce
@@ -79,9 +81,11 @@ class Tools:
         services: Services,
         *,
         spawn_handler: SpawnHandler,
+        delivery_attempts: int = 1,
     ) -> None:
-        """Wire the tool layer to the recorder, the services, and the spawn handler."""
+        """Wire the tool layer to the recorder, the services, the spawn handler and the delivery attempts."""
         self._recorder = recorder
+        self._delivery_attempts = delivery_attempts
         self._services = services
         self._spawn_handler = spawn_handler
 
@@ -175,9 +179,17 @@ class Tools:
         self._log_action(ctx, action, turn, blocked=False, result=result)
         return result
 
-    def receive(self, ctx: AgentContext) -> list[ToolResult]:
-        """The messages sent to the agent that it has not received yet, from the board, in send order."""
-        result = self._services.run("unread", {"actor_uid": ctx.uid, "actor_role": ctx.role})
+    def receive(self, ctx: AgentContext, turn: int) -> list[ToolResult]:
+        """The messages sent to the agent that it has not received yet, from the board, in send order.
+
+        A delivery that fails every attempt is recorded as the agent's ``unread`` action, with its error.
+        """
+        result = tenacity.Retrying(
+            stop=tenacity.stop_after_attempt(self._delivery_attempts),
+            wait=tenacity.wait_exponential(multiplier=0.25, max=2),
+            retry=tenacity.retry_if_result(lambda result: "error" in result),
+            retry_error_callback=lambda state: state.outcome.result() if state.outcome else {},
+        )(self._services.run, "unread", {"actor_uid": ctx.uid, "actor_role": ctx.role})
         if "error" in result:
-            _LOGGER.warning("%s received no messages: %s", ctx.uid, result["error"])
+            self._log_action(ctx, AgentAction("unread"), turn, blocked=False, result=result)
         return result.get("messages", [])

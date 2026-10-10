@@ -176,6 +176,11 @@ class StackSettings(SettingsGroup):
         default=300.0,
         description="Seconds one MCP tool call through agentgateway may take before it is an error result.",
     )
+    tools_delivery_attempts: PositiveInt = Field(
+        default=3,
+        description="Attempts at delivering an agent's unread messages from the board at the start of its "
+        "turn; a delivery that fails them all is recorded as the agent's unread action, with its error.",
+    )
     tools_connect_seconds: PositiveFloat = Field(
         default=30.0,
         description="Seconds each agent's MCP client keeps retrying its first listing of tools, while "
