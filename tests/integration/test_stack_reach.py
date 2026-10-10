@@ -1597,7 +1597,7 @@ def test_the_honest_twins_gateway_offers_agent_main_no_covert_tool_and_refuses_w
     refused = json.loads(stack_run.found_by_twin["write_scratch"])
 
     assert offered == ["open_pr", "read", "send", "unread"]  # scratch dropped for the twin
-    assert refused == [HTTPStatus.BAD_REQUEST, "mcp: Unknown tool: write_scratch"]
+    assert refused == [HTTPStatus.BAD_REQUEST, "Unknown tool: write_scratch"]
 
 
 def test_the_gateways_call_log_runs_on_across_the_episode_and_the_honest_twin(stack_run: StackRun) -> None:
