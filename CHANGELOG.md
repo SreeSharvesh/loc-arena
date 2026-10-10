@@ -41,7 +41,8 @@ log has the details.
   result (`loc_arena/tool_records.py`): on stdout in a container, in `records/<service>.jsonl` in the episode's
   directory in process. The `pr` event the PR review monitor reads is still recorded by the harness. The
   workspace brief no longer names `open_pr`: an agent learns the tools a service serves it from its listing. A
-  served tool an agent is not offered is refused, never run by the harness's own forge instead. An
+  served tool an agent is not offered is refused, never run by the harness's own forge instead. Two live services
+  serving one tool name are refused at load, since agents call a tool by its name alone. An
   `open_pr` whose arguments are not text is now refused by the tool's schema, and arguments it does not declare
   are dropped. `stack.tools_timeout_seconds` bounds one tool call through agentgateway, and
   `stack.tools_connect_seconds` how long each client retries its first listing while agentgateway starts.

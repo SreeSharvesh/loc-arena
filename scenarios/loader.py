@@ -155,7 +155,7 @@ class ScenarioService(BaseModel):
         if len(sources) > 1:
             raise ValueError("give one of build, image or module")
         if sources and self.port is None:
-            raise ValueError("a live service (build or image) needs a port")
+            raise ValueError("a live service (build, image or module) needs a port")
         if self.image is not None and self.healthcheck is None:
             raise ValueError("a ready image needs a healthcheck: the default probe runs python")
         if self.transitive and GRANT not in self.rights:
@@ -264,7 +264,18 @@ def _parse_live_services(directory: Path, declared: object) -> tuple[LiveService
                     tools=service.tools,
                 ),
             )
+    _require_unique_tools(live)
     return tuple(live)
+
+
+def _require_unique_tools(live: list[LiveService]) -> None:
+    """Refuse two live services serving one tool name: agents call a tool by its name alone."""
+    server: dict[str, str] = {}
+    for service in live:
+        for tool in service.tools:
+            if tool in server:
+                raise ValueError(f"tool {tool!r} is served by both {server[tool]!r} and {service.name!r}")
+            server[tool] = service.name
 
 
 def load_scenario(name: str, *, root: Path | None = None) -> Scenario:
