@@ -16,7 +16,7 @@
     <marker id="ab" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#2f6fb0"/></marker>
   </defs>
   <rect width="1600" height="1080" fill="#ffffff"/>
-  <text x="60" y="44" class="t">Record at the boundaries: agentgateway for model calls and tool calls, nothing recorded in the harness</text>
+  <text x="60" y="44" class="t">Record at the boundaries: tools leave the harness behind agentgateway, nothing recorded in the harness</text>
 
   <!-- sandboxes -->
   <g>
@@ -59,21 +59,23 @@
   <line x1="1240" y1="262" x2="1290" y2="262" stroke="#5b6390" stroke-width="2.2" stroke-dasharray="8 6"/>
   <text x="1300" y="267" class="b">tool calls over MCP</text>
 
-  <!-- agentgateway -->
-  <rect x="60" y="286" width="1480" height="200" rx="14" fill="#eef4fb" stroke="#2f6fb0" stroke-width="2.5"/>
-  <text x="80" y="316" class="h" fill="#1f4f80">agentgateway (Apache-2.0, Linux Foundation): the one boundary, configured per run</text>
-  <rect x="90" y="332" width="660" height="134" rx="10" fill="#ffffff" stroke="#2f6fb0"/>
-  <text x="110" y="360" class="h" fill="#1f4f80">LLM route</text>
-  <text x="110" y="386" class="b">holds the OpenRouter key; each agent sends its own token</text>
-  <text x="110" y="410" class="b">logs the full request and response per caller, streamed chunks too</text>
-  <text x="110" y="434" class="b">injects the covert objective for one caller only (CEL rule)</text>
-  <text x="110" y="456" class="m">allows only /api/v1/chat/completions, no retries</text>
-  <rect x="850" y="332" width="660" height="134" rx="10" fill="#ffffff" stroke="#2f6fb0"/>
-  <text x="870" y="360" class="h" fill="#1f4f80">MCP route</text>
-  <text x="870" y="386" class="b">one MCP URL for every harness, one token per agent</text>
-  <text x="870" y="410" class="b">per-agent tools by CEL policy (mcpAuthorization)</text>
-  <text x="870" y="434" class="b">passes the caller's identity on to the service</text>
-  <text x="870" y="456" class="m">logs every tool call with the caller</text>
+  <!-- model-call gateway (ours) -->
+  <rect x="60" y="286" width="720" height="200" rx="14" fill="#f3f0fb" stroke="#6a4fb0" stroke-width="2.5"/>
+  <text x="80" y="318" class="h" fill="#4a3290">our gateway, model calls (loc_arena/gateway, as today)</text>
+  <text x="80" y="348" class="b">holds the OpenRouter key; callers send a dummy key</text>
+  <text x="80" y="374" class="b">logs the full request and response per caller, streamed chunks too</text>
+  <text x="80" y="400" class="b">names each caller by its container: sandbox-&lt;agent&gt;</text>
+  <text x="80" y="426" class="m">allows only /api/v1/chat/completions, no retries</text>
+  <rect x="80" y="440" width="680" height="34" rx="8" fill="#ffffff" stroke="#6a4fb0" stroke-dasharray="6 5"/>
+  <text x="96" y="462" class="s">idea, not decided: agentgateway's LLM route could replace this (the spike says it can, with gaps)</text>
+  <!-- agentgateway MCP route -->
+  <rect x="820" y="286" width="720" height="200" rx="14" fill="#eef4fb" stroke="#2f6fb0" stroke-width="2.5"/>
+  <text x="840" y="318" class="h" fill="#1f4f80">agentgateway, MCP route (Apache-2.0, Linux Foundation)</text>
+  <text x="840" y="348" class="b">one MCP URL for every harness, one token per agent</text>
+  <text x="840" y="374" class="b">per-agent tools by CEL policy (mcpAuthorization)</text>
+  <text x="840" y="400" class="b">passes the caller's identity on to the service</text>
+  <text x="840" y="426" class="m">logs every tool call with the caller</text>
+  <text x="840" y="462" class="s">configured per run: tokens and rules generated from the run config</text>
 
   <!-- OpenRouter -->
   <line x1="300" y1="486" x2="300" y2="546" stroke="#5b6390" stroke-width="2.2" marker-end="url(#ar)"/>
@@ -82,26 +84,27 @@
   <text x="110" y="608" class="b">the only route out to the internet</text>
 
   <!-- services -->
-  <line x1="1180" y1="486" x2="1180" y2="546" stroke="#5b6390" stroke-width="2.2" marker-end="url(#ar)"/>
-  <rect x="850" y="550" width="660" height="80" rx="10" fill="#eef8e8" stroke="#4f9a2c" stroke-width="2"/>
-  <text x="870" y="578" class="h" fill="#2f6b14">services, each its own container on agent-net</text>
-  <text x="870" y="606" class="b">board · forge · notes · jobs · identity</text>
-  <text x="870" y="622" class="s">each records what was done to it, by which identity</text>
+  <line x1="1300" y1="486" x2="1300" y2="546" stroke="#5b6390" stroke-width="2.2" marker-end="url(#ar)"/>
+  <rect x="1050" y="550" width="490" height="80" rx="10" fill="#eef8e8" stroke="#4f9a2c" stroke-width="2"/>
+  <text x="1068" y="578" class="h" fill="#2f6b14">services, each its own container</text>
+  <text x="1068" y="604" class="b">board · forge · notes · jobs · identity</text>
+  <text x="1068" y="622" class="s">each records what was done to it, by whom</text>
 
   <!-- records -->
   <g>
     <path d="M330 690 a170 14 0 0 0 340 0 v60 a170 14 0 0 1 -340 0 z" fill="#e3eefa" stroke="#2f6fb0" stroke-width="2"/>
     <ellipse cx="500" cy="690" rx="170" ry="14" fill="#f2f7fd" stroke="#2f6fb0" stroke-width="2"/>
-    <text x="500" y="728" class="h" fill="#1f4f80" text-anchor="middle">gateway log</text>
-    <text x="500" y="750" class="s" text-anchor="middle">every model call and tool call, with its caller</text>
+    <text x="500" y="728" class="h" fill="#1f4f80" text-anchor="middle">gateway call log</text>
+    <text x="500" y="750" class="s" text-anchor="middle">every model call, with its caller</text>
     <path d="M1010 690 a170 14 0 0 0 340 0 v60 a170 14 0 0 1 -340 0 z" fill="#e3eefa" stroke="#2f6fb0" stroke-width="2"/>
     <ellipse cx="1180" cy="690" rx="170" ry="14" fill="#f2f7fd" stroke="#2f6fb0" stroke-width="2"/>
-    <text x="1180" y="728" class="h" fill="#1f4f80" text-anchor="middle">service logs</text>
-    <text x="1180" y="750" class="s" text-anchor="middle">what was done in the world, by whom</text>
+    <text x="1180" y="728" class="h" fill="#1f4f80" text-anchor="middle">tool-call and service logs</text>
+    <text x="1180" y="750" class="s" text-anchor="middle">every tool call, and what it did in the world</text>
   </g>
-  <path d="M760 486 C 760 560, 560 600, 520 672" fill="none" stroke="#2f6fb0" stroke-width="2.2" marker-end="url(#ab)"/>
-  <line x1="1180" y1="630" x2="1180" y2="672" stroke="#2f6fb0" stroke-width="2.2" marker-end="url(#ab)"/>
-  <text x="782" y="524" class="s">recorded at the boundary</text>
+  <path d="M540 486 C 540 560, 520 620, 510 672" fill="none" stroke="#2f6fb0" stroke-width="2.2" marker-end="url(#ab)"/>
+  <path d="M940 486 L 1080 674" fill="none" stroke="#2f6fb0" stroke-width="2.2" marker-end="url(#ab)"/>
+  <line x1="1260" y1="630" x2="1240" y2="672" stroke="#2f6fb0" stroke-width="2.2" marker-end="url(#ab)"/>
+  <text x="560" y="524" class="s">recorded at the boundary</text>
 
   <!-- event builder -->
   <line x1="560" y1="768" x2="720" y2="826" stroke="#2f6fb0" stroke-width="2.2" marker-end="url(#ab)"/>
