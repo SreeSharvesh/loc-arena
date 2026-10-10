@@ -181,7 +181,7 @@ class StackSettings(SettingsGroup):
     tools_delivery_attempts: PositiveInt = Field(
         default=3,
         description="Attempts at delivering an agent's unread messages from the board at the start of its "
-        "turn; a delivery that fails them all is recorded as the agent's unread action, with its error.",
+        "turn; a delivery that fails them all is recorded as the agent's read action, with its error.",
     )
     tools_connect_seconds: PositiveFloat = Field(
         default=30.0,

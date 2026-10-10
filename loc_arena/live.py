@@ -417,6 +417,7 @@ def play_model_episode(
             budget,
             clock=clk,
             trace=trace,
+            receives="read" in agent_cfg.sandbox.tools.get(BOARD_SERVICE, ()),
         )
 
     # Honest world noise around the attack (same as the scripted path; config-independent).

@@ -116,7 +116,7 @@ class Orchestrator:
             for cuid, child in list(self._children.items()):
                 if self._registry.node(cuid).status != "live":
                     continue
-                if self._board.count_unread(cuid) == 0:
+                if not self._board.read(cuid, self._tools.delivered_through(cuid)):
                     continue
                 status = child.run()
                 progressed = True
