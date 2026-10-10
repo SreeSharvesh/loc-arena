@@ -109,10 +109,38 @@ class McpTools:
         return dict(result.structured_content)
 
 
+class McpClients:
+    """One agent's tools across every service it reaches: one endpoint in a stack, one per service in memory.
+
+    A stack run reaches every service through agentgateway's one route, so the list holds a single client; in
+    process each service is its own in-memory server, so the list holds one client per service. The tools and
+    the calls route by name, unique across services under the tools gateway's ``prefixMode: never``.
+    """
+
+    def __init__(self, clients: list[McpTools]) -> None:
+        """Hold the agent's clients, in offering order (the forge first, then the others)."""
+        self._clients = clients
+
+    def specs(self) -> list[ToolSpec]:
+        """Every tool these clients offer the agent, as the function schemas the model is given."""
+        return [spec for client in self._clients for spec in client.specs()]
+
+    def names(self) -> set[str]:
+        """The names of every tool these clients offer the agent."""
+        return {name for client in self._clients for name in client.names()}
+
+    def call(self, tool: str, arguments: Mapping[str, JsonValue]) -> ToolResult:
+        """Call ``tool`` through the client that offers it, else an error result."""
+        client = next((client for client in self._clients if tool in client.names()), None)
+        if client is None:
+            return {"error": f"{tool} is not offered to you", "tool": tool}
+        return client.call(tool, arguments)
+
+
 class McpServices:
     """``Services`` that send a tool an agent's MCP client offers to that client, any other to ``rest``."""
 
-    def __init__(self, clients: Mapping[str, McpTools], rest: Services, *, served: Collection[str]) -> None:
+    def __init__(self, clients: Mapping[str, McpClients], rest: Services, *, served: Collection[str]) -> None:
         """Route by the calling agent's id through its client in ``clients``; fall through to ``rest``.
 
         A tool in ``served``, which some service serves over MCP, never falls through: only the agents it is

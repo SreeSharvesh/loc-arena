@@ -13,7 +13,7 @@ bus, and spawning through the registry via an injected handler.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -80,12 +80,18 @@ class Tools:
         services: Services,
         *,
         spawn_handler: SpawnHandler,
+        recorded_elsewhere: Collection[str] = (),
     ) -> None:
-        """Wire the tool layer to the recorder, the bus, the services, and the spawn handler."""
+        """Wire the tool layer to the recorder, the bus, the services, and the spawn handler.
+
+        A tool in ``recorded_elsewhere`` is one a service records and the post-play builder rebuilds the
+        event for (the covert tools), so a successful call logs no action event here, which would double it.
+        """
         self._recorder = recorder
         self._bus = bus
         self._services = services
         self._spawn_handler = spawn_handler
+        self._recorded_elsewhere = frozenset(recorded_elsewhere)
 
     @staticmethod
     def _target_for(action: AgentAction) -> str | None:
@@ -176,9 +182,11 @@ class Tools:
                 )
         except (KeyError, TypeError, ValueError) as exc:
             result = {"error": f"malformed args for {action.tool}: {exc}", "tool": action.tool}
-        except ProviderError as exc:  # a covert tool's own model calls (the rogue loop) failed
+        except ProviderError as exc:  # a tool's own model calls failed
             _LOGGER.warning("a model call of %s failed: %s", action.tool, exc)
             result = {"error": f"a model call of {action.tool} failed", "tool": action.tool}
 
-        self._log_action(ctx, action, turn, blocked=False, result=result)
+        # A tool a service records is logged from its record after play, so logging it here would double it.
+        if action.tool not in self._recorded_elsewhere:
+            self._log_action(ctx, action, turn, blocked=False, result=result)
         return result

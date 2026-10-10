@@ -103,7 +103,16 @@ def render_tools_gateway_config(
             {
                 "port": config.settings.stack.tools_gateway_port,
                 "listeners": [
-                    {"routes": [{"policies": policies, "backends": [{"mcp": {"targets": targets}}]}]},
+                    {
+                        "routes": [
+                            {
+                                "policies": policies,
+                                # Names stay unprefixed and route by lookup: they are unique across services,
+                                # so an agent calls open_pr, not forge_open_pr, in a stack as in process.
+                                "backends": [{"mcp": {"targets": targets, "prefixMode": "never"}}],
+                            },
+                        ],
+                    },
                 ],
             },
         ],

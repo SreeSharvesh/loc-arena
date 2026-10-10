@@ -73,7 +73,7 @@ def test_dev_model_keeps_a_tool_result_for_the_next_turn(tmp_path: Path) -> None
     policy = ModelAgentPolicy(
         client,
         _SYSTEM,
-        agent_tool_specs(covert=False),
+        agent_tool_specs(),
         cfg.agent_loop,
     )
 

@@ -317,7 +317,9 @@ def _render_live_service(
                 "image": f"loc-arena-service-{service.name}:latest",
             }
         case EngineModule(name=module):
-            source = {**engine, "command": ["python", "-m", module, f"{CONFIGS_DIRECTORY}/{run}.yaml"]}
+            # The entry name follows the config so one module (the recording service) can serve several.
+            arguments = [f"{CONFIGS_DIRECTORY}/{run}.yaml", service.name]
+            source = {**engine, "command": ["python", "-m", module, *arguments]}
         case image:
             source = {"image": image}
     return {
