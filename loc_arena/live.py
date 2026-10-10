@@ -47,7 +47,7 @@ from loc_arena.gateway.core import (
 from loc_arena.gateway.edge import GatewayEdge
 from loc_arena.identity import IdentityService
 from loc_arena.logging_.agent_trace import open_episode_logs
-from loc_arena.npcs.coworker import run_coworker, run_world_activity
+from loc_arena.npcs.coworker import apply_world_activity, run_coworker, run_world_activity
 from loc_arena.recording_service import TOOLS as RECORDED_TOOLS
 from loc_arena.recording_service import build_server as build_recording_server
 from loc_arena.sandbox import IDENTITY_PREFIX, connect_sandboxes, reset_sandboxes, token_secret_name
@@ -284,11 +284,12 @@ def play_model_episode(
     checkout = seed_episode_checkout(config, workdir)  # the seven side-by-side company repos, pristine
 
     world = generate_world(config, scenario, config.seed)
-    forge = Forge(world)
     reviewer = Reviewer()
     repos = hosted_repos(config, scenario)
     platform_repo = repos[0][0]
     control_repo = next((name for name, control in repos if control), None)
+    forge = Forge(world)
+    activity = apply_world_activity(forge, platform_repo=platform_repo, control_repo=control_repo)
 
     sealed_path = workdir / "events.sealed.jsonl"
     mirror_path = workdir / "events.mirror.jsonl"
@@ -421,6 +422,7 @@ def play_model_episode(
     run_coworker(edge, recorder, set_time)
     run_world_activity(
         recorder,
+        activity,
         forge,
         reviewer,
         set_time,

@@ -1548,6 +1548,16 @@ def test_the_honest_twin_holds_the_rights_its_run_config_seeds_whatever_the_epis
     assert rights == {agent.id: sorted(agent.sandbox.rights.get(NOTES.name, ())) for agent in CONFIG.agents}
 
 
+def test_an_agents_first_pull_request_takes_the_number_after_the_coworkers(stack_run: StackRun) -> None:
+    opened = [
+        line.result for line in stack_run.forge_log if line.result and line.result["repo"] == OPENED_REPO
+    ]
+
+    numbers = [result["number"] for result in opened if isinstance(result["number"], int)]
+
+    assert numbers[0] == 8  # the seeded world holds PRs 1 to 6 in meridian-serving, and a coworker opened 7
+
+
 def test_the_honest_twins_first_pull_request_takes_the_number_the_episodes_first_took(
     stack_run: StackRun,
 ) -> None:

@@ -43,7 +43,7 @@ from loc_arena.identity import IdentityService
 from loc_arena.jobsvc import RogueWorker
 from loc_arena.logging_.agent_trace import EpisodeTrace, open_episode_logs
 from loc_arena.logging_.events import fingerprint
-from loc_arena.npcs.coworker import run_coworker, run_world_activity
+from loc_arena.npcs.coworker import apply_world_activity, run_coworker, run_world_activity
 from loc_arena.registry import get_scorer
 from loc_arena.scaffold.bus import Recorder
 from loc_arena.tasks.main_task_grader import (
@@ -447,11 +447,12 @@ def play_scripted_episode(
 
     # The seeded world: a pure function of (config, seed), identical across the honest twin and attack.
     world = generate_world(config, scenario, config.seed)
-    forge = Forge(world)
     reviewer = Reviewer()
     repos = hosted_repos(config, scenario)
     platform_repo = repos[0][0]
     control_repo = next((name for name, control in repos if control), None)
+    forge = Forge(world)
+    activity = apply_world_activity(forge, platform_repo=platform_repo, control_repo=control_repo)
 
     sealed_path = workdir / "events.sealed.jsonl"
     mirror_path = workdir / "events.mirror.jsonl"
@@ -480,6 +481,7 @@ def play_scripted_episode(
     _routine_coordination(recorder, clk)  # legitimate coordination (config-independent)
     run_world_activity(  # forge boot, coworker PRs, and reviewer judgment in the seeded world
         recorder,
+        activity,
         forge,
         reviewer,
         lambda v: setattr(clk, "t", v),

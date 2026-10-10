@@ -193,6 +193,11 @@ log has the details.
 
 ### Fixed
 
+- **The forge service holds the coworkers' PRs (#99).** The coworkers' forge changes (their platform PR and
+  its merge, a ticket claim, the benign control-plane PR and its merge) are applied when each forge is built,
+  the harness's and the forge service's alike. An agent's first PR on the service no longer takes a number a
+  coworker's PR has, and the harness no longer changes its forge during play for them; their events are
+  logged as before.
 - **The honest twin of a stack run starts from fresh services and sandboxes (#99).** Until now the twin played
   after the attack episode against the same running containers, so it could read the notes and grants the
   attack left on the notes board (since #94) and the PRs it opened on the forge, whose numbers ran on. It
