@@ -3,8 +3,7 @@
 Each sandbox's command server (``sandbox_server``) runs one command at a caller's request, in a directory
 under ``settings.stack.checkouts_directory``, for a caller holding that sandbox's own token (a compose secret
 mounted into the episode and that sandbox only). In the episode container an agent's bash goes to its own
-sandbox, where it runs the scenario's skills; elsewhere bash is refused and run_tests and run_benchmark run
-the skills' scripts in this process.
+sandbox; elsewhere bash is refused, and run_tests and run_benchmark run the skills' scripts in this process.
 """
 
 from __future__ import annotations

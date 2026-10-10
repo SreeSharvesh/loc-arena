@@ -60,11 +60,13 @@ Tool = Annotated[str, StringConstraints(strict=True, pattern=r"^[A-Za-z0-9_.-]{1
 
 
 def resolve_pack_directory(pack: Path, path: Path) -> Path:
-    """``path`` resolved under ``pack``: refused at the pack's root, outside it or in its sealed parts."""
+    """``path`` resolved under ``pack``: refused unless a directory under it, outside its sealed parts."""
     pack = pack.resolve()
     resolved = resolve_inside(pack, path)
     if resolved == pack or any(resolved.is_relative_to(pack / sealed) for sealed in SEALED_DIRECTORIES):
         raise ValueError(f"{path} must be a directory under the pack, outside {list(SEALED_DIRECTORIES)}")
+    if not resolved.is_dir():
+        raise ValueError(f"{path} is no directory")
     return resolved
 
 
@@ -286,15 +288,10 @@ def _require_unique_tools(live: list[LiveService]) -> None:
 
 def _resolve_skills(directory: Path, declared: object) -> Path | None:
     """The pack's ``skills:`` folder, resolved like a build directory; a ValueError names a wrong one."""
-    if declared is None:
-        return None
     try:
-        skills = resolve_pack_directory(directory, Path(str(declared)))
-        if not skills.is_dir():
-            raise ValueError(f"{declared} is no directory")
+        return None if declared is None else resolve_pack_directory(directory, Path(str(declared)))
     except ValueError as error:
         raise ValueError(f"scenario {directory.name}: skills {error}") from error
-    return skills
 
 
 def load_scenario(name: str, *, root: Path | None = None) -> Scenario:

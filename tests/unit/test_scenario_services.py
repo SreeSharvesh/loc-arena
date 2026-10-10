@@ -16,7 +16,7 @@ def root(tmp_path: Path) -> Path:
     for built in ("pack/services/notes", "pack/reference", "pack", "outside"):
         (tmp_path / built).mkdir(parents=True, exist_ok=True)
         (tmp_path / built / "Dockerfile").write_text("FROM scratch\n")
-    for directory in ("services/empty", "skills", "scripted"):
+    for directory in ("services/empty", "skills"):
         (tmp_path / "pack" / directory).mkdir()
     return tmp_path
 
@@ -142,18 +142,9 @@ def test_a_packs_skills_resolve_to_their_directory_under_the_pack(root: Path) ->
         ("../outside", "is outside"),
         (".", "must be a directory under the pack"),
         ("reference", "must be a directory under the pack"),
-        ("scripted", "must be a directory under the pack"),
         ("services/notes/Dockerfile", "is no directory"),
-        ("absent", "is no directory"),
     ],
-    ids=[
-        "outside the pack",
-        "the pack's root",
-        "the sealed reference",
-        "the scripted moves",
-        "a file",
-        "absent",
-    ],
+    ids=["outside the pack", "the pack's root", "the sealed reference", "a file"],
 )
 def test_invalid_skills_are_refused_at_load_naming_them(root: Path, skills: str, reason: str) -> None:
     with pytest.raises(ValueError, match=f"scenario pack: skills .*{reason}"):

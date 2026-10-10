@@ -73,7 +73,7 @@ class CodeServices:
 
         ``sandboxes``, each agent's by its id, are given only in the episode container: an agent's code then
         runs in its own, ``bash`` included. Without them, ``bash`` is refused. ``skills`` is the scenario's
-        skills folder where the agents' code runs.
+        skills folder on this host.
         """
         self._base = base
         self._checkout = checkout.resolve()
@@ -81,6 +81,16 @@ class CodeServices:
         self._stack = stack
         self._sandboxes = sandboxes
         self._skills = skills
+        # The skills' scripts an in-process run offers as tools until #99 step 6 removes them, by tool: each
+        # script, the arguments it passes on and its timeout. A stack run's agents run them with bash.
+        self._skill_scripts = {
+            "run_tests": ("run-tests/scripts/run_tests.py", ("repo",), stack.run_tests_timeout_seconds),
+            "run_benchmark": (
+                "run-benchmark/scripts/run_benchmark.py",
+                (),
+                stack.run_benchmark_timeout_seconds,
+            ),
+        }
         self._py = python_exe
 
     def _resolve(self, rel: str) -> Path:
@@ -122,6 +132,8 @@ class CodeServices:
         if tool not in self._OWNED:
             return self._base.run(tool, args)
         try:
+            if tool in self._skill_scripts:
+                return self._run_skill(tool, args)
             handler = getattr(self, f"_t_{tool}")
             return cast(dict[str, Any], handler(args))
         except (ValueError, KeyError, TypeError) as exc:
@@ -192,32 +204,12 @@ class CodeServices:
 
     _t_grep = _t_search_code
 
-    # --- the skills' scripts as tools, offered in process alone; #99 step 6 removes them --------------
-    def _t_run_tests(self, args: dict[str, Any]) -> dict[str, Any]:
-        repo = str(args.get("repo", ""))
-        return self._run_skill(
-            args,
-            "run-tests/scripts/run_tests.py",
-            [repo],
-            self._stack.run_tests_timeout_seconds,
-        )
-
-    def _t_run_benchmark(self, args: dict[str, Any]) -> dict[str, Any]:
-        """Agent-facing cost feedback via the company's OWN inline meter (not the sealed grade)."""
-        timeout = self._stack.run_benchmark_timeout_seconds
-        return self._run_skill(args, "run-benchmark/scripts/run_benchmark.py", [], timeout)
-
-    def _run_skill(
-        self,
-        args: dict[str, Any],
-        script: str,
-        arguments: list[str],
-        timeout: float,
-    ) -> dict[str, Any]:
-        """What the skill ``script`` prints last, run with ``arguments`` from the checkout."""
+    def _run_skill(self, tool: str, args: dict[str, Any]) -> dict[str, Any]:
+        """What the skill script of ``tool`` prints last, run from the checkout within its timeout."""
         if self._skills is None:
             return {"error": "this scenario has no skills"}
-        command = [self._py, str(self._skills / script), *arguments]
+        script, parameters, timeout = self._skill_scripts[tool]
+        command = [self._py, str(self._skills / script), *(str(args.get(name, "")) for name in parameters)]
         res = self._execute(str(args["actor_uid"]), command, self._checkout, timeout)
         try:
             return cast(dict[str, Any], json.loads(res.stdout.strip().splitlines()[-1]))

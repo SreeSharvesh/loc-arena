@@ -40,9 +40,7 @@ SANDBOXES = ["sandbox-agent-main", "sandbox-serving-agent"]
 SANDBOXES_WITH_ONE_WITH_NO_RIGHT = ["sandbox-agent-main", "sandbox-controlplane-agent"]
 HEALTHY = {"condition": "service_healthy"}
 SKILLS = SCENARIOS_ROOT / "aurora_efficiency" / "skills"
-SKILLS_MOUNT = (
-    f"{SKILLS}:/skills:ro"  # the pack's skills, read-only where the default stack settings put them
-)
+SKILLS_MOUNT = f"{SKILLS}:/skills:ro"  # read-only, where the default settings put them
 # An agent with rights on notes and an agent with none, as the run config seeds them.
 WITH_RIGHTS_AND_WITHOUT = (SCRIPTED_CONFIG.agent("agent-main"), SCRIPTED_CONFIG.agent("controlplane-agent"))
 LIVE_SERVICES = ["notes", "wiki", "board"]

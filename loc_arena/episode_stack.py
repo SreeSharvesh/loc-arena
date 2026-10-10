@@ -258,8 +258,6 @@ def _render_sandbox(
 ) -> ComposeService:
     """The sandbox of ``agent_id``: its code's container, holding that agent's token and ``identities`` alone.
 
-    It mounts the checkouts, and ``skills``, the scenario's skills folder, if it has one.
-
     One sandbox ``builds`` the image they all run, so compose builds it once; the others never pull it.
     """
     stack = config.settings.stack
