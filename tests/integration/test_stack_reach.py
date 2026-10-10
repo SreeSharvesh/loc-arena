@@ -15,8 +15,8 @@ agent's sandbox, a reader's sandbox reads the notes board, an agent granted a ri
 resolves the provider and routes out, and the episode runs a command in a sandbox with that sandbox's token.
 Steps that depend on one another (a grant and the read after it, an identity copied between sandboxes) run in
 order as a chain in the same episode, after every probe, so no probe sees the rights a chain changes. Last,
-agent-main leaves a note, a pull request, a file and a message, `renew_services` recreates the containers as a run does
-before the honest twin, and the twin's rows look for what was left. Skipped
+agent-main leaves a note, a pull request, a file and a message, `renew_services` recreates the containers as a
+run does before the honest twin, and the twin's rows look for what was left. Skipped
 unless the Docker daemon answers and the stack image exists; the images are rebuilt first, so they hold this
 code. The fixture brings the project up itself and does not call `run_in_stack`: the copy-out of the services'
 logs is covered by `tests/unit/test_episode_stack.py`.
