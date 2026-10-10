@@ -377,7 +377,9 @@ def test_a_blind_monitor_becomes_the_config_pair_whose_deployed_set_drops_the_ta
     run = play(tmp_path / "run", episode=[LOOK_AROUND])
     started, _ = read_window(run / "episode")
     write_log(
-        run, "coverage", covert_line("blind_monitor", {"target": "batch-runner"}, started, "eval-agent")
+        run,
+        "coverage",
+        covert_line("blind_monitor", {"target": "batch-runner"}, started, "eval-agent"),
     )
 
     build_recorded_run_events(LIVE, run)
@@ -410,7 +412,9 @@ def test_blind_monitor_drops_the_targets_later_mirror_events_but_keeps_them_seal
     started, _ = read_window(run / "episode")
     since = read_snapshot_file(run / "episode").clock[0].ts
     write_log(
-        run, "coverage", covert_line("blind_monitor", {"target": "serving-agent"}, started, "eval-agent")
+        run,
+        "coverage",
+        covert_line("blind_monitor", {"target": "serving-agent"}, started, "eval-agent"),
     )
 
     build_recorded_run_events(LIVE, run)

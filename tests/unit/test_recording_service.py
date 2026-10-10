@@ -7,7 +7,6 @@ from http import HTTPStatus
 
 import anyio
 import httpx2
-import pytest
 from loc_arena.config import load_run_config
 from loc_arena.recording_service import IdentityVerifier, build_app, build_server, caller_from_token
 from mcp import Client

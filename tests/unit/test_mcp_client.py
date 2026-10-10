@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from loc_arena.scaffold.mcp_client import McpServices, McpTools, over_http
+from loc_arena.scaffold.mcp_client import McpClients, McpServices, McpTools, over_http
 from loc_arena.scaffold.tools import ToolResult
 from mcp import Client
 from mcp.server import MCPServer
@@ -65,7 +65,7 @@ def test_a_call_to_an_unreachable_server_is_an_error_result() -> None:
 
 def test_a_served_tool_the_caller_is_not_offered_is_refused_and_never_run_elsewhere() -> None:
     other = _OtherServices()
-    unoffered = McpTools(lambda: Client(_server()), granted=())
+    unoffered = McpClients([McpTools(lambda: Client(_server()), granted=())])
     services = McpServices({"alpha": unoffered}, other, served={"echo"})
 
     result = services.run("echo", {"text": "hello", "actor_uid": "alpha"})

@@ -624,7 +624,7 @@ def test_a_service_with_tools_runs_its_engine_module_with_the_run_config_and_eve
         "build": {"context": "/repository", "target": "engine"},
         "image": "loc-arena:latest",
         "cap_drop": ["ALL"],
-        "command": ["python", "-m", "loc_arena.forge.service", "/app/configs/a-run.yaml"],
+        "command": ["python", "-m", "loc_arena.forge.service", "/app/configs/a-run.yaml", "forge"],
         "volumes": ["/repository/configs:/app/configs:ro"],
         "mem_limit": "300m",
         "cpus": 0.5,
@@ -758,6 +758,7 @@ def test_the_tools_gateway_forwards_each_call_with_the_callers_identity_on_the_s
                     },
                 },
             ],
+            "prefixMode": "never",
         },
     }
 
@@ -879,11 +880,11 @@ def test_a_stack_run_hands_compose_a_distinct_identity_per_agent_and_service_thr
         [
             *(
                 f"LOC_ARENA_IDENTITY_{service}_{agent}"
-                for service in ("FORGE", "NOTES")
+                for service in ("COVERAGE", "FORGE", "JOBS", "NOTES", "SCRATCH")
                 for agent in AURORA_AGENTS
             ),
         ],
-        14,
+        35,
         [],
     )
 
@@ -1018,7 +1019,13 @@ def test_a_stack_run_copies_each_live_services_log_into_its_run_directory_before
 
     run_aurora_in_stack(tmp_path)
 
-    assert copied_at_grading == [["agentgateway.log", "forge.log", "notes.log"]] * 2
+    assert (
+        copied_at_grading
+        == [
+            ["agentgateway.log", "coverage.log", "forge.log", "jobs.log", "notes.log", "scratch.log"],
+        ]
+        * 2
+    )
 
 
 def test_a_graded_stack_run_copies_its_run_directory_out_once(
@@ -1047,16 +1054,14 @@ def test_an_attack_stack_run_renews_every_container_but_the_gateway_and_the_epis
 
     commands = [call[COMPOSE_PREFIX_LENGTH:] for call in docker.calls]
     plays = [index for index, command in enumerate(commands) if command[0] == "up" and "--attach" in command]
+    logged = ("notes", "forge", "jobs", "scratch", "coverage", "agentgateway")
     assert commands[plays[0] + 1 : plays[1]] == [
-        *(
-            ["logs", "--no-color", "--no-log-prefix", service]
-            for service in ("notes", "forge", "agentgateway")
-        ),
+        *(["logs", "--no-color", "--no-log-prefix", service] for service in logged),
         [
             *["up", "--detach", "--wait", "--force-recreate", "--renew-anon-volumes", "--no-deps"],
             *["sandbox-agent-main", "sandbox-serving-agent", "sandbox-distill-agent", "sandbox-eval-agent"],
             *["sandbox-datapipe-agent", "sandbox-jobsvc-agent", "sandbox-controlplane-agent"],
-            *["notes", "forge", "agentgateway"],
+            *logged,
         ],
     ]
 
