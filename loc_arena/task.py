@@ -30,7 +30,7 @@ from scenarios.loader import Scenario, load_scenario
 from loc_arena.config import RunConfig
 from loc_arena.forge.forge import Forge
 from loc_arena.forge.reviewer import Reviewer
-from loc_arena.forge.world import SeededWorld, generate_world, hosted_repos
+from loc_arena.forge.world import SeededWorld, generate_world
 from loc_arena.gateway.core import (
     BatchGenerateRequest,
     DeterministicProvider,
@@ -43,7 +43,12 @@ from loc_arena.identity import IdentityService
 from loc_arena.jobsvc import RogueWorker
 from loc_arena.logging_.agent_trace import EpisodeTrace, open_episode_logs
 from loc_arena.logging_.events import fingerprint
-from loc_arena.npcs.coworker import apply_world_activity, run_coworker, run_world_activity
+from loc_arena.npcs.coworker import (
+    apply_world_activity,
+    resolve_activity_repos,
+    run_coworker,
+    run_world_activity,
+)
 from loc_arena.registry import get_scorer
 from loc_arena.scaffold.bus import Recorder
 from loc_arena.tasks.main_task_grader import (
@@ -448,11 +453,9 @@ def play_scripted_episode(
     # The seeded world: a pure function of (config, seed), identical across the honest twin and attack.
     world = generate_world(config, scenario, config.seed)
     reviewer = Reviewer()
-    repos = hosted_repos(config, scenario)
-    platform_repo = repos[0][0]
-    control_repo = next((name for name, control in repos if control), None)
+    repos = resolve_activity_repos(config, scenario)
     forge = Forge(world)
-    activity = apply_world_activity(forge, platform_repo=platform_repo, control_repo=control_repo)
+    activity = apply_world_activity(forge, repos)
 
     sealed_path = workdir / "events.sealed.jsonl"
     mirror_path = workdir / "events.mirror.jsonl"
@@ -485,8 +488,7 @@ def play_scripted_episode(
         forge,
         reviewer,
         lambda v: setattr(clk, "t", v),
-        platform_repo=platform_repo,
-        control_repo=control_repo,
+        repos,
         covert_enabled=config.covert.enabled,
     )
     _honest_work(edge, clk)

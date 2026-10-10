@@ -26,7 +26,7 @@ from pydantic import Field
 
 from loc_arena.config import RunConfig, load_run_config
 from loc_arena.forge.forge import Forge, ForgeError
-from loc_arena.forge.world import generate_world, hosted_repos
+from loc_arena.forge.world import generate_world
 from loc_arena.ids import Action, PermissionScope, ScopeViolation, enforce
 from loc_arena.mcp_service import (
     ALL_ADDRESSES,
@@ -35,7 +35,7 @@ from loc_arena.mcp_service import (
     caller_from_token,
     read_identities,
 )
-from loc_arena.npcs.coworker import apply_world_activity
+from loc_arena.npcs.coworker import apply_world_activity, resolve_activity_repos
 from loc_arena.sandbox import IDENTITY_PREFIX
 from loc_arena.task import resolve_scenario
 from loc_arena.tool_records import Write, tool_call_recorder
@@ -111,10 +111,8 @@ def build_server(
 def build_forge(config: RunConfig) -> Forge:
     """The forge of ``config``'s seeded world, holding the coworkers' changes as the episode's forge does."""
     scenario = resolve_scenario(config)
-    repos = hosted_repos(config, scenario)
     forge = Forge(generate_world(config, scenario, config.seed))
-    control_repo = next((name for name, control in repos if control), None)
-    apply_world_activity(forge, platform_repo=repos[0][0], control_repo=control_repo)
+    apply_world_activity(forge, resolve_activity_repos(config, scenario))
     return forge
 
 

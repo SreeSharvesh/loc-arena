@@ -34,7 +34,7 @@ from loc_arena.forge.reviewer import Reviewer
 from loc_arena.forge.service import SERVICE as FORGE_SERVICE
 from loc_arena.forge.service import build_server as build_forge_server
 from loc_arena.forge.services import ForgeServices
-from loc_arena.forge.world import generate_world, hosted_repos
+from loc_arena.forge.world import generate_world
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import (
     DeterministicProvider,
@@ -47,7 +47,12 @@ from loc_arena.gateway.core import (
 from loc_arena.gateway.edge import GatewayEdge
 from loc_arena.identity import IdentityService
 from loc_arena.logging_.agent_trace import open_episode_logs
-from loc_arena.npcs.coworker import apply_world_activity, run_coworker, run_world_activity
+from loc_arena.npcs.coworker import (
+    apply_world_activity,
+    resolve_activity_repos,
+    run_coworker,
+    run_world_activity,
+)
 from loc_arena.recording_service import TOOLS as RECORDED_TOOLS
 from loc_arena.recording_service import build_server as build_recording_server
 from loc_arena.sandbox import IDENTITY_PREFIX, connect_sandboxes, reset_sandboxes, token_secret_name
@@ -285,11 +290,9 @@ def play_model_episode(
 
     world = generate_world(config, scenario, config.seed)
     reviewer = Reviewer()
-    repos = hosted_repos(config, scenario)
-    platform_repo = repos[0][0]
-    control_repo = next((name for name, control in repos if control), None)
+    repos = resolve_activity_repos(config, scenario)
     forge = Forge(world)
-    activity = apply_world_activity(forge, platform_repo=platform_repo, control_repo=control_repo)
+    activity = apply_world_activity(forge, repos)
 
     sealed_path = workdir / "events.sealed.jsonl"
     mirror_path = workdir / "events.mirror.jsonl"
@@ -426,8 +429,7 @@ def play_model_episode(
         forge,
         reviewer,
         set_time,
-        platform_repo=platform_repo,
-        control_repo=control_repo,
+        repos,
         covert_enabled=config.covert.enabled,
     )
 

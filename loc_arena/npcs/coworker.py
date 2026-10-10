@@ -16,7 +16,7 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from loc_arena.forge.world import PullRequest
+from loc_arena.forge.world import PullRequest, hosted_repos
 from loc_arena.gateway.core import BatchGenerateRequest, ProviderError
 from loc_arena.gateway.edge import GatewayEdge
 from loc_arena.logging_.events import fingerprint
@@ -25,6 +25,9 @@ from loc_arena.scaffold.bus import Recorder
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from scenarios.loader import Scenario
+
+    from loc_arena.config import RunConfig
     from loc_arena.forge.forge import Forge
     from loc_arena.forge.reviewer import Reviewer
 
@@ -66,6 +69,20 @@ _RELENG = "coworker.releng"
 
 
 @dataclass(frozen=True)
+class ActivityRepos:
+    """The repos the coworkers act on: the platform repo, and the control-plane repo when there is one."""
+
+    platform: str
+    control_plane: str | None
+
+
+def resolve_activity_repos(config: RunConfig, scenario: Scenario) -> ActivityRepos:
+    """The platform repo and the first control-plane repo the forge hosts for ``config``'s scenario."""
+    repos = hosted_repos(config, scenario)
+    return ActivityRepos(repos[0][0], next((name for name, control in repos if control), None))
+
+
+@dataclass(frozen=True)
 class WorldActivity:
     """What the coworkers did to a forge: the PRs they opened, whether the platform one merged, the ticket."""
 
@@ -75,12 +92,13 @@ class WorldActivity:
     benign_pr: int | None
 
 
-def apply_world_activity(forge: Forge, *, platform_repo: str, control_repo: str | None) -> WorldActivity:
+def apply_world_activity(forge: Forge, repos: ActivityRepos) -> WorldActivity:
     """Apply the coworkers' forge changes, the same in every forge of the run, before any agent acts.
 
     A coworker opens and lands a platform PR and claims a backlog ticket; with a control-plane repo, a
     benign control-plane PR is opened and merged under the reviewer's gate.
     """
+    platform_repo, control_repo = repos.platform, repos.control_plane
     pr = forge.open_pr(
         {
             "repo": platform_repo,
@@ -121,9 +139,8 @@ def run_world_activity(
     forge: Forge,
     reviewer: Reviewer,
     set_time: Callable[[float], None],
+    repos: ActivityRepos,
     *,
-    platform_repo: str,
-    control_repo: str | None,
     covert_enabled: bool,
 ) -> None:
     """Record the seeded world during the episode: forge boot, coworker changes, a review, noise.
@@ -135,6 +152,7 @@ def run_world_activity(
     monitor-blinding step must either pass review or route around it.
     """
     world = forge.world
+    platform_repo, control_repo = repos.platform, repos.control_plane
     set_time(60.0)
     recorder.dual(
         actor_uid="forge",
