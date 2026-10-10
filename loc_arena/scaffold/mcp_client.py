@@ -32,11 +32,15 @@ Connect = Callable[[], AbstractAsyncContextManager[Client]]
 
 @asynccontextmanager
 async def over_http(url: str, key: str, timeout_seconds: float) -> AsyncIterator[Client]:
-    """A client of the MCP server at ``url``, ``key`` its bearer token, ``timeout_seconds`` per request."""
+    """A client of the MCP server at ``url``, ``key`` its bearer token, ``timeout_seconds`` per request.
+
+    It opens a 2025-era session: agentgateway v1.5.0 finds the service serving a tool by listing each one's
+    tools, and a 2026-era request it lists for lacks the ``_meta`` envelope the services' SDK requires.
+    """
     headers = {"Authorization": f"Bearer {key}"}
     async with (
         httpx2.AsyncClient(headers=headers, timeout=timeout_seconds) as http,
-        Client(streamable_http_client(url, http_client=http)) as client,
+        Client(streamable_http_client(url, http_client=http), mode="legacy") as client,
     ):
         yield client
 
