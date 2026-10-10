@@ -12,7 +12,7 @@ import dataclasses
 import json
 import shutil
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -102,10 +102,14 @@ def forge_line(at: datetime, **outcome: object) -> str:
 
 
 def read_window(phase: Path) -> tuple[datetime, datetime]:
-    """When the phase in ``phase`` began and finished playing, from its snapshot."""
+    """The first and the last microsecond of the phase in ``phase``'s play window, from its snapshot.
+
+    A record's time has microseconds, and a snapshot's has more: one microsecond in keeps it inside.
+    """
     snapshot = read_snapshot_file(phase)
     started, finished = snapshot.clock[0].wall, snapshot.finished_at or 0.0
-    return datetime.fromtimestamp(started, UTC), datetime.fromtimestamp(finished, UTC)
+    inside = timedelta(microseconds=1)
+    return datetime.fromtimestamp(started, UTC) + inside, datetime.fromtimestamp(finished, UTC) - inside
 
 
 def list_serving_prs(phase: Path, log: str) -> list[Event]:
@@ -203,7 +207,7 @@ def test_an_open_pr_the_forge_refused_builds_no_event(tmp_path: Path) -> None:
 
     build_recorded_run_events(LIVE, run)
 
-    assert list_serving_prs(run / "episode", MIRROR) == []
+    assert (list_serving_prs(run / "episode", MIRROR), read_unattributed_reasons(run)) == ([], [])
 
 
 def test_grading_a_run_again_leaves_its_sealed_log_byte_identical(tmp_path: Path) -> None:
@@ -243,9 +247,19 @@ def test_a_built_event_of_an_agent_without_native_turns_is_exported_in_the_episo
     [
         (lambda started: forge_line(LONG_BEFORE_THE_RUN), "outside every phase window", []),
         (lambda started: '{"gen_ai.tool.name": "open_pr"}', "not a valid record", []),
+        (
+            lambda started: forge_line(started, **{"gen_ai.tool.call.result": {"opened": True}}),
+            "not a valid record",
+            [],
+        ),
         (lambda started: forge_line(started), "no covering turn", ["length-aware batching"]),
     ],
-    ids=["in no phase window", "not a record", "a native agent's outside its turns"],
+    ids=[
+        "in no phase window",
+        "not a record",
+        "not the forge's result",
+        "a native agent's outside its turns",
+    ],
 )
 def test_a_record_the_builder_cannot_place_is_noted_in_the_bundle_and_built_only_into_a_known_phase(
     tmp_path: Path,

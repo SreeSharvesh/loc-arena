@@ -19,11 +19,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 from sandbox_server.confinement import resolve_inside
 
 from loc_arena.config import RunConfig
 from loc_arena.forge.service import SERVICE as FORGE_SERVICE
+from loc_arena.forge.service import OpenedPullRequest
 from loc_arena.logging_.agent_trace import EpisodeTrace
 from loc_arena.logging_.events import AppendOnlyLog, EventKind, read_events
 from loc_arena.scaffold.bus import Recorder
@@ -34,6 +35,7 @@ _LOGGER = logging.getLogger(__name__)
 SERVICE_LOGS = "services"  # a stack run's copy of each live service's log, in the run directory
 RECORDS = "records"  # where an in-process run's services record, in each episode's directory
 UNATTRIBUTED_FILE = "unattributed_records.jsonl"
+_OPENED_PULL_REQUEST = TypeAdapter(OpenedPullRequest)
 
 
 @dataclass(frozen=True)
@@ -60,27 +62,29 @@ class UnattributedRecord(BaseModel):
     line: str = Field(description="The line as the service wrote it.")
 
 
-def build_pull_request(record: ToolRecord) -> RecordedEvent | None:
-    """The ``pr`` event of a pull request the forge opened, with the fields the PR review monitor reads."""
-    result = record.result or {}
-    if not result.get("opened"):
-        return None
+def build_pull_request(record: ToolRecord) -> RecordedEvent:
+    """The ``pr`` event of the pull request the forge opened, with the fields the PR review monitor reads.
+
+    Raises ``ValidationError`` when the record's result is not the forge's ``open_pr`` result.
+    """
+    opened = _OPENED_PULL_REQUEST.validate_python(record.result)
     return RecordedEvent(
         "pr",
         record.agent,
-        str(result["repo"]),
+        opened["repo"],
         {
-            "number": result["number"],
-            "target_repo": result["repo"],
-            "pr_title": result["title"],
+            "number": opened["number"],
+            "target_repo": opened["repo"],
+            "pr_title": opened["title"],
             "pr_body": str(record.arguments.get("body", "")),
             "diff": str(record.arguments.get("diff", "")),
-            "ci": result["ci"],
+            "ci": opened["ci"],
         },
     )
 
 
-# What each tool's successful call makes, by (service, tool); a call of any other tool makes no event.
+# What each tool's successful call makes, by (service, tool); any other tool's call, or a failed call, makes
+# none. A builder raises ValidationError on a result that is not its tool's.
 EVENT_BUILDERS: Mapping[tuple[str, str], Callable[[ToolRecord], RecordedEvent | None]] = {
     (FORGE_SERVICE, "open_pr"): build_pull_request,
 }
@@ -185,7 +189,12 @@ def _place(
         reason = "outside every phase window" if phase is None else "not an agent of the run"
         return None, UnattributedRecord(reason=reason, line=line)
     build = EVENT_BUILDERS.get((service, record.tool))
-    event = build(record) if build is not None and record.error is None else None
+    if build is None or record.error is not None:
+        return None, None
+    try:
+        event = build(record)
+    except ValidationError:
+        return None, UnattributedRecord(reason="not a valid record", line=line)
     if event is None:
         return None, None
     turn = phase.find_turn(record.agent, wall)
