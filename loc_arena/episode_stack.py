@@ -25,7 +25,6 @@ import json
 import os
 import secrets
 import subprocess
-from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -35,7 +34,13 @@ from urllib.parse import urlsplit
 import yaml
 from scenarios.loader import LiveService
 
-from loc_arena.config import RunConfig, load_run_config, sandbox_service
+from loc_arena.config import (
+    RunConfig,
+    identity_variable,
+    load_run_config,
+    require_distinct_identity_variables,
+    sandbox_service,
+)
 from loc_arena.gateway.core import API_KEY_VARIABLE, GATEWAY_URL_VARIABLE, OPENROUTER_URL, OpenRouterProvider
 from loc_arena.harness import grade_run, locate_run
 from loc_arena.sandbox import IDENTITY_PREFIX, TOKEN_FILE, build_server_settings, token_secret_name
@@ -145,26 +150,21 @@ class Identity:
     @property
     def variable(self) -> str:
         """Where compose reads the identity from, on the host."""
-        return f"LOC_ARENA_{self.secret_name.upper().replace('-', '_')}"
+        return identity_variable(self.service, self.agent_id)
 
 
 def issue_identities(config: RunConfig) -> tuple[Identity, ...]:
     """Every agent's identity on each live service with rights, agents with no rights there included.
 
-    Refuses names that would make two identities share one host variable, and so one value: an agent could
-    then pass as another.
+    Refuses names that would make two identities share one host variable, as the config load does.
     """
-    identities = tuple(
+    require_distinct_identity_variables(config.agents, config.live_services)
+    return tuple(
         Identity(service.name, agent.id)
         for service in config.live_services
         if service.rights
         for agent in config.agents
     )
-    variables = Counter(identity.variable for identity in identities)
-    if shared := [identity for identity in identities if variables[identity.variable] > 1]:
-        pairs = [(identity.service, identity.agent_id) for identity in shared]
-        raise StackError(f"the identities of (service, agent) pairs {pairs} would share one host variable")
-    return identities
 
 
 def render_compose(

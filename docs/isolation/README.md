@@ -101,8 +101,8 @@ For each live service the rendered compose file holds one container with these f
   refuses to start with a declared right it does not enforce, and without `LOC_ARENA_VOCABULARY` (a local run)
   serves every right it enforces; `LOC_ARENA_RIGHTS` lists every agent,
   with an empty list for one that starts with none. Names whose identities would share one host variable (a service
-  `notes` with agent `agent-main`, and a service `notes-agent` with agent `main`) are refused when the file is
-  rendered.
+  `notes` with agent `agent-main`, and a service `notes-agent` with agent `main`) are refused when the run config
+  is loaded and when the file is rendered.
 - The episode starts only after every live service reports healthy.
 
 Each agent's system prompt in a stack run lists the live services: the address, the description and, for a service

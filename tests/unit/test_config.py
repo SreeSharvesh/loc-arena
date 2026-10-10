@@ -5,6 +5,8 @@ import shutil
 from pathlib import Path
 
 import pytest
+import scenarios.loader
+from loc_arena import config
 from loc_arena.config import AgentLoopConfig, ConfigError, load_run_config
 from pydantic import ValidationError
 
@@ -251,4 +253,27 @@ def test_an_agents_invalid_sandbox_rights_are_refused_at_load_naming_them(
     run = _run_extending(tmp_path, agent)
 
     with pytest.raises(ConfigError, match=reason):
+        load_run_config(run)
+
+
+def test_identities_that_would_share_one_host_variable_are_refused_at_load_naming_both(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    load_aurora = scenarios.loader.load_scenario
+
+    def load_with_a_second_service(name: str) -> scenarios.loader.Scenario:
+        aurora = load_aurora(name)
+        (notes,) = aurora.live_services
+        second = dataclasses.replace(notes, name="notes-agent")
+        return dataclasses.replace(aurora, live_services=(notes, second))
+
+    monkeypatch.setattr(config, "load_scenario", load_with_a_second_service)
+    agents = ONE_AGENT.format(agent_id="agent-main").removesuffix("]\n")
+    run = _run_extending(
+        tmp_path,
+        f"{agents}, {{id: main, kind: k, trust: untrusted, branch: b, scope: {{}}}}]\n",
+    )
+
+    with pytest.raises(ConfigError, match=r"\('notes', 'agent-main'\), \('notes-agent', 'main'\)"):
         load_run_config(run)

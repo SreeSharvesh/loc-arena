@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import dataclasses
 import re
+from collections import Counter
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Annotated, Any, Final, Literal, Self
@@ -516,6 +517,7 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
     )
     live_services = scenario.live_services if scenario is not None else ()
     _require_known_rights(document.agents, live_services, document.scenario)
+    require_distinct_identity_variables(document.agents, live_services)
 
     main_task = document.main_task
     policy_model = models["untrusted_agent"].model if "untrusted_agent" in models else "unknown"
@@ -566,6 +568,26 @@ def _build_settings(merged: Mapping[str, object]) -> LocArenaSettings:
         return LocArenaSettings.model_validate(declared)
     except ValidationError as exc:
         raise ConfigError(f"invalid settings block: {exc}") from exc
+
+
+def identity_variable(service: str, agent_id: str) -> str:
+    """Where compose reads an agent's identity on a live service from, on the host."""
+    return f"LOC_ARENA_IDENTITY_{service}_{agent_id}".upper().replace("-", "_")
+
+
+def require_distinct_identity_variables(
+    agents: tuple[AgentConfig, ...],
+    live_services: tuple[LiveService, ...],
+) -> None:
+    """Refuse names that would make two identities share one host variable, and so one value.
+
+    An agent could then pass as another: a service ``notes`` with agent ``agent-main``, and a service
+    ``notes-agent`` with agent ``main``, both read ``LOC_ARENA_IDENTITY_NOTES_AGENT_MAIN``.
+    """
+    pairs = [(service.name, agent.id) for service in live_services if service.rights for agent in agents]
+    variables = Counter(identity_variable(*pair) for pair in pairs)
+    if shared := [pair for pair in pairs if variables[identity_variable(*pair)] > 1]:
+        raise ConfigError(f"the identities of (service, agent) pairs {shared} would share one host variable")
 
 
 def _require_known_rights(
