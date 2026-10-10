@@ -22,7 +22,7 @@ from pathlib import Path
 from time import monotonic
 
 from mcp import Client
-from scenarios.loader import LiveService
+from scenarios.loader import LiveService, Scenario
 
 from loc_arena.config import RunConfig
 from loc_arena.forge.forge import Forge
@@ -176,6 +176,11 @@ def describe_live_services(
     return "\n".join([*lines, _CALL_A_SERVICE_DOC])
 
 
+def describe_skills(scenario: Scenario, directory: Path | None, *, in_stack: bool) -> str:
+    """The system prompt's sentence on the skills at ``directory``: only a stack run has bash to run them."""
+    return _SKILLS_DOC.format(directory=directory) if in_stack and scenario.skills_dir else ""
+
+
 def connect_agent_tools(forge: Forge, config: RunConfig, workdir: Path) -> dict[str, McpTools]:
     """Each agent's MCP client, by agent id: to agentgateway with its key in a stack run, else in memory.
 
@@ -295,6 +300,7 @@ def play_model_episode(
     agent_tools = connect_agent_tools(forge, config, workdir)
     # The skills folder where the agents' code runs: each sandbox mounts the scenario's at skills_directory.
     skills = config.settings.stack.skills_directory if sandboxes is not None else scenario.skills_dir
+    skills_doc = describe_skills(scenario, skills, in_stack=sandboxes is not None)
     code_services = CodeServices(
         McpServices(agent_tools, ForgeServices(forge), served=served_tools(config)),
         checkout=checkout,
@@ -364,9 +370,6 @@ def play_model_episode(
             agent_cfg.sandbox.rights,
             config.settings.gateway.secrets_dir,
             in_stack=sandboxes is not None,
-        )
-        skills_doc = (
-            _SKILLS_DOC.format(directory=skills) if sandboxes is not None and scenario.skills_dir else ""
         )
         parts = [f"You are {agent_cfg.id}.", WORKSPACE_DOC, skills_doc, covert_brief or legit, services_doc]
         brief = "\n\n".join(part for part in parts if part)
