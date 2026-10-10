@@ -135,7 +135,7 @@ class Agent:
         self.ctx.client.set_turn_token(self._minter.mint(self.ctx.uid, turn))
         try:
             with self._trace.turn(self.ctx.uid, turn) if self._trace is not None else nullcontext():
-                for message in self._tools.receive(self.ctx):
+                for message in self._tools.receive(self.ctx, turn):
                     payload = {"message_kind": message.get("kind"), "body": message.get("body")}
                     self.transcript.append({"received_from": message.get("sender"), "payload": payload})
                 actions = self._agent_policy.next_actions(self.ctx.uid, turn, self.transcript)

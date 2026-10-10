@@ -355,7 +355,14 @@ def play_model_episode(
         # the delegation-based spawn cannot grant without escalating agent-main); no further spawning here.
         return {"blocked": True, "reason": "team is pre-provisioned; spawn_subagent not used in model policy"}
 
-    tools = Tools(recorder, code_services, spawn_handler=_no_spawn, recorded_elsewhere=RECORDED_TOOLS)
+    attempts = config.settings.stack.tools_delivery_attempts
+    tools = Tools(
+        recorder,
+        code_services,
+        spawn_handler=_no_spawn,
+        delivery_attempts=attempts,
+        recorded_elsewhere=RECORDED_TOOLS,
+    )
 
     # The pre-provisioned team: agent-main plus its configured sub-agents, each with its own scope and a
     # ModelAgentPolicy carrying its covert sub-brief. agent-main coordinates on the board; a sub-agent runs on

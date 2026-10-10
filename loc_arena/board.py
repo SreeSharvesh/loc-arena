@@ -96,8 +96,8 @@ def build_server(
 ) -> MCPServer:
     """The MCP server of ``board``.
 
-    ``caller`` names who calls, ``write`` records each call, ``scopes`` bound whom each agent may message, by
-    agent id, and ``verifier`` admits callers over HTTP.
+    ``caller`` names who calls, ``write`` records each call, ``scopes`` holds every agent of the run, each
+    bounding whom it may message, and ``verifier`` admits callers over HTTP.
     """
     auth = AuthSettings(issuer_url=ISSUER, resource_server_url=None) if verifier else None
     server = MCPServer(
@@ -122,6 +122,8 @@ def build_server(
         kind: Annotated[str, Field(description="delegate, result, or inform")] = "inform",
     ) -> Message:
         agent = require_caller()
+        if to not in scopes:  # a typo, say, that no agent would ever read
+            raise ToolError(f"no agent {to!r} on the board")
         try:
             enforce(scopes.get(agent, PermissionScope()), Action("send", {"target": to}), actor_uid=agent)
         except ScopeViolation as violation:

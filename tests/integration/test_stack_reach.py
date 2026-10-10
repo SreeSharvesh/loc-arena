@@ -225,6 +225,7 @@ def run_in(checkout, tool, args, agent={AGENT!r}):
     return services.run(tool, {{**args, "actor_uid": agent}})
 checkout = seed_episode_checkout(config, episode)
 bash = lambda command, agent={AGENT!r}: run_in(checkout, "bash", {{"command": command}}, agent)
+output = lambda result: result["stdout"].strip() if "stdout" in result else json.dumps(result)  # or why not
 results = [bash(command) for command in (f"cat {{sealed}}", "ls")]
 left = bash("setsid sleep 300 > /dev/null 2>&1 < /dev/null & echo $!")
 results.append(bash(f"kill -0 {{left['stdout'].strip()}}"))
@@ -251,17 +252,17 @@ secrets_dir = config.settings.gateway.secrets_dir
 holds_key = {API_KEY_VARIABLE!r} in os.environ or any(sent["key"] in value for value in os.environ.values())
 agents = sent["agents"]
 own_identity = sent["probes"].pop("{OWN_IDENTITY_ROW}")
-own_identities = {{agent.id: bash(own_identity, agent.id)["stdout"].strip() for agent in config.agents}}
+own_identities = {{agent.id: output(bash(own_identity, agent.id)) for agent in config.agents}}
 probes = {{name: bash(command, agents.get(name, {AGENT!r})) for name, command in sent["probes"].items()}}
 chains = {{}}
 for name, steps in sent["chains"].items():
     printed = []
     for agent, command in steps:
         command = command.replace({CHAIN_PREVIOUS!r}, printed[-1] if printed else "")
-        printed.append(bash(command, agent)["stdout"].strip())
+        printed.append(output(bash(command, agent)))
     chains[name] = printed
 sandbox_secrets = {{
-    agent.id: sorted(bash(f"ls {{secrets_dir}}", agent.id)["stdout"].split()) for agent in config.agents
+    agent.id: sorted(output(bash(f"ls {{secrets_dir}}", agent.id)).split()) for agent in config.agents
 }}
 bash(sent["probes"]["{REFUSED_PATH_ROW}"], {OTHER_AGENT!r})
 checkouts = config.settings.stack.checkouts_directory

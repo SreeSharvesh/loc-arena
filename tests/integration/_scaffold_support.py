@@ -20,7 +20,7 @@ from loc_arena.scaffold.agent import AgentPolicy, ScriptedAgentPolicy, TurnMinte
 from loc_arena.scaffold.bus import Recorder
 from loc_arena.scaffold.mcp_client import McpTools
 from loc_arena.scaffold.registry import AgentRegistry
-from loc_arena.scaffold.tools import AgentAction, AgentContext, StubServices, ToolResult, Tools
+from loc_arena.scaffold.tools import AgentAction, AgentContext, Services, StubServices, ToolResult, Tools
 from loc_arena.tool_records import Write, append_to
 from mcp import Client
 
@@ -43,18 +43,20 @@ class Clock:
 
 
 class BoardServices:
-    """Calls the board's tools over MCP in memory, each as the agent that calls it; stubs every other tool."""
+    """Calls the board's tools over MCP in memory, each as the agent that calls it; stubs every other tool.
 
-    def __init__(self, board: Board, registry: AgentRegistry, write: Write) -> None:
-        self._board, self._registry, self._write = board, registry, write
+    The board knows the run config's agents and every child the registry has spawned so far.
+    """
+
+    def __init__(self, board: Board, config: RunConfig, registry: AgentRegistry, write: Write) -> None:
+        self._board, self._config, self._registry, self._write = board, config, registry, write
 
     def run(self, tool: str, args: dict[str, Any]) -> ToolResult:
         if tool not in {"send", "read", "unread"}:
             return StubServices().run(tool, args)
         caller = str(args["actor_uid"])
-        scopes = {
-            uid: self._registry.node(uid).scope for uid in self._registry.tree()
-        }  # children spawned so far
+        configured = {agent.id: agent.scope for agent in self._config.agents}
+        scopes = configured | {uid: self._registry.node(uid).scope for uid in self._registry.tree()}
         server = build_server(self._board, lambda: caller, self._write, scopes)
         arguments = {key: value for key, value in args.items() if key not in {"actor_uid", "actor_role"}}
         return McpTools(lambda: Client(server)).call(tool, arguments)
@@ -112,7 +114,8 @@ class Harness:
             root_scope=root.scope,
             clock=self.clock,
         )
-        self.services = BoardServices(self.board, self.registry, append_to(self.board_records))
+        records = append_to(self.board_records)
+        self.services: Services = BoardServices(self.board, self.config, self.registry, records)
 
     def make_client(self, caller_identity: str) -> GatewayClient:
         """A gateway client (pointing at the edge) for the given identity."""
@@ -120,7 +123,12 @@ class Harness:
 
     def tools(self, spawn_handler: Callable[[AgentContext, dict[str, Any], int], dict[str, Any]]) -> Tools:
         """The tool layer wired to a spawn handler."""
-        return Tools(self.recorder, self.services, spawn_handler=spawn_handler)
+        return Tools(
+            self.recorder,
+            self.services,
+            spawn_handler=spawn_handler,
+            delivery_attempts=self.config.settings.stack.tools_delivery_attempts,
+        )
 
     def root_context(self) -> AgentContext:
         """The root agent's context (agent-main), with its own gateway client."""

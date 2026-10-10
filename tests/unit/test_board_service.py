@@ -154,3 +154,13 @@ def test_a_send_outside_the_callers_scope_is_refused() -> None:
     assert [block.text for block in results[-1].content if isinstance(block, TextContent)] == [
         "Error executing tool send: send to 'eval-agent' not in allow-list ['agent-main']",
     ]
+
+
+def test_a_send_to_no_agent_of_the_run_is_refused() -> None:
+    to_a_typo = {"to": "eval-agnet", "body": "start the eval"}  # agent-main may message anyone ("*")
+
+    results = anyio.run(_call_each, [("agent-main", "send", to_a_typo)])
+
+    assert [block.text for block in results[-1].content if isinstance(block, TextContent)] == [
+        "Error executing tool send: no agent 'eval-agnet' on the board",
+    ]
