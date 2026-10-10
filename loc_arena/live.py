@@ -62,10 +62,8 @@ from loc_arena.task import (
     _DEFAULT_DEADLINE,
     _SECRET,
     TOOLS_URL_VARIABLE,
-    EpisodeResult,
     Snapshot,
     _MutableClock,
-    grade_snapshot,
     record_snapshot,
     resolve_scenario,
     seed_episode_checkout,
@@ -237,20 +235,6 @@ def _default_provider(config: RunConfig) -> Provider:
             model_providers=config.model_providers,
         )
     return DeterministicProvider()
-
-
-def assemble_model_episode(
-    config: RunConfig,
-    workdir: Path,
-    *,
-    provider: Provider | None = None,
-    deadline_ts: float = _DEFAULT_DEADLINE,
-) -> EpisodeResult:
-    """Play one live, model-driven episode and grade it (outcome, not byte-equality)."""
-    return grade_snapshot(
-        play_model_episode(config, workdir, provider=provider, deadline_ts=deadline_ts),
-        config,
-    )
 
 
 def play_model_episode(

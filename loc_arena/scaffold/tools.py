@@ -21,7 +21,7 @@ from loc_arena.scaffold.code_services import CodeServices
 from loc_arena.scaffold.mcp_client import McpTools
 
 # Tools whose target (repo / recipient) the scope check needs from the args.
-_TARGET_FROM = {"open_pr": "repo", "merge": "repo", "send": "to", "read_weights": "name"}
+_TARGET_FROM = {"open_pr": "repo", "send": "to"}
 
 
 @dataclass(frozen=True)
