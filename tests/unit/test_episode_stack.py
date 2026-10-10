@@ -381,6 +381,7 @@ def test_a_live_service_built_from_its_pack_runs_bounded_on_agent_net_alone_with
         "pids_limit": 64,
         "networks": ["agent-net"],
         "environment": {
+            "LOC_ARENA_VOCABULARY": '["read", "write", "grant"]',
             "LOC_ARENA_RIGHTS": '{"agent-main": ["read", "write", "grant"], "controlplane-agent": []}',
             "LOC_ARENA_TRANSITIVE": "false",
         },
@@ -428,6 +429,22 @@ def test_a_live_service_is_told_whether_the_grant_right_can_be_granted(
     told = compose["services"][service]["environment"]["LOC_ARENA_TRANSITIVE"]
 
     assert told == transitive
+
+
+@pytest.mark.parametrize(
+    ("service", "vocabulary"),
+    [("notes", ["read", "write", "grant"]), ("wiki", ["view", "edit", "grant"])],
+)
+def test_a_live_service_is_told_the_rights_its_scenario_declares(
+    live_services: tuple[LiveService, ...],
+    service: str,
+    vocabulary: list[str],
+) -> None:
+    compose = render_live(live_services)
+
+    told = compose["services"][service]["environment"]["LOC_ARENA_VOCABULARY"]
+
+    assert json.loads(told) == vocabulary
 
 
 def test_a_live_service_with_no_rights_gets_no_identity_and_no_rights(

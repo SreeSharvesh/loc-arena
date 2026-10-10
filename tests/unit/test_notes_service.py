@@ -25,6 +25,8 @@ TIMEOUT = 0.2
 CLIENT_TIMEOUT = 5.0
 EXIT_CODE_ERROR = 2
 ONE_BYTE = 1
+ENFORCED_RIGHTS = ("read", "write", "grant")
+VOCABULARY_VARIABLE = "LOC_ARENA_VOCABULARY"
 
 READER, WRITER, GRANTER, DELEGATE, NOBODY = "reader", "writer", "granter", "delegate", "nobody"
 READER_TOKEN, WRITER_TOKEN, GRANTER_TOKEN = "reader-token", "writer-token", "granter-token"
@@ -33,7 +35,13 @@ IDENTITIES = {READER: READER_TOKEN, WRITER: WRITER_TOKEN, GRANTER: GRANTER_TOKEN
 IDENTITIES |= {DELEGATE: DELEGATE_TOKEN, NOBODY: NOBODY_TOKEN}
 
 
-def _serve(tmp_path: Path, *, transitive: bool = False, is_open: bool = False) -> Iterator[str]:
+def _serve(
+    tmp_path: Path,
+    *,
+    transitive: bool = False,
+    is_open: bool = False,
+    vocabulary: tuple[str, ...] = ENFORCED_RIGHTS,
+) -> Iterator[str]:
     for agent, identity in IDENTITIES.items():
         (tmp_path / f"identity_{agent}").write_text(identity)
     identities = read_identities(tmp_path)
@@ -43,6 +51,7 @@ def _serve(tmp_path: Path, *, transitive: bool = False, is_open: bool = False) -
     settings = Settings(
         EPHEMERAL_PORT,
         identities,
+        vocabulary,
         rights,
         transitive,
         is_open,
@@ -66,6 +75,11 @@ def service(tmp_path: Path) -> Iterator[str]:
 @pytest.fixture
 def transitive_service(tmp_path: Path) -> Iterator[str]:
     yield from _serve(tmp_path, transitive=True)
+
+
+@pytest.fixture
+def read_grant_service(tmp_path: Path) -> Iterator[str]:
+    yield from _serve(tmp_path, vocabulary=("read", "grant"))
 
 
 @pytest.fixture
@@ -108,6 +122,14 @@ def test_root_description_needs_no_identity(service: str) -> None:
     body = _read(target, token=None)
 
     assert b"Rights: read, write, grant" in body
+
+
+def test_root_description_lists_the_declared_vocabulary(read_grant_service: str) -> None:
+    target = f"{read_grant_service}/"
+
+    body = _read(target, token=None)
+
+    assert b"Rights: read, grant." in body
 
 
 def test_unknown_identity_is_refused(service: str) -> None:
@@ -216,6 +238,14 @@ def test_granting_unknown_right_is_bad_request(service: str) -> None:
     assert status == HTTPStatus.BAD_REQUEST
 
 
+def test_granting_right_outside_the_declared_vocabulary_is_bad_request(read_grant_service: str) -> None:
+    payload = json.dumps({"agent": NOBODY, "rights": ["write"]}).encode()
+
+    status = _call(f"{read_grant_service}/grants", "POST", token=GRANTER_TOKEN, body=payload)
+
+    assert status == HTTPStatus.BAD_REQUEST
+
+
 def test_revoke_removes_right(service: str) -> None:
     payload = json.dumps({"agent": READER, "rights": ["read"]}).encode()
     _call(f"{service}/grants", "DELETE", token=GRANTER_TOKEN, body=payload)
@@ -241,6 +271,42 @@ def test_refuses_to_start_with_no_identity(tmp_path: Path) -> None:
 
     with pytest.raises(SystemExit) as exit_info:
         parse_settings(args)
+
+    assert exit_info.value.code == EXIT_CODE_ERROR
+
+
+def test_declared_vocabulary_is_read_from_the_environment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "identity_a").write_text("token")
+    monkeypatch.setenv(VOCABULARY_VARIABLE, '["read", "grant"]')
+
+    settings = parse_settings(["--secrets-dir", str(tmp_path)])
+
+    assert settings.vocabulary == ("read", "grant")
+
+
+def test_undeclared_vocabulary_is_every_right_the_service_enforces(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(VOCABULARY_VARIABLE, raising=False)
+
+    settings = parse_settings(["--secrets-dir", str(tmp_path), "--open"])
+
+    assert settings.vocabulary == ("read", "write", "grant")
+
+
+def test_refuses_to_start_with_a_right_it_cannot_enforce(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "identity_a").write_text("token")
+    monkeypatch.setenv(VOCABULARY_VARIABLE, '["read", "admin"]')
+
+    with pytest.raises(SystemExit) as exit_info:
+        parse_settings(["--secrets-dir", str(tmp_path)])
 
     assert exit_info.value.code == EXIT_CODE_ERROR
 

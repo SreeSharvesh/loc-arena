@@ -1,9 +1,10 @@
 """The team's notes board: a live service where each agent has its own identity and rights it can grant.
 
-Compose mounts every agent's identity as ``/run/secrets/identity_<agent id>`` and gives the agents' starting
-rights in ``LOC_ARENA_RIGHTS``. With no identity mounted it refuses to start unless told to run open, so a
-missing mount fails closed. Each request, grant and revoke is one JSON line on stdout, naming the caller's
-identity and the container it came from: an identity used from another agent's container shows there.
+Compose mounts every agent's identity as ``/run/secrets/identity_<agent id>`` and gives the rights the
+scenario declares in ``LOC_ARENA_VOCABULARY`` and the agents' starting rights in ``LOC_ARENA_RIGHTS``. It
+refuses to start with a declared right it does not enforce, and with no identity mounted unless told to run
+open, so a missing mount fails closed. Each request, grant and revoke is one JSON line on stdout, naming the
+caller's identity and the container it came from: an identity used from another agent's container shows there.
 Standard library only: the image holds this one file.
 """
 
@@ -24,10 +25,11 @@ from pathlib import Path
 from typing import cast
 
 IDENTITY_PREFIX = "identity_"  # compose mounts each agent's identity as this prefix plus its id
+VOCABULARY_VARIABLE = "LOC_ARENA_VOCABULARY"  # the rights the scenario declares: a JSON list
 RIGHTS_VARIABLE = "LOC_ARENA_RIGHTS"  # the starting rights: JSON {agent id: [right, ...]}
 TRANSITIVE_VARIABLE = "LOC_ARENA_TRANSITIVE"  # "true" when the grant right itself can be granted
 BEARER = "Bearer "
-RIGHTS = ("read", "write", "grant")
+ENFORCED_RIGHTS = ("read", "write", "grant")  # what the handlers check; the declared vocabulary is a subset
 GRANT = "grant"
 NOTES_PATH = "/notes"
 GRANTS_PATH = "/grants"
@@ -46,6 +48,7 @@ class Settings:
 
     port: int
     identities: dict[str, bytes]  # agent id -> its identity
+    vocabulary: tuple[str, ...]  # the rights the scenario declares for this service
     starting_rights: dict[str, set[str]]
     transitive: bool
     open_to_all: bool  # no identity checked: every caller has every right
@@ -103,7 +106,7 @@ class NotesHandler(BaseHTTPRequestHandler):
             transitive = "yes" if settings.transitive else "no"
             self._send(
                 HTTPStatus.OK,
-                DESCRIPTION.format(rights=", ".join(RIGHTS), transitive=transitive).encode(),
+                DESCRIPTION.format(rights=", ".join(settings.vocabulary), transitive=transitive).encode(),
             )
         elif self.path == GRANTS_PATH and self._admit(None):
             with self._server.lock:
@@ -168,15 +171,16 @@ class NotesHandler(BaseHTTPRequestHandler):
         except (ValueError, KeyError, TypeError):
             self._send(HTTPStatus.BAD_REQUEST)
             return
-        status = self._check_change(agent, rights)
-        if status is HTTPStatus.OK:
-            with self._server.lock:
+        with self._server.lock:  # the check and the change are one step: a revoke cannot land between them
+            status = self._check_change(agent, rights)
+            if status is HTTPStatus.OK:
                 held = self._server.rights[agent]
                 if granting:
                     held.update(rights)
                 else:
                     held.difference_update(rights)
                 now = sorted(held)
+        if status is HTTPStatus.OK:
             event = "grant" if granting else "revoke"
             self._record(event=event, granter=self._caller, agent=agent, rights=sorted(rights))
             self._send(status, json.dumps(now).encode())
@@ -184,14 +188,19 @@ class NotesHandler(BaseHTTPRequestHandler):
             self._send(status)
 
     def _check_change(self, agent: str, rights: list[str]) -> HTTPStatus:
-        """Refuse an unknown agent or right, grant when not transitive, or a right the caller lacks."""
+        """Refuse an unknown agent or right, grant when not transitive, or a right the caller lacks.
+
+        Called with the server's lock held, so it reads the rights itself: ``may`` would take the lock again.
+        """
+        settings = self._server.settings
         if agent not in self._server.rights:
             return HTTPStatus.NOT_FOUND
-        if any(right not in RIGHTS for right in rights):
+        if any(right not in settings.vocabulary for right in rights):
             return HTTPStatus.BAD_REQUEST
-        if GRANT in rights and not self._server.settings.transitive:
+        if GRANT in rights and not settings.transitive:
             return HTTPStatus.FORBIDDEN
-        if not all(self._server.may(self._caller, right) for right in rights):
+        held = self._server.rights.get(self._caller or "", ())
+        if not settings.open_to_all and not {GRANT, *rights} <= set(held):
             return HTTPStatus.FORBIDDEN
         return HTTPStatus.OK
 
@@ -276,10 +285,14 @@ def parse_settings(arguments: list[str]) -> Settings:
     identities = read_identities(parsed.secrets_dir) if parsed.secrets_dir.is_dir() else {}
     if not identities and not parsed.open:
         parser.error(f"no {IDENTITY_PREFIX}* file in {parsed.secrets_dir}; pass --open to serve every caller")
+    vocabulary = tuple(json.loads(os.environ.get(VOCABULARY_VARIABLE, json.dumps(ENFORCED_RIGHTS))))
+    if unknown := sorted(set(vocabulary) - set(ENFORCED_RIGHTS)):
+        parser.error(f"{VOCABULARY_VARIABLE} declares rights it does not enforce: {', '.join(unknown)}")
     starting = json.loads(os.environ.get(RIGHTS_VARIABLE, "{}"))
     return Settings(
         parsed.port,
         identities,
+        vocabulary,
         {agent: set(starting.get(agent, ())) for agent in identities},
         os.environ.get(TRANSITIVE_VARIABLE, "false") == "true",
         parsed.open,

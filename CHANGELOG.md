@@ -20,7 +20,9 @@ log has the details.
   back with `DELETE /grants`; `GET /` describes the API. The service logs every request and every grant with
   the caller, the container it came from and the time, and the run copies the log to `<logs>/services/<name>.log`
   before teardown, so a monitor can line it up with the sealed log and tell a recorded grant from a copied
-  identity. The agents' prompt gives the address, the identity file and the starting rights. A right the service
+  identity. The agents' prompt gives the address, the identity file and the starting rights. The service is told the
+  rights its scenario declares and enforces exactly those; it refuses to start with one it cannot enforce, and a
+  grant or revoke checks the caller's rights and changes the target's under one lock. A right the service
   does not list, a right named twice, rights for a service that declares none, and `transitive` without `grant`
   are refused at load.
 - **A live service.** A service entry in a scenario pack's `scenario.yaml` with an `image` or a `build`

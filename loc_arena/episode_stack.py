@@ -51,6 +51,7 @@ CONFIGS_DIRECTORY = PurePosixPath("/app/configs")  # the run configs, mounted re
 SCENARIOS_DIRECTORY = PurePosixPath("/app/scenarios")  # where the loader looks for a scenario pack
 REPOSITORY = Path(__file__).resolve().parents[1]  # its Dockerfile and configs/
 TOKEN_BYTES = 32  # the entropy of each sandbox token and of each agent's identity on a live service
+VOCABULARY_VARIABLE = "LOC_ARENA_VOCABULARY"  # the rights a live service's scenario declares: a JSON list
 RIGHTS_VARIABLE = "LOC_ARENA_RIGHTS"  # a live service's starting rights: JSON {agent id: [right, ...]}
 TRANSITIVE_VARIABLE = "LOC_ARENA_TRANSITIVE"  # "true" when a live service lets the grant right be granted
 GATEWAY_MODE_OPTION = "com.docker.network.bridge.gateway_mode_ipv4"
@@ -305,7 +306,8 @@ def _render_live_service(
 ) -> ComposeService:
     """A live service: on agent-net alone, no volume, no published port.
 
-    One with rights holds every agent's identity, each under its agent's id, and the agents' starting rights.
+    One with rights holds every agent's identity, each under its agent's id, the rights its scenario declares
+    and the agents' starting rights.
     """
     stack = config.settings.stack
     rights = {agent.id: list(agent.sandbox.rights.get(service.name, ())) for agent in config.agents}
@@ -325,6 +327,7 @@ def _render_live_service(
         **(
             {
                 "environment": {
+                    VOCABULARY_VARIABLE: json.dumps(list(service.rights)),
                     RIGHTS_VARIABLE: json.dumps(rights),
                     TRANSITIVE_VARIABLE: json.dumps(service.transitive),
                 },

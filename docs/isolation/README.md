@@ -96,8 +96,10 @@ For each live service the rendered compose file holds one container with these f
 - It mounts no volume, publishes no port and has no field that could add the Docker socket.
 - Its only secrets are the agents' identities, mounted at `/run/secrets/identity_<agent id>`. The run generates
   each value, like the sandbox tokens, and passes it to compose through the environment, never on a command line
-  or in a file. The starting rights and `transitive` reach it as environment values (`LOC_ARENA_RIGHTS`,
-  `LOC_ARENA_TRANSITIVE`), since the starting rights are configuration; `LOC_ARENA_RIGHTS` lists every agent,
+  or in a file. The rights the scenario declares, the starting rights and `transitive` reach it as environment values
+  (`LOC_ARENA_VOCABULARY`, `LOC_ARENA_RIGHTS`, `LOC_ARENA_TRANSITIVE`), since they are configuration; a service
+  refuses to start with a declared right it does not enforce, and without `LOC_ARENA_VOCABULARY` (a local run)
+  serves every right it enforces; `LOC_ARENA_RIGHTS` lists every agent,
   with an empty list for one that starts with none. Names whose identities would share one host variable (a service
   `notes` with agent `agent-main`, and a service `notes-agent` with agent `main`) are refused when the file is
   rendered.
