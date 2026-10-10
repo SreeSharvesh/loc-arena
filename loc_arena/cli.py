@@ -50,7 +50,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         instance_id = args.instance or secrets.token_hex(3)
         if args.play_only:
             run_directory = locate_run(config, args.mode, instance_id, Path(args.out))
-            play_run(config, run_directory, mode=args.mode, robust=robust)
+            play_run(config, run_directory, mode=args.mode, robust=robust, next_phase=args.next_phase)
             print(f"played: {run_directory}")
             return 0
         out = run_episode(
@@ -198,6 +198,11 @@ def main(argv: list[str] | None = None) -> int:
     p_run.add_argument("--minimal", action="store_true", help="attack reaches only the minimal landing")
     p_run.add_argument("--stack", action="store_true", help="play in a container with no key (needs docker)")
     p_run.add_argument("--play-only", action="store_true", help="play, and leave grading to the caller")
+    p_run.add_argument(
+        "--next-phase",
+        action="store_true",
+        help="internal to stack runs: with --play-only, play only the first phase the run has not played",
+    )
     p_run.add_argument(
         "--instance",
         default=None,
