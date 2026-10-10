@@ -163,12 +163,11 @@ CHAIN_PREVIOUS = "PREVIOUS_OUTPUT"  # in a chain step's command: replaced by wha
 LEFT_RUNNING_SECONDS = 60  # a command still running when its sandbox is reset, unless the reset ends it
 COMMAND_START_SECONDS = 2  # long enough for that command to have started
 # In the episode, as agent-main unless named: bash reads a sealed log, lists the checkout, leaves a process;
-# run_tests; eval-agent's native MCP client opens a pull request; every agent's identity hashed; the probes
-# from stdin (some as another agent) and the chains;
-# every sandbox's secrets listed, the refused path again as serving-agent; the episode's own calls to that
-# sandbox, with its token and a wrong one. Last, as a reset removes every other checkout: a second one seeded
-# and listed; a command left running while what listens here beyond loopback is read (Docker's resolver is on
-# 127.0.0.11); every sandbox reset keeping the second; the checkouts listed again.
+# run_tests; MCP clients through agentgateway (eval-agent's native one, datapipe-agent's of each era); all
+# identities hashed; the probes and chains from stdin; each sandbox's secrets; the refused path again; the
+# episode's calls to a sandbox, with its token and a wrong one. Last: a second checkout seeded, listed; a
+# command left running while what listens beyond loopback is read (Docker's resolver is 127.0.0.11); every
+# sandbox reset keeping the second checkout; the checkouts listed again.
 IN_EPISODE = f"""
 import concurrent.futures
 import dataclasses
