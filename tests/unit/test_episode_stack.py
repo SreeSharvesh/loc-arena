@@ -662,7 +662,7 @@ def test_the_tools_gateway_runs_its_pinned_image_on_agent_net_alone_with_its_con
 
     assert (compose["services"]["agentgateway"], compose["secrets"]["agentgateway_config"]) == (
         {
-            "image": "ghcr.io/agentgateway/agentgateway:v1.5.0",
+            "image": "ghcr.io/agentgateway/agentgateway:v1.6.0",
             "command": ["-f", "/run/secrets/agentgateway_config"],
             "secrets": ["agentgateway_config"],
             "cap_drop": ["ALL"],
@@ -747,26 +747,32 @@ def test_the_tools_gateway_forwards_each_call_with_the_callers_identity_on_the_s
 
     (backend,) = route["backends"]
 
-    assert backend == {
-        "mcp": {
-            "targets": [
-                {
-                    "name": "forge",
-                    "mcp": {"host": "http://forge:8000/mcp"},
-                    "policies": {
-                        "transformations": {
-                            "request": {
-                                "set": {
-                                    "authorization": '"Bearer " + {"agent-main": "id-main", '
-                                    '"controlplane-agent": "id-control"}[apiKey.agent]',
-                                },
-                            },
+    assert backend["mcp"]["targets"] == [
+        {
+            "name": "forge",
+            "mcp": {"host": "http://forge:8000/mcp"},
+            "policies": {
+                "transformations": {
+                    "request": {
+                        "set": {
+                            "authorization": '"Bearer " + {"agent-main": "id-main", '
+                            '"controlplane-agent": "id-control"}[apiKey.agent]',
                         },
                     },
                 },
-            ],
+            },
         },
-    }
+    ]
+
+
+def test_the_tools_gateway_offers_each_tool_by_its_own_name_with_no_service_prefix(
+    tools_gateway_config: dict[str, Any],
+) -> None:
+    route = read_route(tools_gateway_config)
+
+    (backend,) = route["backends"]
+
+    assert backend["mcp"]["prefixMode"] == "never"
 
 
 def test_the_tools_gateway_listens_on_its_port_alone_with_no_admin_stats_or_readiness_listener(
@@ -886,11 +892,11 @@ def test_a_stack_run_hands_compose_a_distinct_identity_per_agent_and_service_thr
         [
             *(
                 f"LOC_ARENA_IDENTITY_{service}_{agent}"
-                for service in ("FORGE", "NOTES")
+                for service in ("BOARD", "FORGE", "NOTES")
                 for agent in AURORA_AGENTS
             ),
         ],
-        14,
+        21,
         [],
     )
 
@@ -1025,7 +1031,7 @@ def test_a_stack_run_copies_each_live_services_log_into_its_run_directory_before
 
     run_aurora_in_stack(tmp_path)
 
-    assert copied_at_grading == [["agentgateway.log", "forge.log", "notes.log"]] * 2
+    assert copied_at_grading == [["agentgateway.log", "board.log", "forge.log", "notes.log"]] * 2
 
 
 def test_a_graded_stack_run_copies_its_run_directory_out_once(
@@ -1057,13 +1063,13 @@ def test_an_attack_stack_run_renews_every_container_but_the_gateway_and_the_epis
     assert commands[plays[0] + 1 : plays[1]] == [
         *(
             ["logs", "--no-color", "--no-log-prefix", service]
-            for service in ("notes", "forge", "agentgateway")
+            for service in ("notes", "forge", "board", "agentgateway")
         ),
         [
             *["up", "--detach", "--wait", "--force-recreate", "--renew-anon-volumes", "--no-deps"],
             *["sandbox-agent-main", "sandbox-serving-agent", "sandbox-distill-agent", "sandbox-eval-agent"],
             *["sandbox-datapipe-agent", "sandbox-jobsvc-agent", "sandbox-controlplane-agent"],
-            *["notes", "forge", "agentgateway"],
+            *["notes", "forge", "board", "agentgateway"],
         ],
     ]
 

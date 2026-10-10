@@ -7,7 +7,7 @@ sealed log; a call outside scope is logged as a blocked action and NOT executed)
 from the tool catalog and ``env.default.yaml`` ``tools:``. Service-backed tools
 (tests, benchmark, git, tickets, wiki, cluster, ...) run behind the ``Services`` interface, stubbed here
 and wired to the real services later; inference goes through the gateway client, messaging through the
-bus, and spawning through the registry via an injected handler.
+board (an MCP service), and spawning through the registry via an injected handler.
 """
 
 from __future__ import annotations
@@ -17,16 +17,18 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+import tenacity
+
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import ProviderError
 from loc_arena.ids import Action, PermissionScope, ScopeViolation, enforce
-from loc_arena.scaffold.bus import MessageBus, Recorder
+from loc_arena.scaffold.bus import Recorder
 from loc_arena.scaffold.registry import SpawnDenied
 
 _LOGGER = logging.getLogger(__name__)
 
 # Tools whose target (repo / recipient) the scope check needs from the args.
-_TARGET_FROM = {"open_pr": "repo", "merge": "repo", "message": "to", "read_weights": "name"}
+_TARGET_FROM = {"open_pr": "repo", "merge": "repo", "send": "to", "read_weights": "name"}
 
 
 @dataclass(frozen=True)
@@ -76,14 +78,15 @@ class Tools:
     def __init__(
         self,
         recorder: Recorder,
-        bus: MessageBus,
         services: Services,
         *,
         spawn_handler: SpawnHandler,
+        delivery_attempts: int = 1,
     ) -> None:
-        """Wire the tool layer to the recorder, the bus, the services, and the spawn handler."""
+        """Wire the tool layer to the recorder, the services, the spawn handler and the delivery attempts."""
         self._recorder = recorder
-        self._bus = bus
+        self._delivery_attempts = delivery_attempts
+        self._delivered: dict[str, int] = {}  # by agent: the id of the last message delivered to it
         self._services = services
         self._spawn_handler = spawn_handler
 
@@ -141,17 +144,11 @@ class Tools:
             self._log_action(ctx, action, turn, blocked=False, result=result)
             return result
 
-        if action.tool == "message":
-            # the message IS a dual-captured event via the bus; no separate action event
-            event = self._bus.send(
-                from_id=ctx.uid,
-                from_role=ctx.role,
-                to_id=str(action.args["to"]),
-                kind=str(action.args.get("kind", "inform")),
-                body=str(action.args.get("body", "")),
-                turn=turn,
-            )
-            return {"message_seq": event.seq, "to": event.target_id}
+        if action.tool == "send":  # the board's record of a message it takes becomes the message event
+            result = self._services.run("send", {**action.args, "actor_uid": ctx.uid, "actor_role": ctx.role})
+            if "error" in result:
+                self._log_action(ctx, action, turn, blocked=False, result=result)
+            return result
 
         # A live model routinely emits a malformed tool call (missing/badly-typed args). That must return a
         # logged error result, NEVER crash the run -- so guard the whole dispatch against bad args.
@@ -182,3 +179,27 @@ class Tools:
 
         self._log_action(ctx, action, turn, blocked=False, result=result)
         return result
+
+    def receive(self, ctx: AgentContext, turn: int) -> list[ToolResult]:
+        """The messages sent to the agent after the last one it received, from the board, in send order.
+
+        It reads after the last id it delivered, so an attempt whose answer was lost loses no message. A
+        delivery that fails every attempt is recorded as the agent's ``read`` action, with its error.
+        """
+        args = {"after": self.delivered_through(ctx.uid), "actor_uid": ctx.uid, "actor_role": ctx.role}
+        result = tenacity.Retrying(
+            stop=tenacity.stop_after_attempt(self._delivery_attempts),
+            wait=tenacity.wait_exponential(multiplier=0.25, max=2),
+            retry=tenacity.retry_if_result(lambda result: "error" in result),
+            retry_error_callback=lambda state: state.outcome.result() if state.outcome else {},
+        )(self._services.run, "read", args)
+        if "error" in result:
+            delivery = AgentAction("read", {"after": args["after"]})
+            self._log_action(ctx, delivery, turn, blocked=False, result=result)
+        messages = result.get("messages", [])
+        self._delivered[ctx.uid] = messages[-1]["id"] if messages else args["after"]
+        return messages
+
+    def delivered_through(self, uid: str) -> int:
+        """The id of the last message delivered to ``uid``, 0 before any."""
+        return self._delivered.get(uid, 0)

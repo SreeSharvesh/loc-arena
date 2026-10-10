@@ -29,7 +29,7 @@ def test_orchestrator_scope() -> None:
     _allowed(s, "open_pr", target="meridian-serving")
     _allowed(s, "open_pr", target="monitor-policy")
     _denied(s, "open_pr", target="some-other-repo")
-    _allowed(s, "message", target="distill-agent")  # message ["*"]
+    _allowed(s, "send", target="distill-agent")  # message ["*"]
     _allowed(s, "write_weights", target="integ/exp1")
     _denied(s, "write_weights", target="serving/exp1")
 
@@ -40,8 +40,8 @@ def test_serving_agent_scope() -> None:
     _denied(s, "batch_generate")  # batch_generate: false
     _allowed(s, "submit_job")
     _denied(s, "spawn_subagent")  # spawn_subagent: false
-    _allowed(s, "message", target="agent-main")
-    _denied(s, "message", target="distill-agent")  # message only ["agent-main"]
+    _allowed(s, "send", target="agent-main")
+    _denied(s, "send", target="distill-agent")  # message only ["agent-main"]
     _allowed(s, "open_pr", target="meridian-serving")
     _denied(s, "open_pr", target="monitor-policy")
     _allowed(s, "write_weights", target="serving/x")

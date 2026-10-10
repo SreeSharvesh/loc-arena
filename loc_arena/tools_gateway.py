@@ -32,14 +32,15 @@ def render_tools_gateway_config(
     tokens: Mapping[str, str],
     identities: Mapping[Identity, str],
 ) -> str:
-    """The tools gateway's config (agentgateway v1.5 schema) for agents with these sandbox ``tokens``.
+    """The tools gateway's config (agentgateway v1.6 schema) for agents with these sandbox ``tokens``.
 
     It admits each agent by the SHA-256 of its token, so it never holds one, and logs each request as a JSON
     line naming the agent, with a tool call's arguments and result or error. One CEL rule, generated from
     each agent's ``sandbox.tools``, allows an agent exactly those tools; a tool it may not call is left out of
     its tool list and refused before it reaches the service. Each service's target sets ``Authorization`` to
-    the caller's identity on that service. Admin, stats and readiness listeners are off, so nothing on
-    agent-net can read this config back.
+    the caller's identity on that service. Tools are offered by their own names, never prefixed with their
+    service's. Admin, stats and readiness listeners are off, so nothing on agent-net can read this config
+    back.
     """
     tools = {agent.id: dict(agent.sandbox.tools) for agent in config.agents}
     callers = {
@@ -80,6 +81,7 @@ def render_tools_gateway_config(
             "rules": [{"allow": f"mcp.tool.name in {json.dumps(tools)}[apiKey.agent][mcp.tool.target]"}],
         },
     }
+    backend = {"targets": targets, "prefixMode": "never"}
     document = {
         "config": {
             "adminAddr": "off",
@@ -103,7 +105,7 @@ def render_tools_gateway_config(
             {
                 "port": config.settings.stack.tools_gateway_port,
                 "listeners": [
-                    {"routes": [{"policies": policies, "backends": [{"mcp": {"targets": targets}}]}]},
+                    {"routes": [{"policies": policies, "backends": [{"mcp": backend}]}]},
                 ],
             },
         ],

@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import cast
 
 import pytest
+from loc_arena.board import Board
 from loc_arena.config import load_run_config
 from loc_arena.forge.forge import Forge
 from loc_arena.forge.services import ForgeServices
@@ -25,7 +26,6 @@ from loc_arena.gateway.core import DirectTransport, GenerateRequest, GenerateRes
 from loc_arena.gateway.edge import GatewayEdge
 from loc_arena.live import connect_agent_tools, served_tools
 from loc_arena.logging_.events import read_events
-from loc_arena.scaffold.bus import MessageBus
 from loc_arena.scaffold.covert_tools import CovertToolServices
 from loc_arena.scaffold.mcp_client import McpServices
 from loc_arena.scaffold.tools import AgentAction, AgentContext, Tools
@@ -69,7 +69,7 @@ def _tools(stack: Stack, edge: _RecordingEdge | None = None, *, ceiling: float =
     forge = Forge(generate_world(CFG, SC, CFG.seed))
     covert = CovertToolServices(
         McpServices(
-            connect_agent_tools(forge, CFG, stack.sealed_path.parent),
+            connect_agent_tools(forge, Board(), CFG, stack.sealed_path.parent),
             ForgeServices(forge),
             served=served_tools(CFG),
         ),
@@ -85,7 +85,7 @@ def _tools(stack: Stack, edge: _RecordingEdge | None = None, *, ceiling: float =
         ceiling=ceiling,
     )
 
-    return Tools(stack.recorder, MessageBus(stack.recorder), covert, spawn_handler=_no_spawn)
+    return Tools(stack.recorder, covert, spawn_handler=_no_spawn)
 
 
 def test_covert_tool_surface_lands_robust(tmp_path: Path) -> None:

@@ -241,7 +241,7 @@ def enforce(scope: PermissionScope, action: Action, *, actor_uid: str | None = N
     """Raise ``ScopeViolation`` if ``action`` is outside ``scope``; return ``None`` if allowed.
 
     Maps each gated tool to the capability it requires. Ungated in-sandbox tools always pass. Tools that
-    address a target (``open_pr`` a repo, ``message`` a recipient, weights writes to an area) check the
+    address a target (``open_pr`` a repo, ``send`` a recipient, weights writes to an area) check the
     target too.
     """
     tool = action.tool
@@ -276,12 +276,12 @@ def enforce(scope: PermissionScope, action: Action, *, actor_uid: str | None = N
             deny("merge requires a target repo")
         elif "*" not in scope.open_pr and repo not in scope.open_pr:
             deny(f"merge on {repo!r} not in allow-list {list(scope.open_pr)}")
-    elif tool == "message":
+    elif tool == "send":
         recipient = action.target
         if recipient is None:
-            deny("message requires a target recipient")
+            deny("send requires a target recipient")
         elif "*" not in scope.message and recipient not in scope.message:
-            deny(f"message to {recipient!r} not in allow-list {list(scope.message)}")
+            deny(f"send to {recipient!r} not in allow-list {list(scope.message)}")
     elif tool == "read_weights":
         if not scope.weights.read:
             deny("read_weights requires weights.read")

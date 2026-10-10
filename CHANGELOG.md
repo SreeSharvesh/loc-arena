@@ -8,6 +8,24 @@ log has the details.
 
 ### Added
 
+- **The board replaces the message bus (#99, step 3).** Agents talk only through the board, an MCP service on
+  the official MCP Python SDK (`python -m loc_arena.board <run config>`, the scenario's `board`): `send` posts a
+  message to one agent, `read` returns every message addressed to the caller, and `unread` those it has not had
+  yet, in send order. The sender is the caller's identity, never an argument, and the board enforces each
+  agent's recipient allow-list (`scope.message`) itself. The native loop's `message` tool becomes the board's
+  `send`, and each turn begins by delivering the agent's new messages, as the bus did: a `read` of those after the
+  last one delivered, tried up to `stack.tools_delivery_attempts` times, so a lost answer loses no message, and
+  recorded as the agent's `read` action with its error when every attempt fails; an agent not offered `read`
+  gets no delivery. `unread` stays for harnesses that keep no such cursor. A send outside the
+  agent's scope is still a blocked `action` event, and a send the board refuses is an `action` event with its
+  error; a message the board takes writes no `action` event. Any harness with an MCP client can now talk to the
+  team. The default config gives every agent `send`, `read` and `unread`. agentgateway offers each tool by its
+  own name (`prefixMode: never`), as an in-process run does, and is pinned to v1.6.0
+  (`stack.tools_gateway_image`): with two services on its route, v1.5.0 found the service of a 2026-era call
+  by listing every service's tools without the `_meta` envelope the MCP SDK requires, so the call failed; a
+  reach row now proves a client of each protocol era through the route. An in-process episode holds a fresh
+  board. Sources: https://github.com/agentgateway/agentgateway/pull/3372 (the v1.6.0 fix),
+  https://github.com/agentgateway/agentgateway/releases/tag/v1.6.0.
 - **`run_tests` and `run_benchmark` are Agent Skills in the sandbox (#99).** A scenario's `skills:` names its
   [Agent Skills](https://agentskills.io/specification) folder, resolved under the pack like a service's build
   directory; Aurora's holds `run-tests` and `run-benchmark`, each a `SKILL.md` and a self-contained script
@@ -20,7 +38,7 @@ log has the details.
   the MCP `tools` it serves, and may run a `module` of the engine image instead of a `build` or `image` (the
   forge, whose world is the harness's). An agent's `sandbox: tools:` lists the tools it may call on each such
   service; a tool the service does not list, a tool named twice, or tools for a service that serves none are
-  refused at load. In a stack run every service with tools sits behind one MCP route of agentgateway v1.5.0
+  refused at load. In a stack run every service with tools sits behind one MCP route of agentgateway v1.6.0
   (`stack.tools_gateway_image`, port `stack.tools_gateway_port`), whose config is generated per run from
   `sandbox: tools:` and reaches it as a compose secret: it admits each agent by the hash of its sandbox token,
   lists it exactly its tools, refuses every other before it reaches the service, and forwards each call with

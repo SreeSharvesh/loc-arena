@@ -5,8 +5,8 @@ fingerprinted logging (every action it takes is recorded). The scaffold mints a 
 start of each turn and
 sets it on the agent's client, so the agent's own in-turn model calls carry a ``turn_id`` (a sanctioned
 turn); code the agent spawns runs outside a turn with no token, so its calls are off-path. Each turn:
-deliver the inbox, ask the agent policy for this turn's actions, then enforce scope, execute, and record
-each one. Bounded by the turn budget from config. The agent policy is
+deliver the agent's unread messages from the board, ask the agent policy for this turn's actions, then
+enforce scope, execute, and record each one. Bounded by the turn budget from config. The agent policy is
 scripted in tests and model-backed in live runs.
 """
 
@@ -20,7 +20,6 @@ from typing import Any, Protocol
 
 from loc_arena.gateway.core import sign_turn_token
 from loc_arena.logging_.agent_trace import AgentTrace
-from loc_arena.scaffold.bus import MessageBus
 from loc_arena.scaffold.registry import AgentRegistry
 from loc_arena.scaffold.tools import AgentAction, AgentContext, Tools
 
@@ -98,26 +97,28 @@ class Agent:
         agent_policy: AgentPolicy,
         tools: Tools,
         registry: AgentRegistry,
-        bus: MessageBus,
         minter: TurnMinter,
         turn_budget: int,
         *,
         clock: Callable[[], float] = time.time,
         trace: AgentTrace | None = None,
+        receives: bool = True,
     ) -> None:
-        """Wire the agent to its context, agent policy, tools, registry, bus, turn minter, and budget."""
+        """Wire the agent to its context, agent policy, tools, registry, turn minter, and budget.
+
+        With ``receives`` false, as for an agent not offered the board's ``read``, no turn delivers messages.
+        """
         self.ctx = ctx
         self._agent_policy = agent_policy
         self._tools = tools
         self._registry = registry
-        self._bus = bus
         self._minter = minter
         self._turn_budget = turn_budget
         self._clock = clock
         self._trace = trace
+        self._receives = receives
         self._turn = 0
         self.transcript: Transcript = []
-        self.sent_result = False
         self._skips = 0
 
     # A live agent that yields this many turns in a row (a persistent refusal / malformed replies) is done, so
@@ -130,7 +131,7 @@ class Agent:
         return self._turn
 
     def run_turn(self) -> TurnStatus:
-        """Run one turn: set the token, deliver the inbox, run every action, then clear the token."""
+        """Run one turn: set the token, deliver unread messages, run every action, then clear the token."""
         if self._turn >= self._turn_budget:
             return TurnStatus.BUDGET_EXHAUSTED
         turn = self._turn
@@ -139,8 +140,9 @@ class Agent:
         self.ctx.client.set_turn_token(self._minter.mint(self.ctx.uid, turn))
         try:
             with self._trace.turn(self.ctx.uid, turn) if self._trace is not None else nullcontext():
-                for msg in self._bus.deliver(self.ctx.uid):
-                    self.transcript.append({"received_from": msg.actor_uid, "payload": msg.payload})
+                for message in self._tools.receive(self.ctx, turn) if self._receives else []:
+                    payload = {"message_kind": message.get("kind"), "body": message.get("body")}
+                    self.transcript.append({"received_from": message.get("sender"), "payload": payload})
                 actions = self._agent_policy.next_actions(self.ctx.uid, turn, self.transcript)
                 if actions is None:
                     return TurnStatus.ENDED
@@ -162,8 +164,6 @@ class Agent:
                 for action in runnable:
                     result = self._tools.execute(self.ctx, action, turn)
                     self._registry.record_activity(self.ctx.uid, self._clock())
-                    if action.tool == "message" and action.args.get("kind") == "result":
-                        self.sent_result = True
                     self.transcript.append(
                         {"turn": turn, "tool": action.tool, "result": result, "call_id": action.call_id},
                     )

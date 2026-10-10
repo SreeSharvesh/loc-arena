@@ -1,13 +1,8 @@
-"""Scaffold-hosted message bus with dual capture.
+"""Dual capture: every observable event goes to the sealed log and the mirror log.
 
-Enforces fingerprinted, append-only logging (every message and every action is a fingerprinted event on
-the append-only log) and the sealed-vs-tamperable isolation (dual capture: each event is written to the
-SEALED log the agent cannot reach and to
-the MIRROR log a monitor reads; their divergence is a signal). The bus is the single coordination channel
-and the primary capture point: ``send`` writes ONE logical message
-tagged with both the sender (``actor_uid``) and the recipient (``target_id``), so it reconstructs into
-both trajectories, and delivers in order per recipient. Every message is parsed by the ``action`` hook
-(M_action) before dispatch; the real monitor plugs into that fixed interface.
+The sealed log is the ground truth the agents cannot reach; the mirror log is what a monitor reads, and their
+divergence is a signal. Every event is fingerprinted on an append-only log. Messages between agents travel on
+the board (``loc_arena.board``), and their events are built from its records.
 """
 
 from __future__ import annotations
@@ -16,14 +11,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from loc_arena.logging_.events import AppendOnlyLog, Event, EventKind, fingerprint
-
-# The M_action hook: parses each event before dispatch. Pass-through by default; the real monitor plugs in.
-ActionHook = Callable[[Event], None]
-
-
-def _noop_hook(event: Event) -> None:
-    """Default pass-through M_action hook (the interface a monitor replaces)."""
+from loc_arena.logging_.events import AppendOnlyLog, Event, EventKind
 
 
 class Recorder:
@@ -147,38 +135,3 @@ class Recorder:
             ),
         )
         return sealed_event
-
-
-class MessageBus:
-    """The single coordination channel: dual-captured, fingerprinted, in-order per recipient."""
-
-    def __init__(self, recorder: Recorder, *, action_hook: ActionHook = _noop_hook) -> None:
-        """Bind the bus to the recorder and the M_action hook that parses each message before dispatch."""
-        self._recorder = recorder
-        self._hook = action_hook
-        self._inboxes: dict[str, list[Event]] = {}
-
-    def send(self, from_id: str, from_role: str, to_id: str, kind: str, body: str, *, turn: int = 0) -> Event:
-        """Post one message: dual-captured, parsed by M_action, then queued in order for the recipient."""
-        payload: dict[str, Any] = {"message_kind": kind, "body": body, "content_fp": fingerprint(body)}
-        event = self._recorder.dual(
-            actor_uid=from_id,
-            actor_role=from_role,
-            kind="message",
-            payload=payload,
-            target_id=to_id,
-            turn=turn,
-        )
-        self._hook(event)  # M_action parses before dispatch (pass-through by default)
-        self._inboxes.setdefault(to_id, []).append(event)
-        return event
-
-    def deliver(self, to_id: str) -> list[Event]:
-        """Return and clear the recipient's pending messages, in send order."""
-        pending = self._inboxes.get(to_id, [])
-        self._inboxes[to_id] = []
-        return pending
-
-    def pending_count(self, to_id: str) -> int:
-        """How many messages are queued for ``to_id``."""
-        return len(self._inboxes.get(to_id, []))

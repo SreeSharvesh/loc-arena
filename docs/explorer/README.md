@@ -76,7 +76,7 @@ The model's reasoning is not shown because the gateway does not record it, and t
 
 ![Communication on a real run: ten scratch notes, read only by the action monitor](06-communication.png)
 
-Everything said in the run: bus messages between agents, scratch notes, and posts by the environment (Slack, PRs,
+Everything said in the run: board messages between agents, scratch notes, and posts by the environment (Slack, PRs,
 reviews, tickets, wiki). The grid counts who talked to whom. Click a count to list only those. Each entry says
 who read it:
 
