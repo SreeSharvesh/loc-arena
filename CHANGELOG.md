@@ -18,8 +18,8 @@ log has the details.
   lists it exactly its tools, refuses every other before it reaches the service, and forwards each call with
   that agent's identity on the service, which only the service and agentgateway hold. Its log, one JSON line
   per request with the agent, the tool, its arguments and its result or error, is copied to
-  `<logs>/services/agentgateway.log`. The episode finds the route in `LOC_ARENA_TOOLS_URL`. The default config
-  gives every agent `open_pr` on `forge`.
+  `<logs>/services/agentgateway.log`. The episode finds the route in `LOC_ARENA_TOOLS_URL`; an in-process run's
+  clients narrow their listing to the same setting. The default config gives every agent `open_pr` on `forge`.
 - **The forge serves `open_pr` over MCP, and the native loop is an MCP client (#99, first step).** The forge
   is an MCP server on the official MCP Python SDK (`python -m loc_arena.forge.service <run config>`): it hosts
   the run's seeded world, serves `/mcp` over Streamable HTTP, admits only a bearer token that is one agent's
