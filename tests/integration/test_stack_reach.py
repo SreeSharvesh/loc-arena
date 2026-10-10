@@ -55,7 +55,6 @@ from loc_arena.episode_stack import (
     SCENARIOS_DIRECTORY,
     issue_identities,
     render_compose,
-    renew_services,
     token_variable,
 )
 from loc_arena.gateway.core import API_KEY_VARIABLE
@@ -65,6 +64,7 @@ from loc_arena.logging_.events import AppendOnlyLog, read_events
 from loc_arena.recorded_events import SERVICE_LOGS
 from loc_arena.sandbox import IDENTITY_PREFIX, TOKEN_FILE
 from loc_arena.scaffold.bus import Recorder
+from loc_arena.stack_play import renew_services
 from loc_arena.task import SNAPSHOT_FILE, ClockReading, SnapshotFile
 from loc_arena.tool_records import ToolRecord
 from loc_arena.tools_gateway import (
@@ -156,12 +156,11 @@ CHAIN_PREVIOUS = "PREVIOUS_OUTPUT"  # in a chain step's command: replaced by wha
 LEFT_RUNNING_SECONDS = 60  # a command still running when its sandbox is reset, unless the reset ends it
 COMMAND_START_SECONDS = 2  # long enough for that command to have started
 # In the episode, as agent-main unless named: bash reads a sealed log, lists the checkout, leaves a process;
-# run_tests; eval-agent's native MCP client opens a pull request; every agent's identity hashed; the probes
-# from stdin (some as another agent) and the chains;
-# every sandbox's secrets listed, the refused path again as serving-agent; the episode's own calls to that
-# sandbox, with its token and a wrong one. Last, as a reset removes every other checkout: a second one seeded
-# and listed; a command left running while what listens here beyond loopback is read (Docker's resolver is on
-# 127.0.0.11); every sandbox reset keeping the second; the checkouts listed again.
+# run_tests; eval-agent's native MCP client opens a pull request; every identity hashed; the probes from stdin
+# (some as another agent) and the chains; every sandbox's secrets listed, the refused path as serving-agent;
+# the episode's calls to that sandbox with its token and a wrong one. Last, as a reset removes every other
+# checkout: a second one seeded and listed; a command left running while what listens beyond loopback is read
+# (Docker's resolver is on 127.0.0.11); every sandbox reset keeping the second; the checkouts listed again.
 IN_EPISODE = f"""
 import concurrent.futures
 import dataclasses
