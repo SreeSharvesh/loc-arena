@@ -75,8 +75,8 @@ class GatewaySettings(SettingsGroup):
         description="Where compose mounts a container's secrets: the gateway's key (the file "
         "openrouter_api_key), each sandbox's own token (sandbox_token), in the episode every agent's "
         "sandbox token (sandbox_token_<agent id with - as _>), in a sandbox its agent's identity on each "
-        "live service with rights (identity_<service>), and in such a service every agent's "
-        "(identity_<agent id>).",
+        "live service with rights (identity_<service>), in a live service with rights or tools every agent's "
+        "(identity_<agent id>), and in the tools gateway its generated config (agentgateway_config).",
     )
 
     @field_validator("upstream")
@@ -117,6 +117,18 @@ class StackSettings(SettingsGroup):
         description="Failed probes of the gateway, a sandbox or a live service before giving up.",
     )
     episode_pids_limit: PositiveInt = Field(default=4096, description="Processes the episode may run.")
+    tools_gateway_image: str = Field(
+        default="ghcr.io/agentgateway/agentgateway:v1.5.0",
+        description="The image of the tools gateway, agentgateway, pinned to a release: it puts every live "
+        "service with tools on one MCP route, offers each agent its tools and passes its identity on. Its "
+        "limits are a live service's.",
+    )
+    tools_gateway_port: int = Field(
+        default=3000,
+        ge=1,
+        le=65535,
+        description="The port of the tools gateway's MCP route (/mcp), on agent-net.",
+    )
     agent_code_output_limit_bytes: PositiveInt = Field(
         default=1_000_000,
         description="Bytes of an agent-code run's stdout and of its stderr kept, counted from the end.",
@@ -159,6 +171,15 @@ class StackSettings(SettingsGroup):
         description="Each sandbox's HOME and temporary directories, emptied before each episode plays so an "
         "earlier episode's agents leave nothing there for the next. Empty by default, so a sandbox server "
         "started from bare settings never empties this host's; the run configs name the container's.",
+    )
+    tools_timeout_seconds: PositiveFloat = Field(
+        default=300.0,
+        description="Seconds one MCP tool call through agentgateway may take before it is an error result.",
+    )
+    tools_connect_seconds: PositiveFloat = Field(
+        default=30.0,
+        description="Seconds each agent's MCP client keeps retrying its first listing of tools, while "
+        "agentgateway starts; then the episode fails.",
     )
     checkouts_directory: Path = Field(
         default=Path("/checkouts"),

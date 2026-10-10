@@ -8,11 +8,13 @@ its ``main.py``/``side.py`` so the registrations run, then exposes the seed, the
 reference to the harness. Adding a (main, side) pair at a new point is: drop a pack and register its
 scorer/verifier -- no engine change.
 
-A pack's ``services:`` declares the services its world has. An entry with ``build`` or ``image`` is live: a
-stack run gives it its own container on agent-net, reached at ``http://<name>:<port>``. Any other entry stays
-simulated, and the stack ignores it. A live entry's ``rights`` are the vocabulary it enforces: each agent of a
-stack run then gets its own identity on it, and the run config seeds each agent's starting rights. With no
-rights, it is open to everything on agent-net.
+A pack's ``services:`` declares the services its world has. An entry with ``build``, ``image`` or
+``module`` is live: a stack run gives it its own container on agent-net, reached at ``http://<name>:<port>``.
+Any other entry stays simulated, and the stack ignores it. A live entry's ``rights`` are the vocabulary it
+enforces: each agent of a stack run then gets its own identity on it, and the run config seeds each agent's
+starting rights. A live entry's ``tools`` are the MCP tools it serves: agents reach it only through the tools
+gateway, which offers each agent the tools its run config lists and passes that agent's identity on. With
+neither, it is open to everything on agent-net.
 """
 
 from __future__ import annotations
@@ -45,23 +47,26 @@ SCENARIOS_ROOT = Path(__file__).resolve().parent
 # A host name label (RFC 1123) in lower case alone: what names a compose service and its host on agent-net.
 DNS_LABEL: Final = re.compile(r"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?")
 # The stack's own services (loc_arena.episode_stack): a live service may not take their names.
-STACK_SERVICES: Final = frozenset({"gateway", "episode"})
+STACK_SERVICES: Final = frozenset({"gateway", "episode", "agentgateway"})
 SANDBOX_PREFIX: Final = "sandbox-"
 # Never in a service's build context: the sealed answer and the scripted moves, which agents must not reach.
 SEALED_DIRECTORIES: Final = ("reference", "scripted")
 PACK_DIRECTORY: Final = "pack_directory"  # the validation context key: the pack a build path resolves in
 GRANT: Final = "grant"  # the right to give or take rights; itself grantable only on a transitive service
 Right = Annotated[str, StringConstraints(strict=True, pattern=r"^[a-z0-9-]+$")]
+# The characters and length the MCP specification allows in a tool name.
+Tool = Annotated[str, StringConstraints(strict=True, pattern=r"^[A-Za-z0-9_.-]{1,128}$")]
 
 
-def _require_distinct(rights: tuple[str, ...]) -> tuple[str, ...]:
-    """Refuse a right named twice: a typo or a merge slip, never what was meant."""
-    if len(set(rights)) < len(rights):
-        raise ValueError(f"it names a right twice: {list(rights)}")
-    return rights
+def _require_distinct(names: tuple[str, ...]) -> tuple[str, ...]:
+    """Refuse a right or a tool named twice: a typo or a merge slip, never what was meant."""
+    if repeated := sorted({name for name in names if names.count(name) > 1}):
+        raise ValueError(f"it names {', '.join(map(repr, repeated))} twice: {list(names)}")
+    return names
 
 
 Rights = Annotated[tuple[Right, ...], AfterValidator(_require_distinct)]
+Tools = Annotated[tuple[Tool, ...], AfterValidator(_require_distinct)]
 
 
 def _require_a_service_name(name: str) -> str:
@@ -86,6 +91,12 @@ class ScenarioService(BaseModel):
         description="A directory under the pack holding a Dockerfile; resolved to its absolute path.",
     )
     image: StrictStr | None = Field(default=None, min_length=1, description="A ready image to run instead.")
+    module: StrictStr | None = Field(
+        default=None,
+        min_length=1,
+        description="A module of the engine image to run instead, given the run config's path: for a service "
+        "that needs the harness, such as the forge's world.",
+    )
     command: tuple[StrictStr, ...] | None = Field(
         default=None,
         min_length=1,
@@ -101,6 +112,12 @@ class ScenarioService(BaseModel):
         default=(),
         description="The rights the service enforces; with any, each agent gets its own identity on it, and "
         "with none it is open to everything on agent-net.",
+    )
+    tools: Tools = Field(
+        default=(),
+        description="The MCP tools the service serves at /mcp; with any, agents reach it only through the "
+        "tools gateway, and each agent gets its own identity on it, which only the service and the tools "
+        "gateway hold.",
     )
     transitive: StrictBool = Field(
         default=False,
@@ -130,14 +147,15 @@ class ScenarioService(BaseModel):
     def _require_a_consistent_entry(self) -> Self:
         """Refuse an entry whose parts contradict each other.
 
-        That is both build and image, a live entry with no port, a ready image with no healthcheck (the
-        default probe runs python, which a ready image need not hold; a build is ours to give it), or
-        transitivity with no right to grant.
+        That is more than one of build, image and module, a live entry with no port, a ready image with no
+        healthcheck (the default probe runs python, which a ready image need not hold; a build or the engine
+        image is ours to give it), or transitivity with no right to grant.
         """
-        if self.build is not None and self.image is not None:
-            raise ValueError("give build or image, not both")
-        if (self.build is not None or self.image is not None) and self.port is None:
-            raise ValueError("a live service (build or image) needs a port")
+        sources = [source for source in (self.build, self.image, self.module) if source is not None]
+        if len(sources) > 1:
+            raise ValueError("give one of build, image or module")
+        if sources and self.port is None:
+            raise ValueError("a live service (build, image or module) needs a port")
         if self.image is not None and self.healthcheck is None:
             raise ValueError("a ready image needs a healthcheck: the default probe runs python")
         if self.transitive and GRANT not in self.rights:
@@ -146,17 +164,25 @@ class ScenarioService(BaseModel):
 
 
 @dataclass(frozen=True)
+class EngineModule:
+    """A module of the engine image, run as ``python -m <name> <run config>``."""
+
+    name: str
+
+
+@dataclass(frozen=True)
 class LiveService:
     """A service a stack run gives its own container on agent-net."""
 
     name: str
-    source: Path | str  # the absolute build directory, or the ready image
+    source: Path | str | EngineModule  # the absolute build directory, the ready image, or an engine module
     port: int
     command: tuple[str, ...] | None
     healthcheck: tuple[str, ...] | None
     rights: tuple[str, ...]  # the vocabulary it enforces; none: open, and no identity is issued
     transitive: bool  # whether GRANT itself may be granted
     description: str
+    tools: tuple[str, ...] = ()  # the MCP tools it serves, reached through the tools gateway alone
 
 
 @dataclass(frozen=True)
@@ -223,7 +249,7 @@ def _parse_live_services(directory: Path, declared: object) -> tuple[LiveService
             )
         except (ValidationError, TypeError) as error:
             raise ValueError(f"scenario {directory.name}: service {name!r} is invalid: {error}") from error
-        source = service.build or service.image
+        source = service.build or service.image or (EngineModule(service.module) if service.module else None)
         if source is not None and service.port is not None:  # a live entry with no port was refused above
             live.append(
                 LiveService(
@@ -235,9 +261,21 @@ def _parse_live_services(directory: Path, declared: object) -> tuple[LiveService
                     rights=service.rights,
                     transitive=service.transitive,
                     description=service.description,
+                    tools=service.tools,
                 ),
             )
+    _require_unique_tools(live)
     return tuple(live)
+
+
+def _require_unique_tools(live: list[LiveService]) -> None:
+    """Refuse two live services serving one tool name: agents call a tool by its name alone."""
+    server: dict[str, str] = {}
+    for service in live:
+        for tool in service.tools:
+            if tool in server:
+                raise ValueError(f"tool {tool!r} is served by both {server[tool]!r} and {service.name!r}")
+            server[tool] = service.name
 
 
 def load_scenario(name: str, *, root: Path | None = None) -> Scenario:

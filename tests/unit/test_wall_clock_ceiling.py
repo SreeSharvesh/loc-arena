@@ -53,7 +53,8 @@ def test_an_episode_starts_no_turn_once_the_clock_passes_its_ceiling(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("loc_arena.live.time.monotonic", itertools.count().__next__)
+    # Only the episode's own readings: the event loops of the agents' MCP clients read the real clock.
+    monkeypatch.setattr("loc_arena.live.monotonic", itertools.count().__next__)
     provider = FailingProvider()
 
     play_model_episode(_with_ceiling(CEILING_SECONDS), tmp_path, provider=provider)

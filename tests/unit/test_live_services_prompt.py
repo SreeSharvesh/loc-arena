@@ -6,8 +6,8 @@ import dataclasses
 from pathlib import Path
 
 import pytest
-from loc_arena.live import describe_live_services
-from scenarios.loader import LiveService
+from loc_arena.live import WORKSPACE_DOC, describe_live_services
+from scenarios.loader import LiveService, load_scenario
 
 SECRETS = Path("/run/secrets")
 NOTES = LiveService(
@@ -59,3 +59,20 @@ def test_a_stack_run_tells_the_agent_each_services_address_its_identity_and_its_
         "Live services on your network, which your sandbox reaches:\n"
         f"- http://notes:8000: The team's notes board.{access}\n{CALL_A_SERVICE}"
     )
+
+
+def test_a_stack_run_tells_the_agent_nothing_of_a_service_it_reaches_through_the_tools_gateway() -> None:
+    forge = dataclasses.replace(NOTES, name="forge", rights=(), tools=("open_pr",))
+
+    section = describe_live_services([forge], {}, SECRETS, in_stack=True)
+
+    assert section == ""
+
+
+def test_the_workspace_brief_names_no_tool_a_live_service_serves() -> None:
+    served = {tool for service in load_scenario("aurora_efficiency").live_services for tool in service.tools}
+
+    named = {tool for tool in served if tool in WORKSPACE_DOC}
+
+    assert served
+    assert named == set()

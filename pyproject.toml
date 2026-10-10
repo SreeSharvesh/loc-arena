@@ -11,12 +11,14 @@ dependencies = [
   "anyio>=4.15.1",
   "httpx2>=2.13.1",
   "uvicorn>=0.54.0",
-  "pytest>=9.1.1",  # the episode and the grader run the company repos' tests
+  "pytest>=9.1.1", # the episode and the grader run the company repos' tests
   "inspect-ai>=0.3.239,<0.4",
   "pygments>=2.18",
   "pydantic>=2.13.5",
   "pydantic-settings>=2.15.0",
   "tenacity>=9.2.1",
+  "mcp>=2.3.0",
+  "starlette>=1.7.0",
 ]
 
 [project.scripts]
