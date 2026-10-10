@@ -81,8 +81,6 @@ def render_tools_gateway_config(
             "rules": [{"allow": f"mcp.tool.name in {json.dumps(tools)}[apiKey.agent][mcp.tool.target]"}],
         },
     }
-    # Tools keep their own names, unique across services, so an agent calls a tool by the name an in-process
-    # run offers; agentgateway finds the service that serves it.
     backend = {"targets": targets, "prefixMode": "never"}
     document = {
         "config": {

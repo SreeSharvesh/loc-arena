@@ -76,11 +76,6 @@ async def _call_each(calls: list[Call], write: Callable[[str], None] = print) ->
     return results
 
 
-def _messages(result: CallToolResult) -> list[dict[str, Any]]:
-    assert result.structured_content is not None, result.content
-    return result.structured_content["messages"]
-
-
 @pytest.mark.parametrize(
     "headers",
     [{}, {"Authorization": "Bearer not-an-identity"}, {"Authorization": "main-identity"}],
@@ -105,64 +100,50 @@ def test_a_send_is_recorded_under_the_agent_its_identity_names() -> None:
             "gen_ai.tool.name": "send",
             "gen_ai.tool.call.arguments": REPORT,
             "gen_ai.agent.name": "serving-agent",
-            "gen_ai.tool.call.result": {"sent": True, "id": 1, "to": "agent-main"},
+            "gen_ai.tool.call.result": DELIVERED,
         },
     ]
 
 
-def test_the_recipient_reads_a_message_as_sent_by_the_agent_whose_identity_sent_it() -> None:
-    spoofed = {**REPORT, "sender": "eval-agent", "actor_uid": "eval-agent"}
-
-    results = anyio.run(_call_each, [("serving-agent", "send", spoofed), ("agent-main", "read", {})])
-
-    assert _messages(results[-1]) == [DELIVERED]
+SENT = ("serving-agent", "send", REPORT)
 
 
-def test_unread_returns_each_message_once() -> None:
-    calls: list[Call] = [
-        ("serving-agent", "send", REPORT),
-        ("agent-main", "unread", {}),
-        ("agent-main", "unread", {}),
-    ]
-
+@pytest.mark.parametrize(
+    ("calls", "read"),
+    [
+        (
+            [("serving-agent", "send", {**REPORT, "sender": "eval-agent"}), ("agent-main", "read", {})],
+            [DELIVERED],
+        ),
+        ([SENT, ("eval-agent", "read", {})], []),
+        ([SENT, ("agent-main", "unread", {})], [DELIVERED]),
+        ([SENT, ("agent-main", "unread", {}), ("agent-main", "unread", {})], []),
+        ([SENT, ("agent-main", "unread", {}), ("agent-main", "read", {})], [DELIVERED]),
+        (
+            [
+                ("serving-agent", "send", {"to": "agent-main", "body": "1"}),
+                ("eval-agent", "send", {"to": "agent-main", "body": "2"}),
+                ("agent-main", "unread", {}),
+            ],
+            [
+                {"id": 1, "sender": "serving-agent", "to": "agent-main", "kind": "inform", "body": "1"},
+                {"id": 2, "sender": "eval-agent", "to": "agent-main", "kind": "inform", "body": "2"},
+            ],
+        ),
+    ],
+    ids=[
+        "the recipient, from the sender its identity names whatever it claims",
+        "a third agent, nothing",
+        "unread, a new message",
+        "unread, each message once",
+        "read, what unread already returned",
+        "unread, in send order",
+    ],
+)
+def test_the_last_caller_reads_the_messages_sent_to_it(calls: list[Call], read: list[dict[str, Any]]) -> None:
     results = anyio.run(_call_each, calls)
 
-    assert [_messages(result) for result in results[1:]] == [[DELIVERED], []]
-
-
-def test_read_returns_messages_unread_has_already_returned() -> None:
-    calls: list[Call] = [
-        ("serving-agent", "send", REPORT),
-        ("agent-main", "unread", {}),
-        ("agent-main", "read", {}),
-    ]
-
-    results = anyio.run(_call_each, calls)
-
-    assert _messages(results[-1]) == [DELIVERED]
-
-
-def test_unread_returns_messages_in_the_order_they_were_sent() -> None:
-    calls: list[Call] = [
-        ("serving-agent", "send", {"to": "agent-main", "body": "first"}),
-        ("eval-agent", "send", {"to": "agent-main", "body": "second"}),
-        ("agent-main", "unread", {}),
-    ]
-
-    results = anyio.run(_call_each, calls)
-
-    assert [(message["sender"], message["body"]) for message in _messages(results[-1])] == [
-        ("serving-agent", "first"),
-        ("eval-agent", "second"),
-    ]
-
-
-def test_a_third_agent_does_not_read_a_message_to_another() -> None:
-    calls: list[Call] = [("serving-agent", "send", REPORT), ("eval-agent", "read", {})]
-
-    results = anyio.run(_call_each, calls)
-
-    assert _messages(results[-1]) == []
+    assert (results[-1].structured_content or {}).get("messages") == read
 
 
 def test_a_send_outside_the_callers_scope_is_refused() -> None:

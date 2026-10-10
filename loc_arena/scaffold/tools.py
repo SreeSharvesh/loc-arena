@@ -27,9 +27,6 @@ _LOGGER = logging.getLogger(__name__)
 
 # Tools whose target (repo / recipient) the scope check needs from the args.
 _TARGET_FROM = {"open_pr": "repo", "merge": "repo", "send": "to", "read_weights": "name"}
-# The board's tools: ``send`` posts a message, whose ``message`` event is built from the board's record after
-# play, and ``unread`` delivers an agent its messages at the start of each turn.
-SEND, UNREAD = "send", "unread"
 
 
 @dataclass(frozen=True)
@@ -142,10 +139,8 @@ class Tools:
             self._log_action(ctx, action, turn, blocked=False, result=result)
             return result
 
-        if (
-            action.tool == SEND
-        ):  # a message the board takes becomes its message event, one it refuses an action
-            result = self._services.run(SEND, {**action.args, "actor_uid": ctx.uid, "actor_role": ctx.role})
+        if action.tool == "send":  # the board's record of a message it takes becomes the message event
+            result = self._services.run("send", {**action.args, "actor_uid": ctx.uid, "actor_role": ctx.role})
             if "error" in result:
                 self._log_action(ctx, action, turn, blocked=False, result=result)
             return result
@@ -182,8 +177,7 @@ class Tools:
 
     def receive(self, ctx: AgentContext) -> list[ToolResult]:
         """The messages sent to the agent that it has not received yet, from the board, in send order."""
-        result = self._services.run(UNREAD, {"actor_uid": ctx.uid, "actor_role": ctx.role})
+        result = self._services.run("unread", {"actor_uid": ctx.uid, "actor_role": ctx.role})
         if "error" in result:
             _LOGGER.warning("%s received no messages: %s", ctx.uid, result["error"])
-        messages = result.get("messages")
-        return messages if isinstance(messages, list) else []
+        return result.get("messages", [])

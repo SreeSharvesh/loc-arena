@@ -6,7 +6,7 @@ the tool layer, an orchestrator, and helpers to build agent contexts and clients
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -15,7 +15,6 @@ from loc_arena.config import RunConfig, load_run_config
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import GatewayCore, create_core_app
 from loc_arena.gateway.edge import GatewayEdge, create_edge_app
-from loc_arena.ids import PermissionScope
 from loc_arena.logging_.events import AppendOnlyLog
 from loc_arena.scaffold.agent import AgentPolicy, ScriptedAgentPolicy, TurnMinter
 from loc_arena.scaffold.bus import Recorder
@@ -43,33 +42,20 @@ class Clock:
         self.t += dt
 
 
-class RegistryScopes(Mapping[str, PermissionScope]):
-    """Each agent's scope as the registry holds it now, so a spawned child's joins when it is spawned."""
-
-    def __init__(self, registry: AgentRegistry) -> None:
-        self._registry = registry
-
-    def __getitem__(self, uid: str) -> PermissionScope:
-        return self._registry.node(uid).scope
-
-    def __iter__(self) -> Iterator[str]:
-        return iter(self._registry.tree())
-
-    def __len__(self) -> int:
-        return len(self._registry.tree())
-
-
 class BoardServices:
     """Calls the board's tools over MCP in memory, each as the agent that calls it; stubs every other tool."""
 
-    def __init__(self, board: Board, scopes: Mapping[str, PermissionScope], write: Write) -> None:
-        self._board, self._scopes, self._write = board, scopes, write
+    def __init__(self, board: Board, registry: AgentRegistry, write: Write) -> None:
+        self._board, self._registry, self._write = board, registry, write
 
     def run(self, tool: str, args: dict[str, Any]) -> ToolResult:
         if tool not in {"send", "read", "unread"}:
             return StubServices().run(tool, args)
         caller = str(args["actor_uid"])
-        server = build_server(self._board, lambda: caller, self._write, self._scopes)
+        scopes = {
+            uid: self._registry.node(uid).scope for uid in self._registry.tree()
+        }  # children spawned so far
+        server = build_server(self._board, lambda: caller, self._write, scopes)
         arguments = {key: value for key, value in args.items() if key not in {"actor_uid", "actor_role"}}
         return McpTools(lambda: Client(server)).call(tool, arguments)
 
@@ -126,8 +112,7 @@ class Harness:
             root_scope=root.scope,
             clock=self.clock,
         )
-        scopes = RegistryScopes(self.registry)
-        self.services = BoardServices(self.board, scopes, append_to(self.board_records))
+        self.services = BoardServices(self.board, self.registry, append_to(self.board_records))
 
     def make_client(self, caller_identity: str) -> GatewayClient:
         """A gateway client (pointing at the edge) for the given identity."""

@@ -1,20 +1,19 @@
 """The board: the one channel between agents, an MCP service on the official MCP SDK.
 
-``send`` posts a message to one agent, ``read`` returns every message addressed to the caller, and ``unread``
-those it has not had from ``unread`` yet, each in send order. The sender is the caller, never an argument, and
-the board enforces each agent's recipient allow-list (its scope's ``message``) itself, since any harness, an
-agent's bash included, may reach it through agentgateway. Each call is one line of ``loc_arena.tool_records``;
-the ``message`` events the monitors and the verifier read are built from the ``send`` lines after play.
-
-A stack run starts it as the compose service ``board``: ``python -m loc_arena.board <run config>``. An
-in-process run holds one ``Board`` per episode and serves each agent its own server over it, bound to that
-agent, reached in memory.
+``send`` posts a message to one agent; ``read`` returns every message to the caller, and ``unread`` those
+``unread`` has not returned yet, in send order. The sender is the caller's identity, never an argument, and
+the board enforces each agent's recipient allow-list (``scope.message``) itself, since an agent's bash may
+reach it through agentgateway too. The ``message`` events monitors read are built from its ``send`` records
+after play. A stack run starts it as the compose service ``board`` (``python -m loc_arena.board <run
+config>``); an in-process run serves each agent its own server over the episode's one ``Board``, in memory.
 """
 
 from __future__ import annotations
 
 import functools
+import itertools
 import sys
+from collections import Counter, defaultdict
 from collections.abc import Callable, Mapping
 from typing import Annotated, TypedDict
 
@@ -43,21 +42,13 @@ ISSUER = "http://board"
 
 
 class Message(TypedDict):
-    """One message on the board, as its recipient reads it."""
+    """One message, as ``send`` returns it and its recipient reads it."""
 
     id: int
     sender: str
     to: str
     kind: str
     body: str
-
-
-class Sent(TypedDict):
-    """What ``send`` returns."""
-
-    sent: bool
-    id: int
-    to: str
 
 
 class Messages(TypedDict):
@@ -67,33 +58,33 @@ class Messages(TypedDict):
 
 
 class Board:
-    """Every message of one episode, and how many of its own each agent has had from ``unread``."""
+    """Each agent's messages in send order, and how many of them ``unread`` has returned."""
 
     def __init__(self) -> None:
         """An empty board."""
-        self._messages: list[Message] = []
-        self._delivered: dict[str, int] = {}
+        self._ids = itertools.count(1)
+        self._inboxes: defaultdict[str, list[Message]] = defaultdict(list)
+        self._delivered: Counter[str] = Counter()
 
     def post(self, sender: str, to: str, kind: str, body: str) -> Message:
         """Post one message from ``sender`` to ``to``."""
-        message = Message(id=len(self._messages) + 1, sender=sender, to=to, kind=kind, body=body)
-        self._messages.append(message)
+        message = Message(id=next(self._ids), sender=sender, to=to, kind=kind, body=body)
+        self._inboxes[to].append(message)
         return message
 
-    def addressed_to(self, agent: str) -> list[Message]:
-        """Every message to ``agent``, in send order."""
-        return [message for message in self._messages if message["to"] == agent]
+    def read(self, agent: str) -> list[Message]:
+        """Every message to ``agent``."""
+        return list(self._inboxes[agent])
 
     def take_unread(self, agent: str) -> list[Message]:
-        """The messages to ``agent`` it has not had from this yet, now counted as had."""
-        mine = self.addressed_to(agent)
-        unread = mine[self._delivered.get(agent, 0) :]
-        self._delivered[agent] = len(mine)
+        """The messages to ``agent`` this has not returned yet."""
+        unread = self._inboxes[agent][self._delivered[agent] :]
+        self._delivered[agent] += len(unread)
         return unread
 
     def count_unread(self, agent: str) -> int:
-        """How many messages to ``agent`` ``take_unread`` would return."""
-        return len(self.addressed_to(agent)) - self._delivered.get(agent, 0)
+        """How many messages ``take_unread`` would return."""
+        return len(self._inboxes[agent]) - self._delivered[agent]
 
 
 def build_server(
@@ -129,18 +120,17 @@ def build_server(
         to: Annotated[str, Field(description="recipient agent id, e.g. serving-agent")],
         body: Annotated[str, Field(description="message text")] = "",
         kind: Annotated[str, Field(description="delegate, result, or inform")] = "inform",
-    ) -> Sent:
+    ) -> Message:
         agent = require_caller()
         try:
             enforce(scopes.get(agent, PermissionScope()), Action("send", {"target": to}), actor_uid=agent)
         except ScopeViolation as violation:
             raise ToolError(violation.reason) from violation
-        message = board.post(agent, to, kind, body)
-        return Sent(sent=True, id=message["id"], to=to)
+        return board.post(agent, to, kind, body)
 
     @server.tool(description="Every message sent to you, oldest first.")
     async def read() -> Messages:
-        return Messages(messages=board.addressed_to(require_caller()))
+        return Messages(messages=board.read(require_caller()))
 
     @server.tool(description="The messages sent to you since you last called unread, oldest first.")
     async def unread() -> Messages:
