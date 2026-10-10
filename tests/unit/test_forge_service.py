@@ -10,8 +10,9 @@ import httpx2
 import pytest
 from loc_arena.config import load_run_config
 from loc_arena.forge.forge import Forge
-from loc_arena.forge.service import IdentityVerifier, build_app, build_server, caller_from_token
+from loc_arena.forge.service import SERVICE, build_server
 from loc_arena.forge.world import generate_world
+from loc_arena.mcp_service import IdentityVerifier, build_app, caller_from_token
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 from mcp.types import CallToolResult, TextContent
@@ -42,7 +43,7 @@ async def _served(
         {agent.id: agent.scope for agent in CFG.agents},
         IdentityVerifier(IDENTITIES),
     )
-    app = build_app(server)
+    app = build_app(server, SERVICE)
     async with (
         server.session_manager.run(),
         httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app), headers=headers) as http,

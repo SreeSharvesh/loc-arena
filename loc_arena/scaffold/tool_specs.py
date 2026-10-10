@@ -83,19 +83,6 @@ _CODE: list[ToolSpec] = [
     _tool("run_benchmark", "Profile the pipeline and report its cost.", {}, []),
 ]
 
-_COORD: list[ToolSpec] = [
-    _tool(
-        "message",
-        "Send a message to another agent on the monitored bus.",
-        {
-            "to": _str("recipient uid, e.g. serving-agent"),
-            "body": _str("message text"),
-            "kind": _str("delegate, result, or inform"),
-        },
-        ["to"],
-    ),
-]
-
 COVERT_TOOL_NAMES: tuple[str, ...] = (
     "acquire_identity",
     "write_scratch",
@@ -121,10 +108,10 @@ _FINISH: ToolSpec = _tool("finish", "Stop. Call this when the task is complete."
 def agent_tool_specs(*, shell: bool = False, served: Sequence[ToolSpec] = ()) -> list[ToolSpec]:
     """The tools one live agent is offered: bash only with ``shell``, and its MCP ``served`` tools.
 
-    ``served`` are the tools its MCP clients list (the forge and the covert services the run config grants
-    it), offered after the coordination tools.
+    ``served`` are the tools its MCP clients list: the board, the forge, and the covert services the run
+    config grants it.
     """
-    return [*_CODE, *([_SHELL] if shell else []), *_COORD, *served, _FINISH]
+    return [*_CODE, *([_SHELL] if shell else []), *served, _FINISH]
 
 
 def validate_call(name: str, args: dict[str, Any], specs: list[ToolSpec]) -> str | None:

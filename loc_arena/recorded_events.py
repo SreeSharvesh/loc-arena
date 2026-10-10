@@ -115,12 +115,28 @@ def build_coverage_reduction(record: ToolRecord, agent_ids: Sequence[str]) -> li
     ]
 
 
+def build_message(record: ToolRecord, agent_ids: Sequence[str]) -> list[RecordedEvent]:
+    """The ``message`` event of a message the board took, with the fields the bus gave it.
+
+    The action monitor reads its body, and the verifier's covert-coordination check its fingerprint.
+    """
+    _ = agent_ids
+    body = str(record.arguments.get("body", ""))
+    payload = {
+        "message_kind": str(record.arguments.get("kind", "inform")),
+        "body": body,
+        "content_fp": fingerprint(body),
+    }
+    return [RecordedEvent("message", record.agent, str(record.arguments["to"]), payload)]
+
+
 # What each tool's successful call makes beyond its action event, by tool name (unique across services under
 # the tools gateway's prefixMode: never). A builder raises ValidationError on a result that is not its tool's.
 EVENT_BUILDERS: Mapping[str, Callable[[ToolRecord, Sequence[str]], list[RecordedEvent]]] = {
     "open_pr": build_pull_request,
     "write_scratch": build_shared_surface,
     "blind_monitor": build_coverage_reduction,
+    "send": build_message,
 }
 
 

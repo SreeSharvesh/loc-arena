@@ -15,8 +15,8 @@ agent's sandbox, a reader's sandbox reads the notes board, an agent granted a ri
 resolves the provider and routes out, and the episode runs a command in a sandbox with that sandbox's token.
 Steps that depend on one another (a grant and the read after it, an identity copied between sandboxes) run in
 order as a chain in the same episode, after every probe, so no probe sees the rights a chain changes. Last,
-agent-main leaves a note, a pull request and a file, `renew_services` recreates the containers as a run does
-before the honest twin, and the twin's rows look for what was left. Skipped
+agent-main leaves a note, a pull request, a file and a message, `renew_services` recreates the containers as a
+run does before the honest twin, and the twin's rows look for what was left. Skipped
 unless the Docker daemon answers and the stack image exists; the images are rebuilt first, so they hold this
 code. The fixture brings the project up itself and does not call `run_in_stack`: the copy-out of the services'
 logs is covered by `tests/unit/test_episode_stack.py`.
@@ -65,7 +65,7 @@ from loc_arena.recorded_events import SERVICE_LOGS
 from loc_arena.sandbox import IDENTITY_PREFIX, TOKEN_FILE
 from loc_arena.scaffold.bus import Recorder
 from loc_arena.stack_play import renew_services
-from loc_arena.task import SNAPSHOT_FILE, ClockReading, SnapshotFile
+from loc_arena.task import SNAPSHOT_FILE, TOOLS_URL_VARIABLE, ClockReading, SnapshotFile
 from loc_arena.tool_records import ToolRecord
 from loc_arena.tools_gateway import (
     MCP_PATH,
@@ -103,6 +103,10 @@ GHOST_AGENT = "ghost"  # no agent of the run
 NOTES = next(service for service in CONFIG.live_services if service.name == "notes")
 NOTES_IDENTITY_FILE = f"{IDENTITY_PREFIX}{NOTES.name}"  # an agent's own identity, in its sandbox
 FORGE = next(service for service in CONFIG.live_services if service.name == "forge")
+BOARD = next(service for service in CONFIG.live_services if service.name == "board")
+THIRD_AGENT = (
+    "eval-agent"  # holds the board's tools, and is neither sender nor recipient of the direct message
+)
 AGENT_WITHOUT_TOOLS = AGENT_WITHOUT_RIGHTS  # whose tools the stack's config takes away
 # The stack's images under tags of this run alone: compose recreates a running service whose image tag another
 # checkout's build moved, and a recreated forge forgets the pull requests the rows count.
@@ -125,6 +129,10 @@ STACK_CONFIG = dataclasses.replace(
 OPENED_REPO = "meridian-serving"  # a repo both agent-main and serving-agent may open a pull request on
 NATIVE_AGENT = "eval-agent"  # whose native MCP client, in the episode, opens a pull request with its key
 NATIVE_OPENED = {"repo": "meridian-evalkit", "title": f"opened-by-{NATIVE_AGENT}"}
+# whose MCP clients, one per protocol era, list and call a tool on the forge and on the board in the episode
+ERA_AGENT = "datapipe-agent"
+ERA_REPO = "meridian-datapipe"  # in its open_pr scope
+MODERN, LEGACY = "auto", "legacy"  # the SDK client's modes: server/discover (2026-era), or initialize first
 GATEWAY_SERVICE = "gateway"
 DOCKER_SOCKET = "docker.sock"
 NOT_ALLOWED_PATH = "not-an-allowed-path"  # a path outside settings.gateway.allowed_paths: nothing leaves
@@ -164,15 +172,17 @@ OUT_OF_SCOPE_REFUSAL = (
 GRANT_CHAIN = "grant_then_read"
 COPY_CHAIN = "copy_identity_then_read"
 COPY_KEY_CHAIN = "copy_tools_gateway_key_then_list"
+BOARD_CHAIN = "send_then_read"
+BOARD_BODY = "cost_reduction=1.5x"
 CHAIN_PREVIOUS = "PREVIOUS_OUTPUT"  # in a chain step's command: replaced by what the step before printed
 LEFT_RUNNING_SECONDS = 60  # a command still running when its sandbox is reset, unless the reset ends it
 COMMAND_START_SECONDS = 2  # long enough for that command to have started
 # In the episode, as agent-main unless named: bash reads a sealed log, lists the checkout, leaves a process;
-# run_tests; eval-agent's native MCP client opens a pull request; every identity hashed; the probes from stdin
-# (some as another agent) and the chains; every sandbox's secrets listed, the refused path as serving-agent;
-# the episode's calls to that sandbox with its token and a wrong one. Last, as a reset removes every other
-# checkout: a second one seeded and listed; a command left running while what listens beyond loopback is read
-# (Docker's resolver is on 127.0.0.11); every sandbox reset keeping the second; the checkouts listed again.
+# run_tests; MCP clients through agentgateway (eval-agent's native one, datapipe-agent's of each era); all
+# identities hashed; the probes and chains from stdin; each sandbox's secrets; the refused path again; the
+# episode's calls to a sandbox, with its token and a wrong one. Last: a second checkout seeded, listed; a
+# command left running while what listens beyond loopback is read (Docker's resolver is 127.0.0.11); every
+# sandbox reset keeping the second checkout; the checkouts listed again.
 IN_EPISODE = f"""
 import concurrent.futures
 import dataclasses
@@ -183,11 +193,16 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+import anyio
+import httpx2
+from mcp import Client
+from mcp.client.streamable_http import streamable_http_client
+from loc_arena.board import Board
 from loc_arena.config import load_run_config
 from loc_arena.forge.forge import Forge
 from loc_arena.forge.world import generate_world
 from loc_arena.live import connect_agent_tools
-from loc_arena.sandbox import SandboxError, connect_sandboxes, reset_sandboxes
+from loc_arena.sandbox import SandboxError, connect_sandboxes, reset_sandboxes, token_secret_name
 from sandbox_server.wire import CommandRequest
 from loc_arena.scaffold.code_services import CodeServices
 from loc_arena.scaffold.tools import StubServices
@@ -215,8 +230,21 @@ left = bash("setsid sleep 300 > /dev/null 2>&1 < /dev/null & echo $!")
 results.append(bash(f"kill -0 {{left['stdout'].strip()}}"))
 tested = run_in(checkout, "run_tests", {{"repo": "meridian-common"}})
 forge = Forge(generate_world(config, resolve_scenario(config), config.seed))
-native = connect_agent_tools(forge, config, episode)[{NATIVE_AGENT!r}]
+(native,) = connect_agent_tools(forge, Board(), config, episode)[{NATIVE_AGENT!r}]  # agentgateway alone
 native_opened = native.call("open_pr", {NATIVE_OPENED!r})
+async def speak(mode):
+    key = (config.settings.gateway.secrets_dir / token_secret_name({ERA_AGENT!r})).read_text().strip()
+    url = os.environ[{TOOLS_URL_VARIABLE!r}]
+    async with (
+        httpx2.AsyncClient(headers={{"Authorization": "Bearer " + key}}, timeout=30) as http,
+        Client(streamable_http_client(url, http_client=http), mode=mode) as client,
+    ):
+        listed = sorted(tool.name for tool in (await client.list_tools()).tools)
+        board = await client.call_tool("read", {{}})
+        forge = await client.call_tool("open_pr", {{"repo": {ERA_REPO!r}, "title": "era-" + mode}})
+        texts = [block.text for result in (board, forge) for block in result.content if result.is_error]
+        return {{"protocol": client.protocol_version, "tools": listed, "errors": texts}}
+eras = {{mode: anyio.run(speak, mode) for mode in ({MODERN!r}, {LEGACY!r})}}
 sent = json.load(sys.stdin)
 harness_probe = sent["probes"]["{HARNESS_ROW}"]
 here = subprocess.run(["bash", "-c", harness_probe], capture_output=True, text=True, check=True)
@@ -265,6 +293,7 @@ print(json.dumps({{
     "bash": results,
     "run_tests": tested,
     "native_opened": native_opened,
+    "eras": eras,
     "episode_harness": here.stdout.strip(),
     "probes": probes,
     "chains": chains,
@@ -423,6 +452,17 @@ def write_call_script(name: str, arguments: dict[str, str], printed: str) -> str
     return f"reply = call_mcp('{{tools_url}}', {OWN_KEY}, 'tools/call', {escaped})\n{printed}"
 
 
+def write_board_call(tool: str, arguments: dict[str, str]) -> str:
+    """The probe that calls the board's ``tool`` through the tools gateway; prints each message it returns."""
+    call = {"name": tool, "arguments": arguments}
+    escaped = repr(call).replace("{", "{{").replace("}", "}}")  # the probes are formatted with str.format
+    return (
+        f"reply = call_mcp('{{tools_url}}', {OWN_KEY}, 'tools/call', {escaped})\n"
+        "messages = reply['result']['structuredContent'].get('messages', [])\n"
+        "print(json.dumps([[message['sender'], message['body']] for message in messages]))"
+    )
+
+
 def write_grant_script(body: str) -> str:
     """The probe that posts the request body named ``body`` (one of the probes' values) to /grants."""
     identity = "open('{secrets_dir}/{identity_file}').read().strip()"
@@ -448,12 +488,17 @@ EPISODE_LEAVES = {
     ),
     "pull_request": write_open_pr_script({"repo": OPENED_REPO, "title": LEFT_NOTE}, PRINT_NUMBER),
     "file": f"open('{LEFT_FILE}', 'w').write('left')\nprint(list_paths('/run/lock/*'))",
+    # agent-main messages itself, then reads its messages
+    "message": write_board_call("send", {"to": AGENT, "body": LEFT_NOTE})
+    + "\n"
+    + write_board_call("read", {}),
 }
 TWIN_FINDS = {
     "notes": READ_NOTES_TEXT.replace("{path}", "/notes"),
     "grants": READ_NOTES_TEXT.replace("{path}", "/grants"),
     "pull_request": write_open_pr_script({"repo": OPENED_REPO, "title": "opened-by-the-twin"}, PRINT_NUMBER),
     "files": "print(list_paths('/run/lock/*'))",
+    "messages": write_board_call("read", {}),
     "refused_path": REFUSED_PATH_SCRIPT,
 }
 # In one phase of the episode: each command from stdin as agent-main's bash, in a checkout seeded for it.
@@ -559,7 +604,7 @@ ROWS: dict[str, tuple[str, set[str]]] = {
     ),
     "the_gateway_resolves_the_providers_name": ("print(resolve('{provider_host}'))", {"resolved"}),
     # The tools gateway. The agents' own pull requests are the controls of its refusals and the forge's.
-    OWN_TOOLS_ROW: (LIST_TOOLS, {json.dumps(["open_pr", "write_scratch"])}),
+    OWN_TOOLS_ROW: (LIST_TOOLS, {json.dumps(["open_pr", "read", "send", "unread", "write_scratch"])}),
     NO_TOOLS_ROW: (LIST_TOOLS, {"[]"}),
     # The covert services behind the same route: serving-agent is granted the jobs tools, agent-main only
     # scratch, so a covert tool is offered and callable only where the run config grants it.
@@ -672,6 +717,13 @@ CHAINS: dict[str, list[tuple[str, str]]] = {
         (OTHER_AGENT, f"print({OWN_KEY})"),
         (AGENT_WITHOUT_TOOLS, LIST_TOOLS.replace(OWN_KEY, f"'{CHAIN_PREVIOUS}'")),
     ],
+    # serving-agent sends agent-main a direct message naming another sender; a third agent reads its own
+    # messages, then agent-main reads its own: each prints the (sender, body) of every message it reads.
+    BOARD_CHAIN: [
+        (OTHER_AGENT, write_board_call("send", {"to": AGENT, "body": BOARD_BODY, "sender": THIRD_AGENT})),
+        (THIRD_AGENT, write_board_call("read", {})),
+        (AGENT, write_board_call("read", {})),
+    ],
 }
 
 
@@ -742,7 +794,10 @@ class StackRun:
     played_from: float
     played_until: float
     native_opened: dict[str, Any]
+    eras: dict[str, dict[str, Any]]
     forge_identities: dict[str, str]
+    board_log: list[ToolRecord]
+    board_identities: dict[str, str]
     sandbox_addresses: dict[str, str]
     left_by_episode: dict[str, str]
     found_by_twin: dict[str, str]
@@ -901,8 +956,10 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
     tokens = {agent.id: secrets.token_urlsafe(32) for agent in CONFIG.agents}
     identities = {agent.id: secrets.token_urlsafe(32) for agent in CONFIG.agents}  # on the notes board
     forge_identities = {agent.id: secrets.token_urlsafe(32) for agent in CONFIG.agents}
+    board_identities = {agent.id: secrets.token_urlsafe(32) for agent in CONFIG.agents}
+    by_service = {FORGE.name: forge_identities, BOARD.name: board_identities}
     issued = {
-        identity: (forge_identities if identity.service == FORGE.name else identities)[identity.agent_id]
+        identity: by_service.get(identity.service, identities)[identity.agent_id]
         for identity in issue_identities(STACK_CONFIG)
     }
     compose = ["compose", "-p", project, "-f", str(compose_file), "--project-directory", str(directory)]
@@ -916,7 +973,7 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
     call_log = directory / "calls.jsonl"
     try:
         sandboxes = [sandbox_service(agent) for agent in tokens]
-        services = [GATEWAY_SERVICE, *sandboxes, NOTES.name, FORGE.name, TOOLS_GATEWAY_SERVICE]
+        services = [GATEWAY_SERVICE, *sandboxes, NOTES.name, FORGE.name, BOARD.name, TOOLS_GATEWAY_SERVICE]
         # The gateway, the forge and the episode share the engine image: built once, before any container
         # starts from it, and never again, nor a running service recreated, since a build need not reproduce.
         run_docker(*compose, "build", env=environment)
@@ -974,7 +1031,7 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
         list_files = f"import json, os; print(json.dumps(sorted(os.listdir({str(gateway.secrets_dir)!r}))))"
         service_secrets = {
             service: json.loads(run_in(service, "python", "-c", list_files))
-            for service in (GATEWAY_SERVICE, NOTES.name, FORGE.name)
+            for service in (GATEWAY_SERVICE, NOTES.name, FORGE.name, BOARD.name)
         }
 
         def read_log(service: str) -> list[str]:
@@ -987,6 +1044,7 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
         forge_log_text = "\n".join(read_log(FORGE.name))  # uvicorn's lines among the records
         forge_lines = [line for line in forge_log_text.splitlines() if line[:1] == "{"]
         forge_log = [ToolRecord.model_validate_json(line) for line in forge_lines]
+        board_log = [ToolRecord.model_validate_json(line) for line in read_log(BOARD.name) if line[:1] == "{"]
         tools_gateway_lines = read_log(TOOLS_GATEWAY_SERVICE)
         tools_gateway_log = [
             ToolsGatewayLogLine.model_validate(line)
@@ -1046,6 +1104,8 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
         played_from=played_from,
         played_until=played_until,
         forge_identities=forge_identities,
+        board_log=board_log,
+        board_identities=board_identities,
         sandbox_addresses=sandbox_addresses,
         left_by_episode=left_by_episode,
         found_by_twin=found_by_twin,
@@ -1186,7 +1246,7 @@ def test_each_container_holds_only_the_identity_files_its_role_needs(stack_run: 
     identities = {
         container: [name for name in names if name.startswith(IDENTITY_PREFIX)]
         for container, names in held.items()
-        if container not in (NOTES.name, FORGE.name)
+        if container not in (NOTES.name, FORGE.name, BOARD.name)
     }
     assert identities == {
         **{sandbox_service(agent.id): [NOTES_IDENTITY_FILE] for agent in CONFIG.agents},
@@ -1201,7 +1261,7 @@ def test_the_gateway_holds_the_key_and_nothing_else(stack_run: StackRun) -> None
     assert held == [KEY_SECRET_NAME]
 
 
-@pytest.mark.parametrize("service", [NOTES.name, FORGE.name])
+@pytest.mark.parametrize("service", [NOTES.name, FORGE.name, BOARD.name])
 def test_a_live_service_with_rights_or_tools_holds_exactly_one_identity_per_agent(
     stack_run: StackRun,
     service: str,
@@ -1283,7 +1343,9 @@ def test_the_forge_log_names_the_agent_whose_key_made_each_call_through_the_tool
     logged = stack_run.forge_log
 
     calls = sorted(
-        (line.agent, line.tool, line.arguments.get("title")) for line in logged if line.error is None
+        (line.agent, line.tool, line.arguments.get("title"))
+        for line in logged
+        if line.error is None and line.agent != ERA_AGENT
     )
 
     agents = sorted([AGENT, NATIVE_AGENT, OTHER_AGENT])
@@ -1320,7 +1382,11 @@ def test_a_copied_tools_gateway_key_shows_in_its_log_as_one_agent_calling_from_a
 def test_the_tools_gateway_log_holds_no_sandbox_token_and_no_identity(stack_run: StackRun) -> None:
     logged = stack_run.tools_gateway_log_text
 
-    secrets_held = [*stack_run.tokens.values(), *stack_run.forge_identities.values()]
+    secrets_held = [
+        *stack_run.tokens.values(),
+        *stack_run.forge_identities.values(),
+        *stack_run.board_identities.values(),
+    ]
 
     assert [secret for secret in secrets_held if secret in logged] == []
 
@@ -1337,6 +1403,40 @@ def test_the_forge_log_records_its_refusal_of_a_repo_outside_the_agents_scope_as
     ]
 
     assert refused == [(OTHER_AGENT, "open_pr", "tool_error", None)]
+
+
+def test_the_recipient_reads_a_direct_message_sent_through_the_tools_gateway(stack_run: StackRun) -> None:
+    printed = stack_run.chains[BOARD_CHAIN]
+
+    read_by_recipient = json.loads(printed[-1])
+
+    assert [body for _, body in read_by_recipient] == [BOARD_BODY]
+
+
+def test_the_recipient_reads_a_message_as_sent_by_the_sender_its_identity_names_whatever_it_claims(
+    stack_run: StackRun,
+) -> None:
+    printed = stack_run.chains[BOARD_CHAIN]
+
+    read_by_recipient = json.loads(printed[-1])
+
+    assert [sender for sender, _ in read_by_recipient] == [OTHER_AGENT]
+
+
+def test_a_third_agent_does_not_read_a_direct_message_to_another(stack_run: StackRun) -> None:
+    printed = stack_run.chains[BOARD_CHAIN]
+
+    read_by_third_agent = json.loads(printed[1])
+
+    assert read_by_third_agent == []
+
+
+def test_the_board_log_records_each_send_under_the_agent_whose_sandbox_made_it(stack_run: StackRun) -> None:
+    logged = stack_run.board_log
+
+    sends = [(line.agent, line.arguments["to"]) for line in logged if line.tool == "send"]
+
+    assert sends == [(OTHER_AGENT, AGENT)]
 
 
 def write_played_run(directory: Path, stack_run: StackRun) -> Path:
@@ -1382,8 +1482,27 @@ def test_the_pr_events_built_from_the_forges_log_name_the_agent_whose_key_opened
     build_recorded_run_events(CONFIG, run)
 
     mirror = read_events(run / "episode" / "events.mirror.jsonl")
-    built = sorted((event.actor_uid, event.payload["pr_title"]) for event in mirror if event.kind == "pr")
+    built = sorted(
+        (event.actor_uid, event.payload["pr_title"])
+        for event in mirror
+        if event.kind == "pr" and event.actor_uid != ERA_AGENT
+    )
     assert built == [(agent, f"opened-by-{agent}") for agent in sorted([AGENT, NATIVE_AGENT, OTHER_AGENT])]
+
+
+@pytest.mark.parametrize(("mode", "era"), [(MODERN, "2026-07-28"), (LEGACY, "2025-")], ids=["2026", "2025"])
+def test_a_client_of_either_protocol_era_calls_the_forge_and_the_board_through_the_tools_gateway(
+    stack_run: StackRun,
+    mode: str,
+    era: str,
+) -> None:
+    spoken = stack_run.eras[mode]
+
+    assert (spoken["protocol"].startswith(era), spoken["tools"], spoken["errors"]) == (
+        True,
+        ["open_pr", "read", "send", "unread"],
+        [],
+    )
 
 
 def test_the_honest_twin_reads_no_note_the_episode_wrote(stack_run: StackRun) -> None:
@@ -1411,6 +1530,12 @@ def test_the_honest_twins_first_pull_request_takes_the_number_the_episodes_first
     numbers = (int(stack_run.left_by_episode["pull_request"]), int(stack_run.found_by_twin["pull_request"]))
 
     assert numbers == (episode_numbers[0] + len(episode_numbers), episode_numbers[0])
+
+
+def test_the_honest_twin_reads_no_message_the_episode_sent(stack_run: StackRun) -> None:
+    sent, read = stack_run.left_by_episode["message"].splitlines()[-1], stack_run.found_by_twin["messages"]
+
+    assert ([AGENT, LEFT_NOTE] in json.loads(sent), json.loads(read)) == (True, [])
 
 
 def test_a_file_the_episode_left_in_its_sandbox_is_gone_for_the_honest_twin(stack_run: StackRun) -> None:

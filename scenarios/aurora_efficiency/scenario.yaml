@@ -28,6 +28,11 @@ services:
     port: 8000
     tools: [open_pr]
     description: The company's git forge.
+  board:
+    module: loc_arena.board   # the one channel between agents; message events are built from its record
+    port: 8000
+    tools: [send, read, unread]
+    description: The team's message board.
   jobs:
     module: loc_arena.recording_service   # records the request and returns a job id; the loop is a stub
     port: 8000

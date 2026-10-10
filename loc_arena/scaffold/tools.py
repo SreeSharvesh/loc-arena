@@ -7,7 +7,7 @@ sealed log; a call outside scope is logged as a blocked action and NOT executed)
 from the tool catalog and ``env.default.yaml`` ``tools:``. Service-backed tools
 (tests, benchmark, git, tickets, wiki, cluster, ...) run behind the ``Services`` interface, stubbed here
 and wired to the real services later; inference goes through the gateway client, messaging through the
-bus, and spawning through the registry via an injected handler.
+board (an MCP service), and spawning through the registry via an injected handler.
 """
 
 from __future__ import annotations
@@ -20,13 +20,13 @@ from typing import Any, Protocol
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import ProviderError
 from loc_arena.ids import Action, PermissionScope, ScopeViolation, enforce
-from loc_arena.scaffold.bus import MessageBus, Recorder
+from loc_arena.scaffold.bus import Recorder
 from loc_arena.scaffold.registry import SpawnDenied
 
 _LOGGER = logging.getLogger(__name__)
 
 # Tools whose target (repo / recipient) the scope check needs from the args.
-_TARGET_FROM = {"open_pr": "repo", "merge": "repo", "message": "to", "read_weights": "name"}
+_TARGET_FROM = {"open_pr": "repo", "merge": "repo", "send": "to", "read_weights": "name"}
 
 
 @dataclass(frozen=True)
@@ -76,19 +76,17 @@ class Tools:
     def __init__(
         self,
         recorder: Recorder,
-        bus: MessageBus,
         services: Services,
         *,
         spawn_handler: SpawnHandler,
         recorded_elsewhere: Collection[str] = (),
     ) -> None:
-        """Wire the tool layer to the recorder, the bus, the services, and the spawn handler.
+        """Wire the tool layer to the recorder, the services, and the spawn handler.
 
         A tool in ``recorded_elsewhere`` is one a service records and the post-play builder rebuilds the
         event for (the covert tools), so a successful call logs no action event here, which would double it.
         """
         self._recorder = recorder
-        self._bus = bus
         self._services = services
         self._spawn_handler = spawn_handler
         self._recorded_elsewhere = frozenset(recorded_elsewhere)
@@ -147,17 +145,11 @@ class Tools:
             self._log_action(ctx, action, turn, blocked=False, result=result)
             return result
 
-        if action.tool == "message":
-            # the message IS a dual-captured event via the bus; no separate action event
-            event = self._bus.send(
-                from_id=ctx.uid,
-                from_role=ctx.role,
-                to_id=str(action.args["to"]),
-                kind=str(action.args.get("kind", "inform")),
-                body=str(action.args.get("body", "")),
-                turn=turn,
-            )
-            return {"message_seq": event.seq, "to": event.target_id}
+        if action.tool == "send":  # the board's record of a message it takes becomes the message event
+            result = self._services.run("send", {**action.args, "actor_uid": ctx.uid, "actor_role": ctx.role})
+            if "error" in result:
+                self._log_action(ctx, action, turn, blocked=False, result=result)
+            return result
 
         # A live model routinely emits a malformed tool call (missing/badly-typed args). That must return a
         # logged error result, NEVER crash the run -- so guard the whole dispatch against bad args.
@@ -190,3 +182,10 @@ class Tools:
         if action.tool not in self._recorded_elsewhere:
             self._log_action(ctx, action, turn, blocked=False, result=result)
         return result
+
+    def receive(self, ctx: AgentContext) -> list[ToolResult]:
+        """The messages sent to the agent that it has not received yet, from the board, in send order."""
+        result = self._services.run("unread", {"actor_uid": ctx.uid, "actor_role": ctx.role})
+        if "error" in result:
+            _LOGGER.warning("%s received no messages: %s", ctx.uid, result["error"])
+        return result.get("messages", [])

@@ -27,7 +27,6 @@ def test_in_turn_call_stamped_spawned_code_call_off_path(tmp_path: Path) -> None
         scripted(action("generate", prompt="in-turn call", role="untrusted_agent")),
         tools,
         h.registry,
-        h.bus,
         h.minter,
         5,
         clock=h.clock,

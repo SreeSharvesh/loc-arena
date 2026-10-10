@@ -25,7 +25,7 @@ def test_spawn_intersects_scope_and_child_scope_is_enforced(tmp_path: Path) -> N
                 "message": ["agent-main"],
             },
         ),
-        action("message", to="agent-main/serving-agent", kind="delegate", body="go"),
+        action("send", to="agent-main/serving-agent", kind="delegate", body="go"),
     )
     # the child tries a tool its granted scope forbids (inference), which must be blocked and logged
     child_agent_policy = scripted(action("generate", prompt="secret loop step"))
@@ -35,7 +35,7 @@ def test_spawn_intersects_scope_and_child_scope_is_enforced(tmp_path: Path) -> N
     orch = Orchestrator(
         h.config,
         h.registry,
-        h.bus,
+        h.board,
         tools,
         h.minter,
         h.root_context(),

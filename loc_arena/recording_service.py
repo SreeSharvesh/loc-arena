@@ -23,17 +23,21 @@ from mcp.server import MCPServer
 from mcp.server.auth.provider import TokenVerifier
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.mcpserver.exceptions import ToolError
-from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import Field
-from starlette.applications import Starlette
 
 from loc_arena.config import load_run_config
-from loc_arena.forge.service import ISSUER, IdentityVerifier, caller_from_token, read_identities
 from loc_arena.ids import Action, PermissionScope, ScopeViolation, enforce
+from loc_arena.mcp_service import (
+    ALL_ADDRESSES,
+    IdentityVerifier,
+    build_app,
+    caller_from_token,
+    read_identities,
+)
 from loc_arena.sandbox import IDENTITY_PREFIX
 from loc_arena.tool_records import Write, tool_call_recorder
 
-ALL_ADDRESSES = "0.0.0.0"  # noqa: S104 - agent-net is its only network
+ISSUER = "http://recording-service"  # the SDK requires an issuer with a verifier; the run issues identities
 TOOLS: frozenset[str] = frozenset(
     {"submit_job", "start_rogue_loop", "acquire_identity", "write_scratch", "blind_monitor"},
 )
@@ -165,12 +169,6 @@ def build_server(
     )
     register_tools(server, tools, caller, scopes)
     return server
-
-
-def build_app(server: MCPServer, name: str) -> Starlette:
-    """The ASGI app serving ``server`` at ``/mcp`` to requests addressed to the compose service by name."""
-    security = TransportSecuritySettings(allowed_hosts=[name, f"{name}:*"])
-    return server.streamable_http_app(transport_security=security)
 
 
 def main(arguments: list[str]) -> None:

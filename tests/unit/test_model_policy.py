@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import cast
 
 import pytest
+from loc_arena.board import Board
 from loc_arena.config import AgentLoopConfig, load_run_config
 from loc_arena.forge.forge import Forge
 from loc_arena.forge.world import generate_world
@@ -36,7 +37,7 @@ from loc_arena.scaffold.agent import (
     TurnMinter,
     TurnStatus,
 )
-from loc_arena.scaffold.bus import MessageBus, Recorder
+from loc_arena.scaffold.bus import Recorder
 from loc_arena.scaffold.model_policy import ModelAgentPolicy, render_tool_result
 from loc_arena.scaffold.registry import AgentRegistry
 from loc_arena.scaffold.tool_specs import agent_tool_specs, validate_call
@@ -247,7 +248,11 @@ def test_validate_call_rejects_unknown_and_missing_and_mistyped() -> None:
 def test_an_agent_is_offered_a_pull_request_body_to_write(tmp_path: Path) -> None:
     config = load_run_config("configs/aurora-efficiency.deterministic.yaml")
     forge = Forge(generate_world(config, resolve_scenario(config), config.seed))
-    served = connect_agent_tools(forge, config, tmp_path)["agent-main"].specs()
+    served = [
+        spec
+        for client in connect_agent_tools(forge, Board(), config, tmp_path)["agent-main"]
+        for spec in client.specs()
+    ]
     mistyped_body = {"repo": "meridian-serving", "body": 7}
 
     error = validate_call("open_pr", mistyped_body, served)
@@ -265,11 +270,17 @@ def test_an_in_process_agent_is_offered_only_the_tools_its_run_config_lists(tmp_
     ]
     config = dataclasses.replace(loaded, agents=tuple(without_tools))
     forge = Forge(generate_world(config, resolve_scenario(config), config.seed))
-    clients = connect_agent_tools(forge, config, tmp_path)
+    clients = connect_agent_tools(forge, Board(), config, tmp_path)
 
-    offered = {agent: clients[agent].names() for agent in ("agent-main", "controlplane-agent")}
+    offered = {
+        agent: set().union(*(client.names() for client in clients[agent]))
+        for agent in ("agent-main", "controlplane-agent")
+    }
 
-    assert offered == {"agent-main": {"open_pr", "write_scratch"}, "controlplane-agent": set()}
+    assert offered == {
+        "agent-main": {"open_pr", "send", "read", "unread", "write_scratch"},
+        "controlplane-agent": set(),
+    }
 
 
 def test_bus_message_is_appended_and_results_keep_their_call_id() -> None:
@@ -351,7 +362,6 @@ def _agent(tmp_path: Path, policy: AgentPolicy, *, turn_budget: int = 5) -> tupl
         scope=root.scope,
         client=GatewayClient(DirectTransport(edge), root.id),
     )
-    bus = MessageBus(recorder)
 
     def no_spawn(ctx: AgentContext, args: dict[str, object], turn: int) -> dict[str, object]:
         del ctx, args, turn
@@ -360,7 +370,7 @@ def _agent(tmp_path: Path, policy: AgentPolicy, *, turn_budget: int = 5) -> tupl
     agent = Agent(
         ctx,
         policy,
-        Tools(recorder, bus, StubServices(), spawn_handler=no_spawn),
+        Tools(recorder, StubServices(), spawn_handler=no_spawn),
         AgentRegistry(
             cfg.episode,
             recorder,
@@ -371,7 +381,6 @@ def _agent(tmp_path: Path, policy: AgentPolicy, *, turn_budget: int = 5) -> tupl
             root_scope=root.scope,
             clock=lambda: 0.0,
         ),
-        bus,
         TurnMinter("s", "ep", clock=lambda: 0.0),
         turn_budget,
         clock=lambda: 0.0,

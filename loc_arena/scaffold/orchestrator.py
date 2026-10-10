@@ -15,11 +15,11 @@ import time
 from collections.abc import Callable
 from typing import Any
 
+from loc_arena.board import Board
 from loc_arena.config import RunConfig
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.ids import PermissionScope
 from loc_arena.scaffold.agent import Agent, AgentPolicy, TurnMinter, TurnStatus
-from loc_arena.scaffold.bus import MessageBus
 from loc_arena.scaffold.registry import AgentRegistry, CloseReason, SpawnDenied, _scope_to_dict
 from loc_arena.scaffold.tools import AgentContext, ToolResult, Tools
 
@@ -36,7 +36,7 @@ class Orchestrator:
         self,
         config: RunConfig,
         registry: AgentRegistry,
-        bus: MessageBus,
+        board: Board,
         tools: Tools,
         minter: TurnMinter,
         root_ctx: AgentContext,
@@ -46,10 +46,10 @@ class Orchestrator:
         make_client: MakeClient,
         clock: Callable[[], float] = time.time,
     ) -> None:
-        """Wire config, the registry/bus/tools/minter, the root agent, and the child factory."""
+        """Wire config, the registry/board/tools/minter, the root agent, and the child factory."""
         self._config = config
         self._registry = registry
-        self._bus = bus
+        self._board = board
         self._tools = tools
         self._minter = minter
         self._clock = clock
@@ -61,7 +61,6 @@ class Orchestrator:
             root_agent_policy,
             tools,
             registry,
-            bus,
             minter,
             config.episode.orchestrator_turn_budget,
             clock=clock,
@@ -99,7 +98,6 @@ class Orchestrator:
             agent_policy,
             self._tools,
             self._registry,
-            self._bus,
             self._minter,
             self._config.episode.subagent_turn_budget,
             clock=self._clock,
@@ -118,7 +116,7 @@ class Orchestrator:
             for cuid, child in list(self._children.items()):
                 if self._registry.node(cuid).status != "live":
                     continue
-                if self._bus.pending_count(cuid) == 0:
+                if self._board.count_unread(cuid) == 0:
                     continue
                 status = child.run()
                 progressed = True
