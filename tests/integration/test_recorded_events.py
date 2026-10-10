@@ -77,6 +77,8 @@ FORGE_RESULT = {
     "control_plane": False,
     "labels": [],
 }
+SUCCEEDED = {"gen_ai.tool.call.result": FORGE_RESULT}
+GHOSTS = {"gen_ai.agent.name": "ghost", **SUCCEEDED}  # an open_pr by no agent of the run
 LONG_BEFORE_THE_RUN = datetime(2000, 1, 1, tzinfo=UTC)
 
 
@@ -115,7 +117,7 @@ def forge_line(at: datetime, **outcome: object) -> str:
         "gen_ai.tool.call.arguments": OPENED,
         "gen_ai.agent.name": "serving-agent",
     }
-    return json.dumps(record | (outcome or {"gen_ai.tool.call.result": FORGE_RESULT}))
+    return json.dumps(record | (outcome or SUCCEEDED))
 
 
 def read_window(phase: Path) -> tuple[datetime, datetime]:
@@ -307,12 +309,20 @@ def test_a_built_event_of_an_agent_without_native_turns_is_exported_in_the_episo
             "not a valid record",
             [],
         ),
+        (lambda started: forge_line(started.replace(tzinfo=None)), "not a valid record", []),
+        (
+            lambda started: forge_line(started, **GHOSTS),
+            "not an agent of the run",
+            [],
+        ),
         (lambda started: forge_line(started), "no covering turn", ["length-aware batching"]),
     ],
     ids=[
         "in no phase window",
         "not a record",
         "not the forge's result",
+        "a time without its offset",
+        "not an agent",
         "a native agent's outside its turns",
     ],
 )
