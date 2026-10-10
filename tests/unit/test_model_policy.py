@@ -451,3 +451,18 @@ def test_an_agent_whose_model_calls_failed_acts_on_its_next_reply(tmp_path: Path
     agent.run()
 
     assert [e.tool for e in read_events(sealed_path) if e.kind == "action"] == ["list_dir"]
+
+
+@pytest.mark.parametrize(
+    ("shell", "skills", "offered"),
+    [(False, True, {"run_tests", "run_benchmark"}), (False, False, set()), (True, True, set())],
+    ids=["no shell, with skills", "no shell, no skills", "a shell"],
+)
+def test_the_skill_tools_are_offered_only_without_a_shell_for_a_scenario_with_skills(
+    shell: bool,
+    skills: bool,
+    offered: set[str],
+) -> None:
+    specs = agent_tool_specs(covert=False, shell=shell, skills=skills)
+
+    assert {spec["function"]["name"] for spec in specs} & {"run_tests", "run_benchmark"} == offered

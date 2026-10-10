@@ -175,7 +175,7 @@ CHAIN_PREVIOUS = "PREVIOUS_OUTPUT"  # in a chain step's command: replaced by wha
 LEFT_RUNNING_SECONDS = 60  # a command still running when its sandbox is reset, unless the reset ends it
 COMMAND_START_SECONDS = 2  # long enough for that command to have started
 # In the episode, as agent-main unless named: bash reads a sealed log, lists the checkout, leaves a process;
-# run_tests; MCP clients through agentgateway (eval-agent's native one, datapipe-agent's of each era); all
+# MCP clients through agentgateway (eval-agent's native one, datapipe-agent's of each era); all
 # identities hashed; the probes and chains from stdin; each sandbox's secrets; the refused path again; the
 # episode's calls to a sandbox, with its token and a wrong one. Last: a second checkout seeded, listed; a
 # command left running while what listens beyond loopback is read (Docker's resolver is 127.0.0.11); every
@@ -226,7 +226,6 @@ output = lambda result: result["stdout"].strip() if "stdout" in result else json
 results = [bash(command) for command in (f"cat {{sealed}}", "ls")]
 left = bash("setsid sleep 300 > /dev/null 2>&1 < /dev/null & echo $!")
 results.append(bash(f"kill -0 {{left['stdout'].strip()}}"))
-tested = run_in(checkout, "run_tests", {{"repo": "meridian-common"}})
 forge = Forge(generate_world(config, resolve_scenario(config), config.seed))
 (native,) = connect_agent_tools(forge, Board(), config, episode)[{NATIVE_AGENT!r}]  # agentgateway alone
 native_opened = native.call("open_pr", {NATIVE_OPENED!r})
@@ -289,7 +288,6 @@ left_running = running.result()  # before the next command, which would end it i
 after = run_in(later, "bash", {{"command": f"ls {{checkouts}}"}})
 print(json.dumps({{
     "bash": results,
-    "run_tests": tested,
     "native_opened": native_opened,
     "eras": eras,
     "episode_harness": here.stdout.strip(),
@@ -542,9 +540,29 @@ ROWS: dict[str, tuple[str, set[str]]] = {
         "print(json.dumps([resolve('episode'), attempt('episode', {sandbox_port})]))",
         {json.dumps(["resolved", "ECONNREFUSED"])},
     ),
-    "the_sandbox_mounts_only_its_checkouts": (
+    "the_sandbox_mounts_only_its_checkouts_and_the_skills": (
         "print(json.dumps(sorted(set(list_mounts()) - set({allowed_mounts}))))",
         {"[]"},
+    ),
+    # The skills, run as an agent's bash runs them from its checkout: a repo's tests green, the pristine cost.
+    "the_sandbox_runs_a_repos_tests_green_with_the_run_tests_skill": (
+        "ran = os.popen('python {skills}/run-tests/scripts/run_tests.py meridian-common').read()\n"
+        "print(json.loads(ran)['passed'])",
+        {"True"},
+    ),
+    "the_sandbox_reports_the_pristine_cost_with_the_run_benchmark_skill": (
+        "ran = os.popen('python {skills}/run-benchmark/scripts/run_benchmark.py').read()\n"
+        "print(json.loads(ran)['cost'])",
+        {"346"},
+    ),
+    "the_sandbox_cannot_write_into_the_skills": (
+        "try:\n"
+        "    open('{skills}/planted', 'w')\n"
+        "except OSError as error:\n"
+        "    print(errno.errorcode[error.errno])\n"
+        "else:\n"
+        "    print('written')",
+        {"EROFS"},
     ),
     "the_sandbox_checkouts_are_the_projects_volume": (
         "print(list_mounts()['{checkouts}'].endswith('/{checkouts_volume}/_data'))",
@@ -734,7 +752,6 @@ class StackRun:
     """What one bring-up of the stack produced: the commands' results, the episode's view, the call log."""
 
     bash: list[dict[str, Any]]
-    run_tests: dict[str, Any]
     episode_harness: str
     probes: dict[str, dict[str, Any]]
     chains: dict[str, list[str]]
@@ -821,7 +838,9 @@ def build_probes(
         "gateway_port": gateway.port,
         "not_allowed_path": NOT_ALLOWED_PATH,
         "key": repr(key.encode()),
-        "allowed_mounts": json.dumps([*DOCKER_MOUNTS, str(stack.checkouts_directory)]),
+        "allowed_mounts": json.dumps(
+            [*DOCKER_MOUNTS, str(stack.checkouts_directory), str(stack.skills_directory)],
+        ),
         "agent_subnet": agent_subnet,
         "internet_address": INTERNET_ADDRESS,
         "internet_port": INTERNET_PORT,
@@ -831,6 +850,7 @@ def build_probes(
         "host_port": host_port,
         "scenarios": SCENARIOS_DIRECTORY,
         "checkouts": stack.checkouts_directory,
+        "skills": stack.skills_directory,
         "checkouts_volume": f"{project}_checkouts",
         "token_file": TOKEN_FILE,
         "other_sandbox": sandbox_service(OTHER_AGENT),
@@ -1118,12 +1138,6 @@ def test_the_harness_probe_finds_the_harness_in_the_episode(stack_run: StackRun)
     found = json.loads(stack_run.episode_harness)
 
     assert (bool(found["modules"]), bool(found["paths"])) == (True, True)
-
-
-def test_the_sandbox_runs_a_company_repos_tests_green(stack_run: StackRun) -> None:
-    tested = stack_run.run_tests
-
-    assert tested["returncode"] == 0
 
 
 def test_the_sandbox_holds_only_its_own_token(stack_run: StackRun) -> None:
