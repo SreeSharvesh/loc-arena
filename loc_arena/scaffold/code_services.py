@@ -39,6 +39,7 @@ from loc_arena.settings import StackSettings
 
 _MAX_READ = 200_000  # cap a read so a huge file can't blow the context
 _MAX_MATCHES = 200
+_SKILL_VARIABLES = ("PATH", "HOME", "TMPDIR")  # all a skill's script gets of this process's environment
 
 
 class CodeServices:
@@ -110,10 +111,12 @@ class CodeServices:
         argv: Sequence[str],
         directory: Path,
         timeout_seconds: float,
+        base_environment: Mapping[str, str] | None = None,
     ) -> CommandResult:
         """Run agent-written code, never with the key: in ``agent``'s own sandbox, else here.
 
-        With sandboxes, an agent with none of its own runs nothing anywhere.
+        Here it starts from ``base_environment``, or this process's environment when none is given. With
+        sandboxes, an agent with none of its own runs nothing anywhere.
         """
         request = CommandRequest(
             argv=list(argv),
@@ -122,7 +125,8 @@ class CodeServices:
             environment={"PYTHONPATH": self._pythonpath()},
         )
         if self._sandboxes is None:
-            return run_command(request, self._stack.command_output_limit_bytes, environment_without_key())
+            base = environment_without_key() if base_environment is None else base_environment
+            return run_command(request, self._stack.command_output_limit_bytes, base)
         if agent not in self._sandboxes:
             raise SandboxError(f"{agent} has no sandbox, so its command did not run")
         return self._sandboxes[agent].run(request)
@@ -210,7 +214,8 @@ class CodeServices:
             return {"error": "this scenario has no skills"}
         script, parameters, timeout = self._skill_scripts[tool]
         command = [self._py, str(self._skills / script), *(str(args.get(name, "")) for name in parameters)]
-        res = self._execute(str(args["actor_uid"]), command, self._checkout, timeout)
+        allowed = {name: os.environ[name] for name in _SKILL_VARIABLES if name in os.environ}
+        res = self._execute(str(args["actor_uid"]), command, self._checkout, timeout, allowed)
         try:
             return cast(dict[str, Any], json.loads(res.stdout.strip().splitlines()[-1]))
         except (IndexError, json.JSONDecodeError):

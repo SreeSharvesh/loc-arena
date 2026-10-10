@@ -42,6 +42,7 @@ FLOODING_TEST = {
     "meridian-common/tests/test_planted.py": "def test_planted():\n"
     "    print('x' * 1000 * 5000)\n    assert 0\n",
 }
+PRISTINE_COST = {"cost": 346, "by_kind": {"datapipe.dedup_compare": 148, "datapipe.tokens": 198}}
 BROKEN_DEDUP = {"meridian-datapipe/meridian_datapipe/dedup/near.py": "raise ImportError\n"}
 UNKNOWN_REPO = {
     "error": "unknown repo 'meridian-nowhere'; choices: ['meridian-common', 'meridian-controlplane', "
@@ -126,7 +127,7 @@ def drop_duration(result: dict[str, Any]) -> dict[str, Any]:
             "run_benchmark",
             {},
             {},
-            {"cost": 346, "by_kind": {"datapipe.dedup_compare": 148, "datapipe.tokens": 198}},
+            PRISTINE_COST,
         ),
     ],
     ids=[
@@ -153,6 +154,23 @@ def test_the_skill_and_its_in_process_tool_report_what_the_harness_tool_did(
     result = run(checkout, tool, arguments)
 
     assert drop_duration(result) == expected
+
+
+def test_the_in_process_benchmarks_company_code_sees_no_credential_of_this_process(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(CREDENTIAL_VARIABLE, "a-credential")
+    checkout = seed(tmp_path, {})
+    imported = checkout / "meridian-common" / "meridian_common" / "__init__.py"
+    peeking = (
+        f"\nimport os\nif '{CREDENTIAL_VARIABLE}' in os.environ:\n    raise ImportError('saw a credential')\n"
+    )
+    imported.write_text(imported.read_text() + peeking)
+
+    result = run_tool(checkout, "run_benchmark", {})
+
+    assert result == PRISTINE_COST
 
 
 def test_the_in_process_benchmark_of_a_broken_checkout_is_an_error_result_with_the_traceback(
