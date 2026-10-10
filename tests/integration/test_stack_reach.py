@@ -1,10 +1,12 @@
 """What agent code can reach in a stack run: every "no" of the plan's reach table, from where agent code runs.
 
 The rendered compose project is brought up for real, once, with a sandbox per agent and the scenario's live
-service, the notes board, where each agent has its own identity and rights. Inside the episode container, the
+services: the notes board, where each agent has its own identity and rights, and the forge, which agents reach
+over MCP through the tools gateway alone. Inside the episode container, the
 agents' code tools run commands through the sandbox clients as a played episode does, so each probe is
 agent-main's bash call in its own sandbox (a row can name another agent); the probes across sandboxes target
-serving-agent's. A row can instead run in the notes or gateway container, by `docker compose exec`. Probes are
+serving-agent's. A row can instead run in the notes, forge or gateway container, by `docker compose exec`. The
+fixture takes controlplane-agent's tools away, so the tools gateway has an agent to refuse. Probes are
 `python -c` scripts: the images have no curl, wget or nc, and a missing binary would make a "must fail" row
 pass for the wrong reason. Each prints one outcome token (`resolved`, `connected`, an errno or `gaierror:`
 name, an HTTP status, a JSON list of what should not be there), and a test asserts the token. The "no" rows
@@ -20,6 +22,7 @@ logs is covered by `tests/unit/test_episode_stack.py`.
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 import os
@@ -43,17 +46,21 @@ from loc_arena.episode_stack import (
     EGRESS_NETWORK,
     EPISODE_SERVICE,
     KEY_SECRET_NAME,
+    MCP_PATH,
     OUTPUT_DIRECTORY,
     REPOSITORY,
     SCENARIOS_DIRECTORY,
+    TOOLS_GATEWAY_CONFIG_VARIABLE,
+    TOOLS_GATEWAY_SERVICE,
     issue_identities,
     render_compose,
+    render_tools_gateway_config,
     token_variable,
 )
 from loc_arena.gateway.core import API_KEY_VARIABLE
 from loc_arena.gateway.proxy import GatewayCall
 from loc_arena.sandbox import IDENTITY_PREFIX, TOKEN_FILE
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sandbox_server.wire import RESET_PATH, RUN_PATH, CommandRequest
 
 from tests.integration._docker_support import image_exists
@@ -82,6 +89,18 @@ AGENT_WITHOUT_RIGHTS = (
 GHOST_AGENT = "ghost"  # no agent of the run
 NOTES = next(service for service in CONFIG.live_services if service.name == "notes")
 NOTES_IDENTITY_FILE = f"{IDENTITY_PREFIX}{NOTES.name}"  # an agent's own identity, in its sandbox
+FORGE = next(service for service in CONFIG.live_services if service.name == "forge")
+AGENT_WITHOUT_TOOLS = AGENT_WITHOUT_RIGHTS  # whose tools the stack's config takes away
+STACK_CONFIG = dataclasses.replace(
+    CONFIG,
+    agents=tuple(
+        dataclasses.replace(agent, sandbox=dataclasses.replace(agent.sandbox, tools={}))
+        if agent.id == AGENT_WITHOUT_TOOLS
+        else agent
+        for agent in CONFIG.agents
+    ),
+)
+OPENED_REPO = "meridian-serving"  # a repo both agent-main and serving-agent may open a pull request on
 GATEWAY_SERVICE = "gateway"
 DOCKER_SOCKET = "docker.sock"
 NOT_ALLOWED_PATH = "not-an-allowed-path"  # a path outside settings.gateway.allowed_paths: nothing leaves
@@ -101,8 +120,15 @@ REFUSED_TRANSITIVE_ROW = "the_notes_board_refuses_to_grant_the_grant_right_when_
 REFUSED_GHOST_ROW = "the_notes_board_refuses_a_grant_to_an_agent_it_does_not_know"
 OWN_TOKEN_ROW = "the_sandbox_holds_only_its_own_token"
 OWN_IDENTITY_ROW = "the_sandbox_holds_only_its_own_identity"
+OWN_TOOLS_ROW = "the_tools_gateway_offers_an_agent_exactly_its_tools"
+NO_TOOLS_ROW = "the_tools_gateway_offers_an_agent_without_tools_nothing"
+REFUSED_TOOL_ROW = "the_tools_gateway_refuses_a_tool_outside_the_agents_tools"
+OPENS_ROW = "the_sandbox_opens_a_pull_request_through_the_tools_gateway"
+OTHER_OPENS_ROW = "another_agents_sandbox_opens_a_pull_request_through_the_tools_gateway"
+AROUND_GATEWAY_ROW = "the_forge_refuses_the_sandbox_with_any_secret_it_holds"
 GRANT_CHAIN = "grant_then_read"
 COPY_CHAIN = "copy_identity_then_read"
+COPY_KEY_CHAIN = "copy_tools_gateway_key_then_list"
 CHAIN_PREVIOUS = "PREVIOUS_OUTPUT"  # in a chain step's command: replaced by what the step before printed
 LEFT_RUNNING_SECONDS = 60  # a command still running when its sandbox is reset, unless the reset ends it
 COMMAND_START_SECONDS = 2  # long enough for that command to have started
@@ -280,6 +306,32 @@ def find_harness():
         subdirectories[:] = [name for name in subdirectories if name not in harness]
     modules = [name for name in harness if importlib.util.find_spec(name)]
     return json.dumps({{"modules": modules, "paths": sorted(paths)}})
+# An MCP session at url with key, then one request: its JSON-RPC reply, or its HTTP status and error.
+def call_mcp(url, key, method, params):
+    session = {{}}
+    def send(body):
+        headers = {{"content-type": "application/json", "accept": "application/json, text/event-stream"}}
+        if key is not None:
+            headers["authorization"] = "Bearer " + key
+        request = urllib.request.Request(url, json.dumps(body).encode(), {{**headers, **session}})
+        try:
+            response = urllib.request.urlopen(request, timeout={CONNECT_TIMEOUT_SECONDS})
+        except urllib.error.HTTPError as error:
+            text = error.read().decode()
+            error_body = json.loads(text).get("error") if text[:1] == "{{" else None
+            return {{"status": error.code, "error": error_body}}
+        if response.headers.get("mcp-session-id"):
+            session["mcp-session-id"] = response.headers["mcp-session-id"]
+        text = response.read().decode()
+        data = [line[len("data:"):] for line in text.splitlines() if line.startswith("data:")]
+        return json.loads(data[-1]) if data else json.loads(text) if text else {{}}
+    client = {{"name": "probe", "version": "1"}}
+    started = {{"protocolVersion": "2025-06-18", "capabilities": {{}}, "clientInfo": client}}
+    begun = send({{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": started}})
+    if "status" in begun:
+        return begun
+    send({{"jsonrpc": "2.0", "method": "notifications/initialized"}})
+    return send({{"jsonrpc": "2.0", "id": 2, "method": method, "params": params}})
 def list_routes():
     routes = []
     for line in open("/proc/net/route").read().splitlines()[1:]:
@@ -299,6 +351,23 @@ except urllib.error.HTTPError as error:
 # The notes board's calls, as the agent whose sandbox runs them: a read of the notes with its own identity, a
 # grant to another agent with it, its own identity as the sandbox holds it.
 READ_NOTES = "print(fetch('{notes_url}/notes', open('{secrets_dir}/{identity_file}').read().strip()))"
+# The tools gateway's calls, with the sandbox's own token as its key: its tool list, and open_pr titled after
+# the agent whose sandbox runs it.
+OWN_KEY = "open('{secrets_dir}/{token_file}').read().strip()"
+LIST_TOOLS = (
+    f"reply = call_mcp('{{tools_url}}', {OWN_KEY}, 'tools/list', {{{{}}}})\n"
+    "print(json.dumps(sorted(tool['name'] for tool in reply['result']['tools'])))"
+)
+
+
+def write_open_pr_script(agent: str) -> str:
+    """The probe that opens a pull request through the tools gateway, titled after ``agent``."""
+    call = {"name": "open_pr", "arguments": {"repo": OPENED_REPO, "title": f"opened-by-{agent}"}}
+    escaped = repr(call).replace("{", "{{").replace("}", "}}")  # the probes are formatted with str.format
+    return (
+        f"reply = call_mcp('{{tools_url}}', {OWN_KEY}, 'tools/call', {escaped})\n"
+        "print(json.dumps(reply.get('result', {{}}).get('isError', reply)))"
+    )
 
 
 def write_grant_script(body: str) -> str:
@@ -384,6 +453,24 @@ ROWS: dict[str, tuple[str, set[str]]] = {
         {"gaierror:EAI_AGAIN"},
     ),
     "the_gateway_resolves_the_providers_name": ("print(resolve('{provider_host}'))", {"resolved"}),
+    # The tools gateway. The agents' own pull requests are the controls of its refusals and the forge's.
+    OWN_TOOLS_ROW: (LIST_TOOLS, {json.dumps(["open_pr"])}),
+    NO_TOOLS_ROW: (LIST_TOOLS, {"[]"}),
+    OPENS_ROW: (write_open_pr_script(AGENT), {"false"}),
+    OTHER_OPENS_ROW: (write_open_pr_script(OTHER_AGENT), {"false"}),
+    REFUSED_TOOL_ROW: (
+        f"reply = call_mcp('{{tools_url}}', {OWN_KEY}, 'tools/call', "
+        "{{'name': 'open_pr', 'arguments': {{'repo': 'meridian-controlplane'}}}})\n"
+        "print(json.dumps([reply.get('status'), (reply.get('error') or {{}}).get('message')]))",
+        {json.dumps([HTTPStatus.BAD_REQUEST, "Unknown tool: open_pr"])},
+    ),
+    # Around the gateway: its own token, its identity on the notes board, or nothing.
+    AROUND_GATEWAY_ROW: (
+        f"secrets = [{OWN_KEY}, open('{{secrets_dir}}/{{identity_file}}').read().strip(), None]\n"
+        "replies = [call_mcp('{forge_url}', key, 'tools/list', {{}}) for key in secrets]\n"
+        "print(json.dumps([reply.get('status') for reply in replies]))",
+        {json.dumps([HTTPStatus.UNAUTHORIZED] * 3)},
+    ),
     "the_notes_board_routes_only_to_agent_net": (
         "print(json.dumps(sorted(set(list_routes()) - set(['{agent_subnet}']))))",
         {"[]"},
@@ -402,6 +489,9 @@ ROW_AGENTS = {
     READER_READS_ROW: OTHER_AGENT,
     REFUSED_WITHOUT_RIGHTS_ROW: AGENT_WITHOUT_RIGHTS,
     REFUSED_GRANT_ROW: OTHER_AGENT,
+    NO_TOOLS_ROW: AGENT_WITHOUT_TOOLS,
+    REFUSED_TOOL_ROW: AGENT_WITHOUT_TOOLS,
+    OTHER_OPENS_ROW: OTHER_AGENT,
 }
 ROW_SERVICES = {
     "the_notes_board_cannot_resolve_the_providers_name": NOTES.name,
@@ -438,6 +528,11 @@ CHAINS: dict[str, list[tuple[str, str]]] = {
         (OTHER_AGENT, "print(open('{secrets_dir}/{identity_file}').read().strip())"),
         (AGENT_WITHOUT_RIGHTS, f"print(fetch('{{notes_url}}/notes', '{CHAIN_PREVIOUS}'))"),
     ],
+    # serving-agent prints its sandbox token, its key to the tools gateway; controlplane-agent lists with it.
+    COPY_KEY_CHAIN: [
+        (OTHER_AGENT, f"print({OWN_KEY})"),
+        (AGENT_WITHOUT_TOOLS, LIST_TOOLS.replace(OWN_KEY, f"'{CHAIN_PREVIOUS}'")),
+    ],
 }
 
 
@@ -455,6 +550,34 @@ class NotesLogLine(BaseModel):
     granter: str | None = None
     agent: str | None = None
     rights: list[str] | None = None
+
+
+class ToolsGatewayLogLine(BaseModel):
+    """One request line of the tools gateway's JSON log: the default fields and the agent its key names."""
+
+    model_config = ConfigDict(frozen=True)
+
+    agent: str | None = None
+    source: str = Field(validation_alias="src.addr")
+    method: str | None = Field(default=None, validation_alias="mcp.method.name")
+    tool: str | None = Field(default=None, validation_alias="gen_ai.tool.name")
+    status: int = Field(validation_alias="http.status")
+    error: str | None = None
+
+    @property
+    def source_address(self) -> str:
+        """The address the request came from, without its port."""
+        return self.source.rpartition(":")[0]
+
+
+class ForgeLogLine(BaseModel):
+    """One JSON line of the forge's log: a tool call and the agent whose identity it carried."""
+
+    model_config = ConfigDict(frozen=True)
+
+    agent: str | None = Field(validation_alias="gen_ai.agent.name")
+    tool: str = Field(validation_alias="gen_ai.tool.name")
+    arguments: dict[str, Any] = Field(validation_alias="gen_ai.tool.call.arguments")
 
 
 @dataclass(frozen=True)
@@ -483,6 +606,11 @@ class StackRun:
     notes_log: list[NotesLogLine]
     identities: dict[str, str]
     mounts: dict[str, list[str]]
+    tools_gateway_log: list[ToolsGatewayLogLine]
+    tools_gateway_log_text: str
+    forge_log: list[ForgeLogLine]
+    forge_identities: dict[str, str]
+    sandbox_addresses: dict[str, str]
 
     def read_outcome(self, row: str) -> str:
         """The one token the probe of ``row`` printed, in the sandbox or the service container it ran in."""
@@ -553,6 +681,8 @@ def build_probes(
         "marker": marker,
         "other_token": repr(tokens[OTHER_AGENT]),
         "notes_url": f"http://{NOTES.name}:{NOTES.port}",
+        "tools_url": f"http://{TOOLS_GATEWAY_SERVICE}:{stack.tools_gateway_port}{MCP_PATH}",
+        "forge_url": f"http://{FORGE.name}:{FORGE.port}{MCP_PATH}",
         "identity_file": NOTES_IDENTITY_FILE,
         "identity_prefix": IDENTITY_PREFIX,
         "guessed_token": repr(secrets.token_urlsafe(32)),
@@ -624,24 +754,30 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
     directory = tmp_path_factory.mktemp("stack")
     compose_file = directory / "compose.yaml"
     gateway = CONFIG.settings.gateway
-    compose_file.write_text(yaml.safe_dump(render_compose(CONFIG, REPOSITORY, RUN, [])))
+    compose_file.write_text(yaml.safe_dump(render_compose(STACK_CONFIG, REPOSITORY, RUN, [])))
     project = f"locarena-test-{secrets.token_hex(3)}"
     # The project directory holds no .env, so the gateway gets this random placeholder and never the real key:
     # a match of it anywhere is unambiguous.
     placeholder = secrets.token_urlsafe(24)
     tokens = {agent.id: secrets.token_urlsafe(32) for agent in CONFIG.agents}
     identities = {agent.id: secrets.token_urlsafe(32) for agent in CONFIG.agents}  # on the notes board
+    forge_identities = {agent.id: secrets.token_urlsafe(32) for agent in CONFIG.agents}
+    issued = {
+        identity: (forge_identities if identity.service == FORGE.name else identities)[identity.agent_id]
+        for identity in issue_identities(STACK_CONFIG)
+    }
     compose = ["compose", "-p", project, "-f", str(compose_file), "--project-directory", str(directory)]
     environment = {
         **os.environ,
         API_KEY_VARIABLE: placeholder,
         **{token_variable(agent): token for agent, token in tokens.items()},
-        **{identity.variable: identities[identity.agent_id] for identity in issue_identities(CONFIG)},
+        **{identity.variable: value for identity, value in issued.items()},
+        TOOLS_GATEWAY_CONFIG_VARIABLE: render_tools_gateway_config(STACK_CONFIG, tokens, issued),
     }
     call_log = directory / "calls.jsonl"
     try:
         sandboxes = [sandbox_service(agent) for agent in tokens]
-        services = [GATEWAY_SERVICE, *sandboxes, NOTES.name]
+        services = [GATEWAY_SERVICE, *sandboxes, NOTES.name, FORGE.name, TOOLS_GATEWAY_SERVICE]
         run_docker(*compose, "up", "--detach", "--wait", "--build", *services, env=environment)
         run_docker(*compose, "create", EPISODE_SERVICE, env=environment)  # to inspect, as `run` makes another
         listed = run_docker(*compose, "ps", "--format", "json", env=environment).stdout.splitlines()
@@ -692,11 +828,29 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
         list_files = f"import json, os; print(json.dumps(sorted(os.listdir({str(gateway.secrets_dir)!r}))))"
         service_secrets = {
             service: json.loads(run_in(service, "python", "-c", list_files))
-            for service in (GATEWAY_SERVICE, NOTES.name)
+            for service in (GATEWAY_SERVICE, NOTES.name, FORGE.name)
         }
-        read_log = [*compose, "logs", "--no-log-prefix", NOTES.name]
-        logged = run_docker(*read_log, env=environment).stdout.splitlines()
-        notes_log = [NotesLogLine.model_validate_json(line) for line in logged if line.startswith("{")]
+
+        def read_log(service: str) -> list[str]:
+            logged = run_docker(*compose, "logs", "--no-log-prefix", service, env=environment)
+            return logged.stdout.splitlines()
+
+        notes_log = [
+            NotesLogLine.model_validate_json(line) for line in read_log(NOTES.name) if line[:1] == "{"
+        ]
+        forge_lines = [line for line in read_log(FORGE.name) if line[:1] == "{"]  # skips uvicorn's lines
+        forge_log = [ForgeLogLine.model_validate_json(line) for line in forge_lines]
+        tools_gateway_lines = read_log(TOOLS_GATEWAY_SERVICE)
+        tools_gateway_log = [
+            ToolsGatewayLogLine.model_validate(line)
+            for line in map(json.loads, tools_gateway_lines)
+            if line.get("scope") == "request"
+        ]
+        layout = f'{{{{(index .NetworkSettings.Networks "{project}_{AGENT_NETWORK}").IPAddress}}}}'
+        sandbox_addresses = {
+            run_docker("inspect", "--format", layout, containers[sandbox]).stdout.strip(): agent
+            for agent, sandbox in zip(tokens, sandboxes, strict=True)
+        }
         mounts = read_mounts(project)
     finally:
         down = ["docker", *compose, "down", "--volumes", "--remove-orphans"]
@@ -714,6 +868,11 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
         notes_log=notes_log,
         identities=identities,
         mounts=mounts,
+        tools_gateway_log=tools_gateway_log,
+        tools_gateway_log_text="\n".join(tools_gateway_lines),
+        forge_log=forge_log,
+        forge_identities=forge_identities,
+        sandbox_addresses=sandbox_addresses,
         **printed,
     )
 
@@ -850,7 +1009,7 @@ def test_each_container_holds_only_the_identity_files_its_role_needs(stack_run: 
     identities = {
         container: [name for name in names if name.startswith(IDENTITY_PREFIX)]
         for container, names in held.items()
-        if container != NOTES.name
+        if container not in (NOTES.name, FORGE.name)
     }
     assert identities == {
         **{sandbox_service(agent.id): [NOTES_IDENTITY_FILE] for agent in CONFIG.agents},
@@ -865,8 +1024,12 @@ def test_the_gateway_holds_the_key_and_nothing_else(stack_run: StackRun) -> None
     assert held == [KEY_SECRET_NAME]
 
 
-def test_the_notes_board_holds_exactly_one_identity_per_agent(stack_run: StackRun) -> None:
-    held = stack_run.service_secrets[NOTES.name]
+@pytest.mark.parametrize("service", [NOTES.name, FORGE.name])
+def test_a_live_service_with_rights_or_tools_holds_exactly_one_identity_per_agent(
+    stack_run: StackRun,
+    service: str,
+) -> None:
+    held = stack_run.service_secrets[service]
 
     assert held == sorted(f"{IDENTITY_PREFIX}{agent.id}" for agent in CONFIG.agents)
 
@@ -923,6 +1086,60 @@ def test_no_container_of_the_project_mounts_the_docker_socket(stack_run: StackRu
             GATEWAY_SERVICE,
             EPISODE_SERVICE,
             NOTES.name,
+            FORGE.name,
+            TOOLS_GATEWAY_SERVICE,
             *(sandbox_service(agent.id) for agent in CONFIG.agents),
         ]
     }
+
+
+def test_a_tool_call_the_tools_gateway_refuses_never_reaches_the_forge(stack_run: StackRun) -> None:
+    logged = stack_run.forge_log
+
+    reached = [line for line in logged if line.agent == AGENT_WITHOUT_TOOLS]
+
+    assert reached == []
+
+
+def test_the_forge_log_names_the_agent_whose_sandbox_made_each_call_through_the_tools_gateway(
+    stack_run: StackRun,
+) -> None:
+    logged = stack_run.forge_log
+
+    calls = sorted((line.agent, line.tool, line.arguments.get("title")) for line in logged)
+
+    assert calls == [(agent, "open_pr", f"opened-by-{agent}") for agent in sorted([AGENT, OTHER_AGENT])]
+
+
+def test_the_tools_gateway_log_names_the_agent_and_the_tool_of_a_call_it_refuses(stack_run: StackRun) -> None:
+    logged = stack_run.tools_gateway_log
+
+    refused = [
+        (line.tool, line.status, line.error)
+        for line in logged
+        if line.agent == AGENT_WITHOUT_TOOLS and line.method == "tools/call"
+    ]
+
+    assert refused == [("open_pr", HTTPStatus.BAD_REQUEST, "mcp: Unknown tool: open_pr")]
+
+
+def test_a_copied_tools_gateway_key_shows_in_its_log_as_one_agent_calling_from_anothers_sandbox(
+    stack_run: StackRun,
+) -> None:
+    logged = stack_run.tools_gateway_log
+
+    mismatched = {
+        (line.agent, stack_run.sandbox_addresses[line.source_address])
+        for line in logged
+        if line.agent != stack_run.sandbox_addresses[line.source_address]
+    }
+
+    assert mismatched == {(OTHER_AGENT, AGENT_WITHOUT_TOOLS)}
+
+
+def test_the_tools_gateway_log_holds_no_sandbox_token_and_no_identity(stack_run: StackRun) -> None:
+    logged = stack_run.tools_gateway_log_text
+
+    secrets_held = [*stack_run.tokens.values(), *stack_run.forge_identities.values()]
+
+    assert [secret for secret in secrets_held if secret in logged] == []
