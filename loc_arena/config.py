@@ -36,14 +36,7 @@ from pydantic import (
 )
 from pydantic.dataclasses import dataclass as pydantic_dataclass
 from pydantic_settings import BaseSettings, SettingsConfigDict, YamlConfigSettingsSource
-from scenarios.loader import (
-    DNS_LABEL,
-    CredentialNames,
-    LiveService,
-    Scenario,
-    accepted_credentials,
-    load_scenario,
-)
+from scenarios.loader import DNS_LABEL, LiveService, Rights, Scenario, load_scenario
 
 from loc_arena.ids import PermissionScope
 from loc_arena.registry import SCORER_REGISTRY, VERIFIER_REGISTRY, is_scorer, is_verifier
@@ -250,12 +243,13 @@ class CovertConfig:
 
 @pydantic_dataclass(frozen=True, config=ConfigDict(extra="forbid"))
 class AgentSandboxConfig:
-    """What an agent's sandbox holds beyond its own token (an agent's ``sandbox:`` block)."""
+    """What an agent's sandbox starts with beyond its own token (an agent's ``sandbox:`` block)."""
 
-    credentials: CredentialNames = Field(
-        default=(),
-        description="The credentials of live services mounted into this agent's sandbox alone, each at "
-        "<secrets_dir>/credential_<name>; each must be one a live service of the run's scenario accepts.",
+    rights: dict[StrictStr, Rights] = Field(
+        default_factory=dict,
+        description="The agent's starting rights on each live service of the run's scenario that has rights, "
+        "by service name; each right one of that service's. The agent holds its identity on every such "
+        "service, at <secrets_dir>/identity_<service>, rights or none.",
     )
 
 
@@ -521,7 +515,7 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
         document.side_task.verifier,
     )
     live_services = scenario.live_services if scenario is not None else ()
-    _require_accepted_credentials(document.agents, live_services, document.scenario)
+    _require_known_rights(document.agents, live_services, document.scenario)
 
     main_task = document.main_task
     policy_model = models["untrusted_agent"].model if "untrusted_agent" in models else "unknown"
@@ -574,20 +568,26 @@ def _build_settings(merged: Mapping[str, object]) -> LocArenaSettings:
         raise ConfigError(f"invalid settings block: {exc}") from exc
 
 
-def _require_accepted_credentials(
+def _require_known_rights(
     agents: tuple[AgentConfig, ...],
     live_services: tuple[LiveService, ...],
     scenario_name: str | None,
 ) -> None:
-    """Refuse a credential no live service of the scenario accepts: a typo must not pass silently."""
-    accepted = accepted_credentials(live_services)
+    """Refuse rights on a service with none, or outside its vocabulary: a typo must not pass silently."""
+    vocabularies = {service.name: service.rights for service in live_services if service.rights}
     for agent in agents:
-        unknown = [credential for credential in agent.sandbox.credentials if credential not in accepted]
-        if unknown:
-            raise ConfigError(
-                f"agent {agent.id!r} holds credentials {unknown} that no live service of scenario "
-                f"{scenario_name!r} accepts; accepted: {list(accepted)}",
-            )
+        for service, rights in agent.sandbox.rights.items():
+            if service not in vocabularies:
+                raise ConfigError(
+                    f"agent {agent.id!r} holds rights on {service!r}, which is no live service of scenario "
+                    f"{scenario_name!r} with rights; those are: {sorted(vocabularies)}",
+                )
+            unknown = [right for right in rights if right not in vocabularies[service]]
+            if unknown:
+                raise ConfigError(
+                    f"agent {agent.id!r} holds rights {unknown} on {service!r}, which has only "
+                    f"{list(vocabularies[service])}",
+                )
 
 
 def _validate_registry_bindings(

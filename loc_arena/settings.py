@@ -74,8 +74,9 @@ class GatewaySettings(SettingsGroup):
         default=Path("/run/secrets"),
         description="Where compose mounts a container's secrets: the gateway's key (the file "
         "openrouter_api_key), each sandbox's own token (sandbox_token), in the episode every agent's "
-        "sandbox token (sandbox_token_<agent id with - as _>), and in a live service and the sandboxes of "
-        "the agents holding it each credential it checks (credential_<name>).",
+        "sandbox token (sandbox_token_<agent id with - as _>), in a sandbox its agent's identity on each "
+        "live service with rights (identity_<service>), and in such a service every agent's "
+        "(identity_<agent id>).",
     )
 
     @field_validator("upstream")
