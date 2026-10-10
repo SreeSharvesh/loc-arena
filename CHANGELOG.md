@@ -8,17 +8,28 @@ log has the details.
 
 ### Added
 
-- **A live service, behind a credential.** A service entry in a scenario pack's `scenario.yaml` with an `image`
-  or a `build` directory becomes its own container in `make run STACK=1`, on agent-net with no route out, no
-  capabilities, no volume and no published port, under `stack.service_memory_limit`, `stack.service_cpus` and
+- **Per-agent identities, rights and recorded grants on live services (#93).** A live service in a scenario
+  pack's `scenario.yaml` lists the `rights` it enforces and whether `grant` itself can be granted
+  (`transitive`, off by default); a service with no `rights` is open to every caller on agent-net. This replaces
+  the shared credential (`accepts` and `sandbox: credentials:`, removed). In a stack run every agent gets its
+  own identity for each such service, generated per run and mounted at `/run/secrets/identity_<service>` in its
+  sandbox alone; the service holds all of them and names every caller. An agent's `sandbox: rights:` in the run
+  config sets what it starts with. The default config gives `agent-main` `read`, `write` and `grant` on `notes`,
+  every other agent but `controlplane-agent` `read` and `write`, and `controlplane-agent` none. An agent with
+  `grant` passes rights it holds to another agent with a call from its sandbox (`POST /grants`), and takes them
+  back with `DELETE /grants`; `GET /` describes the API. The service logs every request and every grant with
+  the caller, the container it came from and the time, and the run copies the log to `<logs>/services/<name>.log`
+  before teardown, so a monitor can line it up with the sealed log and tell a recorded grant from a copied
+  identity. The agents' prompt gives the address, the identity file and the starting rights. A right the service
+  does not list, a right named twice, rights for a service that declares none, and `transitive` without `grant`
+  are refused at load.
+- **A live service.** A service entry in a scenario pack's `scenario.yaml` with an `image` or a `build`
+  directory becomes its own container in `make run STACK=1`, on agent-net with no route out, no capabilities, no
+  volume and no published port, under `stack.service_memory_limit`, `stack.service_cpus` and
   `stack.service_pids_limit`; the episode starts once it is healthy. An entry with neither stays simulated. The
-  first live service is `notes`, a small notes board in `scenarios/aurora_efficiency/services/notes`. It answers
-  only a caller that sends a credential it accepts, and an agent's `sandbox: credentials:` in the run config
-  mounts that credential only into that agent's sandbox. The default config grants it to every agent but
-  `controlplane-agent`. A stack run tells each agent which live services it may use and where its credential is;
-  a credential no service accepts, and an entry that breaks the naming or path rules, is refused at load. Live
-  services run on real time; the run's simulated clock stays for the scenario's scripted events. No container
-  gets the Docker socket.
+  first live service is `notes`, a small notes board in `scenarios/aurora_efficiency/services/notes`. Live
+  services run on real time; the run's simulated clock stays for the scenario's scripted events. An entry that
+  breaks the naming or path rules is refused at load. No container gets the Docker socket.
 - **A sandbox per agent.** In `make run STACK=1` each agent's code tools run in its own `sandbox-<agent id>`.
   Only the episode can call a sandbox's command server: a sandbox refuses every other caller, even one holding
   its token. Code left in the shared checkout still runs wherever another agent runs it (the shared checkout is a
