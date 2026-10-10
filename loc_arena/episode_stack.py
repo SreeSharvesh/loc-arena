@@ -377,7 +377,8 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
     ``logs`` and graded on this host with the agents' code sandboxed, while the gateway still runs, so
     model-backed monitors reach their model through it and it records their calls. Whatever the episode, the
     gateway and each live service recorded is copied into ``logs`` before the project is removed, after a
-    Ctrl-C too, a live service's log to ``services/<name>.log``. When a copy fails the project is kept,
+    Ctrl-C too, a live service's log to ``services/<name>.log``; when the episode never started, a live
+    service that failed to become healthy leaves only that log. When a copy fails the project is kept,
     stopped, so nothing recorded is lost. Returns the bundle's directory.
     """
     run = Path(run).name.removesuffix(".yaml")
@@ -419,15 +420,16 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
     for directory in (call_log.parent, service_logs):
         directory.mkdir(parents=True, exist_ok=True)
     copy_output = [*compose, "cp", f"{EPISODE_SERVICE}:{OUTPUT_DIRECTORY}/.", str(logs)]
-    copy_logs: list[tuple[list[str], Path | None]] = [
+    copy_service_logs: list[tuple[list[str], Path | None]] = [
+        (
+            [*compose, "logs", "--no-color", "--no-log-prefix", service.name],
+            service_logs / f"{service.name}.log",
+        )
+        for service in config.live_services
+    ]
+    copy_logs = [
         ([*compose, "cp", f"gateway:{settings.gateway.call_log}", str(call_log)], None),
-        *(
-            (
-                [*compose, "logs", "--no-color", "--no-log-prefix", service.name],
-                service_logs / f"{service.name}.log",
-            )
-            for service in config.live_services
-        ),
+        *copy_service_logs,
     ]
     created = output_copied = False
     try:
@@ -454,14 +456,21 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
     finally:
         never_started = [*compose, "ps", "--all", "--status", "created", "--quiet", EPISODE_SERVICE]
         started = created and not run_compose(never_started, capture_output=True, text=True).stdout.strip()
+        # An episode that never started has no output or call log, but a live service that failed to become
+        # healthy says why in its own.
         pending = copy_logs if output_copied else [(copy_output, None), *copy_logs]
+        if not started:
+            pending = copy_service_logs
         # Every copy is tried, a failed one included, before the project is kept.
-        if started and not all([copied(*copy) for copy in pending]):
+        if created and not all([copied(*copy) for copy in pending]):
             run_compose([*compose, "stop"])
             raise StackError(f"could not copy every log out: kept compose project {project} and its volumes")
         run_compose([*compose, "down", "--volumes", "--remove-orphans"])
         if created and not started:
-            message = f"the episode never started: is {API_KEY_VARIABLE} set in .env or the shell? See above"
+            message = (
+                f"the episode never started: is {API_KEY_VARIABLE} set in .env or the shell, or did a live "
+                f"service fail to become healthy? See above and the copied logs in {service_logs}"
+            )
             raise StackError(message)
 
 

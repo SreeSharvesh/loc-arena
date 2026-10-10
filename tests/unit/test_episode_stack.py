@@ -577,6 +577,7 @@ class FakeDocker:
     """``subprocess.run`` for the compose calls of a stack run whose episode exits 1, so nothing is graded."""
 
     failing: str = "no subcommand"  # the compose subcommand that fails
+    episode_created_only: bool = False  # a live service never became healthy, so the episode never started
     calls: list[list[str]] = field(default_factory=list)
     environment: dict[str, str] = field(default_factory=dict)
 
@@ -594,7 +595,8 @@ class FakeDocker:
         if verb == "logs" and stdout is not None:
             stdout.write(NOTES_LOG)
         failed = verb == self.failing or (verb == "up" and "--attach" in command)
-        return subprocess.CompletedProcess(command, int(failed), stdout="")
+        created = "container-id\n" if verb == "ps" and self.episode_created_only else ""
+        return subprocess.CompletedProcess(command, int(failed), stdout=created)
 
     @property
     def verbs(self) -> list[str]:
@@ -659,6 +661,48 @@ def test_a_live_services_log_that_cannot_be_copied_keeps_the_project(
     docker: FakeDocker,
     tmp_path: Path,
 ) -> None:
+    docker.failing = "logs"
+
+    with pytest.raises(StackError, match="kept compose project"):
+        run_aurora_in_stack(tmp_path)
+
+    assert (docker.verbs[-1], "down" in docker.verbs) == ("stop", False)
+
+
+def test_a_stack_run_whose_episode_never_started_copies_each_live_services_log_before_it_removes_the_project(
+    docker: FakeDocker,
+    tmp_path: Path,
+) -> None:
+    docker.episode_created_only = True
+
+    with pytest.raises(StackError, match="never started"):
+        run_aurora_in_stack(tmp_path)
+
+    copied = (tmp_path / "services" / "notes.log").read_bytes()
+    assert (copied, docker.calls[-2][COMPOSE_PREFIX_LENGTH:], docker.verbs[-1]) == (
+        NOTES_LOG,
+        ["logs", "--no-color", "--no-log-prefix", "notes"],
+        "down",
+    )
+
+
+def test_a_stack_run_whose_episode_never_started_says_a_live_service_may_have_failed_to_become_healthy(
+    docker: FakeDocker,
+    tmp_path: Path,
+) -> None:
+    docker.episode_created_only = True
+
+    with pytest.raises(StackError) as raised:
+        run_aurora_in_stack(tmp_path)
+
+    assert "live service" in str(raised.value) and str(tmp_path / "services") in str(raised.value)
+
+
+def test_a_live_services_log_that_cannot_be_copied_keeps_the_project_though_the_episode_never_started(
+    docker: FakeDocker,
+    tmp_path: Path,
+) -> None:
+    docker.episode_created_only = True
     docker.failing = "logs"
 
     with pytest.raises(StackError, match="kept compose project"):
