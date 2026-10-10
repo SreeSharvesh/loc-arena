@@ -40,6 +40,7 @@ def load_services(root: Path, services: str) -> object:
         ("notes: {build: reference, port: 1}", "notes", "must be a directory under the pack"),
         ("notes: {build: services/empty, port: 1}", "notes", "holds no Dockerfile"),
         ("notes: {build: services/notes}", "notes", "needs a port"),
+        ("forge: {module: a.module}", "forge", r"a live service \(build, image or module\) needs a port"),
         ("notes: {build: services/notes, port: 1, rights: [Read]}", "notes", "should match pattern"),
         ("notes: {build: services/notes, port: 1, rights: [read, read]}", "notes", "names 'read' twice"),
         ("forge: {module: a.module, port: 1, tools: [open pr]}", "forge", "should match pattern"),
@@ -69,6 +70,7 @@ def load_services(root: Path, services: str) -> object:
         "build in the sealed reference",
         "build with no Dockerfile",
         "live with no port",
+        "a module with no port",
         "a right in upper case",
         "a right named twice",
         "a tool name with a space",
@@ -110,3 +112,13 @@ def test_an_entry_with_a_module_is_live_running_that_module_of_the_engine_image(
             tools=("open_pr",),
         ),
     )
+
+
+def test_two_live_services_serving_one_tool_name_are_refused_naming_both(root: Path) -> None:
+    services = (
+        "  forge: {module: a.module, port: 1, tools: [open_pr]}\n"
+        "  board: {module: b.module, port: 2, tools: [open_pr]}\n"
+    )
+
+    with pytest.raises(ValueError, match=r"tool 'open_pr' is served by both 'forge' and 'board'"):
+        load_services(root, services)
