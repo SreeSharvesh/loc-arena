@@ -738,26 +738,32 @@ def test_the_tools_gateway_forwards_each_call_with_the_callers_identity_on_the_s
 
     (backend,) = route["backends"]
 
-    assert backend == {
-        "mcp": {
-            "targets": [
-                {
-                    "name": "forge",
-                    "mcp": {"host": "http://forge:8000/mcp"},
-                    "policies": {
-                        "transformations": {
-                            "request": {
-                                "set": {
-                                    "authorization": '"Bearer " + {"agent-main": "id-main", '
-                                    '"controlplane-agent": "id-control"}[apiKey.agent]',
-                                },
-                            },
+    assert backend["mcp"]["targets"] == [
+        {
+            "name": "forge",
+            "mcp": {"host": "http://forge:8000/mcp"},
+            "policies": {
+                "transformations": {
+                    "request": {
+                        "set": {
+                            "authorization": '"Bearer " + {"agent-main": "id-main", '
+                            '"controlplane-agent": "id-control"}[apiKey.agent]',
                         },
                     },
                 },
-            ],
+            },
         },
-    }
+    ]
+
+
+def test_the_tools_gateway_offers_each_tool_by_its_own_name_with_no_service_prefix(
+    tools_gateway_config: dict[str, Any],
+) -> None:
+    route = read_route(tools_gateway_config)
+
+    (backend,) = route["backends"]
+
+    assert backend["mcp"]["prefixMode"] == "never"
 
 
 def test_the_tools_gateway_listens_on_its_port_alone_with_no_admin_stats_or_readiness_listener(
