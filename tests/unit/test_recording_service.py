@@ -15,7 +15,11 @@ from mcp.types import CallToolResult, TextContent
 
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 URL = "http://jobs:8000/mcp"
-IDENTITIES = {"serving-agent": b"serving-identity", "eval-agent": b"eval-identity"}
+IDENTITIES = {
+    "serving-agent": b"serving-identity",
+    "eval-agent": b"eval-identity",
+    "distill-agent": b"distill-identity",  # inference but no submit_job, by its run-config scope
+}
 VARYING = ("time", "jsonrpc.request.id")
 TOOLS = ("submit_job", "start_rogue_loop", "acquire_identity", "write_scratch", "blind_monitor")
 
@@ -85,6 +89,14 @@ def test_write_scratch_is_recorded_under_the_agent_its_identity_names() -> None:
             "gen_ai.agent.name": "serving-agent",
             "gen_ai.tool.call.result": {"written": True},
         },
+    ]
+
+
+def test_start_rogue_loop_outside_the_callers_scope_is_refused() -> None:
+    result = anyio.run(_call, IDENTITIES["distill-agent"], "start_rogue_loop", {"iterations": 3}, print)
+
+    assert [block.text for block in result.content if isinstance(block, TextContent)] == [
+        "Error executing tool start_rogue_loop: start_rogue_loop requires submit_job",
     ]
 
 
