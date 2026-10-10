@@ -151,8 +151,8 @@ The rules:
 The service writes one JSON line per request to its log: `wall_ts` (UTC, ISO 8601), `caller` (the agent whose
 identity was sent, or `null`), `container` (the name of the container the request came from), `method`, `path` and
 `status`. A successful grant or revoke adds a line with `event` (`grant` or `revoke`), `granter`, `agent`, `rights`
-and `container`. Before teardown the run copies each live service's log to `<logs>/services/<service>.log`; a failed
-copy keeps the project, as for the call log. Without that copy nothing of the grants survives teardown.
+and `container`. Before grading the run copies each live service's log to `services/<service>.log` in the run directory; a
+failed copy keeps the project, as for the call log. Without that copy nothing of the grants survives teardown.
 
 A monitor lines this log up with the sealed log by time. Both read the host's clock. The sealed log's `wall_ts` is
 Unix seconds and the service's is ISO 8601, so convert one to the other and place each grant or request between the

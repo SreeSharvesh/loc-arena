@@ -14,17 +14,18 @@ from __future__ import annotations
 
 import bisect
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 from sandbox_server.confinement import resolve_inside
 
 from loc_arena.board import SERVICE as BOARD_SERVICE
 from loc_arena.config import RunConfig
 from loc_arena.forge.service import SERVICE as FORGE_SERVICE
+from loc_arena.forge.service import OpenedPullRequest
 from loc_arena.logging_.agent_trace import EpisodeTrace
 from loc_arena.logging_.events import AppendOnlyLog, EventKind, fingerprint, read_events
 from loc_arena.scaffold.bus import Recorder
@@ -35,6 +36,7 @@ _LOGGER = logging.getLogger(__name__)
 SERVICE_LOGS = "services"  # a stack run's copy of each live service's log, in the run directory
 RECORDS = "records"  # where an in-process run's services record, in each episode's directory
 UNATTRIBUTED_FILE = "unattributed_records.jsonl"
+_OPENED_PULL_REQUEST = TypeAdapter(OpenedPullRequest)
 
 
 @dataclass(frozen=True)
@@ -61,22 +63,23 @@ class UnattributedRecord(BaseModel):
     line: str = Field(description="The line as the service wrote it.")
 
 
-def build_pull_request(record: ToolRecord) -> RecordedEvent | None:
-    """The ``pr`` event of a pull request the forge opened, with the fields the PR review monitor reads."""
-    result = record.result or {}
-    if not result.get("opened"):
-        return None
+def build_pull_request(record: ToolRecord) -> RecordedEvent:
+    """The ``pr`` event of the pull request the forge opened, with the fields the PR review monitor reads.
+
+    Raises ``ValidationError`` when the record's result is not the forge's ``open_pr`` result.
+    """
+    opened = _OPENED_PULL_REQUEST.validate_python(record.result)
     return RecordedEvent(
         "pr",
         record.agent,
-        str(result["repo"]),
+        opened["repo"],
         {
-            "number": result["number"],
-            "target_repo": result["repo"],
-            "pr_title": result["title"],
+            "number": opened["number"],
+            "target_repo": opened["repo"],
+            "pr_title": opened["title"],
             "pr_body": str(record.arguments.get("body", "")),
             "diff": str(record.arguments.get("diff", "")),
-            "ci": result["ci"],
+            "ci": opened["ci"],
         },
     )
 
@@ -95,7 +98,8 @@ def build_message(record: ToolRecord) -> RecordedEvent:
     return RecordedEvent("message", record.agent, str(record.arguments["to"]), payload)
 
 
-# What each tool's successful call makes, by (service, tool); a call of any other tool makes no event.
+# What each tool's successful call makes, by (service, tool); any other tool's call, or a failed call, makes
+# none. A builder raises ValidationError on a result that is not its tool's.
 EVENT_BUILDERS: Mapping[tuple[str, str], Callable[[ToolRecord], RecordedEvent | None]] = {
     (FORGE_SERVICE, "open_pr"): build_pull_request,
     (BOARD_SERVICE, "send"): build_message,
@@ -127,6 +131,16 @@ class _Phase:
         return next(covering, None if turns else 0)
 
 
+@dataclass(frozen=True)
+class _Placed:
+    """A record's event, placed: its episode, its wall time and its agent's turn."""
+
+    phase: _Phase
+    wall: float
+    event: RecordedEvent
+    turn: int
+
+
 def build_recorded_events(
     run_directory: Path,
     config: RunConfig,
@@ -142,55 +156,69 @@ def build_recorded_events(
         for name, trace in traces.items()
         if (run_directory / name / SNAPSHOT_FILE).exists()
     ]
+    roles = {agent.id: agent.kind for agent in config.agents}
     services = [service.name for service in config.live_services if service.tools]
-    agents = {agent.id: agent.kind for agent in config.agents}
-    sources = [
-        (service, path)
-        for service in services
-        for path in [
-            run_directory / SERVICE_LOGS / f"{service}.log",
-            *(phase.directory / RECORDS / f"{service}.jsonl" for phase in phases),
-        ]
-        if path.exists()
-    ]
     unattributed: list[UnattributedRecord] = []
-    built: dict[Path, list[tuple[float, RecordedEvent, int]]] = {phase.directory: [] for phase in phases}
-    for service, path in sources:
-        for line in path.read_text(encoding="utf-8").splitlines():
-            if not line.startswith("{"):
-                continue  # a line the service logged around its records, such as uvicorn's
-            try:
-                record = ToolRecord.model_validate_json(line)
-            except ValidationError:
-                unattributed.append(UnattributedRecord(reason="not a valid record", line=line))
-                continue
-            wall = record.time.timestamp()
-            phase = next((phase for phase in phases if phase.holds(wall)), None)
-            if phase is None or record.agent not in agents:
-                reason = "outside every phase window" if phase is None else "not an agent of the run"
-                unattributed.append(UnattributedRecord(reason=reason, line=line))
-                continue
-            build = EVENT_BUILDERS.get((service, record.tool))
-            event = build(record) if build is not None and record.error is None else None
-            if event is None:
-                continue
-            turn = phase.find_turn(record.agent, wall)
-            if turn is None:
-                unattributed.append(UnattributedRecord(reason="no covering turn", line=line))
-            built[phase.directory].append((wall, event, turn or 0))
+    built: dict[Path, list[_Placed]] = {phase.directory: [] for phase in phases}
+    for service, line in _read_record_lines(run_directory, services, phases):
+        placed, note = _place(service, line, phases, roles)
+        unattributed += [note] if note else []
+        if placed:
+            built[placed.phase.directory].append(placed)
     for phase in phases:
-        _write_events(phase, sorted(built[phase.directory], key=lambda placed: placed[0]), agents)
+        _write_events(phase, sorted(built[phase.directory], key=lambda placed: placed.wall), roles)
     if unattributed:
         _LOGGER.warning("%d service records were not placed: see %s", len(unattributed), UNATTRIBUTED_FILE)
         lines = "".join(f"{record.model_dump_json()}\n" for record in unattributed)
         (run_directory / UNATTRIBUTED_FILE).write_text(lines, encoding="utf-8")
 
 
-def _write_events(
-    phase: _Phase,
-    built: list[tuple[float, RecordedEvent, int]],
+def _read_record_lines(
+    run_directory: Path,
+    services: list[str],
+    phases: list[_Phase],
+) -> Iterator[tuple[str, str]]:
+    """Each service's record lines, by service: those of its log in a stack run, else of each episode."""
+    for service in services:
+        stack_log = run_directory / SERVICE_LOGS / f"{service}.log"
+        in_process = [phase.directory / RECORDS / f"{service}.jsonl" for phase in phases]
+        for path in (path for path in [stack_log, *in_process] if path.exists()):
+            # A line not starting with "{" is one the service logged around its records, such as uvicorn's.
+            lines = path.read_text(encoding="utf-8").splitlines()
+            yield from ((service, line) for line in lines if line.startswith("{"))
+
+
+def _place(
+    service: str,
+    line: str,
+    phases: list[_Phase],
     roles: Mapping[str, str],
-) -> None:
+) -> tuple[_Placed | None, UnattributedRecord | None]:
+    """The event of ``service``'s record ``line``, placed, if it makes one; a note if it is not placed."""
+    try:
+        record = ToolRecord.model_validate_json(line)
+    except ValidationError:
+        return None, UnattributedRecord(reason="not a valid record", line=line)
+    wall = record.time.timestamp()
+    phase = next((phase for phase in phases if phase.holds(wall)), None)
+    if phase is None or record.agent not in roles:
+        reason = "outside every phase window" if phase is None else "not an agent of the run"
+        return None, UnattributedRecord(reason=reason, line=line)
+    build = EVENT_BUILDERS.get((service, record.tool))
+    if build is None or record.error is not None:
+        return None, None
+    try:
+        event = build(record)
+    except ValidationError:
+        return None, UnattributedRecord(reason="not a valid record", line=line)
+    if event is None:
+        return None, None
+    turn = phase.find_turn(record.agent, wall)
+    note = UnattributedRecord(reason="no covering turn", line=line) if turn is None else None
+    return _Placed(phase, wall, event, turn or 0), note
+
+
+def _write_events(phase: _Phase, built: list[_Placed], roles: Mapping[str, str]) -> None:
     """Append ``built`` to both logs of ``phase``, after every event its play wrote."""
     if not built:
         return
@@ -199,13 +227,13 @@ def _write_events(
     sealed = AppendOnlyLog(sealed_path, episode_id)
     mirror = AppendOnlyLog(resolve_inside(phase.directory, phase.snapshot.mirror_path), episode_id)
     recorder = Recorder(episode_id, sealed, mirror)
-    for wall, event, turn in built:
+    for placed in built:
         recorder.dual(
-            actor_uid=event.actor_uid,
-            actor_role=roles[event.actor_uid],
-            kind=event.kind,
-            payload=event.payload,
-            target_id=event.target_id,
-            turn=turn,
-            ts=phase.read_clock(wall),
+            actor_uid=placed.event.actor_uid,
+            actor_role=roles[placed.event.actor_uid],
+            kind=placed.event.kind,
+            payload=placed.event.payload,
+            target_id=placed.event.target_id,
+            turn=placed.turn,
+            ts=phase.read_clock(placed.wall),
         )

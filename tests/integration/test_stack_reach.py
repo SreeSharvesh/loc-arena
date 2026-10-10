@@ -31,9 +31,11 @@ import shlex
 import signal
 import socket
 import subprocess
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from http import HTTPStatus
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -55,7 +57,13 @@ from loc_arena.episode_stack import (
 )
 from loc_arena.gateway.core import API_KEY_VARIABLE
 from loc_arena.gateway.proxy import GatewayCall
+from loc_arena.harness import PLAYED_FILE, PlayedRun, build_recorded_run_events
+from loc_arena.logging_.events import AppendOnlyLog, read_events
+from loc_arena.recorded_events import SERVICE_LOGS
 from loc_arena.sandbox import IDENTITY_PREFIX, TOKEN_FILE
+from loc_arena.scaffold.bus import Recorder
+from loc_arena.task import SNAPSHOT_FILE, ClockReading, SnapshotFile
+from loc_arena.tool_records import ToolRecord
 from loc_arena.tools_gateway import (
     MCP_PATH,
     TOOLS_GATEWAY_CONFIG_VARIABLE,
@@ -107,6 +115,8 @@ STACK_CONFIG = dataclasses.replace(
     ),
 )
 OPENED_REPO = "meridian-serving"  # a repo both agent-main and serving-agent may open a pull request on
+NATIVE_AGENT = "eval-agent"  # whose native MCP client, in the episode, opens a pull request with its key
+NATIVE_OPENED = {"repo": "meridian-evalkit", "title": f"opened-by-{NATIVE_AGENT}"}
 GATEWAY_SERVICE = "gateway"
 DOCKER_SOCKET = "docker.sock"
 NOT_ALLOWED_PATH = "not-an-allowed-path"  # a path outside settings.gateway.allowed_paths: nothing leaves
@@ -149,7 +159,8 @@ CHAIN_PREVIOUS = "PREVIOUS_OUTPUT"  # in a chain step's command: replaced by wha
 LEFT_RUNNING_SECONDS = 60  # a command still running when its sandbox is reset, unless the reset ends it
 COMMAND_START_SECONDS = 2  # long enough for that command to have started
 # In the episode, as agent-main unless named: bash reads a sealed log, lists the checkout, leaves a process;
-# run_tests; every agent's identity hashed; the probes from stdin (some as another agent) and the chains;
+# run_tests; eval-agent's native MCP client opens a pull request; every agent's identity hashed; the probes
+# from stdin (some as another agent) and the chains;
 # every sandbox's secrets listed, the refused path again as serving-agent; the episode's own calls to that
 # sandbox, with its token and a wrong one. Last, as a reset removes every other checkout: a second one seeded
 # and listed; a command left running while what listens here beyond loopback is read (Docker's resolver is on
@@ -164,12 +175,16 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from loc_arena.board import Board
 from loc_arena.config import load_run_config
+from loc_arena.forge.forge import Forge
+from loc_arena.forge.world import generate_world
+from loc_arena.live import connect_agent_tools
 from loc_arena.sandbox import SandboxError, connect_sandboxes, reset_sandboxes
 from sandbox_server.wire import CommandRequest
 from loc_arena.scaffold.code_services import CodeServices
 from loc_arena.scaffold.tools import StubServices
-from loc_arena.task import seed_episode_checkout
+from loc_arena.task import resolve_scenario, seed_episode_checkout
 
 config = load_run_config("{CONFIGS_DIRECTORY}/{RUN}.yaml")
 sandboxes = connect_sandboxes(config.settings, [agent.id for agent in config.agents])
@@ -192,6 +207,9 @@ results = [bash(command) for command in (f"cat {{sealed}}", "ls")]
 left = bash("setsid sleep 300 > /dev/null 2>&1 < /dev/null & echo $!")
 results.append(bash(f"kill -0 {{left['stdout'].strip()}}"))
 tested = run_in(checkout, "run_tests", {{"repo": "meridian-common"}})
+forge = Forge(generate_world(config, resolve_scenario(config), config.seed))
+(native,) = connect_agent_tools(forge, Board(), config, episode)[{NATIVE_AGENT!r}]  # agentgateway alone
+native_opened = native.call("open_pr", {NATIVE_OPENED!r})
 sent = json.load(sys.stdin)
 harness_probe = sent["probes"]["{HARNESS_ROW}"]
 here = subprocess.run(["bash", "-c", harness_probe], capture_output=True, text=True, check=True)
@@ -239,6 +257,7 @@ after = run_in(later, "bash", {{"command": f"ls {{checkouts}}"}})
 print(json.dumps({{
     "bash": results,
     "run_tests": tested,
+    "native_opened": native_opened,
     "episode_harness": here.stdout.strip(),
     "probes": probes,
     "chains": chains,
@@ -619,18 +638,6 @@ class ToolsGatewayLogLine(BaseModel):
         return self.source.rpartition(":")[0]
 
 
-class ToolCallLine(BaseModel):
-    """One JSON line of a tool service's log (the forge's, the board's): a call and the agent it came from."""
-
-    model_config = ConfigDict(frozen=True)
-
-    agent: str | None = Field(validation_alias="gen_ai.agent.name")
-    tool: str = Field(validation_alias="gen_ai.tool.name")
-    arguments: dict[str, Any] = Field(validation_alias="gen_ai.tool.call.arguments")
-    result: dict[str, Any] | None = Field(default=None, validation_alias="gen_ai.tool.call.result")
-    error: str | None = Field(default=None, validation_alias="error.type")
-
-
 @dataclass(frozen=True)
 class StackRun:
     """What one bring-up of the stack produced: the commands' results, the episode's view, the call log."""
@@ -659,9 +666,13 @@ class StackRun:
     mounts: dict[str, list[str]]
     tools_gateway_log: list[ToolsGatewayLogLine]
     tools_gateway_log_text: str
-    forge_log: list[ToolCallLine]
+    forge_log: list[ToolRecord]
+    forge_log_text: str
+    played_from: float
+    played_until: float
+    native_opened: dict[str, Any]
     forge_identities: dict[str, str]
-    board_log: list[ToolCallLine]
+    board_log: list[ToolRecord]
     board_identities: dict[str, str]
     sandbox_addresses: dict[str, str]
 
@@ -860,6 +871,7 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
                 listener.getsockname()[1],
             )
             in_sandboxes = {row: command for row, command in probes.items() if row not in ROW_SERVICES}
+            played_from = time.time()  # the play window of the episode the fixture stands for
             played = run_docker(
                 *compose,
                 "run",
@@ -875,6 +887,7 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
                 ),
                 env=environment,
             )
+            played_until = time.time()
             in_services = {
                 row: {"stdout": run_in(service, "sh", "-c", probes[row])}
                 for row, service in ROW_SERVICES.items()
@@ -893,12 +906,10 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
         notes_log = [
             NotesLogLine.model_validate_json(line) for line in read_log(NOTES.name) if line[:1] == "{"
         ]
-        forge_log, board_log = (
-            [
-                ToolCallLine.model_validate_json(line) for line in read_log(service) if line[:1] == "{"
-            ]  # not uvicorn's
-            for service in (FORGE.name, BOARD.name)
-        )
+        forge_log_text = "\n".join(read_log(FORGE.name))  # uvicorn's lines among the records
+        forge_lines = [line for line in forge_log_text.splitlines() if line[:1] == "{"]
+        forge_log = [ToolRecord.model_validate_json(line) for line in forge_lines]
+        board_log = [ToolRecord.model_validate_json(line) for line in read_log(BOARD.name) if line[:1] == "{"]
         tools_gateway_lines = read_log(TOOLS_GATEWAY_SERVICE)
         tools_gateway_log = [
             ToolsGatewayLogLine.model_validate(line)
@@ -930,6 +941,9 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
         tools_gateway_log=tools_gateway_log,
         tools_gateway_log_text="\n".join(tools_gateway_lines),
         forge_log=forge_log,
+        forge_log_text=forge_log_text,
+        played_from=played_from,
+        played_until=played_until,
         forge_identities=forge_identities,
         board_log=board_log,
         board_identities=board_identities,
@@ -1163,7 +1177,7 @@ def test_a_tool_call_the_tools_gateway_refuses_never_reaches_the_forge(stack_run
     assert reached == []
 
 
-def test_the_forge_log_names_the_agent_whose_sandbox_made_each_call_through_the_tools_gateway(
+def test_the_forge_log_names_the_agent_whose_key_made_each_call_through_the_tools_gateway(
     stack_run: StackRun,
 ) -> None:
     logged = stack_run.forge_log
@@ -1172,7 +1186,8 @@ def test_the_forge_log_names_the_agent_whose_sandbox_made_each_call_through_the_
         (line.agent, line.tool, line.arguments.get("title")) for line in logged if line.error is None
     )
 
-    assert calls == [(agent, "open_pr", f"opened-by-{agent}") for agent in sorted([AGENT, OTHER_AGENT])]
+    agents = sorted([AGENT, NATIVE_AGENT, OTHER_AGENT])
+    assert calls == [(agent, "open_pr", f"opened-by-{agent}") for agent in agents]
 
 
 def test_the_tools_gateway_log_names_the_agent_and_the_tool_of_a_call_it_refuses(stack_run: StackRun) -> None:
@@ -1192,9 +1207,10 @@ def test_a_copied_tools_gateway_key_shows_in_its_log_as_one_agent_calling_from_a
 ) -> None:
     logged = stack_run.tools_gateway_log
 
+    from_sandboxes = [line for line in logged if line.source_address in stack_run.sandbox_addresses]
     mismatched = {
         (line.agent, stack_run.sandbox_addresses[line.source_address])
-        for line in logged
+        for line in from_sandboxes
         if line.agent != stack_run.sandbox_addresses[line.source_address]
     }
 
@@ -1259,3 +1275,50 @@ def test_the_board_log_records_each_send_under_the_agent_whose_sandbox_made_it(s
     sends = [(line.agent, line.arguments["to"]) for line in logged if line.tool == "send"]
 
     assert sends == [(OTHER_AGENT, AGENT)]
+
+
+def write_played_run(directory: Path, stack_run: StackRun) -> Path:
+    """A run directory standing for an episode played during the fixture's run, with the stack's forge log.
+
+    Its one phase's play window and clock span the episode container's run; its logs hold one event.
+    """
+    run, episode = directory / "run", directory / "run" / "episode"
+    episode.mkdir(parents=True)
+    snapshot = SnapshotFile(
+        sealed_path=Path("events.sealed.jsonl"),
+        mirror_path=Path("events.mirror.jsonl"),
+        checkout=Path("checkout"),
+        deadline_ts=10_000.0,
+        mode="attack",
+        clock=(ClockReading(wall=stack_run.played_from, ts=100.0),),
+        finished_at=stack_run.played_until,
+    )
+    (episode / SNAPSHOT_FILE).write_text(snapshot.model_dump_json())
+    sealed, mirror = (
+        AppendOnlyLog(episode / name, "reach") for name in ("events.sealed.jsonl", "events.mirror.jsonl")
+    )
+    Recorder("reach", sealed, mirror).dual(actor_uid="world", actor_role="trusted", kind="tick", payload={})
+    played = PlayedRun(play_seconds=0.0, episode_trace=None, calibration_trace=None)
+    (run / PLAYED_FILE).write_text(played.model_dump_json())
+    (run / SERVICE_LOGS).mkdir()
+    (run / SERVICE_LOGS / f"{FORGE.name}.log").write_text(stack_run.forge_log_text)
+    return run
+
+
+def test_the_native_client_opens_a_pull_request_through_the_tools_gateway(stack_run: StackRun) -> None:
+    opened = stack_run.native_opened
+
+    assert (opened.get("opened"), opened.get("author")) == (True, NATIVE_AGENT)
+
+
+def test_the_pr_events_built_from_the_forges_log_name_the_agent_whose_key_opened_each_pull_request(
+    stack_run: StackRun,
+    tmp_path: Path,
+) -> None:
+    run = write_played_run(tmp_path, stack_run)
+
+    build_recorded_run_events(CONFIG, run)
+
+    mirror = read_events(run / "episode" / "events.mirror.jsonl")
+    built = sorted((event.actor_uid, event.payload["pr_title"]) for event in mirror if event.kind == "pr")
+    assert built == [(agent, f"opened-by-{agent}") for agent in sorted([AGENT, NATIVE_AGENT, OTHER_AGENT])]

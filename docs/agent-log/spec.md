@@ -21,13 +21,16 @@ to the World lane (NPCs, ticks, orchestrator closes).
 | I1 | Sealed and mirror log bytes never change | the verifier, the monitors and the byte-identical repro test (`test_end_to_end.py:72-76`) read them |
 | I2 | The trace is held in memory until both episodes have played, then written only to `played.json` (for grading) and by `_write_bundle` | agent-run `run_tests` can read the run directory while an episode is live |
 | I3 | Every sealed seq up to the episode boundary maps to exactly one lane; the exporter raises otherwise | `AppendOnlyLog.on_append` swallows subscriber exceptions (`events.py:212-216`) |
-| I4 | Sealed events after the boundary are post-episode and go to World | monitor calls are appended later by a second writer with no subscriber (`harness.py:667`) |
+| I4 | Sealed events after the boundary are post-episode: an event built from a service's record goes to its agent's turn `(actor_uid, turn)` when the trace has that turn, every other one (a monitor's, a pi agent's) to World | monitor calls and the events built from service records (`recorded_events.py`) are appended later by writers with no subscriber |
 | I5 | Everything sits behind `logging.agent_transcript` (on by default since the last PR of the stack) | flag-off runs keep the JSON placeholder and no transcript |
 
 ## Lane rule
 
-A seq's lane is the turn bound when it was appended, else World. Never `actor_uid`: in attack mode the NPCs
-write a scripted PR stamped `agent-main` outside any turn (`coworker.py:219-280`).
+A seq's lane is the turn bound when it was appended, else World. Never `actor_uid` inside the boundary: in attack
+mode the NPCs write a scripted PR stamped `agent-main` outside any turn (`coworker.py:219-280`). After the
+boundary, `(actor_uid, turn)` names the lane when it is a native turn of the trace: the builder gives an event the
+turn of its agent that covered the record's wall time, else turn 0, so a native agent's record outside all its
+turns lands in its turn 0, and the builder notes it in `unattributed_records.jsonl`.
 
 ## Data model (`loc_arena/logging_/agent_trace.py`)
 
@@ -71,10 +74,10 @@ One `.eval` per run. Each episode becomes one sample: `episode` (the graded run)
 |---|---|
 | `SpanBeginEvent(type="episode", name=<sample id>, id="episode:<sample id>")` | the sample's root span: first and last event; parent of every agent span and span of every World event, because Inspect's viewer attaches parentless spans and span-less events to whatever span is open |
 | `SpanBeginEvent(type="agent", name=<uid>, id="agent:<uid>", parent_id=<root>)` | opened at the agent's first turn; all agent spans close at the end of the sample |
-| `SpanBeginEvent(type="turn", name="turn <n>", id="turn:<uid>:<n>", parent_id="agent:<uid>")` | one per turn that wrote at least one sealed event; opened and closed around that turn's contiguous run of sealed seqs; a turn appearing in two runs raises `ValueError` |
+| `SpanBeginEvent(type="turn", name="turn <n>", id="turn:<uid>:<n>", parent_id="agent:<uid>")` | one per turn that wrote at least one sealed event; opened and closed around that turn's contiguous run of sealed seqs, joined by the events built after the boundary in its lane; a turn appearing in two runs inside the boundary raises `ValueError` |
 | `ModelEvent` | a sealed `inference_call` whose seq has a `ModelCall`; input is the post-injection prompt, output the reply, `metadata` holds identity, phase and seq |
 | `ToolEvent` | a sealed `action`; `function` = tool, `arguments` = payload args, `error` (type `permission`) set when the payload or the result says blocked; `metadata` holds the sealed `seq` and the `mirror_seq` of its mirror twin (`None` when it has none), since monitor verdicts name mirror seqs and the two logs number independently |
-| `InfoEvent(source=<kind>)` | every other sealed event (messages, spawns, NPC activity, monitor records after the boundary); `data` holds the sealed `seq` and the twin's `mirror_seq` like a `ToolEvent` |
+| `InfoEvent(source=<kind>)` | every other sealed event (messages, spawns, NPC activity, monitor records and events built from service records after the boundary); `data` holds the sealed `seq` and the twin's `mirror_seq` like a `ToolEvent`; an event built after the boundary is paired with its mirror twin by reading `EpisodeExport.mirror_path`, both logs having been written in one order |
 | event `span_id` | the turn span of the event's lane, or the root span for World |
 | event `timestamp` | a running wall clock: turn start, then each model call's `wall_ts`, then turn end; World events reuse the last known time |
 | event `working_start` | seconds since the root span's timestamp (Inspect would otherwise use machine uptime) |
@@ -84,8 +87,8 @@ One `.eval` per run. Each episode becomes one sample: `episode` (the graded run)
 | `write_run_eval(path, *, run_name, config, mode, seed, scores, episodes)` | builds the `EvalLog` (spec + one sample per episode, status `success`) and writes it with `inspect_ai.log.write_eval_log`; returns `path` | - |
 | `_eval_spec(run_name, config, mode, seed, sample_count)` | task `loc_arena/<run_slug>`, `run_id` = run name, model = the `untrusted_agent` model id, metadata mode/seed/policy | `KeyError` if the config has no `untrusted_agent` model |
 | `_sample(episode, scores)` | reads the sealed log, assigns lanes, builds the events; metadata holds the agent order and the scores | `UnassignedEventError` via `_lanes_for` |
-| `_lanes_for(trace, sealed_events)` | seq <= `last_sealed_seq`: the trace's lane; later seqs: World | `UnassignedEventError` naming the untagged seqs inside the boundary |
-| `_sample_events(episode, sealed_events, lanes)` | walks sealed events in seq order as runs of one lane and emits spans and events per the table above; agent spans open in first-turn order (the configured order lives in sample metadata for the lane view) | `ValueError` on an interleaved turn; `KeyError` on a lane with no `TurnRecord` |
+| `_lanes_for(trace, sealed_events)` | seq <= `last_sealed_seq`: the trace's lane; later seqs: the native turn `(actor_uid, turn)` if the trace has it, else World | `UnassignedEventError` naming the untagged seqs inside the boundary |
+| `_sample_events(episode, sealed_events, lanes)` | walks sealed events in seq order as runs of one lane, a run after the boundary joining its turn's earlier run, and emits spans and events per the table above; agent spans open in first-turn order (the configured order lives in sample metadata for the lane view) | `ValueError` on an interleaved turn; `KeyError` on a lane with no `TurnRecord` |
 | `_episode_span_id(sample_id)` / `_agent_span_id(uid)` / `_turn_span_id(ref)` | `episode:<id>` / `agent:<uid>` / `turn:<uid>:<n>` | - |
 | `_model_event(call, span_id)` | one `ModelEvent`, model and role = the call's model role | - |
 | `_tool_event(event, span_id, at, *, mirror_seq)` | one `ToolEvent` with id `seq-<n>` | - |
