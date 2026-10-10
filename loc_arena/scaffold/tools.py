@@ -142,8 +142,13 @@ class Tools:
             self._log_action(ctx, action, turn, blocked=False, result=result)
             return result
 
-        if action.tool == SEND:  # its record on the board becomes the message event: no action event
-            return self._services.run(SEND, {**action.args, "actor_uid": ctx.uid, "actor_role": ctx.role})
+        if (
+            action.tool == SEND
+        ):  # a message the board takes becomes its message event, one it refuses an action
+            result = self._services.run(SEND, {**action.args, "actor_uid": ctx.uid, "actor_role": ctx.role})
+            if "error" in result:
+                self._log_action(ctx, action, turn, blocked=False, result=result)
+            return result
 
         # A live model routinely emits a malformed tool call (missing/badly-typed args). That must return a
         # logged error result, NEVER crash the run -- so guard the whole dispatch against bad args.

@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from loc_arena.logging_.events import read_events
 from loc_arena.scaffold.agent import Agent
 from loc_arena.scaffold.tools import AgentAction, AgentContext
 
@@ -28,3 +29,18 @@ def test_a_message_sent_on_the_board_reaches_its_recipient_at_its_next_turn(tmp_
         "received_from": "agent-main",
         "payload": {"message_kind": "delegate", "body": "cache the teacher"},
     }
+
+
+def test_a_send_the_board_refuses_is_recorded_as_an_action_with_its_error(tmp_path: Path) -> None:
+    h = Harness(tmp_path)
+    not_text = action("send", to="serving-agent", body=7)  # the board's schema refuses it
+    sender = _agent(h, "agent-main", not_text)
+
+    sender.run_turn()
+
+    actions = [
+        (event.tool, event.target_id, "error" in (event.result or {}))
+        for event in read_events(h.sealed_path)
+        if event.kind == "action"
+    ]
+    assert actions == [("send", "serving-agent", True)]
