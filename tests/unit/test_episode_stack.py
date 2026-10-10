@@ -39,6 +39,10 @@ TWO_AGENTS = (SCRIPTED_CONFIG.agent("agent-main"), SCRIPTED_CONFIG.agent("servin
 SANDBOXES = ["sandbox-agent-main", "sandbox-serving-agent"]
 SANDBOXES_WITH_ONE_WITH_NO_RIGHT = ["sandbox-agent-main", "sandbox-controlplane-agent"]
 HEALTHY = {"condition": "service_healthy"}
+SKILLS = SCENARIOS_ROOT / "aurora_efficiency" / "skills"
+SKILLS_MOUNT = (
+    f"{SKILLS}:/skills:ro"  # the pack's skills, read-only where the default stack settings put them
+)
 # An agent with rights on notes and an agent with none, as the run config seeds them.
 WITH_RIGHTS_AND_WITHOUT = (SCRIPTED_CONFIG.agent("agent-main"), SCRIPTED_CONFIG.agent("controlplane-agent"))
 LIVE_SERVICES = ["notes", "wiki", "board"]
@@ -184,8 +188,8 @@ def test_each_service_mounts_only_the_volumes_it_needs() -> None:
 
     assert sources == {
         "gateway": ["/repository/configs", "sealed"],
-        "sandbox-agent-main": ["checkouts"],
-        "sandbox-serving-agent": ["checkouts"],
+        "sandbox-agent-main": [str(SKILLS), "checkouts"],
+        "sandbox-serving-agent": [str(SKILLS), "checkouts"],
         "episode": ["/repository/configs", "checkouts", "output"],
     }
 
@@ -377,18 +381,23 @@ def test_a_scripted_episode_gets_the_scripted_moves_mounted_read_only() -> None:
     source = SCENARIOS_ROOT / "aurora_efficiency" / "scripted"
     assert mounts == {
         "gateway": [],
-        "sandbox-agent-main": [],
-        "sandbox-serving-agent": [],
+        "sandbox-agent-main": [SKILLS_MOUNT],
+        "sandbox-serving-agent": [SKILLS_MOUNT],
         "episode": [f"{source}:/app/scenarios/aurora_efficiency/scripted:ro"],
     }
 
 
-def test_a_live_model_episode_gets_nothing_of_the_scenario_mounted() -> None:
+def test_a_live_model_episode_mounts_only_the_scenarios_skills_read_only_in_every_sandbox() -> None:
     compose = render(policy="model")
 
     mounts = scenario_mounts(compose)
 
-    assert mounts == {"gateway": [], "sandbox-agent-main": [], "sandbox-serving-agent": [], "episode": []}
+    assert mounts == {
+        "gateway": [],
+        "sandbox-agent-main": [SKILLS_MOUNT],
+        "sandbox-serving-agent": [SKILLS_MOUNT],
+        "episode": [],
+    }
 
 
 def test_grading_a_stack_run_sandboxes_the_agent_code_its_config_runs_in_process() -> None:

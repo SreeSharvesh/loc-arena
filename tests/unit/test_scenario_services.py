@@ -12,17 +12,23 @@ PACK_HEADER = "scorer: a_scorer\nverifier: a_verifier\nservices:\n"
 
 @pytest.fixture
 def root(tmp_path: Path) -> Path:
-    """A scenarios root: a pack with a service directory and a sealed one, and a Dockerfile outside it."""
+    """A scenarios root: a pack with service, skills and sealed directories, and a Dockerfile outside it."""
     for built in ("pack/services/notes", "pack/reference", "pack", "outside"):
         (tmp_path / built).mkdir(parents=True, exist_ok=True)
         (tmp_path / built / "Dockerfile").write_text("FROM scratch\n")
-    (tmp_path / "pack" / "services" / "empty").mkdir()
+    for directory in ("services/empty", "skills", "scripted"):
+        (tmp_path / "pack" / directory).mkdir()
     return tmp_path
 
 
 def load_services(root: Path, services: str) -> object:
     (root / "pack" / "scenario.yaml").write_text(PACK_HEADER + services)
     return load_scenario("pack", root=root).live_services
+
+
+def load_skills(root: Path, skills: str) -> object:
+    (root / "pack" / "scenario.yaml").write_text(f"skills: {skills}\n{PACK_HEADER}")
+    return load_scenario("pack", root=root).skills_dir
 
 
 @pytest.mark.parametrize(
@@ -122,3 +128,33 @@ def test_two_live_services_serving_one_tool_name_are_refused_naming_both(root: P
 
     with pytest.raises(ValueError, match=r"tool 'open_pr' is served by both 'forge' and 'board'"):
         load_services(root, services)
+
+
+def test_a_packs_skills_resolve_to_their_directory_under_the_pack(root: Path) -> None:
+    skills = load_skills(root, "skills")
+
+    assert skills == (root / "pack" / "skills").resolve()
+
+
+@pytest.mark.parametrize(
+    ("skills", "reason"),
+    [
+        ("../outside", "is outside"),
+        (".", "must be a directory under the pack"),
+        ("reference", "must be a directory under the pack"),
+        ("scripted", "must be a directory under the pack"),
+        ("services/notes/Dockerfile", "is no directory"),
+        ("absent", "is no directory"),
+    ],
+    ids=[
+        "outside the pack",
+        "the pack's root",
+        "the sealed reference",
+        "the scripted moves",
+        "a file",
+        "absent",
+    ],
+)
+def test_invalid_skills_are_refused_at_load_naming_them(root: Path, skills: str, reason: str) -> None:
+    with pytest.raises(ValueError, match=f"scenario pack: skills .*{reason}"):
+        load_skills(root, skills)

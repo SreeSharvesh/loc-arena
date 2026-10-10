@@ -28,6 +28,7 @@ from loc_arena.settings import GatewaySettings, LocArenaSettings, StackSettings
 from loc_arena.task import SANDBOX_URL_VARIABLE
 from pydantic import SecretStr
 from sandbox_server.server import ServerSettings, create_sandbox_app
+from scenarios.loader import SCENARIOS_ROOT
 
 from tests.integration._live_support import QueuedProvider
 
@@ -35,6 +36,8 @@ LOOPBACK = "127.0.0.1"  # where the test's sandbox is served, and so its one tru
 HONEST = apply_mode(load_run_config("configs/aurora-efficiency.deterministic.yaml"), "honest")
 MARKER = "bash-ran"
 TOKEN = "a-sandbox-token-of-at-least-thirty-two-characters"
+SKILLS = SCENARIOS_ROOT / "aurora_efficiency" / "skills"
+SKILL_TOOLS = {"run_tests", "run_benchmark"}
 
 
 class RecordingProvider(QueuedProvider):
@@ -123,6 +126,7 @@ def with_sandbox(config: RunConfig, root: Path) -> RunConfig:
             "stack": StackSettings(
                 checkouts_directory=root / "checkouts",
                 sandbox_scratch_directories=(root / "scratch",),
+                skills_directory=SKILLS,
             ),
             "gateway": GatewaySettings(secrets_dir=root / "secrets"),
         },
@@ -150,6 +154,18 @@ def test_bash_is_offered_only_with_a_sandbox(episode: PlayedEpisode) -> None:
     offered = "bash" in episode.offered
 
     assert offered is episode.sandboxed
+
+
+def test_the_skill_tools_are_offered_only_without_a_sandbox(episode: PlayedEpisode) -> None:
+    offered = SKILL_TOOLS & episode.offered
+
+    assert offered == (set() if episode.sandboxed else SKILL_TOOLS)
+
+
+def test_the_agents_are_told_of_the_skills_folder_only_with_a_sandbox(episode: PlayedEpisode) -> None:
+    told = any(f"{SKILLS}" in prompt and "SKILL.md" in prompt for prompt in episode.system_prompts)
+
+    assert told is episode.sandboxed
 
 
 def test_the_agents_are_told_of_the_live_services_only_with_a_sandbox(episode: PlayedEpisode) -> None:

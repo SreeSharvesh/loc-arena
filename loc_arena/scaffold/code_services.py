@@ -13,10 +13,10 @@ checkout, so the untrusted agent
 code (``bash``, ``run_tests``, ``run_benchmark``) run in the calling agent's own sandbox when sandboxes are
 given (a stack run), which sees the checkouts and nothing of the episode; an agent with none gets an error and
 nothing runs. Without sandboxes, ``bash`` is refused, since it is not confined to the checkout, and the other
-two run in this process. Tests and the benchmark run
-with the plain venv interpreter + ``PYTHONPATH`` over the seven side-by-side repos (never ``uv run``, which
-cannot resolve the copied repos' deps). The benchmark reports the company's own inline cost
-accounting as honest DIRECTIONAL feedback; it never reads or moves the sealed grade meter.
+two run in this process. ``run_tests`` and ``run_benchmark`` run the scenario's skill scripts, which a stack
+run's agents run with bash instead, with the plain venv interpreter (never ``uv run``, which cannot resolve
+the copied repos' deps). The benchmark reports the company's own inline cost accounting as honest DIRECTIONAL
+feedback; it never reads or moves the sealed grade meter.
 """
 
 from __future__ import annotations
@@ -54,7 +54,6 @@ class CodeServices:
             "grep",
             "run_tests",
             "run_benchmark",
-            "profile",
             "bash",
         },
     )
@@ -67,18 +66,21 @@ class CodeServices:
         repos: list[str],
         stack: StackSettings,
         sandboxes: Mapping[str, SandboxClient] | None = None,
+        skills: Path | None = None,
         python_exe: str = sys.executable,
     ) -> None:
         """Wire the layer to a base ``Services``, the checkout, the repos, the settings and the interpreter.
 
         ``sandboxes``, each agent's by its id, are given only in the episode container: an agent's code then
-        runs in its own, ``bash`` included. Without them, ``bash`` is refused.
+        runs in its own, ``bash`` included. Without them, ``bash`` is refused. ``skills`` is the scenario's
+        skills folder where the agents' code runs.
         """
         self._base = base
         self._checkout = checkout.resolve()
         self._repos = list(repos)
         self._stack = stack
         self._sandboxes = sandboxes
+        self._skills = skills
         self._py = python_exe
 
     def _resolve(self, rel: str) -> Path:
@@ -190,28 +192,37 @@ class CodeServices:
 
     _t_grep = _t_search_code
 
-    # --- test + benchmark ----------------------------------------------------------------------------
+    # --- the skills' scripts as tools, offered in process alone; #99 step 6 removes them --------------
     def _t_run_tests(self, args: dict[str, Any]) -> dict[str, Any]:
         repo = str(args.get("repo", ""))
-        if repo not in self._repos:
-            return {"error": f"unknown repo {repo!r}; choices: {self._repos}"}
-        command = [self._py, "-m", "pytest", "-q", "-p", "no:cacheprovider"]
-        timeout = self._stack.run_tests_timeout_seconds
-        res = self._execute(str(args["actor_uid"]), command, self._checkout / repo, timeout)
-        out = res.stdout.strip().splitlines()
-        summary = out[-1] if out else (res.stderr.strip().splitlines()[-1:] or [""])[0]
-        return {"repo": repo, "passed": res.returncode == 0, "returncode": res.returncode, "summary": summary}
+        return self._run_skill(
+            args,
+            "run-tests/scripts/run_tests.py",
+            [repo],
+            self._stack.run_tests_timeout_seconds,
+        )
 
     def _t_run_benchmark(self, args: dict[str, Any]) -> dict[str, Any]:
         """Agent-facing cost feedback via the company's OWN inline meter (not the sealed grade)."""
-        command = [self._py, "-c", _BENCH_SRC]
         timeout = self._stack.run_benchmark_timeout_seconds
-        res = self._execute(str(args["actor_uid"]), command, self._checkout, timeout)
-        if res.returncode != 0:
-            return {"error": "benchmark failed", "stderr": res.stderr[-500:]}
-        return cast(dict[str, Any], json.loads(res.stdout.strip().splitlines()[-1]))
+        return self._run_skill(args, "run-benchmark/scripts/run_benchmark.py", [], timeout)
 
-    _t_profile = _t_run_benchmark
+    def _run_skill(
+        self,
+        args: dict[str, Any],
+        script: str,
+        arguments: list[str],
+        timeout: float,
+    ) -> dict[str, Any]:
+        """What the skill ``script`` prints last, run with ``arguments`` from the checkout."""
+        if self._skills is None:
+            return {"error": "this scenario has no skills"}
+        command = [self._py, str(self._skills / script), *arguments]
+        res = self._execute(str(args["actor_uid"]), command, self._checkout, timeout)
+        try:
+            return cast(dict[str, Any], json.loads(res.stdout.strip().splitlines()[-1]))
+        except (IndexError, json.JSONDecodeError):
+            return {"error": f"{script} printed no result", "stderr": res.stderr[-500:]}
 
     # --- shell ---------------------------------------------------------------------------------------
     def _t_bash(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -227,27 +238,3 @@ class CodeServices:
         if res.returncode is None:
             return {**res.model_dump(), "error": f"timed out after {timeout:g} seconds"}
         return res.model_dump()
-
-
-# A small, self-contained agent-facing benchmark: runs a representative datapipe slice over a fixed sample and
-# reports the company's inline cost accounting. Directional feedback only; NOT the sealed grade.
-_BENCH_SRC = r"""
-import json
-from meridian_common import cost
-from meridian_datapipe.dedup import near
-from meridian_datapipe.tokenize.tokenizer import Tokenizer
-from meridian_datapipe.tokenize.vocab import Vocabulary
-from meridian_datapipe.types import Document
-cost.reset()
-docs = [
-    Document(doc_id=f"d{i}", text=("alpha beta gamma delta " * (2 + i % 4)) + f" tail{i % 7}")
-    for i in range(40)
-]
-kept = near.dedup(docs, threshold=0.8)
-survivors = [d for d in docs if d.doc_id in set(kept.kept_ids)]
-vocab = Vocabulary.from_texts([d.text for d in survivors])
-tok = Tokenizer(vocab)
-for d in survivors:
-    tok.encode(d.text)
-print(json.dumps({"cost": cost.total(), "by_kind": cost.snapshot()}))
-"""
