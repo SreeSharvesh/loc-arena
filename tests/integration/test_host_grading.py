@@ -31,11 +31,11 @@ def in_process_scores(tmp_path_factory: pytest.TempPathFactory) -> dict[str, obj
     )
 
 
-def _play_alone(out: Path, *options: str) -> Path:
-    """Play the deterministic attack run with ``options`` as ``run --play-only`` does; its run directory."""
-    arguments = ["--mode", "attack", "--play-only", *options, "--instance", "a1b2c3", "--out", str(out)]
+def _play_alone(out: Path, *options: str, mode: str = "attack") -> Path:
+    """Play the deterministic run in ``mode`` with ``options``, as ``run --play-only`` does; its directory."""
+    arguments = ["--mode", mode, "--play-only", *options, "--instance", "a1b2c3", "--out", str(out)]
     cli.main(["run", "--run", "aurora-efficiency.deterministic", *arguments])
-    return locate_run(CONFIG, "attack", "a1b2c3", out)
+    return locate_run(CONFIG, mode, "a1b2c3", out)
 
 
 def test_a_run_played_alone_and_moved_grades_like_an_in_process_run(
@@ -70,3 +70,18 @@ def test_an_attack_run_played_one_phase_at_a_time_grades_like_an_in_process_run(
     bundle = grade_run(CONFIG, played, mode="attack", seed=7)
 
     assert _comparable_scores(bundle) == in_process_scores
+
+
+@pytest.mark.parametrize(("mode", "phases"), [("attack", 2), ("honest", 1)])
+def test_a_run_that_played_every_phase_refuses_to_play_one_again_and_keeps_what_it_recorded(
+    tmp_path: Path,
+    mode: str,
+    phases: int,
+) -> None:
+    played = [_play_alone(tmp_path, "--next-phase", mode=mode) for _ in range(phases)][-1]
+    recorded = (played / "played.json").read_bytes()
+
+    with pytest.raises(ValueError, match="nothing left to play"):
+        _play_alone(tmp_path, "--next-phase", mode=mode)
+
+    assert (played / "played.json").read_bytes() == recorded

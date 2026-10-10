@@ -450,9 +450,15 @@ def renew_services(
         raise StackError(
             f"could not copy {', '.join(failed)} out before the honest twin, so nothing was renewed",
         )
-    for (_, into), done in zip(copies, logged, strict=True):
-        with into.open("ab") as output:
-            output.write(done.stdout)
+    try:  # every file opened before any is written, so one that cannot be leaves the others untouched
+        with contextlib.ExitStack() as files:
+            outputs = [files.enter_context(into.open("ab")) for _, into in copies]
+            for output, done in zip(outputs, logged, strict=True):
+                output.write(done.stdout)
+    except OSError as error:
+        raise StackError(
+            f"could not write the logs before the honest twin, so nothing was renewed: {error}",
+        ) from error
     renewed = [*(sandbox_service(agent.id) for agent in config.agents), *_list_logged_services(config)]
     recreate = ["up", "--detach", "--wait", "--force-recreate", "--renew-anon-volumes", "--no-deps"]
     if subprocess.run([*compose, *recreate, *renewed], env=environment).returncode != 0:
@@ -520,8 +526,11 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
 
     def copied(command: list[str], into: Path | None = None) -> bool:
         """Whether compose ran ``command``, with what it prints added ``into`` that file when given."""
-        with into.open("ab") if into else contextlib.nullcontext() as output:
-            return run_compose(command, stdout=output).returncode == 0
+        try:
+            with into.open("ab") if into else contextlib.nullcontext() as output:
+                return run_compose(command, stdout=output).returncode == 0
+        except OSError:  # a file that cannot be written is a failed copy: the others are still tried
+            return False
 
     call_log = logs / "gateway" / f"{project}.calls.jsonl"
     service_logs = logs / "services"

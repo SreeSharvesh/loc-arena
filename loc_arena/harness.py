@@ -422,7 +422,7 @@ def play_run(
     The episode plays in ``run_directory/episode`` and the twin in ``run_directory/honest_cal``, each leaving
     its ``snapshot.json``; ``played.json`` at the root holds the play time and the per-agent traces. With
     ``next_phase`` only the first phase ``played.json`` lacks plays, so a stack run can renew its services
-    before the twin.
+    before the twin; with none left, it raises ``ValueError``.
     """
     run_directory.mkdir(parents=True, exist_ok=True)
     start = time.perf_counter()
@@ -432,6 +432,8 @@ def play_run(
         if next_phase and played_file.exists()
         else None
     )
+    if earlier and (mode == "honest" or earlier.failed_model_calls.calibration is not None):
+        raise ValueError(f"{run_directory} has played every phase of its {mode} run: nothing left to play")
     episode = (
         _recall_episode(earlier)
         if earlier

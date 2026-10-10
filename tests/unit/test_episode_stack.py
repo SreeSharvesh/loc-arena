@@ -23,6 +23,7 @@ from loc_arena.episode_stack import (
     Identity,
     StackError,
     render_compose,
+    renew_services,
     run_in_stack,
     sandbox_agent_code,
 )
@@ -806,6 +807,9 @@ class FakeDocker:
     failing: str = "no subcommand"  # the compose subcommand or option whose call fails
     episode_created_only: bool = False  # a live service never became healthy, so the episode never started
     plays_passing: int = 0  # how many plays of the episode exit 0 before one exits 1
+    unwritable_after_first_play: Path | None = (
+        None  # a log file that becomes a directory once the episode played
+    )
     calls: list[list[str]] = field(default_factory=list)
     environment: dict[str, str] = field(default_factory=dict)
 
@@ -823,6 +827,9 @@ class FakeDocker:
         if verb == "logs" and stdout is not None:
             stdout.write(NOTES_LOG)
         playing = verb == "up" and "--attach" in command
+        if playing and self.unwritable_after_first_play and self.plays == 1:
+            self.unwritable_after_first_play.unlink()
+            self.unwritable_after_first_play.mkdir()
         failed = self.failing in command[COMPOSE_PREFIX_LENGTH:] or (
             playing and self.plays > self.plays_passing
         )
@@ -1071,3 +1078,30 @@ def test_the_honest_twin_plays_in_the_episodes_container_though_its_image_tag_mo
 
     plays = [call for call in docker.calls if "--attach" in call]
     assert ["--no-recreate" in play for play in plays] == [True, True]
+
+
+def test_a_log_file_that_cannot_be_written_before_the_honest_twin_renews_nothing_and_writes_no_log(
+    docker: FakeDocker,
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "notes.log").mkdir()
+    compose = ["docker", "compose", "-p", "locarena-test", "-f", "compose.yaml", "--project-directory", "."]
+
+    with pytest.raises(StackError, match="nothing was renewed"):
+        renew_services(SCRIPTED_CONFIG, compose, tmp_path, {})
+
+    renewed = [call for call in docker.calls if "--force-recreate" in call]
+    assert (renewed, sorted(path.name for path in tmp_path.iterdir())) == ([], ["notes.log"])
+
+
+def test_a_log_file_that_cannot_be_written_at_teardown_keeps_the_project_after_every_other_copy(
+    docker: FakeDocker,
+    tmp_path: Path,
+) -> None:
+    docker.unwritable_after_first_play = tmp_path / "services" / "notes.log"
+
+    with pytest.raises(StackError, match="kept compose project"):
+        run_aurora_in_stack(tmp_path)
+
+    copied = (tmp_path / "services" / "agentgateway.log").read_bytes()
+    assert (copied, docker.verbs[-1], "down" in docker.verbs) == (NOTES_LOG, "stop", False)
