@@ -380,6 +380,24 @@ class PlayedRun(BaseModel):
 PLAYED_FILE = "played.json"
 
 
+@dataclasses.dataclass(frozen=True)
+class RecalledEpisode:
+    """What ``played.json`` keeps of an episode played in an earlier call, as its ``Snapshot`` gave it."""
+
+    trace: EpisodeTrace | None
+    stopped_at_wall_clock_ceiling: bool
+    failed_model_calls: int
+
+
+def _recall_episode(played: PlayedRun) -> RecalledEpisode:
+    ceiling = played.wall_clock_ceiling
+    return RecalledEpisode(
+        played.episode_trace,
+        bool(ceiling and ceiling.episode_stopped),
+        played.failed_model_calls.episode,
+    )
+
+
 def locate_run(config: RunConfig, mode: str, instance_id: str, out_root: Path) -> Path:
     """The directory of one run, ``out_root/<run_slug>/<run_name>``; its instance id is letters and digits."""
     if not instance_id.isalnum():
@@ -397,19 +415,38 @@ def play_run(
     robust: bool = True,
     provider: Any = None,
     calibration_provider: Any = None,
+    next_phase: bool = False,
 ) -> None:
     """Play the episode in ``mode`` and, in attack mode, its honest twin; leave what grading needs on disk.
 
     The episode plays in ``run_directory/episode`` and the twin in ``run_directory/honest_cal``, each leaving
-    its ``snapshot.json``; ``played.json`` at the root holds the play time and the per-agent traces.
+    its ``snapshot.json``; ``played.json`` at the root holds the play time and the per-agent traces. With
+    ``next_phase`` only the first phase ``played.json`` lacks plays, so a stack run can renew its services
+    before the twin; with none left, it raises ``ValueError``.
     """
     run_directory.mkdir(parents=True, exist_ok=True)
     start = time.perf_counter()
-    played_config = apply_mode(config, mode)
-    episode = _play_by_policy(played_config, run_directory / "episode", robust=robust, provider=provider)
+    played_file = run_directory / PLAYED_FILE
+    earlier = (
+        PlayedRun.model_validate_json(played_file.read_text())
+        if next_phase and played_file.exists()
+        else None
+    )
+    if earlier and (mode == "honest" or earlier.failed_model_calls.calibration is not None):
+        raise ValueError(f"{run_directory} has played every phase of its {mode} run: nothing left to play")
+    episode = (
+        _recall_episode(earlier)
+        if earlier
+        else _play_by_policy(
+            apply_mode(config, mode),
+            run_directory / "episode",
+            robust=robust,
+            provider=provider,
+        )
+    )
     twin = (
         None
-        if mode == "honest"
+        if mode == "honest" or (next_phase and not earlier)
         else _play_by_policy(
             apply_mode(config, "honest"),
             run_directory / "honest_cal",
@@ -418,7 +455,7 @@ def play_run(
         )
     )
     played = PlayedRun(
-        play_seconds=time.perf_counter() - start,
+        play_seconds=time.perf_counter() - start + (earlier.play_seconds if earlier else 0),
         episode_trace=episode.trace,
         calibration_trace=twin.trace if twin else None,
         wall_clock_ceiling=WallClockCeiling(
@@ -433,7 +470,7 @@ def play_run(
             calibration=twin.failed_model_calls if twin else None,
         ),
     )
-    (run_directory / PLAYED_FILE).write_text(played.model_dump_json())
+    played_file.write_text(played.model_dump_json())
 
 
 def _grade_played(directory: Path, config: RunConfig, trace: EpisodeTrace | None) -> EpisodeResult:
