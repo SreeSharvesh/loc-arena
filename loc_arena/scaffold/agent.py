@@ -102,8 +102,12 @@ class Agent:
         *,
         clock: Callable[[], float] = time.time,
         trace: AgentTrace | None = None,
+        receives: bool = True,
     ) -> None:
-        """Wire the agent to its context, agent policy, tools, registry, turn minter, and budget."""
+        """Wire the agent to its context, agent policy, tools, registry, turn minter, and budget.
+
+        With ``receives`` false, as for an agent not offered the board's ``read``, no turn delivers messages.
+        """
         self.ctx = ctx
         self._agent_policy = agent_policy
         self._tools = tools
@@ -112,6 +116,7 @@ class Agent:
         self._turn_budget = turn_budget
         self._clock = clock
         self._trace = trace
+        self._receives = receives
         self._turn = 0
         self.transcript: Transcript = []
         self._skips = 0
@@ -135,7 +140,7 @@ class Agent:
         self.ctx.client.set_turn_token(self._minter.mint(self.ctx.uid, turn))
         try:
             with self._trace.turn(self.ctx.uid, turn) if self._trace is not None else nullcontext():
-                for message in self._tools.receive(self.ctx, turn):
+                for message in self._tools.receive(self.ctx, turn) if self._receives else []:
                     payload = {"message_kind": message.get("kind"), "body": message.get("body")}
                     self.transcript.append({"received_from": message.get("sender"), "payload": payload})
                 actions = self._agent_policy.next_actions(self.ctx.uid, turn, self.transcript)

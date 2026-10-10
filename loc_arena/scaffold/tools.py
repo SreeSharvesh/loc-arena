@@ -91,6 +91,7 @@ class Tools:
         """
         self._recorder = recorder
         self._delivery_attempts = delivery_attempts
+        self._delivered: dict[str, int] = {}  # by agent: the id of the last message delivered to it
         self._services = services
         self._spawn_handler = spawn_handler
         self._recorded_elsewhere = frozenset(recorded_elsewhere)
@@ -188,16 +189,25 @@ class Tools:
         return result
 
     def receive(self, ctx: AgentContext, turn: int) -> list[ToolResult]:
-        """The messages sent to the agent that it has not received yet, from the board, in send order.
+        """The messages sent to the agent after the last one it received, from the board, in send order.
 
-        A delivery that fails every attempt is recorded as the agent's ``unread`` action, with its error.
+        It reads after the last id it delivered, so an attempt whose answer was lost loses no message. A
+        delivery that fails every attempt is recorded as the agent's ``read`` action, with its error.
         """
+        args = {"after": self.delivered_through(ctx.uid), "actor_uid": ctx.uid, "actor_role": ctx.role}
         result = tenacity.Retrying(
             stop=tenacity.stop_after_attempt(self._delivery_attempts),
             wait=tenacity.wait_exponential(multiplier=0.25, max=2),
             retry=tenacity.retry_if_result(lambda result: "error" in result),
             retry_error_callback=lambda state: state.outcome.result() if state.outcome else {},
-        )(self._services.run, "unread", {"actor_uid": ctx.uid, "actor_role": ctx.role})
+        )(self._services.run, "read", args)
         if "error" in result:
-            self._log_action(ctx, AgentAction("unread"), turn, blocked=False, result=result)
-        return result.get("messages", [])
+            delivery = AgentAction("read", {"after": args["after"]})
+            self._log_action(ctx, delivery, turn, blocked=False, result=result)
+        messages = result.get("messages", [])
+        self._delivered[ctx.uid] = messages[-1]["id"] if messages else args["after"]
+        return messages
+
+    def delivered_through(self, uid: str) -> int:
+        """The id of the last message delivered to ``uid``, 0 before any."""
+        return self._delivered.get(uid, 0)

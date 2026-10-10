@@ -1,13 +1,21 @@
 """The native loop's messages travel on the board, delivered at the recipient's next turn."""
 
+import dataclasses
+import json
 from pathlib import Path
 from typing import Any
 
+from loc_arena.config import load_run_config
+from loc_arena.harness import play_run
 from loc_arena.logging_.events import read_events
 from loc_arena.scaffold.agent import Agent
 from loc_arena.scaffold.tools import AgentAction, AgentContext, Services, ToolResult
 
+from tests.integration._live_support import QueuedProvider
 from tests.integration._scaffold_support import Harness, action, scripted
+
+LIVE = dataclasses.replace(load_run_config("configs/aurora-efficiency.deterministic.yaml"), policy="model")
+LOOK_AROUND = json.dumps({"tool": "list_dir", "args": {"path": "."}})
 
 
 def _agent(h: Harness, uid: str, *actions: AgentAction) -> Agent:
@@ -17,18 +25,19 @@ def _agent(h: Harness, uid: str, *actions: AgentAction) -> Agent:
     return Agent(ctx, scripted(*actions), h.tools(lambda c, a, t: {}), h.registry, h.minter, 5, clock=h.clock)
 
 
-class FailingDelivery:
-    """The services, but their first ``failures`` deliveries fail as an unreachable gateway's do."""
+class LostDelivery:
+    """The services, but the answers to their first ``losses`` deliveries are lost after the board ran."""
 
-    def __init__(self, services: Services, failures: int) -> None:
-        """Wrap ``services``, failing their first ``failures`` deliveries."""
-        self._services, self._failures = services, failures
+    def __init__(self, services: Services, losses: int) -> None:
+        """Wrap ``services``, losing the answers to their first ``losses`` deliveries."""
+        self._services, self._losses = services, losses
 
     def run(self, tool: str, args: dict[str, Any]) -> ToolResult:
-        if tool == "unread" and self._failures > 0:
-            self._failures -= 1
-            return {"error": "unread could not be called: the tool server is unreachable", "tool": "unread"}
-        return self._services.run(tool, args)
+        answer = self._services.run(tool, args)
+        if tool not in {"read", "unread"} or self._losses == 0:
+            return answer
+        self._losses -= 1
+        return {"error": f"{tool} could not be called: the tool server is unreachable", "tool": tool}
 
 
 def test_a_message_sent_on_the_board_reaches_its_recipient_at_its_next_turn(tmp_path: Path) -> None:
@@ -61,10 +70,10 @@ def test_a_send_the_board_refuses_is_recorded_as_an_action_with_its_error(tmp_pa
     assert actions == [("send", "serving-agent", True)]
 
 
-def test_a_delivery_that_fails_once_is_tried_again(tmp_path: Path) -> None:
+def test_a_delivery_whose_answer_is_lost_once_delivers_the_message_when_tried_again(tmp_path: Path) -> None:
     h = Harness(tmp_path)
     _agent(h, "agent-main", action("send", to="serving-agent", body="cache the teacher")).run_turn()
-    h.services = FailingDelivery(h.services, failures=1)
+    h.services = LostDelivery(h.services, losses=1)
     recipient = _agent(h, "serving-agent", action("run_benchmark"))
 
     recipient.run_turn()
@@ -74,7 +83,7 @@ def test_a_delivery_that_fails_once_is_tried_again(tmp_path: Path) -> None:
 
 def test_a_delivery_that_keeps_failing_is_recorded_as_an_action_with_its_error(tmp_path: Path) -> None:
     h = Harness(tmp_path)
-    h.services = FailingDelivery(h.services, failures=h.config.settings.stack.tools_delivery_attempts)
+    h.services = LostDelivery(h.services, losses=h.config.settings.stack.tools_delivery_attempts)
     recipient = _agent(h, "serving-agent", action("run_benchmark"))
 
     recipient.run_turn()
@@ -82,6 +91,26 @@ def test_a_delivery_that_keeps_failing_is_recorded_as_an_action_with_its_error(t
     actions = [
         (event.tool, "error" in (event.result or {}))
         for event in read_events(h.sealed_path)
-        if event.kind == "action" and event.tool == "unread"
+        if event.kind == "action" and event.tool in {"read", "unread"}
     ]
-    assert actions == [("unread", True)]
+    assert actions == [("read", True)]
+
+
+def test_an_agent_not_offered_the_boards_read_gets_no_delivery_and_no_error_each_turn(tmp_path: Path) -> None:
+    unoffered = dataclasses.replace(LIVE.agent("serving-agent").sandbox, tools={})
+    config = dataclasses.replace(
+        LIVE,
+        agents=tuple(
+            dataclasses.replace(agent, sandbox=unoffered) if agent.id == "serving-agent" else agent
+            for agent in LIVE.agents
+        ),
+    )
+
+    play_run(config, tmp_path, mode="honest", provider=QueuedProvider({"serving-agent": [LOOK_AROUND] * 3}))
+
+    deliveries = [
+        event
+        for event in read_events(tmp_path / "episode" / "events.sealed.jsonl")
+        if event.kind == "action" and event.tool in {"read", "unread"}
+    ]
+    assert deliveries == []

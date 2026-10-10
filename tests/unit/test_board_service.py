@@ -130,6 +130,14 @@ SENT = ("serving-agent", "send", REPORT)
                 {"id": 2, "sender": "eval-agent", "to": "agent-main", "kind": "inform", "body": "2"},
             ],
         ),
+        (
+            [
+                SENT,
+                ("eval-agent", "send", {"to": "agent-main", "body": "2"}),
+                ("agent-main", "read", {"after": 1}),
+            ],
+            [{"id": 2, "sender": "eval-agent", "to": "agent-main", "kind": "inform", "body": "2"}],
+        ),
     ],
     ids=[
         "the recipient, from the sender its identity names whatever it claims",
@@ -138,6 +146,7 @@ SENT = ("serving-agent", "send", REPORT)
         "unread, each message once",
         "read, what unread already returned",
         "unread, in send order",
+        "read after an id, only the later messages",
     ],
 )
 def test_the_last_caller_reads_the_messages_sent_to_it(calls: list[Call], read: list[dict[str, Any]]) -> None:

@@ -1,8 +1,8 @@
 """The board: the one channel between agents, an MCP service on the official MCP SDK.
 
-``send`` posts a message to one agent; ``read`` returns every message to the caller, and ``unread`` those
-``unread`` has not returned yet, in send order. The sender is the caller's identity, never an argument, and
-the board enforces each agent's recipient allow-list (``scope.message``) itself, since an agent's bash may
+``send`` posts a message to one agent; ``read`` returns the caller's messages after a given id, and ``unread``
+those ``unread`` has not returned yet, in send order. The sender is the caller's identity, never an argument,
+and the board enforces each agent's recipient allow-list (``scope.message``) itself, since an agent's bash may
 reach it through agentgateway too. The ``message`` events monitors read are built from its ``send`` records
 after play. A stack run starts it as the compose service ``board`` (``python -m loc_arena.board <run
 config>``); an in-process run serves each agent its own server over the episode's one ``Board``, in memory.
@@ -72,19 +72,15 @@ class Board:
         self._inboxes[to].append(message)
         return message
 
-    def read(self, agent: str) -> list[Message]:
-        """Every message to ``agent``."""
-        return list(self._inboxes[agent])
+    def read(self, agent: str, after: int = 0) -> list[Message]:
+        """The messages to ``agent`` whose id is above ``after``."""
+        return [message for message in self._inboxes[agent] if message["id"] > after]
 
     def take_unread(self, agent: str) -> list[Message]:
         """The messages to ``agent`` this has not returned yet."""
         unread = self._inboxes[agent][self._delivered[agent] :]
         self._delivered[agent] += len(unread)
         return unread
-
-    def count_unread(self, agent: str) -> int:
-        """How many messages ``take_unread`` would return."""
-        return len(self._inboxes[agent]) - self._delivered[agent]
 
 
 def build_server(
@@ -130,9 +126,11 @@ def build_server(
             raise ToolError(violation.reason) from violation
         return board.post(agent, to, kind, body)
 
-    @server.tool(description="Every message sent to you, oldest first.")
-    async def read() -> Messages:
-        return Messages(messages=board.read(require_caller()))
+    @server.tool(description="The messages sent to you, oldest first; with after, only those after that id.")
+    async def read(
+        after: Annotated[int, Field(description="the id of the last message you have")] = 0,
+    ) -> Messages:
+        return Messages(messages=board.read(require_caller(), after))
 
     @server.tool(description="The messages sent to you since you last called unread, oldest first.")
     async def unread() -> Messages:

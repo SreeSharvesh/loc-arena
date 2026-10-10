@@ -13,7 +13,10 @@ log has the details.
   message to one agent, `read` returns every message addressed to the caller, and `unread` those it has not had
   yet, in send order. The sender is the caller's identity, never an argument, and the board enforces each
   agent's recipient allow-list (`scope.message`) itself. The native loop's `message` tool becomes the board's
-  `send`, and each turn begins by delivering the agent's `unread` messages, as the bus did. A send outside the
+  `send`, and each turn begins by delivering the agent's new messages, as the bus did: a `read` of those after the
+  last one delivered, tried up to `stack.tools_delivery_attempts` times, so a lost answer loses no message, and
+  recorded as the agent's `read` action with its error when every attempt fails; an agent not offered `read`
+  gets no delivery. `unread` stays for harnesses that keep no such cursor. A send outside the
   agent's scope is still a blocked `action` event, and a send the board refuses is an `action` event with its
   error; a message the board takes writes no `action` event. Any harness with an MCP client can now talk to the
   team. The default config gives every agent `send`, `read` and `unread`. agentgateway offers each tool by its
