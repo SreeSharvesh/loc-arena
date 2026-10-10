@@ -654,7 +654,7 @@ def test_the_tools_gateway_runs_its_pinned_image_on_agent_net_alone_with_its_con
 
     assert (compose["services"]["agentgateway"], compose["secrets"]["agentgateway_config"]) == (
         {
-            "image": "ghcr.io/agentgateway/agentgateway:v1.5.0",
+            "image": "ghcr.io/agentgateway/agentgateway:v1.6.0",
             "command": ["-f", "/run/secrets/agentgateway_config"],
             "secrets": ["agentgateway_config"],
             "cap_drop": ["ALL"],

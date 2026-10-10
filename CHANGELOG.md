@@ -16,12 +16,17 @@ log has the details.
   `send`, and each turn begins by delivering the agent's `unread` messages, as the bus did; a refused send is
   still a blocked `action` event, and a sent one writes none. Any harness with an MCP client can now talk to the
   team. The default config gives every agent `send`, `read` and `unread`. agentgateway offers each tool by its
-  own name (`prefixMode: never`), as an in-process run does. An in-process episode holds a fresh board.
+  own name (`prefixMode: never`), as an in-process run does, and is pinned to v1.6.0
+  (`stack.tools_gateway_image`): with two services on its route, v1.5.0 found the service of a 2026-era call
+  by listing every service's tools without the `_meta` envelope the MCP SDK requires, so the call failed; a
+  reach row now proves a client of each protocol era through the route. An in-process episode holds a fresh
+  board. Sources: https://github.com/agentgateway/agentgateway/pull/3372 (the v1.6.0 fix),
+  https://github.com/agentgateway/agentgateway/releases/tag/v1.6.0.
 - **Each agent's tools set in the run config, behind agentgateway (#99).** A live service in `scenario.yaml` lists
   the MCP `tools` it serves, and may run a `module` of the engine image instead of a `build` or `image` (the
   forge, whose world is the harness's). An agent's `sandbox: tools:` lists the tools it may call on each such
   service; a tool the service does not list, a tool named twice, or tools for a service that serves none are
-  refused at load. In a stack run every service with tools sits behind one MCP route of agentgateway v1.5.0
+  refused at load. In a stack run every service with tools sits behind one MCP route of agentgateway v1.6.0
   (`stack.tools_gateway_image`, port `stack.tools_gateway_port`), whose config is generated per run from
   `sandbox: tools:` and reaches it as a compose secret: it admits each agent by the hash of its sandbox token,
   lists it exactly its tools, refuses every other before it reaches the service, and forwards each call with

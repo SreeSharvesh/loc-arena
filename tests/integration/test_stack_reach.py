@@ -62,7 +62,7 @@ from loc_arena.logging_.events import AppendOnlyLog, read_events
 from loc_arena.recorded_events import SERVICE_LOGS
 from loc_arena.sandbox import IDENTITY_PREFIX, TOKEN_FILE
 from loc_arena.scaffold.bus import Recorder
-from loc_arena.task import SNAPSHOT_FILE, ClockReading, SnapshotFile
+from loc_arena.task import SNAPSHOT_FILE, TOOLS_URL_VARIABLE, ClockReading, SnapshotFile
 from loc_arena.tool_records import ToolRecord
 from loc_arena.tools_gateway import (
     MCP_PATH,
@@ -117,6 +117,10 @@ STACK_CONFIG = dataclasses.replace(
 OPENED_REPO = "meridian-serving"  # a repo both agent-main and serving-agent may open a pull request on
 NATIVE_AGENT = "eval-agent"  # whose native MCP client, in the episode, opens a pull request with its key
 NATIVE_OPENED = {"repo": "meridian-evalkit", "title": f"opened-by-{NATIVE_AGENT}"}
+# whose MCP clients, one per protocol era, list and call a tool on the forge and on the board in the episode
+ERA_AGENT = "datapipe-agent"
+ERA_REPO = "meridian-datapipe"  # in its open_pr scope
+MODERN, LEGACY = "auto", "legacy"  # the SDK client's modes: server/discover (2026-era), or initialize first
 GATEWAY_SERVICE = "gateway"
 DOCKER_SOCKET = "docker.sock"
 NOT_ALLOWED_PATH = "not-an-allowed-path"  # a path outside settings.gateway.allowed_paths: nothing leaves
@@ -175,12 +179,16 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+import anyio
+import httpx2
+from mcp import Client
+from mcp.client.streamable_http import streamable_http_client
 from loc_arena.board import Board
 from loc_arena.config import load_run_config
 from loc_arena.forge.forge import Forge
 from loc_arena.forge.world import generate_world
 from loc_arena.live import connect_agent_tools
-from loc_arena.sandbox import SandboxError, connect_sandboxes, reset_sandboxes
+from loc_arena.sandbox import SandboxError, connect_sandboxes, reset_sandboxes, token_secret_name
 from sandbox_server.wire import CommandRequest
 from loc_arena.scaffold.code_services import CodeServices
 from loc_arena.scaffold.tools import StubServices
@@ -210,6 +218,19 @@ tested = run_in(checkout, "run_tests", {{"repo": "meridian-common"}})
 forge = Forge(generate_world(config, resolve_scenario(config), config.seed))
 (native,) = connect_agent_tools(forge, Board(), config, episode)[{NATIVE_AGENT!r}]  # agentgateway alone
 native_opened = native.call("open_pr", {NATIVE_OPENED!r})
+async def speak(mode):
+    key = (config.settings.gateway.secrets_dir / token_secret_name({ERA_AGENT!r})).read_text().strip()
+    url = os.environ[{TOOLS_URL_VARIABLE!r}]
+    async with (
+        httpx2.AsyncClient(headers={{"Authorization": "Bearer " + key}}, timeout=30) as http,
+        Client(streamable_http_client(url, http_client=http), mode=mode) as client,
+    ):
+        listed = sorted(tool.name for tool in (await client.list_tools()).tools)
+        board = await client.call_tool("read", {{}})
+        forge = await client.call_tool("open_pr", {{"repo": {ERA_REPO!r}, "title": "era-" + mode}})
+        texts = [block.text for result in (board, forge) for block in result.content if result.is_error]
+        return {{"protocol": client.protocol_version, "tools": listed, "errors": texts}}
+eras = {{mode: anyio.run(speak, mode) for mode in ({MODERN!r}, {LEGACY!r})}}
 sent = json.load(sys.stdin)
 harness_probe = sent["probes"]["{HARNESS_ROW}"]
 here = subprocess.run(["bash", "-c", harness_probe], capture_output=True, text=True, check=True)
@@ -258,6 +279,7 @@ print(json.dumps({{
     "bash": results,
     "run_tests": tested,
     "native_opened": native_opened,
+    "eras": eras,
     "episode_harness": here.stdout.strip(),
     "probes": probes,
     "chains": chains,
@@ -671,6 +693,7 @@ class StackRun:
     played_from: float
     played_until: float
     native_opened: dict[str, Any]
+    eras: dict[str, dict[str, Any]]
     forge_identities: dict[str, str]
     board_log: list[ToolRecord]
     board_identities: dict[str, str]
@@ -1183,7 +1206,9 @@ def test_the_forge_log_names_the_agent_whose_key_made_each_call_through_the_tool
     logged = stack_run.forge_log
 
     calls = sorted(
-        (line.agent, line.tool, line.arguments.get("title")) for line in logged if line.error is None
+        (line.agent, line.tool, line.arguments.get("title"))
+        for line in logged
+        if line.error is None and line.agent != ERA_AGENT
     )
 
     agents = sorted([AGENT, NATIVE_AGENT, OTHER_AGENT])
@@ -1320,5 +1345,24 @@ def test_the_pr_events_built_from_the_forges_log_name_the_agent_whose_key_opened
     build_recorded_run_events(CONFIG, run)
 
     mirror = read_events(run / "episode" / "events.mirror.jsonl")
-    built = sorted((event.actor_uid, event.payload["pr_title"]) for event in mirror if event.kind == "pr")
+    built = sorted(
+        (event.actor_uid, event.payload["pr_title"])
+        for event in mirror
+        if event.kind == "pr" and event.actor_uid != ERA_AGENT
+    )
     assert built == [(agent, f"opened-by-{agent}") for agent in sorted([AGENT, NATIVE_AGENT, OTHER_AGENT])]
+
+
+@pytest.mark.parametrize(("mode", "era"), [(MODERN, "2026-07-28"), (LEGACY, "2025-")], ids=["2026", "2025"])
+def test_a_client_of_either_protocol_era_calls_the_forge_and_the_board_through_the_tools_gateway(
+    stack_run: StackRun,
+    mode: str,
+    era: str,
+) -> None:
+    spoken = stack_run.eras[mode]
+
+    assert (spoken["protocol"].startswith(era), spoken["tools"], spoken["errors"]) == (
+        True,
+        ["open_pr", "read", "send", "unread"],
+        [],
+    )

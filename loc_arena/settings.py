@@ -118,7 +118,7 @@ class StackSettings(SettingsGroup):
     )
     episode_pids_limit: PositiveInt = Field(default=4096, description="Processes the episode may run.")
     tools_gateway_image: str = Field(
-        default="ghcr.io/agentgateway/agentgateway:v1.5.0",
+        default="ghcr.io/agentgateway/agentgateway:v1.6.0",
         description="The image of the tools gateway, agentgateway, pinned to a release: it puts every live "
         "service with tools on one MCP route, offers each agent its tools and passes its identity on. Its "
         "limits are a live service's.",

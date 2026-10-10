@@ -32,7 +32,7 @@ def render_tools_gateway_config(
     tokens: Mapping[str, str],
     identities: Mapping[Identity, str],
 ) -> str:
-    """The tools gateway's config (agentgateway v1.5 schema) for agents with these sandbox ``tokens``.
+    """The tools gateway's config (agentgateway v1.6 schema) for agents with these sandbox ``tokens``.
 
     It admits each agent by the SHA-256 of its token, so it never holds one, and logs each request as a JSON
     line naming the agent, with a tool call's arguments and result or error. One CEL rule, generated from
