@@ -5,21 +5,24 @@ Each call to a live service with tools is one record (``loc_arena.tool_records``
 that start with ``{``, copied to ``services/<service>.log`` in the run directory. A record belongs to the
 episode, or the honest twin, whose play window holds its time. Its event takes the episode clock's reading at
 that time and the native turn of its agent running then, else turn 0, and is written after every event of
-play to both the sealed and the mirror log, as the harness wrote it live. A record placed nowhere, or a native
-agent's outside all its turns, is noted in ``unattributed_records.jsonl`` in the run directory. Grading never
-builds, so grading a run again adds nothing.
+play to both the sealed and the mirror log, as the harness wrote it live. Each line of
+``unattributed_records.jsonl`` in the run directory is a service's ``line`` and the ``reason`` it was not
+placed: not a valid record, outside every phase window, or not an agent of the run; or no covering turn, a
+native agent's record outside all its turns, whose event is built in turn 0. Grading never builds, so grading
+a run again adds nothing.
 """
 
 from __future__ import annotations
 
 import bisect
+import json
 import logging
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
+from pydantic import TypeAdapter, ValidationError
 from sandbox_server.confinement import resolve_inside
 
 from loc_arena.board import SERVICE as BOARD_SERVICE
@@ -47,20 +50,6 @@ class RecordedEvent:
     actor_uid: str
     target_id: str | None
     payload: dict[str, Any]
-
-
-class UnattributedRecord(BaseModel):
-    """One line of ``unattributed_records.jsonl``: a service's line, and why no event was placed by it."""
-
-    model_config = ConfigDict(frozen=True)
-
-    reason: str = Field(
-        description=(
-            "Why: not a valid record, outside every phase window, not an agent of the run, or no covering "
-            "turn (its event is built in turn 0)."
-        ),
-    )
-    line: str = Field(description="The line as the service wrote it.")
 
 
 def build_pull_request(record: ToolRecord) -> RecordedEvent:
@@ -100,7 +89,7 @@ def build_message(record: ToolRecord) -> RecordedEvent:
 
 # What each tool's successful call makes, by (service, tool); any other tool's call, or a failed call, makes
 # none. A builder raises ValidationError on a result that is not its tool's.
-EVENT_BUILDERS: Mapping[tuple[str, str], Callable[[ToolRecord], RecordedEvent | None]] = {
+EVENT_BUILDERS: Mapping[tuple[str, str], Callable[[ToolRecord], RecordedEvent]] = {
     (FORGE_SERVICE, "open_pr"): build_pull_request,
     (BOARD_SERVICE, "send"): build_message,
 }
@@ -158,19 +147,18 @@ def build_recorded_events(
     ]
     roles = {agent.id: agent.kind for agent in config.agents}
     services = [service.name for service in config.live_services if service.tools]
-    unattributed: list[UnattributedRecord] = []
+    unattributed: list[str] = []
     built: dict[Path, list[_Placed]] = {phase.directory: [] for phase in phases}
     for service, line in _read_record_lines(run_directory, services, phases):
-        placed, note = _place(service, line, phases, roles)
-        unattributed += [note] if note else []
+        placed, reason = _place(service, line, phases, roles)
+        unattributed += [json.dumps({"reason": reason, "line": line})] if reason else []
         if placed:
             built[placed.phase.directory].append(placed)
     for phase in phases:
         _write_events(phase, sorted(built[phase.directory], key=lambda placed: placed.wall), roles)
     if unattributed:
         _LOGGER.warning("%d service records were not placed: see %s", len(unattributed), UNATTRIBUTED_FILE)
-        lines = "".join(f"{record.model_dump_json()}\n" for record in unattributed)
-        (run_directory / UNATTRIBUTED_FILE).write_text(lines, encoding="utf-8")
+        (run_directory / UNATTRIBUTED_FILE).write_text("".join(f"{note}\n" for note in unattributed))
 
 
 def _read_record_lines(
@@ -193,29 +181,22 @@ def _place(
     line: str,
     phases: list[_Phase],
     roles: Mapping[str, str],
-) -> tuple[_Placed | None, UnattributedRecord | None]:
-    """The event of ``service``'s record ``line``, placed, if it makes one; a note if it is not placed."""
+) -> tuple[_Placed | None, str | None]:
+    """The event of ``service``'s record ``line``, placed, if it makes one; and why not, or not in a turn."""
     try:
         record = ToolRecord.model_validate_json(line)
+        build = EVENT_BUILDERS.get((service, record.tool))
+        event = build(record) if build is not None and record.error is None else None
     except ValidationError:
-        return None, UnattributedRecord(reason="not a valid record", line=line)
+        return None, "not a valid record"
     wall = record.time.timestamp()
     phase = next((phase for phase in phases if phase.holds(wall)), None)
     if phase is None or record.agent not in roles:
-        reason = "outside every phase window" if phase is None else "not an agent of the run"
-        return None, UnattributedRecord(reason=reason, line=line)
-    build = EVENT_BUILDERS.get((service, record.tool))
-    if build is None or record.error is not None:
-        return None, None
-    try:
-        event = build(record)
-    except ValidationError:
-        return None, UnattributedRecord(reason="not a valid record", line=line)
+        return None, "outside every phase window" if phase is None else "not an agent of the run"
     if event is None:
         return None, None
     turn = phase.find_turn(record.agent, wall)
-    note = UnattributedRecord(reason="no covering turn", line=line) if turn is None else None
-    return _Placed(phase, wall, event, turn or 0), note
+    return _Placed(phase, wall, event, turn or 0), "no covering turn" if turn is None else None
 
 
 def _write_events(phase: _Phase, built: list[_Placed], roles: Mapping[str, str]) -> None:

@@ -24,12 +24,12 @@ from loc_arena.episode_stack import (
     Identity,
     StackError,
     render_compose,
-    renew_services,
     run_in_stack,
     sandbox_agent_code,
 )
 from loc_arena.gateway import core
 from loc_arena.settings import GatewaySettings, LocArenaSettings, StackSettings
+from loc_arena.stack_play import renew_services
 from loc_arena.task import SANDBOX_URL_VARIABLE, TOOLS_URL_VARIABLE
 from loc_arena.tools_gateway import render_tools_gateway_config
 from sandbox_server.server import ServerSettings
@@ -1001,12 +1001,9 @@ def test_a_stack_run_copies_the_tools_gateways_log_out_before_it_removes_the_pro
     )
 
 
-def test_a_stack_run_copies_each_live_services_log_into_its_run_directory_before_it_builds_and_grades(
-    docker: FakeDocker,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    docker.plays_passing = 1
+@pytest.fixture
+def copied_at_grading(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
+    """The run directory's service logs as its events are built and as it is graded, in place of both."""
     seen: list[list[str]] = []
 
     def list_copied_logs(config: object, run_directory: Path, **_: object) -> Path:
@@ -1015,10 +1012,34 @@ def test_a_stack_run_copies_each_live_services_log_into_its_run_directory_before
 
     monkeypatch.setattr(episode_stack, "build_recorded_run_events", list_copied_logs)
     monkeypatch.setattr(episode_stack, "grade_run", list_copied_logs)
+    return seen
+
+
+def test_a_stack_run_copies_each_live_services_log_into_its_run_directory_before_it_builds_and_grades(
+    docker: FakeDocker,
+    tmp_path: Path,
+    copied_at_grading: list[list[str]],
+) -> None:
+    docker.plays_passing = 1
 
     run_aurora_in_stack(tmp_path)
 
-    assert seen == [["agentgateway.log", "board.log", "forge.log", "notes.log"]] * 2
+    assert copied_at_grading == [["agentgateway.log", "board.log", "forge.log", "notes.log"]] * 2
+
+
+def test_a_graded_stack_run_copies_its_run_directory_out_once(
+    docker: FakeDocker,
+    tmp_path: Path,
+    copied_at_grading: list[list[str]],
+) -> None:
+    docker.plays_passing = 1
+
+    run_aurora_in_stack(tmp_path)
+
+    outputs = [
+        call for call in docker.calls if call[COMPOSE_PREFIX_LENGTH] == "cp" and call[-1] == str(tmp_path)
+    ]
+    assert len(outputs) == 1
 
 
 def test_an_attack_stack_run_renews_every_container_but_the_gateway_and_the_episode_before_the_honest_twin(

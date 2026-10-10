@@ -22,14 +22,13 @@ kept so nothing is lost.
 
 from __future__ import annotations
 
-import contextlib
 import dataclasses
 import functools
 import json
 import os
 import secrets
 import subprocess
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit
@@ -45,6 +44,13 @@ from loc_arena.identity_variables import find_shared_identity_variable, holds_id
 from loc_arena.recorded_events import SERVICE_LOGS
 from loc_arena.sandbox import IDENTITY_PREFIX, TOKEN_FILE, build_server_settings, token_secret_name
 from loc_arena.settings import StackSettings
+from loc_arena.stack_play import (
+    EPISODE_SERVICE,
+    StackError,
+    copy_out,
+    list_service_log_copies,
+    play_phases,
+)
 from loc_arena.task import SANDBOX_URL_VARIABLE, TOOLS_URL_VARIABLE, resolve_scenario
 from loc_arena.tools_gateway import (
     MCP_PATH,
@@ -55,7 +61,6 @@ from loc_arena.tools_gateway import (
     serves_tools,
 )
 
-EPISODE_SERVICE = "episode"  # the agent loop's compose service: the one caller every sandbox serves
 AGENT_NETWORK = "agent-net"  # the episode, the sandboxes and the gateway, with no route out
 EGRESS_NETWORK = "egress-net"  # the gateway alone: its route to the provider
 KEY_SECRET_NAME = "openrouter_api_key"  # the compose secret: a file in settings.gateway.secrets_dir
@@ -75,10 +80,6 @@ GATEWAY_MODE_OPTION = "com.docker.network.bridge.gateway_mode_ipv4"
 LOOPBACK = "127.0.0.1"  # the only host address the gateway's port is published on, for grading on this host
 ENGINE_TARGET = "engine"  # the Dockerfile's stage of the gateway and the episode
 SANDBOX_TARGET = "sandbox"  # the Dockerfile's stage of the sandboxes: no harness, no scenarios
-
-
-class StackError(RuntimeError):
-    """The episode's compose project could not deliver its logs."""
 
 
 @dataclass(frozen=True)
@@ -398,12 +399,6 @@ def _probe(port: int, stack: StackSettings, *, test: Sequence[str] | None = None
     }
 
 
-def _list_logged_services(config: RunConfig) -> list[str]:
-    """The services whose log a stack run copies out: each live service, and the tools gateway if it runs."""
-    tools_gateway = [TOOLS_GATEWAY_SERVICE] if serves_tools(config) else []
-    return [service.name for service in config.live_services] + tools_gateway
-
-
 def _issue_secrets(config: RunConfig) -> dict[str, str]:
     """Every secret of a stack run of ``config``, generated per run, by the host variable compose reads.
 
@@ -419,99 +414,6 @@ def _issue_secrets(config: RunConfig) -> dict[str, str]:
         **{identity.variable: value for identity, value in identities.items()},
         **({TOOLS_GATEWAY_CONFIG_VARIABLE: tools_gateway_config} if tools_gateway_config else {}),
     }
-
-
-def _list_service_log_copies(
-    config: RunConfig,
-    compose: list[str],
-    service_logs: Path,
-) -> list[tuple[list[str], Path]]:
-    """Each logged service's ``compose logs`` command, and the file in ``service_logs`` its output joins."""
-    return [
-        ([*compose, "logs", "--no-color", "--no-log-prefix", service], service_logs / f"{service}.log")
-        for service in _list_logged_services(config)
-    ]
-
-
-def renew_services(
-    config: RunConfig,
-    compose: list[str],
-    service_logs: Path,
-    environment: dict[str, str],
-) -> None:
-    """Before the honest twin: every container agent code could leave state in, recreated empty.
-
-    Those are each sandbox, each live service and the tools gateway; the gateway, whose call log runs on, and
-    the episode stay. Each logged service's log so far is first added to its file in ``service_logs``, every
-    copy or none, since a recreated container starts a new log. Raises ``StackError`` when a log cannot be
-    copied, so nothing is recreated, or when a renewed container does not come back.
-    """
-    copies = _list_service_log_copies(config, compose, service_logs)
-    logged = [subprocess.run(command, env=environment, capture_output=True) for command, _ in copies]
-    if failed := [into.name for (_, into), done in zip(copies, logged, strict=True) if done.returncode]:
-        raise StackError(
-            f"could not copy {', '.join(failed)} out before the honest twin, so nothing was renewed",
-        )
-    try:  # every file opened before any is written, so one that cannot be leaves the others untouched
-        with contextlib.ExitStack() as files:
-            outputs = [files.enter_context(into.open("ab")) for _, into in copies]
-            for output, done in zip(outputs, logged, strict=True):
-                output.write(done.stdout)
-    except OSError as error:
-        raise StackError(
-            f"could not write the logs before the honest twin, so nothing was renewed: {error}",
-        ) from error
-    renewed = [*(sandbox_service(agent.id) for agent in config.agents), *_list_logged_services(config)]
-    recreate = ["up", "--detach", "--wait", "--force-recreate", "--renew-anon-volumes", "--no-deps"]
-    if subprocess.run([*compose, *recreate, *renewed], env=environment).returncode != 0:
-        raise StackError(
-            "the renewed containers did not come back for the honest twin: see compose's output above",
-        )
-
-
-def _play_phases(
-    config: RunConfig,
-    compose: list[str],
-    mode: str,
-    service_logs: Path,
-    environment: dict[str, str],
-) -> int:
-    """Play the episode and, in attack mode, the honest twin in the same container after ``renew_services``.
-
-    Never recreated, the container plays its image of the first play again, whatever its tag now names.
-    Returns the exit code of the last play.
-    """
-    attached = ["--attach", EPISODE_SERVICE, "--exit-code-from", EPISODE_SERVICE]
-    play = [*compose, "up", "--no-recreate", *attached, EPISODE_SERVICE]
-    exit_code = subprocess.run(play, env=environment).returncode
-    if exit_code == 0 and mode != "honest":
-        renew_services(config, compose, service_logs, environment)
-        exit_code = subprocess.run(play, env=environment).returncode
-    return exit_code
-
-
-def _copy_out(
-    run_compose: Callable[..., subprocess.CompletedProcess[bytes]],
-    command: list[str],
-    into: Path | None = None,
-    *,
-    made: set[Path],
-) -> bool:
-    """Whether compose ran ``command``, with what it prints added ``into`` that file when given.
-
-    A file in ``made`` already holds its copy and gets nothing more, since its lines would repeat; one written
-    now joins ``made``.
-    """
-    if into in made:
-        return True
-    try:
-        with into.open("ab") if into else contextlib.nullcontext() as output:
-            done = run_compose(command, stdout=output).returncode == 0
-    except OSError:  # a file that cannot be written is a failed copy: the others are still tried
-        return False
-    if done and into:
-        made.add(into)
-    return done
 
 
 def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: Path) -> Path:
@@ -552,7 +454,7 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
     environment = {**os.environ, **_issue_secrets(config)}
     run_compose = functools.partial(subprocess.run, env=environment)
 
-    copied = functools.partial(_copy_out, run_compose, made=set())
+    copied = functools.partial(copy_out, run_compose, made=set())
     call_log = logs / "gateway" / f"{project}.calls.jsonl"
     run_directory = locate_run(config, mode, instance_id, logs)
     service_logs = run_directory / SERVICE_LOGS
@@ -561,13 +463,13 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
     copy_output = [*compose, "cp", f"{EPISODE_SERVICE}:{OUTPUT_DIRECTORY}/.", str(logs)]
     # Each copy adds to its file in this run's own directory: the episode's containers', then the twin's.
     copy_service_logs: list[tuple[list[str], Path | None]] = [
-        *_list_service_log_copies(config, compose, service_logs),
+        *list_service_log_copies(config, compose, service_logs),
     ]
     copy_logs = [
         ([*compose, "cp", f"gateway:{settings.gateway.call_log}", str(call_log)], None),
         *copy_service_logs,
     ]
-    created = output_copied = False
+    created = False
     try:
         if run_compose([*compose, "create", "--build"]).returncode != 0:
             raise StackError("could not build or create the episode's containers: see compose's output above")
@@ -575,9 +477,8 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
         # Started on its own, the gateway outlives the episode: the monitors call it while this host grades.
         if run_compose([*compose, "up", "--detach", "--wait", "gateway"]).returncode != 0:
             raise StackError("the gateway did not become healthy: see compose's output above")
-        exit_code = _play_phases(config, compose, mode, service_logs, environment)
-        output_copied = copied(copy_output)
-        if not output_copied:
+        exit_code = play_phases(config, compose, mode, service_logs, environment)
+        if not copied(copy_output):
             raise StackError("could not copy the episode's run directory out, so it was not graded")
         if exit_code != 0:
             raise StackError(f"the episode exited with code {exit_code}: see its output above")
@@ -597,9 +498,7 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
         started = created and not run_compose(never_started, capture_output=True, text=True).stdout.strip()
         # An episode that never started has no output or call log, but a live service that failed to become
         # healthy says why in its own.
-        pending = copy_logs if output_copied else [(copy_output, None), *copy_logs]
-        if not started:
-            pending = copy_service_logs
+        pending = [(copy_output, None), *copy_logs] if started else copy_service_logs
         # Every copy is tried, a failed one included, before the project is kept.
         if created and not all([copied(*copy) for copy in pending]):
             run_compose([*compose, "stop"])

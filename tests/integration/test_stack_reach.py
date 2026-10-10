@@ -55,7 +55,6 @@ from loc_arena.episode_stack import (
     SCENARIOS_DIRECTORY,
     issue_identities,
     render_compose,
-    renew_services,
     token_variable,
 )
 from loc_arena.gateway.core import API_KEY_VARIABLE
@@ -65,6 +64,7 @@ from loc_arena.logging_.events import AppendOnlyLog, read_events
 from loc_arena.recorded_events import SERVICE_LOGS
 from loc_arena.sandbox import IDENTITY_PREFIX, TOKEN_FILE
 from loc_arena.scaffold.bus import Recorder
+from loc_arena.stack_play import renew_services
 from loc_arena.task import SNAPSHOT_FILE, TOOLS_URL_VARIABLE, ClockReading, SnapshotFile
 from loc_arena.tool_records import ToolRecord
 from loc_arena.tools_gateway import (

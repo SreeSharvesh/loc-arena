@@ -125,22 +125,7 @@ def _sample_events(
         SpanBeginEvent(id=root_id, name=episode.sample_id, type="episode", timestamp=now),
     ]
     opened_agents: list[str] = []
-    runs: list[tuple[TurnRef | None, list[Event]]] = []
-    by_turn: dict[TurnRef, list[Event]] = {}
-    for lane, grouped in groupby(sealed_events, key=lambda sealed: lanes[sealed.seq]):
-        run = list(grouped)
-        if lane is not None and lane in by_turn:
-            if run[0].seq <= episode.trace.last_sealed_seq:
-                raise ValueError(
-                    f"{lane.agent_uid} turn {lane.turn} wrote sealed events in two separate runs; "
-                    "turns must not interleave",
-                )
-            by_turn[lane].extend(run)  # built after play: it joins its turn's span
-            continue
-        runs.append((lane, run))
-        if lane is not None:
-            by_turn[lane] = run
-    for lane, run in runs:
+    for lane, run in _group_by_turn(sealed_events, lanes, episode.trace.last_sealed_seq):
         if lane is not None:
             now = _timestamp(turn_records[lane].wall_start)
             if lane.agent_uid not in opened_agents:
@@ -182,6 +167,33 @@ def _sample_events(
     for inspect_event in events:
         inspect_event.working_start = (inspect_event.timestamp - started).total_seconds()
     return events
+
+
+def _group_by_turn(
+    sealed_events: Sequence[Event],
+    lanes: Mapping[int, TurnRef | None],
+    last_sealed_seq: int,
+) -> list[tuple[TurnRef | None, list[Event]]]:
+    """The sealed events as runs of one lane in seq order, an event built after play in its turn's run.
+
+    Raises ``ValueError`` when a turn's events inside the boundary come in two runs: turns never interleave.
+    """
+    runs: list[tuple[TurnRef | None, list[Event]]] = []
+    by_turn: dict[TurnRef, list[Event]] = {}
+    for lane, grouped in groupby(sealed_events, key=lambda sealed: lanes[sealed.seq]):
+        run = list(grouped)
+        if lane is not None and lane in by_turn:
+            if run[0].seq <= last_sealed_seq:
+                raise ValueError(
+                    f"{lane.agent_uid} turn {lane.turn} wrote sealed events in two separate runs; "
+                    "turns must not interleave",
+                )
+            by_turn[lane].extend(run)
+            continue
+        runs.append((lane, run))
+        if lane is not None:
+            by_turn[lane] = run
+    return runs
 
 
 def _pair_built_events(episode: EpisodeExport, sealed_events: Sequence[Event]) -> dict[int, int]:

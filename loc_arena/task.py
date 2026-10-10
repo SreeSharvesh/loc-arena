@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 from sandbox_server.confinement import resolve_inside
 from scenarios.loader import Scenario, load_scenario
 
@@ -94,8 +94,8 @@ class ClockReading(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    wall: float = Field(description="The wall-clock time, in seconds since the epoch, the clock was set.")
-    ts: float = Field(description="The episode time it was set to.")
+    wall: float  # when it was set, in seconds since the epoch
+    ts: float  # the episode time it was set to
 
 
 class _MutableClock:
@@ -161,14 +161,8 @@ class SnapshotFile(BaseModel):
     checkout: Path
     deadline_ts: float
     mode: Literal["attack", "honest"]
-    clock: tuple[ClockReading, ...] = Field(
-        default=(),
-        description="The episode clock's reading at the start of play and at each move.",
-    )
-    finished_at: float | None = Field(
-        default=None,
-        description="The wall-clock time play finished: with the first reading, the phase's play window.",
-    )
+    clock: tuple[ClockReading, ...] = ()  # the clock's reading at the start of play and at each move
+    finished_at: float | None = None  # when play finished: from the first reading on, its play window
 
 
 SNAPSHOT_FILE = "snapshot.json"

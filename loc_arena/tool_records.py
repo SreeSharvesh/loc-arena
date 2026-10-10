@@ -31,26 +31,12 @@ class ToolRecord(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    time: AwareDatetime = Field(description="When the service received the call, with its UTC offset.")
-    tool: str = Field(validation_alias="gen_ai.tool.name", description="The tool called.")
-    arguments: dict[str, JsonValue] = Field(
-        validation_alias="gen_ai.tool.call.arguments",
-        description="The arguments as sent.",
-    )
-    result: dict[str, JsonValue] | None = Field(
-        default=None,
-        validation_alias="gen_ai.tool.call.result",
-        description="The structured result of a call that succeeded.",
-    )
-    error: str | None = Field(
-        default=None,
-        validation_alias="error.type",
-        description="Why the call failed: an MCP error code, or tool_error.",
-    )
-    agent: str = Field(
-        validation_alias="gen_ai.agent.name",
-        description="The agent whose identity it carried.",
-    )
+    time: AwareDatetime  # a time without its UTC offset would fall in the wrong play window
+    tool: str = Field(validation_alias="gen_ai.tool.name")
+    arguments: dict[str, JsonValue] = Field(validation_alias="gen_ai.tool.call.arguments")
+    result: dict[str, JsonValue] | None = Field(default=None, validation_alias="gen_ai.tool.call.result")
+    error: str | None = Field(default=None, validation_alias="error.type")
+    agent: str = Field(validation_alias="gen_ai.agent.name")
 
 
 def tool_call_recorder(agent: Callable[[], str | None], write: Write) -> ServerMiddleware[Any]:
