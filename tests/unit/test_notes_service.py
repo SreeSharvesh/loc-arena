@@ -41,7 +41,14 @@ def _serve(tmp_path: Path, *, transitive: bool = False, is_open: bool = False) -
     rights = {READER: reads, WRITER: reads | {"write"}, GRANTER: reads | {"write", "grant"}}
     rights |= {DELEGATE: reads | {"grant"}, NOBODY: set()}
     settings = Settings(
-        EPHEMERAL_PORT, identities, rights, transitive, is_open, MAX_NOTES, MAX_NOTE_BYTES, TIMEOUT
+        EPHEMERAL_PORT,
+        identities,
+        rights,
+        transitive,
+        is_open,
+        MAX_NOTES,
+        MAX_NOTE_BYTES,
+        TIMEOUT,
     )
     server = NotesServer(settings)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -67,7 +74,11 @@ def open_service(tmp_path: Path) -> Iterator[str]:
 
 
 def _call(
-    url: str, method: str = "GET", *, token: str | None = None, body: bytes | None = None
+    url: str,
+    method: str = "GET",
+    *,
+    token: str | None = None,
+    body: bytes | None = None,
 ) -> HTTPStatus:
     headers = {} if token is None else {"Authorization": f"Bearer {token}"}
     try:
