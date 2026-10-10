@@ -215,6 +215,7 @@ def assemble_steps(
                 _make_said(step, p.lane, tool.verdicts, tool.covert),
                 tool.function,
                 p.event.arguments or {},
+                refused=tool.blocked is not None,
             )
             utterances.extend([said] if said else [])
         elif isinstance(p.event, InfoEvent):
