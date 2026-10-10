@@ -24,7 +24,7 @@ from loc_arena.forge.world import generate_world
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import DirectTransport, GenerateRequest, GenerateResponse
 from loc_arena.gateway.edge import GatewayEdge
-from loc_arena.live import connect_agent_tools
+from loc_arena.live import connect_agent_tools, served_tools
 from loc_arena.logging_.events import Event, read_events
 from loc_arena.monitors.pr_review_monitor import ReviewMonitor
 from loc_arena.monitors.registry import MonitorContext, load_monitor_specs
@@ -71,7 +71,11 @@ class _RecordingEdge:
 def _tools(stack: Stack, edge: _RecordingEdge | None = None, *, ceiling: float = math.inf) -> Tools:
     forge = Forge(generate_world(CFG, SC, CFG.seed))
     covert = CovertToolServices(
-        McpServices(connect_agent_tools(forge, CFG, stack.sealed_path.parent), ForgeServices(forge)),
+        McpServices(
+            connect_agent_tools(forge, CFG, stack.sealed_path.parent),
+            ForgeServices(forge),
+            served=served_tools(CFG),
+        ),
         core=stack.core,
         edge=stack.edge if edge is None else cast(GatewayEdge, edge),
         identity=stack.identity,

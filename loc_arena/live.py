@@ -198,6 +198,11 @@ def connect_agent_tools(forge: Forge, config: RunConfig, workdir: Path) -> dict[
     }
 
 
+def served_tools(config: RunConfig) -> set[str]:
+    """Every tool a live service of ``config``'s scenario serves over MCP."""
+    return {tool for service in config.live_services for tool in service.tools}
+
+
 def _default_provider(config: RunConfig) -> Provider:
     """The live provider (OpenRouter) when a key is present; otherwise the deterministic stub for plumbing."""
     if is_live_provider_configured():
@@ -282,7 +287,7 @@ def play_model_episode(
     # forge tools -> stub.
     agent_tools = connect_agent_tools(forge, config, workdir)
     code_services = CodeServices(
-        McpServices(agent_tools, ForgeServices(forge)),
+        McpServices(agent_tools, ForgeServices(forge), served=served_tools(config)),
         checkout=checkout,
         repos=list(_REPOS),
         stack=config.settings.stack,
