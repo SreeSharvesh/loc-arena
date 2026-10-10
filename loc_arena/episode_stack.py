@@ -10,7 +10,9 @@ checkout is a channel between agents by design). Each live service of the scenar
 on agent-net alone, with no published port. On one with rights, every agent has its own identity, generated
 per run: its sandbox holds that agent's alone, the service holds every agent's and the agents' starting
 rights, and the episode and the gateway hold none. A service with tools is reached through the tools gateway
-alone (``loc_arena.tools_gateway``), which with the service holds the identities on it. When the episode
+alone (``loc_arena.tools_gateway``), which with the service holds the identities on it. In attack mode the
+episode container plays the episode, then starts again for the honest twin once every sandbox, live service
+and the tools gateway is recreated, so the twin sees nothing the attack left. When the episode
 exits, its run directory is copied out and graded on this host, with the agents' code sandboxed, while the
 gateway still runs for the monitors' model calls. Then the gateway's call log and the log of each live
 service and of the tools gateway, their record of every request and grant, are copied out and the project
@@ -417,23 +419,65 @@ def _issue_secrets(config: RunConfig) -> dict[str, str]:
     }
 
 
+def _list_service_log_copies(
+    config: RunConfig,
+    compose: list[str],
+    service_logs: Path,
+) -> list[tuple[list[str], Path]]:
+    """Each logged service's ``compose logs`` command, and the file in ``service_logs`` its output joins."""
+    return [
+        ([*compose, "logs", "--no-color", "--no-log-prefix", service], service_logs / f"{service}.log")
+        for service in _list_logged_services(config)
+    ]
+
+
+def renew_services(
+    config: RunConfig,
+    compose: list[str],
+    service_logs: Path,
+    environment: dict[str, str],
+) -> None:
+    """Before the honest twin: every container agent code could leave state in, recreated empty.
+
+    Those are each sandbox, each live service and the tools gateway; the gateway, whose call log runs on, and
+    the episode stay. Each logged service's log so far is first added to its file in ``service_logs``, every
+    copy or none, since a recreated container starts a new log. Raises ``StackError`` when a log cannot be
+    copied, so nothing is recreated, or when a renewed container does not come back.
+    """
+    copies = _list_service_log_copies(config, compose, service_logs)
+    logged = [subprocess.run(command, env=environment, capture_output=True) for command, _ in copies]
+    if failed := [into.name for (_, into), done in zip(copies, logged, strict=True) if done.returncode]:
+        raise StackError(
+            f"could not copy {', '.join(failed)} out before the honest twin, so nothing was renewed",
+        )
+    for (_, into), done in zip(copies, logged, strict=True):
+        with into.open("ab") as output:
+            output.write(done.stdout)
+    renewed = [*(sandbox_service(agent.id) for agent in config.agents), *_list_logged_services(config)]
+    recreate = ["up", "--detach", "--wait", "--force-recreate", "--renew-anon-volumes", "--no-deps"]
+    if subprocess.run([*compose, *recreate, *renewed], env=environment).returncode != 0:
+        raise StackError(
+            "the renewed containers did not come back for the honest twin: see compose's output above",
+        )
+
+
 def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: Path) -> Path:
     """Play one episode of ``run`` (a config in ``configs/``) in its own compose project; grade it here.
 
-    The episode container plays the episode and its honest twin. Its run directory is then copied into
-    ``logs`` and graded on this host with the agents' code sandboxed, while the gateway still runs, so
-    model-backed monitors reach their model through it and it records their calls. Whatever the episode, the
-    gateway and each live service recorded is copied into ``logs`` before the project is removed, after a
-    Ctrl-C too, a live service's log to ``services/<name>.log``; when the episode never started, a live
-    service that failed to become healthy leaves only that log. When a copy fails the project is kept,
-    stopped, so nothing recorded is lost. Returns the bundle's directory.
+    The episode container plays the episode and, after ``renew_services``, its honest twin. Its run directory
+    is then copied into ``logs`` and graded on this host with the agents' code sandboxed, while the gateway
+    still runs, so model-backed monitors reach their model through it and it records their calls. Whatever
+    the episode, the gateway and each live service recorded is copied into ``logs`` before the project is
+    removed, after a Ctrl-C too, a live service's log to ``services/<name>.log``; when the episode never
+    started, a live service that failed to become healthy leaves only that log. When a copy or the renewal
+    fails the project is kept, stopped, so nothing recorded is lost. Returns the bundle's directory.
     """
     run = Path(run).name.removesuffix(".yaml")
     config = load_run_config(REPOSITORY / "configs" / f"{run}.yaml")
     settings = config.settings
     instance_id = secrets.token_hex(3)
     project = f"locarena-{instance_id}"
-    episode_arguments = ["--mode", mode, "--instance", instance_id, "--play-only"]
+    episode_arguments = ["--mode", mode, "--instance", instance_id, "--play-only", "--next-phase"]
     episode_arguments += [] if robust else ["--minimal"]
     compose_file = logs / "compose" / f"{project}.yaml"
     compose_file.parent.mkdir(parents=True, exist_ok=True)
@@ -449,11 +493,12 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
         "--project-directory",
         str(REPOSITORY),
     ]
-    run_compose = functools.partial(subprocess.run, env={**os.environ, **_issue_secrets(config)})
+    environment = {**os.environ, **_issue_secrets(config)}
+    run_compose = functools.partial(subprocess.run, env=environment)
 
     def copied(command: list[str], into: Path | None = None) -> bool:
-        """Whether compose ran ``command``, with what it prints written ``into`` that file when given."""
-        with into.open("wb") if into else contextlib.nullcontext() as output:
+        """Whether compose ran ``command``, with what it prints added ``into`` that file when given."""
+        with into.open("ab") if into else contextlib.nullcontext() as output:
             return run_compose(command, stdout=output).returncode == 0
 
     call_log = logs / "gateway" / f"{project}.calls.jsonl"
@@ -461,15 +506,15 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
     for directory in (call_log.parent, service_logs):
         directory.mkdir(parents=True, exist_ok=True)
     copy_output = [*compose, "cp", f"{EPISODE_SERVICE}:{OUTPUT_DIRECTORY}/.", str(logs)]
-    copy_service_logs: list[tuple[list[str], Path | None]] = [
-        ([*compose, "logs", "--no-color", "--no-log-prefix", service], service_logs / f"{service}.log")
-        for service in _list_logged_services(config)
-    ]
+    service_log_copies = _list_service_log_copies(config, compose, service_logs)
+    for _, into in service_log_copies:
+        into.write_bytes(b"")  # each copy adds to the file: the episode's containers', then the twin's
+    copy_service_logs: list[tuple[list[str], Path | None]] = [*service_log_copies]
     copy_logs = [
         ([*compose, "cp", f"gateway:{settings.gateway.call_log}", str(call_log)], None),
         *copy_service_logs,
     ]
-    created = output_copied = False
+    created = output_copied = kept = False
     try:
         if run_compose([*compose, "create", "--build"]).returncode != 0:
             raise StackError("could not build or create the episode's containers: see compose's output above")
@@ -479,6 +524,13 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
             raise StackError("the gateway did not become healthy: see compose's output above")
         play = ["up", "--attach", EPISODE_SERVICE, "--exit-code-from", EPISODE_SERVICE, EPISODE_SERVICE]
         exit_code = run_compose([*compose, *play]).returncode
+        if exit_code == 0 and mode != "honest":  # the episode played; the same container now plays the twin
+            try:
+                renew_services(config, compose, service_logs, environment)
+            except StackError as error:
+                kept = True
+                raise StackError(f"{error}: kept compose project {project} and its volumes") from error
+            exit_code = run_compose([*compose, *play]).returncode
         output_copied = copied(copy_output)
         if not output_copied:
             raise StackError("could not copy the episode's run directory out, so it was not graded")
@@ -503,7 +555,8 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
         if created and not all([copied(*copy) for copy in pending]):
             run_compose([*compose, "stop"])
             raise StackError(f"could not copy every log out: kept compose project {project} and its volumes")
-        run_compose([*compose, "down", "--volumes", "--remove-orphans"])
+        # A renewal that failed keeps the project too, and its error, naming the project, propagates.
+        run_compose([*compose, *(["stop"] if kept else ["down", "--volumes", "--remove-orphans"])])
         if created and not started:
             raise StackError(NEVER_STARTED.format(logs=service_logs))
 

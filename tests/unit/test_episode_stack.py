@@ -801,10 +801,11 @@ AURORA_AGENTS += ["JOBSVC_AGENT", "SERVING_AGENT"]
 
 @dataclass
 class FakeDocker:
-    """``subprocess.run`` for the compose calls of a stack run whose episode exits 1, so nothing is graded."""
+    """``subprocess.run`` for the compose calls of a stack run whose last play exits 1: nothing is graded."""
 
-    failing: str = "no subcommand"  # the compose subcommand that fails
+    failing: str = "no subcommand"  # the compose subcommand or option whose call fails
     episode_created_only: bool = False  # a live service never became healthy, so the episode never started
+    plays_passing: int = 0  # how many plays of the episode exit 0 before one exits 1
     calls: list[list[str]] = field(default_factory=list)
     environment: dict[str, str] = field(default_factory=dict)
 
@@ -815,15 +816,23 @@ class FakeDocker:
         env: dict[str, str],
         stdout: IO[bytes] | None = None,
         **_: object,
-    ) -> subprocess.CompletedProcess[str]:
+    ) -> subprocess.CompletedProcess[Any]:
         self.calls.append(command)
         self.environment = env
         verb = command[COMPOSE_PREFIX_LENGTH]
         if verb == "logs" and stdout is not None:
             stdout.write(NOTES_LOG)
-        failed = verb == self.failing or (verb == "up" and "--attach" in command)
+        playing = verb == "up" and "--attach" in command
+        failed = self.failing in command[COMPOSE_PREFIX_LENGTH:] or (
+            playing and self.plays > self.plays_passing
+        )
         created = "container-id\n" if verb == "ps" and self.episode_created_only else ""
-        return subprocess.CompletedProcess(command, int(failed), stdout=created)
+        printed = NOTES_LOG if verb == "logs" and stdout is None else created
+        return subprocess.CompletedProcess(command, int(failed), stdout=printed)
+
+    @property
+    def plays(self) -> int:
+        return sum(call[COMPOSE_PREFIX_LENGTH] == "up" and "--attach" in call for call in self.calls)
 
     @property
     def verbs(self) -> list[str]:
@@ -837,8 +846,8 @@ def docker(monkeypatch: pytest.MonkeyPatch) -> FakeDocker:
     return fake
 
 
-def run_aurora_in_stack(logs: Path) -> None:
-    run_in_stack("aurora-efficiency", mode="honest", seed=None, robust=False, logs=logs)
+def run_aurora_in_stack(logs: Path, mode: str = "honest") -> None:
+    run_in_stack("aurora-efficiency", mode=mode, seed=None, robust=False, logs=logs)
 
 
 def test_a_stack_run_hands_compose_a_distinct_identity_per_agent_and_service_through_its_environment_alone(
@@ -970,4 +979,87 @@ def test_a_stack_run_copies_the_tools_gateways_log_out_before_it_removes_the_pro
         NOTES_LOG,
         True,
         "down",
+    )
+
+
+def test_an_attack_stack_run_renews_every_container_but_the_gateway_and_the_episode_before_the_honest_twin(
+    docker: FakeDocker,
+    tmp_path: Path,
+) -> None:
+    docker.plays_passing = 1
+
+    with pytest.raises(StackError, match="exited with code 1"):
+        run_aurora_in_stack(tmp_path, mode="attack")
+
+    commands = [call[COMPOSE_PREFIX_LENGTH:] for call in docker.calls]
+    plays = [index for index, command in enumerate(commands) if command[0] == "up" and "--attach" in command]
+    assert commands[plays[0] + 1 : plays[1]] == [
+        *(
+            ["logs", "--no-color", "--no-log-prefix", service]
+            for service in ("notes", "forge", "agentgateway")
+        ),
+        [
+            *["up", "--detach", "--wait", "--force-recreate", "--renew-anon-volumes", "--no-deps"],
+            *["sandbox-agent-main", "sandbox-serving-agent", "sandbox-distill-agent", "sandbox-eval-agent"],
+            *["sandbox-datapipe-agent", "sandbox-jobsvc-agent", "sandbox-controlplane-agent"],
+            *["notes", "forge", "agentgateway"],
+        ],
+    ]
+
+
+def test_a_stack_runs_service_log_holds_the_lines_of_the_episodes_container_and_then_the_honest_twins(
+    docker: FakeDocker,
+    tmp_path: Path,
+) -> None:
+    docker.plays_passing = 1
+
+    with pytest.raises(StackError, match="exited with code 1"):
+        run_aurora_in_stack(tmp_path, mode="attack")
+
+    assert (tmp_path / "services" / "notes.log").read_bytes() == NOTES_LOG * 2
+
+
+def test_a_service_log_an_earlier_run_left_in_the_logs_directory_is_replaced(
+    docker: FakeDocker,
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "services").mkdir()
+    (tmp_path / "services" / "notes.log").write_bytes(b"an earlier run's line\n")
+
+    with pytest.raises(StackError, match="exited with code 1"):
+        run_aurora_in_stack(tmp_path)
+
+    assert (tmp_path / "services" / "notes.log").read_bytes() == NOTES_LOG
+
+
+def test_a_log_that_cannot_be_copied_before_the_honest_twin_keeps_the_project_and_renews_nothing(
+    docker: FakeDocker,
+    tmp_path: Path,
+) -> None:
+    docker.plays_passing = 1
+    docker.failing = "logs"
+
+    with pytest.raises(StackError, match="kept compose project"):
+        run_aurora_in_stack(tmp_path, mode="attack")
+
+    renewed = [call for call in docker.calls if "--force-recreate" in call]
+    assert (renewed, docker.plays, docker.verbs[-1]) == ([], 1, "stop")
+
+
+def test_containers_that_do_not_come_back_for_the_honest_twin_keep_the_project_and_its_logs(
+    docker: FakeDocker,
+    tmp_path: Path,
+) -> None:
+    docker.plays_passing = 1
+    docker.failing = "--force-recreate"
+
+    with pytest.raises(StackError, match="honest twin.*kept compose project"):
+        run_aurora_in_stack(tmp_path, mode="attack")
+
+    copied = (tmp_path / "services" / "notes.log").read_bytes()
+    assert (copied, docker.plays, docker.verbs[-1], "down" in docker.verbs) == (
+        NOTES_LOG * 2,
+        1,
+        "stop",
+        False,
     )
