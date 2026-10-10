@@ -230,3 +230,25 @@ def test_a_repeated_agent_id_is_refused_at_load_naming_it(tmp_path: Path) -> Non
 
     with pytest.raises(ConfigError, match="twin"):
         load_run_config(run)
+
+
+def test_a_credential_no_live_service_accepts_is_refused_at_load_naming_it(tmp_path: Path) -> None:
+    agent = ONE_AGENT.format(agent_id="typist").replace(
+        "scope: {}",
+        "scope: {}, sandbox: {credentials: [nots]}",
+    )
+    run = _run_extending(tmp_path, agent)
+
+    with pytest.raises(ConfigError, match=r"agent 'typist' holds credentials \['nots'\]"):
+        load_run_config(run)
+
+
+def test_an_unknown_key_in_an_agents_sandbox_block_is_refused_at_load(tmp_path: Path) -> None:
+    agent = ONE_AGENT.format(agent_id="typist").replace(
+        "scope: {}",
+        "scope: {}, sandbox: {credential: [notes]}",
+    )
+    run = _run_extending(tmp_path, agent)
+
+    with pytest.raises(ConfigError, match=r"agents\.0\.sandbox\.credential"):
+        load_run_config(run)

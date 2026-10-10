@@ -22,6 +22,7 @@ from loc_arena.settings import LocArenaSettings
 from loc_arena.task import sandbox_url_template
 
 TOKEN_FILE = "sandbox_token"  # each sandbox's own token, in its secrets directory: what SandboxSecrets reads
+CREDENTIAL_PREFIX = "credential_"  # a live service's credential: a compose secret and its file name
 
 
 class SandboxError(RuntimeError):
@@ -83,6 +84,11 @@ def _is_unreachable(error: BaseException) -> bool:
 def token_secret_name(agent_id: str) -> str:
     """The compose secret holding the token of ``agent_id``'s sandbox: a file of that name in the episode."""
     return f"{TOKEN_FILE}_{agent_id.replace('-', '_')}"
+
+
+def credential_secret_name(credential: str) -> str:
+    """The compose secret holding ``credential``: a file of that name where it is mounted."""
+    return f"{CREDENTIAL_PREFIX}{credential}"
 
 
 def connect_sandboxes(
