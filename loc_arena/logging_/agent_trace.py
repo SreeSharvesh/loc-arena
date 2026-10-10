@@ -99,7 +99,7 @@ class AgentTrace:
     def on_mirror_append(self, event: Event) -> None:
         self._mirror_lane[event.seq] = self._bound
         twin = self._last_sealed
-        if twin is not None and _same_logical_event(twin, event):
+        if twin is not None and same_logical_event(twin, event):
             self._mirror_to_sealed[event.seq] = twin.seq
             self._last_sealed = None
 
@@ -139,7 +139,7 @@ class AgentTrace:
         )
 
 
-def _same_logical_event(sealed: Event, mirror: Event) -> bool:
+def same_logical_event(sealed: Event, mirror: Event) -> bool:
     return replace(sealed, seq=0, fp="") == replace(mirror, seq=0, fp="")
 
 

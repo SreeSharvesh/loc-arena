@@ -18,6 +18,7 @@ import dataclasses
 import os
 import shutil
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -88,14 +89,37 @@ def resolve_scenario(config: RunConfig) -> Scenario:
     return load_scenario(config.scenario or "aurora_efficiency")
 
 
+class ClockReading(BaseModel):
+    """The episode clock's time from one wall-clock moment on: it moves only when the episode sets it."""
+
+    model_config = ConfigDict(frozen=True)
+
+    wall: float  # when it was set, in seconds since the epoch
+    ts: float  # the episode time it was set to
+
+
 class _MutableClock:
-    """A clock the scripted assembler advances explicitly, so every event timestamp is deterministic."""
+    """A clock the episode advances explicitly, so every event timestamp is deterministic.
+
+    It keeps a reading at its start and at each move, so a service's record, which carries wall time, maps to
+    the episode time a live event would have had then.
+    """
 
     def __init__(self, start: float = 100.0) -> None:
+        self.readings: list[ClockReading] = []
         self.t = start
 
+    @property
+    def t(self) -> float:
+        return self._t
+
+    @t.setter
+    def t(self, value: float) -> None:
+        self._t = value
+        self.readings.append(ClockReading(wall=time.time(), ts=value))
+
     def __call__(self) -> float:
-        return self.t
+        return self._t
 
 
 @dataclass(frozen=True)
@@ -124,6 +148,7 @@ class Snapshot:
     trace: EpisodeTrace | None = None
     stopped_at_wall_clock_ceiling: bool = False  # the ceiling stopped agents that had turns left
     failed_model_calls: int = 0  # calls the provider failed past its retries
+    clock: tuple[ClockReading, ...] = ()  # the episode clock's readings, the first at the start of play
 
 
 class SnapshotFile(BaseModel):
@@ -136,9 +161,11 @@ class SnapshotFile(BaseModel):
     checkout: Path
     deadline_ts: float
     mode: Literal["attack", "honest"]
+    clock: tuple[ClockReading, ...] = ()  # the clock's reading at the start of play and at each move
+    finished_at: float | None = None  # when play finished: from the first reading on, its play window
 
 
-_SNAPSHOT_FILE = "snapshot.json"
+SNAPSHOT_FILE = "snapshot.json"
 
 
 def sandbox_url_template() -> str | None:
@@ -193,14 +220,16 @@ def record_snapshot(snapshot: Snapshot, workdir: Path, config: RunConfig) -> Sna
         checkout=snapshot.checkout.relative_to(workdir),
         deadline_ts=snapshot.deadline_ts,
         mode="attack" if config.covert.enabled else "honest",
+        clock=snapshot.clock,
+        finished_at=time.time(),
     )
-    (workdir / _SNAPSHOT_FILE).write_text(snapshot_file.model_dump_json(indent=2))
+    (workdir / SNAPSHOT_FILE).write_text(snapshot_file.model_dump_json(indent=2))
     return snapshot
 
 
 def read_snapshot_file(directory: Path) -> SnapshotFile:
     """Parse the ``snapshot.json`` a played episode left in ``directory``."""
-    return SnapshotFile.model_validate_json((directory / _SNAPSHOT_FILE).read_text())
+    return SnapshotFile.model_validate_json((directory / SNAPSHOT_FILE).read_text())
 
 
 def read_snapshot(directory: Path, config: RunConfig) -> Snapshot:
@@ -463,7 +492,15 @@ def play_scripted_episode(
         _covert_chain(core, edge, recorder, identity, config, clk, deadline_ts, robust=robust)
     episode_trace = trace.finish(sealed.last_seq) if trace else None
     return record_snapshot(
-        Snapshot(sealed_path, mirror_path, checkout, deadline_ts, world, trace=episode_trace),
+        Snapshot(
+            sealed_path,
+            mirror_path,
+            checkout,
+            deadline_ts,
+            world,
+            trace=episode_trace,
+            clock=tuple(clk.readings),
+        ),
         workdir,
         config,
     )
