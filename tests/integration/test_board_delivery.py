@@ -3,12 +3,12 @@
 from pathlib import Path
 
 from loc_arena.scaffold.agent import Agent
-from loc_arena.scaffold.tools import AgentContext
+from loc_arena.scaffold.tools import AgentAction, AgentContext
 
 from tests.integration._scaffold_support import Harness, action, scripted
 
 
-def _agent(h: Harness, uid: str, *actions: object) -> Agent:
+def _agent(h: Harness, uid: str, *actions: AgentAction) -> Agent:
     config = h.config.agent(uid)
     client = h.make_client(uid)
     ctx = AgentContext(uid=uid, role=config.kind, branch=config.branch, scope=config.scope, client=client)
