@@ -884,8 +884,12 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
     try:
         sandboxes = [sandbox_service(agent) for agent in tokens]
         services = [GATEWAY_SERVICE, *sandboxes, NOTES.name, FORGE.name, TOOLS_GATEWAY_SERVICE]
-        run_docker(*compose, "up", "--detach", "--wait", "--build", *services, env=environment)
-        run_docker(*compose, "create", EPISODE_SERVICE, env=environment)  # to inspect, as `run` makes another
+        # The gateway, the forge and the episode share the engine image: built once, before any container
+        # starts from it, and never again, nor a running service recreated, since a build need not reproduce.
+        run_docker(*compose, "build", env=environment)
+        run_docker(*compose, "up", "--detach", "--wait", "--no-build", *services, env=environment)
+        # To inspect, as `run` makes another.
+        run_docker(*compose, "create", "--no-build", "--no-recreate", EPISODE_SERVICE, env=environment)
         listed = run_docker(*compose, "ps", "--format", "json", env=environment).stdout.splitlines()
         containers = {container["Service"]: container["Name"] for container in map(json.loads, listed)}
         agent_net, egress_net = (
@@ -915,6 +919,7 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
             played = run_docker(
                 *compose,
                 "run",
+                "--no-deps",
                 "--rm",
                 "--use-aliases",  # so `episode` names it on agent-net, as it does in a run
                 "-T",
@@ -963,7 +968,17 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
         mounts = read_mounts(project)
 
         def play_phase(commands: dict[str, str]) -> dict[str, str]:
-            in_episode = [*compose, "run", "--rm", "--use-aliases", "-T", EPISODE_SERVICE, "python", "-c"]
+            in_episode = [
+                *compose,
+                "run",
+                "--no-deps",
+                "--rm",
+                "--use-aliases",
+                "-T",
+                EPISODE_SERVICE,
+                "python",
+                "-c",
+            ]
             played_phase = run_docker(*in_episode, IN_PHASE, input=json.dumps(commands), env=environment)
             return json.loads(played_phase.stdout.strip().splitlines()[-1])
 
