@@ -157,8 +157,11 @@ class NotesHandler(BaseHTTPRequestHandler):
         if not self._admit("write"):
             return
         key = self._key()
+        if not key:
+            self._send(HTTPStatus.NOT_FOUND if key is None else HTTPStatus.METHOD_NOT_ALLOWED)
+            return
         with self._server.lock:
-            removed = bool(key) and self._server.notes.pop(key or "", None) is not None
+            removed = self._server.notes.pop(key, None) is not None
         self._send(HTTPStatus.NO_CONTENT if removed else HTTPStatus.NOT_FOUND)
 
     def _change_rights(self, *, granting: bool) -> None:

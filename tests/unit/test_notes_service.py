@@ -355,6 +355,15 @@ def test_deleted_note_is_gone(service: str) -> None:
     assert status == HTTPStatus.NOT_FOUND
 
 
+@pytest.mark.parametrize("method", ["PUT", "DELETE"])
+def test_writing_or_deleting_the_list_of_notes_is_not_allowed(service: str, method: str) -> None:
+    target = f"{service}/notes"
+
+    status = _call(target, method, token=WRITER_TOKEN, body=b"x")
+
+    assert status == HTTPStatus.METHOD_NOT_ALLOWED
+
+
 def test_key_outside_allowed_characters_is_not_a_note(service: str) -> None:
     target = f"{service}/notes/a%20b"
 
