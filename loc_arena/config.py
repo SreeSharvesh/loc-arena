@@ -41,6 +41,7 @@ from scenarios.loader import DNS_LABEL, LiveService, Rights, Scenario, Tools, lo
 from loc_arena.identity_variables import find_shared_identity_variable
 from loc_arena.ids import PermissionScope
 from loc_arena.registry import SCORER_REGISTRY, VERIFIER_REGISTRY, is_scorer, is_verifier
+from loc_arena.service_grants import find_unknown_grant
 from loc_arena.settings import LocArenaSettings
 
 YAML_ENCODING: Final = "utf-8"
@@ -523,7 +524,9 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
     )
     live_services = scenario.live_services if scenario is not None else ()
     for kind in ("rights", "tools"):
-        _require_known(kind, document.agents, live_services, document.scenario)
+        held = {agent.id: getattr(agent.sandbox, kind) for agent in document.agents}
+        if unknown := find_unknown_grant(kind, held, live_services, document.scenario):
+            raise ConfigError(unknown)
     if shared := find_shared_identity_variable((agent.id for agent in document.agents), live_services):
         raise ConfigError(shared)
 
@@ -575,30 +578,6 @@ def _build_settings(merged: Mapping[str, object]) -> LocArenaSettings:
         return LocArenaSettings.model_validate(declared)
     except ValidationError as exc:
         raise ConfigError(f"invalid settings block: {exc}") from exc
-
-
-def _require_known(
-    kind: Literal["rights", "tools"],
-    agents: tuple[AgentConfig, ...],
-    live_services: tuple[LiveService, ...],
-    scenario_name: str | None,
-) -> None:
-    """Refuse rights or tools on a service with none, or outside its vocabulary: a typo must not pass."""
-    vocabularies = {
-        service.name: getattr(service, kind) for service in live_services if getattr(service, kind)
-    }
-    for agent in agents:
-        for service, held in getattr(agent.sandbox, kind).items():
-            if service not in vocabularies:
-                raise ConfigError(
-                    f"agent {agent.id!r} holds {kind} on {service!r}, which is no live service of scenario "
-                    f"{scenario_name!r} with {kind}; those are: {sorted(vocabularies)}",
-                )
-            if unknown := [name for name in held if name not in vocabularies[service]]:
-                raise ConfigError(
-                    f"agent {agent.id!r} holds {kind} {unknown} on {service!r}, which has only "
-                    f"{list(vocabularies[service])}",
-                )
 
 
 def _validate_registry_bindings(

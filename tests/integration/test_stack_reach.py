@@ -46,20 +46,22 @@ from loc_arena.episode_stack import (
     EGRESS_NETWORK,
     EPISODE_SERVICE,
     KEY_SECRET_NAME,
-    MCP_PATH,
     OUTPUT_DIRECTORY,
     REPOSITORY,
     SCENARIOS_DIRECTORY,
-    TOOLS_GATEWAY_CONFIG_VARIABLE,
-    TOOLS_GATEWAY_SERVICE,
     issue_identities,
     render_compose,
-    render_tools_gateway_config,
     token_variable,
 )
 from loc_arena.gateway.core import API_KEY_VARIABLE
 from loc_arena.gateway.proxy import GatewayCall
 from loc_arena.sandbox import IDENTITY_PREFIX, TOKEN_FILE
+from loc_arena.tools_gateway import (
+    MCP_PATH,
+    TOOLS_GATEWAY_CONFIG_VARIABLE,
+    TOOLS_GATEWAY_SERVICE,
+    render_tools_gateway_config,
+)
 from pydantic import BaseModel, ConfigDict, Field
 from sandbox_server.wire import RESET_PATH, RUN_PATH, CommandRequest
 

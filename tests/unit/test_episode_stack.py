@@ -23,13 +23,13 @@ from loc_arena.episode_stack import (
     Identity,
     StackError,
     render_compose,
-    render_tools_gateway_config,
     run_in_stack,
     sandbox_agent_code,
 )
 from loc_arena.gateway import core
 from loc_arena.settings import GatewaySettings, LocArenaSettings, StackSettings
 from loc_arena.task import SANDBOX_URL_VARIABLE, TOOLS_URL_VARIABLE
+from loc_arena.tools_gateway import render_tools_gateway_config
 from sandbox_server.server import ServerSettings
 from scenarios.loader import SCENARIOS_ROOT, EngineModule, LiveService, load_scenario
 
