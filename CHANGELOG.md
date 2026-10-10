@@ -140,7 +140,8 @@ log has the details.
   (`--next-phase`). Between the two starts, the host adds each live service's and agentgateway's log so far
   to its `services/<name>.log`, then recreates every sandbox, live service and agentgateway with fresh
   anonymous volumes. Only the gateway, whose call log runs on, and the episode are kept. If a log cannot be
-  copied or a container does not come back, the run stops with the compose project kept. An in-process run
+  copied, nothing is recreated. If a container does not come back, the run stops like a failed episode,
+  every log copied out. As before, the compose project is kept only when a copy fails. An in-process run
   already built a fresh forge per phase and is unchanged.
 - **A timed-out agent-code container is gone before the timeout is reported.** The grader force-removes it
   and waits until Docker no longer lists it; a killed `--rm` container used to be removed asynchronously,

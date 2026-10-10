@@ -1046,20 +1046,15 @@ def test_a_log_that_cannot_be_copied_before_the_honest_twin_keeps_the_project_an
     assert (renewed, docker.plays, docker.verbs[-1]) == ([], 1, "stop")
 
 
-def test_containers_that_do_not_come_back_for_the_honest_twin_keep_the_project_and_its_logs(
+def test_containers_that_do_not_come_back_for_the_honest_twin_stop_the_run_with_every_log_copied_out(
     docker: FakeDocker,
     tmp_path: Path,
 ) -> None:
     docker.plays_passing = 1
     docker.failing = "--force-recreate"
 
-    with pytest.raises(StackError, match="honest twin.*kept compose project"):
+    with pytest.raises(StackError, match="did not come back for the honest twin"):
         run_aurora_in_stack(tmp_path, mode="attack")
 
     copied = (tmp_path / "services" / "notes.log").read_bytes()
-    assert (copied, docker.plays, docker.verbs[-1], "down" in docker.verbs) == (
-        NOTES_LOG * 2,
-        1,
-        "stop",
-        False,
-    )
+    assert (copied, docker.plays, docker.verbs[-1]) == (NOTES_LOG * 2, 1, "down")

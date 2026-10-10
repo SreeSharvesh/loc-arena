@@ -469,8 +469,9 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
     still runs, so model-backed monitors reach their model through it and it records their calls. Whatever
     the episode, the gateway and each live service recorded is copied into ``logs`` before the project is
     removed, after a Ctrl-C too, a live service's log to ``services/<name>.log``; when the episode never
-    started, a live service that failed to become healthy leaves only that log. When a copy or the renewal
-    fails the project is kept, stopped, so nothing recorded is lost. Returns the bundle's directory.
+    started, a live service that failed to become healthy leaves only that log. A failed renewal before the
+    twin stops the run like a failed episode, its logs copied out. The project is kept, stopped, only when a
+    copy fails, so nothing recorded is lost. Returns the bundle's directory.
     """
     run = Path(run).name.removesuffix(".yaml")
     config = load_run_config(REPOSITORY / "configs" / f"{run}.yaml")
@@ -514,7 +515,7 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
         ([*compose, "cp", f"gateway:{settings.gateway.call_log}", str(call_log)], None),
         *copy_service_logs,
     ]
-    created = output_copied = kept = False
+    created = output_copied = False
     try:
         if run_compose([*compose, "create", "--build"]).returncode != 0:
             raise StackError("could not build or create the episode's containers: see compose's output above")
@@ -525,11 +526,7 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
         play = ["up", "--attach", EPISODE_SERVICE, "--exit-code-from", EPISODE_SERVICE, EPISODE_SERVICE]
         exit_code = run_compose([*compose, *play]).returncode
         if exit_code == 0 and mode != "honest":  # the episode played; the same container now plays the twin
-            try:
-                renew_services(config, compose, service_logs, environment)
-            except StackError as error:
-                kept = True
-                raise StackError(f"{error}: kept compose project {project} and its volumes") from error
+            renew_services(config, compose, service_logs, environment)
             exit_code = run_compose([*compose, *play]).returncode
         output_copied = copied(copy_output)
         if not output_copied:
@@ -555,8 +552,7 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
         if created and not all([copied(*copy) for copy in pending]):
             run_compose([*compose, "stop"])
             raise StackError(f"could not copy every log out: kept compose project {project} and its volumes")
-        # A renewal that failed keeps the project too, and its error, naming the project, propagates.
-        run_compose([*compose, *(["stop"] if kept else ["down", "--volumes", "--remove-orphans"])])
+        run_compose([*compose, "down", "--volumes", "--remove-orphans"])
         if created and not started:
             raise StackError(NEVER_STARTED.format(logs=service_logs))
 
