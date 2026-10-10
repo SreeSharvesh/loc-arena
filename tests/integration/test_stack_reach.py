@@ -1262,9 +1262,8 @@ def test_no_container_of_the_project_mounts_the_docker_socket(stack_run: StackRu
         for service in [
             GATEWAY_SERVICE,
             EPISODE_SERVICE,
-            NOTES.name,
-            FORGE.name,
             TOOLS_GATEWAY_SERVICE,
+            *(live.name for live in CONFIG.live_services),
             *(sandbox_service(agent.id) for agent in CONFIG.agents),
         ]
     }
