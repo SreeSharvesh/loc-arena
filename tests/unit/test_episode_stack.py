@@ -1006,4 +1006,4 @@ def test_a_stack_run_copies_each_live_services_log_into_its_run_directory_before
 
     run_aurora_in_stack(tmp_path)
 
-    assert seen == [["agentgateway.log", "forge.log", "notes.log"]] * 2
+    assert seen == [["agentgateway.log", "board.log", "forge.log", "notes.log"]] * 2
