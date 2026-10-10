@@ -100,7 +100,8 @@ def test_write_bundle_keeps_the_placeholder_when_the_flag_is_off(tmp_path: Path)
 
 
 def _assembled(tmp_path: Path, name: str) -> SimpleNamespace:
-    return SimpleNamespace(trace=AgentTrace().finish(last_sealed_seq=-1), sealed_path=tmp_path / name)
+    trace = AgentTrace().finish(last_sealed_seq=-1)
+    return SimpleNamespace(trace=trace, sealed_path=tmp_path / name, mirror_path=tmp_path / f"{name}.mirror")
 
 
 def test_eval_episodes_puts_the_root_first_and_labels_the_calibration_twin(tmp_path: Path) -> None:
