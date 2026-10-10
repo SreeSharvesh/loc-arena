@@ -88,8 +88,9 @@ so a typo cannot pass.
 For each live service the rendered compose file holds one container with these fixed properties:
 
 - It joins agent-net and never egress-net, so it has no route out.
-- It drops every capability and runs under the stack's service limits (`service_memory_limit`, `service_cpus`,
-  `service_pids_limit`).
+- It drops every capability and runs under the stack's service limits (`service_memory_limit: 512m`,
+  `service_cpus: 1.0`, `service_pids_limit: 256`). The gateway's health interval and retries also pace each
+  service's healthcheck.
 - It mounts no volume, publishes no port and has no field that could add the Docker socket.
 - Its only secrets are the credentials it accepts. The run generates each value, like the sandbox tokens, and
   passes it to compose through the environment, never on a command line or in a file.
@@ -135,9 +136,11 @@ agents:
 ```
 
 Without a `healthcheck`, the stack probes the declared `port`. A service that checks no credential lists an empty
-`accepts` and is open to everything on agent-net. A load error names the entry when its name is not a DNS label
-(or is `gateway`, `episode` or starts with `sandbox-`), when it sets both `build` and `image`, when `build`
-leaves the scenario pack or holds no `Dockerfile`, or when a live entry has no `port`.
+`accepts` and is open to everything on agent-net. An entry takes only the fields above; any other key is
+refused. The loader names the entry when its name is not a DNS label (or is `gateway` or `episode`, or starts with
+`sandbox-`), when it sets both `build` and `image`, when `build` is not a directory under the scenario pack
+(outside `reference/` and `scripted/`) holding a `Dockerfile`, when a credential name is not lowercase letters,
+digits and hyphens, or when a live entry has no `port`.
 
 ## The gateway: a pass-through to OpenRouter
 
