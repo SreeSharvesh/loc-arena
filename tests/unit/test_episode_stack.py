@@ -15,6 +15,7 @@ from typing import IO, Any
 
 import pytest
 import yaml
+from loc_arena import episode_stack
 from loc_arena.config import AgentSandboxConfig, load_run_config
 from loc_arena.episode_stack import (
     AGENT_NETWORK,
@@ -807,9 +808,10 @@ AURORA_AGENTS += ["JOBSVC_AGENT", "SERVING_AGENT"]
 
 @dataclass
 class FakeDocker:
-    """``subprocess.run`` for the compose calls of a stack run whose episode exits 1, so nothing is graded."""
+    """``subprocess.run`` for a stack run's compose calls; its episode exits 1 unless told, so none grades."""
 
     failing: str = "no subcommand"  # the compose subcommand that fails
+    episode_exit_code: int = 1
     episode_created_only: bool = False  # a live service never became healthy, so the episode never started
     calls: list[list[str]] = field(default_factory=list)
     environment: dict[str, str] = field(default_factory=dict)
@@ -818,16 +820,17 @@ class FakeDocker:
         self,
         command: list[str],
         *,
-        env: dict[str, str],
+        env: dict[str, str] | None = None,  # none on the host's own call, for the gateway's published port
         stdout: IO[bytes] | None = None,
         **_: object,
     ) -> subprocess.CompletedProcess[str]:
         self.calls.append(command)
-        self.environment = env
+        self.environment = env or self.environment
         verb = command[COMPOSE_PREFIX_LENGTH]
         if verb == "logs" and stdout is not None:
             stdout.write(NOTES_LOG)
-        failed = verb == self.failing or (verb == "up" and "--attach" in command)
+        episode_failed = verb == "up" and "--attach" in command and self.episode_exit_code != 0
+        failed = verb == self.failing or episode_failed
         created = "container-id\n" if verb == "ps" and self.episode_created_only else ""
         return subprocess.CompletedProcess(command, int(failed), stdout=created)
 
@@ -845,6 +848,12 @@ def docker(monkeypatch: pytest.MonkeyPatch) -> FakeDocker:
 
 def run_aurora_in_stack(logs: Path) -> None:
     run_in_stack("aurora-efficiency", mode="honest", seed=None, robust=False, logs=logs)
+
+
+def read_copied_log(logs: Path, service: str) -> bytes:
+    """The log of ``service`` a stack run copied into its run directory under ``logs``."""
+    (copied,) = logs.glob(f"*/*/services/{service}.log")
+    return copied.read_bytes()
 
 
 def test_a_stack_run_hands_compose_a_distinct_identity_per_agent_and_service_through_its_environment_alone(
@@ -880,7 +889,7 @@ def test_a_stack_run_copies_each_live_services_log_out_before_it_removes_the_pro
     with pytest.raises(StackError, match="exited with code 1"):
         run_aurora_in_stack(tmp_path)
 
-    copied = (tmp_path / "services" / "notes.log").read_bytes()
+    copied = read_copied_log(tmp_path, "notes")
     commands = [call[COMPOSE_PREFIX_LENGTH:] for call in docker.calls]
     assert (copied, ["logs", "--no-color", "--no-log-prefix", "notes"] in commands, docker.verbs[-1]) == (
         NOTES_LOG,
@@ -910,7 +919,7 @@ def test_a_stack_run_whose_episode_never_started_copies_each_live_services_log_b
     with pytest.raises(StackError, match="never started"):
         run_aurora_in_stack(tmp_path)
 
-    copied = (tmp_path / "services" / "notes.log").read_bytes()
+    copied = read_copied_log(tmp_path, "notes")
     commands = [call[COMPOSE_PREFIX_LENGTH:] for call in docker.calls]
     assert (copied, ["logs", "--no-color", "--no-log-prefix", "notes"] in commands, docker.verbs[-1]) == (
         NOTES_LOG,
@@ -928,7 +937,8 @@ def test_a_stack_run_whose_episode_never_started_says_a_live_service_may_have_fa
     with pytest.raises(StackError) as raised:
         run_aurora_in_stack(tmp_path)
 
-    assert "live service" in str(raised.value) and str(tmp_path / "services") in str(raised.value)
+    (services,) = tmp_path.glob("*/*/services")
+    assert "live service" in str(raised.value) and str(services) in str(raised.value)
 
 
 def test_a_live_services_log_that_cannot_be_copied_keeps_the_project_though_the_episode_never_started(
@@ -966,7 +976,7 @@ def test_a_stack_run_copies_the_tools_gateways_log_out_before_it_removes_the_pro
     with pytest.raises(StackError, match="exited with code 1"):
         run_aurora_in_stack(tmp_path)
 
-    copied = (tmp_path / "services" / "agentgateway.log").read_bytes()
+    copied = read_copied_log(tmp_path, "agentgateway")
     commands = [call[COMPOSE_PREFIX_LENGTH:] for call in docker.calls]
     assert (
         copied,
@@ -977,3 +987,23 @@ def test_a_stack_run_copies_the_tools_gateways_log_out_before_it_removes_the_pro
         True,
         "down",
     )
+
+
+def test_a_stack_run_copies_each_live_services_log_into_its_run_directory_before_it_builds_and_grades(
+    docker: FakeDocker,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    docker.episode_exit_code = 0
+    seen: list[list[str]] = []
+
+    def list_copied_logs(config: object, run_directory: Path, **_: object) -> Path:
+        seen.append(sorted(path.name for path in (run_directory / "services").iterdir()))
+        return run_directory
+
+    monkeypatch.setattr(episode_stack, "build_recorded_run_events", list_copied_logs)
+    monkeypatch.setattr(episode_stack, "grade_run", list_copied_logs)
+
+    run_aurora_in_stack(tmp_path)
+
+    assert seen == [["agentgateway.log", "forge.log", "notes.log"]] * 2
