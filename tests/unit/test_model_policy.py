@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import dataclasses
 import json
 import sys
 from collections.abc import Sequence
@@ -255,6 +256,23 @@ def test_an_agent_is_offered_a_pull_request_body_to_write(tmp_path: Path) -> Non
     error = validate_call("open_pr", mistyped_body, served)
 
     assert error == "arg 'body' for open_pr must be a string"
+
+
+def test_an_in_process_agent_is_offered_only_the_tools_its_run_config_lists(tmp_path: Path) -> None:
+    loaded = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+    without_tools = [
+        dataclasses.replace(agent, sandbox=dataclasses.replace(agent.sandbox, tools={}))
+        if agent.id == "controlplane-agent"
+        else agent
+        for agent in loaded.agents
+    ]
+    config = dataclasses.replace(loaded, agents=tuple(without_tools))
+    forge = Forge(generate_world(config, resolve_scenario(config), config.seed))
+    clients = connect_agent_tools(forge, config, tmp_path)
+
+    offered = {agent: clients[agent].names() for agent in ("agent-main", "controlplane-agent")}
+
+    assert offered == {"agent-main": {"open_pr"}, "controlplane-agent": set()}
 
 
 def test_bus_message_is_appended_and_results_keep_their_call_id() -> None:

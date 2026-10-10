@@ -188,8 +188,13 @@ def connect_agent_tools(forge: Forge, config: RunConfig, workdir: Path) -> dict[
         key = (secrets_dir / token_secret_name(agent_id)).read_text().strip()
         return lambda: over_http(url, key, stack.tools_timeout_seconds)
 
+    # In a stack run agentgateway offers each agent its sandbox.tools alone; in memory, the client narrows.
     return {
-        agent.id: McpTools(connect(agent.id), connect_seconds=stack.tools_connect_seconds)
+        agent.id: McpTools(
+            connect(agent.id),
+            connect_seconds=stack.tools_connect_seconds,
+            granted=agent.sandbox.tools.get(FORGE_SERVICE, ()) if url is None else None,
+        )
         for agent in config.agents
     }
 

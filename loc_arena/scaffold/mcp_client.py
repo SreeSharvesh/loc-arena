@@ -9,7 +9,7 @@ server is an error result for the agent, never an exception for the episode.
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections.abc import AsyncIterator, Callable, Collection, Mapping
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Any
 
@@ -44,10 +44,21 @@ async def over_http(url: str, key: str, timeout_seconds: float) -> AsyncIterator
 class McpTools:
     """One agent's MCP tools: listed once from its server, each call over a fresh connection."""
 
-    def __init__(self, connect: Connect, *, connect_seconds: float = 0.0) -> None:
-        """Reach the server with ``connect``; retry the first listing for up to ``connect_seconds``."""
+    def __init__(
+        self,
+        connect: Connect,
+        *,
+        connect_seconds: float = 0.0,
+        granted: Collection[str] | None = None,
+    ) -> None:
+        """Reach the server with ``connect``; retry the first listing for up to ``connect_seconds``.
+
+        With ``granted``, only those of the server's tools are offered: a server that offers every agent all
+        its tools, as an in-process one does, is narrowed to the agent's ``sandbox.tools``.
+        """
         self._connect = connect
         self._connect_seconds = connect_seconds
+        self._granted = granted
         self._specs: list[ToolSpec] | None = None
 
     def specs(self) -> list[ToolSpec]:
@@ -86,7 +97,8 @@ class McpTools:
 
     async def _list(self) -> list[Tool]:
         async with self._connect() as client:
-            return list((await client.list_tools()).tools)
+            tools = (await client.list_tools()).tools
+        return [tool for tool in tools if self._granted is None or tool.name in self._granted]
 
     async def _call(self, tool: str, arguments: Mapping[str, JsonValue]) -> ToolResult:
         async with self._connect() as client:
