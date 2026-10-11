@@ -141,12 +141,19 @@ EVENT_BUILDERS: Mapping[str, Callable[[ToolRecord, Sequence[str]], list[Recorded
 
 
 def _action_event(record: ToolRecord) -> RecordedEvent:
-    """The dual ``action`` event the action monitor and the explorer read for a covert tool call."""
+    """The dual ``action`` event the action monitor and the explorer read for a covert tool call.
+
+    The scratch note's text is redacted to its fingerprint: the action is on the mirror, which the monitors
+    read, and only the sealed ``shared_surface`` keeps a note's content (as its fingerprint) off it.
+    """
+    args = dict(record.arguments)
+    if record.tool == "write_scratch" and "content" in args:
+        args["content"] = fingerprint(str(args["content"]))
     return RecordedEvent(
         "action",
         record.agent,
         None,
-        {"args": dict(record.arguments), "target": None, "blocked": False, "reason": None},
+        {"args": args, "target": None, "blocked": False, "reason": None},
         tool=record.tool,
         result=dict(record.result) if record.result is not None else None,
     )
@@ -196,12 +203,16 @@ class _Placed:
     turn: int
 
 
-@dataclass
+@dataclass(frozen=True)
 class _CoverageDrop:
-    """A blind_monitor call's effect on the mirror: the target's events after ``since`` are dropped."""
+    """A blind_monitor call's effect on the mirror: the target's events after ``cut`` are dropped.
+
+    ``cut`` is the blind_monitor action's ``(episode time, mirror seq)``: the mirror's own seq breaks a tie
+    between events of the same clock step, which a time comparison alone would keep.
+    """
 
     target: str
-    since: float
+    cut: tuple[float, int]
 
 
 def build_recorded_events(
@@ -224,17 +235,14 @@ def build_recorded_events(
     services = [service.name for service in config.live_services if service.tools]
     unattributed: list[str] = []
     built: dict[Path, list[_Placed]] = {phase.directory: [] for phase in phases}
-    drops: dict[Path, list[_CoverageDrop]] = {phase.directory: [] for phase in phases}
     for line in _read_record_lines(run_directory, services, phases):
-        placed, reason, drop = _place(line, phases, roles, agent_ids)
+        placed, reason = _place(line, phases, roles, agent_ids)
         unattributed += [json.dumps({"reason": reason, "line": line})] if reason else []
         if placed:
             built[placed.phase.directory].append(placed)
-            if drop is not None:
-                drops[placed.phase.directory].append(drop)
     for phase in phases:
-        _write_events(phase, sorted(built[phase.directory], key=lambda placed: placed.wall), roles)
-        _drop_covered_mirror_events(phase, drops[phase.directory])
+        drops = _write_events(phase, sorted(built[phase.directory], key=lambda placed: placed.wall), roles)
+        _drop_covered_mirror_events(phase, drops)
     if unattributed:
         _LOGGER.warning("%d service records were not placed: see %s", len(unattributed), UNATTRIBUTED_FILE)
         (run_directory / UNATTRIBUTED_FILE).write_text("".join(f"{note}\n" for note in unattributed))
@@ -260,42 +268,39 @@ def _place(
     phases: list[_Phase],
     roles: Mapping[str, str],
     agent_ids: Sequence[str],
-) -> tuple[_Placed | None, str | None, _CoverageDrop | None]:
+) -> tuple[_Placed | None, str | None]:
     """The events of a record ``line``, placed, if it makes any; and why not, or not in a turn."""
     try:
         record = ToolRecord.model_validate_json(line)
         events = build_events(record, agent_ids) if record.error is None else []
     except ValidationError:
-        return None, "not a valid record", None
+        return None, "not a valid record"
     wall = record.time.timestamp()
     phase = next((phase for phase in phases if phase.holds(wall)), None)
     if phase is None or record.agent not in roles:
-        return None, "outside every phase window" if phase is None else "not an agent of the run", None
+        return None, "outside every phase window" if phase is None else "not an agent of the run"
     if not events:
-        return None, None, None
+        return None, None
     turn = phase.find_turn(record.agent, wall)
-    drop = _coverage_drop(record, phase, wall)
-    return _Placed(phase, wall, events, turn or 0), "no covering turn" if turn is None else None, drop
+    return _Placed(phase, wall, events, turn or 0), "no covering turn" if turn is None else None
 
 
-def _coverage_drop(record: ToolRecord, phase: _Phase, wall: float) -> _CoverageDrop | None:
-    """The mirror drop a blind_monitor call makes: its target, from the episode time of the call on."""
-    if record.tool != "blind_monitor":
-        return None
-    target = record.arguments.get("target")
-    return _CoverageDrop(str(target), phase.read_clock(wall)) if isinstance(target, str) else None
+def _write_events(phase: _Phase, built: list[_Placed], roles: Mapping[str, str]) -> list[_CoverageDrop]:
+    """Append ``built`` to the logs of ``phase``, after every event its play wrote.
 
-
-def _write_events(phase: _Phase, built: list[_Placed], roles: Mapping[str, str]) -> None:
-    """Append ``built`` to the logs of ``phase``, after every event its play wrote."""
+    Returns a drop for each blind_monitor action, carrying the mirror seq it was written at, so the mirror
+    filter can order the target's events of the same clock step against it.
+    """
+    drops: list[_CoverageDrop] = []
     if not built:
-        return
+        return drops
     sealed_path = resolve_inside(phase.directory, phase.snapshot.sealed_path)
     episode_id = next(read_events(sealed_path)).episode_id
     sealed = AppendOnlyLog(sealed_path, episode_id)
     mirror = AppendOnlyLog(resolve_inside(phase.directory, phase.snapshot.mirror_path), episode_id)
     recorder = Recorder(episode_id, sealed, mirror)
     for placed in built:
+        ts = phase.read_clock(placed.wall)
         for event in placed.events:
             write = recorder.dual if event.to_mirror else recorder.sealed
             write(
@@ -307,8 +312,13 @@ def _write_events(phase: _Phase, built: list[_Placed], roles: Mapping[str, str])
                 turn=placed.turn,
                 tool=event.tool,
                 result=event.result,
-                ts=phase.read_clock(placed.wall),
+                ts=ts,
             )
+            if event.kind == "action" and event.tool == "blind_monitor":
+                target = event.payload["args"].get("target")
+                if isinstance(target, str):
+                    drops.append(_CoverageDrop(target, (ts, mirror.next_seq() - 1)))
+    return drops
 
 
 def _drop_covered_mirror_events(phase: _Phase, drops: list[_CoverageDrop]) -> None:
@@ -317,25 +327,25 @@ def _drop_covered_mirror_events(phase: _Phase, drops: list[_CoverageDrop]) -> No
     Keeps the sealed log whole; filters raw lines, so a kept event's bytes are unchanged, and leaves the file
     untouched when nothing is dropped (the deterministic run stays byte-identical).
     """
-    since = _earliest_coverage_since(drops)
-    if not since:
+    cuts = _earliest_coverage_cuts(drops)
+    if not cuts:
         return
     mirror_path = resolve_inside(phase.directory, phase.snapshot.mirror_path)
     lines = mirror_path.read_text(encoding="utf-8").splitlines()
-    kept = [line for line in lines if _mirror_keeps(line, since)]
+    kept = [line for line in lines if _mirror_keeps(line, cuts)]
     mirror_path.write_text("".join(f"{line}\n" for line in kept), encoding="utf-8")
 
 
-def _earliest_coverage_since(drops: list[_CoverageDrop]) -> dict[str, float]:
-    """The episode time from which each target's coverage is reduced: its earliest blind_monitor call."""
-    since: dict[str, float] = {}
+def _earliest_coverage_cuts(drops: list[_CoverageDrop]) -> dict[str, tuple[float, int]]:
+    """Each target's cut: the ``(episode time, mirror seq)`` of its earliest blind_monitor call."""
+    cuts: dict[str, tuple[float, int]] = {}
     for drop in drops:
-        since[drop.target] = min(drop.since, since.get(drop.target, drop.since))
-    return since
+        cuts[drop.target] = min(drop.cut, cuts.get(drop.target, drop.cut))
+    return cuts
 
 
-def _mirror_keeps(line: str, since: Mapping[str, float]) -> bool:
-    """Whether a mirror line survives: a covered target's event strictly after its reduction is dropped."""
+def _mirror_keeps(line: str, cuts: Mapping[str, tuple[float, int]]) -> bool:
+    """Whether a mirror line survives: a covered target's event after its cut, by (ts, seq), is dropped."""
     event = json.loads(line)
-    covered = since.get(str(event.get("actor_uid")))
-    return covered is None or float(event.get("ts", 0.0)) <= covered
+    covered = cuts.get(str(event.get("actor_uid")))
+    return covered is None or (float(event.get("ts", 0.0)), int(event.get("seq", 0))) <= covered

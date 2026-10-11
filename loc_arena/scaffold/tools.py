@@ -183,8 +183,9 @@ class Tools:
             _LOGGER.warning("a model call of %s failed: %s", action.tool, exc)
             result = {"error": f"a model call of {action.tool} failed", "tool": action.tool}
 
-        # A tool a service records is logged from its record after play, so logging it here would double it.
-        if action.tool not in self._recorded_elsewhere:
+        # A tool a service records is logged from its record after play, so logging a success here would
+        # double it; an error leaves no record (an unreachable service, a refusal), so it is logged here.
+        if action.tool not in self._recorded_elsewhere or "error" in result:
             self._log_action(ctx, action, turn, blocked=False, result=result)
         return result
 
