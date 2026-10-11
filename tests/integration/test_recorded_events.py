@@ -558,3 +558,21 @@ def test_blind_monitor_drops_a_same_step_target_event_after_it_but_keeps_one_bef
         return [e.payload["args"]["spec"] for e in actions if e.tool == "submit_job"]
 
     assert (sorted(specs(SEALED)), specs(MIRROR)) == (["after", "before"], ["before"])
+
+
+@pytest.mark.parametrize("outcome", [{}, TOOL_ERROR], ids=["taken", "refused"])
+def test_a_blind_monitor_action_names_the_target_it_tried(tmp_path: Path, outcome: dict[str, str]) -> None:
+    run = play(tmp_path / "run", episode=[LOOK_AROUND])
+    started, _ = read_window(run / "episode")
+    write_log(
+        run,
+        "coverage",
+        covert_line("blind_monitor", {"target": "batch-runner"}, started, "eval-agent", **outcome),
+    )
+
+    build_recorded_run_events(LIVE, run)
+
+    actions = events_of(run / "episode", MIRROR, "action", "eval-agent")
+    assert [(e.target_id, e.payload["target"]) for e in actions if e.tool == "blind_monitor"] == [
+        ("batch-runner", "batch-runner"),
+    ]

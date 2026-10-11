@@ -2,24 +2,26 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
+import httpx2
 import pytest
 from loc_arena.forge.forge import Forge
 from loc_arena.forge.world import generate_world
 from loc_arena.gateway.core import ProviderError
 from loc_arena.live import connect_agent_tools
 from loc_arena.logging_.events import fingerprint, read_events
-from loc_arena.scaffold.mcp_client import McpTools, over_http
+from loc_arena.scaffold.mcp_client import McpTools
 from loc_arena.scaffold.tools import AgentAction
 from loc_arena.task import resolve_scenario
 from mcp import Client
 from mcp.server import MCPServer
 
-from tests.integration._scaffold_support import Harness
+from tests.integration._scaffold_support import Harness, failing_tools
 
-# A client of the discard port, where nothing listens.
-UNREACHABLE = McpTools(lambda: over_http("http://127.0.0.1:9/mcp", "a-key", timeout_seconds=5.0))
+REFUSED = httpx2.ConnectError("connection refused")  # raised before the request is sent
+LOST = httpx2.ReadTimeout("no answer in time")  # raised after the request was sent
 
 
 @pytest.fixture
@@ -50,27 +52,39 @@ def test_a_call_a_service_took_is_logged_by_no_event_during_play(harness: Harnes
     assert not harness.sealed_path.exists()  # its events are built from the forge's record after play
 
 
-@pytest.mark.parametrize(
-    ("clients", "error"),
-    [([], "is not offered to you"), ([UNREACHABLE], "could not be called: the tool server is unreachable")],
-    ids=["not offered", "server unreachable"],
-)
+@pytest.mark.parametrize("refused", [False, True], ids=["not offered", "connection refused"])
 def test_a_call_that_never_reached_a_service_is_logged_as_an_action_with_its_error(
     harness: Harness,
-    clients: list[McpTools],
-    error: str,
+    refused: bool,
 ) -> None:
-    harness.clients = {"agent-main": clients}
+    board = failing_tools(harness.connect_board("agent-main"), REFUSED, after_call=False, failures=1)
+    harness.clients = {"agent-main": [board] if refused else []}
 
-    result = harness.tools().execute(harness.root_context(), AgentAction("open_pr", {}), 1)
+    result = harness.tools().execute(harness.root_context(), AgentAction("send", {"to": "serving-agent"}), 1)
 
     logged = [(event.kind, event.tool, event.result) for event in read_events(harness.sealed_path)]
-    expected = {"error": f"open_pr {error}", "tool": "open_pr"}
-    assert (result, logged) == (expected, [("action", "open_pr", expected)])
+    error = "could not be called: the tool server is unreachable" if refused else "is not offered to you"
+    expected = {"error": f"send {error}", "tool": "send"}
+    assert (result, logged) == (expected, [("action", "send", expected)])
+
+
+def test_a_call_whose_answer_was_lost_is_an_unknown_outcome_left_to_the_services_record(
+    harness: Harness,
+) -> None:
+    board = failing_tools(harness.connect_board("agent-main"), LOST, after_call=True, failures=1)
+    harness.clients = {"agent-main": [board]}
+
+    result = harness.tools().execute(harness.root_context(), AgentAction("send", {"to": "serving-agent"}), 1)
+
+    unknown = {"error": "send was sent, but its answer was lost: the outcome is unknown", "tool": "send"}
+    recorded = [
+        json.loads(line)["gen_ai.tool.name"] for line in harness.board_records.read_text().splitlines()
+    ]
+    assert (result, harness.sealed_path.exists(), recorded) == (unknown, False, ["send"])
 
 
 def test_a_scratch_note_the_loop_logs_reaches_the_mirror_only_as_its_fingerprint(harness: Harness) -> None:
-    harness.clients = {"agent-main": [UNREACHABLE]}
+    harness.clients = {"agent-main": []}
     note = "a note only the sealed log may hold"
 
     harness.tools().execute(harness.root_context(), AgentAction("write_scratch", {"content": note}), 1)
