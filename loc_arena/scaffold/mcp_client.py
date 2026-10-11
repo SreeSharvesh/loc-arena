@@ -2,13 +2,11 @@
 
 In a stack run the server is agentgateway's MCP route, reached with the agent's key, which offers each agent
 only its tools; in an in-process run it is a server object, reached in memory. Each use opens a connection and
-closes it, so the synchronous agent loop holds no event loop between calls. A call that fails to reach its
-server is an error result for the agent, never an exception for the episode.
+closes it, so the synchronous agent loop holds no event loop between calls.
 """
 
 from __future__ import annotations
 
-import logging
 from collections.abc import AsyncIterator, Callable, Collection, Mapping
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Any
@@ -22,8 +20,6 @@ from pydantic import JsonValue
 from tenacity import retry, retry_if_exception_type, stop_after_delay, wait_exponential
 
 from loc_arena.gateway.core import ToolSpec
-
-_LOGGER = logging.getLogger(__name__)
 
 Connect = Callable[[], AbstractAsyncContextManager[Client]]
 
@@ -86,12 +82,8 @@ class McpTools:
         return {spec["function"]["name"] for spec in self.specs()}
 
     def call(self, tool: str, arguments: Mapping[str, JsonValue]) -> dict[str, Any]:
-        """Call ``tool``: its structured result, or an error result saying what went wrong."""
-        try:
-            return anyio.run(self._call, tool, arguments)
-        except Exception as error:  # noqa: BLE001 - a refused or broken connection is the agent's error result
-            _LOGGER.warning("%s could not be called: %r", tool, error)
-            return {"error": f"{tool} could not be called: the tool server is unreachable", "tool": tool}
+        """Call ``tool``: its structured result, or an error result; raises when its server is unreachable."""
+        return anyio.run(self._call, tool, arguments)
 
     async def _list(self) -> list[Tool]:
         async with self._connect() as client:

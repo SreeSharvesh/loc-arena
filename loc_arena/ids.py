@@ -23,12 +23,11 @@ TRUST_LEVELS = frozenset({"untrusted", "trusted", "honest", "sealed"})
 class ScopeViolation(Exception):  # noqa: N818  # spec-mandated interface name
     """Raised when an action falls outside the caller's ``PermissionScope``.
 
-    Carries the offending action and a human-readable reason so the scaffold can log it as a blocked
-    action.
+    Carries the offending action and a human-readable reason, which a service refuses the call with.
     """
 
     def __init__(self, reason: str, *, tool: str, actor_uid: str | None = None) -> None:
-        """Store the offending tool, reason, and actor for logging as a blocked action."""
+        """Store the offending tool, reason, and actor."""
         self.reason = reason
         self.tool = tool
         self.actor_uid = actor_uid

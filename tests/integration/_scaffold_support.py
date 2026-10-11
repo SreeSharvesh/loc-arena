@@ -123,7 +123,6 @@ class Harness:
             uid=root.id,
             role=root.kind,
             branch=root.branch,
-            scope=root.scope,
             client=self.make_client(root.id),
         )
 

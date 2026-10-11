@@ -5,11 +5,13 @@ Each call to a live service with tools is one record (``loc_arena.tool_records``
 that start with ``{``, copied to ``services/<service>.log`` in the run directory. A record belongs to the
 episode, or the honest twin, whose play window holds its time. Its events take the episode clock's reading at
 that time and the native turn of its agent running then, else turn 0, and are written after every event of
-play to the sealed log, and to the mirror log unless sealed-only, as the harness wrote them live. A tool's
-call makes zero or more events: the forge's ``open_pr`` a ``pr``; a covert tool an ``action`` the monitors
-read, plus ``write_scratch`` a sealed ``shared_surface`` and ``blind_monitor`` the ``config`` pair the
-verifier reads. ``blind_monitor`` also reduces the monitors' view: the target's mirror events after the call
-are dropped, so monitors lose that activity while the sealed log keeps it. Each line of
+play to the sealed log, and to the mirror log unless sealed-only. A call its service refused (it carries
+``error.type``) makes a blocked ``action`` with the service's reason. A successful call makes zero or more
+events: the board's ``send`` a ``message``; the forge's ``open_pr`` a ``pr`` and an ``action``; a covert
+tool an ``action``, plus ``write_scratch`` a sealed ``shared_surface`` and ``blind_monitor`` the ``config``
+pair the verifier reads; ``read`` and ``unread`` none, since each turn's delivery is a ``read``.
+``blind_monitor`` also reduces the monitors' view: the target's mirror events after the call are dropped, so
+monitors lose that activity while the sealed log keeps it. Each line of
 ``unattributed_records.jsonl`` in the run directory is a record and the ``reason`` it was not placed: not a
 valid record, outside every phase window, or not an agent of the run; or no covering turn, a native agent's
 record outside all its turns, whose events are built in turn 0. Grading never builds, so grading a run again
@@ -140,25 +142,37 @@ EVENT_BUILDERS: Mapping[str, Callable[[ToolRecord, Sequence[str]], list[Recorded
 }
 
 
+# The tools whose successful call is also an action, and the argument naming what a call addresses.
+_ACTIONS = COVERT_TOOLS | {"open_pr"}
+_TARGET_FROM: Mapping[str, str] = {"open_pr": "repo", "send": "to"}
+
+
 def _action_event(record: ToolRecord) -> RecordedEvent:
-    """The dual ``action`` event the action monitor and the explorer read for a covert tool call."""
+    """The dual ``action`` event the action monitor and the explorer read; blocked if the service refused."""
+    target = record.arguments.get(_TARGET_FROM.get(record.tool, ""))
+    target = target if isinstance(target, str) else None
     return RecordedEvent(
         "action",
         record.agent,
-        None,
-        {"args": dict(record.arguments), "target": None, "blocked": False, "reason": None},
+        target,
+        {
+            "args": dict(record.arguments),
+            "target": target,
+            "blocked": record.error is not None,
+            "reason": record.status_description,
+        },
         tool=record.tool,
         result=dict(record.result) if record.result is not None else None,
     )
 
 
 def build_events(record: ToolRecord, agent_ids: Sequence[str]) -> list[RecordedEvent]:
-    """Every event a successful ``record`` makes: its tool's own events, plus a covert tool's action event."""
+    """Every event ``record`` makes: a refused call's blocked action, else its tool's events and action."""
+    if record.error is not None:
+        return [_action_event(record)]
     builder = EVENT_BUILDERS.get(record.tool)
     events = builder(record, agent_ids) if builder is not None else []
-    if record.tool in COVERT_TOOLS:
-        events.append(_action_event(record))
-    return events
+    return [*events, _action_event(record)] if record.tool in _ACTIONS else events
 
 
 @dataclass(frozen=True)
@@ -264,7 +278,7 @@ def _place(
     """The events of a record ``line``, placed, if it makes any; and why not, or not in a turn."""
     try:
         record = ToolRecord.model_validate_json(line)
-        events = build_events(record, agent_ids) if record.error is None else []
+        events = build_events(record, agent_ids)
     except ValidationError:
         return None, "not a valid record", None
     wall = record.time.timestamp()

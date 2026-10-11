@@ -16,9 +16,8 @@ log has the details.
   `send`, and each turn begins by delivering the agent's new messages, as the bus did: a `read` of those after the
   last one delivered, tried up to `stack.tools_delivery_attempts` times, so a lost answer loses no message, and
   recorded as the agent's `read` action with its error when every attempt fails; an agent not offered `read`
-  gets no delivery. `unread` stays for harnesses that keep no such cursor. A send outside the
-  agent's scope is still a blocked `action` event, and a send the board refuses is an `action` event with its
-  error; a message the board takes writes no `action` event. Any harness with an MCP client can now talk to the
+  gets no delivery. `unread` stays for harnesses that keep no such cursor. A send the board
+  refuses is a blocked `action` event with its reason; a message the board takes writes no `action` event. Any harness with an MCP client can now talk to the
   team. The default config gives every agent `send`, `read` and `unread`. agentgateway offers each tool by its
   own name (`prefixMode: never`), as an in-process run does, and is pinned to v1.6.0
   (`stack.tools_gateway_image`): with two services on its route, v1.5.0 found the service of a 2026-era call
@@ -161,6 +160,16 @@ log has the details.
   offered. The forge's git, ticket and wiki tools, the stub fallback, the in-process skill tools with their two
   timeouts, the inference tools and subagent spawning leave the loop, and the orchestrator goes with them. The
   covert briefs name no tool: an agent finds its tools in its MCP listing.
+
+- **Each service alone enforces the caller's scope, and a refused call is a blocked action (#99, step 6).** The
+  native loop checks no scope and logs an `action` only for a native tool and for an MCP call that never reached
+  a service (not offered, or its server unreachable); every other call's events are built from its service's
+  record. A failed call's record carries the error's text as `otel.status_description`, which the builder makes
+  the reason of a blocked `action`, so monitors and the explorer still see each refused attempt. A successful
+  `open_pr` builds an `action` beside its `pr`; `read` and `unread` build nothing. Sources:
+  https://github.com/open-telemetry/semantic-conventions-genai `docs/gen-ai/mcp.md` (`error.type` `tool_error`;
+  the status description is the error's message) and
+  https://opentelemetry.io/docs/specs/otel/common/mapping-to-non-otlp/ (`otel.status_description`).
 
 - **A stack run keeps each live service's log in its own run directory.** The logs of the live services and of
   agentgateway are copied to `services/<name>.log` in the run directory before grading, where the events of their

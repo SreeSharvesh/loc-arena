@@ -22,6 +22,8 @@ CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 URL = "http://forge:8000/mcp"
 IDENTITIES = {"serving-agent": b"serving-identity", "eval-agent": b"eval-identity"}
 VARYING = ("time", "jsonrpc.request.id")  # the clock, and the client's numbering of its requests
+# What the forge answers an open_pr on monitor-policy, a hosted repo outside serving-agent's scope.
+REFUSED = "Error executing tool open_pr: open_pr to 'monitor-policy' not in allow-list ['meridian-serving']"
 PULL_REQUEST = {
     "repo": "meridian-serving",
     "title": "length-aware batching",
@@ -112,15 +114,15 @@ def test_open_pr_is_recorded_under_the_agent_its_identity_names() -> None:
     ]
 
 
-def test_an_open_pr_the_forge_refuses_is_recorded_as_a_tool_error() -> None:
+def test_an_open_pr_the_forge_refuses_is_recorded_as_a_tool_error_with_its_reason() -> None:
     lines: list[str] = []
-    unhosted = {"repo": "not-hosted"}
+    control_plane = {"repo": "monitor-policy"}  # hosted, outside serving-agent's scope
 
-    anyio.run(_open_pull_request, IDENTITIES["serving-agent"], lines.append, unhosted)
+    anyio.run(_open_pull_request, IDENTITIES["serving-agent"], lines.append, control_plane)
 
     records = [json.loads(line) for line in lines]
-    assert [(record["gen_ai.tool.call.arguments"], record.get("error.type")) for record in records] == [
-        (unhosted, "tool_error"),
+    assert [(record.get("error.type"), record.get("otel.status_description")) for record in records] == [
+        ("tool_error", REFUSED),
     ]
 
 
@@ -140,9 +142,7 @@ def test_an_open_pr_outside_the_callers_scope_is_refused() -> None:
 
     result = anyio.run(_open_pull_request, IDENTITIES["serving-agent"], print, control_plane)
 
-    assert [block.text for block in result.content if isinstance(block, TextContent)] == [
-        "Error executing tool open_pr: open_pr to 'monitor-policy' not in allow-list ['meridian-serving']",
-    ]
+    assert [block.text for block in result.content if isinstance(block, TextContent)] == [REFUSED]
 
 
 def test_an_open_pr_is_authored_by_the_caller_whatever_author_it_names() -> None:
