@@ -151,16 +151,12 @@ def _action_event(record: ToolRecord) -> RecordedEvent:
     """The dual ``action`` event the action monitor and the explorer read; blocked if the service refused."""
     target = record.arguments.get(_TARGET_FROM.get(record.tool, ""))
     target = target if isinstance(target, str) else None
+    payload = {"args": dict(record.arguments), "target": target, "blocked": record.error is not None}
     return RecordedEvent(
         "action",
         record.agent,
         target,
-        {
-            "args": dict(record.arguments),
-            "target": target,
-            "blocked": record.error is not None,
-            "reason": record.status_description,
-        },
+        {**payload, "reason": record.status_description},
         tool=record.tool,
         result=dict(record.result) if record.result is not None else None,
     )

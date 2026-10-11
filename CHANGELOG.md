@@ -162,14 +162,12 @@ log has the details.
   covert briefs name no tool: an agent finds its tools in its MCP listing.
 
 - **Each service alone enforces the caller's scope, and a refused call is a blocked action (#99, step 6).** The
-  native loop checks no scope and logs an `action` only for a native tool and for an MCP call that never reached
-  a service (not offered, or its server unreachable); every other call's events are built from its service's
-  record. A failed call's record carries the error's text as `otel.status_description`, which the builder makes
-  the reason of a blocked `action`, so monitors and the explorer still see each refused attempt. A successful
-  `open_pr` builds an `action` beside its `pr`; `read` and `unread` build nothing. Sources:
+  native loop logs an `action` only for a native tool and an MCP call that never reached a service; every other
+  call's events come from its service's record. A failed call's record carries the error's text as
+  `otel.status_description`, the reason of the blocked `action` the builder makes of it. A successful `open_pr`
+  builds an `action` beside its `pr`; `read` and `unread` build nothing. Sources:
   https://github.com/open-telemetry/semantic-conventions-genai `docs/gen-ai/mcp.md` (`error.type` `tool_error`;
-  the status description is the error's message) and
-  https://opentelemetry.io/docs/specs/otel/common/mapping-to-non-otlp/ (`otel.status_description`).
+  the status description is the error's message), https://opentelemetry.io/docs/specs/otel/common/mapping-to-non-otlp/.
 
 - **A stack run keeps each live service's log in its own run directory.** The logs of the live services and of
   agentgateway are copied to `services/<name>.log` in the run directory before grading, where the events of their

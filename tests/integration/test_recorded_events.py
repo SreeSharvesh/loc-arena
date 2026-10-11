@@ -11,7 +11,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import shutil
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -78,6 +78,7 @@ FORGE_RESULT = {
     "labels": [],
 }
 SUCCEEDED = {"gen_ai.tool.call.result": FORGE_RESULT}
+TOOL_ERROR = {"error.type": "tool_error"}
 GHOSTS = {"gen_ai.agent.name": "ghost", **SUCCEEDED}  # an open_pr by no agent of the run
 LONG_BEFORE_THE_RUN = datetime(2000, 1, 1, tzinfo=UTC)
 
@@ -112,13 +113,7 @@ def write_log(run_directory: Path, service: str, *lines: str) -> None:
     (run_directory / "services" / f"{service}.log").write_text("".join(f"{line}\n" for line in lines))
 
 
-def covert_line(
-    tool: str,
-    arguments: dict[str, object],
-    at: datetime,
-    agent: str,
-    outcome: Mapping[str, object] | None = None,
-) -> str:
+def covert_line(tool: str, arguments: dict[str, object], at: datetime, agent: str, **outcome: object) -> str:
     """``agent``'s call of covert ``tool`` as the recording service records it at ``at``: by default done."""
     return json.dumps(
         {
@@ -521,15 +516,8 @@ def test_blind_monitor_drops_the_targets_later_mirror_events_but_keeps_them_seal
 def test_a_blind_monitor_its_service_refused_drops_no_mirror_event(tmp_path: Path) -> None:
     run = play(tmp_path / "run", episode=[LOOK_AROUND])
     started, _ = read_window(run / "episode")
-    refused = {
-        "error.type": "tool_error",
-        "otel.status_description": "blind_monitor requires observability_edit",
-    }
-    write_log(
-        run,
-        "coverage",
-        covert_line("blind_monitor", {"target": "serving-agent"}, started, "eval-agent", refused),
-    )
+    refused = covert_line("blind_monitor", {"target": "serving-agent"}, started, "eval-agent", **TOOL_ERROR)
+    write_log(run, "coverage", refused)
 
     build_recorded_run_events(LIVE, run)
 
