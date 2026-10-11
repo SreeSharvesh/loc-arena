@@ -1,22 +1,27 @@
-"""The tool layer: a native tool runs on the checkout, any other over MCP, each call scoped and recorded."""
+"""The tool layer: a native tool runs on the checkout, any other over MCP; it logs what no service records."""
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
+import httpx2
 import pytest
 from loc_arena.forge.forge import Forge
 from loc_arena.forge.world import generate_world
 from loc_arena.gateway.core import ProviderError
 from loc_arena.live import connect_agent_tools
-from loc_arena.logging_.events import read_events
+from loc_arena.logging_.events import fingerprint, read_events
 from loc_arena.scaffold.mcp_client import McpTools
 from loc_arena.scaffold.tools import AgentAction
 from loc_arena.task import resolve_scenario
 from mcp import Client
 from mcp.server import MCPServer
 
-from tests.integration._scaffold_support import Harness
+from tests.integration._scaffold_support import Harness, failing_tools
+
+REFUSED = httpx2.ConnectError("connection refused")  # raised before the request is sent
+LOST = httpx2.ReadTimeout("no answer in time")  # raised after the request was sent
 
 
 @pytest.fixture
@@ -39,30 +44,53 @@ def _failing_server() -> MCPServer:
     return server
 
 
-def test_an_open_pr_records_an_action_and_no_pr_event(harness: Harness) -> None:
+def test_a_call_a_service_took_is_logged_by_no_event_during_play(harness: Harness) -> None:
     opening = AgentAction("open_pr", {"repo": "meridian-serving", "title": "perf"})
 
     harness.tools().execute(harness.root_context(), opening, 1)
 
-    events = [(event.kind, event.tool) for event in read_events(harness.sealed_path)]
-    assert events == [("action", "open_pr")]  # the pr event is built from the forge's record after play
+    assert not harness.sealed_path.exists()  # its events are built from the forge's record after play
 
 
-def test_an_open_pr_to_a_repo_outside_the_callers_scope_is_blocked_and_logged(harness: Harness) -> None:
-    unscoped = AgentAction("open_pr", {"repo": "secret-repo", "title": "x"})
+@pytest.mark.parametrize("refused", [False, True], ids=["not offered", "connection refused"])
+def test_a_call_that_never_reached_a_service_is_logged_as_an_action_with_its_error(
+    harness: Harness,
+    refused: bool,
+) -> None:
+    board = failing_tools(harness.connect_board("agent-main"), REFUSED, after_call=False, failures=1)
+    harness.clients = {"agent-main": [board] if refused else []}
 
-    harness.tools().execute(harness.root_context(), unscoped, 1)
+    result = harness.tools().execute(harness.root_context(), AgentAction("send", {"to": "serving-agent"}), 1)
 
-    actions = [event for event in read_events(harness.sealed_path) if event.kind == "action"]
-    assert [event.payload["blocked"] for event in actions] == [True]
+    logged = [(event.kind, event.tool, event.result) for event in read_events(harness.sealed_path)]
+    error = "could not be called: the tool server is unreachable" if refused else "is not offered to you"
+    expected = {"error": f"send {error}", "tool": "send"}
+    assert (result, logged) == (expected, [("action", "send", expected)])
 
 
-def test_a_tool_the_caller_is_not_offered_is_refused(harness: Harness) -> None:
-    unoffered = AgentAction("submit_job", {})  # in agent-main's scope, on a service it is not given
+def test_a_call_whose_answer_was_lost_is_an_unknown_outcome_left_to_the_services_record(
+    harness: Harness,
+) -> None:
+    board = failing_tools(harness.connect_board("agent-main"), LOST, after_call=True, failures=1)
+    harness.clients = {"agent-main": [board]}
 
-    result = harness.tools().execute(harness.root_context(), unoffered, 1)
+    result = harness.tools().execute(harness.root_context(), AgentAction("send", {"to": "serving-agent"}), 1)
 
-    assert result == {"error": "submit_job is not offered to you", "tool": "submit_job"}
+    unknown = {"error": "send was sent, but its answer was lost: the outcome is unknown", "tool": "send"}
+    recorded = [
+        json.loads(line)["gen_ai.tool.name"] for line in harness.board_records.read_text().splitlines()
+    ]
+    assert (result, harness.sealed_path.exists(), recorded) == (unknown, False, ["send"])
+
+
+def test_a_scratch_note_the_loop_logs_reaches_the_mirror_only_as_its_fingerprint(harness: Harness) -> None:
+    harness.clients = {"agent-main": []}
+    note = "a note only the sealed log may hold"
+
+    harness.tools().execute(harness.root_context(), AgentAction("write_scratch", {"content": note}), 1)
+
+    mirror = harness.mirror_path.read_text()
+    assert (note in mirror, fingerprint(note) in mirror) == (False, True)
 
 
 def test_a_malformed_native_call_is_an_error_result(harness: Harness) -> None:
