@@ -15,6 +15,7 @@ from typing import Any, NamedTuple
 import tenacity
 
 from loc_arena.gateway.client import GatewayClient
+from loc_arena.recording_service import redact_note
 from loc_arena.scaffold.bus import Recorder
 from loc_arena.scaffold.code_services import CodeServices
 from loc_arena.scaffold.mcp_client import McpTools
@@ -78,7 +79,12 @@ class Tools:
             tool=action.tool,
             target_id=None,
             turn=turn,
-            payload={"args": action.args, "target": None, "blocked": False, "reason": None},
+            payload={
+                "args": redact_note(action.tool, action.args),
+                "target": None,
+                "blocked": False,
+                "reason": None,
+            },
             result=result,
         )
 

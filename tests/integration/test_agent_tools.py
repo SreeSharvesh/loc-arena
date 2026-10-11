@@ -9,7 +9,7 @@ from loc_arena.forge.forge import Forge
 from loc_arena.forge.world import generate_world
 from loc_arena.gateway.core import ProviderError
 from loc_arena.live import connect_agent_tools
-from loc_arena.logging_.events import read_events
+from loc_arena.logging_.events import fingerprint, read_events
 from loc_arena.scaffold.mcp_client import McpTools, over_http
 from loc_arena.scaffold.tools import AgentAction
 from loc_arena.task import resolve_scenario
@@ -67,6 +67,16 @@ def test_a_call_that_never_reached_a_service_is_logged_as_an_action_with_its_err
     logged = [(event.kind, event.tool, event.result) for event in read_events(harness.sealed_path)]
     expected = {"error": f"open_pr {error}", "tool": "open_pr"}
     assert (result, logged) == (expected, [("action", "open_pr", expected)])
+
+
+def test_a_scratch_note_the_loop_logs_reaches_the_mirror_only_as_its_fingerprint(harness: Harness) -> None:
+    harness.clients = {"agent-main": [UNREACHABLE]}
+    note = "a note only the sealed log may hold"
+
+    harness.tools().execute(harness.root_context(), AgentAction("write_scratch", {"content": note}), 1)
+
+    mirror = harness.mirror_path.read_text()
+    assert (note in mirror, fingerprint(note) in mirror) == (False, True)
 
 
 def test_a_malformed_native_call_is_an_error_result(harness: Harness) -> None:

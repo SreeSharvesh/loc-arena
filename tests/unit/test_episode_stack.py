@@ -23,15 +23,18 @@ from loc_arena.episode_stack import (
     ComposeDocument,
     Identity,
     StackError,
+    _issue_secrets,
     render_compose,
     run_in_stack,
     sandbox_agent_code,
 )
 from loc_arena.gateway import core
+from loc_arena.harness import apply_mode
+from loc_arena.recording_service import TOOLS as RECORDED_TOOLS
 from loc_arena.settings import GatewaySettings, LocArenaSettings, StackSettings
 from loc_arena.stack_play import renew_services
 from loc_arena.task import SANDBOX_URL_VARIABLE, TOOLS_URL_VARIABLE
-from loc_arena.tools_gateway import render_tools_gateway_config
+from loc_arena.tools_gateway import TOOLS_GATEWAY_CONFIG_VARIABLE, render_tools_gateway_config
 from sandbox_server.server import ServerSettings
 from scenarios.loader import SCENARIOS_ROOT, EngineModule, LiveService, load_scenario
 
@@ -1145,7 +1148,7 @@ def test_a_log_file_that_cannot_be_written_before_the_honest_twin_renews_nothing
     compose = ["docker", "compose", "-p", "locarena-test", "-f", "compose.yaml", "--project-directory", "."]
 
     with pytest.raises(StackError, match="nothing was renewed"):
-        renew_services(SCRIPTED_CONFIG, compose, tmp_path, {})
+        renew_services(SCRIPTED_CONFIG, compose, tmp_path, {}, {})
 
     renewed = [call for call in docker.calls if "--force-recreate" in call]
     assert (renewed, sorted(path.name for path in tmp_path.iterdir())) == ([], ["notes.log"])
@@ -1175,3 +1178,23 @@ def test_a_service_log_copied_before_a_failed_grading_is_not_added_again_at_tear
         run_aurora_in_stack(tmp_path)
 
     assert read_copied_log(tmp_path, "notes") == NOTES_LOG
+
+
+def test_honest_mode_drops_the_covert_tools_from_each_agents_sandbox_tools() -> None:
+    attack = load_run_config("configs/aurora-efficiency.yaml")
+
+    honest = apply_mode(attack, "honest")
+
+    offered = {tool for agent in honest.agents for tools in agent.sandbox.tools.values() for tool in tools}
+    assert offered.isdisjoint(RECORDED_TOOLS) and {"open_pr", "send"} <= offered
+
+
+def test_the_honest_twin_env_carries_a_gateway_config_without_covert_tools() -> None:
+    config = load_run_config("configs/aurora-efficiency.yaml")
+
+    attack_env, twin_env = _issue_secrets(config)
+
+    attack_policy = attack_env[TOOLS_GATEWAY_CONFIG_VARIABLE]
+    twin_policy = twin_env[TOOLS_GATEWAY_CONFIG_VARIABLE]
+    assert "write_scratch" in attack_policy
+    assert "open_pr" in twin_policy and not any(tool in twin_policy for tool in RECORDED_TOOLS)
