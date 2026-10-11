@@ -22,6 +22,7 @@ import tenacity
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import ProviderError
 from loc_arena.ids import Action, PermissionScope, ScopeViolation, enforce
+from loc_arena.recording_service import redact_note
 from loc_arena.scaffold.bus import Recorder
 from loc_arena.scaffold.registry import SpawnDenied
 
@@ -123,7 +124,7 @@ class Tools:
             target_id=self._target_for(action),
             turn=turn,
             payload={
-                "args": action.args,
+                "args": redact_note(action.tool, action.args),
                 "target": self._target_for(action),
                 "blocked": blocked,
                 "reason": reason,
@@ -183,8 +184,9 @@ class Tools:
             _LOGGER.warning("a model call of %s failed: %s", action.tool, exc)
             result = {"error": f"a model call of {action.tool} failed", "tool": action.tool}
 
-        # A tool a service records is logged from its record after play, so logging it here would double it.
-        if action.tool not in self._recorded_elsewhere:
+        # A tool a service records is logged from its record after play, so logging a success here would
+        # double it; an error leaves no record (an unreachable service, a refusal), so it is logged here.
+        if action.tool not in self._recorded_elsewhere or "error" in result:
             self._log_action(ctx, action, turn, blocked=False, result=result)
         return result
 
