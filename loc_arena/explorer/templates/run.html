@@ -438,6 +438,7 @@ dialog.notes .x:hover { color: var(--ink); }
 .citem { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 10px; align-items: start; border: 1px solid var(--line); border-left: 3px solid var(--line-strong); background: var(--surface); border-radius: 9px; padding: 10px 12px; }
 .citem.covert { border-left-color: var(--covert); }
 .citem.read-agent { border-left-color: var(--clean); }
+.citem.refused { border-left-color: var(--flag); opacity: .8; }
 .citem.covert.read-agent { border-left-color: var(--covert); }
 .citem .cleft { display: flex; flex-direction: column; align-items: center; gap: 4px; color: var(--ink-muted); font-family: var(--mono); font-size: .72rem; }
 .citem .cleft .ki { color: var(--accent); }
@@ -524,7 +525,7 @@ dialog.notes .x:hover { color: var(--ink); }
       <div id="comm-matrix"></div>
       <h2>Everything said, in order</h2>
       <div class="fldrow" style="margin-bottom:12px">
-        <label class="fld">kind <select id="c-kind"><option value="">all</option><option value="message">messages between agents</option><option value="scratch">scratch notes</option><option value="environment">environment posts</option></select></label>
+        <label class="fld">kind <select id="c-kind"><option value="">all</option><option value="message">messages between agents</option><option value="scratch">scratch notes</option><option value="refused">refused sends</option><option value="environment">environment posts</option></select></label>
         <label class="fld">read <select id="c-read"><option value="">any</option><option value="agent">read by another agent</option><option value="monitor">read only by monitors</option><option value="none">read by no one</option></select></label>
         <label class="fld" style="gap:8px"><input id="c-covert" type="checkbox"> covert only</label>
         <span class="chips" id="c-chips"></span>
@@ -1565,11 +1566,12 @@ dialog.notes .x:hover { color: var(--ink); }
   const C = { kind: '', read: '', covert: false, sender: '', audience: '' };
   function renderComms() {
     const count = f => COMM.filter(f).length;
-    const said = COMM.filter(c => c.kind !== 'environment');
+    const said = COMM.filter(c => c.kind !== 'environment' && c.kind !== 'refused');
     const stat = (big, lbl, cls) => `<div class="stat"><div class="big ${cls || ''}">${big}</div><div class="lbl">${lbl}</div></div>`;
     el('comm-stats').innerHTML = [
       stat(count(c => c.kind === 'message'), 'messages between agents'),
       stat(count(c => c.kind === 'scratch'), 'scratch notes', 'covert'),
+      stat(count(c => c.kind === 'refused'), 'refused sends', 'flag'),
       stat(count(c => c.kind === 'environment'), 'environment posts'),
       stat(said.filter(c => readClass(c) === 'agent').length, 'of the agents&rsquo; messages and notes were read by another agent'),
       stat(said.filter(c => readClass(c) === 'monitor').length, 'read only by monitors', 'flag'),
@@ -1597,7 +1599,7 @@ dialog.notes .x:hover { color: var(--ink); }
       ].join('');
       const rereads = r.rereads.map(id => byId.get(id)).filter(Boolean);
       const selfNote = rereads.length ? `<span class="help">the author read it again in ${rereads.map(s => roundKey(s.round)).join(', ')}</span>` : '';
-      const readLine = !r.traced ? '<span class="help">too short to trace</span>'
+      const readLine = c.kind === 'refused' ? '<span class="unread">refused: never delivered</span>' : !r.traced ? '<span class="help">too short to trace</span>'
         : cls === 'none' ? `<span class="unread">${icon('eyeoff', 13)} no one</span>`
         : cls === 'monitor' ? `${chips}<span class="unread mon">${icon('eyeoff', 13)} no agent</span>` : chips;
       return `<div class="citem ${c.kind}${c.covert.length ? ' covert' : ''} read-${cls}">

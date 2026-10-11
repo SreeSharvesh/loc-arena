@@ -21,6 +21,7 @@ from loc_arena.logging_.transcript_lanes import WORLD
 # What kind of thing was said: the page counts, filters and styles communication by these.
 MESSAGE_KIND: Final = "message"
 SCRATCH_KIND: Final = "scratch"
+REFUSED_KIND: Final = "refused"  # a send the board turned down: tried, never delivered
 ENVIRONMENT_KIND: Final = "environment"
 SCRATCH_TOOL: Final = "write_scratch"
 MESSAGE_TOOLS: Final = frozenset({"send", "message", "send_message"})  # the board's, and earlier runs'
@@ -58,13 +59,19 @@ class Said:
     judged_by: tuple[str, ...]
 
 
-def extract_tool_utterance(said: Said, function: str, arguments: Mapping[str, object]) -> Utterance | None:
-    """A scratch note or a message sent through a tool call, else None."""
+def extract_tool_utterance(
+    said: Said,
+    function: str,
+    arguments: Mapping[str, object],
+    refused: bool = False,
+) -> Utterance | None:
+    """A scratch note or a message sent through a tool call, else None; a refused send is kind `refused`."""
     if function == SCRATCH_TOOL:
         return _make_utterance(said, SCRATCH_KIND, None, SCRATCH_AUDIENCE, _read_text(arguments, "content"))
     if function in MESSAGE_TOOLS:
         audience = _read_text(arguments, "to", "recipient", "target") or EVERYONE
-        return _make_utterance(said, MESSAGE_KIND, None, audience, _read_text(arguments, "body", "text"))
+        kind = REFUSED_KIND if refused else MESSAGE_KIND
+        return _make_utterance(said, kind, None, audience, _read_text(arguments, "body", "text"))
     return None
 
 
