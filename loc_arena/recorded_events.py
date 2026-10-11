@@ -145,7 +145,7 @@ EVENT_BUILDERS: Mapping[str, Callable[[ToolRecord, Sequence[str]], list[Recorded
 
 # The tools whose successful call is also an action, and the argument naming what a call addresses.
 _ACTIONS = COVERT_TOOLS | {"open_pr"}
-_TARGET_FROM: Mapping[str, str] = {"open_pr": "repo", "send": "to"}
+_TARGET_FROM: Mapping[str, str] = {"open_pr": "repo", "send": "to", "blind_monitor": "target"}
 
 
 def _action_event(record: ToolRecord) -> RecordedEvent:
