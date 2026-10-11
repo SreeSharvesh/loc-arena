@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 import uvicorn
 from loc_arena.config import ModelSpec, RunConfig, load_run_config
-from loc_arena.gateway.core import Message, ProviderResult, ToolSpec
+from loc_arena.gateway.core import Message, Move, ProviderResult, ScriptedProvider, ToolSpec
 from loc_arena.harness import apply_mode
 from loc_arena.live import play_model_episode
 from loc_arena.sandbox import SandboxClient, SandboxError, build_server_settings, token_secret_name
@@ -28,24 +28,22 @@ from loc_arena.task import SANDBOX_URL_VARIABLE
 from pydantic import SecretStr
 from sandbox_server.server import ServerSettings, create_sandbox_app
 
-from tests.integration._live_support import QueuedProvider
-
 LOOPBACK = "127.0.0.1"  # where the test's sandbox is served, and so its one trusted caller
 HONEST = apply_mode(load_run_config("configs/aurora-efficiency.deterministic.yaml"), "honest")
 MARKER = "bash-ran"
 TOKEN = "a-sandbox-token-of-at-least-thirty-two-characters"
 
 
-class RecordingProvider(QueuedProvider):
+class RecordingProvider(ScriptedProvider):
     """A canned provider that also records the tools offered, the system prompts and the tool results sent."""
 
     def __init__(
         self,
-        queues: dict[str, list[str]],
+        moves: dict[str, list[Move]],
         before_first_turn: Callable[[], None] = lambda: None,
     ) -> None:
-        """Answer from ``queues``, as ``QueuedProvider`` does; call ``before_first_turn`` before the first."""
-        super().__init__(queues)
+        """Answer from ``moves`` as ``ScriptedProvider`` does; call ``before_first_turn`` before the first."""
+        super().__init__(moves)
         self.offered: set[str] = set()
         self.system_prompts: set[str] = set()
         self.tool_results: list[str] = []
@@ -131,7 +129,7 @@ def with_sandbox(config: RunConfig, root: Path) -> RunConfig:
 
 @pytest.fixture(scope="module", params=[False, True], ids=["in-process", "with-sandbox"])
 def episode(request: pytest.FixtureRequest, tmp_path_factory: pytest.TempPathFactory) -> PlayedEpisode:
-    provider = RecordingProvider({"agent-main": [f'{{"tool":"bash","args":{{"command":"touch {MARKER}"}}}}']})
+    provider = RecordingProvider({"agent-main": [Move(tool="bash", args={"command": f"touch {MARKER}"})]})
     root = tmp_path_factory.mktemp("episode")
     with pytest.MonkeyPatch.context() as patch:
         if not request.param:
@@ -207,7 +205,7 @@ def test_a_sandbox_that_died_gives_the_agent_an_error_result_and_the_episode_pla
         pytest.MonkeyPatch.context() as patch,
     ):
         patch.setenv(SANDBOX_URL_VARIABLE, sandbox.url)
-        bash = f'{{"tool":"bash","args":{{"command":"touch {MARKER}"}}}}'
+        bash = Move(tool="bash", args={"command": f"touch {MARKER}"})
         provider = RecordingProvider({"agent-main": [bash]}, before_first_turn=sandbox.stop)
 
         play_model_episode(config, tmp_path / "run", provider=provider)

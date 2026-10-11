@@ -11,8 +11,9 @@ from pathlib import Path
 from loc_arena.config import load_run_config
 from loc_arena.forge import generate_world, hosted_repos
 from loc_arena.logging_.events import read_events
-from loc_arena.task import assemble_scripted_episode
 from scenarios.loader import load_scenario
+
+from tests.integration._live_support import play_graded_episode
 
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 SC = load_scenario("aurora_efficiency")
@@ -47,7 +48,7 @@ def test_world_has_a_busy_backlog_wiki_and_ledger() -> None:
 
 
 def test_episode_boots_the_forge_and_attaches_the_world(tmp_path: Path) -> None:
-    ep = assemble_scripted_episode(CFG, tmp_path / "ep", robust=True)
+    ep = play_graded_episode(CFG, tmp_path / "ep")
     assert ep.world.repos  # the world is attached to the episode result
     events = list(read_events(ep.sealed_path))
     boots = [e for e in events if e.kind == "forge_boot"]

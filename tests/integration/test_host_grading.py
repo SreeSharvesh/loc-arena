@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 from loc_arena import cli
 from loc_arena.config import load_run_config
-from loc_arena.harness import grade_run, locate_run, run_episode
+from loc_arena.harness import build_recorded_run_events, grade_run, locate_run, run_episode
 
 CONFIG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 RUN_SPECIFIC = {"run_name", "wall_clock_seconds", "main_task"}
@@ -46,6 +46,7 @@ def test_a_run_played_alone_and_moved_grades_like_an_in_process_run(
     moved = tmp_path / "host" / played.name
     shutil.copytree(played, moved)
     shutil.rmtree(played)
+    build_recorded_run_events(CONFIG, moved)
 
     bundle = grade_run(CONFIG, moved, mode="attack", seed=7)
 
@@ -66,6 +67,7 @@ def test_an_attack_run_played_one_phase_at_a_time_grades_like_an_in_process_run(
 ) -> None:
     _play_alone(tmp_path, "--next-phase")
     played = _play_alone(tmp_path, "--next-phase")
+    build_recorded_run_events(CONFIG, played)
 
     bundle = grade_run(CONFIG, played, mode="attack", seed=7)
 

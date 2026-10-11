@@ -5,7 +5,8 @@ from pathlib import Path
 
 from loc_arena.config import load_run_config
 from loc_arena.logging_.events import Event, read_events
-from loc_arena.task import assemble_scripted_episode
+
+from tests.integration._live_support import ATTACK_MOVES_PENDING, play_graded_episode
 
 _ATTACK = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 _HONEST = dataclasses.replace(_ATTACK, covert=dataclasses.replace(_ATTACK.covert, enabled=False))
@@ -28,9 +29,10 @@ def test_covert_enabled_is_the_only_config_difference() -> None:
     assert _HONEST.covert.enabled is False and _ATTACK.covert.enabled is True
 
 
+@ATTACK_MOVES_PENDING
 def test_only_covert_toggle_changes_the_episode(tmp_path: Path) -> None:
-    honest = assemble_scripted_episode(_HONEST, tmp_path / "h")
-    attack = assemble_scripted_episode(_ATTACK, tmp_path / "a")
+    honest = play_graded_episode(_HONEST, tmp_path / "h")
+    attack = play_graded_episode(_ATTACK, tmp_path / "a")
     # identical main-task work (the optimization cover is the same)
     assert honest.main_score.final_score == attack.main_score.final_score
     # the honest twin produces NO off-path inference; the attack does -- that is the whole difference

@@ -12,10 +12,11 @@ from loc_arena import cli
 from loc_arena.config import load_run_config
 from loc_arena.explorer.build import build_folder, build_run_page
 from loc_arena.explorer.settings import ExplorerSettings
+from loc_arena.gateway.core import ScriptedProvider
 from loc_arena.harness import run_episode
 from loc_arena.logging_.transcript_lanes import WORLD
 
-from tests.integration._live_support import LANDING_QUEUES, QueuedProvider
+from tests.integration._live_support import LANDING_MOVES
 
 LIVE_TRACED = dataclasses.replace(
     load_run_config("configs/aurora-efficiency.deterministic.yaml"),
@@ -34,8 +35,8 @@ def traced_bundle(tmp_path_factory: pytest.TempPathFactory) -> Path:
             LIVE_TRACED,
             mode="attack",
             out_root=tmp_path_factory.mktemp("runs"),
-            provider=QueuedProvider(LANDING_QUEUES),
-            calibration_provider=QueuedProvider({}),
+            provider=ScriptedProvider(LANDING_MOVES),
+            calibration_provider=ScriptedProvider({}),
             write_report=False,
         )
 

@@ -7,10 +7,11 @@ import pytest
 from inspect_ai.event import SpanBeginEvent, ToolEvent
 from inspect_ai.log import read_eval_log
 from loc_arena.config import load_run_config
+from loc_arena.gateway.core import ScriptedProvider
 from loc_arena.harness import run_episode
 from loc_arena.logging_.transcript_lanes import UNPLACED, WORLD, build_transcript
 
-from tests.integration._live_support import LANDING_QUEUES, QueuedProvider
+from tests.integration._live_support import LANDING_MOVES
 
 LIVE_TRACED = dataclasses.replace(
     load_run_config("configs/aurora-efficiency.deterministic.yaml"),
@@ -28,8 +29,8 @@ def test_a_live_attack_run_writes_a_real_eval_with_a_span_per_agent(
         LIVE_TRACED,
         mode="attack",
         out_root=tmp_path,
-        provider=QueuedProvider(LANDING_QUEUES),
-        calibration_provider=QueuedProvider({}),
+        provider=ScriptedProvider(LANDING_MOVES),
+        calibration_provider=ScriptedProvider({}),
         write_report=False,
     )
     (eval_path,) = bundle.glob("*.eval")
@@ -56,8 +57,8 @@ def test_the_exported_episode_lays_out_as_one_lane_per_agent_by_round(
         LIVE_TRACED,
         mode="attack",
         out_root=tmp_path,
-        provider=QueuedProvider(LANDING_QUEUES),
-        calibration_provider=QueuedProvider({}),
+        provider=ScriptedProvider(LANDING_MOVES),
+        calibration_provider=ScriptedProvider({}),
         write_report=False,
     )
     log = read_eval_log(str(next(bundle.glob("*.eval"))))
@@ -85,8 +86,8 @@ def test_every_verdict_with_a_target_in_an_exported_run_lands_on_an_event(
         LIVE_TRACED,
         mode="attack",
         out_root=tmp_path,
-        provider=QueuedProvider(LANDING_QUEUES),
-        calibration_provider=QueuedProvider({}),
+        provider=ScriptedProvider(LANDING_MOVES),
+        calibration_provider=ScriptedProvider({}),
         write_report=False,
     )
     log = read_eval_log(str(next(bundle.glob("*.eval"))))
@@ -109,8 +110,8 @@ def test_a_traced_run_bundle_has_an_ascii_self_contained_transcript(
         LIVE_TRACED,
         mode="attack",
         out_root=tmp_path,
-        provider=QueuedProvider(LANDING_QUEUES),
-        calibration_provider=QueuedProvider({}),
+        provider=ScriptedProvider(LANDING_MOVES),
+        calibration_provider=ScriptedProvider({}),
         write_report=False,
     )
     page = (bundle / "transcript.html").read_text(encoding="ascii")

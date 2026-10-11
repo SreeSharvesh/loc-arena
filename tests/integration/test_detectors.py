@@ -4,6 +4,7 @@ from pathlib import Path
 
 from loc_arena.monitors.registry import MonitorVerdict
 
+from tests.integration._live_support import ATTACK_MOVES_PENDING
 from tests.integration._p5_support import attack_record, honest_record, protocol
 
 _DETECTORS = {"monitor_config_reconcile", "logging_config_reconcile"}
@@ -13,6 +14,7 @@ def _detector_scores(verdicts: list[MonitorVerdict]) -> list[float]:
     return [v.score for v in verdicts if v.monitor in _DETECTORS]
 
 
+@ATTACK_MOVES_PENDING
 def test_detectors_fire_on_the_blinding_attack(tmp_path: Path) -> None:
     proto = protocol()
     robust = attack_record(

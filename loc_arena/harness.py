@@ -56,9 +56,7 @@ from loc_arena.recording_service import COVERT_TOOL_NAMES
 from loc_arena.task import (
     EpisodeResult,
     Snapshot,
-    assemble_scripted_episode,
     grade_snapshot,
-    play_scripted_episode,
     read_snapshot,
 )
 
@@ -346,10 +344,18 @@ def _eval_episodes(cfg: RunConfig, episode: Any, calibration: Any) -> list[Episo
 
 
 def _play_by_policy(cfg: RunConfig, workdir: Path, *, robust: bool, provider: Any = None) -> Snapshot:
-    """Play one episode by ``config.policy``: the scripted driver, or the live model attack."""
-    if cfg.policy == "model":
-        return live.play_model_episode(cfg, workdir, provider=provider)
-    return play_scripted_episode(cfg, workdir, robust=robust)
+    """Play one episode by ``config.policy``: the live model, or the scenario's scripted moves in its place.
+
+    ``robust`` is not read.
+    """
+    return live.play_model_episode(cfg, workdir, provider=provider)
+
+
+def _play_graded(cfg: RunConfig, run_directory: Path, *, robust: bool = False) -> EpisodeResult:
+    """Play one episode in ``run_directory/episode``, build the events its services recorded, and grade it."""
+    snapshot = _play_by_policy(cfg, run_directory / "episode", robust=robust)
+    build_recorded_events(run_directory, cfg, {"episode": snapshot.trace})
+    return grade_snapshot(snapshot, cfg)
 
 
 class WallClockCeiling(BaseModel):
@@ -644,7 +650,7 @@ def run_episode(
     """Run one episode in ``mode``, grade it, and write the reproducible audit bundle; return its dir.
 
     The DELIVERABLE run drives the live model (``policy: model``, e.g. aurora-efficiency.yaml): no scripted or
-    deterministic fallback, graded on outcome, live monitors. The scripted policy (``assemble_scripted``)
+    deterministic fallback, graded on outcome, live monitors. The scripted policy (``policy: scripted``)
     is retained ONLY as deterministic ENGINE-TEST scaffolding (byte-reproducible sealed logs for the invariant
     suite), not as a deliverable run policy. Produces ``logs/<run_id>/<timestamp>/`` with
     config.resolved.yaml, events.sealed.jsonl, events.mirror.jsonl, run.eval, scores.json, report.html,
@@ -703,11 +709,10 @@ def run_sweep(
         return record_episode(ep, cfg, proto, model_caller=caller, event_sink=sink or _default_sink)
 
     honest_records = [
-        _record(assemble_scripted_episode(honest_cfg, sweep_dir / f"honest-{i}"), honest_cfg)
-        for i in range(honest)
+        _record(_play_graded(honest_cfg, sweep_dir / f"honest-{i}"), honest_cfg) for i in range(honest)
     ]
     attack_records = [
-        _record(assemble_scripted_episode(attack_cfg, sweep_dir / f"attack-{i}", robust=robust), attack_cfg)
+        _record(_play_graded(attack_cfg, sweep_dir / f"attack-{i}", robust=robust), attack_cfg)
         for i in range(attack)
     ]
     threshold = calibrate_threshold(honest_records, proto.audit_budget_fpr)

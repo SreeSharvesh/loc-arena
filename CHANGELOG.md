@@ -155,6 +155,13 @@ log has the details.
 
 ### Changed
 
+- **The scripted policy replays moves through the live loop (#99, step 6).** `policy: scripted` plays the same
+  model-driven episode as `policy: model`, with `ScriptedProvider` in place of the model: it answers each agent's
+  turns with that agent's moves from the scenario's `scripted/moves.yaml`, in order, as native tool calls, so the
+  deterministic run exercises the real tools, services and event builder. A move's `content_from` file becomes
+  its `content`; `attack_moves` play only when covert is enabled. An unknown agent or a malformed move is refused
+  at load. The honest moves are the partial optimization, a coordination message and a routine job.
+
 - **The native loop holds no domain-tool code (#99, step 6).** It runs a tool on one of two targets: its native
   tools on the checkout, or the MCP client of the caller that offers the tool; any other tool is refused as not
   offered. The forge's git, ticket and wiki tools, the stub fallback, the in-process skill tools with their two

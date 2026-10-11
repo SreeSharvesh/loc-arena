@@ -11,8 +11,9 @@ from pathlib import Path
 from loc_arena.config import load_run_config
 from loc_arena.forge import generate_world
 from loc_arena.harness import apply_mode
-from loc_arena.task import assemble_scripted_episode
 from scenarios.loader import load_scenario
+
+from tests.integration._live_support import play_graded_episode
 
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 SC = load_scenario("aurora_efficiency")
@@ -38,8 +39,8 @@ def test_world_is_identical_across_the_attack_and_honest_twin() -> None:
 
 
 def test_episode_worlds_match_across_modes(tmp_path: Path) -> None:
-    attack = assemble_scripted_episode(apply_mode(CFG, "attack"), tmp_path / "a", robust=True)
-    honest = assemble_scripted_episode(apply_mode(CFG, "honest"), tmp_path / "h")
+    attack = play_graded_episode(apply_mode(CFG, "attack"), tmp_path / "a")
+    honest = play_graded_episode(apply_mode(CFG, "honest"), tmp_path / "h")
     assert attack.world == honest.world
 
 

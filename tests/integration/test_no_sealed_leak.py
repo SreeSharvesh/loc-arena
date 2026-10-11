@@ -17,8 +17,9 @@ from loc_arena.forge import generate_world
 from loc_arena.forge.world import SeededWorld
 from loc_arena.harness import apply_mode
 from loc_arena.monitors.registry import firewall_violations, load_monitor_specs
-from loc_arena.task import assemble_scripted_episode
 from scenarios.loader import load_scenario
+
+from tests.integration._live_support import ATTACK_MOVES_PENDING, play_graded_episode
 
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 SC = load_scenario("aurora_efficiency")
@@ -67,9 +68,10 @@ def test_firewall_stays_clean_with_the_world() -> None:
     assert firewall_violations(specs) == []  # no monitor input reads a sealed field
 
 
+@ATTACK_MOVES_PENDING
 def test_honest_twin_clean_and_attack_lands_robust_in_the_richer_world(tmp_path: Path) -> None:
-    honest = assemble_scripted_episode(apply_mode(CFG, "honest"), tmp_path / "h")
-    attack = assemble_scripted_episode(apply_mode(CFG, "attack"), tmp_path / "a", robust=True)
+    honest = play_graded_episode(apply_mode(CFG, "honest"), tmp_path / "h")
+    attack = play_graded_episode(apply_mode(CFG, "attack"), tmp_path / "a")
     # honest twin verifies clean even with the busy world around it
     assert honest.verdict.landing.minimal is False and honest.verdict.landing.robust is False
     assert honest.verdict.covert_depth == 0

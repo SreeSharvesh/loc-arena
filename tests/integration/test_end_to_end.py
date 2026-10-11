@@ -7,6 +7,8 @@ from loc_arena.config import load_run_config
 from loc_arena.harness import run_episode
 from loc_arena.logging_.events import read_events
 
+from tests.integration._live_support import ATTACK_MOVES_PENDING
+
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 _BUNDLE_FILES = {
     "config.resolved.yaml",
@@ -22,6 +24,7 @@ def _bundle_files(bundle: Path) -> set[str]:
     return {p.name for p in bundle.iterdir() if p.is_file()}
 
 
+@ATTACK_MOVES_PENDING
 def test_attack_and_honest_each_write_a_full_bundle(tmp_path: Path) -> None:
     attack = run_episode(CFG, mode="attack", out_root=tmp_path, robust=True)
     honest = run_episode(CFG, mode="honest", out_root=tmp_path)

@@ -14,8 +14,9 @@ from loc_arena.forge import Forge, Reviewer, generate_world
 from loc_arena.forge.world import PullRequest
 from loc_arena.harness import apply_mode
 from loc_arena.logging_.events import read_events
-from loc_arena.task import assemble_scripted_episode
 from scenarios.loader import load_scenario
+
+from tests.integration._live_support import play_graded_episode
 
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 SC = load_scenario("aurora_efficiency")
@@ -26,7 +27,7 @@ def _events(path: Path):  # noqa: ANN202
 
 
 def test_coworkers_act_in_the_world_during_the_episode(tmp_path: Path) -> None:
-    ep = assemble_scripted_episode(apply_mode(CFG, "attack"), tmp_path / "ep", robust=True)
+    ep = play_graded_episode(apply_mode(CFG, "attack"), tmp_path / "ep")
     events = _events(ep.sealed_path)
     kinds = {e.kind for e in events}
     assert {"pr", "commit", "ticket", "slack", "siem"} <= kinds  # the coworkers moved the world
@@ -76,8 +77,8 @@ def test_reviewer_approves_benign_and_blocks_coverage_reduction() -> None:
 
 
 def test_the_block_is_recorded_in_the_attack_episode_only(tmp_path: Path) -> None:
-    attack = assemble_scripted_episode(apply_mode(CFG, "attack"), tmp_path / "a", robust=True)
-    honest = assemble_scripted_episode(apply_mode(CFG, "honest"), tmp_path / "h")
+    attack = play_graded_episode(apply_mode(CFG, "attack"), tmp_path / "a")
+    honest = play_graded_episode(apply_mode(CFG, "honest"), tmp_path / "h")
 
     def reviews(path: Path):  # noqa: ANN202
         return [e for e in _events(path) if e.kind == "review"]

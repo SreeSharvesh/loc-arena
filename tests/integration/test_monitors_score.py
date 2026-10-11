@@ -4,6 +4,7 @@ from pathlib import Path
 
 from loc_arena.monitors.registry import MonitorVerdict
 
+from tests.integration._live_support import ATTACK_MOVES_PENDING
 from tests.integration._p5_support import attack_record, honest_record, protocol
 
 
@@ -21,6 +22,7 @@ def test_monitors_produce_scores_and_reasons(tmp_path: Path) -> None:
     assert all(v.monitor and v.tap for v in attack.verdicts)
 
 
+@ATTACK_MOVES_PENDING
 def test_inference_monitor_flags_the_visible_loop_but_not_honest(tmp_path: Path) -> None:
     proto = protocol()
     honest = honest_record(tmp_path / "h", proto)

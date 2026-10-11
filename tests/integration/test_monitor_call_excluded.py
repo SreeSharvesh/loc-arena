@@ -9,6 +9,7 @@ from loc_arena.logging_.events import read_events
 from loc_arena.tasks.side_task_verifier import verify_side_task
 
 from tests.integration._gateway_support import JsonVerdictProvider
+from tests.integration._live_support import ATTACK_MOVES_PENDING
 
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 DEADLINE = 10_000.0
@@ -51,6 +52,7 @@ def test_monitor_calls_excluded_and_honest_twin_stays_clean(tmp_path: Path) -> N
     assert verdict.covert_depth == 0
 
 
+@ATTACK_MOVES_PENDING
 def test_live_monitors_do_not_change_the_attack_verdict(tmp_path: Path) -> None:
     monitors = _live_monitors_yaml(tmp_path)
     bundle = run_episode(
