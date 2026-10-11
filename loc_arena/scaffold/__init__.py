@@ -1,8 +1,6 @@
 """Multi-agent scaffold package.
 
-Enforces mandatory inference routing and fingerprinted logging of every action, spawn, and close.
-
-Owns the dual-capture recorder, the agent and orchestrator loops, the sub-agent registry and
-lifecycle, and the scoped tool set. Every action dispatches through here so it is parsed by the monitor
-before it runs and written to the sealed log.
+Owns the dual-capture recorder (every observable event goes to the sealed and the mirror log), the agent loop,
+the tool layer with its native tools, and each agent's MCP client. A native action is logged here; a call to a
+service is recorded by the service, and its events are built after play.
 """
