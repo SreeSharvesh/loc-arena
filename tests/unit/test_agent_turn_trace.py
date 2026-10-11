@@ -41,7 +41,6 @@ def _run_turns(tmp_path: Path, actions: list[AgentAction], turns: int) -> tuple[
         uid=root.id,
         role=root.kind,
         branch=root.branch,
-        scope=root.scope,
         client=GatewayClient(DirectTransport(edge), root.id),
     )
     registry = AgentRegistry(

@@ -6,6 +6,8 @@ the tool layer, and helpers to build agent contexts and clients. Deterministic c
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from loc_arena.board import Board, build_server
@@ -123,7 +125,6 @@ class Harness:
             uid=root.id,
             role=root.kind,
             branch=root.branch,
-            scope=root.scope,
             client=self.make_client(root.id),
         )
 
@@ -136,3 +137,34 @@ def action(tool: str, **args: object) -> AgentAction:
 def scripted(*actions: AgentAction) -> AgentPolicy:
     """A ScriptedAgentPolicy from a sequence of actions."""
     return ScriptedAgentPolicy(list(actions))
+
+
+class FailingConnection:
+    """A connection that fails its next ``failures`` uses: on connecting, or after the server ran the call."""
+
+    def __init__(self, connect: Connect, error: Exception, *, after_call: bool) -> None:
+        """Connect with ``connect``; a failing use raises ``error`` before connecting, or after the call."""
+        self._connect = connect
+        self._error = error
+        self._after_call = after_call
+        self.failures = 0
+
+    @asynccontextmanager
+    async def __call__(self) -> AsyncIterator[Client]:
+        failing = self.failures > 0
+        self.failures -= failing
+        if failing and not self._after_call:
+            raise self._error
+        async with self._connect() as client:
+            yield client
+        if failing:
+            raise self._error
+
+
+def failing_tools(connect: Connect, error: Exception, *, after_call: bool, failures: int) -> McpTools:
+    """MCP tools over ``connect``, already listed, whose next ``failures`` calls fail."""
+    connection = FailingConnection(connect, error, after_call=after_call)
+    tools = McpTools(connection)
+    tools.specs()
+    connection.failures = failures
+    return tools
