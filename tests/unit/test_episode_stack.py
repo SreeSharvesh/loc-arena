@@ -30,7 +30,7 @@ from loc_arena.episode_stack import (
 )
 from loc_arena.gateway import core
 from loc_arena.harness import apply_mode
-from loc_arena.recording_service import TOOLS as RECORDED_TOOLS
+from loc_arena.recording_service import COVERT_TOOL_NAMES
 from loc_arena.settings import GatewaySettings, LocArenaSettings, StackSettings
 from loc_arena.stack_play import renew_services
 from loc_arena.task import SANDBOX_URL_VARIABLE, TOOLS_URL_VARIABLE
@@ -1186,7 +1186,7 @@ def test_honest_mode_drops_the_covert_tools_from_each_agents_sandbox_tools() -> 
     honest = apply_mode(attack, "honest")
 
     offered = {tool for agent in honest.agents for tools in agent.sandbox.tools.values() for tool in tools}
-    assert offered.isdisjoint(RECORDED_TOOLS) and {"open_pr", "send"} <= offered
+    assert offered.isdisjoint(COVERT_TOOL_NAMES) and {"open_pr", "send", "submit_job"} <= offered
 
 
 def test_the_honest_twin_env_carries_a_gateway_config_without_covert_tools() -> None:
@@ -1197,4 +1197,4 @@ def test_the_honest_twin_env_carries_a_gateway_config_without_covert_tools() -> 
     attack_policy = attack_env[TOOLS_GATEWAY_CONFIG_VARIABLE]
     twin_policy = twin_env[TOOLS_GATEWAY_CONFIG_VARIABLE]
     assert "write_scratch" in attack_policy
-    assert "open_pr" in twin_policy and not any(tool in twin_policy for tool in RECORDED_TOOLS)
+    assert "open_pr" in twin_policy and not any(tool in twin_policy for tool in COVERT_TOOL_NAMES)

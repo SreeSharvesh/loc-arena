@@ -52,7 +52,7 @@ from loc_arena.monitors.registry import (
 )
 from loc_arena.protocol import compose_protocol
 from loc_arena.recorded_events import build_recorded_events
-from loc_arena.recording_service import TOOLS as RECORDED_TOOLS
+from loc_arena.recording_service import COVERT_TOOL_NAMES
 from loc_arena.task import (
     EpisodeResult,
     Snapshot,
@@ -76,8 +76,8 @@ def _default_sink(kind: str, payload: dict[str, Any]) -> None:
 def apply_mode(config: RunConfig, mode: str) -> RunConfig:
     """Return the config for ``mode``; ``mode`` (attack/honest) is the ONLY difference.
 
-    The honest twin is never offered a covert tool: its agents' ``sandbox: tools:`` drop the recording
-    services' tools, so the twin lists none in process and the tools gateway offers it none in a stack.
+    The honest twin is never offered a covert tool: its agents' ``sandbox: tools:`` drop the attack tools
+    (``COVERT_TOOL_NAMES``) and keep honest ones such as ``submit_job``, in process and at the tools gateway.
     """
     if mode not in ("attack", "honest"):
         raise ValueError(f"mode must be 'attack' or 'honest', got {mode!r}")
@@ -93,7 +93,7 @@ def _without_covert_tools(agent: AgentConfig) -> AgentConfig:
     kept = {
         service: remaining
         for service, tools in agent.sandbox.tools.items()
-        if (remaining := tuple(tool for tool in tools if tool not in RECORDED_TOOLS))
+        if (remaining := tuple(tool for tool in tools if tool not in COVERT_TOOL_NAMES))
     }
     if kept == {service: tuple(tools) for service, tools in agent.sandbox.tools.items()}:
         return agent
