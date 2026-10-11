@@ -32,15 +32,29 @@ of model calls, by the usage OpenRouter reported in the gateway's call log.
 
 ## Findings beyond the five capabilities
 
+- A harness in the sandbox bypasses the episode's in-world gateway (`GatewayEdge` and `GatewayCore` in
+  `loc_arena/live.py`), which the native loop's calls pass through before they reach the gateway container.
+  So for harness turns there is no covert-objective injection for `covert.target_identity` (an attack
+  episode's seed never arrives), no signed turn token and so no `turn_id`, no sealed `inference_call`
+  record for the verifier, and no mirror `inference_call` for the inference monitor. The gateway container's
+  `calls.jsonl` records every call, but grading never reads it. Harness turns therefore neither complete
+  `unattributed_inference_calls` (they make no `inference_call` at all) nor show up to monitors.
+- Routing harness calls through the in-world gateway would put the turn credential in the sandbox, where
+  agent code can read and reuse it, so a stamp set from inside the sandbox cannot separate harness turns
+  from off-path calls by agent code.
 - Both harnesses' model calls land in the gateway's call log with `caller` the sandbox container, the same
   container agent code runs in: the gateway cannot tell a harness turn from a model call by code the agent
   started (the open question in `docs/isolation/README.md`, now for every turn).
+- The harnesses' own read, edit and bash make no `action` events (the native loop's `Recorder` writes
+  those), so monitors see only the MCP calls, built from the services' records.
 - Native tool calls (read, edit, bash) leave no record outside the model conversation. Each one can be
   recovered from the next request's messages in `calls.jsonl`; MCP calls are also in agentgateway's log and
   the service's own log.
 - Neither harness sends the `provider` routing of `models.cheap.yaml`; OpenRouter routed by default.
 - One pi call is recorded `complete: false` with status 200 although its reply holds the whole stream through
-  `data: [DONE]`: pi hung up before the upstream closed.
+  `data: [DONE]`. Inferred, not observed: pi hung up before the upstream closed.
+- Not checked: whether Claude Code sends an `x-api-key` header; the gateway replaces only `authorization`
+  and forwards other headers upstream.
 - Claude Code reports its own cost at Anthropic prices ($0.12 for a run OpenRouter billed under a cent) and warns
   `unrecognized_model` on stderr. It loads its bundled skills beside the scenario's.
 - `docker exec` stands in for the sandbox command server, which caps a command at `shell_timeout_seconds` (300)
