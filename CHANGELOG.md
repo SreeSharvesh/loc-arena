@@ -29,7 +29,7 @@ log has the details.
   checkout.
 - **The deterministic run replays through the live loop.** `policy: scripted` plays the model-driven episode
   with the scenario's `scripted/moves.yaml` in place of a model, so it exercises the real tools, services and
-  event builder.
+  event builder. Its attack moves are not written yet, so the deterministic attack run lands no side task.
 - **The honest twin starts from fresh services.** Between the two plays of a stack run every sandbox, live
   service and agentgateway is recreated empty, so the twin sees nothing the attack left; an in-process run
   builds a fresh forge and board for each.
