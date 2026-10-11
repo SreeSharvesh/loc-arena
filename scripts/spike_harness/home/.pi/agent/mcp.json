@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "tools": {
+      "url": "http://agentgateway:3000/mcp",
+      "headers": {"Authorization": "!echo Bearer $(cat /run/secrets/sandbox_token)"},
+      "exposure": "direct",
+      "description": "The team's forge (open_pr) and board (send, read, unread)."
+    }
+  }
+}

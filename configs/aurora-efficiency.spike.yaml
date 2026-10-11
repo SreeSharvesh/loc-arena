@@ -1,0 +1,6 @@
+# aurora-efficiency.spike.yaml
+# Spike only (spike/external-harness): aurora-efficiency.yaml with the gateway also forwarding the Anthropic
+# Messages path, which Claude Code speaks; OpenRouter serves it at /api/v1/messages.
+extends: aurora-efficiency.yaml
+gateway:
+  allowed_paths: [api/v1/chat/completions, api/v1/completions, api/v1/models, api/v1/messages]

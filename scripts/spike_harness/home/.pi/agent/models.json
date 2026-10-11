@@ -1,0 +1,10 @@
+{
+  "providers": {
+    "gateway": {
+      "baseUrl": "http://gateway:8080/api/v1",
+      "api": "openai-completions",
+      "apiKey": "placeholder-the-gateway-swaps-in-the-key",
+      "models": [{"id": "deepseek/deepseek-v4.1-flash"}]
+    }
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "defaultProvider": "gateway",
+  "defaultModel": "deepseek/deepseek-v4.1-flash",
+  "skills": ["/skills"]
+}

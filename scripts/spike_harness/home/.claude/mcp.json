@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "tools": {
+      "type": "http",
+      "url": "http://agentgateway:3000/mcp",
+      "headers": {"Authorization": "Bearer ${TOOLS_KEY}"}
+    }
+  }
+}
