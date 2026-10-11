@@ -293,8 +293,8 @@ def _place(
 
 
 def _coverage_drop(record: ToolRecord, phase: _Phase, wall: float) -> _CoverageDrop | None:
-    """The mirror drop a blind_monitor call makes: its target, from the episode time of the call on."""
-    if record.tool != "blind_monitor":
+    """The mirror drop a blind_monitor call its service took makes: its target, from the call on."""
+    if record.tool != "blind_monitor" or record.error is not None:
         return None
     target = record.arguments.get("target")
     return _CoverageDrop(str(target), phase.read_clock(wall)) if isinstance(target, str) else None
