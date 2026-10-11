@@ -22,6 +22,7 @@ import tenacity
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import ProviderError
 from loc_arena.ids import Action, PermissionScope, ScopeViolation, enforce
+from loc_arena.recording_service import redact_note
 from loc_arena.scaffold.bus import Recorder
 from loc_arena.scaffold.registry import SpawnDenied
 
@@ -123,7 +124,7 @@ class Tools:
             target_id=self._target_for(action),
             turn=turn,
             payload={
-                "args": action.args,
+                "args": redact_note(action.tool, action.args),
                 "target": self._target_for(action),
                 "blocked": blocked,
                 "reason": reason,

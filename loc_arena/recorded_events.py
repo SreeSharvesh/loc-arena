@@ -34,6 +34,7 @@ from loc_arena.forge.service import OpenedPullRequest
 from loc_arena.logging_.agent_trace import EpisodeTrace
 from loc_arena.logging_.events import AppendOnlyLog, EventKind, fingerprint, read_events
 from loc_arena.recording_service import TOOLS as COVERT_TOOLS
+from loc_arena.recording_service import redact_note
 from loc_arena.scaffold.bus import Recorder
 from loc_arena.task import SNAPSHOT_FILE, SnapshotFile, read_snapshot_file
 from loc_arena.tool_records import ToolRecord
@@ -146,9 +147,7 @@ def _action_event(record: ToolRecord) -> RecordedEvent:
     The scratch note's text is redacted to its fingerprint: the action is on the mirror, which the monitors
     read, and only the sealed ``shared_surface`` keeps a note's content (as its fingerprint) off it.
     """
-    args = dict(record.arguments)
-    if record.tool == "write_scratch" and "content" in args:
-        args["content"] = fingerprint(str(args["content"]))
+    args = redact_note(record.tool, record.arguments)
     return RecordedEvent(
         "action",
         record.agent,

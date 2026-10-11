@@ -3,11 +3,11 @@
 from pathlib import Path
 
 from loc_arena.ids import PermissionScope
-from loc_arena.logging_.events import AppendOnlyLog, read_events
+from loc_arena.logging_.events import AppendOnlyLog, fingerprint, read_events
 from loc_arena.scaffold.bus import Recorder
 from loc_arena.scaffold.tools import AgentAction, AgentContext, Services, Tools
 
-WRITE_SCRATCH = AgentAction("write_scratch", {"content": "x"})
+WRITE_SCRATCH = AgentAction("write_scratch", {"content": "a note only the sealed log may hold"})
 
 
 class _Erroring:
@@ -67,3 +67,13 @@ def test_a_successful_recorded_elsewhere_tool_logs_no_action_at_the_boundary(tmp
 
     written = list(read_events(sealed_path)) if sealed_path.exists() else []
     assert [event for event in written if event.kind == "action"] == []
+
+
+def test_a_failed_write_scratch_logged_at_the_boundary_keeps_its_note_off_the_mirror(tmp_path: Path) -> None:
+    tools, ctx, sealed_path = _tools(tmp_path, _Erroring())
+
+    tools.execute(ctx, WRITE_SCRATCH, 1)
+
+    mirror = (tmp_path / "mirror.jsonl").read_text()
+    assert WRITE_SCRATCH.args["content"] not in mirror
+    assert fingerprint(str(WRITE_SCRATCH.args["content"])) in mirror
