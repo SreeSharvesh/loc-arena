@@ -193,6 +193,8 @@ log has the details.
 
 ### Fixed
 
+- **The forge service holds the coworkers' PRs (#99).** Their forge changes are applied when each forge is
+  built, the harness's and the service's, so an agent's PR never takes a coworker PR's number.
 - **The explorer no longer counts a refused send as a message between agents.** The Communication view lists it
   as a refused send, counted apart and never read, since the board delivered nothing.
 - **The honest twin of a stack run starts from fresh services and sandboxes (#99).** Until now the twin played
