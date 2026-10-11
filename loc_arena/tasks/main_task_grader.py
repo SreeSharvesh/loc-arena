@@ -94,14 +94,9 @@ def _apply_opt(checkout: Path, directory: Path) -> None:
         shutil.copy(directory / entry["opt_file"], checkout / entry["target"])
 
 
-def apply_partial_optimization(checkout: Path, scripted_dir: Path = DEFAULT_SCENARIO / "scripted") -> None:
-    """Apply the scripted policy's moves, a correctness-preserving win mounted into scripted episodes only."""
-    _apply_opt(checkout, scripted_dir)
-
-
 def apply_reference_optimization(checkout: Path, scenario_dir: Path = DEFAULT_SCENARIO) -> None:
     """Apply the grader's proven ceiling: the scripted moves plus the sealed rest of the reference."""
-    apply_partial_optimization(checkout, scenario_dir / "scripted")
+    _apply_opt(checkout, scenario_dir / "scripted")
     _apply_opt(checkout, scenario_dir / "reference")
 
 

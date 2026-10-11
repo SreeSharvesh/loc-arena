@@ -22,16 +22,20 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from http import HTTPStatus
+from pathlib import Path
 from typing import Any, Protocol
 
 import httpx2
+import yaml
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError, model_validator
 from sandbox_server.command import API_KEY_VARIABLE
+from sandbox_server.confinement import resolve_inside
 
 from loc_arena.config import ModelSpec, ProviderPreferences, RunConfig
 from loc_arena.logging_.agent_trace import AgentTrace
@@ -393,6 +397,88 @@ class DeterministicProvider:
         """Return a unique deterministic completion and the fixed token counts."""
         self._n += 1
         return ProviderResult(text=f"gen#{self._n}", prompt_tokens=self._pt, completion_tokens=self._ct)
+
+
+class Move(BaseModel):
+    """One scripted tool call; ``content_from`` names a file whose text becomes ``args.content`` at load."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    tool: str
+    args: dict[str, JsonValue] = {}
+    content_from: Path | None = None  # relative to the moves file's directory
+
+
+class _AgentMoves(BaseModel):
+    """One agent's moves in a moves file: those of every episode, and those of the attack alone."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    moves: tuple[Move, ...] = ()
+    attack_moves: tuple[Move, ...] = ()
+
+
+def load_moves(path: Path, config: RunConfig) -> dict[str, list[Move]]:
+    """Each agent's moves in the moves file at ``path``, attack moves included iff covert is enabled.
+
+    An agent the run does not have, or a malformed move, is refused.
+    """
+    document = TypeAdapter(dict[str, _AgentMoves]).validate_python(yaml.safe_load(path.read_text()))
+    unknown = sorted(set(document) - {agent.id for agent in config.agents})
+    if unknown:
+        raise ValueError(f"{path} gives moves to agents the run does not have: {unknown}")
+    return {
+        agent: [
+            _resolve_content(move, path.parent)
+            for move in [*entry.moves, *(entry.attack_moves if config.covert.enabled else ())]
+        ]
+        for agent, entry in document.items()
+    }
+
+
+def _resolve_content(move: Move, directory: Path) -> Move:
+    """``move`` with the text of its ``content_from`` file, inside ``directory``, as ``args.content``."""
+    if move.content_from is None:
+        return move
+    content = resolve_inside(directory, move.content_from).read_text()
+    return Move(tool=move.tool, args={**move.args, "content": content})
+
+
+class ScriptedProvider:
+    """A provider that answers each agent's turns with its scripted moves, in order, as native tool calls.
+
+    It finds the agent in the system prompt (``You are <id>.``); an agent out of moves finishes. A call that
+    offers no tools, such as a coworker's batch, gets a short text reply.
+    """
+
+    def __init__(self, moves: Mapping[str, Sequence[Move]]) -> None:
+        """Queue each agent's moves."""
+        self._moves = {agent: list(queue) for agent, queue in moves.items()}
+        self._calls = 0
+
+    def generate(
+        self,
+        model: str,
+        messages: list[Message],
+        temperature: float,
+        max_tokens: int,
+        tools: list[ToolSpec] | None,
+        *,
+        spec: ModelSpec | None = None,
+    ) -> ProviderResult:
+        """Return the calling agent's next move as a tool call, or text when no tool is offered."""
+        if not tools:
+            return ProviderResult(text="ok", prompt_tokens=1, completion_tokens=1)
+        agent = re.search(r"You are (\S+)\.", "\n\n".join(str(message["content"]) for message in messages))
+        queue = self._moves.get(agent.group(1) if agent else "", [])
+        move = queue.pop(0) if queue else Move(tool="finish")
+        self._calls += 1
+        call = {
+            "id": f"call-{self._calls}",
+            "type": "function",
+            "function": {"name": move.tool, "arguments": json.dumps(move.args)},
+        }
+        return ProviderResult(text="", prompt_tokens=1, completion_tokens=1, tool_calls=[call])
 
 
 # --------------------------------------------------------------------------------------------------------

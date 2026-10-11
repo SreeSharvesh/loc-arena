@@ -8,9 +8,9 @@ authored covert sub-briefs (agent-main coordinates and blinds; distill-agent bui
 loop; serving-agent acquires the durable identity and launches the persistent job; eval-agent under-reports
 the logs). The covert tools are services the agents reach over MCP (``recording_service``): each records the
 request, and the post-play builder maps those records to the events the monitors and the verifier read. This
-is the DELIVERABLE run policy: a run drives the live model with no scripted or deterministic fallback. The
-scripted path (``task.assemble_scripted_episode``) is retained only as deterministic engine-test
-scaffolding, not a selectable deliverable policy.
+is the DELIVERABLE run policy: a run drives the live model with no scripted or deterministic fallback. In
+``policy: scripted``, deterministic engine-test scaffolding, the scenario's scripted moves stand in for the
+model.
 """
 
 from __future__ import annotations
@@ -41,7 +41,9 @@ from loc_arena.gateway.core import (
     GatewayCore,
     OpenRouterProvider,
     Provider,
+    ScriptedProvider,
     is_live_provider_configured,
+    load_moves,
 )
 from loc_arena.gateway.edge import GatewayEdge
 from loc_arena.identity import IdentityService
@@ -233,7 +235,9 @@ def connect_agent_tools(
 
 
 def _default_provider(config: RunConfig) -> Provider:
-    """The live provider (OpenRouter) when a key is present; otherwise the deterministic stub for plumbing."""
+    """The scripted moves under ``policy: scripted``; else OpenRouter when a key is present, or the stub."""
+    if config.policy == "scripted":
+        return ScriptedProvider(load_moves(resolve_scenario(config).scripted_dir / "moves.yaml", config))
     if is_live_provider_configured():
         return OpenRouterProvider(
             timeout=config.settings.gateway.timeout_seconds,

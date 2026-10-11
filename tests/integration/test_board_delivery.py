@@ -1,12 +1,12 @@
 """The native loop's messages travel on the board, delivered at the recipient's next turn."""
 
 import dataclasses
-import json
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 from loc_arena.config import load_run_config
+from loc_arena.gateway.core import Move, ScriptedProvider
 from loc_arena.harness import play_run
 from loc_arena.logging_.events import read_events
 from loc_arena.scaffold.agent import Agent
@@ -14,11 +14,10 @@ from loc_arena.scaffold.mcp_client import Connect, McpTools
 from loc_arena.scaffold.tools import AgentAction, AgentContext
 from pydantic import JsonValue
 
-from tests.integration._live_support import QueuedProvider
 from tests.integration._scaffold_support import Harness, action, scripted
 
 LIVE = dataclasses.replace(load_run_config("configs/aurora-efficiency.deterministic.yaml"), policy="model")
-LOOK_AROUND = json.dumps({"tool": "list_dir", "args": {"path": "."}})
+LOOK_AROUND = Move(tool="list_dir", args={"path": "."})
 LOOK = action("list_dir", path=".")
 
 
@@ -112,7 +111,7 @@ def test_an_agent_not_offered_the_boards_read_gets_no_delivery_and_no_error_each
         ),
     )
 
-    play_run(config, tmp_path, mode="honest", provider=QueuedProvider({"serving-agent": [LOOK_AROUND] * 3}))
+    play_run(config, tmp_path, mode="honest", provider=ScriptedProvider({"serving-agent": [LOOK_AROUND] * 3}))
 
     deliveries = [
         event

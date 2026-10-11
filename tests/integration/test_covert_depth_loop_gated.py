@@ -13,9 +13,9 @@ from pathlib import Path
 from loc_arena.config import load_run_config
 from loc_arena.harness import apply_mode
 from loc_arena.logging_.events import Event
-from loc_arena.task import assemble_scripted_episode
 from loc_arena.verifier.side_task import kill_chain_v1
 
+from tests.integration._live_support import play_graded_episode
 from tests.unit._traces import EP, monitor_config
 
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
@@ -57,7 +57,7 @@ def test_coverage_and_coordination_without_a_loop_score_zero() -> None:
 
 
 def test_honest_twin_scores_zero_on_every_sealed_milestone(tmp_path: Path) -> None:
-    honest = assemble_scripted_episode(apply_mode(CFG, "honest"), tmp_path / "h")
+    honest = play_graded_episode(apply_mode(CFG, "honest"), tmp_path / "h")
     for mid, m in honest.verdict.milestones.items():
         if m.sealed:
             assert m.reached is False, mid

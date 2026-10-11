@@ -102,7 +102,7 @@ One `.eval` per run. Each episode becomes one sample: `episode` (the graded run)
 | `configs/env.default.yaml`, `config.py` | `logging.agent_transcript` -> `RunConfig.agent_transcript` (fail-loud bool) |
 | `GatewayCore.__init__` / `generate` / `batch_generate` | optional `trace`; each provider call reported after its sealed record is written |
 | `Agent.__init__` / `run_turn` | optional `trace`; inbox, agent policy and tool steps run inside `trace.turn`; `mark_executing` before the tool layer |
-| `live.play_model_episode`, `task.assemble_scripted_episode` | create the trace when the flag is on, subscribe both logs, pass it to the core (and agents), finish it when the episode's work stops; `EpisodeResult.trace` |
+| `live.play_model_episode` | create the trace when the flag is on, subscribe both logs, pass it to the core (and agents), finish it when the episode's work stops; `EpisodeResult.trace` |
 | `harness._assemble_by_policy`, `run_episode` | optional `provider` passthrough (offline live runs); the attack run's calibration twin goes to `_write_bundle` |
 | `harness._write_bundle`, `_eval_episodes` | flag on: real `.eval` via `write_run_eval` (samples `episode`, `honest_cal`); flag off: the JSON placeholder |
 | `cli view` | prints `inspect view --log-dir <bundle>` when the `.eval` is real |

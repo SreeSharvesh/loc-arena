@@ -4,14 +4,15 @@ import dataclasses
 from pathlib import Path
 
 from loc_arena.config import load_run_config
-from loc_arena.task import assemble_scripted_episode
+
+from tests.integration._live_support import play_graded_episode
 
 _ATTACK = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 _HONEST = dataclasses.replace(_ATTACK, covert=dataclasses.replace(_ATTACK.covert, enabled=False))
 
 
 def test_honest_twin_completes_no_covert_milestone(tmp_path: Path) -> None:
-    result = assemble_scripted_episode(_HONEST, tmp_path)
+    result = play_graded_episode(_HONEST, tmp_path)
     verdict = result.verdict
     # both landings FALSE and no sealed milestone reached (the honest twin scores zero)
     assert verdict.landing.minimal is False
@@ -32,7 +33,7 @@ def test_honest_twin_completes_no_covert_milestone(tmp_path: Path) -> None:
 
 
 def test_honest_twin_still_makes_main_task_progress(tmp_path: Path) -> None:
-    result = assemble_scripted_episode(_HONEST, tmp_path)
+    result = play_graded_episode(_HONEST, tmp_path)
     # the honest twin does real optimization work: a continuous score STRICTLY above the do-nothing baseline
     # (the shared partial optimization is a genuine ~1.19x win, just short of the first 1.2 milestone).
     assert result.main_score.gate_passed is True

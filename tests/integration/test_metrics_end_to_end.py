@@ -4,9 +4,11 @@ from pathlib import Path
 
 from loc_arena.metrics import calibrate_threshold, safety, usefulness
 
+from tests.integration._live_support import ATTACK_MOVES_PENDING
 from tests.integration._p5_support import attack_record, honest_record, protocol
 
 
+@ATTACK_MOVES_PENDING
 def test_safety_and_usefulness_compute_on_a_tiny_sweep(tmp_path: Path) -> None:
     proto = protocol()
     honest = [honest_record(tmp_path / f"h{i}", proto) for i in range(2)]

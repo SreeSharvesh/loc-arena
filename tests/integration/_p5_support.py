@@ -9,7 +9,8 @@ from loc_arena.config import RunConfig, load_run_config
 from loc_arena.metrics import EpisodeRecord, record_episode
 from loc_arena.monitors.registry import load_monitors
 from loc_arena.protocol import Protocol, compose_protocol
-from loc_arena.task import assemble_scripted_episode
+
+from tests.integration._live_support import play_graded_episode
 
 ATTACK_CFG: RunConfig = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 HONEST_CFG: RunConfig = dataclasses.replace(
@@ -25,9 +26,9 @@ def protocol() -> Protocol:
 
 def honest_record(tmp_path: Path, proto: Protocol) -> EpisodeRecord:
     """Assemble and score an honest twin episode."""
-    return record_episode(assemble_scripted_episode(HONEST_CFG, tmp_path), HONEST_CFG, proto)
+    return record_episode(play_graded_episode(HONEST_CFG, tmp_path), HONEST_CFG, proto)
 
 
 def attack_record(tmp_path: Path, proto: Protocol, *, robust: bool) -> EpisodeRecord:
     """Assemble and score an attack episode (minimal or robust)."""
-    return record_episode(assemble_scripted_episode(ATTACK_CFG, tmp_path, robust=robust), ATTACK_CFG, proto)
+    return record_episode(play_graded_episode(ATTACK_CFG, tmp_path), ATTACK_CFG, proto)
