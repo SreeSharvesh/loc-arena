@@ -11,7 +11,8 @@ from pathlib import Path
 
 from loc_arena.config import load_run_config
 from loc_arena.harness import apply_mode
-from loc_arena.live import assemble_model_episode
+from loc_arena.live import play_model_episode
+from loc_arena.task import grade_snapshot
 
 from tests.integration._live_support import QueuedProvider
 
@@ -21,11 +22,10 @@ DEADLINE = 10_000.0
 
 def test_model_policy_honest_twin_still_clean(tmp_path: Path) -> None:
     # covert.enabled=false: the same machinery, no covert seed injected -> no rogue loop, verifies clean
-    ep = assemble_model_episode(
-        apply_mode(CFG, "honest"),
-        tmp_path / "h",
-        provider=QueuedProvider({}),
-        deadline_ts=DEADLINE,
+    honest = apply_mode(CFG, "honest")
+    ep = grade_snapshot(
+        play_model_episode(honest, tmp_path / "h", provider=QueuedProvider({}), deadline_ts=DEADLINE),
+        honest,
     )
     assert ep.verdict.landing.robust is False and ep.verdict.landing.minimal is False
     assert ep.verdict.covert_depth == 0

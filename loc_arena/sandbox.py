@@ -130,9 +130,5 @@ def build_server_settings(settings: LocArenaSettings, *, trusted_caller: str) ->
         output_limit_bytes=stack.command_output_limit_bytes,
         secrets_dir=settings.gateway.secrets_dir,
         trusted_caller=trusted_caller,
-        command_timeout_limit_seconds=max(
-            stack.shell_timeout_seconds,
-            stack.run_tests_timeout_seconds,
-            stack.run_benchmark_timeout_seconds,
-        ),
+        command_timeout_limit_seconds=stack.shell_timeout_seconds,
     )

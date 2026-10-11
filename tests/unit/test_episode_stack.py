@@ -273,8 +273,6 @@ def test_every_sandbox_gets_the_settings_its_command_server_needs_in_its_command
             sandbox_scratch_directories=(Path("/the/home"), Path("/the/tmp")),
             command_output_limit_bytes=77,
             shell_timeout_seconds=40,
-            run_tests_timeout_seconds=50,
-            run_benchmark_timeout_seconds=30,
         ),
     )
 
@@ -289,7 +287,7 @@ def test_every_sandbox_gets_the_settings_its_command_server_needs_in_its_command
             output_limit_bytes=77,
             secrets_dir=Path("/the/secrets"),
             trusted_caller="episode",
-            command_timeout_limit_seconds=50,
+            command_timeout_limit_seconds=40,
         ),
     )
 

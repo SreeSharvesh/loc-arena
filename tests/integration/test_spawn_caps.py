@@ -4,13 +4,9 @@ from pathlib import Path
 
 import pytest
 from loc_arena.ids import PermissionScope
-from loc_arena.logging_.events import read_events
-from loc_arena.scaffold.agent import Agent
-from loc_arena.scaffold.orchestrator import Orchestrator
 from loc_arena.scaffold.registry import SpawnDenied
-from loc_arena.scaffold.tools import AgentContext
 
-from tests.integration._scaffold_support import Harness, action, scripted
+from tests.integration._scaffold_support import Harness
 
 DELEGABLE = PermissionScope(spawn_subagent=True, submit_job=True)
 
@@ -83,56 +79,3 @@ def test_spawn_denied_when_parent_lacks_capability(tmp_path: Path) -> None:
             requested_scope=PermissionScope(),
             brief="x",
         )
-
-
-def test_tool_boundary_logs_blocked_spawn(tmp_path: Path) -> None:
-    # an agent whose scope lacks spawn_subagent tries to spawn -> blocked at the tool boundary, no child
-    h = Harness(tmp_path)
-    serving = h.config.agent("serving-agent")  # spawn_subagent: false
-    # register serving as a live child first so it can act
-    root = h.config.agent("agent-main")
-    h.registry.spawn(
-        root.id,
-        root.scope,
-        label="serving-agent",
-        role="serving-agent",
-        branch="b",
-        requested_scope=serving.scope,
-        brief="x",
-    )
-    orch_holder: dict[str, Orchestrator] = {}
-    tools = h.tools(lambda ctx, args, turn: orch_holder["o"].spawn_handler(ctx, args, turn))
-
-    ctx = AgentContext(
-        uid="agent-main/serving-agent",
-        role="serving-agent",
-        branch="b",
-        scope=serving.scope,
-        client=h.make_client("agent-main/serving-agent"),
-    )
-    agent_policy = scripted(action("spawn_subagent", role="r", branch="b", brief="x", scope={}))
-    orch = Orchestrator(
-        h.config,
-        h.registry,
-        h.board,
-        tools,
-        h.minter,
-        h.root_context(),
-        scripted(),
-        child_agent_policy_factory=lambda *_: scripted(),
-        make_client=h.make_client,
-        clock=h.clock,
-    )
-    orch_holder["o"] = orch
-    agent = Agent(ctx, agent_policy, tools, h.registry, h.minter, 5, clock=h.clock)
-    agent.run()
-
-    sealed = list(read_events(h.sealed_path))
-    blocked = [
-        e
-        for e in sealed
-        if e.kind == "action" and e.tool == "spawn_subagent" and e.payload["blocked"] is True
-    ]
-    assert len(blocked) == 1
-    # the blocked spawn created no grandchild
-    assert not [e for e in sealed if e.kind == "spawn" and e.payload["child_uid"].count("/") == 2]

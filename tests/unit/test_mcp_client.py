@@ -1,25 +1,11 @@
 """Each agent's MCP client: the tools it is offered come from its server's listing."""
 
-from typing import Any
-
-from loc_arena.scaffold.mcp_client import McpServices, McpTools, over_http
-from loc_arena.scaffold.tools import ToolResult
+from loc_arena.scaffold.mcp_client import McpTools, over_http
 from mcp import Client
 from mcp.server import MCPServer
 
 UNREACHABLE = "http://127.0.0.1:9/mcp"  # the discard port: nothing listens there
 TIMEOUT_SECONDS = 5.0
-
-
-class _OtherServices:
-    """The services an MCP tool would otherwise fall through to: they record what they are asked to run."""
-
-    def __init__(self) -> None:
-        self.ran: list[str] = []
-
-    def run(self, tool: str, args: dict[str, Any]) -> ToolResult:
-        self.ran.append(tool)
-        return {"ran": tool}
 
 
 def _server() -> MCPServer:
@@ -61,14 +47,3 @@ def test_a_call_to_an_unreachable_server_is_an_error_result() -> None:
     result = tools.call("echo", {"text": "hello"})
 
     assert result == {"error": "echo could not be called: the tool server is unreachable", "tool": "echo"}
-
-
-def test_a_served_tool_the_caller_is_not_offered_is_refused_and_never_run_elsewhere() -> None:
-    other = _OtherServices()
-    unoffered = McpTools(lambda: Client(_server()), granted=())
-    services = McpServices({"alpha": [unoffered]}, other, served={"echo"})
-
-    result = services.run("echo", {"text": "hello", "actor_uid": "alpha"})
-
-    assert result == {"error": "echo is not offered to you", "tool": "echo"}
-    assert other.ran == []

@@ -1,14 +1,12 @@
 """In-process scaffold wiring for the scaffold tests (no docker, no provider).
 
 Builds a full episode: sealed + mirror logs, a stub-provider gateway (core + edge), the board, the registry,
-the tool layer, an orchestrator, and helpers to build agent contexts and clients. Deterministic clock.
+the tool layer, and helpers to build agent contexts and clients. Deterministic clock.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path
-from typing import Any
 
 from loc_arena.board import Board, build_server
 from loc_arena.config import RunConfig, load_run_config
@@ -18,10 +16,12 @@ from loc_arena.gateway.edge import GatewayEdge, create_edge_app
 from loc_arena.logging_.events import AppendOnlyLog
 from loc_arena.scaffold.agent import AgentPolicy, ScriptedAgentPolicy, TurnMinter
 from loc_arena.scaffold.bus import Recorder
-from loc_arena.scaffold.mcp_client import McpTools
+from loc_arena.scaffold.code_services import CodeServices
+from loc_arena.scaffold.mcp_client import Connect, McpTools
 from loc_arena.scaffold.registry import AgentRegistry
-from loc_arena.scaffold.tools import AgentAction, AgentContext, Services, StubServices, ToolResult, Tools
-from loc_arena.tool_records import Write, append_to
+from loc_arena.scaffold.tools import AgentAction, AgentContext, Tools
+from loc_arena.settings import StackSettings
+from loc_arena.tool_records import append_to
 from mcp import Client
 
 from tests.integration._gateway_support import AppTransport, StubProvider
@@ -40,26 +40,6 @@ class Clock:
 
     def advance(self, dt: float) -> None:
         self.t += dt
-
-
-class BoardServices:
-    """Calls the board's tools over MCP in memory, each as the agent that calls it; stubs every other tool.
-
-    The board knows the run config's agents and every child the registry has spawned so far.
-    """
-
-    def __init__(self, board: Board, config: RunConfig, registry: AgentRegistry, write: Write) -> None:
-        self._board, self._config, self._registry, self._write = board, config, registry, write
-
-    def run(self, tool: str, args: dict[str, Any]) -> ToolResult:
-        if tool not in {"send", "read", "unread"}:
-            return StubServices().run(tool, args)
-        caller = str(args["actor_uid"])
-        configured = {agent.id: agent.scope for agent in self._config.agents}
-        scopes = configured | {uid: self._registry.node(uid).scope for uid in self._registry.tree()}
-        server = build_server(self._board, lambda: caller, self._write, scopes)
-        arguments = {key: value for key, value in args.items() if key not in {"actor_uid", "actor_role"}}
-        return McpTools(lambda: Client(server)).call(tool, arguments)
 
 
 class Harness:
@@ -114,19 +94,25 @@ class Harness:
             root_scope=root.scope,
             clock=self.clock,
         )
-        records = append_to(self.board_records)
-        self.services: Services = BoardServices(self.board, self.config, self.registry, records)
+        self.code = CodeServices(checkout=tmp_path, repos=[], stack=StackSettings())
+        self.clients = {agent.id: [McpTools(self.connect_board(agent.id))] for agent in self.config.agents}
+
+    def connect_board(self, uid: str) -> Connect:
+        """A connection to the board, in memory, as ``uid``; the board knows the run config's agents."""
+        scopes = {agent.id: agent.scope for agent in self.config.agents}
+        server = build_server(self.board, lambda: uid, append_to(self.board_records), scopes)
+        return lambda: Client(server)
 
     def make_client(self, caller_identity: str) -> GatewayClient:
         """A gateway client (pointing at the edge) for the given identity."""
         return GatewayClient(self._edge_transport, caller_identity)
 
-    def tools(self, spawn_handler: Callable[[AgentContext, dict[str, Any], int], dict[str, Any]]) -> Tools:
-        """The tool layer wired to a spawn handler."""
+    def tools(self) -> Tools:
+        """The tool layer: the native tools on an empty checkout, and each agent's client of the board."""
         return Tools(
             self.recorder,
-            self.services,
-            spawn_handler=spawn_handler,
+            self.code,
+            self.clients,
             delivery_attempts=self.config.settings.stack.tools_delivery_attempts,
         )
 

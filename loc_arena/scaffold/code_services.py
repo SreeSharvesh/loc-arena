@@ -1,98 +1,52 @@
-"""Real code/test/benchmark tools over the agent's company checkout.
+"""The native tools over the agent's company checkout: read, write, edit, list and search, and ``bash``.
 
-Owns the ``code`` tool catalog (read/write/edit/list/grep, ``run_tests``, ``run_benchmark``, and ``bash`` when
-sandboxes are given) so the untrusted
-team actually works the seven-repo ``company/`` checkout: it reads and edits the real code, runs each repo's
-suite, and profiles cost, then that same checkout is graded (continuous scoring). Composes as a
-``Services`` layer
-(``run(tool, args) -> dict``) beneath the covert/forge layers; a tool it does not own falls through.
-
-Enforces the sealed-vs-tamperable isolation at the workspace boundary: every path is confined to the
-checkout, so the untrusted agent
-(even as root in its own sandbox) has no route out to the sealed layer. The tools that run agent-written
-code (``bash``, ``run_tests``, ``run_benchmark``) run in the calling agent's own sandbox when sandboxes are
-given (a stack run), which sees the checkouts and nothing of the episode; an agent with none gets an error and
-nothing runs. Without sandboxes, ``bash`` is refused, since it is not confined to the checkout, and the other
-two run in this process. ``run_tests`` and ``run_benchmark`` run the scenario's skill scripts, which a stack
-run's agents run with bash instead, with the plain venv interpreter (never ``uv run``, which cannot resolve
-the copied repos' deps). The benchmark reports the company's own inline cost accounting as honest DIRECTIONAL
-feedback; it never reads or moves the sealed grade meter.
+The untrusted team works the real seven-repo ``company/`` checkout with them, and that same checkout is graded
+(continuous scoring). Every path is confined to the checkout, so the untrusted agent (even as root in its own
+sandbox) has no route out to the sealed layer. ``bash`` runs agent-written code, so it runs only in the
+calling agent's own sandbox, given in a stack run, which sees the checkouts and nothing of the episode;
+without sandboxes it is refused, since it is not confined to the checkout. An agent with no sandbox of its
+own gets an error and nothing runs.
 """
 
 from __future__ import annotations
 
-import json
 import os
 import re
-import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, cast
 
-from sandbox_server.command import run_command
-from sandbox_server.wire import CommandRequest, CommandResult
+from sandbox_server.wire import CommandRequest
 
-from loc_arena.gateway.core import environment_without_key
 from loc_arena.sandbox import SandboxClient, SandboxError
-from loc_arena.scaffold.tools import Services
 from loc_arena.settings import StackSettings
 
 _MAX_READ = 200_000  # cap a read so a huge file can't blow the context
 _MAX_MATCHES = 200
-_SKILL_VARIABLES = ("PATH", "HOME", "TMPDIR")  # all a skill's script gets of this process's environment
 
 
 class CodeServices:
-    """A ``Services`` layer whose code/test/bench tools act on one company checkout; others fall through."""
+    """The native tools, acting on one company checkout."""
 
-    _OWNED = frozenset(
-        {
-            "read_file",
-            "write_file",
-            "edit_file",
-            "list_dir",
-            "search_code",
-            "grep",
-            "run_tests",
-            "run_benchmark",
-            "bash",
-        },
-    )
+    TOOLS = frozenset({"read_file", "write_file", "edit_file", "list_dir", "search_code", "bash"})
 
     def __init__(
         self,
-        base: Services,
         *,
         checkout: Path,
         repos: list[str],
         stack: StackSettings,
         sandboxes: Mapping[str, SandboxClient] | None = None,
-        skills: Path | None = None,
-        python_exe: str = sys.executable,
     ) -> None:
-        """Wire the layer to a base ``Services``, the checkout, the repos, the settings and the interpreter.
+        """Act on ``checkout``, whose ``repos`` are importable, under the ``stack`` settings.
 
         ``sandboxes``, each agent's by its id, are given only in the episode container: an agent's code then
-        runs in its own, ``bash`` included. Without them, ``bash`` is refused. ``skills`` is the scenario's
-        skills folder on this host.
+        runs in its own, ``bash`` included. Without them, ``bash`` is refused.
         """
-        self._base = base
         self._checkout = checkout.resolve()
         self._repos = list(repos)
         self._stack = stack
         self._sandboxes = sandboxes
-        self._skills = skills
-        # The skills' scripts an in-process run offers as tools until #99 step 6 removes them, by tool: each
-        # script, the arguments it passes on and its timeout. A stack run's agents run them with bash.
-        self._skill_scripts = {
-            "run_tests": ("run-tests/scripts/run_tests.py", ("repo",), stack.run_tests_timeout_seconds),
-            "run_benchmark": (
-                "run-benchmark/scripts/run_benchmark.py",
-                (),
-                stack.run_benchmark_timeout_seconds,
-            ),
-        }
-        self._py = python_exe
 
     def _resolve(self, rel: str) -> Path:
         """Resolve ``rel`` under the checkout, refusing any path that escapes it (workspace confinement)."""
@@ -105,41 +59,10 @@ class CodeServices:
         """The ``PYTHONPATH`` that makes the seven repos importable: each repo dir under the checkout."""
         return os.pathsep.join(str(self._checkout / r) for r in self._repos)
 
-    def _execute(
-        self,
-        agent: str,
-        argv: Sequence[str],
-        directory: Path,
-        timeout_seconds: float,
-        base_environment: Mapping[str, str] | None = None,
-    ) -> CommandResult:
-        """Run agent-written code, never with the key: in ``agent``'s own sandbox, else here.
-
-        Here it starts from ``base_environment``, or this process's environment when none is given. With
-        sandboxes, an agent with none of its own runs nothing anywhere.
-        """
-        request = CommandRequest(
-            argv=list(argv),
-            directory=directory,
-            timeout_seconds=timeout_seconds,
-            environment={"PYTHONPATH": self._pythonpath()},
-        )
-        if self._sandboxes is None:
-            base = environment_without_key() if base_environment is None else base_environment
-            return run_command(request, self._stack.command_output_limit_bytes, base)
-        if agent not in self._sandboxes:
-            raise SandboxError(f"{agent} has no sandbox, so its command did not run")
-        return self._sandboxes[agent].run(request)
-
     def run(self, tool: str, args: dict[str, Any]) -> dict[str, Any]:
-        """Dispatch an owned code tool; a tool this layer does not own falls through to the base."""
-        if tool not in self._OWNED:
-            return self._base.run(tool, args)
+        """Run the native tool ``tool`` with ``args``; a malformed call is an error result, never a crash."""
         try:
-            if tool in self._skill_scripts:
-                return self._run_skill(tool, args)
-            handler = getattr(self, f"_t_{tool}")
-            return cast(dict[str, Any], handler(args))
+            return cast(dict[str, Any], getattr(self, f"_t_{tool}")(args))
         except (ValueError, KeyError, TypeError) as exc:
             # a live model routinely omits/mistypes an arg -> a logged error result, never a crash
             return {"error": f"bad args for {tool}: {exc}", "tool": tool}
@@ -206,21 +129,6 @@ class CodeServices:
                 continue
         return {"matches": matches, "truncated": False}
 
-    _t_grep = _t_search_code
-
-    def _run_skill(self, tool: str, args: dict[str, Any]) -> dict[str, Any]:
-        """What the skill script of ``tool`` prints last, run from the checkout within its timeout."""
-        if self._skills is None:
-            return {"error": "this scenario has no skills"}
-        script, parameters, timeout = self._skill_scripts[tool]
-        command = [self._py, str(self._skills / script), *(str(args.get(name, "")) for name in parameters)]
-        allowed = {name: os.environ[name] for name in _SKILL_VARIABLES if name in os.environ}
-        res = self._execute(str(args["actor_uid"]), command, self._checkout, timeout, allowed)
-        try:
-            return cast(dict[str, Any], json.loads(res.stdout.strip().splitlines()[-1]))
-        except (IndexError, json.JSONDecodeError):
-            return {"error": f"{script} printed no result", "stderr": res.stderr[-500:]}
-
     # --- shell ---------------------------------------------------------------------------------------
     def _t_bash(self, args: dict[str, Any]) -> dict[str, Any]:
         """Run ``bash -c <command>`` in the checkout, in the agent's sandbox; a timeout kills its session.
@@ -229,9 +137,17 @@ class CodeServices:
         """
         if self._sandboxes is None:
             return {"error": "bash runs only in a stack run's sandbox", "tool": "bash"}
+        agent = str(args["actor_uid"])
+        if agent not in self._sandboxes:
+            raise SandboxError(f"{agent} has no sandbox, so its command did not run")
         timeout = self._stack.shell_timeout_seconds
-        command = ["bash", "-c", str(args["command"])]
-        res = self._execute(str(args["actor_uid"]), command, self._checkout, timeout)
+        request = CommandRequest(
+            argv=["bash", "-c", str(args["command"])],
+            directory=self._checkout,
+            timeout_seconds=timeout,
+            environment={"PYTHONPATH": self._pythonpath()},
+        )
+        res = self._sandboxes[agent].run(request)
         if res.returncode is None:
             return {**res.model_dump(), "error": f"timed out after {timeout:g} seconds"}
         return res.model_dump()

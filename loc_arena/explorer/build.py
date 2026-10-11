@@ -60,7 +60,7 @@ from loc_arena.explorer.placement import (
 )
 from loc_arena.explorer.scores import RunScores, load_scores
 from loc_arena.explorer.settings import ExplorerSettings
-from loc_arena.scaffold.tool_specs import COVERT_TOOL_NAMES
+from loc_arena.recording_service import COVERT_TOOL_NAMES
 
 DATA_MARKER: Final = "__DATA__"
 RUN_TEMPLATE: Final = "run.html"

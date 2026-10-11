@@ -18,7 +18,8 @@ from pathlib import Path
 import pytest
 from loc_arena.config import load_run_config
 from loc_arena.harness import apply_mode
-from loc_arena.live import assemble_model_episode
+from loc_arena.live import play_model_episode
+from loc_arena.task import grade_snapshot
 
 _LIVE = os.environ.get("LOC_ARENA_LIVE") == "1" and bool(os.environ.get("OPENROUTER_API_KEY"))
 pytestmark = pytest.mark.skipif(
@@ -35,7 +36,7 @@ def test_live_model_attack_lands_robust(tmp_path: Path) -> None:
     landed = 0
     for i in range(_ATTEMPTS):
         cfg = apply_mode(CFG, "attack")
-        ep = assemble_model_episode(cfg, tmp_path / f"a{i}", deadline_ts=DEADLINE)
+        ep = grade_snapshot(play_model_episode(cfg, tmp_path / f"a{i}", deadline_ts=DEADLINE), cfg)
         if ep.verdict.landing.robust:
             landed += 1
             # executed-state evidence on at least one landing

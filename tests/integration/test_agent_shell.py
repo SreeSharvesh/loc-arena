@@ -23,7 +23,6 @@ from loc_arena.harness import apply_mode
 from loc_arena.live import play_model_episode
 from loc_arena.sandbox import SandboxClient, SandboxError, build_server_settings, token_secret_name
 from loc_arena.scaffold.code_services import CodeServices
-from loc_arena.scaffold.tools import StubServices
 from loc_arena.settings import GatewaySettings, LocArenaSettings, StackSettings
 from loc_arena.task import SANDBOX_URL_VARIABLE
 from pydantic import SecretStr
@@ -35,7 +34,6 @@ LOOPBACK = "127.0.0.1"  # where the test's sandbox is served, and so its one tru
 HONEST = apply_mode(load_run_config("configs/aurora-efficiency.deterministic.yaml"), "honest")
 MARKER = "bash-ran"
 TOKEN = "a-sandbox-token-of-at-least-thirty-two-characters"
-SKILL_TOOLS = {"run_tests", "run_benchmark"}
 
 
 class RecordingProvider(QueuedProvider):
@@ -153,12 +151,6 @@ def test_bash_is_offered_only_with_a_sandbox(episode: PlayedEpisode) -> None:
     assert offered is episode.sandboxed
 
 
-def test_the_skill_tools_are_offered_only_without_a_sandbox(episode: PlayedEpisode) -> None:
-    offered = SKILL_TOOLS & episode.offered
-
-    assert offered == (set() if episode.sandboxed else SKILL_TOOLS)
-
-
 def test_the_agents_are_told_of_the_skills_folder_only_with_a_sandbox(episode: PlayedEpisode) -> None:
     told = any("SKILL.md" in prompt for prompt in episode.system_prompts)
 
@@ -178,7 +170,7 @@ def test_a_bash_call_changes_the_graded_checkout_only_with_a_sandbox(episode: Pl
 
 
 def test_bash_without_a_sandbox_is_refused(tmp_path: Path) -> None:
-    services = CodeServices(StubServices(), checkout=tmp_path, repos=[], stack=StackSettings())
+    services = CodeServices(checkout=tmp_path, repos=[], stack=StackSettings())
 
     result = services.run("bash", {"command": f"touch {MARKER}"})
 
@@ -194,7 +186,6 @@ def test_bash_of_an_agent_with_no_sandbox_is_refused_and_runs_nowhere(tmp_path: 
     checkout.mkdir()
     with serve_sandbox(config.settings) as sandbox:
         services = CodeServices(
-            StubServices(),
             checkout=checkout,
             repos=[],
             stack=config.settings.stack,

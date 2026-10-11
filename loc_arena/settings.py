@@ -137,21 +137,10 @@ class StackSettings(SettingsGroup):
         default=300.0,
         description="Seconds an agent's bash command may run in its sandbox before it is killed.",
     )
-    run_tests_timeout_seconds: PositiveFloat = Field(
-        default=300.0,
-        description="Seconds the in-process run_tests tool may run before its whole session is killed; in a "
-        "stack run agents run the run-tests skill with bash, under `shell_timeout_seconds`.",
-    )
-    run_benchmark_timeout_seconds: PositiveFloat = Field(
-        default=120.0,
-        description="Seconds the in-process run_benchmark tool may run before its whole session is killed; "
-        "in a stack run agents run the run-benchmark skill with bash, under `shell_timeout_seconds`.",
-    )
     command_output_limit_bytes: PositiveInt = Field(
         default=10_000,
-        description="Bytes of the stdout and of the stderr of a command an agent's tool runs (bash, "
-        "run_tests, run_benchmark) kept, counted from the end; small enough that both fit in one tool "
-        "result (`agent_loop.tool_result_max_chars`).",
+        description="Bytes of the stdout and of the stderr of an agent's bash command kept, counted from the "
+        "end; small enough that both fit in one tool result (`agent_loop.tool_result_max_chars`).",
     )
     sandbox_port: int = Field(
         default=8090,

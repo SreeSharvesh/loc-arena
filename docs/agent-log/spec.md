@@ -10,9 +10,9 @@ turns caused. Today the `.eval` is a JSON stub (`harness.py:421-432`).
 
 ## Why attribution works
 
-An episode runs one agent turn at a time on one thread (`live.py:271-279`, `orchestrator.py:113-129`). Every
+An episode runs one agent turn at a time on one thread (`_drive_team` in `live.py`). Every
 event appended while a turn is bound was caused by that turn. Every event appended with no turn bound belongs
-to the World lane (NPCs, ticks, orchestrator closes).
+to the World lane (NPCs, ticks, closes).
 
 ## Invariants
 
@@ -62,7 +62,7 @@ turns lands in its turn 0, and the builder notes it in `unattributed_records.jso
 | Assumption | Evidence |
 |---|---|
 | one sealed and one mirror writer per episode | `live.py:153-154`, `task.py:268-269`; the only other writer is post-episode (`harness.py:667`) |
-| turns never nest | the orchestrator drains children after the root turn returns (`orchestrator.py:131-136`) |
+| turns never nest | `_drive_team` starts an agent's turn only after the previous one returns (`live.py`) |
 | inspect-ai 0.3.268 has agent spans, `ToolEvent.agent_span_id`, and log round-trip | probe on the locked version |
 
 ## M2 `loc_arena/logging_/inspect_export.py`
@@ -102,7 +102,7 @@ One `.eval` per run. Each episode becomes one sample: `episode` (the graded run)
 | `configs/env.default.yaml`, `config.py` | `logging.agent_transcript` -> `RunConfig.agent_transcript` (fail-loud bool) |
 | `GatewayCore.__init__` / `generate` / `batch_generate` | optional `trace`; each provider call reported after its sealed record is written |
 | `Agent.__init__` / `run_turn` | optional `trace`; inbox, agent policy and tool steps run inside `trace.turn`; `mark_executing` before the tool layer |
-| `live.assemble_model_episode`, `task.assemble_scripted_episode` | create the trace when the flag is on, subscribe both logs, pass it to the core (and agents), finish it when the episode's work stops; `EpisodeResult.trace` |
+| `live.play_model_episode`, `task.assemble_scripted_episode` | create the trace when the flag is on, subscribe both logs, pass it to the core (and agents), finish it when the episode's work stops; `EpisodeResult.trace` |
 | `harness._assemble_by_policy`, `run_episode` | optional `provider` passthrough (offline live runs); the attack run's calibration twin goes to `_write_bundle` |
 | `harness._write_bundle`, `_eval_episodes` | flag on: real `.eval` via `write_run_eval` (samples `episode`, `honest_cal`); flag off: the JSON placeholder |
 | `cli view` | prints `inspect view --log-dir <bundle>` when the `.eval` is real |
@@ -112,7 +112,6 @@ Known limits:
 | Limit | Consequence |
 |---|---|
 | attribution needs the gateway core in the scaffold's process (`DirectTransport`) | with `HttpxTransport` the hooks never fire and inference records export as plain info events |
-| the orchestrator path (`scaffold/orchestrator.py`, tests only) builds agents without a trace | with the flag on, its events export in World |
 | `run_sweep` writes no bundles | no `.eval` for sweep episodes |
 | rerunning into an existing run directory | the old sealed seqs are untagged, so the export raises `UnassignedEventError` rather than exporting two runs as one |
 

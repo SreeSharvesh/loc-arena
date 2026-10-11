@@ -9,7 +9,7 @@ server is an error result for the agent, never an exception for the episode.
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncIterator, Callable, Collection, Mapping, Sequence
+from collections.abc import AsyncIterator, Callable, Collection, Mapping
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Any
 
@@ -22,10 +22,8 @@ from pydantic import JsonValue
 from tenacity import retry, retry_if_exception_type, stop_after_delay, wait_exponential
 
 from loc_arena.gateway.core import ToolSpec
-from loc_arena.scaffold.tools import Services, ToolResult
 
 _LOGGER = logging.getLogger(__name__)
-_CALLER_FIELDS = ("actor_uid", "actor_role")  # what the tools layer adds; the server knows the caller itself
 
 Connect = Callable[[], AbstractAsyncContextManager[Client]]
 
@@ -87,7 +85,7 @@ class McpTools:
         """The names of the tools the server offers this agent."""
         return {spec["function"]["name"] for spec in self.specs()}
 
-    def call(self, tool: str, arguments: Mapping[str, JsonValue]) -> ToolResult:
+    def call(self, tool: str, arguments: Mapping[str, JsonValue]) -> dict[str, Any]:
         """Call ``tool``: its structured result, or an error result saying what went wrong."""
         try:
             return anyio.run(self._call, tool, arguments)
@@ -100,39 +98,10 @@ class McpTools:
             tools = (await client.list_tools()).tools
         return [tool for tool in tools if self._granted is None or tool.name in self._granted]
 
-    async def _call(self, tool: str, arguments: Mapping[str, JsonValue]) -> ToolResult:
+    async def _call(self, tool: str, arguments: Mapping[str, JsonValue]) -> dict[str, Any]:
         async with self._connect() as client:
             result = await client.call_tool(tool, dict(arguments))
         if result.is_error or result.structured_content is None:
             text = " ".join(block.text for block in result.content if isinstance(block, TextContent))
             return {"error": text, "tool": tool}
         return dict(result.structured_content)
-
-
-class McpServices:
-    """``Services`` sending a tool one of an agent's MCP clients offers to that client, others to ``rest``."""
-
-    def __init__(
-        self,
-        clients: Mapping[str, Sequence[McpTools]],
-        rest: Services,
-        *,
-        served: Collection[str],
-    ) -> None:
-        """Route by the caller's id through the first of its ``clients`` offering a tool, else ``rest``.
-
-        A tool in ``served``, which some service serves over MCP, never falls through: only the agents it is
-        offered to may call it, so the run config alone decides who does.
-        """
-        self._clients = clients
-        self._rest = rest
-        self._served = frozenset(served)
-
-    def run(self, tool: str, args: dict[str, Any]) -> ToolResult:
-        """Call ``tool`` over MCP, without caller fields, through a client of the caller offering it."""
-        clients = self._clients.get(str(args.get("actor_uid")), ())
-        if client := next((client for client in clients if tool in client.names()), None):
-            return client.call(tool, {key: value for key, value in args.items() if key not in _CALLER_FIELDS})
-        if tool in self._served:
-            return {"error": f"{tool} is not offered to you", "tool": tool}
-        return self._rest.run(tool, args)
