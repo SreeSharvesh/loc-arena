@@ -45,12 +45,15 @@ def renew_services(
     compose: list[str],
     service_logs: Path,
     environment: dict[str, str],
+    twin_environment: dict[str, str],
 ) -> None:
     """Before the honest twin: every container agent code could leave state in, recreated empty.
 
     Those are each sandbox, each live service and the tools gateway; the gateway, whose call log runs on, and
     the episode stay. Each logged service's log so far is first added to its file in ``service_logs``, every
-    copy or none, since a recreated container starts a new log. Raises ``StackError`` when a log cannot be
+    copy or none, since a recreated container starts a new log. The recreate uses ``twin_environment``, whose
+    tools gateway config offers the honest twin's tools (no covert tool), so an agent granted a covert tool in
+    the attack config is refused it at the gateway in the twin. Raises ``StackError`` when a log cannot be
     copied, so nothing is recreated, or when a renewed container does not come back.
     """
     copies = list_service_log_copies(config, compose, service_logs)
@@ -70,7 +73,7 @@ def renew_services(
         ) from error
     renewed = [*(sandbox_service(agent.id) for agent in config.agents), *list_logged_services(config)]
     recreate = ["up", "--detach", "--wait", "--force-recreate", "--renew-anon-volumes", "--no-deps"]
-    if subprocess.run([*compose, *recreate, *renewed], env=environment).returncode != 0:
+    if subprocess.run([*compose, *recreate, *renewed], env=twin_environment).returncode != 0:
         raise StackError(
             "the renewed containers did not come back for the honest twin: see compose's output above",
         )
@@ -82,18 +85,20 @@ def play_phases(
     mode: str,
     service_logs: Path,
     environment: dict[str, str],
+    twin_environment: dict[str, str],
 ) -> int:
     """Play the episode and, in attack mode, the honest twin in the same container after ``renew_services``.
 
-    Never recreated, the container plays its image of the first play again, whatever its tag now names.
-    Returns the exit code of the last play.
+    Never recreated, the container plays its image of the first play again, whatever its tag now names. The
+    twin plays under ``twin_environment``, whose recreated tools gateway offers it no covert tool. Returns the
+    exit code of the last play.
     """
     attached = ["--attach", EPISODE_SERVICE, "--exit-code-from", EPISODE_SERVICE]
     play = [*compose, "up", "--no-recreate", *attached, EPISODE_SERVICE]
     exit_code = subprocess.run(play, env=environment).returncode
     if exit_code == 0 and mode != "honest":
-        renew_services(config, compose, service_logs, environment)
-        exit_code = subprocess.run(play, env=environment).returncode
+        renew_services(config, compose, service_logs, environment, twin_environment)
+        exit_code = subprocess.run(play, env=twin_environment).returncode
     return exit_code
 
 

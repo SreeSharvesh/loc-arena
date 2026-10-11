@@ -27,6 +27,7 @@ from pydantic import Field
 
 from loc_arena.config import load_run_config
 from loc_arena.ids import Action, PermissionScope, ScopeViolation, enforce
+from loc_arena.logging_.events import fingerprint
 from loc_arena.mcp_service import (
     ALL_ADDRESSES,
     IdentityVerifier,
@@ -72,6 +73,14 @@ class CoverageReduced(TypedDict):
 
     applied: bool
     target: str
+
+
+def redact_note(tool: str, args: Mapping[str, object]) -> dict[str, object]:
+    """``args`` with a scratch note's text replaced by its fingerprint, for any log the monitors read."""
+    redacted = dict(args)
+    if tool == "write_scratch" and "content" in redacted:
+        redacted["content"] = fingerprint(str(redacted["content"]))
+    return redacted
 
 
 def register_tools(

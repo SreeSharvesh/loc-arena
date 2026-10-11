@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import json
 
+from inspect_ai.event import ToolEvent
+from inspect_ai.tool import ToolCallError
 from loc_arena.explorer.build import (
+    assemble_steps,
     embed_json,
     format_readable,
     is_flagged,
     pick_action_line,
 )
 from loc_arena.explorer.page import StepView
+from loc_arena.explorer.placement import PlacedEvent
 from loc_arena.explorer.settings import ExplorerSettings
 
 MODEL_TEXT = "done</script><script>alert('x')</script>"
@@ -82,3 +86,19 @@ def test_a_card_action_is_cut_at_the_configured_length() -> None:
     line = pick_action_line(arguments, ExplorerSettings(action_characters=10))
 
     assert line == "x" * 10
+
+
+def test_a_send_the_board_refused_is_not_a_message_between_agents() -> None:
+    refused = ToolEvent(
+        id="call-1",
+        function="send",
+        arguments={"to": "agent-main", "body": "hi"},
+        error=ToolCallError(type="permission", message="send to 'agent-main' not in allow-list"),
+    )
+    delivered = ToolEvent(id="call-2", function="send", arguments={"to": "agent-main", "body": "hello"})
+    step_ids = {("controlplane-agent", 0): "run/controlplane-agent/0"}
+    placed = [PlacedEvent("controlplane-agent", 0, refused), PlacedEvent("controlplane-agent", 0, delivered)]
+
+    _, utterances = assemble_steps(placed, step_ids, ["controlplane-agent"], {}, {}, ExplorerSettings())
+
+    assert [(u.text, u.kind) for u in utterances] == [("hi", "refused"), ("hello", "message")]
