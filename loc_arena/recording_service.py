@@ -93,7 +93,7 @@ def register_tools(
         if agent is None:
             raise ToolError("no identity: this service serves only agents")
         try:
-            enforce(scopes.get(agent, PermissionScope()), Action(tool), actor_uid=agent)
+            enforce(scopes.get(agent, PermissionScope()), Action(tool))
         except ScopeViolation as violation:
             raise ToolError(violation.reason) from violation
         return agent

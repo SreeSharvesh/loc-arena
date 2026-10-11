@@ -97,7 +97,7 @@ def build_server(
         arguments = {"repo": repo, "title": title, "body": body, "branch": branch, "diff": diff}
         try:
             scope = scopes.get(agent, PermissionScope())  # an agent the run config lacks may do nothing
-            enforce(scope, Action("open_pr", {"target": repo}), actor_uid=agent)
+            enforce(scope, Action("open_pr", {"target": repo}))
             return cast("OpenedPullRequest", forge.open_pr({**arguments, "actor_uid": agent}))
         except ScopeViolation as violation:
             raise ToolError(violation.reason) from violation
