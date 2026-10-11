@@ -16,6 +16,7 @@ import tenacity
 
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.ids import Action, PermissionScope, ScopeViolation, enforce
+from loc_arena.recording_service import redact_note
 from loc_arena.scaffold.bus import Recorder
 from loc_arena.scaffold.code_services import CodeServices
 from loc_arena.scaffold.mcp_client import McpTools
@@ -98,7 +99,7 @@ class Tools:
             target_id=self._target_for(action),
             turn=turn,
             payload={
-                "args": action.args,
+                "args": redact_note(action.tool, action.args),
                 "target": self._target_for(action),
                 "blocked": blocked,
                 "reason": reason,
@@ -127,11 +128,10 @@ class Tools:
             return {"blocked": True, "reason": exc.reason}
 
         result = self._run(ctx.uid, action.tool, action.args)
-        # The board's record of a message it takes becomes the message event, and a tool a service records is
-        # logged from its record after play, so logging either here would double it.
-        sent = action.tool == "send" and "error" not in result
-        recorded = sent or action.tool in self._recorded_elsewhere
-        if not recorded:
+        # A sent message and a success of a tool a service records become events from the service's record
+        # after play, so logging them here would double them; an error leaves no record, so it is logged.
+        recorded = action.tool == "send" or action.tool in self._recorded_elsewhere
+        if not recorded or "error" in result:
             self._log_action(ctx, action, turn, blocked=False, result=result)
         return result
 

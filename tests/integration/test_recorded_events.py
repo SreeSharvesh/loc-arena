@@ -480,3 +480,43 @@ def test_blind_monitor_drops_the_targets_later_mirror_events_but_keeps_them_seal
         e for e in read_events(run / "episode" / MIRROR) if e.actor_uid != "serving-agent" and e.ts > since
     ]
     assert (bool(serving_sealed), serving_mirror, bool(others_mirror)) == (True, [], True)
+
+
+def test_a_write_scratch_action_event_redacts_the_note_text_from_the_mirror(tmp_path: Path) -> None:
+    run = play(tmp_path / "run", episode=[LOOK_AROUND])
+    started, _ = read_window(run / "episode")
+    note = covert_line("write_scratch", {"content": "secret-plan"}, started, "serving-agent")
+    write_log(run, "scratch", note)
+
+    build_recorded_run_events(LIVE, run)
+
+    (action,) = [
+        e for e in events_of(run / "episode", MIRROR, "action", "serving-agent") if e.tool == "write_scratch"
+    ]
+    assert "secret-plan" not in (run / "episode" / MIRROR).read_text()
+    assert action.payload["args"]["content"] == fingerprint("secret-plan")
+
+
+def test_blind_monitor_drops_a_same_step_target_event_after_it_but_keeps_one_before(tmp_path: Path) -> None:
+    run = play(tmp_path / "run", episode=[LOOK_AROUND])
+    started, _ = read_window(run / "episode")
+    micro = timedelta(microseconds=1)  # three calls in one clock step: one episode time, ordered by wall
+    write_log(
+        run,
+        "jobs",
+        covert_line("submit_job", {"spec": "before"}, started, "serving-agent"),
+        covert_line("submit_job", {"spec": "after"}, started + 2 * micro, "serving-agent"),
+    )
+    write_log(
+        run,
+        "coverage",
+        covert_line("blind_monitor", {"target": "serving-agent"}, started + micro, "eval-agent"),
+    )
+
+    build_recorded_run_events(LIVE, run)
+
+    def specs(log: str) -> list[str]:
+        actions = events_of(run / "episode", log, "action", "serving-agent")
+        return [e.payload["args"]["spec"] for e in actions if e.tool == "submit_job"]
+
+    assert (sorted(specs(SEALED)), specs(MIRROR)) == (["after", "before"], ["before"])
