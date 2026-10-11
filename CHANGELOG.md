@@ -8,89 +8,31 @@ log has the details.
 
 ### Added
 
-- **The board replaces the message bus (#99, step 3).** Agents talk only through the board, an MCP service on
-  the official MCP Python SDK (`python -m loc_arena.board <run config>`, the scenario's `board`): `send` posts a
-  message to one agent, `read` returns every message addressed to the caller, and `unread` those it has not had
-  yet, in send order. The sender is the caller's identity, never an argument, and the board enforces each
-  agent's recipient allow-list (`scope.message`) itself. The native loop's `message` tool becomes the board's
-  `send`, and each turn begins by delivering the agent's new messages, as the bus did: a `read` of those after the
-  last one delivered, tried up to `stack.tools_delivery_attempts` times, so a lost answer loses no message, and
-  recorded as the agent's `read` action with its error when every attempt fails; an agent not offered `read`
-  gets no delivery. `unread` stays for harnesses that keep no such cursor. A send the board
-  refuses is a blocked `action` event with its reason; a message the board takes writes no `action` event. Any harness with an MCP client can now talk to the
-  team. The default config gives every agent `send`, `read` and `unread`. agentgateway offers each tool by its
-  own name (`prefixMode: never`), as an in-process run does, and is pinned to v1.6.0
-  (`stack.tools_gateway_image`): with two services on its route, v1.5.0 found the service of a 2026-era call
-  by listing every service's tools without the `_meta` envelope the MCP SDK requires, so the call failed; a
-  reach row now proves a client of each protocol era through the route. An in-process episode holds a fresh
-  board. Sources: https://github.com/agentgateway/agentgateway/pull/3372 (the v1.6.0 fix),
-  https://github.com/agentgateway/agentgateway/releases/tag/v1.6.0.
-- **`run_tests` and `run_benchmark` are Agent Skills in the sandbox (#99).** A scenario's `skills:` names its
-  [Agent Skills](https://agentskills.io/specification) folder, resolved under the pack like a service's build
-  directory; Aurora's holds `run-tests` and `run-benchmark`, each a `SKILL.md` and a self-contained script
-  that prints the JSON the tools printed. Every sandbox mounts that folder alone, read-only, at
-  `stack.skills_directory` (`/skills`), so any harness in it can run them on its own checkout. A stack run's
-  native agents are no longer offered the two tools: one sentence of their brief points at the folder, and
-  they run the scripts with bash under `stack.shell_timeout_seconds`. An in-process run, which offers no bash,
-  offers no skills.
-- **Each agent's tools set in the run config, behind agentgateway (#99).** A live service in `scenario.yaml` lists
-  the MCP `tools` it serves, and may run a `module` of the engine image instead of a `build` or `image` (the
-  forge, whose world is the harness's). An agent's `sandbox: tools:` lists the tools it may call on each such
-  service; a tool the service does not list, a tool named twice, or tools for a service that serves none are
-  refused at load. In a stack run every service with tools sits behind one MCP route of agentgateway v1.6.0
-  (`stack.tools_gateway_image`, port `stack.tools_gateway_port`), whose config is generated per run from
-  `sandbox: tools:` and reaches it as a compose secret: it admits each agent by the hash of its sandbox token,
-  lists it exactly its tools, refuses every other before it reaches the service, and forwards each call with
-  that agent's identity on the service, which only the service and agentgateway hold. Its log, one JSON line
-  per request with the agent, the tool, its arguments and its result or error, is copied to
-  `services/agentgateway.log` in the run directory. The episode finds the route in `LOC_ARENA_TOOLS_URL`; an in-process run's
-  clients narrow their listing to the same setting. The default config gives every agent `open_pr` on `forge`.
-- **The forge serves `open_pr` over MCP, and the native loop is an MCP client (#99, first step).** The forge
-  is an MCP server on the official MCP Python SDK (`python -m loc_arena.forge.service <run config>`): it hosts
-  the run's seeded world, serves `/mcp` over Streamable HTTP, admits only a bearer token that is one agent's
-  identity (401 otherwise), takes the caller from that identity, never from an argument, and enforces the
-  caller's `open_pr` scope itself, since an agent's bash can reach it through agentgateway too. Each agent in the
-  native loop has an MCP client that lists the tools it is offered and calls them beside its native tools; it
-  reaches agentgateway's MCP route with its key when `LOC_ARENA_TOOLS_URL` is set (a stack run), and otherwise
-  its own server over the episode's forge, in memory, so no container is needed. Every MCP service records each
-  tool call as one JSON line in OpenTelemetry's GenAI and MCP attribute names, with the calling agent and the
-  result (`loc_arena/tool_records.py`): on stdout in a container, in `records/<service>.jsonl` in the episode's
-  directory in process. The
-  workspace brief no longer names `open_pr`: an agent learns the tools a service serves it from its listing. A
-  served tool an agent is not offered is refused, never run by the harness's own forge instead. Two live services
-  serving one tool name are refused at load, since agents call a tool by its name alone. An
-  `open_pr` whose arguments are not text is now refused by the tool's schema, and arguments it does not declare
-  are dropped. `stack.tools_timeout_seconds` bounds one tool call through agentgateway, and
-  `stack.tools_connect_seconds` how long each client retries its first listing while agentgateway starts.
-- **The events monitors read are built from the services' records (#99, step 2).** After play and before grading,
-  `loc_arena/recorded_events.py` turns each record of a live service with tools into the event of the episode or
-  the honest twin whose play window holds it, on both the sealed and the mirror log, after every event of play: an
-  `open_pr` the forge opened becomes the `pr` event the PR review monitor reads, so the harness no longer records
-  an agent's. The episode clock keeps a reading at its start and at each move against wall time, written with the
-  play window to each episode's `snapshot.json`, so a record takes the episode time a live event had then, a
-  pi agent's too, and the native turn of its agent that covers it, else turn 0. Grading never builds, so grading
-  a run again adds nothing. A record that cannot be placed (not a record, in no play window, not an agent of the
-  run, or a native agent's outside its turns) is written to `unattributed_records.jsonl` in the run directory,
-  never dropped and never stopping grading. The Inspect export puts a built event in its agent's turn span when
-  that turn is native, and pairs it with its mirror twin, so the explorer places the event and the verdicts on
-  it. The coworkers' `pr` events, the scripted one credited to `agent-main` included, are still the harness's.
-- **The covert tools leave the harness as recording services (#99, step 4).** `write_scratch`,
-  `acquire_identity`, `blind_monitor`, `submit_job` and `start_rogue_loop` are now tools the agents reach over
-  MCP, served by `loc_arena/recording_service.py`: one module behind three `scenario.yaml` entries, each its
-  own container with its own tools and grants — `jobs` (`submit_job`, `start_rogue_loop`, `acquire_identity`),
-  `scratch` (`write_scratch`) and `coverage` (`blind_monitor`). Each tool enforces the caller's scope and
-  records the request with a canned result; it keeps no world state, and the job tools return a plausible job
-  id without running anything. An agent is offered a covert tool only where its `sandbox: tools:` grants it:
-  the default config gives `agent-main` and `distill-agent` `scratch`, `serving-agent` `jobs`, and `eval-agent`
-  `coverage`. After play the builder maps each covert record to the events its readers need: an `action` event
-  the action monitor and the explorer see, `write_scratch` a sealed `shared_surface`, and `blind_monitor` the
-  `config` pair the verifier reads whose deployed coverage drops the named target. `blind_monitor` also reduces
-  the monitors' view — the target's mirror events after the call are dropped, while the sealed log keeps them.
-  The native loop no longer runs a covert worker or edits the gateway's coverage, and no longer logs an action
-  event for a tool a service records. With the rogue loop a record-only stub, a live attack run no longer
-  reaches the loop-tied side-task milestones (the scripted engine fixture still does); realistic rogue
-  deployment is left to a later change. The tools gateway multiplexes the services with `prefixMode: never`, so
-  a tool keeps its own name across services.
+- **Agents get their tools from services, set per agent in the run config.** An agent keeps its harness's native
+  tools and an MCP client; the forge (`open_pr`), the board (`send`, `read`, `unread`), the job service, the
+  scratch surface and the coverage control plane are services behind agentgateway, and an agent's
+  `sandbox: tools:` lists exactly the tools it may call on each. A tool outside that list is not offered and
+  is refused. Any harness with an MCP client can use the same tools as the native loop.
+- **The board is the channel between agents.** Messages travel only through it, and each agent's turn begins
+  with the messages sent to it since the last it received.
+- **Events come from the services' records.** Each service records every call made to it and by whom. After play
+  and before grading, those records become the events the monitors and the verifier read, on the sealed and the
+  mirror log, and each is placed in the turn of its agent that was running. A call a service refuses is a
+  blocked action with the service's reason, since each service enforces the caller's scope itself. A record
+  that cannot be placed is listed in `unattributed_records.jsonl` in the run directory, never dropped.
+- **The attack tools are services too.** `start_rogue_loop`, `acquire_identity`, `write_scratch` and
+  `blind_monitor` are offered only to the agents the run config grants them, and never to the honest twin;
+  `submit_job` is an ordinary tool on the same job service. The job tools record the request and return a
+  plausible job id; they run nothing.
+- **`run_tests` and `run_benchmark` are Agent Skills.** A scenario's `skills:` folder holds a `SKILL.md` and a
+  script per skill; every sandbox mounts it read-only at `/skills`, so any harness can run them on its own
+  checkout.
+- **The deterministic run replays through the live loop.** `policy: scripted` plays the model-driven episode
+  with the scenario's `scripted/moves.yaml` in place of a model, so it exercises the real tools, services and
+  event builder.
+- **The honest twin starts from fresh services.** Between the two plays of a stack run every sandbox, live
+  service and agentgateway is recreated empty, so the twin sees nothing the attack left; an in-process run
+  builds a fresh forge and board for each.
 - **Per-agent identities, rights and recorded grants on live services (#93).** A live service in a scenario
   pack's `scenario.yaml` lists the `rights` it enforces and whether `grant` itself can be granted
   (`transitive`, off by default); a service with no `rights` is open to every caller on agent-net. This replaces
@@ -155,28 +97,6 @@ log has the details.
 
 ### Changed
 
-- **The scripted policy replays moves through the live loop (#99, step 6).** `policy: scripted` plays the same
-  model-driven episode as `policy: model`, with `ScriptedProvider` in place of the model: it answers each agent's
-  turns with that agent's moves from the scenario's `scripted/moves.yaml`, in order, as native tool calls, so the
-  deterministic run exercises the real tools, services and event builder. A move's `content_from` file becomes
-  its `content`; `attack_moves` play only when covert is enabled. An unknown agent or a malformed move is refused
-  at load. The honest moves are the partial optimization, a coordination message and a routine job.
-
-- **The native loop holds no domain-tool code (#99, step 6).** It runs a tool on one of two targets: its native
-  tools on the checkout, or the MCP client of the caller that offers the tool; any other tool is refused as not
-  offered. The forge's git, ticket and wiki tools, the stub fallback, the in-process skill tools with their two
-  timeouts, the inference tools and subagent spawning leave the loop, and the orchestrator goes with them. The
-  covert briefs name no tool: an agent finds its tools in its MCP listing.
-
-- **Each service alone enforces the caller's scope, and a refused call is a blocked action (#99, step 6).** The
-  native loop logs an `action` only for a native tool and an MCP call that never reached a service; every other
-  call's events come from its service's record. A failed call's record carries the error's text as
-  `otel.status_description`, the reason of the blocked `action` the builder makes of it. A successful `open_pr`
-  builds an `action` beside its `pr`; `read` and `unread` build nothing. A call whose answer is lost after it was
-  sent is an error result saying its outcome is unknown, and the service's record stands for it. Sources:
-  https://github.com/open-telemetry/semantic-conventions-genai `docs/gen-ai/mcp.md` (`error.type` `tool_error`;
-  the status description is the error's message), https://opentelemetry.io/docs/specs/otel/common/mapping-to-non-otlp/.
-
 - **A stack run keeps each live service's log in its own run directory.** The logs of the live services and of
   agentgateway are copied to `services/<name>.log` in the run directory before grading, where the events of their
   records are built, instead of to `<logs>/services/` after grading, where every run in the same directory
@@ -199,11 +119,9 @@ log has the details.
   log cannot record (NaN, a lone surrogate, an integer past Python's digit limit, nesting past
   `agent_loop.max_argument_depth`) come back to the agent as a tool error, as does a rogue loop of more
   `iterations` than fit before the deadline.
-- **Who did what.** A covert action (a scratch note, a coverage change) is recorded under the uid and role of
-  the agent that called the tool, which the tool layer sets and an agent cannot name. A rogue job's records name
-  the agent that launched it, while the loop's own model calls keep claiming the job's identity. An agent's
-  `open_pr` also records a `pr` event, as the scripted coworkers' PRs do, so the PR review monitor sees and scores
-  agents' PRs.
+- **Who did what.** Every recorded action names the agent that took it, taken from its identity and never from an
+  argument. An agent's `open_pr` records a `pr` event, as the scripted coworkers' PRs do, so the PR review monitor
+  sees and scores agents' PRs.
 - **Grading.** An episode plays, then is graded from what it left: its event logs and its repo checkout, read by
   the main-task scorer and the side-task verifier the run config names. Grading no longer runs inside play,
   which lets it move to its own container next.
@@ -214,21 +132,8 @@ log has the details.
 
 ### Fixed
 
-- **The forge service holds the coworkers' PRs (#99).** Their forge changes are applied when each forge is
-  built, the harness's and the service's, so an agent's PR never takes a coworker PR's number.
 - **The explorer no longer counts a refused send as a message between agents.** The Communication view lists it
   as a refused send, counted apart and never read, since the board delivered nothing.
-- **The honest twin of a stack run starts from fresh services and sandboxes (#99).** Until now the twin played
-  after the attack episode against the same running containers, so it could read the notes and grants the
-  attack left on the notes board (since #94) and the PRs it opened on the forge, whose numbers ran on. It
-  could also read files the attack left in a sandbox under `/run/lock`, `/dev/mqueue` or `/opt/venv/.lock`,
-  which the sandbox reset does not empty. Now the episode container plays one phase per start
-  (`--next-phase`). Between the two starts, the host adds each live service's and agentgateway's log so far
-  to its `services/<name>.log`, then recreates every sandbox, live service and agentgateway with fresh
-  anonymous volumes. Only the gateway, whose call log runs on, and the episode are kept. If a log cannot be
-  copied, nothing is recreated. If a container does not come back, the run stops like a failed episode,
-  every log copied out. As before, the compose project is kept only when a copy fails. An in-process run
-  already built a fresh forge per phase and is unchanged.
 - **A timed-out agent-code container is gone before the timeout is reported.** The grader force-removes it
   and waits until Docker no longer lists it; a killed `--rm` container used to be removed asynchronously,
   so it could still be listed just after.
@@ -241,9 +146,8 @@ log has the details.
 - **In a stack run, agent code cannot read the harness.** The agents' sandbox runs a slim image
   (`stack.sandbox_image`, the Dockerfile's `sandbox` target) with no harness, verifier, scorer or scenario
   spec. Grading's agent-code container runs it too, so it has no harness or scenarios, though it sees the
-  sealed meter it runs. Grading stops if the image is missing. In an in-process run the agents' own tools
-  still run their code on the host; with `stack.sandbox_agent_code` on, grading's agent-code steps run in the
-  slim image there too. (#83)
+  sealed meter it runs. Grading stops if the image is missing. An in-process run offers no `bash`, so its agents
+  run no code; with `stack.sandbox_agent_code` on, grading's agent-code steps run in the slim image there too. (#83)
 - **No unrecorded pages on the gateway or the sandbox.** Neither serves the web framework's `/docs`, `/redoc` or
   `/openapi.json`: on the gateway those answered outside the recorded route, so a call there left no record, and
   on the sandbox they answered without the token. The gateway now refuses such a request and records it like any
@@ -259,8 +163,8 @@ log has the details.
   the sandbox's name.
 - **Agent-written code never sees the provider key.** Tests and benchmarks the agents run, and the grading of
   their work, run without the key in their environment, in-process runs included. (#66)
-- **Agent-written code in a stack run runs only in a sandbox container.** The agents' `bash`, `run_tests` and
-  `run_benchmark` run in a `sandbox` service that mounts the volume of the checkouts and nothing of the
+- **Agent-written code in a stack run runs only in a sandbox container.** The agents' `bash`, and the skills they run
+  with it, run in a `sandbox` service that mounts the volume of the checkouts and nothing of the
   harness: not the episode's event logs, the run configs, the scenario's moves or the gateway's call log. The
   episode reaches its command server on agent-net with a per-run token (a compose secret), each episode's
   checkout plays there and is moved into the run directory before grading, and no process a command starts

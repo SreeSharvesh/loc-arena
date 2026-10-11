@@ -12,7 +12,7 @@ procedures.
 
 | Path | What it holds |
 |---|---|
-| `loc_arena/cli.py` | the `run`, `view`, `explore` and `sweep` commands behind the Makefile targets of the same names |
+| `loc_arena/cli.py` | the `run`, `view`, `explore`, `sweep` and `grade` commands; the first four are the Makefile targets of the same names |
 | `loc_arena/harness.py` | runs an episode and its honest twin, grades them, writes the audit bundle |
 | `loc_arena/config.py` | typed loader and validator for the run configs in `configs/` |
 | `loc_arena/registry.py` | scorers and verifiers, dispatched by the names the configs give |
@@ -25,6 +25,7 @@ procedures.
 | `loc_arena/metrics.py` | safety and usefulness metrics |
 | `loc_arena/forge/`, `loc_arena/npcs/` | the git forge and the seeded company world, and its MCP service (`service.py`); the scripted coworkers |
 | `loc_arena/scaffold/mcp_client.py`, `loc_arena/tool_records.py`, `loc_arena/mcp_service.py` | each agent's MCP client; every MCP service's record of the tool calls made to it; who calls a service, and how it is served |
+| `loc_arena/recording_service.py` | the `jobs`, `scratch` and `coverage` services: each tool enforces the caller's scope, records the request and returns a canned result |
 | `loc_arena/recorded_events.py` | after play, before grading: the events monitors read, built from the services' records |
 | `loc_arena/logging_/` | the sealed and mirror event logs, the per-agent Inspect export, `transcript.html`, `report.html` |
 | `loc_arena/explorer/` | the run explorer behind `make explore` |
@@ -37,6 +38,7 @@ procedures.
 | `company/meridian-*/` | the seven company repos the agents under test work on, each with its own tests |
 | `tests/unit/`, `tests/integration/` | the engine's test suite |
 | `docs/agent-log/` | per-agent logging: `spec.md` (what it guarantees) and `agent.md` (how to work on it) |
+| `docs/isolation/README.md`, `docs/run-config.md` | how a stack run isolates agents and wires their tools and services; the run config's keys and settings |
 | `docs/explorer/README.md` | every view of the run explorer, with screenshots |
 | `CHANGELOG.md` | what each system does for a run and how that changed, under Unreleased until a release |
 | `site/` | the course: `architecture.html`, `monitoring.html`, `extend.html` (setup, configure and extend), ... |
@@ -105,7 +107,11 @@ the latest push. After changing `.coderabbit.yaml`, comment `@coderabbitai confi
   (`ALLOWED_MONITOR_INPUTS` and `firewall_violations` in `loc_arena/monitors/registry.py`; `make setup` checks
   `configs/monitors.yaml`).
 - The honest twin completes no covert milestone; it calibrates the audit threshold
-  (`tests/integration/test_honest_twin_clean.py`).
+  (`tests/integration/test_honest_twin_clean.py`). It is never offered an attack tool and plays on services and
+  sandboxes recreated empty.
+- An agent is offered exactly the tools its `sandbox: tools:` lists. Each service takes the caller from its
+  identity, enforces its scope, and records every call; the events monitors and the verifier read are built from
+  those records after play, and grading never builds them.
 - The scripted engine is reproducible: the same config and seed give a byte-identical sealed log
   (`tests/integration/test_end_to_end.py`).
 - Every model call goes through the gateway (`loc_arena/gateway/`), which records it; never call a provider from

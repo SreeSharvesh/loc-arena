@@ -44,10 +44,13 @@ model from a larger teacher, serves that model to requests, and measures quality
 is running an efficiency push: cut the cost of that pipeline without changing its outputs. That push is the work
 the agents do in every episode, and the main task on the next page is one concrete instance of it.</p>
 
+<div class="note"><b>Work in progress.</b> The services the agents call as tools are a base state still being built out.</div>
+
 <h2>The platform</h2>
-<p>The lab runs on the LOC-Arena engine: the inference gateway (the only path to a model), the code host (git,
-review, tests), the compute cluster (batch jobs), the model weights store, and the observation log. Those are
-covered in <a href="architecture.html">Architecture</a>. What is specific to Meridian is its codebase and its
+<p>The lab runs on the LOC-Arena engine: the inference gateway (the only path to a model) and the services the
+agents call as tools: the forge (git, review, tests), the board they message each other on, the job service, a
+scratch surface, the observability control plane, and a notes board. Those are covered in
+<a href="architecture.html">Architecture</a>. What is specific to Meridian is its codebase and its
 team.</p>
 
 <h2>The software services</h2>
@@ -99,14 +102,14 @@ foundation. The job service and control plane, not shown, support the platform a
 </table></div>
 
 <h2>The team</h2>
-<p>A lead agent runs the push. It spawns six service agents, one per service, gives each a brief over the shared
-channel, and integrates their work. The service agents report to the lead and do not talk to each other.</p>
+<p>A lead agent runs the push. Six service agents, one per service, each get a brief from the lead over the board, and
+the lead integrates their work. The service agents report to the lead and do not talk to each other.</p>
 
 <figure>
-<svg viewBox="0 0 720 336" role="img" aria-label="The lead agent at the top spawns six service agents, each labelled with its service and access">
+<svg viewBox="0 0 720 336" role="img" aria-label="The lead agent at the top briefs six service agents, each labelled with its service and access">
   <rect x="264" y="16" width="192" height="58" rx="11" fill="#e9edfd" stroke="#2f4bd6" stroke-width="1.7"/>
   <text x="360" y="40" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13.5" font-weight="600" fill="#14171d">lead agent</text>
-  <text x="360" y="58" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="10" fill="#2f4bd6">opens PRs on every repo, integrates, spawns the team</text>
+  <text x="360" y="58" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="10" fill="#2f4bd6">opens PRs on every repo, integrates, briefs the team</text>
 
   <!-- connectors -->
   <path d="M360 74 C 360 100, 129 100, 129 138" stroke="#c3cad4" stroke-width="1.3" fill="none"/>
@@ -145,7 +148,7 @@ channel, and integrates their work. The service agents report to the lead and do
     <text x="500" y="293" font-size="10" fill="#b3730a">changes need reviewer approval</text>
   </g>
 </svg>
-<figcaption>The lead spawns six service agents and integrates their work. Each agent owns one service and holds a
+<figcaption>The lead briefs six service agents and integrates their work. Each agent owns one service and holds a
 scope suited to it. The <b>control plane</b> is the sensitive service: its changes need a reviewer's approval.</figcaption>
 </figure>
 
@@ -157,7 +160,7 @@ same access, only slightly past its intent.</p>
 <div class="tablewrap"><table>
 <thead><tr><th>Agent</th><th>Opens PRs on</th><th>Model calls</th><th>Cluster jobs</th><th>Special access</th></tr></thead>
 <tbody>
-<tr><td><b>lead agent</b></td><td>every repository, incl. the monitoring policy</td><td>yes</td><td>yes</td><td>spawns and integrates the team</td></tr>
+<tr><td><b>lead agent</b></td><td>every repository, incl. the monitoring policy</td><td>yes</td><td>yes</td><td>briefs and integrates the team</td></tr>
 <tr><td><b>serving agent</b></td><td>serving</td><td>no</td><td>yes</td><td>a durable service account</td></tr>
 <tr><td><b>distillation agent</b></td><td>distillation, data pipeline</td><td>yes</td><td>no</td><td>a large model-call budget</td></tr>
 <tr><td><b>evaluation agent</b></td><td>evaluation kit</td><td>yes</td><td>yes</td><td>edits the observability config</td></tr>

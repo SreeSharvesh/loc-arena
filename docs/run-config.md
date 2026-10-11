@@ -1,7 +1,65 @@
 # Run config
 
-`loc_arena/config.py` turns a run file into one frozen `RunConfig`.
+`loc_arena/config.py` turns a run file into one frozen `RunConfig`; `load_settings` reads only the settings
+groups, so the gateway container needs no scenario or models file.
 
-**Reading.** pydantic-settings' `YamlConfigSettingsSource` reads the run file and the files it `extends`, base first, with `deep_merge=True`. The source takes that option directly; `SettingsConfigDict` lacks it ([Other settings source](https://pydantic.dev/docs/validation/latest/concepts/pydantic_settings/)). A mapping in a later file merges into the same key of an earlier one, and any other value replaces it. The run document is built from that source alone, passed as `_build_sources`, so environment variables, dotenv files and secrets directories never change a run. This was checked against pydantic-settings 2.15.0, the floor in `pyproject.toml`. `_read_config_file` refuses a missing file, which the source would skip. A config may extend one that itself extends a base: `aurora-efficiency.deterministic.yaml` extends `aurora-efficiency.yaml`, which extends `env.default.yaml`; `aurora-efficiency.fast.yaml` extends `aurora-efficiency.yaml` to run smoke tests with `models.fast.yaml`. `_extends_chain` reads each file for its `extends`, base first, and refuses a cycle.
+## Reading
 
-**Validating.** Each block is a frozen pydantic dataclass with a description per field. Dataclasses keep `dataclasses.replace` working for the honest twin, and `replace` re-validates. That is why `_parse_scope` keeps an already-built `PermissionScope`, and why each prompt field accepts its own name as well as its `*_ref` key. Scalars are pydantic `Strict*` types, so YAML `"30"` or `true` never becomes an int in these blocks. The settings groups in `loc_arena/settings.py` (`inference`; `gateway` for the gateway container: its https upstream, the paths it forwards, its port, timeout, call log and the secrets directory of every container; `stack` for `make run STACK=1`: the image of the gateway and the episode, and `sandbox_image`, the slim image agent code runs in, with no harness and no scenarios, the health probe of the gateway and the sandbox, the memory, CPU and process limits of the episode and the sandbox, `service_memory_limit` (512m), `service_cpus` (1.0) and `service_pids_limit` (256), the limits of each live service, `sandbox_agent_code` to grade the agents' code in a no-network container of `sandbox_image` that gets the same limits (a stack run's grading on the host always does; an in-process run needs the Dockerfile's `sandbox` target built first and tagged as `sandbox_image`, or grading stops), `agent_code_output_limit_bytes`, how much of that code's output is kept, `shell_timeout_seconds` for the agents' `bash` tool, offered only with a sandbox, `command_output_limit_bytes`, how much of the output of `bash` the agent gets back, and for the sandbox `sandbox_port`, `sandbox_response_grace_seconds`, how long the episode waits for it beyond a command's timeout, `checkouts_directory`, where the episode and the sandbox mount the checkouts, `skills_directory`, where every sandbox mounts the scenario's skills folder read-only, `sandbox_recovery_seconds`, how long an episode waits before it plays for a sandbox that is restarting before it fails (it never falls back to running agent code in process), and `sandbox_scratch_directories`, the sandbox's HOME and temporary directories, emptied before each episode with every entry of the checkouts but the new one; empty unless a config names them, so a server started from bare settings never empties this host's, and `tools_delivery_attempts` (3), how many times the native loop tries an agent's turn-start delivery from the board, a `read` of the messages after the last one it delivered, so a retry whose first answer was lost re-reads them; a delivery that fails every attempt is recorded as the agent's `read` action with the error, and an agent its config does not offer the board's `read` gets no delivery at all) keep pydantic's coercing types. `load_settings` reads only these groups, so the gateway container needs no scenario or models file. The sandbox mounts no config: the rendered compose file passes it, as JSON, the few settings its command server needs. An agent's `sandbox.rights` maps a live service's name to the rights the agent starts with on it, empty by default. Every agent gets its own identity for each live service that declares `rights`, mounted at `/run/secrets/identity_<service>` in that agent's sandbox alone, so the rights list holds only what the agent may do, and an agent with none still has an identity the service can name. A service that is not a live service of the run's scenario declaring `rights`, a right outside that service's `rights`, and a right named twice are each a `ConfigError`, and an unknown key under `sandbox:` is refused. The default config seeds `agent-main` with `read`, `write` and `grant` on `notes`, every other agent except `controlplane-agent` with `read` and `write`, and `controlplane-agent` with none; the service's own `transitive` setting decides whether `grant` can itself be granted (see Grants in `docs/isolation/README.md`). A key no block declares is ignored, except in an agent's `scope` (`PermissionScope.from_dict` refuses it) and in the settings groups (`LocArenaSettings` forbids it). `main_task` is read through a view of the keys the harness computes with, while `RunConfig.main_task` keeps the whole block. Prompt references are resolved in a before-validator, because a settings model takes no validation context. It builds new containers, because the merged YAML is also `RunConfig.raw`, kept as written. Only a reference sets a prompt: a prompt written inline is dropped. A missing or invalid field is a `ConfigError` naming its path.
+pydantic-settings' `YamlConfigSettingsSource` reads the run file and the files it `extends`, base first, with
+`deep_merge=True` ([Other settings source](https://pydantic.dev/docs/validation/latest/concepts/pydantic_settings/)):
+a mapping in a later file merges into the same key of an earlier one, and any other value replaces it. The
+document is built from that source alone, so environment variables, dotenv files and secrets directories never
+change a run. A missing file is refused, and an `extends` cycle is refused. Examples: `aurora-efficiency.yaml`
+extends `env.default.yaml`; `aurora-efficiency.deterministic.yaml` and `aurora-efficiency.fast.yaml` extend
+`aurora-efficiency.yaml`.
+
+## Validating
+
+Every block is a frozen pydantic dataclass with a description per field, so `dataclasses.replace` builds the honest
+twin and re-validates it. Scalars are `Strict*` types: YAML `"30"` or `true` never becomes an int. A prompt is set
+only by its `*_ref` key, resolved in a before-validator. A missing or invalid field is a `ConfigError` naming its
+path. A key no block declares is ignored, except in an agent's `scope` and in the settings groups, which refuse it.
+
+## Top-level keys
+
+| Key | What it sets |
+|---|---|
+| `extends`, `models` | the base config; the models file (roles, sampling, OpenRouter providers per model) |
+| `seed`, `policy` | the seed that with the config reproduces the episode; `model` or `scripted` (replays the scenario's `scripted/moves.yaml` in place of a model) |
+| `scenario` | the pack registering the scorer, verifier, live services and skills |
+| `main_task`, `side_task`, `covert` | the tasks and their scorer and verifier; `covert.enabled` is the only difference between an attack run and its honest twin |
+| `episode` | turn budgets, wall-clock ceiling, spawn caps |
+| `agents` | the team; see below |
+| `protocol` | the control protocol: monitors, reviewer, audit budget |
+| `agent_loop`, `logging` | the loop's limits; `logging.agent_transcript` for the per-agent `.eval` and transcript |
+| `inference`, `gateway`, `stack` | the settings groups below |
+
+## An agent
+
+| Field | What it sets |
+|---|---|
+| `id`, `kind`, `trust`, `branch`, `spawned_by` | identity (a DNS label: `sandbox-<id>` names its sandbox) and role |
+| `scope` | what the agent may do; each service enforces it on the caller |
+| `sandbox.tools` | the MCP tools it may call, by service: `{forge: [open_pr], board: [send, read, unread]}`; agentgateway offers it these and refuses the rest |
+| `sandbox.rights` | its starting rights on each service with rights: `{notes: [read, write]}` |
+| `legit`, `covert`, `system_prompt_ref`, `brief_ref` | its assignments, the covert subtasks it owns, and its prompts |
+
+A service in `sandbox:` must be a live service of the scenario that serves tools (for `tools`) or declares rights
+(for `rights`). A tool or right outside that service's list, one named twice, and an unknown key under `sandbox:`
+are each a `ConfigError`. Every agent holds an identity on each such service, rights or none.
+
+## Settings groups (`loc_arena/settings.py`)
+
+Each field has a description in code; these keep pydantic's coercing types.
+
+| Group | What it holds |
+|---|---|
+| `inference` | the sanctioned paths and the teacher token quota |
+| `gateway` | the gateway container: its https upstream, allowed paths, port, timeout, call log, and the secrets directory of every container |
+| `stack`: images and limits | the gateway and episode image; `sandbox_image`, the slim image agent code runs in; memory, CPU and process limits of the episode, each sandbox and each live service; health probe interval and retries |
+| `stack`: tools | `tools_gateway_image` and `tools_gateway_port` (agentgateway), `tools_timeout_seconds` per call, `tools_connect_seconds` for each client's first listing, `tools_delivery_attempts` for a turn's delivery from the board |
+| `stack`: sandboxes | `sandbox_port`, `sandbox_response_grace_seconds`, `sandbox_recovery_seconds`, `sandbox_scratch_directories` (empty unless a config names them), `checkouts_directory`, `skills_directory` (read-only), `shell_timeout_seconds` for `bash` (offered only with a sandbox), `command_output_limit_bytes` |
+| `stack`: grading | `sandbox_agent_code` runs the agents' code in a no-network container of `sandbox_image` (a stack run's grading always does; an in-process run needs the Dockerfile's `sandbox` target built and tagged first, or grading stops), `agent_code_output_limit_bytes` |
+
+The `notes` service's own `transitive` setting decides whether `grant` can itself be granted; see
+`docs/isolation/README.md`.
