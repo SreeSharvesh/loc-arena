@@ -6,7 +6,7 @@ Status of each function is tracked by `grep -rn NotImplementedError loc_arena/lo
 
 Every run writes a real Inspect `.eval` log with one span per agent, and renders it as a transcript with one
 lane per agent. Each lane shows what the agent saw, what it said, what it did, and every sealed event its
-turns caused. Today the `.eval` is a JSON stub (`harness.py:421-432`).
+turns caused. With the flag off, the `.eval` is a JSON placeholder.
 
 ## Why attribution works
 
@@ -21,7 +21,7 @@ to the World lane (NPCs, ticks, closes).
 | I1 | Sealed and mirror log bytes never change | the verifier, the monitors and the byte-identical repro test (`test_end_to_end.py:72-76`) read them |
 | I2 | The trace is held in memory until both episodes have played, then written only to `played.json` (for grading) and by `_write_bundle` | agent-run `run_tests` can read the run directory while an episode is live |
 | I3 | Every sealed seq up to the episode boundary maps to exactly one lane; the exporter raises otherwise | `AppendOnlyLog.on_append` swallows subscriber exceptions (`events.py:212-216`) |
-| I4 | Sealed events after the boundary are post-episode: an event built from a service's record goes to its agent's turn `(actor_uid, turn)` when the trace has that turn, every other one (a monitor's, a pi agent's) to World | monitor calls and the events built from service records (`recorded_events.py`) are appended later by writers with no subscriber |
+| I4 | Sealed events after the boundary are post-episode: an event built from a service's record goes to its agent's turn `(actor_uid, turn)` when the trace has that turn, every other one (a monitor's, and an agent's whose turn the trace does not hold) to World | monitor calls and the events built from service records (`recorded_events.py`) are appended later by writers with no subscriber |
 | I5 | Everything sits behind `logging.agent_transcript` (on by default since the last PR of the stack) | flag-off runs keep the JSON placeholder and no transcript |
 
 ## Lane rule
@@ -61,7 +61,7 @@ turns lands in its turn 0, and the builder notes it in `unattributed_records.jso
 
 | Assumption | Evidence |
 |---|---|
-| one sealed and one mirror writer per episode | `live.py:153-154`, `task.py:268-269`; the only other writer is post-episode (`harness.py:667`) |
+| one sealed and one mirror writer per episode | `open_episode_logs` in `live.py`; the only other writers are post-episode: the monitors' and `recorded_events.py` |
 | turns never nest | `_drive_team` starts an agent's turn only after the previous one returns (`live.py`) |
 | inspect-ai 0.3.268 has agent spans, `ToolEvent.agent_span_id`, and log round-trip | probe on the locked version |
 
@@ -95,15 +95,15 @@ One `.eval` per run. Each episode becomes one sample: `episode` (the graded run)
 | `_info_event(event, span_id, at, *, mirror_seq)` | one `InfoEvent` whose data carries seq, mirror seq, actor, target, payload and result | - |
 | `_timestamp(wall)` | epoch seconds -> aware UTC `datetime` | - |
 
-## M5 wiring (behind `logging.agent_transcript`, default off)
+## M5 wiring (behind `logging.agent_transcript`, on in `env.default.yaml`)
 
 | Where | Change |
 |---|---|
 | `configs/env.default.yaml`, `config.py` | `logging.agent_transcript` -> `RunConfig.agent_transcript` (fail-loud bool) |
 | `GatewayCore.__init__` / `generate` / `batch_generate` | optional `trace`; each provider call reported after its sealed record is written |
-| `Agent.__init__` / `run_turn` | optional `trace`; inbox, agent policy and tool steps run inside `trace.turn`; `mark_executing` before the tool layer |
+| `Agent.__init__` / `run_turn` | optional `trace`; the board delivery, agent policy and tool steps run inside `trace.turn`; `mark_executing` before the tool layer |
 | `live.play_model_episode` | create the trace when the flag is on, subscribe both logs, pass it to the core (and agents), finish it when the episode's work stops; `EpisodeResult.trace` |
-| `harness._assemble_by_policy`, `run_episode` | optional `provider` passthrough (offline live runs); the attack run's calibration twin goes to `_write_bundle` |
+| `harness._play_by_policy`, `run_episode` | optional `provider` passthrough (offline live runs); the attack run's calibration twin goes to `_write_bundle` |
 | `harness._write_bundle`, `_eval_episodes` | flag on: real `.eval` via `write_run_eval` (samples `episode`, `honest_cal`); flag off: the JSON placeholder |
 | `cli view` | prints `inspect view --log-dir <bundle>` when the `.eval` is real |
 

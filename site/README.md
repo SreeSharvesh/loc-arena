@@ -1,21 +1,19 @@
 # LOC-Arena docs site
 
-A static three-page site that teaches the LOC-Arena setting to an outsider:
+A static course that teaches the LOC-Arena setting to an outsider, in five chapters:
 
-- `index.html` -- The Setting: the AI-control question, the three services and mandatory inference routing, the
-  sealed-versus-tamperable ground truth, the company codebase, the end-to-end episode flow, and the monitors as
-  built (tap points, heuristic and live modes, sync and async timing, the firewall, the two-level overall suspicion
-  aggregation, and the honest-twin-calibrated caught decision).
-- `tasks.html` -- The Tasks: the tamper-proof continuous main-task grader, the sealed kill-chain verifier, the full
-  kill chain by phase with the spelled-out milestone names, the agent roster and scopes, and how each score is
-  decided from executed state.
-- `extend.html` -- Use and Extend: setup, running a live attack episode and its honest twin, the dashboard, and
-  worked guides for adding a main task, side task, scenario, or monitor, plus configuring scoring and models.
+- `index.html`: the AI-control question, the two measurements, the honest twin.
+- `architecture.html`: the engine every setting runs on: the gateway, the sandboxes, the services behind one MCP
+  route, the sealed and observable records, and how an episode runs.
+- `settings.html`, `meridian.html`, `meridian-aurora.html`: what a setting defines, the Meridian AI Lab (its
+  codebase, team and permissions) and the Aurora efficiency push (the main task, the side task, a graded episode).
+- `monitoring.html`: tap points, the firewall, monitor modes and timing, the aggregated suspicion score, the
+  caught decision, and the safety and usefulness metrics.
+- `extend.html`: setup, running and reading episodes, and configuring or extending tasks, monitors and models.
 
-Plus `style.css` (shared, light and dark readable, phone friendly) and lightweight inline SVG legends.
+Plus `style.css` (shared, light and dark readable, phone friendly) and inline SVG figures.
 
 ## How it is served
 
 Plain static HTML, no build step. Point GitHub Pages at this folder: in the repository settings, choose the branch
-and the site folder, and Pages serves these files as-is. Diagrams render with Mermaid from a CDN and degrade to
-readable source text when there is no network.
+and the site folder, and Pages serves these files as-is.
