@@ -52,7 +52,7 @@ from loc_arena.monitors.registry import (
 )
 from loc_arena.protocol import compose_protocol
 from loc_arena.recorded_events import build_recorded_events
-from loc_arena.recording_service import TOOLS as RECORDED_TOOLS
+from loc_arena.recording_service import COVERT_TOOL_NAMES
 from loc_arena.task import (
     EpisodeResult,
     Snapshot,
@@ -93,7 +93,7 @@ def _without_covert_tools(agent: AgentConfig) -> AgentConfig:
     kept = {
         service: remaining
         for service, tools in agent.sandbox.tools.items()
-        if (remaining := tuple(tool for tool in tools if tool not in RECORDED_TOOLS))
+        if (remaining := tuple(tool for tool in tools if tool not in COVERT_TOOL_NAMES))
     }
     if kept == {service: tuple(tools) for service, tools in agent.sandbox.tools.items()}:
         return agent
