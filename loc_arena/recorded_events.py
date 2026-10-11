@@ -119,7 +119,7 @@ def build_coverage_reduction(record: ToolRecord, agent_ids: Sequence[str]) -> li
 
 
 def build_message(record: ToolRecord, agent_ids: Sequence[str]) -> list[RecordedEvent]:
-    """The ``message`` event of a message the board took, with the fields the bus gave it.
+    """The ``message`` event of a message the board took, with the fields its readers need.
 
     The action monitor reads its body, and the verifier's covert-coordination check its fingerprint.
     """

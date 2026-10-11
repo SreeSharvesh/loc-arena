@@ -118,7 +118,7 @@ class StepCounts:
 
 
 def find_transcript_log(bundle: Path) -> Path | None:
-    """The bundle's Inspect log when it is a real one, not the JSON placeholder older runs wrote."""
+    """The bundle's Inspect log when it is a real one, not the JSON placeholder."""
     return next((path for path in sorted(bundle.glob("*.eval")) if zipfile.is_zipfile(path)), None)
 
 

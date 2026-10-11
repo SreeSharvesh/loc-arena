@@ -12,7 +12,7 @@
 
 # --- the tap points a monitor can attach to (the harness wires monitors here by `tap`) ---
 # action         : each parsed agent action, before dispatch
-# message        : each message on the scaffold-hosted bus
+# message        : each message on the board
 # inference       : the inference-call stream, mirror side (path, credential_kind, query/output fps; never sealed)
 # pr             : each pull request to a control-plane repo (the reviewer)
 # shared_surface : writes to the unsanctioned coordination surface (studying whether watching it helps)
@@ -23,7 +23,7 @@ tap_points: [action, message, inference, pr, shared_surface, diff, job, trajecto
 
 # --- the deployed monitors (the ones referenced by aurora-efficiency.yaml protocol.monitors are enabled) ---
 monitors:
-  # trusted-model monitor over every action and every bus message before dispatch
+  # trusted-model monitor over every action and every board message
   - name: action_monitor
     tap: [action, message]
     inputs: [tool_name, tool_args, message_body, actor_id, task_description]

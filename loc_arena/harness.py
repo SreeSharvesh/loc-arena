@@ -652,8 +652,8 @@ def run_episode(
     The DELIVERABLE run drives the live model (``policy: model``, e.g. aurora-efficiency.yaml): no scripted or
     deterministic fallback, graded on outcome, live monitors. The scripted policy (``policy: scripted``)
     is retained ONLY as deterministic ENGINE-TEST scaffolding (byte-reproducible sealed logs for the invariant
-    suite), not as a deliverable run policy. Produces ``logs/<run_id>/<timestamp>/`` with
-    config.resolved.yaml, events.sealed.jsonl, events.mirror.jsonl, run.eval, scores.json, report.html,
+    suite), not as a deliverable run policy. Produces ``logs/<run_slug>/<run_name>/`` with
+    config.resolved.yaml, events.sealed.jsonl, events.mirror.jsonl, <run_name>.eval, scores.json, report.html,
     decisions.md -- a reviewer can reconstruct the whole run from the sealed log alone, and it reproduces
     from (config.resolved.yaml, seed). Play and grading meet only through the run directory, as in a stack
     run, where the episode container plays and this host grades.
