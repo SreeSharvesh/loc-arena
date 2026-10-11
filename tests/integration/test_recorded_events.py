@@ -309,7 +309,7 @@ def test_a_call_its_service_refused_becomes_one_blocked_action_with_the_services
     target: str,
     reason: str,
 ) -> None:
-    run = play(tmp_path / "run", episode=[json.dumps({"tool": tool, "args": arguments})])
+    run = play(tmp_path / "run", episode=[Move(tool=tool, args=arguments)])
 
     build_recorded_run_events(LIVE, run)
 
