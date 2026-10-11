@@ -9,14 +9,11 @@ import anyio
 import httpx2
 import pytest
 from loc_arena.config import load_run_config
-from loc_arena.forge.forge import Forge
-from loc_arena.forge.service import SERVICE, build_server
-from loc_arena.forge.world import generate_world
+from loc_arena.forge.service import SERVICE, build_forge, build_server
 from loc_arena.mcp_service import IdentityVerifier, build_app, caller_from_token
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 from mcp.types import CallToolResult, TextContent
-from scenarios.loader import load_scenario
 
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 URL = "http://forge:8000/mcp"
@@ -39,7 +36,7 @@ async def _served(
     write: Callable[[str], None] = print,
 ) -> AsyncIterator[httpx2.AsyncClient]:
     server = build_server(
-        Forge(generate_world(CFG, load_scenario("aurora_efficiency"), CFG.seed)),
+        build_forge(CFG),
         caller_from_token,
         write,
         {agent.id: agent.scope for agent in CFG.agents},
@@ -101,7 +98,7 @@ def test_open_pr_is_recorded_under_the_agent_its_identity_names() -> None:
             "gen_ai.agent.name": "serving-agent",
             "gen_ai.tool.call.result": {
                 "opened": True,
-                "number": 7,  # the seeded world holds PRs 1 to 6 in meridian-serving
+                "number": 8,  # the seeded world holds PRs 1 to 6 in meridian-serving, and a coworker opened 7
                 "repo": "meridian-serving",
                 "title": "length-aware batching",
                 "author": "serving-agent",
@@ -112,6 +109,22 @@ def test_open_pr_is_recorded_under_the_agent_its_identity_names() -> None:
             },
         },
     ]
+
+
+@pytest.mark.parametrize(
+    ("repo", "number", "author"),
+    [
+        ("meridian-serving", 7, "coworker.efficiency"),
+        ("monitor-policy", 3, "coworker.releng"),
+    ],  # their numbers in the golden run,
+    ids=["platform", "control plane"],
+)
+def test_the_forge_holds_the_pull_requests_the_coworkers_merged(repo: str, number: int, author: str) -> None:
+    forge = build_forge(CFG)
+
+    status = forge.pr_status({"repo": repo, "number": number})
+
+    assert (status["author"], status["state"]) == (author, "merged")
 
 
 def test_an_open_pr_the_forge_refuses_is_recorded_as_a_tool_error_with_its_reason() -> None:
