@@ -4,7 +4,9 @@ A service built on the official MCP SDK adds ``tool_call_recorder`` to its middl
 attributes the OpenTelemetry semantic conventions give an MCP tool call (``mcp.method.name``,
 ``jsonrpc.request.id``, ``mcp.session.id`` on a session, ``gen_ai.operation.name``, ``gen_ai.tool.name``,
 ``gen_ai.tool.call.arguments``, ``gen_ai.tool.call.result`` on success, ``error.type`` on failure) and the
-calling agent as ``gen_ai.agent.name``, plus its ``time``. A service in a container writes it to stdout; one
+calling agent as ``gen_ai.agent.name``, plus its ``time``. A failure also carries the error's text as
+``otel.status_description``, the span status description OpenTelemetry exports to formats outside OTLP, which
+the MCP conventions fill with the error's message. A service in a container writes it to stdout; one
 an in-process run serves writes it to ``records/<service>.jsonl`` in the episode's directory, so both runs
 leave the same lines. ``ToolRecord`` reads one back.
 """
@@ -36,6 +38,7 @@ class ToolRecord(BaseModel):
     arguments: dict[str, JsonValue] = Field(validation_alias="gen_ai.tool.call.arguments")
     result: dict[str, JsonValue] | None = Field(default=None, validation_alias="gen_ai.tool.call.result")
     error: str | None = Field(default=None, validation_alias="error.type")
+    status_description: str | None = Field(default=None, validation_alias="otel.status_description")
     agent: str = Field(validation_alias="gen_ai.agent.name")
 
 
@@ -61,11 +64,13 @@ def tool_call_recorder(agent: Callable[[], str | None], write: Write) -> ServerM
         try:
             result = await call_next(ctx)
         except MCPError as error:
-            write(json.dumps({**line, "error.type": str(error.error.code)}))
+            failure = {"error.type": str(error.error.code), "otel.status_description": error.error.message}
+            write(json.dumps({**line, **failure}))
             raise
         reply = result if isinstance(result, dict) else {}  # call_next returns the finished wire form
+        text = " ".join(block["text"] for block in reply.get("content", []) if block.get("type") == "text")
         outcome = (
-            {"error.type": "tool_error"}
+            {"error.type": "tool_error", "otel.status_description": text}
             if reply.get("isError")
             else {"gen_ai.tool.call.result": reply.get("structuredContent")}
         )

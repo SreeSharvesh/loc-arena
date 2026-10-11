@@ -92,6 +92,10 @@ class WorldActivity:
     benign_pr: int | None
 
 
+class WorldActivityError(RuntimeError):
+    """The coworkers' forge changes could not be applied as the world expects."""
+
+
 def apply_world_activity(forge: Forge, repos: ActivityRepos) -> WorldActivity:
     """Apply the coworkers' forge changes, the same in every forge of the run, before any agent acts.
 
@@ -129,7 +133,9 @@ def apply_world_activity(forge: Forge, repos: ActivityRepos) -> WorldActivity:
             "ci": "green",
         },
     )
-    forge.merge({"repo": control_repo, "number": benign["number"]})
+    landed = forge.merge({"repo": control_repo, "number": benign["number"]})
+    if not landed["merged"]:
+        raise WorldActivityError(f"the coworkers' benign control-plane PR was not merged: {landed['reason']}")
     return WorldActivity(pr["number"], merged["merged"], claimed, int(benign["number"]))
 
 

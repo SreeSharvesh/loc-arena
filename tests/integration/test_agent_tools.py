@@ -1,4 +1,4 @@
-"""The tool layer: a native tool runs on the checkout, any other over MCP, each call scoped and recorded."""
+"""The tool layer: a native tool runs on the checkout, any other over MCP; it logs what no service records."""
 
 from __future__ import annotations
 
@@ -9,14 +9,17 @@ from loc_arena.forge.forge import Forge
 from loc_arena.forge.world import generate_world
 from loc_arena.gateway.core import ProviderError
 from loc_arena.live import connect_agent_tools
-from loc_arena.logging_.events import read_events
-from loc_arena.scaffold.mcp_client import McpTools
+from loc_arena.logging_.events import fingerprint, read_events
+from loc_arena.scaffold.mcp_client import McpTools, over_http
 from loc_arena.scaffold.tools import AgentAction
 from loc_arena.task import resolve_scenario
 from mcp import Client
 from mcp.server import MCPServer
 
 from tests.integration._scaffold_support import Harness
+
+# A client of the discard port, where nothing listens.
+UNREACHABLE = McpTools(lambda: over_http("http://127.0.0.1:9/mcp", "a-key", timeout_seconds=5.0))
 
 
 @pytest.fixture
@@ -39,30 +42,41 @@ def _failing_server() -> MCPServer:
     return server
 
 
-def test_an_open_pr_records_an_action_and_no_pr_event(harness: Harness) -> None:
+def test_a_call_a_service_took_is_logged_by_no_event_during_play(harness: Harness) -> None:
     opening = AgentAction("open_pr", {"repo": "meridian-serving", "title": "perf"})
 
     harness.tools().execute(harness.root_context(), opening, 1)
 
-    events = [(event.kind, event.tool) for event in read_events(harness.sealed_path)]
-    assert events == [("action", "open_pr")]  # the pr event is built from the forge's record after play
+    assert not harness.sealed_path.exists()  # its events are built from the forge's record after play
 
 
-def test_an_open_pr_to_a_repo_outside_the_callers_scope_is_blocked_and_logged(harness: Harness) -> None:
-    unscoped = AgentAction("open_pr", {"repo": "secret-repo", "title": "x"})
+@pytest.mark.parametrize(
+    ("clients", "error"),
+    [([], "is not offered to you"), ([UNREACHABLE], "could not be called: the tool server is unreachable")],
+    ids=["not offered", "server unreachable"],
+)
+def test_a_call_that_never_reached_a_service_is_logged_as_an_action_with_its_error(
+    harness: Harness,
+    clients: list[McpTools],
+    error: str,
+) -> None:
+    harness.clients = {"agent-main": clients}
 
-    harness.tools().execute(harness.root_context(), unscoped, 1)
+    result = harness.tools().execute(harness.root_context(), AgentAction("open_pr", {}), 1)
 
-    actions = [event for event in read_events(harness.sealed_path) if event.kind == "action"]
-    assert [event.payload["blocked"] for event in actions] == [True]
+    logged = [(event.kind, event.tool, event.result) for event in read_events(harness.sealed_path)]
+    expected = {"error": f"open_pr {error}", "tool": "open_pr"}
+    assert (result, logged) == (expected, [("action", "open_pr", expected)])
 
 
-def test_a_tool_the_caller_is_not_offered_is_refused(harness: Harness) -> None:
-    unoffered = AgentAction("submit_job", {})  # in agent-main's scope, on a service it is not given
+def test_a_scratch_note_the_loop_logs_reaches_the_mirror_only_as_its_fingerprint(harness: Harness) -> None:
+    harness.clients = {"agent-main": [UNREACHABLE]}
+    note = "a note only the sealed log may hold"
 
-    result = harness.tools().execute(harness.root_context(), unoffered, 1)
+    harness.tools().execute(harness.root_context(), AgentAction("write_scratch", {"content": note}), 1)
 
-    assert result == {"error": "submit_job is not offered to you", "tool": "submit_job"}
+    mirror = harness.mirror_path.read_text()
+    assert (note in mirror, fingerprint(note) in mirror) == (False, True)
 
 
 def test_a_malformed_native_call_is_an_error_result(harness: Harness) -> None:

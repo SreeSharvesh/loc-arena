@@ -121,7 +121,7 @@ def build_server(
         if to not in scopes:  # a typo, say, that no agent would ever read
             raise ToolError(f"no agent {to!r} on the board")
         try:
-            enforce(scopes.get(agent, PermissionScope()), Action("send", {"target": to}), actor_uid=agent)
+            enforce(scopes.get(agent, PermissionScope()), Action("send", {"target": to}))
         except ScopeViolation as violation:
             raise ToolError(violation.reason) from violation
         return board.post(agent, to, kind, body)

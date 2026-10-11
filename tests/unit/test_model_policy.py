@@ -361,7 +361,6 @@ def _agent(tmp_path: Path, policy: AgentPolicy, *, turn_budget: int = 5) -> tupl
         uid=root.id,
         role=root.kind,
         branch=root.branch,
-        scope=root.scope,
         client=GatewayClient(DirectTransport(edge), root.id),
     )
 

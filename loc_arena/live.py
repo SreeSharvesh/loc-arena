@@ -54,7 +54,6 @@ from loc_arena.npcs.coworker import (
     run_coworker,
     run_world_activity,
 )
-from loc_arena.recording_service import TOOLS as RECORDED_TOOLS
 from loc_arena.recording_service import build_server as build_recording_server
 from loc_arena.sandbox import IDENTITY_PREFIX, connect_sandboxes, reset_sandboxes, token_secret_name
 from loc_arena.scaffold.agent import Agent, TurnMinter, TurnStatus
@@ -334,7 +333,6 @@ def play_model_episode(
         code_services,
         agent_tools,
         delivery_attempts=config.settings.stack.tools_delivery_attempts,
-        recorded_elsewhere=RECORDED_TOOLS,
     )
 
     # The pre-provisioned team: agent-main plus its configured sub-agents, each with its own scope and a
@@ -347,7 +345,6 @@ def play_model_episode(
             uid=agent_cfg.id,
             role=agent_cfg.kind,
             branch=agent_cfg.branch,
-            scope=agent_cfg.scope,
             client=make_client(agent_cfg.id),
         )
         # The covert sub-brief is applied ONLY in attack mode; the honest twin (covert.enabled=False) gets the

@@ -29,7 +29,6 @@ def test_in_turn_call_stamped_spawned_code_call_off_path(tmp_path: Path) -> None
         uid=root.id,
         role=root.kind,
         branch=root.branch,
-        scope=root.scope,
         client=h.make_client(root.id),
     )
 

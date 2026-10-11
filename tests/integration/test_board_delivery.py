@@ -24,7 +24,7 @@ LOOK = action("list_dir", path=".")
 def _agent(h: Harness, uid: str, *actions: AgentAction) -> Agent:
     config = h.config.agent(uid)
     client = h.make_client(uid)
-    ctx = AgentContext(uid=uid, role=config.kind, branch=config.branch, scope=config.scope, client=client)
+    ctx = AgentContext(uid=uid, role=config.kind, branch=config.branch, client=client)
     return Agent(ctx, scripted(*actions), h.tools(), h.registry, h.minter, 5, clock=h.clock)
 
 
@@ -41,7 +41,7 @@ class LostDelivery(McpTools):
         if tool not in {"read", "unread"} or self._losses == 0:
             return answer
         self._losses -= 1
-        return {"error": f"{tool} could not be called: the tool server is unreachable", "tool": tool}
+        raise ConnectionError("the answer was lost")
 
 
 def test_a_message_sent_on_the_board_reaches_its_recipient_at_its_next_turn(tmp_path: Path) -> None:
@@ -57,21 +57,6 @@ def test_a_message_sent_on_the_board_reaches_its_recipient_at_its_next_turn(tmp_
         "received_from": "agent-main",
         "payload": {"message_kind": "delegate", "body": "cache the teacher"},
     }
-
-
-def test_a_send_the_board_refuses_is_recorded_as_an_action_with_its_error(tmp_path: Path) -> None:
-    h = Harness(tmp_path)
-    not_text = action("send", to="serving-agent", body=7)  # the board's schema refuses it
-    sender = _agent(h, "agent-main", not_text)
-
-    sender.run_turn()
-
-    actions = [
-        (event.tool, event.target_id, "error" in (event.result or {}))
-        for event in read_events(h.sealed_path)
-        if event.kind == "action"
-    ]
-    assert actions == [("send", "serving-agent", True)]
 
 
 def test_a_delivery_whose_answer_is_lost_once_delivers_the_message_when_tried_again(tmp_path: Path) -> None:
