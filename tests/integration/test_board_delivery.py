@@ -2,24 +2,23 @@
 
 import dataclasses
 import json
-from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
 
+import httpx2
 from loc_arena.config import load_run_config
 from loc_arena.harness import play_run
 from loc_arena.logging_.events import read_events
 from loc_arena.scaffold.agent import Agent
-from loc_arena.scaffold.mcp_client import Connect, McpTools
 from loc_arena.scaffold.tools import AgentAction, AgentContext
-from pydantic import JsonValue
 
 from tests.integration._live_support import QueuedProvider
-from tests.integration._scaffold_support import Harness, action, scripted
+from tests.integration._scaffold_support import Harness, action, failing_tools, scripted
 
 LIVE = dataclasses.replace(load_run_config("configs/aurora-efficiency.deterministic.yaml"), policy="model")
 LOOK_AROUND = json.dumps({"tool": "list_dir", "args": {"path": "."}})
 LOOK = action("list_dir", path=".")
+REFUSED = httpx2.ConnectError("connection refused")  # raised before the request is sent
+LOST = httpx2.ReadTimeout("no answer in time")  # raised after the board ran the read
 
 
 def _agent(h: Harness, uid: str, *actions: AgentAction) -> Agent:
@@ -27,22 +26,6 @@ def _agent(h: Harness, uid: str, *actions: AgentAction) -> Agent:
     client = h.make_client(uid)
     ctx = AgentContext(uid=uid, role=config.kind, branch=config.branch, client=client)
     return Agent(ctx, scripted(*actions), h.tools(), h.registry, h.minter, 5, clock=h.clock)
-
-
-class LostDelivery(McpTools):
-    """A client of the board whose first ``losses`` delivery answers are lost after the board ran."""
-
-    def __init__(self, connect: Connect, losses: int) -> None:
-        """Reach the board with ``connect``, losing the answers to the first ``losses`` deliveries."""
-        super().__init__(connect)
-        self._losses = losses
-
-    def call(self, tool: str, arguments: Mapping[str, JsonValue]) -> dict[str, Any]:
-        answer = super().call(tool, arguments)
-        if tool not in {"read", "unread"} or self._losses == 0:
-            return answer
-        self._losses -= 1
-        raise ConnectionError("the answer was lost")
 
 
 def test_a_message_sent_on_the_board_reaches_its_recipient_at_its_next_turn(tmp_path: Path) -> None:
@@ -63,7 +46,8 @@ def test_a_message_sent_on_the_board_reaches_its_recipient_at_its_next_turn(tmp_
 def test_a_delivery_whose_answer_is_lost_once_delivers_the_message_when_tried_again(tmp_path: Path) -> None:
     h = Harness(tmp_path)
     _agent(h, "agent-main", action("send", to="serving-agent", body="cache the teacher")).run_turn()
-    h.clients["serving-agent"] = [LostDelivery(h.connect_board("serving-agent"), losses=1)]
+    board = failing_tools(h.connect_board("serving-agent"), LOST, after_call=True, failures=1)
+    h.clients["serving-agent"] = [board]
     recipient = _agent(h, "serving-agent", LOOK)
 
     recipient.run_turn()
@@ -71,10 +55,13 @@ def test_a_delivery_whose_answer_is_lost_once_delivers_the_message_when_tried_ag
     assert recipient.transcript[0]["payload"]["body"] == "cache the teacher"
 
 
-def test_a_delivery_that_keeps_failing_is_recorded_as_an_action_with_its_error(tmp_path: Path) -> None:
+def test_a_delivery_that_never_reaches_the_board_is_recorded_as_an_action_with_its_error(
+    tmp_path: Path,
+) -> None:
     h = Harness(tmp_path)
     attempts = h.config.settings.stack.tools_delivery_attempts
-    h.clients["serving-agent"] = [LostDelivery(h.connect_board("serving-agent"), losses=attempts)]
+    board = failing_tools(h.connect_board("serving-agent"), REFUSED, after_call=False, failures=attempts)
+    h.clients["serving-agent"] = [board]
     recipient = _agent(h, "serving-agent", LOOK)
 
     recipient.run_turn()

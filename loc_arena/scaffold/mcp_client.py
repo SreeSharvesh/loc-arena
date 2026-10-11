@@ -7,6 +7,7 @@ closes it, so the synchronous agent loop holds no event loop between calls.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator, Callable, Collection, Mapping
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Any
@@ -20,6 +21,11 @@ from pydantic import JsonValue
 from tenacity import retry, retry_if_exception_type, stop_after_delay, wait_exponential
 
 from loc_arena.gateway.core import ToolSpec
+
+_LOGGER = logging.getLogger(__name__)
+# What a failed connection raises before any request is written: httpcore2 maps a refused connection and a
+# failed name lookup (both OSError) to ConnectError, and a connect that runs out of time to ConnectTimeout.
+_NEVER_SENT = (httpx2.ConnectError, httpx2.ConnectTimeout)
 
 Connect = Callable[[], AbstractAsyncContextManager[Client]]
 
@@ -82,8 +88,21 @@ class McpTools:
         return {spec["function"]["name"] for spec in self.specs()}
 
     def call(self, tool: str, arguments: Mapping[str, JsonValue]) -> dict[str, Any]:
-        """Call ``tool``: its structured result, or an error result; raises when its server is unreachable."""
-        return anyio.run(self._call, tool, arguments)
+        """Call ``tool``: its structured result, or an error result; raises when the call was never sent.
+
+        A failure after the request was sent, such as a lost answer, may follow a call the server ran and
+        recorded, so it is an error result saying the outcome is unknown.
+        """
+        try:
+            return anyio.run(self._call, tool, arguments)
+        except Exception as error:
+            if _never_sent(error):
+                raise
+            _LOGGER.warning("%s was sent, but its answer was lost: %r", tool, error)
+            return {
+                "error": f"{tool} was sent, but its answer was lost: the outcome is unknown",
+                "tool": tool,
+            }
 
     async def _list(self) -> list[Tool]:
         async with self._connect() as client:
@@ -97,3 +116,10 @@ class McpTools:
             text = " ".join(block.text for block in result.content if isinstance(block, TextContent))
             return {"error": text, "tool": tool}
         return dict(result.structured_content)
+
+
+def _never_sent(error: BaseException) -> bool:
+    """Whether ``error`` failed the call before its request was sent: every cause a failed connection."""
+    if isinstance(error, BaseExceptionGroup):
+        return all(_never_sent(inner) for inner in error.exceptions)
+    return isinstance(error, _NEVER_SENT)

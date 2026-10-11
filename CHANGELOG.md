@@ -165,7 +165,8 @@ log has the details.
   native loop logs an `action` only for a native tool and an MCP call that never reached a service; every other
   call's events come from its service's record. A failed call's record carries the error's text as
   `otel.status_description`, the reason of the blocked `action` the builder makes of it. A successful `open_pr`
-  builds an `action` beside its `pr`; `read` and `unread` build nothing. Sources:
+  builds an `action` beside its `pr`; `read` and `unread` build nothing. A call whose answer is lost after it was
+  sent is an error result saying its outcome is unknown, and the service's record stands for it. Sources:
   https://github.com/open-telemetry/semantic-conventions-genai `docs/gen-ai/mcp.md` (`error.type` `tool_error`;
   the status description is the error's message), https://opentelemetry.io/docs/specs/otel/common/mapping-to-non-otlp/.
 
