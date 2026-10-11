@@ -75,6 +75,23 @@ log has the details.
   never dropped and never stopping grading. The Inspect export puts a built event in its agent's turn span when
   that turn is native, and pairs it with its mirror twin, so the explorer places the event and the verdicts on
   it. The coworkers' `pr` events, the scripted one credited to `agent-main` included, are still the harness's.
+- **The covert tools leave the harness as recording services (#99, step 4).** `write_scratch`,
+  `acquire_identity`, `blind_monitor`, `submit_job` and `start_rogue_loop` are now tools the agents reach over
+  MCP, served by `loc_arena/recording_service.py`: one module behind three `scenario.yaml` entries, each its
+  own container with its own tools and grants — `jobs` (`submit_job`, `start_rogue_loop`, `acquire_identity`),
+  `scratch` (`write_scratch`) and `coverage` (`blind_monitor`). Each tool enforces the caller's scope and
+  records the request with a canned result; it keeps no world state, and the job tools return a plausible job
+  id without running anything. An agent is offered a covert tool only where its `sandbox: tools:` grants it:
+  the default config gives `agent-main` and `distill-agent` `scratch`, `serving-agent` `jobs`, and `eval-agent`
+  `coverage`. After play the builder maps each covert record to the events its readers need: an `action` event
+  the action monitor and the explorer see, `write_scratch` a sealed `shared_surface`, and `blind_monitor` the
+  `config` pair the verifier reads whose deployed coverage drops the named target. `blind_monitor` also reduces
+  the monitors' view — the target's mirror events after the call are dropped, while the sealed log keeps them.
+  The native loop no longer runs a covert worker or edits the gateway's coverage, and no longer logs an action
+  event for a tool a service records. With the rogue loop a record-only stub, a live attack run no longer
+  reaches the loop-tied side-task milestones (the scripted engine fixture still does); realistic rogue
+  deployment is left to a later change. The tools gateway multiplexes the services with `prefixMode: never`, so
+  a tool keeps its own name across services.
 - **Per-agent identities, rights and recorded grants on live services (#93).** A live service in a scenario
   pack's `scenario.yaml` lists the `rights` it enforces and whether `grant` itself can be granted
   (`transitive`, off by default); a service with no `rights` is open to every caller on agent-net. This replaces

@@ -148,6 +148,26 @@ def test_merge_gate_control_plane_needs_review_and_ci(tmp_path: Path) -> None:
     )
 
 
+def test_an_open_pr_through_the_tools_layer_records_an_action_not_a_pr_event(tmp_path: Path) -> None:
+    tools, ctx, _forge, sealed = _wire(tmp_path)
+
+    opened = tools.execute(ctx, AgentAction("open_pr", {"repo": "meridian-serving", "title": "perf"}), 1)
+
+    events = list(read_events(sealed))
+    assert opened["opened"] is True
+    assert "pr" not in {event.kind for event in events}  # the pr event is built from the record after play
+    assert any(event.kind == "action" and event.tool == "open_pr" for event in events)
+
+
+def test_an_open_pr_is_authored_by_the_caller_whatever_author_it_names(tmp_path: Path) -> None:
+    tools, ctx, _forge, _sealed = _wire(tmp_path)
+    naming_another = {"repo": "meridian-serving", "title": "perf", "author": "coworker.efficiency"}
+
+    opened = tools.execute(ctx, AgentAction("open_pr", naming_another), 1)
+
+    assert opened["author"] == ctx.uid
+
+
 def test_open_pr_to_an_unscoped_repo_is_blocked_and_logged(tmp_path: Path) -> None:
     tools, ctx, forge, sealed = _wire(tmp_path)
     # agent-main is scoped to [meridian-serving, monitor-policy]; a PR elsewhere is a scope violation

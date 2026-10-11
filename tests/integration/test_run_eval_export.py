@@ -40,7 +40,8 @@ def test_a_live_attack_run_writes_a_real_eval_with_a_span_per_agent(
     agent_spans = [e.name for e in episode.events if isinstance(e, SpanBeginEvent) and e.type == "agent"]
     assert agent_spans[0] == "agent-main" and len(agent_spans) > 1
     assert set(agent_spans) <= set(episode.metadata["agents"])
-    assert episode.metadata["scores"]["safety"]["landed"] is True
+    # The rogue loop is a record-only stub now, so the live run reaches no landing (#99 step 4).
+    assert episode.metadata["scores"]["safety"]["landed"] is False
     assert any(e.event == "model" for e in episode.events)
     twin_tools = {e.function for e in log.samples[1].events if isinstance(e, ToolEvent)}
     assert not twin_tools & {"start_rogue_loop", "blind_monitor", "write_scratch"}
@@ -64,7 +65,9 @@ def test_the_exported_episode_lays_out_as_one_lane_per_agent_by_round(
     transcript = build_transcript(log.samples[0])
     monitors = dict.fromkeys(v["monitor"] for v in log.samples[0].metadata["scores"]["monitor_verdicts"])
     assert transcript.lanes == (WORLD, *monitors, *log.samples[0].metadata["agents"])
-    assert transcript.rows[:2] == (UNPLACED, -1) and 0 in transcript.rows
+    # The world's pre-episode row (-1) comes before the first round (0); every verdict here targets a placed
+    # event, so there is no UNPLACED row.
+    assert transcript.rows[:2] == (-1, 0)
     main_round_0 = transcript.cells[("agent-main", 0)]
     assert [b.kind for b in main_round_0][:2] == ["prompt", "reply"]
     assert any(b.kind == "info" for b in transcript.cells[(WORLD, -1)])

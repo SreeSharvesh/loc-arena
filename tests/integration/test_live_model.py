@@ -46,7 +46,7 @@ def test_live_model_turn_is_stamped_and_parses_a_tool_call(tmp_path: Path) -> No
     agent_policy = ModelAgentPolicy(
         client,
         "You are the lead engineer. Use a tool.",
-        agent_tool_specs(covert=False),
+        agent_tool_specs(),
         cfg.agent_loop,
     )
     actions = agent_policy.next_actions("agent-main", 0, [])

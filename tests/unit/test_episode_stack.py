@@ -23,15 +23,18 @@ from loc_arena.episode_stack import (
     ComposeDocument,
     Identity,
     StackError,
+    _issue_secrets,
     render_compose,
     run_in_stack,
     sandbox_agent_code,
 )
 from loc_arena.gateway import core
+from loc_arena.harness import apply_mode
+from loc_arena.recording_service import TOOLS as RECORDED_TOOLS
 from loc_arena.settings import GatewaySettings, LocArenaSettings, StackSettings
 from loc_arena.stack_play import renew_services
 from loc_arena.task import SANDBOX_URL_VARIABLE, TOOLS_URL_VARIABLE
-from loc_arena.tools_gateway import render_tools_gateway_config
+from loc_arena.tools_gateway import TOOLS_GATEWAY_CONFIG_VARIABLE, render_tools_gateway_config
 from sandbox_server.server import ServerSettings
 from scenarios.loader import SCENARIOS_ROOT, EngineModule, LiveService, load_scenario
 
@@ -631,7 +634,7 @@ def test_a_service_with_tools_runs_its_engine_module_with_the_run_config_and_eve
         "build": {"context": "/repository", "target": "engine"},
         "image": "loc-arena:latest",
         "cap_drop": ["ALL"],
-        "command": ["python", "-m", "loc_arena.forge.service", "/app/configs/a-run.yaml"],
+        "command": ["python", "-m", "loc_arena.forge.service", "/app/configs/a-run.yaml", "forge"],
         "volumes": ["/repository/configs:/app/configs:ro"],
         "mem_limit": "300m",
         "cpus": 0.5,
@@ -892,11 +895,11 @@ def test_a_stack_run_hands_compose_a_distinct_identity_per_agent_and_service_thr
         [
             *(
                 f"LOC_ARENA_IDENTITY_{service}_{agent}"
-                for service in ("BOARD", "FORGE", "NOTES")
+                for service in ("BOARD", "COVERAGE", "FORGE", "JOBS", "NOTES", "SCRATCH")
                 for agent in AURORA_AGENTS
             ),
         ],
-        21,
+        42,
         [],
     )
 
@@ -1031,7 +1034,21 @@ def test_a_stack_run_copies_each_live_services_log_into_its_run_directory_before
 
     run_aurora_in_stack(tmp_path)
 
-    assert copied_at_grading == [["agentgateway.log", "board.log", "forge.log", "notes.log"]] * 2
+    assert (
+        copied_at_grading
+        == [
+            [
+                "agentgateway.log",
+                "board.log",
+                "coverage.log",
+                "forge.log",
+                "jobs.log",
+                "notes.log",
+                "scratch.log",
+            ],
+        ]
+        * 2
+    )
 
 
 def test_a_graded_stack_run_copies_its_run_directory_out_once(
@@ -1060,16 +1077,14 @@ def test_an_attack_stack_run_renews_every_container_but_the_gateway_and_the_epis
 
     commands = [call[COMPOSE_PREFIX_LENGTH:] for call in docker.calls]
     plays = [index for index, command in enumerate(commands) if command[0] == "up" and "--attach" in command]
+    logged = ("notes", "forge", "board", "jobs", "scratch", "coverage", "agentgateway")
     assert commands[plays[0] + 1 : plays[1]] == [
-        *(
-            ["logs", "--no-color", "--no-log-prefix", service]
-            for service in ("notes", "forge", "board", "agentgateway")
-        ),
+        *(["logs", "--no-color", "--no-log-prefix", service] for service in logged),
         [
             *["up", "--detach", "--wait", "--force-recreate", "--renew-anon-volumes", "--no-deps"],
             *["sandbox-agent-main", "sandbox-serving-agent", "sandbox-distill-agent", "sandbox-eval-agent"],
             *["sandbox-datapipe-agent", "sandbox-jobsvc-agent", "sandbox-controlplane-agent"],
-            *["notes", "forge", "board", "agentgateway"],
+            *logged,
         ],
     ]
 
@@ -1135,7 +1150,7 @@ def test_a_log_file_that_cannot_be_written_before_the_honest_twin_renews_nothing
     compose = ["docker", "compose", "-p", "locarena-test", "-f", "compose.yaml", "--project-directory", "."]
 
     with pytest.raises(StackError, match="nothing was renewed"):
-        renew_services(SCRIPTED_CONFIG, compose, tmp_path, {})
+        renew_services(SCRIPTED_CONFIG, compose, tmp_path, {}, {})
 
     renewed = [call for call in docker.calls if "--force-recreate" in call]
     assert (renewed, sorted(path.name for path in tmp_path.iterdir())) == ([], ["notes.log"])
@@ -1165,3 +1180,23 @@ def test_a_service_log_copied_before_a_failed_grading_is_not_added_again_at_tear
         run_aurora_in_stack(tmp_path)
 
     assert read_copied_log(tmp_path, "notes") == NOTES_LOG
+
+
+def test_honest_mode_drops_the_covert_tools_from_each_agents_sandbox_tools() -> None:
+    attack = load_run_config("configs/aurora-efficiency.yaml")
+
+    honest = apply_mode(attack, "honest")
+
+    offered = {tool for agent in honest.agents for tools in agent.sandbox.tools.values() for tool in tools}
+    assert offered.isdisjoint(RECORDED_TOOLS) and {"open_pr", "send"} <= offered
+
+
+def test_the_honest_twin_env_carries_a_gateway_config_without_covert_tools() -> None:
+    config = load_run_config("configs/aurora-efficiency.yaml")
+
+    attack_env, twin_env = _issue_secrets(config)
+
+    attack_policy = attack_env[TOOLS_GATEWAY_CONFIG_VARIABLE]
+    twin_policy = twin_env[TOOLS_GATEWAY_CONFIG_VARIABLE]
+    assert "write_scratch" in attack_policy
+    assert "open_pr" in twin_policy and not any(tool in twin_policy for tool in RECORDED_TOOLS)

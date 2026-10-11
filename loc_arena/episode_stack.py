@@ -39,7 +39,7 @@ from scenarios.loader import EngineModule, LiveService
 from loc_arena.compose_document import ComposeDocument, ComposeService, Healthcheck, ServiceSecret
 from loc_arena.config import RunConfig, load_run_config, sandbox_service
 from loc_arena.gateway.core import API_KEY_VARIABLE, GATEWAY_URL_VARIABLE, OPENROUTER_URL, OpenRouterProvider
-from loc_arena.harness import build_recorded_run_events, grade_run, locate_run
+from loc_arena.harness import apply_mode, build_recorded_run_events, grade_run, locate_run
 from loc_arena.identity_variables import find_shared_identity_variable, holds_identities, identity_variable
 from loc_arena.recorded_events import SERVICE_LOGS
 from loc_arena.sandbox import IDENTITY_PREFIX, TOKEN_FILE, build_server_settings, token_secret_name
@@ -321,7 +321,9 @@ def _render_live_service(
                 "image": f"loc-arena-service-{service.name}:latest",
             }
         case EngineModule(name=module):
-            source = {**engine, "command": ["python", "-m", module, f"{CONFIGS_DIRECTORY}/{run}.yaml"]}
+            # The entry name follows the config so one module (the recording service) can serve several.
+            arguments = [f"{CONFIGS_DIRECTORY}/{run}.yaml", service.name]
+            source = {**engine, "command": ["python", "-m", module, *arguments]}
         case image:
             source = {"image": image}
     return {
@@ -403,21 +405,28 @@ def _probe(port: int, stack: StackSettings, *, test: Sequence[str] | None = None
     }
 
 
-def _issue_secrets(config: RunConfig) -> dict[str, str]:
-    """Every secret of a stack run of ``config``, generated per run, by the host variable compose reads.
+def _issue_secrets(config: RunConfig) -> tuple[dict[str, str], dict[str, str]]:
+    """Every secret of a stack run, by the host variable compose reads: the attack env and the twin's.
 
-    They reach compose through its environment alone: never a command line or a file.
+    The honest-twin env differs only in the tools gateway's config.
+    They reach compose through its environment alone: never a command line or a file. The twin's gateway
+    offers the honest config's tools (no covert tool), so an agent granted one in the attack config is
+    refused it at the gateway after ``renew_services`` recreates the gateway with the twin env.
     """
     tokens = {agent.id: secrets.token_urlsafe(TOKEN_BYTES) for agent in config.agents}
     identities = {identity: secrets.token_urlsafe(TOKEN_BYTES) for identity in issue_identities(config)}
-    tools_gateway_config = (
-        render_tools_gateway_config(config, tokens, identities) if serves_tools(config) else None
-    )
-    return {
+    base = {
         **{token_variable(agent): token for agent, token in tokens.items()},
         **{identity.variable: value for identity, value in identities.items()},
-        **({TOOLS_GATEWAY_CONFIG_VARIABLE: tools_gateway_config} if tools_gateway_config else {}),
     }
+    if not serves_tools(config):
+        return base, base
+
+    def with_gateway(for_config: RunConfig) -> dict[str, str]:
+        rendered = render_tools_gateway_config(for_config, tokens, identities)
+        return {**base, TOOLS_GATEWAY_CONFIG_VARIABLE: rendered}
+
+    return with_gateway(config), with_gateway(apply_mode(config, "honest"))
 
 
 def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: Path) -> Path:
@@ -455,7 +464,9 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
         "--project-directory",
         str(REPOSITORY),
     ]
-    environment = {**os.environ, **_issue_secrets(config)}
+    attack_secrets, twin_secrets = _issue_secrets(config)
+    environment = {**os.environ, **attack_secrets}
+    twin_environment = {**os.environ, **twin_secrets}
     run_compose = functools.partial(subprocess.run, env=environment)
 
     copied = functools.partial(copy_out, run_compose, made=set())
@@ -481,7 +492,7 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
         # Started on its own, the gateway outlives the episode: the monitors call it while this host grades.
         if run_compose([*compose, "up", "--detach", "--wait", "gateway"]).returncode != 0:
             raise StackError("the gateway did not become healthy: see compose's output above")
-        exit_code = play_phases(config, compose, mode, service_logs, environment)
+        exit_code = play_phases(config, compose, mode, service_logs, environment, twin_environment)
         if not copied(copy_output):
             raise StackError("could not copy the episode's run directory out, so it was not graded")
         if exit_code != 0:

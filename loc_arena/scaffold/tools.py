@@ -13,7 +13,7 @@ board (an MCP service), and spawning through the registry via an injected handle
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -22,6 +22,7 @@ import tenacity
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import ProviderError
 from loc_arena.ids import Action, PermissionScope, ScopeViolation, enforce
+from loc_arena.recording_service import redact_note
 from loc_arena.scaffold.bus import Recorder
 from loc_arena.scaffold.registry import SpawnDenied
 
@@ -82,13 +83,19 @@ class Tools:
         *,
         spawn_handler: SpawnHandler,
         delivery_attempts: int = 1,
+        recorded_elsewhere: Collection[str] = (),
     ) -> None:
-        """Wire the tool layer to the recorder, the services, the spawn handler and the delivery attempts."""
+        """Wire the tool layer to the recorder, the services, the spawn handler and the delivery attempts.
+
+        A tool in ``recorded_elsewhere`` is one a service records and the post-play builder rebuilds the
+        event for (the covert tools), so a successful call logs no action event here, which would double it.
+        """
         self._recorder = recorder
         self._delivery_attempts = delivery_attempts
         self._delivered: dict[str, int] = {}  # by agent: the id of the last message delivered to it
         self._services = services
         self._spawn_handler = spawn_handler
+        self._recorded_elsewhere = frozenset(recorded_elsewhere)
 
     @staticmethod
     def _target_for(action: AgentAction) -> str | None:
@@ -117,7 +124,7 @@ class Tools:
             target_id=self._target_for(action),
             turn=turn,
             payload={
-                "args": action.args,
+                "args": redact_note(action.tool, action.args),
                 "target": self._target_for(action),
                 "blocked": blocked,
                 "reason": reason,
@@ -173,11 +180,14 @@ class Tools:
                 )
         except (KeyError, TypeError, ValueError) as exc:
             result = {"error": f"malformed args for {action.tool}: {exc}", "tool": action.tool}
-        except ProviderError as exc:  # a covert tool's own model calls (the rogue loop) failed
+        except ProviderError as exc:  # a tool's own model calls failed
             _LOGGER.warning("a model call of %s failed: %s", action.tool, exc)
             result = {"error": f"a model call of {action.tool} failed", "tool": action.tool}
 
-        self._log_action(ctx, action, turn, blocked=False, result=result)
+        # A tool a service records is logged from its record after play, so logging a success here would
+        # double it; an error leaves no record (an unreachable service, a refusal), so it is logged here.
+        if action.tool not in self._recorded_elsewhere or "error" in result:
+            self._log_action(ctx, action, turn, blocked=False, result=result)
         return result
 
     def receive(self, ctx: AgentContext, turn: int) -> list[ToolResult]:

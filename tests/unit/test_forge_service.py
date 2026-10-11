@@ -124,6 +124,14 @@ def test_an_open_pr_the_forge_refuses_is_recorded_as_a_tool_error() -> None:
     ]
 
 
+def test_an_open_pr_whose_body_is_not_text_is_refused_by_the_schema() -> None:
+    numbers = {"repo": "meridian-serving", "body": 7}
+
+    result = anyio.run(_open_pull_request, IDENTITIES["serving-agent"], print, numbers)
+
+    assert result.is_error is True
+
+
 def test_an_open_pr_outside_the_callers_scope_is_refused() -> None:
     control_plane = {
         "repo": "monitor-policy",
