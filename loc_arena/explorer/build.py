@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import re
 import zipfile
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
@@ -64,6 +65,7 @@ from loc_arena.explorer.settings import ExplorerSettings
 from loc_arena.recording_service import COVERT_TOOL_NAMES
 
 DATA_MARKER: Final = "__DATA__"
+INCLUDE_MARKER: Final = re.compile(r"__INCLUDE:([\w.-]+)__")
 RUN_TEMPLATE: Final = "run.html"
 INDEX_TEMPLATE: Final = "index.html"
 INDEX_PAGE: Final = "index.html"
@@ -460,7 +462,11 @@ def build(target: Path, out: Path | None, settings: ExplorerSettings) -> Path:
 def write_page(template: str, data: RunPage | RunIndex, out: Path) -> Path:
     """Fill a page template with `data` and write it to `out`."""
     out.parent.mkdir(parents=True, exist_ok=True)
-    page = files("loc_arena.explorer").joinpath("templates", template).read_text(encoding="utf-8")
+    templates = files("loc_arena.explorer").joinpath("templates")
+    page = INCLUDE_MARKER.sub(
+        lambda match: templates.joinpath(match[1]).read_text(encoding="utf-8").rstrip("\n"),
+        templates.joinpath(template).read_text(encoding="utf-8"),
+    )
     out.write_text(page.replace(DATA_MARKER, embed_json(dataclasses.asdict(data)), 1), encoding="utf-8")
     return out
 
