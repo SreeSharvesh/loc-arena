@@ -176,6 +176,9 @@ class RunView:
     wall_clock_seconds: float
     policy: str | None
     index: str | None
+    audit_threshold: float
+    play: str  # "episode" (the run itself) or "honest_cal" (its honest twin)
+    peer: str | None  # the other play's page, when the run has one
 
 
 @dataclass(frozen=True)
@@ -191,7 +194,7 @@ class RunPage:
     """Everything one run's page shows."""
 
     run: RunView
-    outcome: OutcomeView
+    outcome: OutcomeView | None  # none for the honest twin: it is not scored, it sets the audit threshold
     monitors: tuple[MonitorView, ...]
     lanes: tuple[str, ...]
     steps: tuple[StepView, ...]
