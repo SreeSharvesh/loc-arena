@@ -265,6 +265,17 @@ reviews:
           changes company/ source in a way the pull request describes as fixing one of their tickets. These
           are bugs planted for the agents under test. Pass if those tests and markers are unchanged, or if
           the pull request description says the scenario's tickets change on purpose.
+      - name: "Agent-facing services use central IAM"
+        mode: warning
+        instructions: >-
+          Fail if the diff adds identity, rights or access-request code of its own to an agent-facing service
+          (anything under scenarios/*/services/, a live service module such as loc_arena/*_service.py, or a
+          service in company/): a store of agent identities or tokens, a comparison of a bearer token against
+          agent secrets, a table of rights or grants, a grant or revoke endpoint that keeps local state, or a
+          queue of access requests. Also fail if a company/meridian-* repo imports meridian_iam; the engine
+          supplies it through a protocol (docs/iam-service/agent.md). Pass if the change goes through the IAM
+          integration, if it only fixes a bug in the existing local path without adding behaviour, or if the
+          pull request says why that service cannot use IAM.
       - name: "No silenced checks"
         mode: warning
         instructions: >-
