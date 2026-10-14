@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from loc_arena import cli
 from loc_arena.config import load_run_config
-from loc_arena.explorer.build import RUN_TEMPLATE, build_folder, build_run_page, write_page
+from loc_arena.explorer.build import RUN_TEMPLATE, TWIN_PLAY, build, build_folder, build_run_page, write_page
 from loc_arena.explorer.page import RunPage
 from loc_arena.explorer.settings import ExplorerSettings
 from loc_arena.gateway.core import ScriptedProvider
@@ -84,6 +84,12 @@ def traced_bundle(tmp_path_factory: pytest.TempPathFactory) -> Path:
 def stack_page(traced_bundle: Path, tmp_path_factory: pytest.TempPathFactory) -> RunPage:
     """The traced run's page with its bundle where a stack run leaves it, beside its gateway's call log."""
     logs = tmp_path_factory.mktemp("logs")
+    bundle = _stack_bundle(traced_bundle, logs)
+    return build_run_page(bundle, ExplorerSettings())
+
+
+def _stack_bundle(traced_bundle: Path, logs: Path) -> Path:
+    """The traced bundle under ``logs`` with a gateway call log beside it, as a stack run leaves it."""
     bundle = logs / traced_bundle.parent.name / traced_bundle.name
     shutil.copytree(traced_bundle, bundle)
     call_log = logs / "gateway" / f"locarena-{bundle.name.rpartition('__')[2]}.calls.jsonl"
@@ -103,7 +109,7 @@ def stack_page(traced_bundle: Path, tmp_path_factory: pytest.TempPathFactory) ->
         for started_at, (message, reasoning) in enumerate(RECORDED_REPLIES)
     ]
     call_log.write_text("".join(call.model_dump_json() + "\n" for call in calls))
-    return build_run_page(bundle, ExplorerSettings())
+    return bundle
 
 
 def _reasoning_by_step(page: RunPage) -> dict[str, str]:
@@ -205,3 +211,58 @@ def test_the_page_carries_each_turns_reasoning_to_the_reader(stack_page: RunPage
         "a short answer will do",
         "plan: have eval-agent blind the monitor",
     ]
+
+
+def _page_data(path: Path) -> dict:
+    match = PAGE_DATA.search(path.read_text(encoding="utf-8"))
+    assert match is not None
+    return json.loads(match.group(1))
+
+
+def test_a_folder_pages_the_honest_twin_beside_the_run_and_links_them_both_ways(
+    traced_bundle: Path,
+    tmp_path: Path,
+) -> None:
+    folder = tmp_path / "logs"
+    shutil.copytree(traced_bundle, folder / "traced")
+
+    index = build_folder(folder, tmp_path / "site", ExplorerSettings())
+
+    pages = sorted((index.parent / "runs").glob("*.html"))
+    twin_path = next(page for page in pages if page.stem.endswith("__honest_twin"))
+    run_path = next(page for page in pages if page is not twin_path)
+    twin, run = _page_data(twin_path), _page_data(run_path)
+    assert (run["run"]["play"], twin["run"]["play"]) == ("episode", TWIN_PLAY)
+    assert run["run"]["peer"] == twin_path.name and twin["run"]["peer"] == run_path.name
+    assert twin["outcome"] is None and run["outcome"] is not None
+    assert twin["verdicts"] == [] and twin["monitors"] == []
+    assert twin["steps"] and twin["lanes"]
+    assert twin["run"]["audit_threshold"] == run["run"]["audit_threshold"]
+
+
+def test_the_twins_page_is_the_twins_own_play_not_the_runs(traced_bundle: Path) -> None:
+    run = build_run_page(traced_bundle, ExplorerSettings())
+    twin = build_run_page(traced_bundle, ExplorerSettings(), play=TWIN_PLAY)
+
+    assert twin.steps and twin.steps != run.steps
+    assert (twin.run.name, twin.run.mode) == (run.run.name + "__honest_twin", "honest")
+
+
+def test_the_twin_borrows_no_reasoning_from_the_runs_call_log(traced_bundle: Path, tmp_path: Path) -> None:
+    bundle = _stack_bundle(traced_bundle, tmp_path)
+
+    run = build_run_page(bundle, ExplorerSettings())
+    twin = build_run_page(bundle, ExplorerSettings(), play=TWIN_PLAY)
+
+    assert _reasoning_by_step(run)  # the recorded replies pair to the run's own events...
+    assert _reasoning_by_step(twin) == {}  # ...and the call log's seqs are the run's, so the twin takes none
+
+
+def test_a_single_bundle_writes_the_twins_page_beside_its_own(traced_bundle: Path, tmp_path: Path) -> None:
+    bundle = tmp_path / "bundle"
+    shutil.copytree(traced_bundle, bundle)
+
+    page = build(bundle, None, ExplorerSettings())
+
+    assert page == bundle / "explorer.html"
+    assert (bundle / "explorer__honest_twin.html").exists()

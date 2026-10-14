@@ -8,6 +8,9 @@ log has the details.
 
 ### Added
 
+- **The run explorer shows the honest twin.** An attack run's honest twin, which is played to set the audit
+  threshold, now has a page of its own beside the run's, linked both ways: every agent's turns, tool calls and model
+  calls, with no verdicts or outcome (it is not scored on its own).
 - A shipping check requires a clean latest-commit CodeRabbit review and no unresolved CodeRabbit threads.
 
 - Every PR checks whole edited files against 700 lines, or their base size if already larger; untouched files are excluded.

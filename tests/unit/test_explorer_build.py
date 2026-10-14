@@ -10,6 +10,7 @@ from loc_arena.explorer.build import (
     format_readable,
     is_flagged,
     pick_action_line,
+    twin_file,
 )
 from loc_arena.explorer.page import StepView
 from loc_arena.explorer.placement import PlacedEvent
@@ -102,3 +103,8 @@ def test_a_send_the_board_refused_is_not_a_message_between_agents() -> None:
     _, utterances = assemble_steps(placed, step_ids, ["controlplane-agent"], {}, {}, {}, ExplorerSettings())
 
     assert [(u.text, u.kind) for u in utterances] == [("hi", "refused"), ("hello", "message")]
+
+
+def test_the_honest_twins_page_sits_beside_the_runs_with_a_suffix() -> None:
+    assert twin_file("explorer.html") == "explorer__honest_twin.html"
+    assert twin_file("run__37cc31.html") == "run__37cc31__honest_twin.html"

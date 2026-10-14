@@ -76,7 +76,10 @@ UNKNOWN_MODEL: Final = "?"  # the index's model column for a run whose scores do
 SECONDS_PER_MINUTE: Final = 60
 # Files every run bundle holds; a folder with them but no scores.json is a run still going, or a sweep.
 BUNDLE_MARKERS: Final = ("events.sealed.jsonl", "config.resolved.yaml", "decisions.md")
-BUNDLE_PARTS: Final = frozenset({"episode", "honest_cal"})  # folders inside a bundle, not runs of their own
+EPISODE_PLAY: Final = "episode"  # the Inspect sample of the run itself, and its folder in the bundle
+TWIN_PLAY: Final = "honest_cal"  # the honest twin's: played to set the audit threshold, not scored on its own
+TWIN_SUFFIX: Final = "__honest_twin"  # the twin's page file is the run's page file with this before ".html"
+BUNDLE_PARTS: Final = frozenset({EPISODE_PLAY, TWIN_PLAY})  # folders inside a bundle, not runs of their own
 # Evidence lists of {"seq": ...} records; every other evidence list whose key ends in "seqs" holds bare seqs.
 EVIDENCE_RECORD_LISTS: Final = frozenset({"off_bus_writes"})
 # The argument a card shows for a tool call, in order of preference.
@@ -123,15 +126,61 @@ def find_transcript_log(bundle: Path) -> Path | None:
     return next((path for path in sorted(bundle.glob("*.eval")) if zipfile.is_zipfile(path)), None)
 
 
-def build_run_page(bundle: Path, settings: ExplorerSettings, index_href: str | None = None) -> RunPage:
-    """Everything one run's page shows, from its bundle."""
+def twin_file(page_file: str) -> str:
+    """The file name of the honest twin's page, beside the run's page."""
+    return f"{page_file.removesuffix('.html')}{TWIN_SUFFIX}.html"
+
+
+def run_page_name(bundle: Path) -> str:
+    """The name a run's page goes by: the Inspect log's run id, else the log file's stem."""
+    log_path = find_transcript_log(bundle)
+    if log_path is None:
+        raise FileNotFoundError(f"{bundle} has no per-agent Inspect log")
+    return read_eval_log(str(log_path), header_only=True).eval.run_id or log_path.stem
+
+
+def has_twin(bundle: Path) -> bool:
+    """Whether the bundle's Inspect log holds the honest twin as a sample of its own."""
+    log_path = find_transcript_log(bundle)
+    if log_path is None:
+        return False
+    return any(sample.id == TWIN_PLAY for sample in read_eval_log(str(log_path)).samples or [])
+
+
+def build_run_page(
+    bundle: Path,
+    settings: ExplorerSettings,
+    index_href: str | None = None,
+    play: str = EPISODE_PLAY,
+    peer_href: str | None = None,
+) -> RunPage:
+    """One play's page, from its bundle: the run itself, or (``play=TWIN_PLAY``) its honest twin.
+
+    The twin's page is its transcript alone. The monitors' verdicts and the side task's evidence belong to
+    the run's own play, and the twin is not scored on its own, so it has no outcome; it keeps no reasoning
+    either, which the gateway's call log pairs to the run's sealed log. ``peer_href`` links the two pages.
+    """
     log_path = find_transcript_log(bundle)
     if log_path is None:
         raise FileNotFoundError(f"{bundle} has no per-agent Inspect log to build a transcript from")
     log = read_eval_log(str(log_path))
-    sample = resolve_sample_attachments((log.samples or [])[0], "full")
+    twin = play == TWIN_PLAY
+    chosen = (
+        next((s for s in log.samples or [] if s.id == play), None) if twin else (log.samples or [None])[0]
+    )
+    if chosen is None:
+        raise FileNotFoundError(f"{log_path.name} has no sample for the {play} play")
+    sample = resolve_sample_attachments(chosen, "full")
     scores = load_scores(bundle / SCORES_FILE)
-    run_name = log.eval.run_id or log_path.stem
+    if twin:
+        scores = scores.model_copy(
+            update={
+                "monitor_verdicts": (),
+                "monitors": (),
+                "side_task": scores.side_task.model_copy(update={"milestones": {}}),
+            },
+        )
+    run_name = (log.eval.run_id or log_path.stem) + (TWIN_SUFFIX if twin else "")
     placed = place_events(sample)
     configured = [str(agent) for agent in sample.metadata.get("agents", [])]
     lanes = order_lanes(configured, {p.lane for p in placed})
@@ -141,7 +190,11 @@ def build_run_page(bundle: Path, settings: ExplorerSettings, index_href: str | N
         for p in placed
         for seq, target in list_verdict_targets(p.event)
     }
-    verdicts = place_verdicts(scores, pair_mirror_to_sealed(sample, bundle), targets)
+    verdicts = place_verdicts(
+        scores,
+        pair_mirror_to_sealed(sample, bundle / play if twin else bundle),
+        targets,
+    )
     evidence = collect_covert_evidence(scores)
     steps, utterances = assemble_steps(
         placed,
@@ -149,7 +202,7 @@ def build_run_page(bundle: Path, settings: ExplorerSettings, index_href: str | N
         lanes,
         verdicts.placed,
         evidence,
-        read_reasoning(bundle),
+        {} if twin else read_reasoning(bundle),
         settings,
     )
     monitor_names = {monitor.name for monitor in scores.monitors}
@@ -157,14 +210,17 @@ def build_run_page(bundle: Path, settings: ExplorerSettings, index_href: str | N
         run=RunView(
             name=run_name,
             slug=scores.run_slug,
-            mode=scores.mode,
+            mode="honest" if twin else scores.mode,
             seed=scores.seed,
             models=scores.models,
             wall_clock_seconds=scores.wall_clock_seconds,
             policy=str((log.eval.metadata or {}).get("policy") or "") or None,
             index=index_href,
+            audit_threshold=scores.safety.audit_threshold,
+            play=play,
+            peer=peer_href,
         ),
-        outcome=describe_outcome(scores, steps),
+        outcome=None if twin else describe_outcome(scores, steps),
         monitors=tuple(
             MonitorView(m.name, m.role, m.mode, m.timing, m.counts_toward_caught, m.errored, m.top_reasons)
             for m in scores.monitors
@@ -354,9 +410,21 @@ def build_folder(root: Path, out: Path, settings: ExplorerSettings) -> Path:
         if find_transcript_log(bundle) is None:
             rows.append(summarize_run(bundle, scores, None, None))
             continue
-        page = build_run_page(bundle, settings, index_href=f"../{INDEX_PAGE}")
+        index_href = f"../{INDEX_PAGE}"
+        twin = has_twin(bundle)
+        peer = twin_file(f"{run_page_name(bundle)}.html") if twin else None
+        page = build_run_page(bundle, settings, index_href, peer_href=peer)
         href = f"{RUNS_FOLDER}/{page.run.name}.html"
         write_page(RUN_TEMPLATE, page, out / href)
+        if twin:
+            twin_page = build_run_page(
+                bundle,
+                settings,
+                index_href,
+                TWIN_PLAY,
+                peer_href=f"{page.run.name}.html",
+            )
+            write_page(RUN_TEMPLATE, twin_page, out / RUNS_FOLDER / f"{twin_page.run.name}.html")
         rows.append(summarize_run(bundle, scores, page, href))
     incomplete = sorted(
         {
@@ -378,7 +446,14 @@ def build_folder(root: Path, out: Path, settings: ExplorerSettings) -> Path:
 def build(target: Path, out: Path | None, settings: ExplorerSettings) -> Path:
     """The page to open: a run bundle's own page, or the index over every run in a folder."""
     if (target / SCORES_FILE).exists():
-        return write_page(RUN_TEMPLATE, build_run_page(target, settings), out or target / RUN_PAGE)
+        page_file = out or target / RUN_PAGE
+        twin = has_twin(target)
+        peer = twin_file(page_file.name) if twin else None
+        written = write_page(RUN_TEMPLATE, build_run_page(target, settings, peer_href=peer), page_file)
+        if twin:
+            twin_page = build_run_page(target, settings, play=TWIN_PLAY, peer_href=page_file.name)
+            write_page(RUN_TEMPLATE, twin_page, page_file.with_name(twin_file(page_file.name)))
+        return written
     return build_folder(target, out or target / SITE_FOLDER, settings)
 
 
