@@ -71,6 +71,7 @@ class Bootstrap(Base):
                 "authenticated": op.authenticated,
                 "public": op.public,
                 "target": op.target,
+                "launch": op.launch,
             }
             for name, op in manifest.operations.items()
         }
@@ -92,6 +93,16 @@ class Bootstrap(Base):
         """Bind a service principal to one resource and the audience its callers' credentials carry."""
         with self._tx() as db:
             db.execute("INSERT INTO service_bindings VALUES (?, ?, ?)", (service, resource, audience))
+
+    def allow_delegation(self, issuer: str, delegable: Mapping[str, Iterable[str]]) -> None:
+        """Let the service bound to resource ``issuer`` give workloads it issues these permissions.
+
+        ``delegable`` maps each resource to the permissions on it the issuer may hand on, its own resource
+        included only if listed. Nothing else widens it, and a service with no delegation cannot issue
+        workloads at all, so a compromised service can mint no more than its seed allows. An unknown
+        resource or permission is ``Invalid``.
+        """
+        raise NotImplementedError
 
     def add_baseline_grant(self, principal: str, resource: str, permissions: Iterable[str]) -> None:
         """Seed an ongoing grant the run config already gives this principal (revocable)."""

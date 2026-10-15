@@ -38,6 +38,9 @@ CREATE TABLE grants (
   id INTEGER PRIMARY KEY AUTOINCREMENT, principal TEXT NOT NULL REFERENCES principals(id),
   resource TEXT NOT NULL REFERENCES resources(id), permission TEXT NOT NULL, starts_at INTEGER NOT NULL,
   expires_at INTEGER, source TEXT NOT NULL, request TEXT, granted_by TEXT NOT NULL, revoked_at INTEGER);
+CREATE TABLE delegations (
+  issuer TEXT NOT NULL REFERENCES resources(id), resource TEXT NOT NULL REFERENCES resources(id),
+  permission TEXT NOT NULL, PRIMARY KEY (issuer, resource, permission));
 CREATE TABLE workloads (
   principal TEXT PRIMARY KEY REFERENCES principals(id), resource TEXT NOT NULL REFERENCES resources(id),
   issuer TEXT NOT NULL REFERENCES principals(id), sponsor TEXT NOT NULL REFERENCES principals(id),

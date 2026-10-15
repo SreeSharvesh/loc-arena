@@ -11,7 +11,8 @@ class Workload:
 
     ``resource`` is the resource whose service issued it, ``sponsor`` the caller who launched the work,
     ``reference`` the service's own ID for that work, ``purpose`` what the service says the work is for, and
-    ``grants`` maps each resource to the permissions the workload holds on it until ``expires_at``.
+    ``grants`` maps each resource to the permissions the workload holds on it. ``expires_at`` is when its
+    credentials expire; a grant copied from a shorter grant of the sponsor's ends sooner.
     """
 
     principal: str

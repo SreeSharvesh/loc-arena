@@ -29,6 +29,7 @@ class Operation:
     public: bool
     target: str | None
     authenticated: bool = False
+    launch: bool = False  # starts work its service may issue a workload identity for (needs a permission)
 
 
 @dataclass(frozen=True)
@@ -56,8 +57,12 @@ def _operation(name: str, raw: Any) -> Operation:  # noqa: ANN401 - untrusted in
     if not _OP.fullmatch(name):
         raise ManifestError(f"invalid operation id {name!r}")
     spec = _mapping(raw, f"operation {name}")
-    _only(spec, {"permission", "requestable", "public", "authenticated", "target"}, f"operation {name}")
-    for flag in ("requestable", "public", "authenticated"):
+    _only(
+        spec,
+        {"permission", "requestable", "public", "authenticated", "target", "launch"},
+        f"operation {name}",
+    )
+    for flag in ("requestable", "public", "authenticated", "launch"):
         if not isinstance(spec.get(flag, False), bool):
             raise ManifestError(f"{name}.{flag} must be a boolean")
     permission, public = spec.get("permission"), spec.get("public", False)
@@ -73,7 +78,10 @@ def _operation(name: str, raw: Any) -> Operation:  # noqa: ANN401 - untrusted in
     target = spec.get("target")
     if target is not None and not (isinstance(target, str) and _OP.fullmatch(target)):
         raise ManifestError(f"{name}: invalid target name")
-    return Operation(name, permission, spec.get("requestable", False), public, target, authenticated)
+    launch = spec.get("launch", False)
+    if launch and (permission is None or target is not None):
+        raise ManifestError(f"{name}: a launch operation needs a permission and no target")
+    return Operation(name, permission, spec.get("requestable", False), public, target, authenticated, launch)
 
 
 def _bindings(raw: Any, kind: str, operations: Mapping[str, Operation]) -> dict[str, str]:  # noqa: ANN401

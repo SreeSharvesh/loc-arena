@@ -120,14 +120,14 @@ class IamClient:
         purpose: str,
         grants: dict[str, list[str]],
         ttl: int,
-        credential: str,
+        credentials: dict[str, str],
         key: str,
     ) -> Workload:
         """Issue a workload identity as this client's service identity, for the caller launching the work.
 
-        A mutation, so never retried. ``credential`` is the secret this service generated for the workload and
-        keeps to hand over; a retry after a lost reply sends the same secret under the same ``key``. A
-        malformed answer is ``Unavailable``.
+        A mutation, so never retried. ``credentials`` maps each audience to a secret this service generated
+        for the workload and keeps to hand over; a retry after a lost reply sends the same secrets under the
+        same ``key``. A malformed answer is ``Unavailable``.
         """
         raise NotImplementedError
 

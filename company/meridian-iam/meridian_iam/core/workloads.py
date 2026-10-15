@@ -20,34 +20,41 @@ class Workloads(Base):
         purpose: str,
         grants: Mapping[str, Iterable[str]],
         ttl: int,
-        credential: str,
+        credentials: Mapping[str, str],
         key: str,
     ) -> Workload:
         """Create the ``job`` principal for work a caller launches through this service.
 
-        The service authenticates with its ``iam`` credential and must hold a service binding. The caller's
-        credential must carry that binding's audience, and ``operation`` (the launching operation in the
-        service's manifest, such as ``submit_job``) must be allowed for the caller exactly as ``authorize``
-        decides it. Every (resource, permission) in ``grants`` must be an active grant of the caller's: the
-        workload gets that subset and nothing more, never the caller's credential or all of its grants.
+        Who may issue: the service authenticates with its ``iam`` credential and must hold a service binding.
+        The caller's credential must carry that binding's audience, ``operation`` must be one the service's
+        manifest marks ``launch``, and the caller must hold its permission.
 
-        ``ttl`` is required and positive. The workload's credential and grants expire at ``now + ttl``, cut
-        short to the earliest expiry of any caller grant they copy; a ``ttl`` beyond a granted resource's
-        ``max_seconds`` is ``Invalid``. ``credential`` is a secret the service generated and hands to the
-        workload: IAM stores only its digest, with the audiences the granted resources' services require, and
-        never returns it. ``reference`` is the service's own ID for the work (a job or run ID) and ``purpose``
-        what the service says it is for (an eval run, CI, an inference server): IAM records both for whoever
-        later checks the work against them, and judges neither.
+        What the workload gets: every (resource, permission) in ``grants`` must be one this service may
+        delegate (``allow_delegation``) and one the caller holds now. The workload gets exactly that subset,
+        never the caller's credential or all of its grants. Each copied grant ends at ``now + ttl`` or when
+        the caller's grant it copies ends, whichever is first; a ``ttl`` beyond a granted resource's
+        ``max_seconds`` is ``Invalid``.
 
-        A workload's grants count at ``authorize`` only while its sponsor is active and still holds them, so
-        revoking a sponsor's grant or disabling the sponsor stops its work at once, down any chain of
-        workloads that launched workloads.
+        Its credentials: ``credentials`` maps each audience the granted resources' services require to a
+        secret the service generated, one per audience, so each service the workload calls sees only its own
+        secret. IAM stores only their digests, labelled by audience and expiring at ``now + ttl``, never
+        returns them, and gives none the ``iam`` audience. ``reference`` is the service's own ID for the work
+        and ``purpose`` what the service says it is for (an eval run, CI, an inference server): IAM records
+        both for whoever later checks the work against them, and judges neither.
+
+        While it lives: a workload's grant counts at ``authorize`` only while its issuer is active, still
+        bound to the same resource and still allowed to delegate that permission, and its sponsor is active
+        and holds the permission through a grant that began no later than the workload was issued, and so on
+        up any chain of workloads that launched workloads. Revoking the sponsor's grant or disabling the
+        sponsor or the issuer stops the work at once, and granting the sponsor the permission again later
+        does not revive it.
 
         Idempotent per (service, ``key``): a retry with the same content returns the same workload, and the
-        same key with any other content, the secret included, is ``Conflict``. A bad service or caller
-        credential is ``Unauthenticated``; a disallowed operation or a grant the caller does not hold is
-        ``Forbidden``; a bad ``ttl``, an empty ``reference``, ``purpose`` or ``grants``, or an unknown
-        resource is ``Invalid``; a secret already in use is ``Conflict``. A rejected call changes nothing and
-        is audited; success is audited as ``workload_issued``, without the secret.
+        same key with any other content, secrets included, is ``Conflict``. A bad service or caller credential
+        is ``Unauthenticated``; a launch the caller may not make, or a grant the service may not delegate or
+        the caller does not hold, is ``Forbidden``; a bad ``ttl``, an empty ``reference``, ``purpose`` or
+        ``grants``, an unknown resource, or ``credentials`` that do not cover exactly the audiences needed is
+        ``Invalid``; a secret already in use is ``Conflict``. A rejected call changes nothing and is audited;
+        success is audited as ``workload_issued``, without the secrets.
         """
         raise NotImplementedError

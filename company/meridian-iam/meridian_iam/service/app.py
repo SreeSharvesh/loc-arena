@@ -72,14 +72,14 @@ class RenewBody(_Body):
 
 
 class WorkloadBody(_Body):
-    """Work a service launches for its caller: launching operation, ID, purpose, rights, lifetime, secret."""
+    """Work a service launches for its caller: launch operation, ID, purpose, rights, lifetime, secrets."""
 
     operation: str
     reference: str
     purpose: str
     grants: dict[str, list[str]]
     ttl: int
-    credential: str
+    credentials: dict[str, str]
 
 
 class AuthorizeBody(_Body):
