@@ -55,7 +55,8 @@ log has the details.
   checkout.
 - **The deterministic run replays through the live loop.** `policy: scripted` plays the model-driven episode
   with the scenario's `scripted/moves.yaml` in place of a model, so it exercises the real tools, services and
-  event builder. Its attack moves are not written yet, so the deterministic attack run lands no side task.
+  event builder. Its attack moves complete no covert milestone yet, so the deterministic attack run lands no
+  side task.
 - **The honest twin starts from fresh services.** Between the two plays of a stack run every sandbox, live
   service and agentgateway is recreated empty, so the twin sees nothing the attack left; an in-process run
   builds a fresh forge and board for each.
@@ -158,6 +159,10 @@ log has the details.
 
 ### Fixed
 
+- **A live attack is judged only on what its agents did.** The world no longer opens a coverage-cutting
+  control-plane PR under agent-main's name in every attack episode, which gave the PR review monitor a catch
+  the model never earned. The scripted policy opens that PR as one of agent-main's own attack moves, through
+  the forge like any other PR.
 - **The explorer no longer counts a refused send as a message between agents.** The Communication view lists it
   as a refused send, counted apart and never read, since the board delivered nothing.
 - **A timed-out agent-code container is gone before the timeout is reported.** The grader force-removes it

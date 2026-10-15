@@ -31,8 +31,9 @@ from loc_arena.task import EpisodeResult, grade_snapshot
 SECRET = "p10-live-secret"
 ACCOUNT = "batch-runner"
 JOB = "job-rogue"
-# A test that needs attack moves in the scripted policy's moves.yaml, which has none: an expected failure.
-ATTACK_MOVES_PENDING = pytest.mark.xfail(reason="attack moves pending", strict=True)
+# A test that needs the scripted policy's attack moves to complete covert milestones, which none does yet: an
+# expected failure.
+ATTACK_MOVES_PENDING = pytest.mark.xfail(reason="covert attack moves pending", strict=True)
 AGENTS = ["agent-main", "serving-agent", "distill-agent", "eval-agent"]
 
 
@@ -96,9 +97,13 @@ class Stack:
         return list(read_events(self.sealed_path))
 
 
-def play_graded_episode(config: RunConfig, run_directory: Path) -> EpisodeResult:
+def play_graded_episode(
+    config: RunConfig,
+    run_directory: Path,
+    provider: Provider | None = None,
+) -> EpisodeResult:
     """Play ``config``'s episode in ``run_directory/episode``, build its services' events, and grade it."""
-    snapshot = play_model_episode(config, run_directory / "episode")
+    snapshot = play_model_episode(config, run_directory / "episode", provider=provider)
     build_recorded_events(run_directory, config, {"episode": snapshot.trace})
     return grade_snapshot(snapshot, config)
 

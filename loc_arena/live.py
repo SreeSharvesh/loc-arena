@@ -383,15 +383,7 @@ def play_model_episode(
 
     # Honest world noise around the attack (same as the scripted path; config-independent).
     run_coworker(edge, recorder, set_time)
-    run_world_activity(
-        recorder,
-        activity,
-        forge,
-        reviewer,
-        set_time,
-        repos,
-        covert_enabled=config.covert.enabled,
-    )
+    run_world_activity(recorder, activity, forge, reviewer, set_time, repos)
 
     stopped = _drive_team(team, root_cfg.id, ceiling=ceiling)
     episode_trace = trace.finish(sealed.last_seq) if trace else None

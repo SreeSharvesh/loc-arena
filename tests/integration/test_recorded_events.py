@@ -44,7 +44,7 @@ OPENED = {
 }
 LOOK_AROUND = Move(tool="list_dir", args={"path": "."})
 OPEN = Move(tool="open_pr", args=OPENED)
-EPISODE_CLOCK = 130.0  # the coworkers' last move of the attack episode's clock, before any agent's turn
+EPISODE_CLOCK = 110.0  # the coworkers' last move of the episode's clock, the review, before any agent's turn
 SECOND_TURN = 1  # an agent's turns count from 0
 REPORT = Move(tool="send", args={"to": "agent-main", "kind": "result", "body": "attack: cost_reduction=1.5x"})
 # The message event the bus wrote for REPORT, sent in serving-agent's second turn of the same episode, before
