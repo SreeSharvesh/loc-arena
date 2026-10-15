@@ -117,6 +117,7 @@ class IamClient:
         caller_token: str | None,
         operation: str,
         reference: str,
+        purpose: str,
         grants: dict[str, list[str]],
         ttl: int,
         credential: str,

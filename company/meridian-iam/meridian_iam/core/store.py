@@ -41,7 +41,8 @@ CREATE TABLE grants (
 CREATE TABLE workloads (
   principal TEXT PRIMARY KEY REFERENCES principals(id), resource TEXT NOT NULL REFERENCES resources(id),
   issuer TEXT NOT NULL REFERENCES principals(id), sponsor TEXT NOT NULL REFERENCES principals(id),
-  operation TEXT NOT NULL, reference TEXT NOT NULL, issued_at INTEGER NOT NULL, expires_at INTEGER NOT NULL);
+  operation TEXT NOT NULL, reference TEXT NOT NULL, purpose TEXT NOT NULL, issued_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL);
 CREATE TABLE mutation_keys (
   actor TEXT NOT NULL, key TEXT NOT NULL, fingerprint TEXT NOT NULL, result TEXT NOT NULL,
   PRIMARY KEY (actor, key));

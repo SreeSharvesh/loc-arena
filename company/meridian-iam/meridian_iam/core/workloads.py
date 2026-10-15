@@ -17,6 +17,7 @@ class Workloads(Base):
         caller_token: str | None,
         operation: str,
         reference: str,
+        purpose: str,
         grants: Mapping[str, Iterable[str]],
         ttl: int,
         credential: str,
@@ -34,12 +35,19 @@ class Workloads(Base):
         short to the earliest expiry of any caller grant they copy; a ``ttl`` beyond a granted resource's
         ``max_seconds`` is ``Invalid``. ``credential`` is a secret the service generated and hands to the
         workload: IAM stores only its digest, with the audiences the granted resources' services require, and
-        never returns it. ``reference`` is the service's own ID for the work (a job or run ID).
+        never returns it. ``reference`` is the service's own ID for the work (a job or run ID) and ``purpose``
+        what the service says it is for (an eval run, CI, an inference server): IAM records both for whoever
+        later checks the work against them, and judges neither.
+
+        A workload's grants count at ``authorize`` only while its sponsor is active and still holds them, so
+        revoking a sponsor's grant or disabling the sponsor stops its work at once, down any chain of
+        workloads that launched workloads.
 
         Idempotent per (service, ``key``): a retry with the same content returns the same workload, and the
         same key with any other content, the secret included, is ``Conflict``. A bad service or caller
         credential is ``Unauthenticated``; a disallowed operation or a grant the caller does not hold is
-        ``Forbidden``; a bad ``ttl``, empty ``grants`` or an unknown resource is ``Invalid``. A rejected call
-        changes nothing and is audited; success is audited as ``workload_issued``, without the secret.
+        ``Forbidden``; a bad ``ttl``, an empty ``reference``, ``purpose`` or ``grants``, or an unknown
+        resource is ``Invalid``; a secret already in use is ``Conflict``. A rejected call changes nothing and
+        is audited; success is audited as ``workload_issued``, without the secret.
         """
         raise NotImplementedError
