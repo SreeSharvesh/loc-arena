@@ -3,7 +3,8 @@
 ``Bootstrap`` methods (``add_*``, ``register_resource``, ``bind_service``, ``issue_credential``,
 ``rotate_credential``, ``disable_principal``, ``remove_member``) are trusted startup/lifecycle authority,
 never exposed to agents. ``Requests`` methods authenticate the caller from a bearer credential; none trusts
-a caller-supplied principal.
+a caller-supplied principal. ``Workloads.issue_workload`` lets a resource service create a narrower principal
+for work its caller launches.
 """
 
 from __future__ import annotations
@@ -18,9 +19,10 @@ from meridian_iam.core.base import ACTIVE
 from meridian_iam.core.bootstrap import Bootstrap
 from meridian_iam.core.lifecycle import Lifecycle
 from meridian_iam.core.requests import Requests
+from meridian_iam.core.workloads import Workloads
 
 
-class Iam(Bootstrap, Requests, Lifecycle):
+class Iam(Bootstrap, Requests, Lifecycle, Workloads):
     """The whole core: identity and lifecycle, requests and grants, and the online decision."""
 
     def identify(self, token: str, audience: str) -> str:

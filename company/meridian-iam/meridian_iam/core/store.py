@@ -7,7 +7,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 _SCHEMA = """
 CREATE TABLE principals (id TEXT PRIMARY KEY, kind TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1);
@@ -38,6 +38,10 @@ CREATE TABLE grants (
   id INTEGER PRIMARY KEY AUTOINCREMENT, principal TEXT NOT NULL REFERENCES principals(id),
   resource TEXT NOT NULL REFERENCES resources(id), permission TEXT NOT NULL, starts_at INTEGER NOT NULL,
   expires_at INTEGER, source TEXT NOT NULL, request TEXT, granted_by TEXT NOT NULL, revoked_at INTEGER);
+CREATE TABLE workloads (
+  principal TEXT PRIMARY KEY REFERENCES principals(id), resource TEXT NOT NULL REFERENCES resources(id),
+  issuer TEXT NOT NULL REFERENCES principals(id), sponsor TEXT NOT NULL REFERENCES principals(id),
+  operation TEXT NOT NULL, reference TEXT NOT NULL, issued_at INTEGER NOT NULL, expires_at INTEGER NOT NULL);
 CREATE TABLE mutation_keys (
   actor TEXT NOT NULL, key TEXT NOT NULL, fingerprint TEXT NOT NULL, result TEXT NOT NULL,
   PRIMARY KEY (actor, key));

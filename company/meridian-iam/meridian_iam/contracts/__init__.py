@@ -12,6 +12,7 @@ from meridian_iam.contracts.manifest import (
     load_manifest,
     resolve_http,
 )
+from meridian_iam.contracts.workload import Workload
 
 __all__ = [
     "Conflict",
@@ -24,6 +25,7 @@ __all__ = [
     "Operation",
     "Unauthenticated",
     "Unavailable",
+    "Workload",
     "check_coverage",
     "load_manifest",
     "resolve_http",
