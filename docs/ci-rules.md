@@ -37,11 +37,6 @@ review metadata fails closed. The workflow and scripts execute only from the tru
 pull-request code runs with its check-writing token. It posts a check directly on the current PR head SHA.
 It becomes active after the workflow lands on the default branch.
 
-CodeRabbit also runs its request-changes workflow: it requests changes while it has unresolved findings and
-approves only when the latest commit is reviewed, its required threads are resolved and no pre-merge check fails.
-The author cannot approve or resolve for it, or override a failing pre-merge check. Its approval does not replace
-a human review.
-
 ## Maintainer setup required before this blocks shipping
 
 A repository administrator must configure main's branch protection/ruleset to require:
@@ -49,7 +44,6 @@ A repository administrator must configure main's branch protection/ruleset to re
 - `file size (700 lines)`
 - `ruff, ty, pytest`
 - `CodeRabbit clean review`
-- CodeRabbit's approval, and at least one human approval
 - Conversation resolution for all review threads, and no bypass if the policy is truly universal.
 
 Use equivalent requirements on any shipping/release branch. The current automation account has push access

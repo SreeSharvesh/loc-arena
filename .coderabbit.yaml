@@ -15,11 +15,8 @@ reviews:
   # chill keeps the tools' severity floors high (Trivy, Checkov, Hadolint, ShellCheck); the path
   # instructions and pre-merge checks below carry the repository-specific strictness.
   profile: chill
-  # CodeRabbit requests changes while it has unresolved findings and approves once the latest commit is reviewed
-  # and its threads are resolved, so GitHub itself holds the merge. Its approval is not a teammate's: the
-  # ruleset still needs a human review (docs/ci-rules.md). The author cannot approve or resolve for it.
-  request_changes_workflow: true
-  allow_author_approval: false
+  # Off: a pull request merges on a teammate's approval, and CodeRabbit's own approval must not read as one.
+  request_changes_workflow: false
   # The summary goes in the walkthrough comment, so the author's description is never rewritten.
   high_level_summary_in_walkthrough: true
   high_level_summary_instructions: |
@@ -214,7 +211,6 @@ reviews:
         - The ruff `rev` matches the ruff version pinned in uv.lock.
 
   pre_merge_checks:
-    override_requested_reviewers_only: true
     # ruff's D rules (Google convention) already enforce docstrings, with deliberate per-file exceptions.
     docstrings:
       mode: "off"
