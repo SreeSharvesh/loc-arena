@@ -272,12 +272,12 @@ reviews:
           (anything under scenarios/*/services/, a live service module such as loc_arena/*_service.py, or a
           service in company/): a store of agent identities or tokens, a comparison of a bearer token against
           agent secrets, a table of rights or grants, a grant or revoke endpoint that keeps local state, or a
-          queue of access requests. Also fail if a company/meridian-* repo imports meridian_iam; the engine
-          supplies it through a protocol (docs/iam-service/agent.md). Pass only if the diff adds none of
-          those local mechanisms: it goes through the IAM integration, or it only fixes a bug in the existing
-          local path without adding behaviour, or the pull request says why that service cannot use IAM. That
-          explanation never excuses a meridian_iam import in a company/meridian-* repo, and going through IAM
-          for one operation does not excuse a local mechanism added for another.
+          queue of access requests. Judge each mechanism on its own: going through IAM for one operation does
+          not excuse a local mechanism added for another. The one exception is a pull request that says why
+          that service cannot use IAM. Pass if the diff adds none of these: it goes through the IAM
+          integration (docs/iam-service/agent.md), or only fixes a bug in the existing local path without
+          adding behaviour. A meridian_iam import in a company repo is not judged here; an ast-grep rule
+          catches it.
       - name: "No silenced checks"
         mode: warning
         instructions: >-
@@ -341,7 +341,7 @@ reviews:
   tools:
     ast-grep:
       # The repository's own rules: provider clients and secret reads outside the gateway, blanket
-      # suppressions, swallowed broad exceptions.
+      # suppressions, swallowed broad exceptions, meridian_iam imported by a company repo.
       rule_dirs:
         - ".coderabbit/ast-grep/rules"
     # Prose nits on the docs, and PII matching that misreads hashes and fixture data, cost more than they

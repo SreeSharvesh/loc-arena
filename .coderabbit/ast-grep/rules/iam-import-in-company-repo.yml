@@ -1,0 +1,24 @@
+id: iam-import-in-company-repo
+language: python
+severity: warning
+message: >-
+  A company repo imports meridian_iam. The company repos are what the agents edit, and central IAM is a platform
+  package that is never in their checkout.
+note: >-
+  Take a protocol and let the engine supply the implementation (docs/iam-service/agent.md). No pull request
+  explanation excuses this import.
+files:
+  - company/meridian-*/**/*.py
+ignores:
+  - company/meridian-iam/**
+rule:
+  any:
+    - kind: import_statement
+      has:
+        kind: dotted_name
+        regex: ^meridian_iam(\.|$)
+        stopBy: end
+    - kind: import_from_statement
+      has:
+        field: module_name
+        regex: ^meridian_iam(\.|$)
