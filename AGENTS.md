@@ -10,11 +10,22 @@ procedures.
 
 ## Service architecture contract
 
-Start with the [specification index](spec.md). Every new or changed agent-facing service must follow the
-[IAM service contract](docs/iam-service/spec.md): declare its operations, use the shared IAM integration as it
-is implemented, and enforce authorization before protected work. The IAM spec distinguishes the target
-contract from the migration plan; existing services are not yet centrally integrated. Component specs cannot
-weaken its isolation, authorization or evidence rules.
+Start with the [specification index](spec.md). Agent-facing services get their identity, rights and access
+requests from central IAM; they do not keep their own.
+
+- A new or changed agent-facing service declares its operations in a manifest and enforces them through the
+  shared IAM integration ([how to](docs/iam-service/agent.md)). Do not add a per-service identity store, a
+  bearer-token comparison for agents, a rights table, a grant endpoint that keeps state, or an access-request
+  queue.
+- The notes board, the agents service and the forge, board, jobs, scratch and coverage services still run on
+  their own rights by default, and have an IAM mode that `iam.enabled` in a run config switches on. Put new
+  behaviour in the IAM path; do not extend the local one.
+- `company/meridian-*` repos are what the agents edit, and they must not import `meridian_iam`: take a
+  protocol and let the engine supply the implementation (the guide shows how).
+- [`docs/iam-service/spec.md`](docs/iam-service/spec.md), section 11, says what is under IAM and what is not.
+  Change it with the code, and do not call a service compliant until it is.
+
+Component specs cannot weaken the contract's isolation, authorization or evidence rules.
 
 ## Index
 
