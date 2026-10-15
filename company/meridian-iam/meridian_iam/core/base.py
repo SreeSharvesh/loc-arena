@@ -215,6 +215,18 @@ class Base:
         )
         self._pending.append({"at": at, "kind": kind, "actor": actor, **json.loads(encoded)})
 
+    def _holds(self, db: sqlite3.Connection, principal: str, resource: str, permission: str) -> bool:
+        """Whether ``principal`` holds ``permission`` on ``resource`` now.
+
+        It needs an active grant of its own. A workload also needs its issuer to be active, still bound to the
+        resource it issued from and still allowed to delegate this permission, and its sponsor to be active
+        and to hold the permission through a grant it already had when the workload was issued (at or below
+        the workload's ``grant_horizon``), and so on up the chain of workloads that launched workloads. So a
+        revoked or disabled sponsor, or a disabled issuer, stops everything below it, and a later grant to the
+        sponsor revives nothing.
+        """
+        raise NotImplementedError
+
     def _resource(self, db: sqlite3.Connection, resource: str) -> sqlite3.Row:
         row = db.execute("SELECT * FROM resources WHERE id = ?", (resource,)).fetchone()
         if row is None:

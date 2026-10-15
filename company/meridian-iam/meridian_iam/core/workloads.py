@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import json
+import sqlite3
 from collections.abc import Iterable, Mapping
+from typing import Any
 
-from meridian_iam.contracts import Workload
-from meridian_iam.core.base import Base
+from meridian_iam.contracts import Conflict, Forbidden, Invalid, Unauthenticated, Workload
+from meridian_iam.core.base import ACTIVE, Base, digest
+from meridian_iam.core.lifecycle import REPLACEMENT
 
 
 class Workloads(Base):
@@ -58,4 +62,116 @@ class Workloads(Base):
         ``Invalid``; a secret already in use is ``Conflict``. A rejected call changes nothing and is audited;
         success is audited as ``workload_issued``, without the secrets.
         """
-        raise NotImplementedError
+        wanted = {resource: sorted(set(permissions)) for resource, permissions in grants.items()}
+        payload = {
+            "operation": operation,
+            "reference": reference,
+            "purpose": purpose,
+            "grants": wanted,
+            "ttl": ttl,
+        }
+
+        def run(db: sqlite3.Connection, issuer: str) -> dict[str, Any]:
+            binding = db.execute("SELECT * FROM service_bindings WHERE principal = ?", (issuer,)).fetchone()
+            if binding is None:
+                raise Unauthenticated("not a service identity")
+            sponsor = self._auth(db, caller_token, binding["audience"])
+            if not all(
+                isinstance(text, str) and 0 < len(text.strip()) <= 200 for text in (reference, purpose)
+            ):
+                raise Invalid("a reference and a purpose of 1-200 characters are required")
+            if not wanted or not all(wanted.values()):
+                raise Invalid("a workload needs at least one grant")
+            if not isinstance(ttl, int) or isinstance(ttl, bool) or ttl <= 0:
+                raise Invalid("a positive ttl is required")
+            launch = json.loads(self._resource(db, binding["resource"])["operations"]).get(operation)
+            if not (launch and launch.get("launch")) or not self._holds(
+                db,
+                sponsor,
+                binding["resource"],
+                launch["permission"],
+            ):
+                raise Forbidden("not allowed to launch work through this service")
+            now = self._now()
+            ends: dict[tuple[str, str], int] = {}
+            for resource, permissions in wanted.items():
+                if ttl > self._resource(db, resource)["max_seconds"]:
+                    raise Invalid("deadline outside the allowed window")
+                for permission in permissions:
+                    delegable = db.execute(
+                        "SELECT 1 FROM delegations WHERE issuer = ? AND resource = ? AND permission = ?",
+                        (binding["resource"], resource, permission),
+                    ).fetchone()
+                    if delegable is None or not self._holds(db, sponsor, resource, permission):
+                        raise Forbidden(
+                            "a workload gets only what its service delegates and its sponsor holds",
+                        )
+                    covering = [
+                        row["expires_at"]
+                        for row in db.execute(
+                            f"SELECT expires_at FROM grants WHERE principal = :p AND resource = :r "
+                            f"AND permission = :perm AND {ACTIVE}",
+                            {"p": sponsor, "r": resource, "perm": permission, "now": now},
+                        )
+                    ]
+                    ends[resource, permission] = (
+                        now + ttl if None in covering else min(now + ttl, max(covering))
+                    )
+            marks = ",".join("?" * len(wanted))
+            needed = {
+                row["audience"]
+                for row in db.execute(
+                    f"SELECT audience FROM service_bindings WHERE resource IN ({marks})",
+                    tuple(wanted),
+                )
+            }
+            if set(credentials) != needed or not all(
+                isinstance(secret, str) and REPLACEMENT.fullmatch(secret) for secret in credentials.values()
+            ):
+                raise Invalid("one secret of 32-128 URL-safe characters per audience the grants need")
+            digests = [digest(secret) for secret in credentials.values()]
+            marks = ",".join("?" * len(digests))
+            if (
+                len(set(digests)) < len(digests)
+                or db.execute(
+                    f"SELECT 1 FROM credentials WHERE digest IN ({marks})",
+                    digests,
+                ).fetchone()
+            ):
+                raise Conflict("that secret is already in use")
+            principal = f"job-{self._id()}"
+            horizon = db.execute("SELECT COALESCE(MAX(id), 0) FROM grants").fetchone()[0]
+            db.execute("INSERT INTO principals(id, kind) VALUES (?, 'job')", (principal,))
+            db.execute(
+                "INSERT INTO workloads VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    principal,
+                    binding["resource"],
+                    issuer,
+                    sponsor,
+                    operation,
+                    reference,
+                    purpose,
+                    now,
+                    now + ttl,
+                    horizon,
+                ),
+            )
+            for (resource, permission), end in ends.items():
+                self._insert_grants(db, principal, resource, [permission], end, "workload", None, sponsor)
+            for audience, secret in sorted(credentials.items()):
+                self._insert_credential(db, principal, [audience], ttl, 1, audience, token=secret)
+            return {
+                "principal": principal,
+                "resource": binding["resource"],
+                "sponsor": sponsor,
+                "reference": reference,
+                "purpose": purpose,
+                "grants": wanted,
+                "expires_at": now + ttl,
+            }
+
+        bearer = {"caller": caller_token or "", **{f"credential:{a}": s for a, s in credentials.items()}}
+        return Workload(
+            **self._mutate(service_token, "workload_issued", key, payload, run, secret_inputs=bearer),
+        )
