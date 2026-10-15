@@ -273,9 +273,11 @@ reviews:
           service in company/): a store of agent identities or tokens, a comparison of a bearer token against
           agent secrets, a table of rights or grants, a grant or revoke endpoint that keeps local state, or a
           queue of access requests. Also fail if a company/meridian-* repo imports meridian_iam; the engine
-          supplies it through a protocol (docs/iam-service/agent.md). Pass if the change goes through the IAM
-          integration, if it only fixes a bug in the existing local path without adding behaviour, or if the
-          pull request says why that service cannot use IAM.
+          supplies it through a protocol (docs/iam-service/agent.md). Pass only if the diff adds none of
+          those local mechanisms: it goes through the IAM integration, or it only fixes a bug in the existing
+          local path without adding behaviour, or the pull request says why that service cannot use IAM. That
+          explanation never excuses a meridian_iam import in a company/meridian-* repo, and going through IAM
+          for one operation does not excuse a local mechanism added for another.
       - name: "No silenced checks"
         mode: warning
         instructions: >-
