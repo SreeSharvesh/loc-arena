@@ -225,16 +225,18 @@ class Base:
         revoked or disabled sponsor, or a disabled issuer, stops everything below it, and a later grant to the
         sponsor revives nothing.
         """
-        now, before = self._now(), None
+        now, horizon = self._now(), None
         while True:
             held = db.execute(
-                "SELECT 1 FROM grants JOIN principals ON principals.id = grants.principal "
+                "SELECT kind FROM grants JOIN principals ON principals.id = grants.principal "
                 "WHERE grants.principal = :p AND resource = :r AND permission = :perm AND active = 1 "
-                f"AND {ACTIVE} AND (:before IS NULL OR starts_at <= :before)",
-                {"p": principal, "r": resource, "perm": permission, "now": now, "before": before},
+                f"AND {ACTIVE} AND (:horizon IS NULL OR grants.id <= :horizon)",
+                {"p": principal, "r": resource, "perm": permission, "now": now, "horizon": horizon},
             ).fetchone()
             if held is None:
                 return False
+            if held["kind"] != "job":  # only a job principal can be a workload
+                return True
             workload = db.execute("SELECT * FROM workloads WHERE principal = ?", (principal,)).fetchone()
             if workload is None:
                 return True
@@ -253,7 +255,7 @@ class Base:
             ).fetchone()
             if issuer is None:
                 return False
-            principal, before = workload["sponsor"], workload["issued_at"]
+            principal, horizon = workload["sponsor"], workload["grant_horizon"]
 
     def _binding(self, db: sqlite3.Connection, service: str) -> sqlite3.Row:
         """The resource and audience ``service`` is bound to; ``Unauthenticated`` if it is no service."""

@@ -107,33 +107,45 @@ def test_workload_is_allowed_only_what_it_was_issued(
     ("change", "error"),
     [
         (
-            lambda jobs: {"grants": {"notes": ["write"]}},
+            lambda jobs, tokens: {"grants": {"notes": ["write"]}},
             Forbidden,
         ),  # alice holds it; jobs may not delegate it
-        (lambda jobs: {"grants": {"notes": ["manage"]}}, Forbidden),  # jobs may delegate it; alice lacks it
-        (lambda jobs: {"caller_token": jobs["bob"]}, Forbidden),  # bob may not submit jobs
         (
-            lambda jobs: {"operation": "list_jobs"},
+            lambda jobs, tokens: {"grants": {"notes": ["manage"]}},
+            Forbidden,
+        ),  # jobs may delegate it; alice lacks it
+        (lambda jobs, tokens: {"caller_token": jobs["bob"]}, Forbidden),  # bob may not submit jobs
+        (
+            lambda jobs, tokens: {"operation": "list_jobs"},
             Forbidden,
         ),  # alice may list jobs, but listing does not launch
-        (lambda jobs: {"service_token": jobs["alice"]}, Unauthenticated),  # not a service identity
-        (lambda jobs: {"ttl": 3601}, Invalid),  # beyond notes' max_seconds
-        (lambda jobs: {"credentials": {}}, Invalid),  # no secret for notes
-        (lambda jobs: {"credentials": {"notes": NOTES_SECRET, "jobs": JOBS_SECRET}}, Invalid),  # one too many
+        (
+            lambda jobs, tokens: {"service_token": tokens["alice"]},
+            Unauthenticated,
+        ),  # manages IAM; not a service
+        (lambda jobs, tokens: {"ttl": 3601}, Invalid),  # beyond notes' max_seconds
+        (lambda jobs, tokens: {"credentials": {}}, Invalid),  # no secret for notes
+        (
+            lambda jobs, tokens: {"credentials": {"notes": NOTES_SECRET, "jobs": JOBS_SECRET}},
+            Invalid,
+        ),  # one too many
     ],
 )
 def test_refused_issuance_changes_nothing_and_is_audited(
     iam: Iam,
     jobs: dict[str, str],
-    change: Callable[[dict[str, str]], dict[str, Any]],
+    tokens: dict[str, str],
+    change: Callable[[dict[str, str], dict[str, str]], dict[str, Any]],
     error: type[IamError],
 ) -> None:
     with pytest.raises(error):
-        issue(iam, jobs, **change(jobs))
+        issue(iam, jobs, **change(jobs, tokens))
 
     kinds = [event["kind"] for event in iam.audit_log()]
     assert kinds[-1] == "rejected"
     assert "workload_issued" not in kinds
+    with pytest.raises(Unauthenticated):  # no credential was registered
+        iam.identify(NOTES_SECRET, "notes")
 
 
 def test_retrying_with_the_same_key_returns_the_same_workload(iam: Iam, jobs: dict[str, str]) -> None:
@@ -147,19 +159,20 @@ def test_retrying_with_the_same_key_returns_the_same_workload(iam: Iam, jobs: di
 @pytest.mark.parametrize(
     "change",
     [
-        {"credentials": {"notes": "m" * 40}},  # same key, another secret
-        {"key": "k2"},  # another key, a secret already in use
+        lambda jobs: {"credentials": {"notes": "m" * 40}},  # same key, another secret
+        lambda jobs: {"caller_token": jobs["bob"]},  # same key and secrets, another caller
+        lambda jobs: {"key": "k2"},  # another key, a secret already in use
     ],
 )
 def test_reusing_a_key_or_a_secret_for_other_content_is_a_conflict(
     iam: Iam,
     jobs: dict[str, str],
-    change: dict[str, Any],
+    change: Callable[[dict[str, str]], dict[str, Any]],
 ) -> None:
     issue(iam, jobs)
 
     with pytest.raises(Conflict):
-        issue(iam, jobs, **change)
+        issue(iam, jobs, **change(jobs))
 
 
 def test_each_secret_works_only_at_its_own_service(iam: Iam, jobs: dict[str, str]) -> None:
@@ -206,3 +219,26 @@ def test_issuance_is_audited_without_the_secrets(iam: Iam, jobs: dict[str, str])
 
     assert (log[-1]["kind"], log[-1]["result"]["principal"]) == ("workload_issued", workload.principal)
     assert NOTES_SECRET not in json.dumps(log)
+
+
+def test_reference_and_purpose_are_kept_as_checked_trimmed(iam: Iam, jobs: dict[str, str]) -> None:
+    workload = issue(iam, jobs, reference="  job-1 ", purpose=" eval run  ")
+
+    assert (workload.reference, workload.purpose) == ("job-1", "eval run")
+
+
+def test_a_workload_never_gets_an_audience_that_manages_iam(iam: Iam, jobs: dict[str, str]) -> None:
+    vault = {
+        "schema_version": 1,
+        "resource": "vault",
+        "operations": {"open": {"permission": "open"}},
+        "tools": {"open": "open"},
+    }
+    iam.add_principal("vault-svc", "service")
+    iam.register_resource(load_manifest(vault), owner_team="research", approver_role="lead", max_seconds=3600)
+    iam.bind_service("vault-svc", "vault", audience="iam")  # a misconfigured binding
+    iam.allow_delegation("jobs", {"vault": ["open"]})
+    iam.add_baseline_grant("alice", "vault", ["open"])
+
+    with pytest.raises(Invalid):
+        issue(iam, jobs, grants={"vault": ["open"]}, credentials={"iam": "v" * 40})
