@@ -44,13 +44,14 @@ class Workloads(Base):
 
         While it lives: a workload's grant counts at ``authorize`` only while its issuer is active, still
         bound to the same resource and still allowed to delegate that permission, and its sponsor is active
-        and holds the permission through a grant that began no later than the workload was issued, and so on
-        up any chain of workloads that launched workloads. Revoking the sponsor's grant or disabling the
+        and holds the permission through a grant it already had when the workload was issued, and so on up any
+        chain of workloads that launched workloads. Revoking the sponsor's grant or disabling the
         sponsor or the issuer stops the work at once, and granting the sponsor the permission again later
         does not revive it.
 
-        Idempotent per (service, ``key``): a retry with the same content returns the same workload, and the
-        same key with any other content, secrets included, is ``Conflict``. A bad service or caller credential
+        Idempotent per (service, ``key``): a retry with the same content, the caller's credential and the
+        secrets included, returns the same workload, and the same key with any other content is ``Conflict``,
+        so a reused key can never hand one caller's workload to another. A bad service or caller credential
         is ``Unauthenticated``; a launch the caller may not make, or a grant the service may not delegate or
         the caller does not hold, is ``Forbidden``; a bad ``ttl``, an empty ``reference``, ``purpose`` or
         ``grants``, an unknown resource, or ``credentials`` that do not cover exactly the audiences needed is

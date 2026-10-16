@@ -7,9 +7,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-SCHEMA_VERSION = 2
-
-_SCHEMA = """
+_V1 = """
 CREATE TABLE principals (id TEXT PRIMARY KEY, kind TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1);
 CREATE TABLE memberships (
   principal TEXT NOT NULL REFERENCES principals(id), team TEXT NOT NULL, role TEXT NOT NULL,
@@ -38,14 +36,6 @@ CREATE TABLE grants (
   id INTEGER PRIMARY KEY AUTOINCREMENT, principal TEXT NOT NULL REFERENCES principals(id),
   resource TEXT NOT NULL REFERENCES resources(id), permission TEXT NOT NULL, starts_at INTEGER NOT NULL,
   expires_at INTEGER, source TEXT NOT NULL, request TEXT, granted_by TEXT NOT NULL, revoked_at INTEGER);
-CREATE TABLE delegations (
-  issuer TEXT NOT NULL REFERENCES resources(id), resource TEXT NOT NULL REFERENCES resources(id),
-  permission TEXT NOT NULL, PRIMARY KEY (issuer, resource, permission));
-CREATE TABLE workloads (
-  principal TEXT PRIMARY KEY REFERENCES principals(id), resource TEXT NOT NULL REFERENCES resources(id),
-  issuer TEXT NOT NULL REFERENCES principals(id), sponsor TEXT NOT NULL REFERENCES principals(id),
-  operation TEXT NOT NULL, reference TEXT NOT NULL, purpose TEXT NOT NULL, issued_at INTEGER NOT NULL,
-  expires_at INTEGER NOT NULL);
 CREATE TABLE mutation_keys (
   actor TEXT NOT NULL, key TEXT NOT NULL, fingerprint TEXT NOT NULL, result TEXT NOT NULL,
   PRIMARY KEY (actor, key));
@@ -53,23 +43,38 @@ CREATE TABLE audit (
   id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, kind TEXT NOT NULL, actor TEXT,
   detail TEXT NOT NULL);
 """
+# Version 2: what a service may delegate, and the workloads it issued. ``grant_horizon`` is the newest grant
+# ID when the workload was issued: a sponsor grant above it came later and cannot keep the workload alive.
+_V2 = """
+CREATE TABLE delegations (
+  issuer TEXT NOT NULL REFERENCES resources(id), resource TEXT NOT NULL REFERENCES resources(id),
+  permission TEXT NOT NULL, PRIMARY KEY (issuer, resource, permission));
+CREATE TABLE workloads (
+  principal TEXT PRIMARY KEY REFERENCES principals(id), resource TEXT NOT NULL REFERENCES resources(id),
+  issuer TEXT NOT NULL REFERENCES principals(id), sponsor TEXT NOT NULL REFERENCES principals(id),
+  operation TEXT NOT NULL, reference TEXT NOT NULL, purpose TEXT NOT NULL, issued_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL, grant_horizon INTEGER NOT NULL);
+"""
+_MIGRATIONS = (_V1, _V2)
+SCHEMA_VERSION = len(_MIGRATIONS)
 
 
 def connect(path: Path | str, timeout: float = 5.0) -> sqlite3.Connection:
-    """Open (and on first use create) the store; foreign keys on, explicit transactions only."""
+    """Open the store, creating or upgrading it in place; foreign keys on, explicit transactions only."""
     conn = sqlite3.connect(path, isolation_level=None, check_same_thread=False, timeout=timeout)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     version = conn.execute("PRAGMA user_version").fetchone()[0]
-    if version == 0:
+    if version > SCHEMA_VERSION:
+        raise RuntimeError(f"unsupported IAM store version {version}")
+    if version < SCHEMA_VERSION:  # a new store, or one a restarted container kept from an older release
         conn.execute("BEGIN IMMEDIATE")
-        for statement in _SCHEMA.split(";"):
-            if statement.strip():
-                conn.execute(statement)
+        for script in _MIGRATIONS[version:]:
+            for statement in script.split(";"):
+                if statement.strip():
+                    conn.execute(statement)
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         conn.execute("COMMIT")
-    elif version != SCHEMA_VERSION:
-        raise RuntimeError(f"unsupported IAM store version {version}")
     return conn
 
 
