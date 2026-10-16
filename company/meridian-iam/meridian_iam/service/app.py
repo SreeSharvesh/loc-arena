@@ -6,6 +6,7 @@ import dataclasses
 from typing import Annotated, Any
 
 from fastapi import FastAPI, Header, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, ConfigDict
 
@@ -104,6 +105,14 @@ def create_app(iam: Iam) -> FastAPI:
     async def iam_error(_: Request, exc: IamError) -> JSONResponse:
         return JSONResponse({"error": exc.code, "message": str(exc)}, status_code=exc.status)
 
+    @app.exception_handler(RequestValidationError)
+    async def malformed(_: Request, __: RequestValidationError) -> JSONResponse:
+        # An Invalid like any other, never echoing the body: it can carry secrets.
+        return JSONResponse(
+            {"error": Invalid.code, "message": "malformed request"},
+            status_code=Invalid.status,
+        )
+
     @app.get("/health", response_class=PlainTextResponse)
     async def health() -> str:
         return "ok"
@@ -126,7 +135,18 @@ def create_app(iam: Iam) -> FastAPI:
         authorization: Auth = None,
         caller: Annotated[str | None, Header(alias=CALLER_HEADER)] = None,
     ) -> dict[str, Any]:
-        raise NotImplementedError
+        workload = iam.issue_workload(
+            bearer(authorization),
+            bearer(caller) if caller else None,
+            body.operation,
+            body.reference,
+            body.purpose,
+            body.grants,
+            body.ttl,
+            body.credentials,
+            key,
+        )
+        return dataclasses.asdict(workload)
 
     @app.post("/credentials/renew")
     async def renew(body: RenewBody, authorization: Auth = None) -> dict[str, Any]:

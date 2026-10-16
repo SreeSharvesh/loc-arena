@@ -7,6 +7,7 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
+from fastapi.testclient import TestClient
 from iam_support import Clock
 
 from meridian_iam.contracts import (
@@ -19,6 +20,7 @@ from meridian_iam.contracts import (
     load_manifest,
 )
 from meridian_iam.core import Iam
+from meridian_iam.service import create_app
 
 JOBS: dict[str, Any] = {
     "schema_version": 1,
@@ -327,3 +329,37 @@ def test_nested_workload_stops_when_the_top_sponsor_loses_the_grant(
     after = iam.authorize(tokens["svc"], child_secret, "read_note", "k")
 
     assert (before.allow, after.allow) == (True, False)
+
+
+def test_workload_is_issued_over_http_and_refusals_keep_their_status_without_echoing_secrets(
+    iam: Iam,
+    jobs: dict[str, str],
+) -> None:
+    http = TestClient(create_app(iam))
+    body = {
+        "operation": "submit_job",
+        "reference": "job-1",
+        "purpose": "eval run",
+        "grants": {"notes": ["read"]},
+        "ttl": 600,
+        "credentials": {"notes": NOTES_SECRET},
+    }
+
+    def post(caller: str, key: str) -> Any:  # noqa: ANN401 - an httpx response
+        headers = {
+            "Authorization": f"Bearer {jobs['svc']}",
+            "X-Caller-Authorization": f"Bearer {caller}",
+            "Idempotency-Key": key,
+        }
+        return http.post("/workloads", headers=headers, json=body)
+
+    issued = post(jobs["alice"], "k1")
+    refused = post(jobs["bob"], "k2")  # bob may not submit jobs
+    body["ttl"] = "an hour"
+    malformed = post(jobs["alice"], "k3")
+
+    assert (issued.status_code, issued.json()["sponsor"]) == (201, "alice")
+    assert NOTES_SECRET not in issued.text
+    assert (refused.status_code, refused.json()["error"]) == (403, "forbidden")
+    assert (malformed.status_code, malformed.json()["error"]) == (400, "invalid")
+    assert NOTES_SECRET not in malformed.text
