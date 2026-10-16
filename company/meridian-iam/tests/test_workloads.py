@@ -242,3 +242,88 @@ def test_a_workload_never_gets_an_audience_that_manages_iam(iam: Iam, jobs: dict
 
     with pytest.raises(Invalid):
         issue(iam, jobs, grants={"vault": ["open"]}, credentials={"iam": "v" * 40})
+
+
+def test_workload_is_denied_once_its_sponsors_grant_is_revoked(
+    iam: Iam,
+    jobs: dict[str, str],
+    tokens: dict[str, str],
+) -> None:
+    issue(iam, jobs)
+
+    iam.revoke(tokens["lead"], "alice", "notes", ["read"], "revoke-read")
+    read = iam.authorize(tokens["svc"], NOTES_SECRET, "read_note", "k")
+
+    assert read.allow is False
+
+
+@pytest.mark.parametrize("disabled", ["alice", "jobs-svc"])  # the sponsor, the issuer
+def test_a_disabled_sponsor_or_issuer_stops_the_workload_authenticating(
+    iam: Iam,
+    jobs: dict[str, str],
+    tokens: dict[str, str],
+    disabled: str,
+) -> None:
+    issue(iam, jobs)
+
+    iam.disable_principal(disabled)
+
+    with pytest.raises(Unauthenticated):  # the service sees a bad credential, so nothing runs
+        iam.authorize(tokens["svc"], NOTES_SECRET, "read_note", "k")
+
+
+def test_grant_listing_omits_a_workload_its_sponsor_no_longer_supports(
+    iam: Iam,
+    jobs: dict[str, str],
+    tokens: dict[str, str],
+) -> None:
+    workload = issue(iam, jobs)
+    listed = iam.grants_for(tokens["lead"], "notes")
+
+    iam.revoke(tokens["lead"], "alice", "notes", ["read"], "revoke-read")
+    after = iam.grants_for(tokens["lead"], "notes")
+
+    assert (workload.principal in listed, workload.principal in after) == (True, False)
+
+
+def test_regranting_the_sponsor_does_not_revive_a_stopped_workload(
+    iam: Iam,
+    jobs: dict[str, str],
+    tokens: dict[str, str],
+    clock: Clock,
+) -> None:
+    issue(iam, jobs)
+    iam.revoke(tokens["lead"], "alice", "notes", ["read"], "revoke-read")
+
+    iam.grant(tokens["lead"], "alice", "notes", ["read"], clock.now + 100, "read-again")  # the same second
+    read = iam.authorize(tokens["svc"], NOTES_SECRET, "read_note", "k")
+
+    assert read.allow is False
+
+
+def test_nested_workload_stops_when_the_top_sponsor_loses_the_grant(
+    iam: Iam,
+    jobs: dict[str, str],
+    tokens: dict[str, str],
+) -> None:
+    issue(
+        iam,
+        jobs,
+        grants={"notes": ["read"], "jobs": ["submit"]},
+        credentials={"notes": NOTES_SECRET, "jobs": JOBS_SECRET},
+    )
+    child_secret = "c" * 40
+    issue(
+        iam,
+        jobs,
+        caller_token=JOBS_SECRET,
+        reference="job-2",
+        credentials={"notes": child_secret},
+        key="k2",
+    )
+    before = iam.authorize(tokens["svc"], child_secret, "read_note", "k")
+
+    iam.revoke(tokens["lead"], "alice", "notes", ["read"], "revoke-read")
+    after = iam.authorize(tokens["svc"], child_secret, "read_note", "k")
+
+    assert (before.allow, after.allow) == (True, False)
