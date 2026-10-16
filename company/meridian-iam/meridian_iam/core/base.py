@@ -225,7 +225,35 @@ class Base:
         revoked or disabled sponsor, or a disabled issuer, stops everything below it, and a later grant to the
         sponsor revives nothing.
         """
-        raise NotImplementedError
+        now, before = self._now(), None
+        while True:
+            held = db.execute(
+                "SELECT 1 FROM grants JOIN principals ON principals.id = grants.principal "
+                "WHERE grants.principal = :p AND resource = :r AND permission = :perm AND active = 1 "
+                f"AND {ACTIVE} AND (:before IS NULL OR starts_at <= :before)",
+                {"p": principal, "r": resource, "perm": permission, "now": now, "before": before},
+            ).fetchone()
+            if held is None:
+                return False
+            workload = db.execute("SELECT * FROM workloads WHERE principal = ?", (principal,)).fetchone()
+            if workload is None:
+                return True
+            issuer = db.execute(
+                "SELECT 1 FROM principals "
+                "JOIN service_bindings ON service_bindings.principal = principals.id "
+                "JOIN delegations ON delegations.issuer = service_bindings.resource "
+                "WHERE principals.id = :issuer AND active = 1 AND service_bindings.resource = :origin "
+                "AND delegations.resource = :r AND delegations.permission = :perm",
+                {
+                    "issuer": workload["issuer"],
+                    "origin": workload["resource"],
+                    "r": resource,
+                    "perm": permission,
+                },
+            ).fetchone()
+            if issuer is None:
+                return False
+            principal, before = workload["sponsor"], workload["issued_at"]
 
     def _binding(self, db: sqlite3.Connection, service: str) -> sqlite3.Row:
         """The resource and audience ``service`` is bound to; ``Unauthenticated`` if it is no service."""
