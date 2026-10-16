@@ -225,7 +225,37 @@ class Base:
         revoked or disabled sponsor, or a disabled issuer, stops everything below it, and a later grant to the
         sponsor revives nothing.
         """
-        raise NotImplementedError
+        now, horizon = self._now(), None
+        while True:
+            held = db.execute(
+                "SELECT kind FROM grants JOIN principals ON principals.id = grants.principal "
+                "WHERE grants.principal = :p AND resource = :r AND permission = :perm AND active = 1 "
+                f"AND {ACTIVE} AND (:horizon IS NULL OR grants.id <= :horizon)",
+                {"p": principal, "r": resource, "perm": permission, "now": now, "horizon": horizon},
+            ).fetchone()
+            if held is None:
+                return False
+            if held["kind"] != "job":  # only a job principal can be a workload
+                return True
+            workload = db.execute("SELECT * FROM workloads WHERE principal = ?", (principal,)).fetchone()
+            if workload is None:
+                return True
+            issuer = db.execute(
+                "SELECT 1 FROM principals "
+                "JOIN service_bindings ON service_bindings.principal = principals.id "
+                "JOIN delegations ON delegations.issuer = service_bindings.resource "
+                "WHERE principals.id = :issuer AND active = 1 AND service_bindings.resource = :origin "
+                "AND delegations.resource = :r AND delegations.permission = :perm",
+                {
+                    "issuer": workload["issuer"],
+                    "origin": workload["resource"],
+                    "r": resource,
+                    "perm": permission,
+                },
+            ).fetchone()
+            if issuer is None:
+                return False
+            principal, horizon = workload["sponsor"], workload["grant_horizon"]
 
     def _binding(self, db: sqlite3.Connection, service: str) -> sqlite3.Row:
         """The resource and audience ``service`` is bound to; ``Unauthenticated`` if it is no service."""
