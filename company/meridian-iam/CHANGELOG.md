@@ -4,8 +4,11 @@
 - workloads: a service issues the work its caller launches a principal of its own (`POST /workloads`,
   `IamClient.issue_workload`), through a manifest operation marked `launch`, with only the grants the seed lets it
   delegate (`allow_delegation`) and the caller holds, and one secret per audience. Every decision counts a
-  workload's grant only while its issuer is live and its sponsor still holds the permission from before the
-  workload existed, so a revocation or a disable stops it and a re-grant does not revive it.
+  workload's grant only while its issuer is live and its sponsor still holds the permission through a grant it
+  had at issuance, so a revocation or a disable stops it and a re-grant does not revive it; a disabled sponsor or
+  issuer also stops its credential authenticating.
+- store: a store from an older release is upgraded in place when it opens.
+- service: a malformed request body is answered 400 `invalid` without echoing it, rather than FastAPI's 422.
 
 ## 0.5.0
 - Wired into the stack: an `iam` service, per-play bootstrap and credentials, and IAM audit lines joined to each
