@@ -29,6 +29,9 @@ How to change `company/meridian-iam/` and how to put a service under it. The con
 - **A resource service holds a resource-bound credential.** An agent's credential on a managed service has the
   audiences `<service>` and `iam:<service>`; only its own `iam` credential manages everything. Never widen it to
   `iam` for convenience: that lets a compromised service act for the agent on every other resource.
+- **A service delegates only what its seed lists.** Issuing workloads needs a manifest operation marked
+  `launch` and an `allow_delegation` for the issuing service. Never widen a delegation for convenience: a
+  compromised issuer can mint everything listed for any caller who holds it.
 - **Fail closed.** An unavailable or inconsistent IAM is a 503 that runs nothing, never a missing grant.
 
 ## Putting a service under IAM

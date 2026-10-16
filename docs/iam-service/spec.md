@@ -282,6 +282,13 @@ Credential and lifecycle administration (section 6) is partly done:
   hold; this is additive, so a weaker owner cannot strip a stronger one, and removing a member needs cover for
   everything removed. A member may leave. An operator (named by the scenario's `iam.operators`, none in Aurora)
   disables a principal. The operator team is reserved: it can only be seeded, and no resource can be owned by it.
+- **Workload identities.** A service gives work its caller launches a principal of its own (`POST /workloads`):
+  only through a manifest operation marked `launch` whose permission the caller holds, only grants the seed lets
+  that service delegate (`allow_delegation`) and the caller holds, each ending no later than the caller's grant
+  it copies, with one secret per audience stored as a digest. A workload's grant counts only while its issuer is
+  live and may delegate it and its sponsor holds the permission through a grant from before the workload
+  existed, so a revocation or a disable stops it and a later re-grant does not revive it. A compromised service
+  can mint no more than its seeded delegations. No service issues workloads yet.
 - **Seeding.** A seed runs in one transaction and writes an explicit completion marker; a seed that fails
   halfway leaves nothing, and only a completed seed counts as bootstrapped on restart.
 - **Startup coverage.** A service starts only if its routes or tools match its manifest exactly: a guarded app
@@ -303,3 +310,6 @@ Not done, and not claimed:
   provider activity, which has not been run.
 - **Stop-on-revoke, job autorenewal and checkpoints** (section 6), which need real runner and job lifecycle
   support.
+- **The rest of the workload lifecycle.** Nothing ends a workload when its job finishes, a workload cannot
+  renew, issuance is not tied to the decision that allowed the launch, and neither the inference gateway nor the
+  tools gateway accepts workload secrets yet.

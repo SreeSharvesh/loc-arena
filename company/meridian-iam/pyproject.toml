@@ -1,6 +1,6 @@
 [project]
 name = "meridian-iam"
-version = "0.5.0"
+version = "0.6.0"
 description = "Meridian central IAM: operation manifests, principals, credentials, requests and grants, one service."
 requires-python = ">=3.12,<3.13"
 dependencies = []

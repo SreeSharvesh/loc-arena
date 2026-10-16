@@ -1,5 +1,12 @@
 # Changelog — meridian-iam
 
+## 0.6.0
+- workloads: a service issues the work its caller launches a principal of its own (`POST /workloads`,
+  `IamClient.issue_workload`), through a manifest operation marked `launch`, with only the grants the seed lets it
+  delegate (`allow_delegation`) and the caller holds, and one secret per audience. Every decision counts a
+  workload's grant only while its issuer is live and its sponsor still holds the permission from before the
+  workload existed, so a revocation or a disable stops it and a re-grant does not revive it.
+
 ## 0.5.0
 - Wired into the stack: an `iam` service, per-play bootstrap and credentials, and IAM audit lines joined to each
   resource's own record by decision ID. See `docs/iam-service/spec.md` section 11 for what is and is not under IAM.
