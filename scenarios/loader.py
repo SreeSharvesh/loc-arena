@@ -50,6 +50,7 @@ DNS_LABEL: Final = re.compile(r"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?")
 # The stack's own services (loc_arena.episode_stack): a live service may not take their names.
 STACK_SERVICES: Final = frozenset({"gateway", "episode", "agentgateway"})
 SANDBOX_PREFIX: Final = "sandbox-"
+RUNNER_PREFIX: Final = "runner-"  # runner-1 to runner-<n>: the runners of the one service with runners
 # Never in a service's build context: the sealed answer and the scripted moves, which agents must not reach.
 SEALED_DIRECTORIES: Final = ("reference", "scripted")
 PACK_DIRECTORY: Final = "pack_directory"  # the validation context key: the pack a build path resolves in
@@ -85,8 +86,11 @@ def _require_a_service_name(name: str) -> str:
     """Refuse a name that is no host name, or that would take the place of one of the stack's services."""
     if not DNS_LABEL.fullmatch(name):
         raise ValueError("it must be a DNS label: at most 63 lower-case letters, digits and inner hyphens")
-    if name in STACK_SERVICES or name.startswith(SANDBOX_PREFIX):
-        raise ValueError(f"it is taken by the stack: {sorted(STACK_SERVICES)} and {SANDBOX_PREFIX}<agent id>")
+    if name in STACK_SERVICES or name.startswith((SANDBOX_PREFIX, RUNNER_PREFIX)):
+        raise ValueError(
+            f"it is taken by the stack: {sorted(STACK_SERVICES)}, {SANDBOX_PREFIX}<agent id> and "
+            f"{RUNNER_PREFIX}<n>",
+        )
     return name
 
 
@@ -136,6 +140,13 @@ class ScenarioService(BaseModel):
         description=f"Whether {GRANT!r} itself may be granted; only rights other than it when false.",
     )
     description: StrictStr = Field(default="", description="What the agents of a stack run are told it is.")
+    runners: StrictInt = Field(
+        default=0,
+        ge=0,
+        description=f"How many runners the service hands work to: {RUNNER_PREFIX}1 to {RUNNER_PREFIX}<n>, "
+        "each a sandbox where the company's own agents run with pi, whose command server serves this service "
+        "alone.",
+    )
 
     @field_validator("build")
     @classmethod
@@ -167,6 +178,8 @@ class ScenarioService(BaseModel):
             raise ValueError("a ready image needs a healthcheck: the default probe runs python")
         if self.transitive and GRANT not in self.rights:
             raise ValueError(f"transitive needs {GRANT!r} in rights: there is nothing to grant on")
+        if self.runners and not sources:
+            raise ValueError("runners need a live service (build, image or module) to hand them work")
         return self
 
 
@@ -190,6 +203,7 @@ class LiveService:
     transitive: bool  # whether GRANT itself may be granted
     description: str
     tools: tuple[str, ...] = ()  # the MCP tools it serves, reached through the tools gateway alone
+    runners: int = 0  # how many runners it hands work to, runner-1 to runner-<n>
 
 
 @dataclass(frozen=True)
@@ -270,9 +284,12 @@ def _parse_live_services(directory: Path, declared: object) -> tuple[LiveService
                     transitive=service.transitive,
                     description=service.description,
                     tools=service.tools,
+                    runners=service.runners,
                 ),
             )
     _require_unique_tools(live)
+    if len(pools := [service.name for service in live if service.runners]) > 1:
+        raise ValueError(f"scenario {directory.name}: only one service may have runners, not {pools}")
     return tuple(live)
 
 

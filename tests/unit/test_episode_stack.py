@@ -1070,7 +1070,7 @@ def test_a_graded_stack_run_copies_its_run_directory_out_once(
     assert len(outputs) == 1
 
 
-def test_an_attack_stack_run_renews_every_container_but_the_gateway_and_the_episode_before_the_honest_twin(
+def test_an_attack_stack_run_renews_every_container_but_the_episode_before_the_honest_twin(
     docker: FakeDocker,
     tmp_path: Path,
 ) -> None:
@@ -1085,7 +1085,7 @@ def test_an_attack_stack_run_renews_every_container_but_the_gateway_and_the_epis
     assert commands[plays[0] + 1 : plays[1]] == [
         *(["logs", "--no-color", "--no-log-prefix", service] for service in logged),
         [
-            *["up", "--detach", "--wait", "--force-recreate", "--renew-anon-volumes", "--no-deps"],
+            *["up", "--detach", "--wait", "--force-recreate", "--renew-anon-volumes", "--no-deps", "gateway"],
             *["sandbox-agent-main", "sandbox-serving-agent", "sandbox-distill-agent", "sandbox-eval-agent"],
             *["sandbox-datapipe-agent", "sandbox-jobsvc-agent", "sandbox-controlplane-agent"],
             *logged,

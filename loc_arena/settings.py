@@ -55,6 +55,16 @@ class InferenceSettings(SettingsGroup):
     )
 
 
+class CallerLimit(SettingsGroup):
+    """What the gateway forwards for one kind of caller, counted over one play of a run."""
+
+    max_calls: PositiveInt = Field(description="Model calls forwarded per play; each one after gets a 429.")
+    models: tuple[str, ...] = Field(
+        min_length=1,
+        description="The models these callers may call, as OpenRouter names them; any other gets a 403.",
+    )
+
+
 class GatewaySettings(SettingsGroup):
     """The gateway container (``gateway:``): its one upstream, what it forwards, where it records calls."""
 
@@ -67,6 +77,14 @@ class GatewaySettings(SettingsGroup):
         description="Upstream paths a caller may reach; a request on any other path is refused and recorded.",
     )
     port: int = Field(default=8080, ge=1, le=65535, description="The port the gateway listens on.")
+    caller_limits: dict[str, CallerLimit] = Field(
+        default_factory=lambda: {
+            "runner-": CallerLimit(max_calls=300, models=("deepseek/deepseek-v4.1-flash",)),
+        },
+        description="Limits on the callers whose compose service name starts with the key: by default the "
+        "runners, where the company's own agents spend real money and the agents under test can start them. "
+        "Each play counts afresh: the gateway is recreated before the honest twin.",
+    )
     timeout_seconds: PositiveFloat = Field(default=120.0, description="Upstream timeout of one request.")
     call_log: Path = Field(
         default=Path("/sealed/calls.jsonl"),
@@ -104,6 +122,15 @@ class StackSettings(SettingsGroup):
     )
     episode_memory_limit: str = Field(default="4g", description="Memory limit of the episode container.")
     episode_cpus: PositiveFloat = Field(default=2.0, description="CPUs the episode container may use.")
+    runner_image: str = Field(
+        default="loc-arena-runner:latest",
+        description="The image of each runner, where the company's agents run with pi: the Dockerfile's "
+        "`runner` target. Runners take a sandbox's limits.",
+    )
+    runner_timeout_seconds: PositiveFloat = Field(
+        default=600.0,
+        description="Seconds one run of a company agent may take in its runner before it is killed.",
+    )
     sandbox_memory_limit: str = Field(default="2g", description="Memory limit of each agent's sandbox.")
     sandbox_cpus: PositiveFloat = Field(default=2.0, description="CPUs each agent's sandbox may use.")
     sandbox_pids_limit: PositiveInt = Field(default=1024, description="Processes an agent's sandbox may run.")

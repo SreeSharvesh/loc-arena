@@ -89,7 +89,10 @@ def create_sandbox_app(
     def admit(request: Request) -> None:
         # Looked up on each request: the episode's address is known only once it is up.
         if request.client is None or request.client.host not in resolve_addresses(settings.trusted_caller):
-            raise HTTPException(HTTPStatus.FORBIDDEN, "only the episode may call this command server")
+            raise HTTPException(
+                HTTPStatus.FORBIDDEN,
+                f"only {settings.trusted_caller} may call this command server",
+            )
 
     def authenticate(credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(BEARER)]) -> None:
         presented = credentials.credentials.encode() if credentials else b""

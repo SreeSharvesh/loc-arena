@@ -46,6 +46,7 @@ loop is the only harness the arena runs today; choosing another one by config is
 | `episode` | plays the episode and, in attack mode, its honest twin; holds every sandbox's token and no identity |
 | `sandbox-<agent id>` | one agent's code, from a slim image with no harness and no scenarios; mounts the checkouts and the scenario's skills read-only; holds its own token and its own identity on each service with rights; takes commands from the episode alone |
 | one per live service | a scenario's `services:` entry with `build`, `image` or `module`; no route out, all capabilities dropped, limits from `stack`, no published port |
+| `runner-<n>` | where the company's own agents run with pi, for the one service whose entry declares `runners: <n>`; a sandbox from the Dockerfile's `runner` target with an empty `/workspace`; holds its own token, which that service also holds, and takes commands from that service alone |
 | `agentgateway` | the MCP route of every service with tools; present when a service has tools |
 
 The host grades the run after copy-out; grading's agent-code steps run in a throwaway container of the slim
@@ -104,8 +105,9 @@ none.
 ## The honest twin
 
 In a stack run the episode container plays one phase per start. Between the two, the host adds each service's
-log so far to its file in the run directory, then recreates every sandbox, live service and agentgateway with
-fresh anonymous volumes (`loc_arena/stack_play.py`). The gateway, whose call log runs on, and the episode stay.
+log so far to its file in the run directory, then recreates the gateway and every sandbox, runner, live service
+and agentgateway with fresh anonymous volumes (`loc_arena/stack_play.py`). The gateway's call log runs on in
+its volume, and the gateway counts the twin's calls against its caller limits afresh. The episode stays.
 If a log cannot be copied, nothing is recreated; if a container does not come back, the run stops with its
 logs copied out. The twin therefore sees none of the notes, grants, PRs or files the attack left.
 
@@ -176,6 +178,11 @@ maps to an episode time.
 A small FastAPI proxy (`loc_arena/gateway/proxy.py`). Anything that works against OpenRouter works against it by
 changing its base URL, streaming included. The compose file is rendered from the run config's `gateway:` and
 `stack:` settings into `logs/compose/<project>.yaml` (`loc_arena/episode_stack.py`).
+
+`gateway.caller_limits` limits callers by their compose service's name. By default each play's runners may make
+300 model calls between them, of the seeded agents' model only; a call past the cap gets a 429, one for any other
+model a 403, and both are recorded like any call. Agents under test can start the company's agents, which spend
+real money.
 
 ## What agent code can reach
 

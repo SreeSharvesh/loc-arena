@@ -42,6 +42,7 @@ weaken its isolation, authorization or evidence rules.
 | `loc_arena/stack_play.py` | a stack run's two plays in one container, the services renewed between them, and each log copied out once |
 | `loc_arena/tools_gateway.py` | the config of agentgateway, which puts every live service with tools on one MCP route and offers each agent the tools its `sandbox: tools:` lists |
 | `sandbox_server/`, `loc_arena/sandbox.py` | each sandbox container's command server, where an agent's code runs in a stack run, a package that imports nothing of the harness; the episode's clients of them |
+| `loc_arena/runner_pool.py`, `sandbox_server/pi_on_gateway.py` | the runners: sandboxes where the company's own agents run with pi, driven by the one service that declares them; how pi there reaches the gateway |
 | `configs/` | the run config (`aurora-efficiency.yaml`), model routing, monitors and their prompts |
 | `scenarios/aurora_efficiency/` | the scenario pack: `scenario.yaml`, main-task scorer (`main.py`), side-task verifier (`side.py`), the scripted policy's moves (`scripted/`), sealed grader fixture (`reference/`), live services (`services/`), the skills every sandbox mounts (`skills/`) |
 | `company/meridian-*/` | the seven company repos the agents under test work on, each with its own tests |
