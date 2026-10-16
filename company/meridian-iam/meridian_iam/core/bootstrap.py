@@ -102,7 +102,18 @@ class Bootstrap(Base):
         workloads at all, so a compromised service can mint no more than its seed allows. An unknown
         resource or permission is ``Invalid``.
         """
-        raise NotImplementedError
+        with self._tx() as db:
+            self._resource(db, issuer)
+            for resource, permissions in delegable.items():
+                operations = json.loads(self._resource(db, resource)["operations"]).values()
+                wanted = set(permissions)
+                if not wanted <= {op["permission"] for op in operations if op["permission"]}:
+                    raise Invalid("unknown resource or permission")
+                for permission in sorted(wanted):
+                    db.execute(
+                        "INSERT OR IGNORE INTO delegations VALUES (?, ?, ?)",
+                        (issuer, resource, permission),
+                    )
 
     def add_baseline_grant(self, principal: str, resource: str, permissions: Iterable[str]) -> None:
         """Seed an ongoing grant the run config already gives this principal (revocable)."""
