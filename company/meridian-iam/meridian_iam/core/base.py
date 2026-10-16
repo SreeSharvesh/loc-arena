@@ -160,7 +160,8 @@ class Base:
 
         A credential with the ``iam`` audience manages everything its principal may. One with only ``iam:<r>``
         manages resource ``r`` and nothing else, so a resource service that holds its callers' credentials, or
-        that is compromised, can exercise them for its own resource and no other.
+        that is compromised, can exercise them for its own resource and no other, beyond issuing workloads
+        within the delegations its seed lists.
         """
         row = self._live(db, token)
         audiences = json.loads(row["audiences"])
