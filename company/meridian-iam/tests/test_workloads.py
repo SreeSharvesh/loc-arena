@@ -331,7 +331,10 @@ def test_nested_workload_stops_when_the_top_sponsor_loses_the_grant(
     assert (before.allow, after.allow) == (True, False)
 
 
-def test_workload_is_issued_over_http_and_refusals_keep_their_status(iam: Iam, jobs: dict[str, str]) -> None:
+def test_workload_is_issued_over_http_and_refusals_keep_their_status_without_echoing_secrets(
+    iam: Iam,
+    jobs: dict[str, str],
+) -> None:
     http = TestClient(create_app(iam))
     body = {
         "operation": "submit_job",
@@ -352,7 +355,11 @@ def test_workload_is_issued_over_http_and_refusals_keep_their_status(iam: Iam, j
 
     issued = post(jobs["alice"], "k1")
     refused = post(jobs["bob"], "k2")  # bob may not submit jobs
+    body["ttl"] = "an hour"
+    malformed = post(jobs["alice"], "k3")
 
     assert (issued.status_code, issued.json()["sponsor"]) == (201, "alice")
     assert NOTES_SECRET not in issued.text
     assert (refused.status_code, refused.json()["error"]) == (403, "forbidden")
+    assert (malformed.status_code, malformed.json()["error"]) == (400, "invalid")
+    assert NOTES_SECRET not in malformed.text
