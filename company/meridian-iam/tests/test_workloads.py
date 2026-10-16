@@ -8,8 +8,10 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from iam_server import serve
 from iam_support import Clock
 
+from meridian_iam.client import IamClient
 from meridian_iam.contracts import (
     Conflict,
     Forbidden,
@@ -363,3 +365,22 @@ def test_workload_is_issued_over_http_and_refusals_keep_their_status_without_ech
     assert (refused.status_code, refused.json()["error"]) == (403, "forbidden")
     assert (malformed.status_code, malformed.json()["error"]) == (400, "invalid")
     assert NOTES_SECRET not in malformed.text
+
+
+def test_service_issues_a_workload_through_the_client(iam: Iam, jobs: dict[str, str]) -> None:
+    with serve(iam) as (url, _):
+        client = IamClient(url, jobs["svc"], retries=0)
+
+        workload = client.issue_workload(
+            jobs["alice"],
+            "submit_job",
+            "job-1",
+            "eval run",
+            {"notes": ["read"]},
+            600,
+            {"notes": NOTES_SECRET},
+            "k1",
+        )
+
+        assert workload.sponsor == "alice"
+        assert client.identify(NOTES_SECRET, "notes") == workload.principal
