@@ -116,3 +116,29 @@ def test_no_credential_means_no_call_to_iam_at_all(fake_with) -> None:  # noqa: 
     assert fake.hits == 0
     assert guard.check(None, "health") is None  # a public operation needs neither a credential nor IAM
     assert fake.hits == 0
+
+
+WORKLOAD: dict[str, Any] = {
+    "principal": "job-1",
+    "resource": "jobs",
+    "sponsor": "alice",
+    "reference": "run-1",
+    "purpose": "eval run",
+    "grants": {"notes": ["read"]},
+    "expires_at": 1600,
+}
+
+
+@pytest.mark.parametrize(
+    "broken",
+    [
+        {k: v for k, v in WORKLOAD.items() if k != "sponsor"},
+        {**WORKLOAD, "expires_at": "soon"},
+        {**WORKLOAD, "grants": {"notes": "read"}},
+        ["not", "an", "object"],
+    ],
+)
+def test_a_malformed_workload_answer_is_unavailable(fake_with, broken: object) -> None:  # noqa: ANN001
+    client = IamClient(fake_with(lambda: (201, broken)).url, "t")
+    with pytest.raises(Unavailable):
+        client.issue_workload("c", "submit_job", "run-1", "eval run", {"notes": ["read"]}, 600, {}, "k")

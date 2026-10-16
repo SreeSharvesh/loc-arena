@@ -7,6 +7,7 @@ Token-bearing headers and transport exception text are never put in errors.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import secrets
 import urllib.error
@@ -129,7 +130,40 @@ class IamClient:
         for the workload and keeps to hand over; a retry after a lost reply sends the same secrets under the
         same ``key``. A malformed answer is ``Unavailable``.
         """
-        raise NotImplementedError
+        headers = {"Idempotency-Key": key}
+        if caller_token:
+            headers["X-Caller-Authorization"] = f"Bearer {caller_token}"
+        body = {
+            "operation": operation,
+            "reference": reference,
+            "purpose": purpose,
+            "grants": grants,
+            "ttl": ttl,
+            "credentials": credentials,
+        }
+        raw = self._call("POST", "/workloads", headers=headers, body=body)
+        try:
+            workload = Workload(**{field.name: raw[field.name] for field in dataclasses.fields(Workload)})
+        except (KeyError, TypeError):
+            raise Unavailable("malformed IAM answer") from None
+        texts = (
+            workload.principal,
+            workload.resource,
+            workload.sponsor,
+            workload.reference,
+            workload.purpose,
+        )
+        if not (
+            all(isinstance(text, str) for text in texts)
+            and type(workload.expires_at) is int
+            and isinstance(workload.grants, dict)
+            and all(
+                isinstance(permissions, list) and all(isinstance(p, str) for p in permissions)
+                for permissions in workload.grants.values()
+            )
+        ):
+            raise Unavailable("malformed IAM answer")
+        return workload
 
     # Management calls forward the caller's own credential; the service identity is not used.
 
