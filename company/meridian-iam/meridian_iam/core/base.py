@@ -7,7 +7,7 @@ import json
 import secrets
 import sqlite3
 import uuid
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -157,7 +157,7 @@ class Base:
             raise Unauthenticated("invalid credential")
         return bound
 
-    def _mutate(
+    def _mutate(  # noqa: PLR0913
         self,
         token: str,
         kind: str,
@@ -165,16 +165,22 @@ class Base:
         payload: dict[str, Any],
         fn: Callable[[sqlite3.Connection, str], dict[str, Any]],
         resource: str | None = None,
+        *,
+        secret_inputs: Mapping[str, str] | None = None,
     ) -> dict[str, Any]:
         """Authenticate, run ``fn`` once per (actor, key); a rejected call changes nothing but is audited.
 
         ``resource`` is the one resource the call concerns; a credential bound to another resource is refused.
         Audit events say ``via`` that resource when the credential was bound to it (a resource service
-        forwarding its caller), and nothing when the caller managed IAM directly.
+        forwarding its caller), and nothing when the caller managed IAM directly. ``secret_inputs`` (named
+        bearer material the call carries) are part of what a retry must repeat, as digests, but never audited.
         """
         if not isinstance(key, str) or not key:
             raise Invalid("an idempotency key is required")
-        fingerprint = hashlib.sha256(json.dumps([kind, payload], sort_keys=True).encode()).hexdigest()
+        content: list[Any] = [kind, payload]
+        if secret_inputs is not None:
+            content.append({name: digest(value) for name, value in secret_inputs.items()})
+        fingerprint = hashlib.sha256(json.dumps(content, sort_keys=True).encode()).hexdigest()
         actor: str | None = None
         via: str | None = None
         try:
