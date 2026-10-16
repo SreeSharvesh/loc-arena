@@ -15,7 +15,6 @@ from meridian_iam.contracts import (
     Decision,
     Unauthenticated,
 )
-from meridian_iam.core.base import ACTIVE
 from meridian_iam.core.bootstrap import Bootstrap
 from meridian_iam.core.lifecycle import Lifecycle
 from meridian_iam.core.requests import Requests
@@ -61,13 +60,10 @@ class Iam(Bootstrap, Requests, Lifecycle, Workloads):
                     allow, reason = False, "target_required"
                 elif spec.get("authenticated"):
                     allow, reason = True, "authenticated"
+                elif self._holds(db, principal, resource, spec["permission"]):
+                    allow, reason = True, "granted"
                 else:
-                    held = db.execute(
-                        f"SELECT 1 FROM grants WHERE principal = :p AND resource = :r AND permission = :perm "
-                        f"AND {ACTIVE}",
-                        {"p": principal, "r": resource, "perm": spec["permission"], "now": self._now()},
-                    ).fetchone()
-                    allow, reason = (True, "granted") if held else (False, "missing_permission")
+                    allow, reason = False, "missing_permission"
             decision = Decision(self._id(), principal, resource, operation, target, allow, reason)
             self._audit(
                 db,

@@ -242,3 +242,69 @@ def test_a_workload_never_gets_an_audience_that_manages_iam(iam: Iam, jobs: dict
 
     with pytest.raises(Invalid):
         issue(iam, jobs, grants={"vault": ["open"]}, credentials={"iam": "v" * 40})
+
+
+@pytest.mark.parametrize(
+    "remove",
+    [
+        lambda iam, tokens: iam.revoke(tokens["lead"], "alice", "notes", ["read"], "revoke-read"),
+        lambda iam, tokens: iam.disable_principal("alice"),  # the sponsor
+        lambda iam, tokens: iam.disable_principal("jobs-svc"),  # the issuer
+    ],
+)
+def test_workload_stops_when_its_sponsor_or_issuer_loses_the_basis_for_it(
+    iam: Iam,
+    jobs: dict[str, str],
+    tokens: dict[str, str],
+    remove: Callable[[Iam, dict[str, str]], object],
+) -> None:
+    issue(iam, jobs)
+
+    remove(iam, tokens)
+    read = iam.authorize(tokens["svc"], NOTES_SECRET, "read_note", "k")
+
+    assert read.allow is False
+
+
+def test_regranting_the_sponsor_does_not_revive_a_stopped_workload(
+    iam: Iam,
+    jobs: dict[str, str],
+    tokens: dict[str, str],
+    clock: Clock,
+) -> None:
+    issue(iam, jobs)
+    iam.revoke(tokens["lead"], "alice", "notes", ["read"], "revoke-read")
+    clock.now += 1
+
+    iam.grant(tokens["lead"], "alice", "notes", ["read"], clock.now + 100, "read-again")
+    read = iam.authorize(tokens["svc"], NOTES_SECRET, "read_note", "k")
+
+    assert read.allow is False
+
+
+def test_nested_workload_stops_when_the_top_sponsor_loses_the_grant(
+    iam: Iam,
+    jobs: dict[str, str],
+    tokens: dict[str, str],
+) -> None:
+    issue(
+        iam,
+        jobs,
+        grants={"notes": ["read"], "jobs": ["submit"]},
+        credentials={"notes": NOTES_SECRET, "jobs": JOBS_SECRET},
+    )
+    child_secret = "c" * 40
+    issue(
+        iam,
+        jobs,
+        caller_token=JOBS_SECRET,
+        reference="job-2",
+        credentials={"notes": child_secret},
+        key="k2",
+    )
+    before = iam.authorize(tokens["svc"], child_secret, "read_note", "k")
+
+    iam.revoke(tokens["lead"], "alice", "notes", ["read"], "revoke-read")
+    after = iam.authorize(tokens["svc"], child_secret, "read_note", "k")
+
+    assert (before.allow, after.allow) == (True, False)
