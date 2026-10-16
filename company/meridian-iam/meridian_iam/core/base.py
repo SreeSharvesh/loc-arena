@@ -215,6 +215,25 @@ class Base:
         )
         self._pending.append({"at": at, "kind": kind, "actor": actor, **json.loads(encoded)})
 
+    def _holds(self, db: sqlite3.Connection, principal: str, resource: str, permission: str) -> bool:
+        """Whether ``principal`` holds ``permission`` on ``resource`` now.
+
+        It needs an active grant of its own. A workload also needs its issuer to be active, still bound to the
+        resource it issued from and still allowed to delegate this permission, and its sponsor to be active
+        and to hold the permission through a grant it already had when the workload was issued (at or below
+        the workload's ``grant_horizon``), and so on up the chain of workloads that launched workloads. So a
+        revoked or disabled sponsor, or a disabled issuer, stops everything below it, and a later grant to the
+        sponsor revives nothing.
+        """
+        raise NotImplementedError
+
+    def _binding(self, db: sqlite3.Connection, service: str) -> sqlite3.Row:
+        """The resource and audience ``service`` is bound to; ``Unauthenticated`` if it is no service."""
+        binding = db.execute("SELECT * FROM service_bindings WHERE principal = ?", (service,)).fetchone()
+        if binding is None:
+            raise Unauthenticated("not a service identity")
+        return binding
+
     def _resource(self, db: sqlite3.Connection, resource: str) -> sqlite3.Row:
         row = db.execute("SELECT * FROM resources WHERE id = ?", (resource,)).fetchone()
         if row is None:
@@ -288,11 +307,13 @@ class Base:
         label: str,
         *,
         token: str | None = None,
+        now: int | None = None,
     ) -> str:
         token = token or self._token()
-        expires = None if ttl is None else self._now() + ttl
+        issued = self._now() if now is None else now
+        expires = None if ttl is None else issued + ttl
         db.execute(
             "INSERT INTO credentials VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL)",
-            (digest(token), principal, json.dumps(audiences), label, generation, self._now(), expires),
+            (digest(token), principal, json.dumps(audiences), label, generation, issued, expires),
         )
         return token
