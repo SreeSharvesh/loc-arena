@@ -36,6 +36,9 @@ def mutated(change: Any) -> dict[str, Any]:  # noqa: ANN401
         lambda r: r["http"].update({"GET /notes/{id}": "read_note"}),
         lambda r: r["http"].update({"GET /notes/{key": "read_note"}),
         lambda r: r["operations"]["read_note"].update(target="missing"),
+        lambda r: r["operations"]["admin"].update(launch="yes"),
+        lambda r: r["operations"]["health"].update(launch=True),  # a launch needs a permission
+        lambda r: r["operations"]["read_note"].update(launch=True),  # and no target
         lambda r: r.update(operations={}),
         lambda r: r.update(tools=[]),  # a falsy non-mapping is not "no tools"
         lambda r: r.update(http=[]),

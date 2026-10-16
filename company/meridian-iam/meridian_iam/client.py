@@ -21,6 +21,7 @@ from meridian_iam.contracts import (
     Invalid,
     Unauthenticated,
     Unavailable,
+    Workload,
 )
 
 _BY_CODE: dict[str, type[IamError]] = {
@@ -110,6 +111,25 @@ class IamClient:
         if not valid:
             raise Unavailable("malformed IAM decision")
         return Decision(**fields)
+
+    def issue_workload(  # noqa: PLR0913
+        self,
+        caller_token: str | None,
+        operation: str,
+        reference: str,
+        purpose: str,
+        grants: dict[str, list[str]],
+        ttl: int,
+        credentials: dict[str, str],
+        key: str,
+    ) -> Workload:
+        """Issue a workload identity as this client's service identity, for the caller launching the work.
+
+        A mutation, so never retried. ``credentials`` maps each audience to a secret this service generated
+        for the workload and keeps to hand over; a retry after a lost reply sends the same secrets under the
+        same ``key``. A malformed answer is ``Unavailable``.
+        """
+        raise NotImplementedError
 
     # Management calls forward the caller's own credential; the service identity is not used.
 

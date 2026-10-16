@@ -41,3 +41,19 @@ def test_a_rollback_after_sqlite_ended_the_transaction_does_not_hide_the_real_er
             store.execute("COMMIT")  # the transaction is already over, as when SQLite ends one itself
             raise BoomError
     assert not store.in_transaction
+
+
+def test_a_version_1_store_is_upgraded_in_place(tmp_path: Path) -> None:
+    path = tmp_path / "old.db"
+    old = connect(path)
+    old.execute("INSERT INTO meta VALUES ('kept', 'yes')")
+    old.execute("DROP TABLE workloads")
+    old.execute("DROP TABLE delegations")
+    old.execute("PRAGMA user_version = 1")  # what a store from before workloads looks like
+    old.close()
+
+    upgraded = connect(path)
+
+    tables = {row[0] for row in upgraded.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    assert {"workloads", "delegations"} <= tables
+    assert upgraded.execute("SELECT value FROM meta WHERE key = 'kept'").fetchone()[0] == "yes"

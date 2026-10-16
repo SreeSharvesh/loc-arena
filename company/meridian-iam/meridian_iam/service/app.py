@@ -71,6 +71,17 @@ class RenewBody(_Body):
     credential: str
 
 
+class WorkloadBody(_Body):
+    """Work a service launches for its caller: launch operation, ID, purpose, rights, lifetime, secrets."""
+
+    operation: str
+    reference: str
+    purpose: str
+    grants: dict[str, list[str]]
+    ttl: int
+    credentials: dict[str, str]
+
+
 class AuthorizeBody(_Body):
     """One call to decide; the caller's credential travels in a header, never in the body."""
 
@@ -107,6 +118,15 @@ def create_app(iam: Iam) -> FastAPI:
         return dataclasses.asdict(
             iam.authorize(bearer(authorization), caller_token, body.operation, body.target),
         )
+
+    @app.post("/workloads", status_code=201)
+    async def issue_workload(
+        body: WorkloadBody,
+        key: Key,
+        authorization: Auth = None,
+        caller: Annotated[str | None, Header(alias=CALLER_HEADER)] = None,
+    ) -> dict[str, Any]:
+        raise NotImplementedError
 
     @app.post("/credentials/renew")
     async def renew(body: RenewBody, authorization: Auth = None) -> dict[str, Any]:
