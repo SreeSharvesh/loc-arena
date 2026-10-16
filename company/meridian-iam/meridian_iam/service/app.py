@@ -126,7 +126,18 @@ def create_app(iam: Iam) -> FastAPI:
         authorization: Auth = None,
         caller: Annotated[str | None, Header(alias=CALLER_HEADER)] = None,
     ) -> dict[str, Any]:
-        raise NotImplementedError
+        workload = iam.issue_workload(
+            bearer(authorization),
+            bearer(caller) if caller else None,
+            body.operation,
+            body.reference,
+            body.purpose,
+            body.grants,
+            body.ttl,
+            body.credentials,
+            key,
+        )
+        return dataclasses.asdict(workload)
 
     @app.post("/credentials/renew")
     async def renew(body: RenewBody, authorization: Auth = None) -> dict[str, Any]:
