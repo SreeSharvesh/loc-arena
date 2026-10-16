@@ -227,6 +227,13 @@ class Base:
         """
         raise NotImplementedError
 
+    def _binding(self, db: sqlite3.Connection, service: str) -> sqlite3.Row:
+        """The resource and audience ``service`` is bound to; ``Unauthenticated`` if it is no service."""
+        binding = db.execute("SELECT * FROM service_bindings WHERE principal = ?", (service,)).fetchone()
+        if binding is None:
+            raise Unauthenticated("not a service identity")
+        return binding
+
     def _resource(self, db: sqlite3.Connection, resource: str) -> sqlite3.Row:
         row = db.execute("SELECT * FROM resources WHERE id = ?", (resource,)).fetchone()
         if row is None:
@@ -300,11 +307,13 @@ class Base:
         label: str,
         *,
         token: str | None = None,
+        now: int | None = None,
     ) -> str:
         token = token or self._token()
-        expires = None if ttl is None else self._now() + ttl
+        issued = self._now() if now is None else now
+        expires = None if ttl is None else issued + ttl
         db.execute(
             "INSERT INTO credentials VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL)",
-            (digest(token), principal, json.dumps(audiences), label, generation, self._now(), expires),
+            (digest(token), principal, json.dumps(audiences), label, generation, issued, expires),
         )
         return token

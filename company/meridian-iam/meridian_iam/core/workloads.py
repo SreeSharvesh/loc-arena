@@ -7,8 +7,8 @@ import sqlite3
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from meridian_iam.contracts import Conflict, Forbidden, Invalid, Unauthenticated, Workload
-from meridian_iam.core.base import ACTIVE, Base, digest
+from meridian_iam.contracts import Conflict, Forbidden, Invalid, Workload
+from meridian_iam.core.base import ACTIVE, IAM_AUDIENCE, SCOPE_PREFIX, Base, digest
 from meridian_iam.core.lifecycle import REPLACEMENT
 
 
@@ -72,14 +72,13 @@ class Workloads(Base):
         }
 
         def run(db: sqlite3.Connection, issuer: str) -> dict[str, Any]:
-            binding = db.execute("SELECT * FROM service_bindings WHERE principal = ?", (issuer,)).fetchone()
-            if binding is None:
-                raise Unauthenticated("not a service identity")
+            binding = self._binding(db, issuer)
             sponsor = self._auth(db, caller_token, binding["audience"])
             if not all(
                 isinstance(text, str) and 0 < len(text.strip()) <= 200 for text in (reference, purpose)
             ):
                 raise Invalid("a reference and a purpose of 1-200 characters are required")
+            work, said = reference.strip(), purpose.strip()  # stored and returned as checked
             if not wanted or not all(wanted.values()):
                 raise Invalid("a workload needs at least one grant")
             if not isinstance(ttl, int) or isinstance(ttl, bool) or ttl <= 0:
@@ -95,8 +94,7 @@ class Workloads(Base):
             now = self._now()
             ends: dict[tuple[str, str], int] = {}
             for resource, permissions in wanted.items():
-                if ttl > self._resource(db, resource)["max_seconds"]:
-                    raise Invalid("deadline outside the allowed window")
+                self._lifetime(self._resource(db, resource), now + ttl)
                 for permission in permissions:
                     delegable = db.execute(
                         "SELECT 1 FROM delegations WHERE issuer = ? AND resource = ? AND permission = ?",
@@ -125,6 +123,8 @@ class Workloads(Base):
                     tuple(wanted),
                 )
             }
+            if needed & {IAM_AUDIENCE} or any(audience.startswith(SCOPE_PREFIX) for audience in needed):
+                raise Invalid("a workload cannot get an audience that manages IAM")
             if set(credentials) != needed or not all(
                 isinstance(secret, str) and REPLACEMENT.fullmatch(secret) for secret in credentials.values()
             ):
@@ -150,8 +150,8 @@ class Workloads(Base):
                     issuer,
                     sponsor,
                     operation,
-                    reference,
-                    purpose,
+                    work,
+                    said,
                     now,
                     now + ttl,
                     horizon,
@@ -160,13 +160,13 @@ class Workloads(Base):
             for (resource, permission), end in ends.items():
                 self._insert_grants(db, principal, resource, [permission], end, "workload", None, sponsor)
             for audience, secret in sorted(credentials.items()):
-                self._insert_credential(db, principal, [audience], ttl, 1, audience, token=secret)
+                self._insert_credential(db, principal, [audience], ttl, 1, audience, token=secret, now=now)
             return {
                 "principal": principal,
                 "resource": binding["resource"],
                 "sponsor": sponsor,
-                "reference": reference,
-                "purpose": purpose,
+                "reference": work,
+                "purpose": said,
                 "grants": wanted,
                 "expires_at": now + ttl,
             }
