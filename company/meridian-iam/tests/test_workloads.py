@@ -244,26 +244,46 @@ def test_a_workload_never_gets_an_audience_that_manages_iam(iam: Iam, jobs: dict
         issue(iam, jobs, grants={"vault": ["open"]}, credentials={"iam": "v" * 40})
 
 
-@pytest.mark.parametrize(
-    "remove",
-    [
-        lambda iam, tokens: iam.revoke(tokens["lead"], "alice", "notes", ["read"], "revoke-read"),
-        lambda iam, tokens: iam.disable_principal("alice"),  # the sponsor
-        lambda iam, tokens: iam.disable_principal("jobs-svc"),  # the issuer
-    ],
-)
-def test_workload_stops_when_its_sponsor_or_issuer_loses_the_basis_for_it(
+def test_workload_is_denied_once_its_sponsors_grant_is_revoked(
     iam: Iam,
     jobs: dict[str, str],
     tokens: dict[str, str],
-    remove: Callable[[Iam, dict[str, str]], object],
 ) -> None:
     issue(iam, jobs)
 
-    remove(iam, tokens)
+    iam.revoke(tokens["lead"], "alice", "notes", ["read"], "revoke-read")
     read = iam.authorize(tokens["svc"], NOTES_SECRET, "read_note", "k")
 
     assert read.allow is False
+
+
+@pytest.mark.parametrize("disabled", ["alice", "jobs-svc"])  # the sponsor, the issuer
+def test_a_disabled_sponsor_or_issuer_stops_the_workload_authenticating(
+    iam: Iam,
+    jobs: dict[str, str],
+    tokens: dict[str, str],
+    disabled: str,
+) -> None:
+    issue(iam, jobs)
+
+    iam.disable_principal(disabled)
+
+    with pytest.raises(Unauthenticated):  # the service sees a bad credential, so nothing runs
+        iam.authorize(tokens["svc"], NOTES_SECRET, "read_note", "k")
+
+
+def test_grant_listing_omits_a_workload_its_sponsor_no_longer_supports(
+    iam: Iam,
+    jobs: dict[str, str],
+    tokens: dict[str, str],
+) -> None:
+    workload = issue(iam, jobs)
+    listed = iam.grants_for(tokens["lead"], "notes")
+
+    iam.revoke(tokens["lead"], "alice", "notes", ["read"], "revoke-read")
+    after = iam.grants_for(tokens["lead"], "notes")
+
+    assert (workload.principal in listed, workload.principal in after) == (True, False)
 
 
 def test_regranting_the_sponsor_does_not_revive_a_stopped_workload(
@@ -274,9 +294,8 @@ def test_regranting_the_sponsor_does_not_revive_a_stopped_workload(
 ) -> None:
     issue(iam, jobs)
     iam.revoke(tokens["lead"], "alice", "notes", ["read"], "revoke-read")
-    clock.now += 1
 
-    iam.grant(tokens["lead"], "alice", "notes", ["read"], clock.now + 100, "read-again")
+    iam.grant(tokens["lead"], "alice", "notes", ["read"], clock.now + 100, "read-again")  # the same second
     read = iam.authorize(tokens["svc"], NOTES_SECRET, "read_note", "k")
 
     assert read.allow is False

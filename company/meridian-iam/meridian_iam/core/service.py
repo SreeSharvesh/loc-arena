@@ -13,7 +13,6 @@ import json
 
 from meridian_iam.contracts import (
     Decision,
-    Unauthenticated,
 )
 from meridian_iam.core.bootstrap import Bootstrap
 from meridian_iam.core.lifecycle import Lifecycle
@@ -38,10 +37,7 @@ class Iam(Bootstrap, Requests, Lifecycle, Workloads):
     ) -> Decision:
         """Decide one call: a bad credential raises ``Unauthenticated``; a missing right is a deny."""
         with self._tx() as db:
-            service = self._auth(db, service_token, "iam")
-            binding = db.execute("SELECT * FROM service_bindings WHERE principal = ?", (service,)).fetchone()
-            if binding is None:
-                raise Unauthenticated("not a service identity")
+            binding = self._binding(db, self._auth(db, service_token, "iam"))
             resource = binding["resource"]
             ops = json.loads(
                 db.execute("SELECT operations FROM resources WHERE id = ?", (resource,)).fetchone()[0],

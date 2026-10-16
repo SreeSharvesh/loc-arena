@@ -100,10 +100,13 @@ class Base:
         self._db.close()
 
     def _live(self, db: sqlite3.Connection, token: str | None) -> sqlite3.Row:
-        """The live credential row ``token`` is: not revoked, not expired, its principal active."""
+        """The live credential row ``token`` is: not revoked, not expired, its principal active.
+
+        A workload's principal is live only while every issuer and sponsor up its chain is too.
+        """
         row = db.execute(
             "SELECT c.principal, c.audiences, c.label, c.generation, c.issued_at, c.expires_at, "
-            "c.revoked_at, c.superseded_by, p.active FROM credentials c "
+            "c.revoked_at, c.superseded_by, p.active, p.kind FROM credentials c "
             "JOIN principals p ON p.id = c.principal WHERE c.digest = ?",
             (digest(token or ""),),
         ).fetchone()
@@ -113,9 +116,29 @@ class Base:
             or row["revoked_at"] is not None
             or not row["active"]
             or (row["expires_at"] is not None and now >= row["expires_at"])
+            or (row["kind"] == "job" and not self._chain_live(db, row["principal"]))
         ):
             raise Unauthenticated("invalid credential")
         return row
+
+    def _chain_live(self, db: sqlite3.Connection, principal: str) -> bool:
+        """Whether every sponsor up a workload's chain is active, and every issuer active and still bound."""
+        while workload := db.execute("SELECT * FROM workloads WHERE principal = ?", (principal,)).fetchone():
+            live = db.execute(
+                "SELECT 1 FROM principals AS sponsor, principals AS issuer "
+                "JOIN service_bindings ON service_bindings.principal = issuer.id "
+                "WHERE sponsor.id = :sponsor AND sponsor.active = 1 AND issuer.id = :issuer "
+                "AND issuer.active = 1 AND service_bindings.resource = :origin",
+                {
+                    "sponsor": workload["sponsor"],
+                    "issuer": workload["issuer"],
+                    "origin": workload["resource"],
+                },
+            ).fetchone()
+            if live is None:
+                return False
+            principal = workload["sponsor"]
+        return True
 
     def _credential(self, db: sqlite3.Connection, token: str | None, audience: str) -> sqlite3.Row:
         """The live credential row ``token`` is, for ``audience``, or ``Unauthenticated``."""

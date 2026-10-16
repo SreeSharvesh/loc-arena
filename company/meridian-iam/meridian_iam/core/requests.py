@@ -225,18 +225,22 @@ class Requests(Base):
         return {k: sorted(set(v)) for k, v in out.items()}
 
     def grants_for(self, token: str, resource: str) -> dict[str, list[str]]:
-        """Every principal's active rights on ``resource`` (compat for the notes ``GET /grants`` listing)."""
+        """Every principal's active rights on ``resource`` (compat for the notes ``GET /grants`` listing).
+
+        A workload's right is listed only while its chain still supports it, as ``authorize`` decides.
+        """
+        out: dict[str, list[str]] = {}
         with self._tx() as db:
             self._manager(db, token, resource)
             self._resource(db, resource)
             rows = db.execute(
-                f"SELECT principal, permission FROM grants WHERE resource = :r AND {ACTIVE} "
-                "ORDER BY principal, permission",
+                "SELECT principal, permission, kind FROM grants JOIN principals ON principals.id = principal "
+                f"WHERE resource = :r AND {ACTIVE} ORDER BY principal, permission",
                 {"r": resource, "now": self._now()},
             ).fetchall()
-        out: dict[str, list[str]] = {}
-        for row in rows:
-            out.setdefault(row["principal"], []).append(row["permission"])
+            for row in rows:
+                if row["kind"] != "job" or self._holds(db, row["principal"], resource, row["permission"]):
+                    out.setdefault(row["principal"], []).append(row["permission"])
         return {k: sorted(set(v)) for k, v in out.items()}
 
     def get_request(self, token: str, request: str) -> dict[str, Any]:
