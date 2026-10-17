@@ -8,6 +8,11 @@ log has the details.
 
 ### Added
 
+- **Runners for the company's own agents.** A scenario's service can declare `runners: <n>`: a stack run then
+  starts `runner-1` to `runner-<n>`, sandboxes with pi in an empty workspace that only that service can drive,
+  each with its own token. pi there calls models through the gateway, which by default lets runners make 300
+  calls per play of the seeded agents' model only, and refuses the rest with a 429 or 403 it records. The gateway
+  and the runners are recreated before the honest twin, so it starts with empty runners and a fresh count.
 - A shipping check requires a clean latest-commit CodeRabbit review and no unresolved CodeRabbit threads.
 
 - Every PR checks whole edited files against 700 lines, or their base size if already larger; untouched files are excluded.

@@ -55,8 +55,8 @@ Each field has a description in code; these keep pydantic's coercing types.
 | Group | What it holds |
 |---|---|
 | `inference` | the sanctioned paths and the teacher token quota |
-| `gateway` | the gateway container: its https upstream, allowed paths, port, timeout, call log, and the secrets directory of every container |
-| `stack`: images and limits | the gateway and episode image; `sandbox_image`, the slim image agent code runs in; memory, CPU and process limits of the episode, each sandbox and each live service; health probe interval and retries |
+| `gateway` | the gateway container: its https upstream, allowed paths, port, timeout, call log, the secrets directory of every container, and `caller_limits`: per compose service name prefix, the models a caller may call and how many calls a play forwards (by default `runner-`: 300, the seeded agents' model) |
+| `stack`: images and limits | the gateway and episode image; `sandbox_image`, the slim image agent code runs in; `runner_image`, a sandbox with pi, and `runner_timeout_seconds` for one run there; memory, CPU and process limits of the episode, each sandbox (and each runner) and each live service; health probe interval and retries |
 | `stack`: tools | `tools_gateway_image` and `tools_gateway_port` (agentgateway), `tools_timeout_seconds` per call, `tools_connect_seconds` for each client's first listing, `tools_delivery_attempts` for a turn's delivery from the board |
 | `stack`: sandboxes | `sandbox_port`, `sandbox_response_grace_seconds`, `sandbox_recovery_seconds`, `sandbox_scratch_directories` (empty unless a config names them), `checkouts_directory`, `skills_directory` (read-only), `shell_timeout_seconds` for `bash` (offered only with a sandbox), `command_output_limit_bytes` |
 | `stack`: grading | `sandbox_agent_code` runs the agents' code in a no-network container of `sandbox_image` (a stack run's grading always does; an in-process run needs the Dockerfile's `sandbox` target built and tagged first, or grading stops), `agent_code_output_limit_bytes` |

@@ -7,12 +7,13 @@ which mounts only the volume of the checkouts: never the episode's logs, the run
 log. Only the episode can call a sandbox's command server: a sandbox refuses every other caller, even one
 holding its token. Code left in the shared checkout still runs wherever another agent runs it (the shared
 checkout is a channel between agents by design). Each live service of the scenario runs in its own container
-on agent-net alone, with no published port. On one with rights, every agent has its own identity, generated
-per run: its sandbox holds that agent's alone, the service holds every agent's and the agents' starting
-rights, and the episode and the gateway hold none. A service with tools is reached through the tools gateway
-alone (``loc_arena.tools_gateway``), which with the service holds the identities on it. In attack mode the
-episode container plays the episode, then starts again for the honest twin once every sandbox, live service
-and the tools gateway is recreated, so the twin sees nothing the attack left. When the episode exits, its run
+on agent-net alone, with no published port, and one may hand work to runners (``loc_arena.runner_pool``). On
+one with rights, every agent has its own identity, generated per run: its sandbox holds that agent's alone,
+the service holds every agent's and the agents' starting rights, and the episode and the gateway hold none. A
+service with tools is reached through the tools gateway alone (``loc_arena.tools_gateway``), which with the
+service holds the identities on it. In attack mode the episode container plays the episode, then starts again
+for the honest twin once the gateway and every sandbox, runner, live service and the tools gateway is
+recreated, so the twin sees nothing the attack left. When the episode exits, its run
 directory is copied out with the log of each live service and of the tools gateway, their record of every
 request, grant and tool call, the events of those tool calls are built, and the run is graded on this host,
 with the agents' code sandboxed, while the gateway still runs for the monitors' model calls. Then the
@@ -39,7 +40,7 @@ from scenarios.loader import EngineModule, LiveService
 from loc_arena.compose_document import ComposeDocument, ComposeService, Healthcheck, ServiceSecret
 from loc_arena.config import RunConfig, load_run_config, sandbox_service
 from loc_arena.gateway.core import API_KEY_VARIABLE, GATEWAY_URL_VARIABLE, OPENROUTER_URL, OpenRouterProvider
-from loc_arena.gateway.proxy import locate_call_log
+from loc_arena.gateway.proxy import PROJECT_PREFIX, locate_call_log
 from loc_arena.harness import apply_mode, build_recorded_run_events, grade_run, locate_run
 from loc_arena.iam_bootstrap import (
     BOOTSTRAP_SECRET,
@@ -54,6 +55,14 @@ from loc_arena.iam_bootstrap import (
 from loc_arena.iam_wiring import CREDENTIAL_VARIABLE, MANIFEST_VARIABLE, URL_VARIABLE
 from loc_arena.identity_variables import find_shared_identity_variable, holds_identities, identity_variable
 from loc_arena.recorded_events import SERVICE_LOGS
+from loc_arena.runner_pool import (
+    RUNNER_TARGET,
+    declare_runner_token_secrets,
+    list_runner_services,
+    render_runners,
+    runner_token_secret,
+    runner_token_variable,
+)
 from loc_arena.sandbox import IDENTITY_PREFIX, TOKEN_FILE, build_server_settings, token_secret_name
 from loc_arena.settings import StackSettings
 from loc_arena.stack_play import (
@@ -198,6 +207,12 @@ def render_compose(
                 )
                 for service in services
             },
+            **render_runners(
+                config,
+                _build_from(repository, RUNNER_TARGET, stack.runner_image),
+                _probe(stack.sandbox_port, stack),
+                AGENT_NETWORK,
+            ),
             **(
                 {TOOLS_GATEWAY_SERVICE: _render_tools_gateway(config, tool_services)} if tool_services else {}
             ),
@@ -220,6 +235,7 @@ def render_compose(
             KEY_SECRET_NAME: {"environment": API_KEY_VARIABLE},
             **{token_secret_name(agent): {"environment": token_variable(agent)} for agent in agent_ids},
             **{identity.secret_name: {"environment": identity.variable} for identity in identities},
+            **declare_runner_token_secrets(config),
             **(
                 {
                     BOOTSTRAP_SECRET: {"environment": BOOTSTRAP_VARIABLE},
@@ -420,6 +436,12 @@ def _render_live_service(  # noqa: PLR0913
             for identity in identities
             if identity.service == service.name
         ]
+    runners = list_runner_services(config) if service.runners else []
+    mounted = [*mounted, *map(runner_token_secret, runners)]
+    depends_on = {
+        **({iam.service: {"condition": "service_healthy"}} if is_managed else {}),
+        **{runner: {"condition": "service_healthy"} for runner in runners},
+    }
     return {
         **source,
         **({"command": list(service.command)} if service.command else {}),
@@ -429,9 +451,9 @@ def _render_live_service(  # noqa: PLR0913
         "pids_limit": stack.service_pids_limit,
         "networks": [AGENT_NETWORK],
         **({"environment": environment} if environment else {}),
-        **({"secrets": mounted} if is_iam or is_managed or holds_identities(service) else {}),
+        **({"secrets": mounted} if is_iam or is_managed or holds_identities(service) or runners else {}),
         **({"volumes": [*source.get("volumes", []), str(iam.database.parent)]} if is_iam else {}),
-        **({"depends_on": {iam.service: {"condition": "service_healthy"}}} if is_managed else {}),
+        **({"depends_on": depends_on} if depends_on else {}),
         "healthcheck": _probe(service.port, stack, test=service.healthcheck),
         "init": True,
     }
@@ -493,12 +515,14 @@ def _issue_secrets(config: RunConfig) -> tuple[dict[str, str], dict[str, str]]:
     """
     managed = managed_services(config)
     tokens = {agent.id: secrets.token_urlsafe(TOKEN_BYTES) for agent in config.agents}
+    runners = list_runner_services(config)
 
     def issue_for_play(for_config: RunConfig) -> dict[str, str]:
         identities = {identity: secrets.token_urlsafe(TOKEN_BYTES) for identity in issue_identities(config)}
         environment = {
             **{token_variable(agent): token for agent, token in tokens.items()},
             **{identity.variable: value for identity, value in identities.items()},
+            **{runner_token_variable(runner): secrets.token_urlsafe(TOKEN_BYTES) for runner in runners},
         }
         if managed:
             environment[BOOTSTRAP_VARIABLE] = render_bootstrap(for_config)
@@ -545,7 +569,7 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
     config = load_run_config(REPOSITORY / "configs" / f"{run}.yaml")
     settings = config.settings
     instance_id = secrets.token_hex(3)
-    project = f"locarena-{instance_id}"
+    project = f"{PROJECT_PREFIX}{instance_id}"
     episode_arguments = ["--mode", mode, "--instance", instance_id, "--play-only", "--next-phase"]
     episode_arguments += [] if robust else ["--minimal"]
     compose_file = logs / "compose" / f"{project}.yaml"

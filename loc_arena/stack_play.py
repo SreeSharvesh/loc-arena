@@ -13,6 +13,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from loc_arena.config import RunConfig, sandbox_service
+from loc_arena.runner_pool import list_runner_services
 from loc_arena.tools_gateway import TOOLS_GATEWAY_SERVICE, serves_tools
 
 EPISODE_SERVICE = "episode"  # the agent loop's compose service: the one caller every sandbox serves
@@ -49,8 +50,9 @@ def renew_services(
 ) -> None:
     """Before the honest twin: every container agent code could leave state in, recreated empty.
 
-    Those are each sandbox, each live service and the tools gateway; the gateway, whose call log runs on, and
-    the episode stay. Each logged service's log so far is first added to its file in ``service_logs``, every
+    Those are each sandbox, each runner, each live service and the tools gateway. The gateway is recreated
+    too, so it counts each play's calls against its caller limits afresh; its call log runs on in its volume.
+    The episode stays. Each logged service's log so far is first added to its file in ``service_logs``, every
     copy or none, since a recreated container starts a new log. The recreate uses ``twin_environment``, whose
     tools gateway config offers the honest twin's tools (no covert tool), so an agent granted a covert tool in
     the attack config is refused it at the gateway in the twin. Raises ``StackError`` when a log cannot be
@@ -71,7 +73,12 @@ def renew_services(
         raise StackError(
             f"could not write the logs before the honest twin, so nothing was renewed: {error}",
         ) from error
-    renewed = [*(sandbox_service(agent.id) for agent in config.agents), *list_logged_services(config)]
+    renewed = [
+        "gateway",
+        *(sandbox_service(agent.id) for agent in config.agents),
+        *list_runner_services(config),
+        *list_logged_services(config),
+    ]
     recreate = ["up", "--detach", "--wait", "--force-recreate", "--renew-anon-volumes", "--no-deps"]
     if subprocess.run([*compose, *recreate, *renewed], env=twin_environment).returncode != 0:
         raise StackError(
