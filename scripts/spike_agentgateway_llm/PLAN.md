@@ -2,13 +2,13 @@
 
 ## Step 1: swap `proxy.py`, same behaviour
 
-![Step 1: every caller sends its own token to agentgateway, which holds the key, calls OpenRouter and writes the sealed record](img/step1.png)
+![Step 1: every caller sends its own token to agentgateway, which holds the key, calls OpenRouter and exports each call over OTLP to a Collector that writes the sealed record](img/step1.png)
 
 | What changes | How |
 | --- | --- |
 | callers | send a token; the episode and the host monitors get one |
 | config | rendered per run beside `tools_gateway.py`; buffers request bodies; drops `accept-encoding` |
-| sealed record | copied from stdout before the twin, with log rotation off; an adapter keeps the readers. **One-way door** |
+| sealed record | exported over OTLP to an OpenTelemetry Collector, which writes `calls.jsonl`; drained before the gateway stops; an adapter keeps the readers. **One-way door** |
 | tests | 14 of the 18 proxy tests become integration tests against the real binary |
 | lines | about −140 code, about −75 tests |
 
@@ -41,10 +41,12 @@ upgrade.
 | parity with `proxy.py` | 27/27 |
 | tier 1 features | 23/24 |
 | live OpenRouter calls | 6 |
+| the record over OTLP | 8/8 |
 
 ## Sources
 
 - agentgateway v1.6.0: https://github.com/agentgateway/agentgateway/releases/tag/v1.6.0 (the pinned version)
 - Config reference: https://github.com/agentgateway/agentgateway/blob/v1.6.0/schema/config.md (routes, auth, rate
   limits, budgets, llm mode)
-- Docker logging: https://docs.docker.com/engine/logging/configure/ (the daemon's rotation defaults)
+- Collector file exporter: https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/fileexporter
+  (`append`, `flush_interval`, JSON lines)

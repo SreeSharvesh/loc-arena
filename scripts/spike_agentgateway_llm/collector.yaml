@@ -1,0 +1,24 @@
+# The sealed record's writer: an OpenTelemetry Collector that receives agentgateway's access logs over OTLP and
+# appends each as one JSON line to a file in a volume only this container mounts.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+        # Above gRPC's default 4 MiB: one record can carry a reply up to agentgateway's maxBufferSize (32 MiB).
+        max_recv_msg_size_mib: 256
+exporters:
+  file:
+    path: /records/calls.jsonl
+    # Without it the exporter truncates the file on start: a Collector restart would erase the record.
+    append: true
+    format: json
+    flush_interval: 100ms
+service:
+  pipelines:
+    logs:
+      receivers: [otlp]
+      exporters: [file]
+  telemetry:
+    logs:
+      level: warn

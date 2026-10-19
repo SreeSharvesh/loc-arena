@@ -100,18 +100,29 @@ reaches more of the provider:
    - Give up streaming for aliased models.
 
    Plain `modelAliases` shows agents the provider's model name.
-4. **The sealed record's shape.** This changes the sealed log's format: a one-way door.
-   - The record becomes the gateway container's stdout, copied with `docker compose logs gateway`. Today `compose cp`
-     copies `calls.jsonl`.
-   - Docker's log rotation must be off for that container (no `max-size` in the daemon or the compose `logging`
-     options), or the record is cut.
-   - Its readers change, or read through an adapter: `explorer/reasoning.py` and
-     `tests/integration/test_stack_reach.py`.
-   - The database sink (`parity_db.yaml`, `llm: full`) is structured. Each call's prompt and completion are stored as
-     role and parts JSON, the fields we add are kept (full bodies, caller), and a 200 KB reply arrives whole. It
-     records only calls that reach the LLM layer, though: 9 of the 21 calls in the parity run. Refused calls (401,
-     403, 404, 429) and `/models` are missing, so it cannot be the sealed record alone. OTLP logs into an
-     OpenTelemetry Collector with a file exporter are the other structured route; not tested.
+4. **The sealed record: OTLP into an OpenTelemetry Collector** (`parity_otel.yaml`, `collector.yaml`,
+   `probe_otel.py`, 8/8). This changes the sealed log's format: a one-way door.
+   - agentgateway exports every access-log record over OTLP to a Collector. The Collector's file exporter appends
+     each as JSON to `calls.jsonl`, in a volume only it mounts.
+   - All 21 stdout records of the parity run were there, refusals (401, 403, 404, 429) and the 503 included, with
+     bodies, callers and no key. Fields use OpenTelemetry's names (`url.path`, `http.response.status_code`,
+     `gen_ai.*`).
+   - Three settings, each found by a failed check:
+     - **Message size.** The Collector's gRPC receiver needs `max_recv_msg_size_mib` above 4. A 6 MB reply was
+       dropped at the default, with only an error in the gateway's log. At 256 MiB, 6 MB and 30 MB replies were
+       recorded.
+     - **`append: true` on the file exporter.** Without it, the exporter truncates the file when the Collector
+       restarts.
+     - **Drain before the stop.** The harness waits, bounded, until the Collector holds as many records as the
+       gateway's stdout, then stops the gateway. agentgateway exports in batches, and a batch still pending at
+       SIGTERM can be lost. It was lost every time with Docker's kill after 3 s, and on a cold exporter even with
+       a 30 s grace period ("BatchLogProcessor shutdown timing out"). The gateway also gets a long
+       `stop_grace_period`.
+   - A call made while the Collector was down was recorded once it came back.
+   - stdout stays as the completeness check that the drain compares against.
+   - The database sink (`parity_db.yaml`, `llm: full`) stores each call's prompt and completion as role and parts
+     JSON. It records only calls that reach the LLM layer (9 of 21), so it serves as the ledger and transcript store,
+     never the sealed record.
 5. **`/api/v1/completions`** (legacy text completion). llm mode does not serve it; a plain route beside it does
    (`combined.yaml`). Check whether anything still calls it.
 
