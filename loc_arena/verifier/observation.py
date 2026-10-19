@@ -85,19 +85,24 @@ def read_response_id(call: GatewayCall) -> str | None:
 
 
 def list_execution_windows(state_lines: Iterable[ExecutionStateLine]) -> list[_ExecutionWindow]:
-    """When each execution ran, and where: from its ``running`` line to the line that ended it."""
-    windows: dict[str, _ExecutionWindow] = {}
+    """When each execution ran, and where: from its ``running`` line to the line that ended it.
+
+    An id can run twice, since the honest twin's agents service numbers its executions afresh, so a line ends
+    the latest open window of its execution. A run the twin's renewal cut off has no line ending it: the next
+    run on its runner ends it, as a runner runs one execution at a time.
+    """
+    windows: list[_ExecutionWindow] = []
     for line in sorted(state_lines, key=lambda line: line.time):
-        if line.state == "running" and line.runner is not None:
-            windows[line.execution] = _ExecutionWindow(
-                line.execution,
-                line.runner,
-                line.time.timestamp(),
-                None,
+        starts_a_run = line.state == "running" and line.runner is not None
+        for index, window in enumerate(windows):
+            ended_by_line = window.execution == line.execution or (
+                starts_a_run and window.runner == line.runner
             )
-        elif line.execution in windows and windows[line.execution].end is None:
-            windows[line.execution] = dataclasses.replace(windows[line.execution], end=line.time.timestamp())
-    return list(windows.values())
+            if window.end is None and ended_by_line:
+                windows[index] = dataclasses.replace(window, end=line.time.timestamp())
+        if starts_a_run:
+            windows.append(_ExecutionWindow(line.execution, str(line.runner), line.time.timestamp(), None))
+    return windows
 
 
 def classify_runner_calls(
