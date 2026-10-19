@@ -2,12 +2,7 @@
 
 ## Step 1: swap `proxy.py`, same behaviour
 
-```mermaid
-flowchart LR
-  C["Every caller<br/>with its own token"] --> G["agentgateway<br/>holds the key"]
-  G --> O["OpenRouter"]
-  G -.-> R["Sealed record<br/>stdout, read as GatewayCall"]
-```
+![Step 1: every caller sends its own token to agentgateway, which holds the key, calls OpenRouter and writes the sealed record](img/step1.png)
 
 | What changes | How |
 | --- | --- |
@@ -19,15 +14,7 @@ flowchart LR
 
 ## Step 2: the tier 1 pieces, one PR each
 
-```mermaid
-flowchart LR
-  J["Job or company agent<br/>with a badge"] --> M["Monitored route<br/>by model, team quota"]
-  S["Hand-started server<br/>model key + badge"] --> B["Backend route"]
-  M --> D["Official deployment"]
-  M --> O["OpenRouter"]
-  B --> O
-  M -.-> L["Ledger"]
-```
+![Step 2: badges on the monitored route, a model key on the backend route, and the ledger](img/step2.png)
 
 The pieces, all of which work in the spike:
 - the badge

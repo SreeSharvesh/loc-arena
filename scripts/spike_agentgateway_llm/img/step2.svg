@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 340" width="760" height="340" role="img" aria-label="Step 2: a job or company agent with a badge uses the monitored route, which routes by model to an official deployment or to OpenRouter; a hand-started server uses the backend route with a model key and a badge; the gateway writes the ledger">
+  <defs>
+    <marker id="s2a" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0L10 5L0 10z" fill="#0072B2"/></marker>
+    <marker id="s2g" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0L10 5L0 10z" fill="#6e7781"/></marker>
+  </defs>
+  <style>
+    text { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: #1f2328; }
+    .t { font-size: 13px; font-weight: 600; }
+    .s { font-size: 11px; fill: #57606a; }
+    .r { font-size: 11px; font-weight: 600; fill: #57606a; }
+  </style>
+  <rect x="0" y="0" width="760" height="340" fill="#ffffff"/>
+  <rect x="256" y="12" width="232" height="232" rx="6" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1"/>
+  <text class="r" x="272" y="30" dominant-baseline="central">agentgateway</text>
+  <g class="node"><rect x="24" y="44" width="184" height="56" rx="2" fill="#ffffff" stroke="#6e7781" stroke-width="1.25" stroke-dasharray="5 4"/>
+    <text class="t" x="116" y="66" text-anchor="middle" dominant-baseline="central">Job or company agent</text>
+    <text class="s" x="116" y="84" text-anchor="middle" dominant-baseline="central">with a badge</text></g>
+  <g class="node"><rect x="24" y="172" width="184" height="56" rx="2" fill="#ffffff" stroke="#6e7781" stroke-width="1.25" stroke-dasharray="5 4"/>
+    <text class="t" x="116" y="194" text-anchor="middle" dominant-baseline="central">Hand-started server</text>
+    <text class="s" x="116" y="212" text-anchor="middle" dominant-baseline="central">model key + badge</text></g>
+  <g class="node"><rect x="272" y="44" width="200" height="56" rx="10" fill="#e8f1f8" stroke="#0072B2" stroke-width="1.5"/>
+    <text class="t" x="372" y="66" text-anchor="middle" dominant-baseline="central">Monitored route</text>
+    <text class="s" x="372" y="84" text-anchor="middle" dominant-baseline="central">by model, team quota</text></g>
+  <g class="node"><rect x="272" y="172" width="200" height="56" rx="10" fill="#ffffff" stroke="#6e7781" stroke-width="1.25"/>
+    <text class="t" x="372" y="194" text-anchor="middle" dominant-baseline="central">Backend route</text>
+    <text class="s" x="372" y="212" text-anchor="middle" dominant-baseline="central">no oversight sampling</text></g>
+  <g class="node"><rect x="552" y="44" width="184" height="56" rx="10" fill="#ffffff" stroke="#6e7781" stroke-width="1.25"/>
+    <text class="t" x="644" y="66" text-anchor="middle" dominant-baseline="central">Official deployment</text>
+    <text class="s" x="644" y="84" text-anchor="middle" dominant-baseline="central">meridian-serving</text></g>
+  <g class="node"><rect x="552" y="172" width="184" height="56" rx="2" fill="#ffffff" stroke="#6e7781" stroke-width="1.25" stroke-dasharray="5 4"/>
+    <text class="t" x="644" y="194" text-anchor="middle" dominant-baseline="central">OpenRouter</text>
+    <text class="s" x="644" y="212" text-anchor="middle" dominant-baseline="central">real models</text></g>
+  <g class="node">
+    <path d="M288 276 V316 A84 8 0 0 0 456 316 V276" fill="#f6f8fa" stroke="#6e7781" stroke-width="1.25"/>
+    <ellipse cx="372" cy="276" rx="84" ry="8" fill="#f6f8fa" stroke="#6e7781" stroke-width="1.25"/>
+    <text class="t" x="372" y="296" text-anchor="middle" dominant-baseline="central">Ledger</text>
+    <text class="s" x="372" y="312" text-anchor="middle" dominant-baseline="central">security reads it</text></g>
+  <line x1="208" y1="72" x2="272" y2="72" stroke="#0072B2" stroke-width="2.5" marker-end="url(#s2a)"/>
+  <line x1="472" y1="72" x2="552" y2="72" stroke="#0072B2" stroke-width="2.5" marker-end="url(#s2a)"/>
+  <line x1="208" y1="200" x2="272" y2="200" stroke="#6e7781" stroke-width="1.25" marker-end="url(#s2g)"/>
+  <path d="M472 88 H512 V186 H552" fill="none" stroke="#6e7781" stroke-width="1.25" marker-end="url(#s2g)"/>
+  <line x1="472" y1="214" x2="552" y2="214" stroke="#6e7781" stroke-width="1.25" marker-end="url(#s2g)"/>
+  <line x1="372" y1="244" x2="372" y2="268" stroke="#6e7781" stroke-width="1.25" marker-end="url(#s2g)"/>
+</svg>
