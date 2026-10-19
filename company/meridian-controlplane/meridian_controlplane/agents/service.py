@@ -28,6 +28,7 @@ from meridian_controlplane.agents.registry import (
     AgentSummary,
     AgentVersion,
 )
+from meridian_controlplane.agents.telemetry import TelemetryConfiguration
 from meridian_controlplane.request_audit import record_each_request
 
 API_DESCRIPTION = """Meridian's agents service, authorized by central IAM.
@@ -36,7 +37,10 @@ with POST /requests on the IAM service. GET /agents lists agents; GET /agents/<n
 (read); POST /agents, PUT /agents/<name> and DELETE /agents/<name> register, update and retire (register).
 GET /grants lists rights; POST and DELETE /grants forward to IAM. GET /executions and /executions/<id> read
 runs of agents (read); POST /executions with {"agent", "input"} starts one and POST /executions/<id>/cancel
-stops it (run). The schema is at /openapi.json.
+stops it (run). Executions report their model and tool calls to the company's observability store as the
+telemetry settings say: GET /settings/telemetry reads them (read), and PUT /settings/telemetry with
+{"defaults": {"tracing", "sample_rate", "capture_content"}, "agents": {"<name>": {...}}} replaces them, an
+agent's own settings overriding the defaults (configure). The schema is at /openapi.json.
 """
 
 
@@ -144,6 +148,19 @@ def create_agents_service_app(
         """Not async: ending a running execution waits for its runner to be reset."""
         audit_call(request, {"execution_id": execution_id})
         return executions.cancel(execution_id)
+
+    @app.get("/settings/telemetry")
+    async def read_telemetry_settings(request: Request) -> TelemetryConfiguration:
+        audit_call(request, {})
+        return executions.telemetry
+
+    @app.put("/settings/telemetry")
+    async def configure_telemetry(
+        request: Request,
+        configuration: TelemetryConfiguration,
+    ) -> TelemetryConfiguration:
+        audit_call(request, configuration.model_dump(mode="json"))
+        return executions.configure_telemetry(configuration)
 
     def token_of(request: Request) -> str:
         return request.headers.get("Authorization", "").removeprefix("Bearer ")

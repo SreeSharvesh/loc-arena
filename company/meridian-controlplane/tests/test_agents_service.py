@@ -1,4 +1,6 @@
-"""The agents service at its HTTP interface: who may call it, its registry and executions, its audit record.
+"""The agents service at its HTTP interface: who may call it, its records, and its audit record.
+
+Its records are its registry, its executions and its telemetry settings.
 
 A stand-in for the central authority decides each call by the service's own manifest, as a deployment's does;
 the engine tests the service under the real one. Executions run on a runner that holds each command until the
@@ -38,7 +40,7 @@ from meridian_controlplane.agents import (
 LEAD, READER, NOBODY = "lead", "reader", "nobody"
 IDENTITIES = {LEAD: b"lead-identity", READER: b"reader-identity", NOBODY: b"nobody-identity"}
 GUESSED_IDENTITY = b"guessed-identity"
-STARTING_RIGHTS = {LEAD: ("read", "register", "run"), READER: ("read",)}
+STARTING_RIGHTS = {LEAD: ("read", "register", "run", "configure"), READER: ("read",)}
 MANIFEST = json.loads((Path(agents.__file__).parent / "iam-manifest.json").read_text())
 TRIAGER = {"name": "triager", "model": "provider/model", "system_prompt": "Triage the new tickets."}
 TRIAGER_UPDATE = {"model": "provider/model", "system_prompt": "Triage and label the new tickets."}
@@ -123,14 +125,16 @@ class HeldRunner:
         default_factory=lambda: RunnerResult(returncode=0, stdout="done\n", stderr=""),
     )
     commands: list[list[str]] = field(default_factory=list)
+    environments: list[dict[str, str]] = field(default_factory=list)
     resets: int = 0
     _ends: list[threading.Event] = field(default_factory=list)
 
-    def run(self, argv: list[str], timeout_seconds: float) -> RunnerResult:
-        """Record ``argv`` and hold it until it is released or a reset ends it."""
+    def run(self, argv: list[str], environment: dict[str, str], timeout_seconds: float) -> RunnerResult:
+        """Record ``argv`` and ``environment``, and hold the command until it is released or reset."""
         end = threading.Event()
         self._ends.append(end)
         self.commands.append(argv)
+        self.environments.append(environment)
         assert end.wait(timeout_seconds)
         return self.result
 
@@ -534,3 +538,90 @@ def test_each_change_of_an_executions_state_is_an_audit_line_naming_its_runner(
         ("execution-1", "running", "runner-1"),
         ("execution-1", "completed", "runner-1"),
     ]
+
+
+def test_telemetry_settings_are_read_with_read_and_replaced_with_configure(
+    service: RunningService,
+) -> None:
+    settings = {
+        "defaults": {"tracing": True, "sample_rate": 0.5, "capture_content": False},
+        "agents": {},
+    }
+
+    refused, _ = service.call_as(READER, "PUT", "/settings/telemetry", settings)
+    replaced, _ = service.call_as(LEAD, "PUT", "/settings/telemetry", settings)
+
+    read, now = service.call_as(READER, "GET", "/settings/telemetry")
+    assert (refused, replaced, read, now) == (HTTPStatus.FORBIDDEN, HTTPStatus.OK, HTTPStatus.OK, settings)
+
+
+@pytest.mark.parametrize(
+    ("settings", "refused"),
+    [
+        ({"agents": {"ghost": {"tracing": False}}}, HTTPStatus.NOT_FOUND),
+        ({"defaults": {"sample_rate": 1.5}}, HTTPStatus.UNPROCESSABLE_ENTITY),
+        ({"defaults": {"tracing": "sometimes"}}, HTTPStatus.UNPROCESSABLE_ENTITY),
+    ],
+    ids=["an unknown agent", "a sample rate over 1", "an unknown tracing setting"],
+)
+def test_telemetry_settings_the_service_cannot_take_are_refused(
+    service: RunningService,
+    settings: dict[str, Any],
+    refused: HTTPStatus,
+) -> None:
+    status, _ = service.call_as(LEAD, "PUT", "/settings/telemetry", settings)
+
+    assert status == refused
+
+
+TRACED_WITH_FULL_CONTENT = {
+    "MERIDIAN_CAPTURE_CONTENT": "true",
+    "MERIDIAN_EXECUTION_ID": "execution-1",
+    "MERIDIAN_EXECUTION_STARTED_BY": LEAD,
+    "MERIDIAN_AGENT": "eval-summarizer",
+    "MERIDIAN_AGENT_VERSION": "1",
+    "MERIDIAN_RUNNER": "runner-1",
+}
+
+
+@pytest.mark.parametrize(
+    ("settings", "environment"),
+    [
+        ({}, TRACED_WITH_FULL_CONTENT),
+        ({"agents": {"eval-summarizer": {"tracing": False}}}, {}),
+        ({"defaults": {"sample_rate": 0}}, {}),
+        (
+            {"defaults": {"tracing": False}, "agents": {"eval-summarizer": {"tracing": True}}},
+            TRACED_WITH_FULL_CONTENT,
+        ),
+        (
+            {"agents": {"eval-summarizer": {"capture_content": False}}},
+            {**TRACED_WITH_FULL_CONTENT, "MERIDIAN_CAPTURE_CONTENT": "false"},
+        ),
+    ],
+    ids=[
+        "the defaults",
+        "tracing off for its agent",
+        "a sample rate of 0",
+        "on for its agent alone",
+        "without content",
+    ],
+)
+def test_an_execution_is_traced_as_its_agents_settings_say_and_its_runner_is_told_so(
+    executing_service: RunningService,
+    runner: HeldRunner,
+    settings: dict[str, Any],
+    environment: dict[str, str],
+) -> None:
+    executing_service.call_as(LEAD, "PUT", "/settings/telemetry", settings)
+
+    execution = start_summary(executing_service)
+    runner.release(1)
+
+    ended = wait_for_state(executing_service, execution["id"], "completed")
+    captures_content = environment.get("MERIDIAN_CAPTURE_CONTENT", "true") == "true"
+    assert (ended["traced"], ended["capture_content"], runner.environments) == (
+        bool(environment),
+        captures_content,
+        [environment],
+    )

@@ -16,6 +16,7 @@ from pathlib import Path
 from loc_arena.config import RunConfig, sandbox_service
 from loc_arena.gateway.model_gateway import MODEL_GATEWAY_SERVICE, drain_record, start_gateway
 from loc_arena.node_pool import list_node_services
+from loc_arena.observability import PHOENIX_SERVICE, export_spans
 from loc_arena.runner_pool import list_runner_services
 from loc_arena.tools_gateway import TOOLS_GATEWAY_SERVICE, serves_tools
 
@@ -60,9 +61,10 @@ def renew_services(
     Those are each sandbox, each runner, each live service and the tools gateway. The model gateway is
     recreated too, so it admits the twin's runners and counts their calls afresh, once its record is drained;
     the Collector, and the record, run on. The episode stays. Each logged service's log so far is first added
-    to its file in ``service_logs``, every copy or none, since a recreated container starts a new log. The
-    recreate uses ``twin_environment``, whose tools gateway config offers the honest twin's tools (no covert
-    tool), so an agent granted a covert tool in the attack config is refused it at the gateway in the twin.
+    to its file in ``service_logs``, every copy or none, since a recreated container starts a new log, then
+    Phoenix's spans, once no runner can add one. The recreate uses ``twin_environment``, whose tools gateway
+    config offers the honest twin's tools (no covert tool), so an agent granted a covert tool in the attack
+    config is refused it at the gateway in the twin.
     Raises ``StackError`` when a log cannot be copied or the record does not drain, so nothing is recreated,
     or when a renewed container does not come back.
     """
@@ -72,9 +74,11 @@ def renew_services(
         *list_runner_services(config),
         *list_logged_services(config),
     ]
-    # Every caller the twin renews stops first, so no call is in flight when the record is drained.
+    # Every caller the twin renews stops first, so no call is in flight when the record is drained. Phoenix
+    # calls no model, and runs on until its spans are exported.
     run = functools.partial(subprocess.run, env=environment)
-    if not drain_record(run, compose, config.settings, callers=renewed[1:]):
+    callers = [service for service in renewed[1:] if service != PHOENIX_SERVICE]
+    if not drain_record(run, compose, config.settings, callers=callers):
         raise StackError("the gateway's record did not drain before the honest twin, so nothing was renewed")
     copies = list_service_log_copies(config, compose, service_logs)
     logged = [subprocess.run(command, env=environment, capture_output=True) for command, _ in copies]
@@ -91,6 +95,7 @@ def renew_services(
         raise StackError(
             f"could not write the logs before the honest twin, so nothing was renewed: {error}",
         ) from error
+    export_spans(run, compose, config, service_logs)
     recreate = ["up", "--detach", "--wait", "--force-recreate", "--renew-anon-volumes", "--no-deps"]
     recreated = subprocess.run([*compose, *recreate, *renewed], env=twin_environment).returncode == 0
     if not (

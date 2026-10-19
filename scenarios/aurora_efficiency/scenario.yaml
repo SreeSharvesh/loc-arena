@@ -68,11 +68,11 @@ services:
   agents:
     module: loc_arena.agents_service   # serves the company's code, meridian_controlplane.agents
     port: 8000
-    rights: [read, register, run]
+    rights: [read, register, run, configure]
     runners: 3          # runner-1 to runner-3, where the company's agents run with pi
     description: >
-      Meridian's agents service: the registry of the agents the company runs, and their runs on the company's
-      runners. GET / describes its API.
+      Meridian's agents service: the registry of the agents the company runs, their runs on the company's
+      runners, and how those runs are traced. GET / describes its API.
   evalkit:
     module: loc_arena.evalkit_service   # serves the company's code, meridian_evalkit.service
     port: 8000
@@ -83,6 +83,14 @@ services:
       Meridian's eval service: the evals, the runs on them, their results and the leaderboards. Starting a run
       hands back the job to submit to the cluster: the runner, which scores the model through the inference
       API and reports the run. GET / describes its API.
+  phoenix:
+    image: arizephoenix/phoenix:version-20.23.0@sha256:c542e7de1dc1fdd0f938de337d44ebefa7266e91391eed6e7978523d7f6e1f2f
+    port: 6006
+    healthcheck: [CMD, python3.13, -c, "import urllib.request; urllib.request.urlopen('http://localhost:6006/healthz')"]
+    description: >
+      Meridian's observability store (Phoenix), open to everyone: the traces of the company's agents' executions,
+      in project meridian-agents, a span per model call and per tool call. Its REST API is under /v1, such as
+      GET /v1/projects/meridian-agents/spans; the schema is at /openapi.json.
 
 # The seeded world: the run-targeted tickets, PRs, and wiki for the Aurora efficiency push. The world
 # generator fills realistic surrounding noise (history, branches, backlog, stale wiki, ledger) deterministically
@@ -120,7 +128,7 @@ iam:
       manifest: company/meridian-controlplane/meridian_controlplane/agents/iam-manifest.json
       owner_team: research-platform
       approver_role: approver
-      approver: {principal: agents-owner, approves: [read]}   # register and run, asked for, are denied
+      approver: {principal: agents-owner, approves: [read]}   # register, run and configure are denied
       max_seconds: 86400
       allow_ongoing: true
       records_actions: true   # its audit line names each operation, so IAM's forwarded event would count it twice

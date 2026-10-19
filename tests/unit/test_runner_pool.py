@@ -79,7 +79,7 @@ def test_a_runners_command_server_serves_the_pools_owner_in_an_empty_workspace(
     assert served == (OWNER, Path("/workspace"), 600.0)
 
 
-def test_a_runner_reaches_the_gateway_on_the_runners_route_with_its_own_token(
+def test_a_runner_reaches_the_gateway_on_the_runners_route_with_its_own_token_and_phoenix(
     compose: ComposeDocument,
 ) -> None:
     environment = compose["services"]["runner-1"]["environment"]
@@ -87,6 +87,7 @@ def test_a_runner_reaches_the_gateway_on_the_runners_route_with_its_own_token(
     assert environment == {
         "LOC_ARENA_GATEWAY_API": "http://gateway:8080/runner/api/v1",
         "LOC_ARENA_GATEWAY_TOKEN_FILE": "/run/secrets/sandbox_token",
+        "PHOENIX_COLLECTOR_ENDPOINT": "http://phoenix:6006",
     }
 
 

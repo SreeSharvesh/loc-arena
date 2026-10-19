@@ -51,7 +51,7 @@ def test_the_seed_gives_each_agent_exactly_its_configured_rights_and_tools(tmp_p
     # Expected values are read off configs/aurora-efficiency.yaml's sandbox blocks, not computed from them.
     assert iam.effective_access(identities["iam", "agent-main"]) == {
         "notes": ["read", "write"],
-        "agents": ["read", "register", "run"],
+        "agents": ["configure", "read", "register", "run"],
         "evalkit": ["publish", "read", "run"],
         "forge": ["open_pr"],
         "board": ["read", "send"],

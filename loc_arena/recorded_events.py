@@ -22,7 +22,8 @@ call, so either may fall outside every turn, unnoted. A job's own calls carry it
 ``workload_issued`` audit line, and each of its events names the ``workload``; it too may fall outside every
 turn, unnoted. A seeded job, another team's work the job service starts with, is marked ``seed`` on its
 ``job`` events, and its owner is a principal of the company: each record of one is placed as an agent's is,
-its events of the actor role ``company``, in turn 0.
+its events of the actor role ``company``, in turn 0. Each span Phoenix held of a traced execution
+(``loc_arena.observability``) is an ``execution_span`` action of the agent that started the execution.
 ``blind_monitor`` also reduces the monitors' view: the target's mirror events after the call are dropped, so
 monitors lose that activity while the sealed log keeps it. Each line of
 ``unattributed_records.jsonl`` in the run directory is a record and the ``reason`` it was not placed: not a
@@ -38,7 +39,7 @@ import contextlib
 import dataclasses
 import json
 import logging
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from http import HTTPMethod, HTTPStatus
 from pathlib import Path
@@ -55,6 +56,7 @@ from loc_arena.logging_.agent_trace import EpisodeTrace
 from loc_arena.logging_.events import AppendOnlyLog, EventKind, fingerprint, read_events
 from loc_arena.mirror_coverage import CoverageDrop, drop_covered_mirror_events
 from loc_arena.node_pool import list_node_services
+from loc_arena.observability import TracedSpan, read_span_lines
 from loc_arena.recording_service import TOOLS as COVERT_TOOLS
 from loc_arena.recording_service import redact_note
 from loc_arena.scaffold.bus import Recorder
@@ -69,6 +71,7 @@ COMPANY_ROLE = "company"  # the actor role of a company principal's events: no a
 _OPENED_PULL_REQUEST = TypeAdapter(OpenedPullRequest)
 _JSON_OBJECT = TypeAdapter(dict[str, JsonValue])
 _COVERAGE_COMPONENTS = ("monitor", "logging")
+SPAN_TOOL = "execution_span"  # the action a traced execution's span makes
 
 
 class ServiceRequestRecord(BaseModel):
@@ -485,6 +488,18 @@ def _parse_service_request_line(line: str, agent_ids: Sequence[str]) -> _ParsedR
     )
 
 
+def _parse_span_line(line: str, agent_ids: Sequence[str]) -> _ParsedRecordLine:
+    """A traced execution's span, an action of the agent that started it; no agent if the span names none."""
+    _ = agent_ids
+    span = TracedSpan.model_validate_json(line)
+    if span.started_by is None:
+        return _ParsedRecordLine(span.start_time.timestamp(), None, [])
+    arguments = {"name": span.name, "kind": span.span_kind, "status": span.status_code, **span.attributes}
+    payload = {"args": arguments, "target": span.execution, "blocked": False, "reason": None}
+    event = RecordedEvent("action", span.started_by, span.execution, payload, tool=SPAN_TOOL)
+    return _ParsedRecordLine(span.start_time.timestamp(), span.started_by, [event])
+
+
 @dataclass(frozen=True)
 class _Placed:
     """A record's events, placed: its episode, its wall time, its agent's turn, and the events themselves."""
@@ -522,10 +537,17 @@ def build_recorded_events(
         ),
         *((node, _attribute_workloads(_parse_process_line, sponsors)) for node in list_node_services(config)),
     ]
+    record_sources: list[tuple[Iterable[str], RecordLineParser]] = [
+        *(
+            (_read_record_lines(run_directory, service, phases), parse)
+            for service, parse in record_line_parsers
+        ),
+        (read_span_lines(run_directory / SERVICE_LOGS), _parse_span_line),
+    ]
     unattributed: list[str] = []
     built: dict[Path, list[_Placed]] = {phase.directory: [] for phase in phases}
-    for service, parse_record_line in record_line_parsers:
-        for line in _read_record_lines(run_directory, service, phases):
+    for record_lines, parse_record_line in record_sources:
+        for line in record_lines:
             placed, reason = _place(line, parse_record_line, phases, roles, agent_ids)
             unattributed += [json.dumps({"reason": reason, "line": line})] if reason else []
             if placed:

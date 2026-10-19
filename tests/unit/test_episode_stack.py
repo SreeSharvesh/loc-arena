@@ -29,6 +29,7 @@ from loc_arena.episode_stack import (
 )
 from loc_arena.gateway import core
 from loc_arena.harness import apply_mode
+from loc_arena.observability import EXPORT_SPANS
 from loc_arena.recording_service import COVERT_TOOL_NAMES
 from loc_arena.settings import GatewaySettings, LocArenaSettings, StackSettings
 from loc_arena.stack_play import renew_services
@@ -748,8 +749,10 @@ COMPOSE_PREFIX_LENGTH = 8  # docker compose -p <project> -f <file> --project-dir
 NOTES_LOG = b'{"caller": "agent-main", "status": 200}\n'
 AURORA_AGENTS = ["AGENT_MAIN", "CONTROLPLANE_AGENT", "DATAPIPE_AGENT", "DISTILL_AGENT", "EVAL_AGENT"]
 AURORA_AGENTS += ["JOBSVC_AGENT", "SERVING_AGENT"]
-# A stack run's services in the order its compose file declares them; the fleet and the tools gateway follow.
+# The services agents hold an identity on, in the order a stack run's compose file declares them.
 SERVICES = ("notes", "forge", "board", "jobsvc", "jobs", "scratch", "coverage", "agents", "evalkit", "iam")
+# The containers whose log a stack run copies, in that order: those, Phoenix, the fleet and the tools gateway.
+LOGGED = (*SERVICES[:-1], "phoenix", "iam", "node-1", "node-2", "node-3", "agentgateway")
 
 
 @dataclass
@@ -785,7 +788,8 @@ class FakeDocker:
         failed = self.failing in command[COMPOSE_PREFIX_LENGTH:] or (
             playing and self.plays > self.plays_passing
         )
-        created = "container-id\n" if verb == "ps" and self.episode_created_only else ""
+        listed = verb == "ps" and (self.episode_created_only or "running" in command)  # Phoenix runs
+        created = "container-id\n" if listed else ""
         published = self.published if verb == "port" else created
         printed = NOTES_LOG if verb == "logs" and stdout is None else published
         printed = printed.decode() if text and isinstance(printed, bytes) else printed
@@ -933,16 +937,9 @@ def test_a_stack_run_copies_the_tools_gateways_log_out_before_it_removes_the_pro
         run_aurora_in_stack(tmp_path)
 
     copied = read_copied_log(tmp_path, "agentgateway")
+    copy_command = ["logs", "--no-color", "--no-log-prefix", "agentgateway"]
     commands = [call[COMPOSE_PREFIX_LENGTH:] for call in docker.calls]
-    assert (
-        copied,
-        ["logs", "--no-color", "--no-log-prefix", "agentgateway"] in commands,
-        docker.verbs[-1],
-    ) == (
-        NOTES_LOG,
-        True,
-        "down",
-    )
+    assert (copied, copy_command in commands, docker.verbs[-1]) == (NOTES_LOG, True, "down")
 
 
 @pytest.fixture
@@ -968,8 +965,9 @@ def test_a_stack_run_copies_each_live_services_log_into_its_run_directory_before
 
     run_aurora_in_stack(tmp_path)
 
-    logged = sorted((*SERVICES, "node-1", "node-2", "node-3", "agentgateway"))
-    assert copied_at_grading == [[f"{service}.log" for service in logged]] * 2
+    assert (
+        copied_at_grading == [sorted([*(f"{service}.log" for service in LOGGED), "phoenix.spans.jsonl"])] * 2
+    )
 
 
 def test_a_graded_stack_run_copies_its_run_directory_out_once(
@@ -998,18 +996,19 @@ def test_an_attack_stack_run_drains_the_record_then_renews_every_container_but_t
 
     commands = [call[COMPOSE_PREFIX_LENGTH:] for call in docker.calls]
     plays = [index for index, command in enumerate(commands) if command[0] == "up" and "--attach" in command]
-    logged = (*SERVICES, "node-1", "node-2", "node-3", "agentgateway")  # the fleet's logs: its process facts
     between = [
         command[:2] if command[0] == "cp" else command for command in commands[plays[0] + 1 : plays[1]]
     ]
     renewed = ["sandbox-agent-main", "sandbox-serving-agent", "sandbox-distill-agent", "sandbox-eval-agent"]
     renewed += ["sandbox-datapipe-agent", "sandbox-jobsvc-agent", "sandbox-controlplane-agent"]
-    renewed += ["runner-1", "runner-2", "runner-3", *logged]
+    renewed += ["runner-1", "runner-2", "runner-3", *LOGGED]
     assert between == [
-        ["stop", *renewed],
+        ["stop", *(service for service in renewed if service != "phoenix")],  # Phoenix runs on to export
         ["logs", "--no-color", "--no-log-prefix", "gateway"],
         ["cp", "collector:/sealed/calls.jsonl"],
-        *(["logs", "--no-color", "--no-log-prefix", service] for service in logged),
+        *(["logs", "--no-color", "--no-log-prefix", service] for service in LOGGED),
+        ["ps", "--status", "running", "--quiet", "phoenix"],
+        ["exec", "-T", "phoenix", "python3.13", "-c", EXPORT_SPANS, "http://localhost:6006"],
         [
             "up",
             "--detach",
