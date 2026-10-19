@@ -107,6 +107,11 @@ reaches more of the provider:
      options), or the record is cut.
    - Its readers change, or read through an adapter: `explorer/reasoning.py` and
      `tests/integration/test_stack_reach.py`.
+   - The database sink (`parity_db.yaml`, `llm: full`) is structured. Each call's prompt and completion are stored as
+     role and parts JSON, the fields we add are kept (full bodies, caller), and a 200 KB reply arrives whole. It
+     records only calls that reach the LLM layer, though: 9 of the 21 calls in the parity run. Refused calls (401,
+     403, 404, 429) and `/models` are missing, so it cannot be the sealed record alone. OTLP logs into an
+     OpenTelemetry Collector with a file exporter are the other structured route; not tested.
 5. **`/api/v1/completions`** (legacy text completion). llm mode does not serve it; a plain route beside it does
    (`combined.yaml`). Check whether anything still calls it.
 
