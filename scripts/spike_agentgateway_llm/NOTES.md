@@ -110,17 +110,15 @@ reaches more of the provider:
 5. **`/api/v1/completions`** (legacy text completion). llm mode does not serve it; a plain route beside it does
    (`combined.yaml`). Check whether anything still calls it.
 
-**Estimated delta of the replacement (not built):**
+**Estimated delta of the replacement (not built).** About 4 of `test_gateway_proxy.py`'s 18 tests check how
+`proxy.py` works and go with it. The other 14 check behaviour we keep, so they come back as integration tests of the
+rendered config against the real agentgateway binary, ported from `probe_parity.py`.
 
-| Change | Lines |
-| --- | --- |
-| delete `proxy.py` | −259 |
-| delete most of `test_gateway_proxy.py` | about −294 |
-| narrow `GatewaySettings` | about −30 |
-| add a config renderer beside `tools_gateway.py` | about +100 |
-| add the log copy and adapter | about +30 |
-| add rendering tests | about +80 |
-| **net** | **about −370** |
+| | Removed | Added | Net |
+| --- | --- | --- | --- |
+| production code | `proxy.py` −259, `GatewaySettings` about −30 | config renderer about +100, log copy and adapter about +30 | about −160 |
+| tests | `test_gateway_proxy.py` −294 | parity checks as integration tests about +180, renderer tests about +40 | about −75 |
+| **total** | | | **about −235** |
 
 ## Files
 
