@@ -1,0 +1,45 @@
+# Spike: the monitored route in agentgateway's llm mode, which routes by the requested model name.
+# aurora-7b-v3 goes to its official deployment (a meridian-serving job; the mock plays it), which names its own
+# model in replies; a provider model goes to the provider (the mock again) under the key. Badge on every call.
+config:
+  adminAddr: "off"
+  statsAddr: "off"
+  readinessAddr: "off"
+  logging:
+    format: json
+gateways:
+  default:
+    port: 8080
+frontendPolicies:
+  accessLog:
+    add:
+      workload: jwt.sub
+      team: jwt.team
+      requested_model: llm.requestModel
+llm:
+  gateways: default
+  pathPrefix: /api
+  discovery: disabled
+  policies:
+    jwtAuth:
+      mode: strict
+      issuer: iam.meridian
+      audiences: [gateway]
+      jwks:
+        file: /run/secrets/jwks.json
+  models:
+  - name: aurora-7b-v3
+    provider: openAI
+    params:
+      baseUrl: http://agwspike-mock:9000/deployments/aurora-7b-v3/v1
+    authorization:
+      rules:
+      - allow: 'jwt.team in ["evals", "applied"]'
+  - name: deepseek/deepseek-v4.1-flash
+    provider: openAI
+    params:
+      baseUrl: http://agwspike-mock:9000/api/v1
+    auth:
+      key:
+        value:
+          file: /run/secrets/openrouter_api_key

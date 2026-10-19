@@ -1,0 +1,136 @@
+# Spike: the tier 1 gateway of the Meridian proposal (#142) on agentgateway, against the mock upstream.
+#  - /api/v1/...      the monitored route: a badge (a JWT IAM signs) on every call, per-team token quota
+#  - /backend/v1/...  the backend route: a model key from a weight file, plus the badge of the job it runs in
+#  - /iam/v1/...      the same monitored route with IAM's opaque workload secrets, checked live by extAuthz
+# Meridian model names are aliases of real models. stdout is the sealed record; the database is the ledger.
+config:
+  adminAddr: "off"
+  statsAddr: "off"
+  readinessAddr: "off"
+  logging:
+    format: json
+  database:
+    url: sqlite:///ledger/ledger.db?mode=rwc
+frontendPolicies:
+  http:
+    maxBufferSize: 33554432
+  accessLog:
+    add:
+      workload: jwt.sub
+      team: jwt.team
+      work: jwt.work
+      model_key: apiKey.model
+      iam_workload: extauthz.workload
+      iam_team: extauthz.team
+      meridian_model: json(request.body).model
+      requested_model: llm.requestModel
+      served_model: llm.responseModel
+      request_body: string(request.body)
+      response_body: string(response.body)
+    database:
+      llm: metadata
+x-upstream: &upstream
+  - ai:
+      name: upstream
+      hostOverride: agwspike-mock:9000
+      provider:
+        custom:
+          formats:
+          - type: completions
+            path: /api/v1/chat/completions
+x-key: &key
+  file: /run/secrets/openrouter_api_key
+x-badge: &badge
+  mode: strict
+  issuer: iam.meridian
+  audiences: [gateway]
+  jwks:
+    file: /run/secrets/jwks.json
+x-ai: &ai
+  routes:
+    "*": completions
+  modelAliases:
+    aurora-7b-v3: deepseek/deepseek-v4.1-flash
+    aurora-70b-v2: qwen/qwen3.5-72b
+    aurora-slow: m-stream-slow
+x-team-quota: &team-quota
+  - type: tokens
+    maxTokens: 30
+    tokensPerFill: 1
+    fillInterval: 87600h
+    key: jwt.team
+binds:
+- port: 8080
+  listeners:
+  - routes:
+    - name: monitored
+      matches:
+      - path: {exact: /api/v1/chat/completions}
+      policies:
+        jwtAuth: *badge
+        backendAuth: {key: *key}
+        authorization:
+          rules:
+          - allow: 'size(request.body) >= 0'
+        localRateLimit: *team-quota
+        # Replies name the Meridian model the caller asked for, never the provider's model behind the alias.
+        transformations:
+          response:
+            # The alias map again, as the config renderer writes it: llm.* is not set while a stream is transformed.
+            body: >-
+              json(request.body).model in {"aurora-7b-v3": "deepseek/deepseek-v4.1-flash", "aurora-slow": "m-stream-slow"}
+              ? string(response.body).replace({"aurora-7b-v3": "deepseek/deepseek-v4.1-flash", "aurora-slow": "m-stream-slow"}[json(request.body).model], json(request.body).model)
+              : response.body
+        ai: *ai
+      backends: *upstream
+    - name: backend
+      matches:
+      - path: {exact: /backend/v1/chat/completions}
+      policies:
+        jwtAuth: *badge
+        apiKey:
+          mode: strict
+          location:
+            header:
+              name: x-model-key
+          keys:
+          - key: mk-aurora-7b-v3-0f9e2c
+            metadata: {model: aurora-7b-v3}
+        backendAuth: {key: *key}
+        urlRewrite:
+          path:
+            full: /api/v1/chat/completions
+        authorization:
+          rules:
+          - allow: 'json(request.body).model == apiKey.model'
+        ai: *ai
+      backends: *upstream
+    - name: monitored-iam
+      matches:
+      - path: {exact: /iam/v1/chat/completions}
+      policies:
+        extAuthz:
+          host: agwspike-iam:9100
+          protocol:
+            http:
+              path: '"/check"'
+              metadata:
+                workload: 'response.headers["x-workload"]'
+                team: 'response.headers["x-team"]'
+          failureMode:
+            denyWithStatus: 503
+        backendAuth: {key: *key}
+        urlRewrite:
+          path:
+            full: /api/v1/chat/completions
+        authorization:
+          rules:
+          - allow: 'size(request.body) >= 0'
+        localRateLimit:
+        - type: tokens
+          maxTokens: 30
+          tokensPerFill: 1
+          fillInterval: 87600h
+          key: extauthz.team
+        ai: *ai
+      backends: *upstream
