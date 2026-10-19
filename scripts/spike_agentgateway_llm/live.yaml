@@ -1,0 +1,53 @@
+# Spike: a handful of live calls to OpenRouter through agentgateway (llm mode), to confirm what the mock cannot:
+# the /api/v1 paths, provider and reasoning passthrough, streaming, /v1/models, the Messages API, and the reply's
+# model name under an alias. The key file is mounted from outside the repository.
+config:
+  adminAddr: "off"
+  statsAddr: "off"
+  readinessAddr: "off"
+  logging:
+    format: json
+gateways:
+  default:
+    port: 8080
+frontendPolicies:
+  accessLog:
+    add:
+      caller: apiKey.agent
+      requested_model: llm.requestModel
+      served_model: llm.responseModel
+      cost: llm.cost.total
+      request_body: string(request.body)
+      response_body: string(response.body)
+llm:
+  gateways: default
+  pathPrefix: /api
+  discovery: disabled
+  policies:
+    apiKey:
+      mode: strict
+      keys:
+      - keyHash: "sha256:4044afa3d77e45c39e47401e32d3d1d4a8cbdfcc77dddb4a7067aa58b81abf8d"
+        metadata: {agent: agent-main}
+  providers:
+  - name: openrouter
+    provider:
+      custom:
+        formats:
+        - type: completions
+        - type: messages
+    defaults:
+      # Ask the provider for an uncompressed reply, so the record holds the reply's text, not gzip bytes.
+      requestHeaders:
+        remove: [accept-encoding]
+    params:
+      baseUrl: https://openrouter.ai/api/v1
+      apiKey:
+        file: /run/secrets/openrouter_api_key
+  models:
+  - name: deepseek/deepseek-v4.1-flash
+    provider: {reference: openrouter}
+  - name: aurora-7b-v3
+    provider: {reference: openrouter}
+    params:
+      model: deepseek/deepseek-v4.1-flash

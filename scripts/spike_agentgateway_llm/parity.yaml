@@ -45,6 +45,10 @@ x-keys: &keys
   backendAuth:
     key:
       file: /run/secrets/openrouter_api_key
+  # Ask the upstream for an uncompressed reply: string(response.body) of gzip bytes fails, and the log drops the field.
+  transformations:
+    request:
+      remove: [accept-encoding]
 binds:
 - port: 8080
   listeners:

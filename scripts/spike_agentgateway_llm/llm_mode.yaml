@@ -43,3 +43,7 @@ llm:
       key:
         value:
           file: /run/secrets/openrouter_api_key
+  - name: m-stream-slow  # the mock streams one chunk a second for 30 s: the hot-reload probe's call in flight
+    provider: openAI
+    params:
+      baseUrl: http://agwspike-mock:9000/api/v1
