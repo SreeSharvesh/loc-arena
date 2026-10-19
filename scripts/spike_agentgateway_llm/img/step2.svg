@@ -1,44 +1,83 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 340" width="760" height="340" role="img" aria-label="Step 2: a job or company agent with a badge uses the monitored route, which routes by model to an official deployment or to OpenRouter; a hand-started server uses the backend route with a model key and a badge; the gateway writes the ledger">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 624" width="1000" height="624" role="img" aria-label="Step 2: on agent-net, a job or company agent calls the gateway's monitored route with a badge, which routes by model to an official deployment or to OpenRouter; a hand-started server calls the backend route with a model key and a badge; the gateway writes a company-readable ledger and, over record-net, the sealed record">
   <defs>
-    <marker id="s2a" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0L10 5L0 10z" fill="#0072B2"/></marker>
-    <marker id="s2g" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0L10 5L0 10z" fill="#6e7781"/></marker>
+    <marker id="a" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0L10 5L0 10z" fill="#1f2933"/></marker>
+    <marker id="b" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0L10 5L0 10z" fill="#3a4fc4"/></marker>
   </defs>
   <style>
-    text { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: #1f2328; }
-    .t { font-size: 13px; font-weight: 600; }
-    .s { font-size: 11px; fill: #57606a; }
-    .r { font-size: 11px; font-weight: 600; fill: #57606a; }
+    text{font-family:-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;fill:#1f2933}
+    .h{font-size:24px;font-weight:700}
+    .m{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;font-weight:700}
+    .z{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;font-weight:700;fill:#52606d}
+    .s{font-size:11px;fill:#52606d}
+    .t{font-size:11px;font-weight:700;fill:#8a4b08}
+    .l{font-size:11px;fill:#52606d}
   </style>
-  <rect x="0" y="0" width="760" height="340" fill="#ffffff"/>
-  <rect x="256" y="12" width="232" height="232" rx="6" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1"/>
-  <text class="r" x="272" y="30" dominant-baseline="central">agentgateway</text>
-  <g class="node"><rect x="24" y="44" width="184" height="56" rx="2" fill="#ffffff" stroke="#6e7781" stroke-width="1.25" stroke-dasharray="5 4"/>
-    <text class="t" x="116" y="66" text-anchor="middle" dominant-baseline="central">Job or company agent</text>
-    <text class="s" x="116" y="84" text-anchor="middle" dominant-baseline="central">with a badge</text></g>
-  <g class="node"><rect x="24" y="172" width="184" height="56" rx="2" fill="#ffffff" stroke="#6e7781" stroke-width="1.25" stroke-dasharray="5 4"/>
-    <text class="t" x="116" y="194" text-anchor="middle" dominant-baseline="central">Hand-started server</text>
-    <text class="s" x="116" y="212" text-anchor="middle" dominant-baseline="central">model key + badge</text></g>
-  <g class="node"><rect x="272" y="44" width="200" height="56" rx="10" fill="#e8f1f8" stroke="#0072B2" stroke-width="1.5"/>
-    <text class="t" x="372" y="66" text-anchor="middle" dominant-baseline="central">Monitored route</text>
-    <text class="s" x="372" y="84" text-anchor="middle" dominant-baseline="central">by model, team quota</text></g>
-  <g class="node"><rect x="272" y="172" width="200" height="56" rx="10" fill="#ffffff" stroke="#6e7781" stroke-width="1.25"/>
-    <text class="t" x="372" y="194" text-anchor="middle" dominant-baseline="central">Backend route</text>
-    <text class="s" x="372" y="212" text-anchor="middle" dominant-baseline="central">no oversight sampling</text></g>
-  <g class="node"><rect x="552" y="44" width="184" height="56" rx="10" fill="#ffffff" stroke="#6e7781" stroke-width="1.25"/>
-    <text class="t" x="644" y="66" text-anchor="middle" dominant-baseline="central">Official deployment</text>
-    <text class="s" x="644" y="84" text-anchor="middle" dominant-baseline="central">meridian-serving</text></g>
-  <g class="node"><rect x="552" y="172" width="184" height="56" rx="2" fill="#ffffff" stroke="#6e7781" stroke-width="1.25" stroke-dasharray="5 4"/>
-    <text class="t" x="644" y="194" text-anchor="middle" dominant-baseline="central">OpenRouter</text>
-    <text class="s" x="644" y="212" text-anchor="middle" dominant-baseline="central">real models</text></g>
+  <text class="h" x="20" y="42">Step 2: the tier 1 gateway</text>
+  <rect x="20" y="62" width="960" height="546" rx="8" fill="#ffffff" stroke="#d9dde3"/>
+  <rect x="590" y="80" width="26" height="14" rx="4" fill="none" stroke="#7b8794" stroke-dasharray="4 3"/>
+  <text class="l" x="622" y="91">Docker network</text>
+  <rect x="722" y="80" width="26" height="14" rx="2" fill="#fdf1dc" stroke="#d9a441"/>
+  <text class="l" x="754" y="91">sealed: agents and monitors never read it</text>
+
+  <rect x="44" y="112" width="290" height="324" rx="10" fill="none" stroke="#7b8794" stroke-dasharray="6 4"/>
+  <text class="z" x="60" y="134">agent-net</text>
+  <text class="s" x="60" y="150">internal: company compute, no route out</text>
+  <g class="node"><rect x="74" y="170" width="230" height="56" rx="6" fill="#fbe7e1" stroke="#c4472c"/>
+    <text class="m" x="189" y="193" text-anchor="middle">job or company agent</text>
+    <text class="s" x="189" y="212" text-anchor="middle">a badge from IAM</text></g>
+  <g class="node"><rect x="74" y="250" width="230" height="56" rx="6" fill="#fbe7e1" stroke="#c4472c"/>
+    <text class="m" x="189" y="273" text-anchor="middle">hand-started server</text>
+    <text class="s" x="189" y="292" text-anchor="middle">model key + its job's badge</text></g>
+  <g class="node"><rect x="74" y="350" width="230" height="56" rx="6" fill="#ffffff" stroke="#1f2933"/>
+    <text class="m" x="189" y="373" text-anchor="middle">official deployment</text>
+    <text class="s" x="189" y="392" text-anchor="middle">meridian-serving, a job</text></g>
+
+  <g class="node"><rect x="392" y="160" width="208" height="200" rx="10" fill="#e8ebf9" stroke="#3a4fc4" stroke-width="1.5"/>
+    <text class="m" x="496" y="182" text-anchor="middle">gateway</text>
+    <text class="s" x="496" y="198" text-anchor="middle">agentgateway · holds the key</text>
+    <rect x="408" y="212" width="176" height="52" rx="6" fill="#ffffff" stroke="#3a4fc4"/>
+    <text class="m" x="496" y="233" text-anchor="middle">monitored route</text>
+    <text class="s" x="496" y="250" text-anchor="middle">by model · team quota</text>
+    <rect x="408" y="282" width="176" height="52" rx="6" fill="#ffffff" stroke="#7b8794"/>
+    <text class="m" x="496" y="303" text-anchor="middle">backend route</text>
+    <text class="s" x="496" y="320" text-anchor="middle">no oversight sampling</text></g>
+
+  <rect x="660" y="112" width="300" height="136" rx="10" fill="none" stroke="#7b8794" stroke-dasharray="6 4"/>
+  <text class="z" x="676" y="134">egress-net</text>
+  <text class="s" x="676" y="150">the gateway's only route out</text>
+  <g class="node"><rect x="700" y="170" width="220" height="56" rx="2" fill="#ffffff" stroke="#1f2933" stroke-dasharray="5 4"/>
+    <text class="m" x="810" y="193" text-anchor="middle">OpenRouter</text>
+    <text class="s" x="810" y="212" text-anchor="middle">real models · gets the key</text></g>
+
+  <rect x="660" y="300" width="300" height="136" rx="10" fill="none" stroke="#7b8794" stroke-dasharray="6 4"/>
+  <text class="z" x="676" y="322">record-net</text>
+  <text class="s" x="676" y="338">internal: the gateway and the Collector alone</text>
+  <g class="node"><rect x="700" y="358" width="220" height="56" rx="6" fill="#fdf1dc" stroke="#d9a441"/>
+    <text class="m" x="810" y="381" text-anchor="middle">collector</text>
+    <text class="s" x="810" y="400" text-anchor="middle">writes the sealed record</text></g>
+
   <g class="node">
-    <path d="M288 276 V316 A84 8 0 0 0 456 316 V276" fill="#f6f8fa" stroke="#6e7781" stroke-width="1.25"/>
-    <ellipse cx="372" cy="276" rx="84" ry="8" fill="#f6f8fa" stroke="#6e7781" stroke-width="1.25"/>
-    <text class="t" x="372" y="296" text-anchor="middle" dominant-baseline="central">Ledger</text>
-    <text class="s" x="372" y="312" text-anchor="middle" dominant-baseline="central">security reads it</text></g>
-  <line x1="208" y1="72" x2="272" y2="72" stroke="#0072B2" stroke-width="2.5" marker-end="url(#s2a)"/>
-  <line x1="472" y1="72" x2="552" y2="72" stroke="#0072B2" stroke-width="2.5" marker-end="url(#s2a)"/>
-  <line x1="208" y1="200" x2="272" y2="200" stroke="#6e7781" stroke-width="1.25" marker-end="url(#s2g)"/>
-  <path d="M472 88 H512 V186 H552" fill="none" stroke="#6e7781" stroke-width="1.25" marker-end="url(#s2g)"/>
-  <line x1="472" y1="214" x2="552" y2="214" stroke="#6e7781" stroke-width="1.25" marker-end="url(#s2g)"/>
-  <line x1="372" y1="244" x2="372" y2="268" stroke="#6e7781" stroke-width="1.25" marker-end="url(#s2g)"/>
+    <path d="M412 488 V532 A84 8 0 0 0 580 532 V488" fill="#ffffff" stroke="#1f2933"/>
+    <ellipse cx="496" cy="488" rx="84" ry="8" fill="#ffffff" stroke="#1f2933"/>
+    <text class="m" x="496" y="512" text-anchor="middle">ledger</text>
+    <text class="s" x="496" y="530" text-anchor="middle">database · security reads it</text></g>
+  <rect x="660" y="468" width="300" height="118" rx="8" fill="#fdf1dc" stroke="#d9a441"/>
+  <text class="t" x="676" y="490">SEALED</text>
+  <g class="node">
+    <path d="M726 512 V556 A84 8 0 0 0 894 556 V512" fill="#fff8ec" stroke="#8a6d3b"/>
+    <ellipse cx="810" cy="512" rx="84" ry="8" fill="#fff8ec" stroke="#8a6d3b"/>
+    <text class="m" x="810" y="536" text-anchor="middle">sealed record</text>
+    <text class="s" x="810" y="554" text-anchor="middle">every call, copied out after play</text></g>
+
+  <path d="M304 198 H348 V238 H408" fill="none" stroke="#3a4fc4" stroke-width="2" marker-end="url(#b)"/>
+  <path d="M304 278 H348 V308 H408" fill="none" stroke="#1f2933" stroke-width="1.25" marker-end="url(#a)"/>
+  <path d="M392 350 H360 V378 H304" fill="none" stroke="#3a4fc4" stroke-width="2" marker-end="url(#b)"/>
+  <text class="s" x="189" y="424" text-anchor="middle">serves Meridian models, routed by name</text>
+  <path d="M584 226 H640 V198 H700" fill="none" stroke="#3a4fc4" stroke-width="2" marker-end="url(#b)"/>
+  <path d="M584 308 H648 V212 H700" fill="none" stroke="#1f2933" stroke-width="1.25" marker-end="url(#a)"/>
+  <path d="M600 346 H624 V386 H700" fill="none" stroke="#1f2933" stroke-width="1.25" marker-end="url(#a)"/>
+  <path d="M496 360 V480" fill="none" stroke="#1f2933" stroke-width="1.25" marker-end="url(#a)"/>
+  <path d="M810 414 V504" fill="none" stroke="#1f2933" stroke-width="1.25" marker-end="url(#a)"/>
+  <text class="s" x="350" y="190">badge</text>
+  <text class="s" x="604" y="190">by model</text>
 </svg>

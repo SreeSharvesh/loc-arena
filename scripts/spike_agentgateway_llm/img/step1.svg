@@ -1,35 +1,87 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 232" width="760" height="232" role="img" aria-label="Step 1: every caller reaches agentgateway with its own token; agentgateway calls OpenRouter with the key and exports each call over OTLP to an OpenTelemetry Collector, which writes the sealed record">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 640" width="1000" height="640" role="img" aria-label="The model gateway in a stack run: callers on agent-net send their own tokens to the gateway, which alone joins agent-net, egress-net and record-net; it calls OpenRouter over egress-net and exports each call's record over record-net to the Collector, whose sealed volume the host copies out after play for grading and the explorer; agents and monitors never read the sealed record">
   <defs>
-    <marker id="s1a" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0L10 5L0 10z" fill="#0072B2"/></marker>
-    <marker id="s1g" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0L10 5L0 10z" fill="#6e7781"/></marker>
+    <marker id="a" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0L10 5L0 10z" fill="#1f2933"/></marker>
+    <marker id="b" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0L10 5L0 10z" fill="#3a4fc4"/></marker>
   </defs>
   <style>
-    text { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: #1f2328; }
-    .t { font-size: 13px; font-weight: 600; }
-    .s { font-size: 11px; fill: #57606a; }
-    .m { font-size: 11px; fill: #57606a; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    text{font-family:-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;fill:#1f2933}
+    .h{font-size:24px;font-weight:700}
+    .m{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;font-weight:700}
+    .z{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;font-weight:700;fill:#52606d}
+    .s{font-size:11px;fill:#52606d}
+    .t{font-size:11px;font-weight:700;fill:#8a4b08}
+    .l{font-size:11px;fill:#52606d}
   </style>
-  <rect x="0" y="0" width="760" height="232" fill="#ffffff"/>
-  <g class="node"><rect x="24" y="24" width="184" height="56" rx="2" fill="#ffffff" stroke="#6e7781" stroke-width="1.25" stroke-dasharray="5 4"/>
-    <text class="t" x="116" y="46" text-anchor="middle" dominant-baseline="central">Every caller</text>
-    <text class="s" x="116" y="64" text-anchor="middle" dominant-baseline="central">sends its own token</text></g>
-  <g class="node"><rect x="288" y="24" width="184" height="56" rx="10" fill="#e8f1f8" stroke="#0072B2" stroke-width="1.5"/>
-    <text class="t" x="380" y="46" text-anchor="middle" dominant-baseline="central">agentgateway</text>
-    <text class="s" x="380" y="64" text-anchor="middle" dominant-baseline="central">holds the key</text></g>
-  <g class="node"><rect x="552" y="24" width="184" height="56" rx="2" fill="#ffffff" stroke="#6e7781" stroke-width="1.25" stroke-dasharray="5 4"/>
-    <text class="t" x="644" y="46" text-anchor="middle" dominant-baseline="central">OpenRouter</text>
-    <text class="s" x="644" y="64" text-anchor="middle" dominant-baseline="central">real models</text></g>
-  <g class="node"><rect x="288" y="144" width="184" height="56" rx="10" fill="#ffffff" stroke="#6e7781" stroke-width="1.25"/>
-    <text class="t" x="380" y="166" text-anchor="middle" dominant-baseline="central">OTel Collector</text>
-    <text class="s" x="380" y="184" text-anchor="middle" dominant-baseline="central">file exporter</text></g>
+  <text class="h" x="20" y="42">The model gateway in a stack run</text>
+  <rect x="20" y="62" width="960" height="562" rx="8" fill="#ffffff" stroke="#d9dde3"/>
+
+  <!-- legend -->
+  <rect x="590" y="80" width="26" height="14" rx="4" fill="none" stroke="#7b8794" stroke-dasharray="4 3"/>
+  <text class="l" x="622" y="91">Docker network</text>
+  <rect x="722" y="80" width="26" height="14" rx="2" fill="#fdf1dc" stroke="#d9a441"/>
+  <text class="l" x="754" y="91">sealed: agents and monitors never read it</text>
+
+  <!-- agent-net -->
+  <rect x="44" y="112" width="290" height="324" rx="10" fill="none" stroke="#7b8794" stroke-dasharray="6 4"/>
+  <text class="z" x="60" y="134">agent-net</text>
+  <text class="s" x="60" y="150">internal: no route out</text>
+  <g class="node"><rect x="74" y="170" width="230" height="56" rx="6" fill="#fbe7e1" stroke="#c4472c"/>
+    <text class="m" x="189" y="193" text-anchor="middle">episode</text>
+    <text class="s" x="189" y="212" text-anchor="middle">agent loops · gateway_token</text></g>
+  <g class="node"><rect x="74" y="250" width="230" height="56" rx="6" fill="#fbe7e1" stroke="#c4472c"/>
+    <text class="m" x="189" y="273" text-anchor="middle">sandbox-&lt;agent&gt;</text>
+    <text class="s" x="189" y="292" text-anchor="middle">agent code · its sandbox token</text></g>
+  <g class="node"><rect x="74" y="330" width="230" height="56" rx="6" fill="#fbe7e1" stroke="#c4472c"/>
+    <text class="m" x="189" y="353" text-anchor="middle">runner-&lt;n&gt;</text>
+    <text class="s" x="189" y="372" text-anchor="middle">pi · its runner token · /runner route</text></g>
+
+  <!-- gateway -->
+  <g class="node"><rect x="392" y="214" width="200" height="132" rx="10" fill="#e8ebf9" stroke="#3a4fc4" stroke-width="1.5"/>
+    <text class="m" x="492" y="240" text-anchor="middle">gateway</text>
+    <text class="s" x="492" y="258" text-anchor="middle">agentgateway · holds the key</text>
+    <text class="s" x="492" y="284" text-anchor="middle">joins agent-net,</text>
+    <text class="s" x="492" y="300" text-anchor="middle">egress-net and record-net</text>
+    <text class="s" x="492" y="326" text-anchor="middle">admits callers by token hash</text></g>
+
+  <!-- egress-net -->
+  <rect x="660" y="112" width="300" height="136" rx="10" fill="none" stroke="#7b8794" stroke-dasharray="6 4"/>
+  <text class="z" x="676" y="134">egress-net</text>
+  <text class="s" x="676" y="150">the gateway's only route out</text>
+  <g class="node"><rect x="700" y="170" width="220" height="56" rx="2" fill="#ffffff" stroke="#1f2933" stroke-dasharray="5 4"/>
+    <text class="m" x="810" y="193" text-anchor="middle">OpenRouter</text>
+    <text class="s" x="810" y="212" text-anchor="middle">outside the stack · gets the key</text></g>
+
+  <!-- record-net -->
+  <rect x="660" y="300" width="300" height="136" rx="10" fill="none" stroke="#7b8794" stroke-dasharray="6 4"/>
+  <text class="z" x="676" y="322">record-net</text>
+  <text class="s" x="676" y="338">internal: the gateway and the Collector alone</text>
+  <g class="node"><rect x="700" y="358" width="220" height="56" rx="6" fill="#fdf1dc" stroke="#d9a441"/>
+    <text class="m" x="810" y="381" text-anchor="middle">collector</text>
+    <text class="s" x="810" y="400" text-anchor="middle">OpenTelemetry Collector</text></g>
+
+  <!-- sealed storage and host -->
+  <rect x="380" y="472" width="580" height="134" rx="8" fill="#fdf1dc" stroke="#d9a441"/>
+  <text class="t" x="396" y="494">SEALED</text>
   <g class="node">
-    <path d="M560 152 V196 A84 8 0 0 0 728 196 V152" fill="#f6f8fa" stroke="#6e7781" stroke-width="1.25"/>
-    <ellipse cx="644" cy="152" rx="84" ry="8" fill="#f6f8fa" stroke="#6e7781" stroke-width="1.25"/>
-    <text class="t" x="644" y="174" text-anchor="middle" dominant-baseline="central">Sealed record</text>
-    <text class="m" x="644" y="192" text-anchor="middle" dominant-baseline="central">calls.jsonl</text></g>
-  <text class="s" x="390" y="112" dominant-baseline="central">OTLP</text>
-  <line x1="208" y1="52" x2="288" y2="52" stroke="#0072B2" stroke-width="2.5" marker-end="url(#s1a)"/>
-  <line x1="472" y1="52" x2="552" y2="52" stroke="#0072B2" stroke-width="2.5" marker-end="url(#s1a)"/>
-  <line x1="380" y1="80" x2="380" y2="144" stroke="#6e7781" stroke-width="1.25" marker-end="url(#s1g)"/>
-  <line x1="472" y1="172" x2="560" y2="172" stroke="#6e7781" stroke-width="1.25" marker-end="url(#s1g)"/>
+    <path d="M726 516 V560 A84 8 0 0 0 894 560 V516" fill="#fff8ec" stroke="#8a6d3b"/>
+    <ellipse cx="810" cy="516" rx="84" ry="8" fill="#fff8ec" stroke="#8a6d3b"/>
+    <text class="m" x="810" y="540" text-anchor="middle">sealed volume</text>
+    <text class="s" x="810" y="558" text-anchor="middle">calls.jsonl · the Collector alone</text></g>
+  <g class="node"><rect x="400" y="508" width="240" height="64" rx="6" fill="#fff8ec" stroke="#8a6d3b"/>
+    <text class="m" x="520" y="532" text-anchor="middle">logs/gateway/&lt;project&gt;</text>
+    <text class="s" x="520" y="550" text-anchor="middle">copied by the host once drained</text>
+    <text class="s" x="520" y="565" text-anchor="middle">read by grading and the explorer</text></g>
+
+  <!-- connectors -->
+  <path d="M304 198 H348 V240 H392" fill="none" stroke="#3a4fc4" stroke-width="2" marker-end="url(#b)"/>
+  <path d="M304 278 H392" fill="none" stroke="#3a4fc4" stroke-width="2" marker-end="url(#b)"/>
+  <path d="M304 358 H348 V318 H392" fill="none" stroke="#3a4fc4" stroke-width="2" marker-end="url(#b)"/>
+  <text class="s" x="350" y="190">own token</text>
+  <path d="M592 240 H640 V198 H700" fill="none" stroke="#3a4fc4" stroke-width="2" marker-end="url(#b)"/>
+  <text class="s" x="604" y="190">the key</text>
+  <path d="M592 318 H640 V386 H700" fill="none" stroke="#1f2933" stroke-width="1.25" marker-end="url(#a)"/>
+  <text class="s" x="632" y="372" text-anchor="end">each call's record, OTLP</text>
+  <path d="M810 414 V508" fill="none" stroke="#1f2933" stroke-width="1.25" marker-end="url(#a)"/>
+  <text class="s" x="818" y="460">appended</text>
+  <path d="M726 540 H640" fill="none" stroke="#1f2933" stroke-width="1.25" marker-end="url(#a)"/>
 </svg>
