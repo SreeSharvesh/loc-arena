@@ -7,6 +7,7 @@ gateway container's stdout (``docker logs``), which is where agentgateway writes
 import base64
 import hashlib
 import json
+import os
 import subprocess
 import time
 
@@ -16,6 +17,10 @@ GATEWAY = "http://127.0.0.1:18080"
 KEY = "sk-or-SPIKEFAKEKEY"
 SANDBOX, RUNNER, STRANGER = "tok-agent-main", "tok-runner-1", "tok-nobody"
 RUNNER_MODEL = "deepseek/deepseek-v4.1-flash"
+# PROBE_MODE=llm: the sandboxes' route is agentgateway's llm mode (combined.yaml), which answers /models from its own
+# config and serves more API paths, so the unserved path probed is /api/v1/files.
+LLM_MODE = os.environ.get("PROBE_MODE") == "llm"
+UNSERVED = "/api/v1/files" if LLM_MODE else "/api/v1/embeddings"
 results: list[tuple[str, bool, str]] = []
 
 
@@ -78,10 +83,11 @@ def main() -> None:
     check("legacy /api/v1/completions passes through", r.status_code == 200 and "/api/v1/completions" in r.text,
           (r.status_code, r.text[:200]))
     r = httpx.get(GATEWAY + "/api/v1/models", headers={"authorization": f"Bearer {SANDBOX}"})
-    check("/api/v1/models passes through", r.status_code == 200 and "mock/model" in r.text, (r.status_code, r.text[:200]))
+    check("/api/v1/models is served", r.status_code == 200 and ("mock/model" in r.text or LLM_MODE),
+          (r.status_code, r.text[:200]))
 
-    r = chat(SANDBOX, body, path="/api/v1/embeddings")
-    rec = last_log("/api/v1/embeddings")
+    r = chat(SANDBOX, body, path=UNSERVED)
+    rec = last_log(UNSERVED)
     check("a path outside the allowlist is refused", r.status_code in (403, 404), r.status_code)
     check("a refused path is recorded", rec is not None, rec)
     for page in ("/docs", "/ui", "/config_dump"):

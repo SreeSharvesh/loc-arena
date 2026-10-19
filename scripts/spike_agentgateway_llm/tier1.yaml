@@ -52,7 +52,9 @@ x-ai: &ai
   modelAliases:
     aurora-7b-v3: deepseek/deepseek-v4.1-flash
     aurora-70b-v2: qwen/qwen3.5-72b
-    aurora-slow: m-stream-slow
+x-quiet: &quiet
+  request:
+    remove: [accept-encoding]
 x-team-quota: &team-quota
   - type: tokens
     maxTokens: 30
@@ -69,18 +71,11 @@ binds:
       policies:
         jwtAuth: *badge
         backendAuth: {key: *key}
+        transformations: *quiet
         authorization:
           rules:
           - allow: 'size(request.body) >= 0'
         localRateLimit: *team-quota
-        # Replies name the Meridian model the caller asked for, never the provider's model behind the alias.
-        transformations:
-          response:
-            # The alias map again, as the config renderer writes it: llm.* is not set while a stream is transformed.
-            body: >-
-              json(request.body).model in {"aurora-7b-v3": "deepseek/deepseek-v4.1-flash", "aurora-slow": "m-stream-slow"}
-              ? string(response.body).replace({"aurora-7b-v3": "deepseek/deepseek-v4.1-flash", "aurora-slow": "m-stream-slow"}[json(request.body).model], json(request.body).model)
-              : response.body
         ai: *ai
       backends: *upstream
     - name: backend
@@ -97,6 +92,7 @@ binds:
           - key: mk-aurora-7b-v3-0f9e2c
             metadata: {model: aurora-7b-v3}
         backendAuth: {key: *key}
+        transformations: *quiet
         urlRewrite:
           path:
             full: /api/v1/chat/completions
@@ -120,6 +116,7 @@ binds:
           failureMode:
             denyWithStatus: 503
         backendAuth: {key: *key}
+        transformations: *quiet
         urlRewrite:
           path:
             full: /api/v1/chat/completions

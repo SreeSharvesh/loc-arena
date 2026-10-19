@@ -27,6 +27,13 @@ llm:
       audiences: [gateway]
       jwks:
         file: /run/secrets/jwks.json
+    authorization:
+      rules:
+      # llm mode forwards any path under its prefix: allow only the API paths we serve.
+      - allow: 'request.path in ["/api/v1/chat/completions", "/api/v1/models", "/api/v1/messages"]'
+    transformations:
+      request:
+        remove: [accept-encoding]
   models:
   - name: aurora-7b-v3
     provider: openAI

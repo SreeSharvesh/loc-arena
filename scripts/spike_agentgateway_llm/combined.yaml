@@ -1,0 +1,110 @@
+# Spike: the parity config in agentgateway's llm mode, beside a plain route on the same port.
+#  - llm mode (/api/v1/chat/completions, /models, /messages, ...): sandboxes, routed by the requested model
+#  - routes (/runner/api/v1/chat/completions): runners, with their model allowlist and per-play cap
+#  - routes (/api/v1/completions): legacy text completions, which llm mode does not serve
+config:
+  adminAddr: "off"
+  statsAddr: "off"
+  readinessAddr: "off"
+  logging:
+    format: json
+gateways:
+  default:
+    port: 8080
+frontendPolicies:
+  http:
+    maxBufferSize: 33554432
+  accessLog:
+    add:
+      caller: apiKey.agent
+      role: apiKey.role
+      model: llm.requestModel
+      request_body: string(request.body)
+      response_body: string(response.body)
+x-keys: &keys
+  mode: strict
+  location:
+    header:
+      name: authorization
+      prefix: "Bearer "
+  keys:
+  - keyHash: "sha256:4044afa3d77e45c39e47401e32d3d1d4a8cbdfcc77dddb4a7067aa58b81abf8d"
+    metadata: {agent: agent-main, role: sandbox}
+  - keyHash: "sha256:2ba8978b0935203aca7c65c5acd53fa15b90a2de8e5ed42d09220ce7a67d3508"
+    metadata: {agent: agent-helper, role: sandbox}
+  - keyHash: "sha256:1068b72285301556d3a3b68da9c3f7b39a58a4ee1209bc11230379df1da53fcb"
+    metadata: {agent: runner-1, role: runner}
+x-plain: &plain
+  - ai:
+      name: upstream
+      hostOverride: agwspike-mock:9000
+      provider:
+        custom:
+          formats:
+          - type: completions
+            path: /api/v1/chat/completions
+x-quiet: &quiet
+  request:
+    remove: [accept-encoding]
+llm:
+  gateways: default
+  pathPrefix: /api
+  discovery: disabled
+  policies:
+    apiKey: *keys
+    authorization:
+      rules:
+      # Sandboxes only; reading request.body buffers it, so a failed call's record keeps it.
+      # llm mode forwards any path under its prefix: allow only the API paths we serve.
+      - allow: >-
+          apiKey.role == "sandbox" && size(request.body) >= 0
+          && request.path in ["/api/v1/chat/completions", "/api/v1/models", "/api/v1/messages"]
+    transformations: *quiet
+  models:
+  - name: "*"
+    provider: openAI
+    params:
+      baseUrl: http://agwspike-mock:9000/api/v1
+    auth:
+      key:
+        value:
+          file: /run/secrets/openrouter_api_key
+routes:
+- name: runners
+  gateways: default
+  matches:
+  - path: {exact: /runner/api/v1/chat/completions}
+  policies:
+    apiKey: *keys
+    backendAuth: {key: {file: /run/secrets/openrouter_api_key}}
+    transformations: *quiet
+    urlRewrite:
+      path:
+        full: /api/v1/chat/completions
+    authorization:
+      rules:
+      - allow: 'apiKey.role == "runner" && json(request.body).model in ["deepseek/deepseek-v4.1-flash"]'
+    localRateLimit:
+    - type: requests
+      maxTokens: 3
+      tokensPerFill: 1
+      fillInterval: 87600h
+    ai:
+      routes:
+        "*": completions
+  backends: *plain
+- name: legacy-completions
+  gateways: default
+  matches:
+  - path: {exact: /api/v1/completions}
+  policies:
+    apiKey: *keys
+    backendAuth: {key: {file: /run/secrets/openrouter_api_key}}
+    transformations: *quiet
+    authorization:
+      rules:
+      - allow: 'apiKey.role == "sandbox" && size(request.body) >= 0'
+    ai:
+      routes:
+        "*": passthrough
+  backends: *plain

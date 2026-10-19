@@ -29,6 +29,13 @@ llm:
       keys:
       - keyHash: "sha256:4044afa3d77e45c39e47401e32d3d1d4a8cbdfcc77dddb4a7067aa58b81abf8d"
         metadata: {agent: agent-main}
+    authorization:
+      rules:
+      # llm mode forwards any path under its prefix: allow only the API paths we serve.
+      - allow: 'request.path in ["/api/v1/chat/completions", "/api/v1/models", "/api/v1/messages"]'
+    transformations:
+      request:
+        remove: [accept-encoding]
   providers:
   - name: openrouter
     provider:
