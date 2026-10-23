@@ -153,13 +153,13 @@ call the gateway with:
 | `POST /jobs` with `{"job_id", "argv", "owner", "environment", "attempt"}` | start the job's command as the node's one process, in its own session, with the job's variables and credentials in its environment; 409 if the node holds a job |
 | `GET /status` | the job the node holds since its last reset, and whether its process runs or how it exited |
 | `GET /output` | the tails of its stdout and stderr, capped by `stack.command_output_limit_bytes` |
-| `POST /stop` | kill the job's process group: its process and every process it started in its session |
+| `POST /stop` | kill the job's process group: its process and every process still in that group |
 | `POST /reset` | kill the job's process group, empty the workspace, take the next job |
 
 Unlike a sandbox's command server, the daemon runs nothing synchronously and kills nothing on a timeout: a
 job's processes end only when it exits, is stopped, or the node is reset after it ended. A process the job
-starts in a session of its own (`setsid`, or a fork that daemonizes) is outside its group, so stop and reset
-leave it running (Not built).
+starts in a group of its own (`setpgid`) or a session of its own (`setsid`, or a fork that daemonizes) is
+outside its group, so stop and reset leave it running (Not built).
 
 ### What a job sees
 
@@ -254,8 +254,8 @@ unnoted.
   `http://<service>:8000`.
 - Ending a job's workload when the job ends, and renewing it.
 - Ending every process a job leaves behind: stop and reset kill the job's process group alone, so a process
-  the job started in a session of its own runs on unrecorded beside the node's next job, and can read that
-  job's environment, credentials included, since every job runs as the same user.
+  the job started in a group or session of its own runs on unrecorded beside the node's next job, and can
+  read that job's environment, credentials included, since every job runs as the same user.
 - Surviving a restart within a play: nothing restarts the service, whose registry lives in memory, so a
   restarted one would forget every job and schedule and mint the same ids again, which IAM refuses as the
   keys of workloads it already issued.

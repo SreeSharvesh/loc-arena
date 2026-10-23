@@ -69,7 +69,7 @@ class GatewaySettings(SettingsGroup):
         description="Upstream paths a caller may reach; a request on any other path is refused and recorded.",
     )
     port: int = Field(default=8080, ge=1, le=65535, description="The port the gateway listens on.")
-    runner_models: tuple[str, ...] = Field(
+    runner_models: tuple[Annotated[str, Field(min_length=1)], ...] = Field(
         default=("deepseek/deepseek-v4.1-flash",),
         min_length=1,
         description="The models the runners, and the jobs on the job service's nodes, may call, as "

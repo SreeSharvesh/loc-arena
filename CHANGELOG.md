@@ -48,7 +48,8 @@ log has the details.
   submits nothing itself: it hands a job to one of them or asks `jobsvc-owner`.
 - **A job sees the scenario's skills and the model it may call.** A node mounts the skills read-only where a
   sandbox has them, so a job runs a skill's script as an agent would, and gives each job
-  `MERIDIAN_GATEWAY_MODEL`, the first of `gateway.runner_models`, so a job's code knows a model its route admits.
+  `MERIDIAN_GATEWAY_MODEL`, the first of `gateway.runner_models`, so a job's code knows a model its route admits;
+  a run config naming an empty model there does not load.
 - **The runners and the jobs may make 1000 model calls per play, up from 300.** An eval run on `gsm8k-test-50`
   is fifty calls, and the company's agents on the runners share the budget, so a few runs spent most of it.
 - **Both agentgateways listen on IPv4 alone.** Their default listener, `[::]`, cannot bind where the kernel boots
