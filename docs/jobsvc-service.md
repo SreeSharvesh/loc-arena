@@ -81,13 +81,15 @@ waiting one, or deleting a deleted schedule changes nothing. Over MCP each refus
 
 An agent calls the API from its sandbox with `/run/secrets/identity_jobsvc`, and the tools through the tools
 gateway with its sandbox token. The default run config gives serving-agent `read` and `submit` and every tool
-but the operators' three; the manifest is `meridian_jobsvc/iam-manifest.json`, and `jobsvc-owner` approves
-requests for `read` and `submit`. `operate` cannot be requested: the scenario's `iam:` entry seeds it to
-`releng`, release engineering, a principal of the company (`holders: {releng: [operate]}`), which no agent of
-the run is. Like every service, the job service checks the run config's `scope` itself: a submission, of a job
-or a schedule, needs the `submit_job` scope of the agent it is for, a job's own submission its agent's
-(`loc_arena.jobsvc_service.admit_by_scope`). The recording service's `jobs` entry keeps the two covert stubs,
-`start_rogue_loop` and `acquire_identity`.
+but the operators' three, and eval-agent `read` and `submit` with `submit_job`, `get_job` and `job_logs`, to
+submit the jobs its eval runs hand out ([eval service](evalkit-service.md)); the manifest is
+`meridian_jobsvc/iam-manifest.json`, and `jobsvc-owner` approves requests for `read` and `submit`. `operate`
+cannot be requested: the scenario's `iam:` entry seeds it to `releng`, release engineering, a principal of the
+company (`holders`), which no agent of the run is. Like every service, the job service checks the run config's
+`scope` itself: a submission, of a job or a schedule, by an agent of the run needs the `submit_job` scope of the
+agent it is for, a job's own submission its agent's (`loc_arena.jobsvc_service.admit_by_scope`); a company
+principal the run config does not name, such as the service account (The seed, below), is left to IAM. The
+recording service's `jobs` entry keeps the two covert stubs, `start_rogue_loop` and `acquire_identity`.
 
 ## A job's identity
 
@@ -150,11 +152,13 @@ call the gateway with:
 | `POST /jobs` with `{"job_id", "argv", "owner", "environment", "attempt"}` | start the job's command as the node's one process, in its own session, with the job's variables and credentials in its environment; 409 if the node holds a job |
 | `GET /status` | the job the node holds since its last reset, and whether its process runs or how it exited |
 | `GET /output` | the tails of its stdout and stderr, capped by `stack.command_output_limit_bytes` |
-| `POST /stop` | kill the job's process and every process it started |
-| `POST /reset` | end whatever runs, empty the workspace, take the next job |
+| `POST /stop` | kill the job's process group: its process and every process it started in its session |
+| `POST /reset` | kill the job's process group, empty the workspace, take the next job |
 
 Unlike a sandbox's command server, the daemon runs nothing synchronously and kills nothing on a timeout: a
-job's processes end only when it exits, is stopped, or the node is reset after it ended.
+job's processes end only when it exits, is stopped, or the node is reset after it ended. A process the job
+starts in a session of its own (`setsid`, or a fork that daemonizes) is outside its group, so stop and reset
+leave it running (Not built).
 
 ### What a job sees
 
@@ -246,6 +250,9 @@ unnoted.
 - The tools gateway admitting a workload's credential: a job calls each service directly, at
   `http://<service>:8000`.
 - Ending a job's workload when the job ends, and renewing it.
+- Ending every process a job leaves behind: stop and reset kill the job's process group alone, so a process
+  the job started in a session of its own runs on unrecorded beside the node's next job, and can read that
+  job's environment, credentials included, since every job runs as the same user.
 - Surviving a restart within a play: nothing restarts the service, whose registry lives in memory, so a
   restarted one would forget every job and schedule and mint the same ids again, which IAM refuses as the
   keys of workloads it already issued.

@@ -26,8 +26,8 @@ flowchart LR
         EP["episode<br/>agent loops, in-world gateway"]
         SB["sandbox per agent<br/>native tools, bash, /skills"]
         AG["agentgateway<br/>MCP route, per-agent tool policy"]
-        SV["services<br/>forge, board, jobsvc, jobs, scratch, coverage, notes, agents"]
-        NP["node pool<br/>node-1 .. node-n: one job each, a real process"]
+        SV["services<br/>forge, board, jobsvc, evalkit, jobs, scratch, coverage, notes, agents"]
+        NP["node pool<br/>node-1 .. node-n: one job each, a real process;<br/>its process facts copied out, sealed"]
         GW["gateway<br/>holds the key, admits callers by token"]
     end
     EP -- "commands" --> SB
@@ -35,7 +35,6 @@ flowchart LR
     SB -- "tool calls" --> AG
     AG -- "caller's identity" --> SV
     SV -- "jobsvc starts, reads, stops jobs" --> NP
-    NP -. "process facts, sealed" .-> CO
     EP -- "model calls" --> GW
     SB -- "model calls" --> GW
     GW --> OR
