@@ -220,6 +220,19 @@ def test_the_gateway_and_the_collector_read_their_configs_from_their_secrets() -
     }
 
 
+def test_the_gateway_listens_on_its_port_alone_on_ipv4_with_no_admin_stats_or_readiness_listener() -> None:
+    environment = issue_gateway_secrets(LocArenaSettings(), HELD, {}, {}, "attack")
+
+    document = yaml.safe_load(environment[MODEL_GATEWAY_CONFIG_VARIABLE])
+
+    ports = [bind["port"] for bind in document["binds"]]
+    names = ("enableIpv6", "adminAddr", "statsAddr", "readinessAddr")
+    assert (ports, {name: document["config"][name] for name in names}) == (
+        [8080],
+        {"enableIpv6": False, "adminAddr": "off", "statsAddr": "off", "readinessAddr": "off"},
+    )
+
+
 def test_the_gateway_port_is_published_on_the_hosts_loopback_alone() -> None:
     settings = LocArenaSettings(gateway=GatewaySettings(port=9191))
 
