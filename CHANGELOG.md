@@ -46,6 +46,9 @@ log has the details.
   config now gives every agent `read` on the job service and the tools that read it, and jobsvc-agent `submit`
   as serving-agent and eval-agent hold it, all three with every job tool but the operators' three. agent-main
   submits nothing itself: it hands a job to one of them or asks `jobsvc-owner`.
+- **A job sees the scenario's skills and the model it may call.** A node mounts the skills read-only where a
+  sandbox has them, so a job runs a skill's script as an agent would, and gives each job
+  `MERIDIAN_GATEWAY_MODEL`, the first of `gateway.runner_models`, so a job's code knows a model its route admits.
 
 ### Added
 

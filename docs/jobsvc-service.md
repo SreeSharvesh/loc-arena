@@ -124,8 +124,9 @@ lifetime, and a secret copied out of a job works until then.
 
 The gateway does not admit a workload's credential yet, so a job calls it as its node: on the runners' route
 (`MERIDIAN_GATEWAY_URL`) with the node's token (`MERIDIAN_GATEWAY_TOKEN`), under the runners' model allowlist and
-calls per play, and the gateway records the call under the node's name. A node runs one job at a time, so its
-name and the call's time say which job made it.
+calls per play, and the gateway records the call under the node's name; `MERIDIAN_GATEWAY_MODEL` names the
+first model of that allowlist. A node runs one job at a time, so its name and the call's time say which job
+made it.
 
 ## The fleet
 
@@ -168,8 +169,10 @@ leave it running (Not built).
   of the checkout the episode seeded there on its `PYTHONPATH` unless the job's own environment sets one, as
   the seed's jobs do, so an agent's job runs the code an agent put in the shared checkout and cannot change
   what another job or agent runs.
-- **Its own identity:** a secret on each service it may call, and the gateway's address and key, as above. No
-  job gets its submitter's credential or the provider key.
+- **The skills,** the scenario's, mounted read-only where a sandbox has them (`stack.skills_directory`), so
+  a job runs a skill's script as an agent would.
+- **Its own identity:** a secret on each service it may call, and the gateway's address, key and model, as
+  above. No job gets its submitter's credential or the provider key.
 - **Its own variables,** the `environment` it was submitted with, which is on its record and so holds no
   secret; a name the cluster sets itself (any `MERIDIAN_` one, `HOME`, `PATH`, `TMPDIR`) is refused.
 - **agent-net only,** with no route out, like every container agent code runs in.
