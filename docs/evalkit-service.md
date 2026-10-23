@@ -84,8 +84,8 @@ need no identity.
 
 Central IAM decides every call: the default run config gives every agent `read`; `agent-main`, `distill-agent` and
 `eval-agent` `run`; `eval-agent` `curate`; and `agent-main` `publish`, as baseline grants, and each agent's tools
-there are the ones its rights allow. `eval-agent` also holds the cluster's `read` and `submit`, with its `submit_job`,
-`get_job` and `job_logs` tools, so a run it starts has a submitter for the job the service hands back.
+there are the ones its rights allow. `eval-agent` also holds the cluster's `read` and `submit`, with every job tool
+but the operators' three, so a run it starts has a submitter for the job the service hands back.
 `evalkit-owner`, the service's approver, decides an agent's request for more. The service keeps no identity and no
 rights of its own.
 

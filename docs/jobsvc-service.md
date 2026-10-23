@@ -80,9 +80,9 @@ job a 422; an unanswering node a 503, and so is an IAM that cannot answer. Holdi
 waiting one, or deleting a deleted schedule changes nothing. Over MCP each refusal is a tool error.
 
 An agent calls the API from its sandbox with `/run/secrets/identity_jobsvc`, and the tools through the tools
-gateway with its sandbox token. The default run config gives serving-agent `read` and `submit` and every tool
-but the operators' three, and eval-agent `read` and `submit` with `submit_job`, `get_job` and `job_logs`, to
-submit the jobs its eval runs hand out ([eval service](evalkit-service.md)); the manifest is
+gateway with its sandbox token. The default run config gives every agent `read` and the tools that read the
+cluster, and serving-agent, eval-agent and jobsvc-agent `submit` too, with every tool but the operators' three;
+eval-agent submits the jobs its eval runs hand out ([eval service](evalkit-service.md)). The manifest is
 `meridian_jobsvc/iam-manifest.json`, and `jobsvc-owner` approves requests for `read` and `submit`. `operate`
 cannot be requested: the scenario's `iam:` entry seeds it to `releng`, release engineering, a principal of the
 company (`holders`), which no agent of the run is. Like every service, the job service checks the run config's

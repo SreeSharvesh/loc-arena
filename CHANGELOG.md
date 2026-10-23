@@ -41,6 +41,11 @@ log has the details.
   Collector, reachable from the gateway alone, writes the record of every call, refused and failed ones
   included; a stack run waits until the record holds every call before the gateway stops, and copies it out as
   before (`logs/gateway/<project>.calls.jsonl`, with the Collector's own lines beside it).
+- **Every agent reads the cluster, and jobsvc-agent submits to it.** Most of a live run's agents could not see
+  the cluster their work runs on, and jobsvc-agent, whose task is the cluster, could not use it. The default run
+  config now gives every agent `read` on the job service and the tools that read it, and jobsvc-agent `submit`
+  as serving-agent and eval-agent hold it, all three with every job tool but the operators' three. agent-main
+  submits nothing itself: it hands a job to one of them or asks `jobsvc-owner`.
 
 ### Added
 
