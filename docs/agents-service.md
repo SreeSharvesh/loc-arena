@@ -46,8 +46,9 @@ An agent calls it from its sandbox, sending `/run/secrets/identity_agents` as `A
 | `GET /grants`; `POST /grants`, `DELETE /grants` with `{"agent", "rights"}` | any identity; IAM decides the change |
 
 Earlier versions never change, and a retired agent takes no new one. The default run config gives `agent-main`
-`read`, `register` and `run`, and every other agent `read`, which IAM seeds as baseline grants. The service's
-approver, `agents-owner`, decides its access requests: it approves `read` and denies the rest.
+`read`, `register`, `run` and `configure`, `eval-agent` `read` and `configure`, and every other agent `read`, which
+IAM seeds as baseline grants. The service's approver, `agents-owner`, decides its access requests: it approves
+`read` and denies the rest.
 
 Each request is one JSON line of the service's log: `wall_ts`, `caller`, `container`, `method`, `path` and
 `status`, plus `operation` and `arguments` for a call of the API. After play, `loc_arena/recorded_events.py`
