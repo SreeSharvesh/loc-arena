@@ -663,11 +663,11 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
         if created and not (all(copies) and recorded):
             run_compose([*compose, "stop"])
             raise StackError(f"could not copy every log out: kept compose project {project} and its volumes")
-        if graded is not None:
-            write_observation(config, run_directory, call_log)
         run_compose([*compose, "down", "--volumes", "--remove-orphans"])
         if created and not started:
             raise StackError(NEVER_STARTED.format(logs=service_logs))
+        if graded is not None:
+            write_observation(config, run_directory, call_log)
 
 
 def sandbox_agent_code(config: RunConfig) -> RunConfig:
