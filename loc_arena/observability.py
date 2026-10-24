@@ -73,6 +73,12 @@ class TracedSpan(BaseModel):
         return {"name": self.name, "kind": self.span_kind, "status": self.status_code, **self.attributes}
 
     @property
+    def response_id(self) -> str | None:
+        """The provider's id of the reply the span says it traces, if it says."""
+        response_id = self.attributes.get("gen_ai.response.id")
+        return response_id if isinstance(response_id, str) else None
+
+    @property
     def execution(self) -> str | None:
         """The execution the span names, if it names one."""
         execution = self.attributes.get("meridian.execution.id")

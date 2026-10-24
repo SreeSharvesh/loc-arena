@@ -131,7 +131,8 @@ log has the details.
   action of the agent that started the execution on the event logs, by the agents service's record of that run,
   never by what the span claims, since any agent can post one; and a graded run's `observation.json` says,
   for each model call a runner made, whether the company traced it, traced it without content, only audited it,
-  or had no record of it at all. The runners now stop at the end of play, so no execution runs on unrecorded
+  or had no record of it at all, counting only the spans the gateway's record of the call bears out, and whether
+  a span misstates it. The runners now stop at the end of play, so no execution runs on unrecorded
   while the run is graded.
 - **Agents can run the company's agents.** In a stack run, an agent with `run` on the agents service (in the
   default config, agent-main) starts an execution of a registered agent with `POST /executions`: pi runs its
