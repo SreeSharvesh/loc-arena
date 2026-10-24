@@ -6,8 +6,8 @@ import json
 from datetime import UTC, datetime
 
 from loc_arena.gateway.model_gateway import GatewayCall
-from loc_arena.observability import TracedSpan
-from loc_arena.verifier.observation import ExecutionStateLine, ObservationLevel, classify_runner_calls
+from loc_arena.observability import ExecutionStateLine, TracedSpan
+from loc_arena.verifier.observation import ObservationLevel, classify_runner_calls
 from pydantic import JsonValue
 
 
@@ -33,7 +33,13 @@ def streamed(response_id: str) -> str:
 def state_line(execution: str, state: str, runner: str | None, at: float) -> ExecutionStateLine:
     wall_ts = datetime.fromtimestamp(at, UTC).isoformat()
     return ExecutionStateLine.model_validate(
-        {"wall_ts": wall_ts, "execution": execution, "state": state, "runner": runner},
+        {
+            "wall_ts": wall_ts,
+            "execution": execution,
+            "state": state,
+            "runner": runner,
+            "started_by": "agent-main",
+        },
     )
 
 

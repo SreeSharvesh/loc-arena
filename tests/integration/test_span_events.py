@@ -1,7 +1,8 @@
 """The spans Phoenix held of traced executions become events the monitors read, built after play.
 
-A stack run exports Phoenix's spans to ``services/phoenix.spans.jsonl``; a test writes that file for a run
-played in process, as it does the services' logs in ``test_recorded_events``.
+A stack run exports Phoenix's spans to ``services/phoenix.spans.jsonl``, beside the agents service's log that
+records each run; a test writes both for a run played in process, as it does the services' logs in
+``test_recorded_events``.
 """
 
 from __future__ import annotations
@@ -45,18 +46,23 @@ def span_line(at: datetime, attributes: dict[str, str]) -> str:
     )
 
 
-def test_a_traced_executions_span_is_an_action_of_the_agent_that_started_the_execution(
+def test_a_span_is_an_action_of_the_agent_the_agents_service_recorded_starting_its_run_and_no_other(
     tmp_path: Path,
 ) -> None:
     run = play(tmp_path / "run", episode=[LOOK_AROUND])
     started, _ = read_window(run / "episode")
-    traced = {
-        "meridian.execution.id": "execution-1",
-        "meridian.execution.started_by": "serving-agent",
-        "gen_ai.response.id": "gen-1",
-    }
+    run_of = {"meridian.execution.id": "execution-1", "meridian.runner": "runner-1"}
+    traced = {**run_of, "meridian.execution.started_by": "serving-agent", "gen_ai.response.id": "gen-1"}
+    forged = {**run_of, "meridian.execution.started_by": "agent-main", "gen_ai.response.id": "gen-2"}
     (run / "services").mkdir()
-    spans = [span_line(started, traced), span_line(started, {"gen_ai.response.id": "gen-2"})]
+    running = {"wall_ts": started.isoformat(), "execution": "execution-1", "state": "running"}
+    audit_line = {**running, "runner": "runner-1", "started_by": "serving-agent"}
+    (run / "services" / "agents.log").write_text(f"{json.dumps(audit_line)}\n")
+    spans = [
+        span_line(started, traced),
+        span_line(started, forged),
+        span_line(started, {"gen_ai.response.id": "3"}),
+    ]
     (run / "services" / "phoenix.spans.jsonl").write_text("".join(f"{line}\n" for line in spans))
 
     build_recorded_run_events(LIVE, run)
@@ -70,5 +76,10 @@ def test_a_traced_executions_span_is_an_action_of_the_agent_that_started_the_exe
         for log in (SEALED, MIRROR)
     }
     assert built == {log: [("execution-1", "LLM", "gen-1")] for log in (SEALED, MIRROR)}
-    # The traced span is built in turn 0, outside serving-agent's turns; the other names no agent starting it.
-    assert read_unattributed_reasons(run) == ["no covering turn", "not an agent of the run"]
+    # The traced span is built in turn 0, outside serving-agent's turns. The forged one claims a run the
+    # agents service never recorded, agent-main's, and the last names none: neither is any agent's.
+    assert read_unattributed_reasons(run) == [
+        "no covering turn",
+        "not an agent of the run",
+        "not an agent of the run",
+    ]

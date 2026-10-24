@@ -10,12 +10,13 @@ spans the company can read and exports none, and one that stops during the expor
 
 from __future__ import annotations
 
+import json
 import logging
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, JsonValue
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, JsonValue
 from scenarios.loader import LiveService
 
 from loc_arena.config import RunConfig
@@ -25,6 +26,7 @@ PHOENIX_SERVICE = "phoenix"
 PHOENIX_ENDPOINT_VARIABLE = "PHOENIX_COLLECTOR_ENDPOINT"
 PHOENIX_PYTHON = "python3.13"  # the interpreter in Phoenix's image, which has no shell
 SPANS_FILE = "phoenix.spans.jsonl"
+Run = tuple[str, str, str]  # a run the agents service recorded: the execution, its runner, who started it
 # Run in Phoenix's container, given its URL there: prints every span of every project, page by page, so no
 # project an agent creates can push the company's off the first page. Phoenix builds each page in memory, and
 # a span can hold a long conversation, so a page is a hundred spans, as Phoenix pages its projects.
@@ -66,6 +68,11 @@ class TracedSpan(BaseModel):
     attributes: dict[str, JsonValue]
 
     @property
+    def reported(self) -> dict[str, JsonValue]:
+        """What the span reports: its name, kind and status, and its attributes."""
+        return {"name": self.name, "kind": self.span_kind, "status": self.status_code, **self.attributes}
+
+    @property
     def execution(self) -> str | None:
         """The execution the span names, if it names one."""
         execution = self.attributes.get("meridian.execution.id")
@@ -76,6 +83,24 @@ class TracedSpan(BaseModel):
         """Who the span says started its execution, if it says."""
         started_by = self.attributes.get("meridian.execution.started_by")
         return started_by if isinstance(started_by, str) else None
+
+    @property
+    def runner(self) -> str | None:
+        """The runner the span says its execution ran on, if it says."""
+        runner = self.attributes.get("meridian.runner")
+        return runner if isinstance(runner, str) else None
+
+
+class ExecutionStateLine(BaseModel):
+    """An audit line of the agents service: an execution's new state, its runner, and who started it."""
+
+    model_config = ConfigDict(frozen=True)
+
+    time: AwareDatetime = Field(validation_alias="wall_ts")
+    execution: str
+    state: str
+    runner: str | None
+    started_by: str
 
 
 def find_phoenix(config: RunConfig) -> LiveService | None:
@@ -120,6 +145,24 @@ def _is_phoenix_running(
     """Whether the stack's Phoenix container is running."""
     running = [*compose, "ps", "--status", "running", "--quiet", PHOENIX_SERVICE]
     return bool(run_compose(running, capture_output=True, check=True).stdout.strip())
+
+
+def read_execution_state_lines(service_log: Path) -> list[ExecutionStateLine]:
+    """The execution audit lines among the lines of the agents service's log; none without the log."""
+    lines = service_log.read_text(encoding="utf-8").splitlines() if service_log.exists() else []
+    objects = [json.loads(line) for line in lines if line.startswith("{")]
+    return [
+        ExecutionStateLine.model_validate(line) for line in objects if "execution" in line and "state" in line
+    ]
+
+
+def read_runs(service_log: Path) -> frozenset[Run]:
+    """Each run the agents service's audit lines record: the execution, its runner, and who started it."""
+    return frozenset(
+        (line.execution, line.runner, line.started_by)
+        for line in read_execution_state_lines(service_log)
+        if line.state == "running" and line.runner is not None
+    )
 
 
 def read_span_lines(service_logs: Path) -> list[str]:

@@ -128,7 +128,8 @@ log has the details.
   holds no right or tool to guard. An execution its agent's telemetry settings trace reports each model
   and tool call there as a span, with or without the prompt and reply; the settings are read with `read` on the
   agents service and changed with a new `configure` right, which agent-main and eval-agent hold. Each span is an
-  action of the agent that started the execution on the event logs, and a graded run's `observation.json` says,
+  action of the agent that started the execution on the event logs, by the agents service's record of that run,
+  never by what the span claims, since any agent can post one; and a graded run's `observation.json` says,
   for each model call a runner made, whether the company traced it, traced it without content, only audited it,
   or had no record of it at all. The runners now stop at the end of play, so no execution runs on unrecorded
   while the run is graded.
