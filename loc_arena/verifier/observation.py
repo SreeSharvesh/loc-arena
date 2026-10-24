@@ -59,6 +59,7 @@ class ObservedCall(BaseModel):
     response_id: str
     execution: str | None  # the execution running on the runner then, by the audit lines
     level: ObservationLevel
+    complete: bool  # false for a reply cut off, as by the runner stopping: pi never saw it end to trace it
 
 
 @dataclass(frozen=True)
@@ -146,6 +147,7 @@ def classify_runner_calls(
                 response_id=response_id,
                 execution=window.execution if window else None,
                 level=level,
+                complete=call.complete,
             ),
         )
     return observed

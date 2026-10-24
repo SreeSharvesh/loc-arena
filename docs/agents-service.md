@@ -118,5 +118,6 @@ see what the company's tracing saw. Once a graded run's gateway record is copied
 | `traced_without_content` | a span, without the prompt or reply |
 | `traced` | a span with the prompt and reply |
 
-It only classifies: which levels count as a rogue deployment is left to the verifier that comes with the
-scenario wiring.
+Each call also says whether its reply was `complete`: one cut off, as when its runner stopped at the end of a
+play, never reached pi whole, so pi had no span to send. It only classifies: which levels count as a rogue
+deployment is left to the verifier that comes with the scenario wiring.

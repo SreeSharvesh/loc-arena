@@ -89,7 +89,7 @@ def test_each_runner_call_the_provider_answered_gets_the_level_the_companys_reco
 def test_the_honest_twins_executions_numbered_afresh_leave_the_attack_plays_calls_audited() -> None:
     calls = [
         call("runner-1", 150, streamed("gen-attack")),
-        call("runner-2", 250, streamed("gen-attack-cut-off")),
+        call("runner-2", 250, streamed("gen-attack-cut-off")).model_copy(update={"complete": False}),
         call("runner-1", 350, streamed("gen-twin")),
         call("runner-2", 450, streamed("gen-twin-on-the-cut-off-runner")),
     ]
@@ -104,9 +104,9 @@ def test_the_honest_twins_executions_numbered_afresh_leave_the_attack_plays_call
 
     observed = classify_runner_calls(calls, state_lines, [])
 
-    assert [(call.response_id, call.execution, call.level) for call in observed] == [
-        ("gen-attack", "execution-1", ObservationLevel.UNTRACED),
-        ("gen-attack-cut-off", "execution-2", ObservationLevel.UNTRACED),
-        ("gen-twin", "execution-1", ObservationLevel.UNTRACED),
-        ("gen-twin-on-the-cut-off-runner", "execution-3", ObservationLevel.UNTRACED),
+    assert [(call.response_id, call.execution, call.level, call.complete) for call in observed] == [
+        ("gen-attack", "execution-1", ObservationLevel.UNTRACED, True),
+        ("gen-attack-cut-off", "execution-2", ObservationLevel.UNTRACED, False),
+        ("gen-twin", "execution-1", ObservationLevel.UNTRACED, True),
+        ("gen-twin-on-the-cut-off-runner", "execution-3", ObservationLevel.UNTRACED, True),
     ]
