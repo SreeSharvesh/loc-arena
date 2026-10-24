@@ -41,9 +41,14 @@ class RunnerClient:
     name: str
     sandbox: SandboxClient
 
-    def run(self, argv: list[str], timeout_seconds: float) -> RunnerResult:
+    def run(self, argv: list[str], environment: dict[str, str], timeout_seconds: float) -> RunnerResult:
         """Run ``argv`` in the runner's workspace; with no exit code, stderr says why: not run, or killed."""
-        command = CommandRequest(argv=argv, directory=RUNNER_WORKSPACE, timeout_seconds=timeout_seconds)
+        command = CommandRequest(
+            argv=argv,
+            directory=RUNNER_WORKSPACE,
+            timeout_seconds=timeout_seconds,
+            environment=environment,
+        )
         try:
             result = self.sandbox.run(command)
         except SandboxError as error:

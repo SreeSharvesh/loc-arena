@@ -57,6 +57,14 @@
       "requestable": true,
       "target": "execution_id"
     },
+    "read_telemetry_settings": {
+      "permission": "read",
+      "requestable": true
+    },
+    "configure_telemetry": {
+      "permission": "configure",
+      "requestable": true
+    },
     "list_grants": {
       "authenticated": true
     },
@@ -81,6 +89,8 @@
     "GET /executions/{execution_id}": "read_execution",
     "POST /executions": "start_execution",
     "POST /executions/{execution_id}/cancel": "cancel_execution",
+    "GET /settings/telemetry": "read_telemetry_settings",
+    "PUT /settings/telemetry": "configure_telemetry",
     "GET /grants": "list_grants",
     "POST /grants": "grant_rights",
     "DELETE /grants": "revoke_rights"

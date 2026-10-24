@@ -2,13 +2,16 @@
 
 An execution waits until a runner is free, runs the agent's latest version there with pi, and ends completed,
 failed or cancelled; the runner is reset after each one. Each change of state is a line of the audit record
-naming the execution, its agent and its runner.
+naming the execution, its agent, its runner and who started it. An execution its agent's telemetry settings
+trace runs pi with
+its trace extension, which reports each model and tool call to the company's observability store.
 """
 
 from __future__ import annotations
 
 import json
 import queue
+import random
 import threading
 import time
 from collections.abc import Callable, Sequence
@@ -21,9 +24,13 @@ from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from meridian_controlplane.agents.registry import AgentName, AgentRegistry, AgentVersion
+from meridian_controlplane.agents.telemetry import TelemetryConfiguration
 
 PI_COMMAND = "pi-on-gateway"  # on every runner: pi, run once on a model through the company's gateway
 RESET_AGAIN_SECONDS = 0.2  # how long a cancel waits for a run to end before it resets the runner again
+CAPTURE_CONTENT_VARIABLE = (
+    "MERIDIAN_CAPTURE_CONTENT"  # set for a traced execution only: pi loads the extension
+)
 
 
 class ExecutionState(StrEnum):
@@ -54,6 +61,8 @@ class Execution(BaseModel):
     input: str
     started_by: str
     state: ExecutionState
+    traced: bool
+    capture_content: bool  # whether its trace keeps prompts and replies, when it is traced
     runner: str | None = None
     queued_at: datetime
     started_at: datetime | None = None
@@ -79,8 +88,8 @@ class Runner(Protocol):
         """The runner, as the audit record names it."""
         ...
 
-    def run(self, argv: list[str], timeout_seconds: float) -> RunnerResult:
-        """Run ``argv`` until it exits, is killed at ``timeout_seconds``, or a reset ends it."""
+    def run(self, argv: list[str], environment: dict[str, str], timeout_seconds: float) -> RunnerResult:
+        """Run ``argv`` with ``environment`` until it exits, is killed at ``timeout_seconds``, or is reset."""
         ...
 
     def reset(self) -> None:
@@ -91,6 +100,20 @@ class Runner(Protocol):
 def build_pi_command(version: AgentVersion, execution_input: str) -> list[str]:
     """pi, run once on ``version``'s model and system prompt with ``execution_input`` as its prompt."""
     return [PI_COMMAND, version.model, version.system_prompt, execution_input]
+
+
+def build_trace_environment(execution: Execution) -> dict[str, str]:
+    """What pi's trace extension reads on the runner of a traced ``execution``; none for an untraced one."""
+    if not execution.traced:
+        return {}
+    return {
+        CAPTURE_CONTENT_VARIABLE: str(execution.capture_content).lower(),
+        "MERIDIAN_EXECUTION_ID": execution.id,
+        "MERIDIAN_EXECUTION_STARTED_BY": execution.started_by,
+        "MERIDIAN_AGENT": execution.agent,
+        "MERIDIAN_AGENT_VERSION": str(execution.version.number),
+        "MERIDIAN_RUNNER": str(execution.runner),
+    }
 
 
 class Executions:
@@ -108,6 +131,7 @@ class Executions:
         self._runners_by_name = {runner.name: runner for runner in runners}
         self._timeout_seconds = timeout_seconds
         self._write_audit_line = write_audit_line
+        self._telemetry = TelemetryConfiguration()
         self._executions_by_id: dict[str, Execution] = {}
         self._queued_ids: queue.Queue[str] = queue.Queue()
         self._executions_lock = threading.Lock()
@@ -127,6 +151,18 @@ class Executions:
         with self._executions_lock:
             return self._find_execution(execution_id)
 
+    @property
+    def telemetry(self) -> TelemetryConfiguration:
+        """How executions are traced from now on."""
+        return self._telemetry
+
+    def configure_telemetry(self, configuration: TelemetryConfiguration) -> TelemetryConfiguration:
+        """Trace the executions started from now on as ``configuration`` says; 404 for an unknown agent."""
+        for agent in configuration.agents:
+            self._registry.get_agent(agent)
+        self._telemetry = configuration
+        return configuration
+
     def start(self, request: ExecutionRequest, started_by: str) -> Execution:
         """Queue a run of the agent's latest version; 404 for no such agent, 409 retired, 503 no runner."""
         if not self._runners_by_name:
@@ -134,6 +170,8 @@ class Executions:
         agent = self._registry.get_agent(request.agent)
         if agent.retired:
             raise HTTPException(HTTPStatus.CONFLICT, f"agent {request.agent!r} is retired")
+        telemetry = self._telemetry.settings_for(agent.name)
+        traced = telemetry.tracing and random.random() < telemetry.sample_rate  # noqa: S311
         with self._executions_lock:
             execution = self._record(
                 Execution(
@@ -143,6 +181,8 @@ class Executions:
                     input=request.input,
                     started_by=started_by,
                     state=ExecutionState.QUEUED,
+                    traced=traced,
+                    capture_content=telemetry.capture_content,
                     queued_at=datetime.now(UTC),
                 ),
             )
@@ -185,7 +225,11 @@ class Executions:
                     started_at=datetime.now(UTC),
                 )
                 self._running_ids_by_runner[runner.name] = execution_id
-            result = runner.run(build_pi_command(execution.version, execution.input), self._timeout_seconds)
+            result = runner.run(
+                build_pi_command(execution.version, execution.input),
+                build_trace_environment(execution),
+                self._timeout_seconds,
+            )
             with runner_lock:
                 with self._executions_lock:
                     del self._running_ids_by_runner[runner.name]
@@ -223,6 +267,7 @@ class Executions:
                     "agent": execution.agent,
                     "version": execution.version.number,
                     "runner": execution.runner,
+                    "started_by": execution.started_by,
                 },
             ),
         )

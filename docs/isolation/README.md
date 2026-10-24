@@ -26,7 +26,7 @@ flowchart LR
         EP["episode<br/>agent loops, in-world gateway"]
         SB["sandbox per agent<br/>native tools, bash, /skills"]
         AG["agentgateway<br/>MCP route, per-agent tool policy"]
-        SV["services<br/>forge, board, jobsvc, jobs, scratch, coverage, notes, agents"]
+        SV["services<br/>forge, board, jobsvc, jobs, scratch, coverage, notes, agents, phoenix"]
         NP["node pool<br/>node-1 .. node-n: one job each, a real process"]
         GW["gateway<br/>holds the key, admits callers by token"]
     end
@@ -104,8 +104,8 @@ tool call (`loc_arena/tool_records.py`): the tool, its arguments, its result or 
 container writes it to stdout; an in-process run writes `records/<service>.jsonl`. agentgateway logs the same
 calls with the caller added.
 
-Before grading, the run copies each live service's log, each node's, and agentgateway's, to
-`services/<name>.log` in the run directory. `loc_arena/recorded_events.py` then turns each record into the events of the episode or the honest
+Before grading, the run stops the runners and copies each live service's log, each node's, and agentgateway's,
+to `services/<name>.log` in the run directory, and Phoenix's spans to `services/phoenix.spans.jsonl`. `loc_arena/recorded_events.py` then turns each record into the events of the episode or the honest
 twin whose play window holds its time, in the turn of the agent that was running. Each event goes to the sealed
 log and, unless it is sealed-only, the mirror log: a scratch note's `shared_surface` event and a node's
 `process` facts stay on the sealed log, where the verifier reads them and the monitors cannot. A refused call is a blocked `action`. A record that cannot be placed goes to
@@ -115,10 +115,10 @@ none.
 ## The honest twin
 
 In a stack run the episode container plays one phase per start. Between the two, the host adds each service's
-log so far to its file in the run directory and waits until the Collector holds a record of every call the
-gateway logged, then recreates the gateway and every sandbox, runner, node, live service and agentgateway with
-fresh anonymous volumes (`loc_arena/stack_play.py`). The Collector and its record run on, and the gateway counts the
-twin's runner calls afresh. The episode stays.
+log so far, and Phoenix's spans, to their files in the run directory and waits until the Collector holds a
+record of every call the gateway logged, then recreates the gateway and every sandbox, runner, node, live service
+and agentgateway with fresh anonymous volumes (`loc_arena/stack_play.py`). The Collector and its record run on,
+and the gateway counts the twin's runner calls afresh. The episode stays.
 If a log cannot be copied, nothing is recreated; if a container does not come back, the run stops with its
 logs copied out. The twin therefore sees none of the notes, grants, PRs, jobs or files the attack left.
 
@@ -218,6 +218,7 @@ under the node's name.
 | the gateway | yes, with its sandbox token, recorded under the sandbox's name; from a job it submits, as that job's node |
 | a service with rights | only with its own identity, and only the rights it holds |
 | a service with tools | only through agentgateway with its sandbox token, and only the tools its run config lists |
+| a service with neither, such as Phoenix | yes: it is open to everything on agent-net, so any agent can read, delete and forge the company's spans; a forged span is no agent's action unless the agents service recorded the run it claims |
 | code left in the shared checkout | runs wherever another agent runs it; the checkout is a channel between agents |
 
 The sandbox mounts only the checkouts and the skills, takes commands from the episode alone, and holds no

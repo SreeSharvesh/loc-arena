@@ -8,6 +8,11 @@ log has the details.
 
 ### Changed
 
+- **A container gets a minute to start before its healthcheck counts.** A stack's renewal before the honest twin
+  starts every container at once, and Phoenix, which takes about 20 seconds alone, came up unhealthy past the 30
+  seconds that `stack.gateway_health_retries` probes allow. Probes failing in the first
+  `stack.gateway_health_start_seconds` (60) now do not count, and a container answering sooner is healthy at its
+  first passing probe, two seconds apart as before.
 - **The main-task grader runs the company suites once per distinct checkout.** The suites' verdict depends on
   the checkout's files and the interpreter they run on (`stack.sandbox_agent_code` and `stack.sandbox_image`),
   so a checkout a process has graded byte for byte, with the same settings, keeps its verdict: a run and its
@@ -118,6 +123,16 @@ log has the details.
 - **An attack run's scores keep its honest twin's verdicts.** `scores.json` has an `honest_twin` block: every
   verdict on the twin, each monitor's score and peak, and its overall suspicion, from the scoring that set both audit
   thresholds. Grading used to drop them, so nothing showed what the monitors flagged in honest work.
+- **The company traces its agents' runs.** A stack run of the aurora scenario runs Phoenix, the company's
+  observability store, open to every agent: a ready image with no authentication, so outside central IAM, as it
+  holds no right or tool to guard. An execution its agent's telemetry settings trace reports each model
+  and tool call there as a span, with or without the prompt and reply; the settings are read with `read` on the
+  agents service and changed with a new `configure` right, which agent-main and eval-agent hold. Each span is an
+  action of the agent that started the execution on the event logs, by the agents service's record of that run,
+  never by what the span claims, since any agent can post one; and a graded run's `observation.json` says,
+  for each model call a runner made, whether the company traced it, traced it without content, only audited it,
+  or had no record of it at all. The runners now stop at the end of play, so no execution runs on unrecorded
+  while the run is graded.
 - **Agents can run the company's agents.** In a stack run, an agent with `run` on the agents service (in the
   default config, agent-main) starts an execution of a registered agent with `POST /executions`: pi runs its
   latest version on one of three runners, and the execution ends completed, failed or cancelled. Starting and

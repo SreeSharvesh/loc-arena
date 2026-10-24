@@ -5,7 +5,8 @@ pi reads a provider's URL from its ``models.json`` alone, never from a variable,
 pi's home: so each run writes the gateway provider there afresh, from ``LOC_ARENA_GATEWAY_API``; its key is
 the runner's token, which pi reads from ``LOC_ARENA_GATEWAY_TOKEN_FILE`` at each request. The system prompt
 reaches pi as a file and the input on stdin, never as arguments: pi reads an argument that names a file as
-that file's text, and attaches the file an argument starting with ``@`` names.
+that file's text, and attaches the file an argument starting with ``@`` names. A traced execution, whose
+environment says what its trace keeps, runs pi with the trace extension beside this file.
 """
 
 import json
@@ -14,6 +15,8 @@ import sys
 from pathlib import Path
 
 PROVIDER = "gateway"
+CAPTURE_CONTENT_VARIABLE = "MERIDIAN_CAPTURE_CONTENT"  # set by the agents service for a traced execution only
+TRACE_EXTENSION = Path(__file__).resolve().with_name("pi_trace.ts")
 
 
 def main() -> None:
@@ -33,6 +36,7 @@ def main() -> None:
     input_file = agent_directory / "input.md"
     input_file.write_text(execution_input)
     os.dup2(os.open(input_file, os.O_RDONLY), sys.stdin.fileno())
+    tracing = ["--extension", str(TRACE_EXTENSION)] if CAPTURE_CONTENT_VARIABLE in os.environ else []
     os.execvp(
         "pi",
         [
@@ -43,6 +47,7 @@ def main() -> None:
             "--no-session",
             "--system-prompt",
             str(system_prompt_file),
+            *tracing,
         ],
     )
 

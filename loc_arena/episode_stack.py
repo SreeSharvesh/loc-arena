@@ -90,6 +90,7 @@ from loc_arena.tools_gateway import (
     render_tools_gateway_config,
     serves_tools,
 )
+from loc_arena.verifier.observation import write_observation
 from loc_arena.yaml_documents import dump_document
 
 AGENT_NETWORK = "agent-net"  # the episode, the sandboxes and the gateway, with no route out
@@ -501,6 +502,8 @@ def _probe(port: int, stack: StackSettings, *, test: Sequence[str] | None = None
         "test": list(test or probe),
         "interval": f"{stack.gateway_health_interval_seconds}s",
         "retries": stack.gateway_health_retries,
+        "start_period": f"{stack.gateway_health_start_seconds}s",
+        "start_interval": f"{stack.gateway_health_interval_seconds}s",
     }
 
 
@@ -570,16 +573,17 @@ def _issue_play_secrets(config: RunConfig, tokens: dict[str, str]) -> tuple[dict
 def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: Path) -> Path:
     """Play one episode of ``run`` (a config in ``configs/``) in its own compose project; grade it here.
 
-    The episode container plays the episode and, after ``renew_services``, its honest twin. Its run directory
-    is then copied into ``logs`` with each live service's log, in ``services/<name>.log`` of the run
-    directory; the events of the services' records are built (``loc_arena.recorded_events``) and the run is
-    graded on this host with the agents' code sandboxed, while the gateway still runs, so model-backed
-    monitors reach their model through it and it records their calls. Whatever the episode, what the gateway
-    and each live service recorded is copied into ``logs`` before the project is removed, after a Ctrl-C too,
-    each log once; when the episode never started, a live service that failed to become healthy leaves only
-    its log. A failed renewal before the twin stops the run like a failed episode, its logs copied out. The
-    project is kept, stopped, only when a copy fails, so nothing recorded is lost. Returns the bundle's
-    directory.
+    The episode container plays the episode and, after ``renew_services``, its honest twin (``play_phases``).
+    Its run directory is then copied into ``logs`` with each live service's log, in ``services/<name>.log`` of
+    the run directory, beside Phoenix's spans (``loc_arena.observability``); the events of the services'
+    records are built (``loc_arena.recorded_events``) and the run is graded on this host with the agents' code
+    sandboxed, while the gateway still runs, so model-backed monitors reach their model through it and it
+    records their calls; ``observation.json`` is then written from the gateway's record.
+    Whatever the episode, what the gateway and each live service recorded is copied into ``logs`` before the
+    project is removed, after a Ctrl-C too, each log once; when the episode never started, a live service that
+    failed to become healthy leaves only its log. A failed renewal before the twin stops the run like a failed
+    episode, its logs copied out. The project is kept, stopped, only when a copy fails, so nothing recorded is
+    lost. Returns the bundle's directory.
     """
     run = Path(run).name.removesuffix(".yaml")
     config = load_run_config(REPOSITORY / "configs" / f"{run}.yaml")
@@ -620,7 +624,7 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
     copy_service_logs: list[tuple[list[str], Path | None]] = [
         *list_service_log_copies(config, compose, service_logs),
     ]
-    created = False
+    created, graded = False, None
     try:
         if run_compose([*compose, "create", "--build"]).returncode != 0:
             raise StackError("could not build or create the episode's containers: see compose's output above")
@@ -638,13 +642,14 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
             raise StackError("could not copy every live service's log out, so the run was not graded")
         build_recorded_run_events(config, run_directory)
         host_token = environment[model_gateway.HOST_TOKEN_VARIABLE]
-        return grade_run(
+        graded = grade_run(
             sandbox_agent_code(config),
             run_directory,
             mode=mode,
             seed=seed,
             monitor_provider=_build_monitor_provider(config, compose, host_token),
         )
+        return graded
     finally:
         never_started = [*compose, "ps", "--all", "--status", "created", "--quiet", EPISODE_SERVICE]
         started = created and not run_compose(never_started, capture_output=True, text=True).stdout.strip()
@@ -658,6 +663,8 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
         if created and not (all(copies) and recorded):
             run_compose([*compose, "stop"])
             raise StackError(f"could not copy every log out: kept compose project {project} and its volumes")
+        if graded is not None:
+            write_observation(config, run_directory, call_log)
         run_compose([*compose, "down", "--volumes", "--remove-orphans"])
         if created and not started:
             raise StackError(NEVER_STARTED.format(logs=service_logs))
