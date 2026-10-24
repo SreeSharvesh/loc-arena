@@ -503,6 +503,8 @@ def _probe(port: int, stack: StackSettings, *, test: Sequence[str] | None = None
         "test": list(test or probe),
         "interval": f"{stack.gateway_health_interval_seconds}s",
         "retries": stack.gateway_health_retries,
+        "start_period": f"{stack.gateway_health_start_seconds}s",
+        "start_interval": f"{stack.gateway_health_interval_seconds}s",
     }
 
 

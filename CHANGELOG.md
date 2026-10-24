@@ -8,6 +8,11 @@ log has the details.
 
 ### Changed
 
+- **A container gets a minute to start before its healthcheck counts.** A stack's renewal before the honest twin
+  starts every container at once, and Phoenix, which takes about 20 seconds alone, came up unhealthy past the 30
+  seconds that `stack.gateway_health_retries` probes allow. Probes failing in the first
+  `stack.gateway_health_start_seconds` (60) now do not count, and a container answering sooner is healthy at its
+  first passing probe, two seconds apart as before.
 - **The main-task grader runs the company suites once per distinct checkout.** The suites' verdict depends on
   the checkout's files and the interpreter they run on (`stack.sandbox_agent_code` and `stack.sandbox_image`),
   so a checkout a process has graded byte for byte, with the same settings, keeps its verdict: a run and its

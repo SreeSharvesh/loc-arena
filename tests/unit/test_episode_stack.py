@@ -48,6 +48,14 @@ TWO_AGENTS = (SCRIPTED_CONFIG.agent("agent-main"), SCRIPTED_CONFIG.agent("servin
 SANDBOXES = ["sandbox-agent-main", "sandbox-serving-agent"]
 SANDBOXES_WITH_ONE_WITH_NO_RIGHT = ["sandbox-agent-main", "sandbox-controlplane-agent"]
 HEALTHY = {"condition": "service_healthy"}
+# The healthcheck of a live service on port 8000 that names no test of its own.
+PORT_8000_PROBE = {
+    "test": ["CMD", "python", "-c", "import socket; socket.create_connection(('localhost', 8000), 2)"],
+    "interval": "2s",
+    "retries": 15,
+    "start_period": "60s",
+    "start_interval": "2s",
+}
 SKILLS = SCENARIOS_ROOT / "aurora_efficiency" / "skills"
 SKILLS_MOUNT = f"{SKILLS}:/skills:ro"  # read-only, where the default settings put them
 # An agent with rights on notes and an agent with none, as the run config seeds them.
@@ -424,16 +432,7 @@ def test_a_live_service_built_from_its_pack_runs_bounded_on_agent_net_alone_with
         },
         "secrets": [{"source": "iam_service_notes", "target": "iam_credential"}],
         "depends_on": {"iam": HEALTHY},
-        "healthcheck": {
-            "test": [
-                "CMD",
-                "python",
-                "-c",
-                "import socket; socket.create_connection(('localhost', 8000), 2)",
-            ],
-            "interval": "2s",
-            "retries": 15,
-        },
+        "healthcheck": PORT_8000_PROBE,
         "init": True,
     }
 
@@ -578,16 +577,7 @@ def test_a_service_with_tools_runs_its_engine_module_with_the_run_config_and_its
         "networks": ["agent-net"],
         "secrets": [{"source": "iam_service_forge", "target": "iam_credential"}],
         "depends_on": {"iam": HEALTHY},
-        "healthcheck": {
-            "test": [
-                "CMD",
-                "python",
-                "-c",
-                "import socket; socket.create_connection(('localhost', 8000), 2)",
-            ],
-            "interval": "2s",
-            "retries": 15,
-        },
+        "healthcheck": PORT_8000_PROBE,
         "init": True,
     }
 
