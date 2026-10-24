@@ -106,7 +106,9 @@ the provider's response id among them), and the execution, its agent, its starte
 
 Phoenix's spans are exported to `services/phoenix.spans.jsonl` once the runners have stopped, so no execution
 adds one after: before the honest twin's renewal, and at the end of play, before grading. The export runs in
-Phoenix's own container; a Phoenix that is not running, such as one an agent crashed, exports none. Each span
+Phoenix's own container, a hundred spans a page, since Phoenix builds each page in memory and a span can hold a
+long conversation. A Phoenix that is not running, such as one an agent crashed, exports none, and one that stops
+during the export keeps the spans it listed first: the run goes on either way. Each span
 becomes an `execution_span` action of the agent that started the execution, on both event logs, so the monitors
 see what the company's tracing saw. Once a graded run's gateway record is copied, `observation.json`
 (`loc_arena/verifier/observation.py`) gives each runner call in it that the provider answered one level:

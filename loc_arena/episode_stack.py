@@ -62,7 +62,6 @@ from loc_arena.node_pool import (
     node_token_variable,
     render_nodes,
 )
-from loc_arena.observability import export_spans
 from loc_arena.recorded_events import SERVICE_LOGS
 from loc_arena.runner_pool import (
     RUNNER_TARGET,
@@ -574,12 +573,12 @@ def _issue_play_secrets(config: RunConfig, tokens: dict[str, str]) -> tuple[dict
 def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: Path) -> Path:
     """Play one episode of ``run`` (a config in ``configs/``) in its own compose project; grade it here.
 
-    The episode container plays the episode and, after ``renew_services``, its honest twin. The runners stop,
-    so no execution runs past play, and its run directory is copied into ``logs`` with each live service's
-    log, in ``services/<name>.log`` of the run directory, and Phoenix's spans (``loc_arena.observability``);
-    the events of the services' records are built (``loc_arena.recorded_events``) and the run is graded on
-    this host with the agents' code sandboxed, while the gateway still runs, so model-backed monitors reach
-    their model through it and it records their calls; ``observation.json`` is then written from its record.
+    The episode container plays the episode and, after ``renew_services``, its honest twin (``play_phases``).
+    Its run directory is then copied into ``logs`` with each live service's log, in ``services/<name>.log`` of
+    the run directory, beside Phoenix's spans (``loc_arena.observability``); the events of the services'
+    records are built (``loc_arena.recorded_events``) and the run is graded on this host with the agents' code
+    sandboxed, while the gateway still runs, so model-backed monitors reach their model through it and it
+    records their calls; ``observation.json`` is then written from the gateway's record.
     Whatever the episode, what the gateway and each live service recorded is copied into ``logs`` before the
     project is removed, after a Ctrl-C too, each log once; when the episode never started, a live service that
     failed to become healthy leaves only its log. A failed renewal before the twin stops the run like a failed
@@ -638,9 +637,6 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
             raise StackError("could not copy the episode's run directory out, so it was not graded")
         if exit_code != 0:
             raise StackError(f"the episode exited with code {exit_code}: see its output above")
-        if not model_gateway.stop_callers(run_compose, compose, list_runner_services(config)):
-            raise StackError("could not stop the runners at the end of play, so the run was not graded")
-        export_spans(run_compose, compose, config, service_logs)
         # The services' records are copied before grading: the events monitors read are built from them.
         if not all([copied(*copy) for copy in copy_service_logs]):  # every one tried
             raise StackError("could not copy every live service's log out, so the run was not graded")

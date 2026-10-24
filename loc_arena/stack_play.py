@@ -14,7 +14,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from loc_arena.config import RunConfig, sandbox_service
-from loc_arena.gateway.model_gateway import MODEL_GATEWAY_SERVICE, drain_record, start_gateway
+from loc_arena.gateway.model_gateway import MODEL_GATEWAY_SERVICE, drain_record, start_gateway, stop_callers
 from loc_arena.node_pool import list_node_services
 from loc_arena.observability import PHOENIX_SERVICE, export_spans
 from loc_arena.runner_pool import list_runner_services
@@ -118,15 +118,22 @@ def play_phases(
     """Play the episode and, in attack mode, the honest twin in the same container after ``renew_services``.
 
     Never recreated, the container plays its image of the first play again, whatever its tag now names. The
-    twin plays under ``twin_environment``, whose recreated tools gateway offers it no covert tool. Returns the
-    exit code of the last play.
+    twin plays under ``twin_environment``, whose recreated tools gateway offers it no covert tool. Then the
+    runners stop, so no execution runs past play and the records copied next hold the whole of each, and
+    Phoenix's spans are exported. Returns the exit code of the last play.
     """
     attached = ["--attach", EPISODE_SERVICE, "--exit-code-from", EPISODE_SERVICE]
     play = [*compose, "up", "--no-recreate", *attached, EPISODE_SERVICE]
-    exit_code = subprocess.run(play, env=environment).returncode
+    played_in = environment
+    exit_code = subprocess.run(play, env=played_in).returncode
     if exit_code == 0 and mode != "honest":
         renew_services(config, compose, service_logs, environment, twin_environment)
-        exit_code = subprocess.run(play, env=twin_environment).returncode
+        played_in = twin_environment
+        exit_code = subprocess.run(play, env=played_in).returncode
+    run = functools.partial(subprocess.run, env=played_in)
+    if not stop_callers(run, compose, list_runner_services(config)):
+        raise StackError("could not stop the runners at the end of play: see compose's output above")
+    export_spans(run, compose, config, service_logs)
     return exit_code
 
 

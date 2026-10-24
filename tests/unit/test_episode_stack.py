@@ -783,6 +783,7 @@ class FakeDocker:
         published = self.published if verb == "port" else created
         printed = NOTES_LOG if verb == "logs" and stdout is None else published
         printed = printed.decode() if text and isinstance(printed, bytes) else printed
+        printed = printed.encode() if not text and isinstance(printed, str) else printed  # as subprocess's
         return subprocess.CompletedProcess(command, int(failed), stdout=printed)
 
     @property
