@@ -8,8 +8,8 @@ calls from the job service alone, holding the node's token, and runs the job in 
 checkouts mounted read-only and the checkout's repos on its ``PYTHONPATH`` unless the job brings its own, as
 the seed's jobs do, so an agent's job runs the code an agent put in the shared checkout and cannot change
 what another job runs. The job's process gets the job's own
-credentials the service sends, and where the inference gateway is with the key to call it: the node's token,
-until the gateway admits a job's own credential. It imports nothing of the harness.
+credentials the service sends, and where the inference gateway is, the key to call it and the model it serves
+jobs: the node's token, until the gateway admits a job's own credential. It imports nothing of the harness.
 """
 
 from __future__ import annotations
@@ -50,6 +50,7 @@ from sandbox_server.trusted import ALL_INTERFACES, ServerToken, admit_trusted_ca
 STOP_GRACE_SECONDS = 5.0  # a stopped process is waited for this long so a following status sees it exited
 GATEWAY_URL_VARIABLE = "MERIDIAN_GATEWAY_URL"  # the inference gateway's API, as a job calls it
 GATEWAY_TOKEN_VARIABLE = "MERIDIAN_GATEWAY_TOKEN"  # its key: the node's token, unless the job brings its own
+GATEWAY_MODEL_VARIABLE = "MERIDIAN_GATEWAY_MODEL"  # the model a job calls it for
 
 
 class NodeServerSettings(BaseModel):
@@ -66,6 +67,10 @@ class NodeServerSettings(BaseModel):
     gateway_url: str = Field(
         description="The inference gateway's API as a job calls it, on the runners' route: a job calls it as "
         "its node, with the node's token, until the gateway admits a job's own credential.",
+    )
+    gateway_model: str = Field(
+        min_length=1,
+        description="The model a job is given to call the gateway for: one the runners' route allows.",
     )
     checkouts_directory: Path = Field(
         description="Where the checkouts' volume is mounted, read-only: the repos of the checkout the "
@@ -126,6 +131,7 @@ class NodeProcess:
             environment = {
                 GATEWAY_URL_VARIABLE: self._settings.gateway_url,
                 GATEWAY_TOKEN_VARIABLE: self._node_token.get_secret_value(),
+                GATEWAY_MODEL_VARIABLE: self._settings.gateway_model,
                 "PYTHONPATH": os.pathsep.join(map(str, repos)),
                 **{name: secret.get_secret_value() for name, secret in job.environment.items()},
                 "PATH": os.environ.get("PATH", "/usr/bin:/bin"),

@@ -41,6 +41,19 @@ log has the details.
   Collector, reachable from the gateway alone, writes the record of every call, refused and failed ones
   included; a stack run waits until the record holds every call before the gateway stops, and copies it out as
   before (`logs/gateway/<project>.calls.jsonl`, with the Collector's own lines beside it).
+- **Every agent reads the cluster, and jobsvc-agent submits to it.** Most of a live run's agents could not see
+  the cluster their work runs on, and jobsvc-agent, whose task is the cluster, could not use it. The default run
+  config now gives every agent `read` on the job service and the tools that read it, and jobsvc-agent `submit`
+  as serving-agent and eval-agent hold it, all three with every job tool but the operators' three. agent-main
+  submits nothing itself: it hands a job to one of them or asks `jobsvc-owner`.
+- **A job sees the scenario's skills and the model it may call.** A node mounts the skills read-only where a
+  sandbox has them, so a job runs a skill's script as an agent would, and gives each job
+  `MERIDIAN_GATEWAY_MODEL`, the first of `gateway.runner_models`, so a job's code knows a model its route admits;
+  a run config naming an empty model there does not load.
+- **The runners and the jobs may make 1000 model calls per play, up from 300.** An eval run on `gsm8k-test-50`
+  is fifty calls, and the company's agents on the runners share the budget, so a few runs spent most of it.
+- **Both agentgateways listen on IPv4 alone.** Their default listener, `[::]`, cannot bind where the kernel boots
+  without IPv6, so a stack run on such a host never started.
 
 ### Added
 

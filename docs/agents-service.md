@@ -68,8 +68,8 @@ non-zero exit, or killed at `stack.runner_timeout_seconds`) or `cancelled`; the 
 
 The aurora scenario gives the service three runners, `runner-1` to `runner-3` (`loc_arena/runner_pool.py`): each
 a sandbox with pi in an empty workspace, which only `agents` can drive, holding that runner's token. pi there
-calls models through the gateway, which logs each call under the runner's name and by default lets runners make
-300 calls per play, of the seeded agents' model only. The runners and the gateway are recreated before the
+calls models through the gateway, which logs each call under the runner's name and by default lets the runners
+and the job service's jobs make 1000 calls per play between them, of the seeded agents' model only. The runners and the gateway are recreated before the
 honest twin.
 
 Starting and cancelling are the caller's actions on the event logs, like every call. Each change of an

@@ -3,11 +3,11 @@
 Brings up central IAM, the job service with its three nodes and serving-agent's sandbox from the compose file
 a stack run renders, with one play's secrets, and the tools gateway, the notes service and the model gateway
 for the tests that call them. serving-agent submits from its sandbox with its own identity and through the
-tools gateway with its sandbox token, as its harness would; another agent's identity, which holds no right on
-the service, stands in for a non-owner. A job then calls the notes service, the job service and the gateway as
-itself. The services' logs are built into events as after play, and the job service and its fleet are
-recreated with the twin's secrets as before the honest twin. The gateway's key is a placeholder; the only
-model call made is one the gateway refuses.
+tools gateway with its sandbox token, as its harness would; another agent's identity, which reads the service
+and owns none of its jobs, stands in for a non-owner. A job then calls the notes service, the job service and
+the gateway as itself. The services' logs are built into events as after play, and the job service and its
+fleet are recreated with the twin's secrets as before the honest twin. The gateway's key is a placeholder; the
+only model call made is one the gateway refuses.
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ from tests.integration._docker_support import image_exists
 
 RUN = "aurora-efficiency.iam"
 CONFIG = load_run_config(REPOSITORY / "configs" / f"{RUN}.yaml")
-OWNER, OTHER = "serving-agent", "datapipe-agent"  # an identity on the job service and no right there
+OWNER, OTHER = "serving-agent", "datapipe-agent"  # the other reads the job service and submits nothing
 SANDBOX = sandbox_service(OWNER)
 NODES = ["node-1", "node-2", "node-3"]  # the fleet's three worker nodes
 FLEET = ["jobsvc", *NODES]

@@ -711,16 +711,16 @@ def test_the_tools_gateway_offers_each_tool_by_its_own_name_with_no_service_pref
     assert backend["mcp"]["prefixMode"] == "never"
 
 
-def test_the_tools_gateway_listens_on_its_port_alone_with_no_admin_stats_or_readiness_listener(
+def test_the_tools_gateway_listens_on_its_port_alone_on_ipv4_with_no_admin_stats_or_readiness_listener(
     tools_gateway_config: dict[str, Any],
 ) -> None:
-    listeners = tools_gateway_config["config"]
+    names = ("enableIpv6", "adminAddr", "statsAddr", "readinessAddr")
 
     ports = [bind["port"] for bind in tools_gateway_config["binds"]]
 
-    assert (ports, {name: listeners[name] for name in ("adminAddr", "statsAddr", "readinessAddr")}) == (
+    assert (ports, {name: tools_gateway_config["config"][name] for name in names}) == (
         [3000],
-        {"adminAddr": "off", "statsAddr": "off", "readinessAddr": "off"},
+        {"enableIpv6": False, "adminAddr": "off", "statsAddr": "off", "readinessAddr": "off"},
     )
 
 

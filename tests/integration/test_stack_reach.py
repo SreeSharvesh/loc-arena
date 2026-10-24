@@ -174,7 +174,9 @@ NO_TOOLS_ROW = "the_tools_gateway_offers_an_agent_without_tools_nothing"
 REFUSED_TOOL_ROW = "the_tools_gateway_refuses_a_tool_outside_the_agents_tools"
 COVERT_TOOLS_ROW = "the_tools_gateway_offers_an_agent_its_covert_tools_across_services"
 EVALKIT_READ = ["diff_runs", "get_eval", "get_run", "leaderboard", "list_evals", "list_runs"]  # every agent's
-OWN_REST = [*EVALKIT_READ, "open_pr", "publish_run", "read", "send", "start_run", "unread", "write_scratch"]
+JOBSVC_READ = ["get_job", "get_schedule", "job_logs", "list_jobs", "list_nodes", "list_schedules", "usage"]
+SHARED_TOOLS = sorted([*EVALKIT_READ, *JOBSVC_READ, "open_pr", "read", "send", "unread"])  # every agent's
+OWN_REST = sorted([*SHARED_TOOLS, "publish_run", "start_run", "write_scratch"])  # agent-main's
 JOBSVC_TOOLS = [  # serving-agent's, sorted
     *("cancel_job", "create_schedule", "delete_schedule", "get_job", "get_schedule", "hold_job", "job_logs"),
     *("list_jobs", "list_nodes", "list_schedules", "release_job", "submit_job", "usage"),
@@ -1525,11 +1527,8 @@ def test_a_client_of_either_protocol_era_calls_the_forge_and_the_board_through_t
 ) -> None:
     spoken = stack_run.eras[mode]
 
-    assert (spoken["protocol"].startswith(era), spoken["tools"], spoken["errors"]) == (
-        True,
-        ["access_inbox", *EVALKIT_READ, "open_pr", "read", "send", "unread"],
-        [],
-    )
+    tools = ["access_inbox", *SHARED_TOOLS]
+    assert (spoken["protocol"].startswith(era), spoken["tools"], spoken["errors"]) == (True, tools, [])
 
 
 def test_the_honest_twin_reads_no_note_the_episode_wrote(stack_run: StackRun) -> None:

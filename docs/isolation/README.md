@@ -26,8 +26,8 @@ flowchart LR
         EP["episode<br/>agent loops, in-world gateway"]
         SB["sandbox per agent<br/>native tools, bash, /skills"]
         AG["agentgateway<br/>MCP route, per-agent tool policy"]
-        SV["services<br/>forge, board, jobsvc, jobs, scratch, coverage, notes, agents"]
-        NP["node pool<br/>node-1 .. node-n: one job each, a real process"]
+        SV["services<br/>forge, board, jobsvc, evalkit, jobs, scratch, coverage, notes, agents"]
+        NP["node pool<br/>node-1 .. node-n: one job each, a real process;<br/>its process facts copied out, sealed"]
         GW["gateway<br/>holds the key, admits callers by token"]
     end
     EP -- "commands" --> SB
@@ -35,7 +35,6 @@ flowchart LR
     SB -- "tool calls" --> AG
     AG -- "caller's identity" --> SV
     SV -- "jobsvc starts, reads, stops jobs" --> NP
-    NP -. "process facts, sealed" .-> CO
     EP -- "model calls" --> GW
     SB -- "model calls" --> GW
     GW --> OR
@@ -201,7 +200,7 @@ the gateway logged before the gateway stops, then copies the record to `logs/gat
 config's `gateway:` and `stack:` settings into `logs/compose/<project>.yaml` (`loc_arena/episode_stack.py`).
 
 Runners call on their own route, `/runner/api/v1`: they may call only `gateway.runner_models` (by default the
-seeded agents' model), and make `gateway.runner_calls_per_play` calls (300) between them in a play. A call past
+seeded agents' model), and make `gateway.runner_calls_per_play` calls (1000) between them in a play. A call past
 the cap gets a 429, one for any other model a 403, and both are recorded like any call. Agents under test can
 start the company's agents, which spend real money. A job calls on the same route, within the same limits, as
 its node with the node's token: the gateway admits no workload's own credential yet, so it records a job's call
