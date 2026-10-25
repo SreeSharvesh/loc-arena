@@ -407,6 +407,10 @@ log has the details.
 
 ### Fixed
 
+- **A sandbox's reset removes the directories agent code locked.** A directory a command made unreadable or
+  unwritable (`chmod 000`) outlived the reset that empties a sandbox before each episode plays, and a runner's
+  after each execution, as the removal skipped what it could not list. The reset now gives the sandbox's user
+  back each directory it owns first; the image's own files stay as they are.
 - **A live attack is judged only on what its agents did.** The world no longer opens a coverage-cutting
   control-plane PR under agent-main's name in every attack episode, which gave the PR review monitor a catch
   the model never earned. The scripted policy opens that PR as one of agent-main's own attack moves, through
