@@ -1,4 +1,4 @@
-"""What a stack run grades: each repo's main as merged on the forge, written as the checkout."""
+"""What a run grades: each repo's main as merged on the forge, written as the checkout."""
 
 from __future__ import annotations
 
@@ -14,11 +14,11 @@ import pytest
 from loc_arena.config import load_run_config
 from loc_arena.forge_service import load_seed, open_forge
 from loc_arena.iam_seed import REPOSITORY
-from loc_arena.merged_main import MergedMainError, archive_main, write_merged_checkout
+from loc_arena.merged_main import MergedMainError, archive_stack_main, write_merged_checkout
 from loc_arena.settings import ForgeSettings
 from loc_arena.tasks.main_task_grader import COMPANY_REPOS
 
-from meridian_forge.repositories import repository_path
+from meridian_forge.repositories import commit_branch, identity, merge_branch
 
 CFG = load_run_config("configs/aurora-efficiency.iam.yaml")
 COMPOSE = ["docker", "compose", "-p", "loc-arena-test"]
@@ -38,28 +38,21 @@ def in_the_forge_container(command: list[str], **options: Any) -> subprocess.Com
 
 
 def move_main(repositories: Path, path: str, content: str) -> None:
-    """A commit on ``REPO``'s main adding ``path``, as a merge will make one."""
-    work = repositories.parent / "work"
-    run = lambda *arguments: subprocess.run(["git", *arguments], cwd=work, check=True)  # noqa: E731
-    subprocess.run(
-        ["git", "clone", "--quiet", str(repository_path(repositories, REPO)), str(work)],
-        check=True,
-    )
-    (work / path).write_text(content)
-    run("add", path)
-    run("-c", "user.name=Merger", "-c", "user.email=merger@meridian.example", "commit", "--quiet", "-m", "x")
-    run("push", "--quiet", "origin", "main")
+    """``REPO``'s main moved by the forge's merge of a branch adding ``path``."""
+    patch = f"--- /dev/null\n+++ b/{path}\n@@ -0,0 +1 @@\n+{content}\n"
+    commit_branch(repositories, REPO, "add-file", patch, "Add a file", identity("yuki"))
+    assert merge_branch(repositories, REPO, "add-file", "Merge add-file", "omar")
 
 
 def test_a_checkout_written_from_main_holds_main_and_nothing_the_episode_left(tmp_path: Path) -> None:
     repositories = tmp_path / "repositories"
     open_forge(CFG, load_seed(CFG), repositories)
-    move_main(repositories, "MERGED.md", "merged by the team\n")
+    move_main(repositories, "MERGED.md", "merged by the team")
     checkout = tmp_path / "episode" / "checkout"
     (checkout / REPO).mkdir(parents=True)
     (checkout / REPO / "UNMERGED.md").write_text("an edit nobody merged\n")
 
-    archives = archive_main(config_with_forge_at(repositories), COMPOSE, in_the_forge_container)
+    archives = archive_stack_main(config_with_forge_at(repositories), COMPOSE, in_the_forge_container)
     write_merged_checkout(checkout, archives or {})
 
     assert sorted(path.name for path in checkout.iterdir()) == sorted(COMPANY_REPOS)
@@ -93,9 +86,9 @@ def test_a_scenario_without_a_forge_has_no_main_to_archive(tmp_path: Path) -> No
         live_services=tuple(service for service in CFG.live_services if service.name != "forge"),
     )
 
-    assert archive_main(config, COMPOSE, in_the_forge_container) is None
+    assert archive_stack_main(config, COMPOSE, in_the_forge_container) is None
 
 
 def test_a_main_the_forge_cannot_archive_stops_the_run_from_being_graded(tmp_path: Path) -> None:
     with pytest.raises(MergedMainError, match="could not archive"):  # no repositories were seeded there
-        archive_main(config_with_forge_at(tmp_path / "empty"), COMPOSE, in_the_forge_container)
+        archive_stack_main(config_with_forge_at(tmp_path / "empty"), COMPOSE, in_the_forge_container)

@@ -3,10 +3,10 @@
 The gateway is the only container with the provider key and a route out (agent-net and egress-net). The
 episode container plays (``loc_arena.cli run --play-only``) on agent-net alone, so its model calls can only go
 to the gateway. Each agent's code runs in its own sandbox, ``sandbox-<agent id>``, also on agent-net alone,
-which mounts only the volume of the checkouts: never the episode's logs, the run configs or the gateway's call
-log. Only the episode can call a sandbox's command server: a sandbox refuses every other caller, even one
-holding its token. Code left in the shared checkout still runs wherever another agent runs it (the shared
-checkout is a channel between agents by design). Each live service of the scenario runs in its own container
+which mounts only that agent's checkout volume: never another agent's, the episode's logs, the run configs or
+the gateway's call log. Only the episode can call a sandbox's command server: a sandbox refuses every other
+caller, even one holding its token. Code reaches another agent only through the forge, by a merge or a pushed
+branch it fetches. Each live service of the scenario runs in its own container
 on agent-net alone, with no published port, and one may hand work to runners (``loc_arena.runner_pool``). On
 one with rights, every agent has its own identity, generated per run: its sandbox holds that agent's alone,
 the service holds every agent's and the agents' starting rights, and the episode and the gateway hold none. A
@@ -35,6 +35,7 @@ from pathlib import Path, PurePosixPath
 
 from scenarios.loader import EngineModule, LiveService
 
+from loc_arena.checkouts import checkout_home, checkout_mount, render_checkout_volumes
 from loc_arena.compose_document import ComposeDocument, ComposeService, Healthcheck, ServiceSecret
 from loc_arena.config import RunConfig, load_run_config, sandbox_service
 from loc_arena.gateway import model_gateway
@@ -90,6 +91,7 @@ from loc_arena.tools_gateway import (
     TOOLS_GATEWAY_CONFIG_SECRET_NAME,
     TOOLS_GATEWAY_CONFIG_VARIABLE,
     TOOLS_GATEWAY_SERVICE,
+    render_tools_gateway,
     render_tools_gateway_config,
     serves_tools,
 )
@@ -172,9 +174,9 @@ def render_compose(
         target = SCENARIOS_DIRECTORY / scenario.directory.name / scenario.scripted_dir.name
         scripted = [f"{scenario.scripted_dir}:{target}:ro"]
     configs = f"{repository / 'configs'}:{CONFIGS_DIRECTORY}:ro"
-    checkouts = f"checkouts:{stack.checkouts_directory}"
     engine = _build_from(repository, ENGINE_TARGET, stack.image)
     agent_ids = [agent.id for agent in config.agents]
+    checkouts = [checkout_mount(stack, agent) for agent in agent_ids]
     services = config.live_services
     tool_services = [service.name for service in services if service.tools]
     # A service with rights too (IAM) is reached from the sandboxes as well, so they keep its identity.
@@ -229,14 +231,16 @@ def render_compose(
                 skills,
             ),
             **(
-                {TOOLS_GATEWAY_SERVICE: _render_tools_gateway(config, tool_services)} if tool_services else {}
+                {TOOLS_GATEWAY_SERVICE: render_tools_gateway(config, tool_services, AGENT_NETWORK)}
+                if tool_services
+                else {}
             ),
             EPISODE_SERVICE: _render_episode(
                 config,
                 engine,
                 run,
                 episode_arguments,
-                [f"output:{OUTPUT_DIRECTORY}", checkouts, configs, *scripted],
+                [f"output:{OUTPUT_DIRECTORY}", *checkouts, configs, *scripted],
             ),
         },
         "networks": {
@@ -246,7 +250,12 @@ def render_compose(
             EGRESS_NETWORK: {"internal": False},
             model_gateway.RECORD_NETWORK: {"internal": True},
         },
-        "volumes": {"sealed": {}, "output": {}, "checkouts": {}, **({BADGES_VOLUME: {}} if managed else {})},
+        "volumes": {
+            "sealed": {},
+            "output": {},
+            **render_checkout_volumes(stack, agent_ids),
+            **({BADGES_VOLUME: {}} if managed else {}),
+        },
         "secrets": {
             **model_gateway.declare_gateway_secrets(),
             **{token_secret_name(agent): {"environment": token_variable(agent)} for agent in agent_ids},
@@ -355,7 +364,11 @@ def _render_sandbox(
         # It mounts no config, so it gets its settings in its command.
         "command": [
             *["python", "-m", "sandbox_server"],
-            build_server_settings(config.settings, trusted_caller=EPISODE_SERVICE).model_dump_json(),
+            build_server_settings(
+                config.settings,
+                trusted_caller=EPISODE_SERVICE,
+                checkouts_directory=checkout_home(stack, agent_id),
+            ).model_dump_json(),
         ],
         # Its token under the one name every sandbox's command server reads; its identity on each service
         # under that service's name.
@@ -367,7 +380,7 @@ def _render_sandbox(
                 if identity.agent_id == agent_id
             ),
         ],
-        "volumes": [f"checkouts:{stack.checkouts_directory}", *skills],
+        "volumes": [checkout_mount(stack, agent_id), *skills],
         "networks": [AGENT_NETWORK],
         "healthcheck": _probe(stack.sandbox_port, stack),
         "init": True,  # reaps the processes the agent's commands leave behind
@@ -476,25 +489,6 @@ def _render_live_service(  # noqa: PLR0913
         **({"depends_on": depends_on} if depends_on else {}),
         "healthcheck": _probe(service.port, stack, test=service.healthcheck),
         "init": True,
-    }
-
-
-def _render_tools_gateway(config: RunConfig, tool_services: Sequence[str]) -> ComposeService:
-    """The tools gateway: its pinned image, on agent-net alone, bounded as a live service, config a secret.
-
-    It starts once every service it puts on its route is healthy.
-    """
-    stack = config.settings.stack
-    return {
-        "image": stack.tools_gateway_image,
-        "command": ["-f", str(config.settings.gateway.secrets_dir / TOOLS_GATEWAY_CONFIG_SECRET_NAME)],
-        "secrets": [TOOLS_GATEWAY_CONFIG_SECRET_NAME],
-        "cap_drop": ["ALL"],
-        "mem_limit": stack.service_memory_limit,
-        "cpus": stack.service_cpus,
-        "pids_limit": stack.service_pids_limit,
-        "networks": [AGENT_NETWORK],
-        "depends_on": {service: {"condition": "service_healthy"} for service in tool_services},
     }
 
 

@@ -16,13 +16,25 @@
       "permission": "read",
       "requestable": true,
       "target": "repo"
+    },
+    "receive_pack": {
+      "permission": "push",
+      "requestable": true,
+      "target": "repo"
+    },
+    "merge": {
+      "permission": "merge",
+      "requestable": true,
+      "target": "repo"
     }
   },
   "http": {
     "GET /git/{repo}/info/refs": "info_refs",
-    "POST /git/{repo}/git-upload-pack": "upload_pack"
+    "POST /git/{repo}/git-upload-pack": "upload_pack",
+    "POST /git/{repo}/git-receive-pack": "receive_pack"
   },
   "tools": {
-    "open_pr": "open_pr"
+    "open_pr": "open_pr",
+    "merge": "merge"
   }
 }

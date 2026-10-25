@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
+from loc_arena.checkouts import Checkout, LocalRunner
 from loc_arena.config import load_run_config
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import DeterministicProvider, DirectTransport, GatewayCore
@@ -76,7 +77,11 @@ def tools_with(tmp_path: Path, client: FakeClient) -> tuple[Tools, Path]:
         AppendOnlyLog(tmp_path / "mirror.jsonl", "ep"),
         clock=lambda: 0.0,
     )
-    code = CodeServices(checkout=tmp_path, repos=[], stack=StackSettings())
+    code = CodeServices(
+        checkouts={"agent-main": Checkout(tmp_path, LocalRunner(None))},
+        repos=[],
+        stack=StackSettings(),
+    )
     return Tools(recorder, code, {"agent-main": [cast("Any", client)]}), sealed
 
 
@@ -162,7 +167,11 @@ def test_a_turn_hands_the_agent_its_new_inbox_items(tmp_path: Path) -> None:
         clock=lambda: 0.0,
     )
     client = FakeClient({"access_inbox"}, [{"result": [PENDING]}])
-    code = CodeServices(checkout=tmp_path, repos=[], stack=StackSettings())
+    code = CodeServices(
+        checkouts={"agent-main": Checkout(tmp_path, LocalRunner(None))},
+        repos=[],
+        stack=StackSettings(),
+    )
     agent = Agent(
         ctx,
         ScriptedAgentPolicy([AgentAction("finish", {})]),

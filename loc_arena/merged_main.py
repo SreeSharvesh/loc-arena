@@ -1,15 +1,16 @@
-"""What a stack run grades: each company repo's ``main`` as merged on the forge, after each play.
+"""What a run grades: each company repo's ``main`` as merged on the forge, after each play.
 
-After a play, ``archive_main`` has ``git archive`` each repo's ``main`` inside the forge's container, so the
-host never runs git on a repository agents push to. Before grading, ``write_merged_checkout`` unpacks those
-archives into the play's ``checkout``, which its main task is graded on, in place of the checkout the episode
-left: only what is merged counts. An entry that would land outside it (an absolute path, a link leading out)
-is skipped and logged, so a crafted tree cannot stop the run being graded. A run whose scenario has no forge
-grades the checkout the episode left.
+After a play, ``archive_main`` has ``git archive`` each repo's ``main`` where the forge's repositories are: in
+a stack run inside the forge's container, so the host never runs git on a repository agents push to; in an
+in-process run in this process, on the episode's own forge. ``write_merged_checkout`` unpacks those archives
+into the play's ``checkout``, which its main task is graded on: only what is merged counts. An entry that
+would land outside it (an absolute path, a link leading out) is skipped and logged, so a crafted tree cannot
+stop the run being graded.
 """
 
 from __future__ import annotations
 
+import functools
 import io
 import logging
 import shutil
@@ -28,26 +29,43 @@ _LOGGER = logging.getLogger(__name__)
 EPISODE_PHASE, TWIN_PHASE = "episode", "honest_cal"
 
 RunCompose = Callable[..., subprocess.CompletedProcess[bytes]]
+RunGit = Callable[[list[str]], subprocess.CompletedProcess[bytes]]  # runs a git command where the forge is
 
 
 class MergedMainError(RuntimeError):
     """The forge's ``main`` could not be read after a play, so the run cannot be graded on it."""
 
 
-def archive_main(config: RunConfig, compose: list[str], run_compose: RunCompose) -> dict[str, bytes] | None:
-    """Each company repo's ``main`` on ``config``'s forge, as a tar, by repo; none when it has no forge."""
-    if not any(service.name == FORGE for service in config.live_services):
-        return None
+def archive_main(repositories: Path, run_git: RunGit) -> dict[str, bytes]:
+    """Each company repo's ``main`` in the forge's ``repositories``, as a tar by repo, read by ``run_git``."""
     archives = {}
     for repo in COMPANY_REPOS:
-        bare = repository_path(config.settings.forge.repositories, repo)
-        archive = ["git", "--git-dir", str(bare), "archive", "--format=tar", MAIN]
-        done = run_compose([*compose, "exec", "-T", FORGE, *archive], capture_output=True)
+        bare = repository_path(repositories, repo)
+        done = run_git(["git", "--git-dir", str(bare), "archive", "--format=tar", MAIN])
         if done.returncode != 0:
             detail = done.stderr.decode().strip()
             raise MergedMainError(f"could not archive {repo}'s main on the forge: {detail}")
         archives[repo] = done.stdout
     return archives
+
+
+def archive_stack_main(
+    config: RunConfig,
+    compose: list[str],
+    run_compose: RunCompose,
+) -> dict[str, bytes] | None:
+    """``archive_main`` in the forge's container of ``config``'s stack run; none when it has no forge."""
+    if not any(service.name == FORGE for service in config.live_services):
+        return None
+    return archive_main(
+        config.settings.forge.repositories,
+        lambda command: run_compose([*compose, "exec", "-T", FORGE, *command], capture_output=True),
+    )
+
+
+def archive_local_main(repositories: Path) -> dict[str, bytes]:
+    """``archive_main`` of the forge whose repositories are in ``repositories`` here, in this process."""
+    return archive_main(repositories, functools.partial(subprocess.run, capture_output=True, check=False))
 
 
 def write_merged_checkout(checkout: Path, archives: Mapping[str, bytes]) -> None:

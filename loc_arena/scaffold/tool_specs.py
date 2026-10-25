@@ -1,7 +1,6 @@
 """OpenAI tool schemas for the live agent loop.
 
-The native tools, with ``bash`` only when the episode has a sandbox to run it in; the tools a service serves
-over MCP come from its listing.
+The native tools, ``bash`` among them; the tools a service serves over MCP come from its listing.
 """
 
 from __future__ import annotations
@@ -78,7 +77,8 @@ _CODE: list[ToolSpec] = [
 
 _SHELL: ToolSpec = _tool(
     "bash",
-    "Run a bash command in the checkout. Returns its exit code and the end of its stdout and stderr.",
+    "Run a bash command in the checkout, git included. Returns its exit code and the end of its stdout and "
+    "stderr.",
     {"command": _str("the command, run with bash -c")},
     ["command"],
 )
@@ -86,13 +86,13 @@ _SHELL: ToolSpec = _tool(
 _FINISH: ToolSpec = _tool("finish", "Stop. Call this when the task is complete.", {}, [])
 
 
-def agent_tool_specs(*, shell: bool = False, served: Sequence[ToolSpec] = ()) -> list[ToolSpec]:
-    """The tools one live agent is offered: bash only with ``shell``, and its MCP ``served`` tools.
+def agent_tool_specs(served: Sequence[ToolSpec] = ()) -> list[ToolSpec]:
+    """The tools one live agent is offered: the native ones and its MCP ``served`` tools.
 
     ``served`` are the tools its MCP clients list: the forge, and the company services in a stack run (chat,
     tickets, notes among them).
     """
-    return [*_CODE, *([_SHELL] if shell else []), *served, _FINISH]
+    return [*_CODE, _SHELL, *served, _FINISH]
 
 
 def validate_call(name: str, args: dict[str, Any], specs: list[ToolSpec]) -> str | None:

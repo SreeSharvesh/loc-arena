@@ -181,9 +181,28 @@ def test_each_service_mounts_only_the_volumes_it_needs() -> None:
     assert sources == {
         "gateway": [],
         "collector": ["sealed"],
-        "sandbox-agent-main": [str(SKILLS), "checkouts"],
-        "sandbox-serving-agent": [str(SKILLS), "checkouts"],
-        "episode": ["/repository/configs", "checkouts", "output"],
+        "sandbox-agent-main": [str(SKILLS), "checkout-agent-main"],
+        "sandbox-serving-agent": [str(SKILLS), "checkout-serving-agent"],
+        "episode": ["/repository/configs", "checkout-agent-main", "checkout-serving-agent", "output"],
+    }
+
+
+def test_each_agents_checkout_is_at_the_same_path_in_its_sandbox_and_the_episode() -> None:
+    compose = render()
+
+    targets = {
+        name: [
+            volume.split(":")[1]
+            for volume in compose["services"][name]["volumes"]
+            if volume.startswith("checkout-")
+        ]
+        for name in (*SANDBOXES, "episode")
+    }
+
+    assert targets == {
+        "sandbox-agent-main": ["/checkouts/agent-main"],
+        "sandbox-serving-agent": ["/checkouts/serving-agent"],
+        "episode": ["/checkouts/agent-main", "/checkouts/serving-agent"],
     }
 
 
@@ -277,7 +296,7 @@ def test_every_sandbox_gets_the_settings_its_command_server_needs_in_its_command
         ["python", "-m", "sandbox_server"],
         ServerSettings(
             port=9292,
-            checkouts_directory=Path("/the/checkouts"),
+            checkouts_directory=Path("/the/checkouts") / sandbox.removeprefix("sandbox-"),
             scratch_directories=(Path("/the/home"), Path("/the/tmp")),
             output_limit_bytes=77,
             secrets_dir=Path("/the/secrets"),

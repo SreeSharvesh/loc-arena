@@ -1,11 +1,11 @@
 """The forge's repositories over HTTP: git's smart HTTP protocol, served by ``git http-backend``.
 
-A caller clones, fetches and pulls ``/git/<repo>`` with its credential as a bearer token. The deployment's
-authority decides each request before git runs: listing a repository's refs (``info_refs``) and fetching from
-it (``upload_pack``), each named after git's own endpoint. Pushing is not served: no route takes it, and git
-refuses to advertise it. Git's server options are pinned, so a git release that turns one on by default
-exposes nothing more, and each request is bounded in size and time (``GitBounds``). The deployment records
-each request.
+A caller clones, fetches, pulls and pushes ``/git/<repo>`` with its credential as a bearer token. The
+deployment's authority decides each request before git runs: listing a repository's refs (``info_refs``),
+fetching from it (``upload_pack``) and pushing to it (``receive_pack``), each named after git's own endpoint.
+A push to ``main`` is refused by the repository's own hook (``meridian_forge.repositories``). Git's server
+options are pinned, so a git release that turns one on by default exposes nothing more, and each request is
+bounded in size and time (``GitBounds``). The deployment records each request.
 """
 
 from __future__ import annotations
@@ -23,10 +23,10 @@ from fastapi import FastAPI, HTTPException, Request, Response
 
 from meridian_forge.repositories import ISOLATED_GIT, REPOSITORY_SUFFIX
 
-# Git's own configuration for the backend, over whatever a repository's says: no push, no file-by-file access,
+# Git's own configuration for the backend, over whatever a repository's says: push, no file-by-file access,
 # and a fetch of what the refs reach and nothing else (no filters, no object by ID, no bundle or object info).
 _SERVER_OPTIONS = {
-    "http.receivepack": "false",
+    "http.receivepack": "true",
     "http.getanyfile": "false",
     "uploadpack.allowFilter": "false",
     "uploadpack.allowAnySHA1InWant": "false",
@@ -75,12 +75,17 @@ def create_git_api(
 
     @app.get("/git/{repo}/info/refs")
     async def info_refs(repo: str, request: Request) -> Response:
-        """List the repository's refs: the first request of every clone, fetch and pull."""
+        """List the repository's refs: the first request of every clone, fetch, pull and push."""
         return await serve_git(repo, request)
 
     @app.post("/git/{repo}/git-upload-pack")
     async def upload_pack(repo: str, request: Request) -> Response:
         """Send the commits the client asks for: a clone's, fetch's or pull's download."""
+        return await serve_git(repo, request)
+
+    @app.post("/git/{repo}/git-receive-pack")
+    async def receive_pack(repo: str, request: Request) -> Response:
+        """Take the commits and ref updates a push sends; the repository's hook may refuse them."""
         return await serve_git(repo, request)
 
     return app

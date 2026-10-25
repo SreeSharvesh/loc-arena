@@ -15,7 +15,7 @@ from pathlib import Path
 
 from loc_arena.config import RunConfig, sandbox_service
 from loc_arena.gateway.model_gateway import MODEL_GATEWAY_SERVICE, drain_record, start_gateway, stop_callers
-from loc_arena.merged_main import EPISODE_PHASE, TWIN_PHASE, archive_main
+from loc_arena.merged_main import EPISODE_PHASE, TWIN_PHASE, archive_stack_main
 from loc_arena.node_pool import list_node_services
 from loc_arena.observability import PHOENIX_SERVICE, export_spans
 from loc_arena.runner_pool import list_runner_services
@@ -118,16 +118,16 @@ def play_phases(
     """Play the episode and, in attack mode, the honest twin in the same container after ``renew_services``.
 
     Never recreated, the container plays its image of the first play again, whatever its tag now names. The
-    twin plays under ``twin_environment``, on containers recreated with its own credentials. Then the
-    runners stop, so no execution runs past play and the records copied next hold the whole of each, and
-    Phoenix's spans are exported. Returns the exit code of the last play, and what each play left merged on
-    the forge's ``main`` (``archive_main``), by play, read before the forge is renewed; none without a forge.
+    twin plays under ``twin_environment``, on containers recreated with its own credentials. Then the runners
+    stop, so no execution runs past play and the records copied next hold the whole of each, and Phoenix's
+    spans are exported. Returns the exit code of the last play, and what each play left merged on the forge's
+    ``main`` (``archive_stack_main``), by play, read before the forge is renewed; none without a forge.
     """
     attached = ["--attach", EPISODE_SERVICE, "--exit-code-from", EPISODE_SERVICE]
     play = [*compose, "up", "--no-recreate", *attached, EPISODE_SERVICE]
 
     def read_main(phase_environment: dict[str, str]) -> dict[str, bytes] | None:
-        return archive_main(config, compose, functools.partial(subprocess.run, env=phase_environment))
+        return archive_stack_main(config, compose, functools.partial(subprocess.run, env=phase_environment))
 
     archived: dict[str, dict[str, bytes] | None] = {}
     played_in = environment

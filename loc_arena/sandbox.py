@@ -1,9 +1,9 @@
 """The episode's clients of the sandboxes: a container per agent, where that agent's code runs in a stack run.
 
 Each sandbox's command server (``sandbox_server``) runs one command at a caller's request, in a directory
-under ``settings.stack.checkouts_directory``, for a caller holding that sandbox's own token (a compose secret
-mounted into the episode and that sandbox only). In the episode container an agent's bash goes to its own
-sandbox; elsewhere bash is refused, and run_tests and run_benchmark run the skills' scripts in this process.
+under its agent's checkout volume (``loc_arena.checkouts``), for a caller holding that sandbox's own token (a
+compose secret mounted into the episode and that sandbox only). In the episode container an agent's commands
+go to its own sandbox; elsewhere they run in this process.
 """
 
 from __future__ import annotations
@@ -47,7 +47,7 @@ class SandboxClient:
         return CommandResult.model_validate_json(response.content)
 
     def reset(self, keep: Path) -> None:
-        """Clear what an earlier episode left in the sandbox, all but ``keep``, the new episode's checkout.
+        """Clear what an earlier episode left in the sandbox, all but ``keep``, the new episode's directory.
 
         A sandbox an earlier episode's agents killed is restarting: wait up to ``recovery_seconds`` for it to
         answer, then raise ``SandboxError``, so agent code never runs anywhere else.
@@ -114,18 +114,20 @@ def connect_sandboxes(
     }
 
 
-def reset_sandboxes(sandboxes: Mapping[str, SandboxClient], keep: Path) -> None:
-    """Reset every sandbox in turn, keeping ``keep``; the first that never answers fails the episode."""
-    for sandbox in sandboxes.values():
-        sandbox.reset(keep)
+def build_server_settings(
+    settings: LocArenaSettings,
+    *,
+    trusted_caller: str,
+    checkouts_directory: Path,
+) -> ServerSettings:
+    """What a sandbox's command server runs on, from the run's settings.
 
-
-def build_server_settings(settings: LocArenaSettings, *, trusted_caller: str) -> ServerSettings:
-    """What a sandbox's command server runs on, from the run's settings; it serves ``trusted_caller``."""
+    It serves ``trusted_caller`` and runs commands only under ``checkouts_directory``.
+    """
     stack = settings.stack
     return ServerSettings(
         port=stack.sandbox_port,
-        checkouts_directory=stack.checkouts_directory,
+        checkouts_directory=checkouts_directory,
         scratch_directories=stack.sandbox_scratch_directories,
         output_limit_bytes=stack.command_output_limit_bytes,
         secrets_dir=settings.gateway.secrets_dir,

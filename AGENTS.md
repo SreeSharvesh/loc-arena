@@ -59,6 +59,7 @@ Component specs cannot weaken the contract's isolation, authorization or evidenc
 | `loc_arena/stack_play.py` | a stack run's two plays in one container, the services renewed between them, and each log copied out once |
 | `loc_arena/tools_gateway.py` | the config of agentgateway, which puts every live service with tools on one MCP route and offers each agent the tools its `sandbox: tools:` lists |
 | `sandbox_server/`, `loc_arena/sandbox.py` | each sandbox container's command server, where an agent's code runs in a stack run, a package that imports nothing of the harness; the episode's clients of them |
+| `loc_arena/checkouts.py` | each agent's checkout: its own clone of every company repo from the forge, in its sandbox's volume or in this process, where its native tools and `bash` act |
 | `loc_arena/runner_pool.py`, `sandbox_server/pi_on_gateway.py` | the runners: sandboxes where the company's own agents run with pi, driven by the one service that declares them; how pi there reaches the gateway |
 | `loc_arena/node_pool.py`, `sandbox_server/node.py` | the job service's fleet: worker containers, each running one job at a time under a daemon only the job service can call |
 | `loc_arena/observability.py`, `sandbox_server/pi_trace.ts` | the company's observability store (Phoenix): pi's trace extension on the runners, and the export of its spans into the run directory |
@@ -158,9 +159,9 @@ the latest push. After changing `.coderabbit.yaml`, comment `@coderabbitai confi
   seed.
 - An agent is offered exactly the tools its `sandbox: tools:` lists, plus, under central IAM, IAM's
   `access_inbox`, which takes the caller from the agent's inbox key and reads only its inbox. Every other service
-  takes the caller from its identity, is authorized by central IAM, and records every call (the lab's own board
-  and recording services, and the job service, also check the run config's `scope`); the events monitors and the
-  verifier read are built from those records after play, and grading never builds them.
+  takes the caller from its identity, is authorized by central IAM, and records every call (the job service also
+  checks the run config's `scope`); the events monitors and the verifier read are built from those records after
+  play, and grading never builds them.
 - The scripted engine is reproducible: the same config and seed give a byte-identical sealed log
   (`tests/integration/test_end_to_end.py`).
 - Every model call goes through the gateway (`loc_arena/gateway/`), which records it; never call a provider from

@@ -85,6 +85,7 @@ def open_seeded_forge(
             ),
         )
     return Forge(
+        directory,
         repos,
         pull_requests,
         review_required=seed.review_required,

@@ -8,23 +8,24 @@ that time and the native turn of its agent running then, else turn 0, and are wr
 play to the sealed log, and to the mirror log unless sealed-only. A call its service refused (it carries
 ``error.type``) makes a blocked ``action`` with the service's reason. A successful call makes zero or more
 events: chat's ``post``, ``reply`` and ``send_dm`` a ``message``, over MCP or HTTP alike; the forge's
-``open_pr`` a ``pr`` and an ``action``. A live service with rights and no tools records a request in its log
-as a line naming its operation (``ServiceRequestRecord``); its other lines are not records. A request it
-refused makes a blocked ``action``, and one that changed something an ``action``; a read it answered makes
-none, the forge's git fetch among them, though it is a POST. A service with tools and rights both (the eval,
-tickets, notes and chat services, the forge) records a tool call or a request per line, and each line is read
-as what it names. The job service, reached both ways, writes both kinds of record, and each change of a job's
-state is a ``job`` event of its owner; the process facts each node of its fleet writes
-(``services/node-<n>.log``) are ``process`` events on the sealed log alone. Neither comes from an agent's
-call, so either may fall outside every turn, unnoted. A job's own calls carry its workload principal
-(``job-<id>``), which is no agent of the run: each record a workload made is its sponsor's, by IAM's
-``workload_issued`` audit line, and each of its events names the ``workload``; it too may fall outside every
-turn, unnoted. A seeded job, another team's work the job service starts with, is marked ``seed`` on its
-``job`` events, and its owner is a principal of the company: each record of one is placed as an agent's is,
-its events of the actor role ``company``, in turn 0. Each line of ``unattributed_records.jsonl`` in the run
-directory is a record and the ``reason`` it was not placed: not a valid record, outside every phase window, or
-not an agent of the run; or no covering turn, a native agent's record outside all its turns, whose events are
-built in turn 0. Grading never builds, so grading a run again adds nothing.
+``open_pr`` a ``pr`` and an ``action``, its ``merge`` an ``action``. A live service with rights and no tools
+records a request in its log as a line naming its operation (``ServiceRequestRecord``); its other lines are
+not records. A request it refused makes a blocked ``action``, and one that changed something an ``action``; a
+read it answered makes none, the forge's git fetch among them, though it is a POST, while its git push is an
+action. A service with tools and rights both (the eval, tickets, notes and chat services, the forge) records a
+tool call or a request per line, and each line is read as what it names. The job service, reached both ways,
+writes both kinds of record, and each change of a job's state is a ``job`` event of its owner; the process
+facts each node of its fleet writes (``services/node-<n>.log``) are ``process`` events on the sealed log
+alone. Neither comes from an agent's call, so either may fall outside every turn, unnoted. A job's own calls
+carry its workload principal (``job-<id>``), which is no agent of the run: each record a workload made is its
+sponsor's, by IAM's ``workload_issued`` audit line, and each of its events names the ``workload``; it too may
+fall outside every turn, unnoted. A seeded job, another team's work the job service starts with, is marked
+``seed`` on its ``job`` events, and its owner is a principal of the company: each record of one is placed as
+an agent's is, its events of the actor role ``company``, in turn 0. Each line of
+``unattributed_records.jsonl`` in the run directory is a record and the ``reason`` it was not placed: not a
+valid record, outside every phase window, or not an agent of the run; or no covering turn, a native agent's
+record outside all its turns, whose events are built in turn 0. Grading never builds, so grading a run again
+adds nothing.
 """
 
 from __future__ import annotations
@@ -167,7 +168,7 @@ def build_pull_request(record: ToolRecord, agent_ids: Sequence[str]) -> list[Rec
                 "target_repo": opened["repo"],
                 "pr_title": opened["title"],
                 "pr_body": str(record.arguments.get("body", "")),
-                "diff": str(record.arguments.get("diff", "")),
+                "diff": opened["diff"],
                 "ci": opened["ci"],
             },
         ),
@@ -220,13 +221,13 @@ EVENT_BUILDERS: Mapping[str, Callable[[ToolRecord, Sequence[str]], list[Recorded
 # The tools whose successful call is also an action (the eval, tickets and notes services' changes among them;
 # their reads are none), and the argument naming what a call or request addresses.
 _ACTIONS = {
-    *("open_pr", "register_eval", "retire_eval", "start_run", "publish_run"),
+    *("open_pr", "merge", "register_eval", "retire_eval", "start_run", "publish_run"),
     *("create_project", "edit_project", "create_ticket", "edit_ticket", "comment_on_ticket"),
     *("write_note", "delete_note"),
     "edit_message",
 }
 _TARGET_FROM: Mapping[str, str] = {
-    "open_pr": "repo",
+    **dict.fromkeys(("open_pr", "merge"), "repo"),
     "post": "channel",
     "send_dm": "member",
     "register_agent": "name",
@@ -246,7 +247,7 @@ _TARGET_FROM: Mapping[str, str] = {
     **dict.fromkeys(("edit_project", "create_ticket"), "project"),
     **dict.fromkeys(("get_ticket", "edit_ticket", "comment_on_ticket"), "ticket"),
     **dict.fromkeys(("read_note", "write_note", "delete_note"), "key"),
-    **dict.fromkeys(("info_refs", "upload_pack"), "repo"),
+    **dict.fromkeys(("info_refs", "upload_pack", "receive_pack"), "repo"),
 }
 # Requests that read though they are no GET: git's fetch, a POST answering with the commits it asks for.
 _POST_READS = frozenset({"upload_pack"})

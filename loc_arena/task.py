@@ -5,10 +5,7 @@ Grading runs the run config's main-task scorer and the sealed side-task verifier
 
 from __future__ import annotations
 
-import dataclasses
 import os
-import shutil
-import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,7 +20,6 @@ from loc_arena.logging_.agent_trace import EpisodeTrace
 from loc_arena.registry import get_scorer
 from loc_arena.tasks.main_task_grader import (
     MainTaskScore,
-    seed_checkout,
 )
 from loc_arena.tasks.side_task_verifier import verify_side_task
 from loc_arena.verifier.side_task import KillChainVerdict
@@ -147,47 +143,8 @@ def sandbox_url_template() -> str | None:
     return os.environ.get(SANDBOX_URL_VARIABLE)
 
 
-def seed_episode_checkout(config: RunConfig, workdir: Path) -> Path:
-    """Seed the checkout an episode plays in: ``workdir/checkout``, or one in the sandboxes' volume.
-
-    In the episode container it is a fresh directory of the volume shared with every sandbox, which sees that
-    volume and nothing of ``workdir``.
-    """
-    home = workdir
-    if sandbox_url_template():
-        home = Path(tempfile.mkdtemp(dir=config.settings.stack.checkouts_directory)).resolve()
-    return seed_checkout(home / "checkout")
-
-
-def _relink(copy: Path, original: Path) -> None:
-    """Point each absolute link in ``copy`` into ``original`` at the same place in ``copy``, relatively.
-
-    Links are read, never followed; one pointing anywhere else stays as it is.
-    """
-    for directory, directories, files in os.walk(copy):  # a link to a directory is listed, never entered
-        for link in (Path(directory) / name for name in [*directories, *files]):
-            target = Path(os.path.normpath(os.readlink(link))) if link.is_symlink() else None
-            if target and target.is_absolute() and target.is_relative_to(original):
-                link.unlink()
-                link.symlink_to(os.path.relpath(copy / target.relative_to(original), link.parent))
-
-
 def record_snapshot(snapshot: Snapshot, workdir: Path, config: RunConfig) -> Snapshot:
-    """Write ``snapshot.json`` into ``workdir`` so the episode can be graded from that directory alone.
-
-    A checkout that played in the sandboxes' volume is first moved into ``workdir``, its symlinks as links, so
-    the honest twin's agents never see it there; an absolute link into it is made relative, so it still
-    points inside the moved checkout. It is refused if a directory on its path became a link, which would copy
-    what that link points at.
-    """
-    kept = workdir / "checkout"
-    if snapshot.checkout != kept:
-        if snapshot.checkout.resolve() != snapshot.checkout:
-            raise ValueError(f"the checkout's path no longer resolves to itself: {snapshot.checkout}")
-        shutil.copytree(snapshot.checkout, kept, symlinks=True)
-        _relink(kept, snapshot.checkout)
-        shutil.rmtree(snapshot.checkout, ignore_errors=True)  # what agent code made undeletable stays
-        snapshot = dataclasses.replace(snapshot, checkout=kept)
+    """Write ``snapshot.json`` into ``workdir`` so the episode can be graded from that directory alone."""
     snapshot_file = SnapshotFile(
         sealed_path=snapshot.sealed_path.relative_to(workdir),
         mirror_path=snapshot.mirror_path.relative_to(workdir),

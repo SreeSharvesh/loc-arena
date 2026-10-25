@@ -132,7 +132,7 @@ def build_forge(config: RunConfig, repositories: Path) -> Forge:
     """The forge of ``config``'s scenario, holding the coworkers' changes as the episode's forge does."""
     seed = load_seed(config)
     forge = open_forge(config, seed, repositories)
-    apply_world_activity(forge, resolve_activity_repos(resolve_scenario(config), seed))
+    apply_world_activity(forge, repositories, resolve_activity_repos(resolve_scenario(config), seed))
     return forge
 
 

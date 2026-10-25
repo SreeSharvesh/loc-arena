@@ -21,7 +21,14 @@ from loc_arena.recorded_events import ServiceRequestRecord, build_events_from_se
 from loc_arena.settings import ForgeSettings
 from loc_arena.tasks.main_task_grader import COMPANY_REPOS
 
-from meridian_forge.repositories import repository_path
+from meridian_forge.repositories import (
+    branch_diff,
+    branch_exists,
+    commit_branch,
+    identity,
+    merge_branch,
+    repository_path,
+)
 from meridian_iam.client import IamClient
 from meridian_iam.contracts import load_manifest
 from meridian_iam.core import Iam
@@ -33,7 +40,8 @@ CFG = load_run_config("configs/aurora-efficiency.iam.yaml")
 MANIFEST = json.loads(
     (REPOSITORY / "scenarios/aurora_efficiency/services/iam-manifests/forge.json").read_text(),
 )
-READER, OUTSIDER = "serving-agent", "eval-agent"  # OUTSIDER holds nothing on the forge
+# DEVELOPER may read and push, READER only read, and OUTSIDER holds nothing on the forge.
+DEVELOPER, READER, OUTSIDER = "serving-agent", "datapipe-agent", "eval-agent"
 REPO = "meridian-serving"
 # A client's git, with neither the user's nor the system's configuration, and no prompt for a password.
 CLIENT_GIT = {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0"}
@@ -77,10 +85,10 @@ StartForge = Callable[..., World]
 def start_forge(tmp_path: Path) -> Iterator[StartForge]:
     """Start the forge under a real IAM: its forge settings the run config's but for those given."""
     iam = Iam(tmp_path / "iam.db", lambda: 1_000_000)
-    for principal in (READER, OUTSIDER, "lead"):
+    for principal in (DEVELOPER, READER, OUTSIDER, "lead"):
         iam.add_principal(principal, "agent")
     iam.add_principal("forge-svc", "service")
-    iam.add_member("lead", "platform", "owner", {SERVICE: ["read", "open_pr"]})
+    iam.add_member("lead", "platform", "owner", {SERVICE: ["read", "push"]})
     iam.register_resource(
         load_manifest(MANIFEST),
         owner_team="platform",
@@ -89,8 +97,10 @@ def start_forge(tmp_path: Path) -> Iterator[StartForge]:
         allow_ongoing=True,
     )
     iam.bind_service("forge-svc", SERVICE, SERVICE)
-    tokens = {agent: iam.issue_credential(agent, [SERVICE, f"iam:{SERVICE}"]) for agent in (READER, OUTSIDER)}
+    agents = (DEVELOPER, READER, OUTSIDER)
+    tokens = {agent: iam.issue_credential(agent, [SERVICE, f"iam:{SERVICE}"]) for agent in agents}
     admin = iam.issue_credential("lead", ["iam"])
+    iam.grant(admin, DEVELOPER, SERVICE, ["read", "push"], None, "developer")
     iam.grant(admin, READER, SERVICE, ["read"], None, "reader")
     iam_server, iam_url = serve(create_app(iam))
     guard = Guard(
@@ -138,16 +148,9 @@ def test_a_clone_holds_the_company_code_on_main(world: World, tmp_path: Path) ->
 
 def test_a_pull_brings_the_commit_main_moved_to(world: World, tmp_path: Path) -> None:
     world.clone(READER, tmp_path / "clone")
-    # main moves on the forge's side, as a merge will move it: a commit pushed straight to the bare repository
-    other = tmp_path / "other"
-    subprocess.run(
-        ["git", "clone", "--quiet", str(repository_path(world.repositories, REPO)), str(other)],
-        check=True,
-    )
-    (other / "NOTES.md").write_text("merged by a teammate\n")
-    subprocess.run(["git", "-C", str(other), "add", "NOTES.md"], check=True)
-    subprocess.run(["git", *COMMITTER, "-C", str(other), "commit", "--quiet", "-m", "Add notes"], check=True)
-    subprocess.run(["git", "-C", str(other), "push", "--quiet", "origin", "main"], check=True)
+    patch = "--- /dev/null\n+++ b/NOTES.md\n@@ -0,0 +1 @@\n+merged by a teammate\n"
+    commit_branch(world.repositories, REPO, "docs/notes", patch, "Add notes", identity("yuki"))
+    merge_branch(world.repositories, REPO, "docs/notes", "Merge docs/notes", "omar")
 
     pulled = world.git(READER, "pull", "--quiet", cwd=tmp_path / "clone")
 
@@ -188,18 +191,54 @@ def test_a_clone_is_recorded_under_its_caller_and_its_iam_decisions_and_makes_no
     assert [event for record in records for event in build_events_from_service_request(record)] == []
 
 
-def test_a_push_is_refused_and_main_does_not_move(world: World, tmp_path: Path) -> None:
-    clone = tmp_path / "clone"
-    world.clone(READER, clone)
-    before = main_commit(world.repositories)
-    (clone / "NOTES.md").write_text("pushed straight to main\n")
-    world.git(READER, "add", "NOTES.md", cwd=clone)
-    world.git(READER, *COMMITTER, "commit", "--quiet", "-m", "Add notes", cwd=clone)
+def commit_notes(world: World, agent: str, clone: Path, branch: str) -> None:
+    """Clone ``REPO`` as ``agent`` into ``clone`` and commit notes there on ``branch``, main included."""
+    world.clone(agent, clone)
+    world.git(agent, "checkout", "--quiet", "-B", branch, cwd=clone)
+    (clone / "NOTES.md").write_text("notes\n")
+    world.git(agent, "add", "NOTES.md", cwd=clone)
+    world.git(agent, *COMMITTER, "commit", "--quiet", "-m", "Add notes", cwd=clone)
 
-    pushed = world.git(READER, "push", "origin", "main", cwd=clone)
+
+def test_a_pushed_branch_lands_on_the_forge_and_is_recorded_as_an_action(
+    world: World,
+    tmp_path: Path,
+) -> None:
+    commit_notes(world, DEVELOPER, tmp_path / "clone", "docs/notes")
+
+    pushed = world.git(DEVELOPER, "push", "--quiet", "origin", "docs/notes", cwd=tmp_path / "clone")
+
+    assert pushed.returncode == 0, pushed.stderr
+    assert "+notes" in branch_diff(world.repositories, REPO, "docs/notes")
+    [push] = [record for record in world.records() if record.operation == "receive_pack"]
+    [event] = build_events_from_service_request(push)
+    assert (event.actor_uid, event.target_id, event.payload["blocked"]) == (DEVELOPER, REPO, False)
+
+
+def test_a_push_to_main_is_refused_and_main_does_not_move(world: World, tmp_path: Path) -> None:
+    commit_notes(world, DEVELOPER, tmp_path / "clone", "main")
+    before = main_commit(world.repositories)
+
+    pushed = world.git(DEVELOPER, "push", "origin", "main", cwd=tmp_path / "clone")
 
     assert pushed.returncode != 0
+    assert "main is protected" in pushed.stderr
     assert main_commit(world.repositories) == before
+
+
+def test_a_push_without_the_push_right_is_refused_and_recorded_as_a_blocked_action(
+    world: World,
+    tmp_path: Path,
+) -> None:
+    commit_notes(world, READER, tmp_path / "clone", "docs/notes")
+
+    pushed = world.git(READER, "push", "origin", "docs/notes", cwd=tmp_path / "clone")
+
+    assert pushed.returncode != 0
+    assert not branch_exists(world.repositories, REPO, "docs/notes")
+    [push] = [record for record in world.records() if record.operation == "receive_pack"]
+    assert push.status == HTTPStatus.FORBIDDEN
+    assert [event.payload["blocked"] for event in build_events_from_service_request(push)] == [True]
 
 
 def test_seeding_gives_every_repository_the_same_main_each_time_and_keeps_one_already_there(

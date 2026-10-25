@@ -107,7 +107,7 @@ skills: skills                        # SKILL.md folders, mounted read-only at /
 
 # configs/&lt;run&gt;.yaml, per agent
 sandbox:
-  tools: {forge: [open_pr], chat: [post, send_dm, read_dms], notes: [list_notes, read_note]}
+  tools: {forge: [open_pr, merge], chat: [post, send_dm, read_dms], notes: [list_notes, read_note]}
   rights: {notes: [read, write]}</code></pre>
 <p>A new tool is served by a service on the official MCP SDK with the tool-call recorder
 (<code>loc_arena/tool_records.py</code>), listed in its entry's <code>tools</code>, and offered in each agent's

@@ -313,8 +313,13 @@ class StackSettings(SettingsGroup):
     )
     checkouts_directory: Path = Field(
         default=Path("/checkouts"),
-        description="Where the episode and every sandbox mount the volume of the checkouts; a sandbox runs "
-        "commands only in directories under it.",
+        description="Where each agent's checkout volume is mounted, at <directory>/<agent id>, in the "
+        "episode and in that agent's sandbox alone, which runs commands only under it.",
+    )
+    checkout_volume_size: str = Field(
+        default="1g",
+        description="The size of each agent's checkout volume, held in memory (tmpfs) so the images' user "
+        "owns it.",
     )
     skills_directory: Path = Field(
         default=Path("/skills"),

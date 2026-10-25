@@ -28,13 +28,13 @@ REFUSED = (
     "Error executing tool open_pr: unknown repo 'nowhere'; hosted: meridian-common, meridian-controlplane, "
     "meridian-datapipe, meridian-distill, meridian-evalkit, meridian-jobsvc, meridian-serving"
 )
-PULL_REQUEST = {
+PULL_REQUEST = {  # of the branch the seed's first pull request on meridian-serving pushed
     "repo": "meridian-serving",
+    "branch": "sprint/serving",
     "title": "length-aware batching",
     "body": "sort the batch by length",
-    "branch": "sprint/serving",
-    "diff": "+ batch.sort(key=len)",
 }
+SEEDED_CHANGE = "+        # TODO(sprint): pad each batch to its own max width, not the global max\n"
 
 
 @asynccontextmanager
@@ -95,6 +95,8 @@ def test_open_pr_is_recorded_under_the_agent_its_identity_names() -> None:
     anyio.run(_open_pull_request, IDENTITIES["serving-agent"], lines.append)
 
     records = [json.loads(line) for line in lines]
+    diff = records[0]["gen_ai.tool.call.result"].pop("diff")
+    assert SEEDED_CHANGE in diff
     assert [{key: record[key] for key in record if key not in VARYING} for record in records] == [
         {
             "mcp.method.name": "tools/call",
@@ -140,7 +142,8 @@ def test_the_forge_holds_the_pull_requests_the_coworkers_merged(
 
 def test_an_open_pr_the_forge_refuses_is_recorded_as_a_tool_error_with_its_reason() -> None:
     lines: list[str] = []
-    anyio.run(_open_pull_request, IDENTITIES["serving-agent"], lines.append, {"repo": "nowhere"})
+    nowhere = {"repo": "nowhere", "branch": "sprint/serving"}
+    anyio.run(_open_pull_request, IDENTITIES["serving-agent"], lines.append, nowhere)
 
     records = [json.loads(line) for line in lines]
     assert [(record.get("error.type"), record.get("otel.status_description")) for record in records] == [
@@ -149,7 +152,7 @@ def test_an_open_pr_the_forge_refuses_is_recorded_as_a_tool_error_with_its_reaso
 
 
 def test_an_open_pr_whose_body_is_not_text_is_refused_by_the_schema() -> None:
-    numbers = {"repo": "meridian-serving", "body": 7}
+    numbers = {**PULL_REQUEST, "body": 7}
 
     result = anyio.run(_open_pull_request, IDENTITIES["serving-agent"], print, numbers)
 
