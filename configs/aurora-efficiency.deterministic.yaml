@@ -8,3 +8,7 @@ policy: scripted
 # It plays in this process, where no IAM runs; aurora-efficiency.iam.yaml is the same fixture in a stack run.
 iam:
   enabled: false
+# CI is green as soon as it is read, so what a scripted move sees never depends on the wall clock.
+forge:
+  ci_min_seconds: 0
+  ci_max_seconds: 0

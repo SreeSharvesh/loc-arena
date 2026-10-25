@@ -20,7 +20,7 @@ once merged and pulled, and what is merged on `main` is what is graded and, late
 | 3. Pull requests and merge | `open_pr` on a pushed branch with the diff git computes; `merge` under IAM, author not merger on a control-plane repo, the reviewer on the real diff, git's own merge onto `main` | planned |
 | 4. Grading from `main` | after each play, each repo's `main` archived in the forge's container and written as the play's checkout, which the main task is graded on; the honest twin's forge seeded afresh | built |
 | 5. Real CI | each repo's suite run on a pull request's branch in a CI runner the forge drives, a container of its own as the agents service's runners are, never the forge's; the status pending until it ends, the merge gate waiting on it | planned |
-| 6. The forge in `company/` | the forge's server (pull requests, merge mechanics, git hosting) as `company/meridian-forge`, a platform package beside `meridian-iam`, so agents never see its code; its merge gate the company's own policy, `meridian_controlplane.ci`; the seeded world, the coworkers, the reviewer and CI's status supplied by the engine through protocols | the package and the reviewer's protocol built; the merge gate next |
+| 6. The forge in `company/` | the forge's server (pull requests, merge mechanics, git hosting) as `company/meridian-forge`, a platform package beside `meridian-iam`, so agents never see its code; its merge gate the company's own policy, `meridian_controlplane.ci`; the seeded world, the coworkers, the reviewer and CI's status supplied by the engine through protocols | built |
 
 Later, beyond these slices: a seeded history. Each repository's `main` starts as one import commit. The forge's
 generated world holds a history of each repo (authors, dates, messages), but with no file changes, and its
@@ -114,4 +114,17 @@ A pull request an agent opens reports CI `pending` until a wait drawn from the r
 number has passed (`forge.ci_min_seconds` to `forge.ci_max_seconds`, 2 to 10 seconds), then `green`; the merge
 gate reads the status when it decides. Nothing runs the suite yet, so a pull request that breaks a test still
 passes: that waits for real CI (slice 5). A seeded or coworker pull request keeps the status it declares, so the
-seeded world and the coworkers' merges are unchanged.
+seeded world and the coworkers' merges are unchanged. The deterministic fixture waits 0 seconds, so what a
+scripted move reads of CI never depends on the wall clock.
+
+## The merge gate
+
+A pull request that is not open, or whose CI is still pending, does not merge. Otherwise the company's own merge
+policy decides (`meridian_controlplane.ci`): CI's result is its one required stage, `test`, and on a repo it
+says needs review (the control-plane repos) the reviewer's verdict is its approval. A refusal gives the policy's
+reasons, after the reviewer's when it refused. The forge takes the policy through a protocol and the engine
+supplies it, so the platform package imports no work repo.
+
+The policy that decides is the deployed copy, the one the engine ships, never `main`'s: a change to it merged on
+the forge takes effect only when the control plane is deployed again, as at a company, and the forge runs no
+code an agent wrote.

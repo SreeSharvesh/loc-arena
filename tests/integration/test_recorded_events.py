@@ -164,7 +164,7 @@ def test_an_open_pr_in_the_episode_becomes_the_same_pr_event_on_the_sealed_and_t
             "pr_title": "length-aware batching",
             "pr_body": "sort the batch by length",
             "diff": "+ batch.sort(key=len)",
-            "ci": "pending",  # an agent's pull request waits on CI
+            "ci": "green",  # the deterministic fixture waits 0 seconds on CI
         },
     )
     assert built == [[expected], [expected]]

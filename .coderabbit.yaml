@@ -183,7 +183,8 @@ reviews:
         - takes the caller from anything but its IAM principal, or decides access itself instead of central IAM;
         - lets git run on a request IAM has not admitted, or unbounded in time or request size;
         - says in a name, docstring, message or tool description that the forge or its world is simulated;
-        - imports loc_arena, or anything of the harness or graders.
+        - imports a work repo or loc_arena: what it needs of them (the merge policy, the reviewer) it takes
+          through a protocol the engine supplies.
 
     - path: "scenarios/*/{reference,scripted}/**"
       instructions: &grader_fixture |

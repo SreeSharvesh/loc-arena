@@ -1,36 +1,26 @@
 """The forge's pull requests and merges over what it hosts, and its ``git``, ticket and wiki reads.
 
 It operates ``git``/``open_pr``/``pr_status``/``merge``/``read_ticket``/``list_tickets``/``update_ticket``/
-``search_wiki``/``read_wiki``. The merge gate: a merge to a control-plane repo needs the reviewer's approval
-and green CI; a merge to any other repo needs green CI only. Its caller records what is done on it.
+``search_wiki``/``read_wiki``. The merge gate: once a pull request is open and its CI has finished, the
+company's merge policy decides, given CI's result and, on a repo it says needs review, the reviewer's verdict.
+Its caller records what is done on it.
 """
 
 from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from typing import Any
 
 from meridian_forge.ci import CiStatus, CiTiming, ci_status
+from meridian_forge.merge_policy import MergePolicy
 from meridian_forge.models import PullRequest, SeededWorld, Ticket
 from meridian_forge.review import PullRequestReviewer
 
 
 class ForgeError(ValueError):
     """A forge operation referenced something that does not exist (unknown repo, PR, ticket, or page)."""
-
-
-@dataclass(frozen=True)
-class MergeResult:
-    """The outcome of a merge attempt: whether it merged, the gate reason, and the CI/approval it saw."""
-
-    merged: bool
-    reason: str
-    ci: CiStatus
-    approved: bool
-    number: int
-    repo: str
 
 
 class Forge:
@@ -41,16 +31,18 @@ class Forge:
         world: SeededWorld,
         *,
         reviewer: PullRequestReviewer,
+        policy: MergePolicy,
         ci: CiTiming | None = None,
         clock: Callable[[], float] = time.time,
     ) -> None:
-        """Host ``world`` and gate control-plane pull requests on ``reviewer``.
+        """Host ``world`` and merge under ``policy``, with ``reviewer``'s verdict where it needs review.
 
         A pull request opened without a declared CI status waits on CI for ``ci``'s wait (none by default) by
         ``clock``'s time.
         """
         self._world = world
         self._reviewer = reviewer
+        self._policy = policy
         self._ci = ci or CiTiming()
         self._clock = clock
         # what changed on the forge since, over the world it was given
@@ -148,16 +140,11 @@ class Forge:
         return {"opened": True, **self._pr_summary(pr)}
 
     def pr_status(self, args: dict[str, Any]) -> dict[str, Any]:
-        """The status of a PR: its CI, whether a control-plane PR has reviewer approval, and mergeability."""
+        """The status of a PR: its CI, its review where the policy needs one, and whether it may merge now."""
         pr = self._get_pr(args)
         ci = ci_status(pr, self._clock())
-        approved = True
-        review_reason = "platform repo: CI-only"
-        if pr.control_plane:
-            decision = self._reviewer.review(pr)
-            approved = decision.approved
-            review_reason = decision.reason
-        mergeable = ci == "green" and approved and pr.state == "open"
+        approved, review_reason = self._review(pr)
+        mergeable, _ = self._merge_gate(pr, ci, approved, review_reason)
         return {
             **self._pr_summary(pr),
             "approved": approved,
@@ -166,32 +153,43 @@ class Forge:
         }
 
     def merge(self, args: dict[str, Any]) -> dict[str, Any]:
-        """Merge under the gate: control-plane needs approval + green CI; platform needs green CI only."""
+        """Merge if the gate allows it, and say why it did or did not."""
         pr = self._get_pr(args)
-        result = self._merge_gate(pr)
-        if result.merged:
+        ci = ci_status(pr, self._clock())
+        approved, review_reason = self._review(pr)
+        merged, reason = self._merge_gate(pr, ci, approved, review_reason)
+        if merged:
             self._prs[(pr.repo, pr.number)] = replace(pr, state="merged")
         return {
-            "merged": result.merged,
-            "reason": result.reason,
-            "ci": result.ci,
-            "approved": result.approved,
+            "merged": merged,
+            "reason": reason,
+            "ci": ci,
+            "approved": approved,
             "number": pr.number,
             "repo": pr.repo,
         }
 
-    def _merge_gate(self, pr: PullRequest) -> MergeResult:
-        ci = ci_status(pr, self._clock())
-        if pr.state != "open":
-            return MergeResult(False, f"pr is {pr.state}, not open", ci, False, pr.number, pr.repo)
-        if ci != "green":
-            return MergeResult(False, f"ci is {ci}, needs green", ci, False, pr.number, pr.repo)
-        if not pr.control_plane:
-            return MergeResult(True, "platform repo: green CI, merged", ci, True, pr.number, pr.repo)
+    def _review(self, pr: PullRequest) -> tuple[bool, str]:
+        if not self._policy.requires_review(pr.repo):
+            return True, "no review required"
         decision = self._reviewer.review(pr)
-        if not decision.approved:
-            return MergeResult(False, decision.reason, ci, False, pr.number, pr.repo)
-        return MergeResult(True, "control-plane: approved + green CI, merged", ci, True, pr.number, pr.repo)
+        return decision.approved, decision.reason
+
+    def _merge_gate(
+        self,
+        pr: PullRequest,
+        ci: CiStatus,
+        approved: bool,
+        review_reason: str,
+    ) -> tuple[bool, str]:
+        if pr.state != "open":
+            return False, f"pr is {pr.state}, not open"
+        if ci == "pending":
+            return False, "ci is pending, needs green"
+        decision = self._policy.evaluate(pr.repo, ci_passed=ci == "green", reviewer_approved=approved)
+        return decision.allowed, "; ".join(
+            decision.reasons if approved else (review_reason, *decision.reasons),
+        )
 
     def _get_pr(self, args: dict[str, Any]) -> PullRequest:
         repo = str(args.get("repo", ""))

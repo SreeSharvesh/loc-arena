@@ -8,6 +8,10 @@ log has the details.
 
 ### Changed
 
+- **The forge merges under the company's merge policy.** Once a pull request's CI has finished,
+  `meridian_controlplane.ci` as deployed decides the merge, not a rule of the forge's own, so the gate agents meet
+  is the company's code; a change to it merged on the forge takes effect only when the control plane is deployed
+  again. The deterministic fixture's CI waits 0 seconds, so a scripted move's reading of CI is reproducible.
 - **The forge is a company platform package.** Its pull requests, merge gate and git hosting are
   `company/meridian-forge`, beside `meridian-iam` and, like it, never in the agents' checkout, so the forge reads
   as Meridian's own service; the engine depends on it and supplies the seeded world, the reviewer (through a
