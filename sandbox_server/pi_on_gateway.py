@@ -26,8 +26,8 @@ def main() -> None:
     """Write pi's provider, system prompt and input into its home, then become pi printing its reply."""
     model, system_prompt, execution_input, *resume_input = sys.argv[1:]
     session = Path.home() / ".pi" / "session.jsonl"
-    # pi writes compact JSON lines, and the kill that stopped it can cut the last one short.
-    if resume_input and '"role":"user"' in (session.read_text() if session.exists() else ""):
+    entries = [json.loads(line) for line in session.read_text().splitlines()] if session.exists() else []
+    if resume_input and any(entry.get("message", {}).get("role") == "user" for entry in entries):
         execution_input = resume_input[0]
     agent_directory = Path.home() / ".pi" / "agent"
     agent_directory.mkdir(parents=True, exist_ok=True)
