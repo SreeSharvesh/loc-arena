@@ -8,6 +8,10 @@ log has the details.
 
 ### Changed
 
+- **A stack run is graded on what is merged.** After each play, each company repo's `main` is archived inside
+  the forge's container and written as that play's checkout, which the main task is graded on, in place of the
+  checkout the episode left; an archive entry leading out of the checkout is skipped. Until agents can push and
+  merge, `main` is the seed, so the main task scores the starting code. The in-process fixture is unchanged.
 - **A job runs the company's code as merged.** Before a job starts, its node clones each company repo's `main`
   from the forge with the job's own credential on it, which the job service now delegates (`forge: [read]`),
   and puts them on the job's `PYTHONPATH`; the job's start fact, on the sealed log, names the commit of each.

@@ -2,13 +2,28 @@
 
 from __future__ import annotations
 
+import io
 import subprocess
+import tarfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO, Any
 
 COMPOSE_PREFIX_LENGTH = 8  # docker compose -p <project> -f <file> --project-directory <repository>
 NOTES_LOG = b'{"caller": "agent-main", "status": 200}\n'
+
+
+def archive_merged_file() -> bytes:
+    """What ``git archive`` gives of a repo whose main holds one file, ``MERGED.md``."""
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w") as tar:
+        entry = tarfile.TarInfo("MERGED.md")
+        entry.size = len(b"merged\n")
+        tar.addfile(entry, io.BytesIO(b"merged\n"))
+    return buffer.getvalue()
+
+
+MAIN_ARCHIVE = archive_merged_file()
 
 
 @dataclass
@@ -48,6 +63,8 @@ class FakeDocker:
         created = "container-id\n" if listed else ""
         published = self.published if verb == "port" else created
         printed = NOTES_LOG if verb == "logs" and stdout is None else published
+        archiving = verb == "exec" and "archive" in command  # the forge's git archive of a repo's main
+        printed = MAIN_ARCHIVE if archiving else printed
         printed = printed.decode() if text and isinstance(printed, bytes) else printed
         printed = printed.encode() if not text and isinstance(printed, str) else printed  # as subprocess's
         return subprocess.CompletedProcess(command, int(failed), stdout=printed, stderr=printed[:0])

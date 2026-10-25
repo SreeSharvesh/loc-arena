@@ -16,10 +16,10 @@ for the honest twin once the gateway and every sandbox, runner, live service and
 recreated, so the twin sees nothing the attack left. When the episode exits, its run directory is copied out
 with the log of each live service and of the tools gateway, their record of every request, grant and tool
 call, and the gateway's record of every model call of play (``loc_arena.gateway.model_gateway``); the events
-of those tool calls are built, and the run is graded on this host, with the agents' code sandboxed, while the
-gateway still runs for the monitors' model calls. Then the gateway's record is copied out again, the monitors'
-calls included, and the project is removed with its volumes. If a copy fails, the project is kept so nothing
-is lost.
+of those tool calls are built, and the run is graded on this host on what each play merged on the forge's main
+(``loc_arena.merged_main``), with the agents' code sandboxed, while the gateway still runs for the monitors'
+model calls. Then the gateway's record is copied out again, the monitors' calls included, and the project is
+removed with its volumes. If a copy fails, the project is kept so nothing is lost.
 """
 
 from __future__ import annotations
@@ -55,6 +55,7 @@ from loc_arena.iam_bootstrap import (
 )
 from loc_arena.iam_wiring import service_environment
 from loc_arena.identity_variables import find_shared_identity_variable, holds_identities, identity_variable
+from loc_arena.merged_main import write_merged_checkouts
 from loc_arena.node_pool import (
     NODE_TARGET,
     declare_node_token_secrets,
@@ -648,11 +649,12 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, logs: Path) -> Path:
         # Started on its own, the gateway outlives the episode: the monitors call it while this host grades.
         if not model_gateway.start_gateway(run_compose, compose, settings):
             raise StackError("the gateway did not start to accept calls: see compose's output above")
-        exit_code = play_phases(config, compose, mode, service_logs, environment, twin_environment)
+        exit_code, mains = play_phases(config, compose, mode, service_logs, environment, twin_environment)
         if not copied(copy_output):
             raise StackError("could not copy the episode's run directory out, so it was not graded")
         if exit_code != 0:
             raise StackError(f"the episode exited with code {exit_code}: see its output above")
+        write_merged_checkouts(run_directory, mains)  # each play is graded on what it merged on main
         # Copied before grading: monitors read events built from the services' records, the checker the calls.
         call_record = run_directory / model_gateway.CALL_RECORD_FILE
         logs_copied = all([copied(*copy) for copy in copy_service_logs])  # every one tried
