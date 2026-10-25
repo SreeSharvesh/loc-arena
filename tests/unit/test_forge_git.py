@@ -1,4 +1,4 @@
-"""The forge's git repositories as a stack run serves them: real git over HTTP, with a real IAM deciding."""
+"""The forge as a stack run serves it: real git over HTTP and its tools over MCP, with a real IAM deciding."""
 
 from __future__ import annotations
 
@@ -12,21 +12,24 @@ from http import HTTPStatus
 from pathlib import Path
 from typing import Any
 
+import anyio
 import httpx2
 import pytest
 from loc_arena.config import load_run_config
 from loc_arena.forge_service import SERVICE, build_forge_app, load_seed, open_forge
 from loc_arena.iam_seed import REPOSITORY
-from loc_arena.recorded_events import ServiceRequestRecord, build_events_from_service_request
+from loc_arena.merged_main import archive_local_main, write_merged_checkout
+from loc_arena.recorded_events import ServiceRequestRecord, build_events, build_events_from_service_request
 from loc_arena.settings import ForgeSettings
 from loc_arena.tasks.main_task_grader import COMPANY_REPOS
+from loc_arena.tool_records import ToolRecord
+from loc_arena.tools_gateway import MCP_PATH
+from mcp import Client
+from mcp.client.streamable_http import streamable_http_client
 
 from meridian_forge.repositories import (
     branch_diff,
     branch_exists,
-    commit_branch,
-    identity,
-    merge_branch,
     repository_path,
 )
 from meridian_iam.client import IamClient
@@ -40,9 +43,11 @@ CFG = load_run_config("configs/aurora-efficiency.iam.yaml")
 MANIFEST = json.loads(
     (REPOSITORY / "scenarios/aurora_efficiency/services/iam-manifests/forge.json").read_text(),
 )
-# DEVELOPER may read and push, READER only read, and OUTSIDER holds nothing on the forge.
-DEVELOPER, READER, OUTSIDER = "serving-agent", "datapipe-agent", "eval-agent"
+# DEVELOPER may read, push, open pull requests and merge, TEAMMATE read and merge, READER only read, and
+# OUTSIDER holds nothing on the forge.
+DEVELOPER, TEAMMATE, READER, OUTSIDER = "serving-agent", "jobsvc-agent", "datapipe-agent", "eval-agent"
 REPO = "meridian-serving"
+REVIEWED_REPO = "meridian-controlplane"  # a repo whose merges need the reviewer's approval
 # A client's git, with neither the user's nor the system's configuration, and no prompt for a password.
 CLIENT_GIT = {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0"}
 COMMITTER = ["-c", "user.name=Serving Agent", "-c", "user.email=serving-agent@meridian.example"]
@@ -69,8 +74,22 @@ class World:
             env={"PATH": os.environ["PATH"], **CLIENT_GIT},
         )
 
-    def clone(self, agent: str, destination: Path) -> subprocess.CompletedProcess[str]:
-        return self.git(agent, "clone", f"{self.url}/git/{REPO}", str(destination))
+    def clone(self, agent: str, destination: Path, repo: str = REPO) -> subprocess.CompletedProcess[str]:
+        return self.git(agent, "clone", f"{self.url}/git/{repo}", str(destination))
+
+    def call_tool(self, agent: str, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Call the forge's MCP ``tool`` as ``agent``, its credential on the forge as a bearer token."""
+
+        async def call() -> dict[str, Any]:
+            # By the forge's service name, as on agent-net: the server admits no other host.
+            headers = {"Authorization": f"Bearer {self.tokens[agent]}", "Host": SERVICE}
+            async with (
+                httpx2.AsyncClient(headers=headers) as http,
+                Client(streamable_http_client(f"{self.url}{MCP_PATH}", http_client=http)) as client,
+            ):
+                return (await client.call_tool(tool, arguments)).structured_content or {}
+
+        return anyio.run(call)
 
     def records(self) -> list[ServiceRequestRecord]:
         return [
@@ -85,10 +104,10 @@ StartForge = Callable[..., World]
 def start_forge(tmp_path: Path) -> Iterator[StartForge]:
     """Start the forge under a real IAM: its forge settings the run config's but for those given."""
     iam = Iam(tmp_path / "iam.db", lambda: 1_000_000)
-    for principal in (DEVELOPER, READER, OUTSIDER, "lead"):
+    for principal in (DEVELOPER, TEAMMATE, READER, OUTSIDER, "lead"):
         iam.add_principal(principal, "agent")
     iam.add_principal("forge-svc", "service")
-    iam.add_member("lead", "platform", "owner", {SERVICE: ["read", "push"]})
+    iam.add_member("lead", "platform", "owner", {SERVICE: ["read", "push", "open_pr", "merge"]})
     iam.register_resource(
         load_manifest(MANIFEST),
         owner_team="platform",
@@ -97,10 +116,11 @@ def start_forge(tmp_path: Path) -> Iterator[StartForge]:
         allow_ongoing=True,
     )
     iam.bind_service("forge-svc", SERVICE, SERVICE)
-    agents = (DEVELOPER, READER, OUTSIDER)
+    agents = (DEVELOPER, TEAMMATE, READER, OUTSIDER)
     tokens = {agent: iam.issue_credential(agent, [SERVICE, f"iam:{SERVICE}"]) for agent in agents}
     admin = iam.issue_credential("lead", ["iam"])
-    iam.grant(admin, DEVELOPER, SERVICE, ["read", "push"], None, "developer")
+    iam.grant(admin, DEVELOPER, SERVICE, ["read", "push", "open_pr", "merge"], None, "developer")
+    iam.grant(admin, TEAMMATE, SERVICE, ["read", "merge"], None, "teammate")
     iam.grant(admin, READER, SERVICE, ["read"], None, "reader")
     iam_server, iam_url = serve(create_app(iam))
     guard = Guard(
@@ -146,18 +166,6 @@ def test_a_clone_holds_the_company_code_on_main(world: World, tmp_path: Path) ->
     assert (tmp_path / "clone/pyproject.toml").read_text() == (company / "pyproject.toml").read_text()
 
 
-def test_a_pull_brings_the_commit_main_moved_to(world: World, tmp_path: Path) -> None:
-    world.clone(READER, tmp_path / "clone")
-    patch = "--- /dev/null\n+++ b/NOTES.md\n@@ -0,0 +1 @@\n+merged by a teammate\n"
-    commit_branch(world.repositories, REPO, "docs/notes", patch, "Add notes", identity("yuki"))
-    merge_branch(world.repositories, REPO, "docs/notes", "Merge docs/notes", "omar")
-
-    pulled = world.git(READER, "pull", "--quiet", cwd=tmp_path / "clone")
-
-    assert pulled.returncode == 0, pulled.stderr
-    assert (tmp_path / "clone/NOTES.md").read_text() == "merged by a teammate\n"
-
-
 @pytest.mark.parametrize(
     ("caller", "status"),
     [(OUTSIDER, HTTPStatus.FORBIDDEN), ("stranger", HTTPStatus.UNAUTHORIZED)],
@@ -191,13 +199,56 @@ def test_a_clone_is_recorded_under_its_caller_and_its_iam_decisions_and_makes_no
     assert [event for record in records for event in build_events_from_service_request(record)] == []
 
 
-def commit_notes(world: World, agent: str, clone: Path, branch: str) -> None:
-    """Clone ``REPO`` as ``agent`` into ``clone`` and commit notes there on ``branch``, main included."""
-    world.clone(agent, clone)
+def commit_notes(world: World, agent: str, clone: Path, branch: str, repo: str = REPO) -> None:
+    """Clone ``repo`` as ``agent`` into ``clone`` and commit notes there on ``branch``, main included."""
+    world.clone(agent, clone, repo)
     world.git(agent, "checkout", "--quiet", "-B", branch, cwd=clone)
     (clone / "NOTES.md").write_text("notes\n")
     world.git(agent, "add", "NOTES.md", cwd=clone)
     world.git(agent, *COMMITTER, "commit", "--quiet", "-m", "Add notes", cwd=clone)
+
+
+def test_a_change_one_agent_pushes_reaches_a_teammate_through_review_and_merge_and_is_graded(
+    start_forge: StartForge,
+    tmp_path: Path,
+) -> None:
+    world = start_forge(ci_min_seconds=0, ci_max_seconds=0)
+    mine, theirs = tmp_path / "mine", tmp_path / "theirs"
+    world.clone(TEAMMATE, theirs, REVIEWED_REPO)
+    commit_notes(world, DEVELOPER, mine, "docs/notes", REVIEWED_REPO)
+
+    world.git(DEVELOPER, "push", "--quiet", "origin", "docs/notes", cwd=mine)
+    opened = world.call_tool(
+        DEVELOPER,
+        "open_pr",
+        {"repo": REVIEWED_REPO, "branch": "docs/notes", "title": "Notes"},
+    )
+    merging = {"repo": REVIEWED_REPO, "number": opened["number"]}
+    by_author, by_teammate = (world.call_tool(agent, "merge", merging) for agent in (DEVELOPER, TEAMMATE))
+    world.git(TEAMMATE, "pull", "--quiet", cwd=theirs)
+    log = world.git(TEAMMATE, "log", "-2", "--format=%an|%s", cwd=theirs).stdout.splitlines()
+    write_merged_checkout(tmp_path / "graded", archive_local_main(world.repositories))
+
+    assert opened["number"] == 3  # after the seed's pull request on the repo and the coworkers' benign one
+    assert (by_author["merged"], by_teammate["merged"], by_teammate["approved"]) == (False, True, True)
+    assert log == [f"{TEAMMATE}|Merge pull request #3 from docs/notes", "Serving Agent|Add notes"]
+    assert (theirs / "NOTES.md").read_text() == (tmp_path / "graded" / REVIEWED_REPO / "NOTES.md").read_text()
+    events = [
+        (event.kind, event.actor_uid, event.tool)
+        for line in world.lines
+        for event in (
+            build_events(ToolRecord.model_validate_json(line), list(world.tokens))
+            if '"gen_ai.tool.name"' in line
+            else build_events_from_service_request(ServiceRequestRecord.model_validate_json(line))
+        )
+    ]
+    assert events == [
+        ("action", DEVELOPER, "receive_pack"),
+        ("pr", DEVELOPER, None),
+        ("action", DEVELOPER, "open_pr"),
+        ("action", DEVELOPER, "merge"),
+        ("action", TEAMMATE, "merge"),
+    ]
 
 
 def test_a_pushed_branch_lands_on_the_forge_and_is_recorded_as_an_action(
