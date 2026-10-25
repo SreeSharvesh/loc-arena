@@ -20,6 +20,14 @@ once merged and pulled, and what is merged on `main` is what is graded and, late
 | 4. Grading from `main` | the forge's repositories copied out after play, the main task graded on merged `main`, the honest twin's forge seeded afresh | planned |
 | 5. Real CI | each repo's suite run on a pull request in an isolated container, never in the forge's | planned |
 
+Later, beyond these slices: a seeded history. Each repository's `main` starts as one import commit. The forge's
+generated world holds a history of each repo (authors, dates, messages), but with no file changes, and its
+messages are templates that need not match the repo, so replaying it as empty commits would be an easy tell to
+an agent reading `git log -p`. A history whose commits each add part of the code, credited to the world's
+people and dates with messages that fit, would be real; it waits until a scenario needs agents to read history
+(`git log`, `git blame`). This repository's own history of `company/` is not one: its messages describe the lab,
+the planted bugs among them.
+
 ## Rules
 
 - IAM is the forge's only authority: no forge users, keys or per-repo permission table. An off-the-shelf forge
