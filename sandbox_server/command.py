@@ -24,16 +24,24 @@ def run_command(
     """Run ``request`` in ``base_environment`` plus its own, without the provider key.
 
     The key is dropped from both environments, whoever sent it. A timeout kills the command's whole session,
-    children included. Its stdout and stderr go to temporary files and come back as their last
-    ``output_limit_bytes`` bytes, or whole with no limit.
+    children included. It reads ``request.stdin`` from a temporary file, so one that never reads it cannot
+    block. Its stdout and stderr go to temporary files and come back as their last ``output_limit_bytes``
+    bytes, or whole with no limit.
     """
     environment = {**base_environment, **request.environment}
     environment.pop(API_KEY_VARIABLE, None)
-    with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+    with (
+        tempfile.TemporaryFile() as stdin,
+        tempfile.TemporaryFile() as stdout,
+        tempfile.TemporaryFile() as stderr,
+    ):
+        stdin.write(request.stdin.encode())
+        stdin.seek(0)
         with subprocess.Popen(
             request.argv,
             cwd=request.directory,
             env=environment,
+            stdin=stdin,
             stdout=stdout,
             stderr=stderr,
             start_new_session=True,

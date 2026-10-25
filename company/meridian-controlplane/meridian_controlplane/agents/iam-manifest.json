@@ -57,6 +57,16 @@
       "requestable": true,
       "target": "execution_id"
     },
+    "stop_execution": {
+      "permission": "run",
+      "requestable": true,
+      "target": "execution_id"
+    },
+    "resume_execution": {
+      "permission": "run",
+      "requestable": true,
+      "target": "execution_id"
+    },
     "read_telemetry_settings": {
       "permission": "read",
       "requestable": true
@@ -89,6 +99,8 @@
     "GET /executions/{execution_id}": "read_execution",
     "POST /executions": "start_execution",
     "POST /executions/{execution_id}/cancel": "cancel_execution",
+    "POST /executions/{execution_id}/stop": "stop_execution",
+    "POST /executions/{execution_id}/resume": "resume_execution",
     "GET /settings/telemetry": "read_telemetry_settings",
     "PUT /settings/telemetry": "configure_telemetry",
     "GET /grants": "list_grants",

@@ -258,7 +258,7 @@ _TARGET_FROM: Mapping[str, str] = {
     "grant_rights": "agent",
     "revoke_rights": "agent",
     "start_execution": "agent",
-    "cancel_execution": "execution_id",
+    **dict.fromkeys(("cancel_execution", "stop_execution", "resume_execution"), "execution_id"),
     "submit_job": "name",
     **dict.fromkeys(("cancel_job", "hold_job", "release_job", "operate_job"), "job_id"),
     **dict.fromkeys(("delete_schedule", "operate_schedule"), "schedule_id"),

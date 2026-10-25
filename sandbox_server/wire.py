@@ -22,6 +22,7 @@ class CommandRequest(BaseModel):
         default_factory=dict,
         description="Variables set on top of the runner's environment, which never holds the provider key.",
     )
+    stdin: str = Field(default="", description="What the command reads on its stdin.")
 
 
 class CommandResult(BaseModel):

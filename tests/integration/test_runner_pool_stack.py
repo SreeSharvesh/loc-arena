@@ -19,11 +19,12 @@ from pathlib import Path
 
 import pytest
 import yaml
+from loc_arena.agents_service import PACK_CHECKPOINT, UNPACK_CHECKPOINT
 from loc_arena.config import load_run_config, sandbox_service
 from loc_arena.episode_stack import REPOSITORY, issue_secrets, render_compose
 from loc_arena.gateway.core import API_KEY_VARIABLE
 from loc_arena.gateway.model_gateway import PROJECT_PREFIX, GatewayCall, copy_call_log
-from loc_arena.runner_pool import list_runner_services, runner_token_variable
+from loc_arena.runner_pool import RUNNER_WORKSPACE, list_runner_services, runner_token_variable
 
 from tests.integration._docker_support import image_exists
 
@@ -131,13 +132,13 @@ class RunnerPool:
         )
         return status, reply
 
-    def run_on_runner(self, runner: str, *argv: str) -> dict[str, object]:
+    def run_on_runner(self, runner: str, *argv: str, stdin: str = "") -> dict[str, object]:
         """Run ``argv`` on ``runner`` in its workspace, as the pool's owner does, and return its result."""
         status, result = self.call_runner(
             OWNER,
             runner,
             "/run",
-            {"argv": list(argv), "directory": "/workspace", "timeout_seconds": 120},
+            {"argv": list(argv), "directory": "/workspace", "timeout_seconds": 120, "stdin": stdin},
             self.tokens[runner],
         )
         assert status == HTTPStatus.OK, result
@@ -257,6 +258,24 @@ def test_a_reset_leaves_a_runners_workspace_and_home_empty(pool: RunnerPool) -> 
     listed = pool.run_on_runner("runner-2", "sh", "-c", "ls -A /workspace; ls -A ~ | grep -c left || true")
 
     assert listed["stdout"] == "0\n"
+
+
+def test_a_checkpoint_of_one_runner_puts_what_its_user_wrote_back_on_another(pool: RunnerPool) -> None:
+    pool.run_on_runner("runner-1", "sh", "-c", "mkdir notes; echo draft > notes/a.md; echo turn > ~/session")
+    emptied = [RUNNER_WORKSPACE, *CONFIG.settings.stack.sandbox_scratch_directories]
+    directories = [str(directory.relative_to("/")) for directory in emptied]
+    packed = pool.run_on_runner("runner-1", "bash", "-c", PACK_CHECKPOINT, "pack", *directories)
+
+    restored = pool.run_on_runner("runner-2", "bash", "-c", UNPACK_CHECKPOINT, stdin=str(packed["stdout"]))
+
+    found = pool.run_on_runner("runner-2", "sh", "-c", "cat notes/a.md ~/session")
+    for runner in ("runner-1", "runner-2"):
+        pool.call_runner(OWNER, runner, "/reset", {"keep": "/workspace/next"}, pool.tokens[runner])
+    assert (packed["returncode"], restored, found["stdout"]) == (
+        0,
+        {"returncode": 0, "stdout": "", "stderr": ""},
+        "draft\nturn\n",
+    )
 
 
 def test_the_gateway_names_a_runners_pi_and_refuses_it_a_model_runners_may_not_call(pool: RunnerPool) -> None:

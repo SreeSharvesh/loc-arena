@@ -12,6 +12,7 @@ import os
 import sys
 import threading
 from dataclasses import dataclass
+from pathlib import Path
 
 import uvicorn
 from pydantic import TypeAdapter
@@ -32,6 +33,12 @@ from meridian_controlplane.agents import (
 )
 
 AUDIT_LOCK = threading.Lock()  # request handlers and the execution workers each write whole lines
+# A checkpoint is what the runner's user owns where a reset empties, gzipped, in base64 since output is text.
+PACK_CHECKPOINT = (
+    'set -o pipefail; cd / && find "$@" -user "$(id -u)" -print0'
+    " | tar --null --no-recursion -czf - -T - | python3 -m base64 -e"
+)
+UNPACK_CHECKPOINT = "set -o pipefail; python3 -m base64 -d | tar -xzf - -C /"
 
 
 @dataclass(frozen=True)
@@ -40,14 +47,22 @@ class RunnerClient:
 
     name: str
     sandbox: SandboxClient
+    emptied_directories: tuple[Path, ...]  # what each reset empties, and so what a checkpoint holds
 
-    def run(self, argv: list[str], environment: dict[str, str], timeout_seconds: float) -> RunnerResult:
+    def run(
+        self,
+        argv: list[str],
+        environment: dict[str, str],
+        timeout_seconds: float,
+        stdin: str = "",
+    ) -> RunnerResult:
         """Run ``argv`` in the runner's workspace; with no exit code, stderr says why: not run, or killed."""
         command = CommandRequest(
             argv=argv,
             directory=RUNNER_WORKSPACE,
             timeout_seconds=timeout_seconds,
             environment=environment,
+            stdin=stdin,
         )
         try:
             result = self.sandbox.run(command)
@@ -55,6 +70,19 @@ class RunnerClient:
             return RunnerResult(returncode=None, stdout="", stderr=str(error))
         killed = "" if result.returncode is not None else f"killed at its {timeout_seconds:g} s time limit\n"
         return RunnerResult(returncode=result.returncode, stdout=result.stdout, stderr=result.stderr + killed)
+
+    def end_processes(self, timeout_seconds: float) -> None:
+        """End what runs on the runner, keeping its files: the command server ends what a command leaves."""
+        self.run(["true"], {}, timeout_seconds)
+
+    def checkpoint(self, timeout_seconds: float) -> RunnerResult:
+        """Pack what a reset would empty; the checkpoint is the stdout of a result that exited 0."""
+        directories = [str(directory.relative_to("/")) for directory in self.emptied_directories]
+        return self.run(["bash", "-c", PACK_CHECKPOINT, "pack", *directories], {}, timeout_seconds)
+
+    def restore(self, checkpoint: str, timeout_seconds: float) -> RunnerResult:
+        """Put a checkpoint's files back on the runner."""
+        return self.run(["bash", "-c", UNPACK_CHECKPOINT], {}, timeout_seconds, checkpoint)
 
     def reset(self) -> None:
         """End what runs on the runner and empty its workspace and home."""
@@ -75,6 +103,7 @@ def connect_runners(run_config: RunConfig) -> list[RunnerClient]:
                 settings.stack.sandbox_recovery_seconds,
                 settings.stack.gateway_health_interval_seconds,
             ),
+            (RUNNER_WORKSPACE, *settings.stack.sandbox_scratch_directories),
         )
         for runner in list_runner_services(run_config)
     ]
