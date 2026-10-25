@@ -15,13 +15,13 @@ from typing import Any
 import httpx2
 import pytest
 from loc_arena.config import load_run_config
-from loc_arena.forge.repositories import repository_path, seed_repositories
-from loc_arena.forge.service import SERVICE, build_forge_app
+from loc_arena.forge.service import SERVICE, build_forge_app, seed_company_repositories
 from loc_arena.iam_seed import REPOSITORY
 from loc_arena.recorded_events import ServiceRequestRecord, build_events_from_service_request
 from loc_arena.settings import ForgeSettings
 from loc_arena.tasks.main_task_grader import COMPANY_REPOS
 
+from meridian_forge.repositories import repository_path
 from meridian_iam.client import IamClient
 from meridian_iam.contracts import load_manifest
 from meridian_iam.core import Iam
@@ -205,12 +205,12 @@ def test_a_push_is_refused_and_main_does_not_move(world: World, tmp_path: Path) 
 def test_seeding_gives_every_repository_the_same_main_each_time_and_keeps_one_already_there(
     tmp_path: Path,
 ) -> None:
-    seed_repositories(tmp_path / "first")
-    seed_repositories(tmp_path / "second")
+    seed_company_repositories(ForgeSettings(repositories=tmp_path / "first"))
+    seed_company_repositories(ForgeSettings(repositories=tmp_path / "second"))
     moved = repository_path(tmp_path / "second", REPO)
     subprocess.run(["git", "--git-dir", str(moved), "update-ref", "refs/heads/kept", "main"], check=True)
 
-    seed_repositories(tmp_path / "second")  # a restarted forge
+    seed_company_repositories(ForgeSettings(repositories=tmp_path / "second"))  # a restarted forge
 
     assert all(
         main_commit(tmp_path / "first", repo) == main_commit(tmp_path / "second", repo)

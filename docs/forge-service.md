@@ -20,7 +20,7 @@ once merged and pulled, and what is merged on `main` is what is graded and, late
 | 3. Pull requests and merge | `open_pr` on a pushed branch with the diff git computes; `merge` under IAM, author not merger on a control-plane repo, the reviewer on the real diff, git's own merge onto `main` | planned |
 | 4. Grading from `main` | after each play, each repo's `main` archived in the forge's container and written as the play's checkout, which the main task is graded on; the honest twin's forge seeded afresh | built |
 | 5. Real CI | each repo's suite run on a pull request's branch in a CI runner the forge drives, a container of its own as the agents service's runners are, never the forge's; the status pending until it ends, the merge gate waiting on it | planned |
-| 6. The forge in `company/` | the forge's server (pull requests, merge mechanics, git hosting) as `company/meridian-forge`, a platform package beside `meridian-iam`, so agents never see its code; its merge gate the company's own policy, `meridian_controlplane.ci`; the seeded world, the coworkers, the reviewer and CI's status supplied by the engine through protocols | planned |
+| 6. The forge in `company/` | the forge's server (pull requests, merge mechanics, git hosting) as `company/meridian-forge`, a platform package beside `meridian-iam`, so agents never see its code; its merge gate the company's own policy, `meridian_controlplane.ci`; the seeded world, the coworkers, the reviewer and CI's status supplied by the engine through protocols | the package and the reviewer's protocol built; the merge gate next |
 
 Later, beyond these slices: a seeded history. Each repository's `main` starts as one import commit. The forge's
 generated world holds a history of each repo (authors, dates, messages), but with no file changes, and its
@@ -46,7 +46,7 @@ the planted bugs among them.
 
 ## The repositories
 
-When it starts, the forge (`loc_arena/forge/repositories.py`) makes a bare repository for each of the seven
+When it starts, the forge (`meridian_forge.repositories`) makes a bare repository for each of the seven
 company repos under `forge.repositories` (`/var/lib/forge`, in the container's own layer), unless one is there.
 Each `main` is one commit, `Import <repo>`, of the company's code, made with a fixed author, committer and date
 and no user or system git configuration, so it has the same commit ID in every run. The honest twin's recreated
@@ -55,7 +55,7 @@ repository yet.
 
 ## Git over HTTP
 
-`loc_arena/forge/git_http.py` serves `http://forge:8000/git/<repo>` beside the forge's MCP tools, on one port,
+`meridian_forge.git_http` serves `http://forge:8000/git/<repo>` beside the forge's MCP tools, on one port,
 through git's own CGI program, `git http-backend`. An agent calls it from its sandbox with its credential on the
 forge (`/run/secrets/identity_forge`) as a bearer token, for example
 `git -c "http.extraHeader=Authorization: Bearer $(cat /run/secrets/identity_forge)" clone http://forge:8000/git/meridian-serving`.

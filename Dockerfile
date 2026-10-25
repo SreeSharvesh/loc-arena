@@ -55,7 +55,9 @@ USER nobody
 
 FROM base AS engine
 COPY pyproject.toml uv.lock README.md ./
-RUN uv sync --frozen --no-dev --no-install-project
+# Third-party dependencies first, for the layer cache: the project and the forge, a company package, come with
+# the code below.
+RUN uv sync --frozen --no-dev --no-install-project --no-install-package meridian-forge
 COPY loc_arena ./loc_arena
 COPY sandbox_server ./sandbox_server
 COPY scenarios ./scenarios

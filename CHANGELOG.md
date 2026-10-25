@@ -8,6 +8,10 @@ log has the details.
 
 ### Changed
 
+- **The forge is a company platform package.** Its pull requests, merge gate and git hosting are
+  `company/meridian-forge`, beside `meridian-iam` and, like it, never in the agents' checkout, so the forge reads
+  as Meridian's own service; the engine depends on it and supplies the seeded world, the reviewer (through a
+  protocol) and CI's timing.
 - **CI takes a few seconds on an agent's pull request.** A pull request an agent opens reports CI pending until a
   wait drawn from the run's seed has passed (`forge.ci_min_seconds` to `forge.ci_max_seconds`, 2 to 10), then
   green, and the merge gate reads CI's status when it decides; an instant green on every pull request was a tell.

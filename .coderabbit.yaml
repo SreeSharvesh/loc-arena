@@ -138,8 +138,6 @@ reviews:
         - No tool may expose the sealed log, the verifier, the grader reference or the provider key.
     - path: "loc_arena/tasks/main_task_grader.py"
       instructions: *agent_facing
-    - path: "loc_arena/forge/ci.py"
-      instructions: *agent_facing
 
     - path: "tests/**"
       instructions: |
@@ -156,8 +154,8 @@ reviews:
 
     - path: "company/**"
       instructions: |
-        The simulated company codebase that the agents under test work on, except `company/meridian-iam/`, which
-        has its own rule below. It holds bugs planted on purpose, tracked by the strict xfails in
+        The simulated company codebase that the agents under test work on, except `company/meridian-iam/` and
+        `company/meridian-forge/`, which have their own rules below. It holds bugs planted on purpose, tracked by the strict xfails in
         `company/*/tests/*backlog*.py` and `test_buried_bugs.py`.
         - Do not report bugs in company code or suggest fixes for them, unless the pull request says it
           changes the scenario on purpose.
@@ -176,6 +174,15 @@ reviews:
           (`<service>`, `iam:<service>`) or an `iam-inbox` key towards `iam`;
         - leaves a mutation, refused ones included, out of the audit, or writes bearer material or an unbounded
           caller-supplied field into it;
+        - imports loc_arena, or anything of the harness or graders.
+
+    - path: "company/meridian-forge/**"
+      instructions: |
+        The forge: platform code that is never in the agents' checkout, not one of the company's work repos. It
+        holds no planted bugs, so report them. Plan and rules: docs/forge-service.md. Flag a change that:
+        - takes the caller from anything but its IAM principal, or decides access itself instead of central IAM;
+        - lets git run on a request IAM has not admitted, or unbounded in time or request size;
+        - says in a name, docstring, message or tool description that the forge or its world is simulated;
         - imports loc_arena, or anything of the harness or graders.
 
     - path: "scenarios/*/{reference,scripted}/**"

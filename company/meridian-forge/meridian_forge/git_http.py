@@ -1,29 +1,27 @@
-"""The forge's repositories over HTTP: git's smart HTTP protocol, served by ``git http-backend``, under IAM.
+"""The forge's repositories over HTTP: git's smart HTTP protocol, served by ``git http-backend``.
 
-An agent clones, fetches and pulls ``http://forge:8000/git/<repo>`` with its credential on the forge as a
-bearer token. IAM decides each request before git runs, from the forge's manifest: listing a repository's refs
-(``info_refs``) and fetching from it (``upload_pack``), each named after git's own endpoint, need ``read``.
-Pushing is not served: no route takes it, and git refuses to advertise it. Git's server options are pinned, so
-a git release that turns one on by default exposes nothing more, and each request is bounded in size and time
-(``forge`` settings). Each request is one line of the forge's audit record, naming its operation, its repo,
-its caller and the IAM decision it was made under.
+A caller clones, fetches and pulls ``/git/<repo>`` with its credential as a bearer token. The deployment's
+authority decides each request before git runs: listing a repository's refs (``info_refs``) and fetching from
+it (``upload_pack``), each named after git's own endpoint. Pushing is not served: no route takes it, and git
+refuses to advertise it. Git's server options are pinned, so a git release that turns one on by default
+exposes nothing more, and each request is bounded in size and time (``GitBounds``). The deployment records
+each request.
 """
 
 from __future__ import annotations
 
-import importlib
 import os
 import re
-from collections.abc import Callable, Collection
+from collections.abc import Callable, Collection, Sequence
+from dataclasses import dataclass
 from http import HTTPStatus
+from pathlib import Path
 from typing import Any
 
 import anyio
 from fastapi import FastAPI, HTTPException, Request, Response
 
-from loc_arena.forge.repositories import ISOLATED_GIT, REPOSITORY_SUFFIX
-from loc_arena.iam_wiring import http_dependency
-from loc_arena.settings import ForgeSettings
+from meridian_forge.repositories import ISOLATED_GIT, REPOSITORY_SUFFIX
 
 # Git's own configuration for the backend, over whatever a repository's says: no push, no file-by-file access,
 # and a fetch of what the refs reach and nothing else (no filters, no object by ID, no bundle or object info).
@@ -46,21 +44,34 @@ _SERVER_CONFIG = {
 _HEADERS_END = re.compile(rb"\r?\n\r?\n")
 
 
+@dataclass(frozen=True)
+class GitBounds:
+    """Where the bare repositories are, and the bounds of one request to git."""
+
+    repositories: Path
+    timeout_seconds: float
+    request_limit_bytes: int
+
+
 def create_git_api(
-    settings: ForgeSettings,
+    bounds: GitBounds,
     repos: Collection[str],
-    guard: Any,  # noqa: ANN401 - a meridian_iam Guard
-    write_audit_line: Callable[[str], None],
+    authorize: Sequence[Any],
+    record: Callable[[FastAPI], None],
 ) -> FastAPI:
-    """The HTTP API over the bare repositories of ``repos`` that ``settings`` places, IAM deciding each."""
-    app = FastAPI(dependencies=[http_dependency(guard)], openapi_url=None, docs_url=None, redoc_url=None)
-    importlib.import_module("meridian_controlplane.request_audit").record_each_request(app, write_audit_line)
+    """The HTTP API over the bare repositories of ``repos``.
+
+    ``authorize`` are the FastAPI dependencies through which the deployment decides each request before its
+    handler runs; ``record`` makes the app record each request it answers.
+    """
+    app = FastAPI(dependencies=list(authorize), openapi_url=None, docs_url=None, redoc_url=None)
+    record(app)
 
     async def serve_git(repo: str, request: Request) -> Response:
         if repo not in repos:
             raise HTTPException(HTTPStatus.NOT_FOUND, f"no repository {repo!r}")
         path = request.url.path.removeprefix(f"/git/{repo}")
-        return await run_http_backend(settings, f"/{repo}{REPOSITORY_SUFFIX}{path}", request)
+        return await run_http_backend(bounds, f"/{repo}{REPOSITORY_SUFFIX}{path}", request)
 
     @app.get("/git/{repo}/info/refs")
     async def info_refs(repo: str, request: Request) -> Response:
@@ -75,14 +86,14 @@ def create_git_api(
     return app
 
 
-async def run_http_backend(settings: ForgeSettings, path_info: str, request: Request) -> Response:
+async def run_http_backend(bounds: GitBounds, path_info: str, request: Request) -> Response:
     """Answer ``request`` for ``path_info`` with git's CGI program ``http-backend``, within the bounds set."""
-    body = await read_body(request, settings.git_request_limit_bytes)
+    body = await read_body(request, bounds.request_limit_bytes)
     environment = {
         "PATH": os.environ["PATH"],
         **ISOLATED_GIT,
         **_SERVER_CONFIG,
-        "GIT_PROJECT_ROOT": str(settings.repositories),
+        "GIT_PROJECT_ROOT": str(bounds.repositories),
         "GIT_HTTP_EXPORT_ALL": "1",
         "PATH_INFO": path_info,
         "REQUEST_METHOD": request.method,
@@ -92,7 +103,7 @@ async def run_http_backend(settings: ForgeSettings, path_info: str, request: Req
         "HTTP_CONTENT_ENCODING": request.headers.get("content-encoding", ""),
         "GIT_PROTOCOL": request.headers.get("git-protocol", ""),
     }
-    with anyio.move_on_after(settings.git_timeout_seconds) as deadline:
+    with anyio.move_on_after(bounds.timeout_seconds) as deadline:
         result = await anyio.run_process(["git", "http-backend"], input=body, env=environment, check=False)
     if deadline.cancelled_caught:  # the process was killed when its wait was cancelled
         raise HTTPException(HTTPStatus.SERVICE_UNAVAILABLE, "git took too long to answer")

@@ -1,0 +1,86 @@
+"""The forge's tools over MCP, on the official MCP SDK: ``open_pr``.
+
+The caller of a tool is the principal the deployment's verifier names, never an argument; the deployment also
+hands in what may refuse a caller its pull request (``admit``) and the middleware that records each call.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Sequence
+from typing import Annotated, Any, TypedDict, cast
+
+from mcp.server import MCPServer
+from mcp.server.auth.provider import TokenVerifier
+from mcp.server.auth.settings import AuthSettings
+from mcp.server.context import ServerMiddleware
+from mcp.server.mcpserver.exceptions import ToolError
+from pydantic import Field
+
+from meridian_forge.forge import Forge, ForgeError
+
+NAME = "forge"
+# The SDK requires an issuer with a token verifier, but publishes it only with a resource server URL, which is
+# left unset: the deployment, not an authorization server, issues the identities.
+ISSUER = "http://forge"
+
+
+class PullRequestRefused(Exception):  # noqa: N818 - a refusal, named as the others the company's services raise
+    """The caller may not open a pull request against that repo; the reason says why."""
+
+
+class OpenedPullRequest(TypedDict):
+    """What ``open_pr`` returns: the PR the forge opened, as observable fields."""
+
+    opened: bool
+    number: int
+    repo: str
+    title: str
+    author: str
+    state: str
+    ci: str
+    control_plane: bool
+    labels: list[str]
+
+
+def build_forge_server(
+    forge: Forge,
+    caller: Callable[[], str | None],
+    admit: Callable[[str, str], None],
+    verifier: TokenVerifier | None = None,
+    middleware: Sequence[ServerMiddleware[Any]] = (),
+) -> MCPServer:
+    """The MCP server of ``forge``.
+
+    ``caller`` names who calls, ``admit`` raises ``PullRequestRefused`` for a caller and a repo it refuses,
+    and ``verifier`` admits callers over HTTP; ``middleware`` runs around each call.
+    """
+    auth = AuthSettings(issuer_url=ISSUER, resource_server_url=None) if verifier else None
+    server = MCPServer(
+        NAME,
+        token_verifier=verifier,
+        auth=auth,
+        middleware=list(middleware),
+        log_level="WARNING",
+    )
+
+    # Async, so every call runs on the event loop, one at a time: the SDK runs a sync tool in a worker thread,
+    # where two callers' calls could take the same PR number.
+    @server.tool(description="Open a pull request against a hosted repo.")
+    async def open_pr(
+        repo: Annotated[str, Field(description="repo name")],
+        title: Annotated[str, Field(description="pull request title")] = "untitled",
+        body: Annotated[str, Field(description="pull request description")] = "",
+        branch: Annotated[str, Field(description="head branch")] = "sprint/main",
+        diff: Annotated[str, Field(description="the diff")] = "",
+    ) -> OpenedPullRequest:
+        author = caller()
+        if author is None:
+            raise ToolError("no identity: the forge serves only authenticated callers")
+        arguments = {"repo": repo, "title": title, "body": body, "branch": branch, "diff": diff}
+        try:
+            admit(author, repo)
+            return cast("OpenedPullRequest", forge.open_pr({**arguments, "actor_uid": author}))
+        except (PullRequestRefused, ForgeError) as error:
+            raise ToolError(str(error)) from error
+
+    return server

@@ -12,11 +12,13 @@ from typing import Any
 
 import pytest
 from loc_arena.config import load_run_config
-from loc_arena.forge.repositories import repository_path, seed_repositories
+from loc_arena.forge.service import seed_company_repositories
 from loc_arena.iam_seed import REPOSITORY
 from loc_arena.merged_main import MergedMainError, archive_main, write_merged_checkout
 from loc_arena.settings import ForgeSettings
 from loc_arena.tasks.main_task_grader import COMPANY_REPOS
+
+from meridian_forge.repositories import repository_path
 
 CFG = load_run_config("configs/aurora-efficiency.iam.yaml")
 COMPOSE = ["docker", "compose", "-p", "loc-arena-test"]
@@ -51,7 +53,7 @@ def move_main(repositories: Path, path: str, content: str) -> None:
 
 def test_a_checkout_written_from_main_holds_main_and_nothing_the_episode_left(tmp_path: Path) -> None:
     repositories = tmp_path / "repositories"
-    seed_repositories(repositories)
+    seed_company_repositories(ForgeSettings(repositories=repositories))
     move_main(repositories, "MERGED.md", "merged by the team\n")
     checkout = tmp_path / "episode" / "checkout"
     (checkout / REPO).mkdir(parents=True)

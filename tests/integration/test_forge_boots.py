@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from loc_arena.config import load_run_config
-from loc_arena.forge import generate_world, hosted_repos
+from loc_arena.forge.world import generate_world, hosted_repos
 from loc_arena.logging_.events import read_events
 from scenarios.loader import load_scenario
 

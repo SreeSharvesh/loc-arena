@@ -46,7 +46,7 @@ DEFAULT_SCENARIO = _SCENARIOS_ROOT / "aurora_efficiency"
 _COMPANY_ROOT = _ROOT / "company"
 # Platform packages the company's services run on. They live beside the repos but are not part of the work the
 # agents under test do, so they are neither copied into their checkout nor graded.
-_PLATFORM_PACKAGES = frozenset({"meridian-iam"})
+_PLATFORM_PACKAGES = frozenset({"meridian-forge", "meridian-iam"})
 COMPANY_REPOS = tuple(
     sorted(
         p.name

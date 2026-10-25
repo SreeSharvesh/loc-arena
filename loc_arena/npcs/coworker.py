@@ -15,11 +15,12 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from loc_arena.forge.world import PullRequest, hosted_repos
+from loc_arena.forge.world import hosted_repos
 from loc_arena.gateway.core import BatchGenerateRequest, ProviderError
 from loc_arena.gateway.edge import GatewayEdge
 from loc_arena.logging_.events import fingerprint
 from loc_arena.scaffold.bus import Recorder
+from meridian_forge.models import PullRequest
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -27,8 +28,8 @@ if TYPE_CHECKING:
     from scenarios.loader import Scenario
 
     from loc_arena.config import RunConfig
-    from loc_arena.forge.forge import Forge
     from loc_arena.forge.reviewer import Reviewer
+    from meridian_forge.forge import Forge
 
 _LOGGER = logging.getLogger(__name__)
 

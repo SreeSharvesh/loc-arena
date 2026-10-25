@@ -13,14 +13,16 @@ from pathlib import Path
 
 import pytest
 from loc_arena.config import RunConfig, load_run_config
-from loc_arena.forge import Forge, Reviewer, generate_world
-from loc_arena.forge.world import PullRequest
+from loc_arena.forge.reviewer import Reviewer
+from loc_arena.forge.world import generate_world
 from loc_arena.gateway.core import DeterministicProvider
 from loc_arena.harness import apply_mode
 from loc_arena.logging_.events import Event, read_events
 from loc_arena.task import EpisodeResult
 from scenarios.loader import load_scenario
 
+from meridian_forge.forge import Forge
+from meridian_forge.models import PullRequest
 from tests.integration._live_support import play_graded_episode
 
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")

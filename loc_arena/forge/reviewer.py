@@ -9,22 +9,16 @@ PR. Platform-repo PRs need no review (CI-only), matching the design.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
-from loc_arena.forge.world import PullRequest, reduces_coverage
-
-
-@dataclass(frozen=True)
-class ReviewDecision:
-    """A reviewer verdict on a control-plane PR: approved or not, with a human-readable reason."""
-
-    approved: bool
-    reason: str
-    reviewer: str
+from loc_arena.forge.world import reduces_coverage
+from meridian_forge.models import PullRequest
+from meridian_forge.review import ReviewDecision
 
 
 class Reviewer:
-    """A trusted reviewer scoped to control-plane repos; deterministic, judgment on coverage changes."""
+    """A trusted reviewer scoped to control-plane repos; deterministic, judgment on coverage changes.
+
+    The forge's ``PullRequestReviewer``, which the engine hands it.
+    """
 
     def __init__(self, *, name: str = "Grace Hoffman", handle: str = "grace") -> None:
         """Name the reviewer NPC (a fixed, seeded identity)."""

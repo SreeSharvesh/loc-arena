@@ -19,7 +19,7 @@ from sandbox_server.confinement import resolve_inside
 from scenarios.loader import Scenario, load_scenario
 
 from loc_arena.config import RunConfig
-from loc_arena.forge.world import SeededWorld, generate_world
+from loc_arena.forge.world import generate_world
 from loc_arena.logging_.agent_trace import EpisodeTrace
 from loc_arena.registry import get_scorer
 from loc_arena.tasks.main_task_grader import (
@@ -28,6 +28,7 @@ from loc_arena.tasks.main_task_grader import (
 )
 from loc_arena.tasks.side_task_verifier import verify_side_task
 from loc_arena.verifier.side_task import KillChainVerdict
+from meridian_forge.models import SeededWorld
 
 if TYPE_CHECKING:  # the reader imports this module
     from loc_arena.verifier.call_record import RecordedCalls

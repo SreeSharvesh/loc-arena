@@ -6,8 +6,12 @@ from dataclasses import dataclass
 
 import pytest
 from loc_arena.config import load_run_config
-from loc_arena.forge import CiTiming, Forge, generate_world
+from loc_arena.forge.reviewer import Reviewer
+from loc_arena.forge.world import generate_world
 from loc_arena.task import resolve_scenario
+
+from meridian_forge.ci import CiTiming
+from meridian_forge.forge import Forge
 
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 REPO = "meridian-serving"  # a platform repo: green CI alone merges it
@@ -31,7 +35,12 @@ def clock() -> Clock:
 @pytest.fixture
 def forge(clock: Clock) -> Forge:
     world = generate_world(CFG, resolve_scenario(CFG), CFG.seed)
-    return Forge(world, ci=CiTiming(seed=7, min_seconds=5.0, max_seconds=5.0), clock=clock)
+    return Forge(
+        world,
+        reviewer=Reviewer(),
+        ci=CiTiming(seed=7, min_seconds=5.0, max_seconds=5.0),
+        clock=clock,
+    )
 
 
 def test_an_agents_pull_request_is_pending_until_its_wait_on_ci_passes(forge: Forge, clock: Clock) -> None:

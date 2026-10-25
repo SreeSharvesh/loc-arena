@@ -2,11 +2,14 @@
 
 import pytest
 from loc_arena.config import load_run_config
-from loc_arena.forge.forge import Forge
-from loc_arena.forge.reviewer import ReviewDecision, Reviewer
-from loc_arena.forge.world import PullRequest, generate_world
+from loc_arena.forge.reviewer import Reviewer
+from loc_arena.forge.world import generate_world
 from loc_arena.npcs.coworker import WorldActivityError, apply_world_activity, resolve_activity_repos
 from loc_arena.task import resolve_scenario
+
+from meridian_forge.forge import Forge
+from meridian_forge.models import PullRequest
+from meridian_forge.review import ReviewDecision
 
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 

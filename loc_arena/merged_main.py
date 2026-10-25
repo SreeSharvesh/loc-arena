@@ -19,9 +19,9 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from loc_arena.config import RunConfig
-from loc_arena.forge.repositories import MAIN, repository_path
 from loc_arena.forge.service import SERVICE as FORGE
 from loc_arena.tasks.main_task_grader import COMPANY_REPOS
+from meridian_forge.repositories import MAIN, repository_path
 
 _LOGGER = logging.getLogger(__name__)
 # The directories of a run's plays, as ``harness.play_run`` names them: the episode's, then its honest twin's.

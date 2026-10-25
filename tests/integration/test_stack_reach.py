@@ -60,8 +60,7 @@ from loc_arena.episode_stack import (
     render_compose,
     token_variable,
 )
-from loc_arena.forge.forge import Forge
-from loc_arena.forge.world import generate_world
+from loc_arena.forge.service import build_forge
 from loc_arena.gateway.core import API_KEY_VARIABLE
 from loc_arena.gateway.model_gateway import (
     GatewayCall,
@@ -73,13 +72,12 @@ from loc_arena.harness import PLAYED_FILE, PlayedRun, apply_mode, build_recorded
 from loc_arena.logging_.events import AppendOnlyLog, read_events
 from loc_arena.node_pool import list_node_services, node_token_variable
 from loc_arena.notes_service import open_notes_store
-from loc_arena.npcs.coworker import apply_world_activity, resolve_activity_repos
 from loc_arena.recorded_events import SERVICE_LOGS
 from loc_arena.runner_pool import list_runner_services, runner_token_secret, runner_token_variable
 from loc_arena.sandbox import IDENTITY_PREFIX, TOKEN_FILE
 from loc_arena.scaffold.bus import Recorder
 from loc_arena.stack_play import renew_services
-from loc_arena.task import SNAPSHOT_FILE, TOOLS_URL_VARIABLE, ClockReading, SnapshotFile, resolve_scenario
+from loc_arena.task import SNAPSHOT_FILE, TOOLS_URL_VARIABLE, ClockReading, SnapshotFile
 from loc_arena.tool_records import ToolRecord
 from loc_arena.tools_gateway import (
     MCP_PATH,
@@ -220,7 +218,7 @@ import httpx2
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 from loc_arena.config import load_run_config
-from loc_arena.forge.forge import Forge
+from loc_arena.forge.service import open_forge
 from loc_arena.forge.world import generate_world
 from loc_arena.live import connect_agent_tools
 from loc_arena.sandbox import SandboxError, connect_sandboxes, reset_sandboxes, token_secret_name
@@ -248,7 +246,7 @@ output = lambda result: result["stdout"].strip() if "stdout" in result else json
 results = [bash(command) for command in (f"cat {{sealed}}", "ls")]
 left = bash("setsid sleep 300 > /dev/null 2>&1 < /dev/null & echo $!")
 results.append(bash(f"kill -0 {{left['stdout'].strip()}}"))
-forge = Forge(generate_world(config, resolve_scenario(config), config.seed))
+forge = open_forge(generate_world(config, resolve_scenario(config), config.seed), config)
 (native,) = connect_agent_tools(forge, config, episode)[{NATIVE_AGENT!r}]  # agentgateway alone
 native_opened = native.call("open_pr", {NATIVE_OPENED!r})
 async def speak(mode):
@@ -1540,9 +1538,7 @@ def test_the_honest_twin_holds_the_rights_its_run_config_seeds_whatever_the_epis
 
 
 def test_an_agents_first_pull_request_takes_the_number_after_the_coworkers(stack_run: StackRun) -> None:
-    scenario = resolve_scenario(STACK_CONFIG)
-    reference = Forge(generate_world(STACK_CONFIG, scenario, STACK_CONFIG.seed))
-    apply_world_activity(reference, resolve_activity_repos(STACK_CONFIG, scenario))
+    reference = build_forge(STACK_CONFIG)  # the forge's world as the stack serves it
     expected = reference.open_pr({"repo": OPENED_REPO})["number"]  # the next number after the coworkers'
     opened = [
         line.result for line in stack_run.forge_log if line.result and line.result["repo"] == OPENED_REPO

@@ -13,12 +13,12 @@ import json
 from pathlib import Path
 
 from loc_arena.config import load_run_config
-from loc_arena.forge import generate_world
-from loc_arena.forge.world import SeededWorld
+from loc_arena.forge.world import generate_world
 from loc_arena.harness import apply_mode
 from loc_arena.monitors.registry import firewall_violations, load_monitor_specs
 from scenarios.loader import load_scenario
 
+from meridian_forge.models import SeededWorld
 from tests.integration._live_support import ATTACK_MOVES_PENDING, play_graded_episode
 
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")

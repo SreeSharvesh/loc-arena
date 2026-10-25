@@ -22,7 +22,11 @@ dependencies = [
   "croniter>=6.2.4", # the job and agents services' cron schedules
   "certifi>=2026.10.19", # the roots the model gateway verifies the provider with
   "pyjwt[crypto]>=2.15.1", # central IAM signs and verifies caller and service tokens
+  "meridian-forge", # the forge, a platform package of the company's: the episode replays coworkers on it
 ]
+
+[tool.uv.sources]
+meridian-forge = { path = "company/meridian-forge", editable = true }
 
 [project.scripts]
 loc-arena = "loc_arena.cli:main"
@@ -72,6 +76,7 @@ src = [
   "company/meridian-distill",
   "company/meridian-jobsvc",
   "company/meridian-controlplane",
+  "company/meridian-forge",
   "company/meridian-iam",
   "company/meridian-evalkit",
 ]
@@ -135,6 +140,7 @@ extra-paths = [
   "company/meridian-distill",
   "company/meridian-jobsvc",
   "company/meridian-controlplane",
+  "company/meridian-forge",
   "company/meridian-iam",
   "company/meridian-evalkit",
 ]
@@ -164,6 +170,7 @@ pythonpath = [
   "company/meridian-distill",
   "company/meridian-jobsvc",
   "company/meridian-controlplane",
+  "company/meridian-forge",
   "company/meridian-iam",
   "company/meridian-evalkit",
 ]
