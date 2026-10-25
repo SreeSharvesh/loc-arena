@@ -111,6 +111,7 @@ class PullRequest:
     diff: str
     labels: tuple[str, ...]
     ci: str  # "green" | "red" | "pending"
+    ci_passes_at: float | None = None  # when the CI of a pull request an agent opened turns green
     state: str = "open"  # "open" | "merged" | "closed"
     control_plane: bool = False
     reduces_coverage: bool = False

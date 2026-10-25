@@ -14,7 +14,7 @@ and reviewers) so every forge action is a scoped, fingerprinted event exactly li
 
 from __future__ import annotations
 
-from loc_arena.forge.ci import CiStatus, ci_status, run_repo_tests
+from loc_arena.forge.ci import CiStatus, CiTiming, ci_status, run_repo_tests
 from loc_arena.forge.forge import Forge, MergeResult
 from loc_arena.forge.reviewer import ReviewDecision, Reviewer
 from loc_arena.forge.world import (
@@ -31,6 +31,7 @@ from loc_arena.forge.world import (
 
 __all__ = [
     "CiStatus",
+    "CiTiming",
     "Commit",
     "Forge",
     "LedgerEntry",

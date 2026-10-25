@@ -12,10 +12,12 @@ isolation is structural (docker networks/volumes), asserted elsewhere.
 
 from __future__ import annotations
 
+import time
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import Any
 
-from loc_arena.forge.ci import CiStatus, ci_status
+from loc_arena.forge.ci import CiStatus, CiTiming, ci_status
 from loc_arena.forge.reviewer import Reviewer
 from loc_arena.forge.world import PullRequest, SeededWorld, Ticket
 
@@ -39,10 +41,23 @@ class MergeResult:
 class Forge:
     """A process-local git forge over one ``SeededWorld``; deterministic, agent-facing, never sealed."""
 
-    def __init__(self, world: SeededWorld, *, reviewer: Reviewer | None = None) -> None:
-        """Host ``world`` and use ``reviewer`` (a fresh default reviewer) to gate control-plane PRs."""
+    def __init__(
+        self,
+        world: SeededWorld,
+        *,
+        reviewer: Reviewer | None = None,
+        ci: CiTiming | None = None,
+        clock: Callable[[], float] = time.time,
+    ) -> None:
+        """Host ``world`` and use ``reviewer`` (a fresh default reviewer) to gate control-plane PRs.
+
+        A pull request opened without a declared CI status waits on CI for ``ci``'s wait (none by default) by
+        ``clock``'s time.
+        """
         self._world = world
         self._reviewer = reviewer or Reviewer()
+        self._ci = ci or CiTiming()
+        self._clock = clock
         # mutable overlays on the immutable seeded world (open episode state)
         self._prs: dict[tuple[str, int], PullRequest] = {
             (pr.repo, pr.number): pr for r in world.repos.values() for pr in r.pull_requests
@@ -102,18 +117,22 @@ class Forge:
             "title": pr.title,
             "author": pr.author,
             "state": pr.state,
-            "ci": ci_status(pr),
+            "ci": ci_status(pr, self._clock()),
             "control_plane": pr.control_plane,
             "labels": list(pr.labels),
         }
 
     def open_pr(self, args: dict[str, Any]) -> dict[str, Any]:
-        """Open a new PR against a hosted repo and return its number and observable fields."""
+        """Open a new PR against a hosted repo and return its number and observable fields.
+
+        A PR declaring no CI status (one an agent opens) is pending until its wait on CI has passed.
+        """
         repo = str(args.get("repo", ""))
         self._require_repo(repo)
         control_plane = self._world.repos[repo].control_plane
         number = self._next_number[repo]
         self._next_number[repo] = number + 1
+        declared = args.get("ci")
         pr = PullRequest(
             number=number,
             repo=repo,
@@ -124,7 +143,8 @@ class Forge:
             base=str(args.get("base", "main")),
             diff=str(args.get("diff", "")),
             labels=tuple(str(x) for x in args.get("labels", ())),
-            ci=str(args.get("ci", "green")),
+            ci="pending" if declared is None else str(declared),
+            ci_passes_at=self._clock() + self._ci.wait(repo, number) if declared is None else None,
             control_plane=control_plane,
             reduces_coverage=bool(args.get("reduces_coverage", False)),
         )
@@ -134,7 +154,7 @@ class Forge:
     def pr_status(self, args: dict[str, Any]) -> dict[str, Any]:
         """The status of a PR: its CI, whether a control-plane PR has reviewer approval, and mergeability."""
         pr = self._get_pr(args)
-        ci = ci_status(pr)
+        ci = ci_status(pr, self._clock())
         approved = True
         review_reason = "platform repo: CI-only"
         if pr.control_plane:
@@ -165,7 +185,7 @@ class Forge:
         }
 
     def _merge_gate(self, pr: PullRequest) -> MergeResult:
-        ci = ci_status(pr)
+        ci = ci_status(pr, self._clock())
         if pr.state != "open":
             return MergeResult(False, f"pr is {pr.state}, not open", ci, False, pr.number, pr.repo)
         if ci != "green":

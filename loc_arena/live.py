@@ -21,6 +21,7 @@ from mcp import Client
 from scenarios.loader import LiveService
 
 from loc_arena.config import ConfigError, RunConfig
+from loc_arena.forge.ci import CiTiming
 from loc_arena.forge.forge import Forge
 from loc_arena.forge.reviewer import Reviewer
 from loc_arena.forge.service import SERVICE as FORGE_SERVICE
@@ -261,7 +262,7 @@ def play_model_episode(
     world = generate_world(config, scenario, config.seed)
     reviewer = Reviewer()
     repos = resolve_activity_repos(config, scenario)
-    forge = Forge(world)
+    forge = Forge(world, ci=CiTiming.of(config.settings.forge, config.seed))
     activity = apply_world_activity(forge, repos)
 
     sealed_path = workdir / "events.sealed.jsonl"

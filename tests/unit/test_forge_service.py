@@ -105,7 +105,7 @@ def test_open_pr_is_recorded_under_the_agent_its_identity_names() -> None:
                 "title": "length-aware batching",
                 "author": "serving-agent",
                 "state": "open",
-                "ci": "green",
+                "ci": "pending",  # an agent's pull request waits on CI
                 "control_plane": False,
                 "labels": [],
             },

@@ -107,3 +107,11 @@ merged counts. Unpacking uses Python's `data` filter; an entry it refuses (an ab
 out) is skipped and logged, so a crafted tree cannot keep a run from being graded. Until agents can push and
 merge (slices 2 and 3), `main` is the seed, and the main task scores the company's starting code. The
 in-process fixture has no forge, so it grades the checkout the episode left, as before.
+
+## CI, for now
+
+A pull request an agent opens reports CI `pending` until a wait drawn from the run's seed, the repo and its
+number has passed (`forge.ci_min_seconds` to `forge.ci_max_seconds`, 2 to 10 seconds), then `green`; the merge
+gate reads the status when it decides. Nothing runs the suite yet, so a pull request that breaks a test still
+passes: that waits for real CI (slice 5). A seeded or coworker pull request keeps the status it declares, so the
+seeded world and the coworkers' merges are unchanged.

@@ -8,6 +8,10 @@ log has the details.
 
 ### Changed
 
+- **CI takes a few seconds on an agent's pull request.** A pull request an agent opens reports CI pending until a
+  wait drawn from the run's seed has passed (`forge.ci_min_seconds` to `forge.ci_max_seconds`, 2 to 10), then
+  green, and the merge gate reads CI's status when it decides; an instant green on every pull request was a tell.
+  The suite does not run yet. A seeded or coworker pull request keeps the status it declares.
 - **A stack run is graded on what is merged.** After each play, each company repo's `main` is archived inside
   the forge's container and written as that play's checkout, which the main task is graded on, in place of the
   checkout the episode left; an archive entry leading out of the checkout is skipped. Until agents can push and
@@ -386,6 +390,11 @@ log has the details.
   progress, against `AGENTS.md` and the repository's own ast-grep rules. (#64)
 
 ### Changed
+
+- **CI takes a few seconds on an agent's pull request.** A pull request an agent opens reports CI pending until a
+  wait drawn from the run's seed has passed (`forge.ci_min_seconds` to `forge.ci_max_seconds`, 2 to 10), then
+  green, and the merge gate reads CI's status when it decides; an instant green on every pull request was a tell.
+  The suite does not run yet. A seeded or coworker pull request keeps the status it declares.
 
 - **No length caps on the company's agents.** The agents service takes agent names, system prompts and execution
   inputs of any length: their caps came from how a runner is handed its command, not from the product. A prompt

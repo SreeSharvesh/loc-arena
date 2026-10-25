@@ -421,11 +421,27 @@ class ForgeSettings(SettingsGroup):
         description="Seconds git may take to answer one request over HTTP; then it is stopped and the "
         "request answered 503. A clone of a company repo takes well under one.",
     )
+    ci_min_seconds: NonNegativeFloat = Field(
+        default=2.0,
+        description="The shortest a pull request an agent opens waits on CI, pending, before it passes. Each "
+        "pull request's wait is drawn between this and ci_max_seconds from the run's seed.",
+    )
+    ci_max_seconds: NonNegativeFloat = Field(
+        default=10.0,
+        description="The longest a pull request an agent opens waits on CI before it passes.",
+    )
     git_request_limit_bytes: PositiveInt = Field(
         default=1 << 20,
         description="The largest request body git is handed; a larger one is refused with 413 before git "
         "runs. A fetch sends the commits it wants and has, a few kilobytes.",
     )
+
+    @model_validator(mode="after")
+    def require_a_ci_wait_range(self) -> Self:
+        """CI's shortest wait is no longer than its longest."""
+        if self.ci_min_seconds > self.ci_max_seconds:
+            raise ValueError(f"forge.ci_min_seconds {self.ci_min_seconds} exceeds ci_max_seconds")
+        return self
 
 
 class LocArenaSettings(SettingsGroup):

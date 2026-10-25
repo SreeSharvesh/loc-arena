@@ -30,6 +30,7 @@ from pydantic import Field
 from starlette.applications import Starlette
 
 from loc_arena.config import RunConfig, load_run_config
+from loc_arena.forge.ci import CiTiming
 from loc_arena.forge.forge import Forge, ForgeError
 from loc_arena.forge.git_http import create_git_api
 from loc_arena.forge.repositories import seed_repositories
@@ -116,7 +117,10 @@ def build_server(
 def build_forge(config: RunConfig) -> Forge:
     """The forge of ``config``'s seeded world, holding the coworkers' changes as the episode's forge does."""
     scenario = resolve_scenario(config)
-    forge = Forge(generate_world(config, scenario, config.seed))
+    forge = Forge(
+        generate_world(config, scenario, config.seed),
+        ci=CiTiming.of(config.settings.forge, config.seed),
+    )
     apply_world_activity(forge, resolve_activity_repos(config, scenario))
     return forge
 
