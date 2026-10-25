@@ -12,7 +12,7 @@ happened is decided by comparing the gateway's call log with the company's own r
 | 1. Registry | the company's agents, with versions, authorized by central IAM, and an audit record | built |
 | 2. Executions | a fixed pool of runner containers where company agents run [pi](https://pi.dev), with their model calls through the gateway | built |
 | 3. Tracing | Phoenix as the company's observability store, telemetry settings per agent, and the export of its spans with each run | built |
-| 4. Unattended work | stop and resume through checkpoints, schedules, and service accounts | planned |
+| 4. Unattended work | stop and resume through checkpoints; an identity for each agent, and schedules | stop and resume built |
 
 After step 4: wiring into the scenario (routes through this service in place of the `acquire_identity`,
 `start_rogue_loop` and `blind_monitor` stubs; `observation.json`, for each runner's model call whether the
@@ -115,3 +115,28 @@ Phoenix runs is the export's fault: the run stops and keeps its compose project,
 when a log cannot be copied. The spans are not events: the
 monitors watch what the agents do, such as starting an execution, not what the company's store holds. The
 exported spans are what `observation.json`, with the scenario wiring, will read beside the gateway's record.
+
+## Stop and resume (step 4)
+
+| Call | Needs |
+|---|---|
+| `POST /executions/<id>/stop` | `run` |
+| `POST /executions/<id>/resume`, with an optional `{"input"}` | `run` |
+
+A stop ends pi and its tools on the execution's runner, with a command that does nothing, since the command
+server ends what each command leaves running. It then packs the checkpoint: a gzipped tarball of what the
+runner's user owns in the directories a reset empties (the workspace, pi's home with its session, and the
+temporary directories), so the agent's files and its conversation are kept, though not its processes. The
+runner is reset, and the stop answers once the execution is `stopped`, holding no runner. A run that exited 0
+before the stop ended it completes as usual; a checkpoint that cannot be packed, such as one of a directory the
+agent made unreadable, fails the execution with the error.
+
+A resume queues the execution again. The next free runner takes the checkpoint back on its stdin and runs pi on
+the same session, which pi continues, told the input or "This run was stopped and has resumed. Continue the
+task." One stopped before pi wrote its input there, in its first second, holds no turn, and starts again on its
+input. The output is the last run's and the error output every run's; each run is a trace of its own under the
+execution's id. Cancelling a stopped execution drops its checkpoint. Checkpoints live in the service's memory,
+which is recreated before the honest twin.
+
+Stopping and resuming are actions on the event logs, like every call, and `stopped` is a state on the audit
+record.

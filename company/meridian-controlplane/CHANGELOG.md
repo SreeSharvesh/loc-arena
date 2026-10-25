@@ -1,5 +1,10 @@
 # Changelog — meridian-controlplane
 
+## 0.11.0
+- agents: a running execution stops with its checkpoint (`POST /executions/<id>/stop`) and a stopped one resumes
+  from it on any runner (`POST /executions/<id>/resume`, with an optional `input`), both with `run`; a stopped
+  execution can be cancelled. A `Runner` also ends what runs on it, packs a checkpoint and puts one back.
+
 ## 0.10.0
 - chat: a chat service, Meridian's chat, with open channels, their threads and direct messages, and each
   member's unread direct messages and mentions, served as an HTTP API and as MCP tools over one SQLite store;
