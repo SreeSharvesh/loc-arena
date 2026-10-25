@@ -100,9 +100,8 @@ def build_server(
 def build_forge(config: RunConfig) -> Forge:
     """The forge of ``config``'s seeded world, holding the coworkers' changes as the episode's forge does."""
     scenario = resolve_scenario(config)
-    world = generate_world(config, scenario, config.seed)
-    forge = open_forge(world, config)
-    apply_world_activity(forge, world, resolve_activity_repos(config, scenario))
+    forge = open_forge(generate_world(config, scenario, config.seed), config)
+    apply_world_activity(forge, resolve_activity_repos(config, scenario))
     return forge
 
 

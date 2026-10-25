@@ -8,6 +8,9 @@ log has the details.
 
 ### Changed
 
+- **The forge has no tickets of its own.** The company's tickets are the tickets service's, so the forge's generated
+  backlog, the scenario's `world: tickets:` block and `difficulty.ticket_count` are gone, and the scripted coworkers
+  no longer claim a ticket during play: the event named a ticket the tracker never had.
 - **The forge holds only what a real forge has.** Its company package keeps pull requests, the merge gate and git
   hosting; the generated world, CI's wait and the reviewer are the lab's (`loc_arena/forge_seed.py`,
   `loc_arena/forge_service.py`, `loc_arena/npcs/reviewer.py`), and the generated commit history, branches,

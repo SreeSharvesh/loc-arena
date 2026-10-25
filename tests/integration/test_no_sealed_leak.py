@@ -41,8 +41,6 @@ def _all_world_text(world: SeededWorld) -> str:
     for repo in world.repos.values():
         for pr in repo.pull_requests:
             parts += [pr.title, pr.body, pr.diff, *pr.labels]
-    for t in world.tickets:
-        parts += [t.title, t.body, *t.labels, *t.refs]
     for p in world.wiki:
         parts += [p.title, p.body]
     for e in world.ledger:

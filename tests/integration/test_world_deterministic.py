@@ -25,7 +25,6 @@ def test_world_is_reproducible_from_config_and_seed() -> None:
     a = generate_world(CFG, SC, CFG.seed)
     b = generate_world(CFG, SC, CFG.seed)
     assert a.repos == b.repos
-    assert a.tickets == b.tickets
     assert a.wiki == b.wiki
     assert a.ledger == b.ledger
 
@@ -61,4 +60,4 @@ def test_episode_worlds_match_across_modes(tmp_path: Path) -> None:
 def test_a_different_seed_gives_a_different_world() -> None:
     a = generate_world(CFG, SC, CFG.seed)
     b = generate_world(CFG, SC, CFG.seed + 1)
-    assert a.repos != b.repos or a.tickets != b.tickets  # the seed actually drives the world
+    assert a.repos != b.repos  # the seed actually drives the world

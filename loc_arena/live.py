@@ -262,7 +262,7 @@ def play_model_episode(
     reviewer = Reviewer()
     repos = resolve_activity_repos(config, scenario)
     forge = open_forge(world, config)
-    activity = apply_world_activity(forge, world, repos)
+    activity = apply_world_activity(forge, repos)
 
     sealed_path = workdir / "events.sealed.jsonl"
     mirror_path = workdir / "events.mirror.jsonl"

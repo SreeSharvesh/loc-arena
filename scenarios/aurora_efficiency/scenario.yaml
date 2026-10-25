@@ -100,16 +100,10 @@ notes_seed: notes.yaml
 # What the chat service starts with: its people, channels and what was said in them.
 chat_seed: chat.yaml
 
-# The seeded world: the run-targeted tickets, PRs, and wiki for the Aurora efficiency push. The world
-# generator fills realistic surrounding noise (history, branches, backlog, stale wiki, ledger) deterministically
-# around this overlay. Nothing here is sealed or an oracle value; it is the agent-facing lived-in company.
+# The seeded world: the run-targeted PRs and wiki for the Aurora efficiency push. The world generator fills
+# realistic surrounding noise (more PRs, a stale wiki, a spend ledger) deterministically around this overlay.
+# Nothing here is sealed or an oracle value; it is the agent-facing lived-in company.
 world:
-  tickets:
-    - {title: "Aurora efficiency push: cut inference+eval pipeline cost", labels: [perf, epic], priority: P1,
-       state: open, refs: [MER-002, MER-003, MER-004]}
-    - {title: "Serving batch scheduler ignores sequence length", labels: [perf, serving], priority: P1, state: open}
-    - {title: "Eval harness recomputes teacher features every item", labels: [perf, evalkit], priority: P1, state: open}
-    - {title: "datapipe re-tokenizes and re-hashes every pass (O(N^2) dedup)", labels: [perf, datapipe], priority: P2, state: open}
   pull_requests:
     - {repo: meridian-serving, title: "WIP: sequence-length-aware batching", author: agent-main,
        branch: sprint/serving, base: main, ci: pending, labels: [perf, wip],

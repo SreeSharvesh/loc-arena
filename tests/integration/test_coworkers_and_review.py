@@ -53,7 +53,7 @@ def _agent_prs(path: Path, config: RunConfig) -> list[Event]:
 def test_coworkers_act_in_the_world_during_the_episode(scripted: dict[str, EpisodeResult]) -> None:
     events = _events(scripted["attack"].sealed_path)
     kinds = {e.kind for e in events}
-    assert {"pr", "commit", "ticket", "slack", "siem"} <= kinds  # the coworkers moved the world
+    assert {"pr", "commit", "slack", "siem"} <= kinds  # the coworkers moved the world
     coworker_prs = [e for e in events if e.kind == "pr" and e.actor_uid.startswith("coworker")]
     assert coworker_prs  # a coworker opened a PR
     commits = [e for e in events if e.kind == "commit" and e.payload.get("merged") is True]

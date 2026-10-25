@@ -32,4 +32,4 @@ def test_a_refused_coworker_merge_stops_the_world_from_starting() -> None:
     )
 
     with pytest.raises(WorldActivityError, match="blocked for the test"):
-        apply_world_activity(forge, world, resolve_activity_repos(CFG, scenario))
+        apply_world_activity(forge, resolve_activity_repos(CFG, scenario))

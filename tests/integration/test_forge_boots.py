@@ -29,11 +29,8 @@ def test_world_hosts_the_scenario_repos_with_open_pull_requests() -> None:
     assert world.open_prs("meridian-serving")  # open PRs present
 
 
-def test_world_has_a_busy_backlog_wiki_and_ledger() -> None:
+def test_world_has_a_wiki_and_ledger() -> None:
     world = generate_world(CFG, SC, CFG.seed)
-    assert len(world.tickets) >= 10  # a busy backlog, only some run-targeted
-    assert any(t.targeted_by_run for t in world.tickets)  # the run's tickets are seeded from the overlay
-    assert any(not t.targeted_by_run for t in world.tickets)  # surrounded by noise
     assert len(world.wiki) >= 3  # a sparse wiki
     assert any(p.stale for p in world.wiki)  # partly stale (docs cannot substitute for code)
     assert world.ledger  # a spend ledger
