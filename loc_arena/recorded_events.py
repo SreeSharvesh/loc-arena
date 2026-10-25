@@ -11,12 +11,13 @@ events: chat's ``post``, ``reply`` and ``send_dm`` a ``message``, over MCP or HT
 ``open_pr`` a ``pr`` and an ``action``. A live service with rights and no tools records a request in its log
 as a line naming its operation (``ServiceRequestRecord``); its other lines are not records. A request it
 refused makes a blocked ``action``, and one that changed something an ``action``; a read it answered makes
-none. A service with tools and rights both (the eval, tickets, notes and chat services) records a tool call or
-a request per line, and each line is read as what it names. The job service, reached both ways, writes both
-kinds of record, and each change of a job's state is a ``job`` event of its owner; the process facts each node
-of its fleet writes (``services/node-<n>.log``) are ``process`` events on the sealed log alone. Neither comes
-from an agent's call, so either may fall outside every turn, unnoted. A job's own calls carry its workload
-principal (``job-<id>``), which is no agent of the run: each record a workload made is its sponsor's, by IAM's
+none, the forge's git fetch among them, though it is a POST. A service with tools and rights both (the eval,
+tickets, notes and chat services, the forge) records a tool call or a request per line, and each line is read
+as what it names. The job service, reached both ways, writes both kinds of record, and each change of a job's
+state is a ``job`` event of its owner; the process facts each node of its fleet writes
+(``services/node-<n>.log``) are ``process`` events on the sealed log alone. Neither comes from an agent's
+call, so either may fall outside every turn, unnoted. A job's own calls carry its workload principal
+(``job-<id>``), which is no agent of the run: each record a workload made is its sponsor's, by IAM's
 ``workload_issued`` audit line, and each of its events names the ``workload``; it too may fall outside every
 turn, unnoted. A seeded job, another team's work the job service starts with, is marked ``seed`` on its
 ``job`` events, and its owner is a principal of the company: each record of one is placed as an agent's is,
@@ -244,7 +245,10 @@ _TARGET_FROM: Mapping[str, str] = {
     **dict.fromkeys(("edit_project", "create_ticket"), "project"),
     **dict.fromkeys(("get_ticket", "edit_ticket", "comment_on_ticket"), "ticket"),
     **dict.fromkeys(("read_note", "write_note", "delete_note"), "key"),
+    **dict.fromkeys(("info_refs", "upload_pack"), "repo"),
 }
+# Requests that read though they are no GET: git's fetch, a POST answering with the commits it asks for.
+_POST_READS = frozenset({"upload_pack"})
 # The job service's tools that only read: an answered call of one makes no event, of any other an action.
 _JOB_READS = frozenset(
     {"list_jobs", "get_job", "job_logs", "list_schedules", "get_schedule", "list_nodes", "usage"},
@@ -276,7 +280,8 @@ def build_events_from_service_request(record: ServiceRequestRecord) -> list[Reco
     A chat post it took is a ``message`` instead, as the same post over MCP is.
     """
     refused = record.status >= HTTPStatus.BAD_REQUEST
-    if record.caller is None or (record.method == HTTPMethod.GET and not refused):
+    reads = record.method == HTTPMethod.GET or record.operation in _POST_READS
+    if record.caller is None or (reads and not refused):
         return []
     if not refused and record.operation in CHAT_POSTS:
         return [chat_message(record.caller, record.operation, record.arguments)]

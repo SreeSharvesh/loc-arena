@@ -407,6 +407,27 @@ class ChatSettings(SettingsGroup):
     )
 
 
+class ForgeSettings(SettingsGroup):
+    """The forge (the run config's ``forge:`` block): where its git repositories are in its container."""
+
+    repositories: Path = Field(
+        default=Path("/var/lib/forge"),
+        description="The directory of its bare repositories, one per company repo. A new container finds "
+        "none and seeds them from the company's code, so the honest twin's recreated forge starts from the "
+        "seed.",
+    )
+    git_timeout_seconds: PositiveFloat = Field(
+        default=30.0,
+        description="Seconds git may take to answer one request over HTTP; then it is stopped and the "
+        "request answered 503. A clone of a company repo takes well under one.",
+    )
+    git_request_limit_bytes: PositiveInt = Field(
+        default=1 << 20,
+        description="The largest request body git is handed; a larger one is refused with 413 before git "
+        "runs. A fetch sends the commits it wants and has, a few kilobytes.",
+    )
+
+
 class LocArenaSettings(SettingsGroup):
     """Every tunable value, one frozen group per concern."""
 
@@ -437,4 +458,8 @@ class LocArenaSettings(SettingsGroup):
     chat: ChatSettings = Field(
         default=ChatSettings(),
         description="The chat service's database.",
+    )
+    forge: ForgeSettings = Field(
+        default=ForgeSettings(),
+        description="The forge's git repositories.",
     )

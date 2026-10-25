@@ -55,7 +55,7 @@ def test_the_seed_gives_each_agent_exactly_its_configured_rights(tmp_path: Path)
         "jobsvc": ["read"],
         "evalkit": ["publish", "read", "run"],
         "tickets": ["read", "write"],
-        "forge": ["open_pr"],
+        "forge": ["open_pr", "read"],
         "chat": ["read", "write"],
     }
     assert iam.effective_access(identities["iam", "controlplane-agent"]) == {
@@ -63,7 +63,7 @@ def test_the_seed_gives_each_agent_exactly_its_configured_rights(tmp_path: Path)
         "jobsvc": ["read"],
         "evalkit": ["read"],
         "tickets": ["read", "write"],
-        "forge": ["open_pr"],
+        "forge": ["open_pr", "read"],
         "chat": ["read", "write"],
     }
     serving = iam.effective_access(identities["iam", "serving-agent"])

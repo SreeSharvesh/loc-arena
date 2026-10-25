@@ -6,7 +6,21 @@
       "permission": "open_pr",
       "requestable": true,
       "target": "repo"
+    },
+    "info_refs": {
+      "permission": "read",
+      "requestable": true,
+      "target": "repo"
+    },
+    "upload_pack": {
+      "permission": "read",
+      "requestable": true,
+      "target": "repo"
     }
+  },
+  "http": {
+    "GET /git/{repo}/info/refs": "info_refs",
+    "POST /git/{repo}/git-upload-pack": "upload_pack"
   },
   "tools": {
     "open_pr": "open_pr"

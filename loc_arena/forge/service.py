@@ -1,13 +1,15 @@
-"""The forge as an MCP service: ``open_pr`` over Streamable HTTP, on the official MCP SDK.
+"""The forge as a live service: ``open_pr`` over MCP, and its git repositories over HTTP.
 
 A stack run starts it as the compose service ``forge``: ``python -m loc_arena.forge.service <run config>``. It
 hosts the run's seeded world, as the episode's own forge does, and serves ``/mcp`` on the port of the
-scenario's ``forge`` entry. Compose mounts every agent's identity as ``identity_<agent id>`` in the secrets
-directory; a request without a known one is refused with 401 before any tool runs, and the caller of a tool is
-the agent its identity names, never an argument. The forge enforces each agent's ``open_pr`` scope itself,
-since any harness, an agent's bash included, may reach it through agentgateway. Each call is one line on
-stdout (``loc_arena.tool_records``). An in-process run serves each agent its own server over the episode's
-forge, bound to that agent, and connects to it in memory.
+scenario's ``forge`` entry, with the company repos' git repositories beside it (``loc_arena.forge.git_http``),
+which it seeds when it starts (``loc_arena.forge.repositories``). Central IAM decides every call: a request
+without a credential it accepts is refused with 401 before any tool or git runs, and the caller is the
+principal its credential names, never an argument. The forge enforces each agent's ``open_pr`` scope itself,
+since any harness, an agent's bash included, may reach it through agentgateway. Each tool call and each HTTP
+request is one line on stdout (``loc_arena.tool_records``, ``meridian_controlplane.request_audit``). An
+in-process run serves each agent its own server over the episode's forge, bound to that agent, and connects
+to it in memory; it hosts no git repositories.
 """
 
 from __future__ import annotations
@@ -25,15 +27,19 @@ from mcp.server.auth.settings import AuthSettings
 from mcp.server.context import ServerMiddleware
 from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import Field
+from starlette.applications import Starlette
 
 from loc_arena.config import RunConfig, load_run_config
 from loc_arena.forge.forge import Forge, ForgeError
+from loc_arena.forge.git_http import create_git_api
+from loc_arena.forge.repositories import seed_repositories
 from loc_arena.forge.world import generate_world
 from loc_arena.iam_wiring import build_service_app, guard_from_environment, iam_options
 from loc_arena.ids import Action, PermissionScope, ScopeViolation, enforce
 from loc_arena.mcp_service import ALL_ADDRESSES, caller_from_token
 from loc_arena.npcs.coworker import apply_world_activity, resolve_activity_repos
 from loc_arena.task import resolve_scenario
+from loc_arena.tasks.main_task_grader import COMPANY_REPOS
 from loc_arena.tool_records import Write, tool_call_recorder
 
 SERVICE = "forge"  # its entry in the scenario's services, and its compose service
@@ -115,6 +121,23 @@ def build_forge(config: RunConfig) -> Forge:
     return forge
 
 
+def build_forge_app(
+    config: RunConfig,
+    guard: Any,  # noqa: ANN401 - a meridian_iam Guard
+    write: Write,
+) -> Starlette:
+    """The forge of ``config``'s stack run under ``guard``: tools at ``/mcp``, its repositories beside them.
+
+    The repositories are seeded first; ``write`` takes each tool call's record and each request's audit line.
+    """
+    seed_repositories(config.settings.forge.repositories)
+    scopes = {agent.id: agent.scope for agent in config.agents}
+    options = iam_options(guard, SERVICE)
+    server = build_server(build_forge(config), caller_from_token, write, scopes, **options)
+    git_api = create_git_api(config.settings.forge, COMPANY_REPOS, guard, write)
+    return build_service_app(guard, server, SERVICE, git_api)
+
+
 def main(arguments: list[str]) -> None:
     """Serve the forge of the run config at ``arguments[0]``, under central IAM."""
     config = load_run_config(arguments[0])
@@ -122,11 +145,7 @@ def main(arguments: list[str]) -> None:
     entry = next((service for service in config.live_services if service.name == SERVICE), None)
     if entry is None:
         raise SystemExit(f"the scenario of {arguments[0]} has no {SERVICE!r} service")
-    forge = build_forge(config)
-    write = functools.partial(print, flush=True)
-    scopes = {agent.id: agent.scope for agent in config.agents}
-    server = build_server(forge, caller_from_token, write, scopes, **iam_options(guard, SERVICE))
-    app = build_service_app(guard, server, SERVICE)
+    app = build_forge_app(config, guard, functools.partial(print, flush=True))
     uvicorn.run(app, host=ALL_ADDRESSES, port=entry.port, log_level="warning", access_log=False)
 
 

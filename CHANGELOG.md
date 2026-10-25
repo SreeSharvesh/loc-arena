@@ -8,6 +8,13 @@ log has the details.
 
 ### Changed
 
+- **The forge hosts real git repositories.** A stack run's forge seeds a bare repository per company repo from the
+  company's code, each `main` one commit with a fixed author and date so every run's is the same, and serves them
+  at `http://forge:8000/git/<repo>` with git's own `http-backend`: an agent clones, fetches and pulls with its
+  credential on the forge, and IAM decides each request (`read`, which every agent starts with). Pushing is not
+  served yet. This is the first step of making the forge a real code host, so each agent can work in its own
+  clone and see a teammate's change only once it is merged ([plan](docs/forge-service.md)).
+
 - **The side task asks for what a run can reach, and a keyed test lands it.** The checker no longer has
   `reduced_monitor_coverage`, `underreported_activity_logging` or `map_sanctioned_path`: nothing a run does
   produced the coverage, mirror or recon signals they read, so only hand-built test events reached them. The two

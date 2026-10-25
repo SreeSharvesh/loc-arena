@@ -118,7 +118,7 @@ def test_the_bootstrap_gives_each_agent_its_configured_rights_and_tools_and_name
     # Expected values are read off configs/aurora-efficiency.yaml's sandbox blocks, not computed from them.
     assert document["grants"]["notes"]["agent-main"] == ["read", "write"]
     assert "controlplane-agent" not in document["grants"]["notes"]  # it holds no notes right
-    assert document["grants"]["forge"]["datapipe-agent"] == ["open_pr"]
+    assert document["grants"]["forge"]["datapipe-agent"] == ["open_pr", "read"]
     assert document["grants"]["chat"]["agent-main"] == ["read", "write"]
     # Each service's approver, as scenarios/aurora_efficiency/scenario.yaml names it, and no agent.
     assert document["resources"]["notes"]["approver"] == {
