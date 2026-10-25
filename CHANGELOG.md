@@ -8,6 +8,9 @@ log has the details.
 
 ### Changed
 
+- **The suite runs on every core, and a process seeds the forge once.** `make gates` runs pytest with
+  pytest-xdist, a test module per worker; each process seeds the forge's repositories once and copies them for
+  each forge, so an in-process play spends a tenth of a second on its forge instead of a second and a half.
 - **The forge starts from a written seed.** The scenario's `forge.yaml`, loaded by the company's own code, names
   the repos that need review and the pull requests open when the forge starts, each a real branch whose diff git
   computes, as the tickets service starts from `tickets.yaml`. The generated world (template pull requests with

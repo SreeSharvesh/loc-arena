@@ -1,14 +1,15 @@
 """What the forge starts with: which repos need review to merge, and the pull requests open on them.
 
-A seeded pull request is a real branch: when the forge seeds its repositories, each pull request's patch is
-committed onto a branch off ``main`` by its author at the time it was opened, and its diff is the one git
-computes, so the forge holds nothing a clone would contradict.
+A seeded pull request is a real branch: when the forge's repositories are seeded
+(``meridian_forge.repositories.seed_repositories``), each pull request's patch is committed onto a branch off
+``main`` by its author at the time it was opened, and its diff is the one git computes, so the forge holds
+nothing a clone would contradict.
 """
 
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Literal
 
@@ -17,7 +18,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict
 
 from meridian_forge.forge import Forge
 from meridian_forge.models import PullRequest
-from meridian_forge.repositories import MAIN, branch_diff, seed_repositories
+from meridian_forge.repositories import MAIN, branch_diff
 from meridian_forge.review import PullRequestReviewer
 
 
@@ -53,20 +54,19 @@ def load_forge_seed(path: Path) -> ForgeSeed:
 
 def open_seeded_forge(
     directory: Path,
-    sources: Mapping[str, Path],
+    repos: Iterable[str],
     seed: ForgeSeed,
     *,
     reviewer: PullRequestReviewer,
     ci_seconds: Callable[[str, int], float],
     clock: Callable[[], float] = time.time,
 ) -> Forge:
-    """The forge over the repositories in ``directory``, seeded from ``sources`` and ``seed`` where missing.
+    """The forge over ``repos``, whose repositories in ``directory`` were seeded with ``seed``'s branches.
 
-    ``sources`` names each hosted repo's code by its name. A seeded pull request takes the number after its
-    repo's last, in the order the seed lists them.
+    A seeded pull request takes the number after its repo's last, in the order the seed lists them.
     """
-    seed_repositories(directory, sources, seed.pull_requests)
-    numbers = dict.fromkeys(sources, 0)
+    repos = tuple(repos)
+    numbers = dict.fromkeys(repos, 0)
     pull_requests: list[PullRequest] = []
     for seeded in seed.pull_requests:
         numbers[seeded.repo] += 1
@@ -85,7 +85,7 @@ def open_seeded_forge(
             ),
         )
     return Forge(
-        sources,
+        repos,
         pull_requests,
         review_required=seed.review_required,
         reviewer=reviewer,

@@ -41,6 +41,7 @@ packages = ["loc_arena", "sandbox_server"]
 [dependency-groups]
 # Dev toolchain. Kept minimal for the skeleton; phases add their own runtime deps (Inspect, FastAPI, ...).
 dev = [
+  "pytest-xdist>=3.8.0", # make gates runs the suite across every core
   "ruff>=0.6",
   "ty>=0.0.84",
   "types-PyYAML>=6.0",

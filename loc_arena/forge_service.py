@@ -13,10 +13,12 @@ its own server over the episode's forge, bound to that agent, and connects to it
 
 from __future__ import annotations
 
+import atexit
 import functools
 import importlib
 import os
 import random
+import shutil
 import sys
 import tempfile
 from collections.abc import Callable, Mapping, Sequence
@@ -40,6 +42,7 @@ from loc_arena.tasks.main_task_grader import COMPANY_REPOS, COMPANY_ROOT, seed_c
 from loc_arena.tool_records import Write, tool_call_recorder
 from meridian_forge.forge import Forge
 from meridian_forge.git_http import GitBounds, create_git_api
+from meridian_forge.repositories import repository_path, seed_repositories
 from meridian_forge.seed import ForgeSeed, load_forge_seed, open_seeded_forge
 from meridian_forge.server import build_forge_server
 
@@ -76,22 +79,35 @@ def load_seed(config: RunConfig) -> ForgeSeed:
     return load_forge_seed(scenario.directory / scenario.meta[SEED_KEY])
 
 
-def open_forge(config: RunConfig, seed: ForgeSeed, repositories: Path) -> Forge:
-    """The forge over its repositories in ``repositories``, seeded from the company's code and ``seed``.
-
-    The engine's reviewer judges what needs review, and CI is timed by ``config``'s forge settings.
-    """
-    settings = config.settings.forge
-    add_company_code_to_path()
+@functools.cache
+def _seed_once(seed: ForgeSeed) -> Path:
+    """The forge's repositories seeded from the company's code and ``seed``, once a process, to copy."""
+    seeded = Path(tempfile.mkdtemp(prefix="forge-seed-"))
+    atexit.register(shutil.rmtree, seeded, ignore_errors=True)
     with tempfile.TemporaryDirectory() as scratch:
         checkout = seed_checkout(Path(scratch) / "checkout")
-        return open_seeded_forge(
-            repositories,
-            {repo: checkout / repo for repo in COMPANY_REPOS},
-            seed,
-            reviewer=Reviewer(),
-            ci_seconds=CiTiming(config.seed, settings.ci_min_seconds, settings.ci_max_seconds).wait,
-        )
+        seed_repositories(seeded, {repo: checkout / repo for repo in COMPANY_REPOS}, seed.pull_requests)
+    return seeded
+
+
+def open_forge(config: RunConfig, seed: ForgeSeed, repositories: Path) -> Forge:
+    """The forge over its repositories in ``repositories``, each seeded from the company's code and ``seed``.
+
+    A repository already there is left as it is, so a restarted forge keeps what was pushed and merged. The
+    engine's reviewer judges what needs review, and CI is timed by ``config``'s forge settings.
+    """
+    for repo in COMPANY_REPOS:
+        if not repository_path(repositories, repo).exists():
+            shutil.copytree(repository_path(_seed_once(seed), repo), repository_path(repositories, repo))
+    settings = config.settings.forge
+    add_company_code_to_path()
+    return open_seeded_forge(
+        repositories,
+        COMPANY_REPOS,
+        seed,
+        reviewer=Reviewer(),
+        ci_seconds=CiTiming(config.seed, settings.ci_min_seconds, settings.ci_max_seconds).wait,
+    )
 
 
 def build_server(

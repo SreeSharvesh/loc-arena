@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from meridian_forge.forge import Forge
-from meridian_forge.repositories import branch_diff
+from meridian_forge.repositories import branch_diff, seed_repositories
 from meridian_forge.review import ReviewDecision
 from meridian_forge.seed import ForgeSeed, SeedPullRequest, open_seeded_forge
 
@@ -33,9 +33,10 @@ def open_forge(tmp_path: Path, seed: ForgeSeed) -> Forge:
     source = tmp_path / "source"
     source.mkdir(exist_ok=True)
     (source / "NOTES.md").write_text("first\n")
+    seed_repositories(tmp_path / "repositories", {"notes": source}, seed.pull_requests)
     return open_seeded_forge(
         tmp_path / "repositories",
-        {"notes": source},
+        ["notes"],
         seed,
         reviewer=Approving(),
         ci_seconds=lambda _repo, _number: 0.0,

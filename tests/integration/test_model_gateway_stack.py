@@ -215,18 +215,24 @@ def test_a_call_is_recorded_with_its_caller_request_and_reply(stack: Stack) -> N
     )
 
 
+# Each refused call: the model it names, which finds its record, its token, its path and the status it gets.
+REFUSED_CALLS = [
+    ("no-token", None, CHAT, 401),
+    ("an-unknown-token", "not-a-token", CHAT, 401),
+    ("a-path-outside-the-allowlist", SANDBOX_TOKEN, "/api/v1/embeddings", 403),
+    ("a-badge-on-the-callers-route", BADGE, CHAT, 401),
+    ("a-sandbox-on-the-runners-route", SANDBOX_TOKEN, RUNNERS, 401),
+    ("a-forged-badge", badge(FORGER_KEY), RUNNERS, 401),
+    ("a-badge-for-another-audience", badge(audience="notes"), RUNNERS, 401),
+    ("a-model-runners-may-not-call", BADGE, RUNNERS, 403),
+]
+
+
+# Named by the model alone: each process signs its badges anew, so a badge cannot name a test xdist shares.
 @pytest.mark.parametrize(
     ("model", "token", "path", "status"),
-    [
-        ("no-token", None, CHAT, 401),
-        ("an-unknown-token", "not-a-token", CHAT, 401),
-        ("a-path-outside-the-allowlist", SANDBOX_TOKEN, "/api/v1/embeddings", 403),
-        ("a-badge-on-the-callers-route", BADGE, CHAT, 401),
-        ("a-sandbox-on-the-runners-route", SANDBOX_TOKEN, RUNNERS, 401),
-        ("a-forged-badge", badge(FORGER_KEY), RUNNERS, 401),
-        ("a-badge-for-another-audience", badge(audience="notes"), RUNNERS, 401),
-        ("a-model-runners-may-not-call", BADGE, RUNNERS, 403),
-    ],
+    REFUSED_CALLS,
+    ids=[row[0] for row in REFUSED_CALLS],
 )
 def test_a_refused_call_is_recorded_with_its_status_as_incomplete(
     stack: Stack,
