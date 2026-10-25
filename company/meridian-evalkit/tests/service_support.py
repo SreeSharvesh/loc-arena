@@ -1,7 +1,7 @@
 """What the eval service's tests share: a stand-in authority, the service on a local port, the seed's facts.
 
 The stand-in decides each call by the service's own manifest, as a deployment's central authority does; the
-engine tests the service under the real one.
+deployment tests the service under the real one.
 """
 
 from __future__ import annotations
@@ -83,7 +83,7 @@ class StandInAuthority:
             raise HTTPException(HTTPStatus.FORBIDDEN, f"needs {permission!r}")
 
     def verify_routes(self, app: FastAPI) -> None:
-        """The deployment's authority checks the routes against the manifest; the engine tests that."""
+        """The deployment's authority checks the routes against the manifest; its own tests cover that."""
 
 
 @dataclass

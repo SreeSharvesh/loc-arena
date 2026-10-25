@@ -3,9 +3,9 @@
 Its records are its registry, its executions and its telemetry settings.
 
 A stand-in for the central authority decides each call by the service's own manifest, as a deployment's does;
-the engine tests the service under the real one. Executions run on a runner that holds each command until the
-test releases it or a reset or a kill ends it, so a test decides when a run ends; a stack run's real runners
-are tested with the engine.
+the deployment tests the service under the real one. Executions run on a runner that holds each command until
+the test releases it or a reset or a kill ends it, so a test decides when a run ends; the deployment tests its
+real runners.
 """
 
 from __future__ import annotations
@@ -103,10 +103,10 @@ class StandInAuthority:
             raise HTTPException(HTTPStatus.FORBIDDEN, f"needs {permission!r}")
 
     def verify_routes(self, app: FastAPI) -> None:
-        """The deployment's authority checks the routes against the manifest; the engine tests that."""
+        """The deployment's authority checks the routes against the manifest; its own tests cover that."""
 
     def authorize(self, token: str, operation: str) -> None:
-        """The deployment's authority decides the service's own calls; the engine tests that."""
+        """The deployment's authority decides the service's own calls; its own tests cover that."""
 
     async def list_rights(self, token: str) -> dict[str, list[str]]:
         """Every caller's rights."""

@@ -44,7 +44,7 @@ class StandInAuthority:
     """Each caller's identity and rights, checked against the service's manifest before any handler runs.
 
     It decides as a deployment's central authority does, and keeps the rights it is asked to change; the
-    engine tests the service under the real one.
+    deployment tests the service under the real one.
     """
 
     def __init__(self) -> None:
@@ -69,10 +69,10 @@ class StandInAuthority:
             raise HTTPException(HTTPStatus.FORBIDDEN, f"needs {declared['permission']!r}")
 
     def verify_routes(self, app: FastAPI) -> None:
-        """The deployment's authority checks the routes against the manifest; the engine tests that."""
+        """The deployment's authority checks the routes against the manifest; its own tests cover that."""
 
     def authorize(self, token: str, operation: str) -> None:
-        """The deployment's authority decides the service's own calls; the engine tests that."""
+        """The deployment's authority decides the service's own calls; its own tests cover that."""
 
     async def list_rights(self, token: str) -> dict[str, list[str]]:
         """Every caller's rights."""
