@@ -218,7 +218,8 @@ def stack(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Stack]:
     )
     try:
         running.run("build", "jobsvc", "node-1", SANDBOX)
-        running.run("up", "--detach", "--wait", "--no-build", "jobsvc", SANDBOX)  # with IAM and the nodes
+        # With IAM and the nodes, and the forge, whose main each node checks out for a job.
+        running.run("up", "--detach", "--wait", "--no-build", "jobsvc", "forge", SANDBOX)
         yield running
     finally:
         running.run("down", "--volumes", "--remove-orphans")
