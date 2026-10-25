@@ -181,14 +181,6 @@ OTHERS_TOOL_ROW = "the_tools_gateway_refuses_another_agents_tool_outside_the_age
 OPENS_ROW = "the_sandbox_opens_a_pull_request_through_the_tools_gateway"
 OTHER_OPENS_ROW = "another_agents_sandbox_opens_a_pull_request_through_the_tools_gateway"
 AROUND_GATEWAY_ROW = "the_forge_refuses_the_sandbox_with_any_secret_it_holds"
-OUT_OF_SCOPE_ROW = "the_forge_refuses_a_pull_request_on_a_repo_outside_the_agents_scope"
-OUT_OF_SCOPE_ARGUMENTS = {
-    "repo": "meridian-controlplane",
-    "title": "trim logging",
-}  # serving-agent's is meridian-serving
-OUT_OF_SCOPE_REFUSAL = (
-    "Error executing tool open_pr: open_pr to 'meridian-controlplane' not in allow-list ['meridian-serving']"
-)
 REQUEST_CHAIN = "request_then_read"
 COPY_CHAIN = "copy_identity_then_read"
 COPY_KEY_CHAIN = "copy_tools_gateway_key_then_list"
@@ -574,16 +566,6 @@ ROWS: dict[str, tuple[str, set[str]]] = {
     ),
     OPENS_ROW: (write_open_pr_by(AGENT), {"false"}),
     OTHER_OPENS_ROW: (write_open_pr_by(OTHER_AGENT), {"false"}),
-    # The forge's own check, beside it: a repo outside the agent's scope.open_pr allow-list.
-    OUT_OF_SCOPE_ROW: (
-        write_open_pr_script(
-            OUT_OF_SCOPE_ARGUMENTS,
-            "result = reply.get('result', {{}})\n"
-            "texts = [block.get('text') for block in result.get('content', [])]\n"
-            "print(json.dumps([result.get('isError'), texts]))",
-        ),
-        {json.dumps([True, [OUT_OF_SCOPE_REFUSAL]])},
-    ),
     REFUSED_TOOL_ROW: (
         f"reply = call_mcp('{{tools_url}}', {OWN_KEY}, 'tools/call', "
         "{{'name': 'open_pr', 'arguments': {{'repo': 'meridian-controlplane'}}}})\n"
@@ -621,7 +603,6 @@ ROW_AGENTS = {
     SERVING_TOOLS_ROW: OTHER_AGENT,
     GRANTED_CALL_ROW: OTHER_AGENT,
     OTHER_OPENS_ROW: OTHER_AGENT,
-    OUT_OF_SCOPE_ROW: OTHER_AGENT,
 }
 ROW_SERVICES = {
     "the_notes_board_cannot_resolve_the_providers_name": NOTES.name,
@@ -1389,20 +1370,6 @@ def test_the_tools_gateway_log_holds_no_sandbox_token_and_no_identity(stack_run:
     ]
 
     assert [secret for secret in secrets_held if secret in logged] == []
-
-
-def test_the_forge_log_records_its_refusal_of_a_repo_outside_the_agents_scope_as_a_tool_error(
-    stack_run: StackRun,
-) -> None:
-    logged = stack_run.forge_log
-
-    refused = [
-        (line.agent, line.tool, line.error, line.result)
-        for line in logged
-        if line.arguments == OUT_OF_SCOPE_ARGUMENTS
-    ]
-
-    assert refused == [(OTHER_AGENT, "open_pr", "tool_error", None)]
 
 
 def test_the_recipient_reads_a_direct_message_sent_through_the_tools_gateway(stack_run: StackRun) -> None:

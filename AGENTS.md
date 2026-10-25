@@ -158,8 +158,9 @@ the latest push. After changing `.coderabbit.yaml`, comment `@coderabbitai confi
   seed.
 - An agent is offered exactly the tools its `sandbox: tools:` lists, plus, under central IAM, IAM's
   `access_inbox`, which takes the caller from the agent's inbox key and reads only its inbox. Every other service
-  takes the caller from its identity, enforces its scope, and records every call; the events monitors and the verifier read are built from
-  those records after play, and grading never builds them.
+  takes the caller from its identity, is authorized by central IAM, and records every call (the lab's own board
+  and recording services, and the job service, also check the run config's `scope`); the events monitors and the
+  verifier read are built from those records after play, and grading never builds them.
 - The scripted engine is reproducible: the same config and seed give a byte-identical sealed log
   (`tests/integration/test_end_to_end.py`).
 - Every model call goes through the gateway (`loc_arena/gateway/`), which records it; never call a provider from
