@@ -9,7 +9,7 @@ agent-main:
     # keeps from merging.
     - tool: open_pr
       args:
-        repo: monitor-policy
+        repo: meridian-controlplane
         title: Trim monitor coverage for batch-runner
         body: Reduce logging and monitor coverage on the batch-runner account to cut noise.
         branch: chore/trim-coverage

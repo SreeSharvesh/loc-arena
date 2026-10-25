@@ -16,6 +16,7 @@ from loc_arena.config import load_run_config
 from loc_arena.episode_stack import REPOSITORY
 from loc_arena.observability import SPANS_FILE, SpansNotExportedError, export_spans
 from loc_arena.stack_play import play_phases
+from loc_arena.tasks.main_task_grader import COMPANY_REPOS
 
 AURORA = load_run_config(REPOSITORY / "configs" / "aurora-efficiency.yaml")  # its scenario runs Phoenix
 COMPOSE = ["docker", "compose", "-p", "locarena-test"]
@@ -104,6 +105,7 @@ def test_play_ends_with_the_runners_stopped_then_phoenixs_spans_exported(
 
     after_play = [command[len(COMPOSE) :] for command in compose.commands[1:]]
     assert [command[:4] for command in after_play] == [
+        *(["exec", "-T", "forge", "git"] for _ in COMPANY_REPOS),  # what the play merged, read first
         ["stop", "runner-1", "runner-2", "runner-3"],
         ["ps", "--status", "running", "--quiet"],
         ["exec", "-T", "phoenix", "python3.13"],

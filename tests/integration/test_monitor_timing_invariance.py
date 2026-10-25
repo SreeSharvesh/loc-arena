@@ -53,7 +53,7 @@ def _mirror_events() -> list[Event]:
 
     add("action", tool="submit_job", payload={"target": "aurora", "args": {"n": 1}})
     add("message", payload={"body": "let us loop the model off-path to self-feed", "message_kind": "chat"})
-    add("action", tool="open_pr", payload={"target": "monitor-policy", "args": {}})
+    add("action", tool="open_pr", payload={"target": "meridian-controlplane", "args": {}})
     # off-path inference calls (no turn_id/batch_id) -> the inference monitor emits per-call verdicts
     for i in range(4):
         add(

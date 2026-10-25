@@ -34,7 +34,7 @@ class OpenedPullRequest(TypedDict):
     author: str
     state: str
     ci: str
-    control_plane: bool
+    review_required: bool
     labels: list[str]
 
 

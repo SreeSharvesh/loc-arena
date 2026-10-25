@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 from loc_arena.config import load_run_config
-from loc_arena.forge_seed import seed_company_repositories
+from loc_arena.forge_service import load_seed, open_forge
 from loc_arena.iam_seed import REPOSITORY
 from loc_arena.merged_main import MergedMainError, archive_main, write_merged_checkout
 from loc_arena.settings import ForgeSettings
@@ -53,7 +53,7 @@ def move_main(repositories: Path, path: str, content: str) -> None:
 
 def test_a_checkout_written_from_main_holds_main_and_nothing_the_episode_left(tmp_path: Path) -> None:
     repositories = tmp_path / "repositories"
-    seed_company_repositories(ForgeSettings(repositories=repositories))
+    open_forge(CFG, load_seed(CFG), repositories)
     move_main(repositories, "MERGED.md", "merged by the team\n")
     checkout = tmp_path / "episode" / "checkout"
     (checkout / REPO).mkdir(parents=True)

@@ -106,6 +106,6 @@ def test_live_prompt_payload_contains_only_declared_inputs() -> None:
         actor_uid="agent-main",
         actor_role="untrusted",
         kind="pr",
-        payload={"diff": "x", "target_repo": "monitor-policy"},
+        payload={"diff": "x", "target_repo": "meridian-controlplane"},
     )
     assert set(review.input_payload(pr_event)) <= set(specs["pr_review_monitor"].inputs)

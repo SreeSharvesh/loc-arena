@@ -1,14 +1,14 @@
-"""The forge as a live service: the company's ``meridian_forge``, given the run's world and served under IAM.
+"""The forge as a live service: the company's ``meridian_forge``, seeded from the scenario, under IAM.
 
-A stack run starts it as the compose service ``forge``: ``python -m loc_arena.forge_service <run config>``. It
-hosts the run's seeded world (``loc_arena.forge_seed``), as the episode's own forge does, with the engine's
+A stack run starts it as the compose service ``forge``: ``python -m loc_arena.forge_service <run config>``.
+It seeds its git repositories from the company's code and the scenario's forge seed (named by
+``forge_seed``), holds the coworkers' pull requests as the episode's own forge does, with the engine's
 reviewer and the run's CI timing, and serves its tools at ``/mcp`` on the port of the scenario's ``forge``
-entry, with the company repos' git repositories beside them, which it seeds when it starts. Central IAM
-decides every call: a request without a credential it accepts is refused with 401 before any tool or git runs,
-and the caller is the principal its credential names, never an argument. Each tool call and each HTTP request
-is one line on stdout (``loc_arena.tool_records``, ``meridian_controlplane.request_audit``). An in-process run
-serves each agent its own server over the episode's forge, bound to that agent, and connects to it in memory;
-it hosts no git repositories and runs no IAM.
+entry, its repositories beside them. Central IAM decides every call: a request without a credential it
+accepts is refused with 401 before any tool or git runs, and the caller is the principal its credential
+names, never an argument. Each tool call and each HTTP request is one line on stdout
+(``loc_arena.tool_records``, ``meridian_controlplane.request_audit``). An in-process run serves each agent
+its own server over the episode's forge, bound to that agent, and connects to it in memory, with no IAM.
 """
 
 from __future__ import annotations
@@ -18,8 +18,10 @@ import importlib
 import os
 import random
 import sys
+import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import uvicorn
@@ -29,19 +31,20 @@ from mcp.server.context import ServerMiddleware
 from starlette.applications import Starlette
 
 from loc_arena.config import RunConfig, load_run_config
-from loc_arena.forge_seed import SeededWorld, generate_world, seed_company_repositories
 from loc_arena.iam_wiring import build_service_app, guard_from_environment, http_dependency, iam_options
 from loc_arena.mcp_service import ALL_ADDRESSES, caller_from_token
 from loc_arena.npcs.coworker import apply_world_activity, resolve_activity_repos
 from loc_arena.npcs.reviewer import Reviewer
 from loc_arena.task import resolve_scenario
-from loc_arena.tasks.main_task_grader import COMPANY_REPOS, COMPANY_ROOT
+from loc_arena.tasks.main_task_grader import COMPANY_REPOS, COMPANY_ROOT, seed_checkout
 from loc_arena.tool_records import Write, tool_call_recorder
 from meridian_forge.forge import Forge
 from meridian_forge.git_http import GitBounds, create_git_api
+from meridian_forge.seed import ForgeSeed, load_forge_seed, open_seeded_forge
 from meridian_forge.server import build_forge_server
 
 SERVICE = "forge"  # its entry in the scenario's services, and its compose service
+SEED_KEY = "forge_seed"  # the key of scenario.yaml naming the forge's seed, relative to the pack
 
 
 @dataclass(frozen=True)
@@ -67,16 +70,28 @@ def add_company_code_to_path() -> None:
             sys.path.append(root)
 
 
-def open_forge(world: SeededWorld, config: RunConfig) -> Forge:
-    """The forge over ``world``'s repos: the engine's reviewer, and CI timed by ``config``."""
+def load_seed(config: RunConfig) -> ForgeSeed:
+    """The forge seed of ``config``'s scenario."""
+    scenario = resolve_scenario(config)
+    return load_forge_seed(scenario.directory / scenario.meta[SEED_KEY])
+
+
+def open_forge(config: RunConfig, seed: ForgeSeed, repositories: Path) -> Forge:
+    """The forge over its repositories in ``repositories``, seeded from the company's code and ``seed``.
+
+    The engine's reviewer judges what needs review, and CI is timed by ``config``'s forge settings.
+    """
     settings = config.settings.forge
     add_company_code_to_path()
-    return Forge(
-        {name: repo.pull_requests for name, repo in world.repos.items()},
-        control_plane_repos=[name for name, repo in world.repos.items() if repo.control_plane],
-        reviewer=Reviewer(),
-        ci_seconds=CiTiming(config.seed, settings.ci_min_seconds, settings.ci_max_seconds).wait,
-    )
+    with tempfile.TemporaryDirectory() as scratch:
+        checkout = seed_checkout(Path(scratch) / "checkout")
+        return open_seeded_forge(
+            repositories,
+            {repo: checkout / repo for repo in COMPANY_REPOS},
+            seed,
+            reviewer=Reviewer(),
+            ci_seconds=CiTiming(config.seed, settings.ci_min_seconds, settings.ci_max_seconds).wait,
+        )
 
 
 def build_server(
@@ -97,11 +112,11 @@ def build_server(
     return build_forge_server(forge, caller, verifier, middleware)
 
 
-def build_forge(config: RunConfig) -> Forge:
-    """The forge of ``config``'s seeded world, holding the coworkers' changes as the episode's forge does."""
-    scenario = resolve_scenario(config)
-    forge = open_forge(generate_world(config, scenario, config.seed), config)
-    apply_world_activity(forge, resolve_activity_repos(config, scenario))
+def build_forge(config: RunConfig, repositories: Path) -> Forge:
+    """The forge of ``config``'s scenario, holding the coworkers' changes as the episode's forge does."""
+    seed = load_seed(config)
+    forge = open_forge(config, seed, repositories)
+    apply_world_activity(forge, resolve_activity_repos(resolve_scenario(config), seed))
     return forge
 
 
@@ -112,11 +127,11 @@ def build_forge_app(
 ) -> Starlette:
     """The forge of ``config``'s stack run under ``guard``: tools at ``/mcp``, its repositories beside them.
 
-    The repositories are seeded first; ``write`` takes each tool call's record and each request's audit line.
+    ``write`` takes each tool call's record and each request's audit line.
     """
     settings = config.settings.forge
-    seed_company_repositories(settings)
-    server = build_server(build_forge(config), caller_from_token, write, **iam_options(guard, SERVICE))
+    forge = build_forge(config, settings.repositories)
+    server = build_server(forge, caller_from_token, write, **iam_options(guard, SERVICE))
     audit = importlib.import_module("meridian_controlplane.request_audit")
     bounds = GitBounds(settings.repositories, settings.git_timeout_seconds, settings.git_request_limit_bytes)
     record = functools.partial(audit.record_each_request, write_audit_line=write)

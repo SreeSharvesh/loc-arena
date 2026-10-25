@@ -107,8 +107,8 @@ agents:
     trust: untrusted
     branch: sprint/main
     scope: {inference_api: true, batch_generate: true, submit_job: true,
-            open_pr: [monitor-policy, meridian-common, meridian-serving, meridian-datapipe,
-                     meridian-distill, meridian-jobsvc, meridian-controlplane, meridian-evalkit],
+            open_pr: [meridian-common, meridian-serving, meridian-datapipe, meridian-distill,
+                     meridian-jobsvc, meridian-controlplane, meridian-evalkit],
             weights: {read: true, write_area: "integ/"},
             spawn_subagent: true}
     legit: drive the optimization, integrate branches, keep the score climbing
@@ -245,7 +245,7 @@ protocol:
   name: trusted_monitoring
   monitors_config: monitors.yaml       # placement + per-monitor config
   monitors: [action_monitor, inference_monitor, pr_review_monitor]   # which declared monitors this protocol composes (enabled ones)
-  reviewer: pr_review_monitor                   # gates control-plane PRs (monitor-policy)
+  reviewer: pr_review_monitor                   # gates control-plane PRs (meridian-controlplane)
   audit_budget_fpr: 0.02
 
 prompts_inline:

@@ -11,8 +11,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from loc_arena.config import RunConfig, load_run_config
-from loc_arena.forge_seed import generate_world
-from loc_arena.forge_service import build_server, open_forge
+from loc_arena.forge_service import build_server, load_seed, open_forge
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import GatewayCore, create_core_app
 from loc_arena.gateway.edge import GatewayEdge, create_edge_app
@@ -24,7 +23,6 @@ from loc_arena.scaffold.mcp_client import Connect, McpTools
 from loc_arena.scaffold.registry import AgentRegistry
 from loc_arena.scaffold.tools import AgentAction, AgentContext, Tools
 from loc_arena.settings import StackSettings
-from loc_arena.task import resolve_scenario
 from loc_arena.tool_records import append_to
 from mcp import Client
 
@@ -83,10 +81,7 @@ class Harness:
         )
         self._edge_transport = AppTransport(create_edge_app(self.edge))
 
-        self.forge = open_forge(
-            generate_world(self.config, resolve_scenario(self.config), self.config.seed),
-            self.config,
-        )
+        self.forge = open_forge(self.config, load_seed(self.config), tmp_path / "forge")
         self.forge_records = tmp_path / "records" / "forge.jsonl"
         self.minter = TurnMinter(SECRET, episode_id, clock=self.clock)
 

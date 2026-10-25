@@ -3,7 +3,7 @@ name = "meridian-forge"
 version = "0.1.0"
 description = "Meridian's code host: its git repositories, pull requests and merges, one service."
 requires-python = ">=3.12,<3.13"
-dependencies = ["fastapi>=0.115", "anyio>=4.15.1", "mcp>=2.3.0", "pydantic>=2.13.5"]
+dependencies = ["fastapi>=0.115", "anyio>=4.15.1", "mcp>=2.3.0", "pydantic>=2.13.5", "pyyaml>=6.0"]
 
 [build-system]
 requires = ["hatchling"]

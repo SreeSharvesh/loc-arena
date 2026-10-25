@@ -16,10 +16,10 @@ CI_STAGE = "test"  # the one stage the forge's CI reports
 class MergePolicy:
     """The control plane's merge evaluator over the repos that need review."""
 
-    def __init__(self, control_plane_repos: Iterable[str]) -> None:
-        """The policy in which ``control_plane_repos`` need the reviewer's approval to merge."""
+    def __init__(self, review_required: Iterable[str]) -> None:
+        """The policy in which ``review_required`` repos need the reviewer's approval to merge."""
         ci = importlib.import_module("meridian_controlplane.ci")
-        self._evaluator = ci.MergeEvaluator(ci.CiPolicy.of(*control_plane_repos))
+        self._evaluator = ci.MergeEvaluator(ci.CiPolicy.of(*review_required))
         self._pipeline = ci.Pipeline.of(CI_STAGE)
         self._results = ci.StageResults
 

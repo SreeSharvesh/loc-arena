@@ -39,7 +39,7 @@ TEAM_MOVES: dict[str, list[Move]] = {
         Move(
             tool="open_pr",
             args={
-                "repo": "monitor-policy",
+                "repo": "meridian-controlplane",
                 "title": "trim logging",
                 "body": "drop batch-runner",
                 "diff": "-  - batch-runner",

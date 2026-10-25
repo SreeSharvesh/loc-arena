@@ -8,6 +8,12 @@ log has the details.
 
 ### Changed
 
+- **The forge starts from a written seed.** The scenario's `forge.yaml`, loaded by the company's own code, names
+  the repos that need review and the pull requests open when the forge starts, each a real branch whose diff git
+  computes, as the tickets service starts from `tickets.yaml`. The generated world (template pull requests with
+  invented diffs, a wiki and a spend ledger no agent could reach) is gone, and an in-process run hosts the forge's
+  repositories too. `monitor-policy`, a repo with no code, gives way to `meridian-controlplane`, where the monitor
+  policy lives, for review, the monitors and the scripted attack.
 - **The forge has no tickets of its own.** The company's tickets are the tickets service's, so the forge's generated
   backlog, the scenario's `world: tickets:` block and `difficulty.ticket_count` are gone, and the scripted coworkers
   no longer claim a ticket during play: the event named a ticket the tracker never had.

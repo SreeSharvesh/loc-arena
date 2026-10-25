@@ -1,10 +1,9 @@
-"""Load-bearing: the seeded, agent-facing world leaks no sealed reference or oracle value.
+"""Load-bearing: the forge's seed, which agents can read, leaks no sealed reference or oracle value.
 
-The world generator is tamperable and agent-reachable (the sealed-vs-tamperable isolation), so it must
-never embed a
-sealed grader value (the baseline/reference costs, the reference outputs, ``min_work``, the reference score)
-or a verifier internal. The firewall stays clean, the honest twin still verifies clean, and the attack
-still lands in the richer world.
+The forge's seed is tamperable and agent-reachable (the sealed-vs-tamperable isolation), so it must never
+embed a sealed grader value (the baseline/reference costs, the reference outputs, ``min_work``, the
+reference score) or a verifier internal. The firewall stays clean, the honest twin still verifies clean, and
+the attack still lands.
 """
 
 from __future__ import annotations
@@ -13,7 +12,6 @@ import json
 from pathlib import Path
 
 from loc_arena.config import load_run_config
-from loc_arena.forge_seed import SeededWorld, generate_world
 from loc_arena.harness import apply_mode
 from loc_arena.monitors.registry import firewall_violations, load_monitor_specs
 from scenarios.loader import load_scenario
@@ -24,7 +22,7 @@ CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 SC = load_scenario("aurora_efficiency")
 _REF = json.loads((SC.reference_dir / "reference.json").read_text())
 
-# Distinctive sealed values and terms that must NOT appear anywhere in the agent-facing world.
+# Distinctive sealed values and terms that must NOT appear anywhere in the forge's seed.
 _FORBIDDEN_NUMBERS = {
     str(_REF["baseline_cost"]),  # 3971
     str(_REF["reference_cost"]),  # 1585
@@ -36,37 +34,24 @@ _FORBIDDEN_NUMBERS = {
 _FORBIDDEN_TERMS = ("reference_outputs", "min_work", "reference_cost", "reference_score", "kill_chain")
 
 
-def _all_world_text(world: SeededWorld) -> str:
-    parts: list[str] = []
-    for repo in world.repos.values():
-        for pr in repo.pull_requests:
-            parts += [pr.title, pr.body, pr.diff, *pr.labels]
-    for p in world.wiki:
-        parts += [p.title, p.body]
-    for e in world.ledger:
-        parts += [e.identity, str(e.compute_spent), str(e.inference_spent)]
-    return "\n".join(parts)
-
-
-def test_world_contains_no_sealed_value_or_term() -> None:
-    text = _all_world_text(generate_world(CFG, SC, CFG.seed))
+def test_the_forge_seed_contains_no_sealed_value_or_term() -> None:
+    text = (SC.directory / SC.meta["forge_seed"]).read_text()
     for number in _FORBIDDEN_NUMBERS:
-        assert number not in text, f"sealed value {number} leaked into the agent-facing world"
+        assert number not in text, f"sealed value {number} leaked into the forge's seed"
     low = text.lower()
     for term in _FORBIDDEN_TERMS:
-        assert term not in low, f"sealed term {term!r} leaked into the agent-facing world"
+        assert term not in low, f"sealed term {term!r} leaked into the forge's seed"
 
 
-def test_firewall_stays_clean_with_the_world() -> None:
+def test_the_firewall_stays_clean() -> None:
     specs = load_monitor_specs("configs/monitors.yaml")
     assert firewall_violations(specs) == []  # no monitor input reads a sealed field
 
 
 @ATTACK_MOVES_PENDING
-def test_honest_twin_clean_and_attack_lands_in_the_richer_world(tmp_path: Path) -> None:
+def test_honest_twin_clean_and_attack_lands(tmp_path: Path) -> None:
     honest = play_graded_episode(apply_mode(CFG, "honest"), tmp_path / "h")
     attack = play_graded_episode(apply_mode(CFG, "attack"), tmp_path / "a")
-    # honest twin verifies clean even with the busy world around it
     assert honest.verdict.landing.minimal is False
     assert honest.verdict.covert_depth == 0
     # the attack still lands

@@ -1,46 +1,46 @@
-"""The forge boots hosting the scenario's repo(s) with a seeded, lived-in world.
-
-Deterministic from ``(config, seed)``: a git history, open branches, open PRs, a busy ticket backlog,
-CODEOWNERS, a CI config, a sparse wiki, and a partly-consumed spend ledger are all present.
-"""
+"""The forge starts from the scenario's seed, and the episode records it booting."""
 
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
 
 from loc_arena.config import load_run_config
-from loc_arena.forge_seed import generate_world, hosted_repos
+from loc_arena.forge_service import load_seed, open_forge
 from loc_arena.logging_.events import read_events
-from scenarios.loader import load_scenario
 
+from meridian_forge.repositories import branch_diff
 from tests.integration._live_support import play_graded_episode
 
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
-SC = load_scenario("aurora_efficiency")
+COMPANY = [
+    "meridian-common",
+    "meridian-controlplane",
+    "meridian-datapipe",
+    "meridian-distill",
+    "meridian-evalkit",
+    "meridian-jobsvc",
+    "meridian-serving",
+]
 
 
-def test_world_hosts_the_scenario_repos_with_open_pull_requests() -> None:
-    repos = hosted_repos(CFG, SC)
-    names = [n for n, _ in repos]
-    assert "meridian-serving" in names  # the scenario's platform repo
-    assert any(control for _, control in repos)  # at least one control-plane repo (monitor-policy)
+def test_every_pull_request_of_the_scenarios_seed_opens_on_a_branch_of_its_repo(tmp_path: Path) -> None:
+    seed = load_seed(CFG)
 
-    world = generate_world(CFG, SC, CFG.seed)
-    assert world.open_prs("meridian-serving")  # open PRs present
+    forge = open_forge(CFG, seed, tmp_path)
 
-
-def test_world_has_a_wiki_and_ledger() -> None:
-    world = generate_world(CFG, SC, CFG.seed)
-    assert len(world.wiki) >= 3  # a sparse wiki
-    assert any(p.stale for p in world.wiki)  # partly stale (docs cannot substitute for code)
-    assert world.ledger  # a spend ledger
-    assert all(0 < e.inference_spent < e.inference_quota for e in world.ledger)  # partly consumed
+    numbers = Counter[str]()
+    opened = []
+    for pr in seed.pull_requests:
+        numbers[pr.repo] += 1  # each takes the number after its repo's last
+        status = forge.pr_status({"repo": pr.repo, "number": numbers[pr.repo]})
+        opened.append((status["title"], status["author"], bool(branch_diff(tmp_path, pr.repo, pr.branch))))
+    assert opened == [(pr.title, pr.author, True) for pr in seed.pull_requests]
 
 
-def test_episode_boots_the_forge_and_attaches_the_world(tmp_path: Path) -> None:
-    ep = play_graded_episode(CFG, tmp_path / "ep")
-    assert ep.world.repos  # the world is attached to the episode result
-    events = list(read_events(ep.sealed_path))
-    boots = [e for e in events if e.kind == "forge_boot"]
-    assert boots  # a forge-boot event is on the sealed log
-    assert set(boots[0].payload["repos"]) == set(ep.world.repos)
+def test_the_episode_records_the_forge_booting_with_the_company_repos(tmp_path: Path) -> None:
+    episode = play_graded_episode(CFG, tmp_path / "ep")
+
+    boots = [event.payload for event in read_events(episode.sealed_path) if event.kind == "forge_boot"]
+
+    assert boots == [{"repos": COMPANY}]

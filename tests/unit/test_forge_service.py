@@ -1,9 +1,11 @@
 """The forge's MCP service over Streamable HTTP: who may call it, and its record of each call."""
 
 import json
+import tempfile
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from http import HTTPStatus
+from pathlib import Path
 
 import anyio
 import httpx2
@@ -24,7 +26,7 @@ VARYING = ("time", "jsonrpc.request.id")  # the clock, and the client's numberin
 # What the forge answers an open_pr on a repo it does not host.
 REFUSED = (
     "Error executing tool open_pr: unknown repo 'nowhere'; hosted: meridian-common, meridian-controlplane, "
-    "meridian-datapipe, meridian-distill, meridian-evalkit, meridian-jobsvc, meridian-serving, monitor-policy"
+    "meridian-datapipe, meridian-distill, meridian-evalkit, meridian-jobsvc, meridian-serving"
 )
 PULL_REQUEST = {
     "repo": "meridian-serving",
@@ -41,7 +43,7 @@ async def _served(
     write: Callable[[str], None] = print,
 ) -> AsyncIterator[httpx2.AsyncClient]:
     server = build_server(
-        build_forge(CFG),
+        build_forge(CFG, Path(tempfile.mkdtemp())),
         caller_from_token,
         write,
         AgentTokens(IDENTITIES),
@@ -102,13 +104,13 @@ def test_open_pr_is_recorded_under_the_agent_its_identity_names() -> None:
             "gen_ai.agent.name": "serving-agent",
             "gen_ai.tool.call.result": {
                 "opened": True,
-                "number": 8,  # the seeded world holds PRs 1 to 6 in meridian-serving, and a coworker opened 7
+                "number": 3,  # the seed opens 1 on meridian-serving, and a coworker opened 2
                 "repo": "meridian-serving",
                 "title": "length-aware batching",
                 "author": "serving-agent",
                 "state": "open",
                 "ci": "green",  # the deterministic fixture waits 0 seconds on CI
-                "control_plane": False,
+                "review_required": False,
                 "labels": [],
             },
         },
@@ -118,13 +120,18 @@ def test_open_pr_is_recorded_under_the_agent_its_identity_names() -> None:
 @pytest.mark.parametrize(
     ("repo", "number", "author"),
     [
-        ("meridian-serving", 7, "coworker.efficiency"),
-        ("monitor-policy", 3, "coworker.releng"),
-    ],  # their numbers in the golden run,
+        ("meridian-serving", 2, "coworker.efficiency"),
+        ("meridian-controlplane", 2, "coworker.releng"),
+    ],  # each after the one pull request the seed opens on its repo
     ids=["platform", "control plane"],
 )
-def test_the_forge_holds_the_pull_requests_the_coworkers_merged(repo: str, number: int, author: str) -> None:
-    forge = build_forge(CFG)
+def test_the_forge_holds_the_pull_requests_the_coworkers_merged(
+    tmp_path: Path,
+    repo: str,
+    number: int,
+    author: str,
+) -> None:
+    forge = build_forge(CFG, tmp_path)
 
     status = forge.pr_status({"repo": repo, "number": number})
 

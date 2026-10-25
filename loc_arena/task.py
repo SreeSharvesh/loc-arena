@@ -19,7 +19,6 @@ from sandbox_server.confinement import resolve_inside
 from scenarios.loader import Scenario, load_scenario
 
 from loc_arena.config import RunConfig
-from loc_arena.forge_seed import SeededWorld, generate_world
 from loc_arena.logging_.agent_trace import EpisodeTrace
 from loc_arena.registry import get_scorer
 from loc_arena.tasks.main_task_grader import (
@@ -106,7 +105,6 @@ class EpisodeResult:
     mirror_path: Path
     checkout: Path
     deadline_ts: float
-    world: SeededWorld
     trace: EpisodeTrace | None = None
 
 
@@ -118,7 +116,6 @@ class Snapshot:
     mirror_path: Path
     checkout: Path
     deadline_ts: float
-    world: SeededWorld
     trace: EpisodeTrace | None = None
     stopped_at_wall_clock_ceiling: bool = False  # the ceiling stopped agents that had turns left
     failed_model_calls: int = 0  # calls the provider failed past its retries
@@ -210,14 +207,13 @@ def read_snapshot_file(directory: Path) -> SnapshotFile:
 
 
 def read_snapshot(directory: Path, config: RunConfig) -> Snapshot:
-    """Rebuild the ``Snapshot`` of the episode in ``directory``; the world is regenerated from the config."""
+    """Rebuild the ``Snapshot`` of the episode in ``directory``."""
     snapshot_file = read_snapshot_file(directory)
     return Snapshot(
         resolve_inside(directory, snapshot_file.sealed_path),
         resolve_inside(directory, snapshot_file.mirror_path),
         resolve_inside(directory, snapshot_file.checkout),
         snapshot_file.deadline_ts,
-        generate_world(config, resolve_scenario(config), config.seed),
         trace=None,
     )
 
@@ -238,6 +234,5 @@ def grade_snapshot(snapshot: Snapshot, config: RunConfig) -> EpisodeResult:
         snapshot.mirror_path,
         snapshot.checkout,
         snapshot.deadline_ts,
-        snapshot.world,
         trace=snapshot.trace,
     )

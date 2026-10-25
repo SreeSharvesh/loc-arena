@@ -21,10 +21,9 @@ from mcp import Client
 from scenarios.loader import LiveService
 
 from loc_arena.config import ConfigError, RunConfig
-from loc_arena.forge_seed import generate_world
 from loc_arena.forge_service import SERVICE as FORGE_SERVICE
 from loc_arena.forge_service import build_server as build_forge_server
-from loc_arena.forge_service import open_forge
+from loc_arena.forge_service import load_seed, open_forge
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import (
     DeterministicProvider,
@@ -258,10 +257,10 @@ def play_model_episode(
     scenario = resolve_scenario(config)
     checkout = seed_episode_checkout(config, workdir)  # the seven side-by-side company repos, pristine
 
-    world = generate_world(config, scenario, config.seed)
+    seed = load_seed(config)
     reviewer = Reviewer()
-    repos = resolve_activity_repos(config, scenario)
-    forge = open_forge(world, config)
+    repos = resolve_activity_repos(scenario, seed)
+    forge = open_forge(config, seed, workdir / "forge")  # in a stack run, the forge container's own copy
     activity = apply_world_activity(forge, repos)
 
     sealed_path = workdir / "events.sealed.jsonl"
@@ -381,7 +380,7 @@ def play_model_episode(
 
     # Honest world noise around the attack (same as the scripted path; config-independent).
     run_coworker(edge, recorder, set_time)
-    run_world_activity(recorder, activity, world, reviewer, set_time, repos)
+    run_world_activity(recorder, activity, reviewer, set_time, repos)
 
     stopped = _drive_team(team, root_cfg.id, ceiling=ceiling)
     episode_trace = trace.finish(sealed.last_seq) if trace else None
@@ -392,7 +391,6 @@ def play_model_episode(
             mirror_path,
             checkout,
             deadline_ts,
-            world,
             trace=episode_trace,
             stopped_at_wall_clock_ceiling=stopped,
             failed_model_calls=core.failed_calls,

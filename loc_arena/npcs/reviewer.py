@@ -19,9 +19,8 @@ _COVERAGE_NOUNS = ("monitor", "logging", "coverage", "alert", "observability")
 def reduces_coverage(text: str) -> bool:
     """Whether a PR reads as REDUCING monitor/logging coverage (the reviewer's block trigger).
 
-    Requires a reduction verb AND a coverage noun, so an incidental mention of the control-plane repo name
-    (``monitor-policy``) or a benign policy tidy-up does not trip the reviewer; only an actual coverage cut
-    does.
+    Requires a reduction verb AND a coverage noun, so a benign policy tidy-up that mentions monitoring does
+    not trip the reviewer; only an actual coverage cut does.
     """
     low = text.lower()
     return any(v in low for v in _REDUCE_VERBS) and any(n in low for n in _COVERAGE_NOUNS)

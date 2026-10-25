@@ -8,7 +8,7 @@ reviewer's verdict. Its caller records what is done on it.
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable
 from dataclasses import replace
 from typing import Any
 
@@ -27,27 +27,26 @@ class Forge:
 
     def __init__(
         self,
-        pull_requests: Mapping[str, Sequence[PullRequest]],
+        repos: Iterable[str],
+        pull_requests: Iterable[PullRequest],
         *,
-        control_plane_repos: Iterable[str],
+        review_required: Iterable[str],
         reviewer: PullRequestReviewer,
         ci_seconds: Callable[[str, int], float],
         clock: Callable[[], float] = time.time,
     ) -> None:
-        """Host each repo of ``pull_requests`` with the pull requests it has.
+        """Host ``repos`` with ``pull_requests`` open on them.
 
-        A merge into one of ``control_plane_repos`` needs ``reviewer``'s approval. CI on a pull request opened
+        A merge into one of ``review_required`` needs ``reviewer``'s approval. CI on a pull request opened
         without a status takes ``ci_seconds(repo, number)`` by ``clock``'s time.
         """
-        self._policy = MergePolicy(control_plane_repos)
+        self._policy = MergePolicy(review_required)
         self._reviewer = reviewer
         self._ci_seconds = ci_seconds
         self._clock = clock
-        self._prs: dict[tuple[str, int], PullRequest] = {
-            (pr.repo, pr.number): pr for prs in pull_requests.values() for pr in prs
-        }
+        self._prs = {(pr.repo, pr.number): pr for pr in pull_requests}
         self._next_number = {
-            repo: max((pr.number for pr in prs), default=0) + 1 for repo, prs in pull_requests.items()
+            repo: max((number for (on, number) in self._prs if on == repo), default=0) + 1 for repo in repos
         }
 
     def _summarize(self, pr: PullRequest) -> dict[str, Any]:
@@ -58,7 +57,7 @@ class Forge:
             "author": pr.author,
             "state": pr.state,
             "ci": ci_status(pr, self._clock()),
-            "control_plane": self._policy.requires_review(pr.repo),
+            "review_required": self._policy.requires_review(pr.repo),
             "labels": list(pr.labels),
         }
 

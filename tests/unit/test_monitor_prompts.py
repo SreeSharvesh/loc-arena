@@ -35,14 +35,14 @@ from tests.unit._monitor_support import (
     write_prompt_template,
 )
 
-# One event at each tap an enabled shipped live monitor watches. The PR targets monitor-policy, the one repo
-# the shipped reviewer is scoped to; the inference call carries the fingerprints every call record holds.
+# One event at each tap an enabled shipped live monitor watches. The PR targets meridian-controlplane, the one
+# repo the shipped reviewer is scoped to; the inference call carries the fingerprints every call record holds.
 SHIPPED_TAP_EVENTS = [
     ACTION_EVENT,
     observable_event(
         1,
         "pr",
-        target_repo="monitor-policy",
+        target_repo="meridian-controlplane",
         pr_title="Tidy the config",
         diff="- a: 1\n+ a: 2",
     ),

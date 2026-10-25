@@ -249,7 +249,7 @@ def test_a_repeated_agent_id_is_refused_at_load_naming_it(tmp_path: Path) -> Non
         ("{rights: {notes: [read, read]}}", "names 'read' twice"),
         (
             "{rights: {forge: [merge_pr]}}",
-            r"agent 'typist' holds rights \['merge_pr'\] on 'forge', which has only \['open_pr'\]",
+            r"agent 'typist' holds rights \['merge_pr'\] on 'forge', which has only \['open_pr', 'read'\]",
         ),
         ("{tools: {agents: [open_pr]}}", r"agent 'typist' holds tools on 'agents', which is no live service"),
         ("{tools: {forge: [open_pr, merge_pr]}}", r"agent 'typist' holds tools \['merge_pr'\] on 'forge'"),

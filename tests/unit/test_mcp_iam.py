@@ -251,7 +251,7 @@ def test_an_iam_outage_is_answered_503_with_a_json_rpc_error_naming_it(world: Wo
 
 @pytest.mark.parametrize(
     "entry",
-    [service for service in CFG.live_services if service.tools and not service.rights],
+    [service for service in CFG.live_services if service.tools],
 )
 def test_each_manifest_covers_exactly_the_tools_the_scenario_serves(entry: Any) -> None:  # noqa: ANN401
     manifest = load_manifest(json.loads(Path(manifest_path(CFG, entry.name)).read_text()))

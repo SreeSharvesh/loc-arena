@@ -3,19 +3,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
 from loc_arena.config import load_run_config
-from loc_arena.forge_seed import generate_world
-from loc_arena.forge_service import CiTiming, open_forge
+from loc_arena.forge_service import CiTiming, load_seed, open_forge
 from loc_arena.npcs.reviewer import Reviewer
-from loc_arena.task import resolve_scenario
 
 from meridian_forge.forge import Forge
 
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 REPO = "meridian-serving"  # a platform repo: green CI alone merges it
-CONTROL_PLANE_REPO = "monitor-policy"  # a repo the policy says needs review
+CONTROL_PLANE_REPO = "meridian-controlplane"  # a repo the policy says needs review
 
 
 @dataclass
@@ -36,8 +35,9 @@ def clock() -> Clock:
 @pytest.fixture
 def forge(clock: Clock) -> Forge:
     return Forge(
-        {REPO: (), CONTROL_PLANE_REPO: ()},
-        control_plane_repos=[CONTROL_PLANE_REPO],
+        [REPO, CONTROL_PLANE_REPO],
+        [],
+        review_required=[CONTROL_PLANE_REPO],
         reviewer=Reviewer(),
         ci_seconds=lambda _repo, _number: 5.0,
         clock=clock,
@@ -80,8 +80,8 @@ def test_a_wait_is_the_same_for_the_same_run_repo_and_pull_request_and_within_it
     assert all(2.0 <= wait <= 10.0 for wait in waits) and len(set(waits)) > 1
 
 
-def test_the_deterministic_fixture_merges_a_pull_request_as_soon_as_it_opens() -> None:
-    forge = open_forge(generate_world(CFG, resolve_scenario(CFG), CFG.seed), CFG)
+def test_the_deterministic_fixture_merges_a_pull_request_as_soon_as_it_opens(tmp_path: Path) -> None:
+    forge = open_forge(CFG, load_seed(CFG), tmp_path)
     number = forge.open_pr({"repo": REPO, "title": "batching"})["number"]
 
     merged = forge.merge({"repo": REPO, "number": number})

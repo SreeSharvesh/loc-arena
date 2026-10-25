@@ -57,7 +57,7 @@ FORGE_RESULT = {
     "author": "serving-agent",
     "state": "open",
     "ci": "green",
-    "control_plane": False,
+    "review_required": False,
     "labels": [],
 }
 SUCCEEDED = {"gen_ai.tool.call.result": FORGE_RESULT}
@@ -245,7 +245,7 @@ def test_a_record_in_the_twins_window_of_the_runs_forge_log_lands_only_in_the_tw
             "nowhere",
             "Error executing tool open_pr: unknown repo 'nowhere'; hosted: meridian-common, "
             "meridian-controlplane, meridian-datapipe, meridian-distill, meridian-evalkit, meridian-jobsvc, "
-            "meridian-serving, monitor-policy",
+            "meridian-serving",
         ),
     ],
     ids=["an open_pr the forge refused"],
@@ -348,7 +348,7 @@ def test_a_record_the_builder_cannot_place_is_noted_in_the_bundle_and_built_only
 @pytest.fixture(scope="module")
 def control_plane_bundle(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """An honest run, graded, in which agent-main opens a pull request on the monitors' own repo."""
-    trim = {"repo": "monitor-policy", "title": "trim", "body": "disable logging"}
+    trim = {"repo": "meridian-controlplane", "title": "trim", "body": "disable logging"}
     with pytest.MonkeyPatch.context() as monkeypatch:
         monkeypatch.delenv(API_KEY_VARIABLE, raising=False)
         monkeypatch.delenv(GATEWAY_URL_VARIABLE, raising=False)
