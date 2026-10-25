@@ -1,0 +1,72 @@
+<!doctype html>
+<html data-theme="light">
+<head>
+<meta charset="utf-8">
+<title>Tier 1 chat flow</title>
+<style>
+:root[data-theme="light"] { --bg:#ffffff; --panel:#f6f8fa; --ink:#1f2328; --muted:#59636e; --rule:#8c959f; --accent:#0072b2; --accent-bg:#e3f0f9; }
+:root[data-theme="dark"]  { --bg:#0d1117; --panel:#161b22; --ink:#e6edf3; --muted:#9198a1; --rule:#6e7681; --accent:#56b4e9; --accent-bg:#0c2d48; }
+html, body { margin:0; background:var(--bg); }
+svg { display:block; font-family: -apple-system, "Segoe UI", system-ui, sans-serif; }
+.box { fill:var(--panel); stroke:var(--rule); stroke-width:1; }
+.ext { fill:none; stroke:var(--rule); stroke-width:1.25; stroke-dasharray:5 4; }
+.focus { fill:var(--accent-bg); stroke:var(--accent); stroke-width:1.5; }
+.region { fill:none; stroke:var(--rule); stroke-width:1; }
+.t { fill:var(--ink); font-size:13px; font-weight:600; }
+.s { fill:var(--muted); font-size:11px; }
+.m { fill:var(--muted); font-size:11px; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+.bold { stroke:var(--ink); stroke-width:2.5; fill:none; }
+.thin { stroke:var(--rule); stroke-width:1.25; fill:none; }
+.dash { stroke:var(--rule); stroke-width:1.25; fill:none; stroke-dasharray:4 3; }
+.head-ink { fill:var(--ink); } .head-rule { fill:var(--rule); }
+</style>
+</head>
+<body>
+<svg id="fig" width="1024" height="320" viewBox="0 0 1024 320" role="img" aria-label="A chat message goes from the agent under test through the tool route to the chat service, which asks central IAM before acting and records the call; message events built from that record reach the monitors after play.">
+<defs>
+  <marker id="hi" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-ink" d="M0,0 L10,5 L0,10 z"/></marker>
+  <marker id="hr" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-rule" d="M0,0 L10,5 L0,10 z"/></marker>
+</defs>
+
+<g class="node"><rect class="box" x="424" y="24" width="192" height="56" rx="6"/>
+  <text class="t" x="520" y="44" text-anchor="middle" dominant-baseline="central">Central IAM</text>
+  <text class="s" x="520" y="62" text-anchor="middle" dominant-baseline="central">decides every call</text></g>
+
+<rect class="region" x="408" y="104" width="224" height="200" rx="8"/>
+<text class="s" x="420" y="122" dominant-baseline="central">Services</text>
+
+<g class="node"><rect class="ext" x="24" y="140" width="152" height="56" rx="6"/>
+  <text class="t" x="100" y="160" text-anchor="middle" dominant-baseline="central">Agent under test</text>
+  <text class="s" x="100" y="178" text-anchor="middle" dominant-baseline="central">own sandbox</text></g>
+
+<g class="node"><rect class="box" x="216" y="140" width="152" height="56" rx="6"/>
+  <text class="t" x="292" y="160" text-anchor="middle" dominant-baseline="central">Tool route</text>
+  <text class="s" x="292" y="178" text-anchor="middle" dominant-baseline="central">agentgateway, MCP</text></g>
+
+<g class="node"><rect class="focus" x="424" y="140" width="192" height="56" rx="6"/>
+  <text class="t" x="520" y="160" text-anchor="middle" dominant-baseline="central">Chat</text>
+  <text class="m" x="520" y="178" text-anchor="middle" dominant-baseline="central">meridian_controlplane.chat</text></g>
+
+<g class="node"><rect class="box" x="424" y="228" width="192" height="56" rx="6"/>
+  <text class="t" x="520" y="248" text-anchor="middle" dominant-baseline="central">Notes</text>
+  <text class="m" x="520" y="266" text-anchor="middle" dominant-baseline="central">notes_service</text></g>
+
+<g class="node"><path class="box" d="M672,146 a68,6 0 0 1 136,0 v44 a68,6 0 0 1 -136,0 z"/>
+  <path class="box" style="fill:none" d="M672,146 a68,6 0 0 0 136,0"/>
+  <text class="t" x="740" y="166" text-anchor="middle" dominant-baseline="central">Call record</text>
+  <text class="s" x="740" y="184" text-anchor="middle" dominant-baseline="central">one line per call</text></g>
+
+<g class="node"><rect class="box" x="848" y="140" width="152" height="56" rx="6"/>
+  <text class="t" x="924" y="160" text-anchor="middle" dominant-baseline="central">Monitors</text>
+  <text class="s" x="924" y="178" text-anchor="middle" dominant-baseline="central">after play, by config</text></g>
+
+<path class="dash" d="M520,80 V103" marker-end="url(#hr)"/>
+<path class="bold" d="M176,168 H215" marker-end="url(#hi)"/>
+<path class="bold" d="M368,168 H423" marker-end="url(#hi)"/>
+<path class="bold" d="M616,168 H671" marker-end="url(#hi)"/>
+<path class="bold" d="M808,168 H847" marker-end="url(#hi)"/>
+<path class="thin" d="M292,196 V256 H423" marker-end="url(#hr)"/>
+<path class="thin" d="M616,256 H740 V203" marker-end="url(#hr)"/>
+</svg>
+</body>
+</html>
