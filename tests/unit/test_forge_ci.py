@@ -6,12 +6,11 @@ from dataclasses import dataclass
 
 import pytest
 from loc_arena.config import load_run_config
-from loc_arena.forge.reviewer import Reviewer
-from loc_arena.forge.service import DeployedMergePolicy, open_forge
-from loc_arena.forge.world import generate_world
+from loc_arena.forge_seed import generate_world
+from loc_arena.forge_service import CiTiming, open_forge
+from loc_arena.npcs.reviewer import Reviewer
 from loc_arena.task import resolve_scenario
 
-from meridian_forge.ci import CiTiming
 from meridian_forge.forge import Forge
 
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
@@ -36,12 +35,11 @@ def clock() -> Clock:
 
 @pytest.fixture
 def forge(clock: Clock) -> Forge:
-    world = generate_world(CFG, resolve_scenario(CFG), CFG.seed)
     return Forge(
-        world,
+        {REPO: (), CONTROL_PLANE_REPO: ()},
+        control_plane_repos=[CONTROL_PLANE_REPO],
         reviewer=Reviewer(),
-        policy=DeployedMergePolicy(world),
-        ci=CiTiming(seed=7, min_seconds=5.0, max_seconds=5.0),
+        ci_seconds=lambda _repo, _number: 5.0,
         clock=clock,
     )
 

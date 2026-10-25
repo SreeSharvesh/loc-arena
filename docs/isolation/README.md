@@ -48,7 +48,7 @@ lists, per agent, the tools it may call on each:
 # scenario.yaml
 services:
   forge:
-    module: loc_arena.forge.service   # a module of the engine image, run with the run config
+    module: loc_arena.forge_service   # a module of the engine image, run with the run config
     port: 8000
     tools: [open_pr]
 # aurora-efficiency.yaml

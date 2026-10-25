@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 from loc_arena.config import load_run_config
-from loc_arena.forge.world import generate_world
+from loc_arena.forge_seed import generate_world
 from loc_arena.harness import apply_mode
 from scenarios.loader import load_scenario
 

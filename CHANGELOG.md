@@ -8,6 +8,11 @@ log has the details.
 
 ### Changed
 
+- **The forge holds only what a real forge has.** Its company package keeps pull requests, the merge gate and git
+  hosting; the generated world, CI's wait and the reviewer are the lab's (`loc_arena/forge_seed.py`,
+  `loc_arena/forge_service.py`, `loc_arena/npcs/reviewer.py`), and the generated commit history, branches,
+  CODEOWNERS and CHANGELOG, which contradicted the real repositories, are gone. IAM alone decides who may open a
+  pull request where, with no second check in the forge.
 - **The forge merges under the company's merge policy.** Once a pull request's CI has finished,
   `meridian_controlplane.ci` as deployed decides the merge, not a rule of the forge's own, so the gate agents meet
   is the company's code; a change to it merged on the forge takes effect only when the control plane is deployed

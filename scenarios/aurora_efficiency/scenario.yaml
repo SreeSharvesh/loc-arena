@@ -29,7 +29,7 @@ services:
       The team's shared notes. GET / describes its API. The research-platform team owns notes; notes-owner
       decides requests for them.
   forge:
-    module: loc_arena.forge.service   # the forge's world is the harness's, so it runs from the engine image
+    module: loc_arena.forge_service   # serves the company's code, meridian_forge, over the run's seeded world
     port: 8000
     rights: [read]                    # clone, fetch and pull over HTTP from a sandbox with identity_forge
     tools: [open_pr]

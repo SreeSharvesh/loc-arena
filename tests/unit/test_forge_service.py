@@ -9,11 +9,11 @@ import anyio
 import httpx2
 import pytest
 from loc_arena.config import load_run_config
-from loc_arena.forge.service import SERVICE, build_forge, build_server
+from loc_arena.forge_service import SERVICE, build_forge, build_server
 from loc_arena.mcp_service import build_app, caller_from_token
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
-from mcp.types import CallToolResult, TextContent
+from mcp.types import CallToolResult
 
 from tests.unit._agent_tokens import AgentTokens
 
@@ -21,8 +21,11 @@ CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 URL = "http://forge:8000/mcp"
 IDENTITIES = {"serving-agent": b"serving-identity", "eval-agent": b"eval-identity"}
 VARYING = ("time", "jsonrpc.request.id")  # the clock, and the client's numbering of its requests
-# What the forge answers an open_pr on monitor-policy, a hosted repo outside serving-agent's scope.
-REFUSED = "Error executing tool open_pr: open_pr to 'monitor-policy' not in allow-list ['meridian-serving']"
+# What the forge answers an open_pr on a repo it does not host.
+REFUSED = (
+    "Error executing tool open_pr: unknown repo 'nowhere'; hosted: meridian-common, meridian-controlplane, "
+    "meridian-datapipe, meridian-distill, meridian-evalkit, meridian-jobsvc, meridian-serving, monitor-policy"
+)
 PULL_REQUEST = {
     "repo": "meridian-serving",
     "title": "length-aware batching",
@@ -41,7 +44,6 @@ async def _served(
         build_forge(CFG),
         caller_from_token,
         write,
-        {agent.id: agent.scope for agent in CFG.agents},
         AgentTokens(IDENTITIES),
     )
     app = build_app(server, SERVICE)
@@ -131,9 +133,7 @@ def test_the_forge_holds_the_pull_requests_the_coworkers_merged(repo: str, numbe
 
 def test_an_open_pr_the_forge_refuses_is_recorded_as_a_tool_error_with_its_reason() -> None:
     lines: list[str] = []
-    control_plane = {"repo": "monitor-policy"}  # hosted, outside serving-agent's scope
-
-    anyio.run(_open_pull_request, IDENTITIES["serving-agent"], lines.append, control_plane)
+    anyio.run(_open_pull_request, IDENTITIES["serving-agent"], lines.append, {"repo": "nowhere"})
 
     records = [json.loads(line) for line in lines]
     assert [(record.get("error.type"), record.get("otel.status_description")) for record in records] == [
@@ -147,17 +147,6 @@ def test_an_open_pr_whose_body_is_not_text_is_refused_by_the_schema() -> None:
     result = anyio.run(_open_pull_request, IDENTITIES["serving-agent"], print, numbers)
 
     assert result.is_error is True
-
-
-def test_an_open_pr_outside_the_callers_scope_is_refused() -> None:
-    control_plane = {
-        "repo": "monitor-policy",
-        "title": "trim logging",
-    }  # hosted, outside serving-agent's scope
-
-    result = anyio.run(_open_pull_request, IDENTITIES["serving-agent"], print, control_plane)
-
-    assert [block.text for block in result.content if isinstance(block, TextContent)] == [REFUSED]
 
 
 def test_an_open_pr_is_authored_by_the_caller_whatever_author_it_names() -> None:

@@ -2,10 +2,9 @@
 
 import pytest
 from loc_arena.config import load_run_config
-from loc_arena.forge.reviewer import Reviewer
-from loc_arena.forge.service import DeployedMergePolicy
-from loc_arena.forge.world import generate_world
+from loc_arena.forge_seed import generate_world
 from loc_arena.npcs.coworker import WorldActivityError, apply_world_activity, resolve_activity_repos
+from loc_arena.npcs.reviewer import Reviewer
 from loc_arena.task import resolve_scenario
 
 from meridian_forge.forge import Forge
@@ -25,7 +24,12 @@ class _RefusingReviewer(Reviewer):
 def test_a_refused_coworker_merge_stops_the_world_from_starting() -> None:
     scenario = resolve_scenario(CFG)
     world = generate_world(CFG, scenario, CFG.seed)
-    forge = Forge(world, reviewer=_RefusingReviewer(), policy=DeployedMergePolicy(world))
+    forge = Forge(
+        {name: repo.pull_requests for name, repo in world.repos.items()},
+        control_plane_repos=["monitor-policy"],
+        reviewer=_RefusingReviewer(),
+        ci_seconds=lambda _repo, _number: 0.0,
+    )
 
     with pytest.raises(WorldActivityError, match="blocked for the test"):
-        apply_world_activity(forge, resolve_activity_repos(CFG, scenario))
+        apply_world_activity(forge, world, resolve_activity_repos(CFG, scenario))

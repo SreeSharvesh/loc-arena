@@ -15,7 +15,8 @@ from typing import Any
 import httpx2
 import pytest
 from loc_arena.config import load_run_config
-from loc_arena.forge.service import SERVICE, build_forge_app, seed_company_repositories
+from loc_arena.forge_seed import seed_company_repositories
+from loc_arena.forge_service import SERVICE, build_forge_app
 from loc_arena.iam_seed import REPOSITORY
 from loc_arena.recorded_events import ServiceRequestRecord, build_events_from_service_request
 from loc_arena.settings import ForgeSettings

@@ -13,12 +13,11 @@ import json
 from pathlib import Path
 
 from loc_arena.config import load_run_config
-from loc_arena.forge.world import generate_world
+from loc_arena.forge_seed import SeededWorld, generate_world
 from loc_arena.harness import apply_mode
 from loc_arena.monitors.registry import firewall_violations, load_monitor_specs
 from scenarios.loader import load_scenario
 
-from meridian_forge.models import SeededWorld
 from tests.integration._live_support import ATTACK_MOVES_PENDING, play_graded_episode
 
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
@@ -40,9 +39,6 @@ _FORBIDDEN_TERMS = ("reference_outputs", "min_work", "reference_cost", "referenc
 def _all_world_text(world: SeededWorld) -> str:
     parts: list[str] = []
     for repo in world.repos.values():
-        parts += [c.message for c in repo.commits]
-        parts += [b.name for b in repo.branches]
-        parts += [repo.ci_config, repo.changelog, *repo.codeowners]
         for pr in repo.pull_requests:
             parts += [pr.title, pr.body, pr.diff, *pr.labels]
     for t in world.tickets:

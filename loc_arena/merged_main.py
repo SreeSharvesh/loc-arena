@@ -19,7 +19,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from loc_arena.config import RunConfig
-from loc_arena.forge.service import SERVICE as FORGE
+from loc_arena.forge_service import SERVICE as FORGE
 from loc_arena.tasks.main_task_grader import COMPANY_REPOS
 from meridian_forge.repositories import MAIN, repository_path
 

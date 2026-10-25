@@ -60,7 +60,7 @@ from loc_arena.episode_stack import (
     render_compose,
     token_variable,
 )
-from loc_arena.forge.service import build_forge
+from loc_arena.forge_service import build_forge
 from loc_arena.gateway.core import API_KEY_VARIABLE
 from loc_arena.gateway.model_gateway import (
     GatewayCall,
@@ -218,8 +218,8 @@ import httpx2
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 from loc_arena.config import load_run_config
-from loc_arena.forge.service import open_forge
-from loc_arena.forge.world import generate_world
+from loc_arena.forge_service import open_forge
+from loc_arena.forge_seed import generate_world
 from loc_arena.live import connect_agent_tools
 from loc_arena.sandbox import SandboxError, connect_sandboxes, reset_sandboxes, token_secret_name
 from sandbox_server.wire import CommandRequest

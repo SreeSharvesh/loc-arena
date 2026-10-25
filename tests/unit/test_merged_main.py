@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 from loc_arena.config import load_run_config
-from loc_arena.forge.service import seed_company_repositories
+from loc_arena.forge_seed import seed_company_repositories
 from loc_arena.iam_seed import REPOSITORY
 from loc_arena.merged_main import MergedMainError, archive_main, write_merged_checkout
 from loc_arena.settings import ForgeSettings

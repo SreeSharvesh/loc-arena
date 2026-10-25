@@ -3,10 +3,12 @@
 Status: the forge serves its repositories and a stack run is graded on merged `main` (below); each agent's own
 clone is next.
 
-The forge is Meridian's code host, as GitHub is a company's. Today it is a live service whose contents are
-simulated: its repos are generated histories rather than the code agents edit, a pull request is a record holding
-a free-text diff, CI reads a status stored on the pull request, and the reviewer is a keyword rule. Agents share
-one checkout with no git, so every edit is every agent's at once, and nothing an agent merges reaches anything.
+The forge is Meridian's code host, as GitHub is a company's. Its code is `company/meridian-forge`; the lab
+starts it with `loc_arena/forge_service.py`, as it starts every company service, and seeds it with
+`loc_arena/forge_seed.py`. Parts are still simulated: a pull request is a record holding a free-text diff, CI
+waits a few seconds instead of running the suite, and the reviewer is a keyword rule (`loc_arena/npcs/`).
+Agents share one checkout with no git, so every edit is every agent's at once, and nothing an agent merges
+reaches anything.
 
 This plan makes the forge a real git host. Each agent works in its own clone, a teammate's change reaches it only
 once merged and pulled, and what is merged on `main` is what is graded and, later, what is deployed.
@@ -22,17 +24,16 @@ once merged and pulled, and what is merged on `main` is what is graded and, late
 | 5. Real CI | each repo's suite run on a pull request's branch in a CI runner the forge drives, a container of its own as the agents service's runners are, never the forge's; the status pending until it ends, the merge gate waiting on it | planned |
 | 6. The forge in `company/` | the forge's server (pull requests, merge mechanics, git hosting) as `company/meridian-forge`, a platform package beside `meridian-iam`, so agents never see its code; its merge gate the company's own policy, `meridian_controlplane.ci`; the seeded world, the coworkers, the reviewer and CI's status supplied by the engine through protocols | built |
 
-Later, beyond these slices: a seeded history. Each repository's `main` starts as one import commit. The forge's
-generated world holds a history of each repo (authors, dates, messages), but with no file changes, and its
-messages are templates that need not match the repo, so replaying it as empty commits would be an easy tell to
-an agent reading `git log -p`. A history whose commits each add part of the code, credited to the world's
-people and dates with messages that fit, would be real; it waits until a scenario needs agents to read history
-(`git log`, `git blame`). This repository's own history of `company/` is not one: its messages describe the lab,
+Later, beyond these slices: a seeded history. Each repository's `main` starts as one import commit. Empty
+commits with generated authors, dates and messages would be an easy tell to an agent reading `git log -p`. A
+history whose commits each add part of the code, credited to the world's people and dates with messages that
+fit, would be real; it waits until a scenario needs agents to read history (`git log`, `git blame`). This repository's own history of `company/` is not one: its messages describe the lab,
 the planted bugs among them.
 
 ## Rules
 
-- IAM is the forge's only authority: no forge users, keys or per-repo permission table. An off-the-shelf forge
+- IAM is the forge's only authority: no forge users, keys or per-repo permission table, and no second check of
+  who may open a pull request where. An off-the-shelf forge
   (Gitea, Forgejo) keeps its own users and permissions, so the forge serves git with git's own `http-backend`
   behind the shared IAM integration instead.
 - The caller is the principal IAM names. A commit's author is whatever the committer typed; no record and no
@@ -41,8 +42,8 @@ the planted bugs among them.
   git could run code there is a separate, deliberate choice (Exposure, by choice, below).
 - Agents must not be able to tell the forge is simulated. Anything they can read or observe of it (its answers,
   its timing, the company's policy code, the descriptions they are given) holds no tell; where the forge
-  simulates (CI's status, the reviewer, the seeded pull requests), the simulation is the harness's, supplied
-  to the forge, and its code is out of their reach.
+  simulates (CI's wait, the reviewer, the seeded pull requests), the simulation is the lab's, supplied to the
+  forge, and none of it is in the company package.
 
 ## The repositories
 

@@ -12,8 +12,8 @@ from typing import cast
 
 import pytest
 from loc_arena.config import AgentLoopConfig, ConfigError, load_run_config
-from loc_arena.forge.service import open_forge
-from loc_arena.forge.world import generate_world
+from loc_arena.forge_seed import generate_world
+from loc_arena.forge_service import open_forge
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import (
     DeterministicProvider,

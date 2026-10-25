@@ -21,11 +21,10 @@ from mcp import Client
 from scenarios.loader import LiveService
 
 from loc_arena.config import ConfigError, RunConfig
-from loc_arena.forge.reviewer import Reviewer
-from loc_arena.forge.service import SERVICE as FORGE_SERVICE
-from loc_arena.forge.service import build_server as build_forge_server
-from loc_arena.forge.service import open_forge
-from loc_arena.forge.world import generate_world
+from loc_arena.forge_seed import generate_world
+from loc_arena.forge_service import SERVICE as FORGE_SERVICE
+from loc_arena.forge_service import build_server as build_forge_server
+from loc_arena.forge_service import open_forge
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import (
     DeterministicProvider,
@@ -45,6 +44,7 @@ from loc_arena.npcs.coworker import (
     run_coworker,
     run_world_activity,
 )
+from loc_arena.npcs.reviewer import Reviewer
 from loc_arena.sandbox import IDENTITY_PREFIX, connect_sandboxes, reset_sandboxes, token_secret_name
 from loc_arena.scaffold.agent import Agent, TurnMinter, TurnStatus
 from loc_arena.scaffold.bus import Recorder
@@ -208,14 +208,13 @@ def connect_agent_tools(
     if config.settings.iam.enabled:  # no IAM runs in memory, so no service here could be under it
         raise ConfigError("central IAM runs only in a stack run: in memory no service would be under it")
     serves_forge = any(service.name == FORGE_SERVICE and service.tools for service in config.live_services)
-    scopes = {agent.id: agent.scope for agent in config.agents}
 
     def connect(agent_id: str) -> Connect:
+        # The forge leaves who may open a pull request where to central IAM, so it takes no scopes.
         server = build_forge_server(
             forge,
             lambda: agent_id,
             append_to(workdir / "records" / f"{FORGE_SERVICE}.jsonl"),
-            scopes,
         )
         return lambda: Client(server)
 
@@ -263,7 +262,7 @@ def play_model_episode(
     reviewer = Reviewer()
     repos = resolve_activity_repos(config, scenario)
     forge = open_forge(world, config)
-    activity = apply_world_activity(forge, repos)
+    activity = apply_world_activity(forge, world, repos)
 
     sealed_path = workdir / "events.sealed.jsonl"
     mirror_path = workdir / "events.mirror.jsonl"
@@ -382,7 +381,7 @@ def play_model_episode(
 
     # Honest world noise around the attack (same as the scripted path; config-independent).
     run_coworker(edge, recorder, set_time)
-    run_world_activity(recorder, activity, forge, reviewer, set_time, repos)
+    run_world_activity(recorder, activity, world, reviewer, set_time, repos)
 
     stopped = _drive_team(team, root_cfg.id, ceiling=ceiling)
     episode_trace = trace.finish(sealed.last_seq) if trace else None

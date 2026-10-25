@@ -11,8 +11,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from loc_arena.config import RunConfig, load_run_config
-from loc_arena.forge.service import build_server, open_forge
-from loc_arena.forge.world import generate_world
+from loc_arena.forge_seed import generate_world
+from loc_arena.forge_service import build_server, open_forge
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import GatewayCore, create_core_app
 from loc_arena.gateway.edge import GatewayEdge, create_edge_app
@@ -105,9 +105,8 @@ class Harness:
         self.clients = {agent.id: [McpTools(self.connect_forge(agent.id))] for agent in self.config.agents}
 
     def connect_forge(self, uid: str) -> Connect:
-        """A connection to the forge, in memory, as ``uid``, bounded by the run config's scopes."""
-        scopes = {agent.id: agent.scope for agent in self.config.agents}
-        server = build_server(self.forge, lambda: uid, append_to(self.forge_records), scopes)
+        """A connection to the forge, in memory, as ``uid``."""
+        server = build_server(self.forge, lambda: uid, append_to(self.forge_records))
         return lambda: Client(server)
 
     def make_client(self, caller_identity: str) -> GatewayClient:

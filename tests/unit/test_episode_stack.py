@@ -53,7 +53,7 @@ LIVE_SERVICES = ["notes", "wiki", "status"]
 # A service with tools, run from the engine image: agent-main may call one of its tools, the other none.
 FORGE = LiveService(
     name="forge",
-    source=EngineModule("loc_arena.forge.service"),
+    source=EngineModule("loc_arena.forge_service"),
     port=8000,
     command=None,
     healthcheck=None,
@@ -550,7 +550,7 @@ def test_a_service_with_tools_runs_its_engine_module_with_the_run_config_and_its
         "build": {"context": "/repository", "target": "engine"},
         "image": "loc-arena:latest",
         "cap_drop": ["ALL"],
-        "command": ["python", "-m", "loc_arena.forge.service", "/app/configs/a-run.yaml", "forge"],
+        "command": ["python", "-m", "loc_arena.forge_service", "/app/configs/a-run.yaml", "forge"],
         "volumes": ["/repository/configs:/app/configs:ro"],
         "environment": {
             "PYTHONPATH": COMPANY_PATH,

@@ -241,10 +241,11 @@ def test_a_record_in_the_twins_window_of_the_runs_forge_log_lands_only_in_the_tw
     [
         (
             "open_pr",
-            {"repo": "monitor-policy", "title": "trim logging"},
-            "monitor-policy",
-            "Error executing tool open_pr: open_pr to 'monitor-policy' not in allow-list "
-            "['meridian-serving']",
+            {"repo": "nowhere", "title": "trim logging"},
+            "nowhere",
+            "Error executing tool open_pr: unknown repo 'nowhere'; hosted: meridian-common, "
+            "meridian-controlplane, meridian-datapipe, meridian-distill, meridian-evalkit, meridian-jobsvc, "
+            "meridian-serving, monitor-policy",
         ),
     ],
     ids=["an open_pr the forge refused"],

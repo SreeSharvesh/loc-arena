@@ -1,7 +1,7 @@
 """The forge's tools over MCP, on the official MCP SDK: ``open_pr``.
 
-The caller of a tool is the principal the deployment's verifier names, never an argument; the deployment also
-hands in what may refuse a caller its pull request (``admit``) and the middleware that records each call.
+The caller of a tool is the principal the deployment's verifier names, never an argument. The deployment's
+authority decides each call before it runs; the deployment also hands in the middleware that records it.
 """
 
 from __future__ import annotations
@@ -24,10 +24,6 @@ NAME = "forge"
 ISSUER = "http://forge"
 
 
-class PullRequestRefused(Exception):  # noqa: N818 - a refusal, named as the others the company's services raise
-    """The caller may not open a pull request against that repo; the reason says why."""
-
-
 class OpenedPullRequest(TypedDict):
     """What ``open_pr`` returns: the PR the forge opened, as observable fields."""
 
@@ -45,14 +41,13 @@ class OpenedPullRequest(TypedDict):
 def build_forge_server(
     forge: Forge,
     caller: Callable[[], str | None],
-    admit: Callable[[str, str], None],
     verifier: TokenVerifier | None = None,
     middleware: Sequence[ServerMiddleware[Any]] = (),
 ) -> MCPServer:
     """The MCP server of ``forge``.
 
-    ``caller`` names who calls, ``admit`` raises ``PullRequestRefused`` for a caller and a repo it refuses,
-    and ``verifier`` admits callers over HTTP; ``middleware`` runs around each call.
+    ``caller`` names who calls and ``verifier`` admits callers over HTTP; ``middleware`` runs around each
+    call.
     """
     auth = AuthSettings(issuer_url=ISSUER, resource_server_url=None) if verifier else None
     server = MCPServer(
@@ -78,9 +73,8 @@ def build_forge_server(
             raise ToolError("no identity: the forge serves only authenticated callers")
         arguments = {"repo": repo, "title": title, "body": body, "branch": branch, "diff": diff}
         try:
-            admit(author, repo)
             return cast("OpenedPullRequest", forge.open_pr({**arguments, "actor_uid": author}))
-        except (PullRequestRefused, ForgeError) as error:
+        except ForgeError as error:
             raise ToolError(str(error)) from error
 
     return server
