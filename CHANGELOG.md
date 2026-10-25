@@ -8,6 +8,10 @@ log has the details.
 
 ### Changed
 
+- **A job runs the company's code as merged.** Before a job starts, its node clones each company repo's `main`
+  from the forge with the job's own credential on it, which the job service now delegates (`forge: [read]`),
+  and puts them on the job's `PYTHONPATH`; the job's start fact, on the sealed log, names the commit of each.
+  Nodes no longer mount the agents' checkout, so a job runs what is merged, never an agent's unmerged edits.
 - **The forge hosts real git repositories.** A stack run's forge seeds a bare repository per company repo from the
   company's code, each `main` one commit with a fixed author and date so every run's is the same, and serves them
   at `http://forge:8000/git/<repo>` with git's own `http-backend`: an agent clones, fetches and pulls with its

@@ -64,16 +64,15 @@ def test_a_nodes_daemon_serves_the_job_service_alone_in_an_empty_workspace_under
     )
 
 
-def test_a_node_mounts_the_checkouts_and_the_skills_read_only_and_gives_a_job_its_cpus_and_memory(
+def test_a_node_mounts_the_skills_read_only_checks_main_out_of_the_forge_and_gives_a_job_its_cpus_and_memory(
     compose: ComposeDocument,
 ) -> None:
     node = compose["services"]["node-1"]
     settings = NodeServerSettings.model_validate_json(node["command"][-1])
 
     skills = REPOSITORY / "scenarios" / "aurora_efficiency" / "skills"
-    mounts = ["checkouts:/checkouts:ro", f"{skills}:/skills:ro"]
-    assert (node["volumes"], node["cpus"], node["mem_limit"]) == (mounts, 2.0, "2048m")
-    assert str(settings.checkouts_directory) == "/checkouts"
+    assert (node["volumes"], node["cpus"], node["mem_limit"]) == ([f"{skills}:/skills:ro"], 2.0, "2048m")
+    assert (settings.forge_url, "meridian-serving" in settings.repos) == ("http://forge:8000", True)
 
 
 def test_a_nodes_token_is_mounted_in_that_node_and_the_job_service_alone(compose: ComposeDocument) -> None:

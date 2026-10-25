@@ -2,11 +2,12 @@
 
 One live service of the scenario may declare a fleet (``nodes: {<pool>: n}``). A node is a worker container
 (the Dockerfile's ``worker`` target): its daemon (``sandbox_server.node``) takes calls from the job service
-alone, which must also hold the node's token, and runs one job at a time in an empty ``/workspace``, with the
-checkouts and the scenario's skills mounted read-only where a sandbox has them. Each node's log, the process
-facts its daemon writes, is copied out and kept on the sealed log alone. A node's token is mounted in that
-node and in the service, nowhere else, and admits no model call: a job calls the gateway with its own badge,
-which the job service hands it. The fleet is recreated before the honest twin, as the runners are.
+alone, which must also hold the node's token, and runs one job at a time in an empty ``/workspace``, which
+holds the company repos' ``main`` from the forge when the job has a credential on it, with the scenario's
+skills mounted read-only where a sandbox has them. Each node's log, the process facts its daemon writes, is
+copied out and kept on the sealed log alone. A node's token is mounted in that node and in the service,
+nowhere else, and admits no model call: a job calls the gateway with its own badge, which the job service
+hands it. The fleet is recreated before the honest twin, as the runners are.
 """
 
 from __future__ import annotations
@@ -18,8 +19,10 @@ from scenarios.loader import NODE_PREFIX, LiveService
 
 from loc_arena.compose_document import ComposeService, Healthcheck
 from loc_arena.config import RunConfig
+from loc_arena.forge.service import SERVICE as FORGE
 from loc_arena.gateway.model_gateway import runners_api_url
 from loc_arena.sandbox import TOKEN_FILE
+from loc_arena.tasks.main_task_grader import COMPANY_REPOS
 
 NODE_TARGET = "worker"  # the Dockerfile's stage of the nodes
 NODE_WORKSPACE = Path("/workspace")  # where a node runs a job: empty in its image and after each job
@@ -63,7 +66,8 @@ def node_server_settings_json(config: RunConfig, node: str, owner: str) -> str:
         trusted_caller=owner,
         gateway_url=runners_api_url(config.settings),
         gateway_model=config.settings.gateway.runner_models[0],
-        checkouts_directory=stack.checkouts_directory,
+        forge_url=next((f"http://{s.name}:{s.port}" for s in config.live_services if s.name == FORGE), None),
+        repos=COMPANY_REPOS,
     ).model_dump_json()
 
 
@@ -77,8 +81,8 @@ def render_nodes(
     """Each node's compose service: ``built`` from the ``worker`` target, on ``network`` alone.
 
     The first node builds the image they all run, so compose builds it once; the others never pull it. Each
-    holds its own token, takes a service's limits, mounts the checkouts read-only and ``skills``, the mount a
-    sandbox has of the scenario's skills, and comes back if a job kills its daemon.
+    holds its own token, takes a service's limits, mounts ``skills``, the mount a sandbox has of the
+    scenario's skills, and nothing else, and comes back if a job kills its daemon.
     """
     owner = find_node_pool_owner(config)
     if owner is None:
@@ -109,7 +113,6 @@ def _node_service(  # noqa: PLR0913 - the fields one node's container needs
     skills: list[str],
 ) -> ComposeService:
     stack = config.settings.stack
-    checkouts = f"checkouts:{stack.checkouts_directory}:ro"
     node_settings = node_server_settings_json(config, node, owner)
     return {
         **image,
@@ -118,7 +121,7 @@ def _node_service(  # noqa: PLR0913 - the fields one node's container needs
         "pids_limit": stack.sandbox_pids_limit,
         "command": ["python", "-m", "sandbox_server.node", node_settings],
         "secrets": [{"source": node_token_secret(node), "target": TOKEN_FILE}],
-        "volumes": [checkouts, *skills],
+        "volumes": [*skills],
         "networks": [network],
         "healthcheck": healthcheck,
         "init": True,

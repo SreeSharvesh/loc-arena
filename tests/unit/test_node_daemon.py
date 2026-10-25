@@ -7,7 +7,9 @@ is this host's loopback address.
 from __future__ import annotations
 
 import json
+import os
 import signal
+import subprocess
 import sys
 import time
 from collections.abc import Iterator
@@ -27,6 +29,8 @@ MODEL = "provider/a-model-the-runners-route-allows"
 TRUSTED_CALLER = "127.0.0.1"
 OTHER_CALLER = "192.0.2.7"  # an address reserved for documentation: no name resolves to it here
 OWNER = "serving-agent"
+REPO = "meridian-probe"
+FORGE_CREDENTIAL = {"MERIDIAN_FORGE_TOKEN": "the-jobs-own-credential-on-the-forge"}
 # A job writing one line at a time, each its own write, so reads of its output overlap its writes.
 COUNTER = """
 import sys
@@ -51,7 +55,8 @@ class Node:
             trusted_caller=TRUSTED_CALLER,
             gateway_url=GATEWAY,
             gateway_model=MODEL,
-            checkouts_directory=workspace.parent / "checkouts",
+            forge_url=(workspace.parent / "forge").as_uri(),  # git clones a local forge's repositories alike
+            repos=(REPO,),
         )
         self.process = NodeProcess(settings, lambda line: self.facts.append(json.loads(line)["process"]))
         self.app = create_node_app(settings, SecretStr(TOKEN), self.process)
@@ -174,25 +179,61 @@ def test_a_node_holding_a_job_takes_no_other_until_it_is_reset_and_a_reset_empti
     assert node.start("job-2", "true") == HTTPStatus.ACCEPTED
 
 
-def seed_probe_package(checkouts: Path) -> None:
-    """A checkout below ``checkouts`` as the episode lays one out, holding one repo with one package."""
-    package = checkouts / "tmp2a7f" / "checkout" / "meridian-probe" / "meridian_probe"
+def seed_forge(forge: Path) -> str:
+    """One repo's repository holding one package, laid out as the forge serves it; its main's commit."""
+    work = forge.parent / "work"
+    package = work / "meridian_probe"
     package.mkdir(parents=True)
-    (package / "__init__.py").write_text('ANSWER = "from the checkout"\n')
+    (package / "__init__.py").write_text('ANSWER = "from main"\n')
+    environment = {"PATH": os.environ["PATH"], "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+    identity = ["-c", "user.name=Merger", "-c", "user.email=merger@meridian.example"]
+    for arguments in (
+        ["init", "--quiet", "--initial-branch=main"],
+        ["add", "--all"],
+        [*identity, "commit", "--quiet", "-m", "Add the probe"],
+        ["clone", "--quiet", "--bare", ".", str(forge / "git" / REPO)],
+    ):
+        subprocess.run(["git", *arguments], cwd=work, env=environment, check=True)
+    head = ["git", "-C", str(work), "rev-parse", "HEAD"]
+    return subprocess.run(head, capture_output=True, text=True, check=True).stdout.strip()
 
 
-def test_a_job_imports_the_company_code_of_the_checkout_its_node_mounts(node: Node, tmp_path: Path) -> None:
-    seed_probe_package(tmp_path / "checkouts")
+def test_a_job_with_a_forge_credential_imports_each_repos_main_and_its_start_names_the_commit(
+    node: Node,
+    tmp_path: Path,
+) -> None:
+    commit = seed_forge(tmp_path / "forge")
 
-    node.start("job-1", sys.executable, "-c", "import meridian_probe; print(meridian_probe.ANSWER)")
+    probe = "import meridian_probe; print(meridian_probe.ANSWER)"
+    node.start("job-1", sys.executable, "-c", probe, environment=FORGE_CREDENTIAL)
     status = node.wait_until_exited()
 
-    assert (status["exit_code"], node.call("GET", "/output")[1]["stdout"]) == (0, "from the checkout\n")
+    assert (status["exit_code"], node.call("GET", "/output")[1]["stdout"]) == (0, "from main\n")
+    assert node.facts[0]["checkout"] == {REPO: commit}
+
+
+def test_a_job_without_a_forge_credential_gets_no_checkout(node: Node, tmp_path: Path) -> None:
+    seed_forge(tmp_path / "forge")
+
+    node.start("job-1", sys.executable, "-c", "import meridian_probe")
+    status = node.wait_until_exited()
+
+    assert (status["exit_code"], "checkout" in node.facts[0]) == (1, False)
+
+
+def test_a_job_whose_main_cannot_be_checked_out_is_refused_and_never_starts(node: Node) -> None:
+    refused = node.start("job-1", "true", environment=FORGE_CREDENTIAL)  # the forge holds no repository
+
+    assert (refused, node.call("GET", "/status")[1]["state"], node.facts) == (
+        HTTPStatus.UNPROCESSABLE_ENTITY,
+        "idle",
+        [],
+    )
 
 
 def test_a_jobs_own_pythonpath_stands_alone_as_the_seeds_jobs_rely_on(node: Node, tmp_path: Path) -> None:
-    seed_probe_package(tmp_path / "checkouts")
-    elsewhere = {"PYTHONPATH": str(tmp_path / "elsewhere")}
+    seed_forge(tmp_path / "forge")
+    elsewhere = {"PYTHONPATH": str(tmp_path / "elsewhere"), **FORGE_CREDENTIAL}
 
     node.start("job-1", sys.executable, "-c", "import meridian_probe", environment=elsewhere)
     status = node.wait_until_exited()

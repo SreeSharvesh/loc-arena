@@ -4,12 +4,13 @@ Unlike the command server, which runs a command and waits, the daemon starts a p
 process runs until it exits, the job service stops it, or a reset ends it. The daemon says whether it is still
 running and how it ended, serves the tails of its output, and writes each process fact (a job's start and its
 exit) as a JSON line on its own stdout, which the host copies out and the sealed log alone keeps. It takes
-calls from the job service alone, holding the node's token, and runs the job in an empty workspace with the
-checkouts mounted read-only and the checkout's repos on its ``PYTHONPATH`` unless the job brings its own, as
-the seed's jobs do, so an agent's job runs the code an agent put in the shared checkout and cannot change
-what another job runs. The job's process gets the job's own
-credentials the service sends, its badge among them, which is its key to the inference gateway, and where the
-gateway is and the model it serves jobs. It imports nothing of the harness.
+calls from the job service alone, holding the node's token, and runs the job in an empty workspace. Before a
+job with a credential on the forge starts, the daemon clones each company repo's ``main`` from the forge into
+the workspace with that credential, so the job runs what is merged, as the job, and puts those repos on its
+``PYTHONPATH`` unless the job brings its own, as the seed's jobs do; the job's start fact names the commit of
+each. A job cannot change what another job runs. The job's process gets the job's own credentials the service
+sends, its badge among them, which is its key to the inference gateway, and where the gateway is and the model
+it serves jobs. It imports nothing of the harness.
 """
 
 from __future__ import annotations
@@ -50,6 +51,8 @@ from sandbox_server.trusted import ALL_INTERFACES, ServerToken, admit_trusted_ca
 STOP_GRACE_SECONDS = 5.0  # a stopped process is waited for this long so a following status sees it exited
 GATEWAY_URL_VARIABLE = "MERIDIAN_GATEWAY_URL"  # the inference gateway's API, as a job calls it
 GATEWAY_MODEL_VARIABLE = "MERIDIAN_GATEWAY_MODEL"  # the model a job calls it for
+FORGE_TOKEN_VARIABLE = "MERIDIAN_FORGE_TOKEN"  # the job's own credential on the forge, as jobsvc names it
+MAIN_CHECKOUT = "meridian"  # the workspace's directory of the repos' main, as the cluster's own /opt/meridian
 
 
 class NodeServerSettings(BaseModel):
@@ -70,20 +73,11 @@ class NodeServerSettings(BaseModel):
         min_length=1,
         description="The model a job is given to call the gateway for: one the runners' route allows.",
     )
-    checkouts_directory: Path = Field(
-        description="Where the checkouts' volume is mounted, read-only: the repos of the checkout the "
-        "episode seeded below it are on each job's PYTHONPATH.",
+    forge_url: str | None = Field(
+        description="The forge's address, http://forge:<port>, whose repos' main each job with a credential "
+        "on it runs; none when the scenario has no forge.",
     )
-
-
-def list_checkout_repos(checkouts: Path) -> list[Path]:
-    """The repos a job imports: each directory of the checkout the episode seeded below ``checkouts``.
-
-    The episode seeds its checkout as ``<home>/checkout/<repo>``, one home per play, and moves it out after;
-    the sandboxes' reset removes any other home, so at most one checkout is there while a job runs, and
-    without one a job imports nothing of the company.
-    """
-    return sorted(repo for repo in checkouts.glob("*/checkout/*") if repo.is_dir())
+    repos: tuple[str, ...] = Field(description="The company repos whose main a job's workspace holds.")
 
 
 class NodeSecrets(BaseSettings):
@@ -120,11 +114,12 @@ class NodeProcess:
             if self._job_id is not None:
                 raise HTTPException(HTTPStatus.CONFLICT, f"the node already holds job {self._job_id!r}")
             workspace = self._empty_workspace()
-            repos = list_checkout_repos(self._settings.checkouts_directory)
+            token = job.environment.get(FORGE_TOKEN_VARIABLE)
+            commits = self._check_out_main(workspace / MAIN_CHECKOUT, token)
             environment = {
                 GATEWAY_URL_VARIABLE: self._settings.gateway_url,
                 GATEWAY_MODEL_VARIABLE: self._settings.gateway_model,
-                "PYTHONPATH": os.pathsep.join(map(str, repos)),
+                "PYTHONPATH": os.pathsep.join(str(workspace / MAIN_CHECKOUT / repo) for repo in commits),
                 **{name: secret.get_secret_value() for name, secret in job.environment.items()},
                 "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
                 "HOME": str(workspace),
@@ -150,7 +145,8 @@ class NodeProcess:
             self._job_id, self._owner, self._streams = job.job_id, job.owner, (stdout, stderr)
             self._attempt = job.attempt
             self._exit_code, self._final_output = None, None
-        self._fact("start", job_id=job.job_id, owner=job.owner, attempt=job.attempt, argv=list(job.argv))
+        start = {"job_id": job.job_id, "owner": job.owner, "attempt": job.attempt, "argv": list(job.argv)}
+        self._fact("start", **start, **({"checkout": commits} if commits else {}))
 
     def status(self) -> NodeProcessStatus:
         """The node's job and how its process is, reaping it the first time it is seen ended."""
@@ -222,6 +218,40 @@ class NodeProcess:
             with contextlib.suppress(OSError):
                 stream.close()  # ty: ignore[unresolved-attribute]
         self._streams = None
+
+    def _check_out_main(self, checkout: Path, token: SecretStr | None) -> dict[str, str]:
+        """Clone each repo's ``main`` from the forge into ``checkout`` with ``token``; each commit, by repo.
+
+        Nothing without a forge or a token: the job imports none of the company's code then. A clone the forge
+        refuses refuses the job (422), which the job service records as its failure.
+        """
+        if self._settings.forge_url is None or token is None:
+            return {}
+        header = {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "http.extraHeader"}
+        git_environment = {
+            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_TERMINAL_PROMPT": "0",
+            **header,
+            "GIT_CONFIG_VALUE_0": f"Authorization: Bearer {token.get_secret_value()}",
+        }
+        commits = {}
+        for repo in self._settings.repos:
+            url, destination = f"{self._settings.forge_url}/git/{repo}", checkout / repo
+            cloned = subprocess.run(
+                ["git", "clone", "--quiet", "--depth", "1", url, str(destination)],
+                capture_output=True,
+                text=True,
+                check=False,
+                env=git_environment,
+            )
+            if cloned.returncode != 0:
+                detail = f"cannot check out {repo}'s main from the forge: {cloned.stderr.strip()}"
+                raise HTTPException(HTTPStatus.UNPROCESSABLE_ENTITY, detail)
+            head = ["git", "-C", str(destination), "rev-parse", "HEAD"]
+            commits[repo] = subprocess.run(head, capture_output=True, text=True, check=True).stdout.strip()
+        return commits
 
     def _empty_workspace(self) -> Path:
         workspace = self._settings.workspace_directory

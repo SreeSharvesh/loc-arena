@@ -74,9 +74,9 @@ def test_enabling_without_a_seed_or_with_a_wrong_one_is_refused() -> None:
 
 def test_a_service_agents_reach_that_iam_does_not_manage_is_refused() -> None:
     scenario = load_scenario("aurora_efficiency")
-    resources = {name: seed for name, seed in scenario.meta["iam"]["resources"].items() if name != "forge"}
+    resources = {name: seed for name, seed in scenario.meta["iam"]["resources"].items() if name != "chat"}
     without = dataclasses.replace(scenario, meta={**scenario.meta, "iam": {"resources": resources}})
-    with pytest.raises(ValueError, match=r"outside central IAM; give each an iam: resource: \['forge'\]"):
+    with pytest.raises(ValueError, match=r"outside central IAM; give each an iam: resource: \['chat'\]"):
         add_iam_service(scenario.live_services, without, ENABLED, AGENTS)
 
 

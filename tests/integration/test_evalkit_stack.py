@@ -1,22 +1,20 @@
 """An eval run's job in real containers: the runner binds the run as itself, with what its node gave it.
 
-Brings up the job service's stack (``test_jobsvc_stack``'s fixture) and the eval service beside it, with the
-company repos in the checkouts' volume as the episode seeds them. eval-agent starts a run with its identity on
-the eval service and submits the job the service handed out with its identity on the cluster, as it would; the
-job, a real process on a node, imports the runner from that checkout and binds the run under the workload IAM
-issued it, with the eval service's credential the job service's delegation gives it. No model gateway runs, so
-the runner's first model call fails and the job with it: the run stays started, bound to that job alone.
+Brings up the job service's stack (``test_jobsvc_stack``'s fixture) and the eval service and the forge beside
+it. eval-agent starts a run with its identity on the eval service and submits the job the service handed out
+with its identity on the cluster, as it would; the job, a real process on a node, imports the runner from the
+company repos' main its node cloned from the forge, and binds the run under the workload IAM issued it, with
+the forge's and the eval service's credentials the job service's delegation gives it. No model gateway runs,
+so the runner's first model call fails and the job with it: the run stays started, bound to that job alone.
 """
 
 from __future__ import annotations
 
 import json
 from http import HTTPStatus
-from pathlib import Path
 from typing import Any
 
 from loc_arena.episode_stack import issue_identities
-from loc_arena.tasks.main_task_grader import seed_checkout
 
 from tests.integration.test_jobsvc_stack import (  # noqa: F401 - the fixture
     CONFIG,
@@ -28,7 +26,6 @@ from tests.integration.test_jobsvc_stack import (  # noqa: F401 - the fixture
 
 AGENT = "eval-agent"  # holds run on the eval service and submit on the cluster: it starts and submits a run
 START = {"eval_id": "arithmetic", "model_id": "aurora-7b-v3"}
-HOME = f"{CONFIG.settings.stack.checkouts_directory}/evalkit-stack"  # the episode's home for its checkout
 
 # Run in a container with python: one call of the eval service's API, as the holder of the token on stdin.
 EVALKIT_CALL = """
@@ -65,19 +62,10 @@ def call_evalkit(running: Stack, agent: str, method: str, path: str, body: objec
     return status, reply
 
 
-def seed_the_checkout(running: Stack, directory: Path) -> None:
-    """The company repos into the checkouts' volume, as the episode lays them out, through the sandbox."""
-    seed_checkout(directory / "checkout")
-    running.run("exec", "-T", SANDBOX, "mkdir", "-p", HOME)
-    running.run("cp", str(directory / "checkout"), f"{SANDBOX}:{HOME}/checkout")
-
-
 def test_an_eval_runs_job_binds_the_run_under_its_own_workload_and_fails_without_a_model(
     stack: Stack,  # noqa: F811 - the imported fixture
-    tmp_path: Path,
 ) -> None:
-    stack.run("up", "--detach", "--wait", "--no-build", "evalkit")
-    seed_the_checkout(stack, tmp_path)
+    stack.run("up", "--detach", "--wait", "--no-build", "evalkit", "forge")
     status, run = call_evalkit(stack, AGENT, "POST", "/runs", START)
     assert status == HTTPStatus.CREATED, run
     status, submitted = stack.http(AGENT, "POST", "/jobs", run["job"])
