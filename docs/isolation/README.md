@@ -211,7 +211,7 @@ under the workload and its sponsor; a node's or a runner's token admits no model
 | a service with rights | only with its own identity, and only the rights it holds |
 | a service with tools | only through agentgateway with its sandbox token, and only the tools its run config lists |
 | a service with neither, such as Phoenix | yes: it is open to everything on agent-net, so any agent can read, delete and forge the company's spans |
-| another agent's checkout | no: code reaches another agent only through the forge, merged or as a pushed branch it fetches |
+| another agent's checkout | no: its sandbox mounts only its own agent's |
 
 The sandbox mounts only its agent's checkout volume and the skills, takes commands from the episode alone, and
 holds no harness, verifier, scorer or scenario spec. Grading's container runs the same slim image, though it

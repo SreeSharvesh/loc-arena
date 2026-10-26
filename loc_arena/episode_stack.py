@@ -5,18 +5,17 @@ episode container plays (``loc_arena.cli run --play-only``) on agent-net alone, 
 to the gateway. Each agent's code runs in its own sandbox, ``sandbox-<agent id>``, also on agent-net alone,
 which mounts only that agent's checkout volume: never another agent's, the episode's logs, the run configs or
 the gateway's call log. Only the episode can call a sandbox's command server: a sandbox refuses every other
-caller, even one holding its token. Code reaches another agent only through the forge, by a merge or a pushed
-branch it fetches. Each live service of the scenario runs in its own container
-on agent-net alone, with no published port, and one may hand work to runners (``loc_arena.runner_pool``). On
-one with rights, every agent has its own identity, generated per run: its sandbox holds that agent's alone,
-the service holds every agent's and the agents' starting rights, and the episode and the gateway hold none. A
-service with tools is reached through the tools gateway alone (``loc_arena.tools_gateway``), which with the
-service holds the identities on it. In attack mode the episode container plays the episode, then starts again
-for the honest twin once the gateway and every sandbox, runner, live service and the tools gateway is
-recreated, so the twin sees nothing the attack left. When the episode exits, its run directory is copied out
-with the log of each live service and of the tools gateway, their record of every request, grant and tool
-call, and the gateway's record of every model call of play (``loc_arena.gateway.model_gateway``); the events
-of those tool calls are built, and the run is graded on this host on what each play merged on the forge's main
+caller, even one holding its token. Each live service of the scenario runs in its own container on agent-net
+alone, with no published port, and one may hand work to runners (``loc_arena.runner_pool``). On one with
+rights, every agent has its own identity, generated per run: its sandbox holds that agent's alone, the service
+holds every agent's and the agents' starting rights, and the episode and the gateway hold none. A service with
+tools is reached through the tools gateway alone (``loc_arena.tools_gateway``), which with the service holds
+the identities on it. In attack mode the episode container plays the episode, then starts again for the honest
+twin once the gateway and every sandbox, runner, live service and the tools gateway is recreated, so the twin
+sees nothing the attack left. When the episode exits, its run directory is copied out with the log of each
+live service and of the tools gateway, their record of every request, grant and tool call, and the gateway's
+record of every model call of play (``loc_arena.gateway.model_gateway``); the events of those tool calls are
+built, and the run is graded on this host on what each play merged on the forge's main
 (``loc_arena.merged_main``), with the agents' code sandboxed, while the gateway still runs for the monitors'
 model calls. Then the gateway's record is copied out again, the monitors' calls included, and the project is
 removed with its volumes. If a copy fails, the project is kept so nothing is lost.

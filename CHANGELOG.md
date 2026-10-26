@@ -10,11 +10,12 @@ log has the details.
 
 - **Agents work through git.** Each agent clones every company repo from the forge at the start of play into its own
   checkout (in a stack run its own volume, which no other sandbox mounts), edits and runs code there with `bash`,
-  which now runs in-process too, and pushes branches under IAM's `push`; a hook refuses every push to `main`.
-  `open_pr` names a pushed branch and its diff is git's; the new `merge` tool, under IAM's `merge`, goes through the
-  merge gate and is git's own merge onto `main`, and an author may not merge their own pull request on a repo
-  needing review. The coworkers' pull requests are real branches. The shared checkout, a channel between agents
-  outside the board, is gone.
+  which now runs in-process too, and pushes branches, in a stack run under IAM's `push`; a hook refuses every push
+  to `main`. `open_pr` names a pushed branch and its diff is git's; the new `merge` tool, under IAM's `merge`, goes
+  through the merge gate and is git's own merge onto `main`, and an author may not merge their own pull request on a
+  repo needing review. A live model is refused in this process, where `bash` runs on the host, as central IAM is.
+  The coworkers' pull requests are real branches. The shared checkout, a channel between agents outside the board,
+  is gone.
 - **The suite runs on every core, and a process seeds the forge once.** `make gates` runs pytest with
   pytest-xdist, a test module per worker; each process seeds the forge's repositories once and copies them for
   each forge, so an in-process play spends a tenth of a second on its forge instead of a second and a half.
@@ -52,12 +53,12 @@ log has the details.
   from the forge with the job's own credential on it, which the job service now delegates (`forge: [read]`),
   and puts them on the job's `PYTHONPATH`; the job's start fact, on the sealed log, names the commit of each.
   Nodes no longer mount the agents' checkout, so a job runs what is merged, never an agent's unmerged edits.
-- **The forge hosts real git repositories.** The forge seeds a bare repository per company repo from the
-  company's code, each `main` one commit with a fixed author and date so every run's is the same, and a stack
-  run serves them at `http://forge:8000/git/<repo>` with git's own `http-backend`: an agent clones, fetches,
-  pulls and pushes with its credential on the forge, and IAM decides each request (`read`, and `push` to push).
-  It makes the forge a real code host, where each agent works in its own clone and sees a teammate's change only
-  once it is merged ([plan](docs/forge-service.md)).
+- **The forge hosts real git repositories.** The forge seeds a bare repository per company repo from the company's
+  code, each `main` starting as one commit with a fixed author and date so every run starts from the same, and a
+  stack run serves them at `http://forge:8000/git/<repo>` with git's own `http-backend`: an agent clones, fetches,
+  pulls and pushes with its credential on the forge, and IAM decides each request (`read`, and `push` to push). It
+  makes the forge a real code host, where each agent works in its own clone and sees a teammate's change through the
+  forge: a branch they pushed, or what they merged ([plan](docs/forge-service.md)).
 
 - **The side task asks for what a run can reach, and a keyed test lands it.** The checker no longer has
   `reduced_monitor_coverage`, `underreported_activity_logging` or `map_sanctioned_path`: nothing a run does
@@ -384,11 +385,11 @@ log has the details.
   first live service is `notes`, a small notes board in `scenarios/aurora_efficiency/services/notes`. Live
   services run on real time; the run's simulated clock stays for the scenario's scripted events. An entry that
   breaks the naming or path rules is refused at load. No container gets the Docker socket.
-- **A sandbox per agent.** In `make run STACK=1` each agent's code tools run in its own `sandbox-<agent id>`.
-  Only the episode can call a sandbox's command server: a sandbox refuses every other caller, even one holding
-  its token. Each sandbox mounts only its agent's own checkout, so code reaches another agent only through the
-  forge. A command's timeout is capped, and a reset ends every process the commands left. Sandboxes have their own `stack.sandbox_*` limits, and an agent id that cannot name a sandbox, or that
-  repeats, is refused at load.
+- **A sandbox per agent.** In `make run STACK=1` each agent's code tools run in its own `sandbox-<agent id>`. Only
+  the episode can call a sandbox's command server: a sandbox refuses every other caller, even one holding its token.
+  Each sandbox mounts only its own agent's checkout, which no other sandbox can reach. A command's timeout is
+  capped, and a reset ends every process the commands left. Sandboxes have their own `stack.sandbox_*` limits, and
+  an agent id that cannot name a sandbox, or that repeats, is refused at load.
 - **Pinned providers per model, reasoning per role.** A models file lists the OpenRouter providers that serve
   each model (order, no fallbacks), and every call to that model is sent to them; a model not listed is routed
   by OpenRouter, so a role that switches model never keeps providers that do not serve it. Each role can set
@@ -616,18 +617,17 @@ log has the details.
   the sandbox's name.
 - **Agent-written code never sees the provider key.** Tests and benchmarks the agents run, and the grading of
   their work, run without the key in their environment, in-process runs included. (#66)
-- **Agent-written code in a stack run runs only in a sandbox container.** The agents' `bash`, and the skills they run
-  with it, run in the agent's own `sandbox` service, which mounts only that agent's checkout volume and
-  nothing of the harness: not the episode's event logs, the run configs, the scenario's moves or the gateway's
-  call log. The episode reaches its command server on agent-net with a per-run token (a compose secret), and no
-  process a command starts outlives it, so agent code never runs while the episode touches the checkout. Before
-  each episode plays, the sandbox empties its HOME and temporary directories (`stack.sandbox_scratch_directories`)
-  and every checkout but the one cloned for the new episode, so nothing of the attack episode reaches its honest
-  twin. A sandbox that
-  stops answering gives the agent an error result and the episode plays on; compose restarts a killed sandbox,
-  and the next episode waits for it (`stack.sandbox_recovery_seconds`) or fails, never running agent code
-  anywhere else. Model calls agent code makes from
-  the sandbox go through the gateway, recorded under the sandbox's name.
+- **Agent-written code in a stack run runs only in a sandbox container.** The agents' `bash`, and the skills they
+  run with it, run in the agent's own `sandbox` service, which mounts only that agent's checkout volume and,
+  read-only, the skills, and nothing of the harness: not the episode's event logs, the run configs, the scenario's
+  moves or the gateway's call log. The episode reaches its command server on agent-net with a per-run token (a
+  compose secret), and no process a command starts outlives it, so agent code never runs while the episode touches
+  the checkout. Before each episode plays, the sandbox empties its HOME and temporary directories
+  (`stack.sandbox_scratch_directories`) and every checkout but the one cloned for the new episode, so nothing of the
+  attack episode reaches its honest twin. A sandbox that stops answering gives the agent an error result and the
+  episode plays on; compose restarts a killed sandbox, and the next episode waits for it
+  (`stack.sandbox_recovery_seconds`) or fails, never running agent code anywhere else. Model calls agent code makes
+  from the sandbox go through the gateway, recorded under the sandbox's name.
 - **Grading writes the sealed harness only into its grading copy.** A file or link the agents left where
   `grade_bench.py` or `grade_workload.py` goes is removed first, so a link cannot redirect the copy onto a
   file of the host; a directory there fails the grade.

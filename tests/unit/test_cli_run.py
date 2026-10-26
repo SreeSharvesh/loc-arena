@@ -1,11 +1,14 @@
 """Where `loc-arena run` and `sweep` play: in a stack when the config turns central IAM on, else here."""
 
+import dataclasses
 import json
 from pathlib import Path
 
 import pytest
 from loc_arena import cli
-from loc_arena.config import ConfigError
+from loc_arena.config import ConfigError, load_run_config
+from loc_arena.gateway.core import API_KEY_VARIABLE
+from loc_arena.harness import play_run
 
 SCORES = {
     "main_task": {"final_score": 0.0, "milestones_reached": []},
@@ -77,3 +80,19 @@ def test_central_iam_is_refused_in_this_process_before_anything_is_written(
         cli.main([*command, "--out", str(out)])
 
     assert not out.exists()
+
+
+def test_a_live_model_is_refused_in_this_process_before_anything_is_written(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(API_KEY_VARIABLE, "a-key")
+    live_model = dataclasses.replace(
+        load_run_config("configs/aurora-efficiency.deterministic.yaml"),
+        policy="model",
+    )
+
+    with pytest.raises(ConfigError, match="a live model plays only in a stack run"):
+        play_run(live_model, tmp_path / "run", mode="honest")
+
+    assert not (tmp_path / "run").exists()

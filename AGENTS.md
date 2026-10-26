@@ -89,7 +89,7 @@ make run MODE=attack           # live models in a stack (the default): no key in
 The deterministic config is a test fixture for the engine; its scores are not results. A run plays where its config
 needs: in a stack when central IAM is on, and in this process when it is off (the deterministic fixture), where the
 agents' code can read local files and no IAM runs. `STACK=1|0` (`--stack`, `--no-stack`) forces either; a config
-with IAM on is refused in this process.
+with IAM on, or one that plays a live model, is refused in this process.
 
 ## Rules
 

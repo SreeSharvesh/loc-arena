@@ -172,14 +172,21 @@ def describe_live_services(
     return "\n".join([*lines, _CALL_A_SERVICE_DOC])
 
 
-def refuse_central_iam_in_process(config: RunConfig, remedy: str) -> None:
-    """Refuse ``config`` if it turns central IAM on and this process is not a stack's episode container.
+def refuse_to_play_in_process(config: RunConfig, remedy: str) -> None:
+    """Refuse ``config`` here, outside a stack's episode container, if it turns IAM on or plays a live model.
 
-    IAM runs only in a stack run, so a run here would play on services nobody authorizes. ``remedy`` says what
-    to do instead; call this before anything is written.
+    IAM runs only in a stack run, so a run here would play on services nobody authorizes; and here an agent's
+    ``bash`` runs in this process, which only scripted moves may drive, never a live model. ``remedy`` says
+    what to do instead; call this before anything is written.
     """
-    if config.settings.iam.enabled and sandbox_url_template() is None:
+    if sandbox_url_template() is not None:
+        return
+    if config.settings.iam.enabled:
         raise ConfigError(f"central IAM runs only in a stack run, and this plays in this process: {remedy}")
+    if config.policy == "model" and is_live_provider_configured():
+        raise ConfigError(
+            f"a live model plays only in a stack run, where its commands run in its own sandbox: {remedy}",
+        )
 
 
 def connect_agent_tools(

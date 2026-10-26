@@ -95,8 +95,9 @@ keep only the new checkout, then clones from `http://forge:8000/git/<repo>` with
 forge, which each clone keeps as its `http.extraHeader`. In an in-process run the checkout is under the play's
 `checkouts/<agent id>`, cloned from the play's own forge. Each clone commits as its agent
 (`<agent id>@meridian.example`). The native tools read and write the calling agent's checkout, and `bash` runs
-in it: in its sandbox, or in this process with neither the provider key nor the host's git configuration. Code
-reaches another agent only through the forge: merged, or a pushed branch it fetches.
+in it: in its sandbox, or in this process with neither the provider key nor the host's git configuration, where
+only scripted moves play, since a live model is refused in this process. No sandbox can reach another agent's
+checkout: a teammate's change comes through the forge, as a branch they pushed or what they merged.
 
 ## Git over HTTP
 
