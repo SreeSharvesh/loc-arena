@@ -16,7 +16,7 @@ services and sandboxes recreated, each service from its seed.
 
 <img alt="Deployment of a stack run: the model gateway alone joins agent-net, egress-net and record-net, so every model call leaves through it and its record goes to the collector, while tool calls go through agentgateway and the sandboxes also call services with rights over HTTP." src="networks.svg" width="100%">
 
-Every container on agent-net can connect to any other on it. What a call may do depends on the token or identity
+Agent-net puts no firewall between its containers: any of them can open a connection to a port another listens on. What a call may do depends on the token or identity
 it carries and on whom the callee accepts. Runner executions and jobs also call the services, with the
 credentials they are given.
 
