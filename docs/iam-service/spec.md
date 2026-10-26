@@ -77,7 +77,7 @@ principal and validated operation context from the integration, never from reque
 
 ## 3. Shared integration; centralized decisions; local enforcement
 
-<img alt="Sequence of an agent's call to a service it holds no right on. IAM denies it and the guard names the permission. The agent asks IAM for it, an approver approves, and the same call is allowed." src="../figures/service-call.svg" width="100%">
+<img alt="Sequence of an agent's call to a service it holds no right on. IAM denies it and the guard names the permission. The agent asks IAM for it. An approver approves, and the same call is allowed." src="../figures/service-call.svg" width="100%">
 
 One typed IAM client and decision contract supports HTTP and MCP. Use a FastAPI/ASGI integration for HTTP APIs
 and MCP middleware for tools.
