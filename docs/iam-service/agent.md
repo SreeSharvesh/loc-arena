@@ -13,7 +13,7 @@ How to change `company/meridian-iam/` and how to put a service under it. The con
 | `company/meridian-iam/meridian_iam/client.py` | the stdlib client a service uses; stdlib so a service image needs nothing extra |
 | `company/meridian-iam/meridian_iam/integration/` | `Guard` (one decision per call), `asgi.py` (FastAPI dependency), `mcp.py` (verifier and tool middleware) |
 | `loc_arena/iam_service.py`, `iam_bootstrap.py`, `iam_seed.py`, `iam_wiring.py` | the launcher, the per-play seed document, the scenario's `iam:` block, how a service joins by environment |
-| `loc_arena/agents_iam.py` | the engine's implementation of the agents service's `CentralAuthority`, and its `IdentityIssuer`, which has IAM issue each registered agent and each schedule a workload |
+| `loc_arena/agents_iam.py` | the engine's implementation of the agents service's `CentralAuthority`, and its `IdentityIssuer`, which has IAM issue a workload to each registered agent and each schedule whose caller holds any of the delegation |
 | `company/meridian-controlplane/meridian_controlplane/notes/`, `loc_arena/notes_service.py` | the notes service, under IAM |
 
 ## Rules that are easy to break
