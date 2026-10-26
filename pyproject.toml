@@ -107,6 +107,8 @@ ignore = [
 "loc_arena/harness.py" = ["PLC0415"]
 # `explore` imports the explorer (and so inspect_ai) only when it runs, for the same reason.
 "loc_arena/cli.py" = ["PLC0415"]
+# A stack run imports the Inspect exporter only to give its finished log the reasoning, for the same reason.
+"loc_arena/episode_stack.py" = ["PLC0415"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"

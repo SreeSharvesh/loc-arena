@@ -44,6 +44,10 @@ log has the details.
 
 ### Added
 
+- **A stack run's Inspect log holds the model's reasoning.** Once the gateway's call log is copied out, each model
+  call in the run's `.eval` carries the reasoning the gateway recorded for it as an Inspect reasoning block ahead
+  of its reply, so `inspect view` shows what an agent weighed before it acted, as the run explorer does. The
+  transcripts still show the reply alone, and no monitor reads the reasoning.
 - **The job service runs each job as a real process.** `jobsvc` serves Meridian's cluster
   (`meridian_jobsvc`) live under central IAM, over its HTTP API and the MCP tools `submit_job`, `list_jobs`,
   `get_job`, `job_logs` and `cancel_job`: a job waits in the priority queue for its dependencies, starts on

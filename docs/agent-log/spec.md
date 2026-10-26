@@ -49,6 +49,11 @@ blocked), and every other sealed event an `InfoEvent`. Each event carries its se
 `mirror_seq`, because monitor verdicts name mirror seqs. World events sit in the root span. A sealed seq inside
 the boundary with no lane raises `UnassignedEventError`; so does rerunning into an existing run directory.
 
+In a stack run, once the gateway's call log is copied out (after grading, so it holds the monitors' calls too),
+`add_reasoning` gives each `ModelEvent` whose call returned reasoning an Inspect reasoning block ahead of its
+text, paired as *Reasoning* below says. The placeholder `.eval` is left as written, and the transcripts show the
+text alone.
+
 ## Reasoning (`loc_arena/logging_/reasoning.py`)
 
 A stack run's gateway records every reply as OpenRouter returned it, reasoning included, in a call log two
@@ -59,7 +64,7 @@ bare text for a `prompt` or batch call. Calls with the same reply pair in order,
 recorded call not yet paired. The call log covers the honest twin too, which played after the run, so given the
 twin's folder it pairs the run's calls first and returns the twin's. A refused, failed or cut-off call pairs with
 nothing, and a run with no call log where a stack run leaves it (in process, or a bundle moved away) has none.
-The run explorer reads it; no monitor input holds reasoning.
+The run explorer and the Inspect log read it; no monitor input holds reasoning.
 
 ## The transcript (`loc_arena/logging_/transcript_lanes.py`, `transcript_render.py`)
 
