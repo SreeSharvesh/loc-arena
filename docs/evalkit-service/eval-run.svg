@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="776" height="816" viewBox="0 0 776 816" role="img" aria-label="UML sequence diagram of an eval run: the caller starts a run on the eval service and submits the job it hands back to the job service, a node runs the runner, which binds the run, reads its items, asks the model through the gateway for each, scores the answers and reports the results, then exits 0">
+<svg xmlns="http://www.w3.org/2000/svg" width="776" height="816" viewBox="0 0 776 816" role="img" aria-label="UML sequence diagram of an eval run: the caller starts a run on the eval service and submits the job it hands back to the job service, and a node runs the runner, which binds the run, reads its items, asks the model through the gateway for each, scores the answers and reports the results, then exits 0">
 <style>
   svg { --ink:#1f2328; --muted:#59636e; --rule:#8c959f; --panel:#f6f8fa;
         --accent:#2f4bd6; --accent-bg:#e9edfd;
