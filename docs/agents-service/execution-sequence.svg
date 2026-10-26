@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="824" height="904" viewBox="0 0 824 904" role="img" aria-label="UML sequence diagram of one agent execution. A caller registers an agent, and the agents service has IAM authorize the call and issue the agent a workload. An execution starts in one of three ways: a caller holding run starts it, a created schedule fires and IAM decides under the schedule's workload, or a seeded schedule fires and IAM decides nothing. A runner runs pi with the agent's secrets, the agent calls a service that IAM authorizes as its workload, and pi calls the model gateway with the runner's token.">
+<style>
+  svg { --ink:#1f2328; --muted:#59636e; --rule:#8c959f; --panel:#f6f8fa;
+        --accent:#2f4bd6; --accent-bg:#e9edfd;
+        --sealed:#0d9488; --sealed-bg:#d9f2ef; --observe:#b3730a; --observe-bg:#f8ecd5; --attack:#d63f4a; --attack-bg:#fbe3e4; }
+  @media (prefers-color-scheme: dark) {
+    svg { --ink:#e6edf3; --muted:#9198a1; --rule:#6e7681; --panel:#161b22;
+          --accent:#8098ff; --accent-bg:#1b2340;
+          --sealed:#3ad6c4; --sealed-bg:#12312e; --observe:#e0a94a; --observe-bg:#33280f; --attack:#f47b82; --attack-bg:#3a1c20; }
+  }
+  text { font-family:-apple-system,"Segoe UI",system-ui,sans-serif; }
+  .box { fill:var(--panel); stroke:var(--rule); stroke-width:1; }
+  .focus { fill:var(--accent-bg); stroke:var(--accent); stroke-width:1.5; }
+  .ext { fill:none; stroke:var(--rule); stroke-width:1.25; stroke-dasharray:5 4; }
+  .region { fill:none; stroke:var(--rule); stroke-width:1; }
+  .sealed { fill:var(--sealed-bg); stroke:var(--sealed); stroke-width:1.5; }
+  .observe { fill:var(--observe-bg); stroke:var(--observe); stroke-width:1.5; }
+  .attack { fill:var(--attack-bg); stroke:var(--attack); stroke-width:1.5; }
+  .t { fill:var(--ink); font-size:13px; font-weight:600; }
+  .s { fill:var(--muted); font-size:11px; }
+  .m { fill:var(--muted); font-size:11px; font-family:ui-monospace,"SF Mono",Menlo,monospace; }
+  .bold { stroke:var(--ink); stroke-width:2.5; fill:none; }
+  .thin { stroke:var(--rule); stroke-width:1.25; fill:none; }
+  .dash { stroke:var(--rule); stroke-width:1.25; fill:none; stroke-dasharray:4 3; }
+  .life { stroke:var(--rule); stroke-width:1; fill:none; stroke-dasharray:3 4; }
+  .note { fill:var(--panel); stroke:var(--rule); stroke-width:1; }
+  .act { fill:var(--panel); stroke:var(--rule); stroke-width:1; }
+  .frame { fill:none; stroke:var(--rule); stroke-width:1; }
+  .ring { fill:none; stroke:var(--ink); stroke-width:1.5; }
+  .head-ink { fill:var(--ink); } .head-rule { fill:var(--rule); } .dot { fill:var(--ink); }
+</style>
+<defs>
+  <marker id="eq-hi" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-ink" d="M0,0 L10,5 L0,10 z"/></marker>
+  <marker id="eq-hr" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-rule" d="M0,0 L10,5 L0,10 z"/></marker>
+</defs>
+<g class="node"><rect class="box" x="12" y="24" width="104" height="48" rx="6"/><text class="t" x="64" y="40" text-anchor="middle" dominant-baseline="central">Caller</text><text class="s" x="64" y="57" text-anchor="middle" dominant-baseline="central">an agent</text></g>
+<g class="node"><rect class="focus" x="144" y="24" width="128" height="48" rx="6"/><text class="t" x="208" y="40" text-anchor="middle" dominant-baseline="central">Agents service</text><text class="m" x="208" y="57" text-anchor="middle" dominant-baseline="central">agents</text></g>
+<g class="node"><rect class="box" x="316" y="24" width="104" height="48" rx="6"/><text class="t" x="368" y="40" text-anchor="middle" dominant-baseline="central">IAM</text><text class="m" x="368" y="57" text-anchor="middle" dominant-baseline="central">meridian_iam</text></g>
+<g class="node"><rect class="box" x="452" y="24" width="104" height="48" rx="6"/><text class="t" x="504" y="40" text-anchor="middle" dominant-baseline="central">A service</text><text class="s" x="504" y="57" text-anchor="middle" dominant-baseline="central">e.g. notes</text></g>
+<g class="node"><rect class="box" x="580" y="24" width="104" height="48" rx="6"/><text class="t" x="632" y="40" text-anchor="middle" dominant-baseline="central">A runner</text><text class="m" x="632" y="57" text-anchor="middle" dominant-baseline="central">runner-1</text></g>
+<g class="node"><rect class="ext" x="708" y="24" width="104" height="48" rx="6"/><text class="t" x="760" y="40" text-anchor="middle" dominant-baseline="central">Model gateway</text><text class="m" x="760" y="57" text-anchor="middle" dominant-baseline="central">gateway</text></g>
+<path class="life" d="M64 72 V888"/>
+<path class="life" d="M208 72 V888"/>
+<path class="life" d="M368 72 V888"/>
+<path class="life" d="M504 72 V888"/>
+<path class="life" d="M632 72 V672"/><path class="life" d="M632 864 V888"/>
+<path class="life" d="M760 72 V888"/>
+<g class="node"><rect class="act" x="627" y="672" width="10" height="192"/></g>
+<path class="bold" d="M64 120 H207" marker-end="url(#eq-hi)"/>
+<text class="m" x="136" y="90" text-anchor="middle" dominant-baseline="central">1 register_agent</text>
+<text class="s" x="136" y="105" text-anchor="middle" dominant-baseline="central">its credential</text>
+<path class="thin" d="M208 168 H367" marker-end="url(#eq-hr)"/>
+<text class="m" x="288" y="138" text-anchor="middle" dominant-baseline="central">2 authorize</text>
+<text class="s" x="288" y="153" text-anchor="middle" dominant-baseline="central">may it register?</text>
+<path class="bold" d="M208 216 H367" marker-end="url(#eq-hi)"/>
+<text class="m" x="288" y="186" text-anchor="middle" dominant-baseline="central">3 issue_workload</text>
+<text class="s" x="288" y="201" text-anchor="middle" dominant-baseline="central">within the delegation</text>
+<path class="dash" d="M368 264 H209" marker-end="url(#eq-hr)"/>
+<text x="288" y="249" text-anchor="middle" dominant-baseline="central"><tspan class="s">its workload </tspan><tspan class="m">job-&lt;id&gt;</tspan></text>
+<path class="dash" d="M208 312 H65" marker-end="url(#eq-hr)"/>
+<text class="s" x="136" y="297" text-anchor="middle" dominant-baseline="central">4 201: the agent</text>
+<g class="node"><path class="frame" d="M16 336 H496 V624 H16 Z"/><path class="frame" d="M16 366 H60 L72 354 V336"/><text class="s" x="30" y="351" dominant-baseline="central">alt</text></g>
+<path class="dash" d="M16 448 H496"/>
+<path class="dash" d="M16 552 H496"/>
+<text class="s" x="380" y="352" dominant-baseline="central">[a caller]</text>
+<text class="s" x="380" y="464" dominant-baseline="central">[created schedule]</text>
+<text class="s" x="380" y="568" dominant-baseline="central">[seeded schedule]</text>
+<path class="thin" d="M64 384 H207" marker-end="url(#eq-hr)"/>
+<text class="m" x="136" y="369" text-anchor="middle" dominant-baseline="central">5 start_execution</text>
+<path class="thin" d="M208 432 H367" marker-end="url(#eq-hr)"/>
+<text class="m" x="288" y="402" text-anchor="middle" dominant-baseline="central">authorize</text>
+<text class="s" x="288" y="417" text-anchor="middle" dominant-baseline="central">may it run?</text>
+<path class="thin" d="M208 472 H232 V488 H209" marker-end="url(#eq-hr)"/>
+<text class="s" x="240" y="480" dominant-baseline="central">5 it fires</text>
+<path class="thin" d="M208 536 H367" marker-end="url(#eq-hr)"/>
+<text class="m" x="288" y="506" text-anchor="middle" dominant-baseline="central">authorize</text>
+<text class="s" x="288" y="521" text-anchor="middle" dominant-baseline="central">as the schedule's workload</text>
+<path class="thin" d="M208 576 H232 V592 H209" marker-end="url(#eq-hr)"/>
+<text class="s" x="240" y="578" dominant-baseline="central">5 it fires, and IAM</text>
+<text class="s" x="240" y="593" dominant-baseline="central">decides nothing</text>
+<path class="bold" d="M208 672 H626" marker-end="url(#eq-hi)"/>
+<text class="m" x="288" y="642" text-anchor="middle" dominant-baseline="central">6 pi-on-gateway</text>
+<text class="s" x="288" y="657" text-anchor="middle" dominant-baseline="central">with the agent's secrets</text>
+<path class="bold" d="M627 720 H505" marker-end="url(#eq-hi)"/>
+<text class="s" x="568" y="690" text-anchor="middle" dominant-baseline="central">7 its own secret</text>
+<text class="m" x="568" y="705" text-anchor="middle" dominant-baseline="central">MERIDIAN_*_TOKEN</text>
+<path class="bold" d="M504 768 H369" marker-end="url(#eq-hi)"/>
+<text class="m" x="436" y="738" text-anchor="middle" dominant-baseline="central">8 authorize</text>
+<text x="436" y="753" text-anchor="middle" dominant-baseline="central"><tspan class="s">as </tspan><tspan class="m">job-&lt;id&gt;</tspan></text>
+<path class="thin" d="M637 816 H759" marker-end="url(#eq-hr)"/>
+<text class="s" x="698" y="786" text-anchor="middle" dominant-baseline="central">9 model call</text>
+<text class="s" x="698" y="801" text-anchor="middle" dominant-baseline="central">the runner's token</text>
+<path class="dash" d="M627 864 H209" marker-end="url(#eq-hr)"/>
+<text x="288" y="849" text-anchor="middle" dominant-baseline="central"><tspan class="s">10 exit 0: </tspan><tspan class="m">completed</tspan></text>
+</svg>
