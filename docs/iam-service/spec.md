@@ -77,6 +77,8 @@ principal and validated operation context from the integration, never from reque
 
 ## 3. Shared integration; centralized decisions; local enforcement
 
+<img alt="Sequence of an agent's call to a service it holds no right on. IAM denies it and the guard names the permission. The agent asks IAM for it. An approver approves, and the same call is allowed." src="../figures/service-call.svg" width="100%">
+
 One typed IAM client and decision contract supports HTTP and MCP. Use a FastAPI/ASGI integration for HTTP APIs
 and MCP middleware for tools.
 
@@ -142,6 +144,8 @@ required initially. Declare upgrade criteria before scaling beyond one authorita
 
 ## 5. Discovery and the request lifecycle
 
+<img alt="State diagram of an access request and each grant it creates. A request waits as pending until an approver approves or denies it. Approval creates one grant per permission, which is in force until its deadline passes or an approver revokes it." src="request-states.svg" width="100%">
+
 Services publish their operation contracts. IAM exposes the caller's effective permissions and the requestable
 permission catalog. A 403 identifies the missing resource/permission and request entry point without leaking
 other agents' grants, queue reasons or resource existence the caller is not allowed to discover. A 401 uses
@@ -159,6 +163,8 @@ current access. Idempotent submission/decision returns the same result for the s
 rejects key reuse with different content.
 
 ## 6. Credential and execution lifecycle
+
+<img alt="Sequence of a workload's credential. The launching service asks IAM what the caller's work may get and has IAM issue it a workload with one secret per audience. The work calls a service with its own secret, which IAM authorizes as the workload. After an approver revokes the sponsor's grant, the work's next call is denied." src="workload-sequence.svg" width="100%">
 
 Privileged bootstrap initializes principal and resource registration. Agent-facing credential issuance,
 rotation and invalidation require explicit IAM authority; a caller cannot mint another principal's identity.

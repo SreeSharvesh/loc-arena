@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="752" height="432" viewBox="0 0 752 432" role="img" aria-label="UML state diagram of an agent execution. It waits queued for a free runner, runs pi there, and ends completed, failed or cancelled. A stop packs its checkpoint and leaves it stopped, and a resume queues it again.">
+<style>
+  svg { --ink:#1f2328; --muted:#59636e; --rule:#8c959f; --panel:#f6f8fa;
+        --accent:#2f4bd6; --accent-bg:#e9edfd;
+        --sealed:#0d9488; --sealed-bg:#d9f2ef; --observe:#b3730a; --observe-bg:#f8ecd5; --attack:#d63f4a; --attack-bg:#fbe3e4; }
+  @media (prefers-color-scheme: dark) {
+    svg { --ink:#e6edf3; --muted:#9198a1; --rule:#6e7681; --panel:#161b22;
+          --accent:#8098ff; --accent-bg:#1b2340;
+          --sealed:#3ad6c4; --sealed-bg:#12312e; --observe:#e0a94a; --observe-bg:#33280f; --attack:#f47b82; --attack-bg:#3a1c20; }
+  }
+  text { font-family:-apple-system,"Segoe UI",system-ui,sans-serif; }
+  .box { fill:var(--panel); stroke:var(--rule); stroke-width:1; }
+  .focus { fill:var(--accent-bg); stroke:var(--accent); stroke-width:1.5; }
+  .ext { fill:none; stroke:var(--rule); stroke-width:1.25; stroke-dasharray:5 4; }
+  .region { fill:none; stroke:var(--rule); stroke-width:1; }
+  .sealed { fill:var(--sealed-bg); stroke:var(--sealed); stroke-width:1.5; }
+  .observe { fill:var(--observe-bg); stroke:var(--observe); stroke-width:1.5; }
+  .attack { fill:var(--attack-bg); stroke:var(--attack); stroke-width:1.5; }
+  .t { fill:var(--ink); font-size:13px; font-weight:600; }
+  .s { fill:var(--muted); font-size:11px; }
+  .m { fill:var(--muted); font-size:11px; font-family:ui-monospace,"SF Mono",Menlo,monospace; }
+  .bold { stroke:var(--ink); stroke-width:2.5; fill:none; }
+  .thin { stroke:var(--rule); stroke-width:1.25; fill:none; }
+  .dash { stroke:var(--rule); stroke-width:1.25; fill:none; stroke-dasharray:4 3; }
+  .life { stroke:var(--rule); stroke-width:1; fill:none; stroke-dasharray:3 4; }
+  .note { fill:var(--panel); stroke:var(--rule); stroke-width:1; }
+  .act { fill:var(--panel); stroke:var(--rule); stroke-width:1; }
+  .frame { fill:none; stroke:var(--rule); stroke-width:1; }
+  .ring { fill:none; stroke:var(--ink); stroke-width:1.5; }
+  .head-ink { fill:var(--ink); } .head-rule { fill:var(--rule); } .dot { fill:var(--ink); }
+</style>
+<defs>
+  <marker id="es-hi" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-ink" d="M0,0 L10,5 L0,10 z"/></marker>
+  <marker id="es-hr" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-rule" d="M0,0 L10,5 L0,10 z"/></marker>
+</defs>
+<g class="node"><rect class="focus" x="48" y="176" width="160" height="48" rx="14"/><text class="t" x="128" y="192" text-anchor="middle" dominant-baseline="central">Waiting for a runner</text><text class="m" x="128" y="209" text-anchor="middle" dominant-baseline="central">queued</text></g>
+<g class="node"><rect class="focus" x="312" y="176" width="144" height="48" rx="14"/><text class="t" x="384" y="192" text-anchor="middle" dominant-baseline="central">pi on a runner</text><text class="m" x="384" y="209" text-anchor="middle" dominant-baseline="central">running</text></g>
+<g class="node"><rect class="box" x="312" y="304" width="144" height="48" rx="14"/><text class="t" x="384" y="320" text-anchor="middle" dominant-baseline="central">Checkpoint kept</text><text class="m" x="384" y="337" text-anchor="middle" dominant-baseline="central">stopped</text></g>
+<g class="node"><rect class="box" x="576" y="40" width="120" height="48" rx="14"/><text class="t" x="636" y="56" text-anchor="middle" dominant-baseline="central">Failed</text><text class="m" x="636" y="73" text-anchor="middle" dominant-baseline="central">failed</text></g>
+<g class="node"><rect class="focus" x="576" y="176" width="120" height="48" rx="14"/><text class="t" x="636" y="192" text-anchor="middle" dominant-baseline="central">Completed</text><text class="m" x="636" y="209" text-anchor="middle" dominant-baseline="central">completed</text></g>
+<g class="node"><rect class="box" x="576" y="304" width="120" height="48" rx="14"/><text class="t" x="636" y="320" text-anchor="middle" dominant-baseline="central">Cancelled</text><text class="m" x="636" y="337" text-anchor="middle" dominant-baseline="central">cancelled</text></g>
+<circle class="dot" cx="88" cy="72" r="7"/>
+<path class="bold" d="M88 79 V175" marker-end="url(#es-hi)"/>
+<text class="m" x="100" y="104" dominant-baseline="central">start_execution</text>
+<text class="s" x="100" y="120" dominant-baseline="central">or a schedule firing</text>
+<path class="bold" d="M208 192 H311" marker-end="url(#es-hi)"/>
+<text class="s" x="260" y="178" text-anchor="middle" dominant-baseline="central">a runner is free</text>
+<path class="bold" d="M456 192 H575" marker-end="url(#es-hi)"/>
+<text class="s" x="516" y="178" text-anchor="middle" dominant-baseline="central">exit 0</text>
+<path class="thin" d="M416 176 V64 H575" marker-end="url(#es-hr)"/>
+<text class="s" x="428" y="104" dominant-baseline="central">a non-zero exit, its time</text>
+<text class="s" x="428" y="120" dominant-baseline="central">limit, or a checkpoint it</text>
+<text class="s" x="428" y="136" dominant-baseline="central">cannot pack or restore</text>
+<path class="thin" d="M344 224 V303" marker-end="url(#es-hr)"/>
+<text class="m" x="336" y="250" text-anchor="end" dominant-baseline="central">stop_execution</text>
+<text class="s" x="336" y="266" text-anchor="end" dominant-baseline="central">checkpoint packed</text>
+<path class="thin" d="M312 328 H152 V225" marker-end="url(#es-hr)"/>
+<text class="m" x="232" y="342" text-anchor="middle" dominant-baseline="central">resume_execution</text>
+<path class="thin" d="M424 224 V264 H616 V303" marker-end="url(#es-hr)"/>
+<text class="m" x="520" y="250" text-anchor="middle" dominant-baseline="central">cancel_execution</text>
+<path class="thin" d="M456 328 H575" marker-end="url(#es-hr)"/>
+<text class="m" x="516" y="314" text-anchor="middle" dominant-baseline="central">cancel_execution</text>
+<path class="thin" d="M48 200 H32 V400 H636 V353" marker-end="url(#es-hr)"/>
+<text class="m" x="336" y="414" text-anchor="middle" dominant-baseline="central">cancel_execution</text>
+<path class="thin" d="M696 64 H715" marker-end="url(#es-hr)"/>
+<g class="node"><circle class="ring" cx="726" cy="64" r="9"/><circle class="dot" cx="726" cy="64" r="5"/></g>
+<path class="thin" d="M696 200 H715" marker-end="url(#es-hr)"/>
+<g class="node"><circle class="ring" cx="726" cy="200" r="9"/><circle class="dot" cx="726" cy="200" r="5"/></g>
+<path class="thin" d="M696 328 H715" marker-end="url(#es-hr)"/>
+<g class="node"><circle class="ring" cx="726" cy="328" r="9"/><circle class="dot" cx="726" cy="328" r="5"/></g>
+</svg>

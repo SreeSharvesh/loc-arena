@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="864" height="368" viewBox="0 0 864 368" role="img" aria-label="UML state diagram of an access request and each grant it creates. A filed request waits as pending until an approver approves or denies it, and both outcomes are final. Approval creates one grant per permission, as a direct grant does, and a grant is in force until its deadline passes or an approver revokes it.">
+<style>
+  svg { --ink:#1f2328; --muted:#59636e; --rule:#8c959f; --panel:#f6f8fa;
+        --accent:#2f4bd6; --accent-bg:#e9edfd;
+        --sealed:#0d9488; --sealed-bg:#d9f2ef; --observe:#b3730a; --observe-bg:#f8ecd5; --attack:#d63f4a; --attack-bg:#fbe3e4; }
+  @media (prefers-color-scheme: dark) {
+    svg { --ink:#e6edf3; --muted:#9198a1; --rule:#6e7681; --panel:#161b22;
+          --accent:#8098ff; --accent-bg:#1b2340;
+          --sealed:#3ad6c4; --sealed-bg:#12312e; --observe:#e0a94a; --observe-bg:#33280f; --attack:#f47b82; --attack-bg:#3a1c20; }
+  }
+  text { font-family:-apple-system,"Segoe UI",system-ui,sans-serif; }
+  .box { fill:var(--panel); stroke:var(--rule); stroke-width:1; }
+  .focus { fill:var(--accent-bg); stroke:var(--accent); stroke-width:1.5; }
+  .ext { fill:none; stroke:var(--rule); stroke-width:1.25; stroke-dasharray:5 4; }
+  .region { fill:none; stroke:var(--rule); stroke-width:1; }
+  .sealed { fill:var(--sealed-bg); stroke:var(--sealed); stroke-width:1.5; }
+  .observe { fill:var(--observe-bg); stroke:var(--observe); stroke-width:1.5; }
+  .attack { fill:var(--attack-bg); stroke:var(--attack); stroke-width:1.5; }
+  .t { fill:var(--ink); font-size:13px; font-weight:600; }
+  .s { fill:var(--muted); font-size:11px; }
+  .m { fill:var(--muted); font-size:11px; font-family:ui-monospace,"SF Mono",Menlo,monospace; }
+  .bold { stroke:var(--ink); stroke-width:2.5; fill:none; }
+  .thin { stroke:var(--rule); stroke-width:1.25; fill:none; }
+  .dash { stroke:var(--rule); stroke-width:1.25; fill:none; stroke-dasharray:4 3; }
+  .life { stroke:var(--rule); stroke-width:1; fill:none; stroke-dasharray:3 4; }
+  .note { fill:var(--panel); stroke:var(--rule); stroke-width:1; }
+  .act { fill:var(--panel); stroke:var(--rule); stroke-width:1; }
+  .frame { fill:none; stroke:var(--rule); stroke-width:1; }
+  .ring { fill:none; stroke:var(--ink); stroke-width:1.5; }
+  .head-ink { fill:var(--ink); } .head-rule { fill:var(--rule); } .dot { fill:var(--ink); }
+</style>
+<defs>
+  <marker id="rs-hi" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-ink" d="M0,0 L10,5 L0,10 z"/></marker>
+  <marker id="rs-hr" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-rule" d="M0,0 L10,5 L0,10 z"/></marker>
+</defs>
+<text class="t" x="24" y="28" dominant-baseline="central">An access request</text>
+<text class="t" x="576" y="28" dominant-baseline="central">Each grant</text>
+<g class="node"><rect class="focus" x="88" y="152" width="160" height="48" rx="14"/><text class="t" x="168" y="168" text-anchor="middle" dominant-baseline="central">Awaiting a decision</text><text class="m" x="168" y="185" text-anchor="middle" dominant-baseline="central">pending</text></g>
+<g class="node"><rect class="focus" x="336" y="152" width="112" height="48" rx="14"/><text class="t" x="392" y="168" text-anchor="middle" dominant-baseline="central">Approved</text><text class="m" x="392" y="185" text-anchor="middle" dominant-baseline="central">approved</text></g>
+<g class="node"><rect class="box" x="336" y="48" width="112" height="48" rx="14"/><text class="t" x="392" y="64" text-anchor="middle" dominant-baseline="central">Denied</text><text class="m" x="392" y="81" text-anchor="middle" dominant-baseline="central">denied</text></g>
+<g class="node"><rect class="focus" x="576" y="152" width="160" height="48" rx="14"/><text class="t" x="656" y="168" text-anchor="middle" dominant-baseline="central">In force</text><text class="m" x="656" y="185" text-anchor="middle" dominant-baseline="central">ACTIVE</text></g>
+<g class="node"><rect class="box" x="576" y="256" width="112" height="48" rx="14"/><text class="t" x="632" y="272" text-anchor="middle" dominant-baseline="central">Expired</text><text class="m" x="632" y="289" text-anchor="middle" dominant-baseline="central">expires_at</text></g>
+<g class="node"><rect class="box" x="744" y="256" width="104" height="48" rx="14"/><text class="t" x="796" y="272" text-anchor="middle" dominant-baseline="central">Revoked</text><text class="m" x="796" y="289" text-anchor="middle" dominant-baseline="central">revoked_at</text></g>
+<circle class="dot" cx="168" cy="72" r="7"/>
+<path class="bold" d="M168 79 V151" marker-end="url(#rs-hi)"/>
+<text class="m" x="156" y="104" text-anchor="end" dominant-baseline="central">submit_request</text>
+<text class="s" x="156" y="120" text-anchor="end" dominant-baseline="central">by the requester</text>
+<path class="bold" d="M248 176 H335" marker-end="url(#rs-hi)"/>
+<text class="m" x="292" y="146" text-anchor="middle" dominant-baseline="central">decide</text>
+<text class="s" x="292" y="160" text-anchor="middle" dominant-baseline="central">approve</text>
+<path class="thin" d="M216 152 V72 H335" marker-end="url(#rs-hr)"/>
+<text class="m" x="276" y="94" text-anchor="middle" dominant-baseline="central">decide</text>
+<text class="s" x="276" y="108" text-anchor="middle" dominant-baseline="central">deny</text>
+<path class="thin" d="M448 72 H467" marker-end="url(#rs-hr)"/>
+<g class="node"><circle class="ring" cx="478" cy="72" r="9"/><circle class="dot" cx="478" cy="72" r="5"/></g>
+<path class="thin" d="M392 200 V259" marker-end="url(#rs-hr)"/>
+<g class="node"><circle class="ring" cx="392" cy="270" r="9"/><circle class="dot" cx="392" cy="270" r="5"/></g>
+<path class="dash" d="M448 176 H575" marker-end="url(#rs-hr)"/>
+<text class="s" x="512" y="160" text-anchor="middle" dominant-baseline="central">creates its grants</text>
+<text class="s" x="512" y="192" text-anchor="middle" dominant-baseline="central">one per permission</text>
+<circle class="dot" cx="656" cy="72" r="7"/>
+<path class="thin" d="M656 79 V151" marker-end="url(#rs-hr)"/>
+<text class="m" x="668" y="100" dominant-baseline="central">grant</text>
+<text class="s" x="668" y="116" dominant-baseline="central">direct, by an approver</text>
+<path class="thin" d="M632 200 V255" marker-end="url(#rs-hr)"/>
+<text class="s" x="620" y="228" text-anchor="end" dominant-baseline="central">its deadline passes</text>
+<path class="thin" d="M736 176 H796 V255" marker-end="url(#rs-hr)"/>
+<text class="m" x="784" y="222" text-anchor="end" dominant-baseline="central">revoke</text>
+<text class="s" x="784" y="238" text-anchor="end" dominant-baseline="central">by an approver</text>
+<path class="thin" d="M632 304 V333" marker-end="url(#rs-hr)"/>
+<g class="node"><circle class="ring" cx="632" cy="344" r="9"/><circle class="dot" cx="632" cy="344" r="5"/></g>
+<path class="thin" d="M796 304 V333" marker-end="url(#rs-hr)"/>
+<g class="node"><circle class="ring" cx="796" cy="344" r="9"/><circle class="dot" cx="796" cy="344" r="5"/></g>
+</svg>

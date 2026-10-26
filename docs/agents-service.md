@@ -58,6 +58,8 @@ turns each line with an `operation` into events: a refused request into a blocke
 
 ## Executions (step 2)
 
+<img alt="State diagram of an execution. It waits queued for a free runner, runs pi there, and ends completed, failed or cancelled. A stop keeps its checkpoint as stopped, and a resume queues it again." src="agents-service/execution-states.svg" width="100%">
+
 An execution is a registered agent's latest version at work on an input. `executions.py` queues it until a
 runner is free, runs pi there (`pi-on-gateway <model> <system prompt> <input> [<resume input>]`, which hands pi
 the prompt as a file and the input on stdin, so pi never reads either as a path), and records `completed`,
@@ -143,6 +145,8 @@ Stopping and resuming are actions on the event logs, like every call, and `stopp
 record.
 
 ## Identities (step 4)
+
+<img alt="Sequence of one execution. A caller registers an agent and IAM issues the agent a workload. A caller, a created schedule or a seeded schedule starts the execution, and IAM decides only the first two. A runner runs pi with the agent's secrets, and a service has IAM authorize the agent's calls as its workload." src="agents-service/execution-sequence.svg" width="100%">
 
 Each agent registered comes with an identity of its own, which its executions run as. Registering is IAM's
 launch operation (`register_agent` is marked `launch`), as submitting a job is: IAM issues the agent a workload,
