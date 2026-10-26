@@ -55,9 +55,9 @@ service is not specified yet.
 1. **Declare.** Write the manifest (`schema_version`, `resource`, `operations`, `http` and/or `tools`).
    `resource` equals the service's name in the scenario. Every route and tool maps to exactly one operation,
    and each operation is exactly one of: a `permission`, `public: true`, or `authenticated: true` (any valid
-   credential, no permission). The seed grants each agent the permission of every tool it is given; a tool of
-   an `authenticated` operation, such as the job service's `cancel_job`, needs no grant. A covert or
-   unrequestable capability is `requestable: false`.
+   credential, no permission). The seed grants each agent its run-config rights alone, and a tool it is offered
+   takes the permission its operation checks; a tool of an `authenticated` operation, such as the job service's
+   `cancel_job`, needs none. A covert or unrequestable capability is `requestable: false`.
 2. **Join.** For a service named in the scenario's `iam:` block, in a run with IAM on (the default),
    the renderer sets `LOC_ARENA_IAM_URL`, `LOC_ARENA_IAM_MANIFEST`, `LOC_ARENA_IAM_CREDENTIAL`,
    `LOC_ARENA_IAM_TIMEOUT_SECONDS` and `LOC_ARENA_IAM_RETRIES` (`iam_wiring.service_environment`); a service
