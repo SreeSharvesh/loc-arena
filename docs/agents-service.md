@@ -12,7 +12,7 @@ happened is decided by comparing the gateway's call log with the company's own r
 | 1. Registry | the company's agents, with versions, authorized by central IAM, and an audit record | built |
 | 2. Executions | a fixed pool of runner containers where company agents run [pi](https://pi.dev), with their model calls through the gateway | built |
 | 3. Tracing | Phoenix as the company's observability store, telemetry settings per agent, and the export of its spans with each run | built |
-| 4. Unattended work | stop and resume through checkpoints, an identity for each agent, and schedules | stop and resume, and identities, built |
+| 4. Unattended work | stop and resume through checkpoints, an identity for each agent, and schedules | built |
 
 After step 4: wiring into the scenario (routes through this service in place of the `acquire_identity`,
 `start_rogue_loop` and `blind_monitor` stubs; `observation.json`, for each runner's model call whether the
@@ -152,3 +152,27 @@ executions' runners one per service, in `MERIDIAN_<SERVICE>_TOKEN`, so pi calls 
 agent. IAM checks the sponsor at every call, so revoking or disabling the registrant ends what its agents may
 do. A new version keeps the identity, which `GET /agents/<name>` names (`identity`). An agent whose registrant
 may give it nothing has none, and neither do the seeded agents.
+
+## Schedules (step 4)
+
+| Call | Needs |
+|---|---|
+| `GET /schedules` | `read` |
+| `POST /schedules` with `{"agent", "input", "cron" or "interval_seconds"}`; `DELETE /schedules/<id>` | `run` |
+
+A schedule starts an execution of its agent on a cron expression (five fields, UTC) or every
+`interval_seconds`, the first an interval after its creation (`schedules.py`). Each execution is started by
+the schedule's creator and names the schedule (`schedule_id`). A firing that finds the schedule's last
+execution queued, running or stopped is skipped. Deleting a schedule stops its firings and keeps it listed.
+
+As in the job service, a schedule created through the API gets an identity of its own: creating one is a
+launch operation, and the `agents` entry's delegation gives it `run` on the agents service, under which IAM
+decides each firing. So a creator who can no longer run agents has the schedule's firings refused. The same
+delegation lets an agent registered by one who holds `run` start executions itself. Each firing, skipped and
+refused ones too, is an audit line (`firing` with the execution and the reason). Creating and deleting a
+schedule are the caller's actions on the event logs; a firing is no agent's call, and not an event.
+
+The service starts with `schedules.yaml`: `batch-runner`, the eval team's background service account, has
+`eval-summarizer` summarize the evaluation runs every 15 minutes. As a seeded schedule it holds no identity, so
+its firings are not decided. For that volume, `telemetry.yaml` traces a fifth of `eval-summarizer`'s
+executions, without their content.

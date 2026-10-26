@@ -72,6 +72,7 @@ class Execution(BaseModel):
     input: str
     resume_input: str | None = None  # what its latest resume told it
     started_by: str
+    schedule_id: str | None = None  # the schedule that started it, if one did
     state: ExecutionState
     traced: bool
     capture_content: bool  # whether its trace keeps prompts and replies, when it is traced
@@ -199,7 +200,7 @@ class Executions:
         self._telemetry = configuration
         return configuration
 
-    def start(self, request: ExecutionRequest, started_by: str) -> Execution:
+    def start(self, request: ExecutionRequest, started_by: str, schedule_id: str | None = None) -> Execution:
         """Queue a run of the agent's latest version; 404 for no such agent, 409 retired, 503 no runner."""
         if not self._runners_by_name:
             raise HTTPException(HTTPStatus.SERVICE_UNAVAILABLE, "the company has no runner to run agents on")
@@ -216,6 +217,7 @@ class Executions:
                     version=agent.latest_version,
                     input=request.input,
                     started_by=started_by,
+                    schedule_id=schedule_id,
                     state=ExecutionState.QUEUED,
                     traced=traced,
                     capture_content=telemetry.capture_content,

@@ -1,16 +1,21 @@
 """Telemetry settings: whether the company traces an agent's executions, how many, and what a trace keeps.
 
-The service has defaults, and an agent's own settings override any of them. Whether an execution is traced is
-decided once, when it starts, from its agent's settings then. A trace that captures no content keeps each
-model and tool call's metadata, without its prompt, reply, arguments or result, as OpenTelemetry's
-generative-AI instrumentations do when content capture is off.
+The service has defaults, and an agent's own settings override any of them; it starts with ``telemetry.yaml``.
+Whether an execution is traced is decided once, when it starts, from its agent's settings then. A trace that
+captures no content keeps each model and tool call's metadata, without its prompt, reply, arguments or result,
+as OpenTelemetry's generative-AI instrumentations do when content capture is off.
 """
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
 from meridian_controlplane.agents.registry import AgentName
+
+SEEDED_TELEMETRY_FILE = Path(__file__).with_name("telemetry.yaml")
 
 
 class TelemetrySettings(BaseModel):
@@ -45,3 +50,8 @@ class TelemetryConfiguration(BaseModel):
         """The settings ``agent``'s executions are traced by: its overrides over the defaults."""
         overrides = self.agents.get(agent, TelemetryOverrides())
         return self.defaults.model_copy(update=overrides.model_dump(exclude_none=True))
+
+
+def load_seeded_telemetry(seed_file: Path = SEEDED_TELEMETRY_FILE) -> TelemetryConfiguration:
+    """The telemetry settings in ``seed_file``, which the service starts with."""
+    return TelemetryConfiguration.model_validate(yaml.safe_load(seed_file.read_text()))

@@ -1,0 +1,7 @@
+# The schedules the agents service starts with. batch-runner, the eval team's background service account, has
+# the eval summarizer summarize the evaluation runs every 15 minutes.
+- created_by: batch-runner
+  schedule:
+    agent: eval-summarizer
+    input: Summarize the evaluation runs since your last summary.
+    interval_seconds: 900

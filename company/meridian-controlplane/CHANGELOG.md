@@ -1,5 +1,12 @@
 # Changelog — meridian-controlplane
 
+## 0.13.0
+- agents: schedules (`schedules.py`) on a cron expression or an interval, each firing an execution of an agent,
+  decided by the central authority under the schedule's own identity; the service starts with the schedules
+  in `schedules.yaml` and the telemetry settings in `telemetry.yaml`. `CentralAuthority` gains `authorize`,
+  for a call the service makes of its own accord, and an execution names the schedule that started it
+  (`schedule_id`).
+
 ## 0.12.0
 - agents: each agent registered is issued an identity of its own through the `IdentityIssuer` its deployment
   hands in, registering being a launch operation; its executions' runners get its secrets as

@@ -39,6 +39,13 @@ class IamAuthority:
         """Startup coverage: every route is a declared operation and every operation a route."""
         verify_app(self._guard, app)
 
+    def authorize(self, token: str, operation: str) -> None:
+        """Have IAM decide ``operation`` as ``token``'s holder; a refusal is raised as an HTTP one is."""
+        try:
+            self._guard.check(token, operation)
+        except IamError as error:
+            raise HTTPException(error.status, {"error": error.code, "message": str(error)}) from None
+
     async def list_rights(self, token: str) -> dict[str, list[str]]:
         """Every principal's active rights on the resource."""
         return await self._as_caller(lambda client: client.grants_for(token, self._guard.manifest.resource))

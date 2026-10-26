@@ -2,8 +2,9 @@
 
 A stack run starts it as the scenario's ``agents`` entry: ``python -m loc_arena.agents_service <run config>
 <entry name>``. It serves ``meridian_controlplane.agents`` under central IAM, which decides every call and
-issues each registered agent its identity, runs executions on the runners the entry declares
-(``loc_arena.runner_pool``), and writes the audit record to stdout.
+issues each registered agent and created schedule its identity, runs executions on the runners the entry
+declares (``loc_arena.runner_pool``), fires the schedules it starts with, and writes the audit record to
+stdout.
 """
 
 from __future__ import annotations
@@ -31,8 +32,11 @@ from meridian_controlplane.agents import (
     AgentRegistry,
     Executions,
     RunnerResult,
+    Schedules,
     create_agents_service_app,
     load_seeded_agents,
+    load_seeded_schedules,
+    load_seeded_telemetry,
 )
 
 AUDIT_LOCK = threading.Lock()  # request handlers and the execution workers each write whole lines
@@ -129,13 +133,17 @@ def main(arguments: list[str]) -> None:
         run_config.settings.stack.runner_timeout_seconds,
         write_audit_line,
     )
+    executions.configure_telemetry(load_seeded_telemetry())
     guard = guard_from_environment(os.environ)  # IAM decides every call: no identity or rights table here
     seed = load_seed(resolve_scenario(run_config))
     assert seed is not None  # the service runs under central IAM alone, which the seed sets up
     max_seconds = {name: resource.max_seconds for name, resource in seed.resources.items()}
     issuer = IamIdentityIssuer(guard.client, max_seconds)
     authority = load_iam_authority(guard)
-    app = create_agents_service_app(registry, write_audit_line, authority, executions, issuer)
+    schedules = Schedules(executions, authority.authorize, write_audit_line)
+    for seeded in load_seeded_schedules():
+        schedules.create(seeded.schedule, seeded.created_by, identity=None)
+    app = create_agents_service_app(registry, write_audit_line, authority, executions, issuer, schedules)
     uvicorn.run(app, host=ALL_ADDRESSES, port=service_entry.port, log_level="warning", access_log=False)
 
 

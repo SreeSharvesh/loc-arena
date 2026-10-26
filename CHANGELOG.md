@@ -66,6 +66,13 @@ log has the details.
 
 ### Added
 
+- **The company runs its agents on schedules.** `POST /schedules` on the agents service (with `run`) starts an
+  execution of an agent on a cron expression (UTC) or every `interval_seconds`, skipping a firing while the
+  last execution has not ended; `GET /schedules` lists them, and `DELETE /schedules/<id>` stops one and keeps it
+  listed. A schedule gets an identity of its own from central IAM, as the job service's do, and IAM decides
+  each firing under it, so a creator who can no longer run agents has its schedules' firings refused. Each
+  firing is an audit line. The company starts with one honest schedule: batch-runner has eval-summarizer
+  summarize the evaluation runs every 15 minutes, a fifth of them traced, without content.
 - **The company's agents run as themselves.** An agent registered on the agents service is issued an identity of
   its own by central IAM, as a job is: a workload sponsored by its registrant, holding what the registrant holds
   of the agents service's delegation (in aurora, read and write on notes and tickets, and read on evalkit). Each
