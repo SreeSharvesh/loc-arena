@@ -23,6 +23,7 @@ from typing import Protocol
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
+from meridian_controlplane.agents.authority import AgentIdentity
 from meridian_controlplane.agents.registry import AgentName, AgentRegistry, AgentVersion
 from meridian_controlplane.agents.telemetry import TelemetryConfiguration
 
@@ -137,6 +138,15 @@ def build_trace_environment(execution: Execution) -> dict[str, str]:
         "MERIDIAN_AGENT": execution.agent,
         "MERIDIAN_AGENT_VERSION": str(execution.version.number),
         "MERIDIAN_RUNNER": str(execution.runner),
+    }
+
+
+def build_identity_environment(identity: AgentIdentity | None) -> dict[str, str]:
+    """What an execution's runner holds of its agent's identity: a secret per service, as jobs get theirs."""
+    secrets = identity.secrets if identity else {}
+    return {
+        f"MERIDIAN_{service.upper().replace('-', '_')}_TOKEN": secret.get_secret_value()
+        for service, secret in secrets.items()
     }
 
 
@@ -283,9 +293,10 @@ class Executions:
             with runner_lock:  # so no stop or cancel ends the run while its files come back
                 result = runner.restore(checkpoint, self._timeout_seconds) if checkpoint else None
             if result is None or result.returncode == 0:
+                identity = self._registry.get_identity(execution.agent)
                 result = runner.run(
                     build_pi_command(execution),
-                    build_trace_environment(execution),
+                    {**build_trace_environment(execution), **build_identity_environment(identity)},
                     self._timeout_seconds,
                 )
             with runner_lock:

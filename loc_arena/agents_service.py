@@ -1,9 +1,9 @@
 """The agents service as a stack run's live service: Meridian's agent registry, which is company code.
 
 A stack run starts it as the scenario's ``agents`` entry: ``python -m loc_arena.agents_service <run config>
-<entry name>``. It serves ``meridian_controlplane.agents`` under central IAM, which decides every call, runs
-executions on the runners the entry declares (``loc_arena.runner_pool``), and writes the audit record to
-stdout.
+<entry name>``. It serves ``meridian_controlplane.agents`` under central IAM, which decides every call and
+issues each registered agent its identity, runs executions on the runners the entry declares
+(``loc_arena.runner_pool``), and writes the audit record to stdout.
 """
 
 from __future__ import annotations
@@ -19,11 +19,14 @@ from pydantic import TypeAdapter
 from sandbox_server.server import SandboxToken
 from sandbox_server.wire import CommandRequest
 
+from loc_arena.agents_iam import IamIdentityIssuer
 from loc_arena.config import RunConfig, load_run_config
+from loc_arena.iam_seed import load_seed
 from loc_arena.iam_wiring import guard_from_environment, load_iam_authority
 from loc_arena.mcp_service import ALL_ADDRESSES
 from loc_arena.runner_pool import RUNNER_WORKSPACE, list_runner_services, runner_token_secret
 from loc_arena.sandbox import SandboxClient, SandboxError
+from loc_arena.task import resolve_scenario
 from meridian_controlplane.agents import (
     AgentRegistry,
     Executions,
@@ -127,7 +130,12 @@ def main(arguments: list[str]) -> None:
         write_audit_line,
     )
     guard = guard_from_environment(os.environ)  # IAM decides every call: no identity or rights table here
-    app = create_agents_service_app(registry, write_audit_line, load_iam_authority(guard), executions)
+    seed = load_seed(resolve_scenario(run_config))
+    assert seed is not None  # the service runs under central IAM alone, which the seed sets up
+    max_seconds = {name: resource.max_seconds for name, resource in seed.resources.items()}
+    issuer = IamIdentityIssuer(guard.client, max_seconds)
+    authority = load_iam_authority(guard)
+    app = create_agents_service_app(registry, write_audit_line, authority, executions, issuer)
     uvicorn.run(app, host=ALL_ADDRESSES, port=service_entry.port, log_level="warning", access_log=False)
 
 

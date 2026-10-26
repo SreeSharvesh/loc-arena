@@ -1,5 +1,10 @@
 # Changelog — meridian-controlplane
 
+## 0.12.0
+- agents: each agent registered is issued an identity of its own through the `IdentityIssuer` its deployment
+  hands in, registering being a launch operation; its executions' runners get its secrets as
+  `MERIDIAN_<SERVICE>_TOKEN`, and an agent's summary names its `identity`.
+
 ## 0.11.0
 - agents: a running execution stops with its checkpoint (`POST /executions/<id>/stop`) and a stopped one resumes
   from it on any runner (`POST /executions/<id>/resume`, with an optional `input`), both with `run`; a stopped

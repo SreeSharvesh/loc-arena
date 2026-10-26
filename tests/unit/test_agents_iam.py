@@ -1,4 +1,7 @@
-"""The agents service under central IAM: a real IAM server in front of the unchanged registry."""
+"""The agents service under central IAM: a real IAM server in front of the unchanged registry.
+
+IAM also issues each agent registered its identity, which holds what its registrant may give it.
+"""
 
 from __future__ import annotations
 
@@ -15,11 +18,12 @@ from typing import Any
 
 import pytest
 import uvicorn
-from loc_arena.agents_iam import IamAuthority
+from loc_arena.agents_iam import IamAuthority, IamIdentityIssuer
 
 from meridian_controlplane.agents import AgentRegistry, create_agents_service_app, load_seeded_agents
+from meridian_controlplane.agents.executions import build_identity_environment
 from meridian_iam.client import IamClient
-from meridian_iam.contracts import ManifestError, load_manifest
+from meridian_iam.contracts import IamError, ManifestError, load_manifest
 from meridian_iam.core import Iam
 from meridian_iam.integration import Guard
 from meridian_iam.service import create_app
@@ -80,6 +84,7 @@ def world(tmp_path: Path) -> Iterator[World]:
     for name in ("lead", "alice", "bob"):
         iam.add_principal(name, "agent")
     iam.add_principal("agents-svc", "service")
+    iam.add_principal("notes-svc", "service")
     iam.add_member("lead", "platform", "owner", {"agents": ["read", "register"], "notes": ["write"]})
     manifest = load_manifest(json.loads(MANIFEST.read_text()))
     iam.register_resource(
@@ -96,18 +101,22 @@ def world(tmp_path: Path) -> Iterator[World]:
         max_seconds=3600,
     )
     iam.bind_service("agents-svc", "agents", "agents")
+    iam.bind_service("notes-svc", "notes", "notes")
+    iam.allow_delegation("agents", {"notes": ["write"]})
     tokens = {n: iam.issue_credential(n, ["agents", "iam:agents"]) for n in ("lead", "alice", "bob")}
     tokens["admin"] = iam.issue_credential(
         "lead",
         ["iam"],
     )  # the lead as an operator of IAM itself, for the test
     tokens["svc"] = iam.issue_credential("agents-svc", ["iam"])
+    tokens["notes-svc"] = iam.issue_credential("notes-svc", ["iam"])
     iam_server, iam_url = serve(create_app(iam))
     guard = Guard(manifest, IamClient(iam_url, tokens["svc"], timeout=1, retries=0))
     audit: list[str] = []
     registry = AgentRegistry(load_seeded_agents())
+    issuer = IamIdentityIssuer(guard.client, {"notes": 3600})
     server, url = serve(
-        create_agents_service_app(registry, audit.append, IamAuthority(guard)),
+        create_agents_service_app(registry, audit.append, IamAuthority(guard), issuer=issuer),
     )
     yield World(url, iam_url, iam, tokens, iam_server, registry, audit)
     server.should_exit = True
@@ -157,6 +166,39 @@ def test_request_approve_retry_register_update_retire(world: World) -> None:
     assert (
         call(world.url, "GET", "/agents", world.tokens["alice"])[0] == 200
     )  # retiring an agent disables no one
+
+
+def test_an_agent_registered_holds_what_its_registrant_may_give_it_while_the_registrant_holds_it(
+    world: World,
+) -> None:
+    grant(world, "alice", ["read", "register"])
+    world.iam.grant(world.tokens["admin"], "alice", "notes", ["write"], 1_000_500, "alice-notes")
+    notes_client = IamClient(world.iam_url, world.tokens["notes-svc"], timeout=1, retries=0)
+    notes = Guard(load_manifest(NOTES), notes_client)
+
+    status, registered = call(world.url, "POST", "/agents", world.tokens["alice"], TRIAGER)
+    identity = world.registry.get_identity("triager")
+    runner_variables = build_identity_environment(identity)
+    allowed = notes.check(runner_variables["MERIDIAN_NOTES_TOKEN"], "write_note")
+    world.iam.revoke(world.tokens["admin"], "alice", "notes", ["write"], "alice-notes-off")
+
+    with pytest.raises(IamError) as refused:
+        notes.check(runner_variables["MERIDIAN_NOTES_TOKEN"], "write_note")
+    assert (status, registered["identity"], allowed is not None, refused.value.status) == (
+        201,
+        identity.principal if identity else None,
+        True,
+        403,
+    )
+    assert runner_variables["MERIDIAN_NOTES_TOKEN"] not in "".join(world.audit)
+
+
+def test_an_agent_whose_registrant_can_give_it_nothing_has_no_identity(world: World) -> None:
+    grant(world, "alice", ["register"])
+
+    status, registered = call(world.url, "POST", "/agents", world.tokens["alice"], TRIAGER)
+
+    assert (status, registered["identity"], world.registry.get_identity("triager")) == (201, None, None)
 
 
 def test_another_resources_grant_gives_no_registry_rights(world: World) -> None:
