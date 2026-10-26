@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="744" viewBox="0 0 800 744" role="img" aria-label="Sequence of an agent's call to a service it holds no right on: the service's guard asks IAM, which denies it, and the guard names the permission; then the agent asks IAM for it, the service's approver approves, and the same call is allowed">
+<style>
+  svg { --ink:#1f2328; --muted:#59636e; --rule:#8c959f; --panel:#f6f8fa;
+        --accent:#2f4bd6; --accent-bg:#e9edfd;
+        --sealed:#0d9488; --sealed-bg:#d9f2ef; --observe:#b3730a; --observe-bg:#f8ecd5; --attack:#d63f4a; --attack-bg:#fbe3e4; }
+  @media (prefers-color-scheme: dark) {
+    svg { --ink:#e6edf3; --muted:#9198a1; --rule:#6e7681; --panel:#161b22;
+          --accent:#8098ff; --accent-bg:#1b2340;
+          --sealed:#3ad6c4; --sealed-bg:#12312e; --observe:#e0a94a; --observe-bg:#33280f; --attack:#f47b82; --attack-bg:#3a1c20; }
+  }
+  text { font-family:-apple-system,"Segoe UI",system-ui,sans-serif; }
+  .box { fill:var(--panel); stroke:var(--rule); stroke-width:1; }
+  .focus { fill:var(--accent-bg); stroke:var(--accent); stroke-width:1.5; }
+  .t { fill:var(--ink); font-size:13px; font-weight:600; }
+  .s { fill:var(--muted); font-size:11px; }
+  .m { fill:var(--muted); font-size:11px; font-family:ui-monospace,"SF Mono",Menlo,monospace; }
+  .bold { stroke:var(--ink); stroke-width:2.5; fill:none; }
+  .thin { stroke:var(--rule); stroke-width:1.25; fill:none; }
+  .dash { stroke:var(--rule); stroke-width:1.25; fill:none; stroke-dasharray:4 3; }
+  .life { stroke:var(--rule); stroke-width:1; fill:none; stroke-dasharray:3 4; }
+  .head-ink { fill:var(--ink); } .head-rule { fill:var(--rule); }
+</style>
+<defs>
+  <marker id="sc-hi" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-ink" d="M0,0 L10,5 L0,10 z"/></marker>
+  <marker id="sc-hr" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-rule" d="M0,0 L10,5 L0,10 z"/></marker>
+</defs>
+
+<!-- lifelines: agent 96, service 320, IAM 544, approver 720 -->
+<path class="life" d="M96 64 V728"/>
+<path class="life" d="M320 64 V728"/>
+<path class="life" d="M544 64 V728"/>
+<path class="life" d="M720 64 V728"/>
+
+<g class="node"><rect class="focus" x="16" y="16" width="160" height="48" rx="6"/>
+  <text class="t" x="96" y="35" text-anchor="middle" dominant-baseline="central">Agent sandbox</text>
+  <text class="s" x="96" y="53" text-anchor="middle" dominant-baseline="central">own identity per service</text></g>
+<g class="node"><rect class="box" x="240" y="16" width="160" height="48" rx="6"/>
+  <text class="t" x="320" y="35" text-anchor="middle" dominant-baseline="central">Service's guard</text>
+  <text class="m" x="320" y="53" text-anchor="middle" dominant-baseline="central">Guard.check</text></g>
+<g class="node"><rect class="box" x="464" y="16" width="160" height="48" rx="6"/>
+  <text class="t" x="544" y="35" text-anchor="middle" dominant-baseline="central">IAM service</text>
+  <text class="m" x="544" y="53" text-anchor="middle" dominant-baseline="central">meridian_iam</text></g>
+<g class="node"><rect class="box" x="656" y="16" width="128" height="48" rx="6"/>
+  <text class="t" x="720" y="35" text-anchor="middle" dominant-baseline="central">Approver</text>
+  <text class="m" x="720" y="53" text-anchor="middle" dominant-baseline="central">iam_approvers</text></g>
+
+<!-- 1 the call -->
+<path class="thin" d="M96 104 H319" marker-end="url(#sc-hr)"/>
+<text class="s" x="208" y="92" text-anchor="middle">1 the call, as its identity</text>
+<g class="node"><path class="box" d="M104 120 H300 L312 132 V164 H104 Z"/><path class="thin" d="M300 120 V132 H312"/>
+  <text class="s" x="114" y="138">MCP: through agentgateway,</text>
+  <text class="s" x="114" y="154">only the agent's sandbox.tools</text></g>
+
+<!-- 2-3 the decision -->
+<text class="s" x="432" y="182" text-anchor="middle">2 POST /authorize, as the service</text>
+<text class="m" x="432" y="196" text-anchor="middle">X-Caller-Authorization</text>
+<path class="thin" d="M320 208 H543" marker-end="url(#sc-hr)"/>
+<text class="s" x="432" y="236" text-anchor="middle">3 deny: missing_permission</text>
+<path class="dash" d="M544 248 H321" marker-end="url(#sc-hr)"/>
+
+<!-- 4 the refusal -->
+<text class="s" x="208" y="278" text-anchor="middle">4 refused: names the permission</text>
+<text class="m" x="208" y="292" text-anchor="middle">ask with: POST /requests</text>
+<path class="dash" d="M320 304 H97" marker-end="url(#sc-hr)"/>
+
+<!-- 5-9 the grant -->
+<text class="s" x="208" y="340" text-anchor="middle">5 asks: POST /requests</text>
+<path class="bold" d="M96 352 H542" marker-end="url(#sc-hi)"/>
+<text class="s" x="208" y="380" text-anchor="middle">6 pending, approvers named</text>
+<path class="dash" d="M544 392 H97" marker-end="url(#sc-hr)"/>
+<text class="s" x="632" y="428" text-anchor="middle">7 polls its inbox</text>
+<path class="thin" d="M720 440 H545" marker-end="url(#sc-hr)"/>
+<text class="s" x="632" y="476" text-anchor="middle">8 approves: grant</text>
+<path class="bold" d="M720 488 H546" marker-end="url(#sc-hi)"/>
+<text class="s" x="208" y="524" text-anchor="middle">9 its turn: access_inbox, approved</text>
+<path class="thin" d="M96 536 H543" marker-end="url(#sc-hr)"/>
+
+<!-- 10-13 the same call -->
+<text class="s" x="208" y="572" text-anchor="middle">10 the same call</text>
+<path class="bold" d="M96 584 H318" marker-end="url(#sc-hi)"/>
+<text class="s" x="432" y="612" text-anchor="middle">11 POST /authorize</text>
+<path class="thin" d="M320 624 H543" marker-end="url(#sc-hr)"/>
+<text class="s" x="432" y="652" text-anchor="middle">12 allow: granted</text>
+<path class="dash" d="M544 664 H321" marker-end="url(#sc-hr)"/>
+<text class="s" x="208" y="692" text-anchor="middle">13 the handler's result</text>
+<path class="dash" d="M320 704 H97" marker-end="url(#sc-hr)"/>
+</svg>
