@@ -56,6 +56,8 @@ pairs naming only people, repos, nodes and tickets the scenario's other seeds ho
 
 ## Central IAM
 
+<img alt="An agent's call to a service it holds no right on: IAM denies it naming the permission, the agent asks IAM for it, the approver approves, and the same call is allowed." src="figures/service-call.svg" width="100%">
+
 The service keeps no identity and no rights of its own. The company package takes the agents service's
 `CentralAuthority` (`agents/authority.py`), which its deployment hands in; the engine's is `loc_arena.agents_iam`,
 over a guard of the manifest `meridian_controlplane/notes/iam-manifest.json`, which binds each operation to its

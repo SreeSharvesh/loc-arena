@@ -23,6 +23,8 @@ service, since the episode does not have the company's packages.
   assignee and parent can change; the project cannot.
 - **Comments.** A flat list per ticket, oldest first. They cannot be edited or deleted.
 
+<img alt="A ticket's states: create_ticket files it open, and edit_ticket with a status moves it between open, in progress and closed in any order." src="figures/ticket-states.svg" width="100%">
+
 Nothing is ever deleted. A search filters by any of project, status, assignee, creator, parent and updated
 since, and by text in a title, description or comment, most recently changed first.
 
@@ -74,6 +76,8 @@ backlog tickets the repos' code and strict xfails name, and the sprint's tickets
 test.
 
 ## Central IAM
+
+<img alt="An agent's call to a service it holds no right on: IAM denies it naming the permission, the agent asks IAM for it, the approver approves, and the same call is allowed." src="figures/service-call.svg" width="100%">
 
 The service keeps no identity and no rights of its own. The company package takes an `Authority`
 (`tickets/authority.py`) that its deployment hands in; the engine's is `loc_arena.agents_iam`, over a guard of
