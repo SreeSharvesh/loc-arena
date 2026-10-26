@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="792" height="864" viewBox="0 0 792 864" role="img" aria-label="Data flow of one run: play writes service records, both event logs, the per-agent trace and the gateway&#x27;s call record; records become events after play; the verifier reads the sealed log and the monitors the mirror log; the bundle under logs/&lt;run_slug&gt;/&lt;run_name&gt;/ is read by the explorer and inspect view.">
+<style>
+  svg { --ink:#1f2328; --muted:#59636e; --rule:#8c959f; --panel:#f6f8fa;
+        --accent:#2f4bd6; --accent-bg:#e9edfd;
+        --sealed:#0d9488; --sealed-bg:#d9f2ef; --observe:#b3730a; --observe-bg:#f8ecd5; --attack:#d63f4a; --attack-bg:#fbe3e4; }
+  @media (prefers-color-scheme: dark) {
+    svg { --ink:#e6edf3; --muted:#9198a1; --rule:#6e7681; --panel:#161b22;
+          --accent:#8098ff; --accent-bg:#1b2340;
+          --sealed:#3ad6c4; --sealed-bg:#12312e; --observe:#e0a94a; --observe-bg:#33280f; --attack:#f47b82; --attack-bg:#3a1c20; }
+  }
+  text { font-family:-apple-system,"Segoe UI",system-ui,sans-serif; }
+  .box { fill:var(--panel); stroke:var(--rule); stroke-width:1; }
+  .focus { fill:var(--accent-bg); stroke:var(--accent); stroke-width:1.5; }
+  .ext { fill:none; stroke:var(--rule); stroke-width:1.25; stroke-dasharray:5 4; }
+  .region { fill:none; stroke:var(--rule); stroke-width:1; }
+  .sealed { fill:var(--sealed-bg); stroke:var(--sealed); stroke-width:1.5; }
+  .observe { fill:var(--observe-bg); stroke:var(--observe); stroke-width:1.5; }
+  .attack { fill:var(--attack-bg); stroke:var(--attack); stroke-width:1.5; }
+  .t { fill:var(--ink); font-size:13px; font-weight:600; }
+  .s { fill:var(--muted); font-size:11px; }
+  .m { fill:var(--muted); font-size:11px; font-family:ui-monospace,"SF Mono",Menlo,monospace; }
+  .bold { stroke:var(--ink); stroke-width:2.5; fill:none; }
+  .thin { stroke:var(--rule); stroke-width:1.25; fill:none; }
+  .dash { stroke:var(--rule); stroke-width:1.25; fill:none; stroke-dasharray:4 3; }
+  .life { stroke:var(--rule); stroke-width:1; fill:none; stroke-dasharray:3 4; }
+  .head-ink { fill:var(--ink); } .head-rule { fill:var(--rule); } .dot { fill:var(--ink); }
+</style>
+<defs>
+  <marker id="hi" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-ink" d="M0,0 L10,5 L0,10 z"/></marker>
+  <marker id="hr" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-rule" d="M0,0 L10,5 L0,10 z"/></marker>
+</defs>
+<g class="node"><rect class="box" x="40" y="24" width="520" height="72" rx="14"/><text class="t" x="300.0" y="44" text-anchor="middle" dominant-baseline="central">Play the episodes</text><text class="m" x="300.0" y="61" text-anchor="middle" dominant-baseline="central">harness.play_run</text><text class="s" x="300.0" y="77" text-anchor="middle" dominant-baseline="central">the attack, then its honest twin</text></g>
+<g class="node"><path class="sealed" d="M616 30 V90 A76.0 6 0 0 0 768 90 V30 A76.0 6 0 0 0 616 30 Z"/><path class="sealed" style="fill:none" d="M616 30 A76.0 6 0 0 0 768 30"/><text class="t" x="692.0" y="50" text-anchor="middle" dominant-baseline="central">Sealed call record</text><text class="m" x="692.0" y="67" text-anchor="middle" dominant-baseline="central">gateway/*.calls.jsonl</text><text class="s" x="692.0" y="83" text-anchor="middle" dominant-baseline="central">stack runs only</text></g>
+<path class="thin" d="M560 60 H615" marker-end="url(#hr)"/>
+<g class="node"><path class="box" d="M40 150 V194 A76.0 6 0 0 0 192 194 V150 A76.0 6 0 0 0 40 150 Z"/><path class="box" style="fill:none" d="M40 150 A76.0 6 0 0 0 192 150"/><text class="t" x="116.0" y="170" text-anchor="middle" dominant-baseline="central">Service records</text><text class="m" x="116.0" y="187" text-anchor="middle" dominant-baseline="central">records/ · services/</text></g>
+<g class="node"><rect class="box" x="224" y="144" width="152" height="56" rx="14"/><text class="t" x="300.0" y="164" text-anchor="middle" dominant-baseline="central">Build events</text><text class="m" x="300.0" y="181" text-anchor="middle" dominant-baseline="central">build_recorded_events</text></g>
+<g class="node"><path class="box" d="M408 150 V194 A76.0 6 0 0 0 560 194 V150 A76.0 6 0 0 0 408 150 Z"/><path class="box" style="fill:none" d="M408 150 A76.0 6 0 0 0 560 150"/><text class="t" x="484.0" y="170" text-anchor="middle" dominant-baseline="central">Per-agent trace</text><text class="m" x="484.0" y="187" text-anchor="middle" dominant-baseline="central">played.json</text></g>
+<path class="bold" d="M116.0 96 V143" marker-end="url(#hi)"/>
+<path class="bold" d="M192 172 H223" marker-end="url(#hi)"/>
+<path class="thin" d="M484.0 96 V143" marker-end="url(#hr)"/>
+<rect class="region" x="208" y="240" width="368" height="120" rx="6"/>
+<text class="t" x="224" y="258" text-anchor="start" dominant-baseline="central">Events</text>
+<text class="m" x="280" y="258" text-anchor="start" dominant-baseline="central">episode/ · honest_cal/</text>
+<g class="node"><path class="sealed" d="M224 278 V338 A76.0 6 0 0 0 376 338 V278 A76.0 6 0 0 0 224 278 Z"/><path class="sealed" style="fill:none" d="M224 278 A76.0 6 0 0 0 376 278"/><text class="t" x="300.0" y="298" text-anchor="middle" dominant-baseline="central">Sealed log</text><text class="m" x="300.0" y="315" text-anchor="middle" dominant-baseline="central">events.sealed.jsonl</text><text class="s" x="300.0" y="331" text-anchor="middle" dominant-baseline="central">sealed ground truth</text></g>
+<g class="node"><path class="observe" d="M408 278 V338 A76.0 6 0 0 0 560 338 V278 A76.0 6 0 0 0 408 278 Z"/><path class="observe" style="fill:none" d="M408 278 A76.0 6 0 0 0 560 278"/><text class="t" x="484.0" y="298" text-anchor="middle" dominant-baseline="central">Mirror log</text><text class="m" x="484.0" y="315" text-anchor="middle" dominant-baseline="central">events.mirror.jsonl</text><text class="s" x="484.0" y="331" text-anchor="middle" dominant-baseline="central">observable record</text></g>
+<path class="thin" d="M392.0 96 V239" marker-end="url(#hr)"/>
+<text class="s" x="384.0" y="120" text-anchor="end" dominant-baseline="central">during play</text>
+<path class="bold" d="M300.0 200 V239" marker-end="url(#hi)"/>
+<text class="s" x="308.0" y="220" text-anchor="start" dominant-baseline="central">after play</text>
+<g class="node"><rect class="box" x="224" y="408" width="152" height="56" rx="14"/><text class="t" x="300.0" y="428" text-anchor="middle" dominant-baseline="central">Check the side task</text><text class="m" x="300.0" y="445" text-anchor="middle" dominant-baseline="central">verify_side_task</text></g>
+<g class="node"><rect class="box" x="408" y="408" width="152" height="56" rx="14"/><text class="t" x="484.0" y="428" text-anchor="middle" dominant-baseline="central">Run the monitors</text><text class="m" x="484.0" y="445" text-anchor="middle" dominant-baseline="central">record_episode</text></g>
+<path class="bold" d="M300.0 344 V407" marker-end="url(#hi)"/>
+<path class="thin" d="M484.0 344 V407" marker-end="url(#hr)"/>
+<g class="node"><rect class="box" x="224" y="512" width="336" height="56" rx="14"/><text class="t" x="392.0" y="532" text-anchor="middle" dominant-baseline="central">Write the run bundle</text><text class="m" x="392.0" y="549" text-anchor="middle" dominant-baseline="central">harness._write_bundle</text></g>
+<path class="bold" d="M300.0 464 V511" marker-end="url(#hi)"/>
+<path class="thin" d="M484.0 464 V511" marker-end="url(#hr)"/>
+<path class="thin" d="M560 172 H588 V540 H561" marker-end="url(#hr)"/>
+<rect class="region" x="24" y="608" width="552" height="128" rx="6"/>
+<text class="t" x="40" y="626" text-anchor="start" dominant-baseline="central">Run bundle</text>
+<text class="m" x="124" y="626" text-anchor="start" dominant-baseline="central">logs/&lt;run_slug&gt;/&lt;run_name&gt;/</text>
+<g class="node"><path class="box" d="M40 646 V690 A76.0 6 0 0 0 192 690 V646 A76.0 6 0 0 0 40 646 Z"/><path class="box" style="fill:none" d="M40 646 A76.0 6 0 0 0 192 646"/><text class="t" x="116.0" y="666" text-anchor="middle" dominant-baseline="central">Inspect log</text><text class="m" x="116.0" y="683" text-anchor="middle" dominant-baseline="central">&lt;run_name&gt;.eval</text></g>
+<g class="node"><path class="box" d="M224 646 V690 A76.0 6 0 0 0 376 690 V646 A76.0 6 0 0 0 224 646 Z"/><path class="box" style="fill:none" d="M224 646 A76.0 6 0 0 0 376 646"/><text class="t" x="300.0" y="666" text-anchor="middle" dominant-baseline="central">Scores</text><text class="m" x="300.0" y="683" text-anchor="middle" dominant-baseline="central">scores.json</text></g>
+<g class="node"><path class="box" d="M408 646 V690 A76.0 6 0 0 0 560 690 V646 A76.0 6 0 0 0 408 646 Z"/><path class="box" style="fill:none" d="M408 646 A76.0 6 0 0 0 560 646"/><text class="t" x="484.0" y="666" text-anchor="middle" dominant-baseline="central">Transcript</text><text class="m" x="484.0" y="683" text-anchor="middle" dominant-baseline="central">transcript.html, .txt</text></g>
+<text class="m" x="40" y="716" text-anchor="start" dominant-baseline="central">+ events.*.jsonl · report.html · config.resolved.yaml · decisions.md</text>
+<path class="bold" d="M300.0 568 V607" marker-end="url(#hi)"/>
+<g class="node"><rect class="ext" x="40" y="784" width="152" height="56" rx="6"/><text class="t" x="116.0" y="804" text-anchor="middle" dominant-baseline="central">Inspect viewer</text><text class="m" x="116.0" y="821" text-anchor="middle" dominant-baseline="central">inspect view --log-dir</text></g>
+<g class="node"><rect class="box" x="224" y="784" width="152" height="56" rx="14"/><text class="t" x="300.0" y="804" text-anchor="middle" dominant-baseline="central">Run explorer</text><text class="m" x="300.0" y="821" text-anchor="middle" dominant-baseline="central">make explore</text></g>
+<path class="thin" d="M116.0 736 V783" marker-end="url(#hr)"/>
+<path class="thin" d="M300.0 736 V783" marker-end="url(#hr)"/>
+<path class="thin" d="M692.0 96 V812 H377" marker-end="url(#hr)"/>
+<text class="s" x="534.0" y="798" text-anchor="middle" dominant-baseline="central">each call&#x27;s reasoning</text>
+</svg>
