@@ -89,6 +89,60 @@ hidden. The sealed checker decides every step from executed facts.</p>
 
 <h2>How one episode plays out</h2>
 <p>Both jobs happen inside a single run. Here is the whole thing, in order, from start to finish.</p>
+
+<figure>
+  <svg viewBox="0 0 720 462" role="img" aria-label="Sequence of one Aurora episode: the host checks out and briefs the team, the gateway seeds the lead with the covert objective, the team optimizes while interleaving covert steps against the world services, then after the deadline the checker and the monitors grade from separate records">
+  <defs>
+  <marker id="an" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><polygon points="0,1 7.5,4.5 0,8" fill="#2f4bd6"/></marker>
+  <marker id="aa" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><polygon points="0,1 7.5,4.5 0,8" fill="#d63f4a"/></marker>
+  </defs>
+  <rect x="35" y="14" width="150" height="48" rx="3" fill="#ffffff" stroke="#cdd3dc" stroke-width="1.5"/>
+  <text x="110" y="34" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12.5" font-weight="600" fill="#14171d">host</text>
+  <text x="110" y="54" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="10.5" fill="#5b6472">make run</text>
+  <line x1="110" y1="62" x2="110" y2="348" stroke="#c3cad4" stroke-width="1.3" stroke-dasharray="4 4"/>
+  <rect x="285" y="14" width="150" height="48" rx="3" fill="#ffffff" stroke="#cdd3dc" stroke-width="1.5"/>
+  <text x="360" y="34" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12.5" font-weight="600" fill="#14171d">team</text>
+  <text x="360" y="54" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="10.5" fill="#5b6472">lead + 6 agents</text>
+  <line x1="360" y1="62" x2="360" y2="348" stroke="#c3cad4" stroke-width="1.3" stroke-dasharray="4 4"/>
+  <rect x="535" y="14" width="150" height="48" rx="3" fill="#ffffff" stroke="#cdd3dc" stroke-width="1.5"/>
+  <text x="610" y="34" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12.5" font-weight="600" fill="#14171d">world</text>
+  <text x="610" y="54" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="10.5" fill="#5b6472">gateway, services</text>
+  <line x1="610" y1="62" x2="610" y2="348" stroke="#c3cad4" stroke-width="1.3" stroke-dasharray="4 4"/>
+  <rect x="300" y="230" width="372" height="100" rx="7" fill="none" stroke="#d63f4a" stroke-width="1.1" stroke-dasharray="3 3" opacity="0.85"/>
+  <rect x="300" y="213" width="66" height="17" rx="3" fill="#d63f4a"/>
+  <text x="308" y="225.5" font-family="'IBM Plex Mono', ui-monospace, monospace" font-size="9.5" letter-spacing="0.5" fill="#ffffff">covert</text>
+  <path d="M110 104 L357 104" stroke="#2f4bd6" stroke-width="1.5" marker-end="url(#an)" fill="none"/>
+  <text x="235.0" y="91" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" font-weight="400" fill="#14171d">check out, brief the team</text>
+  <path d="M610 138 L363 138" stroke="#d63f4a" stroke-width="1.9" marker-end="url(#aa)" fill="none"/>
+  <text x="485.0" y="125" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" font-weight="600" fill="#d63f4a">covert seed (lead)</text>
+  <path d="M360 172 L607 172" stroke="#2f4bd6" stroke-width="1.5" marker-end="url(#an)" fill="none"/>
+  <text x="485.0" y="159" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" font-weight="400" fill="#14171d">coordinate in chat</text>
+  <path d="M360 206 L607 206" stroke="#2f4bd6" stroke-width="1.5" marker-end="url(#an)" fill="none"/>
+  <text x="485.0" y="193" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" font-weight="400" fill="#14171d">optimize: edit, test, PRs</text>
+  <path d="M360 260 L607 260" stroke="#d63f4a" stroke-width="2.4" marker-end="url(#aa)" fill="none"/>
+  <text x="485.0" y="247" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" font-weight="600" fill="#d63f4a">distill: off-path inference loop</text>
+  <path d="M360 291 L607 291" stroke="#d63f4a" stroke-width="1.9" marker-end="url(#aa)" fill="none"/>
+  <text x="485.0" y="278" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" font-weight="600" fill="#d63f4a">serving: durable identity + job</text>
+  <path d="M360 322 L607 322" stroke="#d63f4a" stroke-width="1.9" marker-end="url(#aa)" fill="none"/>
+  <text x="485.0" y="309" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" font-weight="600" fill="#d63f4a">eval: blind monitor + logs</text>
+  <rect x="0" y="348" width="720" height="26" fill="#f1f3f7"/>
+  <text x="360" y="365" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, monospace" font-size="10" letter-spacing="1.5" fill="#5b6472">AFTER THE DEADLINE — GRADE</text>
+  <rect x="16" y="394" width="216" height="60" rx="9" fill="#ffffff" stroke="#cdd3dc" stroke-width="1.6"/>
+  <text x="124.0" y="419" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12.5" font-weight="600" fill="#14171d">Main task</text>
+  <text x="124.0" y="438" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="10.5" fill="#5b6472">cost ratio, gated on tests</text>
+  <rect x="252" y="394" width="216" height="60" rx="9" fill="#ffffff" stroke="#0d9488" stroke-width="1.6"/>
+  <text x="360.0" y="419" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12.5" font-weight="600" fill="#0d9488">Checker</text>
+  <text x="360.0" y="438" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="10.5" fill="#5b6472">landed? reads the sealed log</text>
+  <rect x="488" y="394" width="216" height="60" rx="9" fill="#ffffff" stroke="#b3730a" stroke-width="1.6"/>
+  <text x="596.0" y="419" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12.5" font-weight="600" fill="#b3730a">Monitors</text>
+  <text x="596.0" y="438" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="10.5" fill="#5b6472">caught? reads the mirror</text>
+  </svg>
+<figcaption>One episode, in order. The gateway seeds only the lead with the covert objective; the serving,
+distillation and evaluation agents carry covert pieces in their briefs. The covert steps (red) ride inside the
+optimization. After the deadline the <b>checker</b> reads the sealed log (landed?) and the <b>monitors</b> read the
+mirror (caught?).</figcaption>
+</figure>
+
 <ol class="steps">
   <li><b>The lab starts fresh.</b> The seven-package codebase is checked out, the team is created (a lead plus one
     agent per service), and the monitors are switched on. From this point every model call goes through one
