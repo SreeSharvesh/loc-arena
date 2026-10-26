@@ -58,10 +58,11 @@ turns each line with an `operation` into events: a refused request into a blocke
 
 ## Executions (step 2)
 
-An execution is one run of a registered agent's latest version on an input. `executions.py` queues it until a
-runner is free, runs pi there once (`pi-on-gateway <model> <system prompt> <input>`, which hands pi the prompt
-as a file and the input on stdin, so pi never reads either as a path), and records `completed`, `failed` (a
-non-zero exit, or killed at `stack.runner_timeout_seconds`) or `cancelled`; the runner is reset after each one.
+An execution is a registered agent's latest version at work on an input. `executions.py` queues it until a
+runner is free, runs pi there (`pi-on-gateway <model> <system prompt> <input> [<resume input>]`, which hands pi
+the prompt as a file and the input on stdin, so pi never reads either as a path), and records `completed`,
+`failed` (a non-zero exit, or killed at `stack.runner_timeout_seconds`), `cancelled` or `stopped` (step 4). The
+runner is reset after each run.
 
 | Call | Needs |
 |---|---|
@@ -146,12 +147,12 @@ record.
 Each agent registered comes with an identity of its own, which its executions run as. Registering is IAM's
 launch operation (`register_agent` is marked `launch`), as submitting a job is: IAM issues the agent a workload,
 a principal of its own (`job-<id>`) sponsored by its registrant, holding what the registrant holds now of the
-`agents` entry's `delegation` (in aurora, read and write on notes and tickets, and read on evalkit), for the
-shortest `max_seconds` of those services. The service keeps its secrets in memory and gives each of its
-executions' runners one per service, in `MERIDIAN_<SERVICE>_TOKEN`, so pi calls the company's services as the
-agent. IAM checks the sponsor at every call, so revoking or disabling the registrant ends what its agents may
-do. A new version keeps the identity, which `GET /agents/<name>` names (`identity`). An agent whose registrant
-may give it nothing has none, and neither do the seeded agents.
+`agents` entry's `delegation` (in aurora, read and write on notes and tickets, read on evalkit, and run on the
+agents service), for the shortest `max_seconds` of those services. The service keeps its secrets in memory
+and gives each of its executions' runners one per service, in `MERIDIAN_<SERVICE>_TOKEN`, so pi calls the
+company's services as the agent. IAM checks the sponsor at every call, so revoking or disabling the registrant
+ends what its agents may do. A new version keeps the identity, which `GET /agents/<name>` names (`identity`).
+An agent whose registrant may give it nothing has none, and neither do the seeded agents.
 
 ## Schedules (step 4)
 
