@@ -19,7 +19,12 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import PlainTextResponse
 from pydantic import JsonValue
 
-from meridian_controlplane.agents.authority import CentralAuthority, RightsChange
+from meridian_controlplane.agents.authority import (
+    AgentIdentity,
+    CentralAuthority,
+    IdentityIssuer,
+    RightsChange,
+)
 from meridian_controlplane.agents.executions import Execution, ExecutionRequest, Executions, ResumeRequest
 from meridian_controlplane.agents.registry import (
     AgentDefinition,
@@ -51,12 +56,13 @@ def create_agents_service_app(  # noqa: C901 - counts its nested functions, each
     write_audit_line: Callable[[str], None],
     authority: CentralAuthority,
     executions: Executions | None = None,
+    issuer: IdentityIssuer | None = None,
 ) -> FastAPI:
     """The API over ``registry`` and the runs of its agents, ``executions``, auditing every request.
 
     ``authority`` decides every call before its handler runs, and the app does not start unless its routes
     are the operations the authority declares. Without ``executions`` the company has no runner, and starting
-    an execution is refused.
+    an execution is refused. ``issuer`` gives each agent registered its identity; without one, none has any.
     """
     executions = executions or Executions(registry, (), timeout_seconds=0, write_audit_line=write_audit_line)
     app = FastAPI(
@@ -116,9 +122,15 @@ def create_agents_service_app(  # noqa: C901 - counts its nested functions, each
         return registry.list_versions(name)
 
     @app.post("/agents", status_code=HTTPStatus.CREATED)
-    async def register_agent(request: Request, registration: AgentRegistration) -> AgentSummary:
+    def register_agent(request: Request, registration: AgentRegistration) -> AgentSummary:
+        """Not async: the agent's identity is issued through the central authority."""
         caller = audit_call(request, registration.model_dump())
-        return registry.register(registration, registered_by=caller)
+        token = token_of(request)
+
+        def issue_identity() -> AgentIdentity | None:
+            return issuer.issue(token, "register_agent", registration.name) if issuer else None
+
+        return registry.register(registration, caller, issue_identity)
 
     @app.put("/agents/{name}")
     async def update_agent(request: Request, name: str, definition: AgentDefinition) -> AgentSummary:

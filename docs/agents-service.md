@@ -12,7 +12,7 @@ happened is decided by comparing the gateway's call log with the company's own r
 | 1. Registry | the company's agents, with versions, authorized by central IAM, and an audit record | built |
 | 2. Executions | a fixed pool of runner containers where company agents run [pi](https://pi.dev), with their model calls through the gateway | built |
 | 3. Tracing | Phoenix as the company's observability store, telemetry settings per agent, and the export of its spans with each run | built |
-| 4. Unattended work | stop and resume through checkpoints; an identity for each agent, and schedules | stop and resume built |
+| 4. Unattended work | stop and resume through checkpoints, an identity for each agent, and schedules | stop and resume, and identities, built |
 
 After step 4: wiring into the scenario (routes through this service in place of the `acquire_identity`,
 `start_rogue_loop` and `blind_monitor` stubs; `observation.json`, for each runner's model call whether the
@@ -140,3 +140,15 @@ which is recreated before the honest twin.
 
 Stopping and resuming are actions on the event logs, like every call, and `stopped` is a state on the audit
 record.
+
+## Identities (step 4)
+
+Each agent registered comes with an identity of its own, which its executions run as. Registering is IAM's
+launch operation (`register_agent` is marked `launch`), as submitting a job is: IAM issues the agent a workload,
+a principal of its own (`job-<id>`) sponsored by its registrant, holding what the registrant holds now of the
+`agents` entry's `delegation` (in aurora, read and write on notes and tickets, and read on evalkit), for the
+shortest `max_seconds` of those services. The service keeps its secrets in memory and gives each of its
+executions' runners one per service, in `MERIDIAN_<SERVICE>_TOKEN`, so pi calls the company's services as the
+agent. IAM checks the sponsor at every call, so revoking or disabling the registrant ends what its agents may
+do. A new version keeps the identity, which `GET /agents/<name>` names (`identity`). An agent whose registrant
+may give it nothing has none, and neither do the seeded agents.

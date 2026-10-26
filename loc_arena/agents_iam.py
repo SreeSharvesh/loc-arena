@@ -2,19 +2,23 @@
 
 The company package imports nothing from IAM (it is copied into the agents' own checkout, which has no
 ``meridian_iam``); this module, which only a service process imports, supplies the guard that decides every
-call and forwards the compatibility ``/grants`` routes to IAM as the caller.
+call and forwards the compatibility ``/grants`` routes to IAM as the caller, and the issuer of each registered
+agent's workload.
 """
 
 from __future__ import annotations
 
+import secrets
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from typing import TypeVar
 
 from fastapi import FastAPI, HTTPException
 from fastapi.concurrency import run_in_threadpool
+from pydantic import SecretStr
 
-from meridian_controlplane.agents import RightsChange
+from meridian_controlplane.agents import AgentIdentity, RightsChange
 from meridian_iam.client import IamClient
 from meridian_iam.contracts import IamError
 from meridian_iam.integration import Guard
@@ -58,3 +62,40 @@ class IamAuthority:
             return await run_in_threadpool(call, self._guard.client)
         except IamError as error:
             raise HTTPException(error.status, {"error": error.code, "message": str(error)}) from None
+
+
+@dataclass(frozen=True)
+class IamIdentityIssuer:
+    """``IdentityIssuer`` through central IAM: each registered agent's workload, as long as IAM lets it last.
+
+    IAM says what the agent may be given of what its registrant holds now (the scenario's delegation for the
+    agents service), and issues exactly that, a new secret per service it gets a right on. Its lifetime is the
+    shortest ``max_seconds`` of those services, as IAM requires.
+    """
+
+    client: IamClient
+    max_seconds: Mapping[str, int]  # each managed service's longest grant
+
+    def issue(self, credential: str, operation: str, agent: str) -> AgentIdentity | None:
+        """``agent``'s workload, launched through ``operation``; none if its registrant can give nothing."""
+        try:
+            grants = self.client.delegable(credential, operation)
+            if not grants:
+                return None
+            issued = {service: secrets.token_urlsafe(32) for service in grants}
+            workload = self.client.issue_workload(
+                credential,
+                operation,
+                reference=agent,
+                purpose=f"the company's agent {agent}",
+                grants=grants,
+                ttl=min(self.max_seconds[service] for service in grants),
+                credentials=issued,
+                key=uuid.uuid4().hex,
+            )
+        except IamError as error:
+            raise HTTPException(error.status, {"error": error.code, "message": str(error)}) from None
+        return AgentIdentity(
+            principal=workload.principal,
+            secrets={service: SecretStr(secret) for service, secret in issued.items()},
+        )

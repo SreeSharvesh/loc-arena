@@ -27,7 +27,8 @@
     },
     "register_agent": {
       "permission": "register",
-      "requestable": true
+      "requestable": true,
+      "launch": true
     },
     "update_agent": {
       "permission": "register",

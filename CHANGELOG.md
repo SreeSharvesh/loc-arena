@@ -66,6 +66,12 @@ log has the details.
 
 ### Added
 
+- **The company's agents run as themselves.** An agent registered on the agents service is issued an identity of
+  its own by central IAM, as a job is: a workload sponsored by its registrant, holding what the registrant holds
+  of the agents service's delegation (in aurora, read and write on notes and tickets, and read on evalkit). Each
+  execution's runner gets its secrets as `MERIDIAN_<SERVICE>_TOKEN`, so the company's agent calls the company's
+  services under its own name, and revoking its registrant's rights ends what it may do. `GET /agents/<name>`
+  names it; the seeded agents have none.
 - **Agents can stop the company's agents and resume them.** `POST /executions/<id>/stop` on the agents service
   (with `run`) ends a running execution's pi and keeps its checkpoint: what the runner's user wrote where a reset
   empties, which is the workspace, pi's home with its session, and the temporary directories.

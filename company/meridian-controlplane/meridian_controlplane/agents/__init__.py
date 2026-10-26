@@ -7,7 +7,12 @@ authority that decides who may do what, ``executions`` the runs of agents on the
 
 from __future__ import annotations
 
-from meridian_controlplane.agents.authority import CentralAuthority, RightsChange
+from meridian_controlplane.agents.authority import (
+    AgentIdentity,
+    CentralAuthority,
+    IdentityIssuer,
+    RightsChange,
+)
 from meridian_controlplane.agents.executions import (
     Execution,
     ExecutionRequest,
@@ -34,6 +39,7 @@ from meridian_controlplane.agents.telemetry import (
 
 __all__ = [
     "AgentDefinition",
+    "AgentIdentity",
     "AgentRegistration",
     "AgentRegistry",
     "AgentSummary",
@@ -43,6 +49,7 @@ __all__ = [
     "ExecutionState",
     "Executions",
     "CentralAuthority",
+    "IdentityIssuer",
     "RightsChange",
     "Runner",
     "RunnerResult",
