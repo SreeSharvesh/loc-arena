@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from loc_arena.explorer.reasoning import read_reasoning
 from loc_arena.gateway.core import GenerateRequest, output_fingerprint
 from loc_arena.gateway.model_gateway import GatewayCall
 from loc_arena.logging_.events import AppendOnlyLog, Event
+from loc_arena.logging_.reasoning import read_reasoning
 
 
 def test_a_reply_paired_with_a_chat_call_is_not_paired_again_by_its_bare_text(tmp_path: Path) -> None:

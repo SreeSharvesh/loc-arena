@@ -99,6 +99,7 @@ ignore = [
 "loc_arena/logging_/viewer.py" = ["E501"]
 "loc_arena/logging_/agent_trace.py" = ["D102", "D103", "D107"]
 "loc_arena/logging_/inspect_export.py" = ["D103"]
+"loc_arena/logging_/reasoning.py" = ["D103"]
 "loc_arena/logging_/transcript_lanes.py" = ["D103"]
 "loc_arena/logging_/transcript_render.py" = ["D103", "E501"]
 # The harness imports the Inspect exporter and renderer lazily inside _write_bundle/_eval_episodes: inspect_ai

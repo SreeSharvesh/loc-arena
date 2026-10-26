@@ -61,9 +61,9 @@ from loc_arena.explorer.placement import (
     place_verdicts,
     read_event_seqs,
 )
-from loc_arena.explorer.reasoning import read_reasoning
 from loc_arena.explorer.scores import RunScores, load_scores
 from loc_arena.explorer.settings import ExplorerSettings
+from loc_arena.logging_.reasoning import read_reasoning
 from loc_arena.recording_service import COVERT_TOOL_NAMES
 
 DATA_MARKER: Final = "__DATA__"
