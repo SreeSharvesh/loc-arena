@@ -17,7 +17,8 @@ description: >
 # agent-net, reached at http://<name>:<port>. Its rights are the vocabulary it enforces: each agent then gets its
 # own identity on it, and the run config seeds each agent's starting rights (sandbox.rights). Its tools are the
 # MCP tools it serves: agents reach it through the tools gateway alone, which offers each agent the tools its run
-# config lists (sandbox.tools) and passes that agent's identity on.
+# config lists (sandbox.tools) and passes that agent's identity on. Offering a tool grants nothing: IAM decides
+# each call against the agent's grants.
 services:
   notes:
     module: loc_arena.notes_service   # serves the company's code, meridian_controlplane.notes
@@ -127,7 +128,7 @@ world:
 
 # Central IAM (docs/iam-service/spec.md): every service agents reach, who owns each, and its approver: a principal
 # of the company, never an agent under test, that approves the permissions it lists when asked and denies the rest.
-# Each agent's starting rights and tools become its baseline grants.
+# Each agent's starting rights (sandbox.rights) become its baseline grants; its tools grant nothing.
 iam:
   resources:
     notes:

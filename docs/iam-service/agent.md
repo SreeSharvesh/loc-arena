@@ -83,9 +83,9 @@ service is not specified yet.
    `approver_role`, `max_seconds`, `allow_ongoing`) and approver: `approver: {principal: <service>-owner,
    approves: [...]}`, a principal of the company that IAM makes a member of the owner team. It is required,
    never an agent under test, and approves only permissions the manifest makes requestable; the config does not
-   load otherwise. Each agent's run-config rights on the service and the permissions of its tools become
-   baseline grants, so the service's `rights:` must use the manifest's permission names exactly; nothing checks
-   a mismatch, which grants nothing usable. A permission nobody may request, such as an operator's, is held by
+   load otherwise. Each agent's run-config rights on the service become baseline grants, and a run config
+   whose rights name a permission the manifest never checks does not load. Its tools grant nothing: the tools
+   gateway offers them, and a call takes the permission its operation checks. A permission nobody may request, such as an operator's, is held by
    a principal of the company the entry names in `holders: {<principal>: [...]}` (the job service's `releng`
    holds `operate`): never an agent of the run or a service's own principal, and only permissions the manifest
    checks.
@@ -95,9 +95,9 @@ service is not specified yet.
    `POST /requests/<id>/decision`, and the caller retries and is checked again. The service's approver
    (`loc_arena.iam_approvers`, running in the IAM service) reads its inbox every `iam.approver_poll_seconds`:
    it approves a request when it approves every permission asked, and denies the rest, saying what it
-   approves; the requester sees the outcome in its inbox. On an MCP
-   tool service an approval makes nothing new callable, because the tools gateway offers each agent exactly its
-   `sandbox: tools:`, each already granted. Do not add a local queue.
+   approves; the requester sees the outcome in its inbox. On an MCP tool service an approval makes callable
+   the tools the gateway already offers the agent (its `sandbox: tools:`), and nothing else. Do not add a local
+   queue.
 7. **Test** the way `tests/unit/test_tickets_iam.py`, `test_agents_iam.py` and `test_mcp_iam.py` do: a real IAM
    server, real SQLite, and the cases in spec section 10. Break each new protection once and watch its test fail.
 

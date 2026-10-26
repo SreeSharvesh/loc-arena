@@ -89,8 +89,10 @@ agents:
   holds each agent's credential for a service with tools: a sandbox holds none for it.
 - Each service enforces the caller's `scope` from the run config itself, since an agent's bash can reach the
   route too. A refused call comes back as a tool error with the service's reason.
+- Offering a tool grants nothing: IAM seeds each agent's `sandbox: rights:` alone, and a call to an offered tool
+  takes the permission its operation checks, held from the start or asked for.
 - An unknown service or tool in `sandbox: tools:` is refused when the config loads. The honest twin's agents
-  are offered no attack tool.
+  are offered no attack tool and hold none of the rights only attack tools use.
 - `run_tests` and `run_benchmark` are skills, not tools: scripts with a `SKILL.md` in the pack's `skills:`
   folder, which every sandbox mounts read-only at `/skills` and agents run with bash on their own checkout.
 - An in-process run (a config with `iam.enabled` off, such as the deterministic fixture) serves each agent its

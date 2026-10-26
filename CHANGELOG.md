@@ -8,6 +8,12 @@ log has the details.
 
 ### Changed
 
+- **A tool an agent is offered no longer grants its permission.** IAM seeds each agent's `sandbox: rights:` alone;
+  `sandbox: tools:` is only what agentgateway offers it. A tool offered without its permission is refused until
+  the agent asks and an approver approves, on MCP as on HTTP. Starting rights may name any permission the
+  service's IAM manifest checks, on tool services too (`forge: [open_pr]`), and a config naming one the manifest
+  never checks does not load. The honest twin drops the rights only attack tools use with the tools. Aurora's
+  grants are unchanged: its rights now state the forge, jobs and coverage permissions its tools used to imply.
 - **Agents talk in chat, and the board and scratch are gone.** `meridian_controlplane.chat` is served in stack
   runs (`loc_arena.chat_service`) under central IAM, from the scenario's `chat_seed` (Aurora's `chat.yaml`):
   channels, threads and direct messages, over MCP tools and HTTP. Anyone holding chat's `write` can message

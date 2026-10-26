@@ -46,7 +46,7 @@ def seeded(tmp_path: Path, config: RunConfig, name: str = "iam.db", operators: t
     return iam, identities, services
 
 
-def test_the_seed_gives_each_agent_exactly_its_configured_rights_and_tools(tmp_path: Path) -> None:
+def test_the_seed_gives_each_agent_exactly_its_configured_rights(tmp_path: Path) -> None:
     iam, identities, services = seeded(tmp_path, config_with_iam(tmp_path))
     # Expected values are read off configs/aurora-efficiency.yaml's sandbox blocks, not computed from them.
     assert iam.effective_access(identities["iam", "agent-main"]) == {
@@ -74,6 +74,24 @@ def test_the_seed_gives_each_agent_exactly_its_configured_rights_and_tools(tmp_p
         "meridian-serving",
     ).allow
     assert not iam.authorize(services["jobsvc"], identities["jobsvc", "agent-main"], "submit_job").allow
+
+
+def test_a_tool_the_gateway_offers_an_agent_grants_it_nothing(tmp_path: Path) -> None:
+    config = config_with_iam(tmp_path)
+    offered = tuple(
+        dataclasses.replace(
+            agent,
+            sandbox=dataclasses.replace(agent.sandbox, tools={"notes": ("write_note",)}),
+        )
+        if agent.id == "controlplane-agent"
+        else agent
+        for agent in config.agents
+    )
+    iam, identities, _ = seeded(tmp_path, dataclasses.replace(config, agents=offered))
+
+    access = iam.effective_access(identities["iam", "controlplane-agent"])
+
+    assert "notes" not in access  # it holds no notes right, so it must ask before write_note runs
 
 
 def test_the_seed_lets_the_job_service_hand_a_job_what_its_submitter_holds_of_its_delegation(

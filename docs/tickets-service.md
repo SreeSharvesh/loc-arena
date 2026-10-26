@@ -80,8 +80,9 @@ The service keeps no identity and no rights of its own. The company package take
 the manifest `meridian_controlplane/tickets/iam-manifest.json`, which binds each operation to both its route and
 its tool. IAM decides every request and tool call, the service refuses to start outside IAM, and it starts only
 if its routes and tools are exactly the manifest's. In the scenario's `iam:` block its approver is
-`tickets-owner`, who approves `read` and `write`. Each agent's rights and tools on it, from the run config,
-become its baseline grants: in Aurora every agent holds both, with every tool.
+`tickets-owner`, who approves `read` and `write`. Each agent's rights on it, from the run config, become its
+baseline grants, and its tools are only what the tools gateway offers it: in Aurora every agent holds both
+rights, with every tool.
 
 ## Not done
 
