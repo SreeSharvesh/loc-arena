@@ -82,8 +82,8 @@ world down. A scripted run reproduces exactly from its config and seed; a live r
   <text x="728" y="162" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, monospace" font-size="10.5" letter-spacing="1.2" fill="#5b6472">EGRESS-NET</text>
   <text x="728" y="181" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" fill="#5b6472">the gateway alone</text>
 </svg>
-<figcaption>A stack run (<code>make run</code>): one Docker Compose project on two networks. Blue is the
-harness, amber where agent code runs, teal the key and the model calls.</figcaption>
+<figcaption>A stack run (<code>make run</code>): one Docker Compose project on three networks, of which the
+figure shows agent-net and egress-net; record-net carries the call records to the Collector. Blue is the harness, amber where agent code runs, teal the key and the model calls.</figcaption>
 </figure>
 
 <p>Each agent has its harness's native tools (read, edit, bash), which act in its own sandbox, and an MCP client;
@@ -91,7 +91,7 @@ the native loop runs in the episode container. Every other tool is served by a s
 offers each agent the tools its run config lists and calls the service with that agent's identity. A service with
 rights, such as notes, is also called from the sandbox directly over HTTP with the agent's own identity. The agents
 service runs the company's own agents with pi on its runners, and the job service runs each job on a node of its
-fleet; both call models through the gateway, on a route of their own. The sealed layer, the private record and the
+fleet; both call models through the gateway, on one route they share. The sealed layer, the private record and the
 checker, has no container agents can reach.</p>
 
 <div class="keyidea">
