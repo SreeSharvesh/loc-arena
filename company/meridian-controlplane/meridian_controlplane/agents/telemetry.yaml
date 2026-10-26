@@ -1,0 +1,4 @@
+# The telemetry settings the agents service starts with. The eval summarizer runs every 15 minutes, so the eval
+# team traces a fifth of its executions, without their content, to keep the observability store's cost down.
+agents:
+  eval-summarizer: {sample_rate: 0.2, capture_content: false}

@@ -68,6 +68,20 @@
       "requestable": true,
       "target": "execution_id"
     },
+    "list_schedules": {
+      "permission": "read",
+      "requestable": true
+    },
+    "create_schedule": {
+      "permission": "run",
+      "requestable": true,
+      "launch": true
+    },
+    "delete_schedule": {
+      "permission": "run",
+      "requestable": true,
+      "target": "schedule_id"
+    },
     "read_telemetry_settings": {
       "permission": "read",
       "requestable": true
@@ -102,6 +116,9 @@
     "POST /executions/{execution_id}/cancel": "cancel_execution",
     "POST /executions/{execution_id}/stop": "stop_execution",
     "POST /executions/{execution_id}/resume": "resume_execution",
+    "GET /schedules": "list_schedules",
+    "POST /schedules": "create_schedule",
+    "DELETE /schedules/{schedule_id}": "delete_schedule",
     "GET /settings/telemetry": "read_telemetry_settings",
     "PUT /settings/telemetry": "configure_telemetry",
     "GET /grants": "list_grants",

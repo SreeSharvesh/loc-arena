@@ -148,8 +148,9 @@ iam:
       allow_ongoing: true
       records_actions: true   # its audit line names each operation, so IAM's forwarded event would count it twice
       # Each agent registered runs under its own identity, holding those of these its registrant holds: it reads
-      # and writes the team's notes and tickets, and reads the eval results it summarizes.
-      delegation: {notes: [read, write], tickets: [read, write], evalkit: [read]}
+      # and writes the team's notes and tickets, and reads the eval results it summarizes. A schedule's identity
+      # starts its executions, so IAM decides each firing.
+      delegation: {notes: [read, write], tickets: [read, write], evalkit: [read], agents: [run]}
     forge:
       manifest: scenarios/aurora_efficiency/services/iam-manifests/forge.json
       owner_team: research-platform

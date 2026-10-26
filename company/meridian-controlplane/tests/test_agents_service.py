@@ -105,6 +105,9 @@ class StandInAuthority:
     def verify_routes(self, app: FastAPI) -> None:
         """The deployment's authority checks the routes against the manifest; the engine tests that."""
 
+    def authorize(self, token: str, operation: str) -> None:
+        """The deployment's authority decides the service's own calls; the engine tests that."""
+
     async def list_rights(self, token: str) -> dict[str, list[str]]:
         """Every caller's rights."""
         return {caller: sorted(held) for caller, held in sorted(self._rights.items())}

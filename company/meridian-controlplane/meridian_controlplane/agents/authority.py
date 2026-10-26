@@ -60,6 +60,10 @@ class CentralAuthority(Protocol):
         """Refuse to start unless the routes of ``app`` and the declared operations agree exactly."""
         ...
 
+    def authorize(self, token: str, operation: str) -> None:
+        """Decide a call the service makes of its own accord as ``token``'s holder, as one over HTTP is."""
+        ...
+
     async def list_rights(self, token: str) -> dict[str, list[str]]:
         """Every caller's rights on this service."""
         ...

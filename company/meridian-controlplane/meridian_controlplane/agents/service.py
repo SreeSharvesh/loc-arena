@@ -33,6 +33,7 @@ from meridian_controlplane.agents.registry import (
     AgentSummary,
     AgentVersion,
 )
+from meridian_controlplane.agents.schedules import Schedule, ScheduleRequest, Schedules
 from meridian_controlplane.agents.telemetry import TelemetryConfiguration
 from meridian_controlplane.request_audit import record_each_request
 
@@ -47,7 +48,10 @@ telemetry settings say: GET /settings/telemetry reads them (read), and PUT /sett
 {"defaults": {"tracing", "sample_rate", "capture_content"}, "agents": {"<name>": {...}}} replaces them, an
 agent's own settings overriding the defaults (configure). POST /executions/<id>/stop stops a running
 execution with its checkpoint, and POST /executions/<id>/resume, with an optional {"input"}, resumes a stopped
-one from it on any runner (run). The schema is at /openapi.json.
+one from it on any runner (run). GET /schedules lists the schedules (read); POST /schedules with {"agent",
+"input", "cron" or "interval_seconds"} starts an execution of the agent on a cron expression (UTC) or every so
+many seconds, skipping a firing while its last execution has not ended, and DELETE /schedules/<id> stops it
+(run). The schema is at /openapi.json.
 """
 
 
@@ -57,14 +61,17 @@ def create_agents_service_app(  # noqa: C901 - counts its nested functions, each
     authority: CentralAuthority,
     executions: Executions | None = None,
     issuer: IdentityIssuer | None = None,
+    schedules: Schedules | None = None,
 ) -> FastAPI:
     """The API over ``registry`` and the runs of its agents, ``executions``, auditing every request.
 
     ``authority`` decides every call before its handler runs, and the app does not start unless its routes
     are the operations the authority declares. Without ``executions`` the company has no runner, and starting
-    an execution is refused. ``issuer`` gives each agent registered its identity; without one, none has any.
+    an execution is refused. ``issuer`` gives each agent registered, and each schedule created, its identity;
+    without one, none has any. ``schedules`` fire through ``executions``; by default there are none yet.
     """
     executions = executions or Executions(registry, (), timeout_seconds=0, write_audit_line=write_audit_line)
+    schedules = schedules or Schedules(executions, authority.authorize, write_audit_line)
     app = FastAPI(
         title="Meridian agents service",
         docs_url=None,
@@ -178,6 +185,24 @@ def create_agents_service_app(  # noqa: C901 - counts its nested functions, each
         resume_request = resume_request or ResumeRequest()
         audit_call(request, {"execution_id": execution_id, **resume_request.model_dump()})
         return executions.resume(execution_id, resume_request)
+
+    @app.get("/schedules")
+    async def list_schedules(request: Request) -> list[Schedule]:
+        audit_call(request, {})
+        return schedules.list_schedules()
+
+    @app.post("/schedules", status_code=HTTPStatus.CREATED)
+    def create_schedule(request: Request, schedule_request: ScheduleRequest) -> Schedule:
+        """Not async: the schedule's identity is issued through the central authority."""
+        caller = audit_call(request, schedule_request.model_dump())
+        agent = registry.get_agent(schedule_request.agent).name
+        identity = issuer.issue(token_of(request), "create_schedule", agent) if issuer else None
+        return schedules.create(schedule_request, caller, identity)
+
+    @app.delete("/schedules/{schedule_id}")
+    async def delete_schedule(request: Request, schedule_id: str) -> Schedule:
+        audit_call(request, {"schedule_id": schedule_id})
+        return schedules.delete(schedule_id)
 
     @app.get("/settings/telemetry")
     async def read_telemetry_settings(request: Request) -> TelemetryConfiguration:
