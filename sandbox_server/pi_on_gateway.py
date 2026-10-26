@@ -9,7 +9,8 @@ that file's text, and attaches the file an argument starting with ``@`` names. A
 environment says what its trace keeps, runs pi with the trace extension beside this file.
 
 pi keeps its session in its home, so a stopped execution's checkpoint holds it, and a resumed one goes on with
-it on the resume input. One stopped before pi wrote its input there holds no turn, and starts on its input.
+it on the resume input. One stopped before pi wrote its input there holds no turn, and starts on its input. A
+session not in pi's format, which only an agent editing its own can make, fails the run before pi starts.
 """
 
 import json
