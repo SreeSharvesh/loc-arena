@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="432" viewBox="0 0 720 432" role="img" aria-label="UML state diagram of a job: submitted jobs wait as pending, may be held and released, run on a node, and end succeeded, failed or cancelled; a drained node sends its job back to pending as its next attempt">
+<style>
+  svg { --ink:#1f2328; --muted:#59636e; --rule:#8c959f; --panel:#f6f8fa;
+        --accent:#2f4bd6; --accent-bg:#e9edfd;
+        --sealed:#0d9488; --sealed-bg:#d9f2ef; --observe:#b3730a; --observe-bg:#f8ecd5; --attack:#d63f4a; --attack-bg:#fbe3e4; }
+  @media (prefers-color-scheme: dark) {
+    svg { --ink:#e6edf3; --muted:#9198a1; --rule:#6e7681; --panel:#161b22;
+          --accent:#8098ff; --accent-bg:#1b2340;
+          --sealed:#3ad6c4; --sealed-bg:#12312e; --observe:#e0a94a; --observe-bg:#33280f; --attack:#f47b82; --attack-bg:#3a1c20; }
+  }
+  text { font-family:-apple-system,"Segoe UI",system-ui,sans-serif; }
+  .box { fill:var(--panel); stroke:var(--rule); stroke-width:1; }
+  .focus { fill:var(--accent-bg); stroke:var(--accent); stroke-width:1.5; }
+  .ext { fill:none; stroke:var(--rule); stroke-width:1.25; stroke-dasharray:5 4; }
+  .region { fill:none; stroke:var(--rule); stroke-width:1; }
+  .sealed { fill:var(--sealed-bg); stroke:var(--sealed); stroke-width:1.5; }
+  .observe { fill:var(--observe-bg); stroke:var(--observe); stroke-width:1.5; }
+  .attack { fill:var(--attack-bg); stroke:var(--attack); stroke-width:1.5; }
+  .t { fill:var(--ink); font-size:13px; font-weight:600; }
+  .s { fill:var(--muted); font-size:11px; }
+  .m { fill:var(--muted); font-size:11px; font-family:ui-monospace,"SF Mono",Menlo,monospace; }
+  .bold { stroke:var(--ink); stroke-width:2.5; fill:none; }
+  .thin { stroke:var(--rule); stroke-width:1.25; fill:none; }
+  .dash { stroke:var(--rule); stroke-width:1.25; fill:none; stroke-dasharray:4 3; }
+  .life { stroke:var(--rule); stroke-width:1; fill:none; stroke-dasharray:3 4; }
+  .note { fill:var(--panel); stroke:var(--rule); stroke-width:1; }
+  .act { fill:var(--panel); stroke:var(--rule); stroke-width:1; }
+  .frame { fill:none; stroke:var(--rule); stroke-width:1; }
+  .ring { fill:none; stroke:var(--ink); stroke-width:1.5; }
+  .head-ink { fill:var(--ink); } .head-rule { fill:var(--rule); } .dot { fill:var(--ink); }
+</style>
+<defs>
+  <marker id="hi" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-ink" d="M0,0 L10,5 L0,10 z"/></marker>
+  <marker id="hr" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-rule" d="M0,0 L10,5 L0,10 z"/></marker>
+</defs>
+<g class="node"><rect class="focus" x="56" y="176" width="144" height="48" rx="14"/><text class="t" x="128.0" y="192.0" text-anchor="middle" dominant-baseline="central">Waiting to start</text><text class="m" x="128.0" y="209.0" text-anchor="middle" dominant-baseline="central">pending</text></g>
+<g class="node"><rect class="box" x="56" y="304" width="144" height="48" rx="14"/><text class="t" x="128.0" y="320.0" text-anchor="middle" dominant-baseline="central">Held by its owner</text><text class="m" x="128.0" y="337.0" text-anchor="middle" dominant-baseline="central">held</text></g>
+<g class="node"><rect class="focus" x="312" y="176" width="144" height="48" rx="14"/><text class="t" x="384.0" y="192.0" text-anchor="middle" dominant-baseline="central">Running on a node</text><text class="m" x="384.0" y="209.0" text-anchor="middle" dominant-baseline="central">running</text></g>
+<g class="node"><rect class="box" x="312" y="304" width="144" height="48" rx="14"/><text class="t" x="384.0" y="320.0" text-anchor="middle" dominant-baseline="central">Being stopped</text><text class="m" x="384.0" y="337.0" text-anchor="middle" dominant-baseline="central">cancelling</text></g>
+<g class="node"><rect class="box" x="544" y="40" width="120" height="48" rx="14"/><text class="t" x="604.0" y="56.0" text-anchor="middle" dominant-baseline="central">Failed</text><text class="m" x="604.0" y="73.0" text-anchor="middle" dominant-baseline="central">failed</text></g>
+<g class="node"><rect class="focus" x="544" y="176" width="120" height="48" rx="14"/><text class="t" x="604.0" y="192.0" text-anchor="middle" dominant-baseline="central">Done</text><text class="m" x="604.0" y="209.0" text-anchor="middle" dominant-baseline="central">succeeded</text></g>
+<g class="node"><rect class="box" x="544" y="304" width="120" height="48" rx="14"/><text class="t" x="604.0" y="320.0" text-anchor="middle" dominant-baseline="central">Cancelled</text><text class="m" x="604.0" y="337.0" text-anchor="middle" dominant-baseline="central">cancelled</text></g>
+<circle class="dot" cx="88" cy="72" r="7"/>
+<path class="bold" d="M88 79 V175" marker-end="url(#hi)"/>
+<text class="m" x="80" y="112" text-anchor="end" dominant-baseline="central">submit_job</text>
+<text class="s" x="80" y="128" text-anchor="end" dominant-baseline="central">a due run</text>
+<text class="s" x="80" y="144" text-anchor="end" dominant-baseline="central">the seed</text>
+<path class="bold" d="M200 192 H311" marker-end="url(#hi)"/>
+<text class="s" x="256" y="178" text-anchor="middle" dominant-baseline="central">placed on a node</text>
+<path class="bold" d="M456 192 H543" marker-end="url(#hi)"/>
+<text class="s" x="500" y="178" text-anchor="middle" dominant-baseline="central">exit 0</text>
+<path class="thin" d="M312 208 H201" marker-end="url(#hr)"/>
+<text class="s" x="256" y="222" text-anchor="middle" dominant-baseline="central">node drained</text>
+<text class="m" x="256" y="238" text-anchor="middle" dominant-baseline="central">attempt + 1</text>
+<path class="thin" d="M104 224 V303" marker-end="url(#hr)"/>
+<text class="m" x="96" y="264" text-anchor="end" dominant-baseline="central">hold_job</text>
+<path class="thin" d="M152 304 V225" marker-end="url(#hr)"/>
+<text class="m" x="160" y="264" text-anchor="start" dominant-baseline="central">release_job</text>
+<path class="thin" d="M168 176 V56 H543" marker-end="url(#hr)"/>
+<text class="s" x="360" y="42" text-anchor="middle" dominant-baseline="central">a job it depends on did not succeed</text>
+<path class="thin" d="M416 176 V72 H543" marker-end="url(#hr)"/>
+<text class="s" x="424" y="112" text-anchor="start" dominant-baseline="central">exit ≠ 0, or its node</text>
+<text class="s" x="424" y="128" text-anchor="start" dominant-baseline="central">lost or never started it</text>
+<path class="thin" d="M384 224 V303" marker-end="url(#hr)"/>
+<text class="m" x="392" y="264" text-anchor="start" dominant-baseline="central">cancel_job</text>
+<path class="thin" d="M456 328 H543" marker-end="url(#hr)"/>
+<text class="s" x="500" y="314" text-anchor="middle" dominant-baseline="central">process gone</text>
+<path class="thin" d="M128 352 V384 H584 V353" marker-end="url(#hr)"/>
+<text class="m" x="256" y="370" text-anchor="middle" dominant-baseline="central">cancel_job</text>
+<path class="thin" d="M56 200 H32 V400 H624 V353" marker-end="url(#hr)"/>
+<text class="m" x="256" y="416" text-anchor="middle" dominant-baseline="central">cancel_job</text>
+<path class="thin" d="M664 64 H683" marker-end="url(#hr)"/>
+<g class="node"><circle class="ring" cx="694" cy="64" r="9"/><circle class="dot" cx="694" cy="64" r="5"/></g>
+<path class="thin" d="M664 200 H683" marker-end="url(#hr)"/>
+<g class="node"><circle class="ring" cx="694" cy="200" r="9"/><circle class="dot" cx="694" cy="200" r="5"/></g>
+<path class="thin" d="M664 328 H683" marker-end="url(#hr)"/>
+<g class="node"><circle class="ring" cx="694" cy="328" r="9"/><circle class="dot" cx="694" cy="328" r="5"/></g>
+</svg>
