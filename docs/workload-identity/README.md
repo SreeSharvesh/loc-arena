@@ -2,13 +2,14 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="door-dark.svg">
-  <img alt="Agents and workloads on agent-net reach company services, IAM and the model provider only through the door, agentgateway, which verifies IAM's JWT and logs the caller; services sit on an internal network and ask IAM for each grant" src="door-light.svg" width="100%">
+  <img alt="Agents and workloads on agent-net reach company services, IAM and the model provider only through the door, agentgateway. The door verifies the caller's IAM JWT, logs the caller and exchanges the JWT at IAM for a token scoped to each service. Services sit on an internal network and ask IAM for each grant" src="door-light.svg" width="100%">
 </picture>
 
-Every agent and every workload it launches holds a short-lived JWT from IAM. A workload is a job or a company agent
+Every agent and every workload it launches holds a JWT from IAM for the play. A workload is a job or a company agent
 run, issued by the launching service with the launcher as sponsor. Each caller reaches every company service, tool
-and model through one agentgateway, which verifies the token, logs who called and applies quotas. Services and
-grants work as they do today: each call is still decided live by IAM.
+and model through one agentgateway, which verifies the token and logs who called. For each service, the door then
+exchanges that token at IAM for a short-lived one scoped to that service, so no service ever holds a token another
+service accepts. Grants work as they do today: each call is still decided live by IAM.
 
 `loc_arena/gateway/model_gateway.py` · `loc_arena/tools_gateway.py` · `meridian_iam/core/service.py` · `meridian_iam/core/workloads.py`
 
@@ -27,49 +28,57 @@ Tier 1's done-when list (#142) needs two things the stack can't do today:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="one-call-dark.svg">
-  <img alt="Sequence of one call: the caller swaps its IAM credential for a JWT and calls the door with it; the door verifies it and logs the caller, forwards the call with the JWT to the service, which asks IAM to authorize the operation" src="one-call-light.svg" width="100%">
+  <img alt="Sequence of one call: the caller swaps its IAM credential for a JWT that lasts the play and calls the door with it. The door verifies it, logs the caller and exchanges it at IAM for a short-lived token scoped to the service, then forwards the call with that token. The service asks IAM to authorize the operation" src="one-call-light.svg" width="100%">
 </picture>
 
-The JWT carries identity only: `iss` (`iam`), `aud` (`meridian`, see Audience below), `sub`, `team`, `kind`,
-`sponsor` (for a launched workload), `iat`, `exp`. Grants stay in IAM, so requests, approvals, expiry and revocation
-work as today, and an approval works on the next call with the same token. The door verifies the JWT and reads its
-claims for routing, logging and quotas. IAM verifies it again when a service forwards it to `authorize`. Services
-pass it through and never parse it.
+There are two tokens, and both carry identity only:
+
+| Token | Claims | Lives | Held by |
+| --- | --- | --- | --- |
+| Caller token | `iss` (`iam`), `aud` (`agentgateway`), `sub`, `team`, `kind`, `sponsor` (for a launched workload), `iat`, `exp` | the play | the caller |
+| Service token | `iss` (`iam`), `aud` (the service's name), `sub`, `iat`, `exp` | minutes; the door caches it per caller and service | the door, then the service |
+
+Grants stay in IAM, so requests, approvals, expiry and revocation work as today, and an approval works on the next
+call with the same tokens. The door verifies the caller token and reads its claims for routing and logging. IAM
+issues the service token by OAuth token exchange (RFC 8693), and verifies it again when the service forwards it to
+`authorize`. Services pass it through and never parse it.
 
 ## Who owns what
 
 | Part | Owns | Does not own |
 | --- | --- | --- |
-| IAM | identities, the signing key and its key set, grants, requests | the door's routing |
-| Door (agentgateway) | admission (`jwtAuth`), the call record with the caller, quotas, routing | grants: it asks IAM nothing |
+| IAM | identities, the signing key and its key set, token exchange, grants, requests | the door's routing |
+| Door (agentgateway) | admission (`jwtAuth`), token exchange per service (`oauthTokenExchange`), the call record with the caller, routing | grants: it asks IAM for tokens, never for decisions |
 | Services | their own objects, plus the IAM decision they already make | credentials of their callers |
 
 Each service sits on an internal network that only the door reaches. The door answers under the services' names
-(network aliases, routing by `Host`), so agents, briefs and skills keep `http://notes:8000`.
+(network aliases, routing by `Host`), so agents, briefs and skills keep `http://notes:8000`. IAM sits behind the door
+too, on a route without `jwtAuth`, because IAM authenticates its own callers.
 
 ## Pull requests
 
 | PR | Ships | Size (production code) |
 | --- | --- | --- |
-| 1 | IAM issues tokens: a signing key; its key set written in place (the door watches the file's inode); `POST /token`, which swaps an IAM credential for a JWT; `authorize` accepting a JWT it signed; a workload's JWT at issue, beside its credential | about +200 |
-| 2 | One door for services: agentgateway serves every company service's HTTP API and MCP tools by `Host`, with `jwtAuth` and `passthrough`; services move to an internal network; each sandbox holds one credential instead of one identity file per service; the tools gateway's per-agent credential map goes | about +60, −140 |
-| 3 | Models through the door: `jwtAuth` replaces the API-key list; the call record names `sub`, `team` and `sponsor` (the badge); token budgets per team; jobs and agent runs call as themselves | about +60, −40 |
+| 1 | IAM issues tokens. It starts with a check that agentgateway v1.6.0's `oauthTokenExchange` works against IAM's endpoint, which the spikes did not cover. Then: a signing key; its key set written in place (the door watches the file's inode); `POST /token`, which swaps an IAM credential for a caller token; token exchange (RFC 8693) for a service token; `authorize` accepting a service token for its own service only; a workload's caller token at issue, beside its credential | about +250 |
+| 2 | One door for services: agentgateway serves every company service's HTTP API and MCP tools, and IAM's API, by `Host`, with `jwtAuth` and `oauthTokenExchange`; services move to an internal network; each sandbox holds one caller token instead of one identity file per service; the tools gateway's per-agent credential map goes | about +70, −140 |
+| 3 | Models through the door: `jwtAuth` replaces the API-key list; the call record names `sub`, `team` and `sponsor` (the badge); jobs and agent runs call as themselves. The model route keeps `passthrough` | about +50, −40 |
 
 The checker by badge and the observation window follow as their own plans (#142).
 
-## Decisions for review
+## Decisions
 
-- **Audience.** One audience (`meridian`) for every service behind the door, or one per service as IAM's credentials
-  have today. The door being the only way in covers most of what per-service audiences protect.
-- **Token lifetime.** One token for the whole play, or minutes with a refresh in each harness. An expired token
-  still passes for 60 seconds (agentgateway's clock allowance). In the spike on one replica of agentgateway v1.6.0,
+- **Audience: one per service**, as IAM's credentials have today. A service that holds a caller's token can use it at
+  no other service. The door exchanges the caller token for each service's token at IAM.
+- **Lifetime: one caller token per play**, so no harness or job needs a refresher. Service tokens are short-lived,
+  and the door renews them itself. An expired token still passes for 60 seconds (agentgateway's clock allowance). In the spike on one replica of agentgateway v1.6.0,
   rewriting the key-set file in place took effect within 3 seconds, both when adding and when removing a key.
   Replacing the file by rename was picked up once, after which later replacements were missed until a restart. So
   IAM rewrites the key-set file in place, and the observation window's forced rotation is a file write. Our stack
   runs a single gateway replica.
-- **Model route mode.** Token budgets need agentgateway's parsed `completions` route type instead of `passthrough`.
-  In the spike the upstream received the request body unchanged, OpenRouter fields included.
-- **IAM's own API** (requests, decisions) behind the door on a route IAM authenticates itself, or beside it.
+- **Model route: `passthrough` for now.** Per-team token budgets come later, because the badge does not need them. They
+  need agentgateway's parsed `completions` route type, and in the spike that type left the request body unchanged,
+  OpenRouter fields included.
+- **IAM's own API: behind the door**, on a route without `jwtAuth`, because IAM authenticates its own callers.
 
 ## Evidence: three spikes on agentgateway v1.6.0
 
@@ -88,19 +97,23 @@ localRateLimit:
 - {type: tokens, maxTokens: 120, tokensPerFill: 120, fillInterval: 3600s, key: jwt.team}   # model route only
 ```
 
+The planned services route differs in two ways. `jwtAuth` expects the caller token's audience `agentgateway`, and
+`backendAuth.oauthTokenExchange` against IAM's token endpoint takes the place of `passthrough`.
+
 ## Out of scope
 
 - The checker by badge, the observation window and the sealed record of every command (#142).
 - Inference servers and the model store.
 - Moving `PermissionScope` fields into IAM.
+- Per-team token budgets on the model route.
 
 ## Done when
 
-- [ ] Every sandbox, job and company agent run calls services, tools and models with its own IAM-issued JWT.
+- [ ] Every sandbox, job and company agent run calls services, tools and models with its own IAM-issued caller token.
+- [ ] Each service receives only a token for itself, and a service token sent to another service is refused.
 - [ ] The sealed call record names the calling agent or workload and, for a job or an agent run, its sponsor.
 - [ ] A sandbox reaches no service except through the door; a JWT IAM did not sign is refused at the door and at IAM.
 - [ ] An agent without a grant gets IAM's refusal through the door, asks, and succeeds after approval with the same token.
-- [ ] A team over its token budget is refused at the door, and other teams are not.
 - [ ] Rotating IAM's signing key refuses every token signed with the old key within seconds.
 
 ## Sources
@@ -109,6 +122,7 @@ localRateLimit:
 - [JWT authentication](https://agentgateway.dev/docs/standalone/latest/documentation/configuration/security/jwt-authn.md): `jwtAuth` fields, file key sets, claims as `jwt.<claim>`, `passthrough`.
 - [MCP authorization](https://agentgateway.dev/docs/standalone/latest/documentation/configuration/security/mcp-authz.md): rules on `jwt.sub` and other claims.
 - [Backend authentication](https://agentgateway.dev/docs/standalone/latest/documentation/configuration/security/backend-authn/key.md): `passthrough` forwards the JWT `jwtAuth` validated.
+- [Token exchange](https://agentgateway.dev/docs/standalone/latest/documentation/configuration/security/backend-authn/token-exchange/standard.md): `backendAuth.oauthTokenExchange` (RFC 8693), present in v1.6.0's config schema (`schema/config.json`).
 - [Rate limiting](https://agentgateway.dev/docs/standalone/latest/configuration/resiliency/rate-limits/): `localRateLimit` with a CEL `key` per bucket.
 - [External authorization](https://agentgateway.dev/docs/standalone/latest/documentation/configuration/security/external-authz/): the alternative to JWTs, an IAM call on every request.
 - On main: `loc_arena/gateway/model_gateway.py` (callers, runners, nodes; no job credential), `loc_arena/tools_gateway.py` (per-agent credential map), `meridian_iam/core/service.py` (`authorize` takes the caller's token), `meridian_iam/core/base.py` (credentials scoped by audience).
