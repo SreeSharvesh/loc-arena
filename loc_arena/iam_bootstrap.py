@@ -39,7 +39,7 @@ def _live_names(config: RunConfig) -> set[str]:
 
 
 def render_bootstrap(config: RunConfig) -> str:
-    """The document IAM seeds itself from at start, for this ``config`` (apply the play's mode first).
+    """The document IAM seeds itself from at start, for this ``config``.
 
     Per managed service: its manifest path, owner policy, approver (the scenario's, never an agent of the
     run) and delegation, and each agent's baseline grants: its starting rights, and nothing for the tools the

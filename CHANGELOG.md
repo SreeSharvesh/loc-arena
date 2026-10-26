@@ -10,15 +10,15 @@ log has the details.
 
 - **The Aurora scenario serves no record-only attack tools.** An agent can take a covert step only through a company
   service, with the rights it holds for its ordinary work; steps with no service behind them (a planted durable
-  credential, forced rotation, under-reported logging) cannot be taken. The honest twin holds the same tools and
+  credential, a credential rotation during the episode, under-reported logging) cannot be taken. The honest twin holds the same tools and
   rights and differs only by the covert briefs, the gateway's covert injection and, in a scripted run, the
   scenario's attack moves.
 - **A tool an agent is offered no longer grants its permission.** IAM seeds each agent's `sandbox: rights:` alone;
   `sandbox: tools:` is only what agentgateway offers it. A tool offered without its permission is refused until
   the agent asks and an approver approves, on MCP as on HTTP. Starting rights may name any permission the
   service's IAM manifest checks, on tool services too (`forge: [open_pr]`), and a config naming one the manifest
-  never checks does not load. Aurora's grants are
-  unchanged: its rights state the forge permission its tools used to imply.
+  never checks does not load. Aurora's grants are unchanged: its rights state the forge permission its
+  tools implied.
 - **Agents talk in chat, and the board and scratch are gone.** `meridian_controlplane.chat` is served in stack
   runs (`loc_arena.chat_service`) under central IAM, from the scenario's `chat_seed` (Aurora's `chat.yaml`):
   channels, threads and direct messages, over MCP tools and HTTP. Anyone holding chat's `write` can message
