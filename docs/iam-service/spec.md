@@ -20,7 +20,7 @@ refine it but must not weaken its authorization, isolation or evidence requireme
 | Central IAM service | Stable principals, membership, resource owners, operation policies, credentials, requests, grants, expiry and revocation | Resource business data, agent execution, provider keys or sealed grading expectations |
 | Shared service integration | Credential forwarding, operation mapping, IAM calls, denial/discovery responses and authorization audit context | An independent grant database or stale allow cache |
 | Resource service | Its operation declaration, target-object identification, business validation, execution and outcome audit | Issuing permissions or trusting a caller-supplied principal |
-| Agents service | Versioned executable definitions; future execution lifecycle | Employee membership or implicit permission inheritance by runners |
+| Agents service | Versioned executable definitions, their executions on the runners, and schedules | Employee membership or implicit permission inheritance by runners |
 | Tools gateway | Configured MCP tool exposure and forwarding | The authoritative resource grant database |
 | Inference gateway | Model calls, provider key and provider-call recording | Company resource authorization |
 | Harness and graders | Isolated episode setup, reset, independent evaluation and protected evidence | Exposing sealed expectations to company IAM or monitors |
@@ -188,12 +188,14 @@ issued by the launching service (`POST /workloads`). It never gets the caller's 
   permission it may delegate that the caller holds, behind issuance's gate. It changes nothing, and the service
   then asks for exactly that.
 
-An executable agent definition from #120 is not a principal. Binding a workload to an authorized
-definition/version, and letting a caller discover the permissions a definition needs before launch (declaring them
-does not assign them), is the agents service's runner work. Ending a workload when its work finishes, renewal,
-autorenewal, stopping running work on revoke and checkpoints depend on real runner/job lifecycle support and need
-their own spec; until then a revocation takes effect at the workload's next call. Current recording-service job
-tools are not proof of this behavior.
+An executable agent definition is not a principal. Registering one is a launch: the agent gets a workload
+whenever its registrant holds any of the delegation, and its executions run as it ([agents
+service](../agents-service.md)). Letting a caller discover the permissions a definition needs before launch
+(declaring them does not assign them) is not built. Ending a workload when its work finishes, renewal,
+autorenewal and stopping running work on revoke depend on real runner/job lifecycle support and need their own
+spec; until then a revocation takes effect at the workload's next call. The agents service checkpoints an
+execution it is asked to stop, and no revocation stops one. Current recording-service job tools are not proof of
+this behavior.
 
 ## 7. Wiring the monorepo into an episode
 
@@ -286,7 +288,7 @@ requests from the inbox.
 | `meridian-iam` contracts, core, requests (slices 1-3) | Implemented and tested: strict manifests, SQLite store, online decisions, request/approval/grant/revoke, idempotency, audit |
 | IAM HTTP service, stdlib client, guard and HTTP/ASGI/MCP adapters (slice 4) | Implemented; tested against a real server and real SQLite, including IAM outage and decision mismatch |
 | Notes (`meridian_controlplane.notes`, HTTP and MCP) | IAM mode through the agents service's `CentralAuthority` protocol, implemented by `loc_arena.agents_iam`: one guard decides its routes and its tools, and it starts only if together they are exactly its manifest's operations. Reads need `read` and changes `write`; `/grants` forwards to IAM as the caller, and access requests go to IAM's own `/requests` |
-| Agents registry (slice 6) | IAM mode through the company package's `CentralAuthority` protocol, implemented by `loc_arena.agents_iam`; registry business logic unchanged. The company `AccessControl` is deleted: the service takes an authority and keeps no rights |
+| Agents service (`meridian_controlplane.agents`, HTTP; slice 6) | IAM mode through the company package's `CentralAuthority` protocol, implemented by `loc_arena.agents_iam`: the service takes an authority and keeps no rights. `register_agent` and `create_schedule` are its launch operations: each agent registered and each schedule created through the API gets a workload (section 6) through the package's `IdentityIssuer`. An agent's executions run as its workload, and IAM decides each firing of a schedule (`start_execution`) as the schedule's |
 | Forge, jobs, coverage MCP (slice 7) | IAM mode through `loc_arena.iam_wiring`; the forge's repo scope and the covert tools' scope checks still apply on top. A service started outside IAM does not start |
 | Chat (`meridian_controlplane.chat`, HTTP and MCP) | IAM mode through the company package's `Authority` protocol, implemented by `loc_arena.agents_iam`: one guard decides its routes and its tools, and it starts only if together they are exactly its manifest's operations. Reads need `read` and changes `write`; anyone holding `write` may message anyone in the chat, and the service's one own check is that only a message's author edits it |
 | Job service (`meridian_jobsvc`, HTTP and MCP) | IAM mode through the company package's `CentralAuthority` protocol, implemented by `loc_arena.jobsvc_service`: one guard decides its routes and its tools, and it starts only if together they are exactly its manifest's operations. `cancel_job` is `authenticated`, with the service's own ownership check. `submit_job` and `create_schedule` are its launch operations: each job runs under a workload (section 6) issued before it is queued, and a schedule's runs under the one issued when it is created, through the company package's `WorkloadIssuer` protocol. `hold_job`, `release_job` and `delete_schedule` are `authenticated` with the same ownership check; the operators' routes and `drain_node` need `operate`, which is not requestable and which the scenario seeds to a principal of the company (`holders`). It also runs the run config's `scope` check on submissions, as the MCP services do |
@@ -325,7 +327,8 @@ Credential and lifecycle administration (section 6) is partly done:
 - **Workload identities.** Section 6's workload rules are implemented in the core, `POST /workloads`,
   `GET /workloads/delegable`, `IamClient.issue_workload` and `IamClient.delegable`, and `GET /grants` lists only
   a workload's grants that still count. The job service issues one per job and one per schedule ([job
-  service](../jobsvc-service.md)),
+  service](../jobsvc-service.md)), and the agents service one per registered agent and one per schedule
+  ([agents service](../agents-service.md)), each
   within the delegation the scenario's `iam:` block lists for it, which `render_bootstrap` carries and
   `iam_service.seed_iam` seeds. The events monitors read attribute each record a workload made to its sponsor,
   from IAM's `workload_issued` audit line. A store from before workloads is upgraded in place on open.
@@ -350,7 +353,7 @@ Not done, and not claimed:
   renews keeps its replacement itself, and nothing rewrites a mounted file.
 - **Independent IAM scenario grading.** No scenario yet grades IAM workflows (requests, join/leave, rotation)
   against independently authored expectations; the existing unauthorized-deployment verifier is unchanged.
-- **Stop-on-revoke, job autorenewal and checkpoints** (section 6), which need real runner and job lifecycle
+- **Stop-on-revoke, job autorenewal and checkpoints of jobs** (section 6), which need real runner and job lifecycle
   support.
 - **The rest of the workload lifecycle.** Nothing ends a workload when its job finishes, so a finished job's
   credential works until it expires; a workload cannot renew; issuance is not tied to the decision that allowed
