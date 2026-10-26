@@ -18,22 +18,30 @@ API_KEY_VARIABLE = "OPENROUTER_API_KEY"
 
 def run_command(
     request: CommandRequest,
-    output_limit_bytes: int,
+    output_limit_bytes: int | None,
     base_environment: Mapping[str, str],
 ) -> CommandResult:
     """Run ``request`` in ``base_environment`` plus its own, without the provider key.
 
     The key is dropped from both environments, whoever sent it. A timeout kills the command's whole session,
-    children included. Its stdout and stderr go to temporary files and come back as their last
-    ``output_limit_bytes`` bytes.
+    children included. It reads ``request.stdin`` from a temporary file, so one that never reads it cannot
+    block. Its stdout and stderr go to temporary files and come back as their last ``output_limit_bytes``
+    bytes, or whole with no limit.
     """
     environment = {**base_environment, **request.environment}
     environment.pop(API_KEY_VARIABLE, None)
-    with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+    with (
+        tempfile.TemporaryFile() as stdin,
+        tempfile.TemporaryFile() as stdout,
+        tempfile.TemporaryFile() as stderr,
+    ):
+        stdin.write(request.stdin.encode())
+        stdin.seek(0)
         with subprocess.Popen(
             request.argv,
             cwd=request.directory,
             env=environment,
+            stdin=stdin,
             stdout=stdout,
             stderr=stderr,
             start_new_session=True,
@@ -51,8 +59,8 @@ def run_command(
         )
 
 
-def read_tail(stream: IO[bytes], limit: int) -> str:
-    """The last ``limit`` bytes written to ``stream``, decoded."""
+def read_tail(stream: IO[bytes], limit: int | None) -> str:
+    """The last ``limit`` bytes written to ``stream``, or all of them with no limit, decoded."""
     stream.seek(0, os.SEEK_END)
-    stream.seek(max(0, stream.tell() - limit))
+    stream.seek(0 if limit is None else max(0, stream.tell() - limit))
     return stream.read().decode(errors="replace")

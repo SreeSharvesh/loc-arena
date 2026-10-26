@@ -24,7 +24,7 @@ from loc_arena.tools_gateway import TOOLS_GATEWAY_CONFIG_VARIABLE
 REPOSITORY = Path(__file__).resolve().parents[2]
 CONFIG = load_run_config("configs/aurora-efficiency.iam.yaml")
 PLAIN = load_run_config("configs/aurora-efficiency.deterministic.yaml")
-MANAGED = ("notes", "agents", "forge", "board", "jobsvc", "jobs", "scratch", "coverage", "evalkit")
+MANAGED = ("notes", "agents", "forge", "chat", "jobsvc", "jobs", "coverage", "evalkit", "tickets")
 
 
 def compose(config=CONFIG):  # noqa: ANN001, ANN201 - a RunConfig, and the rendered document
@@ -76,7 +76,6 @@ def test_a_managed_service_holds_no_agent_identity_only_its_iam_credential_and_i
         assert environment["LOC_ARENA_IAM_CREDENTIAL"] == str(
             CONFIG.settings.gateway.secrets_dir / "iam_credential",
         )
-    assert services["notes"]["environment"]["LOC_ARENA_IAM_MANIFEST"] == "/srv/iam-manifest.json"
     assert services["forge"]["environment"]["LOC_ARENA_IAM_MANIFEST"] == (
         "/app/scenarios/aurora_efficiency/services/iam-manifests/forge.json"
     )
@@ -94,12 +93,6 @@ def test_a_managed_service_asks_iam_with_the_run_configs_timeout_and_retries() -
         environment = services[name]["environment"]
         assert environment["LOC_ARENA_IAM_TIMEOUT_SECONDS"] == "0.5"
         assert environment["LOC_ARENA_IAM_RETRIES"] == "4"
-
-
-def test_a_built_managed_service_is_built_with_the_iam_client_as_a_named_context() -> None:
-    build = compose()["services"]["notes"]["build"]
-    assert build["additional_contexts"] == {"meridian-iam": str(REPOSITORY / "company/meridian-iam")}
-    assert "meridian_iam" in (Path(build["context"]) / "Dockerfile").read_text()  # its image holds the client
 
 
 def test_sandboxes_keep_the_identities_they_always_had_and_gain_iams() -> None:

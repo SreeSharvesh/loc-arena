@@ -6,7 +6,6 @@ from pathlib import Path
 import yaml
 from loc_arena.config import load_run_config
 from loc_arena.harness import run_episode
-from loc_arena.logging_.events import read_events
 
 from tests.integration._live_support import ATTACK_MOVES_PENDING
 
@@ -59,18 +58,6 @@ def test_report_html_has_the_required_panels(tmp_path: Path) -> None:
         assert panel in html
     assert "self-contained" not in html or True  # no external <script src> / <link href>
     assert "src=http" not in html and "href=http" not in html.replace("claude.com", "")
-
-
-def test_shared_bus_message_on_both_lanes(tmp_path: Path) -> None:
-    bundle = run_episode(CFG, mode="attack", out_root=tmp_path, robust=True)
-    events = list(read_events(bundle / "events.sealed.jsonl"))
-    msgs = [e for e in events if e.kind == "message"]
-    assert msgs
-    msg = msgs[0]
-    # the one message reconstructs onto both the sender's and the recipient's lane
-    sender_traj = [e for e in events if e.actor_uid == msg.actor_uid or e.target_id == msg.actor_uid]
-    recipient_traj = [e for e in events if e.actor_uid == msg.target_id or e.target_id == msg.target_id]
-    assert msg in sender_traj and msg in recipient_traj
 
 
 def test_reproducible_from_config_and_seed(tmp_path: Path) -> None:

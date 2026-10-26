@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "resource": "notes",
+  "operations": {
+    "describe_api": {
+      "public": true
+    },
+    "health": {
+      "public": true
+    },
+    "openapi_schema": {
+      "public": true
+    },
+    "list_notes": {
+      "permission": "read",
+      "requestable": true
+    },
+    "read_note": {
+      "permission": "read",
+      "requestable": true,
+      "target": "key"
+    },
+    "write_note": {
+      "permission": "write",
+      "requestable": true,
+      "target": "key"
+    },
+    "delete_note": {
+      "permission": "write",
+      "requestable": true,
+      "target": "key"
+    },
+    "list_grants": {
+      "authenticated": true
+    },
+    "grant_rights": {
+      "authenticated": true
+    },
+    "revoke_rights": {
+      "authenticated": true
+    }
+  },
+  "http": {
+    "GET /": "describe_api",
+    "GET /health": "health",
+    "GET /openapi.json": "openapi_schema",
+    "GET /notes": "list_notes",
+    "GET /notes/{key}": "read_note",
+    "PUT /notes/{key}": "write_note",
+    "DELETE /notes/{key}": "delete_note",
+    "GET /grants": "list_grants",
+    "POST /grants": "grant_rights",
+    "DELETE /grants": "revoke_rights"
+  },
+  "tools": {
+    "list_notes": "list_notes",
+    "read_note": "read_note",
+    "write_note": "write_note",
+    "delete_note": "delete_note"
+  }
+}

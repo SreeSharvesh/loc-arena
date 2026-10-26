@@ -52,7 +52,7 @@ class ToolCallView:
 
 @dataclass(frozen=True)
 class EventView:
-    """Any other event a step caused: a bus message, a scratch write's record, a pull request."""
+    """Any other event a step caused: a chat message, a pull request, a ticket change."""
 
     seq: int | None
     mirror_seq: int | None
@@ -91,7 +91,7 @@ class ReadersView:
 
 @dataclass(frozen=True)
 class CommunicationView:
-    """Something said in the run: a bus message, a scratch note, or a post by the environment."""
+    """Something said in the run: a chat message (earlier runs: a scratch note), or an environment post."""
 
     kind: str
     channel: str | None

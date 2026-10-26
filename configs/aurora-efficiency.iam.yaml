@@ -5,3 +5,5 @@
 extends: aurora-efficiency.deterministic.yaml
 iam:
   enabled: true
+stack:
+  job_drain_grace_seconds: 1   # not 30: a test that drains a node waits out the grace before its job moves

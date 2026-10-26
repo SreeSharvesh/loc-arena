@@ -38,7 +38,7 @@ from pydantic.dataclasses import dataclass as pydantic_dataclass
 from pydantic_settings import BaseSettings, SettingsConfigDict, YamlConfigSettingsSource
 from scenarios.loader import DNS_LABEL, LiveService, Rights, Scenario, Tools, load_scenario
 
-from loc_arena.iam_seed import add_iam_service, offer_inbox
+from loc_arena.iam_seed import add_iam_service, offer_inbox, read_manifests, starting_rights
 from loc_arena.identity_variables import find_shared_identity_variable
 from loc_arena.ids import PermissionScope
 from loc_arena.registry import SCORER_REGISTRY, VERIFIER_REGISTRY, is_scorer, is_verifier
@@ -225,10 +225,6 @@ class SideTaskConfig:
         default_factory=dict,
         description="Alternative values of each threshold the verdict is re-checked at.",
     )
-    coordination: dict[str, Any] = Field(
-        default_factory=dict,
-        description="How the team coordinates covertly, free-form.",
-    )
     slug: StrictStr | None = Field(default=None, description="Short run-name slug; the name when absent.")
 
 
@@ -250,15 +246,16 @@ class AgentSandboxConfig:
 
     rights: dict[StrictStr, Rights] = Field(
         default_factory=dict,
-        description="The agent's starting rights on each live service of the run's scenario that has rights, "
-        "by service name; each right one of that service's. The agent holds its identity on every such "
-        "service, at <secrets_dir>/identity_<service>, rights or none.",
+        description="The agent's starting rights on each live service of the run's scenario, by service "
+        "name: its baseline grants in IAM, each a permission the service's IAM manifest checks (or, on a "
+        "service IAM does not manage, one of its own rights). On a service with rights of its own the agent "
+        "holds its identity at <secrets_dir>/identity_<service>, rights or none.",
     )
     tools: dict[StrictStr, Tools] = Field(
         default_factory=dict,
-        description="The MCP tools the agent may call on each live service of the run's scenario that "
-        "serves tools, by service name; each tool one of that service's. The tools gateway offers the agent "
-        "these and refuses it every other.",
+        description="The MCP tools the tools gateway offers the agent on each live service of the run's "
+        "scenario that serves tools, by service name; each tool one of that service's. The gateway refuses "
+        "it every other, and a call still takes the permission IAM checks for the tool.",
     )
 
 
@@ -531,9 +528,17 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
     except ValueError as exc:
         raise ConfigError(str(exc)) from exc
     agents = offer_inbox(document.agents, settings.iam)
+    try:
+        manifests = read_manifests(scenario)
+    except ValueError as exc:
+        raise ConfigError(str(exc)) from exc
+    offered = {
+        "rights": starting_rights(live_services, manifests),
+        "tools": {service.name: service.tools for service in live_services},
+    }
     for kind in ("rights", "tools"):
         held = {agent.id: getattr(agent.sandbox, kind) for agent in agents}
-        if unknown := find_unknown_grant(kind, held, live_services, document.scenario):
+        if unknown := find_unknown_grant(kind, held, offered[kind], document.scenario):
             raise ConfigError(unknown)
     if shared := find_shared_identity_variable((agent.id for agent in agents), live_services):
         raise ConfigError(shared)

@@ -337,11 +337,12 @@ class Base:
 
     def _lifetime(self, resource: sqlite3.Row, until: int | None) -> None:
         now = self._now()
+        window = f"send until as a unix time within {resource['max_seconds']} seconds from now"
         if until is None:
             if not resource["allow_ongoing"]:
-                raise Invalid("ongoing access is not allowed for this resource")
+                raise Invalid(f"ongoing access is not allowed for this resource: {window}")
         elif not now < until <= now + resource["max_seconds"]:
-            raise Invalid("deadline outside the allowed window")
+            raise Invalid(f"deadline outside the allowed window: {window}")
 
     def audit_log(self) -> list[dict[str, Any]]:
         """The IAM audit trail (trusted/operator read; contains no bearer material)."""

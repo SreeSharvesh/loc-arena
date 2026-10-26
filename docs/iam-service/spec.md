@@ -77,9 +77,8 @@ principal and validated operation context from the integration, never from reque
 
 ## 3. Shared integration; centralized decisions; local enforcement
 
-One typed IAM client and decision contract supports HTTP and MCP. Use a FastAPI/ASGI integration for the agents
-service and MCP middleware for tool services. Notes' stdlib HTTP server needs a thin adapter initially; moving
-it to a common framework is optional separate work, not a prerequisite for IAM.
+One typed IAM client and decision contract supports HTTP and MCP. Use a FastAPI/ASGI integration for HTTP APIs
+and MCP middleware for tools.
 
 For every protected call:
 
@@ -286,11 +285,13 @@ requests from the inbox.
 |---|---|
 | `meridian-iam` contracts, core, requests (slices 1-3) | Implemented and tested: strict manifests, SQLite store, online decisions, request/approval/grant/revoke, idempotency, audit |
 | IAM HTTP service, stdlib client, guard and HTTP/ASGI/MCP adapters (slice 4) | Implemented; tested against a real server and real SQLite, including IAM outage and decision mismatch |
-| Notes (slice 5) | Under IAM only (`python -m notes_service`): rights and requests live in IAM, `/grants` and `/requests` forward as the caller; the local queue is deleted |
+| Notes (`meridian_controlplane.notes`, HTTP and MCP) | IAM mode through the agents service's `CentralAuthority` protocol, implemented by `loc_arena.agents_iam`: one guard decides its routes and its tools, and it starts only if together they are exactly its manifest's operations. Reads need `read` and changes `write`; `/grants` forwards to IAM as the caller, and access requests go to IAM's own `/requests` |
 | Agents registry (slice 6) | IAM mode through the company package's `CentralAuthority` protocol, implemented by `loc_arena.agents_iam`; registry business logic unchanged. The company `AccessControl` is deleted: the service takes an authority and keeps no rights |
-| Forge, board, jobs, scratch, coverage MCP (slice 7) | IAM mode through `loc_arena.iam_wiring`; scope and recipient checks still apply on top. A service started outside IAM does not start |
+| Forge, jobs, coverage MCP (slice 7) | IAM mode through `loc_arena.iam_wiring`; the forge's repo scope and the covert tools' scope checks still apply on top. A service started outside IAM does not start |
+| Chat (`meridian_controlplane.chat`, HTTP and MCP) | IAM mode through the company package's `Authority` protocol, implemented by `loc_arena.agents_iam`: one guard decides its routes and its tools, and it starts only if together they are exactly its manifest's operations. Reads need `read` and changes `write`; anyone holding `write` may message anyone in the chat, and the service's one own check is that only a message's author edits it |
 | Job service (`meridian_jobsvc`, HTTP and MCP) | IAM mode through the company package's `CentralAuthority` protocol, implemented by `loc_arena.jobsvc_service`: one guard decides its routes and its tools, and it starts only if together they are exactly its manifest's operations. `cancel_job` is `authenticated`, with the service's own ownership check. `submit_job` and `create_schedule` are its launch operations: each job runs under a workload (section 6) issued before it is queued, and a schedule's runs under the one issued when it is created, through the company package's `WorkloadIssuer` protocol. `hold_job`, `release_job` and `delete_schedule` are `authenticated` with the same ownership check; the operators' routes and `drain_node` need `operate`, which is not requestable and which the scenario seeds to a principal of the company (`holders`). It also runs the run config's `scope` check on submissions, as the MCP services do |
 | Eval service (`meridian_evalkit.service`, HTTP and MCP) | IAM mode through the company package's `Authority` protocol, implemented by `loc_arena.agents_iam` and served by `loc_arena.evalkit_service`: one guard decides its routes and its tools, and it starts only if together they are exactly its manifest's operations. `read`, `run`, `curate` and `publish` are all requestable, and `evalkit-owner` approves each. `bind_job` and `report_results`, which a run's job calls over HTTP, are `authenticated`: the registry binds a run to its first caller and refuses a report from any other, and cannot yet tell a job from its owner, since a decision does not name the caller's kind. A run's job holds a credential on the service through the job service's delegation (`evalkit: [read, run]`). It runs no run-config `scope` check |
+| Tickets (`meridian_controlplane.tickets`, HTTP and MCP) | IAM mode through the company package's `Authority` protocol, implemented by `loc_arena.agents_iam`: one guard decides its routes and its tools, and it starts only if together they are exactly its manifest's operations. Reads need `read` and changes `write` |
 | Sandbox command server, tools gateway exposure, inference gateway | Unchanged boundaries: the gateway's static tool list is an upper bound, IAM is the dynamic check |
 | Stack wiring (slice 8) | `iam` live service, anonymous store volume, per-play bootstrap, per-play identities and credentials, honest-twin recreation. Verified in Docker (`tests/integration/test_iam_docker.py`) |
 | Audit and evidence (slice 9) | Resource records carry the IAM `decision` ID; IAM's own log is correlation-only, so no action is counted twice |
@@ -308,7 +309,7 @@ Credential and lifecycle administration (section 6) is partly done:
   credential keeps working for `iam.renewal_grace_seconds` (bounded overlap), may repeat the same renewal, and
   can never name a different replacement: once renewed it has no authority to replace the newer credential.
   Audience and lifetime cannot widen and a disabled principal cannot renew. This covers the credentials an agent
-  presents itself (the notes board, the agents service, IAM). The identity an agent has on a tool service is held
+  presents itself (the notes service, the agents service, IAM). The identity an agent has on a tool service is held
   in the tools gateway's config and changes only at a play boundary, so it is not renewable mid-play.
 - **Teams and principals.** A team's approvers add members or widen their authority within the authority they
   hold; this is additive, so a weaker owner cannot strip a stronger one, and removing a member needs cover for
@@ -332,9 +333,13 @@ Credential and lifecycle administration (section 6) is partly done:
   halfway leaves nothing, and only a completed seed counts as bootstrapped on restart.
 - **Startup coverage.** A service starts only if its routes or tools match its manifest exactly: a guarded app
   must serve only guarded routes (a plain Starlette route is accepted only for a declared public operation, and
-  HEAD is its own method, never read as GET), the notes service checks the routes it implements, and the MCP
-  services check the tools they registered. A service that serves both routes and tools (the job service and
-  the eval service) starts only if together they are exactly its manifest's operations.
+  HEAD is its own method, never read as GET), and the MCP services check the tools they registered. A
+  service that serves both routes and tools (the job, eval, tickets and notes services) runs both checks, each
+  covering its own side of the manifest.
+- **Exposure and grants.** The tools gateway offers each agent its `sandbox: tools:`, an upper bound it enforces
+  with one agentgateway `mcpAuthorization` rule, and IAM seeds only `sandbox: rights:`. A tool offered without
+  its permission is refused until the agent asks and an approver approves. The gateway asks IAM nothing: every
+  service checks IAM itself, direct calls included, so a second check would record each decision twice.
 - **Evidence.** A management mutation made directly on IAM (a request, a decision, a grant, a revoke, a
   membership change, a disable) is an action of the agent that made it, refused ones included; one forwarded by a
   service that records its own calls is not counted twice. Authorization decisions are correlation-only.
@@ -345,9 +350,6 @@ Not done, and not claimed:
   renews keeps its replacement itself, and nothing rewrites a mounted file.
 - **Independent IAM scenario grading.** No scenario yet grades IAM workflows (requests, join/leave, rotation)
   against independently authored expectations; the existing unauthorized-deployment verifier is unchanged.
-- **Requests on tool services.** The tools gateway offers each agent exactly its `sandbox: tools:`, each
-  already a baseline grant, so an approval on an MCP tool service makes nothing new callable; only an approval
-  on notes or agents changes what an agent can do.
 - **Stop-on-revoke, job autorenewal and checkpoints** (section 6), which need real runner and job lifecycle
   support.
 - **The rest of the workload lifecycle.** Nothing ends a workload when its job finishes, so a finished job's

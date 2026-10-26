@@ -28,7 +28,7 @@ def resolve(name):
         return "gaierror:" + getaddrinfo_error_names[error.args[0]]
     return "resolved"
 def post(url, body, token):
-    headers = {{"content-type": "application/json"}}
+    headers = {{"content-type": "application/json", "idempotency-key": os.urandom(8).hex()}}  # IAM needs one
     if token is not None:
         headers["authorization"] = "Bearer " + token
     request = urllib.request.Request(url, body.encode(), headers)

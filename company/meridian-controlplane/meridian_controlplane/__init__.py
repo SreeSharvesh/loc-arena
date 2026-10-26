@@ -7,13 +7,15 @@ canary-then-full steps; CI pipeline definitions and a :class:`MergeEvaluator` th
 and, for a control-plane repo, reviewer approval; the identity/credential service config (durable service
 accounts, a rotation policy, a durable-credential issuance policy); roles and an :class:`RbacEngine` built on
 the shared ``meridian_common.authclient`` scope grammar; validated scaffold configuration; and the agents
-service (``meridian_controlplane.agents``), the registry of the agents Meridian runs; and the tickets service
-(``meridian_controlplane.tickets``), Meridian's ticket tracker. Depends on meridian-common.
+service (``meridian_controlplane.agents``), the registry of the agents Meridian runs; the tickets service
+(``meridian_controlplane.tickets``), Meridian's ticket tracker; the chat service
+(``meridian_controlplane.chat``), Meridian's chat; and the notes service (``meridian_controlplane.notes``),
+the team's shared notes. Depends on meridian-common.
 """
 
 from __future__ import annotations
 
-__version__ = "0.7.0"
+__version__ = "0.10.0"
 
 from meridian_controlplane.ci import (
     CiPolicy,

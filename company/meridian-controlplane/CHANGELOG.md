@@ -1,5 +1,42 @@
 # Changelog — meridian-controlplane
 
+## 0.13.0
+- agents: schedules (`schedules.py`) on a cron expression or an interval, each firing an execution of an agent,
+  decided by the central authority under the schedule's own identity; the service starts with the schedules
+  in `schedules.yaml` and the telemetry settings in `telemetry.yaml`. `CentralAuthority` gains `authorize`,
+  for a call the service makes of its own accord, and an execution names the schedule that started it
+  (`schedule_id`).
+
+## 0.12.0
+- agents: each agent registered is issued an identity of its own through the `IdentityIssuer` its deployment
+  hands in, registering being a launch operation; its executions' runners get its secrets as
+  `MERIDIAN_<SERVICE>_TOKEN`, and an agent's summary names its `identity`.
+
+## 0.11.0
+- agents: a running execution stops with its checkpoint (`POST /executions/<id>/stop`) and a stopped one resumes
+  from it on any runner (`POST /executions/<id>/resume`, with an optional `input`), both with `run`; a stopped
+  execution can be cancelled. A `Runner` also ends what runs on it, packs a checkpoint and puts one back.
+
+## 0.10.0
+- chat: a chat service, Meridian's chat, with open channels, their threads and direct messages, and each
+  member's unread direct messages and mentions, served as an HTTP API and as MCP tools over one SQLite store;
+  only a message's author can edit it, and an edit keeps the text it replaced.
+- notes: a notes service, the team's shared notes, plain text under a short key, served as an HTTP API and as
+  MCP tools over one in-memory store that starts from a seed. `/grants` lists and changes rights through the
+  central authority its deployment hands in (`CentralAuthority`).
+
+## 0.9.0
+- agents: telemetry settings, defaults and each agent's overrides, read with `read` and replaced with a new
+  `configure` right; each execution is traced or not as its agent's settings say when it starts, and a traced
+  one runs pi with its trace extension.
+
+## 0.8.0
+- tickets: the service keeps no identity of its own. A central authority its deployment hands in (`Authority`)
+  decides every request and names its caller, and the HTTP API no longer takes `identify_caller`.
+
+## 0.7.1
+- agents: no length cap on agent names, system prompts or execution inputs.
+
 ## 0.7.0
 - tickets: a tickets service, Meridian's ticket tracker, with projects, their tickets and the comments on each,
   served as an HTTP API and as MCP tools over one SQLite store that records the history of every change.

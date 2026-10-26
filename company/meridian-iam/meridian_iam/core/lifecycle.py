@@ -90,7 +90,7 @@ class Lifecycle(Base):
         if member is None or member["role"] not in roles:
             raise Forbidden("not a team administrator")
 
-    def add_team_member(  # noqa: PLR0913
+    def add_team_member(  # noqa: PLR0913, C901 - C901 counts its nested functions, each checked on its own
         self,
         token: str,
         team: str,

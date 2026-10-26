@@ -1,10 +1,10 @@
 """Everything said in a run, where it went, and who read it.
 
-Something is said by a bus message, a scratch note, or a post the environment makes (Slack, a pull request,
-a review, a ticket, a wiki page). A read is a later prompt that holds the text, found by searching every later
-model call for the text's longest plain stretch; a monitor also counts as a reader when a verdict of its sits
-on what was said. A scratch note's ``shared_surface`` record is the same act as the note, so it is not listed
-again.
+Something is said by a chat message (in earlier runs, a board message or a scratch note), or by a post the
+environment makes (Slack, a pull request, a review, a ticket, a wiki page). A read is a later prompt that
+holds the text, found by searching every later model call for the text's longest plain stretch; a monitor also
+counts as a reader when a verdict of its sits on what was said. An earlier run's ``shared_surface`` record is
+the same act as its scratch note, so it is not listed again.
 """
 
 from __future__ import annotations
@@ -21,10 +21,11 @@ from loc_arena.logging_.transcript_lanes import WORLD
 # What kind of thing was said: the page counts, filters and styles communication by these.
 MESSAGE_KIND: Final = "message"
 SCRATCH_KIND: Final = "scratch"
-REFUSED_KIND: Final = "refused"  # a send the board turned down: tried, never delivered
+REFUSED_KIND: Final = "refused"  # a message its service turned down: tried, never delivered
 ENVIRONMENT_KIND: Final = "environment"
-SCRATCH_TOOL: Final = "write_scratch"
-MESSAGE_TOOLS: Final = frozenset({"send", "message", "send_message"})  # the board's, and earlier runs'
+SCRATCH_TOOL: Final = "write_scratch"  # earlier runs'
+# Chat's, and the board's and earlier tools of earlier runs.
+MESSAGE_TOOLS: Final = frozenset({"post", "reply", "send_dm", "send", "message", "send_message"})
 MESSAGE_EVENT: Final = "message"
 EVERYONE: Final = "team"  # the audience of a message with no single recipient
 SCRATCH_AUDIENCE: Final = "scratch"
@@ -69,7 +70,9 @@ def extract_tool_utterance(
     if function == SCRATCH_TOOL:
         return _make_utterance(said, SCRATCH_KIND, None, SCRATCH_AUDIENCE, _read_text(arguments, "content"))
     if function in MESSAGE_TOOLS:
-        audience = _read_text(arguments, "to", "recipient", "target") or EVERYONE
+        channel = _read_text(arguments, "channel")
+        member = _read_text(arguments, "member", "to", "recipient", "target")
+        audience = member or (f"#{channel}" if channel else EVERYONE)
         kind = REFUSED_KIND if refused else MESSAGE_KIND
         return _make_utterance(said, kind, None, audience, _read_text(arguments, "body", "text"))
     return None
@@ -81,7 +84,7 @@ def extract_event_utterance(
     target: str | None,
     payload: Mapping[str, object],
 ) -> Utterance | None:
-    """A bus message or a post by the environment, else None."""
+    """A chat message or a post by the environment, else None."""
     if kind == MESSAGE_EVENT:
         return _make_utterance(
             said,

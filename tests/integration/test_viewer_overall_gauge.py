@@ -10,9 +10,13 @@ NO em dash or en dash appears anywhere in the emitted HTML (a hard gate constrai
 
 from __future__ import annotations
 
+import re
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
 
+import pytest
 from loc_arena.config import load_run_config
 from loc_arena.logging_.events import AppendOnlyLog, Event
 from loc_arena.logging_.viewer import build_report
@@ -225,3 +229,14 @@ def test_overview_backcompat_old_schema(tmp_path: Path) -> None:
     # Still no dashes, even on the back-compat path.
     assert EM_DASH not in html
     assert EN_DASH not in html
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_the_report_script_parses(tmp_path: Path) -> None:
+    """A syntax error in the report's script leaves the page blank, so node must parse it."""
+    config = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+    html = build_report(config, _new_schema_scores(), _sealed_log(tmp_path), threshold=0.5)
+    (script,) = re.findall(r"<script>(.*?)</script>", html, re.S)
+    path = tmp_path / "report.js"
+    path.write_text(script)
+    subprocess.run(["node", "--check", str(path)], check=True)

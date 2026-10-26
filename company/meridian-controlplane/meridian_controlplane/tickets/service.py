@@ -1,23 +1,24 @@
-"""The tickets service: the tracker's HTTP API and its MCP tools, over one ``TicketStore``.
+"""The tickets service: the tracker's HTTP API and MCP tools over one ``TicketStore``, authorized centrally.
 
-Every operation is open to every known caller, and its name is the same in both: an HTTP route's handler and
-an MCP tool. The caller is the one its identity names, never an argument. Over HTTP, a request without a known
-identity is refused with 401 and a malformed one with 422, and each request is one line of the audit record
-(``meridian_controlplane.request_audit``); ``/``, ``/health`` and ``/openapi.json`` are open. Over MCP, a
-refused call is a tool error. A deployment serves the tools at ``/mcp`` and the API beside them.
+Each operation has one name, as an HTTP route's handler, as an MCP tool and in the IAM manifest, which binds
+reads to ``read`` and changes to ``write``. The caller is the one its credential names, never an argument. The
+central authority a deployment hands in decides every call before its handler runs (no known credential is a
+401, a missing permission a 403); a malformed request is a 422; and each request is one line of the audit
+record (``meridian_controlplane.request_audit``). ``/``, ``/health`` and ``/openapi.json`` are open. Over MCP
+the deployment's middleware decides each call, and a refused call is a tool error. A deployment serves the
+tools at ``/mcp`` and the API beside them.
 """
 
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from http import HTTPStatus
 from typing import Annotated, Any
 
-from fastapi import FastAPI, HTTPException, Query, Request, Response
+from fastapi import Depends, FastAPI, Query, Request, Response
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
-from fastapi.params import Depends
 from fastapi.responses import JSONResponse, PlainTextResponse
 from mcp.server import MCPServer
 from mcp.server.auth.provider import TokenVerifier
@@ -27,6 +28,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, JsonValue
 
 from meridian_controlplane.request_audit import record_each_request
+from meridian_controlplane.tickets.authority import Authority
 from meridian_controlplane.tickets.store import (
     PROJECT_KEY_PATTERN,
     Comment,
@@ -40,13 +42,12 @@ from meridian_controlplane.tickets.store import (
 
 SERVICE = "tickets"
 # The SDK requires an issuer with a token verifier, but publishes it only with a resource server URL, which is
-# left unset: the deployment, not an authorization server, issues the identities.
+# left unset: the deployment, not an authorization server, issues the credentials.
 ISSUER = "http://tickets"
-BEARER_PREFIX = "Bearer "
-IdentifyCaller = Callable[[str], Awaitable[str | None]]
 
 API_DESCRIPTION = """Meridian's ticket tracker: projects, their tickets and the discussion on each.
-Send your identity as "Authorization: Bearer <identity>".
+Send your credential as "Authorization: Bearer <credential>". Reads need read and changes write; a 403 names
+the missing permission, which you can ask for with POST /requests on the IAM service.
 GET /projects lists the projects. POST /projects with {"key", "name", "description"} creates one (a key such
 as EVALKIT never changes); PATCH /projects/<key> with {"name"} or {"description"} edits one.
 GET /tickets searches tickets by any of project, status, assignee, creator, parent, updated_since and text
@@ -115,50 +116,43 @@ class Tickets(BaseModel):
     tickets: list[TicketSummary]
 
 
-def create_tickets_api(
+def create_tickets_api(  # noqa: C901 - counts its nested functions, each checked on its own
     store: TicketStore,
     write_audit_line: Callable[[str], None],
-    identify_caller: IdentifyCaller | None,
-    dependencies: Sequence[Depends] = (),
+    authority: Authority,
 ) -> FastAPI:
     """The HTTP API over ``store``, auditing every request.
 
-    With ``identify_caller`` the service names the caller of a bearer token itself; without, ``dependencies``
-    must decide every call before its handler runs and name the caller as ``request.state.iam_principal``.
+    ``authority`` decides every call before its handler runs and names the caller as
+    ``request.state.iam_principal``; the app does not start unless its routes are the operations the
+    authority declares.
     """
-    if (identify_caller is None) == (not dependencies):
-        raise ValueError("pass exactly one of identify_caller and dependencies")
     app = FastAPI(
         title="Meridian tickets service",
         docs_url=None,
         redoc_url=None,
-        dependencies=list(dependencies),
+        dependencies=[Depends(authority.dependency)],
     )
     record_each_request(app, write_audit_line)
 
-    async def put_operation_on_audit_line(request: Request, arguments: Mapping[str, JsonValue]) -> str | None:
-        """Name the route's operation, its arguments and its caller on the audit line; returns the caller."""
+    def name_call(request: Request, arguments: Mapping[str, JsonValue]) -> None:
+        """Name the route's operation, arguments and, if the authority ran, caller on the audit line."""
         request.state.operation = request.scope["route"].name
         request.state.arguments = dict(arguments)
-        if identify_caller is None:
-            request.state.caller = getattr(request.state, "iam_principal", None)
-        else:
-            header = request.headers.get("Authorization", "")
-            token = header.removeprefix(BEARER_PREFIX) if header.startswith(BEARER_PREFIX) else None
-            request.state.caller = None if token is None else await identify_caller(token)
-        return request.state.caller
+        request.state.caller = getattr(request.state, "iam_principal", None)
 
-    async def identify(request: Request, arguments: Mapping[str, JsonValue]) -> str:
-        """The caller of the request, once it is known."""
-        caller = await put_operation_on_audit_line(request, arguments)
-        if caller is None:
-            raise HTTPException(HTTPStatus.UNAUTHORIZED, "send a known identity as a bearer token")
-        return caller
+    def identify(request: Request, arguments: Mapping[str, JsonValue]) -> str:
+        """``name_call`` on a route, where the authority has decided the call and named its caller."""
+        name_call(request, arguments)
+        return request.state.iam_principal
 
     @app.exception_handler(RequestValidationError)
     async def refuse_malformed_request(request: Request, error: RequestValidationError) -> Response:
-        """Refused before the route can identify its caller, a malformed request's line still names both."""
-        await put_operation_on_audit_line(request, request.path_params)
+        """Refused before the route runs, a malformed request's audit line still names the operation.
+
+        A body that is not JSON is refused before the authority runs, so that line may name no caller.
+        """
+        name_call(request, request.path_params)
         return await request_validation_exception_handler(request, error)
 
     @app.exception_handler(TicketError)
@@ -175,17 +169,17 @@ def create_tickets_api(
 
     @app.get("/projects")
     async def list_projects(request: Request) -> Projects:
-        await identify(request, {})
+        identify(request, {})
         return Projects(projects=store.list_projects())
 
     @app.post("/projects", status_code=HTTPStatus.CREATED)
     async def create_project(request: Request, creation: ProjectCreation) -> Project:
-        caller = await identify(request, creation.model_dump())
+        caller = identify(request, creation.model_dump())
         return store.create_project(caller, creation.key, creation.name, creation.description)
 
     @app.patch("/projects/{project}")
     async def edit_project(request: Request, project: str, edit: ProjectEdit) -> Project:
-        caller = await identify(request, {"project": project, **edit.model_dump(exclude_none=True)})
+        caller = identify(request, {"project": project, **edit.model_dump(exclude_none=True)})
         return store.edit_project(caller, project, edit.name, edit.description)
 
     @app.get("/tickets")
@@ -199,13 +193,13 @@ def create_tickets_api(
         updated_since: Annotated[AwareDatetime | None, Query()] = None,
         text: Annotated[str | None, Query()] = None,
     ) -> Tickets:
-        await identify(request, dict(request.query_params))
+        identify(request, dict(request.query_params))
         found = store.search_tickets(project, status, assignee, creator, parent, updated_since, text)
         return Tickets(tickets=found)
 
     @app.post("/projects/{project}/tickets", status_code=HTTPStatus.CREATED)
     async def create_ticket(request: Request, project: str, creation: TicketCreation) -> Ticket:
-        caller = await identify(request, {"project": project, **creation.model_dump(exclude_none=True)})
+        caller = identify(request, {"project": project, **creation.model_dump(exclude_none=True)})
         return store.create_ticket(
             caller,
             project,
@@ -217,12 +211,12 @@ def create_tickets_api(
 
     @app.get("/tickets/{ticket}")
     async def get_ticket(request: Request, ticket: str) -> Ticket:
-        await identify(request, {"ticket": ticket})
+        identify(request, {"ticket": ticket})
         return store.get_ticket(ticket)
 
     @app.patch("/tickets/{ticket}")
     async def edit_ticket(request: Request, ticket: str, edit: TicketEdit) -> Ticket:
-        caller = await identify(request, {"ticket": ticket, **edit.model_dump(exclude_none=True)})
+        caller = identify(request, {"ticket": ticket, **edit.model_dump(exclude_none=True)})
         return store.edit_ticket(
             caller,
             ticket,
@@ -235,13 +229,14 @@ def create_tickets_api(
 
     @app.post("/tickets/{ticket}/comments", status_code=HTTPStatus.CREATED)
     async def comment_on_ticket(request: Request, ticket: str, comment: CommentCreation) -> Comment:
-        caller = await identify(request, {"ticket": ticket, **comment.model_dump()})
+        caller = identify(request, {"ticket": ticket, **comment.model_dump()})
         return store.comment_on_ticket(caller, ticket, comment.body)
 
+    authority.verify_routes(app)
     return app
 
 
-def build_tickets_server(
+def build_tickets_server(  # noqa: C901 - counts its nested functions, each checked on its own
     store: TicketStore,
     caller: Callable[[], str | None],
     verifier: TokenVerifier | None = None,
@@ -250,7 +245,8 @@ def build_tickets_server(
     """The MCP server of the tracker: one tool per operation of the HTTP API, with the same name.
 
     ``caller`` names who calls, and ``verifier`` admits callers over HTTP. ``middleware`` runs in order around
-    every request: a deployment records each call and, under central authorization, decides it there.
+    every request: a deployment records each call there and, under central IAM, decides it before the tool
+    runs; a tool itself needs only a caller.
     """
     auth = AuthSettings(issuer_url=ISSUER, resource_server_url=None) if verifier else None
     server = MCPServer(

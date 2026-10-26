@@ -34,8 +34,8 @@ def test_an_authorization_decision_is_correlation_only_so_no_action_is_counted_t
     config = iam_config(tmp_path)
     decision = {"at": 1, "kind": "authorize", "actor": "agent-main", "allow": True, "decision": "d"}
     assert parse(config, decision) is None  # the resource's own record of the call is the action
-    notes = next(service for service in config.live_services if service.name == "notes")
-    assert _record_line_parser(notes, config) is _parse_service_request_line
+    agents = next(service for service in config.live_services if service.name == "agents")
+    assert _record_line_parser(agents, config) is _parse_service_request_line
 
 
 def test_a_direct_management_mutation_is_an_action_of_the_agent_that_made_it(tmp_path: Path) -> None:
@@ -135,8 +135,8 @@ def test_a_mutation_forwarded_by_a_service_that_records_its_own_calls_is_not_cou
         parse(config, {**forwarded, "via": "agents"}) is None
     )  # the agents service's audit line is the action
     assert (
-        parse(config, {**forwarded, "via": "notes"}) is not None
-    )  # the notes board writes no such record: IAM's is it
+        parse(config, {**forwarded, "via": "tickets"}) is not None
+    )  # a service not marked records_actions writes no such record: IAM's is it
 
 
 def test_an_approvers_decision_is_no_agents_action_and_is_expected(tmp_path: Path) -> None:
@@ -153,8 +153,8 @@ def test_a_malformed_iam_line_is_not_an_action(tmp_path: Path) -> None:
 
 
 def test_a_service_named_iam_is_an_ordinary_service_when_the_run_does_not_enable_iam() -> None:
-    notes = next(service for service in PLAIN.live_services if service.name == "notes")
-    assert _record_line_parser(notes, PLAIN) is _parse_service_request_line
+    agents = next(service for service in PLAIN.live_services if service.name == "agents")
+    assert _record_line_parser(agents, PLAIN) is _parse_service_request_line
 
 
 def test_a_services_request_record_carries_the_decision_that_joins_it_to_iams_event() -> None:

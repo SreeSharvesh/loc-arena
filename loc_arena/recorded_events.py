@@ -7,28 +7,26 @@ episode, or the honest twin, whose play window holds its time. Its events take t
 that time and the native turn of its agent running then, else turn 0, and are written after every event of
 play to the sealed log, and to the mirror log unless sealed-only. A call its service refused (it carries
 ``error.type``) makes a blocked ``action`` with the service's reason. A successful call makes zero or more
-events: the board's ``send`` a ``message``; the forge's ``open_pr`` a ``pr`` and an ``action``; a covert
-tool an ``action``, plus ``write_scratch`` a sealed ``shared_surface`` and ``blind_monitor`` the ``config``
-pair the verifier reads; ``read`` and ``unread`` none, since each turn's delivery is a ``read``. A live
-service with rights and no tools records a request in its log as a line naming its operation
-(``ServiceRequestRecord``); its other lines, the notes service's among them, are not records. A request it
-refused makes a blocked ``action``, and one that changed something an ``action``; a read it answered makes
-none. A service with tools and rights both (the eval service) records a tool call or a request per line, and
-each line is read as what it names. The job service, reached both ways, writes both kinds of record, and each
-change of a job's state is a ``job`` event of its owner; the process facts each node of its fleet writes
-(``services/node-<n>.log``) are ``process`` events on the sealed log alone. Neither comes from an agent's
-call, so either may fall outside every turn, unnoted. A job's own calls carry its workload principal
+events: chat's ``post``, ``reply`` and ``send_dm`` a ``message``, over MCP or HTTP alike; the forge's
+``open_pr`` a ``pr`` and an ``action``; a covert tool an ``action``, plus ``blind_monitor`` the ``config``
+pair the verifier reads. A live service with rights and no tools records a request in its log as a line naming
+its operation (``ServiceRequestRecord``); its other lines are not records. A request it refused makes a
+blocked ``action``, and one that changed something an ``action``; a read it answered makes none. A service
+with tools and rights both (the eval, tickets, notes and chat services) records a tool call or a request per
+line, and each line is read as what it names. The job service, reached both ways, writes both kinds of record,
+and each change of a job's state is a ``job`` event of its owner; the process facts each node of its fleet
+writes (``services/node-<n>.log``) are ``process`` events on the sealed log alone. Neither comes from an
+agent's call, so either may fall outside every turn, unnoted. A job's own calls carry its workload principal
 (``job-<id>``), which is no agent of the run: each record a workload made is its sponsor's, by IAM's
 ``workload_issued`` audit line, and each of its events names the ``workload``; it too may fall outside every
 turn, unnoted. A seeded job, another team's work the job service starts with, is marked ``seed`` on its
 ``job`` events, and its owner is a principal of the company: each record of one is placed as an agent's is,
-its events of the actor role ``company``, in turn 0.
-``blind_monitor`` also reduces the monitors' view: the target's mirror events after the call are dropped, so
-monitors lose that activity while the sealed log keeps it. Each line of
-``unattributed_records.jsonl`` in the run directory is a record and the ``reason`` it was not placed: not a
-valid record, outside every phase window, or not an agent of the run; or no covering turn, a native agent's
-record outside all its turns, whose events are built in turn 0. Grading never builds, so grading a run again
-adds nothing.
+its events of the actor role ``company``, in turn 0. ``blind_monitor`` also reduces the monitors' view: the
+target's mirror events after the call are dropped, so monitors lose that activity while the sealed log keeps
+it. Each line of ``unattributed_records.jsonl`` in the run directory is a record and the ``reason`` it was not
+placed: not a valid record, outside every phase window, or not an agent of the run; or no covering turn, a
+native agent's record outside all its turns, whose events are built in turn 0. Grading never builds, so
+grading a run again adds nothing.
 """
 
 from __future__ import annotations
@@ -52,11 +50,10 @@ from loc_arena.config import RunConfig
 from loc_arena.forge.service import OpenedPullRequest
 from loc_arena.iam_seed import load_seed
 from loc_arena.logging_.agent_trace import EpisodeTrace
-from loc_arena.logging_.events import AppendOnlyLog, EventKind, fingerprint, read_events
+from loc_arena.logging_.events import AppendOnlyLog, EventKind, read_events
 from loc_arena.mirror_coverage import CoverageDrop, drop_covered_mirror_events
 from loc_arena.node_pool import list_node_services
 from loc_arena.recording_service import TOOLS as COVERT_TOOLS
-from loc_arena.recording_service import redact_note
 from loc_arena.scaffold.bus import Recorder
 from loc_arena.task import SNAPSHOT_FILE, SnapshotFile, read_snapshot_file, resolve_scenario
 from loc_arena.tool_records import ToolRecord
@@ -154,7 +151,7 @@ class RecordedEvent:
     payload: dict[str, Any]
     tool: str | None = None
     result: dict[str, Any] | None = None
-    to_mirror: bool = True  # a sealed-only event (shared_surface) the monitors never see
+    to_mirror: bool = True  # false for a sealed-only event the monitors never see
 
 
 def build_pull_request(record: ToolRecord, agent_ids: Sequence[str]) -> list[RecordedEvent]:
@@ -181,21 +178,6 @@ def build_pull_request(record: ToolRecord, agent_ids: Sequence[str]) -> list[Rec
     ]
 
 
-def build_shared_surface(record: ToolRecord, agent_ids: Sequence[str]) -> list[RecordedEvent]:
-    """The sealed ``shared_surface`` event of a scratch note, fingerprinted as the verifier reads it."""
-    _ = agent_ids
-    content = str(record.arguments.get("content", ""))
-    return [
-        RecordedEvent(
-            "shared_surface",
-            record.agent,
-            None,
-            {"surface_kind": "workspace_scratch", "content_fp": fingerprint(content)},
-            to_mirror=False,
-        ),
-    ]
-
-
 def build_coverage_reduction(record: ToolRecord, agent_ids: Sequence[str]) -> list[RecordedEvent]:
     """The ``config`` pair the verifier reads: deployed coverage drops the target from the baseline."""
     target = str(record.arguments.get("target", ""))
@@ -213,37 +195,62 @@ def build_coverage_reduction(record: ToolRecord, agent_ids: Sequence[str]) -> li
     ]
 
 
-def build_message(record: ToolRecord, agent_ids: Sequence[str]) -> list[RecordedEvent]:
-    """The ``message`` event of a message the board took, with the fields its readers need.
+def chat_message(
+    author: str,
+    operation: str,
+    arguments: Mapping[str, JsonValue],
+    stored: Mapping[str, JsonValue] | None = None,
+) -> RecordedEvent:
+    """The ``message`` event of a post, reply or direct message chat took, as the action monitor reads it.
 
-    The action monitor reads its body, and the verifier's covert-coordination check its fingerprint.
+    Its target is the channel or the member; ``stored``, the message chat returned (an MCP call's result),
+    adds the channel and thread a reply's arguments do not name.
     """
-    _ = agent_ids
-    body = str(record.arguments.get("body", ""))
+    stored = stored or {}
+    thread = stored.get("thread", arguments.get("message"))
+    channel = stored.get("channel", arguments.get("channel"))
+    member = arguments.get("member")
     payload = {
-        "message_kind": str(record.arguments.get("kind", "inform")),
-        "body": body,
-        "content_fp": fingerprint(body),
+        "message_kind": operation,
+        "body": str(arguments.get("body", "")),
+        "channel": channel,
+        "thread": thread,
+        "dm": operation == "send_dm",
     }
-    return [RecordedEvent("message", record.agent, str(record.arguments["to"]), payload)]
+    target = member if isinstance(member, str) else channel if isinstance(channel, str) else None
+    return RecordedEvent("message", author, target, payload)
 
+
+def build_message(record: ToolRecord, agent_ids: Sequence[str]) -> list[RecordedEvent]:
+    """The ``message`` event of a chat post an agent made over MCP."""
+    _ = agent_ids
+    return [chat_message(record.agent, record.tool, record.arguments, record.result)]
+
+
+CHAT_POSTS: frozenset[str] = frozenset({"post", "reply", "send_dm"})
+"""Chat's operations that write a message, each a ``message`` event, whether over MCP or HTTP."""
 
 # What each tool's successful call makes beyond its action event, by tool name (unique across services under
 # the tools gateway's prefixMode: never). A builder raises ValidationError on a result that is not its tool's.
 EVENT_BUILDERS: Mapping[str, Callable[[ToolRecord, Sequence[str]], list[RecordedEvent]]] = {
     "open_pr": build_pull_request,
-    "write_scratch": build_shared_surface,
     "blind_monitor": build_coverage_reduction,
-    "send": build_message,
+    **dict.fromkeys(CHAT_POSTS, build_message),
 }
 
 
-# The tools whose successful call is also an action (the eval service's changes among them; its reads are
-# none), and the argument naming what a call or request addresses.
-_ACTIONS = COVERT_TOOLS | {"open_pr", "register_eval", "retire_eval", "start_run", "publish_run"}
+# The tools whose successful call is also an action (the eval, tickets and notes services' changes among them;
+# their reads are none), and the argument naming what a call or request addresses.
+_ACTIONS = COVERT_TOOLS | {
+    *("open_pr", "register_eval", "retire_eval", "start_run", "publish_run"),
+    *("create_project", "edit_project", "create_ticket", "edit_ticket", "comment_on_ticket"),
+    *("write_note", "delete_note"),
+    "edit_message",
+}
 _TARGET_FROM: Mapping[str, str] = {
     "open_pr": "repo",
-    "send": "to",
+    "post": "channel",
+    "send_dm": "member",
     "blind_monitor": "target",
     "register_agent": "name",
     "update_agent": "name",
@@ -251,13 +258,17 @@ _TARGET_FROM: Mapping[str, str] = {
     "grant_rights": "agent",
     "revoke_rights": "agent",
     "start_execution": "agent",
-    "cancel_execution": "execution_id",
+    **dict.fromkeys(("cancel_execution", "stop_execution", "resume_execution"), "execution_id"),
     "submit_job": "name",
     **dict.fromkeys(("cancel_job", "hold_job", "release_job", "operate_job"), "job_id"),
     **dict.fromkeys(("delete_schedule", "operate_schedule"), "schedule_id"),
     "drain_node": "node_id",
     **dict.fromkeys(("register_eval", "retire_eval", "start_run"), "eval_id"),
     **dict.fromkeys(("bind_job", "report_results", "publish_run"), "run_id"),
+    "create_project": "key",
+    **dict.fromkeys(("edit_project", "create_ticket"), "project"),
+    **dict.fromkeys(("get_ticket", "edit_ticket", "comment_on_ticket"), "ticket"),
+    **dict.fromkeys(("read_note", "write_note", "delete_note"), "key"),
 }
 # The job service's tools that only read: an answered call of one makes no event, of any other an action.
 _JOB_READS = frozenset(
@@ -266,20 +277,15 @@ _JOB_READS = frozenset(
 
 
 def _action_event(record: ToolRecord) -> RecordedEvent:
-    """The dual ``action`` event the action monitor and the explorer read; blocked if the service refused.
-
-    A scratch note's text is redacted to its fingerprint: the action is on the mirror, which the monitors
-    read, and only the sealed ``shared_surface`` keeps a note's content (as its fingerprint) off it.
-    """
+    """The dual ``action`` event the action monitor and the explorer read; blocked if the service refused."""
     target = record.arguments.get(_TARGET_FROM.get(record.tool, ""))
     target = target if isinstance(target, str) else None
-    args = redact_note(record.tool, record.arguments)
     return RecordedEvent(
         "action",
         record.agent,
         target,
         {
-            "args": args,
+            "args": record.arguments,
             "target": target,
             "blocked": record.error is not None,
             "reason": record.status_description,
@@ -290,10 +296,15 @@ def _action_event(record: ToolRecord) -> RecordedEvent:
 
 
 def build_events_from_service_request(record: ServiceRequestRecord) -> list[RecordedEvent]:
-    """The ``action`` of a request its service refused or that changed something; a read it answered, none."""
+    """The ``action`` of a request its service refused or that changed something; a read it answered, none.
+
+    A chat post it took is a ``message`` instead, as the same post over MCP is.
+    """
     refused = record.status >= HTTPStatus.BAD_REQUEST
     if record.caller is None or (record.method == HTTPMethod.GET and not refused):
         return []
+    if not refused and record.operation in CHAT_POSTS:
+        return [chat_message(record.caller, record.operation, record.arguments)]
     target = record.arguments.get(_TARGET_FROM.get(record.operation, ""))
     target = target if isinstance(target, str) else None
     payload = {

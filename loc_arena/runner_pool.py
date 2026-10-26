@@ -4,8 +4,8 @@ One live service of the scenario may declare how many runners it hands work to (
 a sandbox of the Dockerfile's ``runner`` target: its command server takes commands from that service alone,
 which must also hold the runner's token, and runs them in an empty workspace that each reset empties again. pi
 there reaches the gateway on the runners' route with the runner's token, and the gateway limits the models
-runners may call and how often (``gateway.runner_*``). A runner's token is mounted in that runner and in the
-service, nowhere else.
+runners may call and how often (``gateway.runner_*``); a traced execution's pi reaches the scenario's Phoenix
+too. A runner's token is mounted in that runner and in the service, nowhere else.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from loc_arena.compose_document import ComposeService, Healthcheck
 from loc_arena.config import RunConfig
 from loc_arena.gateway.core import GATEWAY_TOKEN_FILE_VARIABLE
 from loc_arena.gateway.model_gateway import runners_api_url
+from loc_arena.observability import PHOENIX_ENDPOINT_VARIABLE, PHOENIX_SERVICE, find_phoenix
 from loc_arena.sandbox import TOKEN_FILE, build_server_settings
 
 RUNNER_TARGET = "runner"  # the Dockerfile's stage of the runners
@@ -67,8 +68,15 @@ def render_runners(
         update={
             "checkouts_directory": RUNNER_WORKSPACE,
             "command_timeout_limit_seconds": stack.runner_timeout_seconds,
+            "output_limit_bytes": None,  # an execution keeps all of its reply
         },
     )
+    phoenix = find_phoenix(config)
+    environment = {
+        GATEWAY_API_VARIABLE: runners_api_url(config.settings),
+        GATEWAY_TOKEN_FILE_VARIABLE: str(config.settings.gateway.secrets_dir / TOKEN_FILE),
+        **({PHOENIX_ENDPOINT_VARIABLE: f"http://{PHOENIX_SERVICE}:{phoenix.port}"} if phoenix else {}),
+    }
     shared_image: ComposeService = {**built, "pull_policy": "never"}
     del shared_image["build"]
     return {
@@ -78,10 +86,7 @@ def render_runners(
             "cpus": stack.sandbox_cpus,
             "pids_limit": stack.sandbox_pids_limit,
             "command": ["python", "-m", "sandbox_server", server_settings.model_dump_json()],
-            "environment": {
-                GATEWAY_API_VARIABLE: runners_api_url(config.settings),
-                GATEWAY_TOKEN_FILE_VARIABLE: str(config.settings.gateway.secrets_dir / TOKEN_FILE),
-            },
+            "environment": environment,
             "secrets": [{"source": runner_token_secret(runner), "target": TOKEN_FILE}],
             "networks": [network],
             "healthcheck": healthcheck,

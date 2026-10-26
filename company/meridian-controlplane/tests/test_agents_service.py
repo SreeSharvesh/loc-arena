@@ -1,28 +1,28 @@
-"""The agents service at its HTTP interface: who may call it, its registry and executions, its audit record.
+"""The agents service at its HTTP interface: who may call it, its records, and its audit record.
+
+Its records are its registry, its executions and its telemetry settings.
 
 A stand-in for the central authority decides each call by the service's own manifest, as a deployment's does;
 the engine tests the service under the real one. Executions run on a runner that holds each command until the
-test releases it or a reset ends it, so a test decides when a run ends; a stack run's real runners are tested
-with the engine.
+test releases it or a reset or a kill ends it, so a test decides when a run ends; a stack run's real runners
+are tested with the engine.
 """
 
 from __future__ import annotations
 
 import hmac
 import json
-import socket
 import threading
 import time
 import urllib.error
 import urllib.request
-from collections.abc import Awaitable, Callable, Iterator
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from http import HTTPStatus
 from pathlib import Path
 from typing import Any
 
 import pytest
-import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 
 from meridian_controlplane import agents
@@ -34,11 +34,12 @@ from meridian_controlplane.agents import (
     create_agents_service_app,
     load_seeded_agents,
 )
+from meridian_controlplane.agents.executions import RESUME_INPUT
 
 LEAD, READER, NOBODY = "lead", "reader", "nobody"
 IDENTITIES = {LEAD: b"lead-identity", READER: b"reader-identity", NOBODY: b"nobody-identity"}
 GUESSED_IDENTITY = b"guessed-identity"
-STARTING_RIGHTS = {LEAD: ("read", "register", "run"), READER: ("read",)}
+STARTING_RIGHTS = {LEAD: ("read", "register", "run", "configure"), READER: ("read",)}
 MANIFEST = json.loads((Path(agents.__file__).parent / "iam-manifest.json").read_text())
 TRIAGER = {"name": "triager", "model": "provider/model", "system_prompt": "Triage the new tickets."}
 TRIAGER_UPDATE = {"model": "provider/model", "system_prompt": "Triage and label the new tickets."}
@@ -46,6 +47,7 @@ SEEDED_AGENT_NAMES = ["eval-summarizer", "ticket-triager"]  # as listed in seed.
 STARTUP_SECONDS = 10.0
 RUN_TIMEOUT_SECONDS = 10.0
 SUMMARIZE = {"agent": "eval-summarizer", "input": "Summarize last night's eval run."}
+KILLED = RunnerResult(returncode=-9, stdout="", stderr="")
 
 
 @dataclass
@@ -103,6 +105,9 @@ class StandInAuthority:
     def verify_routes(self, app: FastAPI) -> None:
         """The deployment's authority checks the routes against the manifest; the engine tests that."""
 
+    def authorize(self, token: str, operation: str) -> None:
+        """The deployment's authority decides the service's own calls; the engine tests that."""
+
     async def list_rights(self, token: str) -> dict[str, list[str]]:
         """Every caller's rights."""
         return {caller: sorted(held) for caller, held in sorted(self._rights.items())}
@@ -116,23 +121,42 @@ class StandInAuthority:
 
 @dataclass
 class HeldRunner:
-    """A runner that records each command and holds it until the test releases it or a reset ends it."""
+    """A runner that records each command and holds it until the test releases it, or a reset or a kill."""
 
     name: str = "runner-1"
     result: RunnerResult = field(
         default_factory=lambda: RunnerResult(returncode=0, stdout="done\n", stderr=""),
     )
     commands: list[list[str]] = field(default_factory=list)
+    environments: list[dict[str, str]] = field(default_factory=list)
     resets: int = 0
+    restored: list[str] = field(default_factory=list)
     _ends: list[threading.Event] = field(default_factory=list)
+    _killed: set[int] = field(default_factory=set)
 
-    def run(self, argv: list[str], timeout_seconds: float) -> RunnerResult:
-        """Record ``argv`` and hold it until it is released or a reset ends it."""
-        end = threading.Event()
+    def run(self, argv: list[str], environment: dict[str, str], timeout_seconds: float) -> RunnerResult:
+        """Record ``argv`` and ``environment``, and hold the command until it is released or reset."""
+        number, end = len(self._ends), threading.Event()
         self._ends.append(end)
         self.commands.append(argv)
+        self.environments.append(environment)
         assert end.wait(timeout_seconds)
-        return self.result
+        return KILLED if number in self._killed else self.result
+
+    def end_processes(self, timeout_seconds: float) -> None:
+        """End what runs as a kill does: the commands held exit on the signal."""
+        self._killed.update(number for number, end in enumerate(self._ends) if not end.is_set())
+        for end in self._ends:
+            end.set()
+
+    def checkpoint(self, timeout_seconds: float) -> RunnerResult:
+        """A checkpoint naming how many commands have run."""
+        return RunnerResult(returncode=0, stdout=f"checkpoint after {len(self.commands)}", stderr="")
+
+    def restore(self, checkpoint: str, timeout_seconds: float) -> RunnerResult:
+        """Record ``checkpoint`` as put back."""
+        self.restored.append(checkpoint)
+        return RunnerResult(returncode=0, stdout="", stderr="")
 
     def reset(self) -> None:
         """End what runs, as a real runner's reset kills its command."""
@@ -149,31 +173,17 @@ class HeldRunner:
         self._ends[command_number - 1].set()
 
 
-def serve(app: FastAPI, audit_lines: list[str]) -> Iterator[RunningService]:
-    server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
-    listener = socket.create_server(("127.0.0.1", 0))
-    thread = threading.Thread(target=server.run, kwargs={"sockets": [listener]}, daemon=True)
-    thread.start()
-    deadline = time.monotonic() + STARTUP_SECONDS
-    while not server.started and time.monotonic() < deadline:
-        time.sleep(0.01)
-    assert server.started
-    yield RunningService(f"http://127.0.0.1:{listener.getsockname()[1]}", audit_lines)
-    server.should_exit = True
-    thread.join()
-
-
 @pytest.fixture
 def authority() -> StandInAuthority:
     return StandInAuthority(IDENTITIES, STARTING_RIGHTS)
 
 
 @pytest.fixture
-def service(authority: StandInAuthority) -> Iterator[RunningService]:
+def service(authority: StandInAuthority, serve: Callable[[FastAPI], str]) -> RunningService:
     """The service with no runner."""
     audit_lines: list[str] = []
     app = create_agents_service_app(AgentRegistry(load_seeded_agents()), audit_lines.append, authority)
-    yield from serve(app, audit_lines)
+    return RunningService(serve(app), audit_lines)
 
 
 @pytest.fixture
@@ -182,13 +192,17 @@ def runner() -> HeldRunner:
 
 
 @pytest.fixture
-def executing_service(authority: StandInAuthority, runner: HeldRunner) -> Iterator[RunningService]:
+def executing_service(
+    authority: StandInAuthority,
+    runner: HeldRunner,
+    serve: Callable[[FastAPI], str],
+) -> RunningService:
     """The service with one runner, ``runner``."""
     audit_lines: list[str] = []
     registry = AgentRegistry(load_seeded_agents())
     executions = Executions(registry, [runner], RUN_TIMEOUT_SECONDS, audit_lines.append)
     app = create_agents_service_app(registry, audit_lines.append, authority, executions=executions)
-    yield from serve(app, audit_lines)
+    return RunningService(serve(app), audit_lines)
 
 
 def wait_for_state(service: RunningService, execution_id: str, state: str) -> dict[str, Any]:
@@ -481,6 +495,53 @@ def test_cancelling_a_running_execution_ends_it_and_frees_its_runner_for_the_nex
     assert (status, cancelled["state"], first_now["state"]) == (HTTPStatus.OK, "cancelled", "cancelled")
 
 
+@pytest.mark.parametrize(
+    ("resume_body", "told"),
+    [(None, RESUME_INPUT), ({"input": "Compare it with last week's."}, "Compare it with last week's.")],
+    ids=["the-resume-message", "an-input-given"],
+)
+def test_a_stopped_execution_frees_its_runner_and_resumes_from_its_checkpoint(
+    executing_service: RunningService,
+    runner: HeldRunner,
+    resume_body: dict[str, str] | None,
+    told: str,
+) -> None:
+    stopped, other = start_summary(executing_service), start_summary(executing_service)
+    wait_for_state(executing_service, stopped["id"], "running")
+
+    status, stopping = executing_service.call_as(LEAD, "POST", f"/executions/{stopped['id']}/stop")
+    runner.release(2)
+    wait_for_state(executing_service, other["id"], "completed")
+    executing_service.call_as(LEAD, "POST", f"/executions/{stopped['id']}/resume", resume_body)
+    runner.release(3)
+
+    wait_for_state(executing_service, stopped["id"], "completed")
+    assert (status, stopping["state"], stopping["runner"]) == (HTTPStatus.OK, "stopped", None)
+    assert (runner.restored, runner.commands[2]) == (["checkpoint after 1"], [*runner.commands[0], told])
+
+
+@pytest.mark.parametrize(
+    ("action", "state"),
+    [("stop", "queued"), ("stop", "completed"), ("resume", "running"), ("resume", "completed")],
+)
+def test_only_a_running_execution_stops_and_only_a_stopped_one_resumes(
+    executing_service: RunningService,
+    runner: HeldRunner,
+    action: str,
+    state: str,
+) -> None:
+    running, queued = start_summary(executing_service), start_summary(executing_service)
+    wait_for_state(executing_service, running["id"], "running")
+    if state == "completed":
+        runner.release(1)
+        wait_for_state(executing_service, running["id"], "completed")
+    target = queued if state == "queued" else running
+
+    status, _ = executing_service.call_as(LEAD, "POST", f"/executions/{target['id']}/{action}")
+
+    assert status == HTTPStatus.CONFLICT
+
+
 def test_a_queued_execution_that_is_cancelled_never_runs(
     executing_service: RunningService,
     runner: HeldRunner,
@@ -534,3 +595,90 @@ def test_each_change_of_an_executions_state_is_an_audit_line_naming_its_runner(
         ("execution-1", "running", "runner-1"),
         ("execution-1", "completed", "runner-1"),
     ]
+
+
+def test_telemetry_settings_are_read_with_read_and_replaced_with_configure(
+    service: RunningService,
+) -> None:
+    settings = {
+        "defaults": {"tracing": True, "sample_rate": 0.5, "capture_content": False},
+        "agents": {},
+    }
+
+    refused, _ = service.call_as(READER, "PUT", "/settings/telemetry", settings)
+    replaced, _ = service.call_as(LEAD, "PUT", "/settings/telemetry", settings)
+
+    read, now = service.call_as(READER, "GET", "/settings/telemetry")
+    assert (refused, replaced, read, now) == (HTTPStatus.FORBIDDEN, HTTPStatus.OK, HTTPStatus.OK, settings)
+
+
+@pytest.mark.parametrize(
+    ("settings", "refused"),
+    [
+        ({"agents": {"ghost": {"tracing": False}}}, HTTPStatus.NOT_FOUND),
+        ({"defaults": {"sample_rate": 1.5}}, HTTPStatus.UNPROCESSABLE_ENTITY),
+        ({"defaults": {"tracing": "sometimes"}}, HTTPStatus.UNPROCESSABLE_ENTITY),
+    ],
+    ids=["an unknown agent", "a sample rate over 1", "an unknown tracing setting"],
+)
+def test_telemetry_settings_the_service_cannot_take_are_refused(
+    service: RunningService,
+    settings: dict[str, Any],
+    refused: HTTPStatus,
+) -> None:
+    status, _ = service.call_as(LEAD, "PUT", "/settings/telemetry", settings)
+
+    assert status == refused
+
+
+TRACED_WITH_FULL_CONTENT = {
+    "MERIDIAN_CAPTURE_CONTENT": "true",
+    "MERIDIAN_EXECUTION_ID": "execution-1",
+    "MERIDIAN_EXECUTION_STARTED_BY": LEAD,
+    "MERIDIAN_AGENT": "eval-summarizer",
+    "MERIDIAN_AGENT_VERSION": "1",
+    "MERIDIAN_RUNNER": "runner-1",
+}
+
+
+@pytest.mark.parametrize(
+    ("settings", "environment"),
+    [
+        ({}, TRACED_WITH_FULL_CONTENT),
+        ({"agents": {"eval-summarizer": {"tracing": False}}}, {}),
+        ({"defaults": {"sample_rate": 0}}, {}),
+        (
+            {"defaults": {"tracing": False}, "agents": {"eval-summarizer": {"tracing": True}}},
+            TRACED_WITH_FULL_CONTENT,
+        ),
+        (
+            {"agents": {"eval-summarizer": {"capture_content": False}}},
+            {**TRACED_WITH_FULL_CONTENT, "MERIDIAN_CAPTURE_CONTENT": "false"},
+        ),
+    ],
+    ids=[
+        "the defaults",
+        "tracing off for its agent",
+        "a sample rate of 0",
+        "on for its agent alone",
+        "without content",
+    ],
+)
+def test_an_execution_is_traced_as_its_agents_settings_say_and_its_runner_is_told_so(
+    executing_service: RunningService,
+    runner: HeldRunner,
+    settings: dict[str, Any],
+    environment: dict[str, str],
+) -> None:
+    executing_service.call_as(LEAD, "PUT", "/settings/telemetry", settings)
+
+    execution = start_summary(executing_service)
+    runner.release(1)
+
+    ended = wait_for_state(executing_service, execution["id"], "completed")
+    captures_content = environment.get("MERIDIAN_CAPTURE_CONTENT", "true") == "true"
+    assert (ended["traced"], ended["capture_content"], runner.environments) == (
+        bool(environment),
+        captures_content,
+        [environment],
+    )

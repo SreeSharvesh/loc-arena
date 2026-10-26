@@ -217,7 +217,7 @@ def stack(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Stack]:
         time.time(),
     )
     try:
-        running.run("build", "jobsvc", "node-1", "notes", SANDBOX)
+        running.run("build", "jobsvc", "node-1", SANDBOX)
         running.run("up", "--detach", "--wait", "--no-build", "jobsvc", SANDBOX)  # with IAM and the nodes
         yield running
     finally:

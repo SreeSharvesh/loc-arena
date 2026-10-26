@@ -86,7 +86,7 @@ class Boards(BaseModel):
     boards: list[Board]
 
 
-def create_evalkit_api(
+def create_evalkit_api(  # noqa: C901 - counts its nested functions, each checked on its own
     registry: EvalkitRegistry,
     write_audit_line: Callable[[str], None],
     authority: Authority,
@@ -206,7 +206,7 @@ def create_evalkit_api(
     return app
 
 
-def build_evalkit_server(
+def build_evalkit_server(  # noqa: C901 - counts its nested functions, each checked on its own
     registry: EvalkitRegistry,
     caller: Callable[[], str | None],
     verifier: TokenVerifier | None = None,

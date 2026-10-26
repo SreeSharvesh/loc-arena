@@ -1,4 +1,4 @@
-"""The board and recording MCP services under central IAM: a real IAM server in front of the real tools."""
+"""The chat and recording MCP services under central IAM: a real IAM server in front of the real tools."""
 
 import json
 import socket
@@ -15,18 +15,25 @@ import anyio
 import httpx2
 import pytest
 import uvicorn
-from loc_arena.board import SERVICE, Board, build_server
 from loc_arena.config import load_run_config
 from loc_arena.iam_bootstrap import manifest_path
-from loc_arena.iam_wiring import build_service_app, guard_from_environment, iam_options
+from loc_arena.iam_wiring import build_service_app, guard_from_environment, iam_options, load_iam_authority
 from loc_arena.mcp_service import build_app, caller_from_token
 from loc_arena.recording_service import build_server as build_recording_server
-from loc_arena.tool_records import ToolRecord
+from loc_arena.tool_records import ToolRecord, tool_call_recorder
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 from mcp.types import CallToolResult, TextContent
 from starlette.applications import Starlette
 
+from meridian_controlplane.chat import (
+    SERVICE,
+    ChatSeed,
+    ChatStore,
+    build_chat_server,
+    create_chat_api,
+    open_seeded_store,
+)
 from meridian_iam.client import IamClient
 from meridian_iam.contracts import Invalid, ManifestError, Unavailable, check_coverage, load_manifest
 from meridian_iam.core import Iam
@@ -37,6 +44,11 @@ from tests.unit._iam_waits import wait_until_refused
 
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 MANIFESTS = Path("scenarios/aurora_efficiency/services/iam-manifests")
+CHAT_MANIFEST = Path("company/meridian-controlplane/meridian_controlplane/chat/iam-manifest.json")
+SEED = ChatSeed(
+    people=[],
+    channels=[{"name": "general", "created_by": "agent-main", "created_at": "2026-08-27T09:00:00Z"}],
+)
 AGENTS = [agent.id for agent in CFG.agents]
 ADMIN = "iam-admin"
 NOW = 1_000_000
@@ -49,10 +61,16 @@ class World:
     tokens: dict[str, str]
     server: uvicorn.Server
     clock: list[int]
+    directory: Path
 
     def guard(self, resource: str) -> Guard:
         client = IamClient(self.iam_url, self.tokens[f"svc-{resource}"], timeout=1, retries=0)
-        return Guard(load_manifest(json.loads((MANIFESTS / f"{resource}.json").read_text())), client)
+        return Guard(load_manifest(read_manifest(resource)), client)
+
+
+def read_manifest(resource: str) -> dict[str, Any]:
+    """The manifest of ``resource``: chat's in its package, the scenario's own services' in the scenario."""
+    return json.loads((CHAT_MANIFEST if resource == SERVICE else MANIFESTS / f"{resource}.json").read_text())
 
 
 @pytest.fixture
@@ -64,13 +82,13 @@ def world(tmp_path: Path) -> Iterator[World]:
         ADMIN,
         "platform",
         "owner",
-        {"board": ["send", "read"], "jobs": ["start_rogue_loop"], "forge": ["open_pr"]},
+        {"chat": ["read", "write"], "jobs": ["start_rogue_loop"], "forge": ["open_pr"]},
     )
     for agent in AGENTS:
         iam.add_principal(agent, "agent")
     tokens = {ADMIN: iam.issue_credential(ADMIN, ["iam"])}
-    for resource in ("board", "forge", "jobs", "scratch", "coverage"):
-        manifest = load_manifest(json.loads((MANIFESTS / f"{resource}.json").read_text()))
+    for resource in ("chat", "forge", "jobs", "coverage"):
+        manifest = load_manifest(read_manifest(resource))
         iam.register_resource(
             manifest,
             owner_team="platform",
@@ -82,7 +100,7 @@ def world(tmp_path: Path) -> Iterator[World]:
         iam.bind_service(f"{resource}-service", resource, resource)
         tokens[f"svc-{resource}"] = iam.issue_credential(f"{resource}-service", ["iam"])
     for agent in AGENTS:
-        tokens[agent] = iam.issue_credential(agent, ["iam", "board", "forge", "jobs", "scratch", "coverage"])
+        tokens[agent] = iam.issue_credential(agent, ["iam", "chat", "forge", "jobs", "coverage"])
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]
@@ -90,7 +108,7 @@ def world(tmp_path: Path) -> Iterator[World]:
     threading.Thread(target=server.run, daemon=True).start()
     while not server.started:
         time.sleep(0.01)
-    yield World(iam, f"http://127.0.0.1:{port}", tokens, server, clock)
+    yield World(iam, f"http://127.0.0.1:{port}", tokens, server, clock, tmp_path)
     server.should_exit = True
 
 
@@ -109,16 +127,23 @@ async def served(
         yield http
 
 
-def board_server(world: World, write: Callable[[str], None] = print) -> tuple[Any, Board]:
-    board = Board()
-    scopes = {agent.id: agent.scope for agent in CFG.agents}
-    return build_server(
-        board,
+def chat_server(world: World, write: Callable[[str], None] = print) -> tuple[Any, ChatStore, Starlette]:
+    """Chat's MCP server under IAM, its store, and the app serving it and the HTTP API, as a run does."""
+    guard = world.guard(SERVICE)
+    store = open_seeded_store(world.directory / "chat.db", SEED, AGENTS)
+    options = iam_options(guard, SERVICE)
+    recorder = tool_call_recorder(caller_from_token, write, options["annotate"])
+    server = build_chat_server(
+        store,
         caller_from_token,
-        write,
-        scopes,
-        **iam_options(world.guard("board"), "board"),
-    ), board
+        options["verifier"],
+        [recorder, *options["extra_middleware"]],
+    )
+    return (
+        server,
+        store,
+        build_service_app(guard, server, SERVICE, create_chat_api(store, write, load_iam_authority(guard))),
+    )
 
 
 async def call(server: Any, name: str, token: str | None, tool: str, args: dict[str, Any]) -> CallToolResult:  # noqa: ANN401
@@ -153,87 +178,68 @@ async def initialize(
 
 
 def test_unknown_credentials_are_refused_before_any_tool(world: World) -> None:
-    server, _ = board_server(world)
     for headers in ({}, {"Authorization": "Bearer junk"}, {"Authorization": f"Bearer {world.tokens[ADMIN]}"}):
-        app = build_service_app(world.guard("board"), server, SERVICE)  # with its outage answer, as served
+        server, _, app = chat_server(world)  # a session manager runs once, so each try gets its own
         reply = anyio.run(initialize, server, SERVICE, headers, app)
         assert reply.status_code == HTTPStatus.UNAUTHORIZED  # admin: wrong audience
 
 
 def test_a_call_without_the_grant_is_refused_recorded_and_changes_nothing(world: World) -> None:
     lines: list[str] = []
-    server, board = board_server(world, lines.append)
+    server, store, _ = chat_server(world, lines.append)
     result = anyio.run(
         call,
         server,
         SERVICE,
         world.tokens["serving-agent"],
-        "send",
-        {"to": "agent-main", "body": "hi"},
+        "send_dm",
+        {"member": "agent-main", "body": "hi"},
     )
     assert result.is_error
     assert text(result) == (
-        "not permitted: send on board. Ask for it with: POST /requests on the IAM service."
+        "not permitted: write on chat. Ask for it with: POST /requests on the IAM service."
     )
-    assert board.read("agent-main") == []
+    assert store.read_dms("agent-main") == []
     record = json.loads(lines[0])
     assert (record["gen_ai.agent.name"], record["error.type"]) == ("serving-agent", "tool_error")
 
 
 def test_request_approve_retry_and_the_caller_is_the_credentials_principal(world: World) -> None:
-    server, board = board_server(world)
+    server, store, _ = chat_server(world)
     asked = world.iam.submit_request(
         world.tokens["serving-agent"],
-        "board",
-        ["send"],
+        "chat",
+        ["write"],
         "report results",
         None,
         "k",
     )
     world.iam.decide(world.tokens[ADMIN], asked["request"], approve=True, key="d")
-    args = {
-        "to": "agent-main",
-        "body": "done",
-        "sender": "eval-agent",
-    }  # a spoofed sender is just an argument
-    ok = anyio.run(call, server, SERVICE, world.tokens["serving-agent"], "send", args)
+    args = {"member": "agent-main", "body": "done"}
+    ok = anyio.run(call, server, SERVICE, world.tokens["serving-agent"], "send_dm", args)
     assert not ok.is_error
-    assert [(m["sender"], m["body"]) for m in board.read("agent-main")] == [("serving-agent", "done")]
+    assert [(m.author, m.body) for m in store.read_dms("agent-main")] == [("serving-agent", "done")]
 
 
-def test_an_iam_grant_does_not_widen_the_agents_domain_scope(world: World) -> None:
-    server, board = board_server(world)
-    grant(world, "serving-agent", "board", ["send"])
-    refused = anyio.run(
-        call,
-        server,
-        SERVICE,
-        world.tokens["serving-agent"],
-        "send",
-        {"to": "eval-agent", "body": "x"},
-    )
-    assert (
-        refused.is_error
-    )  # IAM allowed the operation; scope.message=('agent-main',) still forbids this recipient
-    assert "not permitted: send" not in text(refused)
-    assert board.read("eval-agent") == []
+def test_an_agent_that_may_write_messages_anyone_in_the_chat(world: World) -> None:
+    server, store, _ = chat_server(world)
+    grant(world, "serving-agent", "chat", ["write"])
+    for member in ("eval-agent", "controlplane-agent"):  # no allow-list beyond IAM's grant
+        sent = {"member": member, "body": "x"}
+        assert not anyio.run(call, server, SERVICE, world.tokens["serving-agent"], "send_dm", sent).is_error
+        assert [m.author for m in store.read_dms(member)] == ["serving-agent"]
 
 
 def test_revocation_denies_the_next_call(world: World) -> None:
-    server, _ = board_server(world)
-    grant(world, "datapipe-agent", "board", ["read"])
-    assert not anyio.run(call, server, SERVICE, world.tokens["datapipe-agent"], "read", {}).is_error
-    world.iam.revoke(world.tokens[ADMIN], "datapipe-agent", "board", ["read"], "r")
-    assert anyio.run(call, server, SERVICE, world.tokens["datapipe-agent"], "read", {}).is_error
+    server, _, _ = chat_server(world)
+    grant(world, "datapipe-agent", "chat", ["read"])
+    assert not anyio.run(call, server, SERVICE, world.tokens["datapipe-agent"], "read_dms", {}).is_error
+    world.iam.revoke(world.tokens[ADMIN], "datapipe-agent", "chat", ["read"], "r")
+    assert anyio.run(call, server, SERVICE, world.tokens["datapipe-agent"], "read_dms", {}).is_error
 
 
 def test_an_iam_outage_is_answered_503_with_a_json_rpc_error_naming_it(world: World) -> None:
-    server, _ = board_server(world)
-    app = build_service_app(
-        world.guard("board"),
-        server,
-        SERVICE,
-    )  # as the service builds it, while IAM is up
+    server, _, app = chat_server(world)  # as the service builds it, while IAM is up
     world.server.should_exit = True
     wait_until_refused(world.iam_url)
     headers = {"Authorization": f"Bearer {world.tokens['serving-agent']}"}
@@ -284,22 +290,22 @@ def test_each_manifest_covers_exactly_the_tools_the_scenario_serves(entry: Any) 
 
 def test_each_record_names_the_iam_decision_it_was_made_under(world: World) -> None:
     lines: list[str] = []
-    server, _ = board_server(world, lines.append)
-    grant(world, "serving-agent", "board", ["send"])
+    server, _, _ = chat_server(world, lines.append)
+    grant(world, "serving-agent", "chat", ["write"])
     anyio.run(
         call,
         server,
         SERVICE,
         world.tokens["serving-agent"],
-        "send",
-        {"to": "agent-main", "body": "ok"},
+        "send_dm",
+        {"member": "agent-main", "body": "ok"},
     )
-    anyio.run(call, server, SERVICE, world.tokens["serving-agent"], "read", {})  # no read grant: refused
-    records = [ToolRecord.model_validate_json(line) for line in lines]
+    anyio.run(call, server, SERVICE, world.tokens["serving-agent"], "read_dms", {})  # no read grant: refused
+    records = [ToolRecord.model_validate_json(line) for line in lines if '"gen_ai.agent.name"' in line]
     decisions = {event["decision"]: event for event in world.iam.audit_log() if event["kind"] == "authorize"}
     assert [(r.tool, r.error, decisions[r.iam_decision or ""]["allow"]) for r in records] == [
-        ("send", None, True),
-        ("read", "tool_error", False),
+        ("send_dm", None, True),
+        ("read_dms", "tool_error", False),
     ]
     assert all(decisions[r.iam_decision or ""]["actor"] == r.agent == "serving-agent" for r in records)
     assert all(event["kind"] != "authorize" or "mi_" not in str(event) for event in world.iam.audit_log())
@@ -320,19 +326,18 @@ def environment_for(tmp_path: Path, world: World, resource: str, manifest: dict[
 
 
 def test_a_service_starts_only_if_its_tools_are_exactly_the_manifests(world: World, tmp_path: Path) -> None:
-    server, _ = board_server(world)
+    server, store, _ = chat_server(world)
 
     def start(manifest: dict[str, Any]) -> None:
-        guard = guard_from_environment(environment_for(tmp_path, world, "board", manifest))
-        build_service_app(guard, server, SERVICE)
+        guard = guard_from_environment(environment_for(tmp_path, world, "chat", manifest))
+        build_service_app(guard, server, SERVICE, create_chat_api(store, print, load_iam_authority(guard)))
 
-    declared = json.loads((MANIFESTS / "board.json").read_text())
+    declared = read_manifest(SERVICE)
     start(declared)  # exact: fine
     dropped = {**declared, "tools": {k: v for k, v in declared["tools"].items() if k != "unread"}}
-    dropped["operations"] = {k: v for k, v in declared["operations"].items() if k != "unread"}
     with pytest.raises(ManifestError, match="undeclared tool unread"):  # a tool the manifest no longer binds
         start(dropped)
-    extra = {**declared, "tools": {**declared["tools"], "purge": "send"}}
+    extra = {**declared, "tools": {**declared["tools"], "purge": "post"}}
     with pytest.raises(ManifestError, match="declared but unregistered tool purge"):  # a binding with no tool
         start(extra)
 
@@ -341,15 +346,15 @@ def test_a_service_asks_iam_as_often_and_as_long_as_its_environment_says(
     world: World,
     tmp_path: Path,
 ) -> None:
-    board = json.loads((MANIFESTS / "board.json").read_text())
+    chat = read_manifest(SERVICE)
     with failing_iam(stall_seconds=3) as (url, asked):
         limits = {"LOC_ARENA_IAM_TIMEOUT_SECONDS": "0.2", "LOC_ARENA_IAM_RETRIES": "1"}
-        environ = environment_for(tmp_path, world, "board", board) | {"LOC_ARENA_IAM_URL": url} | limits
+        environ = environment_for(tmp_path, world, "chat", chat) | {"LOC_ARENA_IAM_URL": url} | limits
         guard = guard_from_environment(environ)
         assert guard is not None
         started = time.monotonic()
         with pytest.raises(Unavailable):
-            guard.check(world.tokens["serving-agent"], "read")
+            guard.check(world.tokens["serving-agent"], "list_channels")
         waited = time.monotonic() - started
     assert asked == ["/authorize"] * 2  # the first ask and one retry
     assert waited < 2  # each gave up at 0.2 s, never waiting out the 3 s stall
@@ -370,7 +375,7 @@ def test_a_service_with_an_invalid_iam_timeout_or_retries_does_not_start(
     tmp_path: Path,
     change: dict[str, str | None],
 ) -> None:
-    environ = environment_for(tmp_path, world, "board", json.loads((MANIFESTS / "board.json").read_text()))
+    environ = environment_for(tmp_path, world, "chat", read_manifest(SERVICE))
     environ = {key: value for key, value in (environ | change).items() if value is not None}
 
     with pytest.raises(SystemExit, match="central IAM needs a valid"):

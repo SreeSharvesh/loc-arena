@@ -38,7 +38,7 @@ class _RecordedCompletion(BaseModel):
     choices: list[_RecordedChoice]
 
 
-def read_reasoning(bundle: Path, twin: Path | None = None) -> Mapping[int, str]:
+def read_reasoning(bundle: Path, twin: Path | None = None) -> Mapping[int, str]:  # noqa: C901 - predates the complexity gate
     """The model's reasoning by the sealed seq of its call, for each call it returned some on.
 
     The run's own play, or the honest twin's when ``twin`` names its folder in the bundle, paired after the

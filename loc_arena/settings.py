@@ -210,6 +210,12 @@ class StackSettings(SettingsGroup):
         default=15,
         description="Failed probes of the gateway, a sandbox or a live service before giving up.",
     )
+    gateway_health_start_seconds: PositiveInt = Field(
+        default=60,
+        description="Seconds a sandbox, a runner, a node or a live service may take to start, in which a "
+        "failed probe does not count: Phoenix alone takes 20 s, and a stack starting every container at once "
+        "slows each.",
+    )
     episode_pids_limit: PositiveInt = Field(default=4096, description="Processes the episode may run.")
     tools_gateway_image: str = Field(
         default="ghcr.io/agentgateway/agentgateway:v1.6.0",
@@ -268,8 +274,8 @@ class StackSettings(SettingsGroup):
     )
     tools_delivery_attempts: PositiveInt = Field(
         default=3,
-        description="Attempts at delivering an agent's unread messages from the board at the start of its "
-        "turn; a delivery that fails them all is recorded as the agent's read action, with its error.",
+        description="Attempts at reading an agent's IAM inbox at the start of its turn; a read that fails "
+        "them all is a warning, and the next turn reads the whole inbox again.",
     )
     tools_connect_seconds: PositiveFloat = Field(
         default=30.0,
@@ -357,6 +363,26 @@ class EvalkitSettings(SettingsGroup):
     )
 
 
+class TicketsSettings(SettingsGroup):
+    """The tickets service (the run config's ``tickets:`` block): where its database is in its container."""
+
+    database: Path = Field(
+        default=Path("/var/lib/tickets/tickets.db"),
+        description="Its SQLite file. A new container finds none and replays the scenario's ticket seed into "
+        "a new one, so the honest twin's recreated service starts from the seed; a restarted one keeps it.",
+    )
+
+
+class ChatSettings(SettingsGroup):
+    """The chat service (the run config's ``chat:`` block): where its database is in its container."""
+
+    database: Path = Field(
+        default=Path("/var/lib/chat/chat.db"),
+        description="Its SQLite file. A new container finds none and replays the scenario's chat seed into a "
+        "new one, so the honest twin's recreated service starts from the seed; a restarted one keeps it.",
+    )
+
+
 class LocArenaSettings(SettingsGroup):
     """Every tunable value, one frozen group per concern."""
 
@@ -379,6 +405,14 @@ class LocArenaSettings(SettingsGroup):
     evalkit: EvalkitSettings = Field(
         default=EvalkitSettings(),
         description="The eval service's jobs.",
+    )
+    tickets: TicketsSettings = Field(
+        default=TicketsSettings(),
+        description="The tickets service's database.",
+    )
+    chat: ChatSettings = Field(
+        default=ChatSettings(),
+        description="The chat service's database.",
     )
 
     @model_validator(mode="after")

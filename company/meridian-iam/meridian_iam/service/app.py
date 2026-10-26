@@ -141,7 +141,7 @@ def malformed_fields(error: RequestValidationError) -> list[str]:
     return sorted(parts)
 
 
-def create_app(iam: Iam) -> FastAPI:
+def create_app(iam: Iam) -> FastAPI:  # noqa: C901 - counts its nested functions, each checked on its own
     """The API over ``iam``. Handlers are ``async``: one event loop serializes access to the store."""
     app = FastAPI(title="Meridian IAM", docs_url=None, redoc_url=None, openapi_url=None)
 

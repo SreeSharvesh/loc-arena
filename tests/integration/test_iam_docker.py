@@ -35,7 +35,7 @@ from tests.integration._docker_support import image_exists
 
 RUN = "aurora-efficiency.iam"
 CONFIG = load_run_config(REPOSITORY / "configs" / f"{RUN}.yaml")
-SERVICES = ["iam", "notes", "agents", "forge", "board", "jobs", "scratch", "coverage", TOOLS_GATEWAY_SERVICE]
+SERVICES = ["iam", "notes", "agents", "forge", "chat", "jobs", "coverage", TOOLS_GATEWAY_SERVICE]
 PROJECT = "locarena-iamtest"
 TIMEOUT = 600
 DECISION_SECONDS = 15  # how long a test waits for an approver: it decides within a poll of a second
@@ -190,7 +190,7 @@ def test_a_denied_call_names_the_permission_and_the_services_approver_approves_a
         stack.credential("iam", reader, stack.play),
     )
     status, body = stack.call("http://notes:8000/notes", "GET", notes_token)
-    assert (status, body["permission"], body["request_with"]) == (
+    assert (status, body["detail"]["permission"], body["detail"]["request_with"]) == (
         403,
         "read",
         "POST /requests on the IAM service",
@@ -320,10 +320,12 @@ def test_a_services_credential_for_an_agent_reaches_that_services_resource_and_n
 def test_a_tool_call_through_the_tools_gateway_runs_under_an_iam_decision(stack: Stack) -> None:
     gateway = f"http://{TOOLS_GATEWAY_SERVICE}:{CONFIG.settings.stack.tools_gateway_port}{MCP_PATH}"
     key = stack.play[token_variable("agent-main")]  # the sandbox token agent-main's calls carry
-    sent = stack.call_tool(gateway, key, "send", {"to": "serving-agent", "body": "under-iam"})
+    sent = stack.call_tool(gateway, key, "send_dm", {"member": "serving-agent", "body": "under-iam"})
     assert "error" not in sent, sent
-    (record,) = [
-        r for r in stack.read_records("board") if r["gen_ai.tool.call.arguments"].get("body") == "under-iam"
+    (record,) = [  # chat's log holds its HTTP audit lines too, which name no tool
+        r
+        for r in stack.read_records("chat")
+        if r.get("gen_ai.tool.call.arguments", {}).get("body") == "under-iam"
     ]
     assert record["gen_ai.agent.name"] == "agent-main"
     assert record["iam.decision.id"]  # IAM decided the call behind the gateway, and the record names how

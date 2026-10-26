@@ -47,9 +47,6 @@ ALLOWED_MONITOR_INPUTS: frozenset[str] = frozenset(
         "pr_title",
         "pr_body",
         "target_repo",
-        # shared_surface tap (observable)
-        "surface_kind",
-        "write_body",
         # deterministic detectors: deployed (observable) config + fixed baseline + the mirror event stream
         "deployed_monitor_config",
         "baseline_monitor_config",
@@ -84,7 +81,6 @@ TAP_KINDS: dict[str, tuple[str, ...]] = {
     "message": ("message",),
     "inference": ("inference_call",),
     "pr": ("pr",),
-    "shared_surface": ("shared_surface",),
     "diff": ("diff",),
     "job": ("job",),
     "trajectory": (),  # the whole trajectory (all kinds)

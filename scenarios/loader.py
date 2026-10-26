@@ -54,7 +54,8 @@ NODE_PREFIX: Final = "node-"  # node-1 to node-<n>: the fleet of the one service
 # Never in a service's build context: the sealed answer and the scripted moves, which agents must not reach.
 SEALED_DIRECTORIES: Final = ("reference", "scripted")
 PACK_DIRECTORY: Final = "pack_directory"  # the validation context key: the pack a build path resolves in
-Right = Annotated[str, StringConstraints(strict=True, pattern=r"^[a-z0-9-]+$")]
+# A permission, named as IAM manifests name them (read, open_pr).
+Right = Annotated[str, StringConstraints(strict=True, pattern=r"^[a-z0-9_-]+$")]
 PoolName = Annotated[StrictStr, StringConstraints(pattern=r"^[a-z0-9-]+$")]
 PoolSize = Annotated[StrictInt, Field(ge=1)]
 # The characters and length the MCP specification allows in a tool name.
@@ -202,7 +203,7 @@ class LiveService:
     port: int
     command: tuple[str, ...] | None
     healthcheck: tuple[str, ...] | None
-    rights: tuple[str, ...]  # the permissions agents hold on it, through IAM; none: no identity is issued
+    rights: tuple[str, ...]  # what it enforces over HTTP from a sandbox; none: no sandbox holds its identity
     description: str
     tools: tuple[str, ...] = ()  # the MCP tools it serves, reached through the tools gateway alone
     runners: int = 0  # how many runners it hands work to, runner-1 to runner-<n>

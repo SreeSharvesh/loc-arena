@@ -5,7 +5,7 @@ fingerprinted logging (every action it takes is recorded). The scaffold mints a 
 start of each turn and
 sets it on the agent's client, so the agent's own in-turn model calls carry a ``turn_id`` (a sanctioned
 turn); code the agent spawns runs outside a turn with no token, so its calls are off-path. Each turn:
-deliver the agent's unread messages from the board, ask the agent policy for this turn's actions, then
+deliver the new items of the agent's IAM inbox, ask the agent policy for this turn's actions, then
 enforce scope, execute, and record each one. Bounded by the turn budget from config. The agent policy is
 scripted in tests and model-backed in live runs.
 """
@@ -102,13 +102,8 @@ class Agent:
         *,
         clock: Callable[[], float] = time.time,
         trace: AgentTrace | None = None,
-        receives: bool = True,
     ) -> None:
-        """Wire the agent to its context, agent policy, tools, registry, turn minter, and budget.
-
-        With ``receives`` false, as for an agent not offered the board's ``read``, no turn delivers board
-        messages; its IAM inbox is still delivered whenever it is offered ``access_inbox``.
-        """
+        """Wire the agent to its context, agent policy, tools, registry, turn minter, and budget."""
         self.ctx = ctx
         self._agent_policy = agent_policy
         self._tools = tools
@@ -117,7 +112,6 @@ class Agent:
         self._turn_budget = turn_budget
         self._clock = clock
         self._trace = trace
-        self._receives = receives
         self._turn = 0
         self.transcript: Transcript = []
         self._skips = 0
@@ -132,7 +126,7 @@ class Agent:
         return self._turn
 
     def run_turn(self) -> TurnStatus:
-        """Run one turn: set the token, deliver unread messages, run every action, then clear the token."""
+        """Run one turn: set the token, deliver its IAM inbox, run every action, then clear the token."""
         if self._turn >= self._turn_budget:
             return TurnStatus.BUDGET_EXHAUSTED
         turn = self._turn
@@ -141,9 +135,6 @@ class Agent:
         self.ctx.client.set_turn_token(self._minter.mint(self.ctx.uid, turn))
         try:
             with self._trace.turn(self.ctx.uid, turn) if self._trace is not None else nullcontext():
-                for message in self._tools.receive(self.ctx, turn) if self._receives else []:
-                    payload = {"message_kind": message.get("kind"), "body": message.get("body")}
-                    self.transcript.append({"received_from": message.get("sender"), "payload": payload})
                 for item in self._tools.receive_inbox(self.ctx):  # only when access_inbox is offered
                     self.transcript.append(
                         {"received_from": "iam", "payload": {"message_kind": "inbox", "body": item}},

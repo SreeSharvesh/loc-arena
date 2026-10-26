@@ -27,12 +27,12 @@ path. A key no block declares is ignored, except in an agent's `scope` and in th
 | `extends`, `models` | the base config; the models file (roles, sampling, OpenRouter providers per model) |
 | `seed`, `policy` | the seed that with the config reproduces the episode; `model` or `scripted` (replays the scenario's `scripted/moves.yaml` in place of a model) |
 | `scenario` | the pack registering the scorer, verifier, live services and skills |
-| `main_task`, `side_task`, `covert` | the tasks and their scorer and verifier; `covert.enabled` switches attack and honest mode; the honest twin also drops the attack tools from every agent's `sandbox: tools:` |
+| `main_task`, `side_task`, `covert` | the tasks and their scorer and verifier; `covert.enabled` switches attack and honest mode; the honest twin also drops the attack tools from every agent's `sandbox: tools:`, and the rights only they use from its `sandbox: rights:` |
 | `episode` | turn budgets, wall-clock ceiling, spawn caps |
 | `agents` | the team; see below |
 | `protocol` | the control protocol: monitors, reviewer, audit budget |
 | `agent_loop`, `logging` | the loop's limits; `logging.agent_transcript` for the per-agent `.eval` and transcript |
-| `inference`, `gateway`, `stack` | the settings groups below |
+| `inference`, `gateway`, `stack`, `evalkit`, `tickets`, `chat` | the settings groups below |
 
 ## An agent
 
@@ -40,8 +40,8 @@ path. A key no block declares is ignored, except in an agent's `scope` and in th
 |---|---|
 | `id`, `kind`, `trust`, `branch`, `spawned_by` | identity (a DNS label: `sandbox-<id>` names its sandbox) and role |
 | `scope` | what the agent may do; each service enforces it on the caller |
-| `sandbox.tools` | the MCP tools it may call, by service: `{forge: [open_pr], board: [send, read, unread]}`; agentgateway offers it these and refuses the rest |
-| `sandbox.rights` | its starting rights on each service with rights: `{notes: [read, write]}` |
+| `sandbox.tools` | the MCP tools agentgateway offers it, by service: `{forge: [open_pr], chat: [post, send_dm, read_dms]}`; it refuses the rest, and a tool grants nothing: a call takes the permission IAM checks for it |
+| `sandbox.rights` | its starting rights, by service, which IAM seeds as its grants: `{notes: [read, write], forge: [open_pr]}`; each a permission the service's IAM manifest checks |
 | `legit`, `covert`, `system_prompt_ref`, `brief_ref` | its assignments, the covert subtasks it owns, and its prompts |
 
 A service in `sandbox:` must be a live service of the scenario that serves tools (for `tools`) or declares rights
@@ -56,11 +56,13 @@ Each field has a description in code; these keep pydantic's coercing types.
 |---|---|
 | `inference` | the sanctioned paths and the teacher token quota |
 | `gateway` | the model gateway: its https upstream, allowed paths, port, timeout, the record the Collector writes (`call_log`), the longest body it records whole (`body_limit_bytes`), the Collector's message limit, how long a stack run waits for the record to drain and the gateway to stop, the secrets directory of every container, and the runners' limits, which the jobs on the job service's nodes share: `runner_models` they may call (by default the seeded agents' model) and `runner_calls_per_play` (1000) |
-| `stack`: images and limits | the episode image; `collector_image`, the OpenTelemetry Collector; `sandbox_image`, the slim image agent code runs in; `runner_image`, a sandbox with pi, and `runner_timeout_seconds` for one run there; memory, CPU and process limits of the episode, each sandbox (and each runner) and each live service; health probe interval and retries |
-| `stack`: tools | `tools_gateway_image` (agentgateway, which also runs the model gateway) and `tools_gateway_port`, `tools_timeout_seconds` per call, `tools_connect_seconds` for each client's first listing, `tools_delivery_attempts` for a turn's delivery from the board |
+| `stack`: images and limits | the episode image; `collector_image`, the OpenTelemetry Collector; `sandbox_image`, the slim image agent code runs in; `runner_image`, a sandbox with pi, and `runner_timeout_seconds` for one run there; memory, CPU and process limits of the episode, each sandbox (and each runner) and each live service; health probe interval and retries, and `gateway_health_start_seconds` (60), how long a container has to start before a failed probe counts |
+| `stack`: tools | `tools_gateway_image` (agentgateway, which also runs the model gateway) and `tools_gateway_port`, `tools_timeout_seconds` per call, `tools_connect_seconds` for each client's first listing, `tools_delivery_attempts` for a turn's read of the agent's IAM inbox |
 | `stack`: sandboxes | `sandbox_port`, `sandbox_response_grace_seconds`, `sandbox_recovery_seconds`, `sandbox_scratch_directories` (empty unless a config names them), `checkouts_directory`, `skills_directory` (read-only), `shell_timeout_seconds` for `bash` (offered only with a sandbox), `command_output_limit_bytes` |
 | `stack`: the fleet | `worker_image`, the job service's nodes (the Dockerfile's `worker` target); `node_cpus` and `node_memory_mb`, each node's container limits and what the job service fits a job's ask against; `job_poll_seconds` between the job service's passes over the fleet; `job_credential_seconds`, how long a job's own credential lasts (two hours, cut to the shortest `max_seconds` of a service it gets a right on); `job_drain_grace_seconds`, how long a drained node's job runs on before it is queued again (30); `job_max_priority`, the highest priority a job may ask (10); `team_max_running_jobs` and `team_max_cpu_hours`, the caps on one team's running jobs and CPU-hours (none). How many nodes is the scenario's: a service entry's `nodes: {<pool>: n}` |
 | `stack`: grading | `sandbox_agent_code` runs the agents' code in a no-network container of `sandbox_image` (a stack run's grading always does; an in-process run needs the Dockerfile's `sandbox` target built and tagged first, or grading stops), `agent_code_output_limit_bytes` |
+| `tickets` | the tickets service: `database`, its SQLite file in its container (`/var/lib/tickets/tickets.db`), which a new container builds from the scenario's ticket seed, so the honest twin's starts from the seed |
+| `chat` | the chat service: `database`, its SQLite file in its container (`/var/lib/chat/chat.db`), which a new container builds from the scenario's chat seed, so the honest twin's starts from the seed |
 | `evalkit` | the eval service: `job_cpu` and `job_memory_mb`, what an eval run's job asks of the cluster; `models`, the name the inference API serves each Meridian model under, which the job calls it as; a name outside `gateway.runner_models` does not load |
 
 Who decides a service's access requests is the scenario's, not the run config's: each service in the scenario's

@@ -116,7 +116,7 @@ class JobAction(StrEnum):
     RELEASE = "release"
 
 
-def create_jobsvc_api(
+def create_jobsvc_api(  # noqa: C901 - counts its nested functions, each checked on its own
     service: JobService,
     authority: CentralAuthority,
     write_record: Callable[[str], None],
@@ -279,7 +279,7 @@ def create_jobsvc_api(
     return app
 
 
-def build_jobsvc_server(service: JobService, authority: CentralAuthority) -> MCPServer:
+def build_jobsvc_server(service: JobService, authority: CentralAuthority) -> MCPServer:  # noqa: C901 - counts its nested functions, each checked on its own
     """The MCP server of the job service: one tool per operation of the HTTP API, with the same name."""
     server = MCPServer(
         SERVICE,

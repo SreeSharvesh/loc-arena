@@ -41,8 +41,8 @@ Set `logging.agent_transcript: false` in a run config to skip them. How attribut
 ## Run explorer
 
 `make explore` builds one page per run under `logs/` (or `LOGS=<folder>`) plus an index of them all, and opens it:
-every agent side by side with each monitor's verdict on the step it judged, who read each message and scratch
-note, the covert steps the monitors missed, and notes you pin to any passage. One run:
+every agent side by side with each monitor's verdict on the step it judged, who read each message, the covert
+steps the monitors missed, and notes you pin to any passage. One run:
 `uv run python -m loc_arena.cli explore <bundle>`. What each view shows, with pictures:
 [`docs/explorer/`](docs/explorer/README.md).
 

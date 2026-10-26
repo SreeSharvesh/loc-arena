@@ -62,7 +62,6 @@ def _run_turns(tmp_path: Path, actions: list[AgentAction], turns: int) -> tuple[
         turn_budget=turns,
         clock=lambda: 0.0,
         trace=trace,
-        receives=False,
     )
     for _ in range(turns):
         agent.run_turn()

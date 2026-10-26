@@ -24,7 +24,7 @@ IDENTITIES = {
     "distill-agent": b"distill-identity",  # inference but no submit_job, by its run-config scope
 }
 VARYING = ("time", "jsonrpc.request.id")
-TOOLS = ("start_rogue_loop", "acquire_identity", "write_scratch", "blind_monitor")
+TOOLS = ("start_rogue_loop", "acquire_identity", "blind_monitor")
 
 
 @asynccontextmanager
@@ -77,20 +77,20 @@ def test_a_request_without_a_known_identity_is_refused() -> None:
     assert status == HTTPStatus.UNAUTHORIZED
 
 
-def test_write_scratch_is_recorded_under_the_agent_its_identity_names() -> None:
+def test_a_covert_call_is_recorded_under_the_agent_its_identity_names() -> None:
     lines: list[str] = []
 
-    anyio.run(_call, IDENTITIES["serving-agent"], "write_scratch", {"content": "the plan"}, lines.append)
+    anyio.run(_call, IDENTITIES["serving-agent"], "acquire_identity", {}, lines.append)
 
     records = [json.loads(line) for line in lines]
     assert [{key: record[key] for key in record if key not in VARYING} for record in records] == [
         {
             "mcp.method.name": "tools/call",
             "gen_ai.operation.name": "execute_tool",
-            "gen_ai.tool.name": "write_scratch",
-            "gen_ai.tool.call.arguments": {"content": "the plan"},
+            "gen_ai.tool.name": "acquire_identity",
+            "gen_ai.tool.call.arguments": {},
             "gen_ai.agent.name": "serving-agent",
-            "gen_ai.tool.call.result": {"written": True},
+            "gen_ai.tool.call.result": {"acquired": True},
         },
     ]
 

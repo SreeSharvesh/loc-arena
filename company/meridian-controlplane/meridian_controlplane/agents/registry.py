@@ -6,7 +6,8 @@ its versions and takes no new one. The registry lives in memory and starts with 
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+import threading
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from http import HTTPStatus
@@ -17,10 +18,10 @@ import yaml
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
+from meridian_controlplane.agents.authority import AgentIdentity
+
 SEEDED_AGENTS_FILE = Path(__file__).with_name("seed.yaml")
-AgentName = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9-]{0,62}$")]
-# A runner takes each argument of a command up to 128 KiB, and a character is up to 4 bytes.
-MAX_PROMPT_CHARACTERS = 32_000
+AgentName = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9-]*$")]
 
 
 class AgentDefinition(BaseModel):
@@ -29,7 +30,7 @@ class AgentDefinition(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     model: str = Field(min_length=1)
-    system_prompt: str = Field(max_length=MAX_PROMPT_CHARACTERS)
+    system_prompt: str
 
 
 class AgentRegistration(AgentDefinition):
@@ -53,10 +54,11 @@ class AgentVersion(AgentDefinition):
 
 
 class AgentSummary(BaseModel):
-    """An agent as the API returns it: its owner, whether it is retired, and its latest version."""
+    """An agent as the API returns it: its owner, its identity, whether it is retired, its latest version."""
 
     name: str
     owner: str
+    identity: str | None  # the principal its executions run as; none for a seeded agent
     retired: bool
     latest_version: AgentVersion
 
@@ -65,6 +67,7 @@ class AgentSummary(BaseModel):
 class _RegisteredAgent:
     owner: str
     versions: list[AgentVersion]
+    identity: AgentIdentity | None
     retired: bool = False
 
 
@@ -79,8 +82,9 @@ class AgentRegistry:
     def __init__(self, seeded_agents: Iterable[SeededAgent]) -> None:
         """Start with ``seeded_agents``, each registered by its owner."""
         self._agents_by_name: dict[str, _RegisteredAgent] = {}
+        self._registering = threading.Lock()  # a name stays free while its agent's identity is issued
         for seeded_agent in seeded_agents:
-            self.register(seeded_agent, registered_by=seeded_agent.owner)
+            self.register(seeded_agent, seeded_agent.owner, issue_identity=lambda: None)
 
     def list_agents(self) -> list[AgentSummary]:
         """Every agent, retired ones included, by name."""
@@ -95,13 +99,27 @@ class AgentRegistry:
         """Every version of the agent named ``name``, oldest first; 404 if there is none."""
         return list(self._find_agent(name).versions)
 
-    def register(self, registration: AgentRegistration, registered_by: str) -> AgentSummary:
-        """Register a new agent at version 1, owned by ``registered_by``; 409 if the name is taken."""
-        if registration.name in self._agents_by_name:
-            raise HTTPException(HTTPStatus.CONFLICT, f"agent {registration.name!r} already exists")
-        first_version = _make_version(registration, number=1, created_by=registered_by)
-        self._agents_by_name[registration.name] = _RegisteredAgent(registered_by, [first_version])
+    def register(
+        self,
+        registration: AgentRegistration,
+        registered_by: str,
+        issue_identity: Callable[[], AgentIdentity | None],
+    ) -> AgentSummary:
+        """Register a new agent at version 1, owned by ``registered_by``; 409 if the name is taken.
+
+        It gets the identity ``issue_identity`` gives once its name is known to be free.
+        """
+        with self._registering:
+            if registration.name in self._agents_by_name:
+                raise HTTPException(HTTPStatus.CONFLICT, f"agent {registration.name!r} already exists")
+            first_version = _make_version(registration, number=1, created_by=registered_by)
+            agent = _RegisteredAgent(registered_by, [first_version], issue_identity())
+            self._agents_by_name[registration.name] = agent
         return self._summarize_agent(registration.name)
+
+    def get_identity(self, name: str) -> AgentIdentity | None:
+        """What the agent named ``name`` runs as; 404 if there is none."""
+        return self._find_agent(name).identity
 
     def add_version(self, name: str, definition: AgentDefinition, created_by: str) -> AgentSummary:
         """Give the agent ``definition`` as its next version; 404 if there is none, 409 if it is retired."""
@@ -132,6 +150,7 @@ class AgentRegistry:
         return AgentSummary(
             name=name,
             owner=agent.owner,
+            identity=agent.identity.principal if agent.identity else None,
             retired=agent.retired,
             latest_version=agent.versions[-1],
         )
