@@ -77,7 +77,7 @@ test.
 
 ## Central IAM
 
-<img alt="An agent's call to a service it holds no right on: IAM denies it naming the permission, the agent asks IAM for it, the approver approves, and the same call is allowed." src="figures/service-call.svg" width="100%">
+<img alt="An agent's call to a service it holds no right on: IAM denies it and the guard names the permission, then the agent asks IAM for it and the approver approves, so the same call is allowed." src="figures/service-call.svg" width="100%">
 
 The service keeps no identity and no rights of its own. The company package takes an `Authority`
 (`tickets/authority.py`) that its deployment hands in; the engine's is `loc_arena.agents_iam`, over a guard of

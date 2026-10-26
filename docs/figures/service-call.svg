@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="800" height="744" viewBox="0 0 800 744" role="img" aria-label="Sequence of an agent's call to a service it holds no right on: the service's guard asks IAM, which denies it naming the permission; the agent asks IAM for it, the service's approver approves, and the same call is allowed">
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="744" viewBox="0 0 800 744" role="img" aria-label="Sequence of an agent's call to a service it holds no right on: the service's guard asks IAM, which denies it, and the guard names the permission; then the agent asks IAM for it, the service's approver approves, and the same call is allowed">
 <style>
   svg { --ink:#1f2328; --muted:#59636e; --rule:#8c959f; --panel:#f6f8fa;
         --accent:#2f4bd6; --accent-bg:#e9edfd;
@@ -60,7 +60,7 @@
 
 <!-- 4 the refusal -->
 <text class="s" x="208" y="278" text-anchor="middle">4 refused: names the permission</text>
-<text class="m" x="208" y="292" text-anchor="middle">request_with: POST /requests</text>
+<text class="m" x="208" y="292" text-anchor="middle">ask with: POST /requests</text>
 <path class="dash" d="M320 304 H97" marker-end="url(#sc-hr)"/>
 
 <!-- 5-9 the grant -->
@@ -72,8 +72,8 @@
 <path class="thin" d="M720 440 H545" marker-end="url(#sc-hr)"/>
 <text class="s" x="632" y="476" text-anchor="middle">8 approves: grant</text>
 <path class="bold" d="M720 488 H546" marker-end="url(#sc-hi)"/>
-<text class="s" x="208" y="524" text-anchor="middle">9 outcome in its inbox</text>
-<path class="dash" d="M544 536 H97" marker-end="url(#sc-hr)"/>
+<text class="s" x="208" y="524" text-anchor="middle">9 its turn: access_inbox, approved</text>
+<path class="thin" d="M96 536 H543" marker-end="url(#sc-hr)"/>
 
 <!-- 10-13 the same call -->
 <text class="s" x="208" y="572" text-anchor="middle">10 the same call</text>
