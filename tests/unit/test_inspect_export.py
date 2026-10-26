@@ -8,9 +8,12 @@ from typing import Any
 
 import pytest
 from inspect_ai.event import Event as InspectEvent
-from inspect_ai.event import InfoEvent, SpanBeginEvent, SpanEndEvent, ToolEvent
+from inspect_ai.event import InfoEvent, ModelEvent, SpanBeginEvent, SpanEndEvent, ToolEvent
 from inspect_ai.log import EvalConfig, EvalDataset, EvalSample, EvalSpec, read_eval_log
+from inspect_ai.model import ContentReasoning
 from loc_arena.config import load_run_config
+from loc_arena.gateway.core import GenerateRequest, output_fingerprint
+from loc_arena.gateway.model_gateway import GatewayCall
 from loc_arena.logging_ import inspect_export
 from loc_arena.logging_.agent_trace import AgentTrace, EpisodeTrace, ModelCall, TurnRef
 from loc_arena.logging_.events import AppendOnlyLog, Event, EventKind
@@ -487,3 +490,90 @@ def test_timestamps_follow_turn_bounds_and_model_calls_and_world_reuses_the_last
         ("span_end", 60.0),
         ("span_end", 60.0),
     ]
+
+
+def _stack_bundle_with_one_model_call(tmp_path: Path, reply: str) -> Path:
+    bundle = tmp_path / "logs" / "run" / "run__abc123"
+    sealed_path = bundle / "events.sealed.jsonl"
+    trace = AgentTrace(wall_clock=lambda: 1_700_000_000.0)
+    sealed = AppendOnlyLog(sealed_path, "ep-export", on_append=trace.on_sealed_append)
+    chat = GenerateRequest(messages=[{"role": "user", "content": "go"}], caller_identity="agent-main")
+    with trace.turn("agent-main", 0):
+        record = sealed.append(
+            Event(
+                episode_id="ep-export",
+                seq=sealed.next_seq(),
+                ts=0.0,
+                actor_uid="agent-main",
+                actor_role="untrusted",
+                kind="inference_call",
+                payload={"output_fp": output_fingerprint(chat, reply, None)},
+            ),
+        )
+        trace.on_model_call(
+            identity="agent-main",
+            role="untrusted_agent",
+            model_input="go",
+            output=reply,
+            sealed_seq=record.seq,
+        )
+    finished = trace.finish(last_sealed_seq=sealed.last_seq)
+    write_run_eval(
+        bundle / f"{bundle.name}.eval",
+        run_name=bundle.name,
+        config=CFG,
+        mode="attack",
+        seed=1,
+        scores={},
+        episodes=[EpisodeExport("episode", finished, sealed_path, ("agent-main",))],
+    )
+    return bundle
+
+
+@pytest.mark.parametrize(
+    ("reply", "reasoning"),
+    [("the reply", "I should not do that."), ("the reply " * 60, "I should not do that. " * 60)],
+    ids=["short", "long enough to be stored as attachments"],
+)
+def test_a_model_call_gets_the_reasoning_the_gateway_kept_for_its_reply(
+    tmp_path: Path,
+    reply: str,
+    reasoning: str,
+) -> None:
+    bundle = _stack_bundle_with_one_model_call(tmp_path, reply=reply)
+    call_log = tmp_path / "logs" / "gateway" / "locarena-abc123.calls.jsonl"
+    call_log.parent.mkdir()
+    recorded = GatewayCall(
+        started_at=0.0,
+        seconds=1.0,
+        caller="episode",
+        method="POST",
+        path="/api/v1/chat/completions",
+        request={},
+        status=200,
+        response={"choices": [{"message": {"content": reply, "reasoning": reasoning}}]},
+        complete=True,
+    )
+    call_log.write_text(recorded.model_dump_json() + "\n")
+
+    inspect_export.add_reasoning(bundle)
+
+    log = read_eval_log(str(bundle / f"{bundle.name}.eval"), resolve_attachments=True)
+    assert log.samples is not None
+    (model,) = [event for event in log.samples[0].events if isinstance(event, ModelEvent)]
+    content = model.output.message.content
+    said = [part.reasoning for part in content if isinstance(part, ContentReasoning)]
+    assert (said, model.output.completion) == ([reasoning], reply)
+
+
+def test_a_placeholder_inspect_log_is_left_as_written(tmp_path: Path) -> None:
+    bundle = tmp_path / "logs" / "run" / "run__abc123"
+    bundle.mkdir(parents=True)
+    placeholder = bundle / "run__abc123.eval"
+    placeholder.write_text('{"note": "Inspect .eval placeholder; report.html is the primary viewer."}')
+
+    inspect_export.add_reasoning(bundle)
+
+    assert (
+        placeholder.read_text() == '{"note": "Inspect .eval placeholder; report.html is the primary viewer."}'
+    )
