@@ -1,13 +1,14 @@
-# Plan: an IAM token for every workload, and agentgateway as the one door
+# Plan: an IAM token for every agent and workload, and agentgateway as the one door
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="door-dark.svg">
-  <img alt="Workloads on agent-net reach company services, IAM and the model provider only through the door, agentgateway, which verifies IAM's JWT and logs the caller; services sit on an internal network and ask IAM for each grant" src="door-light.svg" width="100%">
+  <img alt="Agents and workloads on agent-net reach company services, IAM and the model provider only through the door, agentgateway, which verifies IAM's JWT and logs the caller; services sit on an internal network and ask IAM for each grant" src="door-light.svg" width="100%">
 </picture>
 
-Every workload holds a short-lived JWT from IAM: an agent's sandbox, a job, a company agent run. The workload calls
-every company service, tool and model through one agentgateway, which verifies the token, logs who called and
-applies quotas. Services and grants work as they do today: each call is still decided live by IAM.
+Every agent and every workload it launches holds a short-lived JWT from IAM. A workload is a job or a company agent
+run, issued by the launching service with the launcher as sponsor. Each caller reaches every company service, tool
+and model through one agentgateway, which verifies the token, logs who called and applies quotas. Services and
+grants work as they do today: each call is still decided live by IAM.
 
 `loc_arena/gateway/model_gateway.py` · `loc_arena/tools_gateway.py` · `meridian_iam/core/service.py` · `meridian_iam/core/workloads.py`
 
@@ -15,8 +16,8 @@ applies quotas. Services and grants work as they do today: each call is still de
 
 Tier 1's done-when list (#142) needs two things the stack can't do today:
 
-- **The badge.** Every model call names the workload that made it, and the checker decides "off the path" by
-  badge, not by container. Today a job's model calls arrive as its node: the model gateway admits sandboxes,
+- **The badge.** Every model call names the agent or workload that made it, and the checker decides "off the
+  path" by badge, not by container. Today a job's model calls arrive as its node: the model gateway admits sandboxes,
   runners and nodes, never a job's own credential.
 - **Workloads that act.** "An agent running inside a job can call company tools with the credential it holds, and
   is refused what IAM does not allow." Today the tools gateway admits sandbox tokens only, and holds each agent's
@@ -26,12 +27,14 @@ Tier 1's done-when list (#142) needs two things the stack can't do today:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="one-call-dark.svg">
-  <img alt="Sequence of one call: the workload swaps its IAM credential for a JWT and calls the door with it; the door verifies it and logs the caller, forwards the call with the JWT to the service, which asks IAM to authorize the operation" src="one-call-light.svg" width="100%">
+  <img alt="Sequence of one call: the caller swaps its IAM credential for a JWT and calls the door with it; the door verifies it and logs the caller, forwards the call with the JWT to the service, which asks IAM to authorize the operation" src="one-call-light.svg" width="100%">
 </picture>
 
-The JWT carries identity only: `sub`, `team`, `kind`, `sponsor` (for a job or an agent run), `exp`. Grants stay in
-IAM, so requests, approvals, expiry and revocation work as today, and an approval works on the next call with the
-same token. Services forward the caller's token to IAM's `authorize` already, so only IAM learns to read a JWT.
+The JWT carries identity only: `iss` (`iam`), `aud` (`meridian`, see Audience below), `sub`, `team`, `kind`,
+`sponsor` (for a launched workload), `iat`, `exp`. Grants stay in IAM, so requests, approvals, expiry and revocation
+work as today, and an approval works on the next call with the same token. The door verifies the JWT and reads its
+claims for routing, logging and quotas. IAM verifies it again when a service forwards it to `authorize`. Services
+pass it through and never parse it.
 
 ## Who owns what
 
@@ -59,8 +62,11 @@ The checker by badge and the observation window follow as their own plans (#142)
 - **Audience.** One audience (`meridian`) for every service behind the door, or one per service as IAM's credentials
   have today. The door being the only way in covers most of what per-service audiences protect.
 - **Token lifetime.** One token for the whole play, or minutes with a refresh in each harness. An expired token
-  still passes for 60 seconds (agentgateway's clock allowance). Removing a key from the key set cuts every token it
-  signed within about 3 seconds, which makes the observation window's forced rotation a file write.
+  still passes for 60 seconds (agentgateway's clock allowance). In the spike on one replica of agentgateway v1.6.0,
+  rewriting the key-set file in place took effect within 3 seconds, both when adding and when removing a key.
+  Replacing the file by rename was picked up once, after which later replacements were missed until a restart. So
+  IAM rewrites the key-set file in place, and the observation window's forced rotation is a file write. Our stack
+  runs a single gateway replica.
 - **Model route mode.** Token budgets need agentgateway's parsed `completions` route type instead of `passthrough`.
   In the spike the upstream received the request body unchanged, OpenRouter fields included.
 - **IAM's own API** (requests, decisions) behind the door on a route IAM authenticates itself, or beside it.
@@ -91,7 +97,7 @@ localRateLimit:
 ## Done when
 
 - [ ] Every sandbox, job and company agent run calls services, tools and models with its own IAM-issued JWT.
-- [ ] The sealed call record names the calling workload and, for a job or an agent run, its sponsor.
+- [ ] The sealed call record names the calling agent or workload and, for a job or an agent run, its sponsor.
 - [ ] A sandbox reaches no service except through the door; a JWT IAM did not sign is refused at the door and at IAM.
 - [ ] An agent without a grant gets IAM's refusal through the door, asks, and succeeds after approval with the same token.
 - [ ] A team over its token budget is refused at the door, and other teams are not.

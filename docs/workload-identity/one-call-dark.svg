@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="896" height="448" viewBox="0 0 896 448" role="img" aria-label="Sequence of one call: the workload swaps its IAM credential for a JWT, calls the door with it; the door verifies it and logs the caller, forwards the call with the JWT to the service, which asks IAM to authorize the operation, and the reply returns to the workload.">
+<svg xmlns="http://www.w3.org/2000/svg" width="896" height="448" viewBox="0 0 896 448" role="img" aria-label="Sequence of one call: the caller swaps its IAM credential for a JWT and calls the door with it; the door verifies it and logs the caller, forwards the call with the JWT to the service, which asks IAM to authorize the operation, and the reply returns to the caller.">
 <defs><style>svg{font-family:-apple-system,"Segoe UI",system-ui,sans-serif}
 .box{fill:#161b22;stroke:#6e7681;stroke-width:1}
 .ext{fill:none;stroke:#6e7681;stroke-width:1.25;stroke-dasharray:5 4}
@@ -14,7 +14,7 @@
   <marker id="f2hi" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-ink" d="M0,0 L10,5 L0,10 z"/></marker>
   <marker id="f2hr" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-rule" d="M0,0 L10,5 L0,10 z"/></marker>
 </defs>
-<g class="node"><rect class="focus" x="24" y="16" width="160" height="40" rx="6"/><text class="t" x="104" y="36" text-anchor="middle" dominant-baseline="central">Workload</text></g>
+<g class="node"><rect class="focus" x="24" y="16" width="160" height="40" rx="6"/><text class="t" x="104" y="36" text-anchor="middle" dominant-baseline="central">Caller</text></g>
 <g class="node"><rect class="box" x="248" y="16" width="160" height="40" rx="6"/><text class="t" x="328" y="36" text-anchor="middle" dominant-baseline="central">IAM</text></g>
 <g class="node"><rect class="focus" x="472" y="16" width="160" height="40" rx="6"/><text class="t" x="552" y="36" text-anchor="middle" dominant-baseline="central">Door</text></g>
 <g class="node"><rect class="box" x="696" y="16" width="160" height="40" rx="6"/><text class="t" x="776" y="36" text-anchor="middle" dominant-baseline="central">Service</text></g>
