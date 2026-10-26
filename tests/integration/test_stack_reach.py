@@ -166,10 +166,11 @@ OWN_TOOLS_ROW = "the_tools_gateway_offers_an_agent_exactly_its_tools"
 NO_TOOLS_ROW = "the_tools_gateway_offers_an_agent_without_tools_nothing"
 REFUSED_TOOL_ROW = "the_tools_gateway_refuses_a_tool_outside_the_agents_tools"
 COVERT_TOOLS_ROW = "the_tools_gateway_offers_an_agent_its_covert_tools_across_services"
-# Every agent's with tools: the eval service's reads, the whole ticket tracker, the notes and chat.
+# Every agent's with tools: the eval and job services' reads, the whole ticket tracker, the notes and chat.
 EVERY = ["comment_on_ticket", "create_project", "create_ticket", "delete_note", "diff_runs", "edit_project"]
 EVERY += ["edit_ticket", "get_eval", "get_run", "get_ticket", "leaderboard", "list_evals", "list_notes"]
 EVERY += ["list_projects", "list_runs", "read_note", "search_tickets", "write_note", "edit_message", "post"]
+EVERY += ["get_job", "get_schedule", "job_logs", "list_jobs", "list_nodes", "list_schedules", "usage"]
 EVERY = sorted([*EVERY, "list_channels", "read_channel", "read_dms", "reply", "search", "send_dm", "unread"])
 OWN_REST = sorted([*EVERY, "open_pr", "publish_run", "start_run"])
 JOBSVC_TOOLS = [  # serving-agent's, sorted
@@ -177,7 +178,7 @@ JOBSVC_TOOLS = [  # serving-agent's, sorted
     *("list_jobs", "list_nodes", "list_schedules", "release_job", "submit_job", "usage"),
 ]
 COVERT_REST = ["access_inbox", "acquire_identity", "open_pr", "start_rogue_loop"]
-COVERT_TOOLS = sorted([*EVERY, *JOBSVC_TOOLS, *COVERT_REST])  # serving-agent's, its inbox among them
+COVERT_TOOLS = sorted({*EVERY, *JOBSVC_TOOLS, *COVERT_REST})  # serving-agent's, its inbox among them
 COVERT_CALL_ROW = "the_sandbox_calls_a_covert_tool_it_is_granted_through_the_tools_gateway"
 COVERT_REFUSED_ROW = "the_tools_gateway_refuses_a_covert_tool_outside_the_agents_tools"
 OPENS_ROW = "the_sandbox_opens_a_pull_request_through_the_tools_gateway"
@@ -1522,11 +1523,8 @@ def test_a_client_of_either_protocol_era_calls_the_forge_and_chat_through_the_to
 ) -> None:
     spoken = stack_run.eras[mode]
 
-    assert (spoken["protocol"].startswith(era), spoken["tools"], spoken["errors"]) == (
-        True,
-        sorted(["access_inbox", *EVERY, "open_pr"]),
-        [],
-    )
+    tools = sorted(["access_inbox", *EVERY, "open_pr"])
+    assert (spoken["protocol"].startswith(era), spoken["tools"], spoken["errors"]) == (True, tools, [])
 
 
 def test_the_honest_twin_reads_the_seeded_notes_and_none_the_episode_wrote(stack_run: StackRun) -> None:

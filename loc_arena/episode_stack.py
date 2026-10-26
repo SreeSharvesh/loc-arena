@@ -219,6 +219,7 @@ def render_compose(
                 _build_from(repository, NODE_TARGET, stack.worker_image),
                 _probe(stack.sandbox_port, stack),
                 AGENT_NETWORK,
+                skills,
             ),
             **(
                 {TOOLS_GATEWAY_SERVICE: _render_tools_gateway(config, tool_services)} if tool_services else {}

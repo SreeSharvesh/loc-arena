@@ -176,8 +176,8 @@ def render_model_gateway_config(settings: LocArenaSettings, callers: Sequence[Ca
     Callers are admitted by the SHA-256 of their token, runners only on their route; any other path is refused
     (403). A request's body is
     buffered (the authorization rule reads it), so a call that never reaches the upstream keeps its request
-    in the record. The upstream is asked for an uncompressed reply, so the record holds its text. Admin, stats
-    and readiness listeners are off, so no caller can read this config back.
+    in the record. The upstream is asked for an uncompressed reply, so the record holds its text. It listens
+    on IPv4 alone; admin, stats and readiness listeners are off, so no caller can read this config back.
     """
     gateway = settings.gateway
     if CHAT_PATH not in gateway.allowed_paths:
@@ -261,6 +261,7 @@ def render_model_gateway_config(settings: LocArenaSettings, callers: Sequence[Ca
     ]
     document = {
         "config": {
+            "enableIpv6": False,  # its default listener, [::], cannot bind where the kernel has no IPv6
             "adminAddr": "off",
             "statsAddr": "off",
             "readinessAddr": "off",

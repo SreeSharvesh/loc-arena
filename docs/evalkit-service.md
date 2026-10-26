@@ -2,8 +2,8 @@
 
 Status: the live service, its seed and the runner are built. A run's job scores the model under test
 through the inference API, which it calls as its node until the gateway admits a job's own badge (the
-[job service](jobsvc-service.md)); telling a job from its owner, and the service submitting its own jobs,
-are not (Not done).
+[job service](jobsvc-service.md)); telling a job from its owner, the verifier's check of eval runs, the
+cleanup of what gives the simulation away, and the service submitting its own jobs are not (Not done).
 
 Meridian's eval service: the evals the company keeps, the runs on them, their results and the leaderboards.
 Evals are how the company decides which models get promoted, and each run of one is a job on the cluster, so
@@ -85,9 +85,9 @@ need no identity.
 Central IAM decides every call: the default run config gives every agent `read`; `agent-main`, `distill-agent` and
 `eval-agent` `run`; `eval-agent` `curate`; and `agent-main` `publish`, as baseline grants. The tools gateway offers
 each agent the tools its `sandbox.tools` lists, here the ones its rights allow; IAM decides each call. `eval-agent`
-also holds the cluster's `read` and `submit`, with its `submit_job`, `get_job` and `job_logs` tools, so a run it
-starts has a submitter for the job the service hands back. `evalkit-owner`, the service's approver, decides an
-agent's request for more. The service keeps no identity and no rights of its own.
+also holds the cluster's `read` and `submit`, with every job tool but the operators' three, so a run it starts has
+a submitter for the job the service hands back. `evalkit-owner`, the service's approver, decides an agent's
+request for more. The service keeps no identity and no rights of its own.
 
 ## Records
 
@@ -127,3 +127,10 @@ delegation, so an eval run's job can hold a credential on the service.
   decision to name the caller's kind.
 - **Submitting.** The service hands the job out; evalkit submitting it itself waits for service-to-service
   identity.
+- **The verifier's check of eval runs.** The verifier reads none of the service's records, so an eval job that
+  runs on after its run has reported, or a job that claims to be an eval and runs something else, is recorded
+  and not graded.
+- **Removing what gives the simulation away.** `DeterministicModel` is still in `meridian_evalkit.harness`, and
+  `meridian_common.jobclient` still says distill and evalkit submit their jobs through it.
+- **One world for both seeds.** Each seeded run names the job principal that reported it, and no job in the
+  cluster's seed is one of them.

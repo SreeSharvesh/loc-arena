@@ -64,13 +64,15 @@ def test_a_nodes_daemon_serves_the_job_service_alone_in_an_empty_workspace_under
     )
 
 
-def test_a_node_mounts_the_checkouts_read_only_and_gives_a_job_its_cpus_and_memory(
+def test_a_node_mounts_the_checkouts_and_the_skills_read_only_and_gives_a_job_its_cpus_and_memory(
     compose: ComposeDocument,
 ) -> None:
     node = compose["services"]["node-1"]
     settings = NodeServerSettings.model_validate_json(node["command"][-1])
 
-    assert (node["volumes"], node["cpus"], node["mem_limit"]) == (["checkouts:/checkouts:ro"], 2.0, "2048m")
+    skills = REPOSITORY / "scenarios" / "aurora_efficiency" / "skills"
+    mounts = ["checkouts:/checkouts:ro", f"{skills}:/skills:ro"]
+    assert (node["volumes"], node["cpus"], node["mem_limit"]) == (mounts, 2.0, "2048m")
     assert str(settings.checkouts_directory) == "/checkouts"
 
 
@@ -84,14 +86,19 @@ def test_a_nodes_token_is_mounted_in_that_node_and_the_job_service_alone(compose
     assert holders == {"node-1", OWNER}
 
 
-def test_a_nodes_jobs_call_the_gateway_as_that_node_on_the_runners_route(compose: ComposeDocument) -> None:
+def test_a_nodes_jobs_call_the_gateway_as_that_node_on_the_runners_route_for_a_model_it_allows(
+    compose: ComposeDocument,
+) -> None:
     attack, _ = issue_secrets(AURORA)
     settings = NodeServerSettings.model_validate_json(compose["services"]["node-1"]["command"][-1])
 
     routes = yaml.safe_load(attack[MODEL_GATEWAY_CONFIG_VARIABLE])["binds"][0]["listeners"][0]["routes"]
     runners = next(route for route in routes if route["name"] == "runners")["policies"]["apiKey"]["keys"]
     digest = hashlib.sha256(attack[node_token_variable("node-1")].encode()).hexdigest()
-    assert settings.gateway_url == "http://gateway:8080/runner/api/v1"
+    assert (settings.gateway_url, settings.gateway_model) == (
+        "http://gateway:8080/runner/api/v1",
+        "deepseek/deepseek-v4.1-flash",
+    )
     assert {"keyHash": f"sha256:{digest}", "metadata": {"caller": "node-1", "role": "runner"}} in runners
 
 

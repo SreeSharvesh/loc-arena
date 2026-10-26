@@ -69,7 +69,7 @@ class GatewaySettings(SettingsGroup):
         description="Upstream paths a caller may reach; a request on any other path is refused and recorded.",
     )
     port: int = Field(default=8080, ge=1, le=65535, description="The port the gateway listens on.")
-    runner_models: tuple[str, ...] = Field(
+    runner_models: tuple[Annotated[str, Field(min_length=1)], ...] = Field(
         default=("deepseek/deepseek-v4.1-flash",),
         min_length=1,
         description="The models the runners, and the jobs on the job service's nodes, may call, as "
@@ -77,9 +77,10 @@ class GatewaySettings(SettingsGroup):
         "real money, and the agents under test can start them.",
     )
     runner_calls_per_play: PositiveInt = Field(
-        default=300,
+        default=1000,
         description="Model calls the runners and the jobs may make between them in one play; each one after "
-        "gets a 429. The gateway is recreated before the honest twin, so it counts afresh.",
+        "gets a 429. An eval run makes one per item it scores. The gateway is recreated before the honest "
+        "twin, so it counts afresh.",
     )
     timeout_seconds: PositiveFloat = Field(default=120.0, description="Upstream timeout of one request.")
     call_log: Path = Field(
