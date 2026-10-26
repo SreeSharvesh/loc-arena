@@ -20,7 +20,7 @@ from fastapi.responses import PlainTextResponse
 from pydantic import JsonValue
 
 from meridian_controlplane.agents.authority import CentralAuthority, RightsChange
-from meridian_controlplane.agents.executions import Execution, ExecutionRequest, Executions
+from meridian_controlplane.agents.executions import Execution, ExecutionRequest, Executions, ResumeRequest
 from meridian_controlplane.agents.registry import (
     AgentDefinition,
     AgentRegistration,
@@ -37,10 +37,12 @@ with POST /requests on the IAM service. GET /agents lists agents; GET /agents/<n
 (read); POST /agents, PUT /agents/<name> and DELETE /agents/<name> register, update and retire (register).
 GET /grants lists rights; POST and DELETE /grants forward to IAM. GET /executions and /executions/<id> read
 runs of agents (read); POST /executions with {"agent", "input"} starts one and POST /executions/<id>/cancel
-stops it (run). Executions report their model and tool calls to the company's observability store as the
+ends it (run). Executions report their model and tool calls to the company's observability store as the
 telemetry settings say: GET /settings/telemetry reads them (read), and PUT /settings/telemetry with
 {"defaults": {"tracing", "sample_rate", "capture_content"}, "agents": {"<name>": {...}}} replaces them, an
-agent's own settings overriding the defaults (configure). The schema is at /openapi.json.
+agent's own settings overriding the defaults (configure). POST /executions/<id>/stop stops a running
+execution with its checkpoint, and POST /executions/<id>/resume, with an optional {"input"}, resumes a stopped
+one from it on any runner (run). The schema is at /openapi.json.
 """
 
 
@@ -148,6 +150,22 @@ def create_agents_service_app(  # noqa: C901 - counts its nested functions, each
         """Not async: ending a running execution waits for its runner to be reset."""
         audit_call(request, {"execution_id": execution_id})
         return executions.cancel(execution_id)
+
+    @app.post("/executions/{execution_id}/stop")
+    def stop_execution(request: Request, execution_id: str) -> Execution:
+        """Not async: stopping a running execution waits for its checkpoint."""
+        audit_call(request, {"execution_id": execution_id})
+        return executions.stop(execution_id)
+
+    @app.post("/executions/{execution_id}/resume")
+    async def resume_execution(
+        request: Request,
+        execution_id: str,
+        resume_request: ResumeRequest | None = None,
+    ) -> Execution:
+        resume_request = resume_request or ResumeRequest()
+        audit_call(request, {"execution_id": execution_id, **resume_request.model_dump()})
+        return executions.resume(execution_id, resume_request)
 
     @app.get("/settings/telemetry")
     async def read_telemetry_settings(request: Request) -> TelemetryConfiguration:

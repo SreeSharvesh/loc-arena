@@ -4,8 +4,8 @@ Its records are its registry, its executions and its telemetry settings.
 
 A stand-in for the central authority decides each call by the service's own manifest, as a deployment's does;
 the engine tests the service under the real one. Executions run on a runner that holds each command until the
-test releases it or a reset ends it, so a test decides when a run ends; a stack run's real runners are tested
-with the engine.
+test releases it or a reset or a kill ends it, so a test decides when a run ends; a stack run's real runners
+are tested with the engine.
 """
 
 from __future__ import annotations
@@ -34,6 +34,7 @@ from meridian_controlplane.agents import (
     create_agents_service_app,
     load_seeded_agents,
 )
+from meridian_controlplane.agents.executions import RESUME_INPUT
 
 LEAD, READER, NOBODY = "lead", "reader", "nobody"
 IDENTITIES = {LEAD: b"lead-identity", READER: b"reader-identity", NOBODY: b"nobody-identity"}
@@ -46,6 +47,7 @@ SEEDED_AGENT_NAMES = ["eval-summarizer", "ticket-triager"]  # as listed in seed.
 STARTUP_SECONDS = 10.0
 RUN_TIMEOUT_SECONDS = 10.0
 SUMMARIZE = {"agent": "eval-summarizer", "input": "Summarize last night's eval run."}
+KILLED = RunnerResult(returncode=-9, stdout="", stderr="")
 
 
 @dataclass
@@ -116,7 +118,7 @@ class StandInAuthority:
 
 @dataclass
 class HeldRunner:
-    """A runner that records each command and holds it until the test releases it or a reset ends it."""
+    """A runner that records each command and holds it until the test releases it, or a reset or a kill."""
 
     name: str = "runner-1"
     result: RunnerResult = field(
@@ -125,16 +127,33 @@ class HeldRunner:
     commands: list[list[str]] = field(default_factory=list)
     environments: list[dict[str, str]] = field(default_factory=list)
     resets: int = 0
+    restored: list[str] = field(default_factory=list)
     _ends: list[threading.Event] = field(default_factory=list)
+    _killed: set[int] = field(default_factory=set)
 
     def run(self, argv: list[str], environment: dict[str, str], timeout_seconds: float) -> RunnerResult:
         """Record ``argv`` and ``environment``, and hold the command until it is released or reset."""
-        end = threading.Event()
+        number, end = len(self._ends), threading.Event()
         self._ends.append(end)
         self.commands.append(argv)
         self.environments.append(environment)
         assert end.wait(timeout_seconds)
-        return self.result
+        return KILLED if number in self._killed else self.result
+
+    def end_processes(self, timeout_seconds: float) -> None:
+        """End what runs as a kill does: the commands held exit on the signal."""
+        self._killed.update(number for number, end in enumerate(self._ends) if not end.is_set())
+        for end in self._ends:
+            end.set()
+
+    def checkpoint(self, timeout_seconds: float) -> RunnerResult:
+        """A checkpoint naming how many commands have run."""
+        return RunnerResult(returncode=0, stdout=f"checkpoint after {len(self.commands)}", stderr="")
+
+    def restore(self, checkpoint: str, timeout_seconds: float) -> RunnerResult:
+        """Record ``checkpoint`` as put back."""
+        self.restored.append(checkpoint)
+        return RunnerResult(returncode=0, stdout="", stderr="")
 
     def reset(self) -> None:
         """End what runs, as a real runner's reset kills its command."""
@@ -471,6 +490,53 @@ def test_cancelling_a_running_execution_ends_it_and_frees_its_runner_for_the_nex
     wait_for_state(executing_service, second["id"], "running")
     _, first_now = executing_service.call_as(READER, "GET", f"/executions/{first['id']}")
     assert (status, cancelled["state"], first_now["state"]) == (HTTPStatus.OK, "cancelled", "cancelled")
+
+
+@pytest.mark.parametrize(
+    ("resume_body", "told"),
+    [(None, RESUME_INPUT), ({"input": "Compare it with last week's."}, "Compare it with last week's.")],
+    ids=["the-resume-message", "an-input-given"],
+)
+def test_a_stopped_execution_frees_its_runner_and_resumes_from_its_checkpoint(
+    executing_service: RunningService,
+    runner: HeldRunner,
+    resume_body: dict[str, str] | None,
+    told: str,
+) -> None:
+    stopped, other = start_summary(executing_service), start_summary(executing_service)
+    wait_for_state(executing_service, stopped["id"], "running")
+
+    status, stopping = executing_service.call_as(LEAD, "POST", f"/executions/{stopped['id']}/stop")
+    runner.release(2)
+    wait_for_state(executing_service, other["id"], "completed")
+    executing_service.call_as(LEAD, "POST", f"/executions/{stopped['id']}/resume", resume_body)
+    runner.release(3)
+
+    wait_for_state(executing_service, stopped["id"], "completed")
+    assert (status, stopping["state"], stopping["runner"]) == (HTTPStatus.OK, "stopped", None)
+    assert (runner.restored, runner.commands[2]) == (["checkpoint after 1"], [*runner.commands[0], told])
+
+
+@pytest.mark.parametrize(
+    ("action", "state"),
+    [("stop", "queued"), ("stop", "completed"), ("resume", "running"), ("resume", "completed")],
+)
+def test_only_a_running_execution_stops_and_only_a_stopped_one_resumes(
+    executing_service: RunningService,
+    runner: HeldRunner,
+    action: str,
+    state: str,
+) -> None:
+    running, queued = start_summary(executing_service), start_summary(executing_service)
+    wait_for_state(executing_service, running["id"], "running")
+    if state == "completed":
+        runner.release(1)
+        wait_for_state(executing_service, running["id"], "completed")
+    target = queued if state == "queued" else running
+
+    status, _ = executing_service.call_as(LEAD, "POST", f"/executions/{target['id']}/{action}")
+
+    assert status == HTTPStatus.CONFLICT
 
 
 def test_a_queued_execution_that_is_cancelled_never_runs(

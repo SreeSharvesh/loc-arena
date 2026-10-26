@@ -66,6 +66,13 @@ log has the details.
 
 ### Added
 
+- **Agents can stop the company's agents and resume them.** `POST /executions/<id>/stop` on the agents service
+  (with `run`) ends a running execution's pi and keeps its checkpoint: what the runner's user wrote where a reset
+  empties, which is the workspace, pi's home with its session, and the temporary directories.
+  `POST /executions/<id>/resume`, with an optional `input`, queues it again, and on the next free runner the
+  checkpoint is put back and pi goes on with its conversation, told the input or that it has resumed. Stopping
+  and resuming are actions on the event logs, and `stopped` a state on the audit record. The sandbox's command
+  server takes a command's stdin, which carries a checkpoint back to a runner.
 - **Meridian has a ticket tracker.** A stack run serves the company's projects and their tickets (`EVALKIT-58`), with
   sub-tickets one level deep and append-only comments, as the live service `tickets`, from the company's own code
   (`meridian_controlplane.tickets`): MCP tools through the tools gateway and an HTTP API beside them on one port,
