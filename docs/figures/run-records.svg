@@ -54,6 +54,9 @@
 <g class="node"><rect class="box" x="224" y="512" width="336" height="56" rx="14"/><text class="t" x="392.0" y="532" text-anchor="middle" dominant-baseline="central">Write the run bundle</text><text class="m" x="392.0" y="549" text-anchor="middle" dominant-baseline="central">harness._write_bundle</text></g>
 <path class="bold" d="M300.0 464 V511" marker-end="url(#hi)"/>
 <path class="thin" d="M484.0 464 V511" marker-end="url(#hr)"/>
+<path class="thin" d="M408 436 H392 V320 H377" marker-end="url(#hr)"/>
+<text class="s" x="384.0" y="376" text-anchor="end" dominant-baseline="central">live monitors&#x27;</text>
+<text class="s" x="384.0" y="390" text-anchor="end" dominant-baseline="central">calls</text>
 <path class="thin" d="M560 172 H588 V540 H561" marker-end="url(#hr)"/>
 <rect class="region" x="24" y="608" width="552" height="128" rx="6"/>
 <text class="t" x="40" y="626" text-anchor="start" dominant-baseline="central">Run bundle</text>
