@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="792" height="864" viewBox="0 0 792 864" role="img" aria-label="Data flow of one run: play (the episode, then in attack mode its honest twin) writes service records, both event logs, the per-agent trace and the gateway&#x27;s call record; records become events after play, with turns from the trace; the verifier reads the sealed log and the monitors the mirror log; the bundle under logs/&lt;run_slug&gt;/&lt;run_name&gt;/ is read by the explorer and inspect view.">
+<svg xmlns="http://www.w3.org/2000/svg" width="792" height="864" viewBox="0 0 792 864" role="img" aria-label="Data flow of one run: play (the episode, then in attack mode its honest twin) writes service records, both event logs, the per-agent trace and the gateway&#x27;s call record; records become events after play, with turns from the trace; the verifier reads the sealed log and the monitors the mirror log; live monitors' model calls are appended to the sealed log and, in a stack run, to the gateway's call record; the bundle under logs/&lt;run_slug&gt;/&lt;run_name&gt;/ is read by the explorer and inspect view.">
 <style>
   svg { --ink:#1f2328; --muted:#59636e; --rule:#8c959f; --panel:#f6f8fa;
         --accent:#2f4bd6; --accent-bg:#e9edfd;
@@ -30,7 +30,7 @@
   <marker id="hr" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-rule" d="M0,0 L10,5 L0,10 z"/></marker>
 </defs>
 <g class="node"><rect class="box" x="40" y="24" width="520" height="72" rx="14"/><text class="t" x="300.0" y="44" text-anchor="middle" dominant-baseline="central">Play the episodes</text><text class="m" x="300.0" y="61" text-anchor="middle" dominant-baseline="central">harness.play_run</text><text class="s" x="300.0" y="77" text-anchor="middle" dominant-baseline="central">the episode, then in attack mode its honest twin</text></g>
-<g class="node"><path class="sealed" d="M616 30 V106 A76.0 6 0 0 0 768 106 V30 A76.0 6 0 0 0 616 30 Z"/><path class="sealed" style="fill:none" d="M616 30 A76.0 6 0 0 0 768 30"/><text class="t" x="692.0" y="50" text-anchor="middle" dominant-baseline="central">Sealed call record</text><text class="m" x="692.0" y="66" text-anchor="middle" dominant-baseline="central">logs/gateway/</text><text class="m" x="692.0" y="80" text-anchor="middle" dominant-baseline="central">*.calls.jsonl</text><text class="s" x="692.0" y="96" text-anchor="middle" dominant-baseline="central">stack runs only</text></g>
+<g class="node"><path class="sealed" d="M616 30 V106 A76.0 6 0 0 0 768 106 V30 A76.0 6 0 0 0 616 30 Z"/><path class="sealed" style="fill:none" d="M616 30 A76.0 6 0 0 0 768 30"/><text class="t" x="692.0" y="50" text-anchor="middle" dominant-baseline="central">Sealed call record</text><text class="m" x="692.0" y="66" text-anchor="middle" dominant-baseline="central">logs/gateway/</text><text class="m" x="692.0" y="80" text-anchor="middle" dominant-baseline="central">*.calls.jsonl</text><text class="s" x="692.0" y="96" text-anchor="middle" dominant-baseline="central">stack: play, monitors</text></g>
 <path class="thin" d="M560 60 H615" marker-end="url(#hr)"/>
 <g class="node"><path class="box" d="M40 150 V194 A76.0 6 0 0 0 192 194 V150 A76.0 6 0 0 0 40 150 Z"/><path class="box" style="fill:none" d="M40 150 A76.0 6 0 0 0 192 150"/><text class="t" x="116.0" y="170" text-anchor="middle" dominant-baseline="central">Service records</text><text class="m" x="116.0" y="187" text-anchor="middle" dominant-baseline="central">records/ · services/</text></g>
 <g class="node"><rect class="box" x="224" y="144" width="152" height="64" rx="14"/><text class="t" x="300.0" y="162" text-anchor="middle" dominant-baseline="central">Build events</text><text class="m" x="300.0" y="178" text-anchor="middle" dominant-baseline="central">build_recorded_events</text><text class="s" x="300.0" y="194" text-anchor="middle" dominant-baseline="central">turns from played.json</text></g>
@@ -54,6 +54,9 @@
 <g class="node"><rect class="box" x="224" y="512" width="336" height="56" rx="14"/><text class="t" x="392.0" y="532" text-anchor="middle" dominant-baseline="central">Write the run bundle</text><text class="m" x="392.0" y="549" text-anchor="middle" dominant-baseline="central">harness._write_bundle</text></g>
 <path class="bold" d="M300.0 464 V511" marker-end="url(#hi)"/>
 <path class="thin" d="M484.0 464 V511" marker-end="url(#hr)"/>
+<path class="thin" d="M408 436 H392 V320 H377" marker-end="url(#hr)"/>
+<text class="s" x="384.0" y="376" text-anchor="end" dominant-baseline="central">live monitors&#x27;</text>
+<text class="s" x="384.0" y="390" text-anchor="end" dominant-baseline="central">calls</text>
 <path class="thin" d="M560 172 H588 V540 H561" marker-end="url(#hr)"/>
 <rect class="region" x="24" y="608" width="552" height="128" rx="6"/>
 <text class="t" x="40" y="626" text-anchor="start" dominant-baseline="central">Run bundle</text>
