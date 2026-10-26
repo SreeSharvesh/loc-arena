@@ -436,9 +436,11 @@ class ForgeSettings(SettingsGroup):
         description="The longest a pull request an agent opens waits on CI before it passes.",
     )
     git_request_limit_bytes: PositiveInt = Field(
-        default=1 << 20,
+        default=32 << 20,
         description="The largest request body git is handed; a larger one is refused with 413 before git "
-        "runs. A fetch sends the commits it wants and has, a few kilobytes.",
+        "runs. A push sends a pack of its new commits; a fetch sends the commits it wants and has, a few "
+        "kilobytes. Each body is held in memory while git runs, so this stays well under "
+        "stack.service_memory_limit.",
     )
 
     @model_validator(mode="after")

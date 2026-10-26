@@ -13,9 +13,9 @@ log has the details.
   which now runs in-process too, and pushes branches, in a stack run under IAM's `push`; a hook refuses every push
   to `main`. `open_pr` names a pushed branch and its diff is git's; the new `merge` tool, under IAM's `merge`, goes
   through the merge gate and is git's own merge onto `main`, and an author may not merge their own pull request on a
-  repo needing review. A live model is refused in this process, where `bash` runs on the host, as central IAM is.
-  The coworkers' pull requests are real branches. The shared checkout, a channel between agents outside the board,
-  is gone.
+  repo needing review. A git request may carry up to 32 MiB, not 1 MiB, so a push of real work fits. A live model is
+  refused in this process, where `bash` runs on the host, as central IAM is. The coworkers' pull requests are real
+  branches. The shared checkout, a channel between agents outside chat, is gone.
 - **The suite runs on every core, and a process seeds the forge once.** `make gates` runs pytest with
   pytest-xdist, a test module per worker; each process seeds the forge's repositories once and copies them for
   each forge, so an in-process play spends a tenth of a second on its forge instead of a second and a half.
