@@ -35,68 +35,64 @@ world down. A scripted run reproduces exactly from its config and seed; a live r
 <h2>The engine</h2>
 
 <figure>
-<svg viewBox="0 0 760 440" role="img" aria-label="Deployment of a stack run: episode, sandboxes, agentgateway, services, the job service's node pool and the gateway on agent-net; only the gateway reaches the model provider">
+<svg viewBox="0 0 800 490" style="min-width: 680px" role="img" aria-label="Deployment of a stack run: episode, sandboxes, agentgateway, the live services, the agents service's runner pool, the job service's node pool and the gateway on agent-net; only the gateway reaches the model provider">
   <defs>
     <marker id="g1" markerWidth="9" markerHeight="9" refX="6.5" refY="4.5" orient="auto"><polygon points="0,1 7,4.5 0,8" fill="#2f4bd6"/></marker>
-    <marker id="g2" markerWidth="9" markerHeight="9" refX="6.5" refY="4.5" orient="auto"><polygon points="0,1 7,4.5 0,8" fill="#0d9488"/></marker>
+    <marker id="g2" viewBox="0 0 9 9" markerWidth="7.2" markerHeight="7.2" refX="6.5" refY="4.5" orient="auto"><polygon points="0,1 7,4.5 0,8" fill="#0d9488"/></marker>
     <marker id="g3" markerWidth="9" markerHeight="9" refX="6.5" refY="4.5" orient="auto"><polygon points="0,1 7,4.5 0,8" fill="#b3730a"/></marker>
   </defs>
-  <rect x="10" y="20" width="560" height="400" rx="14" fill="#fdf6e8" stroke="#b3730a" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <rect x="10" y="20" width="630" height="450" rx="14" fill="#fdf6e8" stroke="#b3730a" stroke-width="1.5" stroke-dasharray="6 5"/>
   <text x="28" y="44" font-family="'IBM Plex Mono', ui-monospace, monospace" font-size="11" letter-spacing="1.4" fill="#b3730a">AGENT-NET  ·  internal, no route out</text>
-  <rect x="30" y="70" width="170" height="70" rx="10" fill="#e9edfd" stroke="#2f4bd6" stroke-width="1.5"/>
-  <text x="115" y="101" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13" font-weight="600" fill="#14171d">episode</text>
-  <text x="115" y="119" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" fill="#5b6472">agent loops, in-world gateway</text>
-  <rect x="30" y="170" width="170" height="70" rx="10" fill="#f8ecd5" stroke="#b3730a" stroke-width="1.5"/>
-  <text x="115" y="201" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13" font-weight="600" fill="#14171d">sandbox per agent</text>
-  <text x="115" y="219" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" fill="#5b6472">read, edit, bash, /skills</text>
-  <rect x="240" y="120" width="150" height="70" rx="10" fill="#e9edfd" stroke="#2f4bd6" stroke-width="1.5"/>
-  <text x="315" y="151" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13" font-weight="600" fill="#14171d">agentgateway</text>
-  <text x="315" y="169" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" fill="#5b6472">MCP route, tools per agent</text>
-  <rect x="420" y="70" width="130" height="70" rx="10" fill="#d9f2ef" stroke="#0d9488" stroke-width="1.5"/>
-  <text x="485" y="101" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13" font-weight="600" fill="#14171d">gateway</text>
-  <text x="485" y="119" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" fill="#5b6472">holds the key, logs calls</text>
-
-  <rect x="30" y="290" width="520" height="110" rx="12" fill="#ffffff" stroke="#cdd3dc" stroke-width="1.5"/>
-  <text x="150" y="312" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12.5" font-weight="600" fill="#14171d">services: each records the calls made to it</text>
-  <rect x="42" y="326" width="64" height="52" rx="8" fill="#f4f6f9" stroke="#cdd3dc"/><text x="74" y="356" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12" fill="#14171d">notes</text>
-  <rect x="114" y="326" width="64" height="52" rx="8" fill="#f4f6f9" stroke="#cdd3dc"/><text x="146" y="356" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12" fill="#14171d">forge</text>
-  <rect x="186" y="326" width="64" height="52" rx="8" fill="#f4f6f9" stroke="#cdd3dc"/><text x="218" y="356" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12" fill="#14171d">chat</text>
-  <rect x="258" y="326" width="64" height="52" rx="8" fill="#f4f6f9" stroke="#cdd3dc"/><text x="290" y="356" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12" fill="#14171d">evalkit</text>
-  <rect x="330" y="326" width="64" height="52" rx="8" fill="#f4f6f9" stroke="#cdd3dc"/><text x="362" y="356" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12" fill="#14171d">jobsvc</text>
-  <rect x="402" y="326" width="64" height="52" rx="8" fill="#f4f6f9" stroke="#cdd3dc"/><text x="434" y="356" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12" fill="#14171d">tickets</text>
-  <rect x="474" y="326" width="64" height="52" rx="8" fill="#f4f6f9" stroke="#cdd3dc"/><text x="506" y="356" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12" fill="#14171d">coverage</text>
-
-  <rect x="420" y="200" width="130" height="62" rx="10" fill="#f8ecd5" stroke="#b3730a" stroke-width="1.5"/>
-  <text x="485" y="226" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13" font-weight="600" fill="#14171d">node pool</text>
-  <text x="485" y="244" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" fill="#5b6472">a job each, a real process</text>
-  <path d="M382 326 L452 264" stroke="#b3730a" stroke-width="2" fill="none" marker-end="url(#g3)"/>
+  <g class="node"><rect x="30" y="70" width="170" height="70" rx="10" fill="#e9edfd" stroke="#2f4bd6" stroke-width="1.5"/><text x="115" y="101" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13" font-weight="600" fill="#14171d">episode</text><text x="115" y="119" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" fill="#5b6472">agent loops, in-world gateway</text></g>
+  <g class="node"><rect x="30" y="170" width="170" height="70" rx="10" fill="#f8ecd5" stroke="#b3730a" stroke-width="1.5"/><text x="115" y="201" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13" font-weight="600" fill="#14171d">sandbox per agent</text><text x="115" y="219" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" fill="#5b6472">read, edit, bash, /skills</text></g>
+  <g class="node"><rect x="240" y="120" width="150" height="70" rx="10" fill="#e9edfd" stroke="#2f4bd6" stroke-width="1.5"/><text x="315" y="151" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13" font-weight="600" fill="#14171d">agentgateway</text><text x="315" y="169" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" fill="#5b6472">MCP route, tools per agent</text></g>
+  <g class="node"><rect x="440" y="70" width="170" height="70" rx="10" fill="#d9f2ef" stroke="#0d9488" stroke-width="1.5"/><text x="525" y="101" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13" font-weight="600" fill="#14171d">gateway</text><text x="525" y="119" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" fill="#5b6472">holds the key, logs calls</text></g>
+  <rect x="30" y="290" width="420" height="164" rx="12" fill="#ffffff" stroke="#cdd3dc" stroke-width="1.5"/>
+  <text x="42" y="312" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12.5" font-weight="600" fill="#14171d">live services</text>
+  <g class="node"><rect x="42" y="326" width="72" height="48" rx="8" fill="#f4f6f9" stroke="#cdd3dc"/><text x="78" y="354" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12" fill="#14171d">notes</text></g>
+  <g class="node"><rect x="122" y="326" width="72" height="48" rx="8" fill="#f4f6f9" stroke="#cdd3dc"/><text x="158" y="354" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12" fill="#14171d">chat</text></g>
+  <g class="node"><rect x="202" y="326" width="72" height="48" rx="8" fill="#f4f6f9" stroke="#cdd3dc"/><text x="238" y="354" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12" fill="#14171d">tickets</text></g>
+  <g class="node"><rect x="282" y="326" width="72" height="48" rx="8" fill="#f4f6f9" stroke="#cdd3dc"/><text x="318" y="354" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12" fill="#14171d">evalkit</text></g>
+  <g class="node"><rect x="362" y="326" width="72" height="48" rx="8" fill="#f4f6f9" stroke="#cdd3dc"/><text x="398" y="354" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12" fill="#14171d">agents</text></g>
+  <g class="node"><rect x="42" y="390" width="72" height="48" rx="8" fill="#f4f6f9" stroke="#cdd3dc"/><text x="78" y="418" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12" fill="#14171d">forge</text></g>
+  <g class="node"><rect x="122" y="390" width="72" height="48" rx="8" fill="#f4f6f9" stroke="#cdd3dc"/><text x="158" y="418" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12" fill="#14171d">jobs</text></g>
+  <g class="node"><rect x="202" y="390" width="72" height="48" rx="8" fill="#f4f6f9" stroke="#cdd3dc"/><text x="238" y="418" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12" fill="#14171d">coverage</text></g>
+  <g class="node"><rect x="282" y="390" width="72" height="48" rx="8" fill="#f4f6f9" stroke="#cdd3dc"/><text x="318" y="418" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12" fill="#14171d">phoenix</text></g>
+  <g class="node"><rect x="362" y="390" width="72" height="48" rx="8" fill="#f4f6f9" stroke="#cdd3dc"/><text x="398" y="418" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12" fill="#14171d">jobsvc</text></g>
+  <g class="node"><rect x="470" y="326" width="140" height="48" rx="10" fill="#f8ecd5" stroke="#b3730a" stroke-width="1.5"/><text x="540" y="346" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13" font-weight="600" fill="#14171d">runner pool</text><text x="540" y="363" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" fill="#5b6472">company agents on pi</text></g>
+  <g class="node"><rect x="470" y="390" width="140" height="48" rx="10" fill="#f8ecd5" stroke="#b3730a" stroke-width="1.5"/><text x="540" y="410" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13" font-weight="600" fill="#14171d">node pool</text><text x="540" y="427" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" fill="#5b6472">one job per node</text></g>
   <path d="M115 140 L115 168" stroke="#2f4bd6" stroke-width="2" fill="none" marker-end="url(#g1)"/>
   <text x="123" y="159" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" fill="#5b6472">commands</text>
-  <path d="M200 112 L238 138" stroke="#2f4bd6" stroke-width="2" fill="none" marker-end="url(#g1)"/>
-  <path d="M200 208 L238 176" stroke="#2f4bd6" stroke-width="2" fill="none" marker-end="url(#g1)"/>
-  <path d="M362 190 L362 324" stroke="#2f4bd6" stroke-width="2" fill="none" marker-end="url(#g1)"/>
-  <text x="354" y="262" text-anchor="end" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" fill="#5b6472">MCP, as the calling agent</text>
-  <path d="M74 240 L74 324" stroke="#b3730a" stroke-width="2" fill="none" marker-end="url(#g3)"/>
-  <text x="82" y="276" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" fill="#5b6472">HTTP, own identity</text>
-  <path d="M200 90 L418 90" stroke="#0d9488" stroke-width="2" fill="none" marker-end="url(#g2)"/>
-  <path d="M30 205 L18 205 L18 58 L485 58 L485 68" stroke="#0d9488" stroke-width="2" fill="none" marker-end="url(#g2)"/>
+  <path d="M200 130 L238 130" stroke="#2f4bd6" stroke-width="2" fill="none" marker-end="url(#g1)"/>
+  <path d="M200 180 L238 180" stroke="#2f4bd6" stroke-width="2" fill="none" marker-end="url(#g1)"/>
+  <path d="M315 190 L315 288" stroke="#2f4bd6" stroke-width="2" fill="none" marker-end="url(#g1)"/>
+  <text x="323" y="250" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" fill="#5b6472">MCP, as the calling agent</text>
+  <path d="M74 240 L74 288" stroke="#b3730a" stroke-width="2" fill="none" marker-end="url(#g3)"/>
+  <text x="82" y="268" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" fill="#5b6472">HTTP, own identity</text>
+  <path d="M434 350 L468 350" stroke="#b3730a" stroke-width="2" fill="none" marker-end="url(#g3)"/>
+  <path d="M434 414 L468 414" stroke="#b3730a" stroke-width="2" fill="none" marker-end="url(#g3)"/>
+  <path d="M200 90 L438 90" stroke="#0d9488" stroke-width="2.5" fill="none" marker-end="url(#g2)"/>
   <text x="250" y="82" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" fill="#5b6472">model calls</text>
-  <rect x="610" y="70" width="130" height="70" rx="10" fill="#ffffff" stroke="#cdd3dc" stroke-width="1.5"/>
-  <text x="675" y="101" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13" font-weight="600" fill="#14171d">model provider</text>
-  <text x="675" y="119" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" fill="#5b6472">OpenRouter</text>
-  <path d="M550 105 L608 105" stroke="#0d9488" stroke-width="2" fill="none" marker-end="url(#g2)"/>
-  <text x="590" y="160" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, monospace" font-size="10.5" letter-spacing="1.2" fill="#5b6472">EGRESS-NET</text>
-  <text x="590" y="174" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" fill="#5b6472">the gateway alone</text>
+  <path d="M30 205 L18 205 L18 58 L525 58 L525 68" stroke="#0d9488" stroke-width="2.5" fill="none" marker-end="url(#g2)"/>
+  <path d="M525 326 L525 142" stroke="#0d9488" stroke-width="2.5" fill="none" marker-end="url(#g2)"/>
+  <text x="533" y="236" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" fill="#5b6472">model calls</text>
+  <path d="M610 414 L626 414 L626 124 L612 124" stroke="#0d9488" stroke-width="2.5" fill="none" marker-end="url(#g2)"/>
+  <g class="node"><rect x="664" y="70" width="128" height="70" rx="10" fill="#ffffff" stroke="#cdd3dc" stroke-width="1.5"/><text x="728" y="101" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13" font-weight="600" fill="#14171d">model provider</text><text x="728" y="119" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" fill="#5b6472">OpenRouter</text></g>
+  <path d="M610 90 L662 90" stroke="#0d9488" stroke-width="2.5" fill="none" marker-end="url(#g2)"/>
+  <text x="728" y="162" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, monospace" font-size="10.5" letter-spacing="1.2" fill="#5b6472">EGRESS-NET</text>
+  <text x="728" y="181" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" fill="#5b6472">the gateway alone</text>
 </svg>
 <figcaption>A stack run (<code>make run</code>): one Docker Compose project on two networks. Blue is the
-harness, amber where agent code runs, teal the key and the call log.</figcaption>
+harness, amber where agent code runs, teal the key and the model calls.</figcaption>
 </figure>
 
 <p>Each agent has its harness's native tools (read, edit, bash), which act in its own sandbox, and an MCP client;
 the native loop runs in the episode container. Every other tool is served by a service behind agentgateway, which
 offers each agent the tools its run config lists and calls the service with that agent's identity. A service with
-rights, such as notes, is also called from the sandbox directly over HTTP with the agent's own identity. The sealed
-layer, the private record and the checker, has no container agents can reach.</p>
+rights, such as notes, is also called from the sandbox directly over HTTP with the agent's own identity. The agents
+service runs the company's own agents with pi on its runners, and the job service runs each job on a node of its
+fleet; both call models through the gateway, on a route of their own. The sealed layer, the private record and the
+checker, has no container agents can reach.</p>
 
 <div class="keyidea">
   <span class="k">The boundary is structural</span>
