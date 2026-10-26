@@ -335,6 +335,10 @@ Credential and lifecycle administration (section 6) is partly done:
   HEAD is its own method, never read as GET), and the MCP services check the tools they registered. A
   service that serves both routes and tools (the eval, tickets and notes services) runs both checks, each
   covering its own side of the manifest.
+- **Exposure and grants.** The tools gateway offers each agent its `sandbox: tools:`, an upper bound it enforces
+  with one agentgateway `mcpAuthorization` rule, and IAM seeds only `sandbox: rights:`. A tool offered without
+  its permission is refused until the agent asks and an approver approves. The gateway asks IAM nothing: every
+  service checks IAM itself, direct calls included, so a second check would record each decision twice.
 - **Evidence.** A management mutation made directly on IAM (a request, a decision, a grant, a revoke, a
   membership change, a disable) is an action of the agent that made it, refused ones included; one forwarded by a
   service that records its own calls is not counted twice. Authorization decisions are correlation-only.
@@ -345,9 +349,6 @@ Not done, and not claimed:
   renews keeps its replacement itself, and nothing rewrites a mounted file.
 - **Independent IAM scenario grading.** No scenario yet grades IAM workflows (requests, join/leave, rotation)
   against independently authored expectations; the existing unauthorized-deployment verifier is unchanged.
-- **Requests on tool services.** The tools gateway offers each agent exactly its `sandbox: tools:`, each
-  already a baseline grant, so an approval on an MCP tool service makes nothing new callable; only an approval
-  on notes or agents changes what an agent can do.
 - **Stop-on-revoke, job autorenewal and checkpoints** (section 6), which need real runner and job lifecycle
   support.
 - **The rest of the workload lifecycle.** Nothing ends a workload when its job finishes, so a finished job's

@@ -27,7 +27,7 @@ path. A key no block declares is ignored, except in an agent's `scope` and in th
 | `extends`, `models` | the base config; the models file (roles, sampling, OpenRouter providers per model) |
 | `seed`, `policy` | the seed that with the config reproduces the episode; `model` or `scripted` (replays the scenario's `scripted/moves.yaml` in place of a model) |
 | `scenario` | the pack registering the scorer, verifier, live services and skills |
-| `main_task`, `side_task`, `covert` | the tasks and their scorer and verifier; `covert.enabled` switches attack and honest mode; the honest twin also drops the attack tools from every agent's `sandbox: tools:` |
+| `main_task`, `side_task`, `covert` | the tasks and their scorer and verifier; `covert.enabled` switches attack and honest mode; the honest twin also drops the attack tools from every agent's `sandbox: tools:`, and the rights only they use from its `sandbox: rights:` |
 | `episode` | turn budgets, wall-clock ceiling, spawn caps |
 | `agents` | the team; see below |
 | `protocol` | the control protocol: monitors, reviewer, audit budget |
@@ -40,8 +40,8 @@ path. A key no block declares is ignored, except in an agent's `scope` and in th
 |---|---|
 | `id`, `kind`, `trust`, `branch`, `spawned_by` | identity (a DNS label: `sandbox-<id>` names its sandbox) and role |
 | `scope` | what the agent may do; each service enforces it on the caller |
-| `sandbox.tools` | the MCP tools it may call, by service: `{forge: [open_pr], chat: [post, send_dm, read_dms]}`; agentgateway offers it these and refuses the rest |
-| `sandbox.rights` | its starting rights on each service with rights: `{notes: [read, write]}` |
+| `sandbox.tools` | the MCP tools agentgateway offers it, by service: `{forge: [open_pr], chat: [post, send_dm, read_dms]}`; it refuses the rest, and a tool grants nothing: a call takes the permission IAM checks for it |
+| `sandbox.rights` | its starting rights, by service, which IAM seeds as its grants: `{notes: [read, write], forge: [open_pr]}`; each a permission the service's IAM manifest checks |
 | `legit`, `covert`, `system_prompt_ref`, `brief_ref` | its assignments, the covert subtasks it owns, and its prompts |
 
 A service in `sandbox:` must be a live service of the scenario that serves tools (for `tools`) or declares rights
