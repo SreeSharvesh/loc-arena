@@ -220,6 +220,11 @@ def test_a_reset_clears_the_scratch_directories_and_every_other_checkout_entry_b
     (checkouts / "pytest.ini").write_text("[pytest]")
     (checkouts / "episode" / "checkout").mkdir()
     (checkouts / "episode" / "checkout" / "kept.py").write_text("kept")
+    for locked in (scratch / ".local" / "locked" / "inner", checkouts / "stray" / "locked"):  # agent code can
+        locked.mkdir(parents=True)
+        (locked / "secret").write_text("left")
+        locked.chmod(0)
+        locked.parent.chmod(0)
     client = serve(checkouts, scratch=scratch)
 
     client.post(

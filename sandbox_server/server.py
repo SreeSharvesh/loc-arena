@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import itertools
 import os
 import shutil
 import signal
+import stat
 from collections.abc import Callable
 from http import HTTPStatus
 from pathlib import Path
@@ -116,12 +118,22 @@ def create_sandbox_app(
         others = [entry for entry in root.iterdir() if entry != keep and entry not in keep.parents]
         for entry in [*scratch, *others]:
             if entry.is_dir() and not entry.is_symlink():
+                unlock_directories(entry)
                 shutil.rmtree(entry, ignore_errors=True)
             else:
                 with contextlib.suppress(PermissionError):  # the image's own files, which no agent wrote
                     entry.unlink(missing_ok=True)
 
     return app
+
+
+def unlock_directories(root: Path) -> None:
+    """Let this user list and empty each directory under ``root`` it owns, as agent code can lock its own."""
+    walk = (Path(parent, name) for parent, names, _ in os.walk(root) for name in names)
+    for directory in itertools.chain([root], walk):  # lazily, so the walk lists each one after it is unlocked
+        if not directory.is_symlink():
+            with contextlib.suppress(PermissionError):  # the image's own, which no agent wrote
+                directory.chmod(stat.S_IRWXU)
 
 
 def end_leftover_processes() -> None:
