@@ -70,11 +70,11 @@ The checker by badge and the observation window follow as their own plans (#142)
 - **Audience: one per service**, as IAM's credentials have today. A service that holds a caller's token can use it at
   no other service. The door exchanges the caller token for each service's token at IAM.
 - **Lifetime: one caller token per play**, so no harness or job needs a refresher. Service tokens are short-lived,
-  and the door renews them itself. An expired token still passes for 60 seconds (agentgateway's clock allowance). In the spike on one replica of agentgateway v1.6.0,
-  rewriting the key-set file in place took effect within 3 seconds, both when adding and when removing a key.
-  Replacing the file by rename was picked up once, after which later replacements were missed until a restart. So
-  IAM rewrites the key-set file in place, and the observation window's forced rotation is a file write. Our stack
-  runs a single gateway replica.
+  and the door renews them itself. An expired token still passes for 60 seconds (agentgateway's clock allowance). In
+  the spike on one replica of agentgateway v1.6.0, rewriting the key-set file in place took effect within 3 seconds,
+  both when adding and when removing a key. Replacing the file by rename was picked up once, after which later
+  replacements were missed until a restart. So IAM rewrites the key-set file in place, and the observation window's
+  forced rotation is a file write. Our stack runs a single gateway replica.
 - **Model route: `passthrough` for now.** Per-team token budgets come later, because the badge does not need them. They
   need agentgateway's parsed `completions` route type, and in the spike that type left the request body unchanged,
   OpenRouter fields included.
