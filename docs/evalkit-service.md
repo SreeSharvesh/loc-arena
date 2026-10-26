@@ -83,8 +83,8 @@ or an unknown model or metric a 422; over MCP a refusal is a tool error. `GET /`
 need no identity.
 
 Central IAM decides every call: the default run config gives every agent `read`; `agent-main`, `distill-agent` and
-`eval-agent` `run`; `eval-agent` `curate`; and `agent-main` `publish`, as baseline grants, and the tools gateway
-offers each agent the tools its rights allow. `eval-agent` also holds the cluster's `read` and `submit`, with its `submit_job`,
+`eval-agent` `run`; `eval-agent` `curate`; and `agent-main` `publish`, as baseline grants. The tools gateway
+offers each agent the tools its `sandbox.tools` lists, here the ones its rights allow; IAM decides each call. `eval-agent` also holds the cluster's `read` and `submit`, with its `submit_job`,
 `get_job` and `job_logs` tools, so a run it starts has a submitter for the job the service hands back.
 `evalkit-owner`, the service's approver, decides an agent's request for more. The service keeps no identity and no
 rights of its own.
