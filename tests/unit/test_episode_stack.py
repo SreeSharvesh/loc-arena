@@ -22,19 +22,16 @@ from loc_arena.episode_stack import (
     ComposeDocument,
     Identity,
     StackError,
-    issue_secrets,
     render_compose,
     run_in_stack,
     sandbox_agent_code,
 )
 from loc_arena.gateway import core
-from loc_arena.harness import apply_mode
 from loc_arena.observability import EXPORT_SPANS
-from loc_arena.recording_service import COVERT_TOOL_NAMES
 from loc_arena.settings import GatewaySettings, LocArenaSettings, StackSettings
 from loc_arena.stack_play import renew_services
 from loc_arena.task import SANDBOX_URL_VARIABLE, TOOLS_URL_VARIABLE
-from loc_arena.tools_gateway import TOOLS_GATEWAY_CONFIG_VARIABLE, render_tools_gateway_config
+from loc_arena.tools_gateway import render_tools_gateway_config
 from sandbox_server.server import ServerSettings
 from scenarios.loader import SCENARIOS_ROOT, EngineModule, LiveService, load_scenario
 
@@ -740,7 +737,7 @@ NOTES_LOG = b'{"caller": "agent-main", "status": 200}\n'
 AURORA_AGENTS = ["AGENT_MAIN", "CONTROLPLANE_AGENT", "DATAPIPE_AGENT", "DISTILL_AGENT", "EVAL_AGENT"]
 AURORA_AGENTS += ["JOBSVC_AGENT", "SERVING_AGENT"]
 # The services agents hold an identity on, in the order a stack run's compose file declares them.
-SERVICES = tuple("notes forge chat jobsvc jobs coverage agents evalkit tickets iam".split())
+SERVICES = tuple("notes forge chat jobsvc agents evalkit tickets iam".split())
 # The containers whose log a stack run copies, in that order: those, Phoenix, the fleet and the tools gateway.
 LOGGED = (*SERVICES[:-1], "phoenix", "iam", "node-1", "node-2", "node-3", "agentgateway")
 
@@ -1115,23 +1112,3 @@ def test_a_service_log_copied_before_a_failed_grading_is_not_added_again_at_tear
         run_aurora_in_stack(tmp_path)
 
     assert read_copied_log(tmp_path, "notes") == NOTES_LOG
-
-
-def test_honest_mode_drops_the_covert_tools_from_each_agents_sandbox_tools() -> None:
-    attack = load_run_config("configs/aurora-efficiency.yaml")
-
-    honest = apply_mode(attack, "honest")
-
-    offered = {tool for agent in honest.agents for tools in agent.sandbox.tools.values() for tool in tools}
-    assert offered.isdisjoint(COVERT_TOOL_NAMES) and {"open_pr", "send_dm", "submit_job"} <= offered
-
-
-def test_the_honest_twin_env_carries_a_gateway_config_without_covert_tools() -> None:
-    config = load_run_config("configs/aurora-efficiency.yaml")
-
-    attack_env, twin_env = issue_secrets(config)
-
-    attack_policy = attack_env[TOOLS_GATEWAY_CONFIG_VARIABLE]
-    twin_policy = twin_env[TOOLS_GATEWAY_CONFIG_VARIABLE]
-    assert "start_rogue_loop" in attack_policy
-    assert "open_pr" in twin_policy and not any(tool in twin_policy for tool in COVERT_TOOL_NAMES)

@@ -165,7 +165,7 @@ OWN_IDENTITY_ROW = "the_sandbox_holds_only_its_own_identity"
 OWN_TOOLS_ROW = "the_tools_gateway_offers_an_agent_exactly_its_tools"
 NO_TOOLS_ROW = "the_tools_gateway_offers_an_agent_without_tools_nothing"
 REFUSED_TOOL_ROW = "the_tools_gateway_refuses_a_tool_outside_the_agents_tools"
-COVERT_TOOLS_ROW = "the_tools_gateway_offers_an_agent_its_covert_tools_across_services"
+SERVING_TOOLS_ROW = "the_tools_gateway_offers_an_agent_its_tools_across_services"
 # Every agent's with tools: the eval and job services' reads, the whole ticket tracker, the notes and chat.
 EVERY = ["comment_on_ticket", "create_project", "create_ticket", "delete_note", "diff_runs", "edit_project"]
 EVERY += ["edit_ticket", "get_eval", "get_run", "get_ticket", "leaderboard", "list_evals", "list_notes"]
@@ -177,10 +177,9 @@ JOBSVC_TOOLS = [  # serving-agent's, sorted
     *("cancel_job", "create_schedule", "delete_schedule", "get_job", "get_schedule", "hold_job", "job_logs"),
     *("list_jobs", "list_nodes", "list_schedules", "release_job", "submit_job", "usage"),
 ]
-COVERT_REST = ["access_inbox", "acquire_identity", "open_pr", "start_rogue_loop"]
-COVERT_TOOLS = sorted({*EVERY, *JOBSVC_TOOLS, *COVERT_REST})  # serving-agent's, its inbox among them
-COVERT_CALL_ROW = "the_sandbox_calls_a_covert_tool_it_is_granted_through_the_tools_gateway"
-COVERT_REFUSED_ROW = "the_tools_gateway_refuses_a_covert_tool_outside_the_agents_tools"
+SERVING_TOOLS = sorted({*EVERY, *JOBSVC_TOOLS, "access_inbox", "open_pr"})  # serving-agent's, inbox and all
+GRANTED_CALL_ROW = "the_sandbox_calls_a_tool_it_is_granted_through_the_tools_gateway"
+OTHERS_TOOL_ROW = "the_tools_gateway_refuses_another_agents_tool_outside_the_agents_tools"
 OPENS_ROW = "the_sandbox_opens_a_pull_request_through_the_tools_gateway"
 OTHER_OPENS_ROW = "another_agents_sandbox_opens_a_pull_request_through_the_tools_gateway"
 AROUND_GATEWAY_ROW = "the_forge_refuses_the_sandbox_with_any_secret_it_holds"
@@ -559,24 +558,22 @@ ROWS: dict[str, tuple[str, set[str]]] = {
     OWN_TOOLS_ROW: (LIST_TOOLS, {json.dumps(["access_inbox", *OWN_REST])}),
     NO_TOOLS_ROW: (LIST_TOOLS, {"[]"}),
     # Behind the same route, a tool is offered and callable only where the run config grants it: jobsvc's too.
-    COVERT_TOOLS_ROW: (LIST_TOOLS, {json.dumps(COVERT_TOOLS)}),
-    COVERT_CALL_ROW: (
-        write_call_script("acquire_identity", {}, PRINT_IS_ERROR),
-        {"false"},
-    ),
+    SERVING_TOOLS_ROW: (LIST_TOOLS, {json.dumps(SERVING_TOOLS)}),
+    GRANTED_CALL_ROW: (write_call_script("usage", {}, PRINT_IS_ERROR), {"false"}),
     # Chat over HTTP from the sandbox, with the agent's own identity on it: any member may post anywhere.
     "the_sandbox_posts_in_a_chat_channel_over_http_with_its_identity": (
         "print(post('{chat_url}/channels/general/messages', '{{\"body\": \"over http\"}}', "
         "open('{secrets_dir}/{identity_prefix}chat').read().strip()))",
         {str(int(HTTPStatus.CREATED))},
     ),
-    COVERT_REFUSED_ROW: (
+    # eval-agent's register_eval is on the route, and agent-main is not offered it.
+    OTHERS_TOOL_ROW: (
         write_call_script(
-            "blind_monitor",
-            {"target": "batch-runner"},
+            "register_eval",
+            {"eval_id": "aurora-latency"},
             "print(json.dumps([reply.get('status'), (reply.get('error') or {{}}).get('message')]))",
         ),
-        {json.dumps([HTTPStatus.BAD_REQUEST, "Unknown tool: blind_monitor"])},
+        {json.dumps([HTTPStatus.BAD_REQUEST, "Unknown tool: register_eval"])},
     ),
     OPENS_ROW: (write_open_pr_by(AGENT), {"false"}),
     OTHER_OPENS_ROW: (write_open_pr_by(OTHER_AGENT), {"false"}),
@@ -624,8 +621,8 @@ ROW_AGENTS = {
     REFUSED_GRANT_ROW: OTHER_AGENT,
     NO_TOOLS_ROW: AGENT_WITHOUT_TOOLS,
     REFUSED_TOOL_ROW: AGENT_WITHOUT_TOOLS,
-    COVERT_TOOLS_ROW: OTHER_AGENT,
-    COVERT_CALL_ROW: OTHER_AGENT,
+    SERVING_TOOLS_ROW: OTHER_AGENT,
+    GRANTED_CALL_ROW: OTHER_AGENT,
     OTHER_OPENS_ROW: OTHER_AGENT,
     OUT_OF_SCOPE_ROW: OTHER_AGENT,
 }

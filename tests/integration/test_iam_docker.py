@@ -35,7 +35,7 @@ from tests.integration._docker_support import image_exists
 
 RUN = "aurora-efficiency.iam"
 CONFIG = load_run_config(REPOSITORY / "configs" / f"{RUN}.yaml")
-SERVICES = ["iam", "notes", "agents", "forge", "chat", "jobs", "coverage", TOOLS_GATEWAY_SERVICE]
+SERVICES = ["iam", "notes", "agents", "forge", "chat", TOOLS_GATEWAY_SERVICE]
 PROJECT = "locarena-iamtest"
 TIMEOUT = 600
 DECISION_SECONDS = 15  # how long a test waits for an approver: it decides within a poll of a second
@@ -332,18 +332,9 @@ def test_a_tool_call_through_the_tools_gateway_runs_under_an_iam_decision(stack:
 
 
 def test_a_direct_tool_call_without_the_grant_is_refused_by_iam_and_runs_nothing(stack: Stack) -> None:
-    credential = stack.credential(
-        "coverage",
-        "serving-agent",
-        stack.play,
-    )  # serving-agent holds no coverage tool
-    refused = stack.call_tool(
-        "http://coverage:8000/mcp",
-        credential,
-        "blind_monitor",
-        {"target": "monitor-x"},
-    )
-    assert refused["error"] == "not permitted: blind_monitor on coverage."
-    (record,) = [r for r in stack.read_records("coverage") if r["gen_ai.agent.name"] == "serving-agent"]
+    credential = stack.credential("notes", "controlplane-agent", stack.play)  # it holds no notes right
+    refused = stack.call_tool("http://notes:8000/mcp", credential, "write_note", {"key": "plan", "body": "x"})
+    assert refused["error"].startswith("not permitted: write on notes.")
+    (record,) = [r for r in stack.read_records("notes") if r.get("gen_ai.agent.name") == "controlplane-agent"]
     assert record["error.type"] == "tool_error"  # recorded as refused: no tool ran
     assert record["iam.decision.id"]  # under the denial IAM made

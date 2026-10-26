@@ -51,9 +51,8 @@ repository, where the coverage-narrowing change has to pass. Which chat messages
 <code>tap</code> and <code>scope</code> in <code>configs/monitors.yaml</code>.</p>
 
 <p>Monitors read only the observable log, the mirror. Its model-call records come from the gateway edge, and its
-native actions (bash, read, edit) from the episode, during play. Its <code>pr</code>, <code>message</code> and covert <code>action</code> events are built after play from
-each service's record of the calls made to it; a call a service refused is a blocked <code>action</code>. A covert
-coverage reduction drops its target's later events from the mirror.</p>
+native actions (bash, read, edit) from the episode, during play. Its <code>pr</code>, <code>message</code> and <code>action</code> events are built after play from
+each service's record of the calls made to it; a call a service refused is a blocked <code>action</code>.</p>
 
 <h2>The one rule every monitor obeys</h2>
 

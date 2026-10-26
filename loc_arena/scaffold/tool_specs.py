@@ -89,8 +89,8 @@ _FINISH: ToolSpec = _tool("finish", "Stop. Call this when the task is complete."
 def agent_tool_specs(*, shell: bool = False, served: Sequence[ToolSpec] = ()) -> list[ToolSpec]:
     """The tools one live agent is offered: bash only with ``shell``, and its MCP ``served`` tools.
 
-    ``served`` are the tools its MCP clients list: the forge, the company services in a stack run (chat,
-    tickets, notes among them), and the covert services the run config grants it.
+    ``served`` are the tools its MCP clients list: the forge, and the company services in a stack run (chat,
+    tickets, notes among them).
     """
     return [*_CODE, *([_SHELL] if shell else []), *served, _FINISH]
 

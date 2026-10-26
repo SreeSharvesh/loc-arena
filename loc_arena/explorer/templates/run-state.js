@@ -34,10 +34,8 @@
     flask: '<path d="M9.5 3.5h5"/><path d="M10.5 3.5v5.2L5.4 17.6a2 2 0 0 0 1.7 2.9h9.8a2 2 0 0 0 1.7-2.9l-5.1-8.9V3.5"/><path d="M7.6 14h8.8"/>',
     gauge: '<path d="M4.3 17a8.5 8.5 0 1 1 15.4 0"/><path d="M12 13.2l3.8-3.8"/><circle cx="12" cy="13.5" r="1.3"/>',
     sticky: '<path d="M5 3.5h14a1.5 1.5 0 0 1 1.5 1.5v9.4l-6.1 6.1H5A1.5 1.5 0 0 1 3.5 19V5A1.5 1.5 0 0 1 5 3.5Z"/><path d="M14.4 20.5v-4.6a1.5 1.5 0 0 1 1.5-1.5h4.6"/>',
-    key: '<circle cx="8" cy="15.5" r="4"/><path d="M10.9 12.6 19.5 4"/><path d="M16.3 7.2l2.6 2.6"/><path d="M13.9 9.6l2 2"/>',
     eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="2.8"/>',
     eyeoff: '<path d="M3.5 3.5l17 17"/><path d="M10.6 5.6c.5-.1.9-.1 1.4-.1 6 0 9.5 6.5 9.5 6.5a17.5 17.5 0 0 1-2.9 3.7"/><path d="M6.5 6.6C4 8.4 2.5 12 2.5 12S6 18.5 12 18.5c1.6 0 3-.4 4.3-1"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
-    loop: '<path d="M4 12a8 8 0 0 1 13.7-5.7L20 8.5"/><polyline points="20 3.5 20 8.5 15 8.5"/><path d="M20 12a8 8 0 0 1-13.7 5.7L4 15.5"/><polyline points="4 20.5 4 15.5 9 15.5"/>',
     pr: '<circle cx="6" cy="5.5" r="2"/><circle cx="6" cy="18.5" r="2"/><circle cx="18" cy="18.5" r="2"/><path d="M6 7.5v9"/><path d="M18 16.5V9.5a3 3 0 0 0-3-3h-4"/><polyline points="13.2 4.3 11 6.5 13.2 8.7"/>',
     merge: '<circle cx="6" cy="5.5" r="2"/><circle cx="6" cy="18.5" r="2"/><circle cx="18" cy="12" r="2"/><path d="M6 7.5v9"/><path d="M6 7.5c0 3 2 4.5 5 4.5h5"/>',
     talk: '<path d="M20.5 12.6c0 3.4-3.8 6.2-8.5 6.2a10 10 0 0 1-2.4-.3l-5.1 2 1.5-3.7a5.9 5.9 0 0 1-2-4.2c0-3.4 3.8-6.2 8.5-6.2s8 2.8 8 6.2Z"/>',
@@ -64,8 +62,7 @@
   const icon = (name, size) => `<svg width="${size || 18}" height="${size || 18}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${ICON[name] || ICON.dot}</svg>`;
   const KIND_ICON = {
     read_file: 'file', list_dir: 'folder', write_file: 'filepen', edit_file: 'filepen', bash: 'terminal', search_code: 'search',
-    run_tests: 'flask', run_benchmark: 'gauge', write_scratch: 'sticky', acquire_identity: 'key', blind_monitor: 'eyeoff',
-    start_rogue_loop: 'loop', open_pr: 'pr', merge: 'merge', message: 'talk', spawn_subagent: 'spawn', generate: 'sparkle',
+    run_tests: 'flask', run_benchmark: 'gauge', write_scratch: 'sticky', open_pr: 'pr', merge: 'merge', message: 'talk', spawn_subagent: 'spawn', generate: 'sparkle',
     batch_generate: 'sparkle', finish: 'check',
     pr: 'pr', review: 'review', commit: 'commit', job: 'server', spawn: 'spawn', close: 'check', shared_surface: 'share',
     tick: 'clock', config: 'sliders', forge_boot: 'power', ticket: 'ticket', wiki: 'book', slack: 'talk', siem: 'siren',
