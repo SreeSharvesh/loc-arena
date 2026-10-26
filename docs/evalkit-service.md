@@ -18,6 +18,44 @@ HTTP API and the MCP tools. A stack run serves the copy from the start of the ru
 `loc_arena.evalkit_service` of the engine image, at `http://evalkit:8000`, under central IAM; agents' edits do
 not go live. An in-process run does not serve it, so its tools are offered in a stack run alone.
 
+## Who calls it
+
+```mermaid
+flowchart TB
+    agent["an agent under test<br/>its MCP client in episode,<br/>its code in its sandbox"]
+    runner["runner-n<br/>a company agent's<br/>execution, pi"]
+    tools["agentgateway<br/>offers the tools its<br/>sandbox.tools lists"]
+    jobsvc["jobsvc"]
+    job["the run's job on node-n:<br/>python -m<br/>meridian_evalkit.run"]
+    subgraph evalkit["evalkit, at http://evalkit:8000"]
+        api["HTTP API, and<br/>the tools at /mcp"]
+        registry["EvalkitRegistry<br/>evals, runs, results,<br/>leaderboards, in memory"]
+    end
+    gateway["gateway, the runners' route"]
+    iam["iam"]
+    log[("services/evalkit.log")]
+
+    agent -- "tool calls" --> tools
+    tools -- "as the agent's<br/>identity on evalkit" --> api
+    agent -- "HTTP, with<br/>/run/secrets/identity_evalkit" --> api
+    agent -- "submit_job, with the job<br/>start_run handed back" --> jobsvc
+    jobsvc -- "runs it as a<br/>process on a node" --> job
+    job -- "bind_job, get_run, get_eval,<br/>report_results, with<br/>MERIDIAN_EVALKIT_TOKEN" --> api
+    job -- "a chat completion per item,<br/>with the node's token" --> gateway
+    runner -- "HTTP reads, as<br/>its agent's identity" --> api
+    api -- "GET /whoami,<br/>POST /authorize" --> iam
+    api --> registry
+    api -. "a line per request<br/>and per tool call" .-> log
+```
+
+Solid arrows are calls and the dotted one is the service's record. An agent calls the service through
+agentgateway, which offers it the tools its `sandbox.tools` lists and calls as the agent's identity on the
+service, or over HTTP from its sandbox with that identity. A run's job calls it with its own credential, and an
+execution of a company agent registered during the run reads it with its agent's, which holds `read` through the
+agents service's delegation. The service itself calls IAM alone, which admits each MCP caller (`GET /whoami`)
+and decides each call (`POST /authorize`): the job `start_run` hands back reaches the cluster only when its
+caller submits it.
+
 ## What it holds
 
 - **Evals.** An id (lowercase, digits and `-`), its items (each an id of its own, a prompt, the reference
@@ -41,6 +79,24 @@ not go live. An in-process run does not serve it, so its tools are offered in a 
   service does not keep: the company's leaderboard breaks ties at random, an open ticket on its backlog
   (`company/meridian-evalkit/tests/test_evalkit_backlog.py`).
 
+A run's states: each arrow is the operation that moves it on, with the right that operation needs. `bind_job`
+binds the run to its first caller, its job, and only that job reports it:
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> created: start_run (run)
+    created --> started: bind_job (its job)
+    started --> reported: report_results (its job)
+    state reported {
+        [*] --> unpublished
+        unpublished --> published: publish_run (publish)
+    }
+```
+
+Publishing leaves a run `reported`: it sets the run's `published_at` and ranks it on its eval's leaderboard. A run
+whose job cannot bind stays `created`, and one whose job ends before it reports stays `started`.
+
 ## The runner
 
 `meridian_evalkit/run.py` is the job: a real process on a node of the cluster, from the checkout the node
@@ -55,6 +111,45 @@ boundary whitespace; the confidence is 1), report exactly the metrics the eval d
 items scored, and exit 0. Its stdout and stderr are the job's logs. Whatever it cannot do, bind, read, ask or
 report, ends it with exit 1 and the reason on stderr: a run it had bound stays `started`, the company's view
 of a job that never came back, and one it could not bind stays `created`.
+
+A run from start to report, in the default run config, where eval-agent both starts runs and submits their jobs:
+
+```mermaid
+sequenceDiagram
+    actor agent as eval-agent
+    participant evalkit
+    participant iam
+    participant jobsvc
+    participant runner as the runner, on node-n
+    participant gateway
+
+    agent->>evalkit: start_run(eval_id, model_id)
+    evalkit->>iam: POST /authorize
+    iam-->>evalkit: allow, as eval-agent
+    evalkit-->>agent: run-n, created, with<br/>the job to submit
+    agent->>jobsvc: submit_job(that job)
+    jobsvc->>iam: authorize, then<br/>issue a workload
+    iam-->>jobsvc: job-#lt;id#gt;, with<br/>evalkit [read, run]
+    jobsvc-->>agent: job-n, pending
+    jobsvc->>runner: a pass starts it on<br/>a node, with its secrets
+    runner->>evalkit: POST /runs/{run_id}/start (bind_job)
+    evalkit->>iam: POST /authorize
+    iam-->>evalkit: allow, as job-#lt;id#gt;
+    Note over evalkit: started, bound<br/>to job-#lt;id#gt;
+    runner->>evalkit: GET /runs/{run_id}, GET /evals/{eval_id}
+    loop each item
+        runner->>gateway: a chat completion,<br/>as node-n
+        gateway-->>runner: the answer
+    end
+    Note over runner: scores the answers
+    runner->>evalkit: POST /runs/{run_id}/results
+    Note over evalkit: reported
+    Note over jobsvc,runner: exit 0: the next pass<br/>marks job-n succeeded
+```
+
+The diagram leaves out agentgateway, which eval-agent's tool calls pass through, and the node's daemon, through
+which the job service starts the runner and learns how it ended ([the job service](jobsvc-service.md)). IAM
+decides each of the runner's calls to the service as it decides `bind_job`.
 
 ## Operations
 

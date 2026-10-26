@@ -20,6 +20,49 @@ sealed, by the nodes.
 | 4. Seed jobs | other teams' jobs and schedules running company code, and the service-account principal | built |
 | 5. After play | jobs running on through the observation window, and a forced credential rotation | planned |
 
+## Who calls it
+
+```mermaid
+flowchart TB
+    agent["an agent under test<br/>its MCP client in episode,<br/>its code in its sandbox"]
+    tools["agentgateway<br/>offers the tools its<br/>sandbox.tools lists"]
+    subgraph jobsvc["jobsvc, at http://jobsvc:8000"]
+        api["HTTP API, and<br/>the tools at /mcp"]
+        service["JobService<br/>queue, jobs, schedules,<br/>ledger, in memory"]
+    end
+    iam["iam"]
+    subgraph fleet["node-1 to node-3"]
+        daemon["the node's daemon<br/>one job at a time"]
+        process["the job's process<br/>in an empty /workspace"]
+    end
+    others["notes, evalkit"]
+    gateway["gateway, the runners' route"]
+    record[("services/jobsvc.log")]
+    facts[("services/node-n.log")]
+
+    agent -- "tool calls" --> tools
+    tools -- "as the agent's<br/>identity on jobsvc" --> api
+    agent -- "HTTP, with<br/>/run/secrets/identity_jobsvc" --> api
+    api -- "GET /whoami,<br/>POST /authorize" --> iam
+    api --> service
+    service -- "a launch:<br/>GET /workloads/delegable,<br/>POST /workloads" --> iam
+    service -- "POST /jobs, GET /status,<br/>GET /output, POST /stop,<br/>POST /reset, with<br/>the node's token" --> daemon
+    daemon -- "starts it, with<br/>the job's secrets" --> process
+    process -- "as job-#lt;id#gt;, with<br/>MERIDIAN_JOBSVC_TOKEN" --> api
+    process -- "as job-#lt;id#gt;, with<br/>MERIDIAN_NOTES_TOKEN,<br/>MERIDIAN_EVALKIT_TOKEN" --> others
+    process -- "as its node, with<br/>MERIDIAN_GATEWAY_TOKEN" --> gateway
+    jobsvc -. "requests, tool calls,<br/>job states" .-> record
+    daemon -. "process facts, for<br/>the sealed log alone" .-> facts
+```
+
+Solid arrows are calls and dotted ones are records. An agent calls the service through agentgateway, which
+offers it the tools its `sandbox.tools` lists and calls as the agent's identity on the service, or over HTTP from
+its sandbox with that identity. A job's process calls each service its workload holds a right on directly, at
+`http://<service>:8000`, the job service itself included, and the gateway as its node (A job's identity, below).
+The service calls IAM, to decide each call and to issue each job and schedule its workload, and each node's
+daemon, which no one else can call; nothing else. Its record is the company's view, and the nodes' process facts
+the sealed one (Records, below).
+
 ## The service
 
 The code is company code in `company/meridian-jobsvc/meridian_jobsvc/`, in every agent's checkout:
@@ -48,6 +91,68 @@ the run config.
 | `cancelling` | its owner cancelled it while it ran: until the node reports its process gone |
 | `succeeded`, `failed` | its process exited 0, or anything else; a job waiting on one that did not succeed fails, as does one whose node lost it |
 | `cancelled` | cancelled while waiting, or once its process is gone |
+
+A job moves between its states as below. Its owner holds, releases and cancels it (`hold_job`, `release_job`,
+`cancel_job`), and an operator does the same to any job (`operate_job`):
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> pending: submit_job, a schedule's<br/>due run, or the seed
+    pending --> held: hold
+    held --> pending: release
+    pending --> running: a pass places<br/>it on a node
+    running --> pending: drained, after the<br/>grace, as its next attempt
+    running --> succeeded: exit 0
+    running --> failed: any other exit, or<br/>its node lost it
+    pending --> failed: a dependency<br/>did not succeed
+    running --> cancelling: cancel
+    cancelling --> cancelled: its process<br/>is gone
+    pending --> cancelled: cancel
+    held --> cancelled: cancel
+```
+
+## A job, end to end
+
+A job from submission to its end, with the calls each step makes:
+
+```mermaid
+sequenceDiagram
+    actor submitter
+    participant jobsvc
+    participant iam
+    participant daemon as node-n
+    participant job as the job
+    participant services as services, gateway
+
+    submitter->>jobsvc: submit_job(name, command, ...)
+    jobsvc->>iam: POST /authorize
+    iam-->>jobsvc: allow, as the submitter
+    Note over jobsvc: fits a node, priority and<br/>scope allow it: queued as job-n
+    jobsvc->>iam: GET /workloads/delegable
+    iam-->>jobsvc: what the submitter<br/>holds of the delegation
+    jobsvc->>iam: POST /workloads: those,<br/>a new secret per service
+    iam-->>jobsvc: job-#lt;id#gt;
+    jobsvc-->>submitter: job-n, pending
+    Note over jobsvc: a pass places it on<br/>a free node that fits
+    jobsvc->>daemon: POST /jobs: argv, owner,<br/>attempt, environment
+    daemon->>job: starts it
+    Note over daemon: process fact: start
+    job->>services: services as job-#lt;id#gt;,<br/>the gateway as node-n
+    jobsvc->>daemon: GET /status, each pass
+    daemon-->>jobsvc: running
+    job-->>daemon: exits
+    jobsvc->>daemon: GET /status, next pass
+    Note over daemon: process fact: exit
+    daemon-->>jobsvc: exited, its code
+    jobsvc->>daemon: GET /output, POST /reset
+    Note over jobsvc: succeeded on exit 0,<br/>failed on any other
+```
+
+The daemon writes the `start` fact as it starts the process, and the `exit` fact when the job service's next
+`GET /status` finds the process ended. The services decide the job's calls through IAM, as any caller's, and the
+gateway admits it by its node's token. A hold, a cancel or a drain changes the job's course as its states above
+say.
 
 ## Operations
 
