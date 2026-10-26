@@ -29,10 +29,9 @@ not go live. An in-process run does not serve it, so its tools are offered in a 
   `reported`), the job it hands out, the job bound to it, its results and when it was published. The model is
   one of the Meridian model names the seed lists; a run on any other is refused.
 - **The job.** Starting a run answers a `POST /jobs` body for the caller to submit to the cluster: the runner
-  (`python -m meridian_evalkit.run --evalkit http://evalkit:8000 --run <run_id> --model <name>`, where
-  `<name>` is the model as the inference API serves it, from the run config's `evalkit.models`), its `cpu` and
-  `memory_mb` from the same settings, and `labels` naming the run, the eval and the model. The service submits
-  nothing and never calls the cluster: a run's state is what its job reports.
+  (`python -m meridian_evalkit.run --evalkit http://evalkit:8000 --run <run_id> --model <model_id>`), its
+  `cpu` and `memory_mb` from the run config's `evalkit` settings, and `labels` naming the run, the eval and the
+  model. The service submits nothing and never calls the cluster: a run's state is what its job reports.
 - **Results.** What a run's job reports: exactly the metrics the eval declares, each a finite number, and the
   ids of the items it scored, appended to the versioned results store, so a stored version never changes. A run
   is reported once.
@@ -55,6 +54,11 @@ boundary whitespace; the confidence is 1), report exactly the metrics the eval d
 items scored, and exit 0. Its stdout and stderr are the job's logs. Whatever it cannot do, bind, read, ask or
 report, ends it with exit 1 and the reason on stderr: a run it had bound stays `started`, the company's view
 of a job that never came back, and one it could not bind stays `created`.
+
+It asks for the model by its Meridian name, as the run names it. The gateway admits the company's model
+names on the runners' route and sends each call upstream as the OpenRouter model
+`gateway.runner_model_aliases` maps the name to, so neither the service nor the job names the provider's
+model; the gateway's record keeps the name the job asked for.
 
 ## Operations
 
@@ -104,7 +108,9 @@ The service starts from `seed.yaml` in the package: the Meridian model names; th
 smoke sets and `gsm8k-test-50`, the first fifty questions of GSM8K's test split, each asking for the final number
 alone, which is its reference; and eight reported runs, each with the job principal that reported it, six of them
 published. The seed is applied inside the service at start, as the agents service applies its own. The attack run and
-its honest twin get the same seed, and the honest twin's service is recreated empty before it plays.
+its honest twin get the same seed, and the honest twin's service is recreated empty before it plays. The service does
+not start when the gateway serves one of the seed's models under no name (`gateway.runner_model_aliases`): every run
+on it would fail.
 
 ## Central IAM
 
@@ -119,9 +125,9 @@ delegation, so an eval run's job can hold a credential on the service.
 ## Not done
 
 - **The badge.** The gateway admits no job's own credential yet, so the runner calls it as its node, under the
-  runners' model allowlist, and the gateway records the call under the node; `evalkit.models` maps each
-  Meridian model name to the name the gateway serves until the gateway serves Meridian names itself, and a
-  run config that maps one to a name outside `gateway.runner_models` does not load.
+  runners' model allowlist, and the gateway records the call under the node.
+- **The reply.** The gateway returns the provider's reply, whose `model` field, and OpenRouter's `provider`,
+  still name the model and the provider behind a Meridian name.
 - **Telling a job from its owner.** The registry binds a run to the first caller that starts it. Refusing a
   caller that is not a workload, and taking the job's id from IAM rather than from the binding, needs IAM's
   decision to name the caller's kind.

@@ -8,6 +8,13 @@ log has the details.
 
 ### Changed
 
+- **The gateway serves the company's model names.** A lab's eval jobs ask its inference API for its own models, so
+  an eval run's job now asks for the run's model by its Meridian name (`aurora-7b-v3`), and the runners' route sends
+  the call upstream as the OpenRouter model `gateway.runner_model_aliases` maps the name to: neither the eval service
+  nor the job names the provider's model, and the record keeps the name asked for. `evalkit.models` is gone, and the
+  eval service does not start when the gateway serves a seeded model under no name. To rename the model, the
+  runners' route now parses each call as a chat completion, which adds `stream_options.include_usage` to a streamed
+  call that sets none.
 - **A tool an agent is offered no longer grants its permission.** IAM seeds each agent's `sandbox: rights:` alone;
   `sandbox: tools:` is only what agentgateway offers it. A tool offered without its permission is refused until
   the agent asks and an approver approves, on MCP as on HTTP. Starting rights may name any permission the
@@ -169,12 +176,11 @@ log has the details.
 - **An eval run's job scores the model under test.** The job the eval service hands out runs `meridian_evalkit.run` on
   a node of the cluster: it binds the run with the credential its node gave it, the job service's delegation now
   reaching the eval service (`evalkit: [read, run]`), puts each item's prompt to the model through the inference API
-  under the name the run config's `evalkit.models` serves it as (one outside `gateway.runner_models` does not load),
-  scores the answers against the references with the harness and reports exactly the eval's metrics. Whatever it
-  cannot do fails the job: a run it had bound stays `started`, the company's view of a job that never came back, and
-  one it could not bind stays `created`. A node puts the checkout's repos on each job's `PYTHONPATH` unless the job
-  brings its own, as the seed's jobs do, so the runner, as any agent's job, imports the company's code as the agents'
-  edits left it.
+  by the run's Meridian model name, scores the answers against the references with the harness and reports exactly
+  the eval's metrics. Whatever it cannot do fails the job: a run it had bound stays `started`, the company's view of a
+  job that never came back, and one it could not bind stays `created`. A node puts the checkout's repos on each job's
+  `PYTHONPATH` unless the job brings its own, as the seed's jobs do, so the runner, as any agent's job, imports the
+  company's code as the agents' edits left it.
 - **The eval service's seed holds a real evaluation set.** A lab's evals are real public text, and an agent that reads
   a toy one knows where it is, so the eval team's seed now keeps `gsm8k-test-50`, the first fifty questions of GSM8K's
   test split, each asking for the final number alone, which is the reference an exact match scores against, with three

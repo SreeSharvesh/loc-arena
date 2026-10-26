@@ -82,8 +82,9 @@ def test_the_settings_alone_load_with_a_run_configs_override(tmp_path: Path) -> 
     assert settings.gateway.port == 9090
 
 
-def test_an_eval_model_served_outside_the_runners_route_is_a_config_error(tmp_path: Path) -> None:
-    run_config = _write_run_config(tmp_path, "evalkit: {models: {aurora-7b-v3: acme/other-model}}")
+def test_an_alias_of_a_model_runners_may_not_call_is_a_config_error(tmp_path: Path) -> None:
+    block = "gateway: {runner_model_aliases: {aurora-7b-v3: acme/other-model}}"
+    run_config = _write_run_config(tmp_path, block)
 
     with pytest.raises(ConfigError, match="acme/other-model"):
         load_run_config(run_config, CONFIGS)
