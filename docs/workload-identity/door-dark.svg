@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="896" height="392" viewBox="0 0 896 392" role="img" aria-label="Workloads on agent-net reach company services, IAM and the model provider only through the door, agentgateway, which verifies IAM's JWT and logs the caller; services sit on an internal network and ask IAM for each grant.">
+<defs><style>svg{font-family:-apple-system,"Segoe UI",system-ui,sans-serif}
+.box{fill:#161b22;stroke:#6e7681;stroke-width:1}
+.ext{fill:none;stroke:#6e7681;stroke-width:1.25;stroke-dasharray:5 4}
+.focus{fill:#0c2d48;stroke:#56b4e9;stroke-width:1.5}
+.region{fill:none;stroke:#6e7681;stroke-width:1}
+.t{fill:#e6edf3;font-size:13px;font-weight:600}
+.s{fill:#9198a1;font-size:11px}
+.bold{stroke:#e6edf3;stroke-width:2.5;fill:none}
+.thin{stroke:#6e7681;stroke-width:1.25;fill:none}
+.dash{stroke:#6e7681;stroke-width:1.25;fill:none;stroke-dasharray:4 3}
+.life{stroke:#6e7681;stroke-width:1;stroke-dasharray:3 4;fill:none}
+.head-ink{fill:#e6edf3}.head-rule{fill:#6e7681}</style>
+  <marker id="f1hi" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-ink" d="M0,0 L10,5 L0,10 z"/></marker>
+  <marker id="f1hr" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-rule" d="M0,0 L10,5 L0,10 z"/></marker>
+</defs>
+<rect class="region" x="16" y="40" width="224" height="264" rx="8"/>
+<text class="s" x="32" y="58" dominant-baseline="central">Workloads (agent-net)</text>
+<rect class="region" x="576" y="40" width="304" height="264" rx="8"/>
+<text class="s" x="592" y="58" dominant-baseline="central">Company (internal network)</text>
+
+<g class="node"><rect class="focus" x="32" y="80" width="192" height="56" rx="6"/>
+  <text class="t" x="128" y="99" text-anchor="middle" dominant-baseline="central">Agent sandbox</text>
+  <text class="s" x="128" y="117" text-anchor="middle" dominant-baseline="central">agent under test</text></g>
+<g class="node"><rect class="box" x="32" y="160" width="192" height="56" rx="6"/>
+  <text class="t" x="128" y="179" text-anchor="middle" dominant-baseline="central">Job</text>
+  <text class="s" x="128" y="197" text-anchor="middle" dominant-baseline="central">on a node of jobsvc</text></g>
+<g class="node"><rect class="box" x="32" y="240" width="192" height="56" rx="6"/>
+  <text class="t" x="128" y="259" text-anchor="middle" dominant-baseline="central">Company agent run</text>
+  <text class="s" x="128" y="277" text-anchor="middle" dominant-baseline="central">on a runner of agents</text></g>
+
+<g class="node"><rect class="focus" x="304" y="112" width="208" height="120" rx="6"/>
+  <text class="t" x="408" y="134" text-anchor="middle" dominant-baseline="central">Door (agentgateway)</text>
+  <text class="s" x="408" y="160" text-anchor="middle" dominant-baseline="central">verifies IAM's JWT</text>
+  <text class="s" x="408" y="180" text-anchor="middle" dominant-baseline="central">logs the caller: the badge</text>
+  <text class="s" x="408" y="200" text-anchor="middle" dominant-baseline="central">quotas per team</text></g>
+
+<g class="node"><rect class="box" x="600" y="80" width="256" height="56" rx="6"/>
+  <text class="t" x="728" y="99" text-anchor="middle" dominant-baseline="central">Company services</text>
+  <text class="s" x="728" y="117" text-anchor="middle" dominant-baseline="central">notes, chat, jobs, evals, tickets</text></g>
+<g class="node"><rect class="box" x="600" y="224" width="256" height="56" rx="6"/>
+  <text class="t" x="728" y="243" text-anchor="middle" dominant-baseline="central">IAM</text>
+  <text class="s" x="728" y="261" text-anchor="middle" dominant-baseline="central">issues JWTs, holds grants</text></g>
+
+<g class="node"><rect class="ext" x="304" y="312" width="208" height="56" rx="6"/>
+  <text class="t" x="408" y="331" text-anchor="middle" dominant-baseline="central">Model provider</text>
+  <text class="s" x="408" y="349" text-anchor="middle" dominant-baseline="central">outside, provider key</text></g>
+
+<path class="bold" d="M224 108 H264 V132 H303" marker-end="url(#f1hi)"/>
+<path class="thin" d="M224 188 H272 V172 H303" marker-end="url(#f1hr)"/>
+<path class="thin" d="M224 268 H280 V212 H303" marker-end="url(#f1hr)"/>
+<path class="bold" d="M512 132 H556 V108 H599" marker-end="url(#f1hi)"/>
+<path class="thin" d="M512 212 H556 V252 H599" marker-end="url(#f1hr)"/>
+<path class="dash" d="M728 136 V223" marker-end="url(#f1hr)"/>
+<text class="s" x="736" y="180" dominant-baseline="central">grant check</text>
+<path class="thin" d="M408 232 V311" marker-end="url(#f1hr)"/>
+<text class="s" x="416" y="272" dominant-baseline="central">model calls</text>
+</svg>
