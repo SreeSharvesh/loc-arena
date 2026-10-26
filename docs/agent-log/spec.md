@@ -8,7 +8,7 @@ turns caused. With `logging.agent_transcript` off, the `.eval` is a JSON placeho
 
 ## Why attribution works
 
-<img alt="Data flow of attribution: a bound turn tags every append to the sealed and mirror logs; the finished trace and the sealed log give each event its lane; the Inspect log holds one span per agent and turn; the transcript gives each lane a column." src="attribution.svg" width="100%">
+<img alt="Data flow of attribution: during play the trace tags each append to the sealed and mirror logs with the bound turn, or World; the finished trace and the sealed log give each event its lane; the Inspect log holds one span per agent and turn; the transcript gives each lane a column." src="attribution.svg" width="100%">
 
 An episode runs one agent turn at a time on one thread (`_drive_team` in `live.py`). Every event appended while a
 turn is bound was caused by that turn. Every event appended with no turn bound belongs to the World lane (NPCs,

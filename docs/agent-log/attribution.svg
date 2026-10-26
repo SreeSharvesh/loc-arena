@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="800" height="904" viewBox="0 0 800 904" role="img" aria-label="Data flow of attribution: a bound turn tags every append to the sealed and mirror logs; the finished trace and the sealed log give each event its lane; the Inspect log holds one span per agent and turn; the transcript gives each lane a column.">
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="904" viewBox="0 0 800 904" role="img" aria-label="Data flow of attribution: during play the trace tags each append to the sealed and mirror logs with the bound turn, or World; the finished trace and the sealed log give each event its lane; the Inspect log holds one span per agent and turn; the transcript gives each lane a column.">
 <style>
   svg { --ink:#1f2328; --muted:#59636e; --rule:#8c959f; --panel:#f6f8fa;
         --accent:#2f4bd6; --accent-bg:#e9edfd;
