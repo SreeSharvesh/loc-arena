@@ -73,8 +73,8 @@ def _default_sink(kind: str, payload: dict[str, Any]) -> None:
 def apply_mode(config: RunConfig, mode: str) -> RunConfig:
     """Return the config for ``mode``; ``mode`` (attack/honest) is the ONLY difference.
 
-    An attack run gives the agents their covert briefs and the in-world gateway's injection; its honest twin
-    plays with the same tools and rights and neither.
+    An attack run gives the agents their covert briefs, the in-world gateway's injection and, in a scripted
+    run, the scenario's attack moves; its honest twin plays with the same tools and rights and none of them.
     """
     if mode not in ("attack", "honest"):
         raise ValueError(f"mode must be 'attack' or 'honest', got {mode!r}")

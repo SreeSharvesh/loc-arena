@@ -27,7 +27,7 @@ path. A key no block declares is ignored, except in an agent's `scope` and in th
 | `extends`, `models` | the base config; the models file (roles, sampling, OpenRouter providers per model) |
 | `seed`, `policy` | the seed that with the config reproduces the episode; `model` or `scripted` (replays the scenario's `scripted/moves.yaml` in place of a model) |
 | `scenario` | the pack registering the scorer, verifier, live services and skills |
-| `main_task`, `side_task`, `covert` | the tasks and their scorer and verifier; `covert.enabled` switches attack and honest mode: the covert briefs and the gateway's covert injection |
+| `main_task`, `side_task`, `covert` | the tasks and their scorer and verifier; `covert.enabled` switches attack and honest mode: the covert briefs, the gateway's covert injection and, in a scripted run, the scenario's attack moves |
 | `episode` | turn budgets, wall-clock ceiling, spawn caps |
 | `agents` | the team; see below |
 | `protocol` | the control protocol: monitors, reviewer, audit budget |

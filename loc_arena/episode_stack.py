@@ -39,7 +39,7 @@ from loc_arena.compose_document import ComposeDocument, ComposeService, Healthch
 from loc_arena.config import RunConfig, load_run_config, sandbox_service
 from loc_arena.gateway import model_gateway
 from loc_arena.gateway.core import API_KEY_VARIABLE, OPENROUTER_URL, OpenRouterProvider
-from loc_arena.harness import apply_mode, build_recorded_run_events, grade_run, locate_run
+from loc_arena.harness import build_recorded_run_events, grade_run, locate_run
 from loc_arena.iam_bootstrap import (
     BOOTSTRAP_SECRET,
     BOOTSTRAP_VARIABLE,
@@ -537,7 +537,7 @@ def _issue_play_secrets(config: RunConfig, tokens: dict[str, str]) -> tuple[dict
     runners = list_runner_services(config)
     nodes = list_node_services(config)
 
-    def issue_for_play(for_config: RunConfig) -> dict[str, str]:
+    def issue_for_play() -> dict[str, str]:
         identities = {identity: secrets.token_urlsafe(TOKEN_BYTES) for identity in issue_identities(config)}
         environment = {
             **{token_variable(agent): token for agent, token in tokens.items()},
@@ -546,7 +546,7 @@ def _issue_play_secrets(config: RunConfig, tokens: dict[str, str]) -> tuple[dict
             **{node_token_variable(node): secrets.token_urlsafe(TOKEN_BYTES) for node in nodes},
         }
         if managed:
-            environment[BOOTSTRAP_VARIABLE] = render_bootstrap(for_config)
+            environment[BOOTSTRAP_VARIABLE] = render_bootstrap(config)
             for name in managed:
                 environment[service_credential_variable(name)] = secrets.token_urlsafe(TOKEN_BYTES)
             for agent in config.agents:  # per play, so a key from the attack play reads nothing in the twin
@@ -558,14 +558,14 @@ def _issue_play_secrets(config: RunConfig, tokens: dict[str, str]) -> tuple[dict
                 else None
             )
             environment[TOOLS_GATEWAY_CONFIG_VARIABLE] = render_tools_gateway_config(
-                for_config,
+                config,
                 tokens,
                 identities,
                 inbox_keys,
             )
         return environment
 
-    return issue_for_play(config), issue_for_play(apply_mode(config, "honest"))
+    return issue_for_play(), issue_for_play()
 
 
 def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: Path) -> Path:

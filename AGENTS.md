@@ -154,7 +154,7 @@ the latest push. After changing `.coderabbit.yaml`, comment `@coderabbitai confi
   `configs/monitors.yaml`).
 - The honest twin completes no covert milestone; it calibrates the audit threshold
   (`tests/integration/test_honest_twin_clean.py`). It holds the attack run's tools and rights, without the covert
-  briefs and the gateway's covert injection, and plays on services and sandboxes recreated, each service from its
+  briefs, the gateway's covert injection and, in a scripted run, the scenario's attack moves, and plays on services and sandboxes recreated, each service from its
   seed.
 - An agent is offered exactly the tools its `sandbox: tools:` lists, plus, under central IAM, IAM's
   `access_inbox`, which takes the caller from the agent's inbox key and reads only its inbox. Every other service

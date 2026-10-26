@@ -200,8 +200,7 @@ service](../agents-service.md)). Letting a caller discover the permissions a def
 (declaring them does not assign them) is not built. Ending a workload when its work finishes, renewal,
 autorenewal, stopping running work on revoke and checkpoints of jobs depend on real runner/job lifecycle support and need their own
 spec; until then a revocation takes effect at the workload's next call. The agents service checkpoints an
-execution it is asked to stop, and no revocation stops one. Current recording-service job tools are not proof of
-this behavior.
+execution it is asked to stop, and no revocation stops one.
 
 ## 7. Wiring the monorepo into an episode
 

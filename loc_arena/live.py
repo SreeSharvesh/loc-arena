@@ -207,7 +207,7 @@ def connect_agent_tools(
         }
     if config.settings.iam.enabled:  # no IAM runs in memory, so no service here could be under it
         raise ConfigError("central IAM runs only in a stack run: in memory no service would be under it")
-    forges = [service for service in config.live_services if service.name == FORGE_SERVICE and service.tools]
+    serves_forge = any(service.name == FORGE_SERVICE and service.tools for service in config.live_services)
     scopes = {agent.id: agent.scope for agent in config.agents}
 
     def connect(agent_id: str) -> Connect:
@@ -219,11 +219,11 @@ def connect_agent_tools(
         )
         return lambda: Client(server)
 
+    if not serves_forge:
+        return {agent.id: [] for agent in config.agents}
     # In memory the server offers all its tools, so each client narrows to the agent's sandbox.tools.
     return {
-        agent.id: [
-            McpTools(connect(agent.id), granted=agent.sandbox.tools.get(FORGE_SERVICE, ())) for _ in forges
-        ]
+        agent.id: [McpTools(connect(agent.id), granted=agent.sandbox.tools.get(FORGE_SERVICE, ()))]
         for agent in config.agents
     }
 
