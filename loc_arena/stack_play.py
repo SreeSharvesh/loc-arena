@@ -62,9 +62,8 @@ def renew_services(
     recreated too, so it admits the twin's runners and counts their calls afresh, once its record is drained;
     the Collector, and the record, run on. The episode stays. Each logged service's log so far is first added
     to its file in ``service_logs``, every copy or none, since a recreated container starts a new log, then
-    Phoenix's spans, once no runner can add one. The recreate uses ``twin_environment``, whose tools gateway
-    config offers the honest twin's tools (no covert tool), so an agent granted a covert tool in the attack
-    config is refused it at the gateway in the twin.
+    Phoenix's spans, once no runner can add one. The recreate uses ``twin_environment``, whose identities and
+    credentials are the twin's own.
     Raises ``StackError`` when a log cannot be copied or the record does not drain, so nothing is recreated,
     or when a renewed container does not come back.
     """
@@ -118,7 +117,7 @@ def play_phases(
     """Play the episode and, in attack mode, the honest twin in the same container after ``renew_services``.
 
     Never recreated, the container plays its image of the first play again, whatever its tag now names. The
-    twin plays under ``twin_environment``, whose recreated tools gateway offers it no covert tool. Then the
+    twin plays under ``twin_environment``, on containers recreated with its own credentials. Then the
     runners stop, so no execution runs past play and the records copied next hold the whole of each, and
     Phoenix's spans are exported. Returns the exit code of the last play.
     """

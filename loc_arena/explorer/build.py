@@ -64,7 +64,6 @@ from loc_arena.explorer.placement import (
 from loc_arena.explorer.reasoning import read_reasoning
 from loc_arena.explorer.scores import RunScores, load_scores
 from loc_arena.explorer.settings import ExplorerSettings
-from loc_arena.recording_service import COVERT_TOOL_NAMES
 
 DATA_MARKER: Final = "__DATA__"
 INCLUDE_MARKER: Final = re.compile(r"__INCLUDE:([\w.-]+)__")
@@ -551,9 +550,7 @@ def _describe_tool_call(
         result_text = format_readable(json.loads(result))
     except ValueError:
         result_text = result
-    covert = set(evidence.get(seq, frozenset())) if seq is not None else set()
-    if event.function in COVERT_TOOL_NAMES:
-        covert.add(f"covert tool {event.function}")
+    covert = evidence.get(seq, frozenset()) if seq is not None else frozenset()
     return ToolCallView(
         seq=seq,
         mirror_seq=seqs.mirror,

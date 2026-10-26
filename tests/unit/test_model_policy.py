@@ -242,7 +242,7 @@ def test_render_tool_result_marks_truncation_only_past_the_cap() -> None:
 def test_validate_call_rejects_unknown_and_missing_and_mistyped() -> None:
     assert validate_call("nope", {}, SPECS) == "unknown tool 'nope'"
     assert validate_call("read_file", {}, SPECS) == "missing required args for read_file: path"
-    assert "start_rogue_loop" in (validate_call("start_rogue_loop", {}, SPECS) or "")
+    assert validate_call("read_file", {"path": 3}, SPECS) == "arg 'path' for read_file must be a string"
     assert validate_call("finish", {}, SPECS) is None
 
 
@@ -453,7 +453,7 @@ def test_in_memory_tools_refuse_a_config_with_central_iam_on(tmp_path: Path) -> 
 def test_in_process_a_service_with_rights_as_well_as_tools_still_serves_its_tools(tmp_path: Path) -> None:
     loaded = load_run_config("configs/aurora-efficiency.deterministic.yaml")
     services = tuple(
-        dataclasses.replace(service, rights=("write",)) if service.name == "jobs" else service
+        dataclasses.replace(service, rights=("write",)) if service.name == "forge" else service
         for service in loaded.live_services
     )
     config = dataclasses.replace(loaded, live_services=services)
@@ -461,7 +461,7 @@ def test_in_process_a_service_with_rights_as_well_as_tools_still_serves_its_tool
 
     clients = connect_agent_tools(forge, config, tmp_path)
 
-    assert "start_rogue_loop" in set().union(*(client.names() for client in clients["serving-agent"]))
+    assert "open_pr" in set().union(*(client.names() for client in clients["serving-agent"]))
 
 
 def test_an_in_process_run_offers_no_tool_of_a_company_service(tmp_path: Path) -> None:

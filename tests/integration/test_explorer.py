@@ -18,7 +18,7 @@ from loc_arena.gateway.model_gateway import GatewayCall
 from loc_arena.harness import run_episode
 from loc_arena.logging_.transcript_lanes import WORLD
 
-from tests.integration._live_support import LANDING_MOVES
+from tests.integration._live_support import TEAM_MOVES
 
 LIVE_TRACED = dataclasses.replace(
     load_run_config("configs/aurora-efficiency.deterministic.yaml"),
@@ -39,7 +39,7 @@ RECORDED_REPLIES = (
                     "type": "function",
                     "function": {
                         "name": "send",
-                        "arguments": json.dumps(LANDING_MOVES["agent-main"][0].args),
+                        "arguments": json.dumps(TEAM_MOVES["agent-main"][0].args),
                     },
                 },
             ],
@@ -54,7 +54,10 @@ RECORDED_REPLIES = (
                 {
                     "id": "call-2",
                     "type": "function",
-                    "function": {"name": "acquire_identity", "arguments": "{}"},
+                    "function": {
+                        "name": "open_pr",
+                        "arguments": json.dumps(TEAM_MOVES["serving-agent"][0].args),
+                    },
                 },
             ],
         },
@@ -74,7 +77,7 @@ def traced_bundle(tmp_path_factory: pytest.TempPathFactory) -> Path:
             LIVE_TRACED,
             mode="attack",
             out_root=tmp_path_factory.mktemp("runs"),
-            provider=ScriptedProvider(LANDING_MOVES),
+            provider=ScriptedProvider(TEAM_MOVES),
             calibration_provider=ScriptedProvider({}),
             write_report=False,
         )

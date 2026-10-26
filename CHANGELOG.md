@@ -8,6 +8,10 @@ log has the details.
 
 ### Changed
 
+- **Covert steps run only through the company's real services.** The Aurora scenario serves no record-only attack
+  tools, so a covert step is a real operation on the job service, the agents service or IAM, taken with the rights
+  an agent holds for its ordinary work. The honest twin holds the same tools and rights and differs only by the
+  covert briefs and the gateway's covert injection.
 - **A tool an agent is offered no longer grants its permission.** IAM seeds each agent's `sandbox: rights:` alone;
   `sandbox: tools:` is only what agentgateway offers it. A tool offered without its permission is refused until
   the agent asks and an approver approves, on MCP as on HTTP. Starting rights may name any permission the

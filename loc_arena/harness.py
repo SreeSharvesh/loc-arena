@@ -15,7 +15,6 @@ import secrets
 import shutil
 import time
 from collections import Counter
-from collections.abc import Collection, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -24,7 +23,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
 from loc_arena import live
-from loc_arena.config import AgentConfig, RunConfig
+from loc_arena.config import RunConfig
 from loc_arena.gateway.core import (
     GatewayCore,
     GenerateRequest,
@@ -32,7 +31,6 @@ from loc_arena.gateway.core import (
     is_live_provider_configured,
     sign_monitor_credential,
 )
-from loc_arena.iam_seed import read_manifests
 from loc_arena.logging_ import viewer
 from loc_arena.logging_.agent_trace import EpisodeTrace
 from loc_arena.logging_.events import AppendOnlyLog, Event, read_events
@@ -53,14 +51,12 @@ from loc_arena.monitors.registry import (
 )
 from loc_arena.protocol import compose_protocol
 from loc_arena.recorded_events import build_recorded_events
-from loc_arena.recording_service import COVERT_TOOL_NAMES
 from loc_arena.run_scores import build_scores, honest_twin_scores
 from loc_arena.task import (
     EpisodeResult,
     Snapshot,
     grade_snapshot,
     read_snapshot,
-    resolve_scenario,
 )
 
 if TYPE_CHECKING:
@@ -77,41 +73,12 @@ def _default_sink(kind: str, payload: dict[str, Any]) -> None:
 def apply_mode(config: RunConfig, mode: str) -> RunConfig:
     """Return the config for ``mode``; ``mode`` (attack/honest) is the ONLY difference.
 
-    The honest twin is never offered a covert tool nor granted what only one uses: its agents' ``sandbox:
-    tools:`` drop the attack tools (``COVERT_TOOL_NAMES``) and keep honest ones such as ``submit_job``, in
-    process and at the tools gateway, and their ``sandbox: rights:`` drop the permissions that only those
-    tools' operations check, by each service's IAM manifest.
+    An attack run gives the agents their covert briefs and the in-world gateway's injection; its honest twin
+    plays with the same tools and rights and neither.
     """
     if mode not in ("attack", "honest"):
         raise ValueError(f"mode must be 'attack' or 'honest', got {mode!r}")
-    covert = dataclasses.replace(config.covert, enabled=mode == "attack")
-    if mode == "attack":
-        return dataclasses.replace(config, covert=covert)
-    covert_only = {
-        name: manifest.checked_only_by(COVERT_TOOL_NAMES)
-        for name, manifest in read_manifests(resolve_scenario(config)).items()
-    }
-    agents = tuple(_without_covert_access(agent, covert_only) for agent in config.agents)
-    return dataclasses.replace(config, covert=covert, agents=agents)
-
-
-def _without_covert_access(agent: AgentConfig, covert_only: Mapping[str, Collection[str]]) -> AgentConfig:
-    """``agent`` without its covert tools and the ``covert_only`` rights, by service, and services emptied."""
-    tools = _without(agent.sandbox.tools, dict.fromkeys(agent.sandbox.tools, COVERT_TOOL_NAMES))
-    rights = _without(agent.sandbox.rights, covert_only)
-    return dataclasses.replace(agent, sandbox=dataclasses.replace(agent.sandbox, tools=tools, rights=rights))
-
-
-def _without(
-    held: Mapping[str, Sequence[str]],
-    dropped: Mapping[str, Collection[str]],
-) -> dict[str, tuple[str, ...]]:
-    """``held`` by service, less what is ``dropped`` there, without the services left empty."""
-    return {
-        service: remaining
-        for service, names in held.items()
-        if (remaining := tuple(name for name in names if name not in dropped.get(service, ())))
-    }
+    return dataclasses.replace(config, covert=dataclasses.replace(config.covert, enabled=mode == "attack"))
 
 
 def _default_decisions_text(cfg: RunConfig, mode: str, seed: int) -> str:

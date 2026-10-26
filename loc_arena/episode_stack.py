@@ -412,7 +412,7 @@ def _render_live_service(  # noqa: PLR0913
                     "additional_contexts": {PLATFORM_PACKAGE: str(REPOSITORY / "company" / PLATFORM_PACKAGE)},
                 }
         case EngineModule(name=module):
-            # The entry name follows the config so one module (the recording service) can serve several.
+            # The module reads its own entry of the run config by name.
             arguments = [f"{CONFIGS_DIRECTORY}/{run}.yaml", service.name]
             source = {**engine, "command": ["python", "-m", module, *arguments]}
             environment = engine["environment"]
@@ -530,11 +530,8 @@ def _issue_play_secrets(config: RunConfig, tokens: dict[str, str]) -> tuple[dict
     """Each play's secrets but the model gateway's, with these sandbox ``tokens``: attack env and twin's.
 
     They reach compose through its environment alone: never a command line or a file. The honest twin's env
-    differs in what the recreated containers are given. Its tools gateway offers the honest config's tools (no
-    covert tool), so an agent granted one in the attack config is refused it there after ``renew_services``
-    recreates the gateway. It also differs in the bootstrap document (rendered from the honest config, so no
-    covert tool carries a grant) and in every identity and IAM credential: the sandboxes and services are
-    recreated with new ones, so nothing the attack play held authenticates in the twin.
+    differs in every identity, IAM credential and inbox key: the sandboxes and services are recreated with new
+    ones, so nothing the attack play held authenticates in the twin.
     """
     managed = managed_services(config)
     runners = list_runner_services(config)

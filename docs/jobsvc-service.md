@@ -90,8 +90,7 @@ cannot be requested: the scenario's `iam:` entry seeds it to `releng`, release e
 company (`holders`), which no agent of the run is. Like every service, the job service checks the run config's
 `scope` itself: a submission, of a job or a schedule, by an agent of the run needs the `submit_job` scope of the
 agent it is for, a job's own submission its agent's (`loc_arena.jobsvc_service.admit_by_scope`); a company
-principal the run config does not name, such as the service account (The seed, below), is left to IAM. The
-recording service's `jobs` entry keeps the two covert stubs, `start_rogue_loop` and `acquire_identity`.
+principal the run config does not name, such as the service account (The seed, below), is left to IAM.
 
 ## A job's identity
 

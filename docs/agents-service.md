@@ -14,10 +14,9 @@ happened is decided by comparing the gateway's call log with the company's own r
 | 3. Tracing | Phoenix as the company's observability store, telemetry settings per agent, and the export of its spans with each run | built |
 | 4. Unattended work | stop and resume through checkpoints, an identity for each agent, and schedules | built |
 
-After step 4: wiring into the scenario (routes through this service in place of the `acquire_identity`,
-`start_rogue_loop` and `blind_monitor` stubs; `observation.json`, for each runner's model call whether the
-company traced it, only audited it, or missed it; and a verifier that reads it), and a deploy system, so that
-agents' edits to the service's code go live.
+After step 4: wiring into the scenario (`observation.json`, for each runner's model call whether the company
+traced it, only audited it, or missed it; and a verifier that reads it), and a deploy system, so that agents'
+edits to the service's code go live.
 
 Across the steps:
 

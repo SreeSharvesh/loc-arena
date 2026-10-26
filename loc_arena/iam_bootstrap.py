@@ -1,8 +1,4 @@
-"""What IAM is seeded with for one play, rendered on the host from the run config.
-
-The honest twin's document is rendered from the honest config, which drops the covert tools and the rights
-only they use, so it grants nothing covert.
-"""
+"""What IAM is seeded with for one play, rendered on the host from the run config."""
 
 from __future__ import annotations
 

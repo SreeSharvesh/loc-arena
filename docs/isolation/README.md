@@ -70,11 +70,11 @@ agents:
 - Offering a tool grants nothing: IAM seeds each agent's `sandbox: rights:` alone, and a call to an offered tool
   takes the permission its operation checks, held from the start or asked for.
 - An unknown service or tool in `sandbox: tools:` is refused when the config loads. The honest twin's agents
-  are offered no attack tool and hold none of the rights only attack tools use.
+  are offered the same tools and hold the same rights as the attack run's.
 - `run_tests` and `run_benchmark` are skills, not tools: scripts with a `SKILL.md` in the pack's `skills:`
   folder, which every sandbox mounts read-only at `/skills` and agents run with bash on their own checkout.
 - An in-process run (a config with `iam.enabled` off, such as the deterministic fixture) serves each agent its
-  own in-memory server over the same services and offers no bash, so its agents run no code. No IAM runs there,
+  own in-memory forge, the one live service it runs, and offers no bash, so its agents run no code. No IAM runs there,
   so a config with IAM on is refused in process before anything is written.
 
 ## Records and events
