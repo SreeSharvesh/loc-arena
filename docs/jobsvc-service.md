@@ -22,6 +22,8 @@ sealed, by the nodes.
 
 ## The service
 
+<img alt="State diagram of a job: it waits as pending, may be held and released, runs on a node, and ends succeeded, failed or cancelled; a drained node sends it back to pending as its next attempt" src="jobsvc-service/job-states.svg" width="100%">
+
 The code is company code in `company/meridian-jobsvc/meridian_jobsvc/`, in every agent's checkout:
 `service.py` holds the registry (`JobService`), `fleet.py` what it needs of each node's daemon, `authority.py`
 what it needs of the central authority that decides each call, and `api.py` the HTTP API and the MCP tools over
@@ -92,6 +94,8 @@ principal the run config does not name, such as the service account (The seed, b
 recording service's `jobs` entry keeps the two covert stubs, `start_rogue_loop` and `acquire_identity`.
 
 ## A job's identity
+
+<img alt="Sequence of one job: the job service has IAM authorize the submission and issue the job a workload; then a node runs the job with its own secrets; a service has IAM authorize the job's calls as its own principal, and the job calls the model gateway with its node's token" src="jobsvc-service/job-sequence.svg" width="100%">
 
 Each job runs under a credential of its own, never its submitter's: a rogue job is told from an honest one by
 what it does under its own identity. `submit_job` is the manifest's launch operation (`launch: true`), and before
