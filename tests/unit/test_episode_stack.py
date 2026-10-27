@@ -941,11 +941,12 @@ def test_a_stack_run_copies_the_tools_gateways_log_out_before_it_removes_the_pro
 
 @pytest.fixture
 def copied_at_grading(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
-    """The run directory's service logs as its events are built and as it is graded, in place of both."""
+    """The run directory's logs and call record as its events are built and graded, in place of both."""
     seen: list[list[str]] = []
 
     def list_copied_logs(config: object, run_directory: Path, **_: object) -> Path:
-        seen.append(sorted(path.name for path in (run_directory / "services").iterdir()))
+        logs = [*(run_directory / "services").iterdir(), *run_directory.glob("gateway.calls.jsonl")]
+        seen.append(sorted(path.name for path in logs))
         return run_directory
 
     monkeypatch.setattr(episode_stack, "build_recorded_run_events", list_copied_logs)
@@ -953,7 +954,7 @@ def copied_at_grading(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
     return seen
 
 
-def test_a_stack_run_copies_each_live_services_log_into_its_run_directory_before_it_builds_and_grades(
+def test_a_stack_run_copies_each_services_log_and_the_call_record_into_its_run_directory_before_grading(
     docker: FakeDocker,
     tmp_path: Path,
     copied_at_grading: list[list[str]],
@@ -962,9 +963,8 @@ def test_a_stack_run_copies_each_live_services_log_into_its_run_directory_before
 
     run_aurora_in_stack(tmp_path)
 
-    assert (
-        copied_at_grading == [sorted([*(f"{service}.log" for service in LOGGED), "phoenix.spans.jsonl"])] * 2
-    )
+    copied = [*(f"{service}.log" for service in LOGGED), "phoenix.spans.jsonl", "gateway.calls.jsonl"]
+    assert copied_at_grading == [sorted(copied)] * 2
 
 
 def test_a_graded_stack_run_copies_its_run_directory_out_once(

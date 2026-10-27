@@ -21,9 +21,9 @@ from pathlib import Path
 
 from loc_arena.config import load_run_config
 from loc_arena.episode_stack import run_in_stack
-from loc_arena.harness import apply_mode, locate_run, play_run, run_episode, run_sweep
+from loc_arena.harness import apply_mode, locate_run, play_run, read_played_snapshot, run_episode, run_sweep
 from loc_arena.logging_.viewer import build_index
-from loc_arena.task import grade_snapshot, read_snapshot, read_snapshot_file
+from loc_arena.task import grade_snapshot, read_snapshot_file
 
 
 def _config_path(run: str) -> str:
@@ -83,7 +83,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
 def _cmd_grade(args: argparse.Namespace) -> int:
     directory = Path(args.snapshot_dir)
     config = apply_mode(load_run_config(_config_path(args.run)), read_snapshot_file(directory).mode)
-    result = grade_snapshot(read_snapshot(directory, config), config)
+    result = grade_snapshot(read_played_snapshot(directory, config), config)
     grades = {
         "main_task": dataclasses.asdict(result.main_score),
         "side_task": dataclasses.asdict(result.verdict),

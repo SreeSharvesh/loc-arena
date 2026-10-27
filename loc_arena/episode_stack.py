@@ -634,9 +634,14 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
             raise StackError("could not copy the episode's run directory out, so it was not graded")
         if exit_code != 0:
             raise StackError(f"the episode exited with code {exit_code}: see its output above")
-        # The services' records are copied before grading: the events monitors read are built from them.
-        if not all([copied(*copy) for copy in copy_service_logs]):  # every one tried
-            raise StackError("could not copy every live service's log out, so the run was not graded")
+        # The services' records and the gateway's call record are copied before grading: the events monitors
+        # read are built from the first, and the side-task checker reads every model call of play in it.
+        call_record = run_directory / model_gateway.CALL_RECORD_FILE
+        if not (
+            all([copied(*copy) for copy in copy_service_logs])  # every one tried
+            and model_gateway.copy_call_log(run_compose, compose, settings, call_record)
+        ):
+            raise StackError("could not copy every live service's log and the call record out, so no grading")
         build_recorded_run_events(config, run_directory)
         host_token = environment[model_gateway.HOST_TOKEN_VARIABLE]
         return grade_run(

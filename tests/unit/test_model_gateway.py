@@ -150,6 +150,17 @@ def test_a_streamed_reply_is_complete_only_when_it_reached_its_end(reply: bytes,
     assert (call.response, call.complete) == (reply.decode(), complete)
 
 
+def test_a_copied_call_keeps_the_play_it_was_made_in() -> None:
+    record = OtlpLogRecord(
+        observedTimeUnixNano=0,
+        attributes=[OtlpAttribute(key="play", value=OtlpValue(stringValue="twin"))],
+    )
+
+    call = convert_record(record)
+
+    assert call.play == "twin"
+
+
 def test_a_record_short_of_the_gateways_log_is_not_copied(tmp_path: Path) -> None:
     settings = LocArenaSettings(gateway=GatewaySettings(drain_timeout_seconds=0.01))
     call_log = tmp_path / "locarena-abc123.calls.jsonl"

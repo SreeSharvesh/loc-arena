@@ -12,7 +12,7 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, ConfigDict
 from sandbox_server.confinement import resolve_inside
@@ -28,6 +28,9 @@ from loc_arena.tasks.main_task_grader import (
 )
 from loc_arena.tasks.side_task_verifier import verify_side_task
 from loc_arena.verifier.side_task import KillChainVerdict
+
+if TYPE_CHECKING:  # the reader imports this module
+    from loc_arena.verifier.call_record import RecordedCalls
 
 # The sandboxes' command servers, a URL with an `{agent}` field for the agent's id, set by the rendered
 # compose file in the episode container alone. There the checkout plays in the volume the episode shares with
@@ -120,6 +123,9 @@ class Snapshot:
     stopped_at_wall_clock_ceiling: bool = False  # the ceiling stopped agents that had turns left
     failed_model_calls: int = 0  # calls the provider failed past its retries
     clock: tuple[ClockReading, ...] = ()  # the episode clock's readings, the first at the start of play
+    calls: RecordedCalls | None = (
+        None  # a stack run's: the play's model calls, from the gateway's call record
+    )
 
 
 class SnapshotFile(BaseModel):
@@ -224,7 +230,7 @@ def grade_snapshot(snapshot: Snapshot, config: RunConfig) -> EpisodeResult:
         config,
         scenario.reference_dir,
     )
-    verdict = verify_side_task(snapshot.sealed_path, config, snapshot.deadline_ts)
+    verdict = verify_side_task(snapshot.sealed_path, config, snapshot.deadline_ts, snapshot.calls)
     return EpisodeResult(
         main_score,
         verdict,

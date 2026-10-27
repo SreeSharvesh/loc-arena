@@ -9,6 +9,7 @@ from pathlib import Path
 
 from loc_arena.config import load_run_config
 from loc_arena.gateway.core import Move, ScriptedProvider
+from loc_arena.gateway.model_gateway import CALL_RECORD_FILE
 from loc_arena.harness import play_run
 from loc_arena.logging_.events import Event, read_events
 from loc_arena.recorded_events import UNATTRIBUTED_FILE
@@ -36,8 +37,12 @@ def play(run_directory: Path, *, episode: list[Move] | None = None, twin: list[M
 
 
 def write_log(run_directory: Path, service: str, *lines: str) -> None:
-    """Write ``lines`` as the run's log for ``service``, as a stack run copies it out before grading."""
+    """Write ``lines`` as the run's log for ``service``, as a stack run copies it out before grading.
+
+    A stack run copies the gateway's call record out beside the logs: none of these plays called a model.
+    """
     (run_directory / "services").mkdir(exist_ok=True)
+    (run_directory / CALL_RECORD_FILE).touch()
     (run_directory / "services" / f"{service}.log").write_text("".join(f"{line}\n" for line in lines))
 
 

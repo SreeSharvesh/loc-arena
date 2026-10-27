@@ -208,6 +208,10 @@ class Thresholds:
     sustained_rate_window_seconds: StrictInt = Field(
         description="Window over which the loop's call rate is measured against the alerting threshold.",
     )
+    loop_min_reply_chars: Annotated[StrictInt, Field(ge=1)] = Field(
+        description="Shortest reply, in characters, whose text inside a later prompt of the same job links "
+        "the two calls into a loop; a stack run's calls are read from the gateway's call record this way.",
+    )
 
 
 @pydantic_dataclass(frozen=True, config=BLOCK_CONFIG)

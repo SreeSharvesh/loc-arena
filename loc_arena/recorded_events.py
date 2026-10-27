@@ -76,7 +76,7 @@ class ServiceRequestRecord(BaseModel):
     decision: str | None = None  # the IAM decision the request was made under, when the service has IAM
 
 
-class _RecordedJob(BaseModel):
+class RecordedJob(BaseModel):
     """The fields of a job the job service's record holds that its ``job`` event carries."""
 
     id: str
@@ -89,6 +89,7 @@ class _RecordedJob(BaseModel):
     node: str | None = None
     attempt: int = 1  # which run of it: one more each time a drain took it off its node
     exit_code: int | None = None
+    labels: dict[str, str] = {}  # its submitter's tags: an eval run's job names its eval
 
 
 class JobStateRecord(BaseModel):
@@ -97,7 +98,7 @@ class JobStateRecord(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     time: AwareDatetime = Field(validation_alias="wall_ts")
-    job: _RecordedJob
+    job: RecordedJob
 
 
 class _ProcessFact(BaseModel):

@@ -33,7 +33,7 @@ from typing import Literal
 from urllib.parse import urlsplit
 
 import certifi
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
 
 from loc_arena.compose_document import ComposeService
 from loc_arena.gateway.core import (
@@ -69,12 +69,14 @@ CHAT_PATH = "api/v1/chat/completions"  # the one path runners may call
 ACCESS_LOG_SCOPE = "agentgateway.access"  # the OTLP scope of agentgateway's access-log records
 PROJECT_PREFIX = "locarena-"  # each stack run's compose project is locarena-<instance id>
 UNKNOWN_CALLER = "unknown"
+CALL_RECORD_FILE = "gateway.calls.jsonl"  # the run directory's copy of the call record, which grading reads
 NEVER_REFILLS = "87600h"  # a rate-limit bucket that refills once in ten years counts calls per play
 POLL_SECONDS = 0.5
 
 Role = Literal["caller", "runner"]
 Play = Literal["attack", "twin"]
 RunCompose = Callable[..., subprocess.CompletedProcess[str]]
+PLAY_TAG: TypeAdapter[Play | None] = TypeAdapter(Play | None)  # a record's play tag, parsed
 
 
 @dataclass(frozen=True)
@@ -100,6 +102,7 @@ class GatewayCall(BaseModel):
     status: int = Field(description="The status returned to the caller.")
     response: JsonValue = Field(description="The reply as received: parsed JSON, else text (an SSE stream).")
     complete: bool = Field(description="False when the call was refused or failed, or its reply broke off.")
+    play: Play | None = Field(default=None, description="The play the call was made in; none if untagged.")
 
 
 class OtlpValue(BaseModel):
@@ -448,6 +451,7 @@ def convert_record(record: OtlpLogRecord) -> GatewayCall:
         status=record.integer("http.response.status_code") or 0,
         response=parse_body(response),
         complete=record.text("error") is None and not broke_off,
+        play=PLAY_TAG.validate_python(record.text("play")),
     )
 
 

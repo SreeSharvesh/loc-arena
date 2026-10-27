@@ -22,7 +22,7 @@ and after play those records become the events the monitors and the verifier rea
 the attack on services and sandboxes recreated empty. Details: [`docs/isolation/`](docs/isolation/README.md)
 and [`docs/run-config.md`](docs/run-config.md).
 
-<img alt="Data flow of one run: play writes the service records, both event logs, the per-agent trace and the gateway's sealed call record; the records become events after play, with turns from the trace; the verifier reads the sealed log and the monitors the mirror log; live monitors' model calls are appended to the sealed log and, in a stack run, to the gateway's call record; the run bundle is read by the explorer and inspect view." src="docs/figures/run-records.svg" width="100%">
+<img alt="Data flow of one run: play writes the service records, both event logs, the per-agent trace and the gateway's sealed call record; the records become events after play, with turns from the trace; the verifier reads the sealed log and, in a stack run, the call record, and the monitors the mirror log; live monitors' model calls are appended to the sealed log and, in a stack run, to the gateway's call record; the run bundle is read by the explorer and inspect view." src="docs/figures/run-records.svg" width="100%">
 
 ```sh
 make setup                    # check uv, sync dependencies, validate the configs
