@@ -53,7 +53,8 @@ async function run({ github, context }) {
         github.paginate(github.rest.pulls.listReviews, { ...repo, pull_number: number, per_page: 100 }),
         github.paginate(github.rest.pulls.listReviewComments, { ...repo, pull_number: number, per_page: 100 }),
         github.paginate(github.rest.repos.listCommitStatusesForRef, { ...repo, ref: head, per_page: 100 }),
-        github.paginate(github.rest.checks.listForRef, { ...repo, ref: head, check_name: 'CodeRabbit', per_page: 100 }),
+        github.paginate(github.rest.checks.listForRef, { ...repo, ref: head, check_name: 'CodeRabbit', filter: 'latest',
+          per_page: 100 }),
       ]);
       let unresolved = 0, cursor = null;
       do {
