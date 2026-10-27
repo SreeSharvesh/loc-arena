@@ -223,6 +223,13 @@ def test_a_runner_naming_the_companys_model_reaches_the_upstream_as_the_model_it
     assert (echoed["body"]["model"], recorded(stack, COMPANY_MODEL).status) == (RUNNER_MODEL, 200)
 
 
+def test_a_runner_listing_fallback_models_is_refused(stack: Stack) -> None:
+    # OpenRouter answers from the first of `models` that answers, whatever model `model` names.
+    reply = call(stack, RUNNER_MODEL, token=RUNNER_TOKEN, path=RUNNERS, models=["costly/model"])
+
+    assert reply.status_code == 403
+
+
 def test_runners_make_their_calls_per_play_and_then_get_429(
     stack: Stack,
     company_model_reply: httpx2.Response,  # the play's first runner call

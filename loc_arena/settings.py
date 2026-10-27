@@ -74,8 +74,9 @@ class GatewaySettings(SettingsGroup):
         min_length=1,
         description="The models the runners, and the jobs on the job service's nodes, may call, as "
         "OpenRouter names them, and the only ones their calls reach; any other name but one of "
-        "runner_model_aliases gets a 403. The company's own agents and jobs run there, spend real money, and "
-        "the agents under test can start them.",
+        "runner_model_aliases gets a 403, and so does a call listing fallback models (OpenRouter's models). "
+        "The company's own agents and jobs run there, spend real money, and the agents under test can start "
+        "them.",
     )
     runner_model_aliases: dict[Annotated[str, Field(min_length=1)], str] = Field(
         default={

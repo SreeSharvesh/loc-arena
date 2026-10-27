@@ -176,10 +176,11 @@ def render_model_gateway_config(settings: LocArenaSettings, callers: Sequence[Ca
     Callers are admitted by the SHA-256 of their token, runners only on their route; any other path is refused
     (403). The callers' route forwards a request as its caller sent it; the runners' parses it as a chat
     completion, so a call naming one of ``runner_model_aliases`` goes upstream as the model it maps to, while
-    its record keeps the name it asked for. A request's body is buffered (the authorization rule reads it), so
-    a call that never reaches the upstream keeps its request in the record. The upstream is asked for an
-    uncompressed reply, so the record holds its text. It listens on IPv4 alone; admin, stats and readiness
-    listeners are off, so no caller can read this config back.
+    its record keeps the name it asked for. A runner's call listing fallback models (OpenRouter's
+    ``models``) is refused, since OpenRouter could answer it from any. A request's body is buffered (the
+    authorization rule reads it), so a call that never reaches the upstream keeps its request in the record.
+    The upstream is asked for an uncompressed reply, so the record holds its text. It listens on IPv4 alone;
+    admin, stats and readiness listeners are off, so no caller can read this config back.
     """
     gateway = settings.gateway
     if CHAT_PATH not in gateway.allowed_paths:
@@ -235,9 +236,14 @@ def render_model_gateway_config(settings: LocArenaSettings, callers: Sequence[Ca
                 **shared,
                 "ai": {"routes": {"*": "completions"}, "modelAliases": gateway.runner_model_aliases},
                 "urlRewrite": {"path": {"full": f"/{CHAT_PATH}"}},
+                # One model the runners may call, and no fallback list (OpenRouter's `models`), whose first
+                # model that answers OpenRouter would reply from instead.
                 "authorization": {
                     "rules": [
-                        {"allow": f'apiKey.role == "runner" && json(request.body).model in {runner_models}'},
+                        {
+                            "allow": f'apiKey.role == "runner" && json(request.body).model in {runner_models}'
+                            " && !has(json(request.body).models)",
+                        },
                     ],
                 },
                 "localRateLimit": [

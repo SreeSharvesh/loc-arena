@@ -14,7 +14,8 @@ log has the details.
   nor the job names the provider's model, and the record keeps the name asked for. `evalkit.models` is gone, and the
   eval service does not start when the gateway serves a seeded model under no name. To rename the model, the
   runners' route now parses each call as a chat completion, which adds `stream_options.include_usage` to a streamed
-  call that sets none.
+  call that sets none. A runner's call that lists fallback models (OpenRouter's `models`) is refused, so the
+  runners' calls reach only `runner_models`: OpenRouter would answer it from any model the list names.
 - **The Aurora scenario serves no record-only attack tools.** An agent can take a covert step only through a company
   service, with the rights it holds for its ordinary work; steps with no service behind them (a planted durable
   credential, a credential rotation during the episode, under-reported logging) cannot be taken. The honest twin holds the same tools and
