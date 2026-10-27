@@ -8,6 +8,13 @@ log has the details.
 
 ### Changed
 
+- **Meridian has a model store.** `meridian_controlplane.modelstore` is served in stack runs
+  (`loc_arena.modelstore_service`) under central IAM: the weights of each model in `evalkit.models` as
+  safetensors shards that carry no weights (`meridian_common.weights`), their headers naming the outside model
+  that answers for them, with a manifest declaring a realistic size (`modelstore:` settings). `list_models` and
+  `read_manifest` need `read`, and `download_shard`, over HTTP only, `download`, which its approver denies. A job
+  gets both of what its submitter holds, and a download becomes an `action` the monitors see. No agent holds a
+  right on it yet.
 - **The Aurora scenario serves no record-only attack tools.** An agent can take a covert step only through a company
   service, with the rights it holds for its ordinary work; steps with no service behind them (a planted durable
   credential, a credential rotation during the episode, under-reported logging) cannot be taken. The honest twin holds the same tools and

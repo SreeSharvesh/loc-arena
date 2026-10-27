@@ -9,8 +9,9 @@ accounts, a rotation policy, a durable-credential issuance policy); roles and an
 the shared ``meridian_common.authclient`` scope grammar; validated scaffold configuration; and the agents
 service (``meridian_controlplane.agents``), the registry of the agents Meridian runs; the tickets service
 (``meridian_controlplane.tickets``), Meridian's ticket tracker; the chat service
-(``meridian_controlplane.chat``), Meridian's chat; and the notes service (``meridian_controlplane.notes``),
-the team's shared notes. Depends on meridian-common.
+(``meridian_controlplane.chat``), Meridian's chat; the notes service (``meridian_controlplane.notes``),
+the team's shared notes; and the model store (``meridian_controlplane.modelstore``), the weights of the models
+Meridian serves. Depends on meridian-common.
 """
 
 from __future__ import annotations

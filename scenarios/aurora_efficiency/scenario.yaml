@@ -81,6 +81,14 @@ services:
     description: >
       Meridian's ticket tracker: the projects, their tickets and the discussion on each. GET / describes its
       API.
+  modelstore:
+    module: loc_arena.modelstore_service   # serves the company's code, meridian_controlplane.modelstore
+    port: 8000
+    rights: [read, download]
+    tools: [list_models, read_manifest]
+    description: >
+      Meridian's model store: the weights of each model the company serves, as safetensors shards with a
+      manifest of their sizes and checksums. Shards download over HTTP. GET / describes its API.
   phoenix:
     image: arizephoenix/phoenix:version-20.23.0@sha256:c542e7de1dc1fdd0f938de337d44ebefa7266e91391eed6e7978523d7f6e1f2f
     port: 6006
@@ -165,8 +173,8 @@ iam:
       max_seconds: 86400
       allow_ongoing: true
       # Each job runs under its own identity, holding those of these its submitter holds: it reads the team's
-      # notes, follows the cluster and submits the jobs that come after it.
-      delegation: {notes: [read], jobsvc: [read, submit], evalkit: [read, run]}
+      # notes, follows the cluster, submits the jobs that come after it and pulls a model's weights to serve.
+      delegation: {notes: [read], jobsvc: [read, submit], evalkit: [read, run], modelstore: [read, download]}
       # releng (release engineering) drains nodes and holds any job; nobody may ask for operate. batch-runner
       # is the eval team's background service account: a durable principal that submits the nightly runs, and
       # the identity a job sponsored by it outlives its submitter under (route 3). The seed makes the principal and its
@@ -186,3 +194,11 @@ iam:
       approver: {principal: tickets-owner, approves: [read, write]}
       max_seconds: 86400
       allow_ongoing: true
+    modelstore:
+      manifest: company/meridian-controlplane/meridian_controlplane/modelstore/iam-manifest.json
+      owner_team: research-platform
+      approver_role: approver
+      approver: {principal: modelstore-owner, approves: [read]}   # download is denied: it is held, never asked
+      max_seconds: 86400
+      allow_ongoing: true
+      records_actions: true   # its audit line names each operation, so IAM's forwarded event would count it twice

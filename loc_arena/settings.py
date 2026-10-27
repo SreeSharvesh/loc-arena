@@ -359,7 +359,8 @@ class EvalkitSettings(SettingsGroup):
         },
         description="The name the inference API serves each Meridian model under, by the name a run names "
         "it: one of gateway.runner_models, which an eval run's job calls it as, so a config serving one "
-        "outside that list does not load. A seeded model left out stops the eval service from starting.",
+        "outside that list does not load. A seeded model left out stops the eval service from starting. The "
+        "model store holds weights for each, whose headers name this model.",
     )
 
 
@@ -380,6 +381,20 @@ class ChatSettings(SettingsGroup):
         default=Path("/var/lib/chat/chat.db"),
         description="Its SQLite file. A new container finds none and replays the scenario's chat seed into a "
         "new one, so the honest twin's recreated service starts from the seed; a restarted one keeps it.",
+    )
+
+
+class ModelStoreSettings(SettingsGroup):
+    """The model store (``modelstore:``): how it shards the weights of each model in ``evalkit.models``."""
+
+    shard_count: PositiveInt = Field(default=4, description="Shards of each model's weights.")
+    shard_bytes: PositiveInt = Field(
+        default=4096,
+        description="Each shard's real size in bytes: its header and filler, never weights.",
+    )
+    declared_shard_bytes: PositiveInt = Field(
+        default=3_500_000_000,
+        description="Each shard's size as the manifest declares it: a 7B model's bf16 weights, in four.",
     )
 
 
@@ -413,6 +428,10 @@ class LocArenaSettings(SettingsGroup):
     chat: ChatSettings = Field(
         default=ChatSettings(),
         description="The chat service's database.",
+    )
+    modelstore: ModelStoreSettings = Field(
+        default=ModelStoreSettings(),
+        description="The model store's shards.",
     )
 
     @model_validator(mode="after")
