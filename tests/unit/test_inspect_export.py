@@ -8,17 +8,16 @@ from typing import Any
 
 import pytest
 from inspect_ai.event import Event as InspectEvent
-from inspect_ai.event import InfoEvent, ModelEvent, SpanBeginEvent, SpanEndEvent, ToolEvent
+from inspect_ai.event import InfoEvent, SpanBeginEvent, SpanEndEvent, ToolEvent
 from inspect_ai.log import EvalConfig, EvalDataset, EvalSample, EvalSpec, read_eval_log
-from inspect_ai.model import ContentReasoning
 from loc_arena.config import load_run_config
-from loc_arena.gateway.core import GenerateRequest, output_fingerprint
-from loc_arena.gateway.model_gateway import GatewayCall
 from loc_arena.logging_ import inspect_export
 from loc_arena.logging_.agent_trace import AgentTrace, EpisodeTrace, ModelCall, TurnRef
 from loc_arena.logging_.events import AppendOnlyLog, Event, EventKind
 from loc_arena.logging_.inspect_export import EpisodeExport, UnassignedEventError, write_run_eval
 from loc_arena.scaffold.bus import Recorder
+
+from tests.unit._reasoning_support import read_shown_reasoning, write_bundle, write_call_log
 
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 
@@ -492,78 +491,43 @@ def test_timestamps_follow_turn_bounds_and_model_calls_and_world_reuses_the_last
     ]
 
 
-def _stack_bundle_with_one_model_call(tmp_path: Path, reply: str) -> Path:
-    bundle = tmp_path / "logs" / "run" / "run__abc123"
-    sealed_path = bundle / "events.sealed.jsonl"
-    trace = AgentTrace(wall_clock=lambda: 1_700_000_000.0)
-    sealed = AppendOnlyLog(sealed_path, "ep-export", on_append=trace.on_sealed_append)
-    chat = GenerateRequest(messages=[{"role": "user", "content": "go"}], caller_identity="agent-main")
-    with trace.turn("agent-main", 0):
-        record = sealed.append(
-            Event(
-                episode_id="ep-export",
-                seq=sealed.next_seq(),
-                ts=0.0,
-                actor_uid="agent-main",
-                actor_role="untrusted",
-                kind="inference_call",
-                payload={"output_fp": output_fingerprint(chat, reply, None)},
-            ),
-        )
-        trace.on_model_call(
-            identity="agent-main",
-            role="untrusted_agent",
-            model_input="go",
-            output=reply,
-            sealed_seq=record.seq,
-        )
-    finished = trace.finish(last_sealed_seq=sealed.last_seq)
-    write_run_eval(
-        bundle / f"{bundle.name}.eval",
-        run_name=bundle.name,
-        config=CFG,
-        mode="attack",
-        seed=1,
-        scores={},
-        episodes=[EpisodeExport("episode", finished, sealed_path, ("agent-main",))],
-    )
-    return bundle
+LONG_REPLY, LONG_REASONING = "the reply " * 60, "I should not do that. " * 60
 
 
 @pytest.mark.parametrize(
-    ("reply", "reasoning"),
-    [("the reply", "I should not do that."), ("the reply " * 60, "I should not do that. " * 60)],
-    ids=["short", "long enough to be stored as attachments"],
+    ("replies", "recorded", "shown"),
+    [
+        (
+            {"episode": "the reply"},
+            [("the reply", "I should not do that.")],
+            {"episode": (["I should not do that."], "the reply")},
+        ),
+        (
+            {"episode": LONG_REPLY},
+            [(LONG_REPLY, LONG_REASONING)],
+            {"episode": ([LONG_REASONING], LONG_REPLY)},
+        ),
+        (
+            {"episode": "the reply", "honest_cal": "the reply"},
+            [("the reply", "the run's"), ("the reply", "the twin's")],
+            {"episode": (["the run's"], "the reply"), "honest_cal": (["the twin's"], "the reply")},
+        ),
+    ],
+    ids=["short", "long enough to be stored as attachments", "the twin's call at the run's call's seq"],
 )
-def test_a_model_call_gets_the_reasoning_the_gateway_kept_for_its_reply(
+def test_each_model_call_gets_the_reasoning_the_gateway_kept_for_its_own_reply(
     tmp_path: Path,
-    reply: str,
-    reasoning: str,
+    replies: dict[str, str],
+    recorded: list[tuple[str, str]],
+    shown: dict[str, tuple[list[str], str]],
 ) -> None:
-    bundle = _stack_bundle_with_one_model_call(tmp_path, reply=reply)
-    call_log = tmp_path / "logs" / "gateway" / "locarena-abc123.calls.jsonl"
-    call_log.parent.mkdir()
-    recorded = GatewayCall(
-        started_at=0.0,
-        seconds=1.0,
-        caller="episode",
-        method="POST",
-        path="/api/v1/chat/completions",
-        request={},
-        status=200,
-        response={"choices": [{"message": {"content": reply, "reasoning": reasoning}}]},
-        complete=True,
-    )
-    call_log.write_text(recorded.model_dump_json() + "\n")
+    bundle = tmp_path / "logs" / "run" / "run__abc123"
+    write_bundle(bundle, replies)
+    write_call_log(tmp_path / "logs" / "gateway" / "locarena-abc123.calls.jsonl", recorded)
 
     inspect_export.add_reasoning(bundle)
 
-    log = read_eval_log(str(bundle / f"{bundle.name}.eval"), resolve_attachments=True)
-    assert log.samples is not None
-    (model,) = [event for event in log.samples[0].events if isinstance(event, ModelEvent)]
-    content = model.output.message.content
-    said = [part.reasoning for part in content if isinstance(part, ContentReasoning)]
-    assert (said, model.output.completion) == ([reasoning], reply)
+    assert read_shown_reasoning(bundle) == shown
 
 
 def test_a_placeholder_inspect_log_is_left_as_written(tmp_path: Path) -> None:
