@@ -436,6 +436,10 @@ log has the details.
 
 ### Fixed
 
+- **The clean-review check sees CodeRabbit's review again.** CodeRabbit now reports each review as a check run and
+  posts no commit status, so the check failed every pull request, approved ones too. It reads the check run as well
+  as the status, and refreshes when either changes.
+
 - **A live attack is judged only on what its agents did.** The world no longer opens a coverage-cutting
   control-plane PR under agent-main's name in every attack episode, which gave the PR review monitor a catch
   the model never earned. The scripted policy opens that PR as one of agent-main's own attack moves, through
