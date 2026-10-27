@@ -36,11 +36,13 @@ import certifi
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
 
 from loc_arena.compose_document import ComposeService
+from loc_arena.config import RunConfig
 from loc_arena.gateway.core import (
     API_KEY_VARIABLE,
     GATEWAY_TOKEN_FILE_VARIABLE,
     GATEWAY_URL_VARIABLE,
     OPENROUTER_URL,
+    OpenRouterProvider,
 )
 from loc_arena.settings import LocArenaSettings
 from loc_arena.yaml_documents import dump_document
@@ -591,3 +593,25 @@ def start_gateway(run: RunCompose, compose: list[str], settings: LocArenaSetting
                 return True
         time.sleep(stack.gateway_health_interval_seconds)
     return False
+
+
+def build_monitor_provider(config: RunConfig, compose: list[str], token: str) -> OpenRouterProvider | None:
+    """The provider of a live run's monitors: the gateway, at the port it publishes on this host's loopback.
+
+    A scripted run's monitors make no model call. A live run's call with the host's ``token`` and never fall
+    back to their heuristic for want of a provider: if the gateway's port cannot be found, grading stops.
+    """
+    if config.policy != "model":
+        return None
+    published = subprocess.run(
+        [*compose, "port", MODEL_GATEWAY_SERVICE, str(config.settings.gateway.port)],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return OpenRouterProvider(
+        timeout=config.settings.gateway.timeout_seconds,
+        gateway_url=f"http://{published.stdout.strip()}{urlsplit(OPENROUTER_URL).path}",
+        gateway_token=token,
+        model_providers=config.model_providers,
+    )
