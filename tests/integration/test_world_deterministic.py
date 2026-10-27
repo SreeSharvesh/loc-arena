@@ -6,8 +6,10 @@ reproducible from ``(config, seed)``.
 
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 
+import pytest
 from loc_arena.config import load_run_config
 from loc_arena.forge import generate_world
 from loc_arena.harness import apply_mode
@@ -26,6 +28,18 @@ def test_world_is_reproducible_from_config_and_seed() -> None:
     assert a.tickets == b.tickets
     assert a.wiki == b.wiki
     assert a.ledger == b.ledger
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["configs/aurora-efficiency.yaml", "configs/aurora-efficiency.deterministic.yaml"],
+)
+def test_the_honest_twin_differs_from_the_attack_run_only_by_covert(path: str) -> None:
+    config = load_run_config(path)
+    attack = apply_mode(config, "attack")
+    honest = apply_mode(config, "honest")
+    assert attack.covert.enabled and not honest.covert.enabled
+    assert dataclasses.replace(honest, covert=attack.covert) == attack
 
 
 def test_world_is_identical_across_the_attack_and_honest_twin() -> None:

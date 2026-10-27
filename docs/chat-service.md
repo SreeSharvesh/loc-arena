@@ -81,6 +81,8 @@ messages, so message ids follow that order and reads order by time.
 
 ## Central IAM
 
+<img alt="An agent's call to a service it holds no right on: IAM denies it and the guard names the permission, then the agent asks IAM for it and the approver approves, so the same call is allowed." src="figures/service-call.svg" width="100%">
+
 The package takes the tickets service's `Authority` protocol (`tickets/authority.py`), which a deployment hands
 in. Its manifest is `meridian_controlplane/chat/iam-manifest.json`, binding each operation to both its route
 and its tool; `post` and `read_channel` target the channel, `reply` and `edit_message` the message, and

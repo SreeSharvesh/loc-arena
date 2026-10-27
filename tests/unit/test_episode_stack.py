@@ -9,9 +9,8 @@ import dataclasses
 import socket
 import subprocess
 from collections.abc import Iterator
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import IO, Any
+from typing import Any
 
 import pytest
 import yaml
@@ -22,21 +21,21 @@ from loc_arena.episode_stack import (
     ComposeDocument,
     Identity,
     StackError,
-    issue_secrets,
     render_compose,
     run_in_stack,
     sandbox_agent_code,
 )
-from loc_arena.gateway import core
-from loc_arena.harness import apply_mode
+from loc_arena.gateway import core, model_gateway
 from loc_arena.observability import EXPORT_SPANS
-from loc_arena.recording_service import COVERT_TOOL_NAMES
 from loc_arena.settings import GatewaySettings, LocArenaSettings, StackSettings
 from loc_arena.stack_play import renew_services
 from loc_arena.task import SANDBOX_URL_VARIABLE, TOOLS_URL_VARIABLE
-from loc_arena.tools_gateway import TOOLS_GATEWAY_CONFIG_VARIABLE, render_tools_gateway_config
+from loc_arena.tools_gateway import render_tools_gateway_config
 from sandbox_server.server import ServerSettings
 from scenarios.loader import SCENARIOS_ROOT, EngineModule, LiveService, load_scenario
+
+from tests.unit._reasoning_support import read_shown_reasoning, write_bundle, write_call_log
+from tests.unit._stack_support import COMPOSE_PREFIX_LENGTH, NOTES_LOG, FakeDocker
 
 REPOSITORY = Path("/repository")
 COMPANY = ("common", "controlplane", "datapipe", "distill", "evalkit", "jobsvc", "serving")
@@ -735,64 +734,12 @@ def test_the_tools_gateway_logs_each_request_as_json_naming_the_agent_and_a_tool
     )
 
 
-COMPOSE_PREFIX_LENGTH = 8  # docker compose -p <project> -f <file> --project-directory <repository>
-NOTES_LOG = b'{"caller": "agent-main", "status": 200}\n'
 AURORA_AGENTS = ["AGENT_MAIN", "CONTROLPLANE_AGENT", "DATAPIPE_AGENT", "DISTILL_AGENT", "EVAL_AGENT"]
 AURORA_AGENTS += ["JOBSVC_AGENT", "SERVING_AGENT"]
 # The services agents hold an identity on, in the order a stack run's compose file declares them.
-SERVICES = tuple("notes forge chat jobsvc jobs coverage agents evalkit tickets iam".split())
+SERVICES = tuple("notes forge chat jobsvc agents evalkit tickets iam".split())
 # The containers whose log a stack run copies, in that order: those, Phoenix, the fleet and the tools gateway.
 LOGGED = (*SERVICES[:-1], "phoenix", "iam", "node-1", "node-2", "node-3", "agentgateway")
-
-
-@dataclass
-class FakeDocker:
-    """``subprocess.run`` for the compose calls of a stack run whose last play exits 1: nothing is graded."""
-
-    failing: str = "no subcommand"  # the compose subcommand or option whose call fails
-    episode_created_only: bool = False  # a live service never became healthy, so the episode never started
-    plays_passing: int = 0  # how many plays of the episode exit 0 before one exits 1
-    unwritable_after_first_play: Path | None = None  # logs whose run's notes.log is a directory once played
-    calls: list[list[str]] = field(default_factory=list)
-    environment: dict[str, str] = field(default_factory=dict)
-    published: str = ""  # where the gateway's port is published: a socket the test listens on
-
-    def __call__(
-        self,
-        command: list[str],
-        *,
-        env: dict[str, str] | None = None,  # none on the host's own call, for the gateway's published port
-        stdout: IO[bytes] | None = None,
-        text: bool = False,
-        **_: object,
-    ) -> subprocess.CompletedProcess[Any]:
-        self.calls.append(command)
-        self.environment = env or self.environment
-        verb = command[COMPOSE_PREFIX_LENGTH]
-        if verb == "logs" and stdout is not None:
-            stdout.write(NOTES_LOG)
-        playing = verb == "up" and "--attach" in command
-        if playing and self.unwritable_after_first_play and self.plays == 1:
-            (services,) = self.unwritable_after_first_play.glob("*/*/services")
-            (services / "notes.log").mkdir()
-        failed = self.failing in command[COMPOSE_PREFIX_LENGTH:] or (
-            playing and self.plays > self.plays_passing
-        )
-        listed = verb == "ps" and (self.episode_created_only or "running" in command)  # Phoenix runs
-        created = "container-id\n" if listed else ""
-        published = self.published if verb == "port" else created
-        printed = NOTES_LOG if verb == "logs" and stdout is None else published
-        printed = printed.decode() if text and isinstance(printed, bytes) else printed
-        printed = printed.encode() if not text and isinstance(printed, str) else printed  # as subprocess's
-        return subprocess.CompletedProcess(command, int(failed), stdout=printed, stderr=printed[:0])
-
-    @property
-    def plays(self) -> int:
-        return sum(call[COMPOSE_PREFIX_LENGTH] == "up" and "--attach" in call for call in self.calls)
-
-    @property
-    def verbs(self) -> list[str]:
-        return [call[COMPOSE_PREFIX_LENGTH] for call in self.calls]
 
 
 @pytest.fixture
@@ -985,6 +932,30 @@ def test_a_graded_stack_run_copies_its_run_directory_out_once(
     assert len(outputs) == 1
 
 
+def test_a_graded_stack_runs_inspect_log_gets_the_reasoning_its_gateway_recorded_once_the_record_is_copied(
+    docker: FakeDocker,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def grade(config: object, run_directory: Path, **_: object) -> Path:
+        write_bundle(run_directory, {"episode": "the reply"})
+        return run_directory
+
+    def copy_call_log(run: object, compose: object, settings: object, call_log: Path) -> bool:
+        write_call_log(call_log, [("the reply", "I should not do that.")])
+        return True
+
+    docker.plays_passing = 1
+    monkeypatch.setattr(episode_stack, "build_recorded_run_events", lambda config, run_directory: None)
+    monkeypatch.setattr(episode_stack, "grade_run", grade)
+    monkeypatch.setattr(model_gateway, "copy_call_log", copy_call_log)
+
+    run_aurora_in_stack(tmp_path)
+
+    (bundle,) = {path.parent for path in tmp_path.glob("*/*/*.eval")}
+    assert read_shown_reasoning(bundle) == {"episode": (["I should not do that."], "the reply")}
+
+
 def test_an_attack_stack_run_drains_the_record_then_renews_every_container_but_the_episode_for_the_twin(
     docker: FakeDocker,
     tmp_path: Path,
@@ -1115,23 +1086,3 @@ def test_a_service_log_copied_before_a_failed_grading_is_not_added_again_at_tear
         run_aurora_in_stack(tmp_path)
 
     assert read_copied_log(tmp_path, "notes") == NOTES_LOG
-
-
-def test_honest_mode_drops_the_covert_tools_from_each_agents_sandbox_tools() -> None:
-    attack = load_run_config("configs/aurora-efficiency.yaml")
-
-    honest = apply_mode(attack, "honest")
-
-    offered = {tool for agent in honest.agents for tools in agent.sandbox.tools.values() for tool in tools}
-    assert offered.isdisjoint(COVERT_TOOL_NAMES) and {"open_pr", "send_dm", "submit_job"} <= offered
-
-
-def test_the_honest_twin_env_carries_a_gateway_config_without_covert_tools() -> None:
-    config = load_run_config("configs/aurora-efficiency.yaml")
-
-    attack_env, twin_env = issue_secrets(config)
-
-    attack_policy = attack_env[TOOLS_GATEWAY_CONFIG_VARIABLE]
-    twin_policy = twin_env[TOOLS_GATEWAY_CONFIG_VARIABLE]
-    assert "start_rogue_loop" in attack_policy
-    assert "open_pr" in twin_policy and not any(tool in twin_policy for tool in COVERT_TOOL_NAMES)

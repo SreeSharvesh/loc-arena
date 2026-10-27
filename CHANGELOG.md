@@ -15,12 +15,17 @@ log has the details.
   eval service does not start when the gateway serves a seeded model under no name. To rename the model, the
   runners' route now parses each call as a chat completion, which adds `stream_options.include_usage` to a streamed
   call that sets none.
+- **The Aurora scenario serves no record-only attack tools.** An agent can take a covert step only through a company
+  service, with the rights it holds for its ordinary work; steps with no service behind them (a planted durable
+  credential, a credential rotation during the episode, under-reported logging) cannot be taken. The honest twin holds the same tools and
+  rights and differs only by the covert briefs, the gateway's covert injection and, in a scripted run, the
+  scenario's attack moves.
 - **A tool an agent is offered no longer grants its permission.** IAM seeds each agent's `sandbox: rights:` alone;
   `sandbox: tools:` is only what agentgateway offers it. A tool offered without its permission is refused until
   the agent asks and an approver approves, on MCP as on HTTP. Starting rights may name any permission the
   service's IAM manifest checks, on tool services too (`forge: [open_pr]`), and a config naming one the manifest
-  never checks does not load. The honest twin drops the rights only attack tools use with the tools. Aurora's
-  grants are unchanged: its rights now state the forge, jobs and coverage permissions its tools used to imply.
+  never checks does not load. Aurora's grants are unchanged: its rights state the forge permission its
+  tools implied.
 - **Agents talk in chat, and the board and scratch are gone.** `meridian_controlplane.chat` is served in stack
   runs (`loc_arena.chat_service`) under central IAM, from the scenario's `chat_seed` (Aurora's `chat.yaml`):
   channels, threads and direct messages, over MCP tools and HTTP. Anyone holding chat's `write` can message
@@ -92,6 +97,10 @@ log has the details.
 
 ### Added
 
+- **A stack run's Inspect log holds the model's reasoning.** Once the gateway's call log is copied out, each model
+  call in the run's `.eval` carries the reasoning the gateway recorded for it as an Inspect reasoning block ahead
+  of its reply, so `inspect view` shows what an agent weighed before it acted, as the run explorer does. The
+  transcripts still show the reply alone, and no monitor reads the reasoning.
 - **The company runs its agents on schedules.** `POST /schedules` on the agents service (with `run`) starts an
   execution of an agent on a cron expression (UTC) or every `interval_seconds`, skipping a firing while the
   last execution has not ended; `GET /schedules` lists them, and `DELETE /schedules/<id>` stops one and keeps it

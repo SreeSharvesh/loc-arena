@@ -13,7 +13,7 @@ How to change `company/meridian-iam/` and how to put a service under it. The con
 | `company/meridian-iam/meridian_iam/client.py` | the stdlib client a service uses; stdlib so a service image needs nothing extra |
 | `company/meridian-iam/meridian_iam/integration/` | `Guard` (one decision per call), `asgi.py` (FastAPI dependency), `mcp.py` (verifier and tool middleware) |
 | `loc_arena/iam_service.py`, `iam_bootstrap.py`, `iam_seed.py`, `iam_wiring.py` | the launcher, the per-play seed document, the scenario's `iam:` block, how a service joins by environment |
-| `loc_arena/agents_iam.py` | the engine's implementation of the agents service's `CentralAuthority` |
+| `loc_arena/agents_iam.py` | the engine's implementation of the agents service's `CentralAuthority`, and its `IdentityIssuer`, which has IAM issue a workload to each registered agent and each schedule whose caller holds any of the delegation |
 | `company/meridian-controlplane/meridian_controlplane/notes/`, `loc_arena/notes_service.py` | the notes service, under IAM |
 
 ## Rules that are easy to break
@@ -46,8 +46,8 @@ service is not specified yet.
 
 | The service | It does | Status |
 |---|---|---|
-| is guarded | declares its operations, asks IAM before each protected call, runs only on allow | built in IAM mode: agents (HTTP); jobsvc, evalkit, tickets, notes, chat (HTTP and MCP); forge, jobs, coverage (MCP) |
-| launches work | also issues each piece of work a workload principal with a subset of its caller's rights | built: jobsvc issues one per job |
+| is guarded | declares its operations, asks IAM before each protected call, runs only on allow | built in IAM mode: agents (HTTP); jobsvc, evalkit, tickets, notes, chat (HTTP and MCP); forge (MCP) |
+| launches work | also issues each piece of work a workload principal with a subset of its caller's rights | built: jobsvc issues one per job and one per schedule; agents one per registered agent and one per schedule |
 | calls another service | acts at another resource for its caller | not specified: do not reuse a caller's credential or share a secret |
 
 ### Every service
@@ -55,9 +55,9 @@ service is not specified yet.
 1. **Declare.** Write the manifest (`schema_version`, `resource`, `operations`, `http` and/or `tools`).
    `resource` equals the service's name in the scenario. Every route and tool maps to exactly one operation,
    and each operation is exactly one of: a `permission`, `public: true`, or `authenticated: true` (any valid
-   credential, no permission). The seed grants each agent the permission of every tool it is given; a tool of
-   an `authenticated` operation, such as the job service's `cancel_job`, needs no grant. A covert or
-   unrequestable capability is `requestable: false`.
+   credential, no permission). The seed grants each agent its run-config rights alone, and a tool it is offered
+   takes the permission its operation checks; a tool of an `authenticated` operation, such as the job service's
+   `cancel_job`, needs none. A covert or unrequestable capability is `requestable: false`.
 2. **Join.** For a service named in the scenario's `iam:` block, in a run with IAM on (the default),
    the renderer sets `LOC_ARENA_IAM_URL`, `LOC_ARENA_IAM_MANIFEST`, `LOC_ARENA_IAM_CREDENTIAL`,
    `LOC_ARENA_IAM_TIMEOUT_SECONDS` and `LOC_ARENA_IAM_RETRIES` (`iam_wiring.service_environment`); a service

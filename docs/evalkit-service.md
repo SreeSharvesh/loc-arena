@@ -42,6 +42,8 @@ not go live. An in-process run does not serve it, so its tools are offered in a 
 
 ## The runner
 
+<img alt="Sequence of an eval run: the caller starts a run and submits the job it hands back, and the runner binds the run, reads its items, asks the model through the gateway for each, scores the answers, reports the results and exits 0" src="evalkit-service/eval-run.svg" width="100%">
+
 `meridian_evalkit/run.py` is the job: a real process on a node of the cluster, from the checkout the node
 mounts and puts on its `PYTHONPATH`, so an agent's edits to the package run in the agent's own jobs. It holds
 nothing but its own credentials, which its node sets in its environment: `MERIDIAN_EVALKIT_TOKEN`, the secret IAM issued its

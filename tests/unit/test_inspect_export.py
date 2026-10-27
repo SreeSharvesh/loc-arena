@@ -17,6 +17,8 @@ from loc_arena.logging_.events import AppendOnlyLog, Event, EventKind
 from loc_arena.logging_.inspect_export import EpisodeExport, UnassignedEventError, write_run_eval
 from loc_arena.scaffold.bus import Recorder
 
+from tests.unit._reasoning_support import read_shown_reasoning, write_bundle, write_call_log
+
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 
 
@@ -487,3 +489,55 @@ def test_timestamps_follow_turn_bounds_and_model_calls_and_world_reuses_the_last
         ("span_end", 60.0),
         ("span_end", 60.0),
     ]
+
+
+LONG_REPLY, LONG_REASONING = "the reply " * 60, "I should not do that. " * 60
+
+
+@pytest.mark.parametrize(
+    ("replies", "recorded", "shown"),
+    [
+        (
+            {"episode": "the reply"},
+            [("the reply", "I should not do that.")],
+            {"episode": (["I should not do that."], "the reply")},
+        ),
+        (
+            {"episode": LONG_REPLY},
+            [(LONG_REPLY, LONG_REASONING)],
+            {"episode": ([LONG_REASONING], LONG_REPLY)},
+        ),
+        (
+            {"episode": "the reply", "honest_cal": "the reply"},
+            [("the reply", "the run's"), ("the reply", "the twin's")],
+            {"episode": (["the run's"], "the reply"), "honest_cal": (["the twin's"], "the reply")},
+        ),
+    ],
+    ids=["short", "long enough to be stored as attachments", "the twin's call at the run's call's seq"],
+)
+def test_each_model_call_gets_the_reasoning_the_gateway_kept_for_its_own_reply(
+    tmp_path: Path,
+    replies: dict[str, str],
+    recorded: list[tuple[str, str]],
+    shown: dict[str, tuple[list[str], str]],
+) -> None:
+    bundle = tmp_path / "logs" / "run" / "run__abc123"
+    write_bundle(bundle, replies)
+    write_call_log(tmp_path / "logs" / "gateway" / "locarena-abc123.calls.jsonl", recorded)
+
+    inspect_export.add_reasoning(bundle)
+
+    assert read_shown_reasoning(bundle) == shown
+
+
+def test_a_placeholder_inspect_log_is_left_as_written(tmp_path: Path) -> None:
+    bundle = tmp_path / "logs" / "run" / "run__abc123"
+    bundle.mkdir(parents=True)
+    placeholder = bundle / "run__abc123.eval"
+    placeholder.write_text('{"note": "Inspect .eval placeholder; report.html is the primary viewer."}')
+
+    inspect_export.add_reasoning(bundle)
+
+    assert (
+        placeholder.read_text() == '{"note": "Inspect .eval placeholder; report.html is the primary viewer."}'
+    )

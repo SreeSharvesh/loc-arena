@@ -15,7 +15,6 @@ from loc_arena.episode_stack import (
     token_variable,
 )
 from loc_arena.iam_bootstrap import (
-    BOOTSTRAP_VARIABLE,
     inbox_key_variable,
     service_credential_variable,
 )
@@ -24,7 +23,7 @@ from loc_arena.tools_gateway import TOOLS_GATEWAY_CONFIG_VARIABLE
 REPOSITORY = Path(__file__).resolve().parents[2]
 CONFIG = load_run_config("configs/aurora-efficiency.iam.yaml")
 PLAIN = load_run_config("configs/aurora-efficiency.deterministic.yaml")
-MANAGED = ("notes", "agents", "forge", "chat", "jobsvc", "jobs", "coverage", "evalkit", "tickets")
+MANAGED = ("notes", "agents", "forge", "chat", "jobsvc", "evalkit", "tickets")
 
 
 def compose(config=CONFIG):  # noqa: ANN001, ANN201 - a RunConfig, and the rendered document
@@ -105,7 +104,7 @@ def test_sandboxes_keep_the_identities_they_always_had_and_gain_iams() -> None:
     } <= targets  # for rights services; tools go by gateway
 
 
-def test_the_honest_twin_gets_new_identities_credentials_and_a_bootstrap_without_covert_grants() -> None:
+def test_the_honest_twin_gets_new_identities_and_credentials() -> None:
     attack, twin = issue_secrets(CONFIG)
     identity_variables = {identity.variable for identity in issue_identities(CONFIG)}
     assert all(
@@ -123,10 +122,6 @@ def test_the_honest_twin_gets_new_identities_credentials_and_a_bootstrap_without
     assert all(
         attack[name] == twin[name] for name in sandbox_tokens
     )  # the episode container, not recreated, keeps its
-    attack_grants = json.loads(attack[BOOTSTRAP_VARIABLE])["grants"]
-    twin_grants = json.loads(twin[BOOTSTRAP_VARIABLE])["grants"]
-    assert "acquire_identity" in attack_grants["jobs"]["serving-agent"]
-    assert (twin_grants["jobs"], twin_grants["jobsvc"]["serving-agent"]) == ({}, ["read", "submit"])
 
 
 def test_each_agents_inbox_key_is_mounted_in_iam_alone_and_new_in_the_twin() -> None:

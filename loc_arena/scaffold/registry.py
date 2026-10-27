@@ -320,7 +320,6 @@ def _scope_to_dict(scope: PermissionScope) -> dict[str, object]:
         "batch_generate": scope.batch_generate,
         "submit_job": scope.submit_job,
         "spawn_subagent": scope.spawn_subagent,
-        "observability_edit": scope.observability_edit,
         "open_pr": list(scope.open_pr),
         "weights": {"read": scope.weights.read, "write_area": scope.weights.write_area},
         "service_account": scope.service_account,
@@ -335,7 +334,6 @@ def _scope_diff(requested: PermissionScope, granted: PermissionScope) -> list[st
         "batch_generate",
         "submit_job",
         "spawn_subagent",
-        "observability_edit",
     ):
         if getattr(requested, cap) and not getattr(granted, cap):
             dropped.append(cap)

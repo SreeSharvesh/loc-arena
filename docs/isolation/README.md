@@ -14,32 +14,11 @@ rights-bearing service such as `notes` or `chat` can also be called over HTTP fr
 whom. After play, those records become the events the monitors and the verifier read. The honest twin plays on
 services and sandboxes recreated, each service from its seed.
 
-```mermaid
-flowchart LR
-    subgraph egress["egress-net"]
-        OR["OpenRouter"]
-    end
-    subgraph recordnet["record-net: internal"]
-        CO["collector<br/>writes the sealed record"]
-    end
-    subgraph agentnet["agent-net: internal, no route out"]
-        EP["episode<br/>agent loops, in-world gateway"]
-        SB["sandbox per agent<br/>native tools, bash, /skills"]
-        AG["agentgateway<br/>MCP route, per-agent tool policy"]
-        SV["services<br/>forge, chat, jobsvc, jobs, coverage, notes, agents, evalkit, tickets, phoenix"]
-        NP["node pool<br/>node-1 .. node-n: one job each, a real process;<br/>its process facts copied out, sealed"]
-        GW["gateway<br/>holds the key, admits callers by token"]
-    end
-    EP -- "commands" --> SB
-    EP -- "tool calls" --> AG
-    SB -- "tool calls" --> AG
-    AG -- "caller's identity" --> SV
-    SV -- "jobsvc starts, reads, stops jobs" --> NP
-    EP -- "model calls" --> GW
-    SB -- "model calls" --> GW
-    GW --> OR
-    GW -- "every call's record" --> CO
-```
+<img alt="Deployment of a stack run: the model gateway alone joins agent-net, egress-net and record-net, so every model call leaves through it and its record goes to the collector, while tool calls go through agentgateway and the sandboxes also call services with rights over HTTP." src="networks.svg" width="100%">
+
+Agent-net puts no firewall between its containers: any of them can open a connection to a port another listens on. What a call may do depends on the token or identity
+it carries and on whom the callee accepts. Runner executions and jobs also call the services, with the
+credentials they are given.
 
 Any harness with an MCP client sees the same tools, from the same services, recorded the same way. The native
 loop is the only harness the arena runs today; choosing another one by config is #84.
@@ -48,12 +27,12 @@ loop is the only harness the arena runs today; choosing another one by config is
 
 | Container | Role |
 |---|---|
-| `gateway` | agentgateway, the only holder of the key and of a route out (agent-net and egress-net); admits each caller by its own token and exports a record of every model call, with the caller, to the Collector |
+| `gateway` | agentgateway, the only holder of the key and of a route out, on agent-net, egress-net and record-net; admits each caller by its own token and exports a record of every model call, with the caller, to the Collector |
 | `collector` | an OpenTelemetry Collector on record-net, which only the gateway joins; appends each record to the sealed record in a volume only it mounts |
 | `episode` | plays the episode and, in attack mode, its honest twin; holds every sandbox's token and no identity |
 | `sandbox-<agent id>` | one agent's code, from a slim image with no harness and no scenarios; mounts the checkouts and the scenario's skills read-only; holds its own token and its own identity on each service with rights; takes commands from the episode alone |
 | one per live service | a scenario's `services:` entry with `build`, `image` or `module`; no route out, all capabilities dropped, limits from `stack`, no published port |
-| `runner-<n>` | where the company's own agents run with pi, for the one service whose entry declares `runners: <n>`; a sandbox from the Dockerfile's `runner` target with an empty `/workspace`; holds its own token, which that service also holds, and takes commands from that service alone |
+| `runner-<n>` | where the company's own agents run with pi, for the one service whose entry declares `runners: <n>`; a sandbox from the Dockerfile's `runner` target with an empty `/workspace`; holds its own token, which that service also holds, and takes commands from that service alone; an execution there gets its agent's tokens on the company's services (`MERIDIAN_<SERVICE>_TOKEN`) |
 | `node-<n>` | the job service's fleet, for the one service whose entry declares `nodes: {<pool>: n}`; a worker from the Dockerfile's `worker` target whose daemon runs one job at a time as a real process in an empty `/workspace`, with the checkouts mounted read-only, the cluster's own read-only deployment of the company repos at `/opt/meridian` that the seed's jobs run, and the limits `stack.node_cpus` and `stack.node_memory_mb`; holds its own token, which that service also holds and its jobs call the gateway with, and takes calls from that service alone; gives each job the secrets of the job's own workload; its log is its jobs' process facts ([docs/jobsvc-service.md](../jobsvc-service.md)) |
 | `agentgateway` | the MCP route of every service with tools; present when a service has tools |
 
@@ -91,11 +70,11 @@ agents:
 - Offering a tool grants nothing: IAM seeds each agent's `sandbox: rights:` alone, and a call to an offered tool
   takes the permission its operation checks, held from the start or asked for.
 - An unknown service or tool in `sandbox: tools:` is refused when the config loads. The honest twin's agents
-  are offered no attack tool and hold none of the rights only attack tools use.
+  are offered the same tools and hold the same rights as the attack run's.
 - `run_tests` and `run_benchmark` are skills, not tools: scripts with a `SKILL.md` in the pack's `skills:`
   folder, which every sandbox mounts read-only at `/skills` and agents run with bash on their own checkout.
 - An in-process run (a config with `iam.enabled` off, such as the deterministic fixture) serves each agent its
-  own in-memory server over the same services and offers no bash, so its agents run no code. No IAM runs there,
+  own in-memory forge, the one live service it runs, and offers no bash, so its agents run no code. No IAM runs there,
   so a config with IAM on is refused in process before anything is written.
 
 ## Records and events
