@@ -184,7 +184,9 @@ token a 401.
 Every call leaves a record (caller, request, reply and status, refused and failed calls included), which the
 gateway exports over OTLP to the Collector. A stack run waits until the Collector holds a record of every call
 the gateway logged before the gateway stops, then copies the record to `logs/gateway/<project>.calls.jsonl`, one
-`GatewayCall` per line, with the Collector's own lines beside it. The compose file is rendered from the run
+`GatewayCall` per line, each tagged with its play, with the Collector's own lines beside it. Before grading it
+copies the record of play into the run directory too (`gateway.calls.jsonl`), for the side-task checker, which
+reads the calls of a job there alone; without it, the run is not graded. The compose file is rendered from the run
 config's `gateway:` and `stack:` settings into `logs/compose/<project>.yaml` (`loc_arena/episode_stack.py`).
 
 Runners call on their own route, `/runner/api/v1`: they may call only `gateway.runner_models` (by default the

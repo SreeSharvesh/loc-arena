@@ -33,14 +33,16 @@ from typing import Literal
 from urllib.parse import urlsplit
 
 import certifi
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
 
 from loc_arena.compose_document import ComposeService
+from loc_arena.config import RunConfig
 from loc_arena.gateway.core import (
     API_KEY_VARIABLE,
     GATEWAY_TOKEN_FILE_VARIABLE,
     GATEWAY_URL_VARIABLE,
     OPENROUTER_URL,
+    OpenRouterProvider,
 )
 from loc_arena.settings import LocArenaSettings
 from loc_arena.yaml_documents import dump_document
@@ -69,12 +71,14 @@ CHAT_PATH = "api/v1/chat/completions"  # the one path runners may call
 ACCESS_LOG_SCOPE = "agentgateway.access"  # the OTLP scope of agentgateway's access-log records
 PROJECT_PREFIX = "locarena-"  # each stack run's compose project is locarena-<instance id>
 UNKNOWN_CALLER = "unknown"
+CALL_RECORD_FILE = "gateway.calls.jsonl"  # the run directory's copy of the call record, which grading reads
 NEVER_REFILLS = "87600h"  # a rate-limit bucket that refills once in ten years counts calls per play
 POLL_SECONDS = 0.5
 
 Role = Literal["caller", "runner"]
 Play = Literal["attack", "twin"]
 RunCompose = Callable[..., subprocess.CompletedProcess[str]]
+PLAY_TAG: TypeAdapter[Play | None] = TypeAdapter(Play | None)  # a record's play tag, parsed
 
 
 @dataclass(frozen=True)
@@ -100,6 +104,7 @@ class GatewayCall(BaseModel):
     status: int = Field(description="The status returned to the caller.")
     response: JsonValue = Field(description="The reply as received: parsed JSON, else text (an SSE stream).")
     complete: bool = Field(description="False when the call was refused or failed, or its reply broke off.")
+    play: Play | None = Field(default=None, description="The play the call was made in; none if untagged.")
 
 
 class OtlpValue(BaseModel):
@@ -457,6 +462,7 @@ def convert_record(record: OtlpLogRecord) -> GatewayCall:
         status=record.integer("http.response.status_code") or 0,
         response=parse_body(response),
         complete=record.text("error") is None and not broke_off,
+        play=PLAY_TAG.validate_python(record.text("play")),
     )
 
 
@@ -587,3 +593,25 @@ def start_gateway(run: RunCompose, compose: list[str], settings: LocArenaSetting
                 return True
         time.sleep(stack.gateway_health_interval_seconds)
     return False
+
+
+def build_monitor_provider(config: RunConfig, compose: list[str], token: str) -> OpenRouterProvider | None:
+    """The provider of a live run's monitors: the gateway, at the port it publishes on this host's loopback.
+
+    A scripted run's monitors make no model call. A live run's call with the host's ``token`` and never fall
+    back to their heuristic for want of a provider: if the gateway's port cannot be found, grading stops.
+    """
+    if config.policy != "model":
+        return None
+    published = subprocess.run(
+        [*compose, "port", MODEL_GATEWAY_SERVICE, str(config.settings.gateway.port)],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return OpenRouterProvider(
+        timeout=config.settings.gateway.timeout_seconds,
+        gateway_url=f"http://{published.stdout.strip()}{urlsplit(OPENROUTER_URL).path}",
+        gateway_token=token,
+        model_providers=config.model_providers,
+    )

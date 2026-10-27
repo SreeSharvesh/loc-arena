@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="792" height="864" viewBox="0 0 792 864" role="img" aria-label="Data flow of one run: play (the episode, then in attack mode its honest twin) writes service records, both event logs, the per-agent trace and the gateway&#x27;s call record; records become events after play, with turns from the trace; the verifier reads the sealed log and the monitors the mirror log; live monitors' model calls are appended to the sealed log and, in a stack run, to the gateway's call record; the bundle under logs/&lt;run_slug&gt;/&lt;run_name&gt;/ is read by the explorer and inspect view.">
+<svg xmlns="http://www.w3.org/2000/svg" width="792" height="864" viewBox="0 0 792 864" role="img" aria-label="Data flow of one run: play (the episode, then in attack mode its honest twin) writes service records, both event logs, the per-agent trace and the gateway&#x27;s call record; records become events after play, with turns from the trace; the verifier reads the sealed log and, in a stack run, the call record, and the monitors the mirror log; live monitors' model calls are appended to the sealed log and, in a stack run, to the gateway's call record; the bundle under logs/&lt;run_slug&gt;/&lt;run_name&gt;/ is read by the explorer and inspect view.">
 <style>
   svg { --ink:#1f2328; --muted:#59636e; --rule:#8c959f; --panel:#f6f8fa;
         --accent:#2f4bd6; --accent-bg:#e9edfd;
@@ -71,5 +71,7 @@
 <path class="thin" d="M116.0 736 V783" marker-end="url(#hr)"/>
 <path class="thin" d="M300.0 736 V783" marker-end="url(#hr)"/>
 <path class="thin" d="M692.0 112 V812 H377" marker-end="url(#hr)"/>
+<path class="thin" d="M692.0 24 V12 H24 V436 H223" marker-end="url(#hr)"/>
+<text class="s" x="40" y="416" text-anchor="start" dominant-baseline="central">stack: every model call</text>
 <text class="s" x="534.0" y="798" text-anchor="middle" dominant-baseline="central">each call&#x27;s reasoning</text>
 </svg>

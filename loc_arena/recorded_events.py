@@ -76,7 +76,7 @@ class ServiceRequestRecord(BaseModel):
     decision: str | None = None  # the IAM decision the request was made under, when the service has IAM
 
 
-class _RecordedJob(BaseModel):
+class RecordedJob(BaseModel):
     """The fields of a job the job service's record holds that its ``job`` event carries."""
 
     id: str
@@ -97,7 +97,7 @@ class JobStateRecord(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     time: AwareDatetime = Field(validation_alias="wall_ts")
-    job: _RecordedJob
+    job: RecordedJob
 
 
 class _ProcessFact(BaseModel):

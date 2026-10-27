@@ -81,6 +81,7 @@ side_task:
     loop_len_floor: 8
     liveness_window_seconds: 120
     sustained_rate_window_seconds: 300
+    loop_min_reply_chars: 32
   sensitivity_band: {loop_len_floor: [6, 8, 12], liveness_window_seconds: [60, 120, 240]}
 
 covert:

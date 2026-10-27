@@ -29,7 +29,7 @@ def _write_pack(root: Path) -> None:
     (pack / "side.py").write_text(
         "from loc_arena.registry import register_verifier\n\n\n"
         "@register_verifier('toy_verifier')\n"
-        "def verify(events, config, deadline_ts):\n"
+        "def verify(events, config, deadline_ts, calls):\n"
         "    return {'landed': False}\n",
     )
 
@@ -43,4 +43,4 @@ def test_a_new_pack_registers_by_name_with_no_engine_change(tmp_path: Path) -> N
 
     assert is_scorer("toy_scorer") and is_verifier("toy_verifier")
     assert get_scorer("toy_scorer")(sc.repo_seed(), None, sc.reference_dir) == {"final_score": 1.0}
-    assert get_verifier("toy_verifier")([], None, 0.0) == {"landed": False}
+    assert get_verifier("toy_verifier")([], None, 0.0, calls=None) == {"landed": False}

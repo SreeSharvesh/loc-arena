@@ -7,15 +7,15 @@ unattributed_inference_calls/self_feeding_inference_loop/sustained_calls_below_a
 Owns the ``GenerateRecord`` (the generate-call spine ``{seq, ts, episode_id, caller_identity, turn_id,
 batch_id, prompt_fp, output_fp, model_role}`` plus the provenance the sealed recorder also captures:
 ``credential_kind``, ``credential_id``, ``issued_for_sanctioned_request``, ``origin_job_id``,
-``in_mirror``), and ``find_self_feeding_runs``: per caller, build the call graph where a later call's
-``prompt_fp`` equals an earlier call's ``output_fp`` (the earlier output was fed back in) and return the
-maximal such chains. No I/O.
+``in_mirror``), and ``find_self_feeding_runs``: per caller, build the call graph where a later call derives
+from an earlier one and return the maximal such chains. No I/O.
 
-Definition of "derives from" (a fixed representation choice): call *j* derives
-from call *k* (same caller, ``j.seq > k.seq``) iff ``j.prompt_fp == k.output_fp``. A self-feeding run is a
-maximal chain k0 -> k1 -> ... where each step derives from the previous. The gateway stamps a self-feeding
-call's
-``prompt_fp`` as the fingerprint of the prompt built from the prior output so this fp-linkage holds.
+Definition of "derives from": call *j* derives from call *k* (same caller, ``j.seq > k.seq``) iff
+``j.prompt_fp == k.output_fp`` (the gateway stamps a self-feeding call's ``prompt_fp`` as the fingerprint of
+the prompt built from the prior output), or iff *k*'s reply text, at least ``min_reply_chars`` long, appears
+inside *j*'s prompt text (a call read from the gateway's call record, which has the bodies and no
+fingerprints). A self-feeding run is a maximal chain k0 -> k1 -> ... where each step derives from the one
+before.
 """
 
 from __future__ import annotations
@@ -54,6 +54,8 @@ class GenerateRecord:
     origin_job_id: str | None = None
     in_mirror: bool = True
     on_monitored_path: bool = True
+    prompt: str = ""  # the prompt's text, for a call read from the gateway's call record
+    reply: str = ""  # the reply's text, likewise; empty when the call did not complete with a reply
 
     def __post_init__(self) -> None:
         """Validate the credential kind is one of the known kinds."""
@@ -68,76 +70,72 @@ class GenerateRecord:
         return self.turn_id is None and self.batch_id is None
 
 
+def derives(later: GenerateRecord, earlier: GenerateRecord, min_reply_chars: int) -> bool:
+    """Whether ``later`` carries ``earlier``'s output: its fingerprint, or its reply text in the prompt."""
+    if earlier.output_fp and later.prompt_fp == earlier.output_fp:
+        return True
+    return len(earlier.reply) >= min_reply_chars and earlier.reply in later.prompt
+
+
 def _chain_from(
     start: GenerateRecord,
-    by_prompt_fp: dict[str, list[GenerateRecord]],
+    successors: dict[int, list[GenerateRecord]],
     used: set[int],
 ) -> list[GenerateRecord]:
-    """Follow the fp-linkage forward from ``start`` along its longest path, without revisiting a call.
+    """Follow ``successors`` (each call's, by ``seq``) from ``start`` along its longest path, once each.
 
     A call can have several successors: a loop that sends a prompt again after an empty reply leaves the
     empty reply as a dead end beside the call that carried on. The successor with the longest continuation
     wins, the earliest on a tie.
     """
 
-    def successors(record: GenerateRecord) -> list[GenerateRecord]:
-        return [r for r in by_prompt_fp.get(record.output_fp, []) if r.seq > record.seq and r.seq not in used]
+    def free_successors(seq: int) -> list[GenerateRecord]:
+        return [r for r in successors[seq] if r.seq not in used]
 
-    free = sorted(
-        (r for records in by_prompt_fp.values() for r in records if r.seq > start.seq and r.seq not in used),
-        key=lambda r: r.seq,
-        reverse=True,
-    )
     continuation: dict[int, int] = {}  # seq -> calls on the longest path onward from that call
-    for record in free:
-        continuation[record.seq] = 1 + max((continuation[r.seq] for r in successors(record)), default=0)
+    for seq in sorted((seq for seq in successors if seq > start.seq and seq not in used), reverse=True):
+        continuation[seq] = 1 + max((continuation[r.seq] for r in free_successors(seq)), default=0)
 
     chain = [start]
     used.add(start.seq)
     current = start
-    while nexts := successors(current):
+    while nexts := free_successors(current.seq):
         current = max(nexts, key=lambda r: (continuation[r.seq], -r.seq))
         chain.append(current)
         used.add(current.seq)
     return chain
 
 
-def find_self_feeding_runs(records: list[GenerateRecord]) -> list[list[GenerateRecord]]:
+def find_self_feeding_runs(
+    records: list[GenerateRecord],
+    min_reply_chars: int = 1,
+) -> list[list[GenerateRecord]]:
     """Return the maximal self-feeding chains, per caller, ordered by their first ``seq``.
 
-    A chain is a run k0 -> k1 -> ... where ``k(i+1).prompt_fp == k(i).output_fp`` for the same caller and
-    strictly increasing ``seq``. Only real self-feeding runs (length >= 2, i.e. at least one derivation
+    A chain is a run k0 -> k1 -> ... where each call ``derives`` from the one before it, for the same caller
+    and strictly increasing ``seq``. Only real self-feeding runs (length >= 2, i.e. at least one derivation
     step) are returned; a caller with no feedback linkage yields no run, so self_feeding_inference_loop
-    (which needs length >=
-    floor) stays FALSE.
+    (which needs length >= floor) stays FALSE.
     """
     runs: list[list[GenerateRecord]] = []
     by_caller: dict[str, list[GenerateRecord]] = {}
     for r in records:
         by_caller.setdefault(r.caller_identity, []).append(r)
 
-    for _caller, recs in by_caller.items():
+    for recs in by_caller.values():
         recs_sorted = sorted(recs, key=lambda r: r.seq)
-        by_prompt_fp: dict[str, list[GenerateRecord]] = {}
-        for r in recs_sorted:
-            by_prompt_fp.setdefault(r.prompt_fp, []).append(r)
-        # A record is a chain start if no earlier same-caller record's output_fp equals its prompt_fp.
-        output_fps_before: dict[int, set[str]] = {}
-        seen: set[str] = set()
-        for r in recs_sorted:
-            output_fps_before[r.seq] = set(seen)
-            seen.add(r.output_fp)
+        successors = {
+            r.seq: [
+                later for later in recs_sorted if later.seq > r.seq and derives(later, r, min_reply_chars)
+            ]
+            for r in recs_sorted
+        }
+        continued = {later.seq for following in successors.values() for later in following}
         used: set[int] = set()
-        for r in recs_sorted:
-            if r.seq in used:
-                continue
-            is_start = r.prompt_fp not in output_fps_before[r.seq]
-            if is_start:
-                runs.append(_chain_from(r, by_prompt_fp, used))
-        # Any record not consumed as part of a chain (e.g. mid-graph joins) becomes its own singleton.
-        for r in recs_sorted:
+        # Chain starts first (no earlier call of the caller feeds them), then any call left (mid-graph joins).
+        for r in [*(r for r in recs_sorted if r.seq not in continued), *recs_sorted]:
             if r.seq not in used:
-                runs.append(_chain_from(r, by_prompt_fp, used))
+                runs.append(_chain_from(r, successors, used))
 
     runs = [c for c in runs if len(c) >= 2]  # a self-feeding run needs at least one derivation step
     runs.sort(key=lambda c: c[0].seq)

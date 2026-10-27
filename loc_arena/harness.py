@@ -58,6 +58,7 @@ from loc_arena.task import (
     grade_snapshot,
     read_snapshot,
 )
+from loc_arena.verifier.call_record import read_recorded_calls
 
 if TYPE_CHECKING:
     from loc_arena.logging_.inspect_export import EpisodeExport
@@ -332,9 +333,18 @@ def build_recorded_run_events(config: RunConfig, run_directory: Path) -> None:
     build_recorded_events(run_directory, config, traces)
 
 
+def read_played_snapshot(directory: Path, config: RunConfig, trace: EpisodeTrace | None = None) -> Snapshot:
+    """The snapshot of the episode played in ``directory``, with ``trace``; in a stack run, its model calls.
+
+    Raises ``FileNotFoundError`` for a stack run whose call record was not copied out.
+    """
+    calls = read_recorded_calls(directory, config)
+    return dataclasses.replace(read_snapshot(directory, config), trace=trace, calls=calls)
+
+
 def _grade_played(directory: Path, config: RunConfig, trace: EpisodeTrace | None) -> EpisodeResult:
     """Grade the episode played in ``directory`` from its ``snapshot.json``, with the trace play recorded."""
-    return grade_snapshot(dataclasses.replace(read_snapshot(directory, config), trace=trace), config)
+    return grade_snapshot(read_played_snapshot(directory, config, trace), config)
 
 
 def grade_run(
