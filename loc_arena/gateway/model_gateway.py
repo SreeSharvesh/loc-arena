@@ -1,13 +1,13 @@
 """The model gateway: agentgateway holding the provider key, and the Collector that writes the sealed record.
 
 agentgateway forwards a request on an allowed path to the one upstream in ``settings.gateway`` under the key,
-and returns the reply unchanged. It admits callers by the SHA-256 of their token, so it never holds one: the
-episode, the host's monitors, each agent's sandbox, each runner and each node of the job service's fleet.
-Runners call on their own route, which holds their model allowlist and their calls per play, and so do the
-jobs on a node, as that node: the gateway admits no job's own credential yet. Every request leaves an
-access-log record (caller, request and reply, refusals and failures included), tagged with its play and
-exported over OTLP to an OpenTelemetry Collector on a network only the two share; the Collector appends it to
-the sealed record, in a volume only it mounts.
+and returns the reply. It admits callers by the SHA-256 of their token, so it never holds one: the episode,
+the host's monitors, each agent's sandbox, each runner and each node of the job service's fleet. Runners call
+on their own route, which holds their model allowlist and their calls per play and sends a call naming one of
+the company's models upstream as the model it stands for; so do the jobs on a node, as that node: the gateway
+admits no job's own credential yet. Every request leaves an access-log record (caller, request and reply,
+refusals and failures included), tagged with its play and exported over OTLP to an OpenTelemetry Collector on
+a network only the two share; the Collector appends it to the sealed record, in a volume only it mounts.
 
 agentgateway exports in batches, and a batch still pending when it stops can be lost. So a stack run drains
 the record before the gateway stops (waits until the Collector holds a record of every request the gateway
@@ -174,10 +174,13 @@ def render_model_gateway_config(settings: LocArenaSettings, callers: Sequence[Ca
     """The gateway's config (agentgateway v1.6 schema) for ``callers`` in ``play``, as a compose secret.
 
     Callers are admitted by the SHA-256 of their token, runners only on their route; any other path is refused
-    (403). A request's body is
-    buffered (the authorization rule reads it), so a call that never reaches the upstream keeps its request
-    in the record. The upstream is asked for an uncompressed reply, so the record holds its text. It listens
-    on IPv4 alone; admin, stats and readiness listeners are off, so no caller can read this config back.
+    (403). The callers' route forwards a request as its caller sent it; the runners' parses it as a chat
+    completion, so a call naming one of ``runner_model_aliases`` goes upstream as the model it maps to, while
+    its record keeps the name it asked for. A runner's call listing fallback models (OpenRouter's
+    ``models``) is refused, since OpenRouter could answer it from any. A request's body is buffered (the
+    authorization rule reads it), so a call that never reaches the upstream keeps its request in the record.
+    The upstream is asked for an uncompressed reply, so the record holds its text. It listens on IPv4 alone;
+    admin, stats and readiness listeners are off, so no caller can read this config back.
     """
     gateway = settings.gateway
     if CHAT_PATH not in gateway.allowed_paths:
@@ -215,7 +218,7 @@ def render_model_gateway_config(settings: LocArenaSettings, callers: Sequence[Ca
         },
         "ai": {"routes": {"*": "passthrough"}},  # forwarded as the caller sent it
     }
-    runner_models = json.dumps(list(gateway.runner_models))
+    runner_models = json.dumps([*gateway.runner_models, *gateway.runner_model_aliases])
     routes = [
         {
             "name": "callers",
@@ -231,10 +234,16 @@ def render_model_gateway_config(settings: LocArenaSettings, callers: Sequence[Ca
             "matches": [{"path": {"exact": f"/{RUNNER_ROUTE_PREFIX}/{CHAT_PATH}"}}],
             "policies": {
                 **shared,
+                "ai": {"routes": {"*": "completions"}, "modelAliases": gateway.runner_model_aliases},
                 "urlRewrite": {"path": {"full": f"/{CHAT_PATH}"}},
+                # One model the runners may call, and no fallback list (OpenRouter's `models`), whose first
+                # model that answers OpenRouter would reply from instead.
                 "authorization": {
                     "rules": [
-                        {"allow": f'apiKey.role == "runner" && json(request.body).model in {runner_models}'},
+                        {
+                            "allow": f'apiKey.role == "runner" && json(request.body).model in {runner_models}'
+                            " && !has(json(request.body).models)",
+                        },
                     ],
                 },
                 "localRateLimit": [

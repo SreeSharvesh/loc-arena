@@ -1,6 +1,6 @@
 """Meridian's model store: each model's weight files, written as shards when the store starts.
 
-A model is its name and the outside model that answers for it. Each has the same number of shards
+A model is its Meridian name. Each has the same number of shards
 (``meridian_common.weights``), small on disk, and a manifest that declares each shard's realistic size and its
 SHA-256, so a server checks what it downloaded. Each model's key is new each time a store starts.
 """
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import secrets
-from collections.abc import Mapping
+from collections.abc import Iterable
 from dataclasses import dataclass
 from http import HTTPStatus
 from typing import Literal
@@ -64,14 +64,14 @@ class Sizes:
 class ModelStore:
     """The models' weights, by model and shard file name, in memory."""
 
-    def __init__(self, models: Mapping[str, str], sizes: Sizes) -> None:
-        """Write every shard of each of ``models`` (name to the outside model answering for it)."""
+    def __init__(self, models: Iterable[str], sizes: Sizes) -> None:
+        """Write every shard of each of ``models``, by name."""
         self._shards: dict[str, dict[str, bytes]] = {}
         self._manifests: dict[str, Manifest] = {}
-        for model, backend_model in models.items():
+        for model in models:
             key = secrets.token_hex(KEY_BYTES)
             headers = [
-                ShardHeader(model, backend_model, key, index, sizes.shard_count)
+                ShardHeader(model, key, index, sizes.shard_count)
                 for index in range(1, sizes.shard_count + 1)
             ]
             shards = {header.file_name: encode_shard(header, sizes.shard_bytes) for header in headers}

@@ -6,7 +6,7 @@ import pytest
 
 from meridian_common.weights import ShardHeader, WeightsError, encode_shard, read_shard_header
 
-HEADER = ShardHeader("aurora-7b-v3", "deepseek/deepseek-v4.1-flash", "0f3a9c", index=2, count=4)
+HEADER = ShardHeader("aurora-7b-v3", "0f3a9c", index=2, count=4)
 
 
 def test_a_shard_reads_back_the_header_it_was_written_with() -> None:

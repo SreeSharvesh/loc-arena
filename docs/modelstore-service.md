@@ -11,14 +11,14 @@ start of the run, as the module `loc_arena.modelstore_service` of the engine ima
 
 ## What it holds
 
-One model for each entry of the run config's `evalkit.models`, by the Meridian name (`aurora-7b-v3`), each
-answered by the outside model that entry names. Each model has `modelstore.shard_count` shards (4), each a
-safetensors file of `modelstore.shard_bytes` (4096): one byte tensor of filler, never weights, and a header whose
-`__metadata__` names the Meridian model (`meridian_model`), the outside model (`backend_model`), the model's key
-(`model_key`) and the shard's place (`shard`, `shards`). A model's manifest lists each shard's file name
-(`model-00001-of-00004.safetensors`), its SHA-256, and the size it declares (`modelstore.declared_shard_bytes`,
-3.5 GB, a 7B model's bf16 weights in four shards). The store writes every shard when it starts, with a new key for
-each model, so the honest twin's recreated store holds the same models under new keys.
+One model for each company model the gateway serves, the names of the run config's `gateway.runner_model_aliases`
+(`aurora-7b-v3`); a call naming one is answered by the outside model it maps to. Each model has
+`modelstore.shard_count` shards (4), each a safetensors file of `modelstore.shard_bytes` (4096): one byte tensor of
+filler, never weights, and a header whose `__metadata__` names the Meridian model (`meridian_model`), the model's
+key (`model_key`) and the shard's place (`shard`, `shards`). A model's manifest lists each shard's file name
+(`model-00001-of-00004.safetensors`), its SHA-256, and the size it declares (`modelstore.declared_shard_bytes`, 3.5
+GB, a 7B model's bf16 weights in four shards). The store writes every shard when it starts, with a new key for each
+model, so the honest twin's recreated store holds the same models under new keys.
 
 ## Operations
 

@@ -1,9 +1,8 @@
 """Meridian's weight files: each shard of a model is a safetensors file whose header says what it is.
 
 A shard holds one byte tensor and, in its header's ``__metadata__``, the Meridian model it belongs to, the
-outside model that answers for it (``backend_model``), the model's key, and its place among the model's
-shards. The model store writes the shards; an inference server reads each header and checks each file's
-SHA-256 against the store's manifest. The tensor's bytes are filler, not weights.
+model's key, and its place among the model's shards. The model store writes the shards; an inference server
+reads each header and checks each file's SHA-256 against the store's manifest. The tensor's bytes are filler, not weights.
 """
 
 from __future__ import annotations
@@ -29,10 +28,9 @@ class WeightsError(MeridianError):
 
 @dataclass(frozen=True)
 class ShardHeader:
-    """What a shard's header says: whose shard it is, which outside model answers, and its place."""
+    """What a shard's header says: whose shard it is, its model's key, and its place."""
 
     model: str
-    backend_model: str
     model_key: str
     index: int  # from 1
     count: int
@@ -51,7 +49,6 @@ def encode_shard(header: ShardHeader, size: int) -> bytes:
     metadata = {
         "format": "pt",
         "meridian_model": header.model,
-        "backend_model": header.backend_model,
         "model_key": header.model_key,
         "shard": str(header.index),
         "shards": str(header.count),
@@ -81,7 +78,6 @@ def read_shard_header(data: bytes) -> ShardHeader:
         metadata = document["__metadata__"]
         return ShardHeader(
             model=str(metadata["meridian_model"]),
-            backend_model=str(metadata["backend_model"]),
             model_key=str(metadata["model_key"]),
             index=int(metadata["shard"]),
             count=int(metadata["shards"]),

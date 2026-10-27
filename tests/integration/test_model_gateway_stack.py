@@ -1,7 +1,8 @@
 """The model gateway as a stack run renders it: agentgateway and the Collector, before a stand-in upstream.
 
 Every call is recorded with its caller, request and reply, refused and failed ones included, and the record
-is copied out once the Collector holds every call agentgateway logged. The key reaches the upstream alone.
+is copied out once the Collector holds every call agentgateway logged. The key reaches the upstream alone, and
+a runner's call naming one of the company's models reaches it as the model that name stands for.
 Needs Docker and the images the stack pins; skipped otherwise.
 """
 
@@ -9,6 +10,7 @@ from __future__ import annotations
 
 import functools
 import hashlib
+import json
 import os
 import secrets
 import subprocess
@@ -41,9 +43,17 @@ from tests.integration._docker_support import image_exists
 KEY = "sk-or-the-test-key"
 SANDBOX_TOKEN, RUNNER_TOKEN = "the-sandbox-token", "the-runner-token"
 RUNNER_MODEL = "deepseek/deepseek-v4.1-flash"
+COMPANY_MODEL = "company-model"  # the company's name for RUNNER_MODEL
 CHAT = "/api/v1/chat/completions"
+RUNNERS = f"/{RUNNER_ROUTE_PREFIX}{CHAT}"
 MOCK = Path(__file__).parent / "_mock_upstream.py"
-CONFIGURED = LocArenaSettings(gateway=GatewaySettings(runner_calls_per_play=3, drain_timeout_seconds=15))
+CONFIGURED = LocArenaSettings(
+    gateway=GatewaySettings(
+        runner_model_aliases={COMPANY_MODEL: RUNNER_MODEL},
+        runner_calls_per_play=4,
+        drain_timeout_seconds=15,
+    ),
+)
 # A plain-HTTP stand-in for the upstream: settings refuse one, so it is set past their validation.
 SETTINGS = CONFIGURED.model_copy(
     update={"gateway": CONFIGURED.gateway.model_copy(update={"upstream": HttpUrl("http://mock:9000")})},
@@ -153,6 +163,12 @@ def recorded(stack: Stack, model: str, deadline_seconds: float = 15.0) -> Gatewa
         time.sleep(0.5)
 
 
+@pytest.fixture(scope="module")
+def company_model_reply(stack: Stack) -> httpx2.Response:
+    """The reply to a runner's one call naming the company's model: one of the play's runner calls."""
+    return call(stack, COMPANY_MODEL, token=RUNNER_TOKEN, path=RUNNERS)
+
+
 def test_a_call_reaches_the_upstream_with_the_key_in_place_of_the_callers_token(stack: Stack) -> None:
     reply = call(stack, "the-first-call")
 
@@ -180,8 +196,8 @@ def test_a_call_is_recorded_with_its_caller_request_and_reply(stack: Stack) -> N
         ("an-unknown-token", "not-a-token", CHAT, 401),
         ("a-path-outside-the-allowlist", SANDBOX_TOKEN, "/api/v1/embeddings", 403),
         ("a-runner-on-the-callers-route", RUNNER_TOKEN, CHAT, 403),
-        ("a-sandbox-on-the-runners-route", SANDBOX_TOKEN, f"/{RUNNER_ROUTE_PREFIX}{CHAT}", 403),
-        ("a-model-runners-may-not-call", RUNNER_TOKEN, f"/{RUNNER_ROUTE_PREFIX}{CHAT}", 403),
+        ("a-sandbox-on-the-runners-route", SANDBOX_TOKEN, RUNNERS, 403),
+        ("a-model-runners-may-not-call", RUNNER_TOKEN, RUNNERS, 403),
     ],
 )
 def test_a_refused_call_is_recorded_with_its_status_as_incomplete(
@@ -197,13 +213,30 @@ def test_a_refused_call_is_recorded_with_its_status_as_incomplete(
     assert (reply.status_code, record.status, record.complete) == (status, status, False)
 
 
-def test_runners_make_their_calls_per_play_and_then_get_429(stack: Stack) -> None:
-    statuses = [
-        call(stack, RUNNER_MODEL, token=RUNNER_TOKEN, path=f"/{RUNNER_ROUTE_PREFIX}{CHAT}").status_code
-        for _ in range(4)
-    ]
+def test_a_runner_naming_the_companys_model_reaches_the_upstream_as_the_model_it_stands_for(
+    stack: Stack,
+    company_model_reply: httpx2.Response,
+) -> None:
+    echoed = json.loads(company_model_reply.json()["choices"][0]["message"]["content"])
 
-    assert statuses == [200, 200, 200, 429]
+    # The record keeps the name the runner asked for: it is found by that name.
+    assert (echoed["body"]["model"], recorded(stack, COMPANY_MODEL).status) == (RUNNER_MODEL, 200)
+
+
+def test_a_runner_listing_fallback_models_is_refused(stack: Stack) -> None:
+    # OpenRouter answers from the first of `models` that answers, whatever model `model` names.
+    reply = call(stack, RUNNER_MODEL, token=RUNNER_TOKEN, path=RUNNERS, models=["costly/model"])
+
+    assert reply.status_code == 403
+
+
+def test_runners_make_their_calls_per_play_and_then_get_429(
+    stack: Stack,
+    company_model_reply: httpx2.Response,  # the play's first runner call
+) -> None:
+    statuses = [call(stack, RUNNER_MODEL, token=RUNNER_TOKEN, path=RUNNERS).status_code for _ in range(4)]
+
+    assert (company_model_reply.status_code, statuses) == (200, [200, 200, 200, 429])
 
 
 def test_a_streamed_reply_reaches_the_caller_and_the_record_whole(stack: Stack) -> None:

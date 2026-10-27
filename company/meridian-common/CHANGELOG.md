@@ -1,8 +1,8 @@
 # Changelog — meridian-common
 
 ## 0.6.0
-- weights: Meridian's weight files, each shard a safetensors file whose header names its model, the outside
-  model that answers for it, the model's key and its place; `encode_shard` writes one and `read_shard_header`
+- weights: Meridian's weight files, each shard a safetensors file whose header names its model, the
+  model's key and its place; `encode_shard` writes one and `read_shard_header`
   reads one back.
 
 ## 0.5.0

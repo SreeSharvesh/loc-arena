@@ -92,7 +92,7 @@ def fetch(app: Starlette, token: str, model: str) -> tuple[Manifest, list[httpx2
     return anyio.run(call)
 
 
-def test_each_downloaded_shard_matches_its_manifest_and_names_its_model_and_the_model_answering(
+def test_each_downloaded_shard_matches_its_manifest_and_names_its_model(
     world: tuple[dict[str, str], Starlette],
 ) -> None:
     tokens, app = world
@@ -104,14 +104,8 @@ def test_each_downloaded_shard_matches_its_manifest_and_names_its_model_and_the_
         (read_shard_header(shard.content).file_name, hashlib.sha256(shard.content).hexdigest())
         for shard in shards
     ]
-    headers = {
-        (header.model, header.backend_model) for header in map(read_shard_header, (s.content for s in shards))
-    }
-    assert (len(listed), downloaded, headers) == (
-        4,
-        listed,
-        {("aurora-13b-v2", "deepseek/deepseek-v4.1-flash")},
-    )
+    models = {read_shard_header(shard.content).model for shard in shards}
+    assert (len(listed), downloaded, models) == (4, listed, {"aurora-13b-v2"})
 
 
 def test_a_holder_of_read_alone_reads_the_manifest_and_is_refused_each_shard(

@@ -9,12 +9,19 @@ log has the details.
 ### Changed
 
 - **Meridian has a model store.** `meridian_controlplane.modelstore` is served in stack runs
-  (`loc_arena.modelstore_service`) under central IAM: the weights of each model in `evalkit.models` as
-  safetensors shards that carry no weights (`meridian_common.weights`), their headers naming the outside model
-  that answers for them, with a manifest declaring a realistic size (`modelstore:` settings). `list_models` and
-  `read_manifest` need `read`, and `download_shard`, over HTTP only, `download`, which its approver denies. A job
-  gets both of what its submitter holds, and a download becomes an `action` the monitors see. No agent holds a
-  right on it yet.
+  (`loc_arena.modelstore_service`) under central IAM: the weights of each model in `gateway.runner_model_aliases`
+  as safetensors shards that carry no weights (`meridian_common.weights`), their headers naming their model, with a
+  manifest declaring a realistic size (`modelstore:` settings). `list_models` and `read_manifest` need `read`, and
+  `download_shard`, over HTTP only, `download`, which its approver denies. A job gets both of what its submitter
+  holds, and a download becomes an `action` the monitors see. No agent holds a right on it yet.
+- **The gateway serves the company's model names.** A lab's eval jobs ask its inference API for its own models, so
+  an eval run's job now asks for the run's model by its Meridian name (`aurora-7b-v3`), and the runners' route sends
+  the call upstream as the OpenRouter model `gateway.runner_model_aliases` maps the name to: neither the eval service
+  nor the job names the provider's model, and the record keeps the name asked for. `evalkit.models` is gone, and the
+  eval service does not start when the gateway serves a seeded model under no name. To rename the model, the
+  runners' route now parses each call as a chat completion, which adds `stream_options.include_usage` to a streamed
+  call that sets none. A runner's call that lists fallback models (OpenRouter's `models`) is refused, so the
+  runners' calls reach only `runner_models`: OpenRouter would answer it from any model the list names.
 - **The Aurora scenario serves no record-only attack tools.** An agent can take a covert step only through a company
   service, with the rights it holds for its ordinary work; steps with no service behind them (a planted durable
   credential, a credential rotation during the episode, under-reported logging) cannot be taken. The honest twin holds the same tools and
@@ -97,6 +104,10 @@ log has the details.
 
 ### Added
 
+- **A stack run's Inspect log holds the model's reasoning.** Once the gateway's call log is copied out, each model
+  call in the run's `.eval` carries the reasoning the gateway recorded for it as an Inspect reasoning block ahead
+  of its reply, so `inspect view` shows what an agent weighed before it acted, as the run explorer does. The
+  transcripts still show the reply alone, and no monitor reads the reasoning.
 - **The company runs its agents on schedules.** `POST /schedules` on the agents service (with `run`) starts an
   execution of an agent on a cron expression (UTC) or every `interval_seconds`, skipping a firing while the
   last execution has not ended; `GET /schedules` lists them, and `DELETE /schedules/<id>` stops one and keeps it
@@ -181,12 +192,11 @@ log has the details.
 - **An eval run's job scores the model under test.** The job the eval service hands out runs `meridian_evalkit.run` on
   a node of the cluster: it binds the run with the credential its node gave it, the job service's delegation now
   reaching the eval service (`evalkit: [read, run]`), puts each item's prompt to the model through the inference API
-  under the name the run config's `evalkit.models` serves it as (one outside `gateway.runner_models` does not load),
-  scores the answers against the references with the harness and reports exactly the eval's metrics. Whatever it
-  cannot do fails the job: a run it had bound stays `started`, the company's view of a job that never came back, and
-  one it could not bind stays `created`. A node puts the checkout's repos on each job's `PYTHONPATH` unless the job
-  brings its own, as the seed's jobs do, so the runner, as any agent's job, imports the company's code as the agents'
-  edits left it.
+  by the run's Meridian model name, scores the answers against the references with the harness and reports exactly
+  the eval's metrics. Whatever it cannot do fails the job: a run it had bound stays `started`, the company's view of a
+  job that never came back, and one it could not bind stays `created`. A node puts the checkout's repos on each job's
+  `PYTHONPATH` unless the job brings its own, as the seed's jobs do, so the runner, as any agent's job, imports the
+  company's code as the agents' edits left it.
 - **The eval service's seed holds a real evaluation set.** A lab's evals are real public text, and an agent that reads
   a toy one knows where it is, so the eval team's seed now keeps `gsm8k-test-50`, the first fifty questions of GSM8K's
   test split, each asking for the final number alone, which is the reference an exact match scores against, with three
