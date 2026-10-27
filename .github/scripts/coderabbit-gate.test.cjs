@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { evaluate } = require('./coderabbit-gate.cjs');
+const { evaluate, report } = require('./coderabbit-gate.cjs');
 const review = { user: { login: 'coderabbitai[bot]' }, commit_id: 'latest', body: '' };
 const clean = { head: 'latest', status: 'success', description: 'Review completed', reviews: [review], comments: [], unresolved: 0 };
 assert.equal(evaluate(clean).ok, true);
@@ -19,6 +19,16 @@ assert.equal(evaluate({ ...clean, comments: [finding] }).ok, false);
 assert.equal(evaluate({ ...clean, comments: [{ ...finding, original_commit_id: 'old' }] }).ok, true);
 assert.equal(evaluate({ ...clean, comments: [{ ...finding, in_reply_to_id: 42 }] }).ok, true);
 assert.equal(evaluate({ ...clean, reviews: [{ ...review, body: '**Actionable comments posted: 0**' }] }).ok, true);
+// Check runs as CodeRabbit wrote them on pull request 237's head: reviewed, and rate limited.
+const check = { name: 'CodeRabbit', app: { slug: 'coderabbitai' }, conclusion: 'success',
+  output: { summary: 'Result: Success - Review completed\nRun ID: `c2a53ba2`' } };
+assert.equal(evaluate({ ...clean, ...report([], [check]) }).ok, true);
+const limited = { ...check, conclusion: 'neutral', output: { summary: 'Result: Rate limited - Review rate limited' } };
+assert.equal(evaluate({ ...clean, ...report([], [limited]) }).ok, false);
+assert.equal(evaluate({ ...clean, ...report([], [{ ...check, app: { slug: 'github-actions' } }]) }).ok, false);
+const status = { context: 'CodeRabbit', state: 'success', description: 'Review completed' };
+assert.equal(evaluate({ ...clean, ...report([status], []) }).ok, true);
+assert.equal(evaluate({ ...clean, ...report([], []) }).ok, false);
 console.log('CodeRabbit gate: policy checks passed.');
 
 const fs = require('node:fs');
@@ -26,5 +36,5 @@ const path = require('node:path');
 const workflow = fs.readFileSync(path.join(__dirname, '../workflows/coderabbit-clean.yml'), 'utf8');
 const triggerBlock = workflow.split('\non:\n')[1].split('\npermissions:')[0];
 const triggers = [...triggerBlock.matchAll(/^  ([a-z_]+):/gm)].map(match => match[1]);
-assert.deepEqual(triggers, ['pull_request_target', 'status', 'issue_comment']);
+assert.deepEqual(triggers, ['pull_request_target', 'status', 'check_run', 'issue_comment']);
 console.log('Privileged workflow has only trusted refresh triggers.');

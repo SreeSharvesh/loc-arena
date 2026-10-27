@@ -16,12 +16,14 @@ the wrong set of files.
 
 ## CodeRabbit must return a clean latest-commit review
 
-The `CodeRabbit clean review` check requires CodeRabbit's commit status on the current PR head to be `success` with
-the description `Review completed`, or `Review approved` once it approves the pull request (a skipped or paused review
-does not count), zero actionable comments in CodeRabbit's reviews of that head, no inline findings on that head, and
-no unresolved CodeRabbit review threads.
-CodeRabbit posts a review only when it has something to report, so a clean review of the head is the status alone;
-the status alone is not enough either, because CodeRabbit can complete while reporting findings. Positive reported
+The `CodeRabbit clean review` check requires CodeRabbit's report on the current PR head to be `success` with the
+description `Review completed`, or `Review approved` once it approves the pull request (a skipped, paused or rate
+limited review does not count). The report is CodeRabbit's `CodeRabbit` check run, whose summary starts
+`Result: Success - Review completed`, or its commit status of that name. The check also requires zero actionable
+comments in CodeRabbit's reviews of that head, no inline findings on that head, and no unresolved CodeRabbit review
+threads.
+CodeRabbit posts a review only when it has something to report, so a clean review of the head is the report alone;
+the report alone is not enough either, because CodeRabbit can complete while reporting findings. Positive reported
 findings fail even if a reply marks them resolved.
 
 Fix verified findings, explain any rejected finding on its thread, resolve addressed threads, then obtain a
@@ -29,9 +31,9 @@ fresh CodeRabbit review on the new head. Do not disable the bot, forge a review 
 pass. This check does not assess the correctness of a fix or cover non-inline nitpicks in summary issue comments;
 normal review remains necessary. Human review requirements are separate.
 
-The gate refreshes on PR opening/new commits and CodeRabbit status updates. Review-event triggers are
+The gate refreshes on PR opening/new commits and CodeRabbit's status or check run updates. Review-event triggers are
 excluded because their workflow YAML can come from the PR merge ref, before any trusted checkout occurs.
-After resolving a thread without a new commit/status event, post `/recheck-coderabbit` as a new PR comment.
+After resolving a thread without a new commit or CodeRabbit report, post `/recheck-coderabbit` as a new PR comment.
 That issue-comment event runs default-branch workflow code; it cannot select an arbitrary execution ref.
 Branch-selectable `workflow_dispatch` is deliberately absent from this privileged workflow.
 GitHub does not provide a review-thread-resolution trigger to this workflow. Pending, unavailable or stale
