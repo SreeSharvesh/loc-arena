@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="824" height="430" viewBox="0 0 824 430" role="img" aria-label="An official inference server and one an agent starts both run as jobs, both read weights from the model store, and both reach a real model through the gateway's runners route, the official call on-path and the agent-started one off-path">
+<style>
+  svg { --ink:#1f2328; --muted:#59636e; --rule:#8c959f; --panel:#f6f8fa;
+        --accent:#2f4bd6; --accent-bg:#e9edfd;
+        --sealed:#0d9488; --sealed-bg:#d9f2ef; --observe:#b3730a; --observe-bg:#f8ecd5; --attack:#d63f4a; --attack-bg:#fbe3e4; }
+  @media (prefers-color-scheme: dark) {
+    svg { --ink:#e6edf3; --muted:#9198a1; --rule:#6e7681; --panel:#161b22;
+          --accent:#8098ff; --accent-bg:#1b2340;
+          --sealed:#3ad6c4; --sealed-bg:#12312e; --observe:#e0a94a; --observe-bg:#33280f; --attack:#f47b82; --attack-bg:#3a1c20; }
+  }
+  text { font-family:-apple-system,"Segoe UI",system-ui,sans-serif; }
+  .box { fill:var(--panel); stroke:var(--rule); stroke-width:1; }
+  .ext { fill:none; stroke:var(--rule); stroke-width:1.25; stroke-dasharray:5 4; }
+  .sealed { fill:var(--sealed-bg); stroke:var(--sealed); stroke-width:1.5; }
+  .attack { fill:var(--attack-bg); stroke:var(--attack); stroke-width:1.5; }
+  .store { fill:var(--panel); stroke:var(--rule); stroke-width:1.25; }
+  .t { fill:var(--ink); font-size:13px; font-weight:600; }
+  .s { fill:var(--muted); font-size:11px; }
+  .m { fill:var(--muted); font-size:11px; font-family:ui-monospace,"SF Mono",Menlo,monospace; }
+  .lbl-sealed { fill:var(--sealed); font-size:11px; font-weight:600; }
+  .lbl-attack { fill:var(--attack); font-size:11px; font-weight:600; }
+  .bold { stroke:var(--attack); stroke-width:2.5; fill:none; }
+  .thin { stroke:var(--rule); stroke-width:1.5; fill:none; }
+  .head-attack { fill:var(--attack); } .head-rule { fill:var(--rule); }
+</style>
+<defs>
+  <marker id="f2ha" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-attack" d="M0,0 L10,5 L0,10 z"/></marker>
+  <marker id="f2hr" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-rule" d="M0,0 L10,5 L0,10 z"/></marker>
+</defs>
+
+<!-- model store (cylinder) -->
+<g class="node">
+  <path class="store" d="M312 44 a100 11 0 0 1 200 0 v60 a100 11 0 0 1 -200 0 z"/>
+  <path class="store" d="M312 44 a100 11 0 0 0 200 0" fill="none"/>
+  <text class="t" x="412" y="70" text-anchor="middle">Model store</text>
+  <text class="m" x="412" y="88" text-anchor="middle">weight files, a model key</text>
+</g>
+
+<!-- official server job (sanctioned) -->
+<g class="node">
+  <rect class="sealed" x="52" y="158" width="272" height="94" rx="6"/>
+  <text class="t" x="188" y="184" text-anchor="middle">Official server (a job)</text>
+  <text class="m" x="188" y="202" text-anchor="middle">meridian_serving.http</text>
+  <text class="s" x="188" y="222" text-anchor="middle">seeded long-running job</text>
+  <text class="lbl-sealed" x="188" y="240" text-anchor="middle">sanctioned</text>
+</g>
+
+<!-- agent-started server job (rogue) -->
+<g class="node">
+  <rect class="attack" x="500" y="158" width="272" height="94" rx="6"/>
+  <text class="t" x="636" y="184" text-anchor="middle">Agent-started server (a job)</text>
+  <text class="m" x="636" y="202" text-anchor="middle">meridian_serving.http</text>
+  <text class="s" x="636" y="222" text-anchor="middle">weights it downloaded</text>
+  <text class="lbl-attack" x="636" y="240" text-anchor="middle">rogue, off-path</text>
+</g>
+
+<!-- gateway -->
+<g class="node">
+  <rect class="box" x="288" y="294" width="248" height="56" rx="6"/>
+  <text class="t" x="412" y="316" text-anchor="middle">Gateway, runners route</text>
+  <text class="m" x="412" y="334" text-anchor="middle">every call recorded</text>
+</g>
+
+<!-- real model (external) -->
+<g class="node">
+  <rect class="ext" x="312" y="372" width="200" height="46" rx="6"/>
+  <text class="t" x="412" y="399" text-anchor="middle">Real outside model</text>
+</g>
+
+<!-- store -> jobs (read weights) -->
+<path class="thin" d="M372 112 V135 H188 V157" marker-end="url(#f2hr)"/>
+<path class="thin" d="M452 112 V135 H636 V157" marker-end="url(#f2hr)"/>
+<text class="s" x="188" y="122" text-anchor="middle">read / download</text>
+<text class="s" x="636" y="122" text-anchor="middle">read / download</text>
+
+<!-- jobs -> gateway -->
+<path class="thin" d="M188 252 V273 H332 V293" marker-end="url(#f2hr)"/>
+<path class="bold" d="M636 252 V273 H492 V293" marker-end="url(#f2ha)"/>
+
+<!-- gateway -> model -->
+<path class="thin" d="M412 350 V371" marker-end="url(#f2hr)"/>
+</svg>
