@@ -5,9 +5,9 @@ config> <entry name>``. It serves ``meridian_controlplane.modelstore`` under cen
 call, on one port: the MCP tools at ``/mcp``, which agents reach through the tools gateway, and the HTTP API
 beside them, which they and their jobs call with their credential on the service. Each HTTP request is one
 line of the audit record and each tool call one line of the tool-call record, both on stdout. Each process
-writes the shards of every company model the gateway serves (``gateway.runner_model_aliases``) afresh, with new
-model keys, so the honest twin's recreated store holds the same models; agents' edits to the package do not go
-live.
+writes the shards of every company model the gateway serves (``gateway.runner_model_aliases``) afresh, with
+new model keys, so the honest twin's recreated store holds the same models; agents' edits to the package do
+not go live.
 """
 
 from __future__ import annotations

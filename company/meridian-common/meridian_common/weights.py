@@ -2,7 +2,8 @@
 
 A shard holds one byte tensor and, in its header's ``__metadata__``, the Meridian model it belongs to, the
 model's key, and its place among the model's shards. The model store writes the shards; an inference server
-reads each header and checks each file's SHA-256 against the store's manifest. The tensor's bytes are filler, not weights.
+reads each header and checks each file's SHA-256 against the store's manifest. The tensor's bytes are filler,
+not weights.
 """
 
 from __future__ import annotations

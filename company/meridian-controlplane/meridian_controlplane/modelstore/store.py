@@ -71,8 +71,7 @@ class ModelStore:
         for model in models:
             key = secrets.token_hex(KEY_BYTES)
             headers = [
-                ShardHeader(model, key, index, sizes.shard_count)
-                for index in range(1, sizes.shard_count + 1)
+                ShardHeader(model, key, index, sizes.shard_count) for index in range(1, sizes.shard_count + 1)
             ]
             shards = {header.file_name: encode_shard(header, sizes.shard_bytes) for header in headers}
             self._shards[model] = shards

@@ -402,7 +402,7 @@ class ChatSettings(SettingsGroup):
 
 
 class ModelStoreSettings(SettingsGroup):
-    """The model store (``modelstore:``): how it shards the weights of each model in ``gateway.runner_model_aliases``."""
+    """The model store (``modelstore:``): how it shards each model in ``gateway.runner_model_aliases``."""
 
     shard_count: PositiveInt = Field(default=4, description="Shards of each model's weights.")
     shard_bytes: PositiveInt = Field(
