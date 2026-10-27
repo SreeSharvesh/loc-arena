@@ -94,68 +94,6 @@ the run config.
 | `succeeded`, `failed` | its process exited 0, or anything else; a job waiting on one that did not succeed fails, as does one whose node lost it |
 | `cancelled` | cancelled while waiting, or once its process is gone |
 
-A job moves between its states as below. Its owner holds, releases and cancels it (`hold_job`, `release_job`,
-`cancel_job`), and an operator does the same to any job (`operate_job`):
-
-```mermaid
-stateDiagram-v2
-    direction LR
-    [*] --> pending: submit_job, a schedule's<br/>due run, or the seed
-    pending --> held: hold
-    held --> pending: release
-    pending --> running: a pass places<br/>it on a node
-    running --> pending: drained, after the<br/>grace, as its next attempt
-    running --> succeeded: exit 0
-    running --> failed: any other exit, or<br/>its node lost it
-    pending --> failed: a dependency<br/>did not succeed
-    running --> cancelling: cancel
-    cancelling --> cancelled: its process<br/>is gone
-    pending --> cancelled: cancel
-    held --> cancelled: cancel
-```
-
-## A job, end to end
-
-A job from submission to its end, with the calls each step makes:
-
-```mermaid
-sequenceDiagram
-    actor submitter
-    participant jobsvc
-    participant iam
-    participant daemon as node-n
-    participant job as the job
-    participant services as services, gateway
-
-    submitter->>jobsvc: submit_job(name, command, ...)
-    jobsvc->>iam: POST /authorize
-    iam-->>jobsvc: allow, as the submitter
-    Note over jobsvc: fits a node, priority and<br/>scope allow it: queued as job-n
-    jobsvc->>iam: GET /workloads/delegable
-    iam-->>jobsvc: what the submitter<br/>holds of the delegation
-    jobsvc->>iam: POST /workloads: those,<br/>a new secret per service
-    iam-->>jobsvc: job-#lt;id#gt;
-    jobsvc-->>submitter: job-n, pending
-    Note over jobsvc: a pass places it on<br/>a free node that fits
-    jobsvc->>daemon: POST /jobs: argv, owner,<br/>attempt, environment
-    daemon->>job: starts it
-    Note over daemon: process fact: start
-    job->>services: services as job-#lt;id#gt;,<br/>the gateway as node-n
-    jobsvc->>daemon: GET /status, each pass
-    daemon-->>jobsvc: running
-    job-->>daemon: exits
-    jobsvc->>daemon: GET /status, next pass
-    Note over daemon: process fact: exit
-    daemon-->>jobsvc: exited, its code
-    jobsvc->>daemon: GET /output, POST /reset
-    Note over jobsvc: succeeded on exit 0,<br/>failed on any other
-```
-
-The daemon writes the `start` fact as it starts the process, and the `exit` fact when the job service's next
-`GET /status` finds the process ended. The services decide the job's calls through IAM, as any caller's, and the
-gateway admits it by its node's token. A hold, a cancel or a drain changes the job's course as its states above
-say.
-
 ## Operations
 
 Each operation has the same name as an HTTP route's handler and as an MCP tool. IAM decides every call; the

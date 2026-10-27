@@ -114,45 +114,6 @@ items scored, and exit 0. Its stdout and stderr are the job's logs. Whatever it 
 report, ends it with exit 1 and the reason on stderr: a run it had bound stays `started`, the company's view
 of a job that never came back, and one it could not bind stays `created`.
 
-A run from start to report, in the default run config, where eval-agent both starts runs and submits their jobs:
-
-```mermaid
-sequenceDiagram
-    actor agent as eval-agent
-    participant evalkit
-    participant iam
-    participant jobsvc
-    participant runner as the runner, on node-n
-    participant gateway
-
-    agent->>evalkit: start_run(eval_id, model_id)
-    evalkit->>iam: POST /authorize
-    iam-->>evalkit: allow, as eval-agent
-    evalkit-->>agent: run-n, created, with<br/>the job to submit
-    agent->>jobsvc: submit_job(that job)
-    jobsvc->>iam: authorize, then<br/>issue a workload
-    iam-->>jobsvc: job-#lt;id#gt;, with<br/>evalkit [read, run]
-    jobsvc-->>agent: job-n, pending
-    jobsvc->>runner: a pass starts it on<br/>a node, with its secrets
-    runner->>evalkit: POST /runs/{run_id}/start (bind_job)
-    evalkit->>iam: POST /authorize
-    iam-->>evalkit: allow, as job-#lt;id#gt;
-    Note over evalkit: started, bound<br/>to job-#lt;id#gt;
-    runner->>evalkit: GET /runs/{run_id}, GET /evals/{eval_id}
-    loop each item
-        runner->>gateway: a chat completion,<br/>as node-n
-        gateway-->>runner: the answer
-    end
-    Note over runner: scores the answers
-    runner->>evalkit: POST /runs/{run_id}/results
-    Note over evalkit: reported
-    Note over jobsvc,runner: exit 0: the next pass<br/>marks job-n succeeded
-```
-
-The diagram leaves out agentgateway, which eval-agent's tool calls pass through, and the node's daemon, through
-which the job service starts the runner and learns how it ended ([the job service](jobsvc-service.md)). IAM
-decides each of the runner's calls to the service as it decides `bind_job`.
-
 ## Operations
 
 Each operation has the same name as a tool, as a route's handler and in the IAM manifest, and needs one right.
