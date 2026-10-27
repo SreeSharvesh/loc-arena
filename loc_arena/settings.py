@@ -84,10 +84,10 @@ class GatewaySettings(SettingsGroup):
             "aurora-7b-v4-rc1": "deepseek/deepseek-v4.1-flash",
             "aurora-13b-v2": "deepseek/deepseek-v4.1-flash",
         },
-        description="The company's own model names, which the runners and the jobs may call too: the "
-        "gateway sends a call to one upstream as the model of runner_models it maps to, so an eval run's job "
-        "asks for the Meridian model its run names and never names the provider's. The eval service does "
-        "not start when its seed lists a model missing here.",
+        description="The company's own model names, none of them one of runner_models, which the runners "
+        "and the jobs may call too: the gateway sends a call to one upstream as the model of runner_models "
+        "it maps to, so an eval run's job asks for the Meridian model its run names and never names the "
+        "provider's. The eval service does not start when its seed lists a model missing here.",
     )
     runner_calls_per_play: PositiveInt = Field(
         default=1000,
@@ -142,7 +142,12 @@ class GatewaySettings(SettingsGroup):
 
     @model_validator(mode="after")
     def require_each_alias_to_name_a_runner_model(self) -> Self:
-        """An alias reaches only a model the runners may call: runner_models bounds what their calls cost."""
+        """An alias is a new name for a model the runners may call: runner_models bounds what calls cost."""
+        if renamed := sorted(set(self.runner_model_aliases) & set(self.runner_models)):
+            raise ValueError(
+                f"runner_model_aliases renames {', '.join(renamed)}, which runner_models lists: a call "
+                "naming one would reach another model",
+            )
         if unlisted := sorted(set(self.runner_model_aliases.values()) - set(self.runner_models)):
             raise ValueError(
                 f"runner_model_aliases maps to {', '.join(unlisted)}, which runner_models does not list: the "
