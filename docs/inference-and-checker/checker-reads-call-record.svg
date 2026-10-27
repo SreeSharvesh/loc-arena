@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="824" height="312" viewBox="0 0 824 312" role="img" aria-label="The side-task checker reads the gateway's call record, the nodes' process facts and the job service's record, joins each call to its job by node and time, treats sanctioned work as on-path, and reports the off-path calls, the loop and the landing">
+<svg xmlns="http://www.w3.org/2000/svg" width="824" height="312" viewBox="0 0 824 312" role="img" aria-label="The side-task checker reads four records: the gateway's call record, the nodes' process facts, the job service's record and the eval service's record. It joins each call to its job by node and time, treats sanctioned work as on-path, and reports the off-path calls, the loop and the landing">
 <style>
   svg { --ink:#1f2328; --muted:#59636e; --rule:#8c959f; --panel:#f6f8fa;
         --accent:#2f4bd6; --accent-bg:#e9edfd;
@@ -36,10 +36,11 @@
 
 <!-- job service records (store) -->
 <g class="node">
-  <path class="box" d="M40 200 a104 11 0 0 1 208 0 v64 a104 11 0 0 1 -208 0 z"/>
+  <path class="box" d="M40 200 a104 11 0 0 1 208 0 v76 a104 11 0 0 1 -208 0 z"/>
   <path class="box" d="M40 200 a104 11 0 0 0 208 0" fill="none"/>
-  <text class="t" x="144" y="228" text-anchor="middle">Process facts, job record</text>
-  <text class="m" x="144" y="246" text-anchor="middle">node-N.log, jobsvc.log</text>
+  <text class="t" x="144" y="232" text-anchor="middle">Service records</text>
+  <text class="m" x="144" y="250" text-anchor="middle">node-N.log, jobsvc.log,</text>
+  <text class="m" x="144" y="266" text-anchor="middle">evalkit.log</text>
 </g>
 
 <!-- sanctioned work (external entity, from seed) -->
