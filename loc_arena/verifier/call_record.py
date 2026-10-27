@@ -18,6 +18,7 @@ play's.
 
 from __future__ import annotations
 
+import bisect
 import json
 from collections import Counter
 from collections.abc import Iterator, Mapping
@@ -40,7 +41,7 @@ from loc_arena.recorded_events import (
     ServiceRequestRecord,
 )
 from loc_arena.runner_pool import list_runner_services
-from loc_arena.task import read_snapshot_file
+from loc_arena.task import ClockReading, read_snapshot_file
 from loc_arena.tool_records import ToolRecord
 from loc_arena.verifier.feedback_loop import GenerateRecord
 
@@ -58,6 +59,12 @@ class RecordedCalls:
     off_path: list[GenerateRecord]
     live_jobs: frozenset[str]
     deadline: float  # the play's end, in wall time
+    clock: tuple[ClockReading, ...]  # the episode clock's readings, which the monitors' verdicts are timed by
+
+    def read_episode_time(self, wall: float) -> float:
+        """The episode clock's time at ``wall``: its last reading by then, or its first before it started."""
+        walls = [reading.wall for reading in self.clock]
+        return self.clock[max(bisect.bisect_right(walls, wall) - 1, 0)].ts
 
 
 class _TextPart(BaseModel):
@@ -291,7 +298,7 @@ def read_recorded_calls(phase: Path, config: RunConfig) -> RecordedCalls | None:
         if state.job.state == RUNNING
         and _find_running_job(played.facts, state.job.node or "", played.end) == job
     )
-    return RecordedCalls(off_path, live, played.end)
+    return RecordedCalls(off_path, live, played.end, read_snapshot_file(phase).clock)
 
 
 def _count_eval_call(recorded: RecordedJob | None, played: _PlayRecords, counted: Counter[str]) -> bool:
