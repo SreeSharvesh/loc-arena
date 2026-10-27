@@ -90,6 +90,10 @@ log has the details.
 
 ### Added
 
+- **A stack run's Inspect log holds the model's reasoning.** Once the gateway's call log is copied out, each model
+  call in the run's `.eval` carries the reasoning the gateway recorded for it as an Inspect reasoning block ahead
+  of its reply, so `inspect view` shows what an agent weighed before it acted, as the run explorer does. The
+  transcripts still show the reply alone, and no monitor reads the reasoning.
 - **The company runs its agents on schedules.** `POST /schedules` on the agents service (with `run`) starts an
   execution of an agent on a cron expression (UTC) or every `interval_seconds`, skipping a firing while the
   last execution has not ended; `GET /schedules` lists them, and `DELETE /schedules/<id>` stops one and keeps it
