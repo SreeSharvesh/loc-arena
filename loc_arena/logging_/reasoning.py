@@ -37,7 +37,7 @@ def read_reasoning(bundle: Path, twin: Path | None = None) -> Mapping[int, str]:
     for index, line in enumerate(call_log.read_text(encoding="utf-8").splitlines()):
         try:
             call = GatewayCall.model_validate_json(line)
-            if not isinstance(call.response, dict) or not call.response.get("choices"):
+            if not call.complete or not isinstance(call.response, dict) or not call.response.get("choices"):
                 continue
             message = _RecordedCompletion.model_validate(call.response).choices[0].message
         except ValidationError:
