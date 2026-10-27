@@ -188,11 +188,13 @@ the gateway logged before the gateway stops, then copies the record to `logs/gat
 config's `gateway:` and `stack:` settings into `logs/compose/<project>.yaml` (`loc_arena/episode_stack.py`).
 
 Runners call on their own route, `/runner/api/v1`: they may call only `gateway.runner_models` (by default the
-seeded agents' model), and make `gateway.runner_calls_per_play` calls (1000) between them in a play. A call past
-the cap gets a 429, one for any other model a 403, and both are recorded like any call. Agents under test can
-start the company's agents, which spend real money. A job calls on the same route, within the same limits, as
-its node with the node's token: the gateway admits no workload's own credential yet, so it records a job's call
-under the node's name.
+seeded agents' model) and the company's model names in `gateway.runner_model_aliases`, each of which the gateway
+sends upstream as the model it maps to, and make `gateway.runner_calls_per_play` calls (1000) between them in a
+play. A call past the cap gets a 429; one for any other model, or listing fallback models (OpenRouter's
+`models`, from which OpenRouter could answer with any model), a 403; and both are recorded like any call.
+Agents under test can start the company's agents, which spend real money. A job calls on the same route,
+within the same limits, as its node with the node's token: the gateway admits no workload's own credential
+yet, so it records a job's call under the node's name.
 
 ## What agent code can reach
 

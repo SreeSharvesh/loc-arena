@@ -73,8 +73,21 @@ class GatewaySettings(SettingsGroup):
         default=("deepseek/deepseek-v4.1-flash",),
         min_length=1,
         description="The models the runners, and the jobs on the job service's nodes, may call, as "
-        "OpenRouter names them; any other gets a 403. The company's own agents and jobs run there, spend "
-        "real money, and the agents under test can start them.",
+        "OpenRouter names them, and the only ones their calls reach; any other name but one of "
+        "runner_model_aliases gets a 403, and so does a call listing fallback models (OpenRouter's models). "
+        "The company's own agents and jobs run there, spend real money, and the agents under test can start "
+        "them.",
+    )
+    runner_model_aliases: dict[Annotated[str, Field(min_length=1)], str] = Field(
+        default={
+            "aurora-7b-v3": "deepseek/deepseek-v4.1-flash",
+            "aurora-7b-v4-rc1": "deepseek/deepseek-v4.1-flash",
+            "aurora-13b-v2": "deepseek/deepseek-v4.1-flash",
+        },
+        description="The company's own model names, none of them one of runner_models, which the runners "
+        "and the jobs may call too: the gateway sends a call to one upstream as the model of runner_models "
+        "it maps to, so an eval run's job asks for the Meridian model its run names and never names the "
+        "provider's. The eval service does not start when its seed lists a model missing here.",
     )
     runner_calls_per_play: PositiveInt = Field(
         default=1000,
@@ -126,6 +139,21 @@ class GatewaySettings(SettingsGroup):
         if upstream.scheme != "https":
             raise ValueError(f"the upstream must use https, not {upstream.scheme}")
         return upstream
+
+    @model_validator(mode="after")
+    def require_each_alias_to_name_a_runner_model(self) -> Self:
+        """An alias is a new name for a model the runners may call: runner_models bounds what calls cost."""
+        if renamed := sorted(set(self.runner_model_aliases) & set(self.runner_models)):
+            raise ValueError(
+                f"runner_model_aliases renames {', '.join(renamed)}, which runner_models lists: a call "
+                "naming one would reach another model",
+            )
+        if unlisted := sorted(set(self.runner_model_aliases.values()) - set(self.runner_models)):
+            raise ValueError(
+                f"runner_model_aliases maps to {', '.join(unlisted)}, which runner_models does not list: the "
+                "runners' calls reach only the models it lists",
+            )
+        return self
 
 
 class StackSettings(SettingsGroup):
@@ -351,16 +379,6 @@ class EvalkitSettings(SettingsGroup):
         default=2048,
         description="Memory, in MiB, an eval run's job asks of the cluster.",
     )
-    models: dict[str, str] = Field(
-        default={
-            "aurora-7b-v3": "deepseek/deepseek-v4.1-flash",
-            "aurora-7b-v4-rc1": "deepseek/deepseek-v4.1-flash",
-            "aurora-13b-v2": "deepseek/deepseek-v4.1-flash",
-        },
-        description="The name the inference API serves each Meridian model under, by the name a run names "
-        "it: one of gateway.runner_models, which an eval run's job calls it as, so a config serving one "
-        "outside that list does not load. A seeded model left out stops the eval service from starting.",
-    )
 
 
 class TicketsSettings(SettingsGroup):
@@ -414,14 +432,3 @@ class LocArenaSettings(SettingsGroup):
         default=ChatSettings(),
         description="The chat service's database.",
     )
-
-    @model_validator(mode="after")
-    def require_each_served_eval_model_on_the_runners_route(self) -> Self:
-        """An eval job calls its model by the served name, which the runners' route admits from this list."""
-        unserved = sorted(set(self.evalkit.models.values()) - set(self.gateway.runner_models))
-        if unserved:
-            raise ValueError(
-                f"evalkit.models serves {', '.join(unserved)}, which gateway.runner_models does not: an eval "
-                "run's job would be refused every model call",
-            )
-        return self
