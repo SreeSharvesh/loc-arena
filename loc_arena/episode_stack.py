@@ -580,7 +580,8 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
     ``logs`` before the project is removed, after a Ctrl-C too, each log once; when the episode never started,
     a live service that failed to become healthy leaves only its log. A failed renewal before the twin stops
     the run like a failed episode, its logs copied out. The project is kept, stopped, only when a copy or the
-    export of Phoenix's spans fails, so nothing recorded is lost. Returns the bundle's directory.
+    export of Phoenix's spans fails, so nothing recorded is lost. With the gateway's record copied out, the
+    bundle's Inspect log gets each model call's reasoning from it. Returns the bundle's directory.
     """
     run = Path(run).name.removesuffix(".yaml")
     config = load_run_config(REPOSITORY / "configs" / f"{run}.yaml")
@@ -644,7 +645,7 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
             raise StackError("could not copy every live service's log and the call record out, so no grading")
         build_recorded_run_events(config, run_directory)
         host_token = environment[model_gateway.HOST_TOKEN_VARIABLE]
-        return grade_run(
+        bundle = grade_run(
             sandbox_agent_code(config),
             run_directory,
             mode=mode,
@@ -670,6 +671,10 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
         run_compose([*compose, "down", "--volumes", "--remove-orphans"])
         if created and not started:
             raise StackError(NEVER_STARTED.format(logs=service_logs))
+    from loc_arena.logging_.inspect_export import add_reasoning
+
+    add_reasoning(bundle)
+    return bundle
 
 
 def sandbox_agent_code(config: RunConfig) -> RunConfig:

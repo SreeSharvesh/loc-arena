@@ -19,7 +19,6 @@ import yaml
 from loc_arena.compose_document import ComposeDocument
 from loc_arena.config import load_run_config
 from loc_arena.episode_stack import AGENT_NETWORK, EGRESS_NETWORK, REPOSITORY, render_compose
-from loc_arena.explorer.reasoning import read_reasoning
 from loc_arena.gateway.core import GenerateRequest, output_fingerprint
 from loc_arena.gateway.model_gateway import (
     EPISODE_TOKEN_VARIABLE,
@@ -35,6 +34,7 @@ from loc_arena.gateway.model_gateway import (
     read_records,
 )
 from loc_arena.logging_.events import AppendOnlyLog, Event
+from loc_arena.logging_.reasoning import read_reasoning
 from loc_arena.settings import GatewaySettings, LocArenaSettings
 
 RECORD = (Path(__file__).parent / "data" / "collector_record.jsonl").read_text(encoding="utf-8")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import zipfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -12,13 +13,22 @@ from typing import Any
 
 from inspect_ai.event import Event as InspectEvent
 from inspect_ai.event import InfoEvent, ModelEvent, SpanBeginEvent, SpanEndEvent, ToolEvent
-from inspect_ai.log import EvalConfig, EvalDataset, EvalLog, EvalSample, EvalSpec, write_eval_log
-from inspect_ai.model import ChatMessageUser, GenerateConfig, ModelOutput
+from inspect_ai.log import (
+    EvalConfig,
+    EvalDataset,
+    EvalLog,
+    EvalSample,
+    EvalSpec,
+    read_eval_log,
+    write_eval_log,
+)
+from inspect_ai.model import ChatMessageUser, ContentReasoning, ContentText, GenerateConfig, ModelOutput
 from inspect_ai.tool import ToolCallError
 
 from loc_arena.config import RunConfig
 from loc_arena.logging_.agent_trace import EpisodeTrace, ModelCall, TurnRef, same_logical_event
 from loc_arena.logging_.events import Event, read_events
+from loc_arena.logging_.reasoning import read_reasoning
 
 
 class UnassignedEventError(RuntimeError):
@@ -53,6 +63,17 @@ def write_run_eval(
     )
     write_eval_log(log, str(path))
     return path
+
+
+def add_reasoning(bundle: Path) -> None:
+    path = bundle / f"{bundle.name}.eval"
+    if not zipfile.is_zipfile(path):
+        return
+    log = read_eval_log(str(path))
+    for index, sample in enumerate(log.samples or []):
+        reasoning = read_reasoning(bundle, bundle / str(sample.id) if index else None)
+        sample.events = [_with_reasoning(event, reasoning) for event in sample.events]
+    write_eval_log(log, str(path))
 
 
 def _eval_spec(run_name: str, config: RunConfig, mode: str, seed: int, sample_count: int) -> EvalSpec:
@@ -237,6 +258,16 @@ def _model_event(call: ModelCall, span_id: str | None) -> ModelEvent:
         completed=at,
         metadata={"identity": call.identity, "phase": call.phase, "sealed_seq": call.sealed_seq},
     )
+
+
+def _with_reasoning(event: InspectEvent, reasoning: Mapping[int, str]) -> InspectEvent:
+    if not isinstance(event, ModelEvent):
+        return event
+    said = reasoning.get((event.metadata or {}).get("sealed_seq"))
+    if said is None:
+        return event
+    content = [ContentReasoning(reasoning=said), ContentText(text=event.output.completion)]
+    return event.model_copy(update={"output": ModelOutput.from_content(event.output.model, content)})
 
 
 def _tool_event(event: Event, span_id: str | None, at: datetime, *, mirror_seq: int | None) -> ToolEvent:

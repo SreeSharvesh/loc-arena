@@ -89,8 +89,8 @@ Below the action, each part of the turn is folded under an icon, so you learn wh
 The reasoning comes from the call log the gateway of a stack run writes beside the run (`logs/gateway/`), where
 each reply is recorded as OpenRouter returned it. Each recorded reply is matched to its sealed `inference_call` by
 its `output_fp`. The expanded card shows it collapsed above the action. An in-process or scripted run, a model with
-reasoning off, or a bundle moved away from its call log has none, and the page says so. Only the page reads it:
-the monitors never do.
+reasoning off, or a bundle moved away from its call log has none, and the page says so. The page and the run's
+Inspect log show it; the monitors never read it.
 
 ## Communication
 
