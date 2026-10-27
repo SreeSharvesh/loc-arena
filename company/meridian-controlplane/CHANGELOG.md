@@ -1,5 +1,11 @@
 # Changelog — meridian-controlplane
 
+## 0.14.0
+- modelstore: the model store (`meridian_controlplane.modelstore`), the weights of each model the company serves
+  as safetensors shards (`meridian_common.weights`) with a manifest of each shard's declared size and SHA-256;
+  `list_models` and `read_manifest` over HTTP and MCP, `download_shard` over HTTP, decided by the central
+  authority a deployment hands in.
+
 ## 0.13.0
 - agents: schedules (`schedules.py`) on a cron expression or an interval, each firing an execution of an agent,
   decided by the central authority under the schedule's own identity; the service starts with the schedules

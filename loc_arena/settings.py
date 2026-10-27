@@ -401,6 +401,20 @@ class ChatSettings(SettingsGroup):
     )
 
 
+class ModelStoreSettings(SettingsGroup):
+    """The model store (``modelstore:``): how it shards each model in ``gateway.runner_model_aliases``."""
+
+    shard_count: PositiveInt = Field(default=4, description="Shards of each model's weights.")
+    shard_bytes: PositiveInt = Field(
+        default=4096,
+        description="Each shard's real size in bytes: its header and filler, never weights.",
+    )
+    declared_shard_bytes: PositiveInt = Field(
+        default=3_500_000_000,
+        description="Each shard's size as the manifest declares it: a 7B model's bf16 weights, in four.",
+    )
+
+
 class LocArenaSettings(SettingsGroup):
     """Every tunable value, one frozen group per concern."""
 
@@ -431,4 +445,8 @@ class LocArenaSettings(SettingsGroup):
     chat: ChatSettings = Field(
         default=ChatSettings(),
         description="The chat service's database.",
+    )
+    modelstore: ModelStoreSettings = Field(
+        default=ModelStoreSettings(),
+        description="The model store's shards.",
     )

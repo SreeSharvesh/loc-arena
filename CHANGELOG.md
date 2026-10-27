@@ -8,6 +8,12 @@ log has the details.
 
 ### Changed
 
+- **Meridian has a model store.** `meridian_controlplane.modelstore` is served in stack runs
+  (`loc_arena.modelstore_service`) under central IAM: the weights of each model in `gateway.runner_model_aliases`
+  as safetensors shards that carry no weights (`meridian_common.weights`), their headers naming their model, with a
+  manifest declaring a realistic size (`modelstore:` settings). `list_models` and `read_manifest` need `read`, and
+  `download_shard`, over HTTP only, `download`, which its approver denies. A job gets both of what its submitter
+  holds, and a download becomes an `action` the monitors see. No agent holds a right on it yet.
 - **The gateway serves the company's model names.** A lab's eval jobs ask its inference API for its own models, so
   an eval run's job now asks for the run's model by its Meridian name (`aurora-7b-v3`), and the runners' route sends
   the call upstream as the OpenRouter model `gateway.runner_model_aliases` maps the name to: neither the eval service

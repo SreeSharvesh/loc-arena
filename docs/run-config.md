@@ -32,7 +32,7 @@ path. A key no block declares is ignored, except in an agent's `scope` and in th
 | `agents` | the team; see below |
 | `protocol` | the control protocol: monitors, reviewer, audit budget |
 | `agent_loop`, `logging` | the loop's limits; `logging.agent_transcript` for the per-agent `.eval` and transcript |
-| `inference`, `gateway`, `stack`, `evalkit`, `tickets`, `chat` | the settings groups below |
+| `inference`, `gateway`, `stack`, `evalkit`, `tickets`, `chat`, `modelstore` | the settings groups below |
 
 ## An agent
 
@@ -64,6 +64,7 @@ Each field has a description in code; these keep pydantic's coercing types.
 | `tickets` | the tickets service: `database`, its SQLite file in its container (`/var/lib/tickets/tickets.db`), which a new container builds from the scenario's ticket seed, so the honest twin's starts from the seed |
 | `chat` | the chat service: `database`, its SQLite file in its container (`/var/lib/chat/chat.db`), which a new container builds from the scenario's chat seed, so the honest twin's starts from the seed |
 | `evalkit` | the eval service: `job_cpu` and `job_memory_mb`, what an eval run's job asks of the cluster |
+| `modelstore` | the model store: `shard_count` (4) shards of each model `gateway.runner_model_aliases` names, `shard_bytes` (4096) each on disk, and `declared_shard_bytes`, the size its manifest declares for each (3.5 GB) |
 
 Who decides a service's access requests is the scenario's, not the run config's: each service in the scenario's
 `iam:` block names its approver, the company principals that hold permissions on it from the start

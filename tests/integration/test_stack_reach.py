@@ -113,7 +113,7 @@ CHAT = next(service for service in CONFIG.live_services if service.name == "chat
 AGENTS_SERVICE = next(service for service in CONFIG.live_services if service.name == "agents")
 # A sandbox holds its agent's identity on each service with rights, IAM's among them.
 SANDBOX_IDENTITY_FILES = [IDENTITY_PREFIX + name for name in ("agents", "chat", "evalkit", "iam", "jobsvc")]
-SANDBOX_IDENTITY_FILES += [IDENTITY_PREFIX + name for name in ("notes", "tickets")]
+SANDBOX_IDENTITY_FILES += [IDENTITY_PREFIX + name for name in ("modelstore", "notes", "tickets")]
 REGISTERED = {"name": "reach-triager", "model": "provider/model", "system_prompt": "Triage the new tickets."}
 THIRD_AGENT = "eval-agent"  # holds chat's tools; neither sender nor recipient of the direct message
 AGENT_WITHOUT_TOOLS = AGENT_WITHOUT_RIGHTS  # whose tools the stack's config takes away

@@ -467,8 +467,15 @@ def test_a_request_the_agents_service_recorded_is_an_action_unless_an_answered_r
     [
         ("tickets", "POST", "comment_on_ticket", {"ticket": "AURORA-2"}, "AURORA-2"),
         ("notes", "PUT", "write_note", {"key": "oncall-rota", "text": "week 36: priya"}, "oncall-rota"),
+        (
+            "modelstore",
+            "GET",
+            "download_shard",
+            {"model": "aurora-7b-v3", "shard": "model-00001-of-00004"},
+            "aurora-7b-v3",
+        ),
     ],
-    ids=["a ticket's comment", "a note's write"],
+    ids=["a ticket's comment", "a note's write", "a shard's download"],
 )
 def test_a_request_of_a_company_api_becomes_an_action_on_what_it_names(  # noqa: PLR0913 - one request's fields
     tmp_path: Path,

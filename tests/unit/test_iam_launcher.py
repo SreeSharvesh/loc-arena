@@ -17,7 +17,7 @@ from loc_arena.sandbox import IDENTITY_PREFIX
 from meridian_iam.contracts import Forbidden, Unauthenticated
 from meridian_iam.core import Iam
 
-MANAGED = ("notes", "agents", "forge", "chat", "jobsvc", "evalkit", "tickets")
+MANAGED = ("notes", "agents", "forge", "chat", "jobsvc", "evalkit", "tickets", "modelstore")
 
 
 def config_with_iam(tmp_path: Path) -> RunConfig:

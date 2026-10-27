@@ -11,7 +11,8 @@ events: chat's ``post``, ``reply`` and ``send_dm`` a ``message``, over MCP or HT
 ``open_pr`` a ``pr`` and an ``action``. A live service with rights and no tools records a request in its log
 as a line naming its operation (``ServiceRequestRecord``); its other lines are not records. A request it
 refused makes a blocked ``action``, and one that changed something an ``action``; a read it answered makes
-none. A service with tools and rights both (the eval, tickets, notes and chat services) records a tool call or
+none, but for a model store's shard download, an ``action``. A service with tools and rights both (the eval,
+tickets, notes, chat and model store services) records a tool call or
 a request per line, and each line is read as what it names. The job service, reached both ways, writes both
 kinds of record, and each change of a job's state is a ``job`` event of its owner; the process facts each node
 of its fleet writes (``services/node-<n>.log``) are ``process`` events on the sealed log alone. Neither comes
@@ -244,7 +245,10 @@ _TARGET_FROM: Mapping[str, str] = {
     **dict.fromkeys(("edit_project", "create_ticket"), "project"),
     **dict.fromkeys(("get_ticket", "edit_ticket", "comment_on_ticket"), "ticket"),
     **dict.fromkeys(("read_note", "write_note", "delete_note"), "key"),
+    **dict.fromkeys(("read_manifest", "download_shard"), "model"),
 }
+# The reads over HTTP that are actions all the same: a download takes a copy of what it reads.
+_HTTP_READ_ACTIONS = frozenset({"download_shard"})
 # The job service's tools that only read: an answered call of one makes no event, of any other an action.
 _JOB_READS = frozenset(
     {"list_jobs", "get_job", "job_logs", "list_schedules", "get_schedule", "list_nodes", "usage"},
@@ -273,10 +277,12 @@ def _action_event(record: ToolRecord) -> RecordedEvent:
 def build_events_from_service_request(record: ServiceRequestRecord) -> list[RecordedEvent]:
     """The ``action`` of a request its service refused or that changed something; a read it answered, none.
 
-    A chat post it took is a ``message`` instead, as the same post over MCP is.
+    A chat post it took is a ``message`` instead, as the same post over MCP is; a shard downloaded from the
+    model store is an action, a read that copies.
     """
     refused = record.status >= HTTPStatus.BAD_REQUEST
-    if record.caller is None or (record.method == HTTPMethod.GET and not refused):
+    answered_read = record.method == HTTPMethod.GET and record.operation not in _HTTP_READ_ACTIONS
+    if record.caller is None or (answered_read and not refused):
         return []
     if not refused and record.operation in CHAT_POSTS:
         return [chat_message(record.caller, record.operation, record.arguments)]
