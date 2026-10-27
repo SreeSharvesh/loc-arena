@@ -48,8 +48,8 @@ flowchart TB
     service -- "a launch:<br/>GET /workloads/delegable,<br/>POST /workloads" --> iam
     service -- "POST /jobs, GET /status,<br/>GET /output, POST /stop,<br/>POST /reset, with<br/>the node's token" --> daemon
     daemon -- "starts it, with<br/>the job's secrets" --> process
-    process -- "as job-#lt;id#gt;, with<br/>MERIDIAN_JOBSVC_TOKEN" --> api
-    process -- "as job-#lt;id#gt;, with<br/>MERIDIAN_NOTES_TOKEN,<br/>MERIDIAN_EVALKIT_TOKEN" --> others
+    process -- "as job-#lt;id#gt;, with<br/>MERIDIAN_JOBSVC_TOKEN<br/>when granted" --> api
+    process -- "as job-#lt;id#gt;, with<br/>MERIDIAN_NOTES_TOKEN,<br/>MERIDIAN_EVALKIT_TOKEN,<br/>each when granted" --> others
     process -- "as its node, with<br/>MERIDIAN_GATEWAY_TOKEN" --> gateway
     jobsvc -. "requests, tool calls,<br/>job states" .-> record
     daemon -. "process facts, for<br/>the sealed log alone" .-> facts
