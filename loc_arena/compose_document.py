@@ -11,6 +11,8 @@ class Healthcheck(TypedDict):
     test: list[str]
     interval: str
     retries: int
+    start_period: str  # a failed probe counts only once it is over
+    start_interval: str
 
 
 class ComposeBuild(TypedDict):

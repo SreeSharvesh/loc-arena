@@ -43,8 +43,9 @@ class ServerSettings(BaseModel):
         description="The server's HOME and temporary directories, emptied on each reset so an earlier "
         "episode's agents leave nothing there for the next.",
     )
-    output_limit_bytes: PositiveInt = Field(
-        description="Bytes of a command's stdout and of its stderr kept, counted from the end.",
+    output_limit_bytes: PositiveInt | None = Field(
+        description="Bytes of a command's stdout and of its stderr kept, counted from the end; none keeps "
+        "them whole.",
     )
     secrets_dir: Path = Field(
         description="Where compose mounts this sandbox's own token, a file named sandbox_token.",

@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
+import certifi
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
 
 from loc_arena.compose_document import ComposeService
@@ -49,6 +50,9 @@ COLLECTOR_SERVICE = "collector"  # the OpenTelemetry Collector's compose service
 RECORD_NETWORK = "record-net"  # the gateway and the Collector alone: no agent can send the Collector a record
 COLLECTOR_PORT = 4317  # the Collector's OTLP gRPC receiver
 KEY_SECRET_NAME = "openrouter_api_key"  # the provider key: a file in the gateway's secrets directory
+# The roots the gateway verifies the provider with: certifi's, kept current by the lock, since the image's own
+# store lags behind distrusts such as the compromised emSign CAs.
+PROVIDER_ROOTS_SECRET_NAME = "provider_roots"
 MODEL_GATEWAY_CONFIG_SECRET_NAME = "model_gateway_config"
 MODEL_GATEWAY_CONFIG_VARIABLE = "LOC_ARENA_MODEL_GATEWAY_CONFIG"
 COLLECTOR_CONFIG_SECRET_NAME = "collector_config"
@@ -172,8 +176,8 @@ def render_model_gateway_config(settings: LocArenaSettings, callers: Sequence[Ca
     Callers are admitted by the SHA-256 of their token, runners only on their route; any other path is refused
     (403). A request's body is
     buffered (the authorization rule reads it), so a call that never reaches the upstream keeps its request
-    in the record. The upstream is asked for an uncompressed reply, so the record holds its text. Admin, stats
-    and readiness listeners are off, so no caller can read this config back.
+    in the record. The upstream is asked for an uncompressed reply, so the record holds its text. It listens
+    on IPv4 alone; admin, stats and readiness listeners are off, so no caller can read this config back.
     """
     gateway = settings.gateway
     if CHAT_PATH not in gateway.allowed_paths:
@@ -185,14 +189,14 @@ def render_model_gateway_config(settings: LocArenaSettings, callers: Sequence[Ca
         }
         for caller in callers
     ]
-    upstream = gateway.upstream
+    upstream, roots = gateway.upstream, str(gateway.secrets_dir / PROVIDER_ROOTS_SECRET_NAME)
     backends = [
         {
             "ai": {
                 "name": "upstream",
                 "hostOverride": f"{upstream.host}:{upstream.port}",
                 "provider": {"custom": {"formats": [{"type": "completions", "path": f"/{CHAT_PATH}"}]}},
-                **({"policies": {"backendTLS": {}}} if upstream.scheme == "https" else {}),
+                **({"policies": {"backendTLS": {"root": roots}}} if upstream.scheme == "https" else {}),
             },
         },
     ]
@@ -257,6 +261,7 @@ def render_model_gateway_config(settings: LocArenaSettings, callers: Sequence[Ca
     ]
     document = {
         "config": {
+            "enableIpv6": False,  # its default listener, [::], cannot bind where the kernel has no IPv6
             "adminAddr": "off",
             "statsAddr": "off",
             "readinessAddr": "off",
@@ -324,7 +329,7 @@ def render_gateway_services(
         MODEL_GATEWAY_SERVICE: {
             "image": stack.tools_gateway_image,
             "command": ["-f", str(gateway.secrets_dir / MODEL_GATEWAY_CONFIG_SECRET_NAME)],
-            "secrets": [KEY_SECRET_NAME, MODEL_GATEWAY_CONFIG_SECRET_NAME],
+            "secrets": [KEY_SECRET_NAME, MODEL_GATEWAY_CONFIG_SECRET_NAME, PROVIDER_ROOTS_SECRET_NAME],
             "cap_drop": ["ALL"],
             "networks": [agent_network, egress_network, RECORD_NETWORK],
             "ports": [f"127.0.0.1::{gateway.port}"],
@@ -390,9 +395,13 @@ def render_episode_environment(settings: LocArenaSettings) -> dict[str, str]:
 
 
 def declare_gateway_secrets() -> dict[str, dict[str, str]]:
-    """The provider key, the gateway's and the Collector's configs and the episode's token: host variables."""
+    """The provider key, the gateway's and the Collector's configs and the episode's token: host variables.
+
+    The provider's roots are certifi's file: too large for a variable.
+    """
     return {
         KEY_SECRET_NAME: {"environment": API_KEY_VARIABLE},
+        PROVIDER_ROOTS_SECRET_NAME: {"file": certifi.where()},
         MODEL_GATEWAY_CONFIG_SECRET_NAME: {"environment": MODEL_GATEWAY_CONFIG_VARIABLE},
         COLLECTOR_CONFIG_SECRET_NAME: {"environment": COLLECTOR_CONFIG_VARIABLE},
         GATEWAY_TOKEN_SECRET_NAME: {"environment": EPISODE_TOKEN_VARIABLE},

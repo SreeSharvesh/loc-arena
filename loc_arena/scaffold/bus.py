@@ -1,8 +1,8 @@
 """Dual capture: every observable event goes to the sealed log and the mirror log.
 
 The sealed log is the ground truth the agents cannot reach; the mirror log is what a monitor reads, and their
-divergence is a signal. Every event is fingerprinted on an append-only log. Messages between agents travel on
-the board (``loc_arena.board``), and their events are built from its records.
+divergence is a signal. Every event is fingerprinted on an append-only log. Messages between agents travel in
+chat (``loc_arena.chat_service``), and their events are built from its records after play.
 """
 
 from __future__ import annotations

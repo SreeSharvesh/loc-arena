@@ -4,8 +4,10 @@ A pack's ``iam:`` block names, per live service, the manifest the service ships,
 requests follow and the approver that decides them: a principal of the company, never an agent under test,
 with the permissions it approves (it denies the rest); the company principals that hold permissions on it
 from the start (``holders``), such as its operators; and, for a service that launches work, its
-``delegation``: what that work may be given. Each agent's starting rights and tools on a service, from the run
-config, become its baseline grants.
+``delegation``: what that work may be given. Each agent's starting rights on a service, from the run
+config, become its baseline grants, and may be any permission the service's manifest checks. Its tools are
+only what the tools gateway offers it: calling one takes the permission its operation checks, held or asked
+for.
 The block is inert only where the run config turns ``iam.enabled`` off (an in-process run). Every service an
 agent reaches, by tools or by rights, must be one of its resources.
 """
@@ -63,8 +65,8 @@ class ResourceSeed(BaseModel):
     records_actions: StrictBool = Field(
         default=False,
         description="Whether the service writes its own operation record of each call it forwards to IAM, "
-        "which makes IAM's event for it a duplicate; a service that does not (notes) leaves IAM's event as "
-        "the only record.",
+        "which makes IAM's event for it a duplicate; a service that does not leaves IAM's event as the only "
+        "record.",
     )
     delegation: dict[StrictStr, tuple[StrictStr, ...]] = Field(
         default_factory=dict,
@@ -97,7 +99,7 @@ def load_seed(scenario: Scenario | None) -> IamSeed | None:
     return None if declared is None else IamSeed.model_validate(declared)
 
 
-def find_seed_problem(
+def find_seed_problem(  # noqa: C901 - predates the complexity gate
     seed: IamSeed,
     live_services: tuple[LiveService, ...],
     agents: Collection[str],
@@ -107,12 +109,9 @@ def find_seed_problem(
     if unknown := sorted(set(seed.resources) - set(live)):
         return f"the iam seed names services the scenario does not run: {unknown}"
     roles: dict[str, tuple[str, str]] = {}
-    heads: dict[str, _ManifestHead] = {}
+    heads: dict[str, ManifestHead] = {}
     for name, resource in seed.resources.items():
-        path = REPOSITORY / resource.manifest
-        if not path.is_file():
-            return f"the iam seed for {name!r} names no manifest file: {resource.manifest}"
-        head = _read_manifest_head(name, path)
+        head = _read_manifest_head(name, resource.manifest)
         if isinstance(head, str):
             return head
         if problem := _manifest_problem(name, head, live[name].rights, resource.approver):
@@ -143,11 +142,11 @@ def find_seed_problem(
     return None
 
 
-class _ManifestHead(BaseModel):
-    """What the host reads of a manifest to render the bootstrap; the full check is the service's, at start.
+class ManifestHead(BaseModel):
+    """What the host reads of a manifest to check a seed and a run config; the full check is the service's.
 
     The engine cannot import ``meridian_iam`` (the episode container has no company packages), so it parses
-    the JSON into this typed shape at the boundary and reports a manifest it could not render before any
+    the JSON into this typed shape at the boundary and reports a manifest it could not read before any
     bootstrap.
     """
 
@@ -157,11 +156,51 @@ class _ManifestHead(BaseModel):
     operations: dict[StrictStr, dict[StrictStr, object]] = Field(min_length=1)
     tools: dict[StrictStr, StrictStr] = Field(default_factory=dict)
 
+    def checked(self) -> set[str]:
+        """The permissions some operation checks."""
+        return {
+            permission
+            for spec in self.operations.values()
+            if isinstance(permission := spec.get("permission"), str)
+        }
 
-def _read_manifest_head(name: str, path: Path) -> _ManifestHead | str:
-    """The manifest a seed names for ``name``, or what is wrong with it: unreadable, malformed, another's."""
+
+def read_manifests(scenario: Scenario | None) -> dict[str, ManifestHead]:
+    """The manifest of each service the scenario's IAM seed manages, by service; none without a seed.
+
+    Raises ``ValueError`` for a manifest that is missing, malformed or another service's.
+    """
+    seed = load_seed(scenario)
+    heads = (
+        {}
+        if seed is None
+        else {name: _read_manifest_head(name, r.manifest) for name, r in seed.resources.items()}
+    )
+    if problems := [head for head in heads.values() if isinstance(head, str)]:
+        raise ValueError(problems[0])
+    return {name: head for name, head in heads.items() if isinstance(head, ManifestHead)}
+
+
+def starting_rights(
+    live_services: tuple[LiveService, ...],
+    manifests: Mapping[str, ManifestHead],
+) -> dict[str, tuple[str, ...]]:
+    """What an agent may start with on each live service: what its manifest checks, else its own rights."""
+    return {
+        service.name: tuple(sorted(manifests[service.name].checked()))
+        if service.name in manifests
+        else service.rights
+        for service in live_services
+    }
+
+
+def _read_manifest_head(name: str, manifest: str) -> ManifestHead | str:
+    """The manifest a seed names for ``name``, or what is wrong with it: missing, malformed, another's."""
+    path = REPOSITORY / manifest
+    if not path.is_file():
+        return f"the iam seed for {name!r} names no manifest file: {manifest}"
     try:
-        head = _ManifestHead.model_validate_json(path.read_text())
+        head = ManifestHead.model_validate_json(path.read_text())
     except (OSError, ValueError) as error:
         return f"the iam manifest of {name!r} ({path.name}) is not a valid manifest: {error}"
     if head.resource != name:
@@ -169,14 +208,9 @@ def _read_manifest_head(name: str, path: Path) -> _ManifestHead | str:
     return head
 
 
-def _checked_permissions(head: _ManifestHead) -> set[object]:
-    """The permissions some operation of the manifest checks."""
-    return {spec.get("permission") for spec in head.operations.values()}
-
-
 def _manifest_problem(
     name: str,
-    head: _ManifestHead,
+    head: ManifestHead,
     rights: Collection[str],
     approver: ApproverSeed,
 ) -> str | None:
@@ -188,7 +222,7 @@ def _manifest_problem(
     """
     if unknown := sorted(set(head.tools.values()) - set(head.operations)):
         return f"the iam manifest of {name!r} binds tools to operations it does not declare: {unknown}"
-    if unchecked := sorted(set(rights) - _checked_permissions(head)):
+    if unchecked := sorted(set(rights) - head.checked()):
         return f"the service {name!r} declares rights its iam manifest never checks: {unchecked}"
     requestable = {spec.get("permission") for spec in head.operations.values() if spec.get("requestable")}
     if unrequestable := sorted(set(approver.approves) - requestable):
@@ -199,7 +233,7 @@ def _manifest_problem(
 def _holders_problem(
     name: str,
     holders: Mapping[str, Collection[str]],
-    head: _ManifestHead,
+    head: ManifestHead,
     taken: Collection[str],
 ) -> str | None:
     """What is wrong with the company principals seeded holding permissions on ``name``, else ``None``.
@@ -212,7 +246,7 @@ def _holders_problem(
             return (
                 f"{holder!r} holds rights on {name!r} from the seed, but is an agent of the run or a service"
             )
-        if unchecked := sorted(set(permissions) - _checked_permissions(head)):
+        if unchecked := sorted(set(permissions) - head.checked()):
             return f"{holder!r} holds permissions the iam manifest of {name!r} never checks: {unchecked}"
     return None
 
@@ -225,7 +259,7 @@ def _service_principal(service: str) -> str:
 def _delegation_problem(
     name: str,
     delegation: Mapping[str, Collection[str]],
-    heads: Mapping[str, _ManifestHead],
+    heads: Mapping[str, ManifestHead],
 ) -> str | None:
     """What is wrong with what ``name`` may hand the work it launches, else ``None``.
 
@@ -237,7 +271,7 @@ def _delegation_problem(
     for target, permissions in delegation.items():
         if target not in heads:
             return f"{name!r} delegates rights on {target!r}, which the iam seed does not manage"
-        if unchecked := sorted(set(permissions) - _checked_permissions(heads[target])):
+        if unchecked := sorted(set(permissions) - heads[target].checked()):
             return f"{name!r} delegates permissions the iam manifest of {target!r} never checks: {unchecked}"
     return None
 

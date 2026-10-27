@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import cast
 
 import pytest
-from loc_arena.board import Board
 from loc_arena.config import AgentLoopConfig, ConfigError, load_run_config
 from loc_arena.forge.forge import Forge
 from loc_arena.forge.world import generate_world
@@ -243,7 +242,7 @@ def test_render_tool_result_marks_truncation_only_past_the_cap() -> None:
 def test_validate_call_rejects_unknown_and_missing_and_mistyped() -> None:
     assert validate_call("nope", {}, SPECS) == "unknown tool 'nope'"
     assert validate_call("read_file", {}, SPECS) == "missing required args for read_file: path"
-    assert "start_rogue_loop" in (validate_call("start_rogue_loop", {}, SPECS) or "")
+    assert validate_call("read_file", {"path": 3}, SPECS) == "arg 'path' for read_file must be a string"
     assert validate_call("finish", {}, SPECS) is None
 
 
@@ -252,7 +251,7 @@ def test_an_agent_is_offered_a_pull_request_body_to_write(tmp_path: Path) -> Non
     forge = Forge(generate_world(config, resolve_scenario(config), config.seed))
     served = [
         spec
-        for client in connect_agent_tools(forge, Board(), config, tmp_path)["agent-main"]
+        for client in connect_agent_tools(forge, config, tmp_path)["agent-main"]
         for spec in client.specs()
     ]
     mistyped_body = {"repo": "meridian-serving", "body": 7}
@@ -272,7 +271,7 @@ def test_an_in_process_agent_is_offered_only_the_tools_its_run_config_lists(tmp_
     ]
     config = dataclasses.replace(loaded, agents=tuple(without_tools))
     forge = Forge(generate_world(config, resolve_scenario(config), config.seed))
-    clients = connect_agent_tools(forge, Board(), config, tmp_path)
+    clients = connect_agent_tools(forge, config, tmp_path)
 
     offered = {
         agent: set().union(*(client.names() for client in clients[agent]))
@@ -280,12 +279,12 @@ def test_an_in_process_agent_is_offered_only_the_tools_its_run_config_lists(tmp_
     }
 
     assert offered == {
-        "agent-main": {"open_pr", "send", "read", "unread", "write_scratch"},
+        "agent-main": {"open_pr"},  # chat, tickets, notes and evalkit are company services: a stack run's
         "controlplane-agent": set(),
     }
 
 
-def test_bus_message_is_appended_and_results_keep_their_call_id() -> None:
+def test_a_received_message_is_appended_and_results_keep_their_call_id() -> None:
     client = FakeClient(
         [
             _reply(
@@ -306,14 +305,14 @@ def test_bus_message_is_appended_and_results_keep_their_call_id() -> None:
         [
             {"call_id": "b", "result": {"content": "second"}},
             {"call_id": "a", "result": {"path": "a.py", "content": "first"}},
-            {"received_from": "serving-agent", "payload": {"message_kind": "result", "body": "done"}},
+            {"received_from": "iam", "payload": {"message_kind": "inbox", "body": "request r1 approved"}},
         ],
     )
     sent = client.sent[1][0]
     assert sent[: len(prefix)] == prefix
     tools = [(m["tool_call_id"], m["content"]) for m in sent if m["role"] == "tool"]
     assert tools == [("b", "second"), ("a", "a.py\nfirst")]
-    assert sent[-1] == {"role": "user", "content": "Message from serving-agent (result): done"}
+    assert sent[-1] == {"role": "user", "content": "Message from iam (inbox): request r1 approved"}
 
 
 def test_tool_result_over_the_cap_is_marked_truncated() -> None:
@@ -381,7 +380,6 @@ def _agent(tmp_path: Path, policy: AgentPolicy, *, turn_budget: int = 5) -> tupl
         TurnMinter("s", "ep", clock=lambda: 0.0),
         turn_budget,
         clock=lambda: 0.0,
-        receives=False,
     )
     return agent, sealed_path
 
@@ -449,30 +447,30 @@ def test_in_memory_tools_refuse_a_config_with_central_iam_on(tmp_path: Path) -> 
     forge = Forge(generate_world(config, resolve_scenario(config), config.seed))
 
     with pytest.raises(ConfigError, match="in memory no service would be under it"):
-        connect_agent_tools(forge, Board(), config, tmp_path)
+        connect_agent_tools(forge, config, tmp_path)
 
 
 def test_in_process_a_service_with_rights_as_well_as_tools_still_serves_its_tools(tmp_path: Path) -> None:
     loaded = load_run_config("configs/aurora-efficiency.deterministic.yaml")
     services = tuple(
-        dataclasses.replace(service, rights=("write",)) if service.name == "scratch" else service
+        dataclasses.replace(service, rights=("write",)) if service.name == "forge" else service
         for service in loaded.live_services
     )
     config = dataclasses.replace(loaded, live_services=services)
     forge = Forge(generate_world(config, resolve_scenario(config), config.seed))
 
-    clients = connect_agent_tools(forge, Board(), config, tmp_path)
+    clients = connect_agent_tools(forge, config, tmp_path)
 
-    assert "write_scratch" in set().union(*(client.names() for client in clients["agent-main"]))
+    assert "open_pr" in set().union(*(client.names() for client in clients["serving-agent"]))
 
 
 def test_an_in_process_run_offers_no_tool_of_a_company_service(tmp_path: Path) -> None:
     config = load_run_config("configs/aurora-efficiency.deterministic.yaml")
     forge = Forge(generate_world(config, resolve_scenario(config), config.seed))
-    evalkit = next(service for service in config.live_services if service.name == "evalkit")
+    company = [service for service in config.live_services if service.name in ("evalkit", "tickets", "chat")]
 
-    clients = connect_agent_tools(forge, Board(), config, tmp_path)
+    clients = connect_agent_tools(forge, config, tmp_path)
 
     offered = set().union(*(client.names() for client in clients["agent-main"]))
-    assert "start_run" in config.agents[0].sandbox.tools["evalkit"]  # a stack run offers it
-    assert not offered & set(evalkit.tools)
+    assert {"evalkit", "tickets", "chat"} <= set(config.agents[0].sandbox.tools)  # a stack run offers them
+    assert not offered & {tool for service in company for tool in service.tools}

@@ -1,6 +1,8 @@
 # Changelog — meridian-iam
 
 ## Unreleased
+- requests: a request for ongoing access a resource does not allow, or past its deadline limit, is told to
+  send `until` as a unix time within the resource's `max_seconds`, so it can ask again correctly.
 - requests: filing says the approvers decide from their own inbox and the outcome reaches the requester's, and
   no longer tells the requester to ask them.
 - integration: an MCP service wrapped with `answer_outages` answers 503 with a JSON-RPC error when

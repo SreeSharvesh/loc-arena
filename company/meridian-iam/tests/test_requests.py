@@ -297,6 +297,17 @@ def two_resources(iam: Iam) -> None:
     iam.add_member("lead", "research", "lead", {"notes": ["read", "write"], "wiki": ["read", "write"]})
 
 
+def test_a_request_outside_the_allowed_lifetime_is_told_the_window_to_ask_within(
+    iam: Iam,
+    tokens: dict[str, str],
+) -> None:
+    two_resources(iam)  # wiki allows no ongoing access and an hour at most
+
+    for until in (None, 10**12):
+        with pytest.raises(Invalid, match="send until as a unix time within 3600 seconds from now"):
+            iam.submit_request(tokens["alice"], "wiki", ["write"], "r", until, f"k-{until}")
+
+
 def test_a_resource_bound_credential_manages_its_own_resource_and_no_other(
     iam: Iam,
     tokens: dict[str, str],

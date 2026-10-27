@@ -37,7 +37,7 @@ MANIFEST = Path("company/meridian-evalkit/meridian_evalkit/service/iam-manifest.
 SERVICE = "evalkit"
 START = {"eval_id": "arithmetic", "model_id": "aurora-7b-v3"}
 RESULTS = {"metrics": {"accuracy": 0.95, "brier": 0.05}, "item_ids": ["ar-001"]}
-SEEDED_RUNS = 5  # read off seed.yaml
+SEEDED_RUNS = 8  # read off seed.yaml
 
 
 def serve(app: Any) -> tuple[uvicorn.Server, str]:  # noqa: ANN401

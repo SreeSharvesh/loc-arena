@@ -1,8 +1,8 @@
 """The runner pool in a stack run: who may drive a runner, what it holds, how far its pi reaches, executions.
 
-Starts the gateway, the agents service with its runners and central IAM, and agent-main's sandbox from the
-compose file a stack run renders, with one play's secrets. The gateway's key is a placeholder; the only model
-call made is one the gateway refuses.
+Starts the gateway, the agents service with its runners and central IAM, Phoenix, and agent-main's sandbox
+from the compose file a stack run renders, with one play's secrets. The gateway's key is a placeholder; the
+only model calls made are ones the gateway refuses.
 """
 
 from __future__ import annotations
@@ -19,11 +19,12 @@ from pathlib import Path
 
 import pytest
 import yaml
+from loc_arena.agents_service import PACK_CHECKPOINT, UNPACK_CHECKPOINT
 from loc_arena.config import load_run_config, sandbox_service
 from loc_arena.episode_stack import REPOSITORY, issue_secrets, render_compose
 from loc_arena.gateway.core import API_KEY_VARIABLE
 from loc_arena.gateway.model_gateway import PROJECT_PREFIX, GatewayCall, copy_call_log
-from loc_arena.runner_pool import list_runner_services, runner_token_variable
+from loc_arena.runner_pool import RUNNER_WORKSPACE, list_runner_services, runner_token_variable
 
 from tests.integration._docker_support import image_exists
 
@@ -76,6 +77,39 @@ print(json.dumps(execution))
 """
 
 
+# Run in agent-main's sandbox: runs agent sys.argv[1] traced, then with its tracing off; prints both ended
+# executions and the spans Phoenix holds of them once it has stored the traced one's.
+TRACE_TWO_RUNS = """
+import json, sys, time, urllib.request
+identity = open("/run/secrets/identity_agents").read().strip()
+def call(method, url, body=None):
+    data = None if body is None else json.dumps(body).encode()
+    headers = {"authorization": f"Bearer {identity}", "content-type": "application/json"}
+    with urllib.request.urlopen(urllib.request.Request(url, data, headers, method=method)) as reply:
+        return json.loads(reply.read())
+def run(agent):
+    execution = call("POST", "http://agents:8000/executions", {"agent": agent, "input": "Summarize."})
+    while execution["state"] in ("queued", "running"):
+        time.sleep(0.5)
+        execution = call("GET", f"http://agents:8000/executions/{execution['id']}")
+    return execution
+agent = sys.argv[1]
+call("POST", "http://agents:8000/agents", {"name": agent, "model": sys.argv[2], "system_prompt": "Go."})
+traced = run(agent)
+call("PUT", "http://agents:8000/settings/telemetry", {"agents": {agent: {"tracing": False}}})
+untraced = run(agent)
+def list_spans_of(*executions):
+    spans = call("GET", "http://phoenix:6006/v1/projects/meridian-agents/spans?limit=1000")["data"]
+    ids = {execution["id"] for execution in executions}
+    return [span for span in spans if span["attributes"]["meridian.execution.id"] in ids]
+deadline = time.monotonic() + 30  # Phoenix stores a span a moment after it takes it
+while not list_spans_of(traced) and time.monotonic() < deadline:
+    time.sleep(0.5)
+time.sleep(2)  # as long again for any span of the untraced one
+print(json.dumps([traced, untraced, list_spans_of(traced, untraced)]))
+"""
+
+
 @dataclass(frozen=True)
 class RunnerPool:
     """The started project: a way to run a command in one of its services, each runner's token, the record."""
@@ -98,13 +132,13 @@ class RunnerPool:
         )
         return status, reply
 
-    def run_on_runner(self, runner: str, *argv: str) -> dict[str, object]:
+    def run_on_runner(self, runner: str, *argv: str, stdin: str = "") -> dict[str, object]:
         """Run ``argv`` on ``runner`` in its workspace, as the pool's owner does, and return its result."""
         status, result = self.call_runner(
             OWNER,
             runner,
             "/run",
-            {"argv": list(argv), "directory": "/workspace", "timeout_seconds": 120},
+            {"argv": list(argv), "directory": "/workspace", "timeout_seconds": 120, "stdin": stdin},
             self.tokens[runner],
         )
         assert status == HTTPStatus.OK, result
@@ -163,6 +197,7 @@ def pool(tmp_path_factory: pytest.TempPathFactory) -> Iterator[RunnerPool]:
             "--no-build",
             "gateway",
             OWNER,
+            "phoenix",
             SANDBOX,
             environment=environment,
         )
@@ -225,6 +260,24 @@ def test_a_reset_leaves_a_runners_workspace_and_home_empty(pool: RunnerPool) -> 
     assert listed["stdout"] == "0\n"
 
 
+def test_a_checkpoint_of_one_runner_puts_what_its_user_wrote_back_on_another(pool: RunnerPool) -> None:
+    pool.run_on_runner("runner-1", "sh", "-c", "mkdir notes; echo draft > notes/a.md; echo turn > ~/session")
+    emptied = [RUNNER_WORKSPACE, *CONFIG.settings.stack.sandbox_scratch_directories]
+    directories = [str(directory.relative_to("/")) for directory in emptied]
+    packed = pool.run_on_runner("runner-1", "bash", "-c", PACK_CHECKPOINT, "pack", *directories)
+
+    restored = pool.run_on_runner("runner-2", "bash", "-c", UNPACK_CHECKPOINT, stdin=str(packed["stdout"]))
+
+    found = pool.run_on_runner("runner-2", "sh", "-c", "cat notes/a.md ~/session")
+    for runner in ("runner-1", "runner-2"):
+        pool.call_runner(OWNER, runner, "/reset", {"keep": "/workspace/next"}, pool.tokens[runner])
+    assert (packed["returncode"], restored, found["stdout"]) == (
+        0,
+        {"returncode": 0, "stdout": "", "stderr": ""},
+        "draft\nturn\n",
+    )
+
+
 def test_the_gateway_names_a_runners_pi_and_refuses_it_a_model_runners_may_not_call(pool: RunnerPool) -> None:
     result = pool.run_on_runner("runner-1", "pi-on-gateway", COSTLY_MODEL, "Summarize.", "hi")
 
@@ -250,4 +303,22 @@ def test_an_execution_runs_pi_on_a_runner_whose_model_calls_the_gateway_answers(
         "failed",
         "agent-main",
         {execution["runner"]},
+    )
+
+
+def test_a_traced_execution_reports_its_model_call_to_phoenix_and_an_untraced_one_nothing(
+    pool: RunnerPool,
+) -> None:
+    traced, untraced, spans = json.loads(
+        pool.run_in(SANDBOX, "python", "-c", TRACE_TWO_RUNS, "traced-summarizer", COSTLY_MODEL),
+    )
+
+    reported = {
+        (span["attributes"]["meridian.execution.id"], span["span_kind"], span["status_code"])
+        for span in spans
+    }
+    assert (traced["traced"], untraced["traced"], reported) == (
+        True,
+        False,
+        {(traced["id"], "LLM", "ERROR")},  # the gateway refuses the model, which the span records
     )

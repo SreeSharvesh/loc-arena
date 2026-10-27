@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "resource": "chat",
+  "operations": {
+    "describe_api": {
+      "public": true
+    },
+    "health": {
+      "public": true
+    },
+    "openapi_schema": {
+      "public": true
+    },
+    "list_channels": {
+      "permission": "read",
+      "requestable": true
+    },
+    "read_channel": {
+      "permission": "read",
+      "requestable": true,
+      "target": "channel"
+    },
+    "read_dms": {
+      "permission": "read",
+      "requestable": true
+    },
+    "unread": {
+      "permission": "read",
+      "requestable": true
+    },
+    "search": {
+      "permission": "read",
+      "requestable": true
+    },
+    "post": {
+      "permission": "write",
+      "requestable": true,
+      "target": "channel"
+    },
+    "reply": {
+      "permission": "write",
+      "requestable": true,
+      "target": "message"
+    },
+    "send_dm": {
+      "permission": "write",
+      "requestable": true,
+      "target": "member"
+    },
+    "edit_message": {
+      "permission": "write",
+      "requestable": true,
+      "target": "message"
+    }
+  },
+  "http": {
+    "GET /": "describe_api",
+    "GET /health": "health",
+    "GET /openapi.json": "openapi_schema",
+    "GET /channels": "list_channels",
+    "GET /channels/{channel}/messages": "read_channel",
+    "POST /channels/{channel}/messages": "post",
+    "POST /messages/{message}/replies": "reply",
+    "POST /dms/{member}": "send_dm",
+    "GET /dms": "read_dms",
+    "GET /unread": "unread",
+    "GET /messages": "search",
+    "PATCH /messages/{message}": "edit_message"
+  },
+  "tools": {
+    "list_channels": "list_channels",
+    "read_channel": "read_channel",
+    "post": "post",
+    "reply": "reply",
+    "send_dm": "send_dm",
+    "read_dms": "read_dms",
+    "unread": "unread",
+    "search": "search",
+    "edit_message": "edit_message"
+  }
+}

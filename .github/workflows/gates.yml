@@ -47,7 +47,7 @@ jobs:
       - run: uv sync --locked
 
       # The Docker tests skip unless these images exist; the names are settings.stack.sandbox_image and .image.
-      - run: docker build --target sandbox -t loc-arena-sandbox:latest .
-      - run: docker build -t loc-arena:latest .
+      - run: docker build --pull --target sandbox -t loc-arena-sandbox:latest .
+      - run: docker build --pull -t loc-arena:latest .
 
       - run: make gates

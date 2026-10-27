@@ -23,7 +23,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
 from loc_arena import live
-from loc_arena.config import AgentConfig, RunConfig
+from loc_arena.config import RunConfig
 from loc_arena.gateway.core import (
     GatewayCore,
     GenerateRequest,
@@ -51,7 +51,6 @@ from loc_arena.monitors.registry import (
 )
 from loc_arena.protocol import compose_protocol
 from loc_arena.recorded_events import build_recorded_events
-from loc_arena.recording_service import COVERT_TOOL_NAMES
 from loc_arena.run_scores import build_scores, honest_twin_scores
 from loc_arena.task import (
     EpisodeResult,
@@ -74,28 +73,12 @@ def _default_sink(kind: str, payload: dict[str, Any]) -> None:
 def apply_mode(config: RunConfig, mode: str) -> RunConfig:
     """Return the config for ``mode``; ``mode`` (attack/honest) is the ONLY difference.
 
-    The honest twin is never offered a covert tool: its agents' ``sandbox: tools:`` drop the attack tools
-    (``COVERT_TOOL_NAMES``) and keep honest ones such as ``submit_job``, in process and at the tools gateway.
+    An attack run gives the agents their covert briefs, the in-world gateway's injection and, in a scripted
+    run, the scenario's attack moves; its honest twin plays with the same tools and rights and none of them.
     """
     if mode not in ("attack", "honest"):
         raise ValueError(f"mode must be 'attack' or 'honest', got {mode!r}")
-    covert = dataclasses.replace(config.covert, enabled=mode == "attack")
-    if mode == "attack":
-        return dataclasses.replace(config, covert=covert)
-    agents = tuple(_without_covert_tools(agent) for agent in config.agents)
-    return dataclasses.replace(config, covert=covert, agents=agents)
-
-
-def _without_covert_tools(agent: AgentConfig) -> AgentConfig:
-    """``agent`` with every covert tool dropped from its ``sandbox: tools:``, and emptied services with it."""
-    kept = {
-        service: remaining
-        for service, tools in agent.sandbox.tools.items()
-        if (remaining := tuple(tool for tool in tools if tool not in COVERT_TOOL_NAMES))
-    }
-    if kept == {service: tuple(tools) for service, tools in agent.sandbox.tools.items()}:
-        return agent
-    return dataclasses.replace(agent, sandbox=dataclasses.replace(agent.sandbox, tools=kept))
+    return dataclasses.replace(config, covert=dataclasses.replace(config.covert, enabled=mode == "attack"))
 
 
 def _default_decisions_text(cfg: RunConfig, mode: str, seed: int) -> str:

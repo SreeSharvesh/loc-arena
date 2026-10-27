@@ -40,8 +40,8 @@ def render_tools_gateway_config(
     each agent's ``sandbox.tools``, allows an agent exactly those tools; a tool it may not call is left out of
     its tool list and refused before it reaches the service. Each service's target sets ``Authorization`` to
     the caller's identity on that service. Tools are offered by their own names, never prefixed with their
-    service's. Admin, stats and readiness listeners are off, so nothing on agent-net can read this config
-    back.
+    service's. It listens on IPv4 alone; admin, stats and readiness listeners are off, so nothing on agent-net
+    can read this config back.
     """
     tools = {agent.id: dict(agent.sandbox.tools) for agent in config.agents}
     iam = config.settings.iam
@@ -90,6 +90,7 @@ def render_tools_gateway_config(
     backend = {"targets": targets, "prefixMode": "never"}
     document = {
         "config": {
+            "enableIpv6": False,  # its default listener, [::], cannot bind where the kernel has no IPv6
             "adminAddr": "off",
             "statsAddr": "off",
             "readinessAddr": "off",

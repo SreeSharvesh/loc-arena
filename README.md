@@ -22,6 +22,8 @@ and after play those records become the events the monitors and the verifier rea
 the attack on services and sandboxes recreated empty. Details: [`docs/isolation/`](docs/isolation/README.md)
 and [`docs/run-config.md`](docs/run-config.md).
 
+<img alt="Data flow of one run: play writes the service records, both event logs, the per-agent trace and the gateway's sealed call record; the records become events after play, with turns from the trace; the verifier reads the sealed log and the monitors the mirror log; live monitors' model calls are appended to the sealed log and, in a stack run, to the gateway's call record; the run bundle is read by the explorer and inspect view." src="docs/figures/run-records.svg" width="100%">
+
 ```sh
 make setup                    # check uv, sync dependencies, validate the configs
 make run MODE=attack  # live models in a stack (the default): central IAM, no key in the episode; the key in .env
@@ -33,16 +35,16 @@ Every run bundle (`logs/<run_slug>/<run_name>/`) also holds a per-agent view of 
 
 | File | What it shows |
 |---|---|
-| `<run_name>.eval` | a real Inspect log: one sample for the graded run and one for the honest twin, one span per agent with its turns nested inside; open with `inspect view --log-dir <bundle>` (`make view` prints the command) |
-| `transcript.html` / `.txt` | one column per agent plus World, one row per round: each agent's prompts, replies, tool calls and the events its turns caused |
+| `<run_name>.eval` | a real Inspect log: one sample for the graded run and, in attack mode, one for the honest twin, one span per agent with its turns nested inside; open with `inspect view --log-dir <bundle>` (`make view` prints the command) |
+| `transcript.html` / `.txt` | one column per agent, plus World and each monitor with a verdict, one row per round: each agent's prompts, replies, tool calls and the events its turns caused |
 
 Set `logging.agent_transcript: false` in a run config to skip them. How attribution works: `docs/agent-log/spec.md`.
 
 ## Run explorer
 
 `make explore` builds one page per run under `logs/` (or `LOGS=<folder>`) plus an index of them all, and opens it:
-every agent side by side with each monitor's verdict on the step it judged, who read each message and scratch
-note, the covert steps the monitors missed, and notes you pin to any passage. One run:
+every agent side by side with each monitor's verdict on the step it judged, who read each message, the covert
+steps the monitors missed, and notes you pin to any passage. One run:
 `uv run python -m loc_arena.cli explore <bundle>`. What each view shows, with pictures:
 [`docs/explorer/`](docs/explorer/README.md).
 

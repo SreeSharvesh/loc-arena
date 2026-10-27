@@ -39,7 +39,7 @@ from loc_arena.compose_document import ComposeDocument, ComposeService, Healthch
 from loc_arena.config import RunConfig, load_run_config, sandbox_service
 from loc_arena.gateway import model_gateway
 from loc_arena.gateway.core import API_KEY_VARIABLE, OPENROUTER_URL, OpenRouterProvider
-from loc_arena.harness import apply_mode, build_recorded_run_events, grade_run, locate_run
+from loc_arena.harness import build_recorded_run_events, grade_run, locate_run
 from loc_arena.iam_bootstrap import (
     BOOTSTRAP_SECRET,
     BOOTSTRAP_VARIABLE,
@@ -62,6 +62,7 @@ from loc_arena.node_pool import (
     node_token_variable,
     render_nodes,
 )
+from loc_arena.observability import SpansNotExportedError
 from loc_arena.recorded_events import SERVICE_LOGS
 from loc_arena.runner_pool import (
     RUNNER_TARGET,
@@ -218,6 +219,7 @@ def render_compose(
                 _build_from(repository, NODE_TARGET, stack.worker_image),
                 _probe(stack.sandbox_port, stack),
                 AGENT_NETWORK,
+                skills,
             ),
             **(
                 {TOOLS_GATEWAY_SERVICE: _render_tools_gateway(config, tool_services)} if tool_services else {}
@@ -410,7 +412,7 @@ def _render_live_service(  # noqa: PLR0913
                     "additional_contexts": {PLATFORM_PACKAGE: str(REPOSITORY / "company" / PLATFORM_PACKAGE)},
                 }
         case EngineModule(name=module):
-            # The entry name follows the config so one module (the recording service) can serve several.
+            # The module reads its own entry of the run config by name.
             arguments = [f"{CONFIGS_DIRECTORY}/{run}.yaml", service.name]
             source = {**engine, "command": ["python", "-m", module, *arguments]}
             environment = engine["environment"]
@@ -501,6 +503,8 @@ def _probe(port: int, stack: StackSettings, *, test: Sequence[str] | None = None
         "test": list(test or probe),
         "interval": f"{stack.gateway_health_interval_seconds}s",
         "retries": stack.gateway_health_retries,
+        "start_period": f"{stack.gateway_health_start_seconds}s",
+        "start_interval": f"{stack.gateway_health_interval_seconds}s",
     }
 
 
@@ -526,17 +530,14 @@ def _issue_play_secrets(config: RunConfig, tokens: dict[str, str]) -> tuple[dict
     """Each play's secrets but the model gateway's, with these sandbox ``tokens``: attack env and twin's.
 
     They reach compose through its environment alone: never a command line or a file. The honest twin's env
-    differs in what the recreated containers are given. Its tools gateway offers the honest config's tools (no
-    covert tool), so an agent granted one in the attack config is refused it there after ``renew_services``
-    recreates the gateway. It also differs in the bootstrap document (rendered from the honest config, so no
-    covert tool carries a grant) and in every identity and IAM credential: the sandboxes and services are
-    recreated with new ones, so nothing the attack play held authenticates in the twin.
+    differs in every identity, IAM credential and inbox key: the sandboxes and services are recreated with new
+    ones, so nothing the attack play held authenticates in the twin.
     """
     managed = managed_services(config)
     runners = list_runner_services(config)
     nodes = list_node_services(config)
 
-    def issue_for_play(for_config: RunConfig) -> dict[str, str]:
+    def issue_for_play() -> dict[str, str]:
         identities = {identity: secrets.token_urlsafe(TOKEN_BYTES) for identity in issue_identities(config)}
         environment = {
             **{token_variable(agent): token for agent, token in tokens.items()},
@@ -545,7 +546,7 @@ def _issue_play_secrets(config: RunConfig, tokens: dict[str, str]) -> tuple[dict
             **{node_token_variable(node): secrets.token_urlsafe(TOKEN_BYTES) for node in nodes},
         }
         if managed:
-            environment[BOOTSTRAP_VARIABLE] = render_bootstrap(for_config)
+            environment[BOOTSTRAP_VARIABLE] = render_bootstrap(config)
             for name in managed:
                 environment[service_credential_variable(name)] = secrets.token_urlsafe(TOKEN_BYTES)
             for agent in config.agents:  # per play, so a key from the attack play reads nothing in the twin
@@ -557,30 +558,30 @@ def _issue_play_secrets(config: RunConfig, tokens: dict[str, str]) -> tuple[dict
                 else None
             )
             environment[TOOLS_GATEWAY_CONFIG_VARIABLE] = render_tools_gateway_config(
-                for_config,
+                config,
                 tokens,
                 identities,
                 inbox_keys,
             )
         return environment
 
-    return issue_for_play(config), issue_for_play(apply_mode(config, "honest"))
+    return issue_for_play(), issue_for_play()
 
 
 def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: Path) -> Path:
     """Play one episode of ``run`` (a config in ``configs/``) in its own compose project; grade it here.
 
-    The episode container plays the episode and, after ``renew_services``, its honest twin. Its run directory
-    is then copied into ``logs`` with each live service's log, in ``services/<name>.log`` of the run
-    directory; the events of the services' records are built (``loc_arena.recorded_events``) and the run is
-    graded on this host with the agents' code sandboxed, while the gateway still runs, so model-backed
-    monitors reach their model through it and it records their calls. Whatever the episode, what the gateway
-    and each live service recorded is copied into ``logs`` before the project is removed, after a Ctrl-C too,
-    each log once; when the episode never started, a live service that failed to become healthy leaves only
-    its log. A failed renewal before the twin stops the run like a failed episode, its logs copied out. The
-    project is kept, stopped, only when a copy fails, so nothing recorded is lost. With the gateway's record
-    copied out, the bundle's Inspect log gets each model call's reasoning from it. Returns the bundle's
-    directory.
+    The episode container plays the episode and, after ``renew_services``, its honest twin (``play_phases``).
+    Its run directory is then copied into ``logs`` with each live service's log, in ``services/<name>.log`` of
+    the run directory, beside Phoenix's spans (``loc_arena.observability``); the events of the services'
+    records are built (``loc_arena.recorded_events``) and the run is graded on this host with the agents' code
+    sandboxed, while the gateway still runs, so model-backed monitors reach their model through it and it
+    records their calls. Whatever the episode, what the gateway and each live service recorded is copied into
+    ``logs`` before the project is removed, after a Ctrl-C too, each log once; when the episode never started,
+    a live service that failed to become healthy leaves only its log. A failed renewal before the twin stops
+    the run like a failed episode, its logs copied out. The project is kept, stopped, only when a copy or the
+    export of Phoenix's spans fails, so nothing recorded is lost. With the gateway's record copied out, the
+    bundle's Inspect log gets each model call's reasoning from it. Returns the bundle's directory.
     """
     run = Path(run).name.removesuffix(".yaml")
     config = load_run_config(REPOSITORY / "configs" / f"{run}.yaml")
@@ -621,7 +622,7 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
     copy_service_logs: list[tuple[list[str], Path | None]] = [
         *list_service_log_copies(config, compose, service_logs),
     ]
-    created = False
+    created, spans_left_in_phoenix = False, False
     try:
         if run_compose([*compose, "create", "--build"]).returncode != 0:
             raise StackError("could not build or create the episode's containers: see compose's output above")
@@ -646,6 +647,9 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
             seed=seed,
             monitor_provider=_build_monitor_provider(config, compose, host_token),
         )
+    except SpansNotExportedError:
+        spans_left_in_phoenix = True
+        raise
     finally:
         never_started = [*compose, "ps", "--all", "--status", "created", "--quiet", EPISODE_SERVICE]
         started = created and not run_compose(never_started, capture_output=True, text=True).stdout.strip()
@@ -656,7 +660,7 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
         # copied once it holds every call the gateway logged, the monitors' included.
         copies = [copied(*copy) for copy in pending] if created else []
         recorded = not started or model_gateway.copy_call_log(run_compose, compose, settings, call_log)
-        if created and not (all(copies) and recorded):
+        if created and (spans_left_in_phoenix or not (all(copies) and recorded)):
             run_compose([*compose, "stop"])
             raise StackError(f"could not copy every log out: kept compose project {project} and its volumes")
         run_compose([*compose, "down", "--volumes", "--remove-orphans"])

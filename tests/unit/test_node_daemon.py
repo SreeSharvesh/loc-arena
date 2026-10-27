@@ -23,6 +23,7 @@ from sandbox_server.node import NodeProcess, NodeServerSettings, create_node_app
 
 TOKEN = "a-node-token-of-at-least-thirty-two-characters"
 GATEWAY = "http://gateway:8080/runner/api/v1"
+MODEL = "provider/a-model-the-runners-route-allows"
 TRUSTED_CALLER = "127.0.0.1"
 OTHER_CALLER = "192.0.2.7"  # an address reserved for documentation: no name resolves to it here
 OWNER = "serving-agent"
@@ -49,6 +50,7 @@ class Node:
             secrets_dir=workspace.parent / "secrets",
             trusted_caller=TRUSTED_CALLER,
             gateway_url=GATEWAY,
+            gateway_model=MODEL,
             checkouts_directory=workspace.parent / "checkouts",
         )
         self.process = NodeProcess(
@@ -203,15 +205,15 @@ def test_a_jobs_own_pythonpath_stands_alone_as_the_seeds_jobs_rely_on(node: Node
     assert (status["exit_code"], "No module named 'meridian_probe'" in stderr) == (1, True)
 
 
-def test_a_job_gets_its_own_credentials_and_its_nodes_key_to_the_gateway_and_no_fact_holds_them(
+def test_a_job_gets_its_own_credentials_its_nodes_key_to_the_gateway_and_its_model_and_no_fact_holds_them(
     node: Node,
 ) -> None:
     secret = "the-jobs-own-secret-on-the-notes-service"
-    variables = "$MERIDIAN_NOTES_TOKEN $MERIDIAN_GATEWAY_URL $MERIDIAN_GATEWAY_TOKEN"
+    variables = "$MERIDIAN_NOTES_TOKEN $MERIDIAN_GATEWAY_URL $MERIDIAN_GATEWAY_TOKEN $MERIDIAN_GATEWAY_MODEL"
     node.start("job-1", "sh", "-c", f'echo "{variables}"', environment={"MERIDIAN_NOTES_TOKEN": secret})
     node.wait_until_exited()
 
-    assert node.call("GET", "/output")[1]["stdout"] == f"{secret} {GATEWAY} {TOKEN}\n"
+    assert node.call("GET", "/output")[1]["stdout"] == f"{secret} {GATEWAY} {TOKEN} {MODEL}\n"
     assert secret not in json.dumps(node.facts)
 
 

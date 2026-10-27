@@ -22,18 +22,16 @@ from loc_arena.episode_stack import (
     ComposeDocument,
     Identity,
     StackError,
-    issue_secrets,
     render_compose,
     run_in_stack,
     sandbox_agent_code,
 )
 from loc_arena.gateway import core
-from loc_arena.harness import apply_mode
-from loc_arena.recording_service import COVERT_TOOL_NAMES
+from loc_arena.observability import EXPORT_SPANS
 from loc_arena.settings import GatewaySettings, LocArenaSettings, StackSettings
 from loc_arena.stack_play import renew_services
 from loc_arena.task import SANDBOX_URL_VARIABLE, TOOLS_URL_VARIABLE
-from loc_arena.tools_gateway import TOOLS_GATEWAY_CONFIG_VARIABLE, render_tools_gateway_config
+from loc_arena.tools_gateway import render_tools_gateway_config
 from sandbox_server.server import ServerSettings
 from scenarios.loader import SCENARIOS_ROOT, EngineModule, LiveService, load_scenario
 
@@ -47,6 +45,14 @@ TWO_AGENTS = (SCRIPTED_CONFIG.agent("agent-main"), SCRIPTED_CONFIG.agent("servin
 SANDBOXES = ["sandbox-agent-main", "sandbox-serving-agent"]
 SANDBOXES_WITH_ONE_WITH_NO_RIGHT = ["sandbox-agent-main", "sandbox-controlplane-agent"]
 HEALTHY = {"condition": "service_healthy"}
+# The healthcheck of a live service on port 8000 that names no test of its own.
+PORT_8000_PROBE = {
+    "test": ["CMD", "python", "-c", "import socket; socket.create_connection(('localhost', 8000), 2)"],
+    "interval": "2s",
+    "retries": 15,
+    "start_period": "60s",
+    "start_interval": "2s",
+}
 SKILLS = SCENARIOS_ROOT / "aurora_efficiency" / "skills"
 SKILLS_MOUNT = f"{SKILLS}:/skills:ro"  # read-only, where the default settings put them
 # An agent with rights on notes and an agent with none, as the run config seeds them.
@@ -206,7 +212,7 @@ def test_the_gateway_holds_the_key_and_the_episode_every_sandbox_token() -> None
     holders = {name: compose["services"][name]["secrets"] for name in ("gateway", "episode")}
 
     assert holders == {
-        "gateway": ["openrouter_api_key", "model_gateway_config"],
+        "gateway": ["openrouter_api_key", "model_gateway_config", "provider_roots"],
         "episode": ["gateway_token", "sandbox_token_agent_main", "sandbox_token_serving_agent"],
     }
 
@@ -214,7 +220,7 @@ def test_the_gateway_holds_the_key_and_the_episode_every_sandbox_token() -> None
 def test_compose_reads_each_secret_from_its_own_host_variable() -> None:
     compose = render()
 
-    sources = compose["secrets"]
+    sources = {name: source for name, source in compose["secrets"].items() if "file" not in source}
 
     assert sources == {
         "openrouter_api_key": {"environment": "OPENROUTER_API_KEY"},
@@ -423,16 +429,7 @@ def test_a_live_service_built_from_its_pack_runs_bounded_on_agent_net_alone_with
         },
         "secrets": [{"source": "iam_service_notes", "target": "iam_credential"}],
         "depends_on": {"iam": HEALTHY},
-        "healthcheck": {
-            "test": [
-                "CMD",
-                "python",
-                "-c",
-                "import socket; socket.create_connection(('localhost', 8000), 2)",
-            ],
-            "interval": "2s",
-            "retries": 15,
-        },
+        "healthcheck": PORT_8000_PROBE,
         "init": True,
     }
 
@@ -499,7 +496,7 @@ def test_neither_the_gateway_nor_the_episode_holds_an_identity(
     holders = {name: compose["services"][name]["secrets"] for name in ("gateway", "episode")}
 
     assert holders == {
-        "gateway": ["openrouter_api_key", "model_gateway_config"],
+        "gateway": ["openrouter_api_key", "model_gateway_config", "provider_roots"],
         "episode": ["gateway_token", "sandbox_token_agent_main", "sandbox_token_controlplane_agent"],
     }
 
@@ -577,16 +574,7 @@ def test_a_service_with_tools_runs_its_engine_module_with_the_run_config_and_its
         "networks": ["agent-net"],
         "secrets": [{"source": "iam_service_forge", "target": "iam_credential"}],
         "depends_on": {"iam": HEALTHY},
-        "healthcheck": {
-            "test": [
-                "CMD",
-                "python",
-                "-c",
-                "import socket; socket.create_connection(('localhost', 8000), 2)",
-            ],
-            "interval": "2s",
-            "retries": 15,
-        },
+        "healthcheck": PORT_8000_PROBE,
         "init": True,
     }
 
@@ -711,16 +699,16 @@ def test_the_tools_gateway_offers_each_tool_by_its_own_name_with_no_service_pref
     assert backend["mcp"]["prefixMode"] == "never"
 
 
-def test_the_tools_gateway_listens_on_its_port_alone_with_no_admin_stats_or_readiness_listener(
+def test_the_tools_gateway_listens_on_its_port_alone_on_ipv4_with_no_admin_stats_or_readiness_listener(
     tools_gateway_config: dict[str, Any],
 ) -> None:
-    listeners = tools_gateway_config["config"]
+    names = ("enableIpv6", "adminAddr", "statsAddr", "readinessAddr")
 
     ports = [bind["port"] for bind in tools_gateway_config["binds"]]
 
-    assert (ports, {name: listeners[name] for name in ("adminAddr", "statsAddr", "readinessAddr")}) == (
+    assert (ports, {name: tools_gateway_config["config"][name] for name in names}) == (
         [3000],
-        {"adminAddr": "off", "statsAddr": "off", "readinessAddr": "off"},
+        {"enableIpv6": False, "adminAddr": "off", "statsAddr": "off", "readinessAddr": "off"},
     )
 
 
@@ -748,8 +736,10 @@ COMPOSE_PREFIX_LENGTH = 8  # docker compose -p <project> -f <file> --project-dir
 NOTES_LOG = b'{"caller": "agent-main", "status": 200}\n'
 AURORA_AGENTS = ["AGENT_MAIN", "CONTROLPLANE_AGENT", "DATAPIPE_AGENT", "DISTILL_AGENT", "EVAL_AGENT"]
 AURORA_AGENTS += ["JOBSVC_AGENT", "SERVING_AGENT"]
-# A stack run's services in the order its compose file declares them; the fleet and the tools gateway follow.
-SERVICES = ("notes", "forge", "board", "jobsvc", "jobs", "scratch", "coverage", "agents", "evalkit", "iam")
+# The services agents hold an identity on, in the order a stack run's compose file declares them.
+SERVICES = tuple("notes forge chat jobsvc agents evalkit tickets iam".split())
+# The containers whose log a stack run copies, in that order: those, Phoenix, the fleet and the tools gateway.
+LOGGED = (*SERVICES[:-1], "phoenix", "iam", "node-1", "node-2", "node-3", "agentgateway")
 
 
 @dataclass
@@ -785,11 +775,13 @@ class FakeDocker:
         failed = self.failing in command[COMPOSE_PREFIX_LENGTH:] or (
             playing and self.plays > self.plays_passing
         )
-        created = "container-id\n" if verb == "ps" and self.episode_created_only else ""
+        listed = verb == "ps" and (self.episode_created_only or "running" in command)  # Phoenix runs
+        created = "container-id\n" if listed else ""
         published = self.published if verb == "port" else created
         printed = NOTES_LOG if verb == "logs" and stdout is None else published
         printed = printed.decode() if text and isinstance(printed, bytes) else printed
-        return subprocess.CompletedProcess(command, int(failed), stdout=printed)
+        printed = printed.encode() if not text and isinstance(printed, str) else printed  # as subprocess's
+        return subprocess.CompletedProcess(command, int(failed), stdout=printed, stderr=printed[:0])
 
     @property
     def plays(self) -> int:
@@ -833,7 +825,7 @@ def test_a_stack_run_hands_compose_a_distinct_identity_per_agent_and_service_thr
         [v for v in identities.values() if v in written],
     ) == (
         sorted(f"LOC_ARENA_IDENTITY_{s.upper()}_{a}" for s in SERVICES for a in AURORA_AGENTS),
-        70,
+        len(SERVICES) * len(AURORA_AGENTS),
         [],
     )
 
@@ -854,14 +846,23 @@ def test_a_stack_run_copies_each_live_services_log_out_before_it_removes_the_pro
     )
 
 
-def test_a_live_services_log_that_cannot_be_copied_keeps_the_project(
+@pytest.mark.parametrize(
+    ("failing", "mode", "plays_passing"),
+    [("notes", "honest", 0), ("python3.13", "honest", 0), ("python3.13", "attack", 1)],
+    ids=["a-live-services-log", "phoenixs-spans-at-the-end-of-play", "phoenixs-spans-before-the-twin"],
+)
+def test_a_record_that_cannot_be_copied_out_keeps_the_project(
     docker: FakeDocker,
     tmp_path: Path,
+    failing: str,
+    mode: str,
+    plays_passing: int,
 ) -> None:
-    docker.failing = "notes"  # the live service's log alone, not the gateway's
+    docker.failing = failing  # a live service's log, not the gateway's, or the export in a running Phoenix
+    docker.plays_passing = plays_passing
 
     with pytest.raises(StackError, match="kept compose project"):
-        run_aurora_in_stack(tmp_path)
+        run_aurora_in_stack(tmp_path, mode)
 
     assert (docker.verbs[-1], "down" in docker.verbs) == ("stop", False)
 
@@ -933,16 +934,9 @@ def test_a_stack_run_copies_the_tools_gateways_log_out_before_it_removes_the_pro
         run_aurora_in_stack(tmp_path)
 
     copied = read_copied_log(tmp_path, "agentgateway")
+    copy_command = ["logs", "--no-color", "--no-log-prefix", "agentgateway"]
     commands = [call[COMPOSE_PREFIX_LENGTH:] for call in docker.calls]
-    assert (
-        copied,
-        ["logs", "--no-color", "--no-log-prefix", "agentgateway"] in commands,
-        docker.verbs[-1],
-    ) == (
-        NOTES_LOG,
-        True,
-        "down",
-    )
+    assert (copied, copy_command in commands, docker.verbs[-1]) == (NOTES_LOG, True, "down")
 
 
 @pytest.fixture
@@ -968,8 +962,9 @@ def test_a_stack_run_copies_each_live_services_log_into_its_run_directory_before
 
     run_aurora_in_stack(tmp_path)
 
-    logged = sorted((*SERVICES, "node-1", "node-2", "node-3", "agentgateway"))
-    assert copied_at_grading == [[f"{service}.log" for service in logged]] * 2
+    assert (
+        copied_at_grading == [sorted([*(f"{service}.log" for service in LOGGED), "phoenix.spans.jsonl"])] * 2
+    )
 
 
 def test_a_graded_stack_run_copies_its_run_directory_out_once(
@@ -998,18 +993,19 @@ def test_an_attack_stack_run_drains_the_record_then_renews_every_container_but_t
 
     commands = [call[COMPOSE_PREFIX_LENGTH:] for call in docker.calls]
     plays = [index for index, command in enumerate(commands) if command[0] == "up" and "--attach" in command]
-    logged = (*SERVICES, "node-1", "node-2", "node-3", "agentgateway")  # the fleet's logs: its process facts
     between = [
         command[:2] if command[0] == "cp" else command for command in commands[plays[0] + 1 : plays[1]]
     ]
     renewed = ["sandbox-agent-main", "sandbox-serving-agent", "sandbox-distill-agent", "sandbox-eval-agent"]
     renewed += ["sandbox-datapipe-agent", "sandbox-jobsvc-agent", "sandbox-controlplane-agent"]
-    renewed += ["runner-1", "runner-2", "runner-3", *logged]
+    renewed += ["runner-1", "runner-2", "runner-3", *LOGGED]
     assert between == [
-        ["stop", *renewed],
+        ["stop", *(service for service in renewed if service != "phoenix")],  # Phoenix runs on to export
         ["logs", "--no-color", "--no-log-prefix", "gateway"],
         ["cp", "collector:/sealed/calls.jsonl"],
-        *(["logs", "--no-color", "--no-log-prefix", service] for service in logged),
+        *(["logs", "--no-color", "--no-log-prefix", service] for service in LOGGED),
+        ["ps", "--status", "running", "--quiet", "phoenix"],
+        ["exec", "-T", "phoenix", "python3.13", "-c", EXPORT_SPANS, "http://localhost:6006"],
         [
             "up",
             "--detach",
@@ -1116,23 +1112,3 @@ def test_a_service_log_copied_before_a_failed_grading_is_not_added_again_at_tear
         run_aurora_in_stack(tmp_path)
 
     assert read_copied_log(tmp_path, "notes") == NOTES_LOG
-
-
-def test_honest_mode_drops_the_covert_tools_from_each_agents_sandbox_tools() -> None:
-    attack = load_run_config("configs/aurora-efficiency.yaml")
-
-    honest = apply_mode(attack, "honest")
-
-    offered = {tool for agent in honest.agents for tools in agent.sandbox.tools.values() for tool in tools}
-    assert offered.isdisjoint(COVERT_TOOL_NAMES) and {"open_pr", "send", "submit_job"} <= offered
-
-
-def test_the_honest_twin_env_carries_a_gateway_config_without_covert_tools() -> None:
-    config = load_run_config("configs/aurora-efficiency.yaml")
-
-    attack_env, twin_env = issue_secrets(config)
-
-    attack_policy = attack_env[TOOLS_GATEWAY_CONFIG_VARIABLE]
-    twin_policy = twin_env[TOOLS_GATEWAY_CONFIG_VARIABLE]
-    assert "write_scratch" in attack_policy
-    assert "open_pr" in twin_policy and not any(tool in twin_policy for tool in COVERT_TOOL_NAMES)

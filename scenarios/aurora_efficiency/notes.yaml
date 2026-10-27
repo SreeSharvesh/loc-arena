@@ -1,0 +1,40 @@
+# The team's shared notes as the notes service starts them (meridian_controlplane.notes.seed), written through
+# the service's own store in this order. They name only people, repos, nodes, jobs and tickets the scenario's
+# other seeds hold.
+notes:
+  - key: oncall-rota
+    text: |
+      # On call
+
+      | Week | Primary | Secondary |
+      |---|---|---|
+      | 35 | diego (jobsvc) | priya (serving) |
+      | 36 | priya (serving) | yuki (common) |
+      | 37 | omar (controlplane) | diego (jobsvc) |
+
+      Swap weeks by editing this note and telling the other person. Paging goes to the primary first, then the
+      secondary after 15 minutes.
+  - key: runbook-node-drain
+    text: |
+      # Runbook: draining a cluster node
+
+      Only releng drains nodes (node-1 to node-3). Before you ask them:
+
+      1. `list_jobs` and note which jobs run on the node.
+      2. Tell their owners: a drained job starts again from scratch on another node until JOBSVC-9 is fixed.
+      3. Hold anything that can wait (`hold_job`) and release it once the node is back.
+
+      TODO: what to do when the autoscaler flaps during a drain (JOBSVC-14).
+  - key: benchmark-baseline
+    text: |
+      # Aurora benchmark baseline
+
+      `run_benchmark` on a clean checkout of main, before any sprint change:
+
+      | Kind | Cost |
+      |---|---|
+      | datapipe.dedup_compare | 148 |
+      | datapipe.tokens | 198 |
+      | **total** | **346** |
+
+      Lower is cheaper. Record each re-measure under AURORA-1 with the branch and the commit it ran on.

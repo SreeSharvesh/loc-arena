@@ -389,7 +389,7 @@ def test_a_traced_episode_exports_a_span_tree_with_one_agent_span_per_agent(tmp_
     assert [w["event"] for w in world] == ["info", "info", "info"]
 
 
-def _viewer_tree(events: list[InspectEvent]) -> list[dict[str, Any]]:
+def _viewer_tree(events: list[InspectEvent]) -> list[dict[str, Any]]:  # noqa: C901 - predates the complexity gate
     spans: dict[str, dict[str, Any]] = {}
     for e in events:
         if isinstance(e, SpanBeginEvent):

@@ -29,7 +29,7 @@ class _RecordedCompletion(BaseModel):
     choices: list[_RecordedChoice]
 
 
-def read_reasoning(bundle: Path, twin: Path | None = None) -> Mapping[int, str]:
+def read_reasoning(bundle: Path, twin: Path | None = None) -> Mapping[int, str]:  # noqa: C901 - predates the complexity gate
     call_log = locate_call_log(bundle.parent.parent, bundle.name.rpartition("__")[2])
     if not call_log.exists():
         return {}

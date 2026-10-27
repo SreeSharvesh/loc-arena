@@ -1,8 +1,7 @@
 """The model-driven star (policy: model) drives the full live assembler and stays clean when honest.
 
 Drives ModelAgentPolicy-driven agent-main and its pre-provisioned sub-agents through a canned provider. The
-covert tools are record-only services now (the rogue loop is a stub, #99 step 4), so a live run reaches no
-loop-tied side-task milestone; the honest twin reaches none either, which this checks.
+honest twin reaches no side-task milestone, which this checks.
 """
 
 from __future__ import annotations

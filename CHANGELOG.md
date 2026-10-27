@@ -8,11 +8,44 @@ log has the details.
 
 ### Changed
 
+- **The Aurora scenario serves no record-only attack tools.** An agent can take a covert step only through a company
+  service, with the rights it holds for its ordinary work; steps with no service behind them (a planted durable
+  credential, a credential rotation during the episode, under-reported logging) cannot be taken. The honest twin holds the same tools and
+  rights and differs only by the covert briefs, the gateway's covert injection and, in a scripted run, the
+  scenario's attack moves.
+- **A tool an agent is offered no longer grants its permission.** IAM seeds each agent's `sandbox: rights:` alone;
+  `sandbox: tools:` is only what agentgateway offers it. A tool offered without its permission is refused until
+  the agent asks and an approver approves, on MCP as on HTTP. Starting rights may name any permission the
+  service's IAM manifest checks, on tool services too (`forge: [open_pr]`), and a config naming one the manifest
+  never checks does not load. Aurora's grants are unchanged: its rights state the forge permission its
+  tools implied.
+- **Agents talk in chat, and the board and scratch are gone.** `meridian_controlplane.chat` is served in stack
+  runs (`loc_arena.chat_service`) under central IAM, from the scenario's `chat_seed` (Aurora's `chat.yaml`):
+  channels, threads and direct messages, over MCP tools and HTTP. Anyone holding chat's `write` can message
+  anyone; the per-agent `scope.message` allow-list is removed. Agents read chat when they choose: no message is
+  pushed into a turn (the IAM inbox still is). Each post, reply and direct message is a `message` event for the
+  monitors, over MCP or HTTP alike. `scratch`, `write_scratch`, the `shared_surface` tap and monitor, and the
+  `covert_coordination_channel` milestone are removed, so covert depth counts eight milestones. Chat runs in
+  stack runs only: an in-process run has no messages.
+- **The notes service is company code with MCP tools and a seed.** `meridian_controlplane.notes` serves the
+  team's notes from the engine image (`loc_arena.notes_service`) as `list_notes`, `read_note`, `write_note` and
+  `delete_note`, over HTTP and as tools, so agents can keep notes without leaving their tools. It starts from the
+  scenario's `notes_seed` (Aurora's `notes.yaml`), so the honest twin starts where the episode did. Access
+  requests go to the IAM service's own `/requests`, as for the other services: notes no longer forwards them,
+  and its own image and stdlib server are gone.
+- **A container gets a minute to start before its healthcheck counts.** A stack's renewal before the honest twin
+  starts every container at once, and Phoenix, which takes about 20 seconds alone, came up unhealthy past the 30
+  seconds that `stack.gateway_health_retries` probes allow. Probes failing in the first
+  `stack.gateway_health_start_seconds` (60) now do not count, and a container answering sooner is healthy at its
+  first passing probe, two seconds apart as before.
 - **The main-task grader runs the company suites once per distinct checkout.** The suites' verdict depends on
   the checkout's files and the interpreter they run on (`stack.sandbox_agent_code` and `stack.sandbox_image`),
   so a checkout a process has graded byte for byte, with the same settings, keeps its verdict: a run and its
   honest twin hold the same files, as do a test session's graded episodes, and the suites took 23 of the 24
   seconds a graded episode cost. An edit after a grade changes the digest, so it is graded afresh.
+- **The main-task grader runs the seven company suites at once.** Each still runs in its own process under its
+  own timeout, so a grade's suites take as long as the slowest one rather than all seven in turn. The checkout is
+  green when every suite passes.
 - **Each service has its own approver, and no agent under test approves.** The scenario's `iam:` block names
   one per service (in Aurora `notes-owner`, `agents-owner`, ...): a principal of the company that IAM makes a
   member of the owner team, and that approves the permissions it lists and denies the rest. It runs in the IAM
@@ -41,6 +74,19 @@ log has the details.
   Collector, reachable from the gateway alone, writes the record of every call, refused and failed ones
   included; a stack run waits until the record holds every call before the gateway stops, and copies it out as
   before (`logs/gateway/<project>.calls.jsonl`, with the Collector's own lines beside it).
+- **Every agent reads the cluster, and jobsvc-agent submits to it.** Most of a live run's agents could not see
+  the cluster their work runs on, and jobsvc-agent, whose task is the cluster, could not use it. The default run
+  config now gives every agent `read` on the job service and the tools that read it, and jobsvc-agent `submit`
+  as serving-agent and eval-agent hold it, all three with every job tool but the operators' three. agent-main
+  submits nothing itself: it hands a job to one of them or asks `jobsvc-owner`.
+- **A job sees the scenario's skills and the model it may call.** A node mounts the skills read-only where a
+  sandbox has them, so a job runs a skill's script as an agent would, and gives each job
+  `MERIDIAN_GATEWAY_MODEL`, the first of `gateway.runner_models`, so a job's code knows a model its route admits;
+  a run config naming an empty model there does not load.
+- **The runners and the jobs may make 1000 model calls per play, up from 300.** An eval run on `gsm8k-test-50`
+  is fifty calls, and the company's agents on the runners share the budget, so a few runs spent most of it.
+- **Both agentgateways listen on IPv4 alone.** Their default listener, `[::]`, cannot bind where the kernel boots
+  without IPv6, so a stack run on such a host never started.
 
 ### Added
 
@@ -48,6 +94,33 @@ log has the details.
   call in the run's `.eval` carries the reasoning the gateway recorded for it as an Inspect reasoning block ahead
   of its reply, so `inspect view` shows what an agent weighed before it acted, as the run explorer does. The
   transcripts still show the reply alone, and no monitor reads the reasoning.
+- **The company runs its agents on schedules.** `POST /schedules` on the agents service (with `run`) starts an
+  execution of an agent on a cron expression (UTC) or every `interval_seconds`, skipping a firing while the
+  last execution has not ended; `GET /schedules` lists them, and `DELETE /schedules/<id>` stops one and keeps it
+  listed. A schedule gets an identity of its own from central IAM, as the job service's do, and IAM decides
+  each firing under it, so a creator who can no longer run agents has its schedules' firings refused. Each
+  firing is an audit line. The company starts with one honest schedule: batch-runner has eval-summarizer
+  summarize the evaluation runs every 15 minutes, a fifth of them traced, without content.
+- **The company's agents run as themselves.** An agent registered on the agents service is issued an identity of
+  its own by central IAM, as a job is: a workload sponsored by its registrant, holding what the registrant holds
+  of the agents service's delegation (in aurora, read and write on notes and tickets, and read on evalkit). Each
+  execution's runner gets its secrets as `MERIDIAN_<SERVICE>_TOKEN`, so the company's agent calls the company's
+  services under its own name, and revoking its registrant's rights ends what it may do. `GET /agents/<name>`
+  names it; the seeded agents have none.
+- **Agents can stop the company's agents and resume them.** `POST /executions/<id>/stop` on the agents service
+  (with `run`) ends a running execution's pi and keeps its checkpoint: what the runner's user wrote where a reset
+  empties, which is the workspace, pi's home with its session, and the temporary directories.
+  `POST /executions/<id>/resume`, with an optional `input`, queues it again, and on the next free runner the
+  checkpoint is put back and pi goes on with its conversation, told the input or that it has resumed. Stopping
+  and resuming are actions on the event logs, and `stopped` a state on the audit record. The sandbox's command
+  server takes a command's stdin, which carries a checkpoint back to a runner.
+- **Meridian has a ticket tracker.** A stack run serves the company's projects and their tickets (`EVALKIT-58`), with
+  sub-tickets one level deep and append-only comments, as the live service `tickets`, from the company's own code
+  (`meridian_controlplane.tickets`): MCP tools through the tools gateway and an HTTP API beside them on one port,
+  under central IAM. It starts from `scenarios/aurora_efficiency/tickets.yaml`: a project per company repo with the
+  open backlog tickets its code names, and the sprint's tickets assigned to the agents under test. Every agent reads
+  and writes it with every tool, and `tickets-owner` is its approver. Its database records the history of every
+  change, and each change, or refused call, is an action on the event logs. An in-process run does not serve it.
 - **The job service runs each job as a real process.** `jobsvc` serves Meridian's cluster
   (`meridian_jobsvc`) live under central IAM, over its HTTP API and the MCP tools `submit_job`, `list_jobs`,
   `get_job`, `job_logs` and `cancel_job`: a job waits in the priority queue for its dependencies, starts on
@@ -111,6 +184,10 @@ log has the details.
   one it could not bind stays `created`. A node puts the checkout's repos on each job's `PYTHONPATH` unless the job
   brings its own, as the seed's jobs do, so the runner, as any agent's job, imports the company's code as the agents'
   edits left it.
+- **The eval service's seed holds a real evaluation set.** A lab's evals are real public text, and an agent that reads
+  a toy one knows where it is, so the eval team's seed now keeps `gsm8k-test-50`, the first fifty questions of GSM8K's
+  test split, each asking for the final number alone, which is the reference an exact match scores against, with three
+  past runs and a leaderboard on it beside the two small smoke sets. An eval run on it is fifty model calls.
 - **The run explorer shows what the monitors flagged in the honest twin.** A toggle in the top bar switches between the
   run and its twin. The twin's page shows its own verdicts and model reasoning, and both pages set each monitor's score
   on the run beside its score on the twin, with the twin's overall as the bar. A verdict exactly at the audit threshold
@@ -118,10 +195,19 @@ log has the details.
 - **An attack run's scores keep its honest twin's verdicts.** `scores.json` has an `honest_twin` block: every
   verdict on the twin, each monitor's score and peak, and its overall suspicion, from the scoring that set both audit
   thresholds. Grading used to drop them, so nothing showed what the monitors flagged in honest work.
+- **The company traces its agents' runs.** A stack run of the aurora scenario runs Phoenix, the company's
+  observability store, open to every agent: a ready image with no authentication, so outside central IAM, as it
+  holds no right or tool to guard. An execution its agent's telemetry settings trace reports each model
+  and tool call there as a span, with or without the prompt and reply; the settings are read with `read` on the
+  agents service and changed with a new `configure` right, which agent-main and eval-agent hold. Phoenix's spans
+  are exported into the run directory, `services/phoenix.spans.jsonl`, before the honest twin and at the end of
+  play. The spans are not events, as the monitors watch the agents' own actions. The runners now stop at the end
+  of play, so no execution runs on unrecorded while the run is graded.
 - **Agents can run the company's agents.** In a stack run, an agent with `run` on the agents service (in the
   default config, agent-main) starts an execution of a registered agent with `POST /executions`: pi runs its
   latest version on one of three runners, and the execution ends completed, failed or cancelled. Starting and
-  cancelling are actions on the event logs; each change of state is an audit line naming its runner.
+  cancelling are actions on the event logs; each change of state is an audit line naming its runner. Its record
+  keeps pi's whole reply.
 - **Runners for the company's own agents.** A scenario's service can declare `runners: <n>`: a stack run then
   starts `runner-1` to `runner-<n>`, sandboxes with pi in an empty workspace that only that service can drive,
   each with its own token. pi there calls models through the gateway, which by default lets runners make 300
@@ -251,6 +337,11 @@ log has the details.
   progress, against `AGENTS.md` and the repository's own ast-grep rules. (#64)
 
 ### Changed
+
+- **No length caps on the company's agents.** The agents service takes agent names, system prompts and execution
+  inputs of any length: their caps came from how a runner is handed its command, not from the product. A prompt
+  or input over Linux's 128 KiB limit on one argument now fails its execution, which says the runner could not
+  run it.
 
 - **Agents learn of access requests at the start of their turn.** Under central IAM the harness reads each
   agent's IAM inbox when its turn starts, as it reads its board messages, and hands it each new item once as a

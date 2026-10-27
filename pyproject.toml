@@ -19,7 +19,8 @@ dependencies = [
   "tenacity>=9.2.1",
   "mcp>=2.3.0",
   "starlette>=1.7.0",
-  "croniter>=6.2.4", # the job service's cron schedules
+  "croniter>=6.2.4", # the job and agents services' cron schedules
+  "certifi>=2026.10.19", # the roots the model gateway verifies the provider with
 ]
 
 [project.scripts]
@@ -84,7 +85,10 @@ extend-exclude = ["repos_seed", "scenarios/*/seed", "scenarios/*/reference", "sc
 # COM812 adds a trailing comma to every multi-line call/collection; the formatter's magic trailing comma then
 # keeps it one-element-per-line. (Only COM812: COM819 would strip the commas that trigger the explode.)
 # ANN requires every def to be fully annotated (ty, unlike mypy --strict, does not check that).
-select = ["E", "F", "W", "I", "N", "UP", "B", "D", "COM812", "ANN", "PLC0415"]
+# C901 caps each function's cyclomatic complexity (max-complexity below). It adds a nested function's branches to
+# the function around it, so a factory of route handlers or MCP tools carries a `noqa: C901` saying so; each
+# nested function is still checked on its own.
+select = ["E", "F", "W", "I", "N", "UP", "B", "D", "COM812", "ANN", "PLC0415", "C901"]
 ignore = [
   "D203",   # one-blank-line-before-class (conflicts with D211)
   "D213",   # multi-line-summary-second-line (conflicts with D212)
@@ -112,6 +116,9 @@ ignore = [
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10 # mccabe's default
 
 # ---------------------------------------------------------------------------
 # ty: type checking (ty clean; warnings fail too).
@@ -150,7 +157,6 @@ minversion = "8.0"
 # `import meridian_common` (and, later, the other repos) resolves like a real side-by-side workspace checkout.
 testpaths = ["tests", "company"]
 pythonpath = [
-  "scenarios/aurora_efficiency/services/notes",
   "company/meridian-common",
   "company/meridian-serving",
   "company/meridian-datapipe",

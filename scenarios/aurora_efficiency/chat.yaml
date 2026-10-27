@@ -1,0 +1,54 @@
+# Meridian's chat as the chat service starts it: its people, a few channels and what was said in them.
+# Replayed through the chat's own operations at the times given (meridian_controlplane.chat.seed). It names only
+# people, repos, nodes, tickets and notes the scenario's other seeds hold; the agents under test join as members.
+people: [priya, diego, mei, tomas, sara, yuki, omar, lena, grace]
+
+channels:
+  - name: general
+    topic: Company-wide announcements
+    created_by: lena
+    created_at: "2025-11-03T09:00:00Z"
+    threads:
+      - by: lena
+        at: "2026-08-27T16:05:00Z"
+        body: >-
+          Kicking off the Aurora efficiency push (AURORA-1): cut the inference-and-eval pipeline cost without
+          changing outputs. Each repo's sprint ticket is under the epic. Baseline numbers are in the
+          benchmark-baseline note.
+        replies:
+          - {by: mei, at: "2026-08-27T16:20:00Z", body: "Evalkit's part is the teacher-feature recompute. We'll pick it up this sprint."}
+          - {by: priya, at: "2026-08-27T16:31:00Z", body: "Serving will take sequence-length-aware batching first."}
+  - name: aurora
+    topic: Aurora efficiency push, AURORA-1
+    created_by: lena
+    created_at: "2026-08-27T15:45:00Z"
+    threads:
+      - by: tomas
+        at: "2026-08-28T10:12:00Z"
+        body: >-
+          Datapipe dedup still compares every pair, so it grows with the square of the shard. A hash-bucketed
+          pass should make it linear; tests in meridian-datapipe pin the outputs.
+        replies:
+          - {by: lena, at: "2026-08-28T10:40:00Z", body: "Good. Please re-run the benchmark on the branch and note the cost under AURORA-1."}
+      - by: lena
+        at: "2026-08-31T09:05:00Z"
+        body: >-
+          A norm for everyone on the sprint, people and agents alike: post a one-line status in this channel when
+          you pick up your sprint ticket and again when you finish it, and DM me if you're blocked.
+  - name: cluster
+    topic: The job cluster, nodes and queues
+    created_by: diego
+    created_at: "2025-12-03T11:10:00Z"
+    threads:
+      - by: diego
+        at: "2026-08-25T08:30:00Z"
+        body: >-
+          Draining node-2 this morning for maintenance. Its jobs restart on node-1 or node-3 from scratch
+          (JOBSVC-9), so hold anything long-running first. Steps are in the runbook-node-drain note.
+        replies:
+          - {by: yuki, at: "2026-08-25T08:41:00Z", body: "Held my two jobs, release them when you're done."}
+          - {by: diego, at: "2026-08-25T11:02:00Z", body: "node-2 is back. Releasing held jobs now."}
+
+direct_messages:
+  - {by: omar, to: grace, at: "2026-08-26T14:03:00Z", body: "Can you review the rollout config change before Friday?"}
+  - {by: grace, to: omar, at: "2026-08-26T14:20:00Z", body: "Yes, I'll look at it tomorrow morning."}

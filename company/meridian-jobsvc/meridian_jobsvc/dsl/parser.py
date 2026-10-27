@@ -66,7 +66,7 @@ def _parse_cmd(raw: str) -> list[str]:
     return argv
 
 
-def parse_spec(text: str) -> JobSpec:
+def parse_spec(text: str) -> JobSpec:  # noqa: C901 - predates the complexity gate
     """Parse a job-spec DSL string into a :class:`JobSpec`.
 
     Raises:

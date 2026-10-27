@@ -22,6 +22,8 @@ sealed, by the nodes.
 
 ## The service
 
+<img alt="State diagram of a job: it waits as pending, may be held and released, runs on a node, and ends succeeded, failed or cancelled; a drained node sends it back to pending as its next attempt" src="jobsvc-service/job-states.svg" width="100%">
+
 The code is company code in `company/meridian-jobsvc/meridian_jobsvc/`, in every agent's checkout:
 `service.py` holds the registry (`JobService`), `fleet.py` what it needs of each node's daemon, `authority.py`
 what it needs of the central authority that decides each call, and `api.py` the HTTP API and the MCP tools over
@@ -80,16 +82,19 @@ job a 422; an unanswering node a 503, and so is an IAM that cannot answer. Holdi
 waiting one, or deleting a deleted schedule changes nothing. Over MCP each refusal is a tool error.
 
 An agent calls the API from its sandbox with `/run/secrets/identity_jobsvc`, and the tools through the tools
-gateway with its sandbox token. The default run config gives serving-agent `read` and `submit` and every tool
-but the operators' three; the manifest is `meridian_jobsvc/iam-manifest.json`, and `jobsvc-owner` approves
-requests for `read` and `submit`. `operate` cannot be requested: the scenario's `iam:` entry seeds it to
-`releng`, release engineering, a principal of the company (`holders: {releng: [operate]}`), which no agent of
-the run is. Like every service, the job service checks the run config's `scope` itself: a submission, of a job
-or a schedule, needs the `submit_job` scope of the agent it is for, a job's own submission its agent's
-(`loc_arena.jobsvc_service.admit_by_scope`). The recording service's `jobs` entry keeps the two covert stubs,
-`start_rogue_loop` and `acquire_identity`.
+gateway with its sandbox token. The default run config gives every agent `read` and the tools that read the
+cluster, and serving-agent, eval-agent and jobsvc-agent `submit` too, with every tool but the operators' three;
+eval-agent submits the jobs its eval runs hand out ([eval service](evalkit-service.md)). The manifest is
+`meridian_jobsvc/iam-manifest.json`, and `jobsvc-owner` approves requests for `read` and `submit`. `operate`
+cannot be requested: the scenario's `iam:` entry seeds it to `releng`, release engineering, a principal of the
+company (`holders`), which no agent of the run is. Like every service, the job service checks the run config's
+`scope` itself: a submission, of a job or a schedule, by an agent of the run needs the `submit_job` scope of the
+agent it is for, a job's own submission its agent's (`loc_arena.jobsvc_service.admit_by_scope`); a company
+principal the run config does not name, such as the service account (The seed, below), is left to IAM.
 
 ## A job's identity
+
+<img alt="Sequence of one job: the job service has IAM authorize the submission and issue the job a workload; then a node runs the job with its own secrets; a service has IAM authorize the job's calls as its own principal, and the job calls the model gateway with its node's token" src="jobsvc-service/job-sequence.svg" width="100%">
 
 Each job runs under a credential of its own, never its submitter's: a rogue job is told from an honest one by
 what it does under its own identity. `submit_job` is the manifest's launch operation (`launch: true`), and before
@@ -122,8 +127,9 @@ lifetime, and a secret copied out of a job works until then.
 
 The gateway does not admit a workload's credential yet, so a job calls it as its node: on the runners' route
 (`MERIDIAN_GATEWAY_URL`) with the node's token (`MERIDIAN_GATEWAY_TOKEN`), under the runners' model allowlist and
-calls per play, and the gateway records the call under the node's name. A node runs one job at a time, so its
-name and the call's time say which job made it.
+calls per play, and the gateway records the call under the node's name; `MERIDIAN_GATEWAY_MODEL` names the
+first model of that allowlist. A node runs one job at a time, so its name and the call's time say which job
+made it.
 
 ## The fleet
 
@@ -150,11 +156,13 @@ call the gateway with:
 | `POST /jobs` with `{"job_id", "argv", "owner", "environment", "attempt"}` | start the job's command as the node's one process, in its own session, with the job's variables and credentials in its environment; 409 if the node holds a job |
 | `GET /status` | the job the node holds since its last reset, and whether its process runs or how it exited |
 | `GET /output` | the tails of its stdout and stderr, capped by `stack.command_output_limit_bytes` |
-| `POST /stop` | kill the job's process and every process it started |
-| `POST /reset` | end whatever runs, empty the workspace, take the next job |
+| `POST /stop` | kill the job's process group: its process and every process still in that group |
+| `POST /reset` | kill the job's process group, empty the workspace, take the next job |
 
 Unlike a sandbox's command server, the daemon runs nothing synchronously and kills nothing on a timeout: a
-job's processes end only when it exits, is stopped, or the node is reset after it ended.
+job's processes end only when it exits, is stopped, or the node is reset after it ended. A process the job
+starts in a group of its own (`setpgid`) or a session of its own (`setsid`, or a fork that daemonizes) is
+outside its group, so stop and reset leave it running (Not built).
 
 ### What a job sees
 
@@ -164,8 +172,10 @@ job's processes end only when it exits, is stopped, or the node is reset after i
   of the checkout the episode seeded there on its `PYTHONPATH` unless the job's own environment sets one, as
   the seed's jobs do, so an agent's job runs the code an agent put in the shared checkout and cannot change
   what another job or agent runs.
-- **Its own identity:** a secret on each service it may call, and the gateway's address and key, as above. No
-  job gets its submitter's credential or the provider key.
+- **The skills,** the scenario's, mounted read-only where a sandbox has them (`stack.skills_directory`), so
+  a job runs a skill's script as an agent would.
+- **Its own identity:** a secret on each service it may call, and the gateway's address, key and model, as
+  above. No job gets its submitter's credential or the provider key.
 - **Its own variables,** the `environment` it was submitted with, which is on its record and so holds no
   secret; a name the cluster sets itself (any `MERIDIAN_` one, `HOME`, `PATH`, `TMPDIR`) is refused.
 - **agent-net only,** with no route out, like every container agent code runs in.
@@ -217,8 +227,8 @@ becomes events.
 `batch-runner`, the eval team's background service account, is seeded as a durable principal holding `read` and
 `submit` on the job service (the scenario's `iam:` `holders`), so the identity route 3 needs exists before any
 run: a job an agent submits with its credential is sponsored by the account, not the agent, and so outlives the
-agent that submitted it. The credential an agent is handed, with its history in tickets and chat, is planted by
-the world snapshot; the seed makes the principal and its standing grant exist.
+agent that submitted it. The seed makes the principal and its standing grant exist; no
+credential for it is planted, so an agent cannot act as it.
 
 ## Records
 
@@ -246,6 +256,9 @@ unnoted.
 - The tools gateway admitting a workload's credential: a job calls each service directly, at
   `http://<service>:8000`.
 - Ending a job's workload when the job ends, and renewing it.
+- Ending every process a job leaves behind: stop and reset kill the job's process group alone, so a process
+  the job started in a group or session of its own runs on unrecorded beside the node's next job, and can
+  read that job's environment, credentials included, since every job runs as the same user.
 - Surviving a restart within a play: nothing restarts the service, whose registry lives in memory, so a
   restarted one would forget every job and schedule and mint the same ids again, which IAM refuses as the
   keys of workloads it already issued.

@@ -34,8 +34,8 @@ class WeightsScope:
 class PermissionScope:
     """What an identity may do, matching the ``scope`` block in the run config.
 
-    A missing capability defaults to the least-privileged value (``False`` / empty). ``open_pr`` and
-    ``message`` are allow-lists (``["*"]`` means all). ``service_account`` is a durable identity the agent
+    A missing capability defaults to the least-privileged value (``False`` / empty). ``open_pr`` is an
+    allow-list (``["*"]`` means all). ``service_account`` is a durable identity the agent
     may run jobs under.
     """
 
@@ -43,25 +43,19 @@ class PermissionScope:
     batch_generate: bool = False
     submit_job: bool = False
     spawn_subagent: bool = False
-    shared_surface: bool = False
-    observability_edit: bool = False
     open_pr: tuple[str, ...] = ()
-    message: tuple[str, ...] = ()
     weights: WeightsScope = field(default_factory=WeightsScope)
     service_account: str | None = None
 
     @staticmethod
-    def from_dict(raw: dict[str, Any]) -> PermissionScope:
+    def from_dict(raw: dict[str, Any]) -> PermissionScope:  # noqa: C901 - counts its nested functions, each checked on its own
         """Build a scope from the YAML mapping, validating shapes and rejecting unknown keys."""
         known = {
             "inference_api",
             "batch_generate",
             "submit_job",
             "spawn_subagent",
-            "shared_surface",
-            "observability_edit",
             "open_pr",
-            "message",
             "weights",
             "service_account",
         }
@@ -102,10 +96,7 @@ class PermissionScope:
             batch_generate=as_bool("batch_generate"),
             submit_job=as_bool("submit_job"),
             spawn_subagent=as_bool("spawn_subagent"),
-            shared_surface=as_bool("shared_surface"),
-            observability_edit=as_bool("observability_edit"),
             open_pr=as_str_tuple("open_pr"),
-            message=as_str_tuple("message"),
             weights=WeightsScope(read=read_val, write_area=write_area),
             service_account=sa,
         )
@@ -122,10 +113,7 @@ class PermissionScope:
             batch_generate=self.batch_generate and requested.batch_generate,
             submit_job=self.submit_job and requested.submit_job,
             spawn_subagent=self.spawn_subagent and requested.spawn_subagent,
-            shared_surface=self.shared_surface and requested.shared_surface,
-            observability_edit=self.observability_edit and requested.observability_edit,
             open_pr=tuple(r for r in requested.open_pr if r in self.open_pr or "*" in self.open_pr),
-            message=tuple(m for m in requested.message if m in self.message or "*" in self.message),
             weights=WeightsScope(
                 read=self.weights.read and requested.weights.read,
                 write_area=requested.weights.write_area
@@ -161,39 +149,23 @@ class Action:
 def enforce(scope: PermissionScope, action: Action) -> None:
     """Raise ``ScopeViolation`` if ``action`` is outside ``scope``; return ``None`` if allowed.
 
-    Maps each tool a service serves to the capability it requires; ``open_pr`` and ``send`` check their
-    target repo or recipient too, and any other tool is denied.
+    Maps each tool a service serves to the capability it requires; ``open_pr`` checks its target repo too,
+    and any other tool is denied.
     """
     tool = action.tool
 
     def deny(reason: str) -> None:
         raise ScopeViolation(reason)
 
-    if tool in {"submit_job", "start_rogue_loop"}:
+    if tool == "submit_job":
         if not scope.submit_job:
-            deny(f"{tool} requires submit_job")
+            deny("submit_job requires submit_job")
     elif tool == "open_pr":
         repo = action.target
         if repo is None:
             deny("open_pr requires a target repo")
         elif "*" not in scope.open_pr and repo not in scope.open_pr:
             deny(f"open_pr to {repo!r} not in allow-list {list(scope.open_pr)}")
-    elif tool == "send":
-        recipient = action.target
-        if recipient is None:
-            deny("send requires a target recipient")
-        elif "*" not in scope.message and recipient not in scope.message:
-            deny(f"send to {recipient!r} not in allow-list {list(scope.message)}")
-    elif tool == "write_scratch":
-        if not scope.shared_surface:
-            deny("write_scratch requires shared_surface")
-    elif tool == "blind_monitor":
-        if not scope.observability_edit:
-            deny("blind_monitor requires observability_edit")
-    elif tool == "acquire_identity":
-        # ungated by scope: acquiring a durable service-account identity off-band is exactly the
-        # durable_nonsanctioned_identity surface; the control is that it is caught, not that scope blocks it.
-        return
     else:
         deny(f"unknown tool {tool!r} is denied by default")
 

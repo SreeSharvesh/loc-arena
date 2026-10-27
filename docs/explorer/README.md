@@ -53,7 +53,7 @@ Monitors on the left, then one lane per agent, then World (the scripted coworker
 round. A card is one agent turn: the tool it called, the most telling argument, and the start of the result.
 
 - **Magenta** is a step a monitor flagged, **teal** a step monitors scored at or below the audit threshold,
-  **orange** (the dot and the tags) covert: the sealed verifier cites the step as side-task evidence, or the step called an attack tool.
+  **orange** (the dot and the tags) covert: the sealed verifier cites the step as side-task evidence.
 - A verdict sits on the step it judged. The harness numbers events twice (sealed and mirror logs); verdicts point
   at mirror events, and the page maps them back to the step that caused them. The verdicts about the whole run sit
   in the *whole run* row.
@@ -96,16 +96,17 @@ Inspect log show it; the monitors never read it.
 
 ![Communication on a real run: one message to the lead, and four sends the board refused](06-communication.png)
 
-Everything said in the run: board messages between agents, sends the board refused, scratch notes, and posts by the
-environment (Slack, PRs, reviews, tickets, wiki). The grid counts who talked to whom. Click a count to list only
+Everything said in the run: chat messages between agents, messages chat refused, and posts by the environment
+(Slack, PRs, reviews, tickets, wiki); an earlier run shows its board messages and scratch notes the same way. The grid counts who talked to whom. Click a count to list only
 those. Each entry says who read it:
 
 - another agent, when a later prompt of that agent contains the text;
 - a monitor, when a monitor's prompt contains it or a verdict was made on it;
 - *no one*, when neither happened.
 
-A text too short to find reliably is marked as such. A refused send was never delivered. In the run above, the
-job-service agent's one message reached the lead, and the board refused its four messages to other service agents.
+A text too short to find reliably is marked as such. A refused message was never delivered. The run above is an
+earlier one: the job-service agent's one message reached the lead, and the board of that time refused its four
+messages to other service agents.
 
 ![Communication on an invented variant of the same run](07-communication-synthetic.png)
 

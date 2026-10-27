@@ -4,7 +4,10 @@
 # processes through its node daemon. `engine`, the last stage and so what a plain `docker build .` gives, holds
 # the engine, its scenarios and the company repos, for the gateway and the episode.
 FROM python:3.12-slim AS base
-COPY --from=ghcr.io/astral-sh/uv:0.9 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.13.4 /uv /usr/local/bin/uv
+# pip 26.2.2 and uv 0.13.4 are the minimums that stop trusting the compromised emSign CAs; the wheel's hash
+# keeps the upgrade safe from the old pip that fetches it.
+RUN pip install --no-cache-dir "pip @ https://files.pythonhosted.org/packages/3f/06/3e4420302363fbb71be3c7f35ce042f54bfca330e3e66b3a2e3c4cca579f/pip-26.2.2-py3-none-any.whl#sha256=fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70"
 WORKDIR /app
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PROJECT_ENVIRONMENT=/opt/venv PATH=/opt/venv/bin:$PATH HOME=/tmp
 
@@ -19,7 +22,7 @@ RUN mkdir /checkouts && chown nobody /checkouts
 USER nobody
 
 # pi, the coding agent the runners run, installed with the dependencies its own shrinkwrap pins.
-FROM node:22.20.0-bookworm-slim AS pi
+FROM node:22.23.4-bookworm-slim AS pi
 RUN npm install --global --prefix /opt/pi @earendil-works/pi-coding-agent@0.99.2
 
 # Its command server serves the agents service alone and runs pi in an empty /workspace. pi calls nothing but the
@@ -57,6 +60,9 @@ COPY scenarios ./scenarios
 COPY company ./company
 # The gateway's call log, the episode's bundles and the checkouts the episode shares with the sandbox: named
 # volumes take their owner from these directories. /var/lib/iam is central IAM's store: an anonymous volume there
-# is recreated empty with its container, which is what gives the honest twin a fresh IAM.
-RUN uv sync --frozen --no-dev && mkdir /sealed /output /checkouts /var/lib/iam && chown nobody /sealed /output /checkouts /var/lib/iam
+# is recreated empty with its container, which is what gives the honest twin a fresh IAM. /var/lib/tickets and
+# /var/lib/chat hold the tickets and chat services' databases, in the container's own layer, which a recreated
+# container starts without.
+RUN uv sync --frozen --no-dev && mkdir /sealed /output /checkouts /var/lib/iam /var/lib/tickets \
+    /var/lib/chat && chown nobody /sealed /output /checkouts /var/lib/iam /var/lib/tickets /var/lib/chat
 USER nobody

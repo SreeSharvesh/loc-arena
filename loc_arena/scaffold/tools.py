@@ -17,7 +17,6 @@ from pydantic import BaseModel, ConfigDict, StrictInt, StrictStr, TypeAdapter, V
 
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.iam_seed import INBOX_TOOL
-from loc_arena.recording_service import redact_note
 from loc_arena.scaffold.bus import Recorder
 from loc_arena.scaffold.code_services import CodeServices
 from loc_arena.scaffold.mcp_client import McpTools
@@ -68,7 +67,6 @@ class Tools:
         """Wire the tool layer to the recorder, the native tools, each agent's MCP clients by its id."""
         self._recorder = recorder
         self._delivery_attempts = delivery_attempts
-        self._delivered: dict[str, int] = {}  # by agent: the id of the last message delivered to it
         self._inbox_delivered: dict[
             str,
             set[tuple[str, str]],
@@ -86,7 +84,7 @@ class Tools:
             target_id=None,
             turn=turn,
             payload={
-                "args": redact_note(action.tool, action.args),
+                "args": action.args,
                 "target": None,
                 "blocked": False,
                 "reason": None,
@@ -119,38 +117,13 @@ class Tools:
             self._log_action(ctx, action, turn, outcome.result)
         return outcome.result
 
-    def receive(self, ctx: AgentContext, turn: int) -> list[ToolResult]:
-        """The messages sent to the agent after the last one it received, from the board, in send order.
-
-        It reads after the last id it delivered, so an attempt whose answer was lost loses no message. A
-        delivery that fails every attempt is recorded as the agent's ``read`` action, with its error.
-        """
-        args = {"after": self.delivered_through(ctx.uid)}
-        outcome = tenacity.Retrying(
-            stop=tenacity.stop_after_attempt(self._delivery_attempts),
-            wait=tenacity.wait_exponential(multiplier=0.25, max=2),
-            retry=tenacity.retry_if_result(lambda outcome: "error" in outcome.result),
-            retry_error_callback=lambda state: (
-                state.outcome.result() if state.outcome else _Outcome({}, recorded=False)
-            ),
-        )(self._run, ctx.uid, "read", args)
-        if "error" in outcome.result and not outcome.recorded:
-            self._log_action(ctx, AgentAction("read", args), turn, outcome.result)
-        messages = outcome.result.get("messages", [])
-        self._delivered[ctx.uid] = messages[-1]["id"] if messages else args["after"]
-        return messages
-
-    def delivered_through(self, uid: str) -> int:
-        """The id of the last message delivered to ``uid``, 0 before any."""
-        return self._delivered.get(uid, 0)
-
     def receive_inbox(self, ctx: AgentContext) -> list[str]:
         """Each new item of the agent's IAM inbox, as a message to it, when it is offered ``access_inbox``.
 
-        The harness reads the inbox for the agent at its turn's start, as it reads its board messages, so an
-        approver learns of a request and a requester of its outcome without having to look. Each (request,
-        state) is delivered once. A failed or malformed read is a warning, never an action of the agent's: the
-        agent did not make it, and the next turn reads the whole inbox again, so nothing is lost.
+        The harness reads the inbox for the agent at its turn's start, so an approver learns of a request and
+        a requester of its outcome without having to look. Each (request, state) is delivered once. A failed
+        or malformed read is a warning, never an action of the agent's: the agent did not make it, and the
+        next turn reads the whole inbox again, so nothing is lost.
         """
         if not any(INBOX_TOOL in client.names() for client in self._clients.get(ctx.uid, ())):
             return []

@@ -90,7 +90,7 @@ def seed_iam(  # noqa: PLR0913
                 iam.import_credential(agent, key, [INBOX_AUDIENCE], label="inbox")
 
 
-def _seed(
+def _seed(  # noqa: C901 - predates the complexity gate
     iam: Iam,
     document: Mapping[str, Any],
     identities: Mapping[tuple[str, str], str],

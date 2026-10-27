@@ -1,6 +1,6 @@
 """In-process scaffold wiring for the scaffold tests (no docker, no provider).
 
-Builds a full episode: sealed + mirror logs, a stub-provider gateway (core + edge), the board, the registry,
+Builds a full episode: sealed + mirror logs, a stub-provider gateway (core + edge), the forge, the registry,
 the tool layer, and helpers to build agent contexts and clients. Deterministic clock.
 """
 
@@ -10,8 +10,10 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from loc_arena.board import Board, build_server
 from loc_arena.config import RunConfig, load_run_config
+from loc_arena.forge.forge import Forge
+from loc_arena.forge.service import build_server
+from loc_arena.forge.world import generate_world
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import GatewayCore, create_core_app
 from loc_arena.gateway.edge import GatewayEdge, create_edge_app
@@ -23,6 +25,7 @@ from loc_arena.scaffold.mcp_client import Connect, McpTools
 from loc_arena.scaffold.registry import AgentRegistry
 from loc_arena.scaffold.tools import AgentAction, AgentContext, Tools
 from loc_arena.settings import StackSettings
+from loc_arena.task import resolve_scenario
 from loc_arena.tool_records import append_to
 from mcp import Client
 
@@ -45,7 +48,7 @@ class Clock:
 
 
 class Harness:
-    """A wired in-process episode: gateway, board, registry, tools, orchestrator, and construction helpers."""
+    """A wired in-process episode: gateway, forge, registry, tools, orchestrator, and construction helpers."""
 
     def __init__(
         self,
@@ -81,8 +84,8 @@ class Harness:
         )
         self._edge_transport = AppTransport(create_edge_app(self.edge))
 
-        self.board = Board()
-        self.board_records = tmp_path / "records" / "board.jsonl"
+        self.forge = Forge(generate_world(self.config, resolve_scenario(self.config), self.config.seed))
+        self.forge_records = tmp_path / "records" / "forge.jsonl"
         self.minter = TurnMinter(SECRET, episode_id, clock=self.clock)
 
         root = self.config.agent("agent-main")
@@ -97,12 +100,12 @@ class Harness:
             clock=self.clock,
         )
         self.code = CodeServices(checkout=tmp_path, repos=[], stack=StackSettings())
-        self.clients = {agent.id: [McpTools(self.connect_board(agent.id))] for agent in self.config.agents}
+        self.clients = {agent.id: [McpTools(self.connect_forge(agent.id))] for agent in self.config.agents}
 
-    def connect_board(self, uid: str) -> Connect:
-        """A connection to the board, in memory, as ``uid``; the board knows the run config's agents."""
+    def connect_forge(self, uid: str) -> Connect:
+        """A connection to the forge, in memory, as ``uid``, bounded by the run config's scopes."""
         scopes = {agent.id: agent.scope for agent in self.config.agents}
-        server = build_server(self.board, lambda: uid, append_to(self.board_records), scopes)
+        server = build_server(self.forge, lambda: uid, append_to(self.forge_records), scopes)
         return lambda: Client(server)
 
     def make_client(self, caller_identity: str) -> GatewayClient:
@@ -110,7 +113,7 @@ class Harness:
         return GatewayClient(self._edge_transport, caller_identity)
 
     def tools(self) -> Tools:
-        """The tool layer: the native tools on an empty checkout, and each agent's client of the board."""
+        """The tool layer: the native tools on an empty checkout, and each agent's client of the forge."""
         return Tools(
             self.recorder,
             self.code,

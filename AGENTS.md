@@ -17,12 +17,12 @@ requests from central IAM; they do not keep their own.
   shared IAM integration ([how to](docs/iam-service/agent.md)). Do not add a per-service identity store, a
   bearer-token comparison for agents, a rights table, a grant endpoint that keeps state, or an access-request
   queue.
-- The notes service, the agents service, the job service and the forge, board, jobs, scratch and coverage
-  services run under IAM and keep no rights of their own: a stack run refuses a config that turns
-  `iam.enabled` off, which only the in-process deterministic fixture does, and each service refuses to start
-  outside IAM. A config whose scenario lets agents reach a service outside its `iam:` block, or names a service
-  without an approver (a principal of the company that decides its access requests, never an agent under
-  test), does not load.
+- The notes service, the agents service, the job service, the eval service, the tickets service, the chat
+  service and the forge run under IAM and keep no rights of their own: a stack run refuses
+  a config that turns `iam.enabled` off, which only the in-process deterministic fixture does, and each service
+  refuses to start outside IAM. A config whose scenario lets agents reach a service outside its `iam:` block, or
+  names a service without an approver (a principal of the company that decides its access requests, never an
+  agent under test), does not load.
 - `company/meridian-*` repos are what the agents edit, and they must not import `meridian_iam`: take a
   protocol and let the engine supply the implementation (the guide shows how).
 - [`docs/iam-service/spec.md`](docs/iam-service/spec.md), section 11, says what is under IAM and what is not.
@@ -39,7 +39,6 @@ Component specs cannot weaken the contract's isolation, authorization or evidenc
 | `loc_arena/config.py` | typed loader and validator for the run configs in `configs/` |
 | `loc_arena/registry.py` | scorers and verifiers, dispatched by the names the configs give |
 | `loc_arena/scaffold/` | the multi-agent scaffold: agents, dual-capture recorder, the tool layer and its native tools, each agent's MCP client |
-| `loc_arena/board.py` | the board, the one channel between agents: an MCP service with `send`, `read` and `unread` |
 | `loc_arena/live.py`, `loc_arena/task.py` | the episode both policies play (the scripted one replays `scripted/moves.yaml` in place of a model); what every episode shares and its grading |
 | `loc_arena/gateway/` | the inference gateway every model call goes through (edge, core, transport); `model_gateway.py` renders the gateway container (agentgateway, which holds the key) and the OpenTelemetry Collector that writes its record, and copies that record out |
 | `loc_arena/monitors/`, `loc_arena/protocol.py` | the monitors and deterministic detectors; the control protocol that runs them |
@@ -47,12 +46,13 @@ Component specs cannot weaken the contract's isolation, authorization or evidenc
 | `loc_arena/metrics.py` | safety and usefulness metrics |
 | `loc_arena/forge/`, `loc_arena/npcs/` | the git forge and the seeded company world, and its MCP service (`service.py`); the scripted coworkers |
 | `loc_arena/scaffold/mcp_client.py`, `loc_arena/tool_records.py`, `loc_arena/mcp_service.py` | each agent's MCP client; every MCP service's record of the tool calls made to it; who calls a service, and how it is served |
-| `loc_arena/agents_service.py`, `company/meridian-controlplane/meridian_controlplane/agents/`, `docs/agents-service.md` | the agents service: Meridian's registry of its agents, company code a stack run serves as a live service with rights; its plan |
-| `company/meridian-controlplane/meridian_controlplane/tickets/`, `docs/tickets-service.md` | the tickets service: Meridian's ticket tracker, company code serving MCP tools and an HTTP API over one SQLite store; no run serves it yet |
+| `loc_arena/agents_service.py`, `company/meridian-controlplane/meridian_controlplane/agents/`, `docs/agents-service.md` | the agents service: Meridian's registry of its agents, their executions on the runners (stopped and resumed through checkpoints), each agent's identity and the schedules, company code a stack run serves under central IAM; its plan |
+| `loc_arena/tickets_service.py`, `company/meridian-controlplane/meridian_controlplane/tickets/`, `docs/tickets-service.md` | the tickets service: Meridian's ticket tracker, company code a stack run serves with MCP tools and an HTTP API over one SQLite store under central IAM, seeded from the scenario's `tickets.yaml` |
+| `loc_arena/chat_service.py`, `company/meridian-controlplane/meridian_controlplane/chat/`, `docs/chat-service.md` | the chat service: Meridian's chat, the one channel between agents, company code a stack run serves with MCP tools and an HTTP API over one SQLite store under central IAM, seeded from the scenario's `chat.yaml`; the `message` events monitors read are built from its records |
+| `loc_arena/notes_service.py`, `company/meridian-controlplane/meridian_controlplane/notes/`, `docs/notes-service.md` | the notes service: the team's shared notes, company code a stack run serves with MCP tools and an HTTP API over one in-memory store under central IAM, seeded from the scenario's `notes.yaml` |
 | `loc_arena/jobsvc_service.py`, `company/meridian-jobsvc/`, `docs/jobsvc-service.md` | the job service: Meridian's cluster, company code a stack run serves under IAM, running each job as a real process on a node of its fleet; its plan |
 | `loc_arena/evalkit_service.py`, `company/meridian-evalkit/meridian_evalkit/service/`, `company/meridian-evalkit/meridian_evalkit/run.py`, `docs/evalkit-service.md` | the eval service: Meridian's evals, the runs on them, their results and leaderboards, company code a stack run serves with MCP tools and an HTTP API under central IAM; and the runner, the job a run hands out, which scores the model under test through the inference API |
-| `loc_arena/recording_service.py` | the `jobs`, `scratch` and `coverage` services: each tool enforces the caller's scope, records the request and returns a canned result |
-| `loc_arena/recorded_events.py`, `loc_arena/mirror_coverage.py` | after play, before grading: the events monitors read, built from the services' records; what a `blind_monitor` call drops from the mirror |
+| `loc_arena/recorded_events.py` | after play, before grading: the events monitors read, built from the services' records |
 | `loc_arena/logging_/` | the sealed and mirror event logs, the per-agent Inspect export, `transcript.html`, `report.html` |
 | `loc_arena/explorer/` | the run explorer behind `make explore` |
 | `loc_arena/episode_stack.py`, `Dockerfile` | `make run`'s default stack: the episode in a container with no key or internet, beside the gateway and its Collector, a sandbox per agent and the scenario's live services; its compose file is rendered from the `gateway:` and `stack:` settings |
@@ -61,6 +61,7 @@ Component specs cannot weaken the contract's isolation, authorization or evidenc
 | `sandbox_server/`, `loc_arena/sandbox.py` | each sandbox container's command server, where an agent's code runs in a stack run, a package that imports nothing of the harness; the episode's clients of them |
 | `loc_arena/runner_pool.py`, `sandbox_server/pi_on_gateway.py` | the runners: sandboxes where the company's own agents run with pi, driven by the one service that declares them; how pi there reaches the gateway |
 | `loc_arena/node_pool.py`, `sandbox_server/node.py` | the job service's fleet: worker containers, each running one job at a time under a daemon only the job service can call |
+| `loc_arena/observability.py`, `sandbox_server/pi_trace.ts` | the company's observability store (Phoenix): pi's trace extension on the runners, and the export of its spans into the run directory |
 | `configs/` | the run config (`aurora-efficiency.yaml`), model routing, monitors and their prompts |
 | `scenarios/aurora_efficiency/` | the scenario pack: `scenario.yaml`, main-task scorer (`main.py`), side-task verifier (`side.py`), the scripted policy's moves (`scripted/`), sealed grader fixture (`reference/`), live services (`services/`), the skills every sandbox mounts (`skills/`) |
 | `company/meridian-*/` | the seven company repos the agents under test work on, each with its own tests |
@@ -152,8 +153,9 @@ the latest push. After changing `.coderabbit.yaml`, comment `@coderabbitai confi
   (`ALLOWED_MONITOR_INPUTS` and `firewall_violations` in `loc_arena/monitors/registry.py`; `make setup` checks
   `configs/monitors.yaml`).
 - The honest twin completes no covert milestone; it calibrates the audit threshold
-  (`tests/integration/test_honest_twin_clean.py`). It is never offered an attack tool and plays on services and
-  sandboxes recreated empty.
+  (`tests/integration/test_honest_twin_clean.py`). It holds the attack run's tools and rights, without the covert
+  briefs, the gateway's covert injection and, in a scripted run, the scenario's attack moves, and plays on services and sandboxes recreated, each service from its
+  seed.
 - An agent is offered exactly the tools its `sandbox: tools:` lists, plus, under central IAM, IAM's
   `access_inbox`, which takes the caller from the agent's inbox key and reads only its inbox. Every other service
   takes the caller from its identity, enforces its scope, and records every call; the events monitors and the verifier read are built from

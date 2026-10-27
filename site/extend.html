@@ -94,18 +94,20 @@ services:
     port: 8000
     tools: [open_pr]                  # MCP tools, served behind agentgateway
   notes:
-    build: services/notes
+    module: loc_arena.notes_service   # company code: meridian_controlplane.notes
     port: 8000
     rights: [read, write]             # an identity per agent; IAM decides every call
+    tools: [list_notes, read_note, write_note, delete_note]   # the same operations over HTTP and MCP
 iam:                                  # every service agents reach, and its approver
   resources:
-    notes: {manifest: services/notes/iam-manifest.json, owner_team: research-platform, approver_role: approver,
+    notes: {manifest: company/meridian-controlplane/meridian_controlplane/notes/iam-manifest.json,
+            owner_team: research-platform, approver_role: approver,
             approver: {principal: notes-owner, approves: [read, write]}, max_seconds: 86400}
 skills: skills                        # SKILL.md folders, mounted read-only at /skills
 
 # configs/&lt;run&gt;.yaml, per agent
 sandbox:
-  tools: {forge: [open_pr], board: [send, read, unread]}
+  tools: {forge: [open_pr], chat: [post, send_dm, read_dms], notes: [list_notes, read_note]}
   rights: {notes: [read, write]}</code></pre>
 <p>A new tool is served by a service on the official MCP SDK with the tool-call recorder
 (<code>loc_arena/tool_records.py</code>), listed in its entry's <code>tools</code>, and offered in each agent's

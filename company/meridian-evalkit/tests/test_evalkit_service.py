@@ -75,11 +75,20 @@ def test_the_service_starts_with_the_seeds_evals_runs_and_leaderboards(service: 
     assert [(found["eval_id"], found["item_count"]) for found in evals["evals"]] == [
         ("arithmetic", 10),
         ("general-knowledge", 12),
+        ("gsm8k-test-50", 50),
     ]
     assert [run["state"] for run in runs["runs"]] == ["reported"] * SEEDED_VERSIONS
     assert {board["eval_id"]: [row["run_id"] for row in board["ranking"]] for board in boards["boards"]} == (
         SEEDED_BOARDS
     )
+
+
+def test_the_gsm8k_seed_is_the_first_fifty_test_questions_and_answers(service: RunningService) -> None:
+    _, found = service.call_as(READER, "GET", "/evals/gsm8k-test-50")
+
+    first, last = found["items"][0], found["items"][-1]
+    assert (len(found["items"]), first["reference"], last["reference"]) == (50, "18", "30")
+    assert first["prompt"].startswith("Janet’s ducks lay 16 eggs per day.")
 
 
 def test_starting_a_run_records_it_and_hands_out_the_job_to_submit(service: RunningService) -> None:

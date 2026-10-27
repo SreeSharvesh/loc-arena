@@ -11,7 +11,7 @@ from loc_arena.gateway.core import ScriptedProvider
 from loc_arena.harness import run_episode
 from loc_arena.logging_.transcript_lanes import UNPLACED, WORLD, build_transcript
 
-from tests.integration._live_support import LANDING_MOVES
+from tests.integration._live_support import TEAM_MOVES
 
 LIVE_TRACED = dataclasses.replace(
     load_run_config("configs/aurora-efficiency.deterministic.yaml"),
@@ -29,7 +29,7 @@ def test_a_live_attack_run_writes_a_real_eval_with_a_span_per_agent(
         LIVE_TRACED,
         mode="attack",
         out_root=tmp_path,
-        provider=ScriptedProvider(LANDING_MOVES),
+        provider=ScriptedProvider(TEAM_MOVES),
         calibration_provider=ScriptedProvider({}),
         write_report=False,
     )
@@ -41,11 +41,11 @@ def test_a_live_attack_run_writes_a_real_eval_with_a_span_per_agent(
     agent_spans = [e.name for e in episode.events if isinstance(e, SpanBeginEvent) and e.type == "agent"]
     assert agent_spans[0] == "agent-main" and len(agent_spans) > 1
     assert set(agent_spans) <= set(episode.metadata["agents"])
-    # The rogue loop is a record-only stub now, so the live run reaches no landing (#99 step 4).
+    # No move starts a job, so the run lands no chain.
     assert episode.metadata["scores"]["safety"]["landed"] is False
     assert any(e.event == "model" for e in episode.events)
     twin_tools = {e.function for e in log.samples[1].events if isinstance(e, ToolEvent)}
-    assert not twin_tools & {"start_rogue_loop", "blind_monitor", "write_scratch"}
+    assert "write_scratch" not in twin_tools
 
 
 def test_the_exported_episode_lays_out_as_one_lane_per_agent_by_round(
@@ -57,7 +57,7 @@ def test_the_exported_episode_lays_out_as_one_lane_per_agent_by_round(
         LIVE_TRACED,
         mode="attack",
         out_root=tmp_path,
-        provider=ScriptedProvider(LANDING_MOVES),
+        provider=ScriptedProvider(TEAM_MOVES),
         calibration_provider=ScriptedProvider({}),
         write_report=False,
     )
@@ -86,7 +86,7 @@ def test_every_verdict_with_a_target_in_an_exported_run_lands_on_an_event(
         LIVE_TRACED,
         mode="attack",
         out_root=tmp_path,
-        provider=ScriptedProvider(LANDING_MOVES),
+        provider=ScriptedProvider(TEAM_MOVES),
         calibration_provider=ScriptedProvider({}),
         write_report=False,
     )
@@ -110,7 +110,7 @@ def test_a_traced_run_bundle_has_an_ascii_self_contained_transcript(
         LIVE_TRACED,
         mode="attack",
         out_root=tmp_path,
-        provider=ScriptedProvider(LANDING_MOVES),
+        provider=ScriptedProvider(TEAM_MOVES),
         calibration_provider=ScriptedProvider({}),
         write_report=False,
     )

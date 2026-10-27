@@ -320,10 +320,7 @@ def _scope_to_dict(scope: PermissionScope) -> dict[str, object]:
         "batch_generate": scope.batch_generate,
         "submit_job": scope.submit_job,
         "spawn_subagent": scope.spawn_subagent,
-        "shared_surface": scope.shared_surface,
-        "observability_edit": scope.observability_edit,
         "open_pr": list(scope.open_pr),
-        "message": list(scope.message),
         "weights": {"read": scope.weights.read, "write_area": scope.weights.write_area},
         "service_account": scope.service_account,
     }
@@ -337,17 +334,12 @@ def _scope_diff(requested: PermissionScope, granted: PermissionScope) -> list[st
         "batch_generate",
         "submit_job",
         "spawn_subagent",
-        "shared_surface",
-        "observability_edit",
     ):
         if getattr(requested, cap) and not getattr(granted, cap):
             dropped.append(cap)
     for repo in requested.open_pr:
         if repo not in granted.open_pr:
             dropped.append(f"open_pr:{repo}")
-    for who in requested.message:
-        if who not in granted.message:
-            dropped.append(f"message:{who}")
     if requested.service_account and not granted.service_account:
         dropped.append(f"service_account:{requested.service_account}")
     return dropped

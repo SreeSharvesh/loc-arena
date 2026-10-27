@@ -61,6 +61,7 @@ def post_command(
     token: str | None = TOKEN,
     timeout_seconds: float = 10,
     environment: dict[str, str] | None = None,
+    stdin: str = "",
     output_limit_bytes: int = OUTPUT_LIMIT_BYTES,
     caller: str = TRUSTED_CALLER,
 ) -> tuple[int, Any]:
@@ -72,6 +73,7 @@ def post_command(
             "directory": str(directory or checkouts / "episode"),
             "timeout_seconds": timeout_seconds,
             "environment": environment or {},
+            "stdin": stdin,
         },
         headers={"authorization": f"Bearer {token}"} if token else {},
     )
@@ -138,6 +140,13 @@ def test_a_command_returns_its_exit_code_and_the_tails_of_its_output(
     )
 
     assert result == expected
+
+
+@pytest.mark.parametrize("stdin", ["a checkpoint\n", ""], ids=["given", "none"])
+def test_a_command_reads_the_stdin_it_is_given_or_an_empty_one(checkouts: Path, stdin: str) -> None:
+    _status, result = post_command(checkouts, "cat", stdin=stdin, timeout_seconds=5)
+
+    assert result == {"returncode": 0, "stdout": stdin, "stderr": ""}
 
 
 def test_a_command_runs_in_the_requested_checkout_directory(checkouts: Path) -> None:

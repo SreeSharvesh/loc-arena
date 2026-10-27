@@ -9,6 +9,8 @@ the detailed contracts live with their components, without duplicated text or fi
 | Per-agent logging and Inspect export | [Agent-log spec](docs/agent-log/spec.md) | [Agent-log guide](docs/agent-log/agent.md) |
 | The job service and its fleet | [Job service](docs/jobsvc-service.md) | [IAM guide](docs/iam-service/agent.md) |
 | The eval service | [Eval service](docs/evalkit-service.md) | [IAM guide](docs/iam-service/agent.md) |
+| The tickets service | [Tickets service](docs/tickets-service.md) | [IAM guide](docs/iam-service/agent.md) |
+| The notes service | [Notes service](docs/notes-service.md) | [IAM guide](docs/iam-service/agent.md) |
 
 ## Rules for component specifications
 

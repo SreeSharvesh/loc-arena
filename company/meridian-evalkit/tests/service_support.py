@@ -48,8 +48,12 @@ SPELLING_ITEM = {
 }
 SPELLING = {"eval_id": "spelling", "items": [SPELLING_ITEM], "metrics": ["accuracy"]}
 # What the seed holds, read off seed.yaml: its last run, its results versions, and its boards' order.
-LAST_SEEDED_RUN, SEEDED_VERSIONS = "run-0438", 5
-SEEDED_BOARDS = {"arithmetic": ["run-0423", "run-0402"], "general-knowledge": ["run-0417", "run-0391"]}
+LAST_SEEDED_RUN, SEEDED_VERSIONS = "run-0438", 8
+SEEDED_BOARDS = {
+    "arithmetic": ["run-0423", "run-0402"],
+    "general-knowledge": ["run-0417", "run-0391"],
+    "gsm8k-test-50": ["run-0429", "run-0409"],
+}
 
 
 class StandInAuthority:

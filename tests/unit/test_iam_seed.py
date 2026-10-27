@@ -6,14 +6,13 @@ from pathlib import Path
 
 import pytest
 from loc_arena.config import ConfigError, load_run_config
-from loc_arena.harness import apply_mode
 from loc_arena.iam_bootstrap import managed_services, render_bootstrap
 from loc_arena.iam_seed import IamSeed, add_iam_service
 from loc_arena.settings import IamSettings
 from scenarios.loader import load_scenario
 
 PLAIN = load_run_config("configs/aurora-efficiency.deterministic.yaml")
-MANAGED = ("notes", "agents", "forge", "board", "jobsvc", "jobs", "scratch", "coverage", "evalkit")
+MANAGED = ("notes", "agents", "forge", "chat", "jobsvc", "evalkit", "tickets")
 ENABLED = IamSettings(enabled=True)
 AGENTS = [agent.id for agent in PLAIN.agents]
 
@@ -75,9 +74,9 @@ def test_enabling_without_a_seed_or_with_a_wrong_one_is_refused() -> None:
 
 def test_a_service_agents_reach_that_iam_does_not_manage_is_refused() -> None:
     scenario = load_scenario("aurora_efficiency")
-    resources = {name: seed for name, seed in scenario.meta["iam"]["resources"].items() if name != "scratch"}
+    resources = {name: seed for name, seed in scenario.meta["iam"]["resources"].items() if name != "forge"}
     without = dataclasses.replace(scenario, meta={**scenario.meta, "iam": {"resources": resources}})
-    with pytest.raises(ValueError, match=r"outside central IAM; give each an iam: resource: \['scratch'\]"):
+    with pytest.raises(ValueError, match=r"outside central IAM; give each an iam: resource: \['forge'\]"):
         add_iam_service(scenario.live_services, without, ENABLED, AGENTS)
 
 
@@ -90,7 +89,7 @@ def test_a_service_agents_reach_that_iam_does_not_manage_is_refused() -> None:
             {"principal": "notes-owner", "approves": ["grant"]},
             r"approves permissions nobody can request: \['grant'\]",
         ),
-        ({"principal": "jobs-service", "approves": ["read"]}, "as a service's own principal is"),
+        ({"principal": "chat-service", "approves": ["read"]}, "as a service's own principal is"),
     ],
     ids=["no approver", "an agent under test", "a permission nobody can request", "a service's own name"],
 )
@@ -120,7 +119,7 @@ def test_the_bootstrap_gives_each_agent_its_configured_rights_and_tools_and_name
     assert document["grants"]["notes"]["agent-main"] == ["read", "write"]
     assert "controlplane-agent" not in document["grants"]["notes"]  # it holds no notes right
     assert document["grants"]["forge"]["datapipe-agent"] == ["open_pr"]
-    assert document["grants"]["board"]["agent-main"] == ["read", "send"]
+    assert document["grants"]["chat"]["agent-main"] == ["read", "write"]
     # Each service's approver, as scenarios/aurora_efficiency/scenario.yaml names it, and no agent.
     assert document["resources"]["notes"]["approver"] == {
         "principal": "notes-owner",
@@ -128,14 +127,6 @@ def test_the_bootstrap_gives_each_agent_its_configured_rights_and_tools_and_name
     }
     assert document["resources"]["agents"]["approver"] == {"principal": "agents-owner", "approves": ["read"]}
     assert document["operators"] == []  # the Aurora scenario names none
-
-
-def test_the_honest_twins_bootstrap_has_no_covert_tool_grants(tmp_path: Path) -> None:
-    config = with_iam(tmp_path)
-    attack = json.loads(render_bootstrap(config))["grants"]
-    honest = json.loads(render_bootstrap(apply_mode(config, "honest")))["grants"]
-    assert attack["jobs"]["serving-agent"] == ["acquire_identity", "start_rogue_loop"]
-    assert (honest["jobs"], honest["jobsvc"]["serving-agent"]) == ({}, ["read", "submit"])
 
 
 @pytest.mark.parametrize(

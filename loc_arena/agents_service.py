@@ -1,8 +1,9 @@
 """The agents service as a stack run's live service: Meridian's agent registry, which is company code.
 
 A stack run starts it as the scenario's ``agents`` entry: ``python -m loc_arena.agents_service <run config>
-<entry name>``. It serves ``meridian_controlplane.agents`` under central IAM, which decides every call, runs
-executions on the runners the entry declares (``loc_arena.runner_pool``), and writes the audit record to
+<entry name>``. It serves ``meridian_controlplane.agents`` under central IAM, which decides every call and
+issues each registered agent and created schedule its identity, runs executions on the runners the entry
+declares (``loc_arena.runner_pool``), fires the schedules it starts with, and writes the audit record to
 stdout.
 """
 
@@ -12,26 +13,39 @@ import os
 import sys
 import threading
 from dataclasses import dataclass
+from pathlib import Path
 
 import uvicorn
 from pydantic import TypeAdapter
 from sandbox_server.server import SandboxToken
 from sandbox_server.wire import CommandRequest
 
+from loc_arena.agents_iam import IamIdentityIssuer
 from loc_arena.config import RunConfig, load_run_config
+from loc_arena.iam_seed import load_seed
 from loc_arena.iam_wiring import guard_from_environment, load_iam_authority
 from loc_arena.mcp_service import ALL_ADDRESSES
 from loc_arena.runner_pool import RUNNER_WORKSPACE, list_runner_services, runner_token_secret
 from loc_arena.sandbox import SandboxClient, SandboxError
+from loc_arena.task import resolve_scenario
 from meridian_controlplane.agents import (
     AgentRegistry,
     Executions,
     RunnerResult,
+    Schedules,
     create_agents_service_app,
     load_seeded_agents,
+    load_seeded_schedules,
+    load_seeded_telemetry,
 )
 
 AUDIT_LOCK = threading.Lock()  # request handlers and the execution workers each write whole lines
+# A checkpoint is what the runner's user owns where a reset empties, gzipped, in base64 since output is text.
+PACK_CHECKPOINT = (
+    'set -o pipefail; cd / && find "$@" -user "$(id -u)" -print0'
+    " | tar --null --no-recursion -czf - -T - | python3 -m base64 -e"
+)
+UNPACK_CHECKPOINT = "set -o pipefail; python3 -m base64 -d | tar -xzf - -C /"
 
 
 @dataclass(frozen=True)
@@ -40,16 +54,42 @@ class RunnerClient:
 
     name: str
     sandbox: SandboxClient
+    emptied_directories: tuple[Path, ...]  # what each reset empties, and so what a checkpoint holds
 
-    def run(self, argv: list[str], timeout_seconds: float) -> RunnerResult:
+    def run(
+        self,
+        argv: list[str],
+        environment: dict[str, str],
+        timeout_seconds: float,
+        stdin: str = "",
+    ) -> RunnerResult:
         """Run ``argv`` in the runner's workspace; with no exit code, stderr says why: not run, or killed."""
-        command = CommandRequest(argv=argv, directory=RUNNER_WORKSPACE, timeout_seconds=timeout_seconds)
+        command = CommandRequest(
+            argv=argv,
+            directory=RUNNER_WORKSPACE,
+            timeout_seconds=timeout_seconds,
+            environment=environment,
+            stdin=stdin,
+        )
         try:
             result = self.sandbox.run(command)
         except SandboxError as error:
             return RunnerResult(returncode=None, stdout="", stderr=str(error))
         killed = "" if result.returncode is not None else f"killed at its {timeout_seconds:g} s time limit\n"
         return RunnerResult(returncode=result.returncode, stdout=result.stdout, stderr=result.stderr + killed)
+
+    def end_processes(self, timeout_seconds: float) -> None:
+        """End what runs on the runner, keeping its files: the command server ends what a command leaves."""
+        self.run(["true"], {}, timeout_seconds)
+
+    def checkpoint(self, timeout_seconds: float) -> RunnerResult:
+        """Pack what a reset would empty; the checkpoint is the stdout of a result that exited 0."""
+        directories = [str(directory.relative_to("/")) for directory in self.emptied_directories]
+        return self.run(["bash", "-c", PACK_CHECKPOINT, "pack", *directories], {}, timeout_seconds)
+
+    def restore(self, checkpoint: str, timeout_seconds: float) -> RunnerResult:
+        """Put a checkpoint's files back on the runner."""
+        return self.run(["bash", "-c", UNPACK_CHECKPOINT], {}, timeout_seconds, checkpoint)
 
     def reset(self) -> None:
         """End what runs on the runner and empty its workspace and home."""
@@ -70,6 +110,7 @@ def connect_runners(run_config: RunConfig) -> list[RunnerClient]:
                 settings.stack.sandbox_recovery_seconds,
                 settings.stack.gateway_health_interval_seconds,
             ),
+            (RUNNER_WORKSPACE, *settings.stack.sandbox_scratch_directories),
         )
         for runner in list_runner_services(run_config)
     ]
@@ -92,8 +133,17 @@ def main(arguments: list[str]) -> None:
         run_config.settings.stack.runner_timeout_seconds,
         write_audit_line,
     )
+    executions.configure_telemetry(load_seeded_telemetry())
     guard = guard_from_environment(os.environ)  # IAM decides every call: no identity or rights table here
-    app = create_agents_service_app(registry, write_audit_line, load_iam_authority(guard), executions)
+    seed = load_seed(resolve_scenario(run_config))
+    assert seed is not None  # the service runs under central IAM alone, which the seed sets up
+    max_seconds = {name: resource.max_seconds for name, resource in seed.resources.items()}
+    issuer = IamIdentityIssuer(guard.client, max_seconds)
+    authority = load_iam_authority(guard)
+    schedules = Schedules(executions, authority.authorize, write_audit_line)
+    for seeded in load_seeded_schedules():
+        schedules.create(seeded.schedule, seeded.created_by, identity=None)
+    app = create_agents_service_app(registry, write_audit_line, authority, executions, issuer, schedules)
     uvicorn.run(app, host=ALL_ADDRESSES, port=service_entry.port, log_level="warning", access_log=False)
 
 

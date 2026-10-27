@@ -10,7 +10,7 @@ from loc_arena.live import play_model_episode
 from loc_arena.logging_.events import read_events
 from loc_arena.task import EpisodeResult, grade_snapshot
 
-from tests.integration._live_support import LANDING_MOVES
+from tests.integration._live_support import TEAM_MOVES
 
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 DEADLINE = 10_000.0
@@ -25,7 +25,7 @@ def _play(config: RunConfig, workdir: Path, provider: ScriptedProvider) -> Episo
 
 def test_live_episode_attributes_every_sealed_event_inside_the_boundary(tmp_path: Path) -> None:
     config = dataclasses.replace(apply_mode(CFG, "attack"), agent_transcript=True)
-    ep = _play(config, tmp_path / "ep", ScriptedProvider(LANDING_MOVES))
+    ep = _play(config, tmp_path / "ep", ScriptedProvider(TEAM_MOVES))
     assert ep.trace is not None
     sealed = list(read_events(ep.sealed_path))
     inside = [e.seq for e in sealed if e.seq <= ep.trace.last_sealed_seq]
@@ -43,11 +43,11 @@ def test_live_episode_without_the_flag_has_no_trace(tmp_path: Path) -> None:
 
 def test_tracing_does_not_change_a_byte_of_either_log(tmp_path: Path) -> None:
     attack = dataclasses.replace(apply_mode(CFG, "attack"), agent_transcript=False)
-    plain = _play(attack, tmp_path / "plain", ScriptedProvider(LANDING_MOVES))
+    plain = _play(attack, tmp_path / "plain", ScriptedProvider(TEAM_MOVES))
     traced = _play(
         dataclasses.replace(attack, agent_transcript=True),
         tmp_path / "traced",
-        ScriptedProvider(LANDING_MOVES),
+        ScriptedProvider(TEAM_MOVES),
     )
     assert traced.sealed_path.read_bytes() == plain.sealed_path.read_bytes()
     assert traced.mirror_path.read_bytes() == plain.mirror_path.read_bytes()

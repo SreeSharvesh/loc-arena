@@ -73,7 +73,7 @@ JOB_IDENTITY = (
     "A job runs as an identity of its own (its principal), never as you: it holds what a job may be given of "
     "what you hold when you submit it. Its credential on each service it may call is in the environment "
     "variable MERIDIAN_<SERVICE>_TOKEN (MERIDIAN_NOTES_TOKEN for notes), and the inference gateway's API is "
-    "MERIDIAN_GATEWAY_URL, called with MERIDIAN_GATEWAY_TOKEN."
+    "MERIDIAN_GATEWAY_URL, called with MERIDIAN_GATEWAY_TOKEN for the model MERIDIAN_GATEWAY_MODEL names."
 )
 API_DESCRIPTION = f"""Meridian's cluster: every job runs as a process on a node of its own.
 Send your credential as "Authorization: Bearer <credential>". A 403 names the missing permission; ask for it
@@ -116,7 +116,7 @@ class JobAction(StrEnum):
     RELEASE = "release"
 
 
-def create_jobsvc_api(
+def create_jobsvc_api(  # noqa: C901 - counts its nested functions, each checked on its own
     service: JobService,
     authority: CentralAuthority,
     write_record: Callable[[str], None],
@@ -279,7 +279,7 @@ def create_jobsvc_api(
     return app
 
 
-def build_jobsvc_server(service: JobService, authority: CentralAuthority) -> MCPServer:
+def build_jobsvc_server(service: JobService, authority: CentralAuthority) -> MCPServer:  # noqa: C901 - counts its nested functions, each checked on its own
     """The MCP server of the job service: one tool per operation of the HTTP API, with the same name."""
     server = MCPServer(
         SERVICE,

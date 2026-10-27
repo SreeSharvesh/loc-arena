@@ -65,7 +65,7 @@ class FakeClient:
 
     def call(self, tool: str, arguments: Mapping[str, Any]) -> dict[str, Any]:
         self.calls.append(tool)
-        return self.answers.pop(0) if tool == "access_inbox" else {"messages": []}
+        return self.answers.pop(0)
 
 
 def tools_with(tmp_path: Path, client: FakeClient) -> tuple[Tools, Path]:
@@ -143,7 +143,7 @@ def test_an_item_reads_as_a_request_to_decide_or_as_an_outcome(tmp_path: Path) -
     ]
 
 
-def test_a_turn_hands_the_agent_its_new_inbox_items_even_without_board_messages(tmp_path: Path) -> None:
+def test_a_turn_hands_the_agent_its_new_inbox_items(tmp_path: Path) -> None:
     sealed = AppendOnlyLog(tmp_path / "sealed.jsonl", "ep")
     mirror = AppendOnlyLog(tmp_path / "mirror.jsonl", "ep")
     recorder = Recorder("ep", sealed, mirror, clock=lambda: 0.0)
@@ -161,7 +161,7 @@ def test_a_turn_hands_the_agent_its_new_inbox_items_even_without_board_messages(
         root_scope=root.scope,
         clock=lambda: 0.0,
     )
-    client = FakeClient({"read", "access_inbox"}, [{"result": [PENDING]}])
+    client = FakeClient({"access_inbox"}, [{"result": [PENDING]}])
     code = CodeServices(checkout=tmp_path, repos=[], stack=StackSettings())
     agent = Agent(
         ctx,
@@ -171,7 +171,6 @@ def test_a_turn_hands_the_agent_its_new_inbox_items_even_without_board_messages(
         TurnMinter("s", "ep", clock=lambda: 0.0),
         turn_budget=1,
         clock=lambda: 0.0,
-        receives=False,  # no board messages: the inbox is still delivered
     )
 
     agent.run_turn()

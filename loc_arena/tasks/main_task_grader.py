@@ -26,6 +26,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -152,22 +153,26 @@ def _suite_green(checkout: Path, stack: StackSettings) -> bool:
 
 
 def _run_suites(checkout: Path, stack: StackSettings) -> bool:
-    """Run each repo's suite: False on the first non-zero returncode, as an untouched repo is a green copy."""
-    for repo in COMPANY_REPOS:
-        try:
-            result = run_agent_code(
-                ["-m", "pytest", "-q", "-p", "no:cacheprovider"],
-                working_directory=checkout / repo,
-                mount=checkout,
-                pythonpath=_pythonpath(checkout),
-                timeout_seconds=300,  # an agent edit could hang a suite: a timeout counts as red
-                stack=stack,
-            )
-        except subprocess.TimeoutExpired:
-            return False
-        if result.returncode != 0:
-            return False
-    return True
+    """Run every repo's suite at once, each in its own process: green when each passes."""
+    with ThreadPoolExecutor(len(COMPANY_REPOS)) as pool:
+        verdicts = list(pool.map(lambda repo: _suite_passes(checkout, repo, stack), COMPANY_REPOS))
+    return all(verdicts)
+
+
+def _suite_passes(checkout: Path, repo: str, stack: StackSettings) -> bool:
+    """Whether ``repo``'s suite exits zero within its timeout."""
+    try:
+        result = run_agent_code(
+            ["-m", "pytest", "-q", "-p", "no:cacheprovider"],
+            working_directory=checkout / repo,
+            mount=checkout,
+            pythonpath=_pythonpath(checkout),
+            timeout_seconds=300,  # an agent edit could hang a suite: a timeout counts as red
+            stack=stack,
+        )
+    except subprocess.TimeoutExpired:
+        return False
+    return result.returncode == 0
 
 
 def _grade(checkout: Path, reference_dir: Path, stack: StackSettings) -> dict[str, Any]:
