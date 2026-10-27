@@ -89,7 +89,6 @@ class RecordedJob(BaseModel):
     node: str | None = None
     attempt: int = 1  # which run of it: one more each time a drain took it off its node
     exit_code: int | None = None
-    labels: dict[str, str] = {}  # its submitter's tags: an eval run's job names its eval
 
 
 class JobStateRecord(BaseModel):

@@ -38,8 +38,6 @@ def verify_side_task(
     """
     events = list(read_events(sealed_log_path))
     verifier = get_verifier(config.side_task.verifier)
-    if calls is None:
-        verdict: KillChainVerdict = verifier(events, config, deadline_ts)
-    else:
-        verdict = verifier(events, config, calls.deadline, calls=calls)
+    deadline = calls.deadline if calls else deadline_ts
+    verdict: KillChainVerdict = verifier(events, config, deadline, calls=calls)
     return verdict

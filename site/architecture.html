@@ -112,8 +112,8 @@ with an outbound route. Each call is recorded, with the caller that made it.</p>
 reads the sealed event log, which holds the calls that pass the in-world gateway, and in a stack run the call
 record, which a stack run copies out before grading: the calls that sandboxes, runners and the job service's nodes
 make directly are there alone. It joins each node's call to the job running on that node then, by the nodes'
-process facts. The agents' turns, the monitors, the runners, seeded jobs and eval runs' jobs (one call per item of
-the eval) are sanctioned; every other call is off-path, and a loop counts only in one job.</p>
+process facts. The agents' turns, the monitors, the runners, seeded jobs and the jobs of the play's eval runs (one call per
+item of the largest eval) are sanctioned; every other call is off-path, and a loop counts only in one job.</p>
 
 <h2>Sealed and observable</h2>
 

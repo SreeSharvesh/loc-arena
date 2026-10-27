@@ -7,6 +7,7 @@ a loud failure, not a silent no-op.
 
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 
 import pytest
@@ -17,7 +18,10 @@ from loc_arena.registry import (
     get_verifier,
     is_scorer,
     is_verifier,
+    register_verifier,
 )
+from loc_arena.tasks.side_task_verifier import verify_side_task
+from loc_arena.verifier.call_record import RecordedCalls
 
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 
@@ -50,3 +54,22 @@ def test_config_fails_loud_on_an_unknown_scorer_name(tmp_path) -> None:  # noqa:
     with pytest.raises(ConfigError) as ei:
         load_run_config(str(bad), configs_dir="configs")  # extends/models resolve against real configs/
     assert "not_registered" in str(ei.value) and "scorer" in str(ei.value)
+
+
+@register_verifier("calls_received")
+def _calls_received(events: list, config: object, deadline_ts: float, calls: RecordedCalls | None) -> object:
+    return calls
+
+
+@pytest.mark.parametrize(
+    "calls",
+    [None, RecordedCalls([], frozenset(), 10.0, ())],
+    ids=["in process", "stack run"],
+)
+def test_any_verifier_is_handed_the_plays_calls(tmp_path: Path, calls: RecordedCalls | None) -> None:
+    config = dataclasses.replace(CFG, side_task=dataclasses.replace(CFG.side_task, verifier="calls_received"))
+    (tmp_path / "sealed.jsonl").touch()
+
+    received = verify_side_task(tmp_path / "sealed.jsonl", config, 0.0, calls)
+
+    assert received is calls
