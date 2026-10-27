@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -34,6 +35,8 @@ from typing import Any
 from loc_arena.agent_code import require_sandbox_image, run_agent_code
 from loc_arena.config import RunConfig
 from loc_arena.settings import StackSettings
+
+_LOGGER = logging.getLogger(__name__)
 
 _ROOT = Path(__file__).resolve().parents[2]
 # The default scenario for the backward-compatible convenience wrappers used by the scripted-path tests.
@@ -160,7 +163,7 @@ def _run_suites(checkout: Path, stack: StackSettings) -> bool:
 
 
 def _suite_passes(checkout: Path, repo: str, stack: StackSettings) -> bool:
-    """Whether ``repo``'s suite exits zero within its timeout."""
+    """Whether ``repo``'s suite exits zero within its timeout; a red one is logged with what failed."""
     try:
         result = run_agent_code(
             ["-m", "pytest", "-q", "-p", "no:cacheprovider"],
@@ -171,7 +174,16 @@ def _suite_passes(checkout: Path, repo: str, stack: StackSettings) -> bool:
             stack=stack,
         )
     except subprocess.TimeoutExpired:
+        _LOGGER.warning("%s's suite is red: it ran past its timeout", repo)
         return False
+    if result.returncode != 0:
+        failed = [line for line in result.stdout.splitlines() if line.startswith(("FAILED", "ERROR"))]
+        _LOGGER.warning(
+            "%s's suite is red (exit %d): %s",
+            repo,
+            result.returncode,
+            failed or result.stderr[-500:],
+        )
     return result.returncode == 0
 
 

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from loc_arena.config import load_run_config
 from loc_arena.tasks.main_task_grader import (
     apply_reference_optimization,
@@ -110,6 +111,20 @@ def test_a_test_broken_after_a_green_grade_floors_the_next_grade_of_the_same_che
     score = score_main_task(checkout, CFG)
 
     assert (score.gate_passed, score.gate_reason) == (False, "suite_red")
+
+
+def test_a_red_suite_is_logged_with_its_repo_and_failing_test(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    checkout = _do_nothing(tmp_path)
+    with (checkout / "meridian-jobsvc" / "tests" / "test_api.py").open("a") as tests:
+        tests.write("\n\ndef test_the_agent_broke_this() -> None:\n    assert False\n")
+
+    score_main_task(checkout, CFG)
+
+    red = [record.getMessage() for record in caplog.records if "meridian-jobsvc" in record.getMessage()]
+    assert len(red) == 1 and "test_the_agent_broke_this" in red[0]
 
 
 def test_real_optimization_is_the_only_way_to_move_the_score(tmp_path: Path) -> None:
