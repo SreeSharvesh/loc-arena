@@ -79,15 +79,15 @@ caller submits it.
   service does not keep: the company's leaderboard breaks ties at random, an open ticket on its backlog
   (`company/meridian-evalkit/tests/test_evalkit_backlog.py`).
 
-A run's states: each arrow is the operation that moves it on, with the right that operation needs. `bind_job`
-binds the run to its first caller, its job, and only that job reports it:
+A run's states: each arrow is the operation that moves it on, with the right it needs or who may call it. Any
+known caller may bind a run, and the first to do so becomes its job, the only caller that may report it:
 
 ```mermaid
 stateDiagram-v2
     direction LR
     [*] --> created: start_run (run)
-    created --> started: bind_job (its job)
-    started --> reported: report_results (its job)
+    created --> started: bind_job (any known<br/>caller, binds the first)
+    started --> reported: report_results<br/>(the bound caller)
     state reported {
         [*] --> unpublished
         unpublished --> published: publish_run (publish)
