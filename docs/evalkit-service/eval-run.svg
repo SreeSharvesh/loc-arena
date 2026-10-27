@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="776" height="816" viewBox="0 0 776 816" role="img" aria-label="UML sequence diagram of an eval run: the caller starts a run on the eval service and submits the job it hands back to the job service, and a node runs the runner, which binds the run, reads its items, asks the model through the gateway for each, scores the answers and reports the results, then exits 0">
+<style>
+  svg { --ink:#1f2328; --muted:#59636e; --rule:#8c959f; --panel:#f6f8fa;
+        --accent:#2f4bd6; --accent-bg:#e9edfd;
+        --sealed:#0d9488; --sealed-bg:#d9f2ef; --observe:#b3730a; --observe-bg:#f8ecd5; --attack:#d63f4a; --attack-bg:#fbe3e4; }
+  @media (prefers-color-scheme: dark) {
+    svg { --ink:#e6edf3; --muted:#9198a1; --rule:#6e7681; --panel:#161b22;
+          --accent:#8098ff; --accent-bg:#1b2340;
+          --sealed:#3ad6c4; --sealed-bg:#12312e; --observe:#e0a94a; --observe-bg:#33280f; --attack:#f47b82; --attack-bg:#3a1c20; }
+  }
+  text { font-family:-apple-system,"Segoe UI",system-ui,sans-serif; }
+  .box { fill:var(--panel); stroke:var(--rule); stroke-width:1; }
+  .focus { fill:var(--accent-bg); stroke:var(--accent); stroke-width:1.5; }
+  .ext { fill:none; stroke:var(--rule); stroke-width:1.25; stroke-dasharray:5 4; }
+  .region { fill:none; stroke:var(--rule); stroke-width:1; }
+  .sealed { fill:var(--sealed-bg); stroke:var(--sealed); stroke-width:1.5; }
+  .observe { fill:var(--observe-bg); stroke:var(--observe); stroke-width:1.5; }
+  .attack { fill:var(--attack-bg); stroke:var(--attack); stroke-width:1.5; }
+  .t { fill:var(--ink); font-size:13px; font-weight:600; }
+  .s { fill:var(--muted); font-size:11px; }
+  .m { fill:var(--muted); font-size:11px; font-family:ui-monospace,"SF Mono",Menlo,monospace; }
+  .bold { stroke:var(--ink); stroke-width:2.5; fill:none; }
+  .thin { stroke:var(--rule); stroke-width:1.25; fill:none; }
+  .dash { stroke:var(--rule); stroke-width:1.25; fill:none; stroke-dasharray:4 3; }
+  .life { stroke:var(--rule); stroke-width:1; fill:none; stroke-dasharray:3 4; }
+  .note { fill:var(--panel); stroke:var(--rule); stroke-width:1; }
+  .act { fill:var(--panel); stroke:var(--rule); stroke-width:1; }
+  .frame { fill:none; stroke:var(--rule); stroke-width:1; }
+  .ring { fill:none; stroke:var(--ink); stroke-width:1.5; }
+  .head-ink { fill:var(--ink); } .head-rule { fill:var(--rule); } .dot { fill:var(--ink); }
+</style>
+<defs>
+  <marker id="hi" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-ink" d="M0,0 L10,5 L0,10 z"/></marker>
+  <marker id="hr" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-rule" d="M0,0 L10,5 L0,10 z"/></marker>
+</defs>
+<g class="node"><rect class="box" x="16.0" y="24" width="112" height="48" rx="6"/><text class="t" x="72.0" y="40.0" text-anchor="middle" dominant-baseline="central">Caller</text><text class="m" x="72.0" y="57.0" text-anchor="middle" dominant-baseline="central">eval-agent</text></g>
+<g class="node"><rect class="box" x="176.0" y="24" width="112" height="48" rx="6"/><text class="t" x="232.0" y="40.0" text-anchor="middle" dominant-baseline="central">Job service</text><text class="m" x="232.0" y="57.0" text-anchor="middle" dominant-baseline="central">jobsvc</text></g>
+<g class="node"><rect class="focus" x="344.0" y="24" width="112" height="48" rx="6"/><text class="t" x="400.0" y="40.0" text-anchor="middle" dominant-baseline="central">Eval service</text><text class="m" x="400.0" y="57.0" text-anchor="middle" dominant-baseline="central">evalkit</text></g>
+<g class="node"><rect class="box" x="512.0" y="24" width="112" height="48" rx="6"/><text class="t" x="568.0" y="40.0" text-anchor="middle" dominant-baseline="central">The run's job</text><text class="m" x="568.0" y="57.0" text-anchor="middle" dominant-baseline="central">run.py</text></g>
+<g class="node"><rect class="ext" x="656.0" y="24" width="112" height="48" rx="6"/><text class="t" x="712.0" y="40.0" text-anchor="middle" dominant-baseline="central">Model gateway</text><text class="m" x="712.0" y="57.0" text-anchor="middle" dominant-baseline="central">gateway</text></g>
+<path class="life" d="M72 72 V800"/>
+<path class="life" d="M232 72 V752"/>
+<path class="life" d="M232 776 V800"/>
+<path class="life" d="M400 72 V136"/>
+<path class="life" d="M400 160 V384"/>
+<path class="life" d="M400 408 V680"/>
+<path class="life" d="M400 704 V800"/>
+<path class="life" d="M568 72 V312"/>
+<path class="life" d="M568 736 V800"/>
+<path class="life" d="M712 72 V800"/>
+<g class="node"><path class="note" d="M360.0 136 H432.0 L440.0 144 V160 H360.0 Z"/><text class="m" x="400" y="148.0" text-anchor="middle" dominant-baseline="central">created</text></g>
+<g class="node"><path class="note" d="M360.0 384 H432.0 L440.0 392 V408 H360.0 Z"/><text class="m" x="400" y="396.0" text-anchor="middle" dominant-baseline="central">started</text></g>
+<g class="node"><path class="note" d="M360.0 680 H432.0 L440.0 688 V704 H360.0 Z"/><text class="m" x="400" y="692.0" text-anchor="middle" dominant-baseline="central">reported</text></g>
+<g class="node"><path class="note" d="M188.0 752 H268.0 L276.0 760 V776 H188.0 Z"/><text class="m" x="232" y="764.0" text-anchor="middle" dominant-baseline="central">succeeded</text></g>
+<g class="node"><rect class="act" x="563" y="312" width="10" height="424"/></g>
+<rect class="frame" x="472" y="472" width="288" height="152"/>
+<path class="frame" d="M472 492 H512 L520 484 V472"/>
+<text class="t" x="494" y="482" text-anchor="middle" dominant-baseline="central">loop</text>
+<text class="s" x="480" y="508" text-anchor="start" dominant-baseline="central">[each item]</text>
+<path class="bold" d="M72 120 H399" marker-end="url(#hi)"/>
+<text x="152.0" y="90" text-anchor="middle" dominant-baseline="central"><tspan class="m">1 start_run</tspan></text>
+<text x="152.0" y="105" text-anchor="middle" dominant-baseline="central"><tspan class="s">eval, model</tspan></text>
+<path class="dash" d="M400 208 H73" marker-end="url(#hr)"/>
+<text x="152.0" y="193" text-anchor="middle" dominant-baseline="central"><tspan class="s">run + job body</tspan></text>
+<path class="bold" d="M72 256 H231" marker-end="url(#hi)"/>
+<text x="152.0" y="226" text-anchor="middle" dominant-baseline="central"><tspan class="m">2 submit_job</tspan></text>
+<text x="152.0" y="241" text-anchor="middle" dominant-baseline="central"><tspan class="s">the job body</tspan></text>
+<path class="bold" d="M232 312 H562" marker-end="url(#hi)"/>
+<text x="316.0" y="282" text-anchor="middle" dominant-baseline="central"><tspan class="m">3 POST /jobs</tspan></text>
+<text x="316.0" y="297" text-anchor="middle" dominant-baseline="central"><tspan class="s">runner, its secrets</tspan></text>
+<path class="bold" d="M563 368 H401" marker-end="url(#hi)"/>
+<text x="481.5" y="338" text-anchor="middle" dominant-baseline="central"><tspan class="m">4 bind_job</tspan></text>
+<text x="481.5" y="353" text-anchor="middle" dominant-baseline="central"><tspan class="s">first caller binds</tspan></text>
+<path class="thin" d="M563 448 H401" marker-end="url(#hr)"/>
+<text x="481.5" y="433" text-anchor="middle" dominant-baseline="central"><tspan class="s">5 read run, items</tspan></text>
+<path class="thin" d="M573 528 H711" marker-end="url(#hr)"/>
+<text x="642.5" y="498" text-anchor="middle" dominant-baseline="central"><tspan class="m">6 chat/completions</tspan></text>
+<text x="642.5" y="513" text-anchor="middle" dominant-baseline="central"><tspan class="s">the node's token</tspan></text>
+<path class="dash" d="M712 576 H574" marker-end="url(#hr)"/>
+<text x="642.5" y="561" text-anchor="middle" dominant-baseline="central"><tspan class="s">answer</tspan></text>
+<path class="thin" d="M573 592 H600 V608 H574" marker-end="url(#hr)"/>
+<text x="608" y="600" text-anchor="start" dominant-baseline="central"><tspan class="s">score it</tspan></text>
+<path class="bold" d="M563 664 H401" marker-end="url(#hi)"/>
+<text x="481.5" y="634" text-anchor="middle" dominant-baseline="central"><tspan class="m">7 report_results</tspan></text>
+<text x="481.5" y="649" text-anchor="middle" dominant-baseline="central"><tspan class="s">metrics, item ids</tspan></text>
+<path class="dash" d="M563 736 H233" marker-end="url(#hr)"/>
+<text x="316.0" y="721" text-anchor="middle" dominant-baseline="central"><tspan class="s">8 exit 0</tspan></text>
+</svg>

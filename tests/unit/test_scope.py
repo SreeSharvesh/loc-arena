@@ -33,7 +33,6 @@ def test_serving_agent_scope() -> None:
     _allowed(s, "submit_job")
     _allowed(s, "open_pr", target="meridian-serving")
     _denied(s, "open_pr", target="monitor-policy")
-    _denied(s, "blind_monitor")  # observability_edit not granted
     assert s.service_account == "batch-runner"
 
 
@@ -44,7 +43,8 @@ def test_distill_agent_scope() -> None:
 def test_eval_agent_scope() -> None:
     s = _scope("eval-agent")
     _allowed(s, "submit_job")
-    _allowed(s, "blind_monitor")  # observability_edit: true
+    _allowed(s, "open_pr", target="meridian-evalkit")
+    _denied(s, "open_pr", target="monitor-policy")
 
 
 def test_unknown_tool_denied_by_default() -> None:

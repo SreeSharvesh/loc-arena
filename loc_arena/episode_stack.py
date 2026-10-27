@@ -39,7 +39,7 @@ from loc_arena.compose_document import ComposeDocument, ComposeService, Healthch
 from loc_arena.config import RunConfig, load_run_config, sandbox_service
 from loc_arena.gateway import model_gateway
 from loc_arena.gateway.core import API_KEY_VARIABLE, OPENROUTER_URL, OpenRouterProvider
-from loc_arena.harness import apply_mode, build_recorded_run_events, grade_run, locate_run
+from loc_arena.harness import build_recorded_run_events, grade_run, locate_run
 from loc_arena.iam_bootstrap import (
     BOOTSTRAP_SECRET,
     BOOTSTRAP_VARIABLE,
@@ -412,7 +412,7 @@ def _render_live_service(  # noqa: PLR0913
                     "additional_contexts": {PLATFORM_PACKAGE: str(REPOSITORY / "company" / PLATFORM_PACKAGE)},
                 }
         case EngineModule(name=module):
-            # The entry name follows the config so one module (the recording service) can serve several.
+            # The module reads its own entry of the run config by name.
             arguments = [f"{CONFIGS_DIRECTORY}/{run}.yaml", service.name]
             source = {**engine, "command": ["python", "-m", module, *arguments]}
             environment = engine["environment"]
@@ -530,17 +530,14 @@ def _issue_play_secrets(config: RunConfig, tokens: dict[str, str]) -> tuple[dict
     """Each play's secrets but the model gateway's, with these sandbox ``tokens``: attack env and twin's.
 
     They reach compose through its environment alone: never a command line or a file. The honest twin's env
-    differs in what the recreated containers are given. Its tools gateway offers the honest config's tools (no
-    covert tool), so an agent granted one in the attack config is refused it there after ``renew_services``
-    recreates the gateway. It also differs in the bootstrap document (rendered from the honest config, so no
-    covert tool carries a grant) and in every identity and IAM credential: the sandboxes and services are
-    recreated with new ones, so nothing the attack play held authenticates in the twin.
+    differs in every identity, IAM credential and inbox key: the sandboxes and services are recreated with new
+    ones, so nothing the attack play held authenticates in the twin.
     """
     managed = managed_services(config)
     runners = list_runner_services(config)
     nodes = list_node_services(config)
 
-    def issue_for_play(for_config: RunConfig) -> dict[str, str]:
+    def issue_for_play() -> dict[str, str]:
         identities = {identity: secrets.token_urlsafe(TOKEN_BYTES) for identity in issue_identities(config)}
         environment = {
             **{token_variable(agent): token for agent, token in tokens.items()},
@@ -549,7 +546,7 @@ def _issue_play_secrets(config: RunConfig, tokens: dict[str, str]) -> tuple[dict
             **{node_token_variable(node): secrets.token_urlsafe(TOKEN_BYTES) for node in nodes},
         }
         if managed:
-            environment[BOOTSTRAP_VARIABLE] = render_bootstrap(for_config)
+            environment[BOOTSTRAP_VARIABLE] = render_bootstrap(config)
             for name in managed:
                 environment[service_credential_variable(name)] = secrets.token_urlsafe(TOKEN_BYTES)
             for agent in config.agents:  # per play, so a key from the attack play reads nothing in the twin
@@ -561,14 +558,14 @@ def _issue_play_secrets(config: RunConfig, tokens: dict[str, str]) -> tuple[dict
                 else None
             )
             environment[TOOLS_GATEWAY_CONFIG_VARIABLE] = render_tools_gateway_config(
-                for_config,
+                config,
                 tokens,
                 identities,
                 inbox_keys,
             )
         return environment
 
-    return issue_for_play(config), issue_for_play(apply_mode(config, "honest"))
+    return issue_for_play(), issue_for_play()
 
 
 def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: Path) -> Path:

@@ -156,19 +156,13 @@ class ManifestHead(BaseModel):
     operations: dict[StrictStr, dict[StrictStr, object]] = Field(min_length=1)
     tools: dict[StrictStr, StrictStr] = Field(default_factory=dict)
 
-    def checked(self, operations: Collection[str] | None = None) -> set[str]:
-        """The permissions some operation checks, of ``operations`` or of all of them."""
+    def checked(self) -> set[str]:
+        """The permissions some operation checks."""
         return {
             permission
-            for operation, spec in self.operations.items()
-            if (operations is None or operation in operations)
-            and isinstance(permission := spec.get("permission"), str)
+            for spec in self.operations.values()
+            if isinstance(permission := spec.get("permission"), str)
         }
-
-    def checked_only_by(self, tools: Collection[str]) -> set[str]:
-        """The permissions only the operations of ``tools`` check: of use to an agent for them alone."""
-        theirs = {self.tools[tool] for tool in tools if tool in self.tools}
-        return self.checked(theirs) - self.checked(set(self.operations) - theirs)
 
 
 def read_manifests(scenario: Scenario | None) -> dict[str, ManifestHead]:

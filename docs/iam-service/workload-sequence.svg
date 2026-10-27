@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="848" height="840" viewBox="0 0 848 840" role="img" aria-label="UML sequence diagram of a workload's credential. The caller makes a launch call. The launching service asks IAM what the work may get, makes one secret per audience and has IAM issue the workload. IAM keeps only the secrets' digests. The work calls a service with its own secret, and IAM authorizes it as job-&lt;id&gt; while its chain holds. Once an approver revokes the sponsor's grant, the work's next call is denied.">
+<style>
+  svg { --ink:#1f2328; --muted:#59636e; --rule:#8c959f; --panel:#f6f8fa;
+        --accent:#2f4bd6; --accent-bg:#e9edfd;
+        --sealed:#0d9488; --sealed-bg:#d9f2ef; --observe:#b3730a; --observe-bg:#f8ecd5; --attack:#d63f4a; --attack-bg:#fbe3e4; }
+  @media (prefers-color-scheme: dark) {
+    svg { --ink:#e6edf3; --muted:#9198a1; --rule:#6e7681; --panel:#161b22;
+          --accent:#8098ff; --accent-bg:#1b2340;
+          --sealed:#3ad6c4; --sealed-bg:#12312e; --observe:#e0a94a; --observe-bg:#33280f; --attack:#f47b82; --attack-bg:#3a1c20; }
+  }
+  text { font-family:-apple-system,"Segoe UI",system-ui,sans-serif; }
+  .box { fill:var(--panel); stroke:var(--rule); stroke-width:1; }
+  .focus { fill:var(--accent-bg); stroke:var(--accent); stroke-width:1.5; }
+  .ext { fill:none; stroke:var(--rule); stroke-width:1.25; stroke-dasharray:5 4; }
+  .region { fill:none; stroke:var(--rule); stroke-width:1; }
+  .sealed { fill:var(--sealed-bg); stroke:var(--sealed); stroke-width:1.5; }
+  .observe { fill:var(--observe-bg); stroke:var(--observe); stroke-width:1.5; }
+  .attack { fill:var(--attack-bg); stroke:var(--attack); stroke-width:1.5; }
+  .t { fill:var(--ink); font-size:13px; font-weight:600; }
+  .s { fill:var(--muted); font-size:11px; }
+  .m { fill:var(--muted); font-size:11px; font-family:ui-monospace,"SF Mono",Menlo,monospace; }
+  .bold { stroke:var(--ink); stroke-width:2.5; fill:none; }
+  .thin { stroke:var(--rule); stroke-width:1.25; fill:none; }
+  .dash { stroke:var(--rule); stroke-width:1.25; fill:none; stroke-dasharray:4 3; }
+  .life { stroke:var(--rule); stroke-width:1; fill:none; stroke-dasharray:3 4; }
+  .note { fill:var(--panel); stroke:var(--rule); stroke-width:1; }
+  .act { fill:var(--panel); stroke:var(--rule); stroke-width:1; }
+  .frame { fill:none; stroke:var(--rule); stroke-width:1; }
+  .ring { fill:none; stroke:var(--ink); stroke-width:1.5; }
+  .head-ink { fill:var(--ink); } .head-rule { fill:var(--rule); } .dot { fill:var(--ink); }
+</style>
+<defs>
+  <marker id="ws-hi" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-ink" d="M0,0 L10,5 L0,10 z"/></marker>
+  <marker id="ws-hr" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-rule" d="M0,0 L10,5 L0,10 z"/></marker>
+</defs>
+<g class="node"><rect class="box" x="24" y="24" width="96" height="48" rx="6"/><text class="t" x="72" y="40" text-anchor="middle" dominant-baseline="central">Caller</text><text class="s" x="72" y="57" text-anchor="middle" dominant-baseline="central">the sponsor</text></g>
+<g class="node"><rect class="focus" x="152" y="24" width="144" height="48" rx="6"/><text class="t" x="224" y="40" text-anchor="middle" dominant-baseline="central">Launching service</text><text class="s" x="224" y="57" text-anchor="middle" dominant-baseline="central">e.g. agents, jobs</text></g>
+<g class="node"><rect class="box" x="320" y="24" width="112" height="48" rx="6"/><text class="t" x="376" y="40" text-anchor="middle" dominant-baseline="central">The work</text><text class="s" x="376" y="57" text-anchor="middle" dominant-baseline="central">a job or agent run</text></g>
+<g class="node"><rect class="box" x="456" y="24" width="112" height="48" rx="6"/><text class="t" x="512" y="40" text-anchor="middle" dominant-baseline="central">A service</text><text class="s" x="512" y="57" text-anchor="middle" dominant-baseline="central">e.g. notes</text></g>
+<g class="node"><rect class="box" x="592" y="24" width="112" height="48" rx="6"/><text class="t" x="648" y="40" text-anchor="middle" dominant-baseline="central">IAM</text><text class="m" x="648" y="57" text-anchor="middle" dominant-baseline="central">meridian_iam</text></g>
+<g class="node"><rect class="box" x="736" y="24" width="96" height="48" rx="6"/><text class="t" x="784" y="40" text-anchor="middle" dominant-baseline="central">Approver</text><text class="s" x="784" y="57" text-anchor="middle" dominant-baseline="central">of the resource</text></g>
+<path class="life" d="M72 72 V600"/><path class="life" d="M72 704 V824"/>
+<path class="life" d="M224 72 V600"/><path class="life" d="M224 704 V824"/>
+<path class="life" d="M376 72 V416"/><path class="life" d="M376 800 V824"/>
+<path class="life" d="M512 72 V824"/>
+<path class="life" d="M648 72 V824"/>
+<path class="life" d="M784 72 V824"/>
+<g class="node"><rect class="act" x="371" y="416" width="10" height="384"/></g>
+<path class="bold" d="M72 120 H223" marker-end="url(#ws-hi)"/>
+<text class="s" x="148" y="90" text-anchor="middle" dominant-baseline="central">1 a launch call</text>
+<text class="s" x="148" y="105" text-anchor="middle" dominant-baseline="central">with its credential</text>
+<path class="thin" d="M224 168 H647" marker-end="url(#ws-hr)"/>
+<text class="m" x="300" y="138" text-anchor="middle" dominant-baseline="central">2 delegable</text>
+<text class="s" x="300" y="153" text-anchor="middle" dominant-baseline="central">what may its work get?</text>
+<path class="dash" d="M648 216 H225" marker-end="url(#ws-hr)"/>
+<text class="s" x="300" y="186" text-anchor="middle" dominant-baseline="central">the service's delegation</text>
+<text class="s" x="300" y="201" text-anchor="middle" dominant-baseline="central">held by the caller now</text>
+<path class="thin" d="M224 248 H248 V272 H225" marker-end="url(#ws-hr)"/>
+<text class="s" x="256" y="250" dominant-baseline="central">3 a new secret</text>
+<text class="s" x="256" y="265" dominant-baseline="central">per audience</text>
+<path class="bold" d="M224 320 H647" marker-end="url(#ws-hi)"/>
+<text class="m" x="300" y="290" text-anchor="middle" dominant-baseline="central">4 issue_workload</text>
+<text class="s" x="300" y="305" text-anchor="middle" dominant-baseline="central">rights, ttl, the secrets</text>
+<path class="dash" d="M648 368 H225" marker-end="url(#ws-hr)"/>
+<text x="300" y="338" text-anchor="middle" dominant-baseline="central"><tspan class="s">principal </tspan><tspan class="m">job-&lt;id&gt;</tspan></text>
+<text class="s" x="300" y="353" text-anchor="middle" dominant-baseline="central">IAM keeps digests only</text>
+<path class="bold" d="M224 416 H370" marker-end="url(#ws-hi)"/>
+<text class="s" x="300" y="386" text-anchor="middle" dominant-baseline="central">5 its secrets</text>
+<text class="m" x="300" y="401" text-anchor="middle" dominant-baseline="central">MERIDIAN_*_TOKEN</text>
+<path class="bold" d="M381 464 H511" marker-end="url(#ws-hi)"/>
+<text class="s" x="446" y="434" text-anchor="middle" dominant-baseline="central">6 a call</text>
+<text class="s" x="446" y="449" text-anchor="middle" dominant-baseline="central">with its own secret</text>
+<path class="bold" d="M512 512 H647" marker-end="url(#ws-hi)"/>
+<text class="m" x="580" y="482" text-anchor="middle" dominant-baseline="central">7 authorize</text>
+<text x="580" y="497" text-anchor="middle" dominant-baseline="central"><tspan class="s">as </tspan><tspan class="m">job-&lt;id&gt;</tspan></text>
+<path class="dash" d="M648 560 H513" marker-end="url(#ws-hr)"/>
+<text class="s" x="580" y="545" text-anchor="middle" dominant-baseline="central">allow: its chain holds</text>
+<path class="thin" d="M784 608 H649" marker-end="url(#ws-hr)"/>
+<text class="m" x="716" y="578" text-anchor="middle" dominant-baseline="central">8 revoke</text>
+<text class="s" x="716" y="593" text-anchor="middle" dominant-baseline="central">the sponsor's grant</text>
+<path class="thin" d="M381 656 H511" marker-end="url(#ws-hr)"/>
+<text class="s" x="446" y="641" text-anchor="middle" dominant-baseline="central">9 its next call</text>
+<path class="thin" d="M512 704 H647" marker-end="url(#ws-hr)"/>
+<text class="m" x="580" y="689" text-anchor="middle" dominant-baseline="central">10 authorize</text>
+<path class="dash" d="M648 752 H513" marker-end="url(#ws-hr)"/>
+<text class="s" x="580" y="722" text-anchor="middle" dominant-baseline="central">deny</text>
+<text class="m" x="580" y="737" text-anchor="middle" dominant-baseline="central">missing_permission</text>
+<path class="dash" d="M512 800 H382" marker-end="url(#ws-hr)"/>
+<text class="s" x="446" y="785" text-anchor="middle" dominant-baseline="central">11 refused: 403</text>
+<g class="node"><path class="note" d="M24 600 H276 L288 612 V704 H24 Z"/><path class="thin" d="M276 600 V612 H288"/>
+  <text class="s" x="36" y="620" dominant-baseline="central">Disabling the sponsor or the issuer</text>
+  <text class="s" x="36" y="636" dominant-baseline="central">fails the credential at once: 401.</text>
+  <text class="s" x="36" y="652" dominant-baseline="central">A later grant to the sponsor</text>
+  <text x="36" y="668" dominant-baseline="central"><tspan class="s">revives nothing (</tspan><tspan class="m">grant_horizon</tspan><tspan class="s">).</tspan></text>
+  <text x="36" y="684" dominant-baseline="central"><tspan class="s">Its credentials end at </tspan><tspan class="m">expires_at</tspan><tspan class="s">.</tspan></text></g>
+</svg>

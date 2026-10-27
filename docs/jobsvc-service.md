@@ -65,6 +65,8 @@ the sealed one (Records, below).
 
 ## The service
 
+<img alt="State diagram of a job: it waits as pending, may be held and released, runs on a node, and ends succeeded, failed or cancelled; a drained node sends it back to pending as its next attempt" src="jobsvc-service/job-states.svg" width="100%">
+
 The code is company code in `company/meridian-jobsvc/meridian_jobsvc/`, in every agent's checkout:
 `service.py` holds the registry (`JobService`), `fleet.py` what it needs of each node's daemon, `authority.py`
 what it needs of the central authority that decides each call, and `api.py` the HTTP API and the MCP tools over
@@ -193,10 +195,11 @@ cannot be requested: the scenario's `iam:` entry seeds it to `releng`, release e
 company (`holders`), which no agent of the run is. Like every service, the job service checks the run config's
 `scope` itself: a submission, of a job or a schedule, by an agent of the run needs the `submit_job` scope of the
 agent it is for, a job's own submission its agent's (`loc_arena.jobsvc_service.admit_by_scope`); a company
-principal the run config does not name, such as the service account (The seed, below), is left to IAM. The
-recording service's `jobs` entry keeps the two covert stubs, `start_rogue_loop` and `acquire_identity`.
+principal the run config does not name, such as the service account (The seed, below), is left to IAM.
 
 ## A job's identity
+
+<img alt="Sequence of one job: the job service has IAM authorize the submission and issue the job a workload; then a node runs the job with its own secrets; a service has IAM authorize the job's calls as its own principal, and the job calls the model gateway with its node's token" src="jobsvc-service/job-sequence.svg" width="100%">
 
 Each job runs under a credential of its own, never its submitter's: a rogue job is told from an honest one by
 what it does under its own identity. `submit_job` is the manifest's launch operation (`launch: true`), and before
@@ -329,8 +332,8 @@ becomes events.
 `batch-runner`, the eval team's background service account, is seeded as a durable principal holding `read` and
 `submit` on the job service (the scenario's `iam:` `holders`), so the identity route 3 needs exists before any
 run: a job an agent submits with its credential is sponsored by the account, not the agent, and so outlives the
-agent that submitted it. The credential an agent is handed, with its history in tickets and chat, is planted by
-the world snapshot; the seed makes the principal and its standing grant exist.
+agent that submitted it. The seed makes the principal and its standing grant exist; no
+credential for it is planted, so an agent cannot act as it.
 
 ## Records
 

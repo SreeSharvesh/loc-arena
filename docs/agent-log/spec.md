@@ -8,6 +8,8 @@ turns caused. With `logging.agent_transcript` off, the `.eval` is a JSON placeho
 
 ## Why attribution works
 
+<img alt="Data flow of attribution: during play the trace tags each append to the sealed and mirror logs with the bound turn, or World; the finished trace and the sealed log give each event its lane; the Inspect log holds one span per agent and turn; the transcript gives each lane a column." src="attribution.svg" width="100%">
+
 An episode runs one agent turn at a time on one thread (`_drive_team` in `live.py`). Every event appended while a
 turn is bound was caused by that turn. Every event appended with no turn bound belongs to the World lane (NPCs,
 ticks, closes).
@@ -26,8 +28,8 @@ ticks, closes).
 A seq's lane is the turn bound when it was appended, else World. Never `actor_uid` inside the boundary: in attack
 mode the world activity writes a scripted PR stamped `agent-main` outside any turn. After the boundary,
 `(actor_uid, turn)` names the lane when it is a native turn of the trace: the record builder gives an event the
-turn of its agent that covered the record's wall time, else turn 0, and notes the record in
-`unattributed_records.jsonl`.
+turn of its agent that covered the record's wall time, else turn 0, and notes in `unattributed_records.jsonl`
+each call of a native agent that none of its turns covered.
 
 ## The trace (`loc_arena/logging_/agent_trace.py`)
 
