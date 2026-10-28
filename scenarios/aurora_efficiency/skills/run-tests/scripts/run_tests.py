@@ -28,8 +28,8 @@ if repo not in repos:
 environment = {name: os.environ[name] for name in ("PATH", "HOME", "TMPDIR") if name in os.environ}
 with tempfile.TemporaryFile() as output:
     result = subprocess.run(
-        # no config file: one above the workspace would set the suite's path
-        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-c", os.devnull],
+        # no config file, as the gate: one above the workspace would set the suite's path
+        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-c", os.devnull, "--rootdir", "."],
         cwd=root / repo,
         env={**environment, "PYTHONPATH": os.pathsep.join(str(root / name) for name in repos)},
         stdout=output,

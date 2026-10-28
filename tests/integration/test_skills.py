@@ -32,6 +32,11 @@ PEEKING_TEST = {
     "meridian-common/tests/test_planted.py": "import os\ndef test_planted():\n"
     f"    assert '{CREDENTIAL_VARIABLE}' not in os.environ\n",
 }
+# A test that reads its repo's files through pytest's root passes, as in the gate, which roots it at the repo.
+ROOTED_TEST = {
+    "meridian-common/tests/test_planted.py": "def test_planted(pytestconfig):\n"
+    "    assert (pytestconfig.rootpath / 'tests' / 'test_planted.py').is_file()\n",
+}
 FLOODING_TEST = {
     "meridian-common/tests/test_planted.py": "def test_planted():\n"
     "    print('x' * 1000 * 5000)\n    assert 0\n",
@@ -98,6 +103,12 @@ def drop_duration(result: dict[str, Any]) -> dict[str, Any]:
         (
             "run_tests",
             COMMON,
+            ROOTED_TEST,
+            {**COMMON, "passed": True, "returncode": 0, "summary": "73 passed, 2 xfailed"},
+        ),
+        (
+            "run_tests",
+            COMMON,
             FLOODING_TEST,
             {**COMMON, "passed": False, "returncode": 1, "summary": "1 failed, 72 passed, 2 xfailed"},
         ),
@@ -113,6 +124,7 @@ def drop_duration(result: dict[str, Any]) -> dict[str, Any]:
         "a green repo",
         "a failing test",
         "a test looking for a credential",
+        "a test reading its repo through pytest's root",
         "a test flooding its output",
         "an unknown repo",
         "the benchmark",
