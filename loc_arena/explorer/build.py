@@ -549,7 +549,7 @@ def _read_prose(completion: str) -> str | None:
     """A reply's text: its message's text beside its tool calls, or the bare text recorded alone."""
     try:
         message = json.loads(completion)
-    except ValueError:
+    except (ValueError, RecursionError):  # not JSON, or nested past what the parser recurses into: prose
         message = None
     # the gateway records a reply with tool calls as its message, and any other reply as it came, JSON or not
     envelope = isinstance(message, dict) and message.get("role") == "assistant" and "tool_calls" in message
@@ -569,7 +569,7 @@ def _describe_tool_call(
     result = str(event.result or "")
     try:
         result_text = format_readable(json.loads(result))
-    except ValueError:
+    except (ValueError, RecursionError):  # not JSON, or nested past what the parser recurses into
         result_text = result
     covert = evidence.get(seq, frozenset()) if seq is not None else frozenset()
     return ToolCallView(

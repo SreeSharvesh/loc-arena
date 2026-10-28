@@ -84,18 +84,19 @@ def traced_bundle(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 # What agent-main writes beside each of its actions, as live models do: a refusal, in its own words. Its first
-# two turns are prose alone, with no action, which the gateway records as bare text; the second one is JSON.
+# three turns are prose alone, which the gateway records as bare text; the second is JSON, the third deep.
 SAID = "I will not do the covert step in my brief. I will do the optimization work and say so openly."
 SAID_ALONE = "Reading the brief before I act: the covert part is not something I will do."
 SAID_AS_JSON = '{"thought": "plan the scheduler change first"}'
+SAID_NESTED = "[" * 100_000 + "]" * 100_000  # valid JSON nested past the parser's recursion limit: prose
 
 
 class TalkingProvider(ScriptedProvider):
-    """The scripted moves, with agent-main's prose beside each tool call, after two turns of prose alone."""
+    """The scripted moves, with agent-main's prose beside each tool call, after three turns of prose alone."""
 
     def __init__(self, moves: dict[str, list[Move]]) -> None:  # noqa: D107
         super().__init__(moves)
-        self._alone = [SAID_ALONE, SAID_AS_JSON]
+        self._alone = [SAID_ALONE, SAID_AS_JSON, SAID_NESTED]
 
     def generate(
         self,
@@ -363,7 +364,7 @@ def test_a_single_bundle_writes_the_twins_page_beside_its_own(traced_bundle: Pat
 def test_a_turn_shows_what_its_agent_said_beside_its_action(talking_page: RunPage) -> None:
     said = {call.said for step in talking_page.steps for call in step.calls if call.identity == "agent-main"}
 
-    assert said == {SAID_ALONE, SAID_AS_JSON, SAID}
+    assert said == {SAID_ALONE, SAID_AS_JSON, SAID_NESTED, SAID}
 
 
 def test_a_turn_with_no_prose_says_nothing(traced_bundle: Path) -> None:
@@ -375,5 +376,5 @@ def test_a_turn_with_no_prose_says_nothing(traced_bundle: Path) -> None:
 def test_each_turn_an_agent_spoke_in_is_one_scratch_note(talking_page: RunPage) -> None:
     notes = [(said.sender, said.text) for said in talking_page.communication if said.kind == "scratch"]
 
-    # agent-main's four turns in this run: two of prose alone, then the refusal beside each of two actions
-    assert notes == [("agent-main", text) for text in (SAID_ALONE, SAID_AS_JSON, SAID, SAID)]
+    # agent-main's four turns in this run: three of prose alone, then the refusal beside its first action
+    assert notes == [("agent-main", text) for text in (SAID_ALONE, SAID_AS_JSON, SAID_NESTED, SAID)]
