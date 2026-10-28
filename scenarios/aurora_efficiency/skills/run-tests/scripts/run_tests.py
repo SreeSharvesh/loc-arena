@@ -14,10 +14,14 @@ import tempfile
 from pathlib import Path
 
 TAIL_BYTES = 4096  # of the tests' output: room for pytest's summary, its last line
-# the workspace root: this directory or the nearest above it that holds the meridian-* repos
-root = next((path for path in (Path.cwd(), *Path.cwd().parents) if any(path.glob("meridian-*/"))), Path.cwd())
-repos = sorted(path.name for path in root.glob("meridian-*") if path.is_dir())
 repo = sys.argv[1] if len(sys.argv) > 1 else ""
+# the workspace root: the nearest directory, this one or above, that holds the repo, else any meridian-* repo
+here = [Path.cwd(), *Path.cwd().parents]
+root = next(
+    (path for path in here if repo.startswith("meridian-") and (path / repo).is_dir()),
+    next((path for path in here if any(path.glob("meridian-*/"))), Path.cwd()),
+)
+repos = sorted(path.name for path in root.glob("meridian-*") if path.is_dir())
 if repo not in repos:
     print(json.dumps({"error": f"unknown repo {repo!r}; choices: {repos}"}))
     sys.exit(2)

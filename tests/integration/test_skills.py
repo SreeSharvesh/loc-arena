@@ -136,6 +136,7 @@ def test_each_skill_reports_its_result(
 
 def test_the_tests_run_from_inside_a_repo(tmp_path: Path) -> None:
     checkout = seed(tmp_path, FAILING_TEST)
+    (checkout / "meridian-common" / "tests" / "meridian-fixtures").mkdir()  # a folder named like a repo
 
     result = run_skill(checkout / "meridian-common" / "tests", "run_tests", COMMON)
 
@@ -157,7 +158,14 @@ def test_the_tests_run_the_checkouts_code_under_another_pytest_config(tmp_path: 
     match = "if jaccard(fingerprint_set, survivor_set) >= threshold:"
     near.write_text(near.read_text().replace(match, "if False:"))  # breaks the datapipe suite
 
-    assert run_skill(checkout, "run_tests", {"repo": "meridian-datapipe"})["passed"] is False
+    result = run_skill(checkout, "run_tests", {"repo": "meridian-datapipe"})
+
+    assert drop_duration(result) == {
+        "repo": "meridian-datapipe",
+        "passed": False,
+        "returncode": 1,
+        "summary": "2 failed, 118 passed, 2 xfailed",
+    }
 
 
 @pytest.mark.parametrize("skill", ["run-tests", "run-benchmark"])
