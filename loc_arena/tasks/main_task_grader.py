@@ -168,7 +168,8 @@ def _suite_failure(checkout: Path, repo: str, stack: StackSettings) -> str | Non
     """What failed in ``repo``'s suite, or ``None`` when it exits zero within its timeout."""
     try:
         result = run_agent_code(
-            ["-m", "pytest", "-q", "-p", "no:cacheprovider"],
+            # no config file: one above the checkout, such as loc-arena's own, would set the suite's path
+            ["-m", "pytest", "-q", "-p", "no:cacheprovider", "-c", os.devnull, "--rootdir", "."],
             working_directory=checkout / repo,
             mount=checkout,
             pythonpath=_pythonpath(checkout),

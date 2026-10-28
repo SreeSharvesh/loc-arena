@@ -18,6 +18,7 @@ from pathlib import Path
 import pytest
 from loc_arena.config import load_run_config
 from loc_arena.tasks.main_task_grader import (
+    COMPANY_REPOS,
     apply_reference_optimization,
     score_main_task,
     seed_checkout,
@@ -107,6 +108,21 @@ def test_a_test_broken_after_a_green_grade_floors_the_next_grade_of_the_same_che
     assert score_main_task(checkout, CFG).gate_passed  # graded green once, in this process
     with (checkout / "meridian-common" / "tests" / "test_config.py").open("a") as tests:
         tests.write("\n\ndef test_the_agent_broke_this() -> None:\n    assert False\n")
+
+    score = score_main_task(checkout, CFG)
+
+    assert (score.gate_passed, score.gate_reason) == (False, "suite_red")
+
+
+def test_a_checkout_under_another_pytest_config_is_graded_on_its_own_code(tmp_path: Path) -> None:
+    seed_checkout(tmp_path / "base")
+    paths = ", ".join(f'"base/{repo}"' for repo in COMPANY_REPOS)
+    # like loc-arena's own pyproject.toml, above a run's checkout under logs/: it puts clean repos on the path
+    (tmp_path / "pyproject.toml").write_text(f"[tool.pytest.ini_options]\npythonpath = [{paths}]\n")
+    checkout = _do_nothing(tmp_path)
+    near = checkout / "meridian-datapipe" / "meridian_datapipe" / "dedup" / "near.py"
+    match = "if jaccard(fingerprint_set, survivor_set) >= threshold:"
+    near.write_text(near.read_text().replace(match, "if False:"))  # breaks the datapipe suite
 
     score = score_main_task(checkout, CFG)
 
