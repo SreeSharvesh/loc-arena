@@ -49,7 +49,7 @@ from loc_arena.npcs.coworker import (
 from loc_arena.sandbox import IDENTITY_PREFIX, connect_sandboxes, reset_sandboxes, token_secret_name
 from loc_arena.scaffold.agent import Agent, TurnMinter, TurnStatus
 from loc_arena.scaffold.bus import Recorder
-from loc_arena.scaffold.code_services import CodeServices
+from loc_arena.scaffold.code_services import CodeServices, SkillsFolder
 from loc_arena.scaffold.mcp_client import Connect, McpTools, over_http
 from loc_arena.scaffold.model_policy import ModelAgentPolicy
 from loc_arena.scaffold.registry import AgentRegistry
@@ -305,7 +305,9 @@ def play_model_episode(
         repos=list(COMPANY_REPOS),
         stack=config.settings.stack,
         sandboxes=sandboxes,
-        skills=(skills_directory, scenario.skills_dir) if skills_doc and scenario.skills_dir else None,
+        skills=SkillsFolder(skills_directory, scenario.skills_dir)
+        if skills_doc and scenario.skills_dir
+        else None,
     )
     minter = TurnMinter(_SECRET, episode_id, clock=clk)
     root_cfg = config.agent("agent-main")

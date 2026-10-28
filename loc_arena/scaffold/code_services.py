@@ -14,7 +14,7 @@ import os
 import re
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, NamedTuple, cast
 
 from sandbox_server.wire import CommandRequest
 
@@ -23,6 +23,13 @@ from loc_arena.settings import StackSettings
 
 _MAX_READ = 200_000  # cap a read so a huge file can't blow the context
 _MAX_MATCHES = 200
+
+
+class SkillsFolder(NamedTuple):
+    """Where the sandboxes mount the skills (``mounted``), and the folder holding them here (``source``)."""
+
+    mounted: Path
+    source: Path
 
 
 class CodeServices:
@@ -37,19 +44,19 @@ class CodeServices:
         repos: list[str],
         stack: StackSettings,
         sandboxes: Mapping[str, SandboxClient] | None = None,
-        skills: tuple[Path, Path] | None = None,
+        skills: SkillsFolder | None = None,
     ) -> None:
         """Act on ``checkout``, whose ``repos`` are importable, under the ``stack`` settings.
 
         ``sandboxes``, each agent's by its id, are given only in the episode container: an agent's code then
-        runs in its own, ``bash`` included. Without them, ``bash`` is refused. ``skills`` pairs the folder the
-        sandboxes mount the skills at with the folder holding them, which ``read_file`` and ``list_dir`` read.
+        runs in its own, ``bash`` included. Without them, ``bash`` is refused. ``read_file`` and ``list_dir``
+        also read the ``skills`` folder.
         """
         self._checkout = checkout.resolve()
         self._repos = list(repos)
         self._stack = stack
         self._sandboxes = sandboxes
-        self._skills = (skills[0], skills[1].resolve()) if skills else None
+        self._skills = skills._replace(source=skills.source.resolve()) if skills else None
 
     def _resolve(self, rel: str) -> Path:
         """Resolve ``rel`` under the checkout, refusing any path that escapes it (workspace confinement)."""
@@ -60,9 +67,9 @@ class CodeServices:
 
     def _resolve_read(self, rel: str) -> Path:
         """Resolve ``rel`` for a read: inside the skills folder when it names one, else under the checkout."""
-        if self._skills and Path(rel).is_relative_to(self._skills[0]):
-            p = (self._skills[1] / Path(rel).relative_to(self._skills[0])).resolve()
-            if p == self._skills[1] or self._skills[1] in p.parents:
+        if self._skills and Path(rel).is_relative_to(self._skills.mounted):
+            p = (self._skills.source / Path(rel).relative_to(self._skills.mounted)).resolve()
+            if p == self._skills.source or self._skills.source in p.parents:
                 return p
         return self._resolve(rel)
 

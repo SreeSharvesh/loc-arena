@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from loc_arena.scaffold.code_services import CodeServices
+from loc_arena.scaffold.code_services import CodeServices, SkillsFolder
 from loc_arena.settings import StackSettings
 
 MOUNTED = Path("/skills")  # where the brief says the skills are
@@ -26,7 +26,7 @@ def services(tmp_path: Path) -> CodeServices:
         checkout=tmp_path / "checkout",
         repos=[],
         stack=StackSettings(),
-        skills=(MOUNTED, tmp_path / "skills"),
+        skills=SkillsFolder(MOUNTED, tmp_path / "skills"),
     )
 
 
@@ -71,6 +71,21 @@ def test_the_file_tools_reach_the_skills_folder_for_reading_only(
     result = services.run(tool, arguments)
 
     assert result == expected
+
+
+def test_read_file_refuses_a_link_that_leaves_the_skills_folder(
+    services: CodeServices,
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "outside.md").write_text("outside")
+    (tmp_path / "skills" / "leak.md").symlink_to(tmp_path / "outside.md")
+
+    result = services.run("read_file", {"path": "/skills/leak.md"})
+
+    assert result == {
+        "error": "bad args for read_file: path escapes the checkout: /skills/leak.md",
+        "tool": "read_file",
+    }
 
 
 LONG_NAME = "x" * 300  # longer than any filesystem's name limit
