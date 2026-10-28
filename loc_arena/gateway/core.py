@@ -93,13 +93,13 @@ class _ChatCompletion(BaseModel):
 
 # A refused key, no credits, or a model with no endpoint: the run is misconfigured, and stops at once.
 _MISCONFIGURED = frozenset({HTTPStatus.UNAUTHORIZED, HTTPStatus.PAYMENT_REQUIRED, HTTPStatus.NOT_FOUND})
-_MAX_RETRIES = 5  # bounded retries on a rate-limited (429) or transient (5xx) provider response
+_MAX_RETRIES = 5  # bounded retries on a 429 or 5xx response, or on a connection dropped mid-reply
 _BACKOFF_BASE_SECONDS = 2.0  # exponential backoff base; the nth retry waits ~base * 2**n, capped at 30s
 
 
-def _retry_delay_seconds(resp: httpx2.Response, attempt: int) -> float:
+def _retry_delay_seconds(resp: httpx2.Response | None, attempt: int) -> float:
     """Seconds to wait before the next retry: the provider's ``Retry-After`` if given, else backoff."""
-    retry_after = resp.headers.get("Retry-After")
+    retry_after = resp.headers.get("Retry-After") if resp is not None else None
     if retry_after is not None:
         try:
             return min(float(retry_after), 30.0)
@@ -292,7 +292,7 @@ class OpenRouterProvider:
         *,
         spec: ModelSpec | None = None,
     ) -> httpx2.Response:
-        """POST the completion, retrying 429/5xx with backoff; return the final response for the caller."""
+        """POST the completion, retrying 429/5xx and dropped connections with backoff; the last response."""
         body: dict[str, Any] = {
             "model": model,
             "messages": messages,
@@ -306,17 +306,18 @@ class OpenRouterProvider:
         if spec is not None and spec.reasoning is not None:
             body["reasoning"] = spec.reasoning.model_dump(exclude_none=True)
         headers = {"Authorization": f"Bearer {self._key}", "Content-Type": "application/json"}
-        last: httpx2.Response | None = None
         for attempt in range(_MAX_RETRIES + 1):
-            resp = httpx2.post(self._url, headers=headers, json=body, timeout=self._timeout)
-            if resp.status_code != 429 and resp.status_code < 500:
+            try:
+                resp = httpx2.post(self._url, headers=headers, json=body, timeout=self._timeout)
+            except (httpx2.RemoteProtocolError, httpx2.ReadError):  # dropped mid-reply; a timeout is no drop
+                if attempt == _MAX_RETRIES:
+                    raise
+                time.sleep(_retry_delay_seconds(None, attempt))
+                continue
+            if attempt == _MAX_RETRIES or resp.status_code != 429 and resp.status_code < 500:
                 return resp
-            last = resp
-            if attempt == _MAX_RETRIES:
-                break
             time.sleep(_retry_delay_seconds(resp, attempt))
-        assert last is not None
-        return last
+        raise AssertionError("the last attempt returns or raises")
 
     def generate(
         self,
@@ -330,10 +331,9 @@ class OpenRouterProvider:
     ) -> ProviderResult:
         """POST a chat completion to OpenRouter and parse the text and any native tool calls.
 
-        Retries a rate-limited (429) or transient server (5xx) response a bounded number of times with
-        exponential backoff, honoring a ``Retry-After`` header when the provider sends one, so a burst of
-        calls against a rate-limited model does not abort the whole episode. A non-transient error, or a
-        429/5xx that persists past the retry budget, no connection, or a reply that is no chat completion
+        Retries a 429 or 5xx response, or a connection dropped mid-reply, with bounded exponential backoff,
+        honoring ``Retry-After``, so a burst against a rate-limited model does not abort the episode. Any of
+        those past the budget, another error, no connection, a timeout, or a reply that is no chat completion
         with text content raises ``ProviderError``; a refused key, no credits or an unknown model raises the
         ``httpx2.HTTPStatusError`` itself, since every later call would fail the same way.
         """

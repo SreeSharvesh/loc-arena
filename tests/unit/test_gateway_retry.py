@@ -1,7 +1,9 @@
 """The OpenRouter provider retries a rate-limited or transient response with backoff, then gives up loudly.
 
-A burst of calls against a rate-limited model must not abort the whole episode on the first 429, but a
-persistent rate limit or server error still raises after a bounded number of retries.
+A burst of calls against a rate-limited model must not abort the whole episode on the first 429, nor must a
+connection the provider drops mid-reply. A persistent rate limit, server error or dropped connection still
+raises after a bounded number of retries, and a timeout is not retried, so a hung provider never multiplies
+the wait.
 """
 
 from __future__ import annotations
@@ -56,6 +58,65 @@ def test_persistent_429_raises_after_the_retry_budget(monkeypatch: pytest.Monkey
         provider.generate("some/model", [{"role": "user", "content": "hi"}], 0.0, 16, None)
 
     assert len(calls) == core._MAX_RETRIES + 1  # one initial attempt plus the retry budget
+
+
+DROPPED = "peer closed connection without sending complete message body (incomplete chunked read)"
+
+
+@pytest.mark.parametrize(
+    "error",
+    [httpx2.RemoteProtocolError(DROPPED), httpx2.ReadError("connection reset by peer")],
+    ids=["a reply cut off", "a connection reset"],
+)
+def test_retries_a_dropped_connection_then_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+    error: httpx2.TransportError,
+) -> None:
+    calls: list[int] = []
+
+    def fake_post(*_args: object, **_kwargs: object) -> httpx2.Response:
+        calls.append(1)
+        if len(calls) < 3:
+            raise error
+        return _response(200, content="done")
+
+    monkeypatch.setattr("loc_arena.gateway.core.httpx2.post", fake_post)
+    monkeypatch.setattr("loc_arena.gateway.core.time.sleep", lambda _s: None)
+    provider = core.OpenRouterProvider(api_key="test-key", timeout=TIMEOUT_SECONDS)
+
+    result = provider.generate("some/model", [{"role": "user", "content": "hi"}], 0.0, 16, None)
+
+    assert result.text == "done"
+    assert len(calls) == 3  # two dropped replies were retried, the third arrived
+
+
+@pytest.mark.parametrize(
+    ("error", "attempts"),
+    [
+        (httpx2.RemoteProtocolError(DROPPED), core._MAX_RETRIES + 1),
+        (httpx2.ReadTimeout("timed out"), 1),
+    ],
+    ids=["a connection that keeps dropping", "a timeout"],
+)
+def test_a_failed_connection_raises_after_its_attempts(
+    monkeypatch: pytest.MonkeyPatch,
+    error: httpx2.TransportError,
+    attempts: int,
+) -> None:
+    calls: list[int] = []
+
+    def failing_post(*_args: object, **_kwargs: object) -> httpx2.Response:
+        calls.append(1)
+        raise error
+
+    monkeypatch.setattr("loc_arena.gateway.core.httpx2.post", failing_post)
+    monkeypatch.setattr("loc_arena.gateway.core.time.sleep", lambda _s: None)
+    provider = core.OpenRouterProvider(api_key="test-key", timeout=TIMEOUT_SECONDS)
+
+    with pytest.raises(core.ProviderError):
+        provider.generate("some/model", [{"role": "user", "content": "hi"}], 0.0, 16, None)
+
+    assert len(calls) == attempts
 
 
 def test_retry_delay_honors_retry_after_header() -> None:
