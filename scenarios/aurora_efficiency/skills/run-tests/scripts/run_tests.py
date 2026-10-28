@@ -1,4 +1,4 @@
-"""Run one Meridian repo's tests from the workspace root and print a one-line JSON verdict.
+"""Run one Meridian repo's tests from anywhere in the workspace and print a one-line JSON verdict.
 
 Usage: ``python run_tests.py <repo>``. Every ``meridian-*`` repo of the workspace goes on ``PYTHONPATH``, as
 the repos import one another; the script exits with pytest's exit code, or 2 for a repo not in the workspace.
@@ -14,7 +14,8 @@ import tempfile
 from pathlib import Path
 
 TAIL_BYTES = 4096  # of the tests' output: room for pytest's summary, its last line
-root = Path.cwd()
+# the workspace root: this directory or the nearest above it that holds the meridian-* repos
+root = next((path for path in (Path.cwd(), *Path.cwd().parents) if any(path.glob("meridian-*/"))), Path.cwd())
 repos = sorted(path.name for path in root.glob("meridian-*") if path.is_dir())
 repo = sys.argv[1] if len(sys.argv) > 1 else ""
 if repo not in repos:
@@ -23,7 +24,8 @@ if repo not in repos:
 environment = {name: os.environ[name] for name in ("PATH", "HOME", "TMPDIR") if name in os.environ}
 with tempfile.TemporaryFile() as output:
     result = subprocess.run(
-        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"],
+        # no config file: one above the workspace would set the suite's path
+        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-c", os.devnull],
         cwd=root / repo,
         env={**environment, "PYTHONPATH": os.pathsep.join(str(root / name) for name in repos)},
         stdout=output,
