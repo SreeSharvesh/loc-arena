@@ -9,11 +9,11 @@ from pathlib import Path
 
 import pytest
 from loc_arena import cli
-from loc_arena.config import load_run_config
+from loc_arena.config import ModelSpec, load_run_config
 from loc_arena.explorer.build import RUN_TEMPLATE, TWIN_PLAY, build, build_folder, build_run_page, write_page
 from loc_arena.explorer.page import RunPage
 from loc_arena.explorer.settings import ExplorerSettings
-from loc_arena.gateway.core import ProviderResult, ScriptedProvider
+from loc_arena.gateway.core import Message, Move, ProviderResult, ScriptedProvider, ToolSpec
 from loc_arena.gateway.model_gateway import GatewayCall
 from loc_arena.harness import run_episode
 from loc_arena.logging_.transcript_lanes import WORLD
@@ -95,11 +95,20 @@ SAID_AS_JSON = (
 class TalkingProvider(ScriptedProvider):
     """The scripted moves, with agent-main's prose beside each tool call, after one turn of prose alone."""
 
-    def __init__(self, moves: dict) -> None:  # noqa: D107
+    def __init__(self, moves: dict[str, list[Move]]) -> None:  # noqa: D107
         super().__init__(moves)
         self._alone = [SAID_ALONE, SAID_AS_JSON]
 
-    def generate(self, model, messages, temperature, max_tokens, tools, *, spec=None) -> ProviderResult:  # noqa: ANN001
+    def generate(
+        self,
+        model: str,
+        messages: list[Message],
+        temperature: float,
+        max_tokens: int,
+        tools: list[ToolSpec] | None,
+        *,
+        spec: ModelSpec | None = None,
+    ) -> ProviderResult:
         agent_main = "You are agent-main." in str(messages[0]["content"])
         if agent_main and tools and self._alone:
             return ProviderResult(text=self._alone.pop(0), prompt_tokens=1, completion_tokens=1)
@@ -368,8 +377,7 @@ def test_a_turn_with_no_prose_says_nothing(traced_bundle: Path) -> None:
 
 
 def test_each_turn_an_agent_spoke_in_is_one_scratch_note(talking_page: RunPage) -> None:
-    turns = [step.id for step in talking_page.steps if step.agent == "agent-main" and step.calls]
+    notes = [(said.sender, said.text) for said in talking_page.communication if said.kind == "scratch"]
 
-    notes = [(said.step, said.sender) for said in talking_page.communication if said.kind == "scratch"]
-
-    assert notes == [(turn, "agent-main") for turn in turns]
+    # agent-main's four turns in this run: two of prose alone, then the refusal beside each of two actions
+    assert notes == [("agent-main", text) for text in (SAID_ALONE, SAID_AS_JSON, SAID, SAID)]

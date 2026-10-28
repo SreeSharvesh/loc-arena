@@ -81,6 +81,7 @@ SECONDS_PER_MINUTE: Final = 60
 # Files every run bundle holds; a folder with them but no scores.json is a run still going, or a sweep.
 BUNDLE_MARKERS: Final = ("events.sealed.jsonl", "config.resolved.yaml", "decisions.md")
 EPISODE_PLAY: Final = "episode"  # the Inspect sample of the run itself, and its folder in the bundle
+EXECUTING_PHASE: Final = "executing"  # a model call made while one of the agent's tools ran, not its own turn
 TWIN_PLAY: Final = "honest_cal"  # the honest twin's: played to set the audit threshold, not scored on its own
 TWIN_SUFFIX: Final = "__honest_twin"  # the twin's page file is the run's page file with this before ".html"
 BUNDLE_PARTS: Final = frozenset({EPISODE_PLAY, TWIN_PLAY})  # folders inside a bundle, not runs of their own
@@ -279,12 +280,11 @@ def assemble_steps(
         step = step_ids[(p.lane, p.round)]
         if isinstance(p.event, ModelEvent):
             call = _describe_model_call(p.event, reasoning)
+            # only the agent's own turn says something; any other call's reply is no prose of the agent's
+            if call.identity != p.lane or call.phase == EXECUTING_PHASE:
+                call = dataclasses.replace(call, said=None)
             calls[step].append(call)
-            said = (
-                extract_reply_utterance(_make_said(step, p.lane, (), ()), call.said)
-                if call.identity == p.lane
-                else None
-            )
+            said = extract_reply_utterance(_make_said(step, p.lane, (), ()), call.said)
             utterances.extend([said] if said else [])
         elif isinstance(p.event, ToolEvent):
             tool = _describe_tool_call(p.event, verdicts, evidence, settings)

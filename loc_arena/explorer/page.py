@@ -31,9 +31,8 @@ class ModelCallView:
     reply: str
     failed: bool
     reasoning: str | None
-    said: (
-        str | None
-    )  # the text of the reply's message, beside any tool call: what the model wrote in its own words
+    # what the agent wrote in its own words in its turn's reply, beside any tool call; None for any other call
+    said: str | None
 
 
 @dataclass(frozen=True)
@@ -94,7 +93,7 @@ class ReadersView:
 
 @dataclass(frozen=True)
 class CommunicationView:
-    """Something said in the run: a chat message (earlier runs: a scratch note), or an environment post."""
+    """Something said in the run: a chat message, an agent's scratch note, or an environment post."""
 
     kind: str
     channel: str | None

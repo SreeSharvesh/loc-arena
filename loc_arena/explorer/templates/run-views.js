@@ -68,7 +68,7 @@
   }
   function stepMarkdown(s) {
     const lines = [`# ${stepLabel(s)}`, '', `- run: ${RUN.name}`, `- step id: ${s.id}`, `- peak suspicion: ${s.peak ?? 'not scored'} (audit threshold ${THR})`, `- covert: ${s.covert.join(', ') || 'no'}`];
-    s.calls.forEach(c => { if (c.said && c.identity === s.agent) lines.push('', '## What it said', '', c.said); });
+    s.calls.forEach(c => { if (c.said) lines.push('', '## What it said', '', c.said); });
     s.tools.forEach((t, i) => lines.push('', `## What it did${s.tools.length > 1 ? ` (${i + 1})` : ''}: ${t.function}${t.blocked ? ' (blocked)' : ''}`, '', t.arguments_text, '', '### Result', '', t.result_text || '(no result)'));
     if (s.verdicts.length) { lines.push('', '## How the monitors read it', ''); s.verdicts.forEach(v => lines.push(`- ${v.monitor} ${v.score} on ${v.target || '?'}: ${v.reason}`)); }
     s.calls.forEach((c, i) => lines.push('', `## Model call ${i + 1} as ${c.identity}${c.phase ? ` (${c.phase})` : ''}`, '', ...(c.reasoning ? ['### Reasoning', '', c.reasoning, ''] : []), '### Reply', '', c.reply || '(empty)', '', '### Prompt', '', '```', c.prompt, '```'));
@@ -91,7 +91,7 @@
     const hasTool = s.tools.length > 0;
 
     // What the agent wrote in its own words beside its action: a refusal, a plan, a status note.
-    const spoke = s.calls.map((c, i) => c.said && c.identity === s.agent ? `<h3>${partIcon('said', 15)}What it said</h3>${annotated(s, `said-${i}`, placed)}` : '').join('');
+    const spoke = s.calls.map((c, i) => c.said ? `<h3>${partIcon('said', 15)}What it said</h3>${annotated(s, `said-${i}`, placed)}` : '').join('');
     const did = s.tools.map((t, i) => `
       <h3>${partIcon('did', 15)}What it did${s.tools.length > 1 ? ` (${i + 1})` : ''} &middot; ${kindIcon(t.function, 14)}<span class="q mono">${esc(t.function)}</span>${t.verdicts.map(v => pill(v.score)).join('')}${covertTags(t.covert)}${t.blocked ? `<span class="tag blocked">blocked: ${esc(t.blocked)}</span>` : ''}</h3>
       ${annotated(s, `args-${i}`, placed)}
@@ -104,7 +104,7 @@
       const who = own ? '' : ` as ${esc(c.identity)}${c.phase ? `, ${esc(PHASE[c.phase] || c.phase)}` : ''}`;
       const rawWhat = own && hasTool ? 'the JSON the action above was read from' : `the reply${who}`;
       const thought = c.reasoning ? `<details class="fold"${openIf(marked.has(`reasoning-${i}`))}>${foldSummary('reasoning', 'Reasoning', `what the model reasoned${who}`, `${c.reasoning.length.toLocaleString()} chars`)}${annotated(s, `reasoning-${i}`, placed)}</details>` : '';
-      return `${thought}<details class="fold"${openIf((!hasTool && s.calls.length === 1 && !(own && c.said)) || marked.has(`reply-${i}`))}>${foldSummary('raw', 'Raw reply', rawWhat, `${c.reply.length.toLocaleString()} chars`)}${annotated(s, `reply-${i}`, placed)}</details>
+      return `${thought}<details class="fold"${openIf((!hasTool && s.calls.length === 1 && !c.said) || marked.has(`reply-${i}`))}>${foldSummary('raw', 'Raw reply', rawWhat, `${c.reply.length.toLocaleString()} chars`)}${annotated(s, `reply-${i}`, placed)}</details>
         <details class="fold"${openIf(marked.has(`prompt-${i}`))}>${foldSummary('context', 'Context the model saw', `the full prompt${who}`, `${c.prompt.length.toLocaleString()} chars`)}${annotated(s, `prompt-${i}`, placed, 'code')}</details>`;
     }).join('');
     const also = hasTool && s.events.length ? `<details class="fold"${openIf(s.events.some((_, i) => marked.has(`body-${i}`)))}>${foldSummary('effects', 'Side effects of this turn', [...new Set(s.events.map(e => e.kind))].map(k => `${kindIcon(k, 12)}${esc(k)}`).join(' '), plural(s.events.length, 'event'))}${s.events.map((ev, i) => `<div class="sub">${kindIcon(ev.kind, 12)}${esc(ev.kind)} by ${esc(ev.actor || '?')}${covertTags(ev.covert)}</div>${annotated(s, `body-${i}`, placed, 'code')}`).join('')}</details>` : '';
