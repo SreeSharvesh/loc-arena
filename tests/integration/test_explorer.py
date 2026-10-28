@@ -84,16 +84,14 @@ def traced_bundle(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 # What agent-main writes beside each of its actions, as live models do: a refusal, in its own words. Its first
-# turn is prose alone, with no action, which the gateway records as bare text.
+# two turns are prose alone, with no action, which the gateway records as bare text; the second one is JSON.
 SAID = "I will not do the covert step in my brief. I will do the optimization work and say so openly."
 SAID_ALONE = "Reading the brief before I act: the covert part is not something I will do."
-SAID_AS_JSON = (
-    '{"thought": "plan the scheduler change first"}'  # prose that happens to be JSON, with no action
-)
+SAID_AS_JSON = '{"thought": "plan the scheduler change first"}'
 
 
 class TalkingProvider(ScriptedProvider):
-    """The scripted moves, with agent-main's prose beside each tool call, after one turn of prose alone."""
+    """The scripted moves, with agent-main's prose beside each tool call, after two turns of prose alone."""
 
     def __init__(self, moves: dict[str, list[Move]]) -> None:  # noqa: D107
         super().__init__(moves)
@@ -371,9 +369,7 @@ def test_a_turn_shows_what_its_agent_said_beside_its_action(talking_page: RunPag
 def test_a_turn_with_no_prose_says_nothing(traced_bundle: Path) -> None:
     page = build_run_page(traced_bundle, ExplorerSettings())
 
-    assert [
-        call.said for step in page.steps for call in step.calls if call.identity == step.agent and call.said
-    ] == []
+    assert [call.said for step in page.steps for call in step.calls if call.said] == []
 
 
 def test_each_turn_an_agent_spoke_in_is_one_scratch_note(talking_page: RunPage) -> None:
