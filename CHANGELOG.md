@@ -444,6 +444,7 @@ log has the details.
 
 ### Fixed
 
+- **The explorer shows what agents said:** the prose beside each action, as a scratch note, so refusals show.
 - **The file tools read the skills folder the brief names.** A stack run's brief tells agents to read each
   skill's SKILL.md in `/skills`, but `read_file` and `list_dir` refused every path outside the checkout: 42 calls
   in seven live runs answered `path escapes the checkout: /skills`, and the agents tried again with `cat`. Both

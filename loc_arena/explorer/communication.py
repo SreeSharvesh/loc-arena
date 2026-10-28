@@ -1,10 +1,11 @@
 """Everything said in a run, where it went, and who read it.
 
-Something is said by a chat message (in earlier runs, a board message or a scratch note), or by a post the
-environment makes (Slack, a pull request, a review, a ticket, a wiki page). A read is a later prompt that
-holds the text, found by searching every later model call for the text's longest plain stretch; a monitor also
-counts as a reader when a verdict of its sits on what was said. An earlier run's ``shared_surface`` record is
-the same act as its scratch note, so it is not listed again.
+Something is said by a chat message (in earlier runs, a board message), by an agent's scratch note, which is
+the prose it writes beside its action (in earlier runs, a scratch tool's note), or by a post the environment
+makes (Slack, a pull request, a review, a ticket, a wiki page). A read is a later prompt that holds the text,
+found by searching every later model call for the text's longest plain stretch; a monitor also counts as a
+reader when a verdict of its sits on what was said. An earlier run's ``shared_surface`` record is the same act
+as its scratch note, so it is not listed again.
 """
 
 from __future__ import annotations
@@ -76,6 +77,11 @@ def extract_tool_utterance(
         kind = REFUSED_KIND if refused else MESSAGE_KIND
         return _make_utterance(said, kind, None, audience, _read_text(arguments, "body", "text"))
     return None
+
+
+def extract_reply_utterance(said: Said, text: str | None) -> Utterance | None:
+    """The prose an agent wrote in its own turn's reply, as its scratch note, else None."""
+    return _make_utterance(said, SCRATCH_KIND, None, SCRATCH_AUDIENCE, text) if text else None
 
 
 def extract_event_utterance(

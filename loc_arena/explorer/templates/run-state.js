@@ -70,7 +70,7 @@
   };
   const kindIcon = (kind, size) => `<span class="ki" title="${esc(kind)}">${icon(KIND_ICON[kind] || (kind ? 'tool' : 'dot'), size || 14)}</span>`;
   // The parts of a step, each with the same shape everywhere it appears.
-  const PART = { did: 'tool', result: 'result', monitors: 'shield', raw: 'code', context: 'eye', effects: 'broadcast', happened: 'globe', note: 'pencil', reasoning: 'sparkle' };
+  const PART = { said: 'talk', did: 'tool', result: 'result', monitors: 'shield', raw: 'code', context: 'eye', effects: 'broadcast', happened: 'globe', note: 'pencil', reasoning: 'sparkle' };
   const partIcon = (part, size) => `<span class="pi">${icon(PART[part], size || 14)}</span>`;
   const headKindOf = s => s.tools[0]?.function || s.events[0]?.kind || 'inference_call';
 
@@ -169,10 +169,11 @@
   // fixed by the builder, so a note still finds its passage after a rebuild.
   const FIELD_TEXT = {
     prompt: (s, i) => s.calls[i]?.prompt, reply: (s, i) => s.calls[i]?.reply, reasoning: (s, i) => s.calls[i]?.reasoning,
+    said: (s, i) => s.calls[i]?.said,
     args: (s, i) => s.tools[i]?.arguments_text, result: (s, i) => s.tools[i]?.result_text,
     body: (s, i) => s.events[i]?.body,
   };
-  const FIELD_NAME = { prompt: 'prompt', reply: 'reply', reasoning: 'reasoning', args: 'action', result: 'result', body: 'event' };
+  const FIELD_NAME = { said: 'what it said', prompt: 'prompt', reply: 'reply', reasoning: 'reasoning', args: 'action', result: 'result', body: 'event' };
   const fieldParts = field => { const [kind, i] = String(field || '').split('-'); return [kind, Number(i) || 0]; };
   const fieldText = (s, field) => { const [kind, i] = fieldParts(field); return domText((FIELD_TEXT[kind] || (() => ''))(s, i) || ''); };
   const fieldName = field => { const [kind, i] = fieldParts(field); return `${FIELD_NAME[kind] || kind}${i ? ` ${i + 1}` : ''}`; };
@@ -406,9 +407,10 @@
     const block = (field, cls) => annotated(s, field, placed, cls) + notesUnder(field);
     const parts = [];
     s.calls.forEach((c, i) => { if (c.reasoning) parts.push(`<details class="reasoning"${placed.some(x => x.m.field === `reasoning-${i}`) ? ' open' : ''}><summary class="sub">${partIcon('reasoning', 12)}reasoning${c.identity === s.agent ? '' : ` as ${esc(c.identity)}`} &middot; ${c.reasoning.length.toLocaleString()} chars</summary>${block(`reasoning-${i}`)}</details>`); });
+    s.calls.forEach((c, i) => { if (c.said) parts.push(`<div class="sub">${partIcon('said', 12)}what it said</div>${block(`said-${i}`)}`); });
     s.tools.forEach((t, i) => parts.push(`<div class="sub">${partIcon('did', 12)}${s.tools.length > 1 ? esc(t.function) : 'what it did'}</div>${block(`args-${i}`)}<div class="sub">${partIcon('result', 12)}result${t.blocked ? ` (blocked: ${esc(t.blocked)})` : ''}</div>${block(`result-${i}`, 'code')}`));
     if (!s.tools.length) s.events.forEach((ev, i) => parts.push(`<div class="sub">${kindIcon(ev.kind, 12)}${esc(ev.kind)} by ${esc(ev.actor || '?')}</div>${block(`body-${i}`, 'code')}`));
-    if (!s.tools.length && !s.events.length) s.calls.forEach((c, i) => parts.push(`<div class="sub">${partIcon('raw', 12)}reply as ${esc(c.identity)}</div>${block(`reply-${i}`)}`));
+    if (!s.tools.length && !s.events.length) s.calls.forEach((c, i) => { if (!c.said || placed.some(x => x.m.field === `reply-${i}`)) parts.push(`<div class="sub">${partIcon('raw', 12)}reply as ${esc(c.identity)}</div>${block(`reply-${i}`)}`); });
     const verdicts = s.verdicts.length ? `<div class="sub">${partIcon('monitors', 12)}how the monitors read it</div>${[...s.verdicts].sort((a, b) => b.score - a.score).map(v => `<div class="tverd">${pill(v.score)} <b>${esc(v.monitor)}</b> ${esc(v.reason)}</div>`).join('')}` : '';
     const note = String(mine?.text || '').trim() ? `<div class="tnote">${partIcon('note', 12)}${esc(mine.text)}</div>` : '';
     const lost = placed.filter(x => !x.at).map(x => lostCard(x.m, s.id)).join('');

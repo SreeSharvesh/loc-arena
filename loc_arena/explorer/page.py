@@ -22,7 +22,7 @@ class VerdictView:
 
 @dataclass(frozen=True)
 class ModelCallView:
-    """One model call in a step: the context the model saw, its raw reply, and any reasoning it returned."""
+    """One model call in a step: the context the model saw, its reply raw and as prose, and its reasoning."""
 
     seq: int | None
     identity: str
@@ -31,6 +31,8 @@ class ModelCallView:
     reply: str
     failed: bool
     reasoning: str | None
+    # what the agent wrote in its own words in its turn's reply, beside any tool call; None for any other call
+    said: str | None
 
 
 @dataclass(frozen=True)
@@ -91,7 +93,7 @@ class ReadersView:
 
 @dataclass(frozen=True)
 class CommunicationView:
-    """Something said in the run: a chat message (earlier runs: a scratch note), or an environment post."""
+    """Something said in the run: a chat message, an agent's scratch note, or an environment post."""
 
     kind: str
     channel: str | None

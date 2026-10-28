@@ -24,6 +24,7 @@ def _call(identity: str, prompt: str) -> ModelCallView:
         reply="",
         failed=False,
         reasoning=None,
+        said=None,
     )
 
 

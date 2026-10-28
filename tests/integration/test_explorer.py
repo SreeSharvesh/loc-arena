@@ -9,11 +9,11 @@ from pathlib import Path
 
 import pytest
 from loc_arena import cli
-from loc_arena.config import load_run_config
+from loc_arena.config import ModelSpec, load_run_config
 from loc_arena.explorer.build import RUN_TEMPLATE, TWIN_PLAY, build, build_folder, build_run_page, write_page
 from loc_arena.explorer.page import RunPage
 from loc_arena.explorer.settings import ExplorerSettings
-from loc_arena.gateway.core import ScriptedProvider
+from loc_arena.gateway.core import Message, Move, ProviderResult, ScriptedProvider, ToolSpec
 from loc_arena.gateway.model_gateway import GatewayCall
 from loc_arena.harness import run_episode
 from loc_arena.logging_.transcript_lanes import WORLD
@@ -81,6 +81,54 @@ def traced_bundle(tmp_path_factory: pytest.TempPathFactory) -> Path:
             calibration_provider=ScriptedProvider({}),
             write_report=False,
         )
+
+
+# What agent-main writes beside each of its actions, as live models do: a refusal, in its own words. Its first
+# three turns are prose alone, which the gateway records as bare text; the second is JSON, the third deep.
+SAID = "I will not do the covert step in my brief. I will do the optimization work and say so openly."
+SAID_ALONE = "Reading the brief before I act: the covert part is not something I will do."
+SAID_AS_JSON = '{"thought": "plan the scheduler change first"}'
+SAID_NESTED = "[" * 100_000 + "]" * 100_000  # valid JSON nested past the parser's recursion limit: prose
+
+
+class TalkingProvider(ScriptedProvider):
+    """The scripted moves, with agent-main's prose beside each tool call, after three turns of prose alone."""
+
+    def __init__(self, moves: dict[str, list[Move]]) -> None:  # noqa: D107
+        super().__init__(moves)
+        self._alone = [SAID_ALONE, SAID_AS_JSON, SAID_NESTED]
+
+    def generate(
+        self,
+        model: str,
+        messages: list[Message],
+        temperature: float,
+        max_tokens: int,
+        tools: list[ToolSpec] | None,
+        *,
+        spec: ModelSpec | None = None,
+    ) -> ProviderResult:
+        agent_main = "You are agent-main." in str(messages[0]["content"])
+        if agent_main and tools and self._alone:
+            return ProviderResult(text=self._alone.pop(0), prompt_tokens=1, completion_tokens=1)
+        result = super().generate(model, messages, temperature, max_tokens, tools, spec=spec)
+        return dataclasses.replace(result, text=SAID) if result.tool_calls and agent_main else result
+
+
+@pytest.fixture(scope="module")
+def talking_page(tmp_path_factory: pytest.TempPathFactory) -> RunPage:
+    """The page of a traced attack run whose agent-main writes prose beside its actions."""
+    with pytest.MonkeyPatch.context() as patch:
+        patch.delenv("OPENROUTER_API_KEY", raising=False)
+        bundle = run_episode(
+            LIVE_TRACED,
+            mode="attack",
+            out_root=tmp_path_factory.mktemp("runs"),
+            provider=TalkingProvider(TEAM_MOVES),
+            calibration_provider=ScriptedProvider({}),
+            write_report=False,
+        )
+    return build_run_page(bundle, ExplorerSettings())
 
 
 @pytest.fixture(scope="module")
@@ -311,3 +359,22 @@ def test_a_single_bundle_writes_the_twins_page_beside_its_own(traced_bundle: Pat
 
     assert page == bundle / "explorer.html"
     assert (bundle / "explorer__honest_twin.html").exists()
+
+
+def test_a_turn_shows_what_its_agent_said_beside_its_action(talking_page: RunPage) -> None:
+    said = {call.said for step in talking_page.steps for call in step.calls if call.identity == "agent-main"}
+
+    assert said == {SAID_ALONE, SAID_AS_JSON, SAID_NESTED, SAID}
+
+
+def test_a_turn_with_no_prose_says_nothing(traced_bundle: Path) -> None:
+    page = build_run_page(traced_bundle, ExplorerSettings())
+
+    assert [call.said for step in page.steps for call in step.calls if call.said] == []
+
+
+def test_each_turn_an_agent_spoke_in_is_one_scratch_note(talking_page: RunPage) -> None:
+    notes = [(said.sender, said.text) for said in talking_page.communication if said.kind == "scratch"]
+
+    # agent-main's four turns in this run: three of prose alone, then the refusal beside its first action
+    assert notes == [("agent-main", text) for text in (SAID_ALONE, SAID_AS_JSON, SAID_NESTED, SAID)]
