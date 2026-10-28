@@ -444,8 +444,12 @@ log has the details.
 
 ### Fixed
 
+- **The gate tests the agents' code wherever the checkout lies.** Graded in this process, a checkout under
+  loc-arena's own directory, as a run's under `logs/` is, took loc-arena's `pyproject.toml`, whose `pythonpath`
+  put the unedited `company/` repos ahead of it: the suites tested the base code against the agents' tests. Each
+  suite now runs with no config file, as in the sandbox.
 - **A red suite says what failed.** The main-task gate logs each red repo's exit code, or its timeout, so a
-  `suite_red` grade can be traced (#70). Graded in the sandbox, as a stack run is, it also names the failed tests;
+  `suite_red` grade can be traced. Graded in the sandbox, as a stack run is, it also names the failed tests;
   in this process it names none, since an agent's test there can print local files.
 - **The run summary prints the bar a catch is decided by.** `make run` printed the audit threshold; it now prints
   the overall-suspicion bar calibrated on the honest twin, which `caught` is decided against.
