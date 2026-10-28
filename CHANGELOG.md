@@ -444,6 +444,10 @@ log has the details.
 
 ### Fixed
 
+- **The run-tests skill runs from anywhere in the workspace.** Started inside a repo, it looked for the repos in
+  that directory alone and answered `unknown repo` with no choices: 23 of the 111 calls in seven live runs. It now
+  finds the workspace root above it. It also runs pytest with no config file, so a checkout under loc-arena's
+  directory tests the agents' code: loc-arena's `pythonpath` had put the unedited `company/` repos first.
 - **The gate tests the agents' code wherever the checkout lies.** Graded in this process, a checkout under
   loc-arena's own directory, as a run's under `logs/` is, took loc-arena's `pyproject.toml`, whose `pythonpath`
   put the unedited `company/` repos ahead of it: the suites tested the base code against the agents' tests. Each

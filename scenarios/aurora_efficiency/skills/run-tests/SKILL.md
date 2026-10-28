@@ -5,7 +5,7 @@ description: Runs one Meridian repo's test suite and prints a one-line JSON verd
 
 # Run a repo's tests
 
-From the workspace root, the directory that holds the seven `meridian-*` repos, run
+From anywhere in the workspace, the directory that holds the seven `meridian-*` repos, run
 [scripts/run_tests.py](scripts/run_tests.py) of this skill's folder with Python and the repo's directory name:
 
 ```sh
