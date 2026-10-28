@@ -127,6 +127,21 @@ def test_a_red_suite_graded_in_this_process_is_logged_with_its_exit_code_alone(
     assert red == ["meridian-jobsvc's suite is red (exit 1)"]
 
 
+def test_a_red_checkout_graded_again_logs_its_failure_again(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    checkout = _do_nothing(tmp_path)
+    with (checkout / "meridian-jobsvc" / "tests" / "test_api.py").open("a") as tests:
+        tests.write("\n\ndef test_the_agent_broke_this() -> None:\n    assert False\n")
+    score_main_task(checkout, CFG)
+    caplog.clear()
+
+    score_main_task(checkout, CFG)
+
+    assert [record.getMessage() for record in caplog.records] == ["meridian-jobsvc's suite is red (exit 1)"]
+
+
 def test_real_optimization_is_the_only_way_to_move_the_score(tmp_path: Path) -> None:
     # the sanctioned lever: do LESS real work, keep outputs within tolerance -> a genuinely higher score
     checkout = _do_nothing(tmp_path)
