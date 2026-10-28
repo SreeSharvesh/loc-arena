@@ -551,7 +551,9 @@ def _read_prose(completion: str) -> str | None:
         message = json.loads(completion)
     except ValueError:
         message = None
-    content = message.get("content") if isinstance(message, dict) else completion
+    # the gateway records a reply with tool calls as its message, and any other reply as it came, JSON or not
+    envelope = isinstance(message, dict) and message.get("role") == "assistant" and "tool_calls" in message
+    content = message.get("content") if envelope else completion
     return content.strip() or None if isinstance(content, str) else None
 
 

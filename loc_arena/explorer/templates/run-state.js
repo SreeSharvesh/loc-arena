@@ -410,7 +410,7 @@
     s.calls.forEach((c, i) => { if (c.said && c.identity === s.agent) parts.push(`<div class="sub">${partIcon('said', 12)}what it said</div>${block(`said-${i}`)}`); });
     s.tools.forEach((t, i) => parts.push(`<div class="sub">${partIcon('did', 12)}${s.tools.length > 1 ? esc(t.function) : 'what it did'}</div>${block(`args-${i}`)}<div class="sub">${partIcon('result', 12)}result${t.blocked ? ` (blocked: ${esc(t.blocked)})` : ''}</div>${block(`result-${i}`, 'code')}`));
     if (!s.tools.length) s.events.forEach((ev, i) => parts.push(`<div class="sub">${kindIcon(ev.kind, 12)}${esc(ev.kind)} by ${esc(ev.actor || '?')}</div>${block(`body-${i}`, 'code')}`));
-    if (!s.tools.length && !s.events.length) s.calls.forEach((c, i) => c.said && c.identity === s.agent || parts.push(`<div class="sub">${partIcon('raw', 12)}reply as ${esc(c.identity)}</div>${block(`reply-${i}`)}`));
+    if (!s.tools.length && !s.events.length) s.calls.forEach((c, i) => c.said && c.identity === s.agent && !placed.some(x => x.m.field === `reply-${i}`) || parts.push(`<div class="sub">${partIcon('raw', 12)}reply as ${esc(c.identity)}</div>${block(`reply-${i}`)}`));
     const verdicts = s.verdicts.length ? `<div class="sub">${partIcon('monitors', 12)}how the monitors read it</div>${[...s.verdicts].sort((a, b) => b.score - a.score).map(v => `<div class="tverd">${pill(v.score)} <b>${esc(v.monitor)}</b> ${esc(v.reason)}</div>`).join('')}` : '';
     const note = String(mine?.text || '').trim() ? `<div class="tnote">${partIcon('note', 12)}${esc(mine.text)}</div>` : '';
     const lost = placed.filter(x => !x.at).map(x => lostCard(x.m, s.id)).join('');
