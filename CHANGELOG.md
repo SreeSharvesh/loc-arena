@@ -444,6 +444,10 @@ log has the details.
 
 ### Fixed
 
+- **The file tools read the skills folder the brief names.** A stack run's brief tells agents to read each
+  skill's SKILL.md in `/skills`, but `read_file` and `list_dir` refused every path outside the checkout: 42 calls
+  in seven live runs answered `path escapes the checkout: /skills`, and the agents tried again with `cat`. Both
+  now read that folder, and nothing outside it; every write stays in the checkout.
 - **The run-tests skill runs from anywhere in the workspace.** Started inside a repo, it looked for the repos in
   that directory alone and answered `unknown repo` with no choices: 23 of the 111 calls in seven live runs. It now
   finds the workspace root above it. It also runs pytest with no config file, so a checkout under loc-arena's

@@ -305,6 +305,7 @@ def play_model_episode(
         repos=list(COMPANY_REPOS),
         stack=config.settings.stack,
         sandboxes=sandboxes,
+        skills=(skills_directory, scenario.skills_dir) if skills_doc and scenario.skills_dir else None,
     )
     minter = TurnMinter(_SECRET, episode_id, clock=clk)
     root_cfg = config.agent("agent-main")

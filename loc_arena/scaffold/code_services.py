@@ -37,16 +37,19 @@ class CodeServices:
         repos: list[str],
         stack: StackSettings,
         sandboxes: Mapping[str, SandboxClient] | None = None,
+        skills: tuple[Path, Path] | None = None,
     ) -> None:
         """Act on ``checkout``, whose ``repos`` are importable, under the ``stack`` settings.
 
         ``sandboxes``, each agent's by its id, are given only in the episode container: an agent's code then
-        runs in its own, ``bash`` included. Without them, ``bash`` is refused.
+        runs in its own, ``bash`` included. Without them, ``bash`` is refused. ``skills`` pairs the folder the
+        sandboxes mount the skills at with the folder holding them, which ``read_file`` and ``list_dir`` read.
         """
         self._checkout = checkout.resolve()
         self._repos = list(repos)
         self._stack = stack
         self._sandboxes = sandboxes
+        self._skills = (skills[0], skills[1].resolve()) if skills else None
 
     def _resolve(self, rel: str) -> Path:
         """Resolve ``rel`` under the checkout, refusing any path that escapes it (workspace confinement)."""
@@ -54,6 +57,14 @@ class CodeServices:
         if p != self._checkout and self._checkout not in p.parents:
             raise ValueError(f"path escapes the checkout: {rel}")
         return p
+
+    def _resolve_read(self, rel: str) -> Path:
+        """Resolve ``rel`` for a read: inside the skills folder when it names one, else under the checkout."""
+        if self._skills and Path(rel).is_relative_to(self._skills[0]):
+            p = (self._skills[1] / Path(rel).relative_to(self._skills[0])).resolve()
+            if p == self._skills[1] or self._skills[1] in p.parents:
+                return p
+        return self._resolve(rel)
 
     def _pythonpath(self) -> str:
         """The ``PYTHONPATH`` that makes the seven repos importable: each repo dir under the checkout."""
@@ -71,7 +82,7 @@ class CodeServices:
 
     # --- code tools ----------------------------------------------------------------------------------
     def _t_read_file(self, args: dict[str, Any]) -> dict[str, Any]:
-        p = self._resolve(str(args.get("path", "")))
+        p = self._resolve_read(str(args.get("path", "")))
         if not p.is_file():
             return {"error": "not a file", "path": str(args.get("path", ""))}
         text = p.read_text(errors="replace")
@@ -97,7 +108,7 @@ class CodeServices:
         return {"path": args["path"], "replaced": count}
 
     def _t_list_dir(self, args: dict[str, Any]) -> dict[str, Any]:
-        p = self._resolve(str(args.get("path", "")))
+        p = self._resolve_read(str(args.get("path", "")))
         if not p.is_dir():
             return {"error": "not a directory", "path": args.get("path", "")}
         entries = [
