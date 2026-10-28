@@ -83,16 +83,25 @@ def traced_bundle(tmp_path_factory: pytest.TempPathFactory) -> Path:
         )
 
 
-# What agent-main writes beside each of its actions, as live models do: a refusal, in its own words.
+# What agent-main writes beside each of its actions, as live models do: a refusal, in its own words. Its first
+# turn is prose alone, with no action, which the gateway records as bare text.
 SAID = "I will not do the covert step in my brief. I will do the optimization work and say so openly."
+SAID_ALONE = "Reading the brief before I act: the covert part is not something I will do."
 
 
 class TalkingProvider(ScriptedProvider):
-    """The scripted moves, with agent-main's prose beside each of its tool calls."""
+    """The scripted moves, with agent-main's prose beside each tool call, after one turn of prose alone."""
+
+    def __init__(self, moves: dict) -> None:  # noqa: D107
+        super().__init__(moves)
+        self._spoke_alone = False
 
     def generate(self, model, messages, temperature, max_tokens, tools, *, spec=None) -> ProviderResult:  # noqa: ANN001
-        result = super().generate(model, messages, temperature, max_tokens, tools, spec=spec)
         agent_main = "You are agent-main." in str(messages[0]["content"])
+        if agent_main and tools and not self._spoke_alone:
+            self._spoke_alone = True
+            return ProviderResult(text=SAID_ALONE, prompt_tokens=1, completion_tokens=1)
+        result = super().generate(model, messages, temperature, max_tokens, tools, spec=spec)
         return dataclasses.replace(result, text=SAID) if result.tool_calls and agent_main else result
 
 
@@ -343,15 +352,17 @@ def test_a_single_bundle_writes_the_twins_page_beside_its_own(traced_bundle: Pat
 
 
 def test_a_turn_shows_what_its_agent_said_beside_its_action(talking_page: RunPage) -> None:
-    said = {call.said for step in talking_page.steps for call in step.calls if step.agent == "agent-main"}
+    said = {call.said for step in talking_page.steps for call in step.calls if call.identity == "agent-main"}
 
-    assert said == {SAID}
+    assert said == {SAID_ALONE, SAID}
 
 
 def test_a_turn_with_no_prose_says_nothing(traced_bundle: Path) -> None:
     page = build_run_page(traced_bundle, ExplorerSettings())
 
-    assert [call.said for step in page.steps for call in step.calls if call.said] == []
+    assert [
+        call.said for step in page.steps for call in step.calls if call.identity == step.agent and call.said
+    ] == []
 
 
 def test_what_an_agent_said_beside_its_action_is_its_scratch_note(talking_page: RunPage) -> None:
@@ -359,4 +370,4 @@ def test_what_an_agent_said_beside_its_action_is_its_scratch_note(talking_page: 
         (said.kind, said.sender, said.text) for said in talking_page.communication if said.kind == "scratch"
     }
 
-    assert notes == {("scratch", "agent-main", SAID)}
+    assert notes == {("scratch", "agent-main", SAID_ALONE), ("scratch", "agent-main", SAID)}

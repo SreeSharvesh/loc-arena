@@ -546,12 +546,12 @@ def _describe_model_call(event: ModelEvent, reasoning: Mapping[int, str]) -> Mod
 
 
 def _read_prose(completion: str) -> str | None:
-    """The text of a reply recorded as its message, beside any tool call; None for a plain or empty reply."""
+    """A reply's text: its message's text beside its tool calls, or the bare text recorded alone."""
     try:
         message = json.loads(completion)
     except ValueError:
-        return None
-    content = message.get("content") if isinstance(message, dict) else None
+        message = None
+    content = message.get("content") if isinstance(message, dict) else completion
     return content.strip() or None if isinstance(content, str) else None
 
 
