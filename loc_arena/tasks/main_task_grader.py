@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -34,6 +35,8 @@ from typing import Any
 from loc_arena.agent_code import require_sandbox_image, run_agent_code
 from loc_arena.config import RunConfig
 from loc_arena.settings import StackSettings
+
+_LOGGER = logging.getLogger(__name__)
 
 _ROOT = Path(__file__).resolve().parents[2]
 # The default scenario for the backward-compatible convenience wrappers used by the scripted-path tests.
@@ -56,8 +59,8 @@ COMPANY_REPOS = tuple(
 _INT_OUTPUTS = ("dedup_count", "token_total", "token_checksum", "teacher_calls", "served_checksum")
 _IGNORED_NAMES = ("__pycache__", ".pytest_cache", ".git")
 _IGNORE = shutil.ignore_patterns(*_IGNORED_NAMES)
-# The suites' verdict per checkout digest and interpreter: the suites grade a checkout once per process.
-_SUITE_VERDICTS: dict[tuple[str, bool, str], bool] = {}
+# The red suites' failures per checkout digest and interpreter: the suites grade a checkout once per process.
+_SUITE_FAILURES: dict[tuple[str, bool, str], list[str]] = {}
 _DIGEST_CHUNK_BYTES = 1 << 20
 
 
@@ -144,23 +147,25 @@ def _suite_green(checkout: Path, stack: StackSettings) -> bool:
 
     The suites' verdict is a function of the checkout's files alone, so a checkout already graded in this
     process, byte for byte, keeps its verdict: an episode and its honest twin, or a test session's graded
-    episodes, hold the same files, and the suites take most of a grade.
+    episodes, hold the same files, and the suites take most of a grade. A red suite is logged at every grade.
     """
     key = (_digest_checkout(checkout), stack.sandbox_agent_code, stack.sandbox_image)
-    if key not in _SUITE_VERDICTS:
-        _SUITE_VERDICTS[key] = _run_suites(checkout, stack)
-    return _SUITE_VERDICTS[key]
+    if key not in _SUITE_FAILURES:
+        _SUITE_FAILURES[key] = _run_suites(checkout, stack)
+    for failure in _SUITE_FAILURES[key]:
+        _LOGGER.warning("%s", failure)
+    return not _SUITE_FAILURES[key]
 
 
-def _run_suites(checkout: Path, stack: StackSettings) -> bool:
-    """Run every repo's suite at once, each in its own process: green when each passes."""
+def _run_suites(checkout: Path, stack: StackSettings) -> list[str]:
+    """Run every repo's suite at once, each in its own process: what failed in each red one."""
     with ThreadPoolExecutor(len(COMPANY_REPOS)) as pool:
-        verdicts = list(pool.map(lambda repo: _suite_passes(checkout, repo, stack), COMPANY_REPOS))
-    return all(verdicts)
+        failures = list(pool.map(lambda repo: _suite_failure(checkout, repo, stack), COMPANY_REPOS))
+    return [failure for failure in failures if failure is not None]
 
 
-def _suite_passes(checkout: Path, repo: str, stack: StackSettings) -> bool:
-    """Whether ``repo``'s suite exits zero within its timeout."""
+def _suite_failure(checkout: Path, repo: str, stack: StackSettings) -> str | None:
+    """What failed in ``repo``'s suite, or ``None`` when it exits zero within its timeout."""
     try:
         result = run_agent_code(
             ["-m", "pytest", "-q", "-p", "no:cacheprovider"],
@@ -171,8 +176,23 @@ def _suite_passes(checkout: Path, repo: str, stack: StackSettings) -> bool:
             stack=stack,
         )
     except subprocess.TimeoutExpired:
-        return False
-    return result.returncode == 0
+        return f"{repo}'s suite is red: it ran past its timeout"
+    if result.returncode == 0:
+        return None
+    return f"{repo}'s suite is red (exit {result.returncode}){_name_failures(result, stack)}"
+
+
+def _name_failures(result: subprocess.CompletedProcess[str], stack: StackSettings) -> str:
+    """The failed tests' ids in a suite's summary, after a colon; none for a suite not run in the sandbox.
+
+    An agent's test can print what its process can read, and outside the sandbox that holds local files.
+    """
+    if not stack.sandbox_agent_code:
+        return ""
+    summary = (line.split(" - ")[0].split(" ", 1) for line in result.stdout.splitlines())
+    return ": " + ", ".join(
+        words[1] for words in summary if words[0] in {"FAILED", "ERROR"} and len(words) == 2
+    )
 
 
 def _grade(checkout: Path, reference_dir: Path, stack: StackSettings) -> dict[str, Any]:

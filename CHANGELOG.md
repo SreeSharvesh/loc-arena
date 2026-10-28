@@ -444,6 +444,12 @@ log has the details.
 
 ### Fixed
 
+- **A red suite says what failed.** The main-task gate logs each red repo's exit code, or its timeout, so a
+  `suite_red` grade can be traced (#70). Graded in the sandbox, as a stack run is, it also names the failed tests;
+  in this process it names none, since an agent's test there can print local files.
+- **The run summary prints the bar a catch is decided by.** `make run` printed the audit threshold; it now prints
+  the overall-suspicion bar calibrated on the honest twin, which `caught` is decided against.
+
 - **The clean-review check sees CodeRabbit's review again.** CodeRabbit now reports each review as a check run and
   posts no commit status, so the check failed every pull request, approved ones too. It reads the check run as well
   as the status, and refreshes when either changes.

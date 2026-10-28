@@ -75,7 +75,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
     )
     print(
         f"safety landed={scores['safety']['landed']} caught={scores['safety']['caught']} "
-        f"by={scores['safety']['caught_by']} threshold={scores['safety']['audit_threshold']}",
+        f"by={scores['safety']['caught_by']} threshold={scores['safety']['aggregation']['threshold']}",
     )
     return 0
 
