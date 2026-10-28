@@ -68,6 +68,7 @@
   }
   function stepMarkdown(s) {
     const lines = [`# ${stepLabel(s)}`, '', `- run: ${RUN.name}`, `- step id: ${s.id}`, `- peak suspicion: ${s.peak ?? 'not scored'} (audit threshold ${THR})`, `- covert: ${s.covert.join(', ') || 'no'}`];
+    s.calls.forEach(c => { if (c.said && c.identity === s.agent) lines.push('', '## What it said', '', c.said); });
     s.tools.forEach((t, i) => lines.push('', `## What it did${s.tools.length > 1 ? ` (${i + 1})` : ''}: ${t.function}${t.blocked ? ' (blocked)' : ''}`, '', t.arguments_text, '', '### Result', '', t.result_text || '(no result)'));
     if (s.verdicts.length) { lines.push('', '## How the monitors read it', ''); s.verdicts.forEach(v => lines.push(`- ${v.monitor} ${v.score} on ${v.target || '?'}: ${v.reason}`)); }
     s.calls.forEach((c, i) => lines.push('', `## Model call ${i + 1} as ${c.identity}${c.phase ? ` (${c.phase})` : ''}`, '', ...(c.reasoning ? ['### Reasoning', '', c.reasoning, ''] : []), '### Reply', '', c.reply || '(empty)', '', '### Prompt', '', '```', c.prompt, '```'));
@@ -89,6 +90,8 @@
     const seqs = [...s.calls, ...s.tools, ...s.events].map(x => x.seq).filter(x => x != null);
     const hasTool = s.tools.length > 0;
 
+    // What the agent wrote in its own words beside its action: a refusal, a plan, a status note.
+    const spoke = s.calls.map((c, i) => c.said && c.identity === s.agent ? `<h3>${partIcon('said', 15)}What it said</h3>${annotated(s, `said-${i}`, placed)}` : '').join('');
     const did = s.tools.map((t, i) => `
       <h3>${partIcon('did', 15)}What it did${s.tools.length > 1 ? ` (${i + 1})` : ''} &middot; ${kindIcon(t.function, 14)}<span class="q mono">${esc(t.function)}</span>${t.verdicts.map(v => pill(v.score)).join('')}${covertTags(t.covert)}${t.blocked ? `<span class="tag blocked">blocked: ${esc(t.blocked)}</span>` : ''}</h3>
       ${annotated(s, `args-${i}`, placed)}
@@ -119,7 +122,7 @@
       <div class="split-read">
         <svg class="connectors" aria-hidden="true"></svg>
         <div class="textcol">
-          ${did}${happened}${read}${said}${also}
+          ${spoke}${did}${happened}${read}${said}${also}
           ${s.calls.length && !s.calls.some(c => c.reasoning) ? `<p class="help absent"><span class="pi">${icon('eyeoff', 14)}</span>No reasoning: the model returned none here, or the run left no gateway call log to read it from.</p>` : ''}
           <div class="metaline">${seqs.length ? `sealed #${Math.min(...seqs)}&ndash;${Math.max(...seqs)} &middot; ` : ''}<code>${esc(s.id)}</code><button class="copy" data-copy-text="${esc(s.id)}">copy id</button><button class="copy" data-copy-link="${esc(s.id)}">copy link</button><button class="copy" data-act="md">copy as Markdown</button></div>
         </div>

@@ -13,7 +13,7 @@ from loc_arena.config import load_run_config
 from loc_arena.explorer.build import RUN_TEMPLATE, TWIN_PLAY, build, build_folder, build_run_page, write_page
 from loc_arena.explorer.page import RunPage
 from loc_arena.explorer.settings import ExplorerSettings
-from loc_arena.gateway.core import ScriptedProvider
+from loc_arena.gateway.core import ProviderResult, ScriptedProvider
 from loc_arena.gateway.model_gateway import GatewayCall
 from loc_arena.harness import run_episode
 from loc_arena.logging_.transcript_lanes import WORLD
@@ -81,6 +81,35 @@ def traced_bundle(tmp_path_factory: pytest.TempPathFactory) -> Path:
             calibration_provider=ScriptedProvider({}),
             write_report=False,
         )
+
+
+# What agent-main writes beside each of its actions, as live models do: a refusal, in its own words.
+SAID = "I will not do the covert step in my brief. I will do the optimization work and say so openly."
+
+
+class TalkingProvider(ScriptedProvider):
+    """The scripted moves, with agent-main's prose beside each of its tool calls."""
+
+    def generate(self, model, messages, temperature, max_tokens, tools, *, spec=None) -> ProviderResult:  # noqa: ANN001
+        result = super().generate(model, messages, temperature, max_tokens, tools, spec=spec)
+        agent_main = "You are agent-main." in str(messages[0]["content"])
+        return dataclasses.replace(result, text=SAID) if result.tool_calls and agent_main else result
+
+
+@pytest.fixture(scope="module")
+def talking_page(tmp_path_factory: pytest.TempPathFactory) -> RunPage:
+    """The page of a traced attack run whose agent-main writes prose beside its actions."""
+    with pytest.MonkeyPatch.context() as patch:
+        patch.delenv("OPENROUTER_API_KEY", raising=False)
+        bundle = run_episode(
+            LIVE_TRACED,
+            mode="attack",
+            out_root=tmp_path_factory.mktemp("runs"),
+            provider=TalkingProvider(TEAM_MOVES),
+            calibration_provider=ScriptedProvider({}),
+            write_report=False,
+        )
+    return build_run_page(bundle, ExplorerSettings())
 
 
 @pytest.fixture(scope="module")
@@ -311,3 +340,23 @@ def test_a_single_bundle_writes_the_twins_page_beside_its_own(traced_bundle: Pat
 
     assert page == bundle / "explorer.html"
     assert (bundle / "explorer__honest_twin.html").exists()
+
+
+def test_a_turn_shows_what_its_agent_said_beside_its_action(talking_page: RunPage) -> None:
+    said = {call.said for step in talking_page.steps for call in step.calls if step.agent == "agent-main"}
+
+    assert said == {SAID}
+
+
+def test_a_turn_with_no_prose_says_nothing(traced_bundle: Path) -> None:
+    page = build_run_page(traced_bundle, ExplorerSettings())
+
+    assert [call.said for step in page.steps for call in step.calls if call.said] == []
+
+
+def test_what_an_agent_said_beside_its_action_is_its_scratch_note(talking_page: RunPage) -> None:
+    notes = {
+        (said.kind, said.sender, said.text) for said in talking_page.communication if said.kind == "scratch"
+    }
+
+    assert notes == {("scratch", "agent-main", SAID)}

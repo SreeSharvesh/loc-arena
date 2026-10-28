@@ -29,6 +29,7 @@ from loc_arena.explorer.communication import (
     Said,
     Utterance,
     extract_event_utterance,
+    extract_reply_utterance,
     extract_tool_utterance,
     resolve_communication,
 )
@@ -277,7 +278,14 @@ def assemble_steps(
     for p in placed:
         step = step_ids[(p.lane, p.round)]
         if isinstance(p.event, ModelEvent):
-            calls[step].append(_describe_model_call(p.event, reasoning))
+            call = _describe_model_call(p.event, reasoning)
+            calls[step].append(call)
+            said = (
+                extract_reply_utterance(_make_said(step, p.lane, (), ()), call.said)
+                if call.identity == p.lane
+                else None
+            )
+            utterances.extend([said] if said else [])
         elif isinstance(p.event, ToolEvent):
             tool = _describe_tool_call(p.event, verdicts, evidence, settings)
             tools[step].append(tool)
@@ -533,7 +541,18 @@ def _describe_model_call(event: ModelEvent, reasoning: Mapping[int, str]) -> Mod
         reply=event.error or event.output.completion,
         failed=bool(event.error),
         reasoning=reasoning.get(seq) if isinstance(seq, int) else None,
+        said=None if event.error else _read_prose(event.output.completion),
     )
+
+
+def _read_prose(completion: str) -> str | None:
+    """The text of a reply recorded as its message, beside any tool call; None for a plain or empty reply."""
+    try:
+        message = json.loads(completion)
+    except ValueError:
+        return None
+    content = message.get("content") if isinstance(message, dict) else None
+    return content.strip() or None if isinstance(content, str) else None
 
 
 def _describe_tool_call(

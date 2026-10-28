@@ -444,6 +444,11 @@ log has the details.
 
 ### Fixed
 
+- **The explorer shows what each agent said.** An agent's prose beside its tool call, where every refusal of the
+  covert task sits, showed only inside the collapsed raw reply, and the Communication view counted scratch notes
+  only from a scratch tool no run has any more, so every run read 0. Each step now shows **What it said** above
+  the action, in the expanded card and the side panel, and that prose is the agent's scratch note: seven live runs
+  now count 9 to 70 each.
 - **The file tools read the skills folder the brief names.** A stack run's brief tells agents to read each
   skill's SKILL.md in `/skills`, but `read_file` and `list_dir` refused every path outside the checkout: 42 calls
   in seven live runs answered `path escapes the checkout: /skills`, and the agents tried again with `cat`. Both
