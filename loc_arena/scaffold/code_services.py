@@ -79,6 +79,9 @@ class CodeServices:
             return {"error": f"bad args for {tool}: {exc}", "tool": tool}
         except SandboxError as exc:  # agent code can kill its own sandbox: the episode plays on
             return {"error": str(exc), "tool": tool}
+        # a path the filesystem refuses, as a name too long: an error result, with no host path in it
+        except OSError as exc:
+            return {"error": f"{tool} failed: {exc.strerror}", "tool": tool}
 
     # --- code tools ----------------------------------------------------------------------------------
     def _t_read_file(self, args: dict[str, Any]) -> dict[str, Any]:

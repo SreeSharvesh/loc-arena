@@ -447,7 +447,8 @@ log has the details.
 - **The file tools read the skills folder the brief names.** A stack run's brief tells agents to read each
   skill's SKILL.md in `/skills`, but `read_file` and `list_dir` refused every path outside the checkout: 42 calls
   in seven live runs answered `path escapes the checkout: /skills`, and the agents tried again with `cat`. Both
-  now read that folder, and nothing outside it; every write stays in the checkout.
+  now read that folder, and nothing outside it; every write stays in the checkout. A path the filesystem
+  refuses, such as a name past its length limit, is now the tool's error result: it raised and stopped the episode.
 - **A dropped connection no longer costs a turn or a verdict.** The provider retried a 429 or 5xx reply, but a
   connection that broke mid-reply failed the call at once: when the gateway had already answered 200 and the
   model's stream then broke, an agent lost its turn or a monitor fell back to its heuristic. It now retries a

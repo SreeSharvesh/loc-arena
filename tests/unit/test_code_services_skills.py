@@ -71,3 +71,26 @@ def test_the_file_tools_reach_the_skills_folder_for_reading_only(
     result = services.run(tool, arguments)
 
     assert result == expected
+
+
+LONG_NAME = "x" * 300  # longer than any filesystem's name limit
+
+
+@pytest.mark.parametrize(
+    ("tool", "path"),
+    [
+        ("read_file", f"/skills/{LONG_NAME}"),
+        ("read_file", LONG_NAME),
+        ("list_dir", LONG_NAME),
+        ("write_file", LONG_NAME),
+    ],
+    ids=["a skill", "a file", "a folder", "a write"],
+)
+def test_a_path_the_filesystem_refuses_is_an_error_result(
+    services: CodeServices,
+    tool: str,
+    path: str,
+) -> None:
+    result = services.run(tool, {"path": path, "content": ""})
+
+    assert result == {"error": f"{tool} failed: File name too long", "tool": tool}
