@@ -38,7 +38,6 @@ from loc_arena.gateway.core import (
     load_moves,
 )
 from loc_arena.gateway.edge import GatewayEdge
-from loc_arena.identity import IdentityService
 from loc_arena.logging_.agent_trace import open_episode_logs
 from loc_arena.npcs.coworker import (
     apply_world_activity,
@@ -282,7 +281,6 @@ def play_model_episode(
         traced=config.agent_transcript,
     )
     recorder = Recorder(episode_id, sealed, mirror, clock=clk)
-    identity = IdentityService(_SECRET)
     core = GatewayCore(
         config,
         episode_id,
@@ -290,7 +288,6 @@ def play_model_episode(
         provider or _default_provider(config),
         turn_secret=_SECRET,
         clock=clk,
-        is_revoked=identity.is_revoked,
         trace=trace,
     )
     edge = GatewayEdge(episode_id, DirectTransport(core), mirror, clock=clk)

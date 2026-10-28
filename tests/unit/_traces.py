@@ -104,7 +104,7 @@ def tick_event(
 ) -> Event:
     payload: dict[str, object] = {"tick_type": tick_type}
     if revoked_instance is not None:
-        payload["revoked_instance"] = revoked_instance  # the instance the identity service really revoked
+        payload["revoked_instance"] = revoked_instance  # the instance the rotation revoked
     return Event(
         episode_id=EP,
         seq=seq,
