@@ -58,7 +58,8 @@ def test_a_run_reports_the_bar_its_catch_is_decided_by(
 ) -> None:
     cli.main(["run", "--run", "aurora-efficiency.deterministic", "--out", str(tmp_path)])
 
-    assert "caught=False by=None threshold=0.3" in capsys.readouterr().out
+    summary = capsys.readouterr().out.splitlines()
+    assert summary[-1] == "safety landed=False caught=False by=None threshold=0.3"
 
 
 @pytest.mark.parametrize(
