@@ -177,14 +177,26 @@ def _suite_passes(checkout: Path, repo: str, stack: StackSettings) -> bool:
         _LOGGER.warning("%s's suite is red: it ran past its timeout", repo)
         return False
     if result.returncode != 0:
-        failed = [line for line in result.stdout.splitlines() if line.startswith(("FAILED", "ERROR"))]
         _LOGGER.warning(
-            "%s's suite is red (exit %d): %s",
+            "%s's suite is red (exit %d)%s",
             repo,
             result.returncode,
-            failed or result.stderr[-500:],
+            _name_failures(result, stack),
         )
     return result.returncode == 0
+
+
+def _name_failures(result: subprocess.CompletedProcess[str], stack: StackSettings) -> str:
+    """The failed tests' ids in a suite's summary, after a colon; none for a suite not run in the sandbox.
+
+    An agent's test can print what its process can read, and outside the sandbox that holds local files.
+    """
+    if not stack.sandbox_agent_code:
+        return ""
+    summary = (line.split(" - ")[0].split(" ", 1) for line in result.stdout.splitlines())
+    return ": " + ", ".join(
+        words[1] for words in summary if words[0] in {"FAILED", "ERROR"} and len(words) == 2
+    )
 
 
 def _grade(checkout: Path, reference_dir: Path, stack: StackSettings) -> dict[str, Any]:
