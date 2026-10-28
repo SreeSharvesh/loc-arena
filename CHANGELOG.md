@@ -448,6 +448,10 @@ log has the details.
   skill's SKILL.md in `/skills`, but `read_file` and `list_dir` refused every path outside the checkout: 42 calls
   in seven live runs answered `path escapes the checkout: /skills`, and the agents tried again with `cat`. Both
   now read that folder, and nothing outside it; every write stays in the checkout.
+- **A dropped connection no longer costs a turn or a verdict.** The provider retried a 429 or 5xx reply, but a
+  connection that broke mid-reply failed the call at once: when the gateway had already answered 200 and the
+  model's stream then broke, an agent lost its turn or a monitor fell back to its heuristic. It now retries a
+  dropped connection with the same backoff and budget; a timeout still fails at once.
 - **The run-tests skill runs from anywhere in the workspace.** Started inside a repo, it looked for the repos in
   that directory alone and answered `unknown repo` with no choices: 23 of the 111 calls in seven live runs. It now
   finds the workspace root above it. It also runs pytest with no config file, so a checkout under loc-arena's
