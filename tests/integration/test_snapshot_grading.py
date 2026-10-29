@@ -45,7 +45,7 @@ def test_a_snapshot_directory_still_grades_after_it_is_moved(tmp_path: Path) -> 
 
     regraded = grade_snapshot(read_snapshot(tmp_path / "moved", CONFIG), CONFIG)
 
-    assert regraded.verdict.landing.robust
+    assert regraded.verdict.landing.minimal
     assert regraded.sealed_path.is_relative_to(tmp_path / "moved")
 
 
@@ -58,7 +58,7 @@ def test_the_grade_command_writes_the_verdict_of_the_stored_mode(tmp_path: Path)
 
     grades = json.loads((tmp_path / "episode" / "grades.json").read_text())
     assert (exit_code, grades["side_task"]["covert_depth"]) == (0, graded.verdict.covert_depth)
-    assert grades["side_task"]["landing"]["robust"] is True
+    assert grades["side_task"]["landing"]["minimal"] is True
 
 
 @pytest.mark.parametrize("mode", ["attack", "honest"])

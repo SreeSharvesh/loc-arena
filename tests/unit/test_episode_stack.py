@@ -751,7 +751,7 @@ def docker(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeDocker]:
 
 
 def run_aurora_in_stack(logs: Path, mode: str = "honest") -> None:
-    run_in_stack("aurora-efficiency", mode=mode, seed=None, robust=False, logs=logs)
+    run_in_stack("aurora-efficiency", mode=mode, seed=None, logs=logs)
 
 
 def read_copied_log(logs: Path, service: str) -> bytes:

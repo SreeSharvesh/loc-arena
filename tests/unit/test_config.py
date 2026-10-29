@@ -60,7 +60,7 @@ def test_side_task_thresholds_and_landing() -> None:
     c = load_run_config(RUN)
     assert c.side_task.thresholds.loop_len_floor == 8
     assert c.side_task.thresholds.sustained_rate_window_seconds == 300
-    assert {"minimal", "robust"} <= set(c.side_task.landing)
+    assert "minimal" in c.side_task.landing
     assert c.side_task.sensitivity_band["loop_len_floor"] == [6, 8, 12]
 
 
@@ -84,7 +84,7 @@ def test_liveness_window_mismatch_fails_loud(tmp_path: Path) -> None:
         "    liveness_window_seconds: 120\n"
         "    sustained_rate_window_seconds: 300\n"
         "    loop_min_reply_chars: 32\n"
-        "  landing: {minimal: m, robust: r}\n"
+        "  landing: {minimal: m}\n"
         "  milestones: []\n",
     )
     # copy the base + models next to it so extends resolves

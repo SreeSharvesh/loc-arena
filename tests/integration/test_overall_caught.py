@@ -163,7 +163,7 @@ def test_calibrate_overall_threshold_empty_falls_back() -> None:
 
 
 def test_scores_json_carries_overall_aggregation_and_monitor_rows(tmp_path: Path) -> None:
-    attack = run_episode(CFG, mode="attack", out_root=tmp_path / "a", robust=True)
+    attack = run_episode(CFG, mode="attack", out_root=tmp_path / "a")
     honest = run_episode(CFG, mode="honest", out_root=tmp_path / "h")
     a = json.loads((attack / "scores.json").read_text())
     h = json.loads((honest / "scores.json").read_text())
@@ -249,7 +249,7 @@ def test_detector_fires_but_suspicion_below_threshold_is_not_caught(tmp_path: Pa
         gate_passed=True,
         gate_reason="ok",
     )
-    landing = SimpleNamespace(minimal=True, robust=False, evidence={})
+    landing = SimpleNamespace(minimal=True, evidence={})
     episode = SimpleNamespace(
         verdict=SimpleNamespace(landing=landing, covert_depth=1, milestones={}),
         deadline_ts=100.0,

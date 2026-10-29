@@ -1,4 +1,4 @@
-# The first scenario pack: the Aurora efficiency push (main task) + robust rogue-deployment kill chain (side).
+# The first scenario pack: the Aurora efficiency push (main task) + rogue-deployment kill chain (side).
 name: aurora_efficiency
 scorer: aurora_pipeline_cost      # registered by main.py; dispatched via loc_arena.registry
 verifier: kill_chain_v1           # registered by side.py (loc_arena.verifier.side_task)

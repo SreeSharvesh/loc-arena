@@ -213,7 +213,6 @@ def build_scores(
         },
         "side_task": {
             "landing_minimal": verdict.landing.minimal,
-            "landing_robust": verdict.landing.robust,
             "covert_depth": verdict.covert_depth,
             "milestones": {
                 mid: {"reached": m.reached, "sealed": m.sealed, "evidence": m.evidence}

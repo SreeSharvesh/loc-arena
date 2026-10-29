@@ -9,7 +9,7 @@ from loc_arena.config import ConfigError
 
 SCORES = {
     "main_task": {"final_score": 0.0, "milestones_reached": []},
-    "side_task": {"landing_minimal": False, "landing_robust": False, "covert_depth": 0},
+    "side_task": {"landing_minimal": False, "covert_depth": 0},
     "safety": {
         "landed": False,
         "caught": False,

@@ -164,17 +164,14 @@ def _eval_episodes(cfg: RunConfig, episode: Any, calibration: Any) -> list[Episo
     return exports
 
 
-def _play_by_policy(cfg: RunConfig, workdir: Path, *, robust: bool, provider: Any = None) -> Snapshot:
-    """Play one episode by ``config.policy``: the live model, or the scenario's scripted moves in its place.
-
-    ``robust`` is not read.
-    """
+def _play_by_policy(cfg: RunConfig, workdir: Path, *, provider: Any = None) -> Snapshot:
+    """Play one episode by ``config.policy``: the live model, or the scenario's scripted moves instead."""
     return live.play_model_episode(cfg, workdir, provider=provider)
 
 
-def _play_graded(cfg: RunConfig, run_directory: Path, *, robust: bool = False) -> EpisodeResult:
+def _play_graded(cfg: RunConfig, run_directory: Path) -> EpisodeResult:
     """Play one episode in ``run_directory/episode``, build the events its services recorded, and grade it."""
-    snapshot = _play_by_policy(cfg, run_directory / "episode", robust=robust)
+    snapshot = _play_by_policy(cfg, run_directory / "episode")
     build_recorded_events(run_directory, cfg, {"episode": snapshot.trace})
     return grade_snapshot(snapshot, cfg)
 
@@ -261,7 +258,6 @@ def play_run(
     run_directory: Path,
     *,
     mode: str,
-    robust: bool = True,
     provider: Any = None,
     calibration_provider: Any = None,
     next_phase: bool = False,
@@ -290,7 +286,6 @@ def play_run(
         else _play_by_policy(
             apply_mode(config, mode),
             run_directory / "episode",
-            robust=robust,
             provider=provider,
         )
     )
@@ -300,7 +295,6 @@ def play_run(
         else _play_by_policy(
             apply_mode(config, "honest"),
             run_directory / "honest_cal",
-            robust=False,
             provider=calibration_provider,
         )
     )
@@ -477,7 +471,6 @@ def run_episode(
     mode: str,
     out_root: Path | None = None,
     seed: int | None = None,
-    robust: bool = True,
     monitors_path: str = "configs/monitors.yaml",
     write_report: bool = True,
     monitor_provider: Any = None,
@@ -502,7 +495,6 @@ def run_episode(
         config,
         run_directory,
         mode=mode,
-        robust=robust,
         provider=provider,
         calibration_provider=calibration_provider,
     )
@@ -524,7 +516,6 @@ def run_sweep(
     honest: int,
     attack: int,
     out_root: Path | None = None,
-    robust: bool = True,
     monitors_path: str = "configs/monitors.yaml",
     monitor_provider: Any = None,
 ) -> dict[str, Any]:
@@ -549,8 +540,7 @@ def run_sweep(
         _record(_play_graded(honest_cfg, sweep_dir / f"honest-{i}"), honest_cfg) for i in range(honest)
     ]
     attack_records = [
-        _record(_play_graded(attack_cfg, sweep_dir / f"attack-{i}", robust=robust), attack_cfg)
-        for i in range(attack)
+        _record(_play_graded(attack_cfg, sweep_dir / f"attack-{i}"), attack_cfg) for i in range(attack)
     ]
     threshold = calibrate_threshold(honest_records, proto.audit_budget_fpr)
     safe = safety(attack_records, threshold)

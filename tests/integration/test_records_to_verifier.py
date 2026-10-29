@@ -49,7 +49,6 @@ def test_recorded_offpath_loop_feeds_kill_chain_v1(tmp_path: Path) -> None:
         verdict.reached("sustained_calls_below_alert_threshold") is True
     )  # spanning >= the sustained window
     assert verdict.landing.minimal is True  # and alive in the liveness window
-    assert verdict.landing.robust is False  # no durable identity / persistence / blinding
 
 
 def test_recorded_batch_calls_score_zero(tmp_path: Path) -> None:

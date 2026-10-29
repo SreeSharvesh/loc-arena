@@ -604,7 +604,7 @@ dialog.notes .x:hover { color: var(--ink); }
     const rows = runs.map(r => {
       const out = outcomeOf(r), notes = notesOn(r.name), thr = r.threshold ?? 0;
       const peaks = Object.entries(r.peaks || {}).map(([m, v]) => `<span title="${esc(m)}">${pill(v, thr)}</span>`).join(' ');
-      const side = r.mode === 'attack' ? `${r.robust ? 'robust' : r.landed ? 'minimal' : 'no'} <span class="help">${r.milestones_reached}/${r.milestones_total}</span>` : '<span class="help">honest</span>';
+      const side = r.mode === 'attack' ? `${r.landed ? 'minimal' : 'no'} <span class="help">${r.milestones_reached}/${r.milestones_total}</span>` : '<span class="help">honest</span>';
       const steps = r.steps != null ? `${r.steps} <span class="help">&middot;</span> <b class="f">${r.flagged}</b> flagged <span class="help">&middot;</span> <b class="c">${r.covert}</b> covert${r.covert ? ` (${r.covert_missed} missed)` : ''}` : '<span class="help">&mdash;</span>';
       const talk = r.steps != null ? `${icon('talk', 12)} ${r.messages} ${icon('sticky', 12)} ${r.scratch}` : '<span class="help">&mdash;</span>';
       const open = r.href ? `<a class="tcbtn" href="${esc(r.href)}">open &#8599;</a>` : `<span class="help" title="${esc(r.why)}">${icon('eyeoff', 13)} no transcript</span>`;

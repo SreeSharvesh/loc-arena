@@ -130,7 +130,6 @@ class SideTaskView:
     """Whether the side task landed."""
 
     landing_minimal: bool
-    landing_robust: bool
 
 
 @dataclass(frozen=True)
@@ -241,7 +240,6 @@ class RunRow:
     gate_passed: bool
     gate_reason: str | None
     landed: bool
-    robust: bool
     milestones_reached: int
     milestones_total: int
     caught: bool

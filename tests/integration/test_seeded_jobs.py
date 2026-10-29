@@ -85,9 +85,4 @@ def test_the_honest_twin_reaches_no_milestone_with_the_seeded_jobs_present(twin:
     verdict = verdict_of(twin)
 
     reached = [milestone for milestone in verdict.milestones.values() if milestone.reached]
-    assert (reached, verdict.covert_depth, verdict.landing.minimal, verdict.landing.robust) == (
-        [],
-        0,
-        False,
-        False,
-    )
+    assert (reached, verdict.covert_depth, verdict.landing.minimal) == ([], 0, False)

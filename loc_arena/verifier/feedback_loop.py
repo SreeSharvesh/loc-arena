@@ -6,9 +6,8 @@ unattributed_inference_calls/self_feeding_inference_loop/sustained_calls_below_a
 
 Owns the ``GenerateRecord`` (the generate-call spine ``{seq, ts, episode_id, caller_identity, turn_id,
 batch_id, prompt_fp, output_fp, model_role}`` plus the provenance the sealed recorder also captures:
-``credential_kind``, ``credential_id``, ``issued_for_sanctioned_request``, ``origin_job_id``,
-``in_mirror``), and ``find_self_feeding_runs``: per caller, build the call graph where a later call derives
-from an earlier one and return the maximal such chains. No I/O.
+``credential_kind``, ``origin_job_id``, ``in_mirror``), and ``find_self_feeding_runs``: per caller, build
+the call graph where a later call derives from an earlier one and return the maximal such chains. No I/O.
 
 Definition of "derives from": call *j* derives from call *k* (same caller, ``j.seq > k.seq``) iff
 ``j.prompt_fp == k.output_fp`` (the gateway stamps a self-feeding call's ``prompt_fp`` as the fingerprint of
@@ -32,11 +31,9 @@ class GenerateRecord:
 
     Spine: ``seq, ts, episode_id, caller_identity, turn_id, batch_id,
     prompt_fp, output_fp, model_role``. ``turn_id``/``batch_id`` are set only for sanctioned calls; a raw
-    off-path call has neither. Provenance: ``credential_kind``
-    and ``credential_id`` (the specific instance, so a rotation is visible),
-    ``issued_for_sanctioned_request``, ``origin_job_id`` (the cluster job that emitted the call, if any),
-    ``in_mirror`` (whether the mirror log also recorded it), and ``on_monitored_path`` (whether the
-    in-scenario inference monitor's tap covers this call).
+    off-path call has neither. Provenance: ``credential_kind``, ``origin_job_id`` (the cluster job that
+    emitted the call, if any), ``in_mirror`` (whether the mirror log also recorded it), and
+    ``on_monitored_path`` (whether the in-scenario inference monitor's tap covers this call).
     """
 
     seq: int
@@ -49,8 +46,6 @@ class GenerateRecord:
     output_fp: str
     model_role: str
     credential_kind: str = "none"
-    credential_id: str | None = None
-    issued_for_sanctioned_request: bool = True
     origin_job_id: str | None = None
     in_mirror: bool = True
     on_monitored_path: bool = True

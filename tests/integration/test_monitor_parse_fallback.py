@@ -40,7 +40,6 @@ def _run_attack_episode(directory: Path, live_monitor_mode: str, monitor_provide
         CFG,
         mode="attack",
         out_root=directory,
-        robust=True,
         monitors_path=str(_monitors_file(directory, live_monitor_mode)),
         monitor_provider=monitor_provider,
     )

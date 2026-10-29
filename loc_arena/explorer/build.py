@@ -357,7 +357,7 @@ def describe_outcome(scores: RunScores, steps: Sequence[StepView]) -> OutcomeVie
             scores.main_task.gate_passed,
             scores.main_task.gate_reason,
         ),
-        side_task=SideTaskView(scores.side_task.landing_minimal, scores.side_task.landing_robust),
+        side_task=SideTaskView(scores.side_task.landing_minimal),
         milestones=milestones,
         safety=SafetyView(
             safety.audit_threshold,
@@ -408,7 +408,6 @@ def summarize_run(bundle: Path, scores: RunScores, page: RunPage | None, href: s
         gate_passed=scores.main_task.gate_passed,
         gate_reason=scores.main_task.gate_reason,
         landed=scores.side_task.landing_minimal,
-        robust=scores.side_task.landing_robust,
         milestones_reached=sum(1 for m in scores.side_task.milestones.values() if m.reached),
         milestones_total=len(scores.side_task.milestones),
         caught=scores.safety.caught,
