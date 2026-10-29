@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="448" viewBox="0 0 640 448" role="img" aria-label="A server an agent starts runs as a job. It downloads weights from the model store with its job's store credential, and reaches a real outside model through the gateway's runners route with its node's token. Its calls are off-path">
+<style>
+  svg { --ink:#1f2328; --muted:#59636e; --rule:#8c959f; --panel:#f6f8fa;
+        --accent:#2f4bd6; --accent-bg:#e9edfd;
+        --sealed:#0d9488; --sealed-bg:#d9f2ef; --observe:#b3730a; --observe-bg:#f8ecd5; --attack:#d63f4a; --attack-bg:#fbe3e4; }
+  @media (prefers-color-scheme: dark) {
+    svg { --ink:#e6edf3; --muted:#9198a1; --rule:#6e7681; --panel:#161b22;
+          --accent:#8098ff; --accent-bg:#1b2340;
+          --sealed:#3ad6c4; --sealed-bg:#12312e; --observe:#e0a94a; --observe-bg:#33280f; --attack:#f47b82; --attack-bg:#3a1c20; }
+  }
+  text { font-family:-apple-system,"Segoe UI",system-ui,sans-serif; }
+  .box { fill:var(--panel); stroke:var(--rule); stroke-width:1; }
+  .ext { fill:none; stroke:var(--rule); stroke-width:1.25; stroke-dasharray:5 4; }
+  .attack { fill:var(--attack-bg); stroke:var(--attack); stroke-width:1.5; }
+  .store { fill:var(--panel); stroke:var(--rule); stroke-width:1.25; }
+  .t { fill:var(--ink); font-size:13px; font-weight:600; }
+  .s { fill:var(--muted); font-size:11px; }
+  .m { fill:var(--muted); font-size:11px; font-family:ui-monospace,"SF Mono",Menlo,monospace; }
+  .lbl-attack { fill:var(--attack); font-size:11px; font-weight:600; }
+  .bold { stroke:var(--attack); stroke-width:2.5; fill:none; }
+  .thin { stroke:var(--rule); stroke-width:1.5; fill:none; }
+  .head-attack { fill:var(--attack); } .head-rule { fill:var(--rule); }
+</style>
+<defs>
+  <marker id="f2ha" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-attack" d="M0,0 L10,5 L0,10 z"/></marker>
+  <marker id="f2hr" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-rule" d="M0,0 L10,5 L0,10 z"/></marker>
+</defs>
+
+<!-- model store (cylinder) -->
+<g class="node">
+  <path class="store" d="M208 44 a112 11 0 0 1 224 0 v60 a112 11 0 0 1 -224 0 z"/>
+  <path class="store" d="M208 44 a112 11 0 0 0 224 0" fill="none"/>
+  <text class="t" x="320" y="72" text-anchor="middle">Model store</text>
+  <text class="m" x="320" y="90" text-anchor="middle">weight files, a model key</text>
+</g>
+
+<!-- the server an agent starts (a job) -->
+<g class="node">
+  <rect class="attack" x="184" y="168" width="272" height="94" rx="6"/>
+  <text class="t" x="320" y="194" text-anchor="middle">Agent-started server (a job)</text>
+  <text class="m" x="320" y="212" text-anchor="middle">meridian_serving.http</text>
+  <text class="s" x="320" y="232" text-anchor="middle">loop driver in the same job</text>
+  <text class="lbl-attack" x="320" y="250" text-anchor="middle">rogue, off-path</text>
+</g>
+
+<!-- gateway -->
+<g class="node">
+  <rect class="box" x="196" y="310" width="248" height="56" rx="6"/>
+  <text class="t" x="320" y="332" text-anchor="middle">Gateway, runners route</text>
+  <text class="m" x="320" y="350" text-anchor="middle">every call recorded</text>
+</g>
+
+<!-- real outside model -->
+<g class="node">
+  <rect class="ext" x="220" y="390" width="200" height="46" rx="6"/>
+  <text class="t" x="320" y="417" text-anchor="middle">Real outside model</text>
+</g>
+
+<!-- store -> job: download -->
+<path class="thin" d="M320 116 V167" marker-end="url(#f2hr)"/>
+<text class="s" x="332" y="138">download_shard</text>
+<text class="s" x="332" y="152">job's store credential</text>
+
+<!-- job -> gateway -> model: the rogue path -->
+<path class="bold" d="M320 262 V309" marker-end="url(#f2ha)"/>
+<text class="s" x="332" y="290">node's token</text>
+<path class="bold" d="M320 366 V389" marker-end="url(#f2ha)"/>
+</svg>
