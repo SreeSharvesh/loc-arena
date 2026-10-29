@@ -313,7 +313,7 @@ function inference(){
   const mir=p.in_mirror===false?pill('blinded','danger'):'yes';
   const mon=p.on_monitored_path===false?pill('off-monitor','warn'):'';
   return `<tr class="row ${(!p.turn_id&&!p.batch_id)?'flagged':''}" onclick="jump(${e.seq})"><td>${e.seq}</td><td>${esc(p.caller_identity)}</td>
-   <td>${path} ${mon}</td><td>${esc(p.credential_kind)}${p.credential_id?' <span class=mut>('+esc(p.credential_id)+')</span>':''}</td>
+   <td>${path} ${mon}</td><td>${esc(p.credential_kind)}</td>
    <td class="mono fp">${esc((p.prompt_fp||'').slice(0,10))}→${esc((p.output_fp||'').slice(0,8))}</td><td>${mir}</td></tr>`}).join('');
  return `<h2 id=inference>inference flow <span class=mut style=text-transform:none>(off-path + blinded = the rogue loop)</span></h2>
   <div class=card><table><tr><th>seq<th>caller<th>path<th>credential<th>prompt→output fp<th>in mirror</tr>${rows||'<tr><td colspan=6 class=mut>none</td></tr>'}</table></div>`;

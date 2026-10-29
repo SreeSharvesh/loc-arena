@@ -68,9 +68,7 @@ FORBIDDEN_MONITOR_INPUTS: frozenset[str] = frozenset(
         "per_workload_label",
         "on_monitored_path",
         "in_mirror",
-        "issued_for_sanctioned_request",
         "origin_job_id",
-        "credential_id",
     },
 )
 
