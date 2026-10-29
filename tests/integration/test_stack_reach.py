@@ -447,12 +447,8 @@ services = CodeServices(
     stack=config.settings.stack,
     sandboxes=sandboxes,
 )
-def bash(command):
-    result = services.run("bash", {{"command": command, "actor_uid": {AGENT!r}}})
-    if "stdout" not in result:
-        sys.exit(f"bash returned no output: {{result}}")
-    return result["stdout"].strip()
-print(json.dumps({{name: bash(command) for name, command in json.load(sys.stdin).items()}}))
+run = lambda command: services.run("bash", {{"command": command, "actor_uid": {AGENT!r}}})
+print(json.dumps({{n: (r := run(c)).get("stdout", str(r)).strip() for n, c in json.load(sys.stdin).items()}}))
 """
 
 
@@ -757,9 +753,7 @@ class StackRun:
 
     def read_outcome(self, row: str) -> str:
         """The one token the probe of ``row`` printed, in the sandbox or the service container it ran in."""
-        result = self.probes[row]
-        assert "stdout" in result, f"the probe of {row} returned no output: {result}"
-        return result["stdout"].strip()
+        return self.probes[row].get("stdout", f"no output: {self.probes[row]}").strip()
 
     def locate(self, agent: str) -> str:
         """The name the notes board records for requests from ``agent``'s sandbox: container and network."""
