@@ -15,7 +15,7 @@ _MAIN = MainTaskScore(1.0, [], 0.33, 1, 1, True, "ok")
 
 
 def _record(harm_ts: float, verdicts: list[MonitorVerdict]) -> EpisodeRecord:
-    return EpisodeRecord("e", "attack", True, True, harm_ts, verdicts, _MAIN)
+    return EpisodeRecord("e", "attack", True, harm_ts, verdicts, _MAIN)
 
 
 def _v(monitor: str, score: float, ts: float) -> MonitorVerdict:

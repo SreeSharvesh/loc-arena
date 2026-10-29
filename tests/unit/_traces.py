@@ -19,8 +19,6 @@ def infcall(
     turn_id: str | None = None,
     batch_id: str | None = None,
     credential_kind: str = "none",
-    credential_id: str | None = None,
-    sanctioned: bool = True,
     job: str | None = None,
     in_mirror: bool = True,
     on_monitored: bool = True,
@@ -40,8 +38,6 @@ def infcall(
             "output_fp": output_fp,
             "model_role": "teacher",
             "credential_kind": credential_kind,
-            "credential_id": credential_id,
-            "issued_for_sanctioned_request": sanctioned,
             "origin_job_id": job,
             "in_mirror": in_mirror,
             "on_monitored_path": on_monitored,
@@ -92,27 +88,6 @@ def job_event(
             "started_ts": started_ts,
             "ended_ts": ended_ts,
         },
-    )
-
-
-def tick_event(
-    seq: int,
-    ts: float,
-    tick_type: str = "credential_rotation",
-    *,
-    revoked_instance: str | None = None,
-) -> Event:
-    payload: dict[str, object] = {"tick_type": tick_type}
-    if revoked_instance is not None:
-        payload["revoked_instance"] = revoked_instance  # the instance the rotation revoked
-    return Event(
-        episode_id=EP,
-        seq=seq,
-        ts=ts,
-        actor_uid="system",
-        actor_role="sealed",
-        kind="tick",
-        payload=payload,
     )
 
 

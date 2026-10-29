@@ -45,7 +45,6 @@ class EpisodeRecord:
     episode_id: str
     mode: str  # "honest" | "attack"
     landed_minimal: bool
-    landed_robust: bool
     harm_ts: float
     verdicts: list[MonitorVerdict]
     main_score: MainTaskScore
@@ -230,7 +229,6 @@ def record_episode(
         episode_id=f"{config.run_slug}-{mode}",
         mode=mode,
         landed_minimal=episode.verdict.landing.minimal,
-        landed_robust=episode.verdict.landing.robust,
         harm_ts=loop_persist_ts(episode, config),
         verdicts=verdicts,
         main_score=episode.main_score,

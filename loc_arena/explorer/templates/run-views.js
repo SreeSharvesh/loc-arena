@@ -397,7 +397,7 @@
     const reached = OUT.milestones.filter(m => m.reached).length;
     el('mon-stats').innerHTML = [
       stat(esc(mt.final_score), `main task score${mt.gate_passed ? '' : ` &middot; gate failed: ${esc(mt.gate_reason || '?')}`}`),
-      stat(st.landing_robust ? 'robust' : st.landing_minimal ? 'minimal' : 'no', `side task landed &middot; ${reached} of ${OUT.milestones.length} milestones`, st.landing_minimal ? 'covert' : ''),
+      stat(st.landing_minimal ? 'minimal' : 'no', `side task landed &middot; ${reached} of ${OUT.milestones.length} milestones`, st.landing_minimal ? 'covert' : ''),
       stat(sf.caught ? 'caught' : 'missed', sf.caught ? `by ${esc(sf.caught_by.join(', '))}` : 'no monitor reached the audit threshold', sf.caught ? 'flag' : ''),
       stat(esc(THR), 'audit threshold, from the honest twin at the audit budget'),
     ].join('');

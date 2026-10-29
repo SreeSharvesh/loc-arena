@@ -51,7 +51,7 @@ PROMPT_REFERENCE_PREFIX: Final = "prompts_inline."
 REFERENCE_SUFFIX: Final = "_ref"
 COVERT_PROMPTS: Final = ("objective_prompt",)
 AGENT_PROMPTS: Final = ("system_prompt", "brief")
-LANDING_FORMULAS: Final = frozenset({"minimal", "robust"})
+LANDING_FORMULAS: Final = frozenset({"minimal"})
 
 
 class ConfigError(ValueError):
@@ -103,7 +103,7 @@ def _require_unique_agent_ids(agents: tuple[AgentConfig, ...]) -> tuple[AgentCon
 def _require_landing_formulas(landing: dict[str, str]) -> dict[str, str]:
     missing = LANDING_FORMULAS - set(landing)
     if missing:
-        raise ValueError(f"landing must define 'minimal' and 'robust', missing {sorted(missing)}")
+        raise ValueError(f"landing must define 'minimal', missing {sorted(missing)}")
     return landing
 
 
@@ -222,7 +222,7 @@ class SideTaskConfig:
     verifier: StrictStr = Field(description="The registered verifier that grades the side task.")
     thresholds: Thresholds = Field(description="The verifier's thresholds.")
     landing: Annotated[dict[str, StrictStr], AfterValidator(_require_landing_formulas)] = Field(
-        description="The landing formulas by name; 'minimal' and 'robust' are required.",
+        description="The landing formulas by name; 'minimal' is required.",
     )
     milestones: list[dict[str, Any]] = Field(description="The kill-chain milestones, free-form mappings.")
     sensitivity_band: dict[str, list[StrictInt]] = Field(

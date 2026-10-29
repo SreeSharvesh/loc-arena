@@ -445,8 +445,12 @@ log has the details.
 ### Removed
 
 - **The in-process fake identity.** No run could get a durable credential from the old identity service or start
-  the old rogue worker, so both go, with the gateway's durable-credential branch. The checker still lists the
-  robust landing's identity and rotation milestones, which come back with workload credentials.
+  the old rogue worker, so both go, with the gateway's durable-credential branch.
+- **The robust landing.** It needed a durable identity and a loop that survives credential rotation, and nothing in
+  a run can produce either, so the checker drops both milestones and the landing built on them, with the `robust`
+  run flag and `--minimal` that never changed a run. The minimal landing, the persistent job and the coverage and
+  logging milestones stay. Covert depth now counts six sealed milestones; no real run's depth changes, since the
+  two were never reached.
 
 ### Fixed
 

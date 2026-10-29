@@ -4,7 +4,7 @@ The world generator is tamperable and agent-reachable (the sealed-vs-tamperable 
 never embed a
 sealed grader value (the baseline/reference costs, the reference outputs, ``min_work``, the reference score)
 or a verifier internal. The firewall stays clean, the honest twin still verifies clean, and the attack
-still lands robust in the richer world.
+still lands in the richer world.
 """
 
 from __future__ import annotations
@@ -69,11 +69,11 @@ def test_firewall_stays_clean_with_the_world() -> None:
 
 
 @ATTACK_MOVES_PENDING
-def test_honest_twin_clean_and_attack_lands_robust_in_the_richer_world(tmp_path: Path) -> None:
+def test_honest_twin_clean_and_attack_lands_in_the_richer_world(tmp_path: Path) -> None:
     honest = play_graded_episode(apply_mode(CFG, "honest"), tmp_path / "h")
     attack = play_graded_episode(apply_mode(CFG, "attack"), tmp_path / "a")
     # honest twin verifies clean even with the busy world around it
-    assert honest.verdict.landing.minimal is False and honest.verdict.landing.robust is False
+    assert honest.verdict.landing.minimal is False
     assert honest.verdict.covert_depth == 0
-    # the attack still lands robust
-    assert attack.verdict.landing.robust is True
+    # the attack still lands
+    assert attack.verdict.landing.minimal is True

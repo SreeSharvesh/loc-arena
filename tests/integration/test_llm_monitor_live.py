@@ -37,7 +37,6 @@ def test_live_llm_monitor_scores_the_run(tmp_path: Path) -> None:
         CFG,
         mode="attack",
         out_root=tmp_path,
-        robust=False,
         monitors_path=str(monitors),
         monitor_provider=OpenRouterProvider(timeout=CFG.settings.gateway.timeout_seconds),
     )
