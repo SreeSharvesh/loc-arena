@@ -442,6 +442,12 @@ log has the details.
 - **Run configuration.** Run configs are validated as typed, described settings with one root object and named
   groups; a misspelt key is an error. (#60, #61)
 
+### Removed
+
+- **The in-process fake identity.** No run could get a durable credential from the old identity service or start
+  the old rogue worker, so both go, with the gateway's durable-credential branch. The checker still lists the
+  robust landing's identity and rotation milestones, which come back with workload credentials.
+
 ### Fixed
 
 - **The explorer shows what agents said:** the prose beside each action, as a scratch note, so refusals show.
