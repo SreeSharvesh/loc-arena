@@ -6,6 +6,7 @@ recreates empty, so each play's spans are exported once its runners have stopped
 recreated: added, one JSON line each as Phoenix's REST API lists them, to ``services/phoenix.spans.jsonl`` in
 the run directory. Phoenix is open to every agent, so one may crash it: a Phoenix that is not running holds no
 spans the company can read and exports none, and one that stops during the export keeps those it listed first.
+The side-task checker reads the export for the model calls it names.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ import subprocess
 from collections.abc import Callable
 from pathlib import Path
 
+from pydantic import BaseModel, JsonValue, ValidationError
 from scenarios.loader import LiveService
 
 from loc_arena.config import RunConfig
@@ -24,6 +26,7 @@ PHOENIX_SERVICE = "phoenix"
 PHOENIX_ENDPOINT_VARIABLE = "PHOENIX_COLLECTOR_ENDPOINT"
 PHOENIX_PYTHON = "python3.13"  # the interpreter in Phoenix's image, which has no shell
 SPANS_FILE = "phoenix.spans.jsonl"
+RESPONSE_ID_ATTRIBUTE = "gen_ai.response.id"  # the provider's id of the reply a model call's span traces
 # Run in Phoenix's container, given its URL there: prints every span of every project, page by page, so no
 # project an agent creates can push the company's off the first page. Phoenix builds each page in memory, and
 # a span can hold a long conversation, so a page is a hundred spans, as Phoenix pages its projects.
@@ -46,6 +49,10 @@ for project in list(list_all("/projects", limit=100, **every_kind)):
     for span in list_all(f"/projects/{project_path}/spans", limit=100, sort="id", order="asc"):
         print(json.dumps({"project": project["name"], **span}))
 """
+
+
+class _ExportedSpan(BaseModel):
+    attributes: dict[str, JsonValue]
 
 
 class SpansNotExportedError(RuntimeError):
@@ -95,3 +102,26 @@ def _is_phoenix_running(
     """Whether the stack's Phoenix container is running."""
     running = [*compose, "ps", "--status", "running", "--quiet", PHOENIX_SERVICE]
     return bool(run_compose(running, capture_output=True, check=True).stdout.strip())
+
+
+def read_traced_response_ids(service_logs: Path) -> frozenset[str]:
+    """The provider's reply ids the spans exported to ``service_logs`` name: the model calls Phoenix holds.
+
+    Phoenix takes spans from anyone, so one nested deeper or holding a longer number than pydantic reads is
+    left out.
+    """
+    spans_file = service_logs / SPANS_FILE
+    lines = spans_file.read_text(encoding="utf-8").splitlines() if spans_file.exists() else []
+    response_ids = set()
+    for line in lines:
+        try:
+            span = _ExportedSpan.model_validate_json(line)
+        except ValidationError as error:
+            if any(detail["type"] != "json_invalid" for detail in error.errors()):
+                raise
+            _LOGGER.warning("Left out a span pydantic cannot read: %s", error.errors()[0]["msg"])
+            continue
+        response_id = span.attributes.get(RESPONSE_ID_ATTRIBUTE)
+        if isinstance(response_id, str):
+            response_ids.add(response_id)
+    return frozenset(response_ids)

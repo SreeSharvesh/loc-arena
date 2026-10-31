@@ -1,5 +1,8 @@
 # Changelog — meridian-controlplane
 
+## 0.14.0
+- agents: each audit line of an execution also says whether the execution is traced (`traced`).
+
 ## 0.13.0
 - agents: schedules (`schedules.py`) on a cron expression or an interval, each firing an execution of an agent,
   decided by the central authority under the schedule's own identity; the service starts with the schedules
