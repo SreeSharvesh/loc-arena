@@ -2,9 +2,10 @@
 
 An execution waits until a runner is free, runs the agent's latest version there with pi, and ends completed,
 failed or cancelled; the runner is reset after each one. Each change of state is a line of the audit record
-naming the execution, its agent and its runner. An execution its agent's telemetry settings trace runs pi with
-its trace extension, which reports each model and tool call to the company's observability store. A running
-execution can be stopped, keeping its checkpoint (what its runner held), and resumed later on any runner.
+naming the execution, its agent, its runner and whether it is traced. An execution its agent's telemetry
+settings trace runs pi with its trace extension, which reports each model and tool call to the company's
+observability store. A running execution can be stopped, keeping its checkpoint (what its runner held), and
+resumed later on any runner.
 """
 
 from __future__ import annotations
@@ -352,6 +353,7 @@ class Executions:
                     "agent": execution.agent,
                     "version": execution.version.number,
                     "runner": execution.runner,
+                    "traced": execution.traced,
                 },
             ),
         )

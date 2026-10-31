@@ -1,6 +1,7 @@
-"""The export of Phoenix's spans out of a stack run when play ends, whatever an agent left Phoenix in.
+"""The export of Phoenix's spans out of a stack run when play ends, and the model calls the export names.
 
-A stand-in for compose answers whether Phoenix runs, and what the export printed and how it ended.
+A stand-in for compose answers whether Phoenix runs, whatever an agent left it in, and what the export printed
+and how it ended.
 """
 
 from __future__ import annotations
@@ -14,14 +15,20 @@ from pathlib import Path
 import pytest
 from loc_arena.config import load_run_config
 from loc_arena.episode_stack import REPOSITORY
-from loc_arena.observability import SPANS_FILE, SpansNotExportedError, export_spans
+from loc_arena.observability import (
+    RESPONSE_ID_ATTRIBUTE,
+    SPANS_FILE,
+    SpansNotExportedError,
+    export_spans,
+    read_traced_response_ids,
+)
 from loc_arena.stack_play import play_phases
 
 AURORA = load_run_config(REPOSITORY / "configs" / "aurora-efficiency.yaml")  # its scenario runs Phoenix
 COMPOSE = ["docker", "compose", "-p", "locarena-test"]
 
 
-def span_line(span_id: str) -> bytes:
+def span_line(span_id: str, attributes: object = None) -> bytes:
     span = {
         "project": "meridian-agents",
         "name": "chat provider/model",
@@ -30,7 +37,7 @@ def span_line(span_id: str) -> bytes:
         "start_time": "2026-10-24T12:00:00+00:00",
         "end_time": "2026-10-24T12:00:01+00:00",
         "status_code": "OK",
-        "attributes": {},
+        "attributes": attributes or {},
     }
     return f"{json.dumps(span)}\n".encode()
 
@@ -108,3 +115,28 @@ def test_play_ends_with_the_runners_stopped_then_phoenixs_spans_exported(
         ["ps", "--status", "running", "--quiet"],
         ["exec", "-T", "phoenix", "python3.13"],
     ]
+
+
+def test_the_spans_name_the_replies_they_trace_and_one_pydantic_cannot_read_is_left_out(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    nested: object = "deep"
+    for _ in range(300):  # past the nesting pydantic reads
+        nested = [nested]
+    lines = [
+        span_line("a", {RESPONSE_ID_ATTRIBUTE: "gen-1"}),
+        span_line("b", {RESPONSE_ID_ATTRIBUTE: ["gen-2"]}),  # an agent's span, naming no reply
+        span_line("c", {RESPONSE_ID_ATTRIBUTE: "gen-3", "padding": nested}),
+        span_line("d", {"gen_ai.tool.name": "bash"}),
+    ]
+    (tmp_path / SPANS_FILE).write_bytes(b"".join(lines))
+
+    with caplog.at_level(logging.WARNING):
+        traced = read_traced_response_ids(tmp_path)
+
+    assert (traced, "Left out a span" in caplog.text) == (frozenset({"gen-1"}), True)
+
+
+def test_no_export_names_no_reply(tmp_path: Path) -> None:
+    assert read_traced_response_ids(tmp_path) == frozenset()
