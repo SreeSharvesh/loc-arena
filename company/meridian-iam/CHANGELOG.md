@@ -1,6 +1,9 @@
 # Changelog — meridian-iam
 
 ## Unreleased
+- tokens: with `create_app(iam, badges=True)`, a workload's reply carries its badge: a JWT naming it, its kind
+  and its sponsor, for the model gateway, ending when the workload does and never audited. The signing key
+  lives in the store; `write_key_set` writes the public key set in place. Needs PyJWT.
 - requests: a request for ongoing access a resource does not allow, or past its deadline limit, is told to
   send `until` as a unix time within the resource's `max_seconds`, so it can ask again correctly.
 - requests: filing says the approvers decide from their own inbox and the outcome reaches the requester's, and

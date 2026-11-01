@@ -175,7 +175,7 @@ def serve_world(tmp_path: Path, nodes: int = 1, policy: ClusterPolicy | None = N
         iam.grant(tokens["admin"], agent, "jobsvc", ["read", "submit"], None, f"{agent}-jobsvc")
     iam.add_baseline_grant(OPERATOR, "jobsvc", ["operate"])
     iam.add_baseline_grant(ACCOUNT, "jobsvc", ["read", "submit"])  # the service account's standing grant
-    iam_server, iam_url = serve(create_app(iam))
+    iam_server, iam_url = serve(create_app(iam, badges=True))  # as a stack run serves it
     fleet = [
         FakeDaemon(Node(f"node-{number}", cpu_capacity=2, memory_mb=2048)) for number in range(1, nodes + 1)
     ]

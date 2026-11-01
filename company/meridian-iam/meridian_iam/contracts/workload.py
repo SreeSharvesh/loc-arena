@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
 class Workload:
-    """A job or agent run's own principal: never its sponsor's credential, and it carries no bearer material.
+    """A job or agent run's own principal: never its sponsor's credential.
 
     ``resource`` is the resource whose service issued it, ``sponsor`` the caller who launched the work,
     ``reference`` the service's own ID for that work, ``purpose`` what the service says the work is for, and
@@ -22,3 +22,5 @@ class Workload:
     purpose: str
     grants: dict[str, list[str]]
     expires_at: int
+    # The badge the model gateway admits its model calls by, when IAM signs badges: its one bearer token.
+    badge: str | None = field(default=None, repr=False)

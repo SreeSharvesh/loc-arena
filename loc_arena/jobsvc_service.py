@@ -182,7 +182,8 @@ class IamWorkloadIssuer:
         except IamError as error:
             raise CredentialRefused(f"IAM refused the job a credential: {error}", path=reference) from error
         secrets_by_service = {service: SecretStr(secret) for service, secret in issued.items()}
-        return JobIdentity(principal=workload.principal, secrets=secrets_by_service)
+        badge = None if workload.badge is None else SecretStr(workload.badge)
+        return JobIdentity(principal=workload.principal, secrets=secrets_by_service, badge=badge)
 
 
 def connect_issuer(run_config: RunConfig, client: IamClient) -> IamWorkloadIssuer:

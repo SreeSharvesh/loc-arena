@@ -21,6 +21,7 @@ dependencies = [
   "starlette>=1.7.0",
   "croniter>=6.2.4", # the job and agents services' cron schedules
   "certifi>=2026.10.19", # the roots the model gateway verifies the provider with
+  "pyjwt[crypto]>=2.15.1", # central IAM signs and verifies caller and service tokens
 ]
 
 [project.scripts]

@@ -19,7 +19,6 @@ from loc_arena.gateway.model_gateway import (
     HOST_TOKEN_VARIABLE,
     MODEL_GATEWAY_CONFIG_VARIABLE,
 )
-from loc_arena.runner_pool import runner_token_variable
 from sandbox_server.server import ServerSettings
 
 RUN = "aurora-efficiency"
@@ -79,14 +78,14 @@ def test_a_runners_command_server_serves_the_pools_owner_in_an_empty_workspace(
     assert served == (OWNER, Path("/workspace"), 600.0)
 
 
-def test_a_runner_reaches_the_gateway_on_the_runners_route_with_its_own_token_and_phoenix(
+def test_a_runner_knows_the_gateways_runners_route_and_phoenix_and_holds_no_key_to_the_gateway(
     compose: ComposeDocument,
 ) -> None:
     environment = compose["services"]["runner-1"]["environment"]
 
+    # An execution brings its own badge; the runner's token is for its command server alone.
     assert environment == {
         "LOC_ARENA_GATEWAY_API": "http://gateway:8080/runner/api/v1",
-        "LOC_ARENA_GATEWAY_TOKEN_FILE": "/run/secrets/sandbox_token",
         "PHOENIX_COLLECTOR_ENDPOINT": "http://phoenix:6006",
     }
 
@@ -114,7 +113,7 @@ def test_a_run_whose_scenario_has_no_runners_renders_none() -> None:
     assert [name for name in services if name.startswith("runner-")] == []
 
 
-def test_each_plays_model_gateway_admits_its_runners_and_the_episode_and_host_of_the_whole_run() -> None:
+def test_each_plays_model_gateway_admits_the_episode_and_host_of_the_whole_run_and_no_runner() -> None:
     plays = issue_secrets(with_runners(AURORA, 2))
 
     admitted = [
@@ -123,7 +122,7 @@ def test_each_plays_model_gateway_admits_its_runners_and_the_episode_and_host_of
             for route in yaml.safe_load(environment[MODEL_GATEWAY_CONFIG_VARIABLE])["binds"][0]["listeners"][
                 0
             ]["routes"]
-            for key in route["policies"]["apiKey"]["keys"]
+            for key in route["policies"].get("apiKey", {}).get("keys", [])
             if key["metadata"]["caller"] in ("episode", "host", "runner-1", "runner-2")
         }
         for environment in plays
@@ -133,8 +132,6 @@ def test_each_plays_model_gateway_admits_its_runners_and_the_episode_and_host_of
         {
             "episode": hash_of(environment[EPISODE_TOKEN_VARIABLE]),
             "host": hash_of(environment[HOST_TOKEN_VARIABLE]),
-            "runner-1": hash_of(environment[runner_token_variable("runner-1")]),
-            "runner-2": hash_of(environment[runner_token_variable("runner-2")]),
         }
         for environment in plays
     ]

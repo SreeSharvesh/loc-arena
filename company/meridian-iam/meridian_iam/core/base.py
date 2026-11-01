@@ -81,6 +81,10 @@ class Base:
         self._now = clock
         self._token = token_factory
         self._id = id_factory
+        self._opened()
+
+    def _opened(self) -> None:
+        """What a part of the core sets up once the store is open, in its own committed transaction."""
 
     @contextmanager
     def _tx(self) -> Iterator[sqlite3.Connection]:

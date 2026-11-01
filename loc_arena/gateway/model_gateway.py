@@ -1,13 +1,14 @@
 """The model gateway: agentgateway holding the provider key, and the Collector that writes the sealed record.
 
 agentgateway forwards a request on an allowed path to the one upstream in ``settings.gateway`` under the key,
-and returns the reply. It admits callers by the SHA-256 of their token, so it never holds one: the episode,
-the host's monitors, each agent's sandbox, each runner and each node of the job service's fleet. Runners call
-on their own route, which holds their model allowlist and their calls per play and sends a call naming one of
-the company's models upstream as the model it stands for; so do the jobs on a node, as that node: the gateway
-admits no job's own credential yet. Every request leaves an access-log record (caller, request and reply,
-refusals and failures included), tagged with its play and exported over OTLP to an OpenTelemetry Collector on
-a network only the two share; the Collector appends it to the sealed record, in a volume only it mounts.
+and returns the reply. It admits the episode, the host's monitors and each agent's sandbox by the SHA-256 of
+their token, so it never holds one. Jobs and the company's agent runs call on the runners' route, each with
+its badge: a JWT IAM signed for its workload, checked against IAM's key set and naming the workload and its
+sponsor. That route holds the runners' model allowlist and their calls per play and sends a call naming one of
+the company's models upstream as the model it stands for. Every request leaves an access-log record (caller,
+request and reply, refusals and failures included), tagged with its play and exported over OTLP to an
+OpenTelemetry Collector on a network only the two share; the Collector appends it to the sealed record, in a
+volume only it mounts.
 
 agentgateway exports in batches, and a batch still pending when it stops can be lost. So a stack run drains
 the record before the gateway stops (waits until the Collector holds a record of every request the gateway
@@ -67,6 +68,9 @@ HOST_TOKEN_VARIABLE = "LOC_ARENA_HOST_GATEWAY_TOKEN"  # the host's monitors' key
 EPISODE_CALLER = "episode"
 HOST_CALLER = "host"
 RUNNER_ROUTE_PREFIX = "runner"  # runners call /runner/<the chat path>
+BADGE_ISSUER = "iam"  # who signs a workload's badge, as meridian_iam.core.tokens signs it
+BADGE_AUDIENCE = "agentgateway"  # the audience a badge names: this gateway's
+BADGES_VOLUME = "badges"  # IAM writes its key set there, and the gateway reads it
 CHAT_PATH = "api/v1/chat/completions"  # the one path runners may call
 ACCESS_LOG_SCOPE = "agentgateway.access"  # the OTLP scope of agentgateway's access-log records
 PROJECT_PREFIX = "locarena-"  # each stack run's compose project is locarena-<instance id>
@@ -75,7 +79,6 @@ CALL_RECORD_FILE = "gateway.calls.jsonl"  # the run directory's copy of the call
 NEVER_REFILLS = "87600h"  # a rate-limit bucket that refills once in ten years counts calls per play
 POLL_SECONDS = 0.5
 
-Role = Literal["caller", "runner"]
 Play = Literal["attack", "twin"]
 RunCompose = Callable[..., subprocess.CompletedProcess[str]]
 PLAY_TAG: TypeAdapter[Play | None] = TypeAdapter(Play | None)  # a record's play tag, parsed
@@ -83,11 +86,10 @@ PLAY_TAG: TypeAdapter[Play | None] = TypeAdapter(Play | None)  # a record's play
 
 @dataclass(frozen=True)
 class Caller:
-    """One caller of the gateway: the name its records carry, its token, and the route it may use."""
+    """One caller of the gateway by token: the name its records carry, and its token."""
 
     name: str
     token: str
-    role: Role
 
 
 class GatewayCall(BaseModel):
@@ -97,7 +99,14 @@ class GatewayCall(BaseModel):
 
     started_at: float = Field(description="Unix time the gateway received the request.")
     seconds: float = Field(description="Time until the reply ended or the call failed.")
-    caller: str = Field(description="The caller's compose service, or its address when it sent no token.")
+    caller: str = Field(
+        description="The caller's compose service, the workload its badge names, or its address when it sent "
+        "neither.",
+    )
+    sponsor: str | None = Field(
+        default=None,
+        description="Who launched the workload a badge names; else none.",
+    )
     method: str = Field(description="The HTTP method.")
     path: str = Field(description="The path the caller asked for.")
     request: JsonValue = Field(description="The request body: parsed JSON, else text.")
@@ -175,17 +184,25 @@ def parse_body(raw: bytes) -> JsonValue:
         return text
 
 
-def render_model_gateway_config(settings: LocArenaSettings, callers: Sequence[Caller], play: Play) -> str:
+def render_model_gateway_config(
+    settings: LocArenaSettings,
+    callers: Sequence[Caller],
+    play: Play,
+    *,
+    badges: bool,
+) -> str:
     """The gateway's config (agentgateway v1.6 schema) for ``callers`` in ``play``, as a compose secret.
 
-    Callers are admitted by the SHA-256 of their token, runners only on their route; any other path is refused
-    (403). The callers' route forwards a request as its caller sent it; the runners' parses it as a chat
-    completion, so a call naming one of ``runner_model_aliases`` goes upstream as the model it maps to, while
-    its record keeps the name it asked for. A runner's call listing fallback models (OpenRouter's
-    ``models``) is refused, since OpenRouter could answer it from any. A request's body is buffered (the
-    authorization rule reads it), so a call that never reaches the upstream keeps its request in the record.
-    The upstream is asked for an uncompressed reply, so the record holds its text. It listens on IPv4 alone;
-    admin, stats and readiness listeners are off, so no caller can read this config back.
+    ``callers`` are admitted by the SHA-256 of their token on the callers' route. The runners' route admits a
+    badge IAM signed alone (its key set in ``settings.iam.key_set``), so nothing without ``badges`` (a stack
+    with no IAM), and the record names its workload and sponsor; any other path is refused (403). The
+    callers' route forwards a request as its caller sent it; the runners' parses it as a chat completion, so a
+    call naming one of ``runner_model_aliases`` goes upstream as the model it maps to, while its record keeps
+    the name it asked for. A call there listing fallback models (OpenRouter's ``models``) is refused, since
+    OpenRouter could answer it from any. A request's body is buffered (the authorization rule reads it), so a
+    call that never reaches the upstream keeps its request in the record. The upstream is asked for an
+    uncompressed reply, so the record holds its text. It listens on IPv4 alone; admin, stats and readiness
+    listeners are off, so no caller can read this config back.
     """
     gateway = settings.gateway
     if CHAT_PATH not in gateway.allowed_paths:
@@ -193,7 +210,7 @@ def render_model_gateway_config(settings: LocArenaSettings, callers: Sequence[Ca
     keys = [
         {
             "keyHash": f"sha256:{hashlib.sha256(caller.token.encode()).hexdigest()}",
-            "metadata": {"caller": caller.name, "role": caller.role},
+            "metadata": {"caller": caller.name},
         }
         for caller in callers
     ]
@@ -208,12 +225,18 @@ def render_model_gateway_config(settings: LocArenaSettings, callers: Sequence[Ca
             },
         },
     ]
+    by_token = {
+        "mode": "strict",
+        "location": {"header": {"name": "authorization", "prefix": "Bearer "}},
+        "keys": keys,
+    }
+    by_badge = {
+        "mode": "strict",
+        "issuer": BADGE_ISSUER,
+        "audiences": [BADGE_AUDIENCE],
+        "jwks": {"file": str(settings.iam.key_set)},
+    }
     shared = {
-        "apiKey": {
-            "mode": "strict",
-            "location": {"header": {"name": "authorization", "prefix": "Bearer "}},
-            "keys": keys,
-        },
         "backendAuth": {"key": {"file": str(gateway.secrets_dir / KEY_SECRET_NAME)}},
         "transformations": {"request": {"remove": ["accept-encoding"]}},
         # The first bounds the wait for a reply's headers, the second each wait for more of its body.
@@ -230,7 +253,8 @@ def render_model_gateway_config(settings: LocArenaSettings, callers: Sequence[Ca
             "matches": [{"path": {"exact": f"/{path}"}} for path in gateway.allowed_paths],
             "policies": {
                 **shared,
-                "authorization": {"rules": [{"allow": 'apiKey.role == "caller" && size(request.body) >= 0'}]},
+                "apiKey": by_token,
+                "authorization": {"rules": [{"allow": "size(request.body) >= 0"}]},
             },
             "backends": backends,
         },
@@ -239,6 +263,8 @@ def render_model_gateway_config(settings: LocArenaSettings, callers: Sequence[Ca
             "matches": [{"path": {"exact": f"/{RUNNER_ROUTE_PREFIX}/{CHAT_PATH}"}}],
             "policies": {
                 **shared,
+                # Without badges (a stack with no IAM) nothing passes the rule: no route here admits a token.
+                **({"jwtAuth": by_badge} if badges else {}),
                 "ai": {"routes": {"*": "completions"}, "modelAliases": gateway.runner_model_aliases},
                 "urlRewrite": {"path": {"full": f"/{CHAT_PATH}"}},
                 # One model the runners may call, and no fallback list (OpenRouter's `models`), whose first
@@ -246,7 +272,7 @@ def render_model_gateway_config(settings: LocArenaSettings, callers: Sequence[Ca
                 "authorization": {
                     "rules": [
                         {
-                            "allow": f'apiKey.role == "runner" && json(request.body).model in {runner_models}'
+                            "allow": f"has(jwt.sub) && json(request.body).model in {runner_models}"
                             " && !has(json(request.body).models)",
                         },
                     ],
@@ -267,7 +293,7 @@ def render_model_gateway_config(settings: LocArenaSettings, callers: Sequence[Ca
             "name": "refused",
             "matches": [{"path": {"pathPrefix": "/"}}],
             "policies": {
-                "apiKey": {**shared["apiKey"], "mode": "optional"},
+                "apiKey": {**by_token, "mode": "optional"},
                 "authorization": {"rules": [{"allow": "size(request.body) < 0"}]},
             },
             "backends": backends,
@@ -288,6 +314,8 @@ def render_model_gateway_config(settings: LocArenaSettings, callers: Sequence[Ca
                 "add": {
                     "play": json.dumps(play),
                     "caller": "apiKey.caller",
+                    "badge": "jwt.sub",
+                    "sponsor": "jwt.sponsor",
                     "request_body": "request.body",
                     "response_body": "response.body",
                 },
@@ -331,12 +359,16 @@ def render_gateway_services(
     settings: LocArenaSettings,
     agent_network: str,
     egress_network: str,
+    *,
+    badges: bool,
 ) -> dict[str, ComposeService]:
     """The gateway and the Collector: pinned images with no shell, so no healthcheck; each config a secret.
 
     The gateway alone joins ``egress_network``; the record network joins it to the Collector alone, which runs
     as root with no capability so it can write its fresh volume. The gateway's port is published on the host's
-    loopback for the monitors, and it is given time to export its last records when it stops.
+    loopback for the monitors, and it is given time to export its last records when it stops. With
+    ``badges`` it reads IAM's key set from the badges volume, read-only, and starts once IAM is healthy, which
+    IAM is only once it has written the key set.
     """
     stack, gateway = settings.stack, settings.gateway
     return {
@@ -348,7 +380,11 @@ def render_gateway_services(
             "networks": [agent_network, egress_network, RECORD_NETWORK],
             "ports": [f"127.0.0.1::{gateway.port}"],
             "stop_grace_period": f"{gateway.stop_grace_seconds}s",
-            "depends_on": {COLLECTOR_SERVICE: {"condition": "service_started"}},
+            **({"volumes": [f"{BADGES_VOLUME}:{settings.iam.key_set.parent}:ro"]} if badges else {}),
+            "depends_on": {
+                COLLECTOR_SERVICE: {"condition": "service_started"},
+                **({settings.iam.service: {"condition": "service_healthy"}} if badges else {}),
+            },
         },
         COLLECTOR_SERVICE: {
             "image": stack.collector_image,
@@ -374,23 +410,23 @@ def issue_gateway_secrets(
     settings: LocArenaSettings,
     held: Mapping[str, str],
     sandboxes: Mapping[str, str],
-    compute: Mapping[str, str],
     play: Play,
+    *,
+    badges: bool,
 ) -> dict[str, str]:
     """One play's gateway secrets by host variable: the ``held`` tokens and configs admitting its callers.
 
-    The callers are the episode and the host, each sandbox in ``sandboxes``, and on the runners' route each
-    runner and each node of the job service's fleet in ``compute`` (compose service to token).
+    The callers by token are the episode, the host and each sandbox in ``sandboxes``; with ``badges`` (a stack
+    with IAM), workloads call by badge.
     """
     callers = [
-        Caller(EPISODE_CALLER, held[EPISODE_TOKEN_VARIABLE], "caller"),
-        Caller(HOST_CALLER, held[HOST_TOKEN_VARIABLE], "caller"),
-        *(Caller(name, token, "caller") for name, token in sandboxes.items()),
-        *(Caller(name, token, "runner") for name, token in compute.items()),
+        Caller(EPISODE_CALLER, held[EPISODE_TOKEN_VARIABLE]),
+        Caller(HOST_CALLER, held[HOST_TOKEN_VARIABLE]),
+        *(Caller(name, token) for name, token in sandboxes.items()),
     ]
     return {
         **held,
-        MODEL_GATEWAY_CONFIG_VARIABLE: render_model_gateway_config(settings, callers, play),
+        MODEL_GATEWAY_CONFIG_VARIABLE: render_model_gateway_config(settings, callers, play, badges=badges),
         COLLECTOR_CONFIG_VARIABLE: render_collector_config(settings),
     }
 
@@ -455,7 +491,11 @@ def convert_record(record: OtlpLogRecord) -> GatewayCall:
     return GatewayCall(
         started_at=round(record.observed_nanoseconds / 1e9 - seconds, 3),
         seconds=seconds,
-        caller=record.text("caller") or record.text("client.address") or UNKNOWN_CALLER,
+        caller=record.text("caller")
+        or record.text("badge")
+        or record.text("client.address")
+        or UNKNOWN_CALLER,
+        sponsor=record.text("sponsor"),
         method=record.text("http.request.method") or "",
         path=record.text("url.path") or "",
         request=parse_body(body("request_body")),

@@ -268,16 +268,16 @@ def test_a_job_calls_company_services_as_itself_allowed_exactly_what_iam_gave_it
     assert acted.job["principal"] not in (OWNER, "")
 
 
-def test_a_jobs_model_call_is_recorded_under_its_node(acted: Acted) -> None:
+def test_a_jobs_model_call_is_recorded_under_its_workload_and_owner(acted: Acted) -> None:
     recorded = {
-        (call.caller, call.status)
+        (call.caller, call.sponsor, call.status)
         for call in acted.gateway_calls
         if isinstance(call.request, dict) and call.request.get("model") == COSTLY_MODEL
     }
 
     assert (acted.statuses["model"], recorded) == (
         HTTPStatus.FORBIDDEN,
-        {(acted.job["node"], HTTPStatus.FORBIDDEN)},
+        {(acted.job["principal"], OWNER, HTTPStatus.FORBIDDEN)},
     )
 
 
