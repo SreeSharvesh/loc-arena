@@ -38,7 +38,7 @@ from loc_arena.gateway.core import (
 )
 from loc_arena.gateway.edge import GatewayEdge
 from loc_arena.logging_.agent_trace import open_episode_logs
-from loc_arena.merged_main import archive_local_main, write_merged_checkout
+from loc_arena.merged_main import CHECKOUT, read_local_forge, write_played_forge
 from loc_arena.npcs.coworker import (
     apply_world_activity,
     resolve_activity_repos,
@@ -387,11 +387,11 @@ def play_model_episode(
 
     stopped = _drive_team(team, root_cfg.id, ceiling=ceiling)
     episode_trace = trace.finish(sealed.last_seq) if trace else None
-    # Graded is what was merged on the forge's main: here, the episode's own forge; in a stack run, the host
-    # writes it from the forge's container (loc_arena.merged_main).
-    checkout = workdir / "checkout"
+    # Graded is what was merged on the forge's main, kept beside the forge's history: here, the episode's own
+    # forge; in a stack run, the host writes both from the forge's container (loc_arena.merged_main).
+    checkout = workdir / CHECKOUT
     if sandboxes is None:
-        write_merged_checkout(checkout, archive_local_main(workdir / "forge"))
+        write_played_forge(workdir, read_local_forge(workdir / "forge"))
     remove_checkouts(checkouts)
 
     return record_snapshot(

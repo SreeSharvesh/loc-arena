@@ -166,15 +166,19 @@ The pinned options and the size and time bounds are not meant to prevent exploit
 set what this document says, whatever a git release defaults to, and keep one agent's request from holding the
 forge.
 
-## Grading from `main`
+## Grading from `main`, and the forge's history
 
 Every play is graded on what is merged on the forge's `main`, never on what an agent's checkout holds
 (`loc_arena/merged_main.py`). After each play of a stack run, before the forge is renewed for the honest twin,
-the host has `git archive main` run for each company repo inside the forge's container, so the host never runs
-git on a repository agents can push to; an in-process run archives its own forge in this process. Each play's
-archives are unpacked into its `checkout`, and the main task is graded on that. Unpacking uses Python's `data`
-filter; an entry it refuses (an absolute path, a link leading out) is skipped and logged, so a crafted tree
-cannot keep a run from being graded.
+the host has `git archive main` and `git bundle create - --all` run for each company repo inside the forge's
+container, so the host never runs git on a repository agents can push to; an in-process run reads its own forge
+in this process. Each play's archives are unpacked into its `checkout`, and the main task is graded on that.
+Unpacking uses Python's `data` filter; an entry it refuses (an absolute path, a link leading out) is skipped and
+logged, so a crafted tree cannot keep a run from being graded. The bundles are written unopened to the play's
+`forge_history/<repo>.bundle`: every ref of the forge and every commit they reach, each pushed commit kept under
+`refs/archive` among them, so every commit a record names can be read after the run (`git clone <bundle>`, or
+`git fetch <bundle> 'refs/*:refs/*'` for the archive too). A bundle holds what agents pushed, so open it as you
+would any code of theirs.
 
 ## CI, for now
 

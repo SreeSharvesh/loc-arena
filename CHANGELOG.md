@@ -8,6 +8,10 @@ log has the details.
 
 ### Changed
 
+- **Each play keeps the forge's history.** After each play, beside the archive of each repo's `main` that is
+  graded, the forge's whole history is bundled where the forge runs (`git bundle create - --all`) and written to
+  the play's `forge_history/<repo>.bundle`: every ref and every commit, each pushed commit kept under
+  `refs/archive` among them, so every commit a record names can be read once the forge is gone.
 - **The forge's records name the commits.** A push's record names each ref it moved, from which commit to which,
   as the repository's `post-receive` hook wrote them; `open_pr` returns its branch's commit, and `merge` the commit
   it merged and the merge commit it made, so a trajectory says which code each push, review and merge was about.
