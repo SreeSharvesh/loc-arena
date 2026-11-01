@@ -23,6 +23,7 @@ from loc_arena.observability import (
     read_traced_response_ids,
 )
 from loc_arena.stack_play import play_phases
+from pydantic import ValidationError
 
 AURORA = load_run_config(REPOSITORY / "configs" / "aurora-efficiency.yaml")  # its scenario runs Phoenix
 COMPOSE = ["docker", "compose", "-p", "locarena-test"]
@@ -140,3 +141,12 @@ def test_the_spans_name_the_replies_they_trace_and_one_pydantic_cannot_read_is_l
 
 def test_no_export_names_no_reply(tmp_path: Path) -> None:
     assert read_traced_response_ids(tmp_path) == frozenset()
+
+
+def test_a_line_without_attributes_is_no_span_phoenix_listed_and_stops_the_reading(tmp_path: Path) -> None:
+    span = json.loads(span_line("a"))
+    del span["attributes"]  # Phoenix's span list builds every span with its attributes, {} at least
+    (tmp_path / SPANS_FILE).write_text(f"{json.dumps(span)}\n")
+
+    with pytest.raises(ValidationError, match="attributes"):
+        read_traced_response_ids(tmp_path)
