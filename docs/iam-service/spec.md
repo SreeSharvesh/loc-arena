@@ -194,6 +194,14 @@ issued by the launching service (`POST /workloads`). It never gets the caller's 
   permission it may delegate that the caller holds, behind issuance's gate. It changes nothing, and the service
   then asks for exactly that.
 
+IAM also signs each workload a badge: a JWT (ES256, `meridian_iam.core.tokens`) naming the workload (`sub`),
+its `kind` and its `sponsor`, with audience `agentgateway`, ending when the workload does. It carries identity
+only; grants stay in IAM. With `create_app(iam, badges=True)` a workload's reply carries it beside the
+workload, signed after the audited issue, so no badge reaches the audit log; a stopped workload gets none. The
+model gateway verifies it against the key set `write_key_set` writes, in place since agentgateway watches the
+file's inode. The signing key lives in IAM's store, which only IAM mounts, so a restart keeps every badge
+valid; whoever reads the store can sign badges. A stack run does not turn badges on.
+
 An executable agent definition is not a principal. Registering one is a launch: the agent gets a workload
 whenever its registrant holds any of the delegation, and its executions run as it ([agents
 service](../agents-service.md)). Letting a caller discover the permissions a definition needs before launch

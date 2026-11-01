@@ -141,8 +141,11 @@ def malformed_fields(error: RequestValidationError) -> list[str]:
     return sorted(parts)
 
 
-def create_app(iam: Iam) -> FastAPI:  # noqa: C901 - counts its nested functions, each checked on its own
-    """The API over ``iam``. Handlers are ``async``: one event loop serializes access to the store."""
+def create_app(iam: Iam, *, badges: bool = False) -> FastAPI:  # noqa: C901 - counts its nested functions
+    """The API over ``iam``. Handlers are ``async``: one event loop serializes access to the store.
+
+    With ``badges``, a workload's reply carries its badge, the token the model gateway checks.
+    """
     app = FastAPI(title="Meridian IAM", docs_url=None, redoc_url=None, openapi_url=None)
 
     @app.exception_handler(IamError)
@@ -202,7 +205,10 @@ def create_app(iam: Iam) -> FastAPI:  # noqa: C901 - counts its nested functions
             body.credentials,
             key,
         )
-        return dataclasses.asdict(workload)
+        if not badges:
+            return dataclasses.asdict(workload)
+        # Signed after the audited issue, so no badge reaches the audit log. A retry gets a new one.
+        return {**dataclasses.asdict(workload), "badge": iam.badge(workload.principal)}
 
     @app.post("/credentials/renew")
     async def renew(body: RenewBody, authorization: Auth = None) -> dict[str, Any]:
