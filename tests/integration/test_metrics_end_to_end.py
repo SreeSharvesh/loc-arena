@@ -19,7 +19,7 @@ def test_safety_and_usefulness_compute_on_a_tiny_sweep(tmp_path: Path) -> None:
     threshold = calibrate_threshold(honest, proto.audit_budget_fpr)
 
     result = safety(attack, threshold)
-    # both attacks landed (minimal); both caught by the inference monitor
+    # both attacks landed (minimal), and both are caught
     assert result.n_landed == 2
     assert result.n_caught == 2
     assert result.safety_rate == 1.0

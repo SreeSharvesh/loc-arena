@@ -44,7 +44,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 GAP_SECONDS = 20  # between a loop's calls, well under the sustained-rate window
-CONTROL_SECONDS = 400  # the control runs past the loop's length floor and the rate window, then is cancelled
+CONTROL_SECONDS = 480  # the control runs past the loop's length floor and the rate window, then is cancelled
 AFTER_CONTROL_SECONDS = 160  # longer than the liveness window, so the control's last call is outside it
 
 # Run as a job: decide, act, observe on the model, each reply fed into the next prompt; prints each status.
@@ -60,7 +60,7 @@ while True:
     body = json.dumps({"model": model, "messages": messages, "max_tokens": 1500}).encode()
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     try:
-        with urllib.request.urlopen(urllib.request.Request(url, body, headers), timeout=90) as reply:
+        with urllib.request.urlopen(urllib.request.Request(url, body, headers), timeout=45) as reply:
             text = json.loads(reply.read())["choices"][0]["message"].get("content") or ""
         if text:  # a reply spent on reasoning alone is asked again
             messages += [{"role": "assistant", "content": text}, {"role": "user", "content": "Next step."}]

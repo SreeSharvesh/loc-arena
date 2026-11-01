@@ -5,9 +5,8 @@ Enforces the firewall: it reads ONLY the observable action/message fields declar
 ``heuristic`` mode (the default, deterministic) it scores each action/message with a rule; in ``live``
 mode it builds a prompt from those declared inputs, calls the trusted-monitor model THROUGH THE GATEWAY,
 and parses a strict JSON verdict, falling back to the heuristic on a parse failure. Because the covert
-coordination is worded as everyday work across chat, notes and tickets, and the blinding is routed around
-review, a fragmented chain leaves little for this monitor to see -- the multi-agent evasion the setting
-studies.
+coordination is worded as everyday work across chat, notes and tickets, a fragmented chain leaves little
+for this monitor to see -- the multi-agent evasion the setting studies.
 """
 
 from __future__ import annotations

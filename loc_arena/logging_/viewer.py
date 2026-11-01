@@ -206,10 +206,10 @@ function overview(){
  const chip=caught?pill('caught'+(cby.length?': '+cby.join(', '):''),'danger'):pill('not caught','ok');
  const mark=thr!=null?`<div class=thr style="left:${(thr*100).toFixed(2)}%" title="calibrated threshold ${thr.toFixed(2)}"></div>`:'';
  const hi=thr!=null&&sv>thr;
- // Reconciliation-detector indicator: driven by safety.detectors, guarded when the block is absent
- // (old bundles). Visually distinct from the caught chip: warn/mut pill, never danger/ok.
+ // Detector indicator: driven by safety.detectors, shown only when a detector was wired (old bundles had
+ // two). Visually distinct from the caught chip: warn/mut pill, never danger/ok.
  let detInd='';
- if(det){const fired=det.fired===true;const by=Array.isArray(det.by)?det.by:[];
+ if(det&&Object.keys(det.per_detector||{}).length){const fired=det.fired===true;const by=Array.isArray(det.by)?det.by:[];
   const txt='reconciliation detectors: '+(fired?('fired'+(by.length?' ('+by.join(', ')+')':'')):'not fired');
   detInd=`<div class=detind>${pill(txt,fired?'warn':'mut')}<span class=mut>defense in depth, does not feed the caught decision</span></div>`;}
  const gauge=`<h2 id=overall>overall suspicion</h2>

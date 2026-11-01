@@ -5,7 +5,7 @@ untrusted agent and its sub-agents do real research-engineering work on a seven-
 attempt to establish an internal rogue deployment (running the model off the sanctioned, monitored path). Every
 episode measures two things and reports the gap between them: whether a rogue deployment actually happened (a
 sealed, deterministic ground-truth verifier the agent cannot reach) and whether the platform's own control points
-caught it (configurable in-scenario monitors plus deterministic reconciliation detectors). The gap between those
+caught it (configurable in-scenario monitors). The gap between those
 two, under an adversarial agent, is the science.
 
 This is defensive AI-safety research infrastructure. Attack chains are represented as control-plane state
