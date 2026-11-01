@@ -35,7 +35,7 @@ There are two tokens, and both carry identity only:
 
 | Token | Claims | Lives | Held by |
 | --- | --- | --- | --- |
-| Caller token | `iss` (`iam`), `aud` (`agentgateway`), `sub`, `team`, `kind`, `sponsor` (for a launched workload), `iat`, `exp` | the play | the caller |
+| Caller token | `iss` (`iam`), `aud` (`agentgateway`), `sub`, `kind`, `sponsor` (for a launched workload), `cred` (the credential it was swapped for), `iat`, `exp` | the play | the caller |
 | Service token | `iss` (`iam`), `aud` (the service's name), `sub`, `iat`, `exp` | minutes; the door caches it per caller and service | the door, then the service |
 
 Grants stay in IAM, so requests, approvals, expiry and revocation work as today, and an approval works on the next
@@ -59,16 +59,17 @@ too, on a route without `jwtAuth`, because IAM authenticates its own callers.
 
 | PR | Ships | Size (production code) |
 | --- | --- | --- |
-| 1 | IAM issues tokens: a signing key; its key set written in place (the door watches the file's inode); `POST /token`, which swaps an IAM credential for a caller token; token exchange (RFC 8693) for a service token, which only the door may ask for; `authorize` accepting a service token for its own service only; a workload's caller token at issue, beside its credential | about +270 |
-| 2 | One door for services: agentgateway serves every company service's HTTP API and MCP tools, and IAM's API, by `Host`, with `jwtAuth` and `oauthTokenExchange`; services move to an internal network; each sandbox holds one caller token instead of one identity file per service; the tools gateway's per-agent credential map goes | about +70, −140 |
-| 3 | Models through the door: `jwtAuth` replaces the API-key list; the call record names `sub`, `team` and `sponsor` (the badge); jobs and agent runs call as themselves. The model route keeps `passthrough` | about +50, −40 |
+| 1 | IAM issues tokens: a signing key kept in IAM's store; its key set written in place (the door watches the file's inode); `POST /token`, which swaps an IAM credential for a caller token; token exchange (RFC 8693) for a service token, which only the door may ask for; `authorize` accepting a service token for its own service only; a workload's caller token at issue, beside its credential | about +270 |
+| 2 | One door for services: IAM writes its key set to `/jwks/jwks.json` on a volume it mounts read-write and the door read-only, at start and on each rotation; agentgateway serves every company service's HTTP API and MCP tools, and IAM's API, by `Host`, with `jwtAuth` and `oauthTokenExchange`; services move to an internal network; each sandbox holds one caller token instead of one identity file per service; the tools gateway's per-agent credential map goes | about +70, −140 |
+| 3 | Models through the door: `jwtAuth` replaces the API-key list; the call record names `sub` and `sponsor` (the badge); the model route's `jwtAuth` expects `audiences: [agentgateway]`, as the services route does; jobs and agent runs call as themselves. The model route keeps `passthrough` | about +50, −40 |
 
 The checker by badge and the observation window follow as their own plans (#142).
 
 ## Decisions
 
-- **Audience: one per service**, as IAM's credentials have today. A service that holds a caller's token can use it at
-  no other service. The door exchanges the caller token for each service's token at IAM.
+- **Audience: one per service**, as IAM's credentials have today. Each service receives only its own service token,
+  which no other service accepts. The door exchanges the caller token for each service's token at IAM, and IAM
+  gives only an audience that a live credential of the caller carries.
 - **Lifetime: one caller token per play**, so no harness or job needs a refresher. Service tokens are short-lived,
   and the door renews them itself. An expired token still passes for 60 seconds (agentgateway's clock allowance),
   and IAM allows the same 60 seconds, so a token just past its expiry gets the same answer at both. In
@@ -94,7 +95,8 @@ The checker by badge and the observation window follow as their own plans (#142)
 | Real IAM, notes and chat | with a prototype of PR 1 in IAM (about 50 lines) and services unchanged: a JWT reads notes through the door; an agent without the right gets IAM's 403 naming the permission, asks, is approved and reads with the same token; chat's MCP `post` through the door is authored by the agent, and chat's record names it; a forged JWT is refused at the door and at IAM; a valid JWT sent around the door still works, so the internal network is what makes the door the only door |
 | Token exchange at the door | with a stand-in token endpoint and service: the door exchanges the caller token for a service token, and the service receives only the service token (audience `notes`, subject the caller); IAM receives the RFC 8693 grant, `subject_token_type` access token and `audience` naming the service, and its reply must carry `token_type: Bearer`; three repeat calls reach IAM once, since the door caches each token until its `expires_in`, never past the caller token's own expiry; with `clientAuth` the door sends its secret and an agent calling the endpoint directly gets a 401; without `preserveToken` the door removes the caller token after `jwtAuth` and the exchange fails with a 400; a caller token a few seconds past expiry passes the door, while an IAM with no clock allowance refuses it and the caller gets a 400 |
 
-The door's policy on each route, as run in the first three spikes:
+The door's policy on each route, as run in the first three spikes (spike only: their tokens carried `aud`
+`meridian`):
 
 ```yaml
 jwtAuth: {mode: strict, issuer: iam, audiences: [meridian], jwks: {file: /jwks/jwks.json}}
@@ -109,7 +111,7 @@ The planned services route, as run in the fourth spike, with one `audiences` ent
 jwtAuth: {mode: strict, issuer: iam, audiences: [agentgateway], jwks: {file: /jwks/jwks.json}, preserveToken: true}
 backendAuth:
   oauthTokenExchange: {host: iam:8000, path: /token, audiences: [notes],
-                       clientAuth: {clientId: door, clientSecret: {file: /run/secrets/token_exchange}}}
+                       clientAuth: {clientId: agentgateway, clientSecret: {file: /run/secrets/token_exchange}}}
 ```
 
 `preserveToken` keeps the caller token after `jwtAuth` accepts it, so the exchange has a token to send.
@@ -119,7 +121,8 @@ backendAuth:
 - The checker by badge, the observation window and the sealed record of every command (#142).
 - Inference servers and the model store.
 - Moving `PermissionScope` fields into IAM.
-- Per-team token budgets on the model route.
+- Per-team token budgets on the model route, and the `team` claim they need: the agents under test belong to no
+  team in IAM.
 
 ## Done when
 
