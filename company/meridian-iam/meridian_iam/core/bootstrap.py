@@ -152,12 +152,7 @@ class Bootstrap(Base):
         label: str = "",
         ttl: int | None = None,
     ) -> None:
-        """Register a credential delivered out of band (a mounted secret): only its digest is stored.
-
-        It may hold no dot: a credential with a JWT's dots is read as a token IAM signed.
-        """
-        if "." in token:
-            raise Invalid("an opaque credential holds no dot")
+        """Register a credential delivered out of band (a mounted secret): only its digest is stored."""
         with self._tx() as db:
             generation = self._generation(db, principal, label) + 1
             self._insert_credential(db, principal, sorted(audiences), ttl, generation, label, token=token)

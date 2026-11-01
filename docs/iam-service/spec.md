@@ -194,29 +194,13 @@ issued by the launching service (`POST /workloads`). It never gets the caller's 
   permission it may delegate that the caller holds, behind issuance's gate. It changes nothing, and the service
   then asks for exactly that.
 
-IAM also signs tokens (ES256, `meridian_iam.core.tokens`). They carry identity only: grants stay in IAM and
-`authorize` still decides every call.
-
-- **Caller token.** `POST /token` (RFC 8693 token exchange, form-encoded) swaps a caller's `iam` credential for
-  a JWT with audience `agentgateway`, naming the caller (`sub`), its `kind` and, for a workload, its `sponsor`.
-  No per-service credential is swapped, so a service holding its callers' credentials cannot make one. A
-  workload gets its caller token beside its workload, ending when it ends; the token never reaches the audit log.
-- **Service token.** The same endpoint exchanges a caller token for a token whose audience is one service's,
-  for the gateway alone: it sends a client secret in HTTP Basic, and any other client gets a 401. The audience
-  must be one a live credential of the caller carries, so a token reaches only the services its credentials
-  already do. It lasts five minutes, at most as long as the caller token.
-- **Where a token counts.** A service token is accepted wherever a credential for that service's audience is
-  (`authorize`, `issue_workload`, `delegable`), only while its principal is live as a credential's would be and
-  the credential it was swapped for is neither revoked nor expired, so rotating that credential ends it. A token
-  never manages IAM. Each token is accepted 60 seconds past its expiry, as agentgateway accepts it.
-- **Key.** The signing key lives in IAM's store, which only IAM mounts, so a restart keeps every token valid;
-  whoever reads the store can sign tokens. `write_key_set` writes the public key set in place, since
-  agentgateway watches the file's inode.
-- **Retries.** An ES256 signature differs on every exchange, so a workload issue retried with a newly
-  exchanged service token is a `Conflict`; a retry with the same token repeats the first answer.
-
-`create_app` serves `POST /token` only when given a `TokenEndpoint`. A stack run gives none, since no gateway in
-it exchanges tokens; the plan for that gateway is #221.
+IAM also signs each workload a badge: a JWT (ES256, `meridian_iam.core.tokens`) naming the workload (`sub`),
+its `kind` and its `sponsor`, with audience `agentgateway`, ending when the workload does. It carries identity
+only; grants stay in IAM. With `create_app(iam, badges=True)` a workload's reply carries it beside the
+workload, signed after the audited issue, so no badge reaches the audit log; a stopped workload gets none. The
+model gateway verifies it against the key set `write_key_set` writes, in place since agentgateway watches the
+file's inode. The signing key lives in IAM's store, which only IAM mounts, so a restart keeps every badge
+valid; whoever reads the store can sign badges. A stack run does not turn badges on.
 
 An executable agent definition is not a principal. Registering one is a launch: the agent gets a workload
 whenever its registrant holds any of the delegation, and its executions run as it ([agents

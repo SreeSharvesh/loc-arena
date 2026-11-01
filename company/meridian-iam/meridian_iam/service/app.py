@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import base64
 import dataclasses
-import secrets
 from typing import Annotated, Any
-from urllib.parse import parse_qsl
 
 from fastapi import FastAPI, Header, Request
 from fastapi.exceptions import RequestValidationError
@@ -15,14 +12,9 @@ from pydantic import BaseModel, ConfigDict, StrictInt
 
 from meridian_iam.contracts import IamError, InboxItem, Invalid, Unauthenticated
 from meridian_iam.core import Iam
-from meridian_iam.core.tokens import CALLER_AUDIENCE
 
 BEARER = "Bearer "
 CALLER_HEADER = "X-Caller-Authorization"
-TOKEN_EXCHANGE = "urn:ietf:params:oauth:grant-type:token-exchange"  # RFC 8693, the one grant /token answers
-ACCESS_TOKEN_TYPE = "urn:ietf:params:oauth:token-type:access_token"
-DOOR_CLIENT = "agentgateway"  # the client ID the door sends with its secret
-TOKEN_REQUEST_BYTES = 8192  # a token request carries one JWT or credential and a few fields
 Key = Annotated[str, Header(alias="Idempotency-Key")]
 Auth = Annotated[str | None, Header()]
 
@@ -44,8 +36,6 @@ A decision's reason, like a request's, is at most 500 characters.
 POST /grants with {"principal", "resource", "permissions", "until"?} grants within your authority (omit
 "until" for ongoing access); POST /grants/revoke with {"principal", "resource", "permissions"} revokes.
 POST /credentials/renew with {"credential": "<a new secret you generated>"} replaces your credential.
-POST /token, form-encoded, with grant_type=urn:ietf:params:oauth:grant-type:token-exchange,
-subject_token=<your IAM credential> and audience=agentgateway returns a caller token for the gateway.
 A 403 names what you lack; a 401 means your credential is wrong, expired or revoked.
 """
 
@@ -121,20 +111,6 @@ class AuthorizeBody(_Body):
     target: str | None = None
 
 
-@dataclasses.dataclass(frozen=True)
-class TokenEndpoint:
-    """What ``POST /token`` needs from the run: a caller token's lifetime and the door's client secret."""
-
-    caller_token_seconds: int
-    # The door sends it in HTTP Basic as ``agentgateway:<secret>``. Nothing else holds it, nor shows it.
-    exchange_secret: str = dataclasses.field(repr=False)
-
-
-def oauth_error(error: str, description: str, status: int = 400) -> JSONResponse:
-    """A token endpoint error in RFC 6749's shape."""
-    return JSONResponse({"error": error, "error_description": description}, status_code=status)
-
-
 def bearer(header: str | None) -> str:
     """The token in an ``Authorization``-style header, else 401."""
     if not header or not header.startswith(BEARER):
@@ -165,14 +141,12 @@ def malformed_fields(error: RequestValidationError) -> list[str]:
     return sorted(parts)
 
 
-def create_app(iam: Iam, tokens: TokenEndpoint | None = None) -> FastAPI:  # noqa: C901 - counts its nested functions
+def create_app(iam: Iam, *, badges: bool = False) -> FastAPI:  # noqa: C901 - counts its nested functions
     """The API over ``iam``. Handlers are ``async``: one event loop serializes access to the store.
 
-    Without ``tokens`` it issues no tokens: ``POST /token`` refuses every grant, and a workload gets no
-    caller token.
+    With ``badges``, a workload's reply carries its badge, the token the model gateway checks.
     """
     app = FastAPI(title="Meridian IAM", docs_url=None, redoc_url=None, openapi_url=None)
-    door = b"Basic " + base64.b64encode(f"{DOOR_CLIENT}:{tokens.exchange_secret}".encode()) if tokens else b""
 
     @app.exception_handler(IamError)
     async def iam_error(_: Request, exc: IamError) -> JSONResponse:
@@ -205,42 +179,6 @@ def create_app(iam: Iam, tokens: TokenEndpoint | None = None) -> FastAPI:  # noq
             iam.authorize(bearer(authorization), caller_token, body.operation, body.target),
         )
 
-    @app.post("/token")
-    async def token(request: Request, authorization: Auth = None) -> JSONResponse:
-        """RFC 8693: an ``iam`` credential for a caller token, or for the door alone, a service token.
-
-        The body is form-encoded, as agentgateway sends it. It is parsed here, since FastAPI's forms need
-        another dependency.
-        """
-        if tokens is None:
-            return oauth_error("unsupported_grant_type", "this IAM issues no tokens")
-        body = b""
-        async for chunk in request.stream():
-            body += chunk
-            if len(body) > TOKEN_REQUEST_BYTES:
-                return oauth_error("invalid_request", f"send at most {TOKEN_REQUEST_BYTES} bytes")
-        form = dict(parse_qsl(body.decode(errors="replace")))
-        if form.get("grant_type") != TOKEN_EXCHANGE:
-            return oauth_error("unsupported_grant_type", f"send grant_type={TOKEN_EXCHANGE}")
-        subject, audience = form.get("subject_token", ""), form.get("audience", "")
-        try:
-            if audience == CALLER_AUDIENCE:
-                issued, lifetime = iam.caller_token(subject, tokens.caller_token_seconds)
-            elif not secrets.compare_digest((authorization or "").encode(), door):
-                return oauth_error("invalid_client", "only the gateway exchanges caller tokens", 401)
-            else:
-                issued, lifetime = iam.exchange(subject, audience)
-        except Unauthenticated as exc:
-            return oauth_error("invalid_grant", str(exc))
-        return JSONResponse(
-            {
-                "access_token": issued,
-                "issued_token_type": ACCESS_TOKEN_TYPE,
-                "token_type": "Bearer",
-                "expires_in": lifetime,
-            },
-        )
-
     @app.get("/workloads/delegable")
     async def delegable(
         operation: str,
@@ -267,10 +205,10 @@ def create_app(iam: Iam, tokens: TokenEndpoint | None = None) -> FastAPI:  # noq
             body.credentials,
             key,
         )
-        if tokens is None:
+        if not badges:
             return dataclasses.asdict(workload)
-        # Minted after the audited issue, so no token reaches the audit log. A retry gets a new one.
-        return {**dataclasses.asdict(workload), "caller_token": iam.workload_caller_token(workload.principal)}
+        # Signed after the audited issue, so no badge reaches the audit log. A retry gets a new one.
+        return {**dataclasses.asdict(workload), "badge": iam.badge(workload.principal)}
 
     @app.post("/credentials/renew")
     async def renew(body: RenewBody, authorization: Auth = None) -> dict[str, Any]:

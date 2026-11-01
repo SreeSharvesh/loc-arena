@@ -2,6 +2,6 @@
 
 from __future__ import annotations
 
-from meridian_iam.service.app import TokenEndpoint, create_app
+from meridian_iam.service.app import create_app
 
-__all__ = ["TokenEndpoint", "create_app"]
+__all__ = ["create_app"]
