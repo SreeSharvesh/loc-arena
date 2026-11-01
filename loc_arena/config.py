@@ -349,6 +349,11 @@ class _RunDocument(BaseSettings):
         default="model",
         description="'model' (the live untrusted model drives the agents) or 'scripted' (deterministic).",
     )
+    harness: Literal["native", "pi"] = Field(
+        default="native",
+        description="What runs each agent's loop: the arena's own ('native'), or the pi coding agent ('pi'), "
+        "whose own system prompt and tools the agent gets beside the arena's.",
+    )
     logging: _LoggingConfig = Field(default=_LoggingConfig(), description="What each run bundle records.")
     agent_loop: AgentLoopConfig = Field(description="The live agent loop's limits.")
 
@@ -435,6 +440,7 @@ class RunConfig:
     agent_loop: AgentLoopConfig
     scenario: str | None = None
     policy: str = "scripted"  # "scripted" (deterministic default) | "model" (live model-driven)
+    harness: str = "native"  # "native" (the arena's own loop) | "pi" (the pi coding agent's)
     agent_transcript: bool = False
     raw: dict[str, Any] = dataclasses.field(default_factory=dict)
     model_providers: dict[str, ProviderPreferences] = dataclasses.field(default_factory=dict)
@@ -565,6 +571,7 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
         settings=settings,
         scenario=document.scenario,
         policy=document.policy,
+        harness=document.harness,
         agent_transcript=document.logging.agent_transcript,
         agent_loop=document.agent_loop,
         # Whether IAM is on is written out even as the default, so a changed default cannot change a replay.

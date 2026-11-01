@@ -16,7 +16,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, NamedTuple, cast
 
-from sandbox_server.wire import CommandRequest
+from sandbox_server.wire import CommandRequest, CommandResult
 
 from loc_arena.sandbox import SandboxClient, SandboxError
 from loc_arena.settings import StackSettings
@@ -152,23 +152,49 @@ class CodeServices:
 
     # --- shell ---------------------------------------------------------------------------------------
     def _t_bash(self, args: dict[str, Any]) -> dict[str, Any]:
-        """Run ``bash -c <command>`` in the checkout, in the agent's sandbox; a timeout kills its session.
-
-        Not a login shell: Debian's ``/etc/profile`` would reset ``PATH`` and drop the image's virtualenv.
-        """
+        """Run ``bash -c <command>`` in the checkout, in the agent's sandbox; a timeout kills its session."""
         if self._sandboxes is None:
             return {"error": "bash runs only in a stack run's sandbox", "tool": "bash"}
-        agent = str(args["actor_uid"])
-        if agent not in self._sandboxes:
-            raise SandboxError(f"{agent} has no sandbox, so its command did not run")
         timeout = self._stack.shell_timeout_seconds
-        request = CommandRequest(
-            argv=["bash", "-c", str(args["command"])],
-            directory=self._checkout,
-            timeout_seconds=timeout,
-            environment={"PYTHONPATH": self._pythonpath()},
-        )
-        res = self._sandboxes[agent].run(request)
+        res = self._run_in_sandbox(str(args["actor_uid"]), str(args["command"]), self._checkout, timeout)
         if res.returncode is None:
             return {**res.model_dump(), "error": f"timed out after {timeout:g} seconds"}
         return res.model_dump()
+
+    def _run_in_sandbox(self, agent: str, command: str, directory: Path, timeout: float) -> CommandResult:
+        """Run ``command`` in ``agent``'s sandbox.
+
+        Not a login shell: Debian's ``/etc/profile`` would reset ``PATH`` and drop the image's virtualenv.
+        """
+        if self._sandboxes is None or agent not in self._sandboxes:
+            raise SandboxError(f"{agent} has no sandbox, so its command did not run")
+        request = CommandRequest(
+            argv=["bash", "-c", command],
+            directory=directory,
+            timeout_seconds=timeout,
+            environment={"PYTHONPATH": self._pythonpath()},
+        )
+        return self._sandboxes[agent].run(request)
+
+    # --- pi's operations: what pi's own tools do to a file, or run, each at an absolute path ----------
+    def read_bytes(self, path: str) -> bytes:
+        """The bytes of the file at ``path``, in the checkout or the skills folder."""
+        return self._resolve_read(path).read_bytes()
+
+    def check_readable(self, path: str) -> None:
+        """Raise ``FileNotFoundError`` unless ``path``, in the checkout or the skills folder, is a file."""
+        if not self._resolve_read(path).is_file():
+            raise FileNotFoundError(f"no such file: {path}")
+
+    def write_text(self, path: str, content: str) -> None:
+        """Write ``content`` to the file at ``path`` in the checkout."""
+        self._resolve(path).write_text(content)
+
+    def make_directory(self, path: str) -> None:
+        """Make the directory ``path`` in the checkout, and its parents."""
+        self._resolve(path).mkdir(parents=True, exist_ok=True)
+
+    def run_command(self, agent: str, command: str, directory: str, timeout: float | None) -> CommandResult:
+        """Run ``command`` in ``agent``'s sandbox, from ``directory`` in the checkout, within the limit."""
+        limit = self._stack.shell_timeout_seconds
+        return self._run_in_sandbox(agent, command, self._resolve(directory), min(timeout or limit, limit))
