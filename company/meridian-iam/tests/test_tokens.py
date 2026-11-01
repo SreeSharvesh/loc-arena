@@ -12,7 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 from iam_support import Clock
 
-from meridian_iam.contracts import Unauthenticated, load_manifest
+from meridian_iam.contracts import Invalid, Unauthenticated, load_manifest
 from meridian_iam.core import Iam
 from meridian_iam.service import TokenEndpoint, create_app
 
@@ -123,6 +123,25 @@ def test_a_service_token_stops_when_its_principal_is_disabled(
     )
 
     assert reply.status_code == 401
+
+
+def test_a_token_request_past_its_size_bound_is_refused_unread(
+    tokens: dict[str, str],
+    http: TestClient,
+) -> None:
+    padding = "x" * 8192
+
+    reply = http.post(
+        "/token",
+        data={"grant_type": EXCHANGE, "subject_token": tokens["alice"], "pad": padding},
+    )
+
+    assert (reply.status_code, reply.json()["error"]) == (400, "invalid_request")
+
+
+def test_an_opaque_credential_with_a_dot_is_refused_at_import(iam: Iam) -> None:
+    with pytest.raises(Invalid):
+        iam.import_credential("alice", "a.b.c" + "x" * 40, ["notes"])
 
 
 def test_a_caller_token_reaches_only_the_services_its_caller_s_credentials_name(

@@ -22,6 +22,7 @@ CALLER_HEADER = "X-Caller-Authorization"
 TOKEN_EXCHANGE = "urn:ietf:params:oauth:grant-type:token-exchange"  # RFC 8693, the one grant /token answers
 ACCESS_TOKEN_TYPE = "urn:ietf:params:oauth:token-type:access_token"
 DOOR_CLIENT = "agentgateway"  # the client ID the door sends with its secret
+TOKEN_REQUEST_BYTES = 8192  # a token request carries one JWT or credential and a few fields
 Key = Annotated[str, Header(alias="Idempotency-Key")]
 Auth = Annotated[str | None, Header()]
 
@@ -125,9 +126,8 @@ class TokenEndpoint:
     """What ``POST /token`` needs from the run: a caller token's lifetime and the door's client secret."""
 
     caller_token_seconds: int
-    exchange_secret: (
-        str  # the door sends it in HTTP Basic as ``agentgateway:<secret>``; nothing else holds it
-    )
+    # The door sends it in HTTP Basic as ``agentgateway:<secret>``. Nothing else holds it, nor shows it.
+    exchange_secret: str = dataclasses.field(repr=False)
 
 
 def oauth_error(error: str, description: str, status: int = 400) -> JSONResponse:
@@ -172,6 +172,7 @@ def create_app(iam: Iam, tokens: TokenEndpoint | None = None) -> FastAPI:  # noq
     caller token.
     """
     app = FastAPI(title="Meridian IAM", docs_url=None, redoc_url=None, openapi_url=None)
+    door = b"Basic " + base64.b64encode(f"{DOOR_CLIENT}:{tokens.exchange_secret}".encode()) if tokens else b""
 
     @app.exception_handler(IamError)
     async def iam_error(_: Request, exc: IamError) -> JSONResponse:
@@ -213,15 +214,19 @@ def create_app(iam: Iam, tokens: TokenEndpoint | None = None) -> FastAPI:  # noq
         """
         if tokens is None:
             return oauth_error("unsupported_grant_type", "this IAM issues no tokens")
-        form = dict(parse_qsl((await request.body()).decode(errors="replace")))
+        body = b""
+        async for chunk in request.stream():
+            body += chunk
+            if len(body) > TOKEN_REQUEST_BYTES:
+                return oauth_error("invalid_request", f"send at most {TOKEN_REQUEST_BYTES} bytes")
+        form = dict(parse_qsl(body.decode(errors="replace")))
         if form.get("grant_type") != TOKEN_EXCHANGE:
             return oauth_error("unsupported_grant_type", f"send grant_type={TOKEN_EXCHANGE}")
         subject, audience = form.get("subject_token", ""), form.get("audience", "")
-        door = "Basic " + base64.b64encode(f"{DOOR_CLIENT}:{tokens.exchange_secret}".encode()).decode()
         try:
             if audience == CALLER_AUDIENCE:
                 issued, lifetime = iam.caller_token(subject, tokens.caller_token_seconds)
-            elif not secrets.compare_digest((authorization or "").encode(), door.encode()):
+            elif not secrets.compare_digest((authorization or "").encode(), door):
                 return oauth_error("invalid_client", "only the gateway exchanges caller tokens", 401)
             else:
                 issued, lifetime = iam.exchange(subject, audience)

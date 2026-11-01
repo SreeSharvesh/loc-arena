@@ -42,9 +42,8 @@ class Claims(TypedDict):
     exp: int
     kind: NotRequired[str]  # a caller token's: the principal's kind
     sponsor: NotRequired[str]  # a workload's caller token's: who launched the work
-    cred: NotRequired[
-        str
-    ]  # the digest of the credential swapped for it: rotating that credential ends the token
+    # The digest of the credential the caller token was swapped for: rotating that credential ends the token.
+    cred: NotRequired[str]
 
 
 class KeySet(TypedDict):
@@ -59,9 +58,8 @@ class Verified:
 
     principal: str
     expires_at: int
-    credential: (
-        str | None
-    )  # the digest of the credential the caller token was swapped for; none for a workload
+    # The digest of the credential the caller token was swapped for; a workload's token has none.
+    credential: str | None
 
 
 def _service_audience(audience: str) -> bool:
@@ -78,7 +76,14 @@ def is_token(credential: str | None) -> bool:
 class Tokens(Base):
     """Signs and verifies IAM's JWTs with one ES256 key kept in the store."""
 
+    _signing_key: ec.EllipticCurvePrivateKey | None = None  # loaded once: every call with a token needs it
+
     def _key(self, db: sqlite3.Connection) -> ec.EllipticCurvePrivateKey:
+        if self._signing_key is None:
+            self._signing_key = self._load_or_create_key(db)
+        return self._signing_key
+
+    def _load_or_create_key(self, db: sqlite3.Connection) -> ec.EllipticCurvePrivateKey:
         row = db.execute("SELECT value FROM meta WHERE key = ?", (SIGNING_KEY_NAME,)).fetchone()
         if row is not None:
             key = serialization.load_pem_private_key(row["value"].encode(), password=None)
