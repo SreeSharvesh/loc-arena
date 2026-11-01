@@ -59,7 +59,7 @@ too, on a route without `jwtAuth`, because IAM authenticates its own callers.
 
 | PR | Ships | Size (production code) |
 | --- | --- | --- |
-| 1 | IAM issues tokens. It starts with a check that agentgateway v1.6.0's `oauthTokenExchange` works against IAM's endpoint, which the spikes did not cover. Then: a signing key; its key set written in place (the door watches the file's inode); `POST /token`, which swaps an IAM credential for a caller token; token exchange (RFC 8693) for a service token; `authorize` accepting a service token for its own service only; a workload's caller token at issue, beside its credential | about +250 |
+| 1 | IAM issues tokens: a signing key; its key set written in place (the door watches the file's inode); `POST /token`, which swaps an IAM credential for a caller token; token exchange (RFC 8693) for a service token, which only the door may ask for; `authorize` accepting a service token for its own service only; a workload's caller token at issue, beside its credential | about +270 |
 | 2 | One door for services: agentgateway serves every company service's HTTP API and MCP tools, and IAM's API, by `Host`, with `jwtAuth` and `oauthTokenExchange`; services move to an internal network; each sandbox holds one caller token instead of one identity file per service; the tools gateway's per-agent credential map goes | about +70, −140 |
 | 3 | Models through the door: `jwtAuth` replaces the API-key list; the call record names `sub`, `team` and `sponsor` (the badge); jobs and agent runs call as themselves. The model route keeps `passthrough` | about +50, −40 |
 
@@ -70,7 +70,8 @@ The checker by badge and the observation window follow as their own plans (#142)
 - **Audience: one per service**, as IAM's credentials have today. A service that holds a caller's token can use it at
   no other service. The door exchanges the caller token for each service's token at IAM.
 - **Lifetime: one caller token per play**, so no harness or job needs a refresher. Service tokens are short-lived,
-  and the door renews them itself. An expired token still passes for 60 seconds (agentgateway's clock allowance). In
+  and the door renews them itself. An expired token still passes for 60 seconds (agentgateway's clock allowance),
+  and IAM allows the same 60 seconds, so a token just past its expiry gets the same answer at both. In
   the spike on one replica of agentgateway v1.6.0, rewriting the key-set file in place took effect within 3 seconds,
   both when adding and when removing a key. Replacing the file by rename was picked up once, after which later
   replacements were missed until a restart. So IAM rewrites the key-set file in place, and the observation window's
@@ -79,16 +80,21 @@ The checker by badge and the observation window follow as their own plans (#142)
   need agentgateway's parsed `completions` route type, and in the spike that type left the request body unchanged,
   OpenRouter fields included.
 - **IAM's own API: behind the door**, on a route without `jwtAuth`, because IAM authenticates its own callers.
+- **Token exchange: the door's alone.** IAM's token endpoint exchanges a caller token only for a client that sends
+  the door's secret (`clientAuth`, HTTP Basic), which the door reads from a file. An agent that sends its own caller
+  token to the endpoint gets a 401. Otherwise an agent could get service tokens itself and call services that the
+  door never logs.
 
-## Evidence: three spikes on agentgateway v1.6.0
+## Evidence: four spikes on agentgateway v1.6.0
 
 | Spike | Shows |
 | --- | --- |
 | Stand-in services | `jwtAuth` on our own issuer with a file key set refuses no token, expired, wrong audience, wrong issuer and unknown key; the door sets the caller's identity and overwrites a spoofed one; `passthrough` hands the JWT to HTTP and MCP backends; a rule on `jwt.team` hides a tool from `tools/list` and refuses its call; the access log names the caller, including a job's sponsor; `localRateLimit` keyed on `jwt.sub` limits each caller apart; the services' names do not resolve from a sandbox |
 | Transparent door and real clients | agents keep `http://notes:8000` through network aliases; the MCP SDK client and the OpenAI SDK, streaming included, work with the JWT as bearer or API key; a token budget keyed on `jwt.team` is shared by an agent and its job and refuses the call past it; reusing another caller's MCP session ID grants nothing, as each request is checked on its own token; `jwtAuth` adds about 0.2 ms at p50 |
 | Real IAM, notes and chat | with a prototype of PR 1 in IAM (about 50 lines) and services unchanged: a JWT reads notes through the door; an agent without the right gets IAM's 403 naming the permission, asks, is approved and reads with the same token; chat's MCP `post` through the door is authored by the agent, and chat's record names it; a forged JWT is refused at the door and at IAM; a valid JWT sent around the door still works, so the internal network is what makes the door the only door |
+| Token exchange at the door | with a stand-in token endpoint and service: the door exchanges the caller token for a service token, and the service receives only the service token (audience `notes`, subject the caller); IAM receives the RFC 8693 grant, `subject_token_type` access token and `audience` naming the service, and its reply must carry `token_type: Bearer`; three repeat calls reach IAM once, since the door caches each token until its `expires_in`, never past the caller token's own expiry; with `clientAuth` the door sends its secret and an agent calling the endpoint directly gets a 401; without `preserveToken` the door removes the caller token after `jwtAuth` and the exchange fails with a 400; a caller token a few seconds past expiry passes the door, while an IAM with no clock allowance refuses it and the caller gets a 400 |
 
-The door's policy on each route, as run in the spikes:
+The door's policy on each route, as run in the first three spikes:
 
 ```yaml
 jwtAuth: {mode: strict, issuer: iam, audiences: [meridian], jwks: {file: /jwks/jwks.json}}
@@ -97,8 +103,16 @@ localRateLimit:
 - {type: tokens, maxTokens: 120, tokensPerFill: 120, fillInterval: 3600s, key: jwt.team}   # model route only
 ```
 
-The planned services route differs in two ways. `jwtAuth` expects the caller token's audience `agentgateway`, and
-`backendAuth.oauthTokenExchange` against IAM's token endpoint takes the place of `passthrough`.
+The planned services route, as run in the fourth spike, with one `audiences` entry per service:
+
+```yaml
+jwtAuth: {mode: strict, issuer: iam, audiences: [agentgateway], jwks: {file: /jwks/jwks.json}, preserveToken: true}
+backendAuth:
+  oauthTokenExchange: {host: iam:8000, path: /token, audiences: [notes],
+                       clientAuth: {clientId: door, clientSecret: {file: /run/secrets/token_exchange}}}
+```
+
+`preserveToken` keeps the caller token after `jwtAuth` accepts it, so the exchange has a token to send.
 
 ## Out of scope
 
@@ -122,7 +136,9 @@ The planned services route differs in two ways. `jwtAuth` expects the caller tok
 - [JWT authentication](https://agentgateway.dev/docs/standalone/latest/documentation/configuration/security/jwt-authn.md): `jwtAuth` fields, file key sets, claims as `jwt.<claim>`, `passthrough`.
 - [MCP authorization](https://agentgateway.dev/docs/standalone/latest/documentation/configuration/security/mcp-authz.md): rules on `jwt.sub` and other claims.
 - [Backend authentication](https://agentgateway.dev/docs/standalone/latest/documentation/configuration/security/backend-authn/key.md): `passthrough` forwards the JWT `jwtAuth` validated.
-- [Token exchange](https://agentgateway.dev/docs/standalone/latest/documentation/configuration/security/backend-authn/token-exchange/standard.md): `backendAuth.oauthTokenExchange` (RFC 8693), present in v1.6.0's config schema (`schema/config.json`).
+- [Token exchange](https://agentgateway.dev/docs/standalone/latest/documentation/configuration/security/backend-authn/token-exchange/standard.md): `backendAuth.oauthTokenExchange` (RFC 8693), present in v1.6.0's config schema (`schema/config.json`), with `clientAuth` and a `clientSecret` read from a file.
+- [agentgateway v1.6.0, `http/auth/oauth/`](https://github.com/agentgateway/agentgateway/tree/v1.6.0/crates/agentgateway/src/http/auth/oauth): `transport.rs` requires `token_type: Bearer` and a non-empty `access_token` in the token endpoint's reply; `cache.rs` keys the cache by the subject token and request, and caps an entry at the subject token's expiry.
+- [RFC 8693](https://www.rfc-editor.org/rfc/rfc8693): OAuth 2.0 token exchange, the grant the door sends.
 - [Rate limiting](https://agentgateway.dev/docs/standalone/latest/configuration/resiliency/rate-limits/): `localRateLimit` with a CEL `key` per bucket.
 - [External authorization](https://agentgateway.dev/docs/standalone/latest/documentation/configuration/security/external-authz/): the alternative to JWTs, an IAM call on every request.
 - On main: `loc_arena/gateway/model_gateway.py` (callers, runners, nodes; no job credential), `loc_arena/tools_gateway.py` (per-agent credential map), `meridian_iam/core/service.py` (`authorize` takes the caller's token), `meridian_iam/core/base.py` (credentials scoped by audience).
