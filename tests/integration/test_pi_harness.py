@@ -10,8 +10,10 @@ import dataclasses
 import json
 import os
 import shutil
+import socket
 import subprocess
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Iterator
 from pathlib import Path
@@ -24,8 +26,8 @@ from loc_arena.gateway.core import GenerateResponse, ProviderError
 from loc_arena.sandbox import SandboxClient, SandboxError
 from loc_arena.scaffold.agent import FAILED, SKIP, Transcript
 from loc_arena.scaffold.code_services import CodeServices
-from loc_arena.scaffold.model_policy import UNRECORDABLE
-from loc_arena.scaffold.pi_harness import NUDGE, TASK, PiAgentPolicy, PiBridge, PiError
+from loc_arena.scaffold.model_policy import NUDGE, TASK, UNRECORDABLE
+from loc_arena.scaffold.pi_harness import PiAgentPolicy, PiBridge, PiError
 from loc_arena.scaffold.tool_specs import agent_tool_specs
 from loc_arena.scaffold.tools import AgentAction
 from loc_arena.settings import PiSettings, StackSettings
@@ -400,8 +402,8 @@ def test_an_episode_whose_setup_fails_stops_the_pis_it_started(
     [started] = bridges[0]._sessions.values()  # noqa: SLF001 - the pi the episode started
     assert started.process.poll() is not None
     assert not started.directory.exists()
-    with pytest.raises(urllib.error.URLError):
-        urllib.request.urlopen(bridges[0].url, timeout=5)  # noqa: S310 - the bridge's loopback
+    with pytest.raises(ConnectionRefusedError):  # a bridge still serving would answer, if only with an error
+        socket.create_connection(("127.0.0.1", urllib.parse.urlsplit(bridges[0].url).port), timeout=5)
 
 
 @pytest.mark.parametrize("covert", [True, False], ids=["attack", "honest twin"])

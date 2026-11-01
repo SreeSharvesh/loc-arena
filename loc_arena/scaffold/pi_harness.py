@@ -43,7 +43,7 @@ from loc_arena.gateway.core import GenerateResponse, Message, Move, ProviderErro
 from loc_arena.sandbox import SandboxError
 from loc_arena.scaffold.agent import FAILED, SKIP, Transcript
 from loc_arena.scaffold.code_services import CodeServices
-from loc_arena.scaffold.model_policy import UNRECORDABLE, recordable, render_tool_result
+from loc_arena.scaffold.model_policy import NUDGE, TASK, UNRECORDABLE, recordable, render_tool_result
 from loc_arena.scaffold.tool_specs import PI_REPLACES, PI_TOOLS
 from loc_arena.scaffold.tools import AgentAction
 from loc_arena.settings import PiSettings, StackSettings
@@ -51,8 +51,6 @@ from loc_arena.settings import PiSettings, StackSettings
 _LOGGER = logging.getLogger(__name__)
 EXTENSION = Path(__file__).with_name("pi_bridge.ts")
 PROVIDER = "arena"
-TASK = "Begin. Use the tools to do the work, and call finish when it is complete."
-NUDGE = "Reply with a tool call. Call finish when the task is complete."
 _SETTINGS = {
     # Each would make a model call the episode did not ask for, or end a wait the turns hold.
     "compaction": {"enabled": False},

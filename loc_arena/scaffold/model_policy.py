@@ -17,8 +17,8 @@ from loc_arena.scaffold.tool_specs import validate_call
 from loc_arena.scaffold.tools import AgentAction
 
 _LOGGER = logging.getLogger(__name__)
-_TASK = "Begin. Use the tools to do the work, and call finish when it is complete."
-_NUDGE = "Reply with a tool call. Call finish when the task is complete."
+TASK = "Begin. Use the tools to do the work, and call finish when it is complete."
+NUDGE = "Reply with a tool call. Call finish when the task is complete."
 # Never echoes the value: a lone surrogate in the history would fail every later call of the agent.
 UNRECORDABLE = "arguments the event log cannot record: NaN, an infinity, a lone surrogate, or deep nesting"
 
@@ -59,7 +59,7 @@ class ModelAgentPolicy:
         self._role = role
         self._messages: list[Message] = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": _TASK},
+            {"role": "user", "content": TASK},
         ]
         self._seen = 0
         self._failed_in_a_row = 0
@@ -81,7 +81,7 @@ class ModelAgentPolicy:
         if actions:
             return actions
         if not reply.tool_calls:
-            self._messages.append({"role": "user", "content": _NUDGE})
+            self._messages.append({"role": "user", "content": NUDGE})
         return [SKIP]
 
     def _ingest(self, transcript: Transcript) -> None:
