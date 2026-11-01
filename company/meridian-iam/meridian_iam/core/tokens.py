@@ -86,7 +86,9 @@ class Tokens(Base):
         data = json.dumps(self.key_set()).encode()
         descriptor = os.open(path, os.O_WRONLY | os.O_CREAT, 0o644)
         try:
-            os.write(descriptor, data)
+            written = 0
+            while written < len(data):  # a write may take fewer bytes than it is given
+                written += os.write(descriptor, data[written:])
             os.ftruncate(descriptor, len(data))
             os.fsync(descriptor)
         finally:
@@ -100,7 +102,11 @@ class Tokens(Base):
                 "JOIN principals ON principals.id = workloads.principal WHERE principal = ? AND active = 1",
                 (principal,),
             ).fetchone()
-            if workload is None or not self._chain_live(db, principal):
+            if (
+                workload is None
+                or self._now() >= workload["expires_at"]
+                or not self._chain_live(db, principal)
+            ):
                 raise Unauthenticated("not a live workload")
             claims = Claims(
                 iss=ISSUER,

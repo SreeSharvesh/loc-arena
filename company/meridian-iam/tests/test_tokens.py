@@ -89,9 +89,13 @@ def test_without_badges_a_workload_s_reply_is_unchanged(iam: Iam, jobs: dict[str
     assert "badge" not in issued
 
 
-def test_a_stopped_workload_gets_no_badge(iam: Iam, jobs: dict[str, str]) -> None:
+@pytest.mark.parametrize("stop", ["sponsor disabled", "workload ended"])
+def test_a_stopped_workload_gets_no_badge(iam: Iam, jobs: dict[str, str], clock: Clock, stop: str) -> None:
     principal = issue(TestClient(create_app(iam)), jobs)["principal"]
-    iam.disable_principal("alice")  # its sponsor: the work stops
+    if stop == "sponsor disabled":
+        iam.disable_principal("alice")
+    else:
+        clock.now += 600
 
     with pytest.raises(Unauthenticated):
         iam.badge(principal)
