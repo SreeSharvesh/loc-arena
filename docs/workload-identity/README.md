@@ -76,8 +76,8 @@ The checker by badge and the observation window follow as their own plans (#142)
 | Real IAM, notes and chat | with a prototype of PR 1 in IAM (about 50 lines) and services unchanged: a JWT reads notes through the door; an agent without the right gets IAM's 403 naming the permission, asks, is approved and reads with the same token; chat's MCP `post` through the door is authored by the agent, and chat's record names it; a forged JWT is refused at the door and at IAM; a valid JWT sent around the door still works, so the internal network is what makes the door the only door |
 | Token exchange at the door | with a stand-in token endpoint and service: the door exchanges the caller token for a service token, and the service receives only the service token (audience `notes`, subject the caller); IAM receives the RFC 8693 grant, `subject_token_type` access token and `audience` naming the service, and its reply must carry `token_type: Bearer`; three repeat calls reach IAM once, since the door caches each token until its `expires_in`, never past the caller token's own expiry; with `clientAuth` the door sends its secret and an agent calling the endpoint directly gets a 401; without `preserveToken` the door removes the caller token after `jwtAuth` and the exchange fails with a 400; a caller token a few seconds past expiry passes the door, while an IAM with no clock allowance refuses it and the caller gets a 400 |
 
-The door's policy on each route, as run in the first three spikes (spike only: their tokens carried `aud`
-`meridian`):
+The gateway's policy as run in the first three spikes (their tokens carried `aud` `meridian`; the badge carries
+`agentgateway`):
 
 ```yaml
 jwtAuth: {mode: strict, issuer: iam, audiences: [meridian], jwks: {file: /jwks/jwks.json}}
@@ -85,17 +85,6 @@ backendAuth: {passthrough: {}}
 localRateLimit:
 - {type: tokens, maxTokens: 120, tokensPerFill: 120, fillInterval: 3600s, key: jwt.team}   # model route only
 ```
-
-The planned services route, as run in the fourth spike, with one `audiences` entry per service:
-
-```yaml
-jwtAuth: {mode: strict, issuer: iam, audiences: [agentgateway], jwks: {file: /jwks/jwks.json}, preserveToken: true}
-backendAuth:
-  oauthTokenExchange: {host: iam:8000, path: /token, audiences: [notes],
-                       clientAuth: {clientId: agentgateway, clientSecret: {file: /run/secrets/token_exchange}}}
-```
-
-`preserveToken` keeps the caller token after `jwtAuth` accepts it, so the exchange has a token to send.
 
 ## Out of scope
 
@@ -113,13 +102,8 @@ backendAuth:
 
 ## Sources
 
-- #142: tier 1's done-when list (the badge, workloads calling tools with their own credential).
+- #142: tier 1's done-when list (the badge).
 - [JWT authentication](https://agentgateway.dev/docs/standalone/latest/documentation/configuration/security/jwt-authn.md): `jwtAuth` fields, file key sets, claims as `jwt.<claim>`, `passthrough`.
-- [MCP authorization](https://agentgateway.dev/docs/standalone/latest/documentation/configuration/security/mcp-authz.md): rules on `jwt.sub` and other claims.
-- [Backend authentication](https://agentgateway.dev/docs/standalone/latest/documentation/configuration/security/backend-authn/key.md): `passthrough` forwards the JWT `jwtAuth` validated.
-- [Token exchange](https://agentgateway.dev/docs/standalone/latest/documentation/configuration/security/backend-authn/token-exchange/standard.md): `backendAuth.oauthTokenExchange` (RFC 8693), present in v1.6.0's config schema (`schema/config.json`), with `clientAuth` and a `clientSecret` read from a file.
-- [agentgateway v1.6.0, `http/auth/oauth/`](https://github.com/agentgateway/agentgateway/tree/v1.6.0/crates/agentgateway/src/http/auth/oauth): `transport.rs` requires `token_type: Bearer` and a non-empty `access_token` in the token endpoint's reply; `cache.rs` keys the cache by the subject token and request, and caps an entry at the subject token's expiry.
-- [RFC 8693](https://www.rfc-editor.org/rfc/rfc8693): OAuth 2.0 token exchange, the grant the door sends.
 - [Rate limiting](https://agentgateway.dev/docs/standalone/latest/configuration/resiliency/rate-limits/): `localRateLimit` with a CEL `key` per bucket.
 - [External authorization](https://agentgateway.dev/docs/standalone/latest/documentation/configuration/security/external-authz/): the alternative to JWTs, an IAM call on every request.
 - On main: `loc_arena/gateway/model_gateway.py` (callers, runners, nodes; no job credential), `loc_arena/tools_gateway.py` (per-agent credential map), `meridian_iam/core/service.py` (`authorize` takes the caller's token), `meridian_iam/core/base.py` (credentials scoped by audience).
