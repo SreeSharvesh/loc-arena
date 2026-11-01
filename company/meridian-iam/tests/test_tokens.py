@@ -249,6 +249,26 @@ def test_a_workload_s_caller_token_names_its_sponsor_works_at_its_services_and_i
     assert "eyJ" not in json.dumps([iam.audit_log(), [row[0] for row in stored]])  # every JWT starts so
 
 
+def test_a_refused_token_before_any_signing_does_not_lose_the_key(
+    tmp_path: Path,
+    clock: Clock,
+) -> None:
+    fresh = Iam(tmp_path / "fresh.db", clock)
+    fresh.add_principal("carol", "agent")
+    with pytest.raises(Unauthenticated):
+        fresh.identify("a.b.c", "notes")  # the first call that needs the key fails
+    caller, _ = fresh.caller_token(fresh.issue_credential("carol", ["iam"]), 600)
+    fresh.close()
+
+    restarted = Iam(tmp_path / "fresh.db", clock)
+
+    public = jwt.PyJWKSet.from_dict(dict(restarted.key_set())).keys[0].key
+    claims = jwt.decode(
+        caller, public, algorithms=["ES256"], audience="agentgateway", options={"verify_exp": False},
+    )
+    assert claims["sub"] == "carol"
+
+
 def test_the_key_set_is_written_in_place_verifies_caller_tokens_and_survives_a_restart(
     iam: Iam,
     tokens: dict[str, str],

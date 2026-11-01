@@ -9,6 +9,7 @@ and to ``issue_workload`` as its caller's credential, and no other service accep
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
@@ -76,11 +77,15 @@ def is_token(credential: str | None) -> bool:
 class Tokens(Base):
     """Signs and verifies IAM's JWTs with one ES256 key kept in the store."""
 
-    _signing_key: ec.EllipticCurvePrivateKey | None = None  # loaded once: every call with a token needs it
+    _signing_key: ec.EllipticCurvePrivateKey
 
-    def _key(self, db: sqlite3.Connection) -> ec.EllipticCurvePrivateKey:
-        if self._signing_key is None:
+    def _opened(self) -> None:
+        """Load the signing key, or make and commit one, before any call can roll its making back."""
+        super()._opened()
+        with self._tx() as db:
             self._signing_key = self._load_or_create_key(db)
+
+    def _key(self, _: sqlite3.Connection) -> ec.EllipticCurvePrivateKey:
         return self._signing_key
 
     def _load_or_create_key(self, db: sqlite3.Connection) -> ec.EllipticCurvePrivateKey:
@@ -105,8 +110,18 @@ class Tokens(Base):
         return {"keys": [{**public, "kid": KEY_ID, "alg": ALGORITHM, "use": "sig"}]}
 
     def write_key_set(self, path: Path) -> None:
-        """Write the key set to ``path`` in place: agentgateway watches the file's inode, not its name."""
-        path.write_text(json.dumps(self.key_set()))
+        """Write the key set to ``path`` in place: agentgateway watches the file's inode, not its name.
+
+        One write over the old content, then a truncate to its length, so a reader never finds the file empty.
+        """
+        data = json.dumps(self.key_set()).encode()
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT, 0o644)
+        try:
+            os.write(descriptor, data)
+            os.ftruncate(descriptor, len(data))
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
 
     def _sign(self, db: sqlite3.Connection, claims: Claims) -> str:
         return jwt.encode(
