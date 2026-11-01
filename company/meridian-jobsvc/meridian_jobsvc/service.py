@@ -652,9 +652,13 @@ def credential_variable(service: str) -> str:
     return f"MERIDIAN_{service.upper().replace('-', '_')}_TOKEN"
 
 
+GATEWAY_TOKEN_VARIABLE = "MERIDIAN_GATEWAY_TOKEN"  # the job's key to the model gateway: its badge
+
+
 def job_environment(identity: JobIdentity) -> dict[str, SecretStr]:
-    """What a job's process gets of its identity: each secret in its service's variable."""
-    return {credential_variable(service): secret for service, secret in identity.secrets.items()}
+    """What a job's process gets of its identity: each secret in its service's variable, and its badge."""
+    environment = {credential_variable(service): secret for service, secret in identity.secrets.items()}
+    return environment if identity.badge is None else {**environment, GATEWAY_TOKEN_VARIABLE: identity.badge}
 
 
 def _spec(request: JobRequest) -> JobSpec:

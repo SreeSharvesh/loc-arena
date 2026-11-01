@@ -53,11 +53,7 @@ class Node:
             gateway_model=MODEL,
             checkouts_directory=workspace.parent / "checkouts",
         )
-        self.process = NodeProcess(
-            settings,
-            lambda line: self.facts.append(json.loads(line)["process"]),
-            SecretStr(TOKEN),
-        )
+        self.process = NodeProcess(settings, lambda line: self.facts.append(json.loads(line)["process"]))
         self.app = create_node_app(settings, SecretStr(TOKEN), self.process)
 
     def call(self, method: str, path: str, body: object = None, *, caller: str = TRUSTED_CALLER) -> Any:  # noqa: ANN401
@@ -205,15 +201,18 @@ def test_a_jobs_own_pythonpath_stands_alone_as_the_seeds_jobs_rely_on(node: Node
     assert (status["exit_code"], "No module named 'meridian_probe'" in stderr) == (1, True)
 
 
-def test_a_job_gets_its_own_credentials_its_nodes_key_to_the_gateway_and_its_model_and_no_fact_holds_them(
+@pytest.mark.parametrize("badge", ["the-jobs-badge", None])
+def test_a_job_gets_its_own_credentials_and_badge_never_its_nodes_token_and_no_fact_holds_them(
     node: Node,
+    badge: str | None,
 ) -> None:
     secret = "the-jobs-own-secret-on-the-notes-service"
+    sent = {"MERIDIAN_NOTES_TOKEN": secret, **({"MERIDIAN_GATEWAY_TOKEN": badge} if badge else {})}
     variables = "$MERIDIAN_NOTES_TOKEN $MERIDIAN_GATEWAY_URL $MERIDIAN_GATEWAY_TOKEN $MERIDIAN_GATEWAY_MODEL"
-    node.start("job-1", "sh", "-c", f'echo "{variables}"', environment={"MERIDIAN_NOTES_TOKEN": secret})
+    node.start("job-1", "sh", "-c", f'echo "{variables}"', environment=sent)
     node.wait_until_exited()
 
-    assert node.call("GET", "/output")[1]["stdout"] == f"{secret} {GATEWAY} {TOKEN} {MODEL}\n"
+    assert node.call("GET", "/output")[1]["stdout"] == f"{secret} {GATEWAY} {badge or ''} {MODEL}\n"
     assert secret not in json.dumps(node.facts)
 
 

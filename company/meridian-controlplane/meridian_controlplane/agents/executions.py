@@ -143,8 +143,10 @@ def build_trace_environment(execution: Execution) -> dict[str, str]:
 
 
 def build_identity_environment(identity: AgentIdentity | None) -> dict[str, str]:
-    """What an execution's runner holds of its agent's identity: a secret per service, as jobs get theirs."""
+    """What an execution's runner holds of its agent's identity: a secret per service, and its badge."""
     secrets = identity.secrets if identity else {}
+    if identity is not None and identity.badge is not None:
+        secrets = {**secrets, "gateway": identity.badge}  # MERIDIAN_GATEWAY_TOKEN, which pi-on-gateway reads
     return {
         f"MERIDIAN_{service.upper().replace('-', '_')}_TOKEN": secret.get_secret_value()
         for service, secret in secrets.items()

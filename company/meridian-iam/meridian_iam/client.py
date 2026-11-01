@@ -163,7 +163,10 @@ class IamClient:
         }
         raw = self._call("POST", "/workloads", headers=headers, body=body)
         try:
-            workload = Workload(**{field.name: raw[field.name] for field in dataclasses.fields(Workload)})
+            fields = {
+                field.name: raw[field.name] for field in dataclasses.fields(Workload) if field.name != "badge"
+            }
+            workload = Workload(**fields, badge=raw.get("badge"))
         except (KeyError, TypeError):
             raise Unavailable("malformed IAM answer") from None
         texts = (
@@ -176,6 +179,7 @@ class IamClient:
         if not (
             all(isinstance(text, str) for text in texts)
             and type(workload.expires_at) is int
+            and (workload.badge is None or isinstance(workload.badge, str))
             and isinstance(workload.grants, dict)
             and all(
                 isinstance(permissions, list) and all(isinstance(p, str) for p in permissions)

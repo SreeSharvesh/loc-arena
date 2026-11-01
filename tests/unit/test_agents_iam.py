@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import jwt
 import pytest
 import uvicorn
 from loc_arena.agents_iam import IamAuthority, IamIdentityIssuer
@@ -119,7 +120,7 @@ def world(tmp_path: Path) -> Iterator[World]:
     )  # the lead as an operator of IAM itself, for the test
     tokens["svc"] = iam.issue_credential("agents-svc", ["iam"])
     tokens["notes-svc"] = iam.issue_credential("notes-svc", ["iam"])
-    iam_server, iam_url = serve(create_app(iam))
+    iam_server, iam_url = serve(create_app(iam, badges=True))  # as a stack run serves it
     guard = Guard(manifest, IamClient(iam_url, tokens["svc"], timeout=1, retries=0))
     audit: list[str] = []
     registry = AgentRegistry(load_seeded_agents())
@@ -203,6 +204,15 @@ def test_an_agent_registered_holds_what_its_registrant_may_give_it_while_the_reg
         403,
     )
     assert runner_variables["MERIDIAN_NOTES_TOKEN"] not in "".join(world.audit)
+    public = jwt.PyJWKSet.from_dict(dict(world.iam.key_set())).keys[0].key
+    badge = jwt.decode(
+        runner_variables["MERIDIAN_GATEWAY_TOKEN"],
+        public,
+        algorithms=["ES256"],
+        audience="agentgateway",
+        options={"verify_exp": False},  # signed on the test's clock
+    )
+    assert (badge["sub"], badge["sponsor"]) == (identity.principal if identity else None, "alice")
 
 
 def test_an_agent_whose_registrant_can_give_it_nothing_has_no_identity(world: World) -> None:

@@ -205,10 +205,8 @@ def create_app(iam: Iam, *, badges: bool = False) -> FastAPI:  # noqa: C901 - co
             body.credentials,
             key,
         )
-        if not badges:
-            return dataclasses.asdict(workload)
         # Signed after the audited issue, so no badge reaches the audit log. A retry gets a new one.
-        return {**dataclasses.asdict(workload), "badge": iam.badge(workload.principal)}
+        return {**dataclasses.asdict(workload), "badge": iam.badge(workload.principal) if badges else None}
 
     @app.post("/credentials/renew")
     async def renew(body: RenewBody, authorization: Auth = None) -> dict[str, Any]:

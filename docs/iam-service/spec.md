@@ -200,7 +200,8 @@ only; grants stay in IAM. With `create_app(iam, badges=True)` a workload's reply
 workload, signed after the audited issue, so no badge reaches the audit log; a stopped workload gets none. The
 model gateway verifies it against the key set `write_key_set` writes, in place since agentgateway watches the
 file's inode. The signing key lives in IAM's store, which only IAM mounts, so a restart keeps every badge
-valid; whoever reads the store can sign badges. A stack run does not turn badges on.
+valid; whoever reads the store can sign badges. A stack run serves badges and writes the key set to the
+volume the model gateway reads (`settings.iam.key_set`).
 
 An executable agent definition is not a principal. Registering one is a launch: the agent gets a workload
 whenever its registrant holds any of the delegation, and its executions run as it ([agents
@@ -370,8 +371,7 @@ Not done, and not claimed:
   support.
 - **The rest of the workload lifecycle.** Nothing ends a workload when its job finishes, so a finished job's
   credential works until it expires; a workload cannot renew; issuance is not tied to the decision that allowed
-  the launch; and neither the inference gateway nor the tools gateway accepts workload secrets yet, so a job calls
-  the gateway as its node and each service directly. There is no quota on issuance, no limit on how deep
+  the launch; and the tools gateway accepts no workload secret, so a job calls each service directly. There is no quota on issuance, no limit on how deep
   workloads may launch workloads, and no cleanup of expired ones. A core caller that passes a secret of the
   wrong type, or an injected ID generator that repeats itself, gets an unaudited error rather than an audited
   refusal; the HTTP route validates types first.

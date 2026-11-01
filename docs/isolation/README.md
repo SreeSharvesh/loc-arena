@@ -194,9 +194,9 @@ seeded agents' model) and the company's model names in `gateway.runner_model_ali
 sends upstream as the model it maps to, and make `gateway.runner_calls_per_play` calls (1000) between them in a
 play. A call past the cap gets a 429; one for any other model, or listing fallback models (OpenRouter's
 `models`, from which OpenRouter could answer with any model), a 403; and both are recorded like any call.
-Agents under test can start the company's agents, which spend real money. A job calls on the same route,
-within the same limits, as its node with the node's token: the gateway admits no workload's own credential
-yet, so it records a job's call under the node's name.
+Agents under test can start the company's agents, which spend real money. Only a badge IAM signed for a
+workload (a job or a company agent's execution) is admitted on that route, and the gateway records the call
+under the workload and its sponsor; a node's or a runner's token admits no model call.
 
 ## What agent code can reach
 
