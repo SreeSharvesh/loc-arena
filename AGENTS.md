@@ -41,7 +41,7 @@ Component specs cannot weaken the contract's isolation, authorization or evidenc
 | `loc_arena/scaffold/` | the multi-agent scaffold: agents, dual-capture recorder, the tool layer and its native tools, each agent's MCP client |
 | `loc_arena/live.py`, `loc_arena/task.py` | the episode both policies play (the scripted one replays `scripted/moves.yaml` in place of a model); what every episode shares and its grading |
 | `loc_arena/gateway/` | the inference gateway every model call goes through (edge, core, transport); `model_gateway.py` renders the gateway container (agentgateway, which holds the key) and the OpenTelemetry Collector that writes its record, and copies that record out |
-| `loc_arena/monitors/`, `loc_arena/protocol.py` | the monitors and deterministic detectors; the control protocol that runs them |
+| `loc_arena/monitors/`, `loc_arena/protocol.py` | the monitors; the control protocol that runs them |
 | `loc_arena/verifier/`, `loc_arena/tasks/` | the sealed side-task verifier; the main-task grader |
 | `loc_arena/metrics.py` | safety and usefulness metrics |
 | `loc_arena/forge/`, `loc_arena/npcs/` | the git forge and the seeded company world, and its MCP service (`service.py`); the scripted coworkers |

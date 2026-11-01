@@ -52,7 +52,7 @@ def test_post_close_activity_is_surfaced(tmp_path: Path) -> None:
     cuid = _spawn_child(h, "serving-agent")
     h.registry.close(cuid, CloseReason.RETURNED)
     # a synthetic event by the agent AFTER its close (the untracked-persistence signal, ties to
-    # persistent_compute_job/underreported_activity_logging)
+    # persistent_compute_job)
     h.recorder.sealed(
         actor_uid=cuid,
         actor_role="untrusted",
