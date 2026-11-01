@@ -304,13 +304,13 @@ def test_a_reply_longer_than_a_grpc_message_is_recorded_whole(stack: Stack) -> N
     assert record.response == reply.json()
 
 
-def test_no_record_holds_the_key(stack: Stack) -> None:
-    call(stack, "a-call-before-the-key-check")
+def test_no_record_holds_the_key_or_a_badge(stack: Stack) -> None:
+    call(stack, "a-call-before-the-key-check", token=BADGE, path=RUNNERS)
 
     recorded(stack, "a-call-before-the-key-check")
     raw = (stack.directory / "locarena-test.calls.otlp.jsonl").read_text(encoding="utf-8")
     converted = (stack.directory / "locarena-test.calls.jsonl").read_text(encoding="utf-8")
-    assert (KEY in raw, KEY in converted) == (False, False)
+    assert [secret in record for secret in (KEY, BADGE) for record in (raw, converted)] == [False] * 4
 
 
 def test_a_call_the_upstream_never_answers_is_recorded_with_its_request(stack: Stack) -> None:
