@@ -8,6 +8,12 @@ log has the details.
 
 ### Changed
 
+- **Each action's code is kept.** As cloned, after each of an agent's native tool calls and at the end of play,
+  the episode stores the agent's whole checkout as a git tree in the play's `checkout_history`, read with dulwich
+  and never by running git on it, and logs a `checkout` event naming the tree on the sealed log alone. A trajectory
+  so says which code each action ran on and left, though the checkout is removed when the play ends and its agent
+  could empty it. A capture stores only what changed, links are never followed, and `history` settings bound what
+  one capture reads.
 - **Each play keeps the forge's history.** After each play, beside the archive of each repo's `main` that is
   graded, the forge's whole history is bundled where the forge runs (`git bundle create - --all`) and written to
   the play's `forge_history/<repo>.bundle`: every ref and every commit, each pushed commit kept under

@@ -10,6 +10,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import socket
+import subprocess
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -19,12 +20,14 @@ from pathlib import Path
 
 import pytest
 import uvicorn
+from loc_arena.checkout_history import HISTORY_DIRECTORY
 from loc_arena.checkouts import Checkout, LocalRunner, checkout_home
 from loc_arena.config import ModelSpec, RunConfig, load_run_config
 from loc_arena.forge_service import SERVICE as FORGE
 from loc_arena.gateway.core import Message, Move, ProviderResult, ScriptedProvider, ToolSpec
 from loc_arena.harness import apply_mode
 from loc_arena.live import play_model_episode
+from loc_arena.logging_.events import read_events
 from loc_arena.sandbox import (
     IDENTITY_PREFIX,
     SandboxClient,
@@ -90,6 +93,7 @@ class PlayedEpisode:
     tool_results: list[str]
     ran_in: list[str]  # the agents in whose checkout the command ran
     graded: bool  # whether the graded checkout holds that file
+    played: Path  # the play's directory
 
 
 class ServedSandboxes:
@@ -190,6 +194,7 @@ def episode(request: pytest.FixtureRequest, tmp_path_factory: pytest.TempPathFac
         provider.tool_results,
         ran_in,
         graded,
+        root / "run",
     )
 
 
@@ -221,6 +226,26 @@ def test_a_bash_call_runs_in_its_agents_own_checkout_and_nothing_unmerged_is_gra
     episode: PlayedEpisode,
 ) -> None:
     assert (episode.ran_in, episode.graded) == (["agent-main"], False)
+
+
+def test_each_native_call_leaves_a_checkout_event_on_the_sealed_log_alone_naming_the_tree_it_left(
+    episode: PlayedEpisode,
+) -> None:
+    sealed, mirror = (read_events(episode.played / f"events.{log}.jsonl") for log in ("sealed", "mirror"))
+    captured = [
+        (e.tool, e.payload["tree"]) for e in sealed if e.kind == "checkout" and e.actor_uid == "agent-main"
+    ]
+    store = episode.played / HISTORY_DIRECTORY
+    listed = ["git", "--git-dir", str(store), "ls-tree", "--name-only"]
+    held = [
+        MARKER in subprocess.run([*listed, tree], capture_output=True, text=True, check=True).stdout.split()
+        for _, tree in captured
+    ]
+
+    # As cloned, after the bash that made the file, after the read that changed nothing, and at the end.
+    assert [tool for tool, _ in captured] == [None, "bash", "read_file", None]
+    assert held == [False, True, True, True]
+    assert [e for e in mirror if e.kind == "checkout"] == []
 
 
 def test_bash_of_an_agent_with_no_checkout_is_refused_and_runs_nowhere(tmp_path: Path) -> None:

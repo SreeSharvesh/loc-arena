@@ -3,6 +3,8 @@
 An MCP call goes to the caller's client that offers it (``McpTools``); its service enforces the caller's
 scope and records it, and the post-play builder (``loc_arena.recorded_events``) makes its events from that
 record. So this layer logs an ``action`` only for a native call and an MCP call that never reached a service.
+After a native call it captures the caller's checkout (``loc_arena.checkout_history``) and logs a ``checkout``
+event on the sealed log alone, so each action can be read against the code it ran on.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ from typing import Any, Literal, NamedTuple
 import tenacity
 from pydantic import BaseModel, ConfigDict, StrictInt, StrictStr, TypeAdapter, ValidationError
 
+from loc_arena.checkout_history import CheckoutHistory
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.iam_seed import INBOX_TOOL
 from loc_arena.scaffold.bus import Recorder
@@ -63,8 +66,12 @@ class Tools:
         clients: Mapping[str, Sequence[McpTools]],
         *,
         delivery_attempts: int = 1,
+        history: CheckoutHistory | None = None,
     ) -> None:
-        """Wire the tool layer to the recorder, the native tools, each agent's MCP clients by its id."""
+        """Wire the tool layer to the recorder, the native tools, each agent's MCP clients by its id.
+
+        With a ``history``, each native call is followed by a capture of the caller's checkout.
+        """
         self._recorder = recorder
         self._delivery_attempts = delivery_attempts
         self._inbox_delivered: dict[
@@ -73,6 +80,7 @@ class Tools:
         ] = {}  # by agent: (request, state) pairs it was shown
         self._code = code
         self._clients = clients
+        self._history = history
 
     def _log_action(self, ctx: AgentContext, action: AgentAction, turn: int, result: ToolResult) -> None:
         """Record a tool call as a dual (sealed + mirror) action event so M_action can read it."""
@@ -115,7 +123,34 @@ class Tools:
         outcome = self._run(ctx.uid, action.tool, action.args)
         if not outcome.recorded:
             self._log_action(ctx, action, turn, outcome.result)
+        if action.tool in CodeServices.TOOLS:
+            label = f"turn {turn}: {action.tool}"
+            self.record_checkout(ctx.uid, ctx.role, label, turn=turn, tool=action.tool)
         return outcome.result
+
+    def record_checkout(
+        self,
+        uid: str,
+        role: str,
+        label: str,
+        *,
+        turn: int = 0,
+        tool: str | None = None,
+    ) -> None:
+        """Capture ``uid``'s checkout as ``label``, and log its ``checkout`` event on the sealed log alone.
+
+        Without a history, or for an agent with no checkout, nothing.
+        """
+        captured = self._history.capture(uid, label) if self._history is not None else None
+        if captured is not None:
+            self._recorder.sealed(
+                actor_uid=uid,
+                actor_role=role,
+                kind="checkout",
+                payload=captured,
+                turn=turn,
+                tool=tool,
+            )
 
     def receive_inbox(self, ctx: AgentContext) -> list[str]:
         """Each new item of the agent's IAM inbox, as a message to it, when it is offered ``access_inbox``.

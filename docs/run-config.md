@@ -32,7 +32,7 @@ path. A key no block declares is ignored, except in an agent's `scope` and in th
 | `agents` | the team; see below |
 | `protocol` | the control protocol: monitors, reviewer, audit budget |
 | `agent_loop`, `logging` | the loop's limits; `logging.agent_transcript` for the per-agent `.eval` and transcript |
-| `inference`, `gateway`, `stack`, `evalkit`, `tickets`, `chat`, `forge` | the settings groups below |
+| `inference`, `gateway`, `stack`, `evalkit`, `tickets`, `chat`, `forge`, `history` | the settings groups below |
 
 ## An agent
 
@@ -64,6 +64,7 @@ Each field has a description in code; these keep pydantic's coercing types.
 | `tickets` | the tickets service: `database`, its SQLite file in its container (`/var/lib/tickets/tickets.db`), which a new container builds from the scenario's ticket seed, so the honest twin's starts from the seed |
 | `chat` | the chat service: `database`, its SQLite file in its container (`/var/lib/chat/chat.db`), which a new container builds from the scenario's chat seed, so the honest twin's starts from the seed |
 | `forge` | the forge: `repositories`, the directory of its bare git repositories in its container (`/var/lib/forge`), which a new container seeds from the company's code, so the honest twin's starts from the seed; `ci_min_seconds` and `ci_max_seconds` (2 and 10), between which a pull request an agent opens waits on CI before it passes, each wait drawn from the run's seed; `git_timeout_seconds` and `git_request_limit_bytes`, the bounds of one git request; `commit_date`, unset but in the deterministic fixture, which dates every commit of a play the same so its commit IDs, and its sealed log, are the same each run |
+| `history` | each capture of an agent's checkout (`loc_arena/checkout_history.py`): `max_file_bytes` (1 MiB), the largest file stored whole; `max_entries` (20000) and `max_depth` (32), past which a capture stops and says so; `skipped_names`, left out wherever they are (`.git`, `__pycache__`, `.pytest_cache`) |
 | `evalkit` | the eval service: `job_cpu` and `job_memory_mb`, what an eval run's job asks of the cluster |
 
 Who decides a service's access requests is the scenario's, not the run config's: each service in the scenario's

@@ -459,6 +459,37 @@ class ForgeSettings(SettingsGroup):
         return self
 
 
+class HistorySettings(SettingsGroup):
+    """What one capture of an agent's checkout reads (the run config's ``history:`` block).
+
+    After each of an agent's native tool calls the episode stores its checkout
+    (``loc_arena.checkout_history``); these bound one capture, so an agent filling its checkout cannot hold
+    the episode.
+    """
+
+    max_file_bytes: PositiveInt = Field(
+        default=1 << 20,
+        description="The largest file stored whole. A larger one is stored as a line giving its size, and "
+        "named in the capture's event: a dataset or a build an agent leaves would otherwise grow the history "
+        "by its whole size on each change.",
+    )
+    max_entries: PositiveInt = Field(
+        default=20_000,
+        description="The most files, links and directories one capture reads; past it the capture stops and "
+        "its event says it was cut short. A clone of the seven company repos holds a few hundred.",
+    )
+    max_depth: PositiveInt = Field(
+        default=32,
+        description="The deepest directory a capture reads, below the checkout; a deeper one is left out and "
+        "the capture's event says it was cut short.",
+    )
+    skipped_names: tuple[str, ...] = Field(
+        default=(".git", "__pycache__", ".pytest_cache"),
+        description="Directory and file names a capture leaves out wherever they are: git's own data, which "
+        "the forge's records and history keep, and caches the company's tests write.",
+    )
+
+
 class LocArenaSettings(SettingsGroup):
     """Every tunable value, one frozen group per concern."""
 
@@ -493,4 +524,8 @@ class LocArenaSettings(SettingsGroup):
     forge: ForgeSettings = Field(
         default=ForgeSettings(),
         description="The forge's git repositories.",
+    )
+    history: HistorySettings = Field(
+        default=HistorySettings(),
+        description="What one capture of an agent's checkout reads.",
     )

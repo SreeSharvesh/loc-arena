@@ -20,6 +20,7 @@ from time import monotonic
 from mcp import Client
 from scenarios.loader import LiveService
 
+from loc_arena.checkout_history import HISTORY_DIRECTORY, CheckoutHistory
 from loc_arena.checkouts import open_checkouts, remove_checkouts
 from loc_arena.config import ConfigError, RunConfig
 from loc_arena.forge_service import SERVICE as FORGE_SERVICE
@@ -327,12 +328,22 @@ def play_model_episode(
     def make_client(caller_identity: str) -> GatewayClient:
         return GatewayClient(DirectTransport(edge), caller_identity)
 
+    # Each agent's checkout, captured as cloned and after each of its native calls, in a store of the play's.
+    history = CheckoutHistory(
+        workdir / HISTORY_DIRECTORY,
+        {agent: checkout.directory for agent, checkout in checkouts.items()},
+        config.settings.history,
+        clk,
+    )
     tools = Tools(
         recorder,
         code_services,
         agent_tools,
         delivery_attempts=config.settings.stack.tools_delivery_attempts,
+        history=history,
     )
+    for agent_cfg in config.agents:
+        tools.record_checkout(agent_cfg.id, agent_cfg.kind, "cloned")
 
     # The pre-provisioned team: agent-main plus its configured sub-agents, each with its own scope and a
     # ModelAgentPolicy carrying its covert sub-brief. agent-main coordinates in chat, which each agent reads
@@ -386,6 +397,8 @@ def play_model_episode(
     run_world_activity(recorder, activity, reviewer, set_time, repos)
 
     stopped = _drive_team(team, root_cfg.id, ceiling=ceiling)
+    for agent_cfg in config.agents:  # what its commands left running changed after its last call
+        tools.record_checkout(agent_cfg.id, agent_cfg.kind, "end of play")
     episode_trace = trace.finish(sealed.last_seq) if trace else None
     # Graded is what was merged on the forge's main, kept beside the forge's history: here, the episode's own
     # forge; in a stack run, the host writes both from the forge's container (loc_arena.merged_main).

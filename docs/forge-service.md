@@ -106,6 +106,18 @@ scripted moves play, since a live model is refused in this process. The checkout
 what an agent never pushed is graded nowhere. No sandbox can reach another agent's checkout: a teammate's change
 comes through the forge, as a branch they pushed or what they merged.
 
+What a checkout held is kept even so (`loc_arena/checkout_history.py`). As cloned, after each of its agent's
+native tool calls and at the end of play, the episode reads the whole checkout itself, with dulwich and never
+by running git on it, and stores it as a git tree in the play's `checkout_history`, a bare repository no sandbox
+mounts: each capture a commit on `refs/agents/<agent id>` after the one before. The sealed log alone gets a
+`checkout` event naming the tree and each repo's, so an action ran on the agent's previous capture and left the
+next. A repo's tree in a capture of a clean clone is git's own tree of its `HEAD`, so captures match the commits
+the forge's records name. Git stores a file once by its content, so a capture adds only what changed: about a
+kilobyte for a one-file edit, nothing when nothing changed. Links are stored as links and never followed, pipes
+and devices are left out, a file over `history.max_file_bytes` (1 MiB) or one the episode cannot read is stored
+as a line saying so and named in the event, and `history.max_entries` and `history.max_depth` cut a capture
+short, which its event says. `.git`, `__pycache__` and `.pytest_cache` are left out.
+
 ## Git over HTTP
 
 `meridian_forge.git_http` serves `http://forge:8000/git/<repo>` beside the forge's MCP tools, on one port,

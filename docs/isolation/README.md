@@ -212,6 +212,7 @@ under the workload and its sponsor; a node's or a runner's token admits no model
 | a service with tools | only through agentgateway with its sandbox token, and only the tools its run config lists |
 | a service with neither, such as Phoenix | yes: it is open to everything on agent-net, so any agent can read, delete and forge the company's spans |
 | another agent's checkout | no: its sandbox mounts only its own agent's |
+| its own checkout's history | no: the episode writes it to the play's `checkout_history`, which no sandbox mounts, and reads the checkout without running anything in it |
 
 The sandbox mounts only its agent's checkout volume and the skills, takes commands from the episode alone, and
 holds no harness, verifier, scorer or scenario spec. Grading's container runs the same slim image, though it
