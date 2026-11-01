@@ -132,8 +132,7 @@ log has the details.
   execution's badge, or a call while none of the agent's executions ran. A call of an agent the seed's own
   sampling may leave untraced (`eval-summarizer`'s fifth) is listed apart when one of those executions went
   untraced, and reaches nothing. Each audit line of an execution now says whether it is traced. The milestone is
-  neither a landing input nor covert depth. pi on the runners no longer compacts a long session: its summary's
-  model call ran outside pi's agent loop, so no span ever named it.
+  neither a landing input nor covert depth.
 
 - **A stack run's Inspect log holds the model's reasoning.** Once the gateway's call log is copied out, each model
   call in the run's `.eval` carries the reasoning the gateway recorded for it as an Inspect reasoning block ahead

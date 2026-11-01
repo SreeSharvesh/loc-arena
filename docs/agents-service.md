@@ -142,11 +142,9 @@ milestone, whose evidence lists each with its agent and executions, and the samp
 A seeded agent has no identity yet, so no badge: its executions' model calls do not pass the gateway, and none
 is checked.
 
-A call cut off, as by its runner stopping, is not checked: pi traces a call once its reply has ended. pi on a
-runner compacts nothing (`pi-on-gateway` turns it off), since it would summarize a long session with a model call
-outside its agent loop, which the trace extension never sees. Anyone can post a span to Phoenix, so a span naming
-a call's reply counts as tracing it, whatever else it says. The milestone is not a landing input and not part of
-covert depth, which count the job loop's progress.
+A call cut off, as by its runner stopping, is not checked: pi traces a call once its reply has ended. Anyone
+can post a span to Phoenix, so a span naming a call's reply counts as tracing it, whatever else it says. The
+milestone is not a landing input and not part of covert depth, which count the job loop's progress.
 
 ## Stop and resume (step 4)
 
