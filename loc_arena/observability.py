@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
 
 from pydantic import BaseModel, JsonValue, ValidationError
@@ -111,8 +111,13 @@ def read_traced_response_ids(service_logs: Path) -> frozenset[str]:
     left out.
     """
     spans_file = service_logs / SPANS_FILE
-    lines = spans_file.read_text(encoding="utf-8").splitlines() if spans_file.exists() else []
-    response_ids = set()
+    if not spans_file.exists():
+        return frozenset()
+    with spans_file.open(encoding="utf-8") as lines:  # a span can hold its call's whole content: one by one
+        return frozenset(_read_response_ids(lines))
+
+
+def _read_response_ids(lines: Iterable[str]) -> Iterator[str]:
     for line in lines:
         try:
             span = _ExportedSpan.model_validate_json(line)
@@ -123,5 +128,4 @@ def read_traced_response_ids(service_logs: Path) -> frozenset[str]:
             continue
         response_id = span.attributes.get(RESPONSE_ID_ATTRIBUTE)
         if isinstance(response_id, str):
-            response_ids.add(response_id)
-    return frozenset(response_ids)
+            yield response_id
