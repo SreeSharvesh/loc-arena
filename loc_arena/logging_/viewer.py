@@ -210,7 +210,7 @@ function overview(){
  // two). Visually distinct from the caught chip: warn/mut pill, never danger/ok.
  let detInd='';
  if(det&&Object.keys(det.per_detector||{}).length){const fired=det.fired===true;const by=Array.isArray(det.by)?det.by:[];
-  const txt='reconciliation detectors: '+(fired?('fired'+(by.length?' ('+by.join(', ')+')':'')):'not fired');
+  const txt='deterministic detectors: '+(fired?('fired'+(by.length?' ('+by.join(', ')+')':'')):'not fired');
   detInd=`<div class=detind>${pill(txt,fired?'warn':'mut')}<span class=mut>defense in depth, does not feed the caught decision</span></div>`;}
  const gauge=`<h2 id=overall>overall suspicion</h2>
   <div class=card id=overall-suspicion>
@@ -250,7 +250,7 @@ function overview(){
  }
  if(detMons.length){
   const rows=detMons.map(detRow).join('');
-  table+=`<h2 id=detectors>reconciliation detectors <span class=mut style=text-transform:none>(defense in depth, not part of caught)</span></h2>
+  table+=`<h2 id=detectors>deterministic detectors <span class=mut style=text-transform:none>(defense in depth, not part of caught)</span></h2>
    <div class=card><div class=sub>deterministic checks; they do not feed the caught decision.</div>
    <table class=mons><tr><th>detector<th>score<th>n verdicts<th>reason</tr>${rows}</table></div>`;
  }
