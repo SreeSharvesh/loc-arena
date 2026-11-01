@@ -39,6 +39,7 @@ from loc_arena.compose_document import ComposeDocument, ComposeService, Healthch
 from loc_arena.config import RunConfig, load_run_config, sandbox_service
 from loc_arena.gateway import model_gateway
 from loc_arena.gateway.core import API_KEY_VARIABLE
+from loc_arena.gateway.model_gateway import BADGES_VOLUME
 from loc_arena.harness import build_recorded_run_events, grade_run, locate_run
 from loc_arena.iam_bootstrap import (
     BOOTSTRAP_SECRET,
@@ -244,12 +245,7 @@ def render_compose(
             EGRESS_NETWORK: {"internal": False},
             model_gateway.RECORD_NETWORK: {"internal": True},
         },
-        "volumes": {
-            "sealed": {},
-            "output": {},
-            "checkouts": {},
-            **({model_gateway.BADGES_VOLUME: {}} if managed else {}),
-        },
+        "volumes": {"sealed": {}, "output": {}, "checkouts": {}, **({BADGES_VOLUME: {}} if managed else {})},
         "secrets": {
             **model_gateway.declare_gateway_secrets(),
             **{token_secret_name(agent): {"environment": token_variable(agent)} for agent in agent_ids},
@@ -470,7 +466,7 @@ def _render_live_service(  # noqa: PLR0913
                 "volumes": [
                     *source.get("volumes", []),
                     str(iam.database.parent),
-                    f"{model_gateway.BADGES_VOLUME}:{iam.key_set.parent}",
+                    f"{BADGES_VOLUME}:{iam.key_set.parent}",
                 ],
             }
             if is_iam
