@@ -40,9 +40,10 @@ from typing import Any
 from loc_arena.config import AgentLoopConfig
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import GenerateResponse, Message, Move, ProviderError, ToolSpec
+from loc_arena.sandbox import SandboxError
 from loc_arena.scaffold.agent import FAILED, SKIP, Transcript
 from loc_arena.scaffold.code_services import CodeServices
-from loc_arena.scaffold.model_policy import render_tool_result
+from loc_arena.scaffold.model_policy import UNRECORDABLE, recordable, render_tool_result
 from loc_arena.scaffold.tool_specs import PI_REPLACES, PI_TOOLS
 from loc_arena.scaffold.tools import AgentAction
 from loc_arena.settings import PiSettings, StackSettings
@@ -144,7 +145,8 @@ class _Call:
     name: str
     args: dict[str, Any]
     released: bool = False  # a call of pi's own tool may run
-    result: tuple[str, bool] | None = None  # pi's own tool's text and whether it failed
+    refusal: str | None = None  # why the turn plays none of it, for pi
+    result: dict[str, Any] | None = None  # pi's own tool's result, as the turn records it
     answer: str | None = None  # an arena tool's result, for pi
     acked: bool = False  # pi's own tool's result was taken
 
@@ -309,8 +311,7 @@ class PiBridge:
             seconds = self._settings.answer_seconds + self._run_seconds
             session.wait(lambda: call.result is not None, seconds, f"finish {call.name}")
             assert call.result is not None
-            text, failed = call.result
-        return {"content": text, "is_error": failed}
+            return call.result
 
     # --- pi's side, from the server's threads -----------------------------------------------------------
     def authorized(self, agent: str, header: str | None) -> _Session | None:
@@ -337,19 +338,30 @@ class PiBridge:
             call = session.calls.setdefault(call_id, _Call(name, args))
             session.condition.notify_all()
             session.condition.wait_for(
-                lambda: call.released or call.answer is not None,
+                lambda: call.released or call.answer is not None or call.refusal is not None,
                 self._settings.hold_seconds,
             )
+            if call.refusal is not None:
+                return {"status": "refused", "error": call.refusal}
             if call.answer is not None:
                 return {"status": "done", "text": call.answer}
             return {"status": "run"} if call.released else {"status": "pending"}
 
-    def report(self, session: _Session, call_id: str, text: str, *, failed: bool) -> dict[str, Any]:
+    def report(  # noqa: PLR0913 - one result of pi's own tool
+        self,
+        session: _Session,
+        call_id: str,
+        text: str,
+        *,
+        failed: bool,
+        exit_code: int | None,
+    ) -> dict[str, Any]:
         """Keep the result of pi's own tool, and hold pi until it may go on, or say it is still pending."""
         with session.condition:
             call = session.calls[call_id]
             if call.result is None:
-                call.result = (text, failed)
+                ran = {} if exit_code is None else {"exit_code": exit_code}
+                call.result = {"content": text, "is_error": failed, **ran}
                 session.condition.notify_all()
             session.condition.wait_for(lambda: call.acked, self._settings.hold_seconds)
             return {"status": "ok" if call.acked else "pending"}
@@ -384,11 +396,16 @@ class PiBridge:
             elif op == "mkdir":
                 code.make_directory(path)
             elif op == "exec":
-                ran = code.run_command(agent, str(body["command"]), str(body["cwd"]), body.get("timeout"))
-                return {"status": "ok", "output": ran.stdout + ran.stderr, "exit_code": ran.returncode}
+                limit = code.command_limit(body.get("timeout"))
+                ran = code.run_command(agent, str(body["command"]), str(body["cwd"]), limit)
+                output = ran.stdout + ran.stderr
+                if ran.returncode is None:
+                    return {"status": "ok", "output": output, "timeout": limit}
+                return {"status": "ok", "output": output, "exit_code": ran.returncode}
             else:
                 return {"status": "error", "error": f"no operation {op!r}"}
-        except (OSError, ValueError) as error:  # a path outside the checkout, or one the filesystem refuses
+        # a path outside the checkout, one the filesystem refuses, or a sandbox agent code broke
+        except (OSError, ValueError, SandboxError) as error:
             return {"status": "error", "error": str(error)}
         return {"status": "ok"}
 
@@ -482,10 +499,8 @@ class PiAgentPolicy:
             _LOGGER.warning("%s's model call failed, so turn %d is spent: %s", uid, turn, error)
             return None if self._failed_in_a_row >= self._loop.failed_turns_before_end else [FAILED]
         self._failed_in_a_row = 0
-        calls = [
-            {**call, "id": str(call.get("id") or f"{uid}-{turn}-{index}")}
-            for index, call in enumerate(reply.tool_calls or [])
-        ]
+        # pi keys a call by its id, and a model may reuse one: a reused id would replay pi's old call.
+        calls = [{**call, "id": f"{uid}-{turn}-{index}"} for index, call in enumerate(reply.tool_calls or [])]
         with session.condition:
             request.reply = stream_reply(
                 reply.model_copy(update={"tool_calls": calls or None}),
@@ -498,8 +513,13 @@ class PiAgentPolicy:
                 self._answer_seconds,
                 "take its tool calls",
             )
-            self._playing = [call_id for call_id in ids if call_id in session.calls]
-            # A reply calling no tool ends pi's run; one whose every call pi refused lets it ask again.
+            taken = [call_id for call_id in ids if call_id in session.calls]
+            for call_id in taken:  # as natively, a call the event log cannot record is not played
+                if not recordable(session.calls[call_id].args, self._loop.max_argument_depth):
+                    session.calls[call_id].refusal = UNRECORDABLE
+            session.condition.notify_all()
+            self._playing = [call_id for call_id in taken if session.calls[call_id].refusal is None]
+            # A reply calling no tool ends pi's run; one whose every call was refused lets it ask again.
             self._state = (
                 _PiState.ENDED if not ids else _PiState.PLAYING if self._playing else _PiState.ASKING
             )
@@ -585,6 +605,7 @@ def _handler(bridge: PiBridge) -> type[BaseHTTPRequestHandler]:
                     str(body["id"]),
                     body["text"],
                     failed=body["is_error"],
+                    exit_code=body["exit_code"],
                 ),
                 "ops": lambda: bridge.operate(session, body),
             }

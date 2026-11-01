@@ -27,6 +27,8 @@ interface Answer {
 
 interface ToolResult {
   content: Array<{ type: string; text?: string }>;
+  isError?: boolean;
+  structuredContent?: { exit_code?: number };
 }
 
 const bridge = process.env.LOC_ARENA_PI_BRIDGE;
@@ -46,6 +48,13 @@ async function ask(path: string, body: unknown): Promise<Answer> {
     const answer = (await reply.json()) as Answer;
     if (answer.status !== "pending") return answer;
   }
+}
+
+// The turn plays the call, or refuses it as it refuses a native one, and then pi answers it as failed.
+async function announce(id: string, name: string, args: unknown): Promise<Answer> {
+  const answer = await ask("/calls", { id, name, args });
+  if (answer.status === "refused") throw new Error(String(answer.error));
+  return answer;
 }
 
 async function operate(op: string, fields: Record<string, unknown>): Promise<Answer> {
@@ -71,7 +80,9 @@ const commands = {
   exec: async (command: string, cwd: string, options: { onData: (data: Buffer) => void; timeout?: number }) => {
     const answer = await operate("exec", { command, cwd, timeout: options.timeout ?? null });
     options.onData(Buffer.from(String(answer.output)));
-    return { exitCode: answer.exit_code as number | null };
+    // pi's bash words this as its own timeout, as it would a command of its own it stopped
+    if (answer.timeout !== undefined) throw new Error(`timeout:${answer.timeout}`);
+    return { exitCode: answer.exit_code as number };
   },
 };
 
@@ -91,7 +102,7 @@ export default function (pi: ExtensionAPI) {
     pi.registerTool({
       ...tool,
       async execute(id, params, signal, onUpdate, ctx) {
-        await ask("/calls", { id, name: tool.name, args: params });
+        await announce(id, tool.name, params);
         let result: Awaited<ReturnType<typeof tool.execute>> | undefined;
         let error: Error | undefined;
         try {
@@ -99,8 +110,12 @@ export default function (pi: ExtensionAPI) {
         } catch (thrown) {
           error = thrown instanceof Error ? thrown : new Error(String(thrown));
         }
-        const text = error ? error.message : textOf(result as ToolResult);
-        await ask("/results", { id, text, is_error: error !== undefined });
+        const done = result as ToolResult | undefined;
+        const text = error ? error.message : textOf(done as ToolResult);
+        // pi's bash returns a command that exited nonzero as a failed result, not an error
+        const failed = error !== undefined || done?.isError === true;
+        const exitCode = done?.structuredContent?.exit_code ?? null;
+        await ask("/results", { id, text, is_error: failed, exit_code: exitCode });
         if (error) throw error;
         return result as never;
       },
@@ -114,7 +129,7 @@ export default function (pi: ExtensionAPI) {
       promptSnippet: tool.description.split("\n")[0],
       parameters: { ...tool.parameters, type: "object", properties: tool.parameters.properties ?? {} } as never,
       async execute(id, params) {
-        const answer = await ask("/calls", { id, name: tool.name, args: params });
+        const answer = await announce(id, tool.name, params);
         return { content: [{ type: "text", text: String(answer.text) }], details: {} };
       },
     });

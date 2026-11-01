@@ -179,4 +179,15 @@ def test_pis_skills_folder_is_read_only(code: CodeServices) -> None:
 
 def test_a_command_runs_only_in_a_sandbox(code: CodeServices, tmp_path: Path) -> None:
     with pytest.raises(SandboxError, match="has no sandbox"):
-        code.run_command("agent-main", "ls", str(tmp_path / "checkout"), None)
+        code.run_command("agent-main", "ls", str(tmp_path / "checkout"), 5)
+
+
+@pytest.mark.parametrize(("asked", "limit"), [(None, 30), (5, 5), (600, 30)])
+def test_a_command_runs_within_what_it_asks_but_never_past_the_stacks_limit(
+    tmp_path: Path,
+    asked: float | None,
+    limit: float,
+) -> None:
+    code = CodeServices(checkout=tmp_path, repos=[], stack=StackSettings(shell_timeout_seconds=30))
+
+    assert code.command_limit(asked) == limit

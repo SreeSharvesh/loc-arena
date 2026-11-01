@@ -20,7 +20,7 @@ _LOGGER = logging.getLogger(__name__)
 _TASK = "Begin. Use the tools to do the work, and call finish when it is complete."
 _NUDGE = "Reply with a tool call. Call finish when the task is complete."
 # Never echoes the value: a lone surrogate in the history would fail every later call of the agent.
-_UNRECORDABLE = "arguments the event log cannot record: NaN, an infinity, a lone surrogate, or deep nesting"
+UNRECORDABLE = "arguments the event log cannot record: NaN, an infinity, a lone surrogate, or deep nesting"
 
 
 def render_tool_result(result: dict[str, Any], cap: int) -> str:
@@ -123,14 +123,14 @@ class ModelAgentPolicy:
             if problem is not None:
                 errors.append(_tool_message(call_id, problem))
                 continue
-            if not _recordable(args, self._loop.max_argument_depth):
-                errors.append(_tool_message(call_id, _UNRECORDABLE))
+            if not recordable(args, self._loop.max_argument_depth):
+                errors.append(_tool_message(call_id, UNRECORDABLE))
                 continue
             actions.append(AgentAction(tool=name, args=args, call_id=call_id))
         return actions, errors
 
 
-def _recordable(args: object, max_depth: int) -> bool:
+def recordable(args: object, max_depth: int) -> bool:
     """Whether the event log can record ``args``: nested at most ``max_depth`` levels, and canonical JSON."""
     level: list[object] = [args]
     for _ in range(max_depth):

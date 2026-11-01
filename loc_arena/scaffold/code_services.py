@@ -194,7 +194,11 @@ class CodeServices:
         """Make the directory ``path`` in the checkout, and its parents."""
         self._resolve(path).mkdir(parents=True, exist_ok=True)
 
-    def run_command(self, agent: str, command: str, directory: str, timeout: float | None) -> CommandResult:
-        """Run ``command`` in ``agent``'s sandbox, from ``directory`` in the checkout, within the limit."""
+    def command_limit(self, timeout: float | None) -> float:
+        """How long a command asked to run within ``timeout`` may run: never past the stack's limit."""
         limit = self._stack.shell_timeout_seconds
-        return self._run_in_sandbox(agent, command, self._resolve(directory), min(timeout or limit, limit))
+        return min(timeout or limit, limit)
+
+    def run_command(self, agent: str, command: str, directory: str, limit: float) -> CommandResult:
+        """Run ``command`` in ``agent``'s sandbox, from ``directory`` in the checkout, within ``limit``."""
+        return self._run_in_sandbox(agent, command, self._resolve(directory), limit)

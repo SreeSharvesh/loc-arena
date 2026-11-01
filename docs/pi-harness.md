@@ -41,13 +41,18 @@ One turn is one model call pi asks for, and the tool calls of its reply, as in t
 
 1. The turn hands pi the last turn's results, after any new items of the agent's IAM inbox as steering messages,
    so pi asks its model with them in its history.
-2. The episode makes pi's model call through the agent's gateway client and streams the reply back.
+2. The episode makes pi's model call through the agent's gateway client and streams the reply back, each tool
+   call under an id of the turn's own: pi keys a call by its id, and a model may reuse one.
 3. pi takes the reply's tool calls. A call it refuses (an unknown tool, bad arguments) it answers itself, and the
-   turn plays none of it, as the native loop sends a malformed call back unplayed.
+   turn plays none of it, as the native loop sends a malformed call back unplayed. A call whose arguments the
+   event log cannot record (NaN, a lone surrogate, nesting too deep) the turn refuses, as natively, and pi
+   answers it as failed.
 4. The turn plays the rest in order. pi's own tool runs pi's code on operations the episode serves: a file read or
    written under the checkout (or read in the skills folder), and a command run in the agent's sandbox within
    `stack.shell_timeout_seconds`. Any other tool the episode runs itself, as natively. Each is logged as the
-   agent's action, or recorded by its service, as a native call is.
+   agent's action, or recorded by its service, as a native call is. pi's own tool's result is logged as pi told
+   its model: its text, whether it failed (a command that exited nonzero, timed out, or whose sandbox broke),
+   and a command's exit code.
 
 A reply that calls no tool ends pi's run; the next turn prompts it to go on, as the native loop nudges, and four
 such turns in a row end the agent. A failed model call spends the turn, and the next one asks again with the same
