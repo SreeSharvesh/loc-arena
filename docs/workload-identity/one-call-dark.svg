@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="896" height="528" viewBox="0 0 896 528" role="img" aria-label="Sequence of one call: the caller swaps its IAM credential for a JWT that lasts the play and calls the door with it. The door verifies it, logs the caller and exchanges it at IAM for a short-lived token scoped to the service, then forwards the call with that token. The service asks IAM to authorize the operation, and the reply returns to the caller.">
+<defs><style>svg{font-family:-apple-system,"Segoe UI",system-ui,sans-serif}
+.box{fill:#161b22;stroke:#6e7681;stroke-width:1}
+.ext{fill:none;stroke:#6e7681;stroke-width:1.25;stroke-dasharray:5 4}
+.focus{fill:#0c2d48;stroke:#56b4e9;stroke-width:1.5}
+.region{fill:none;stroke:#6e7681;stroke-width:1}
+.t{fill:#e6edf3;font-size:13px;font-weight:600}
+.s{fill:#9198a1;font-size:11px}
+.bold{stroke:#e6edf3;stroke-width:2.5;fill:none}
+.thin{stroke:#6e7681;stroke-width:1.25;fill:none}
+.dash{stroke:#6e7681;stroke-width:1.25;fill:none;stroke-dasharray:4 3}
+.life{stroke:#6e7681;stroke-width:1;stroke-dasharray:3 4;fill:none}
+.head-ink{fill:#e6edf3}.head-rule{fill:#6e7681}</style>
+  <marker id="f2hi" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-ink" d="M0,0 L10,5 L0,10 z"/></marker>
+  <marker id="f2hr" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-rule" d="M0,0 L10,5 L0,10 z"/></marker>
+</defs>
+<g class="node"><rect class="focus" x="24" y="16" width="160" height="40" rx="6"/><text class="t" x="104" y="36" text-anchor="middle" dominant-baseline="central">Caller</text></g>
+<g class="node"><rect class="box" x="248" y="16" width="160" height="40" rx="6"/><text class="t" x="328" y="36" text-anchor="middle" dominant-baseline="central">IAM</text></g>
+<g class="node"><rect class="focus" x="472" y="16" width="160" height="40" rx="6"/><text class="t" x="552" y="36" text-anchor="middle" dominant-baseline="central">Door</text></g>
+<g class="node"><rect class="box" x="696" y="16" width="160" height="40" rx="6"/><text class="t" x="776" y="36" text-anchor="middle" dominant-baseline="central">Service</text></g>
+<path class="life" d="M104 56 V512"/><path class="life" d="M328 56 V512"/><path class="life" d="M552 56 V512"/><path class="life" d="M776 56 V512"/>
+
+<text class="s" x="216" y="88" text-anchor="middle">1. POST /token, IAM credential</text>
+<path class="thin" d="M104 100 H327" marker-end="url(#f2hr)"/>
+<text class="s" x="216" y="128" text-anchor="middle">2. JWT for the play</text>
+<path class="dash" d="M328 140 H105" marker-end="url(#f2hr)"/>
+<text class="s" x="216" y="176" text-anchor="middle">3. call, Bearer JWT</text>
+<path class="bold" d="M104 188 H551" marker-end="url(#f2hi)"/>
+<path class="thin" d="M552 212 H600 V244 H553" marker-end="url(#f2hr)"/>
+<text class="s" x="608" y="228" dominant-baseline="central">4. verify, log sub</text>
+<text class="s" x="440" y="276" text-anchor="middle">5. exchange (RFC 8693)</text>
+<path class="thin" d="M552 288 H329" marker-end="url(#f2hr)"/>
+<text class="s" x="440" y="316" text-anchor="middle">6. token for the service</text>
+<path class="dash" d="M328 328 H551" marker-end="url(#f2hr)"/>
+<text class="s" x="664" y="356" text-anchor="middle">7. forward, service token</text>
+<path class="bold" d="M552 368 H775" marker-end="url(#f2hi)"/>
+<text class="s" x="664" y="400" text-anchor="middle">8. authorize(token, op)</text>
+<path class="thin" d="M776 412 H329" marker-end="url(#f2hr)"/>
+<text class="s" x="440" y="444" text-anchor="middle">9. allow or deny</text>
+<path class="dash" d="M328 456 H775" marker-end="url(#f2hr)"/>
+<text class="s" x="216" y="484" text-anchor="middle">10. reply</text>
+<path class="dash" d="M776 496 H105" marker-end="url(#f2hr)"/>
+</svg>
