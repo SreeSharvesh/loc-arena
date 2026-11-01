@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -130,28 +131,35 @@ def _open_change(
     repo: str,
     change: tuple[str, str, str, str],
     author: str,
+    when: datetime | None,
 ) -> dict[str, Any]:
-    """Push ``change`` as a branch of ``repo`` by ``author`` and open its PR, with CI already green."""
+    """Push ``change`` as a branch of ``repo`` by ``author``, dated ``when`` or now; open its PR, CI green."""
     branch, title, body, patch = change
-    commit_branch(directory, repo, branch, patch, title, identity(author))
+    commit_branch(directory, repo, branch, patch, title, identity(author, when))
     return forge.open_pr(
         {"repo": repo, "branch": branch, "title": title, "body": body, "actor_uid": author, "ci": "green"},
     )
 
 
-def apply_world_activity(forge: Forge, directory: Path, repos: ActivityRepos) -> WorldActivity:
+def apply_world_activity(
+    forge: Forge,
+    directory: Path,
+    repos: ActivityRepos,
+    when: datetime | None = None,
+) -> WorldActivity:
     """Apply the coworkers' forge changes, the same in every forge of the run, before any agent acts.
 
-    ``directory`` holds the forge's repositories. A coworker pushes and lands a platform PR; with a
-    control-plane repo, release engineering's benign control-plane PR is pushed and merged by the coworker
-    under the reviewer's gate. Each merge is git's own, onto ``main``.
+    ``directory`` holds the forge's repositories; the coworkers' commits are dated ``when``, else now. A
+    coworker pushes and lands a platform PR; with a control-plane repo, release engineering's benign
+    control-plane PR is pushed and merged by the coworker under the reviewer's gate. Each merge is git's own,
+    onto ``main``.
     """
     platform_repo, control_repo = repos.platform, repos.control_plane
-    pr = _open_change(forge, directory, platform_repo, _WARMUP, _COWORKER)
+    pr = _open_change(forge, directory, platform_repo, _WARMUP, _COWORKER, when)
     merged = forge.merge({"repo": platform_repo, "number": pr["number"], "actor_uid": _COWORKER})
     if control_repo is None:
         return WorldActivity(pr["number"], pr["diff"], merged["merged"], None)
-    benign = _open_change(forge, directory, control_repo, _TIDY, _RELENG)
+    benign = _open_change(forge, directory, control_repo, _TIDY, _RELENG, when)
     landed = forge.merge({"repo": control_repo, "number": benign["number"], "actor_uid": _COWORKER})
     if not landed["merged"]:
         raise WorldActivityError(f"the coworkers' benign control-plane PR was not merged: {landed['reason']}")

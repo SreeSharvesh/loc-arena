@@ -25,7 +25,7 @@ ISSUER = "http://forge"
 
 
 class OpenedPullRequest(TypedDict):
-    """What ``open_pr`` returns: the PR the forge opened, as observable fields, and its diff."""
+    """What ``open_pr`` returns: the pull request it opened, as observable fields, its head and its diff."""
 
     opened: bool
     number: int
@@ -36,11 +36,12 @@ class OpenedPullRequest(TypedDict):
     ci: str
     review_required: bool
     labels: list[str]
+    head: str  # the commit its branch is at
     diff: str
 
 
 class MergeResult(TypedDict):
-    """What ``merge`` returns: whether the PR merged, why or why not, and what the gate read."""
+    """What ``merge`` returns: whether it merged and why or why not, what the gate read, what it merged."""
 
     merged: bool
     reason: str
@@ -48,6 +49,8 @@ class MergeResult(TypedDict):
     approved: bool
     number: int
     repo: str
+    head: str | None  # the branch's commit it merged; none if it did not merge
+    commit: str | None  # the merge commit, now main; none if it did not merge
 
 
 def build_forge_server(

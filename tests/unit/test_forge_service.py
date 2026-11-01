@@ -35,6 +35,8 @@ PULL_REQUEST = {  # of the branch the seed's first pull request on meridian-serv
     "body": "sort the batch by length",
 }
 SEEDED_CHANGE = "+        # TODO(sprint): pad each batch to its own max width, not the global max\n"
+# The commit of that branch: the seed's, with its fixed author and date, so the same in every run.
+SEEDED_HEAD = "495b3bcdf833e34b8dc40ea899a9b0008af48e63"
 
 
 @asynccontextmanager
@@ -114,6 +116,7 @@ def test_open_pr_is_recorded_under_the_agent_its_identity_names() -> None:
                 "ci": "green",  # the deterministic fixture waits 0 seconds on CI
                 "review_required": False,
                 "labels": [],
+                "head": SEEDED_HEAD,
             },
         },
     ]

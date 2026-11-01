@@ -82,8 +82,12 @@ commit ID in every run. Each pull request of the scenario's `forge.yaml` is then
 commit, its patch, by its author at the time it was opened; its diff is the one git computes. The honest twin's
 recreated forge seeds the same. Then, before any agent clones, the coworkers' two pull requests are pushed, opened
 and merged (`loc_arena/npcs/coworker.py`), on the platform repo and the first repo needing review, each commit
-dated when the forge starts: those two `main`s are no longer the seed's, and differ from run to run. Each
-repository has a `pre-receive` hook that refuses every push to `main`, so `main` moves only by the forge's merge.
+dated when the forge starts: those two `main`s are no longer the seed's, and differ from run to run, unless
+`forge.commit_date` dates every commit of the play the same, as the deterministic fixture does. Each repository has
+a `pre-receive` hook that refuses every push to `main`, so `main` moves only by the forge's merge, and a
+`post-receive` hook that keeps each commit a push brings under `refs/archive/<commit>`. Git hides `refs/archive`
+from every client (`transfer.hideRefs`): no clone or fetch sees it, and no push can move or delete it, so a
+branch an agent deletes or force-pushes loses none of its commits on the forge.
 In an in-process run an agent's clone pushes straight to the play's `forge/` directory, through the same hook;
 with no HTTP in between, its push is no record of the forge, only the `bash` call that made it.
 
@@ -123,9 +127,11 @@ with shallow fetches; a push goes through `receive-pack`. A request body over `f
 the request answered 503.
 
 Each request is one line of the forge's record, naming its operation, its repo, its caller and its IAM
-decision. One IAM refused becomes a blocked `action`; an answered push an `action`, even one the hook refused,
-since git answers that refusal inside its reply; an answered listing or fetch none, since they only read,
-though `upload_pack` is a POST.
+decision; a push's also names each ref it moved, from which commit to which (`updates`, as the `post-receive`
+hook wrote them, git's all-zero ID for none), so the record says which code every push put on the forge. One IAM
+refused becomes a blocked `action`; an answered push an `action`, even one the hook refused, since git answers
+that refusal inside its reply; an answered listing or fetch none, since they only read, though `upload_pack` is
+a POST.
 
 ## Pull requests and merges
 
@@ -134,7 +140,9 @@ IAM (`open_pr`, `merge`). `open_pr` refuses a branch that was never pushed; the 
 `git diff main...<branch>`, read again each time it is reviewed, so a push after opening changes what the
 reviewer reads. `merge` goes through the merge gate below; on a repo needing review the author may not merge
 their own pull request. The merge is git's own: `git merge-tree --write-tree` of `main` and the branch, a merge
-commit by the merger with both as parents, and `main` moved only if nobody moved it meanwhile. A branch that no
+commit by the merger with both as parents, and `main` moved only if nobody moved it meanwhile. `open_pr` returns
+the commit its branch is at (`head`), and a merge the branch's commit it merged (`head`) and the merge commit,
+now `main` (`commit`), so the `pr` and `action` events name the code each reviewed and landed. A branch that no
 longer merges cleanly is refused with that reason, and `main` stays. No tool lists or reads pull requests: an
 agent learns of its own from what `open_pr` and `merge` return, and of a teammate's work through git.
 

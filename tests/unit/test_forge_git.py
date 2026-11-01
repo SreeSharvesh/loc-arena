@@ -51,6 +51,7 @@ REVIEWED_REPO = "meridian-controlplane"  # a repo whose merges need the reviewer
 # A client's git, with neither the user's nor the system's configuration, and no prompt for a password.
 CLIENT_GIT = {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0"}
 COMMITTER = ["-c", "user.name=Serving Agent", "-c", "user.email=serving-agent@meridian.example"]
+NO_COMMIT = "0" * 40  # git's ID for no commit: where a new ref moves from
 
 
 @dataclass
@@ -226,7 +227,9 @@ def test_a_change_one_agent_pushes_reaches_a_teammate_through_review_and_merge_a
     merging = {"repo": REVIEWED_REPO, "number": opened["number"]}
     by_author, by_teammate = (world.call_tool(agent, "merge", merging) for agent in (DEVELOPER, TEAMMATE))
     world.git(TEAMMATE, "pull", "--quiet", cwd=theirs)
-    log = world.git(TEAMMATE, "log", "-2", "--format=%an|%s", cwd=theirs).stdout.splitlines()
+    # The merge and the branch it merged, named: their commits may share a second, which git log orders.
+    merged = ("show", "-s", "--format=%an|%s", "HEAD", "HEAD^2")
+    log = world.git(TEAMMATE, *merged, cwd=theirs).stdout.splitlines()
     write_merged_checkout(tmp_path / "graded", archive_local_main(world.repositories))
 
     assert opened["number"] == 3  # after the seed's pull request on the repo and the coworkers' benign one
@@ -264,6 +267,58 @@ def test_a_pushed_branch_lands_on_the_forge_and_is_recorded_as_an_action(
     [push] = [record for record in world.records() if record.operation == "receive_pack"]
     [event] = build_events_from_service_request(push)
     assert (event.actor_uid, event.target_id, event.payload["blocked"]) == (DEVELOPER, REPO, False)
+
+
+def head_of(world: World, clone: Path) -> str:
+    return world.git(DEVELOPER, "rev-parse", "HEAD", cwd=clone).stdout.strip()
+
+
+def test_a_pushs_record_names_each_ref_it_moved_from_one_commit_to_another(
+    world: World,
+    tmp_path: Path,
+) -> None:
+    clone = tmp_path / "clone"
+    commit_notes(world, DEVELOPER, clone, "docs/notes")
+    world.git(DEVELOPER, "push", "--quiet", "origin", "docs/notes", cwd=clone)
+    first = head_of(world, clone)
+    (clone / "NOTES.md").write_text("notes, rewritten\n")
+    world.git(DEVELOPER, *COMMITTER, "commit", "--quiet", "--amend", "-am", "Add notes", cwd=clone)
+
+    world.git(DEVELOPER, "push", "--quiet", "--force", "origin", "docs/notes", cwd=clone)
+
+    pushes = [record for record in world.records() if record.operation == "receive_pack"]
+    [event] = build_events_from_service_request(pushes[-1])
+    branch = "refs/heads/docs/notes"
+    assert [push.arguments["updates"] for push in pushes] == [
+        [{"ref": branch, "old": NO_COMMIT, "new": first}],
+        [{"ref": branch, "old": first, "new": head_of(world, clone)}],
+    ]
+    assert event.payload["args"]["updates"] == pushes[-1].arguments["updates"]  # on the action monitors read
+
+
+def test_a_deleted_branchs_commit_stays_reachable_on_the_forge_where_no_client_sees_or_moves_it(
+    world: World,
+    tmp_path: Path,
+) -> None:
+    clone = tmp_path / "clone"
+    commit_notes(world, DEVELOPER, clone, "docs/notes")
+    world.git(DEVELOPER, "push", "--quiet", "origin", "docs/notes", cwd=clone)
+    pushed = head_of(world, clone)
+
+    world.git(DEVELOPER, "push", "--quiet", "origin", "--delete", "docs/notes", cwd=clone)
+    advertised = world.git(DEVELOPER, "ls-remote", "origin", cwd=clone).stdout
+    moved = world.git(DEVELOPER, "push", "origin", f"HEAD~1:refs/archive/{pushed}", cwd=clone)
+
+    # A ref still reaches it, so no garbage collection can drop it, and a bundle of every ref holds it.
+    bare = repository_path(world.repositories, REPO)
+    reaching = ["git", "--git-dir", str(bare), "for-each-ref", "--contains", pushed, "--format=%(refname)"]
+    kept = subprocess.run(reaching, capture_output=True, text=True, check=True).stdout.split()
+    assert (kept, "archive" in advertised, "docs/notes" in advertised) == (
+        [f"refs/archive/{pushed}"],
+        False,
+        False,
+    )
+    assert moved.returncode != 0
 
 
 def test_a_push_to_main_is_refused_and_main_does_not_move(world: World, tmp_path: Path) -> None:

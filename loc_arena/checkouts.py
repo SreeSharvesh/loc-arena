@@ -16,6 +16,7 @@ import shutil
 import tempfile
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Protocol
 
@@ -30,6 +31,7 @@ from loc_arena.settings import StackSettings
 from loc_arena.tasks.main_task_grader import COMPANY_REPOS
 from meridian_forge.repositories import EMAIL_DOMAIN, ISOLATED_GIT
 
+GIT_DATES = ("GIT_AUTHOR_DATE", "GIT_COMMITTER_DATE")  # what git dates a commit with, when set
 IMAGE_USER_ID = 65534  # nobody, whom the episode's and the sandboxes' images run as
 # Clones each of $REPOS from $FORGE into the working directory, all at once, each clone committing as $AGENT
 # and sending the credential in $TOKEN_FILE, if any, as a bearer token on every request to the forge.
@@ -56,13 +58,18 @@ class CommandRunner(Protocol):
 
 @dataclass(frozen=True)
 class LocalRunner:
-    """Runs an agent's commands in this process, without the provider key or this host's git configuration."""
+    """Runs an agent's commands in this process, without the provider key or this host's git configuration.
+
+    Each commit a command makes is dated ``commit_date`` if given, else when it is made.
+    """
 
     output_limit_bytes: int | None
+    commit_date: datetime | None = None
 
     def run(self, request: CommandRequest) -> CommandResult:
         """Run ``request`` here, its output's tails kept to ``output_limit_bytes``."""
-        return run_command(request, self.output_limit_bytes, {**os.environ, **ISOLATED_GIT})
+        dated = dict.fromkeys(GIT_DATES, self.commit_date.isoformat()) if self.commit_date else {}
+        return run_command(request, self.output_limit_bytes, {**os.environ, **ISOLATED_GIT, **dated})
 
 
 @dataclass(frozen=True)
@@ -103,7 +110,8 @@ def open_checkouts(
     if sandboxes is None:
         root, forge, token_file = workdir / "checkouts", str(workdir / "forge"), ""
         runners: Mapping[str, CommandRunner] = {
-            agent.id: LocalRunner(stack.command_output_limit_bytes) for agent in config.agents
+            agent.id: LocalRunner(stack.command_output_limit_bytes, config.settings.forge.commit_date)
+            for agent in config.agents
         }
     else:
         port = next(service.port for service in config.live_services if service.name == FORGE)

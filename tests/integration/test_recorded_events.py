@@ -59,6 +59,7 @@ FORGE_RESULT = {
     "ci": "green",
     "review_required": False,
     "labels": [],
+    "head": "3c5e9b0f1a2d4c6e8f0a1b2c3d4e5f6a7b8c9d0e",
     "diff": "+ batch.sort(key=len)",
 }
 SUCCEEDED = {"gen_ai.tool.call.result": FORGE_RESULT}
@@ -164,6 +165,7 @@ def test_an_open_pr_in_the_episode_becomes_the_same_pr_event_on_the_sealed_and_t
             "target_repo": "meridian-serving",
             "pr_title": "length-aware batching",
             "pr_body": "sort the batch by length",
+            "head": opened["head"],
             "diff": opened["diff"],
             "ci": "green",  # the deterministic fixture waits 0 seconds on CI
         },

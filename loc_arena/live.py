@@ -269,7 +269,7 @@ def play_model_episode(
     reviewer = Reviewer()
     repos = resolve_activity_repos(scenario, seed)
     forge = open_forge(config, seed, workdir / "forge")  # in a stack run, the forge container's own copy
-    activity = apply_world_activity(forge, workdir / "forge", repos)
+    activity = apply_world_activity(forge, workdir / "forge", repos, config.settings.forge.commit_date)
 
     sealed_path = workdir / "events.sealed.jsonl"
     mirror_path = workdir / "events.mirror.jsonl"

@@ -1,7 +1,8 @@
 """The forge's pull requests and merges over the repos it hosts.
 
 It operates ``open_pr``/``pr_status``/``merge``. A pull request names a branch pushed to its repo, and its
-diff is the one git computes. The merge gate: once a pull request is open and its CI has finished, the
+diff is the one git computes; opening one names the commit its branch is at, and a merge the commit it merged
+and the one it made. The merge gate: once a pull request is open and its CI has finished, the
 company's merge policy decides, given CI's result and, on a repo it says needs review, the reviewer's verdict
 on the current diff; on such a repo the author may not merge their own. A merge is git's own merge onto
 ``main``. Its caller records what is done on it.
@@ -12,13 +13,14 @@ from __future__ import annotations
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import replace
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from meridian_forge.ci import CiStatus, ci_status
 from meridian_forge.merge_policy import MergePolicy
 from meridian_forge.models import PullRequest
-from meridian_forge.repositories import MAIN, branch_diff, branch_exists, merge_branch
+from meridian_forge.repositories import MAIN, branch_diff, branch_exists, branch_head, merge_branch
 from meridian_forge.review import PullRequestReviewer
 
 
@@ -39,17 +41,20 @@ class Forge:
         reviewer: PullRequestReviewer,
         ci_seconds: Callable[[str, int], float],
         clock: Callable[[], float] = time.time,
+        commit_date: datetime | None = None,
     ) -> None:
         """Host ``repos``, whose repositories are in ``directory``, with ``pull_requests`` open on them.
 
         A merge into one of ``review_required`` needs ``reviewer``'s approval. CI on a pull request opened
-        without a status takes ``ci_seconds(repo, number)`` by ``clock``'s time.
+        without a status takes ``ci_seconds(repo, number)`` by ``clock``'s time. Each merge commit is dated
+        ``commit_date`` if given, else when it is made.
         """
         self._directory = directory
         self._policy = MergePolicy(review_required)
         self._reviewer = reviewer
         self._ci_seconds = ci_seconds
         self._clock = clock
+        self._commit_date = commit_date
         self._prs = {(pr.repo, pr.number): pr for pr in pull_requests}
         self._next_number = {
             repo: max((number for (on, number) in self._prs if on == repo), default=0) + 1 for repo in repos
@@ -68,14 +73,15 @@ class Forge:
         }
 
     def open_pr(self, args: dict[str, Any]) -> dict[str, Any]:
-        """Open a PR of a pushed branch against ``main``, and return its number, observable fields and diff.
+        """Open a PR of a pushed branch against ``main``; return its number, observable fields, head and diff.
 
         A PR declaring no CI status (one opened through the forge's tools) is pending until CI has run on it.
         """
         repo, branch = str(args.get("repo", "")), str(args.get("branch", ""))
         if repo not in self._next_number:
             raise ForgeError(f"unknown repo {repo!r}; hosted: {', '.join(sorted(self._next_number))}")
-        if not branch_exists(self._directory, repo, branch):
+        head = branch_head(self._directory, repo, branch)
+        if head is None:
             raise ForgeError(f"no branch {branch!r} on {repo!r}: push it first")
         number = self._next_number[repo]
         self._next_number[repo] = number + 1
@@ -94,7 +100,7 @@ class Forge:
             ci_passes_at=self._clock() + self._ci_seconds(repo, number) if declared is None else None,
         )
         self._prs[(repo, number)] = pr
-        return {"opened": True, **self._summarize(pr), "diff": pr.diff}
+        return {"opened": True, **self._summarize(pr), "head": head, "diff": pr.diff}
 
     def pr_status(self, args: dict[str, Any]) -> dict[str, Any]:
         """The status of a PR: its CI, its review where the policy needs one, and whether it may merge now."""
@@ -110,7 +116,11 @@ class Forge:
         }
 
     def merge(self, args: dict[str, Any]) -> dict[str, Any]:
-        """Merge as ``actor_uid`` if the gate allows and git merges it cleanly; say why it did or did not."""
+        """Merge as ``actor_uid`` if the gate allows and git merges it cleanly; say why it did or did not.
+
+        A merge names the commit of the branch it merged (``head``) and the merge commit, now ``main``
+        (``commit``); a refused one names neither.
+        """
         pr = self._current(self._find(args))
         merger = str(args.get("actor_uid", ""))
         ci = ci_status(pr, self._clock())
@@ -118,12 +128,22 @@ class Forge:
         merged, reason = self._merge_gate(pr, ci, approved, review_reason)
         if merged and merger == pr.author and self._policy.requires_review(pr.repo):
             merged, reason = False, "the author may not merge their own pull request on a repo needing review"
+        head, commit = None, None
         if merged:
             message = f"Merge pull request #{pr.number} from {pr.branch}\n\n{pr.title}"
-            if merge_branch(self._directory, pr.repo, pr.branch, message, merger or pr.author):
+            head = branch_head(self._directory, pr.repo, pr.branch)
+            commit = merge_branch(
+                self._directory,
+                pr.repo,
+                pr.branch,
+                message,
+                merger or pr.author,
+                self._commit_date,
+            )
+            if commit is not None:
                 self._prs[(pr.repo, pr.number)] = replace(pr, state="merged")
             else:
-                merged, reason = False, f"{pr.branch} does not merge cleanly onto {MAIN}"
+                head, merged, reason = None, False, f"{pr.branch} does not merge cleanly onto {MAIN}"
         return {
             "merged": merged,
             "reason": reason,
@@ -131,6 +151,8 @@ class Forge:
             "approved": approved,
             "number": pr.number,
             "repo": pr.repo,
+            "head": head,
+            "commit": commit,
         }
 
     def _current(self, pr: PullRequest) -> PullRequest:

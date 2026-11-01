@@ -168,6 +168,7 @@ def build_pull_request(record: ToolRecord, agent_ids: Sequence[str]) -> list[Rec
                 "target_repo": opened["repo"],
                 "pr_title": opened["title"],
                 "pr_body": str(record.arguments.get("body", "")),
+                "head": opened["head"],
                 "diff": opened["diff"],
                 "ci": opened["ci"],
             },

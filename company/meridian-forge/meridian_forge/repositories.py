@@ -4,7 +4,9 @@ Each repository's ``main`` starts as one commit of its repo's code, made with a 
 date and no user or system git configuration, so the same code gives the same commit ID every time, and a
 recreated forge starts where the last one did. Each pull request it starts with is a branch off ``main`` with
 one commit, its change, by its author at the time it was opened. ``main`` is protected: a hook refuses every
-push to it, so it changes only by the forge's own merge (``merge_branch``).
+push to it, so it changes only by the forge's own merge (``merge_branch``). Every commit a push brings stays:
+another hook keeps it under ``refs/archive``, which git hides from every fetch and push, so deleting or
+force-pushing a branch loses nothing, and writes each ref the push moved where the forge asks it to.
 """
 
 from __future__ import annotations
@@ -33,6 +35,8 @@ SEED_IDENTITY = {
 # Git configuration from neither the user nor the system: no hook, template or signing setting changes a seed.
 ISOLATED_GIT = {"GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull}
 EMAIL_DOMAIN = "meridian.example"  # a principal's commits carry <principal>@ this domain
+ARCHIVE_REFS = "refs/archive"  # where each pushed commit is kept, hidden from every client
+REF_UPDATES_VARIABLE = "FORGE_REF_UPDATES"  # the file a push's hook writes each ref it moved to, if set
 # The hook each repository runs on a push: main changes only by a merge on the forge.
 PROTECT_MAIN = f"""#!/bin/sh
 while read -r old new ref; do
@@ -40,6 +44,14 @@ while read -r old new ref; do
     echo "{MAIN} is protected: push a branch and open a pull request" >&2
     exit 1
   fi
+done
+"""
+# The hook each repository runs once a push has moved its refs: each move written as "<old> <new> <ref>" where
+# the forge asks, and each commit the push brought kept, so no later push or deletion can lose it.
+KEEP_PUSHES = f"""#!/bin/sh
+while read -r old new ref; do
+  if [ -n "${{{REF_UPDATES_VARIABLE}:-}}" ]; then echo "$old $new $ref" >> "${{{REF_UPDATES_VARIABLE}}}"; fi
+  case "$new" in *[!0]*) git update-ref "{ARCHIVE_REFS}/$new" "$new" ;; esac
 done
 """
 
@@ -99,8 +111,10 @@ def seed_repositories(
         (bare / "index").unlink()  # the staging area of the seed, which a bare repository keeps none of
         hooks = bare / "hooks"
         hooks.mkdir()
-        (hooks / "pre-receive").write_text(PROTECT_MAIN)
-        (hooks / "pre-receive").chmod(0o755)
+        for hook, script in (("pre-receive", PROTECT_MAIN), ("post-receive", KEEP_PUSHES)):
+            (hooks / hook).write_text(script)
+            (hooks / hook).chmod(0o755)
+        run_git(["--git-dir", str(bare), "config", "transfer.hideRefs", ARCHIVE_REFS])
         for branch in branches:
             if branch.repo == repo:
                 commit_branch(
@@ -135,10 +149,16 @@ def commit_branch(  # noqa: PLR0913 - a commit's every part
     run_git([*git, "update-ref", f"refs/heads/{branch}", commit])
 
 
+def branch_head(directory: Path, repo: str, branch: str) -> str | None:
+    """The commit ``branch`` of ``repo`` is at; none if it has no such branch."""
+    git = ["--git-dir", str(repository_path(directory, repo))]
+    head = run_git([*git, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"], check=False).strip()
+    return head or None
+
+
 def branch_exists(directory: Path, repo: str, branch: str) -> bool:
     """Whether ``repo`` has ``branch``."""
-    git = ["--git-dir", str(repository_path(directory, repo))]
-    return bool(run_git([*git, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"], check=False))
+    return branch_head(directory, repo, branch) is not None
 
 
 def branch_diff(directory: Path, repo: str, branch: str) -> str:
@@ -146,20 +166,28 @@ def branch_diff(directory: Path, repo: str, branch: str) -> str:
     return run_git(["--git-dir", str(repository_path(directory, repo)), "diff", f"{MAIN}...{branch}"])
 
 
-def merge_branch(directory: Path, repo: str, branch: str, message: str, merger: str) -> bool:
-    """Merge ``branch`` onto ``main`` of ``repo`` as ``merger`` with git's own merge; ``False`` on a conflict.
+def merge_branch(  # noqa: PLR0913 - a merge commit's every part
+    directory: Path,
+    repo: str,
+    branch: str,
+    message: str,
+    merger: str,
+    when: datetime | None = None,
+) -> str | None:
+    """Merge ``branch`` onto ``main`` of ``repo`` as ``merger``, at ``when`` or the present, with git's merge.
 
-    The merge commit is written without a working tree, and ``main`` moves only if no one moved it meanwhile.
+    Returns the merge commit, now ``main``; none on a conflict. The merge commit is written without a working
+    tree, and ``main`` moves only if no one moved it meanwhile.
     """
     git = ["--git-dir", str(repository_path(directory, repo))]
     base = run_git([*git, "rev-parse", MAIN]).strip()
     head = run_git([*git, "rev-parse", f"refs/heads/{branch}"]).strip()
     tree = run_git([*git, "merge-tree", "--write-tree", base, head], check=False).split("\n", 1)[0]
     if not tree:
-        return False
+        return None
     commit = run_git(
         [*git, "commit-tree", tree, "-p", base, "-p", head, "-m", message],
-        identity(merger),
+        identity(merger, when),
     ).strip()
     run_git([*git, "update-ref", f"refs/heads/{MAIN}", commit, base])
-    return True
+    return commit

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable, Iterable
+from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
@@ -60,10 +61,12 @@ def open_seeded_forge(
     reviewer: PullRequestReviewer,
     ci_seconds: Callable[[str, int], float],
     clock: Callable[[], float] = time.time,
+    commit_date: datetime | None = None,
 ) -> Forge:
     """The forge over ``repos``, whose repositories in ``directory`` were seeded with ``seed``'s branches.
 
-    A seeded pull request takes the number after its repo's last, in the order the seed lists them.
+    A seeded pull request takes the number after its repo's last, in the order the seed lists them. Each
+    merge commit is dated ``commit_date`` if given, else when it is made.
     """
     repos = tuple(repos)
     numbers = dict.fromkeys(repos, 0)
@@ -92,4 +95,5 @@ def open_seeded_forge(
         reviewer=reviewer,
         ci_seconds=ci_seconds,
         clock=clock,
+        commit_date=commit_date,
     )

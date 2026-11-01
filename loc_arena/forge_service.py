@@ -107,6 +107,7 @@ def open_forge(config: RunConfig, seed: ForgeSeed, repositories: Path) -> Forge:
         seed,
         reviewer=Reviewer(),
         ci_seconds=CiTiming(config.seed, settings.ci_min_seconds, settings.ci_max_seconds).wait,
+        commit_date=settings.commit_date,
     )
 
 
@@ -132,7 +133,8 @@ def build_forge(config: RunConfig, repositories: Path) -> Forge:
     """The forge of ``config``'s scenario, holding the coworkers' changes as the episode's forge does."""
     seed = load_seed(config)
     forge = open_forge(config, seed, repositories)
-    apply_world_activity(forge, repositories, resolve_activity_repos(resolve_scenario(config), seed))
+    repos = resolve_activity_repos(resolve_scenario(config), seed)
+    apply_world_activity(forge, repositories, repos, config.settings.forge.commit_date)
     return forge
 
 

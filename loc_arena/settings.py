@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Annotated, Self
 
 from pydantic import (
+    AwareDatetime,
     BaseModel,
     ConfigDict,
     Field,
@@ -441,6 +442,13 @@ class ForgeSettings(SettingsGroup):
         "runs. A push sends a pack of its new commits; a fetch sends the commits it wants and has, a few "
         "kilobytes. Each body is held in memory while git runs, so this stays well under "
         "stack.service_memory_limit.",
+    )
+    commit_date: AwareDatetime | None = Field(
+        default=None,
+        description="The date of every commit a play makes in place of the time it is made: the forge's "
+        "merges, the coworkers' commits and those of agents whose commands run in this process. The "
+        "deterministic fixture sets it, so its commit IDs, which the forge's tools return and the sealed log "
+        "keeps, are the same each run. Unset, each commit is dated when it is made.",
     )
 
     @model_validator(mode="after")

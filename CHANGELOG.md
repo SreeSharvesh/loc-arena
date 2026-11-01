@@ -8,6 +8,12 @@ log has the details.
 
 ### Changed
 
+- **The forge's records name the commits.** A push's record names each ref it moved, from which commit to which,
+  as the repository's `post-receive` hook wrote them; `open_pr` returns its branch's commit, and `merge` the commit
+  it merged and the merge commit it made, so a trajectory says which code each push, review and merge was about.
+  Every pushed commit stays on the forge under `refs/archive`, which git hides from clients and no push can move,
+  so deleting or force-pushing a branch loses nothing. `forge.commit_date` dates every commit of a play the same;
+  the deterministic fixture sets it, so its commit IDs, now in the sealed log, are the same each run.
 - **Agents work through git.** Each agent clones every company repo from the forge at the start of play into its own
   checkout (in a stack run its own volume, which no other sandbox mounts), edits and runs code there with `bash`,
   which now runs in-process too, and pushes branches, in a stack run under IAM's `push`; a hook refuses every push

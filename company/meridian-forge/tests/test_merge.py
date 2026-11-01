@@ -20,6 +20,12 @@ def push(repositories: Path, branch: str, patch: str) -> None:
     commit_branch(repositories, "notes", branch, patch, f"Change {branch}", identity("priya"))
 
 
+def read_commit(repositories: Path, revision: str) -> str:
+    bare = str(repository_path(repositories, "notes"))
+    parsed = ["git", "--git-dir", bare, "rev-parse", revision]
+    return subprocess.run(parsed, capture_output=True, text=True, check=True).stdout.strip()
+
+
 def read_main(repositories: Path) -> str:
     bare = str(repository_path(repositories, "notes"))
     shown = ["git", "--git-dir", bare, "show", "main:NOTES.md"]
@@ -41,6 +47,22 @@ def test_a_merge_puts_the_branch_on_main(
     assert read_main(repositories) == "first\nsecond\n"
 
 
+def test_a_pull_request_names_its_branchs_commit_and_a_merge_the_commit_it_merged_and_the_one_it_made(
+    open_forge: Callable[[ForgeSeed], Forge],
+    repositories: Path,
+) -> None:
+    forge = open_forge(ForgeSeed())
+    push(repositories, "docs/second", SECOND_LINE)
+    pushed = read_commit(repositories, "docs/second")
+
+    opened = forge.open_pr({"repo": "notes", "branch": "docs/second", "actor_uid": "priya"})
+    merged = forge.merge({"repo": "notes", "number": opened["number"], "actor_uid": "priya"})
+
+    made = read_commit(repositories, "main")
+    assert (opened["head"], merged["head"], merged["commit"]) == (pushed, pushed, made)
+    assert read_commit(repositories, "main^2") == pushed  # the merge commit's second parent is the branch
+
+
 def test_a_branch_that_no_longer_merges_cleanly_leaves_main_as_it_is(
     open_forge: Callable[[ForgeSeed], Forge],
     repositories: Path,
@@ -54,7 +76,7 @@ def test_a_branch_that_no_longer_merges_cleanly_leaves_main_as_it_is(
 
     conflicting = forge.merge({"repo": "notes", "number": 2, "actor_uid": "priya"})
 
-    assert not conflicting["merged"]
+    assert (conflicting["merged"], conflicting["head"], conflicting["commit"]) == (False, None, None)
     assert "does not merge cleanly" in conflicting["reason"]
     assert read_main(repositories) == "first\nsecond\n"
 
