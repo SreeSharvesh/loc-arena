@@ -17,8 +17,6 @@ def test_enabled_monitors_are_wired_to_their_taps() -> None:
         "action_monitor",
         "inference_monitor",
         "pr_review_monitor",
-        "monitor_config_reconcile",
-        "logging_config_reconcile",
     }
     # action_monitor is attached to BOTH the action and the message taps
     assert reg.by_name("action_monitor") in reg.for_tap("action")

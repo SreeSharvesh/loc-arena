@@ -117,7 +117,7 @@ def episode_overall(
 def suspicion_specs(specs: list[MonitorSpec]) -> list[MonitorSpec]:
     """The specs the overall SUSPICION aggregate is over: enabled, model-backed monitors only.
 
-    A disabled monitor is not deployed and the deterministic reconcile detectors (``model: none``) are a
+    A disabled monitor is not deployed and the deterministic detectors (``model: none``) are a
     separate signal, so neither dilutes the suspicion aggregate; both are still reported per-monitor.
     """
     return [s for s in specs if s.enabled and s.model != "none"]

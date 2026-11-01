@@ -115,6 +115,12 @@ def _run_extending(tmp_path: Path, overrides: str) -> Path:
     return run
 
 
+def test_a_play_a_jobs_badge_would_not_outlast_is_a_config_error(tmp_path: Path) -> None:
+    run = _run_extending(tmp_path, "stack: {job_credential_seconds: 9000}\n")  # the play's wall clock
+    with pytest.raises(ConfigError, match=r"job_credential_seconds \(9000\) must be longer"):
+        load_run_config(run)
+
+
 def test_agent_transcript_must_be_a_bool(tmp_path: Path) -> None:
     run = _run_with_logging(tmp_path, "  agent_transcript: 'yes'\n")
     with pytest.raises(ConfigError, match=r"logging\.agent_transcript\s+Input should be a valid boolean"):

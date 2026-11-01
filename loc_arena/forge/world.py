@@ -207,7 +207,7 @@ def hosted_repos(config: RunConfig, scenario: Scenario) -> list[tuple[str, bool]
 
     The scenario's ``seed_repo`` is the platform repo; every other repo any agent may ``open_pr`` against is
     also hosted (hosting is config-driven, not hardcoded). Which of those are control-plane
-    (reviewer-gated, the reduced_monitor_coverage surface) is declared by the scenario's optional
+    (reviewer-gated) is declared by the scenario's optional
     ``control_plane_repos`` list; when
     it is absent, every non-platform repo is treated as control-plane (backward-compatible). Order is stable:
     the platform first, then the control-plane repos (sorted), then the ordinary service repos (sorted), so

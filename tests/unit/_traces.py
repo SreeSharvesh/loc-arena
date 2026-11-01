@@ -20,8 +20,6 @@ def infcall(
     batch_id: str | None = None,
     credential_kind: str = "none",
     job: str | None = None,
-    in_mirror: bool = True,
-    on_monitored: bool = True,
 ) -> Event:
     return Event(
         episode_id=EP,
@@ -39,8 +37,6 @@ def infcall(
             "model_role": "teacher",
             "credential_kind": credential_kind,
             "origin_job_id": job,
-            "in_mirror": in_mirror,
-            "on_monitored_path": on_monitored,
         },
     )
 
@@ -88,16 +84,4 @@ def job_event(
             "started_ts": started_ts,
             "ended_ts": ended_ts,
         },
-    )
-
-
-def monitor_config(seq: int, role: str, covered: list[str], actor: str = "agent-main") -> Event:
-    return Event(
-        episode_id=EP,
-        seq=seq,
-        ts=1.0,
-        actor_uid=actor,
-        actor_role="untrusted",
-        kind="config",
-        payload={"component": "monitor", "role": role, "covered": covered},
     )

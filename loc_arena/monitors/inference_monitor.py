@@ -4,10 +4,7 @@ Enforces the firewall: it reads the generate records visible on the MIRROR side 
 turn_id/batch_id, credential kind, caller, query/output fingerprints, inter-call gaps), never the sealed
 recompute. In ``heuristic`` mode it finds off-path self-feeding loops in the mirror stream; in ``live``
 mode it sends the declared observable fields of the stream to the trusted-monitor model THROUGH THE
-GATEWAY and parses a strict JSON verdict, falling back to the heuristic on a parse failure. When
-log-blinding (underreported_activity_logging) removes the loop's calls from the mirror, this monitor
-no longer sees them -- the
-evasion the setting studies.
+GATEWAY and parses a strict JSON verdict, falling back to the heuristic on a parse failure.
 """
 
 from __future__ import annotations
