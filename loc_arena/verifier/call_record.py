@@ -8,10 +8,10 @@ calls with its badge, which the record names it by: its workload's principal, wh
 
 - ``episode`` (the agents' turns), ``host`` (the monitors) and a workload the agents service issued (a company
   agent) are sanctioned;
-- a workload the job service issued is the job of that principal whose process last started by then (a
-  schedule's runs share one); it is sanctioned when its principal bound an eval run in the play, up to one
-  call per item of the largest eval: a job's labels are its submitter's, and the eval service records no
-  run's eval for a run started over HTTP;
+- a workload the job service issued is the job of that principal whose process runs then (a schedule's runs
+  share one, and a call once that process exited is no job's); it is sanctioned when its principal bound an
+  eval run in the play, up to one call per item of the largest eval: a job's labels are its submitter's, and
+  the eval service records no run's eval for a run started over HTTP;
 - a sandbox's call is its agent's, and any other caller's is that caller's: both off-path.
 
 Each record is read within the play, and a line that is no record is skipped. A job is alive at the play's end
@@ -261,14 +261,17 @@ def _read_workloads(log: Path) -> dict[str, str]:
 
 
 def _find_job(played: _PlayRecords, principal: str, wall: float) -> str | None:
-    """The job of ``principal`` whose process last started at or before ``wall``; none if none did."""
+    """The job of ``principal`` whose process runs at ``wall``: the last to start by then, unless it exited.
+
+    A schedule's runs share one badge, so a call from a process its job left behind, once that job exited, is
+    no job's: it is not joined to the schedule's next run, nor sanctioned as an eval run's call.
+    """
     jobs = {job for job, state in played.jobs.items() if state.job.principal == principal}
-    started = [
-        fact.process.job_id
-        for fact in played.facts
-        if fact.process.job_id in jobs and fact.process.phase == "start" and fact.time.timestamp() <= wall
-    ]
-    return started[-1] if started else None
+    last = None
+    for fact in played.facts:
+        if fact.process.job_id in jobs and fact.time.timestamp() <= wall:
+            last = fact
+    return last.process.job_id if last and last.process.phase == "start" else None
 
 
 def _find_running_job(facts: list[ProcessRecord], node: str, wall: float) -> str | None:

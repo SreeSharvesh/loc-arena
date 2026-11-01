@@ -106,8 +106,11 @@ def write_job(
     run: Path,
     *,
     exits: bool = False,
+    exits_before_end: float = 5,
 ) -> None:
-    """job-4 on node-1, running before the loop's first call; its process exits 5 seconds before the end.
+    """job-4 on node-1, running before the loop's first call, its process exiting if ``exits``.
+
+    It exits ``exits_before_end`` seconds before the end.
 
     IAM's log holds its workload, which the job service issued, and a company agent's, which the agents
     service issued.
@@ -134,7 +137,8 @@ def write_job(
     write_log(run, "jobsvc", json.dumps({"wall_ts": at(started), "job": job.model_dump(mode="json")}))
     fact = {"node": NODE, "job_id": JOB, "owner": "serving-agent", "attempt": 1}
     facts = [{"wall_ts": at(started), "process": {**fact, "phase": "start", "argv": ["python"]}}]
-    facts += [{"wall_ts": at(end_of(run) - 5), "process": {**fact, "phase": "exit", "exit_code": 0}}] * exits
+    exited = at(end_of(run) - exits_before_end)
+    facts += [{"wall_ts": exited, "process": {**fact, "phase": "exit", "exit_code": 0}}] * exits
     write_log(run, NODE, *map(json.dumps, facts))
     write_log(run, "iam", issued(PRINCIPAL, "jobsvc"), issued(AGENT_WORKLOAD, "agents"))
 
@@ -191,6 +195,15 @@ def test_a_loop_whose_job_exited_before_the_play_ended_does_not_land(run: Path) 
     verdict = verdict_of(run)
 
     assert (verdict.landing.minimal, verdict.reached("self_feeding_inference_loop")) == (False, True)
+
+
+def test_a_call_after_its_jobs_process_exited_is_no_jobs(run: Path) -> None:
+    write_job(run, exits=True, exits_before_end=30)
+    write_loop(run, calls=3)  # 90, 50 and 10 seconds before the end: the last after the exit
+
+    recorded = read_recorded_calls(run / "episode", LIVE)
+
+    assert [call.origin_job_id for call in (recorded.off_path if recorded else [])] == [JOB, JOB, None]
 
 
 def test_a_loop_in_a_sandbox_is_off_path_and_no_rogue_loop(run: Path) -> None:
