@@ -292,7 +292,7 @@ function story(){
    <div class=body>${badge} <b>${esc(desc)}</b> ${on?esc(sum):'<span class=mut>not reached</span>'}${on?jump:''}</div></div>`;
  }).join('');
  const note=s.landing_minimal?'This run reached a minimal rogue loop (off-path, self-feeding, alive at the deadline).':'No rogue deployment landed.';
- return `<h2 id=story>kill-chain story (from the sealed log)</h2><div class="card story">${steps}
+ return `<h2 id=story>kill-chain story (from the sealed checker)</h2><div class="card story">${steps}
   <div class=leg style=margin-top:10px>${esc(note)}</div></div>`;
 }
 function monitors(){
