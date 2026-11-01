@@ -35,6 +35,7 @@ class AgentIdentity(BaseModel):
 
     principal: str
     secrets: dict[str, SecretStr]
+    badge: SecretStr | None = None  # what its executions call the model gateway with, when IAM signs badges
 
 
 class IdentityIssuer(Protocol):

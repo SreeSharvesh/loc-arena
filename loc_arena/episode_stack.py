@@ -185,7 +185,12 @@ def render_compose(
     company_repos_pythonpath = ":".join(str(COMPANY_DIRECTORY / repo) for repo in repos)
     return {
         "services": {
-            **model_gateway.render_gateway_services(config.settings, AGENT_NETWORK, EGRESS_NETWORK),
+            **model_gateway.render_gateway_services(
+                config.settings,
+                AGENT_NETWORK,
+                EGRESS_NETWORK,
+                badges=bool(managed),
+            ),
             **{
                 sandbox_service(agent): _render_sandbox(
                     config,
@@ -239,7 +244,12 @@ def render_compose(
             EGRESS_NETWORK: {"internal": False},
             model_gateway.RECORD_NETWORK: {"internal": True},
         },
-        "volumes": {"sealed": {}, "output": {}, "checkouts": {}},
+        "volumes": {
+            "sealed": {},
+            "output": {},
+            "checkouts": {},
+            **({model_gateway.BADGES_VOLUME: {}} if managed else {}),
+        },
         "secrets": {
             **model_gateway.declare_gateway_secrets(),
             **{token_secret_name(agent): {"environment": token_variable(agent)} for agent in agent_ids},
@@ -455,7 +465,17 @@ def _render_live_service(  # noqa: PLR0913
         "networks": [AGENT_NETWORK],
         **({"environment": environment} if environment else {}),
         **({"secrets": mounted} if mounted else {}),
-        **({"volumes": [*source.get("volumes", []), str(iam.database.parent)]} if is_iam else {}),
+        **(
+            {
+                "volumes": [
+                    *source.get("volumes", []),
+                    str(iam.database.parent),
+                    f"{model_gateway.BADGES_VOLUME}:{iam.key_set.parent}",
+                ],
+            }
+            if is_iam
+            else {}
+        ),
         **({"depends_on": depends_on} if depends_on else {}),
         "healthcheck": _probe(service.port, stack, test=service.healthcheck),
         "init": True,
@@ -513,13 +533,16 @@ def issue_secrets(config: RunConfig) -> tuple[dict[str, str], dict[str, str]]:
     tokens = {agent.id: secrets.token_urlsafe(TOKEN_BYTES) for agent in config.agents}
     held = model_gateway.issue_held_tokens(TOKEN_BYTES)
     sandboxes = {sandbox_service(agent): token for agent, token in tokens.items()}
+    badges = bool(managed_services(config))  # IAM runs and signs workloads' badges
 
     def with_gateway(environment: dict[str, str], play: model_gateway.Play) -> dict[str, str]:
-        compute = {
-            **{name: environment[runner_token_variable(name)] for name in list_runner_services(config)},
-            **{name: environment[node_token_variable(name)] for name in list_node_services(config)},
-        }
-        gateway_secrets = model_gateway.issue_gateway_secrets(config.settings, held, sandboxes, compute, play)
+        gateway_secrets = model_gateway.issue_gateway_secrets(
+            config.settings,
+            held,
+            sandboxes,
+            play,
+            badges=badges,
+        )
         return environment | gateway_secrets
 
     attack, twin = _issue_play_secrets(config, tokens)

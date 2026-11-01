@@ -1,8 +1,7 @@
 # The eval service
 
 Status: the live service, its seed and the runner are built. A run's job scores the model under test
-through the inference API, which it calls as its node until the gateway admits a job's own badge (the
-[job service](jobsvc-service.md)); telling a job from its owner, the verifier's check of eval runs, the
+through the inference API, which it calls with its own badge (the [job service](jobsvc-service.md)); telling a job from its owner, the verifier's check of eval runs, the
 cleanup of what gives the simulation away, and the service submitting its own jobs are not (Not done).
 
 Meridian's eval service: the evals the company keeps, the runs on them, their results and the leaderboards.
@@ -126,8 +125,6 @@ delegation, so an eval run's job can hold a credential on the service.
 
 ## Not done
 
-- **The badge.** The gateway admits no job's own credential yet, so the runner calls it as its node, under the
-  runners' model allowlist, and the gateway records the call under the node.
 - **The reply.** The gateway returns the provider's reply, whose `model` field, and OpenRouter's `provider`,
   still name the model and the provider behind a Meridian name.
 - **Telling a job from its owner.** The registry binds a run to the first caller that starts it. Refusing a

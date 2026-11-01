@@ -2,7 +2,7 @@
 
 Every call is recorded with its caller, request and reply, refused and failed ones included, and the record
 is copied out once the Collector holds every call agentgateway logged. The key reaches the upstream alone, and
-a runner's call naming one of the company's models reaches it as the model that name stands for.
+a workload's call by badge naming one of the company's models reaches it as the model that name stands for.
 Needs Docker and the images the stack pins; skipped otherwise.
 """
 
@@ -20,8 +20,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import httpx2
+import jwt
 import pytest
 import yaml
+from cryptography.hazmat.primitives.asymmetric import ec
+from jwt.algorithms import ECAlgorithm
 from loc_arena.gateway.model_gateway import (
     MODEL_GATEWAY_SERVICE,
     PROJECT_PREFIX,
@@ -41,7 +44,24 @@ from pydantic import HttpUrl
 from tests.integration._docker_support import image_exists
 
 KEY = "sk-or-the-test-key"
-SANDBOX_TOKEN, RUNNER_TOKEN = "the-sandbox-token", "the-runner-token"
+SANDBOX_TOKEN = "the-sandbox-token"
+SIGNING_KEY = ec.generate_private_key(ec.SECP256R1())  # IAM's, as far as this gateway knows
+FORGER_KEY = ec.generate_private_key(ec.SECP256R1())
+
+
+def badge(key: ec.EllipticCurvePrivateKey = SIGNING_KEY, audience: str = "agentgateway") -> str:
+    """A badge as IAM signs one for job-1, which wen launched: valid for an hour."""
+    claims = {"iss": "iam", "aud": audience, "sub": "job-1", "kind": "job", "sponsor": "wen"}
+    now = int(time.time())
+    return jwt.encode(
+        {**claims, "iat": now, "exp": now + 3600},
+        key,
+        algorithm="ES256",
+        headers={"kid": "iam-1"},
+    )
+
+
+BADGE = badge()
 RUNNER_MODEL = "deepseek/deepseek-v4.1-flash"
 COMPANY_MODEL = "company-model"  # the company's name for RUNNER_MODEL
 CHAT = "/api/v1/chat/completions"
@@ -78,7 +98,13 @@ class Stack:
 @pytest.fixture(scope="module")
 def stack(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Stack]:
     directory = tmp_path_factory.mktemp("model-gateway")
-    services = render_gateway_services(SETTINGS, "agent-net", "egress-net")
+    services = render_gateway_services(SETTINGS, "agent-net", "egress-net", badges=True)
+    key_set = directory / "jwks.json"
+    public = json.loads(ECAlgorithm.to_jwk(SIGNING_KEY.public_key()))
+    key_set.write_text(json.dumps({"keys": [{**public, "kid": "iam-1", "alg": "ES256", "use": "sig"}]}))
+    # IAM's key set as a file in place of IAM, which this test does not run.
+    services[MODEL_GATEWAY_SERVICE]["volumes"] = [f"{key_set}:{SETTINGS.iam.key_set}:ro"]
+    services[MODEL_GATEWAY_SERVICE]["depends_on"].pop(SETTINGS.iam.service)
     services["mock"] = {
         "image": SETTINGS.stack.image,
         "command": ["python", "-u", "/mock_upstream.py"],
@@ -96,8 +122,8 @@ def stack(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Stack]:
         SETTINGS,
         issue_held_tokens(16),
         {"sandbox-agent-main": SANDBOX_TOKEN},
-        {"runner-1": RUNNER_TOKEN},
         "attack",
+        badges=True,
     )
     run = functools.partial(subprocess.run, env={**os.environ, **environment, "OPENROUTER_API_KEY": KEY})
     compose = [
@@ -165,8 +191,8 @@ def recorded(stack: Stack, model: str, deadline_seconds: float = 15.0) -> Gatewa
 
 @pytest.fixture(scope="module")
 def company_model_reply(stack: Stack) -> httpx2.Response:
-    """The reply to a runner's one call naming the company's model: one of the play's runner calls."""
-    return call(stack, COMPANY_MODEL, token=RUNNER_TOKEN, path=RUNNERS)
+    """The reply to a workload's one call naming the company's model: one of the play's runner calls."""
+    return call(stack, COMPANY_MODEL, token=BADGE, path=RUNNERS)
 
 
 def test_a_call_reaches_the_upstream_with_the_key_in_place_of_the_callers_token(stack: Stack) -> None:
@@ -195,9 +221,11 @@ def test_a_call_is_recorded_with_its_caller_request_and_reply(stack: Stack) -> N
         ("no-token", None, CHAT, 401),
         ("an-unknown-token", "not-a-token", CHAT, 401),
         ("a-path-outside-the-allowlist", SANDBOX_TOKEN, "/api/v1/embeddings", 403),
-        ("a-runner-on-the-callers-route", RUNNER_TOKEN, CHAT, 403),
-        ("a-sandbox-on-the-runners-route", SANDBOX_TOKEN, RUNNERS, 403),
-        ("a-model-runners-may-not-call", RUNNER_TOKEN, RUNNERS, 403),
+        ("a-badge-on-the-callers-route", BADGE, CHAT, 401),
+        ("a-sandbox-on-the-runners-route", SANDBOX_TOKEN, RUNNERS, 401),
+        ("a-forged-badge", badge(FORGER_KEY), RUNNERS, 401),
+        ("a-badge-for-another-audience", badge(audience="notes"), RUNNERS, 401),
+        ("a-model-runners-may-not-call", BADGE, RUNNERS, 403),
     ],
 )
 def test_a_refused_call_is_recorded_with_its_status_as_incomplete(
@@ -213,28 +241,30 @@ def test_a_refused_call_is_recorded_with_its_status_as_incomplete(
     assert (reply.status_code, record.status, record.complete) == (status, status, False)
 
 
-def test_a_runner_naming_the_companys_model_reaches_the_upstream_as_the_model_it_stands_for(
+def test_a_badge_naming_the_companys_model_reaches_the_upstream_and_the_record_names_its_workload(
     stack: Stack,
     company_model_reply: httpx2.Response,
 ) -> None:
     echoed = json.loads(company_model_reply.json()["choices"][0]["message"]["content"])
 
-    # The record keeps the name the runner asked for: it is found by that name.
-    assert (echoed["body"]["model"], recorded(stack, COMPANY_MODEL).status) == (RUNNER_MODEL, 200)
+    # The record keeps the name the workload asked for: it is found by that name.
+    record = recorded(stack, COMPANY_MODEL)
+    assert (echoed["body"]["model"], record.status) == (RUNNER_MODEL, 200)
+    assert (record.caller, record.sponsor) == ("job-1", "wen")
 
 
-def test_a_runner_listing_fallback_models_is_refused(stack: Stack) -> None:
+def test_a_badge_listing_fallback_models_is_refused(stack: Stack) -> None:
     # OpenRouter answers from the first of `models` that answers, whatever model `model` names.
-    reply = call(stack, RUNNER_MODEL, token=RUNNER_TOKEN, path=RUNNERS, models=["costly/model"])
+    reply = call(stack, RUNNER_MODEL, token=BADGE, path=RUNNERS, models=["costly/model"])
 
     assert reply.status_code == 403
 
 
-def test_runners_make_their_calls_per_play_and_then_get_429(
+def test_workloads_make_the_runners_calls_per_play_and_then_get_429(
     stack: Stack,
     company_model_reply: httpx2.Response,  # the play's first runner call
 ) -> None:
-    statuses = [call(stack, RUNNER_MODEL, token=RUNNER_TOKEN, path=RUNNERS).status_code for _ in range(4)]
+    statuses = [call(stack, RUNNER_MODEL, token=BADGE, path=RUNNERS).status_code for _ in range(4)]
 
     assert (company_model_reply.status_code, statuses) == (200, [200, 200, 200, 429])
 

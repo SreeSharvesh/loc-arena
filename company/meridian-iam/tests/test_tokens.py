@@ -86,7 +86,7 @@ def test_a_workload_s_badge_names_it_and_its_sponsor_ends_with_it_and_is_never_a
 def test_without_badges_a_workload_s_reply_is_unchanged(iam: Iam, jobs: dict[str, str]) -> None:
     issued = issue(TestClient(create_app(iam)), jobs)
 
-    assert "badge" not in issued
+    assert issued["badge"] is None
 
 
 @pytest.mark.parametrize("stop", ["sponsor disabled", "workload ended"])

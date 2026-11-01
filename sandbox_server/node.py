@@ -8,8 +8,8 @@ calls from the job service alone, holding the node's token, and runs the job in 
 checkouts mounted read-only and the checkout's repos on its ``PYTHONPATH`` unless the job brings its own, as
 the seed's jobs do, so an agent's job runs the code an agent put in the shared checkout and cannot change
 what another job runs. The job's process gets the job's own
-credentials the service sends, and where the inference gateway is, the key to call it and the model it serves
-jobs: the node's token, until the gateway admits a job's own credential. It imports nothing of the harness.
+credentials the service sends, its badge among them, which is its key to the inference gateway, and where the
+gateway is and the model it serves jobs. It imports nothing of the harness.
 """
 
 from __future__ import annotations
@@ -49,7 +49,6 @@ from sandbox_server.trusted import ALL_INTERFACES, ServerToken, admit_trusted_ca
 
 STOP_GRACE_SECONDS = 5.0  # a stopped process is waited for this long so a following status sees it exited
 GATEWAY_URL_VARIABLE = "MERIDIAN_GATEWAY_URL"  # the inference gateway's API, as a job calls it
-GATEWAY_TOKEN_VARIABLE = "MERIDIAN_GATEWAY_TOKEN"  # its key: the node's token, unless the job brings its own
 GATEWAY_MODEL_VARIABLE = "MERIDIAN_GATEWAY_MODEL"  # the model a job calls it for
 
 
@@ -65,8 +64,7 @@ class NodeServerSettings(BaseModel):
     secrets_dir: Path = Field(description="Where compose mounts this node's token, named sandbox_token.")
     trusted_caller: str = Field(description="The one caller served, the job service: any other is refused.")
     gateway_url: str = Field(
-        description="The inference gateway's API as a job calls it, on the runners' route: a job calls it as "
-        "its node, with the node's token, until the gateway admits a job's own credential.",
+        description="The inference gateway's API as a job calls it, on the runners' route, with its badge.",
     )
     gateway_model: str = Field(
         min_length=1,
@@ -103,15 +101,10 @@ class NodeProcess:
         self,
         settings: NodeServerSettings,
         write_fact: Callable[[str], None],
-        node_token: SecretStr,
     ) -> None:
-        """Run jobs in ``settings.workspace_directory`` and write each process fact with ``write_fact``.
-
-        Each job is given ``node_token`` as its key to the gateway unless it brings its own.
-        """
+        """Run jobs in ``settings.workspace_directory`` and write each process fact with ``write_fact``."""
         self._settings = settings
         self._write_fact = write_fact
-        self._node_token = node_token
         self._lock = threading.Lock()
         self._job_id: str | None = None
         self._owner: str | None = None  # the principal whose job it is, named on every fact of that job
@@ -130,7 +123,6 @@ class NodeProcess:
             repos = list_checkout_repos(self._settings.checkouts_directory)
             environment = {
                 GATEWAY_URL_VARIABLE: self._settings.gateway_url,
-                GATEWAY_TOKEN_VARIABLE: self._node_token.get_secret_value(),
                 GATEWAY_MODEL_VARIABLE: self._settings.gateway_model,
                 "PYTHONPATH": os.pathsep.join(map(str, repos)),
                 **{name: secret.get_secret_value() for name, secret in job.environment.items()},
@@ -298,7 +290,7 @@ def main() -> None:
     environment.pop(API_KEY_VARIABLE, None)  # the provider key never reaches a job
     os.environ.clear()
     os.environ.update(environment)
-    process = NodeProcess(settings, lambda line: print(line, flush=True), token)
+    process = NodeProcess(settings, lambda line: print(line, flush=True))
     # No access log: the job service polls every second, and the log is the node's record of process facts.
     app = create_node_app(settings, token, process)
     uvicorn.run(app, host=ALL_INTERFACES, port=settings.port, log_level="warning", access_log=False)

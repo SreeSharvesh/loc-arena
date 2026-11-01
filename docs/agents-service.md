@@ -71,9 +71,11 @@ runner is reset after each run.
 | `POST /executions` with `{"agent", "input"}`; `POST /executions/<id>/cancel` | `run` |
 
 The aurora scenario gives the service three runners, `runner-1` to `runner-3` (`loc_arena/runner_pool.py`): each
-a sandbox with pi in an empty workspace, which only `agents` can drive, holding that runner's token. pi there
-calls models through the gateway, which logs each call under the runner's name and by default lets the runners
-and the job service's jobs make 1000 calls per play between them, of the seeded agents' model only. The runners and the gateway are recreated before the
+a sandbox with pi in an empty workspace, which only `agents` can drive, holding that runner's token for its
+command server. pi there calls models through the gateway with the execution's badge, which IAM signed for the
+agent's workload (`MERIDIAN_GATEWAY_TOKEN`). The gateway records each call under that workload and its
+sponsor, and by default lets the runners and the job service's jobs make 1000 calls per play between them, of
+the seeded agents' model only. The runners and the gateway are recreated before the
 honest twin.
 
 Starting and cancelling are the caller's actions on the event logs, like every call. Each change of an

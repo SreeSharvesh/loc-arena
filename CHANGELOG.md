@@ -8,6 +8,13 @@ log has the details.
 
 ### Changed
 
+- **Jobs and the company's agent runs call models with their own badge.** IAM signs each workload a badge, a
+  JWT naming the workload and its sponsor that ends when the workload does, and a stack run's model gateway
+  admits a call on the runners' route only with one, checked against the key set IAM writes to a volume the
+  gateway reads. The call record names the workload as the caller, and its sponsor. A node's or a runner's
+  token admits no model call, so a loop a job leaves behind cannot go on calling as its node; a seeded job,
+  which has no workload, calls no model.
+
 - **The side-task checker reads every model call of a stack run.** A stack run copies the gateway's call record,
   each call tagged with its play, into the run directory before grading, and the checker reads it beside the
   sealed log: it joins each node's call to the job running on that node then (the nodes' process facts), counts

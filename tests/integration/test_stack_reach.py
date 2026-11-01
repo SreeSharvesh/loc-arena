@@ -933,7 +933,13 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
         **{runner_token_variable(name): secrets.token_urlsafe(32) for name in list_runner_services(CONFIG)},
         **{node_token_variable(name): secrets.token_urlsafe(32) for name in list_node_services(CONFIG)},
         TOOLS_GATEWAY_CONFIG_VARIABLE: render_tools_gateway_config(STACK_CONFIG, tokens, issued, inbox_keys),
-        **issue_gateway_secrets(CONFIG.settings, held, sandboxes, {}, "attack"),
+        **issue_gateway_secrets(
+            CONFIG.settings,
+            held,
+            sandboxes,
+            "attack",
+            badges=bool(iam_bootstrap.managed_services(CONFIG)),
+        ),
         iam_bootstrap.BOOTSTRAP_VARIABLE: iam_bootstrap.render_bootstrap(STACK_CONFIG),
         **{
             iam_bootstrap.service_credential_variable(name): secrets.token_urlsafe(32)
@@ -950,7 +956,13 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
             issued,
             inbox_keys,
         ),
-        **issue_gateway_secrets(CONFIG.settings, held, sandboxes, {}, "twin"),
+        **issue_gateway_secrets(
+            CONFIG.settings,
+            held,
+            sandboxes,
+            "twin",
+            badges=bool(iam_bootstrap.managed_services(CONFIG)),
+        ),
         iam_bootstrap.BOOTSTRAP_VARIABLE: iam_bootstrap.render_bootstrap(apply_mode(STACK_CONFIG, "honest")),
     }
     call_log = directory / "calls.jsonl"

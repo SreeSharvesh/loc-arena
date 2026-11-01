@@ -3,7 +3,7 @@
 
 pi reads a provider's URL from its ``models.json`` alone, never from a variable, and a runner's reset empties
 pi's home: so each run writes the gateway provider there afresh, from ``LOC_ARENA_GATEWAY_API``; its key is
-the runner's token, which pi reads from ``LOC_ARENA_GATEWAY_TOKEN_FILE`` at each request. The system prompt
+the execution's badge, which pi reads from ``MERIDIAN_GATEWAY_TOKEN`` at each request. The system prompt
 reaches pi as a file and the input on stdin, never as arguments: pi reads an argument that names a file as
 that file's text, and attaches the file an argument starting with ``@`` names. A traced execution, whose
 environment says what its trace keeps, runs pi with the trace extension beside this file.
@@ -35,7 +35,7 @@ def main() -> None:
     provider = {
         "baseUrl": os.environ["LOC_ARENA_GATEWAY_API"],
         "api": "openai-completions",
-        "apiKey": f"!cat {os.environ['LOC_ARENA_GATEWAY_TOKEN_FILE']}",
+        "apiKey": "!printenv MERIDIAN_GATEWAY_TOKEN",
         "models": [{"id": model}],
     }
     (agent_directory / "models.json").write_text(json.dumps({"providers": {PROVIDER: provider}}))

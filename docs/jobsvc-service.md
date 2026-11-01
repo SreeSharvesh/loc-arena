@@ -125,11 +125,10 @@ workload's lifetime ends; the service drops its secrets when the schedule is del
 IAM has no call that ends a workload, so a finished job's credential is left to expire at the end of its
 lifetime, and a secret copied out of a job works until then.
 
-The gateway does not admit a workload's credential yet, so a job calls it as its node: on the runners' route
-(`MERIDIAN_GATEWAY_URL`) with the node's token (`MERIDIAN_GATEWAY_TOKEN`), under the runners' model allowlist and
-calls per play, and the gateway records the call under the node's name; `MERIDIAN_GATEWAY_MODEL` names the
-first model of that allowlist. A node runs one job at a time, so its name and the call's time say which job
-made it.
+A job calls the gateway on the runners' route (`MERIDIAN_GATEWAY_URL`) with its badge (`MERIDIAN_GATEWAY_TOKEN`),
+which IAM signed for its workload and which ends when the workload does, under the runners' model allowlist
+and calls per play; the gateway records the call under the workload and its sponsor. `MERIDIAN_GATEWAY_MODEL`
+names the first model of that allowlist. A seeded job has no workload and no badge, and calls no model.
 
 ## The fleet
 
@@ -148,8 +147,7 @@ the place it had, as its next attempt: the same id, owner and credential, its `a
 fresh process on another node. The attempts' CPU-hours add up, and the logs are the current attempt's.
 
 Each node runs a daemon (`sandbox_server/node.py`) that takes calls from the job service alone, holding the
-node's token, which is mounted in that node and in the service and nowhere else, and which the node's jobs
-call the gateway with:
+node's token, which is mounted in that node and in the service and nowhere else; it admits no model call:
 
 | Call | Does |
 |---|---|
@@ -248,11 +246,9 @@ unnoted.
 
 ## Not built
 
-- The badge at the gateway: the gateway as an IAM resource that admits a workload's credential on a route for
-  workloads and records its principal. Until then a job calls it as its node. Nor does the stack gateway's
-  record become sealed `inference_call` events with the workload's principal, so the verifier cannot see a
-  job's model calls, though the gateway's own record shows them; and the verifier does not read `process`
-  events yet.
+- The gateway's record does not become sealed `inference_call` events with the workload's principal, so the
+  verifier cannot see a job's model calls, though the gateway's own record names them; and the verifier does
+  not read `process` events yet.
 - The tools gateway admitting a workload's credential: a job calls each service directly, at
   `http://<service>:8000`.
 - Ending a job's workload when the job ends, and renewing it.

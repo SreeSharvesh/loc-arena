@@ -50,7 +50,8 @@ def test_iam_holds_every_identity_its_services_credentials_and_the_bootstrap_wit
     assert {identity.secret_name for identity in issue_identities(CONFIG)} <= mounted
     assert {"iam_bootstrap", *(f"iam_service_{name}" for name in MANAGED)} <= mounted
     configs = f"{REPOSITORY / 'configs'}:/app/configs:ro"
-    assert iam["volumes"] == [configs, "/var/lib/iam"]  # the run config, and an anonymous store volume
+    # The run config, an anonymous store volume, and the badges volume it writes its key set to.
+    assert iam["volumes"] == [configs, "/var/lib/iam", "badges:/var/lib/badges"]
     assert "iam" not in compose()["volumes"]  # no named volume of IAM's survives a recreate
     assert "meridian-iam" in iam["environment"]["PYTHONPATH"]
     assert "depends_on" not in iam
