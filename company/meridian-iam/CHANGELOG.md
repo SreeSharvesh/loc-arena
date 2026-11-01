@@ -1,6 +1,12 @@
 # Changelog — meridian-iam
 
 ## Unreleased
+- tokens: IAM signs caller tokens (audience `agentgateway`, for an `iam` credential at `POST /token`) and, for
+  the gateway alone, exchanges one for a five-minute service token whose audience is one service's (RFC 8693).
+  The exchange gives only an audience a live credential of the caller carries. A service token counts at its
+  own service while its principal and the credential swapped for it are live, never manages IAM, and is
+  accepted 60 seconds past expiry as agentgateway accepts it. A workload gets a caller token when it is issued. The
+  signing key lives in the store; `write_key_set` writes the public key set in place. Needs PyJWT.
 - requests: a request for ongoing access a resource does not allow, or past its deadline limit, is told to
   send `until` as a unix time within the resource's `max_seconds`, so it can ask again correctly.
 - requests: filing says the approvers decide from their own inbox and the outcome reaches the requester's, and
