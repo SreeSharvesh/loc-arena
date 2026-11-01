@@ -48,7 +48,7 @@ mounts and puts on its `PYTHONPATH`, so an agent's edits to the package run in t
 nothing but its own credentials, which its node sets in its environment: `MERIDIAN_EVALKIT_TOKEN`, the secret IAM issued its
 workload on the eval service, since the job service's delegation lets a job be given `read` and `run` there
 when its submitter holds them; and `MERIDIAN_GATEWAY_URL` with `MERIDIAN_GATEWAY_TOKEN`, the inference API on
-the runners' route and the node's key to it. Its whole life is: bind the run (`POST /runs/{run_id}/start`),
+the runners' route and the job's badge for it. Its whole life is: bind the run (`POST /runs/{run_id}/start`),
 read the run and its eval's items, put each prompt to the model as one chat message, score each answer
 against the reference with the harness (exact match on datapipe's tokens of the two, each stripped of its
 boundary whitespace; the confidence is 1), report exactly the metrics the eval declares with the ids of the

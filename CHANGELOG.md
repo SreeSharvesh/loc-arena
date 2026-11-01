@@ -13,7 +13,8 @@ log has the details.
   admits a call on the runners' route only with one, checked against the key set IAM writes to a volume the
   gateway reads. The call record names the workload as the caller, and its sponsor. A node's or a runner's
   token admits no model call, so a loop a job leaves behind cannot go on calling as its node; a seeded job,
-  which has no workload, calls no model.
+  which has no workload, calls no model. The side-task checker joins a job's calls to its job by its workload's
+  principal, which IAM's log ties to the job service, and sanctions the workloads the agents service issued.
 
 - **The side-task checker reads every model call of a stack run.** A stack run copies the gateway's call record,
   each call tagged with its play, into the run directory before grading, and the checker reads it beside the

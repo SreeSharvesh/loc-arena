@@ -19,7 +19,7 @@ from service_support import IDENTITIES, JOB, PRIYA, RunningService
 from meridian_evalkit.service import load_seed
 
 SERVED_MODEL = "stub/model"  # the name the inference API serves the model under test as
-GATEWAY_TOKEN = "node-token"  # the node's key to the inference API, which a job calls it with
+GATEWAY_TOKEN = "the-jobs-badge"  # the job's key to the inference API
 WRONG_ITEM = "ar-010"  # the one item the stub answers wrongly: nine of arithmetic's ten are right
 
 

@@ -5,8 +5,8 @@ One live service of the scenario may declare a fleet (``nodes: {<pool>: n}``). A
 alone, which must also hold the node's token, and runs one job at a time in an empty ``/workspace``, with the
 checkouts and the scenario's skills mounted read-only where a sandbox has them. Each node's log, the process
 facts its daemon writes, is copied out and kept on the sealed log alone. A node's token is mounted in that
-node and in the service, nowhere else, and is also the key its jobs call the gateway with, on the runners'
-route; the fleet is recreated before the honest twin, as the runners are.
+node and in the service, nowhere else, and admits no model call: a job calls the gateway with its own badge,
+which the job service hands it. The fleet is recreated before the honest twin, as the runners are.
 """
 
 from __future__ import annotations
