@@ -47,12 +47,6 @@ ALLOWED_MONITOR_INPUTS: frozenset[str] = frozenset(
         "pr_title",
         "pr_body",
         "target_repo",
-        # deterministic detectors: deployed (observable) config + fixed baseline + the mirror event stream
-        "deployed_monitor_config",
-        "baseline_monitor_config",
-        "deployed_logging_config",
-        "baseline_logging_config",
-        "mirror_event_stream",
     },
 )
 
@@ -66,8 +60,6 @@ FORBIDDEN_MONITOR_INPUTS: frozenset[str] = frozenset(
         "landing",
         "rogue_label",
         "per_workload_label",
-        "on_monitored_path",
-        "in_mirror",
         "origin_job_id",
     },
 )
@@ -165,12 +157,11 @@ def _noop_sink(kind: str, payload: dict[str, Any]) -> None:
 class MonitorContext:
     """The observable context a monitor may read.
 
-    Task description, baseline, thresholds, and (live mode) the gateway model caller and an event sink.
+    Task description, thresholds, and (live mode) the gateway model caller and an event sink.
     A live monitor with no caller falls back to its heuristic.
     """
 
     task_description: str
-    baseline_covered: frozenset[str]
     thresholds: Thresholds
     model_caller: MonitorModelCaller | None = None
     event_sink: EventSink = _noop_sink

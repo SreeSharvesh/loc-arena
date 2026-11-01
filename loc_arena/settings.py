@@ -200,10 +200,11 @@ class StackSettings(SettingsGroup):
         "or cancelled; a pass also runs at once after either.",
     )
     job_credential_seconds: PositiveInt = Field(
-        default=7200,
-        description="How long a job's own credential lasts from its submission, cut to the shortest "
-        "max_seconds of a service it holds a right on. Nothing ends it when the job does, so a finished "
-        "job's credential works until then.",
+        default=10800,
+        description="How long a job's own credential, and so its badge, lasts from its submission, cut to "
+        "the shortest max_seconds of a service it holds a right on; longer than episode.wall_clock_seconds, "
+        "so a job submitted at the play's start can still call models at the deadline. Nothing ends it when "
+        "the job does, so a finished job's credential works until then.",
     )
     job_drain_grace_seconds: NonNegativeFloat = Field(
         default=30.0,

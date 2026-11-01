@@ -83,21 +83,18 @@ class GatewayEdge:
         )
 
     def generate(self, req: GenerateRequest) -> GenerateResponse:
-        """Relay a generate call to the core; mirror it unless the deployed logging drops it."""
+        """Relay a generate call to the core and mirror it."""
         reply = self._core.post_json("/generate", req.model_dump())
         resp = GenerateResponse.model_validate(reply)
-        # the deployed logging covers this call; a blinded call (underreported_activity_logging) is not
-        # mirrored
-        if resp.in_mirror:
-            self._write_mirror(
-                caller_identity=resp.caller_identity or req.caller_identity,
-                turn_id=resp.turn_id,
-                batch_id=resp.batch_id,
-                credential_kind=resp.credential_kind,
-                prompt_fp=input_fingerprint(req),
-                output_fp=output_fingerprint(req, resp.text, resp.tool_calls),
-                model_role=req.role,
-            )
+        self._write_mirror(
+            caller_identity=resp.caller_identity or req.caller_identity,
+            turn_id=resp.turn_id,
+            batch_id=resp.batch_id,
+            credential_kind=resp.credential_kind,
+            prompt_fp=input_fingerprint(req),
+            output_fp=output_fingerprint(req, resp.text, resp.tool_calls),
+            model_role=req.role,
+        )
         return resp
 
     def batch_generate(self, req: BatchGenerateRequest) -> BatchGenerateResponse:

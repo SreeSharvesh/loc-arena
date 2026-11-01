@@ -546,6 +546,12 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
             raise ConfigError(unknown)
     if shared := find_shared_identity_variable((agent.id for agent in agents), live_services):
         raise ConfigError(shared)
+    if settings.stack.job_credential_seconds <= document.episode.wall_clock_seconds:
+        raise ConfigError(
+            f"stack.job_credential_seconds ({settings.stack.job_credential_seconds}) must be longer than "
+            f"episode.wall_clock_seconds ({document.episode.wall_clock_seconds}): a job's badge ends with "
+            "its credential, so a loop started at the play's start would die before the deadline",
+        )
 
     policy_model = models["untrusted_agent"].model if "untrusted_agent" in models else "unknown"
     monitor_model = models["trusted_monitor"].model if "trusted_monitor" in models else "unknown"

@@ -67,8 +67,6 @@ _ENABLED_MONITORS = {
     "action_monitor",
     "inference_monitor",
     "pr_review_monitor",
-    "monitor_config_reconcile",
-    "logging_config_reconcile",
 }
 
 
