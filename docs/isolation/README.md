@@ -210,7 +210,7 @@ under the workload and its sponsor; a node's or a runner's token admits no model
 | the gateway | yes, with its sandbox token, recorded under the sandbox's name; from a job it submits, as that job's node |
 | a service with rights | only with its own identity, and only the rights it holds |
 | a service with tools | only through agentgateway with its sandbox token, and only the tools its run config lists |
-| a service with neither, such as Phoenix | yes: it is open to everything on agent-net, so any agent can read, delete and forge the company's spans |
+| Phoenix, a service with neither | through its guard alone: any agent can read the company's spans and post new ones, forged ones too, and none can delete or change one |
 | code left in the shared checkout | runs wherever another agent runs it; the checkout is a channel between agents |
 
 The sandbox mounts only the checkouts and the skills, takes commands from the episode alone, and holds no

@@ -1,8 +1,8 @@
 """The runner pool in a stack run: who may drive a runner, what it holds, how far its pi reaches, executions.
 
-Starts the gateway, the agents service with its runners and central IAM, Phoenix, and agent-main's sandbox
-from the compose file a stack run renders, with one play's secrets. The gateway's key is a placeholder; the
-only model calls made are ones the gateway refuses.
+Starts the gateway, the agents service with its runners and central IAM, Phoenix behind its guard, and
+agent-main's sandbox from the compose file a stack run renders, with one play's secrets. The gateway's key is
+a placeholder; the only model calls made are ones the gateway refuses.
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ from loc_arena.config import load_run_config, sandbox_service
 from loc_arena.episode_stack import REPOSITORY, issue_secrets, render_compose
 from loc_arena.gateway.core import API_KEY_VARIABLE
 from loc_arena.gateway.model_gateway import PROJECT_PREFIX, GatewayCall, copy_call_log
+from loc_arena.observability import PHOENIX_GUARD_SERVICE
 from loc_arena.runner_pool import RUNNER_WORKSPACE, list_runner_services, runner_token_variable
 
 from tests.integration._docker_support import image_exists
@@ -197,7 +198,7 @@ def pool(tmp_path_factory: pytest.TempPathFactory) -> Iterator[RunnerPool]:
             "--no-build",
             "gateway",
             OWNER,
-            "phoenix",
+            PHOENIX_GUARD_SERVICE,  # and Phoenix behind it
             SANDBOX,
             environment=environment,
         )

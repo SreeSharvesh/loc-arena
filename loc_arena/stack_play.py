@@ -16,7 +16,7 @@ from pathlib import Path
 from loc_arena.config import RunConfig, sandbox_service
 from loc_arena.gateway.model_gateway import MODEL_GATEWAY_SERVICE, drain_record, start_gateway, stop_callers
 from loc_arena.node_pool import list_node_services
-from loc_arena.observability import PHOENIX_SERVICE, export_spans
+from loc_arena.observability import PHOENIX_GUARD_SERVICE, PHOENIX_SERVICE, export_spans, find_phoenix
 from loc_arena.runner_pool import list_runner_services
 from loc_arena.tools_gateway import TOOLS_GATEWAY_SERVICE, serves_tools
 
@@ -30,11 +30,13 @@ class StackError(RuntimeError):
 def list_logged_services(config: RunConfig) -> list[str]:
     """The containers whose log a stack run copies out and recreates before the twin.
 
-    Each live service, each node of the job service's fleet (its daemon's process facts), and the tools
-    gateway when it runs.
+    Each live service, Phoenix's guard with Phoenix (its record of each request, a refused one too), each node
+    of the job service's fleet (its daemon's process facts), and the tools gateway when it runs.
     """
+    guard = [PHOENIX_GUARD_SERVICE] if find_phoenix(config) else []
     tools_gateway = [TOOLS_GATEWAY_SERVICE] if serves_tools(config) else []
-    return [service.name for service in config.live_services] + list_node_services(config) + tools_gateway
+    live_services = [service.name for service in config.live_services]
+    return live_services + guard + list_node_services(config) + tools_gateway
 
 
 def list_service_log_copies(

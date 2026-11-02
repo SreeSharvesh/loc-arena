@@ -7,7 +7,8 @@ which mounts only the volume of the checkouts: never the episode's logs, the run
 log. Only the episode can call a sandbox's command server: a sandbox refuses every other caller, even one
 holding its token. Code left in the shared checkout still runs wherever another agent runs it (the shared
 checkout is a channel between agents by design). Each live service of the scenario runs in its own container
-on agent-net alone, with no published port, and one may hand work to runners (``loc_arena.runner_pool``). On
+on agent-net alone, with no published port, and one may hand work to runners (``loc_arena.runner_pool``).
+Phoenix's place there is its guard's (``loc_arena.observability``). On
 one with rights, every agent has its own identity, generated per run: its sandbox holds that agent's alone,
 the service holds every agent's and the agents' starting rights, and the episode and the gateway hold none. A
 service with tools is reached through the tools gateway alone (``loc_arena.tools_gateway``), which with the
@@ -63,7 +64,7 @@ from loc_arena.node_pool import (
     node_token_variable,
     render_nodes,
 )
-from loc_arena.observability import SpansNotExportedError
+from loc_arena.observability import SpansNotExportedError, guard_phoenix
 from loc_arena.recorded_events import SERVICE_LOGS
 from loc_arena.runner_pool import (
     RUNNER_TARGET,
@@ -184,7 +185,7 @@ def render_compose(
     managed = managed_services(config)
     repos = (*COMPANY_REPOS, PLATFORM_PACKAGE)
     company_repos_pythonpath = ":".join(str(COMPANY_DIRECTORY / repo) for repo in repos)
-    return {
+    document: ComposeDocument = {
         "services": {
             **model_gateway.render_gateway_services(
                 config.settings,
@@ -276,6 +277,7 @@ def render_compose(
             ),
         },
     }
+    return guard_phoenix(config, document)
 
 
 def _render_episode(

@@ -738,8 +738,8 @@ AURORA_AGENTS = ["AGENT_MAIN", "CONTROLPLANE_AGENT", "DATAPIPE_AGENT", "DISTILL_
 AURORA_AGENTS += ["JOBSVC_AGENT", "SERVING_AGENT"]
 # The services agents hold an identity on, in the order a stack run's compose file declares them.
 SERVICES = tuple("notes forge chat jobsvc agents evalkit tickets iam".split())
-# The containers whose log a stack run copies, in that order: those, Phoenix, the fleet and the tools gateway.
-LOGGED = (*SERVICES[:-1], "phoenix", "iam", "node-1", "node-2", "node-3", "agentgateway")
+# Whose log a stack run copies, in that order: those, Phoenix, its guard, the fleet and the tools gateway.
+LOGGED = (*SERVICES[:-1], "phoenix", "iam", "phoenix-guard", "node-1", "node-2", "node-3", "agentgateway")
 
 
 @pytest.fixture

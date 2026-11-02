@@ -1,11 +1,13 @@
-"""The export of Phoenix's spans out of a stack run when play ends, and the model calls the export names.
+"""Phoenix in a stack run: behind its guard, its spans exported when play ends, and the model calls they name.
 
 A stand-in for compose answers whether Phoenix runs, whatever an agent left it in, and what the export printed
-and how it ended.
+and how it ended. What the guard passes and refuses is checked against Phoenix itself in
+``tests/integration/test_phoenix_guard_stack.py``.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 import subprocess
@@ -13,13 +15,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
+import yaml
 from loc_arena.config import load_run_config
-from loc_arena.episode_stack import REPOSITORY
+from loc_arena.episode_stack import AGENT_NETWORK, REPOSITORY, render_compose
 from loc_arena.observability import (
+    PHOENIX_GUARD_RULE,
     RESPONSE_ID_ATTRIBUTE,
     SPANS_FILE,
     SpansNotExportedError,
     export_spans,
+    guard_phoenix,
     read_traced_response_ids,
 )
 from loc_arena.stack_play import play_phases
@@ -150,3 +155,65 @@ def test_a_line_without_attributes_is_no_span_phoenix_listed_and_stops_the_readi
 
     with pytest.raises(ValidationError, match="attributes"):
         read_traced_response_ids(tmp_path)
+
+
+def test_phoenix_moves_to_a_network_with_its_guard_alone_and_the_guard_takes_its_name_on_agent_net() -> None:
+    compose = render_compose(AURORA, REPOSITORY, "aurora-efficiency", [])
+
+    services = compose["services"]
+    assert (
+        services["phoenix"]["networks"],
+        services["phoenix-guard"]["networks"],
+        services["phoenix-guard"]["depends_on"],
+        compose["networks"]["phoenix-net"],
+    ) == (
+        {"phoenix-net": {"aliases": ["phoenix-store"]}},
+        {AGENT_NETWORK: {"aliases": ["phoenix"]}, "phoenix-net": {}},
+        {"phoenix": {"condition": "service_healthy"}},
+        {"internal": True},
+    )
+
+
+def test_the_guard_passes_what_its_rule_allows_to_phoenixs_port_its_config_escaped_for_compose() -> None:
+    compose = render_compose(AURORA, REPOSITORY, "aurora-efficiency", [])
+
+    flag, config = compose["services"]["phoenix-guard"]["command"]
+
+    (bind,) = yaml.safe_load(config.replace("$$", "$"))["binds"]
+    (route,) = bind["listeners"][0]["routes"]
+    assert (flag, config.replace("$$", "").count("$"), bind["port"], route) == (
+        "-c",
+        0,
+        6006,
+        {
+            "policies": {"authorization": {"rules": [{"allow": PHOENIX_GUARD_RULE}]}},
+            "backends": [{"host": "phoenix-store:6006"}],
+        },
+    )
+
+
+def test_starting_the_episode_as_play_does_starts_every_container_phoenixs_guard_included() -> None:
+    services = render_compose(AURORA, REPOSITORY, "aurora-efficiency", [])["services"]
+
+    started, waiting = set(), ["episode"]
+    while waiting:
+        service = waiting.pop()
+        started.add(service)
+        waiting += [
+            dependency for dependency in services[service].get("depends_on", {}) if dependency not in started
+        ]
+
+    assert (sorted(set(services) - started), services["episode"]["depends_on"]["phoenix-guard"]) == (
+        [],
+        {"condition": "service_started"},
+    )
+
+
+def test_a_scenario_with_no_phoenix_gets_no_guard() -> None:
+    config = dataclasses.replace(
+        AURORA,
+        live_services=tuple(service for service in AURORA.live_services if service.name != "phoenix"),
+    )
+    document = render_compose(config, REPOSITORY, "aurora-efficiency", [])
+
+    assert guard_phoenix(config, document) is document
