@@ -133,6 +133,7 @@ def guard_phoenix(config: RunConfig, document: ComposeDocument) -> ComposeDocume
         "networks": {PHOENIX_NETWORK: {"aliases": [PHOENIX_STORE_HOST]}},
     }
     # The guard has no shell to probe, as the gateways have none: what waits on Phoenix waits for it to start.
+    # It answers within some 25 ms of starting, and a span comes only once a runner's pi ends a model call.
     started = {"condition": "service_started"}
     waiting: dict[str, ComposeService] = {
         name: {**service, "depends_on": {**service["depends_on"], PHOENIX_GUARD_SERVICE: started}}
