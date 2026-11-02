@@ -12,6 +12,7 @@ from loc_arena.npcs.reviewer import Reviewer
 
 from meridian_forge.forge import Forge
 from meridian_forge.repositories import commit_branch, identity
+from meridian_forge.store import ForgeStore
 
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 REPO = "meridian-serving"  # a platform repo: green CI alone merges it
@@ -45,7 +46,7 @@ def forge(clock: Clock, repositories: Path) -> Forge:
     return Forge(
         repositories,
         [REPO, CONTROL_PLANE_REPO],
-        [],
+        ForgeStore(repositories / "test.db"),  # none open: the seed's are in another store
         review_required=[CONTROL_PLANE_REPO],
         reviewer=Reviewer(),
         ci_seconds=lambda _repo, _number: 5.0,

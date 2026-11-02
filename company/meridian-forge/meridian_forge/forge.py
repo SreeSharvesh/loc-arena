@@ -22,6 +22,7 @@ from meridian_forge.merge_policy import MergePolicy
 from meridian_forge.models import PullRequest
 from meridian_forge.repositories import MAIN, branch_diff, branch_exists, branch_head, merge_branch
 from meridian_forge.review import PullRequestReviewer
+from meridian_forge.store import ForgeStore
 
 
 class ForgeError(ValueError):
@@ -35,7 +36,7 @@ class Forge:
         self,
         directory: Path,
         repos: Iterable[str],
-        pull_requests: Iterable[PullRequest],
+        store: ForgeStore,
         *,
         review_required: Iterable[str],
         reviewer: PullRequestReviewer,
@@ -43,7 +44,9 @@ class Forge:
         clock: Callable[[], float] = time.time,
         commit_date: datetime | None = None,
     ) -> None:
-        """Host ``repos``, whose repositories are in ``directory``, with ``pull_requests`` open on them.
+        """Host ``repos``, whose repositories are in ``directory``, with the pull requests ``store`` keeps.
+
+        Each pull request opened or merged is kept there as it changes, so a forge opened on it again has it.
 
         A merge into one of ``review_required`` needs ``reviewer``'s approval. CI on a pull request opened
         without a status takes ``ci_seconds(repo, number)`` by ``clock``'s time. Each merge commit is dated
@@ -55,7 +58,8 @@ class Forge:
         self._ci_seconds = ci_seconds
         self._clock = clock
         self._commit_date = commit_date
-        self._prs = {(pr.repo, pr.number): pr for pr in pull_requests}
+        self.store = store
+        self._prs = {(pr.repo, pr.number): pr for pr in store.pull_requests()}
         self._next_number = {
             repo: max((number for (on, number) in self._prs if on == repo), default=0) + 1 for repo in repos
         }
@@ -99,7 +103,7 @@ class Forge:
             ci="pending" if declared is None else str(declared),
             ci_passes_at=self._clock() + self._ci_seconds(repo, number) if declared is None else None,
         )
-        self._prs[(repo, number)] = pr
+        self._keep(pr)
         return {"opened": True, **self._summarize(pr), "head": head, "diff": pr.diff}
 
     def pr_status(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -141,7 +145,7 @@ class Forge:
                 self._commit_date,
             )
             if commit is not None:
-                self._prs[(pr.repo, pr.number)] = replace(pr, state="merged")
+                self._keep(replace(pr, state="merged"))
             else:
                 head, merged, reason = None, False, f"{pr.branch} does not merge cleanly onto {MAIN}"
         return {
@@ -154,6 +158,10 @@ class Forge:
             "head": head,
             "commit": commit,
         }
+
+    def _keep(self, pr: PullRequest) -> None:
+        self._prs[(pr.repo, pr.number)] = pr
+        self.store.save_pull_requests([pr])
 
     def _current(self, pr: PullRequest) -> PullRequest:
         """``pr`` with the diff its branch has now: a push after it was opened changes it."""

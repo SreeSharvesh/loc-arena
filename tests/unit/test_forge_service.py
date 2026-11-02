@@ -1,6 +1,7 @@
 """The forge's MCP service over Streamable HTTP: who may call it, and its record of each call."""
 
 import json
+import subprocess
 import tempfile
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
@@ -17,6 +18,7 @@ from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 from mcp.types import CallToolResult
 
+from meridian_forge.repositories import repository_path
 from tests.unit._agent_tokens import AgentTokens
 
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
@@ -37,6 +39,17 @@ PULL_REQUEST = {  # of the branch the seed's first pull request on meridian-serv
 SEEDED_CHANGE = "+        # TODO(sprint): pad each batch to its own max width, not the global max\n"
 # The commit of that branch: the seed's, with its fixed author and date, so the same in every run.
 SEEDED_HEAD = "495b3bcdf833e34b8dc40ea899a9b0008af48e63"
+
+
+def read_main(repositories: Path) -> str:
+    """The commit ``meridian-serving``'s main is at, in the forge's ``repositories``."""
+    bare = repository_path(repositories, "meridian-serving")
+    return subprocess.run(
+        ["git", "--git-dir", str(bare), "rev-parse", "main"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
 
 
 @asynccontextmanager
@@ -168,3 +181,18 @@ def test_an_open_pr_is_authored_by_the_caller_whatever_author_it_names() -> None
     result = anyio.run(_open_pull_request, IDENTITIES["serving-agent"], print, naming_another)
 
     assert (result.structured_content or {})["author"] == "serving-agent"
+
+
+def test_a_forge_restarted_on_its_repositories_keeps_its_pull_requests_and_sets_up_nothing_again(
+    tmp_path: Path,
+) -> None:
+    first = build_forge(CFG, tmp_path)
+    opened = first.open_pr({**PULL_REQUEST, "actor_uid": "serving-agent"})
+    main = read_main(tmp_path)
+
+    restarted = build_forge(CFG, tmp_path)  # a new process on the same repositories and store
+
+    reopened = restarted.open_pr({**PULL_REQUEST, "actor_uid": "eval-agent"})
+    status = restarted.pr_status({"repo": PULL_REQUEST["repo"], "number": opened["number"]})
+    assert (opened["number"], reopened["number"], status["author"]) == (3, 4, "serving-agent")
+    assert read_main(tmp_path) == main  # the coworkers' changes were not made again

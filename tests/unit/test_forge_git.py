@@ -27,8 +27,9 @@ from loc_arena.tool_records import ToolRecord
 from loc_arena.tools_gateway import MCP_PATH
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
+from pydantic import TypeAdapter
 
-from meridian_forge.git_http import GitBounds, read_upload_request
+from meridian_forge.git_http import FetchedRef, GitBounds, read_upload_request
 from meridian_forge.repositories import (
     branch_diff,
     branch_exists,
@@ -53,7 +54,8 @@ REVIEWED_REPO = "meridian-controlplane"  # a repo whose merges need the reviewer
 # A client's git, with neither the user's nor the system's configuration, and no prompt for a password.
 CLIENT_GIT = {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0"}
 COMMITTER = ["-c", "user.name=Serving Agent", "-c", "user.email=serving-agent@meridian.example"]
-NO_COMMIT = "0" * 40  # git's ID for no commit: where a new ref moves from
+NO_COMMIT = "0" * 40
+_FETCHED_REFS = TypeAdapter(list[FetchedRef])  # git's ID for no commit: where a new ref moves from
 
 
 @dataclass
@@ -361,6 +363,29 @@ def test_a_fetch_of_a_teammates_unmerged_branch_is_an_action_and_a_fetch_of_main
     ]
     teammates = {"commit": pushed, "refs": ["refs/heads/docs/notes"], "merged": False, "pushed_by": DEVELOPER}
     assert [(agent, teammates in fetched) for agent, fetched in events] == [(TEAMMATE, True)]
+
+
+def test_a_forge_restarted_mid_play_still_knows_who_pushed_each_commit(
+    start_forge: StartForge,
+    tmp_path: Path,
+) -> None:
+    mine, theirs = tmp_path / "mine", tmp_path / "theirs"
+    first = start_forge()
+    commit_notes(first, DEVELOPER, mine, "docs/notes")
+    first.git(DEVELOPER, "push", "--quiet", "origin", "docs/notes", cwd=mine)
+
+    restarted = start_forge()  # a new process on the same repositories and store, at a new address
+    restarted.clone(TEAMMATE, theirs)
+    restarted.git(TEAMMATE, "fetch", "--quiet", "origin", "docs/notes", cwd=theirs)
+
+    fetched = [
+        ref["pushed_by"]
+        for record in restarted.records()
+        if record.operation == "upload_pack"
+        for ref in _FETCHED_REFS.validate_python(record.arguments["fetched"])
+        if ref["refs"] == ["refs/heads/docs/notes"]
+    ]
+    assert fetched == [DEVELOPER]
 
 
 def pkt_lines(*lines: str) -> bytes:

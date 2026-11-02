@@ -28,6 +28,7 @@ services:
   forge:
     module: loc_arena.forge_service   # serves the company's code, meridian_forge, seeded from forge.yaml
     port: 8000
+    restarts: true                    # its repositories and its store survive in its container
     rights: [read, push]              # clone, fetch, pull and push over HTTP from a sandbox with identity_forge
     tools: [open_pr, merge]
     description: >

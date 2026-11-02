@@ -34,6 +34,7 @@ from meridian_forge.repositories import (
     branch_tips,
     on_main,
 )
+from meridian_forge.store import ForgeStore
 
 # Git's own configuration for the backend, over whatever a repository's says: push, no file-by-file access,
 # and a fetch of what the refs reach and nothing else (no filters, no object by ID, no bundle or object info).
@@ -72,7 +73,7 @@ class FetchedRef(TypedDict):
     commit: str
     refs: list[str]
     merged: bool
-    pushed_by: str | None  # the caller whose push brought it, since the forge started; none for the seed's
+    pushed_by: str | None  # the caller whose push brought it; none for the seed's
 
 
 @dataclass(frozen=True)
@@ -90,16 +91,16 @@ def create_git_api(
     authorize: Sequence[Any],
     record: Callable[[FastAPI], None],
     caller: Callable[[Request], str | None],
+    store: ForgeStore,
 ) -> FastAPI:
     """The HTTP API over the bare repositories of ``repos``.
 
     ``authorize`` are the FastAPI dependencies through which the deployment decides each request before its
     handler runs; ``record`` makes the app record each request it answers; ``caller`` names who made a request
-    the deployment admitted.
+    the deployment admitted. Who pushed each commit is kept in the forge's ``store``.
     """
     app = FastAPI(dependencies=list(authorize), openapi_url=None, docs_url=None, redoc_url=None)
     record(app)
-    pushed_by: dict[tuple[str, str], str | None] = {}  # by repo and commit: whose push brought it
 
     def check_repo(repo: str) -> None:
         if repo not in repos:
@@ -136,7 +137,7 @@ def create_git_api(
                 commit=commit,
                 refs=tips.get(commit, []),
                 merged=on_main(bounds.repositories, repo, commit),
-                pushed_by=pushed_by.get((repo, commit)),
+                pushed_by=store.pusher_of(repo, commit),
             )
             for commit in wants
         ]
@@ -158,7 +159,7 @@ def create_git_api(
                 moved = read_ref_updates(updates)
                 request.state.arguments = {"repo": repo, "updates": moved}
                 pusher = caller(request)
-                pushed_by.update({(repo, move["new"]): pusher for move in moved if move["new"] != NO_COMMIT})
+                store.save_pushes(repo, {move["new"]: pusher for move in moved if move["new"] != NO_COMMIT})
 
     return app
 

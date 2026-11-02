@@ -46,6 +46,7 @@ from meridian_forge.git_http import GitBounds, create_git_api
 from meridian_forge.repositories import repository_path, seed_repositories
 from meridian_forge.seed import ForgeSeed, load_forge_seed, open_seeded_forge
 from meridian_forge.server import build_forge_server
+from meridian_forge.store import STORE_FILE, ForgeStore
 
 SERVICE = "forge"  # its entry in the scenario's services, and its compose service
 SEED_KEY = "forge_seed"  # the key of scenario.yaml naming the forge's seed, relative to the pack
@@ -94,8 +95,9 @@ def _seed_once(seed: ForgeSeed) -> Path:
 def open_forge(config: RunConfig, seed: ForgeSeed, repositories: Path) -> Forge:
     """The forge over its repositories in ``repositories``, each seeded from the company's code and ``seed``.
 
-    A repository already there is left as it is, so a restarted forge keeps what was pushed and merged. The
-    engine's reviewer judges what needs review, and CI is timed by ``config``'s forge settings.
+    A repository already there is left as it is, and the forge's store beside them (``STORE_FILE``) keeps its
+    pull requests, so a restarted forge keeps what was pushed, opened and merged. The engine's reviewer judges
+    what needs review, and CI is timed by ``config``'s forge settings.
     """
     for repo in COMPANY_REPOS:
         if not repository_path(repositories, repo).exists():
@@ -106,6 +108,7 @@ def open_forge(config: RunConfig, seed: ForgeSeed, repositories: Path) -> Forge:
         repositories,
         COMPANY_REPOS,
         seed,
+        ForgeStore(repositories / STORE_FILE),
         reviewer=Reviewer(),
         ci_seconds=CiTiming(config.seed, settings.ci_min_seconds, settings.ci_max_seconds).wait,
         commit_date=settings.commit_date,
@@ -131,11 +134,16 @@ def build_server(
 
 
 def build_forge(config: RunConfig, repositories: Path) -> Forge:
-    """The forge of ``config``'s scenario, holding the coworkers' changes as the episode's forge does."""
+    """The forge of ``config``'s scenario, holding the coworkers' changes as the episode's forge does.
+
+    A forge set up before, restarted on its repositories and store, makes the coworkers' changes no more.
+    """
     seed = load_seed(config)
     forge = open_forge(config, seed, repositories)
-    repos = resolve_activity_repos(resolve_scenario(config), seed)
-    apply_world_activity(forge, repositories, repos, config.settings.forge.commit_date)
+    if not forge.store.is_set_up():
+        repos = resolve_activity_repos(resolve_scenario(config), seed)
+        apply_world_activity(forge, repositories, repos, config.settings.forge.commit_date)
+        forge.store.mark_set_up()
     return forge
 
 
@@ -159,7 +167,8 @@ def build_forge_app(
     audit = importlib.import_module("meridian_controlplane.request_audit")
     bounds = GitBounds(settings.repositories, settings.git_timeout_seconds, settings.git_request_limit_bytes)
     record = functools.partial(audit.record_each_request, write_audit_line=write)
-    git_api = create_git_api(bounds, COMPANY_REPOS, [http_dependency(guard)], record, name_http_caller)
+    authorize = [http_dependency(guard)]
+    git_api = create_git_api(bounds, COMPANY_REPOS, authorize, record, name_http_caller, forge.store)
     return build_service_app(guard, server, SERVICE, git_api)
 
 

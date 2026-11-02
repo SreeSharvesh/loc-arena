@@ -492,6 +492,7 @@ def _render_live_service(  # noqa: PLR0913
         **({"depends_on": depends_on} if depends_on else {}),
         "healthcheck": _probe(service.port, stack, test=service.healthcheck),
         "init": True,
+        **({"restart": "unless-stopped"} if service.restarts else {}),
     }
 
 

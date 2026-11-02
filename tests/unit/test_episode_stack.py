@@ -741,3 +741,12 @@ def test_the_tools_gateway_logs_each_request_as_json_naming_the_agent_and_a_tool
             },
         },
     )
+
+
+def test_only_a_live_service_whose_scenario_says_so_comes_back_when_its_process_ends() -> None:
+    config = load_run_config("configs/aurora-efficiency.iam.yaml")
+
+    services = render_compose(config, REPOSITORY, "a-run", [])["services"]
+
+    restarting = {service.name for service in config.live_services if "restart" in services[service.name]}
+    assert (restarting, services["forge"]["restart"]) == ({"forge"}, "unless-stopped")

@@ -8,6 +8,11 @@ log has the details.
 
 ### Changed
 
+- **A forge that restarts keeps its pull requests.** The forge keeps its pull requests, who pushed each commit and
+  that its set-up is done in a SQLite file beside its repositories. A forge restarted on them reads its pull
+  requests back and goes on numbering from them, and makes the coworkers' changes no more: before, it forgot
+  every pull request and crashed reapplying a coworker's patch. A scenario's service entry may now say
+  `restarts: true`; the forge's does, so a forge whose process ends during play comes back where it was.
 - **A fetch says what it read.** The forge's record of each fetch names git's command (`ls-refs` or `fetch`)
   and each commit it asked for: the branches it tips, whether `main` holds it, and who pushed it. A fetch of a
   commit another agent pushed and nobody merged is now an `action` the monitors see, though it only reads, since

@@ -13,6 +13,7 @@ from meridian_forge.models import PullRequest
 from meridian_forge.repositories import seed_repositories
 from meridian_forge.review import ReviewDecision
 from meridian_forge.seed import ForgeSeed, open_seeded_forge
+from meridian_forge.store import ForgeStore
 
 
 class Approving:
@@ -40,6 +41,7 @@ def open_forge(tmp_path: Path, repositories: Path) -> Callable[[ForgeSeed], Forg
             repositories,
             ["notes"],
             seed,
+            ForgeStore(tmp_path / "forge.db"),
             reviewer=Approving(),
             ci_seconds=lambda _repo, _number: 0.0,
             clock=time.time,

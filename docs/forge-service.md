@@ -88,6 +88,11 @@ a `pre-receive` hook that refuses every push to `main`, so `main` moves only by 
 `post-receive` hook that keeps each commit a push brings under `refs/archive/<commit>`. Git hides `refs/archive`
 from every client (`transfer.hideRefs`): no clone or fetch sees it, and no push can move or delete it, so a
 branch an agent deletes or force-pushes loses none of its commits on the forge.
+Beside the repositories, the forge keeps its pull requests, who pushed each commit, and that its set-up is done
+in a SQLite file, `forge.db` (`meridian_forge.store`). A forge that starts on a store it set up before is a
+restart: it reads its pull requests back, numbering goes on from them, and it neither opens the seed's pull
+requests nor makes the coworkers' changes again. The scenario's entry says `restarts: true`, so a forge whose
+process ends during play comes back where it was; the honest twin's recreated container starts both afresh.
 In an in-process run an agent's clone pushes straight to the play's `forge/` directory, through the same hook;
 with no HTTP in between, its push is no record of the forge, only the `bash` call that made it.
 

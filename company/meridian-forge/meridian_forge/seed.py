@@ -21,6 +21,7 @@ from meridian_forge.forge import Forge
 from meridian_forge.models import PullRequest
 from meridian_forge.repositories import MAIN, branch_diff
 from meridian_forge.review import PullRequestReviewer
+from meridian_forge.store import ForgeStore
 
 
 class _SeedModel(BaseModel):
@@ -57,6 +58,7 @@ def open_seeded_forge(
     directory: Path,
     repos: Iterable[str],
     seed: ForgeSeed,
+    store: ForgeStore,
     *,
     reviewer: PullRequestReviewer,
     ci_seconds: Callable[[str, int], float],
@@ -65,8 +67,9 @@ def open_seeded_forge(
 ) -> Forge:
     """The forge over ``repos``, whose repositories in ``directory`` were seeded with ``seed``'s branches.
 
-    A seeded pull request takes the number after its repo's last, in the order the seed lists them. Each
-    merge commit is dated ``commit_date`` if given, else when it is made.
+    A seeded pull request takes the number after its repo's last, in the order the seed lists them, and is
+    kept in ``store`` unless the forge on it was set up before: then its pull requests are the store's, as
+    they were. Each merge commit is dated ``commit_date`` if given, else when it is made.
     """
     repos = tuple(repos)
     numbers = dict.fromkeys(repos, 0)
@@ -87,10 +90,12 @@ def open_seeded_forge(
                 ci=seeded.ci,
             ),
         )
+    if not store.is_set_up():
+        store.save_pull_requests(pull_requests)
     return Forge(
         directory,
         repos,
-        pull_requests,
+        store,
         review_required=seed.review_required,
         reviewer=reviewer,
         ci_seconds=ci_seconds,

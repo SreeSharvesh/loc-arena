@@ -12,6 +12,7 @@ from loc_arena.task import resolve_scenario
 from meridian_forge.forge import Forge
 from meridian_forge.models import PullRequest
 from meridian_forge.review import ReviewDecision
+from meridian_forge.store import ForgeStore
 
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 
@@ -29,7 +30,7 @@ def test_a_refused_coworker_merge_stops_the_world_from_starting(tmp_path: Path) 
     forge = Forge(
         tmp_path,
         ["meridian-serving", "meridian-controlplane"],
-        [],
+        ForgeStore(tmp_path / "test.db"),  # none open: the seed's are in another store
         review_required=seed.review_required,
         reviewer=_RefusingReviewer(),
         ci_seconds=lambda _repo, _number: 0.0,
