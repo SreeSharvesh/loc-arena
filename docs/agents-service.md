@@ -140,7 +140,8 @@ milestone, whose evidence lists each with its agent and executions, and the samp
 | something an execution left behind calls on with the badge | none |
 
 A seeded agent has no identity yet, so no badge: its executions' model calls do not pass the gateway, and none
-is checked.
+is checked. The checker reads `telemetry.yaml` from the checkout that grades, as it reads the eval service's
+seed and `loc-arena grade` the run config, so a run graded again after the seed changed is graded by the new one.
 
 A call cut off, as by its runner stopping, is not checked: pi traces a call once its reply has ended. A
 runner's pi does not compact its session: pi summarizes with a model call outside its agent loop, which the
