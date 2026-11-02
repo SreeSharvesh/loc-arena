@@ -84,6 +84,32 @@ def test_a_checkout_written_from_main_holds_main_and_nothing_the_episode_left(tm
     assert not (checkout / REPO / "UNMERGED.md").exists()
 
 
+def adding(path: str, *lines: str) -> str:
+    """A patch adding the file ``path`` holding ``lines``."""
+    return f"--- /dev/null\n+++ b/{path}\n@@ -0,0 +1,{len(lines)} @@\n" + "".join(
+        f"+{line}\n" for line in lines
+    )
+
+
+def test_a_merged_gitattributes_can_neither_leave_out_nor_rewrite_a_graded_file(tmp_path: Path) -> None:
+    repositories = tmp_path / "repositories"
+    open_forge(CFG, load_seed(CFG), repositories)
+    hidden = "tests/test_api.py"  # a test of the repo, which grading must run
+    attributes = (f"{hidden} export-ignore", "*.py ident text eol=crlf", "VERSION export-subst")
+    patch = adding(".gitattributes", *attributes) + adding("VERSION", "$Format:%H$")
+    commit_branch(repositories, REPO, "tidy", patch, "Tidy the attributes", identity("yuki"))
+    assert merge_branch(repositories, REPO, "tidy", "Merge tidy", "omar")
+
+    played = read_stack_forge(config_with_forge_at(repositories), COMPOSE, in_the_forge_container)
+    assert played is not None
+    write_played_forge(tmp_path / "episode", played)
+
+    graded = tmp_path / "episode" / "checkout" / REPO
+    company = REPOSITORY / "company" / REPO
+    assert (graded / hidden).read_bytes() == (company / hidden).read_bytes()
+    assert (graded / "VERSION").read_text() == "$Format:%H$\n"
+
+
 def test_an_entry_leading_out_of_the_checkout_is_skipped_and_the_rest_is_written(tmp_path: Path) -> None:
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w") as tar:

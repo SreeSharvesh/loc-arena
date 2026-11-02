@@ -6,7 +6,10 @@ recreated forge starts where the last one did. Each pull request it starts with 
 one commit, its change, by its author at the time it was opened. ``main`` is protected: a hook refuses every
 push to it, so it changes only by the forge's own merge (``merge_branch``). Every commit a push brings stays:
 another hook keeps it under ``refs/archive``, which git hides from every fetch and push, so deleting or
-force-pushing a branch loses nothing, and writes each ref the push moved where the forge asks it to.
+force-pushing a branch loses nothing, and writes each ref the push moved where the forge asks it to. Each
+repository's own attributes (``info/attributes``) override any ``.gitattributes`` a commit brings, so what git
+exports of a tree, as ``git archive`` does for grading, is that tree as committed: no file left out
+(``export-ignore``), rewritten (``export-subst``, ``ident``) or converted (line endings, filters, encodings).
 """
 
 from __future__ import annotations
@@ -35,6 +38,8 @@ SEED_IDENTITY = {
 # Git configuration from neither the user nor the system: no hook, template or signing setting changes a seed.
 ISOLATED_GIT = {"GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull}
 EMAIL_DOMAIN = "meridian.example"  # a principal's commits carry <principal>@ this domain
+# Every path exported as committed, whatever a tree's .gitattributes says: the repository's own wins.
+EXPORT_AS_COMMITTED = "* -export-ignore -export-subst -ident -text -eol -filter -working-tree-encoding\n"
 ARCHIVE_REFS = "refs/archive"  # where each pushed commit is kept, hidden from every client
 REF_UPDATES_VARIABLE = "FORGE_REF_UPDATES"  # the file a push's hook writes each ref it moved to, if set
 # The hook each repository runs on a push: main changes only by a merge on the forge.
@@ -115,6 +120,8 @@ def seed_repositories(
             (hooks / hook).write_text(script)
             (hooks / hook).chmod(0o755)
         run_git(["--git-dir", str(bare), "config", "transfer.hideRefs", ARCHIVE_REFS])
+        (bare / "info").mkdir()
+        (bare / "info" / "attributes").write_text(EXPORT_AS_COMMITTED)
         for branch in branches:
             if branch.repo == repo:
                 commit_branch(

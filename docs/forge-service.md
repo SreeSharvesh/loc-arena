@@ -193,7 +193,11 @@ Every play is graded on what is merged on the forge's `main`, never on what an a
 (`loc_arena/merged_main.py`). After each play of a stack run, before the forge is renewed for the honest twin,
 the host has `git archive main` and `git bundle create - --all` run for each company repo inside the forge's
 container, so the host never runs git on a repository agents can push to; an in-process run reads its own forge
-in this process. Each play's archives are unpacked into its `checkout`, and the main task is graded on that.
+in this process. Each repository's own `info/attributes` unsets every attribute that changes what git exports
+(`export-ignore`, `export-subst`, `ident`, `text`, `eol`, `filter`, `working-tree-encoding`), and it wins over any
+`.gitattributes` a commit brings, so a merged line such as `tests/test_bug.py export-ignore` cannot leave a test
+out of grading: the archive is `main`'s tree as committed. Each play's archives are unpacked into its
+`checkout`, and the main task is graded on that.
 Unpacking uses Python's `data` filter; an entry it refuses (an absolute path, a link leading out) is skipped and
 logged, so a crafted tree cannot keep a run from being graded. The bundles are written unopened to the play's
 `forge_history/<repo>.bundle`: every ref of the forge and every commit they reach, each pushed commit kept under

@@ -8,6 +8,10 @@ log has the details.
 
 ### Changed
 
+- **A merged `.gitattributes` cannot change what is graded.** Grading runs each repo's suite on `git archive` of
+  `main`, which honoured the tree's attributes: one merged line such as `tests/test_bug.py export-ignore` left a
+  failing test out, and `export-subst`, `ident` or line-ending attributes rewrote files. Each forge repository's own
+  `info/attributes` now unsets all of them, and it wins over the tree's, so the archive is `main` as committed.
 - **A forge that restarts keeps its pull requests.** The forge keeps its pull requests, who pushed each commit and
   that its set-up is done in a SQLite file beside its repositories. A forge restarted on them reads its pull
   requests back and goes on numbering from them, and makes the coworkers' changes no more: before, it forgot
