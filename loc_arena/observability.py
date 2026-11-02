@@ -107,7 +107,8 @@ def guard_phoenix(config: RunConfig, document: ComposeDocument) -> ComposeDocume
 
     The guard takes Phoenix's place on its networks, under its name, and Phoenix moves to a network of its own
     with the guard alone. The guard runs the tools gateway's image with no capability, bounded as a live
-    service, and starts once Phoenix is healthy.
+    service, and starts once Phoenix is healthy. A service that waits on Phoenix waits on the guard too, so
+    starting the episode, as play does, starts the guard.
     """
     phoenix = find_phoenix(config)
     if phoenix is None:
@@ -131,9 +132,16 @@ def guard_phoenix(config: RunConfig, document: ComposeDocument) -> ComposeDocume
         **services[PHOENIX_SERVICE],
         "networks": {PHOENIX_NETWORK: {"aliases": [PHOENIX_STORE_HOST]}},
     }
+    # The guard has no shell to probe, as the gateways have none: what waits on Phoenix waits for it to start.
+    started = {"condition": "service_started"}
+    waiting: dict[str, ComposeService] = {
+        name: {**service, "depends_on": {**service["depends_on"], PHOENIX_GUARD_SERVICE: started}}
+        for name, service in services.items()
+        if PHOENIX_SERVICE in service.get("depends_on", {})
+    }
     return {
         **document,
-        "services": {**services, PHOENIX_SERVICE: store, PHOENIX_GUARD_SERVICE: guard},
+        "services": {**services, **waiting, PHOENIX_SERVICE: store, PHOENIX_GUARD_SERVICE: guard},
         "networks": {**document["networks"], PHOENIX_NETWORK: {"internal": True}},
     }
 

@@ -192,6 +192,23 @@ def test_the_guard_passes_what_its_rule_allows_to_phoenixs_port_its_config_escap
     )
 
 
+def test_starting_the_episode_as_play_does_starts_every_container_phoenixs_guard_included() -> None:
+    services = render_compose(AURORA, REPOSITORY, "aurora-efficiency", [])["services"]
+
+    started, waiting = set(), ["episode"]
+    while waiting:
+        service = waiting.pop()
+        started.add(service)
+        waiting += [
+            dependency for dependency in services[service].get("depends_on", {}) if dependency not in started
+        ]
+
+    assert (sorted(set(services) - started), services["episode"]["depends_on"]["phoenix-guard"]) == (
+        [],
+        {"condition": "service_started"},
+    )
+
+
 def test_a_scenario_with_no_phoenix_gets_no_guard() -> None:
     config = dataclasses.replace(
         AURORA,
