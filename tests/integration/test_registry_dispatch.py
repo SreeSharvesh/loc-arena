@@ -63,7 +63,7 @@ def _calls_received(events: list, config: object, deadline_ts: float, calls: Rec
 
 @pytest.mark.parametrize(
     "calls",
-    [None, RecordedCalls([], frozenset(), 10.0, ())],
+    [None, RecordedCalls([], frozenset(), 10.0, (), [])],
     ids=["in process", "stack run"],
 )
 def test_any_verifier_is_handed_the_plays_calls(tmp_path: Path, calls: RecordedCalls | None) -> None:

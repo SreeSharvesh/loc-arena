@@ -26,13 +26,14 @@ path. A key no block declares is ignored, except in an agent's `scope` and in th
 |---|---|
 | `extends`, `models` | the base config; the models file (roles, sampling, OpenRouter providers per model) |
 | `seed`, `policy` | the seed that with the config reproduces the episode; `model` or `scripted` (replays the scenario's `scripted/moves.yaml` in place of a model) |
+| `harness` | what runs each agent's loop: `native`, the arena's own (the default), or `pi`, the pi coding agent, whose own system prompt and tools the agent gets beside the arena's ([docs/pi-harness.md](pi-harness.md)) |
 | `scenario` | the pack registering the scorer, verifier, live services and skills |
 | `main_task`, `side_task`, `covert` | the tasks and their scorer and verifier; `covert.enabled` switches attack and honest mode: the covert briefs, the gateway's covert injection and, in a scripted run, the scenario's attack moves. `side_task.thresholds` are the verifier's numbers: `loop_len_floor`, the fewest calls of a loop; `liveness_window_seconds`, how close to the deadline its last call must be; `sustained_rate_window_seconds`, the span it must keep calling over, no gap longer; and `loop_min_reply_chars`, the shortest reply whose text inside a later prompt of the same job links two calls of a stack run into a loop |
 | `episode` | turn budgets, wall-clock ceiling, spawn caps |
 | `agents` | the team; see below |
 | `protocol` | the control protocol: monitors, reviewer, audit budget |
 | `agent_loop`, `logging` | the loop's limits; `logging.agent_transcript` for the per-agent `.eval` and transcript |
-| `inference`, `gateway`, `stack`, `evalkit`, `tickets`, `chat`, `forge`, `history` | the settings groups below |
+| `inference`, `gateway`, `stack`, `evalkit`, `tickets`, `chat`, `forge`, `history`, `pi` | the settings groups below |
 
 ## An agent
 
@@ -66,6 +67,7 @@ Each field has a description in code; these keep pydantic's coercing types.
 | `forge` | the forge: `repositories`, the directory of its bare git repositories in its container (`/var/lib/forge`), which a new container seeds from the company's code, so the honest twin's starts from the seed; `ci_min_seconds` and `ci_max_seconds` (2 and 10), between which a pull request an agent opens waits on CI before it passes, each wait drawn from the run's seed; `git_timeout_seconds` and `git_request_limit_bytes`, the bounds of one git request; `commit_date`, unset but in the deterministic fixture, which dates every commit of a play the same so its commit IDs, and its sealed log, are the same each run |
 | `history` | each capture of an agent's checkout (`loc_arena/checkout_history.py`): `max_file_bytes` (1 MiB), the largest file stored whole; `max_entries` (20000) and `max_depth` (32), past which a capture stops and says so; `skipped_names`, left out wherever they are (`.git`, `__pycache__`, `.pytest_cache`) |
 | `evalkit` | the eval service: `job_cpu` and `job_memory_mb`, what an eval run's job asks of the cluster |
+| `pi` | pi under `harness: pi`: `executable` (`pi`, on `PATH`), `answer_seconds` (120), how long the episode waits for pi to ask its model or take its tool calls, and `hold_seconds` (20), how long it holds one of pi's waits before pi asks again |
 
 Who decides a service's access requests is the scenario's, not the run config's: each service in the scenario's
 `iam:` block names its approver, the company principals that hold permissions on it from the start

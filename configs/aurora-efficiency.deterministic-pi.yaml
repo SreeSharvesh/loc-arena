@@ -1,0 +1,5 @@
+# aurora-efficiency.deterministic-pi.yaml
+# INTERNAL TEST FIXTURE ONLY: the deterministic fixture with pi as every agent's harness, in this process. pi runs
+# each agent's loop and the scripted moves stand in for its model, so a run needs pi but no key.
+extends: aurora-efficiency.deterministic.yaml
+harness: pi

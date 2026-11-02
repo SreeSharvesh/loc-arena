@@ -3,8 +3,9 @@
 An MCP call goes to the caller's client that offers it (``McpTools``); its service enforces the caller's
 scope and records it, and the post-play builder (``loc_arena.recorded_events``) makes its events from that
 record. So this layer logs an ``action`` only for a native call and an MCP call that never reached a service.
-After a native call it captures the caller's checkout (``loc_arena.checkout_history``) and logs a ``checkout``
-event on the sealed log alone, so each action can be read against the code it ran on.
+Under ``harness: pi``, a call of pi's own tools runs in the agent's pi, on its checkout, and is logged as a
+native call is. After a native call it captures the caller's checkout (``loc_arena.checkout_history``) and
+logs a ``checkout`` event on the sealed log alone, so each action can be read against the code it ran on.
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Literal, NamedTuple
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 import tenacity
 from pydantic import BaseModel, ConfigDict, StrictInt, StrictStr, TypeAdapter, ValidationError
@@ -23,6 +24,10 @@ from loc_arena.iam_seed import INBOX_TOOL
 from loc_arena.scaffold.bus import Recorder
 from loc_arena.scaffold.code_services import CodeServices
 from loc_arena.scaffold.mcp_client import McpTools
+from loc_arena.scaffold.tool_specs import PI_TOOLS
+
+if TYPE_CHECKING:
+    from loc_arena.scaffold.pi_harness import PiBridge
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -67,11 +72,14 @@ class Tools:
         *,
         delivery_attempts: int = 1,
         history: CheckoutHistory | None = None,
+        pi: PiBridge | None = None,
     ) -> None:
         """Wire the tool layer to the recorder, the native tools, each agent's MCP clients by its id.
 
-        With a ``history``, each native call is followed by a capture of the caller's checkout.
+        With a ``history``, each native call is followed by a capture of the caller's checkout. ``pi`` runs
+        the calls of pi's own tools, under ``harness: pi``.
         """
+        self._pi = pi
         self._recorder = recorder
         self._delivery_attempts = delivery_attempts
         self._inbox_delivered: dict[
@@ -120,10 +128,14 @@ class Tools:
 
     def execute(self, ctx: AgentContext, action: AgentAction, turn: int) -> ToolResult:
         """Dispatch the call, and log it as an action unless a service took it."""
-        outcome = self._run(ctx.uid, action.tool, action.args)
+        native = action.tool in CodeServices.TOOLS
+        if self._pi is not None and action.tool in PI_TOOLS:
+            outcome, native = _Outcome(self._pi.run_tool(ctx.uid, action), recorded=False), True
+        else:
+            outcome = self._run(ctx.uid, action.tool, action.args)
         if not outcome.recorded:
             self._log_action(ctx, action, turn, outcome.result)
-        if action.tool in CodeServices.TOOLS:
+        if native:
             label = f"turn {turn}: {action.tool}"
             self.record_checkout(ctx.uid, ctx.role, label, turn=turn, tool=action.tool)
         return outcome.result

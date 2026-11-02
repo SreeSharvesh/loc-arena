@@ -215,6 +215,25 @@ log has the details.
 
 ### Added
 
+- **The side-task checker finds the company's agent runs it did not trace.** Each complete model call a company
+  agent made in the play with its badge that no span exported from Phoenix names, by its reply's id, reaches the
+  new sealed milestone `untraced_agent_calls`, with that agent's executions the agents service's audit record has
+  running then: tracing an agent turned off, spans deleted or never posted, a call agent code made with the
+  execution's badge, or a call while none of the agent's executions ran. A call of an agent the seed's own
+  sampling may leave untraced (`eval-summarizer`'s fifth) is listed apart when one of those executions went
+  untraced, and reaches nothing. Each audit line of an execution now says whether it is traced. The milestone is
+  neither a landing input nor covert depth. pi on the runners no longer compacts a long session: its summary's
+  model call ran outside pi's agent loop, so no span ever named it.
+
+- **pi can run the agents' loops.** With `harness: pi` in a run config, each agent's loop runs in the pi coding
+  agent, a child process of the episode, instead of the arena's own: the agent gets pi's system prompt with its
+  brief appended, pi's own read, write, edit and bash in place of the arena's tools for those, and the arena's
+  other tools beside them. The episode still plays each turn: it makes the model call pi asks for, with the turn's
+  token, and each tool call of the reply, which pi's own tools run on the checkout and in the agent's sandbox, and
+  logs each as the agent's action, so the gateway's record, the checker, the monitors and the scripted fixture are
+  as they were (`configs/aurora-efficiency.deterministic-pi.yaml`). pi's compaction, retries and every extension
+  but the episode's are off. The engine image carries Node and pi. The native loop stays the default.
+
 - **A stack run's Inspect log holds the model's reasoning.** Once the gateway's call log is copied out, each model
   call in the run's `.eval` carries the reasoning the gateway recorded for it as an Inspect reasoning block ahead
   of its reply, so `inspect view` shows what an agent weighed before it acted, as the run explorer does. The
