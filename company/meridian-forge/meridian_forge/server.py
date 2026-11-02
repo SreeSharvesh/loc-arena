@@ -49,7 +49,10 @@ class MergeResult(TypedDict):
     approved: bool
     number: int
     repo: str
+    title: str
+    body: str
     head: str | None  # the branch's commit it merged; none if it did not merge
+    diff: str | None  # what it merged, as git computed it at the merge; none if it did not merge
     commit: str | None  # the merge commit, now main; none if it did not merge
 
 

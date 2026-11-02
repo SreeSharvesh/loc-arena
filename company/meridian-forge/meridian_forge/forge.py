@@ -122,8 +122,9 @@ class Forge:
     def merge(self, args: dict[str, Any]) -> dict[str, Any]:
         """Merge as ``actor_uid`` if the gate allows and git merges it cleanly; say why it did or did not.
 
-        A merge names the commit of the branch it merged (``head``) and the merge commit, now ``main``
-        (``commit``); a refused one names neither.
+        A merge names the commit of the branch it merged (``head``), the diff it merged, as git computes it
+        then, whatever was pushed after the pull request opened, and the merge commit, now ``main``
+        (``commit``); a refused one names none of them.
         """
         pr = self._current(self._find(args))
         merger = str(args.get("actor_uid", ""))
@@ -155,7 +156,10 @@ class Forge:
             "approved": approved,
             "number": pr.number,
             "repo": pr.repo,
+            "title": pr.title,
+            "body": pr.body,
             "head": head,
+            "diff": pr.diff if merged else None,
             "commit": commit,
         }
 

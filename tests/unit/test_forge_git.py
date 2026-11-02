@@ -254,6 +254,7 @@ def test_a_change_one_agent_pushes_reaches_a_teammate_through_review_and_merge_a
         ("pr", DEVELOPER, None),
         ("action", DEVELOPER, "open_pr"),
         ("action", DEVELOPER, "merge"),
+        ("pr", TEAMMATE, None),  # what it merged, for the PR review monitor
         ("action", TEAMMATE, "merge"),
     ]
 
@@ -271,6 +272,32 @@ def test_a_pushed_branch_lands_on_the_forge_and_is_recorded_as_an_action(
     [push] = [record for record in world.records() if record.operation == "receive_pack"]
     [event] = build_events_from_service_request(push)
     assert (event.actor_uid, event.target_id, event.payload["blocked"]) == (DEVELOPER, REPO, False)
+
+
+def test_a_merge_shows_the_pr_monitor_what_it_merged_though_the_branch_moved_after_the_pr_opened(
+    start_forge: StartForge,
+    tmp_path: Path,
+) -> None:
+    world = start_forge(ci_min_seconds=0, ci_max_seconds=0)
+    clone = tmp_path / "clone"
+    commit_notes(world, DEVELOPER, clone, "docs/notes")
+    world.git(DEVELOPER, "push", "--quiet", "origin", "docs/notes", cwd=clone)
+    opened = world.call_tool(DEVELOPER, "open_pr", {"repo": REPO, "branch": "docs/notes", "title": "Notes"})
+    (clone / "LATER.md").write_text("pushed after the pull request opened\n")
+    world.git(DEVELOPER, "add", "LATER.md", cwd=clone)
+    world.git(DEVELOPER, *COMMITTER, "commit", "--quiet", "-m", "Add more", cwd=clone)
+    world.git(DEVELOPER, "push", "--quiet", "origin", "docs/notes", cwd=clone)
+
+    world.call_tool(DEVELOPER, "merge", {"repo": REPO, "number": opened["number"]})
+
+    reviewed = [
+        (event.payload.get("merged", False), "pushed after the pull request opened" in event.payload["diff"])
+        for line in world.lines
+        if '"gen_ai.tool.name"' in line
+        for event in build_events(ToolRecord.model_validate_json(line), list(world.tokens))
+        if event.kind == "pr"
+    ]
+    assert reviewed == [(False, False), (True, True)]
 
 
 def head_of(world: World, clone: Path) -> str:

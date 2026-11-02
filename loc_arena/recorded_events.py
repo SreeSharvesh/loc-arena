@@ -8,24 +8,24 @@ that time and the native turn of its agent running then, else turn 0, and are wr
 play to the sealed log, and to the mirror log unless sealed-only. A call its service refused (it carries
 ``error.type``) makes a blocked ``action`` with the service's reason. A successful call makes zero or more
 events: chat's ``post``, ``reply`` and ``send_dm`` a ``message``, over MCP or HTTP alike; the forge's
-``open_pr`` a ``pr`` and an ``action``, its ``merge`` an ``action``. A live service with rights and no tools
-records a request in its log as a line naming its operation (``ServiceRequestRecord``); its other lines are
-not records. A request it refused makes a blocked ``action``, and one that changed something an ``action``; a
-read it answered makes none, the forge's git fetch among them, though it is a POST, while its git push is an
-action. A service with tools and rights both (the eval, tickets, notes and chat services, the forge) records a
-tool call or a request per line, and each line is read as what it names. The job service, reached both ways,
-writes both kinds of record, and each change of a job's state is a ``job`` event of its owner; the process
-facts each node of its fleet writes (``services/node-<n>.log``) are ``process`` events on the sealed log
-alone. Neither comes from an agent's call, so either may fall outside every turn, unnoted. A job's own calls
-carry its workload principal (``job-<id>``), which is no agent of the run: each record a workload made is its
-sponsor's, by IAM's ``workload_issued`` audit line, and each of its events names the ``workload``; it too may
-fall outside every turn, unnoted. A seeded job, another team's work the job service starts with, is marked
-``seed`` on its ``job`` events, and its owner is a principal of the company: each record of one is placed as
-an agent's is, its events of the actor role ``company``, in turn 0. Each line of
-``unattributed_records.jsonl`` in the run directory is a record and the ``reason`` it was not placed: not a
-valid record, outside every phase window, or not an agent of the run; or no covering turn, a native agent's
-record outside all its turns, whose events are built in turn 0. Grading never builds, so grading a run again
-adds nothing.
+``open_pr`` a ``pr`` and an ``action``, its ``merge`` an ``action`` and, if it landed, a ``pr`` with the diff
+it merged. A live service with rights and no tools records a request in its log as a line naming its operation
+(``ServiceRequestRecord``); its other lines are not records. A request it refused makes a blocked ``action``,
+and one that changed something an ``action``; a read it answered makes none, the forge's git fetch among them,
+though it is a POST, while its git push is an action. A service with tools and rights both (the eval, tickets,
+notes and chat services, the forge) records a tool call or a request per line, and each line is read as what
+it names. The job service, reached both ways, writes both kinds of record, and each change of a job's state is
+a ``job`` event of its owner; the process facts each node of its fleet writes (``services/node-<n>.log``) are
+``process`` events on the sealed log alone. Neither comes from an agent's call, so either may fall outside
+every turn, unnoted. A job's own calls carry its workload principal (``job-<id>``), which is no agent of the
+run: each record a workload made is its sponsor's, by IAM's ``workload_issued`` audit line, and each of its
+events names the ``workload``; it too may fall outside every turn, unnoted. A seeded job, another team's work
+the job service starts with, is marked ``seed`` on its ``job`` events, and its owner is a principal of the
+company: each record of one is placed as an agent's is, its events of the actor role ``company``, in turn 0.
+Each line of ``unattributed_records.jsonl`` in the run directory is a record and the ``reason`` it was not
+placed: not a valid record, outside every phase window, or not an agent of the run; or no covering turn, a
+native agent's record outside all its turns, whose events are built in turn 0. Grading never builds, so
+grading a run again adds nothing.
 """
 
 from __future__ import annotations
@@ -54,7 +54,7 @@ from loc_arena.scaffold.bus import Recorder
 from loc_arena.task import SNAPSHOT_FILE, SnapshotFile, read_snapshot_file, resolve_scenario
 from loc_arena.tool_records import ToolRecord
 from meridian_forge.git_http import FetchedRef
-from meridian_forge.server import OpenedPullRequest
+from meridian_forge.server import MergeResult, OpenedPullRequest
 
 _LOGGER = logging.getLogger(__name__)
 SERVICE_LOGS = "services"  # a stack run's copy of each live service's log, in the run directory
@@ -62,6 +62,7 @@ RECORDS = "records"  # where an in-process run's services record, in each episod
 UNATTRIBUTED_FILE = "unattributed_records.jsonl"
 COMPANY_ROLE = "company"  # the actor role of a company principal's events: no agent of the run
 _OPENED_PULL_REQUEST = TypeAdapter(OpenedPullRequest)
+_MERGE_RESULT = TypeAdapter(MergeResult)
 _JSON_OBJECT = TypeAdapter(dict[str, JsonValue])
 
 
@@ -153,28 +154,28 @@ class RecordedEvent:
 
 
 def build_pull_request(record: ToolRecord, agent_ids: Sequence[str]) -> list[RecordedEvent]:
-    """The ``pr`` event of the pull request the forge opened, with the fields the PR review monitor reads.
+    """The ``pr`` event of a pull request the forge opened or merged, with the fields the PR monitor reads.
 
-    Raises ``ValidationError`` when the record's result is not the forge's ``open_pr`` result.
+    A merge's is its merger's, with the diff it merged: a branch may move after its pull request opens, so
+    what merges is reviewed as it merged. A refused merge makes none. Raises ``ValidationError`` when the
+    record's result is not the forge's ``open_pr`` or ``merge`` result.
     """
     _ = agent_ids
-    opened = _OPENED_PULL_REQUEST.validate_python(record.result)
-    return [
-        RecordedEvent(
-            "pr",
-            record.agent,
-            opened["repo"],
-            {
-                "number": opened["number"],
-                "target_repo": opened["repo"],
-                "pr_title": opened["title"],
-                "pr_body": str(record.arguments.get("body", "")),
-                "head": opened["head"],
-                "diff": opened["diff"],
-                "ci": opened["ci"],
-            },
-        ),
-    ]
+    if record.tool == "merge":
+        merged = _MERGE_RESULT.validate_python(record.result)
+        if not merged["merged"]:
+            return []
+        pr: dict[str, Any] = {**merged, "merged": True}
+    else:
+        pr = {**_OPENED_PULL_REQUEST.validate_python(record.result), "body": record.arguments.get("body", "")}
+    payload = {
+        "number": pr["number"],
+        "target_repo": pr["repo"],
+        "pr_title": pr["title"],
+        "pr_body": str(pr["body"]),
+    }
+    payload |= {key: pr[key] for key in ("head", "diff", "ci", "merged") if key in pr}
+    return [RecordedEvent("pr", record.agent, str(pr["repo"]), payload)]
 
 
 def chat_message(
@@ -216,6 +217,7 @@ CHAT_POSTS: frozenset[str] = frozenset({"post", "reply", "send_dm"})
 # the tools gateway's prefixMode: never). A builder raises ValidationError on a result that is not its tool's.
 EVENT_BUILDERS: Mapping[str, Callable[[ToolRecord, Sequence[str]], list[RecordedEvent]]] = {
     "open_pr": build_pull_request,
+    "merge": build_pull_request,
     **dict.fromkeys(CHAT_POSTS, build_message),
 }
 

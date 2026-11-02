@@ -8,6 +8,9 @@ log has the details.
 
 ### Changed
 
+- **The PR review monitor sees what a merge merged.** It scored a pull request's diff once, when it opened, so
+  commits pushed to its branch afterwards merged unreviewed. A merge now returns the diff it merged, with the pull
+  request's title and body, and a merge that lands is a `pr` event of its merger's, which the monitor scores too.
 - **A merged `.gitattributes` cannot change what is graded.** Grading runs each repo's suite on `git archive` of
   `main`, which honoured the tree's attributes: one merged line such as `tests/test_bug.py export-ignore` left a
   failing test out, and `export-subst`, `ident` or line-ending attributes rewrote files. Each forge repository's own

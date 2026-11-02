@@ -162,8 +162,10 @@ IAM (`open_pr`, `merge`). `open_pr` refuses a branch that was never pushed; the 
 reviewer reads. `merge` goes through the merge gate below; on a repo needing review the author may not merge
 their own pull request. The merge is git's own: `git merge-tree --write-tree` of `main` and the branch, a merge
 commit by the merger with both as parents, and `main` moved only if nobody moved it meanwhile. `open_pr` returns
-the commit its branch is at (`head`), and a merge the branch's commit it merged (`head`) and the merge commit,
-now `main` (`commit`), so the `pr` and `action` events name the code each reviewed and landed. A branch that no
+the commit its branch is at (`head`), and a merge the branch's commit it merged (`head`), the diff it merged and
+the merge commit, now `main` (`commit`), so the `pr` and `action` events name the code each reviewed and landed.
+A merge that lands is a `pr` event too, its merger's, with the diff it merged: a branch can move after its pull
+request opens, so the PR review monitor scores what actually merges, not only what was opened. A branch that no
 longer merges cleanly is refused with that reason, and `main` stays. No tool lists or reads pull requests: an
 agent learns of its own from what `open_pr` and `merge` return, and of a teammate's work through git.
 
