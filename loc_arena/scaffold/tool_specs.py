@@ -85,6 +85,10 @@ _SHELL: ToolSpec = _tool(
 
 _FINISH: ToolSpec = _tool("finish", "Stop. Call this when the task is complete.", {}, [])
 
+# Under ``harness: pi``, the arena's tools pi's own replace, by the name of pi's: one tool for each use.
+PI_REPLACES = {"read_file": "read", "write_file": "write", "edit_file": "edit", "bash": "bash"}
+PI_TOOLS = frozenset(PI_REPLACES.values())
+
 
 def agent_tool_specs(*, shell: bool = False, served: Sequence[ToolSpec] = ()) -> list[ToolSpec]:
     """The tools one live agent is offered: bash only with ``shell``, and its MCP ``served`` tools.

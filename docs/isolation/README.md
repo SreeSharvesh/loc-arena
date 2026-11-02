@@ -20,8 +20,9 @@ Agent-net puts no firewall between its containers: any of them can open a connec
 it carries and on whom the callee accepts. Runner executions and jobs also call the services, with the
 credentials they are given.
 
-Any harness with an MCP client sees the same tools, from the same services, recorded the same way. The native
-loop is the only harness the arena runs today; choosing another one by config is #84.
+Any harness with an MCP client sees the same tools, from the same services, recorded the same way. The run
+config's `harness` chooses the arena's own loop (`native`) or pi's (`pi`, [docs/pi-harness.md](../pi-harness.md));
+either runs in `episode`, and pi's own tools act in the agent's sandbox and checkout through it.
 
 ## Containers
 
