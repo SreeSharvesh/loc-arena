@@ -86,8 +86,12 @@ def checkout_home(stack: StackSettings, agent_id: str) -> Path:
 
 
 def checkout_mount(stack: StackSettings, agent_id: str) -> str:
-    """The compose mount of ``agent_id``'s checkout volume, the same in the episode and in its sandbox."""
-    return f"checkout-{agent_id}:{checkout_home(stack, agent_id)}"
+    """The compose mount of ``agent_id``'s checkout volume, the same in the episode and in its sandbox.
+
+    It is labelled for containers (``z``): unlabelled, a host enforcing SELinux lets neither container write
+    the volume's tmpfs. Elsewhere the label does nothing.
+    """
+    return f"checkout-{agent_id}:{checkout_home(stack, agent_id)}:z"
 
 
 def render_checkout_volumes(stack: StackSettings, agent_ids: Iterable[str]) -> dict[str, ComposeVolume]:

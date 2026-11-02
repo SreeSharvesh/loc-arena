@@ -71,7 +71,7 @@ def test_a_node_mounts_the_skills_read_only_checks_main_out_of_the_forge_and_giv
     settings = NodeServerSettings.model_validate_json(node["command"][-1])
 
     skills = REPOSITORY / "scenarios" / "aurora_efficiency" / "skills"
-    assert (node["volumes"], node["cpus"], node["mem_limit"]) == ([f"{skills}:/skills:ro"], 2.0, "2048m")
+    assert (node["volumes"], node["cpus"], node["mem_limit"]) == ([f"{skills}:/skills:ro,z"], 2.0, "2048m")
     assert (settings.forge_url, "meridian-serving" in settings.repos) == ("http://forge:8000", True)
 
 

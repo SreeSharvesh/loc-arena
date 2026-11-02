@@ -46,7 +46,7 @@ PORT_8000_PROBE = {
     "start_interval": "2s",
 }
 SKILLS = SCENARIOS_ROOT / "aurora_efficiency" / "skills"
-SKILLS_MOUNT = f"{SKILLS}:/skills:ro"  # read-only, where the default settings put them
+SKILLS_MOUNT = f"{SKILLS}:/skills:ro,z"  # read-only, where the default settings put them
 # An agent with rights on notes and an agent with none, as the run config seeds them.
 WITH_RIGHTS_AND_WITHOUT = (SCRIPTED_CONFIG.agent("agent-main"), SCRIPTED_CONFIG.agent("controlplane-agent"))
 LIVE_SERVICES = ["notes", "wiki", "status"]
@@ -376,7 +376,7 @@ def test_a_scripted_episode_gets_the_scripted_moves_mounted_read_only() -> None:
         "collector": [],
         "sandbox-agent-main": [SKILLS_MOUNT],
         "sandbox-serving-agent": [SKILLS_MOUNT],
-        "episode": [f"{source}:/app/scenarios/aurora_efficiency/scripted:ro"],
+        "episode": [f"{source}:/app/scenarios/aurora_efficiency/scripted:ro,z"],
     }
 
 
@@ -570,7 +570,7 @@ def test_a_service_with_tools_runs_its_engine_module_with_the_run_config_and_its
         "image": "loc-arena:latest",
         "cap_drop": ["ALL"],
         "command": ["python", "-m", "loc_arena.forge_service", "/app/configs/a-run.yaml", "forge"],
-        "volumes": ["/repository/configs:/app/configs:ro"],
+        "volumes": ["/repository/configs:/app/configs:ro,z"],
         "environment": {
             "PYTHONPATH": COMPANY_PATH,
             "LOC_ARENA_IAM_URL": "http://iam:8000",

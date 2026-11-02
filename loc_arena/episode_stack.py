@@ -106,6 +106,9 @@ REPOSITORY = Path(__file__).resolve().parents[1]  # its Dockerfile and configs/
 PLATFORM_PACKAGE = "meridian-iam"  # on every engine service's path, never in the agents' checkout
 IAM_MANIFEST_DIRECTORY = PurePosixPath("/srv")  # where a built managed service finds its own manifest
 ENGINE_DIRECTORY = PurePosixPath("/app")  # the repository, in the engine image
+# How a folder of this host is mounted: read-only, and relabelled for every container (SELinux's shared
+# label), without which a host enforcing SELinux keeps containers out of a user's home; elsewhere a no-op.
+HOST_FOLDER = "ro,z"
 TOKEN_BYTES = 32  # the entropy of each sandbox token and of each agent's identity on a live service
 NEVER_STARTED = (
     f"the episode never started: is {API_KEY_VARIABLE} set in .env or the shell, or did a live service fail "
@@ -160,19 +163,20 @@ def render_compose(
     The images hold neither the scenario's sealed ``reference/`` nor its ``scripted/`` moves, so an agent with
     a shell cannot read the answer. Only a scripted episode, which plays them, gets ``scripted/`` mounted. The
     sandboxes' image holds no harness and no scenarios either, so agent code cannot read how it is graded;
-    each sandbox mounts only the scenario's skills folder, read-only. Every service an agent reaches runs
-    under central IAM, so a run config that turns it off cannot run in a stack.
+    each sandbox mounts only the scenario's skills folder, read-only. Each folder mounted from this host is
+    labelled for containers (``z``), so a host enforcing SELinux lets them read it. Every service an agent
+    reaches runs under central IAM, so a run config that turns it off cannot run in a stack.
     """
     if not config.settings.iam.enabled:
         raise StackError("a stack run needs central IAM: this run config turns iam.enabled off")
     stack = config.settings.stack
     scenario = resolve_scenario(config)
-    skills = [f"{scenario.skills_dir}:{stack.skills_directory}:ro"] if scenario.skills_dir else []
+    skills = [f"{scenario.skills_dir}:{stack.skills_directory}:{HOST_FOLDER}"] if scenario.skills_dir else []
     scripted = []
     if config.policy == "scripted":
         target = SCENARIOS_DIRECTORY / scenario.directory.name / scenario.scripted_dir.name
-        scripted = [f"{scenario.scripted_dir}:{target}:ro"]
-    configs = f"{repository / 'configs'}:{CONFIGS_DIRECTORY}:ro"
+        scripted = [f"{scenario.scripted_dir}:{target}:{HOST_FOLDER}"]
+    configs = f"{repository / 'configs'}:{CONFIGS_DIRECTORY}:{HOST_FOLDER}"
     engine = _build_from(repository, ENGINE_TARGET, stack.image)
     agent_ids = [agent.id for agent in config.agents]
     checkouts = [checkout_mount(stack, agent) for agent in agent_ids]

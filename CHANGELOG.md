@@ -8,6 +8,12 @@ log has the details.
 
 ### Changed
 
+- **A stack run works on a host enforcing SELinux.** The folders a stack mounts from the repository (the run
+  configs, the scripted moves, the skills) and each agent's checkout volume are mounted with Docker's shared
+  label (`z`); unlabelled, SELinux kept every container from reading the configs or writing a checkout. The
+  gateway's provider roots, a compose secret from the virtualenv's certifi, still need the label by hand
+  (`chcon -t container_file_t .venv/lib/python3.12/site-packages/certifi/cacert.pem`), since compose cannot
+  relabel a secret.
 - **Each action's code is kept.** As cloned, after each of an agent's native tool calls and at the end of play,
   the episode stores the agent's whole checkout as a git tree in the play's `checkout_history`, read with dulwich
   and never by running git on it, and logs a `checkout` event naming the tree on the sealed log alone. A trajectory
