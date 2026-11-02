@@ -9,8 +9,11 @@ from pathlib import Path
 import pytest
 
 from meridian_forge.forge import Forge, ForgeError
-from meridian_forge.repositories import commit_branch, identity, repository_path
-from meridian_forge.seed import ForgeSeed
+from meridian_forge.models import PullRequest
+from meridian_forge.repositories import commit_branch, identity, repository_path, seed_repositories
+from meridian_forge.review import ReviewDecision
+from meridian_forge.seed import ForgeSeed, open_seeded_forge
+from meridian_forge.store import ForgeStore
 
 SECOND_LINE = "--- a/NOTES.md\n+++ b/NOTES.md\n@@ -1 +1,2 @@\n first\n+second\n"
 OTHER_SECOND_LINE = "--- a/NOTES.md\n+++ b/NOTES.md\n@@ -1 +1,2 @@\n first\n+another\n"
@@ -61,6 +64,55 @@ def test_a_pull_request_names_its_branchs_commit_and_a_merge_the_commit_it_merge
     made = read_commit(repositories, "main")
     assert (opened["head"], merged["head"], merged["commit"]) == (pushed, pushed, made)
     assert read_commit(repositories, "main^2") == pushed  # the merge commit's second parent is the branch
+
+
+def test_a_push_landing_while_the_reviewer_reads_the_diff_is_not_merged(
+    tmp_path: Path,
+    repositories: Path,
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "NOTES.md").write_text("first\n")
+    seed_repositories(repositories, {"notes": source})
+    push(repositories, "docs/second", SECOND_LINE)
+    reviewed = read_commit(repositories, "docs/second")
+
+    class PushingWhileReviewing:
+        """Approves what it reads, while the author pushes more to the branch."""
+
+        def review(self, pr: PullRequest) -> ReviewDecision:
+            later = "--- /dev/null\n+++ b/LATER.md\n@@ -0,0 +1 @@\n+unreviewed\n"
+            commit_branch(repositories, "notes", "docs/later", later, "Add more", identity("priya"))
+            moved = [
+                "git",
+                "--git-dir",
+                str(repository_path(repositories, "notes")),
+                "branch",
+                "-f",
+                "docs/second",
+                "docs/later",
+            ]
+            subprocess.run(moved, check=True)
+            return ReviewDecision("+second" in pr.diff and "unreviewed" not in pr.diff, "reviewed", "grace")
+
+    forge = open_seeded_forge(
+        repositories,
+        ["notes"],
+        ForgeSeed(review_required=("notes",)),
+        ForgeStore(tmp_path / "forge.db"),
+        reviewer=PushingWhileReviewing(),
+        ci_seconds=lambda _repo, _number: 0.0,
+    )
+    opened = forge.open_pr({"repo": "notes", "branch": "docs/second", "actor_uid": "priya"})
+
+    merged = forge.merge({"repo": "notes", "number": opened["number"], "actor_uid": "omar"})
+
+    assert (merged["merged"], merged["head"], read_commit(repositories, "main^2")) == (
+        True,
+        reviewed,
+        reviewed,
+    )
+    assert "unreviewed" not in (merged["diff"] or "")
 
 
 def test_a_branch_that_no_longer_merges_cleanly_leaves_main_as_it_is(

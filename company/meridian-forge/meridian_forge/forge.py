@@ -20,7 +20,7 @@ from typing import Any
 from meridian_forge.ci import CiStatus, ci_status
 from meridian_forge.merge_policy import MergePolicy
 from meridian_forge.models import PullRequest
-from meridian_forge.repositories import MAIN, branch_diff, branch_exists, branch_head, merge_branch
+from meridian_forge.repositories import MAIN, branch_diff, branch_head, merge_branch
 from meridian_forge.review import PullRequestReviewer
 from meridian_forge.store import ForgeStore
 
@@ -108,7 +108,7 @@ class Forge:
 
     def pr_status(self, args: dict[str, Any]) -> dict[str, Any]:
         """The status of a PR: its CI, its review where the policy needs one, and whether it may merge now."""
-        pr = self._current(self._find(args))
+        pr, _ = self._current(self._find(args))
         ci = ci_status(pr, self._clock())
         approved, review_reason = self._review(pr)
         mergeable, _ = self._merge_gate(pr, ci, approved, review_reason)
@@ -122,25 +122,27 @@ class Forge:
     def merge(self, args: dict[str, Any]) -> dict[str, Any]:
         """Merge as ``actor_uid`` if the gate allows and git merges it cleanly; say why it did or did not.
 
-        A merge names the commit of the branch it merged (``head``), the diff it merged, as git computes it
-        then, whatever was pushed after the pull request opened, and the merge commit, now ``main``
-        (``commit``); a refused one names none of them.
+        The branch's commit is read once: the reviewer judges its diff and that commit is what merges, so a
+        push meanwhile merges nothing unreviewed. A merge names that commit (``head``), the diff it merged,
+        whatever was pushed after the pull request opened, and the merge commit, now ``main`` (``commit``); a
+        refused one names none of them.
         """
-        pr = self._current(self._find(args))
+        pr, reviewed = self._current(self._find(args))
         merger = str(args.get("actor_uid", ""))
         ci = ci_status(pr, self._clock())
         approved, review_reason = self._review(pr)
         merged, reason = self._merge_gate(pr, ci, approved, review_reason)
         if merged and merger == pr.author and self._policy.requires_review(pr.repo):
             merged, reason = False, "the author may not merge their own pull request on a repo needing review"
-        head, commit = None, None
-        if merged:
+        if merged and reviewed is None:
+            merged, reason = False, f"no branch {pr.branch!r} to merge: it was deleted"
+        commit = None
+        if merged and reviewed is not None:
             message = f"Merge pull request #{pr.number} from {pr.branch}\n\n{pr.title}"
-            head = branch_head(self._directory, pr.repo, pr.branch)
             commit = merge_branch(
                 self._directory,
                 pr.repo,
-                pr.branch,
+                reviewed,
                 message,
                 merger or pr.author,
                 self._commit_date,
@@ -148,7 +150,7 @@ class Forge:
             if commit is not None:
                 self._keep(replace(pr, state="merged"))
             else:
-                head, merged, reason = None, False, f"{pr.branch} does not merge cleanly onto {MAIN}"
+                merged, reason = False, f"{pr.branch} does not merge cleanly onto {MAIN}"
         return {
             "merged": merged,
             "reason": reason,
@@ -158,7 +160,7 @@ class Forge:
             "repo": pr.repo,
             "title": pr.title,
             "body": pr.body,
-            "head": head,
+            "head": reviewed if merged else None,
             "diff": pr.diff if merged else None,
             "commit": commit,
         }
@@ -167,11 +169,15 @@ class Forge:
         self._prs[(pr.repo, pr.number)] = pr
         self.store.save_pull_requests([pr])
 
-    def _current(self, pr: PullRequest) -> PullRequest:
-        """``pr`` with the diff its branch has now: a push after it was opened changes it."""
-        if pr.state != "open" or not branch_exists(self._directory, pr.repo, pr.branch):
-            return pr
-        return replace(pr, diff=branch_diff(self._directory, pr.repo, pr.branch))
+    def _current(self, pr: PullRequest) -> tuple[PullRequest, str | None]:
+        """``pr`` with the diff of the commit its branch is at now, and that commit; none if it has no branch.
+
+        A push after it was opened changes both; the commit is read once, so its diff is that commit's.
+        """
+        head = branch_head(self._directory, pr.repo, pr.branch)
+        if pr.state != "open" or head is None:
+            return pr, head
+        return replace(pr, diff=branch_diff(self._directory, pr.repo, head)), head
 
     def _review(self, pr: PullRequest) -> tuple[bool, str]:
         if not self._policy.requires_review(pr.repo):

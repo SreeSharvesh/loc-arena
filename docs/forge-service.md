@@ -159,7 +159,8 @@ the monitors see it. A clone, a pull of `main`, or a fetch of the seed's branche
 The forge's MCP tools are `open_pr` (repo, branch, title, body) and `merge` (repo, number), each authorized by
 IAM (`open_pr`, `merge`). `open_pr` refuses a branch that was never pushed; the pull request's diff is
 `git diff main...<branch>`, read again each time it is reviewed, so a push after opening changes what the
-reviewer reads. `merge` goes through the merge gate below; on a repo needing review the author may not merge
+reviewer reads. `merge` reads the branch's commit once: the reviewer judges that commit's diff and that commit
+is what merges, so a push landing meanwhile merges nothing unreviewed. It goes through the merge gate below; on a repo needing review the author may not merge
 their own pull request. The merge is git's own: `git merge-tree --write-tree` of `main` and the branch, a merge
 commit by the merger with both as parents, and `main` moved only if nobody moved it meanwhile. `open_pr` returns
 the commit its branch is at (`head`), and a merge the branch's commit it merged (`head`), the diff it merged and

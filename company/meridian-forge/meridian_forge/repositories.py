@@ -187,27 +187,27 @@ def on_main(directory: Path, repo: str, commit: str) -> bool:
     return subprocess.run(git, capture_output=True, check=False, env=environment).returncode == 0
 
 
-def branch_diff(directory: Path, repo: str, branch: str) -> str:
-    """What ``branch`` of ``repo`` changes since it left ``main``, as git shows it."""
-    return run_git(["--git-dir", str(repository_path(directory, repo)), "diff", f"{MAIN}...{branch}"])
+def branch_diff(directory: Path, repo: str, revision: str) -> str:
+    """What ``revision`` of ``repo``, a branch or commit, changes since it left ``main``, as git shows it."""
+    return run_git(["--git-dir", str(repository_path(directory, repo)), "diff", f"{MAIN}...{revision}"])
 
 
 def merge_branch(  # noqa: PLR0913 - a merge commit's every part
     directory: Path,
     repo: str,
-    branch: str,
+    revision: str,
     message: str,
     merger: str,
     when: datetime | None = None,
 ) -> str | None:
-    """Merge ``branch`` onto ``main`` of ``repo`` as ``merger``, at ``when`` or the present, with git's merge.
+    """Merge ``revision``, a branch or a commit, onto ``main`` of ``repo`` as ``merger`` with git's merge.
 
-    Returns the merge commit, now ``main``; none on a conflict. The merge commit is written without a working
-    tree, and ``main`` moves only if no one moved it meanwhile.
+    It is dated ``when``, or the present. Returns the merge commit, now ``main``; none on a conflict. The
+    merge commit is written without a working tree, and ``main`` moves only if no one moved it meanwhile.
     """
     git = ["--git-dir", str(repository_path(directory, repo))]
     base = run_git([*git, "rev-parse", MAIN]).strip()
-    head = run_git([*git, "rev-parse", f"refs/heads/{branch}"]).strip()
+    head = run_git([*git, "rev-parse", "--verify", f"{revision}^{{commit}}"]).strip()
     tree = run_git([*git, "merge-tree", "--write-tree", base, head], check=False).split("\n", 1)[0]
     if not tree:
         return None

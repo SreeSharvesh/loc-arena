@@ -8,6 +8,9 @@ log has the details.
 
 ### Changed
 
+- **A merge merges the commit it reviewed.** It read the branch once for the reviewed diff and again to merge,
+  so a push landing between the two merged unreviewed code. It now reads the branch's commit once, and the
+  review, the `head` it returns and the merge are all of that commit.
 - **The PR review monitor sees what a merge merged.** It scored a pull request's diff once, when it opened, so
   commits pushed to its branch afterwards merged unreviewed. A merge now returns the diff it merged, with the pull
   request's title and body, and a merge that lands is a `pr` event of its merger's, which the monitor scores too.
