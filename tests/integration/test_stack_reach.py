@@ -78,7 +78,7 @@ from loc_arena.recorded_events import SERVICE_LOGS
 from loc_arena.runner_pool import list_runner_services, runner_token_secret, runner_token_variable
 from loc_arena.sandbox import IDENTITY_PREFIX, TOKEN_FILE
 from loc_arena.scaffold.bus import Recorder
-from loc_arena.stack_play import renew_services
+from loc_arena.stack_play import list_logged_services, renew_services
 from loc_arena.task import SNAPSHOT_FILE, TOOLS_URL_VARIABLE, ClockReading, SnapshotFile, resolve_scenario
 from loc_arena.tool_records import ToolRecord
 from loc_arena.tools_gateway import (
@@ -1323,11 +1323,9 @@ def test_no_container_of_the_project_mounts_the_docker_socket(stack_run: StackRu
             GATEWAY_SERVICE,
             "collector",
             EPISODE_SERVICE,
-            TOOLS_GATEWAY_SERVICE,
-            *(live.name for live in CONFIG.live_services),
+            *list_logged_services(CONFIG),  # the live services, Phoenix's guard, the fleet, the tools gateway
             *(sandbox_service(agent.id) for agent in CONFIG.agents),
             *list_runner_services(CONFIG),
-            *list_node_services(CONFIG),
         ]
     }
 
