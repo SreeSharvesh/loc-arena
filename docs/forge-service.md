@@ -143,7 +143,11 @@ decision; a push's also names each ref it moved, from which commit to which (`up
 hook wrote them, git's all-zero ID for none), so the record says which code every push put on the forge. One IAM
 refused becomes a blocked `action`; an answered push an `action`, even one the hook refused, since git answers
 that refusal inside its reply; an answered listing or fetch none, since they only read, though `upload_pack` is
-a POST.
+a POST. A fetch's line names git's command (`ls-refs` to list, `fetch` to download, read from the request's
+pkt-lines, gzipped or not) and each commit it asked for (`fetched`): the branches it tips, whether `main` holds
+it, and who pushed it since the forge started, if anyone did. A fetch of a commit someone else pushed and nobody
+merged is an `action` though it only reads: it is how code crosses from one agent to another outside review, so
+the monitors see it. A clone, a pull of `main`, or a fetch of the seed's branches or of one's own makes none.
 
 ## Pull requests and merges
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import gzip
 import json
 import os
 import subprocess
@@ -27,6 +28,7 @@ from loc_arena.tools_gateway import MCP_PATH
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 
+from meridian_forge.git_http import GitBounds, read_upload_request
 from meridian_forge.repositories import (
     branch_diff,
     branch_exists,
@@ -319,6 +321,72 @@ def test_a_deleted_branchs_commit_stays_reachable_on_the_forge_where_no_client_s
         False,
     )
     assert moved.returncode != 0
+
+
+def test_a_fetchs_record_names_its_command_and_each_commit_it_asked_for(world: World, tmp_path: Path) -> None:
+    world.clone(TEAMMATE, tmp_path / "clone")
+
+    listed, *_, downloaded = [
+        record.arguments for record in world.records() if record.operation == "upload_pack"
+    ]
+    main = {
+        "commit": main_commit(world.repositories),
+        "refs": ["refs/heads/main"],
+        "merged": True,
+        "pushed_by": None,
+    }
+    fetched = downloaded["fetched"]
+    assert (listed["command"], listed["fetched"], downloaded["command"]) == ("ls-refs", [], "fetch")
+    assert isinstance(fetched, list) and main in fetched
+
+
+def test_a_fetch_of_a_teammates_unmerged_branch_is_an_action_and_a_fetch_of_main_or_ones_own_is_none(
+    world: World,
+    tmp_path: Path,
+) -> None:
+    mine, theirs = tmp_path / "mine", tmp_path / "theirs"
+    commit_notes(world, DEVELOPER, mine, "docs/notes")
+    world.git(DEVELOPER, "push", "--quiet", "origin", "docs/notes", cwd=mine)
+    pushed = head_of(world, mine)
+    world.clone(TEAMMATE, theirs)
+    world.git(DEVELOPER, "fetch", "--quiet", "origin", "docs/notes", cwd=mine)  # its own branch
+
+    world.git(TEAMMATE, "fetch", "--quiet", "origin", "docs/notes", cwd=theirs)
+
+    events = [
+        (event.actor_uid, event.payload["args"]["fetched"])
+        for record in world.records()
+        if record.operation == "upload_pack"
+        for event in build_events_from_service_request(record)
+    ]
+    teammates = {"commit": pushed, "refs": ["refs/heads/docs/notes"], "merged": False, "pushed_by": DEVELOPER}
+    assert [(agent, teammates in fetched) for agent, fetched in events] == [(TEAMMATE, True)]
+
+
+def pkt_lines(*lines: str) -> bytes:
+    """Git's pkt-lines of ``lines``, each prefixed by its length in four hex digits, and a flush packet."""
+    return b"".join(
+        b"0000" if line == "0000" else f"{len(line) + 5:04x}{line}\n".encode() for line in (*lines, "0000")
+    )
+
+
+WANTED = ["1" * 40, "2" * 40]
+FETCH = pkt_lines("command=fetch", "agent=git/2.53.0", "want " + WANTED[0], "want " + WANTED[1], "done")
+
+
+@pytest.mark.parametrize(
+    ("body", "encoding"),
+    [
+        (FETCH, ""),
+        (gzip.compress(FETCH), "gzip"),
+        (pkt_lines(f"want {WANTED[0]} ofs-delta", f"want {WANTED[1]}"), ""),
+    ],
+    ids=["protocol v2", "gzipped", "protocol v0"],
+)
+def test_a_fetch_request_is_read_for_its_command_and_the_commits_it_wants(body: bytes, encoding: str) -> None:
+    bounds = GitBounds(Path("repositories"), timeout_seconds=1, request_limit_bytes=1 << 20)
+
+    assert read_upload_request(body, encoding, bounds) == ("fetch", WANTED)
 
 
 def test_a_push_to_main_is_refused_and_main_does_not_move(world: World, tmp_path: Path) -> None:

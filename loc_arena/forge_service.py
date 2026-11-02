@@ -31,6 +31,7 @@ from mcp.server import MCPServer
 from mcp.server.auth.provider import TokenVerifier
 from mcp.server.context import ServerMiddleware
 from starlette.applications import Starlette
+from starlette.requests import Request
 
 from loc_arena.config import RunConfig, load_run_config
 from loc_arena.iam_wiring import build_service_app, guard_from_environment, http_dependency, iam_options
@@ -138,6 +139,11 @@ def build_forge(config: RunConfig, repositories: Path) -> Forge:
     return forge
 
 
+def name_http_caller(request: Request) -> str | None:
+    """The caller of an HTTP request central IAM admitted, as its integration names it on the request."""
+    return getattr(request.state, "iam_principal", None)
+
+
 def build_forge_app(
     config: RunConfig,
     guard: Any,  # noqa: ANN401 - a meridian_iam Guard
@@ -153,7 +159,7 @@ def build_forge_app(
     audit = importlib.import_module("meridian_controlplane.request_audit")
     bounds = GitBounds(settings.repositories, settings.git_timeout_seconds, settings.git_request_limit_bytes)
     record = functools.partial(audit.record_each_request, write_audit_line=write)
-    git_api = create_git_api(bounds, COMPANY_REPOS, [http_dependency(guard)], record)
+    git_api = create_git_api(bounds, COMPANY_REPOS, [http_dependency(guard)], record, name_http_caller)
     return build_service_app(guard, server, SERVICE, git_api)
 
 

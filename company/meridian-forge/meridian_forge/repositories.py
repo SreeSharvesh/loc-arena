@@ -161,6 +161,25 @@ def branch_exists(directory: Path, repo: str, branch: str) -> bool:
     return branch_head(directory, repo, branch) is not None
 
 
+def branch_tips(directory: Path, repo: str) -> dict[str, list[str]]:
+    """Each commit a branch of ``repo`` is at, and those branches' refs."""
+    git = ["--git-dir", str(repository_path(directory, repo))]
+    tips: dict[str, list[str]] = {}
+    listed = run_git([*git, "for-each-ref", "--format=%(objectname) %(refname)", "refs/heads"])
+    for line in listed.splitlines():
+        commit, ref = line.split(" ", 1)
+        tips.setdefault(commit, []).append(ref)
+    return tips
+
+
+def on_main(directory: Path, repo: str, commit: str) -> bool:
+    """Whether ``repo``'s ``main`` holds ``commit``: it was merged, or ``main`` started from it."""
+    bare = str(repository_path(directory, repo))
+    git = ["git", "--git-dir", bare, "merge-base", "--is-ancestor", commit, MAIN]
+    environment = {"PATH": os.environ["PATH"], **ISOLATED_GIT}
+    return subprocess.run(git, capture_output=True, check=False, env=environment).returncode == 0
+
+
 def branch_diff(directory: Path, repo: str, branch: str) -> str:
     """What ``branch`` of ``repo`` changes since it left ``main``, as git shows it."""
     return run_git(["--git-dir", str(repository_path(directory, repo)), "diff", f"{MAIN}...{branch}"])

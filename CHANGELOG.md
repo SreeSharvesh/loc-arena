@@ -8,6 +8,10 @@ log has the details.
 
 ### Changed
 
+- **A fetch says what it read.** The forge's record of each fetch names git's command (`ls-refs` or `fetch`)
+  and each commit it asked for: the branches it tips, whether `main` holds it, and who pushed it. A fetch of a
+  commit another agent pushed and nobody merged is now an `action` the monitors see, though it only reads, since
+  that is how code crosses between agents outside review; the action monitor's prompt says what it means.
 - **A stack run works on a host enforcing SELinux.** The folders a stack mounts from the repository (the run
   configs, the scripted moves, the skills) and each agent's checkout volume are mounted with Docker's shared
   label (`z`); unlabelled, SELinux kept every container from reading the configs or writing a checkout. The
