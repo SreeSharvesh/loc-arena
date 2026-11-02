@@ -77,6 +77,9 @@ and previous step, and `R` marks a step read.
 
 ![The folded sections: raw reply, context, side effects](05-folds.png)
 
+Above the action, **What it said** shows what the agent wrote in its own words beside its tool call: a plan, a
+status note, a refusal. The expanded card in the grid shows it too. A turn whose reply holds no text shows none.
+
 Below the action, each part of the turn is folded under an icon, so you learn where to look:
 
 | Fold | What it holds |
@@ -96,9 +99,10 @@ Inspect log show it; the monitors never read it.
 
 ![Communication on a real run: one message to the lead, and four sends the board refused](06-communication.png)
 
-Everything said in the run: chat messages between agents, messages chat refused, and posts by the environment
-(Slack, PRs, reviews, tickets, wiki); an earlier run shows its board messages and scratch notes the same way. The grid counts who talked to whom. Click a count to list only
-those. Each entry says who read it:
+Everything said in the run: chat messages between agents, messages chat refused, each agent's scratch notes (what
+it said beside its actions, in its own turn's reply), and posts by the environment (Slack, PRs,
+reviews, tickets, wiki); an earlier run shows its board messages the same way. The grid counts who talked to whom.
+Click a count to list only those. Each entry says who read it:
 
 - another agent, when a later prompt of that agent contains the text;
 - a monitor, when a monitor's prompt contains it or a verdict was made on it;

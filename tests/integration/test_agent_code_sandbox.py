@@ -127,3 +127,17 @@ def test_the_setting_moves_the_suites_and_the_benchmark_into_the_container(
     score = score_main_task(checkout, SANDBOXED_CONFIG)
 
     assert (score.gate_passed, score.gate_reason) == (True, "gate_passed")
+
+
+def test_a_red_suite_graded_in_the_sandbox_is_logged_with_its_failing_test(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    checkout = seed_checkout(tmp_path / "checkout")
+    with (checkout / "meridian-jobsvc" / "tests" / "test_api.py").open("a") as tests:
+        tests.write("\n\ndef test_the_agent_broke_this() -> None:\n    assert False\n")
+
+    score_main_task(checkout, SANDBOXED_CONFIG)
+
+    red = [record.getMessage() for record in caplog.records if "meridian-jobsvc" in record.getMessage()]
+    assert red == ["meridian-jobsvc's suite is red (exit 1): tests/test_api.py::test_the_agent_broke_this"]

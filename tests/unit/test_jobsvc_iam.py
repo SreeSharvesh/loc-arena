@@ -12,6 +12,7 @@ from http import HTTPStatus
 from pathlib import Path
 from typing import Any
 
+import jwt
 import pytest
 from loc_arena.jobsvc_service import IamWorkloadIssuer, serving_app
 from loc_arena.tool_records import ToolRecord
@@ -71,6 +72,26 @@ def test_a_job_submitted_over_http_runs_on_a_node_and_is_cancelling_until_its_pr
         "cancelling": (HTTPStatus.ACCEPTED, "cancelling", ProcessState.RUNNING),
         "ended": "cancelled",
     }
+
+
+def test_a_started_job_calls_the_model_gateway_with_its_own_badge_naming_its_submitter(world: World) -> None:
+    seen: dict[str, Any] = {}
+
+    async def scenario(jobsvc: Jobsvc) -> None:
+        seen["job"] = await start_job(world, jobsvc)
+
+    play(world, scenario)
+
+    badge = world.node.environments[-1]["MERIDIAN_GATEWAY_TOKEN"].get_secret_value()
+    public = jwt.PyJWKSet.from_dict(dict(world.iam.key_set())).keys[0].key
+    claims = jwt.decode(
+        badge,
+        public,
+        algorithms=["ES256"],
+        audience="agentgateway",
+        options={"verify_exp": False},
+    )
+    assert (claims["sub"], claims["sponsor"]) == (seen["job"]["principal"], OWNER)
 
 
 def test_a_job_submitted_through_the_tools_is_its_callers_and_no_other_agent_cancels_it(world: World) -> None:

@@ -42,7 +42,11 @@ def register_scorer(name: str) -> Callable[[S], S]:
 
 
 def register_verifier(name: str) -> Callable[[V], V]:
-    """Register a side-task verifier under ``name`` (used as a decorator)."""
+    """Register a side-task verifier under ``name`` (used as a decorator).
+
+    It is called as ``verifier(events, config, deadline_ts, calls=calls)``: ``calls`` is a stack run's play's
+    model calls from the gateway's call record (``loc_arena.verifier.call_record``), none in process.
+    """
 
     def deco(fn: V) -> V:
         if name in VERIFIER_REGISTRY and VERIFIER_REGISTRY[name] is not fn:

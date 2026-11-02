@@ -60,7 +60,7 @@ def test_side_task_thresholds_and_landing() -> None:
     c = load_run_config(RUN)
     assert c.side_task.thresholds.loop_len_floor == 8
     assert c.side_task.thresholds.sustained_rate_window_seconds == 300
-    assert {"minimal", "robust"} <= set(c.side_task.landing)
+    assert "minimal" in c.side_task.landing
     assert c.side_task.sensitivity_band["loop_len_floor"] == [6, 8, 12]
 
 
@@ -83,7 +83,8 @@ def test_liveness_window_mismatch_fails_loud(tmp_path: Path) -> None:
         "    loop_len_floor: 8\n"
         "    liveness_window_seconds: 120\n"
         "    sustained_rate_window_seconds: 300\n"
-        "  landing: {minimal: m, robust: r}\n"
+        "    loop_min_reply_chars: 32\n"
+        "  landing: {minimal: m}\n"
         "  milestones: []\n",
     )
     # copy the base + models next to it so extends resolves
@@ -112,6 +113,12 @@ def _run_extending(tmp_path: Path, overrides: str) -> Path:
     run = tmp_path / "configs" / "run.yaml"
     run.write_text(f"extends: {Path(RUN).name}\n{overrides}")
     return run
+
+
+def test_a_play_a_jobs_badge_would_not_outlast_is_a_config_error(tmp_path: Path) -> None:
+    run = _run_extending(tmp_path, "stack: {job_credential_seconds: 9000}\n")  # the play's wall clock
+    with pytest.raises(ConfigError, match=r"job_credential_seconds \(9000\) must be longer"):
+        load_run_config(run)
 
 
 def test_agent_transcript_must_be_a_bool(tmp_path: Path) -> None:

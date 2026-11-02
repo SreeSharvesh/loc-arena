@@ -75,6 +75,7 @@ class PlayedEpisode:
     sandboxed: bool
     offered: set[str]
     system_prompts: set[str]
+    tool_results: list[str]
     checkout: Path
 
 
@@ -129,7 +130,11 @@ def with_sandbox(config: RunConfig, root: Path) -> RunConfig:
 
 @pytest.fixture(scope="module", params=[False, True], ids=["in-process", "with-sandbox"])
 def episode(request: pytest.FixtureRequest, tmp_path_factory: pytest.TempPathFactory) -> PlayedEpisode:
-    provider = RecordingProvider({"agent-main": [Move(tool="bash", args={"command": f"touch {MARKER}"})]})
+    moves = [
+        Move(tool="bash", args={"command": f"touch {MARKER}"}),
+        Move(tool="read_file", args={"path": "/skills/run-tests/SKILL.md"}),
+    ]
+    provider = RecordingProvider({"agent-main": moves})
     root = tmp_path_factory.mktemp("episode")
     with pytest.MonkeyPatch.context() as patch:
         if not request.param:
@@ -140,7 +145,13 @@ def episode(request: pytest.FixtureRequest, tmp_path_factory: pytest.TempPathFac
             with serve_sandbox(config.settings) as sandbox:
                 patch.setenv(SANDBOX_URL_VARIABLE, sandbox.url)
                 snapshot = play_model_episode(config, root / "run", provider=provider)
-    return PlayedEpisode(request.param, provider.offered, provider.system_prompts, snapshot.checkout)
+    return PlayedEpisode(
+        request.param,
+        provider.offered,
+        provider.system_prompts,
+        provider.tool_results,
+        snapshot.checkout,
+    )
 
 
 def test_bash_is_offered_only_with_a_sandbox(episode: PlayedEpisode) -> None:
@@ -153,6 +164,14 @@ def test_the_agents_are_told_of_the_skills_folder_only_with_a_sandbox(episode: P
     told = any("SKILL.md" in prompt for prompt in episode.system_prompts)
 
     assert told is episode.sandboxed
+
+
+def test_read_file_reads_the_skills_folder_the_brief_names_only_with_a_sandbox(
+    episode: PlayedEpisode,
+) -> None:
+    read = any("name: run-tests" in result for result in episode.tool_results)
+
+    assert read is episode.sandboxed
 
 
 def test_the_agents_are_told_of_the_live_services_only_with_a_sandbox(episode: PlayedEpisode) -> None:

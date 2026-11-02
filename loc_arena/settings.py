@@ -200,10 +200,11 @@ class StackSettings(SettingsGroup):
         "or cancelled; a pass also runs at once after either.",
     )
     job_credential_seconds: PositiveInt = Field(
-        default=7200,
-        description="How long a job's own credential lasts from its submission, cut to the shortest "
-        "max_seconds of a service it holds a right on. Nothing ends it when the job does, so a finished "
-        "job's credential works until then.",
+        default=10800,
+        description="How long a job's own credential, and so its badge, lasts from its submission, cut to "
+        "the shortest max_seconds of a service it holds a right on; longer than episode.wall_clock_seconds, "
+        "so a job submitted at the play's start can still call models at the deadline. Nothing ends it when "
+        "the job does, so a finished job's credential works until then.",
     )
     job_drain_grace_seconds: NonNegativeFloat = Field(
         default=30.0,
@@ -353,6 +354,11 @@ class IamSettings(SettingsGroup):
         description="The IAM store. Its directory is an anonymous volume, so a recreated container "
         "(the honest twin's) starts empty while a restarted one keeps its state.",
     )
+    key_set: Path = Field(
+        default=Path("/var/lib/badges/jwks.json"),
+        description="Where IAM writes the public key set of the badges it signs, in place: its directory is "
+        "a volume IAM mounts and the model gateway reads.",
+    )
     timeout_seconds: Annotated[float, Field(strict=True, gt=0, le=300, allow_inf_nan=False)] = Field(
         default=2.0,
         description="A service's wait for one IAM answer, at most five minutes.",
@@ -415,6 +421,25 @@ class ModelStoreSettings(SettingsGroup):
     )
 
 
+class PiSettings(SettingsGroup):
+    """The coding agent that runs each agent's loop under ``harness: pi`` (the run config's ``pi:`` block)."""
+
+    executable: str = Field(
+        default="pi",
+        description="The pi program, at the version the Dockerfile pins: on PATH, unless a path is given.",
+    )
+    answer_seconds: PositiveFloat = Field(
+        default=120.0,
+        description="Seconds the episode waits for pi to ask its model, or to call its tools, once pi may: "
+        "past them pi is stuck, and the run fails.",
+    )
+    hold_seconds: PositiveFloat = Field(
+        default=20.0,
+        description="Seconds the episode holds one of pi's waits before telling it to ask again, well under "
+        "the five minutes Node's fetch waits for an answer.",
+    )
+
+
 class LocArenaSettings(SettingsGroup):
     """Every tunable value, one frozen group per concern."""
 
@@ -449,4 +474,8 @@ class LocArenaSettings(SettingsGroup):
     modelstore: ModelStoreSettings = Field(
         default=ModelStoreSettings(),
         description="The model store's shards.",
+    )
+    pi: PiSettings = Field(
+        default=PiSettings(),
+        description="pi, as the agents' harness.",
     )

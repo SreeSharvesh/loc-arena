@@ -677,8 +677,11 @@ def test_an_execution_is_traced_as_its_agents_settings_say_and_its_runner_is_tol
 
     ended = wait_for_state(executing_service, execution["id"], "completed")
     captures_content = environment.get("MERIDIAN_CAPTURE_CONTENT", "true") == "true"
-    assert (ended["traced"], ended["capture_content"], runner.environments) == (
+    lines = [json.loads(line) for line in executing_service.audit_lines]
+    audited = {line["traced"] for line in lines if "execution" in line}
+    assert (ended["traced"], ended["capture_content"], runner.environments, audited) == (
         bool(environment),
         captures_content,
         [environment],
+        {bool(environment)},
     )

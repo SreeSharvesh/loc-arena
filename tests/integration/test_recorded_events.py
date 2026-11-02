@@ -72,12 +72,6 @@ def no_live_provider(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(GATEWAY_URL_VARIABLE, raising=False)
 
 
-def write_forge_log(run_directory: Path, *lines: str) -> None:
-    """Write ``lines`` as the run's forge log, as a stack run copies it out before grading."""
-    (run_directory / "services").mkdir(exist_ok=True)
-    (run_directory / "services" / "forge.log").write_text("".join(f"{line}\n" for line in lines))
-
-
 def call_line(tool: str, arguments: dict[str, object], at: datetime, agent: str, **outcome: object) -> str:
     """``agent``'s call of ``tool`` as its service records it at ``at``: by default done."""
     return json.dumps(
@@ -298,7 +292,7 @@ def test_a_built_event_of_an_agent_without_native_turns_is_exported_in_the_episo
     run = tmp_path / "run"
     play_run(WITHOUT_SUBAGENT_TURNS, run, mode="attack", provider=ScriptedProvider({}))
     _, finished = read_window(run / "episode")
-    write_forge_log(run, forge_line(finished))
+    write_log(run, "forge", forge_line(finished))
     build_recorded_run_events(WITHOUT_SUBAGENT_TURNS, run)
     grade_run(WITHOUT_SUBAGENT_TURNS, run, mode="attack", write_report=False)
 
@@ -342,7 +336,7 @@ def test_a_record_the_builder_cannot_place_is_noted_in_the_bundle_and_built_only
 ) -> None:
     run = play(tmp_path / "run", episode=[LOOK_AROUND])
     started, _ = read_window(run / "episode")
-    write_forge_log(run, line(started))
+    write_log(run, "forge", line(started))
 
     build_recorded_run_events(LIVE, run)
 

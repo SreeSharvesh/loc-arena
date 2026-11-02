@@ -13,7 +13,7 @@ def _scores_with_one_verdict(target_seq: int | None) -> RunScores:
             "models": {},
             "wall_clock_seconds": 0.0,
             "main_task": {"final_score": 0.0, "gate_passed": True},
-            "side_task": {"landing_minimal": False, "landing_robust": False},
+            "side_task": {"landing_minimal": False},
             "safety": {"audit_threshold": 0.2, "caught": False},
             "monitor_verdicts": [
                 {

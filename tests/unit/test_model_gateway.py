@@ -51,14 +51,14 @@ def render(settings: LocArenaSettings | None = None) -> ComposeDocument:
     return render_compose(config, REPOSITORY, "a-run", [])
 
 
-def admitted(environment: dict[str, str]) -> set[tuple[str, str, str]]:
-    """Every key the gateway config admits on any route: (key hash, caller, role)."""
+def admitted(environment: dict[str, str]) -> set[tuple[str, str]]:
+    """Every key the gateway config admits on any route: (key hash, caller)."""
     config = yaml.safe_load(environment[MODEL_GATEWAY_CONFIG_VARIABLE])
     routes = config["binds"][0]["listeners"][0]["routes"]
     return {
-        (key["keyHash"], key["metadata"]["caller"], key["metadata"]["role"])
+        (key["keyHash"], key["metadata"]["caller"])
         for route in routes
-        for key in route["policies"]["apiKey"]["keys"]
+        for key in route["policies"].get("apiKey", {}).get("keys", [])
     }
 
 
@@ -100,19 +100,18 @@ def test_a_play_admits_each_caller_by_the_hash_of_its_token_and_holds_no_token()
         LocArenaSettings(),
         HELD,
         {"sandbox-agent-main": "sandbox-token"},
-        {"runner-1": "runner-token"},
         "attack",
+        badges=True,
     )
 
     keys = admitted(environment)
 
     assert keys == {
-        (sha256("episode-token"), "episode", "caller"),
-        (sha256("host-token"), "host", "caller"),
-        (sha256("sandbox-token"), "sandbox-agent-main", "caller"),
-        (sha256("runner-token"), "runner-1", "runner"),
+        (sha256("episode-token"), "episode"),
+        (sha256("host-token"), "host"),
+        (sha256("sandbox-token"), "sandbox-agent-main"),
     }
-    tokens = ("episode-token", "host-token", "sandbox-token", "runner-token")
+    tokens = ("episode-token", "host-token", "sandbox-token")
     assert [token for token in tokens if token in environment[MODEL_GATEWAY_CONFIG_VARIABLE]] == []
 
 
@@ -148,6 +147,17 @@ def test_a_streamed_reply_is_complete_only_when_it_reached_its_end(reply: bytes,
     call = convert_record(record)
 
     assert (call.response, call.complete) == (reply.decode(), complete)
+
+
+def test_a_copied_call_keeps_the_play_it_was_made_in() -> None:
+    record = OtlpLogRecord(
+        observedTimeUnixNano=0,
+        attributes=[OtlpAttribute(key="play", value=OtlpValue(stringValue="twin"))],
+    )
+
+    call = convert_record(record)
+
+    assert call.play == "twin"
 
 
 def test_a_record_short_of_the_gateways_log_is_not_copied(tmp_path: Path) -> None:
@@ -223,7 +233,7 @@ def test_the_gateway_and_the_collector_read_their_configs_from_their_secrets() -
 def test_the_gateway_listens_on_its_port_alone_on_ipv4_with_no_admin_stats_or_readiness_listener() -> None:
     settings = LocArenaSettings()
 
-    environment = issue_gateway_secrets(settings, HELD, {}, {}, "attack")
+    environment = issue_gateway_secrets(settings, HELD, {}, "attack", badges=False)
 
     document = yaml.safe_load(environment[MODEL_GATEWAY_CONFIG_VARIABLE])
     ports = [bind["port"] for bind in document["binds"]]

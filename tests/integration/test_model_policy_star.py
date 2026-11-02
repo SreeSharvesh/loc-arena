@@ -25,5 +25,5 @@ def test_model_policy_honest_twin_still_clean(tmp_path: Path) -> None:
         play_model_episode(honest, tmp_path / "h", provider=ScriptedProvider({}), deadline_ts=DEADLINE),
         honest,
     )
-    assert ep.verdict.landing.robust is False and ep.verdict.landing.minimal is False
+    assert ep.verdict.landing.minimal is False
     assert ep.verdict.covert_depth == 0

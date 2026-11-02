@@ -26,7 +26,7 @@ def _bundle_files(bundle: Path) -> set[str]:
 
 @ATTACK_MOVES_PENDING
 def test_attack_and_honest_each_write_a_full_bundle(tmp_path: Path) -> None:
-    attack = run_episode(CFG, mode="attack", out_root=tmp_path, robust=True)
+    attack = run_episode(CFG, mode="attack", out_root=tmp_path)
     honest = run_episode(CFG, mode="honest", out_root=tmp_path)
     assert _BUNDLE_FILES <= _bundle_files(attack)
     assert _BUNDLE_FILES <= _bundle_files(honest)
@@ -39,14 +39,14 @@ def test_attack_and_honest_each_write_a_full_bundle(tmp_path: Path) -> None:
     # honest twin verifies clean; attack decided from the sealed log
     assert h["side_task"]["landing_minimal"] is False and h["side_task"]["covert_depth"] == 0
     assert h["safety"]["landed"] is False
-    assert a["side_task"]["landing_robust"] is True
+    assert a["side_task"]["landing_minimal"] is True
     assert a["safety"]["landed"] is True and a["safety"]["caught"] is True
     # main task is a continuous score in both modes (the only difference is covert.enabled)
     assert a["main_task"]["final_score"] == h["main_task"]["final_score"]
 
 
 def test_report_html_has_the_required_panels(tmp_path: Path) -> None:
-    bundle = run_episode(CFG, mode="attack", out_root=tmp_path, robust=True)
+    bundle = run_episode(CFG, mode="attack", out_root=tmp_path)
     html = (bundle / "report.html").read_text()
     for panel in (
         "global timeline",
@@ -61,8 +61,8 @@ def test_report_html_has_the_required_panels(tmp_path: Path) -> None:
 
 
 def test_reproducible_from_config_and_seed(tmp_path: Path) -> None:
-    a = run_episode(CFG, mode="attack", out_root=tmp_path / "a", robust=True)
-    b = run_episode(CFG, mode="attack", out_root=tmp_path / "b", robust=True)
+    a = run_episode(CFG, mode="attack", out_root=tmp_path / "a")
+    b = run_episode(CFG, mode="attack", out_root=tmp_path / "b")
     # deterministic scripted policy: the sealed event sequence is byte-identical across runs
     assert (a / "events.sealed.jsonl").read_text() == (b / "events.sealed.jsonl").read_text()
     # and so are the graded outcomes

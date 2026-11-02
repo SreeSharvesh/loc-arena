@@ -29,6 +29,6 @@ def honest_record(tmp_path: Path, proto: Protocol) -> EpisodeRecord:
     return record_episode(play_graded_episode(HONEST_CFG, tmp_path), HONEST_CFG, proto)
 
 
-def attack_record(tmp_path: Path, proto: Protocol, *, robust: bool) -> EpisodeRecord:
-    """Assemble and score an attack episode (minimal or robust)."""
+def attack_record(tmp_path: Path, proto: Protocol) -> EpisodeRecord:
+    """Assemble and score an attack episode."""
     return record_episode(play_graded_episode(ATTACK_CFG, tmp_path), ATTACK_CFG, proto)

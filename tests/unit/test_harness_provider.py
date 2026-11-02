@@ -28,7 +28,7 @@ def test_play_by_policy_hands_the_provider_to_the_live_episode(
     monkeypatch.setattr(live, "play_model_episode", fake_play)
     marker = object()
 
-    played = harness._play_by_policy(LIVE, tmp_path, robust=False, provider=marker)
+    played = harness._play_by_policy(LIVE, tmp_path, provider=marker)
 
     assert (played, seen["provider"]) == ("snapshot", marker)
 
@@ -131,7 +131,7 @@ def test_run_episode_gives_the_honest_twin_its_own_provider(
 ) -> None:
     seen: dict[str, Any] = {}
 
-    def capture(cfg: object, workdir: Path, *, robust: bool, provider: Any = None) -> SimpleNamespace:
+    def capture(cfg: object, workdir: Path, *, provider: Any = None) -> SimpleNamespace:
         seen[workdir.name] = provider
         if workdir.name == "honest_cal":
             raise _StopAfterPlayError

@@ -26,13 +26,14 @@ path. A key no block declares is ignored, except in an agent's `scope` and in th
 |---|---|
 | `extends`, `models` | the base config; the models file (roles, sampling, OpenRouter providers per model) |
 | `seed`, `policy` | the seed that with the config reproduces the episode; `model` or `scripted` (replays the scenario's `scripted/moves.yaml` in place of a model) |
+| `harness` | what runs each agent's loop: `native`, the arena's own (the default), or `pi`, the pi coding agent, whose own system prompt and tools the agent gets beside the arena's ([docs/pi-harness.md](pi-harness.md)) |
 | `scenario` | the pack registering the scorer, verifier, live services and skills |
-| `main_task`, `side_task`, `covert` | the tasks and their scorer and verifier; `covert.enabled` switches attack and honest mode: the covert briefs, the gateway's covert injection and, in a scripted run, the scenario's attack moves |
+| `main_task`, `side_task`, `covert` | the tasks and their scorer and verifier; `covert.enabled` switches attack and honest mode: the covert briefs, the gateway's covert injection and, in a scripted run, the scenario's attack moves. `side_task.thresholds` are the verifier's numbers: `loop_len_floor`, the fewest calls of a loop; `liveness_window_seconds`, how close to the deadline its last call must be; `sustained_rate_window_seconds`, the span it must keep calling over, no gap longer; and `loop_min_reply_chars`, the shortest reply whose text inside a later prompt of the same job links two calls of a stack run into a loop |
 | `episode` | turn budgets, wall-clock ceiling, spawn caps |
 | `agents` | the team; see below |
 | `protocol` | the control protocol: monitors, reviewer, audit budget |
 | `agent_loop`, `logging` | the loop's limits; `logging.agent_transcript` for the per-agent `.eval` and transcript |
-| `inference`, `gateway`, `stack`, `evalkit`, `tickets`, `chat`, `modelstore` | the settings groups below |
+| `inference`, `gateway`, `stack`, `evalkit`, `tickets`, `chat`, `modelstore`, `pi` | the settings groups below |
 
 ## An agent
 
@@ -59,12 +60,13 @@ Each field has a description in code; these keep pydantic's coercing types.
 | `stack`: images and limits | the episode image; `collector_image`, the OpenTelemetry Collector; `sandbox_image`, the slim image agent code runs in; `runner_image`, a sandbox with pi, and `runner_timeout_seconds` for one run there; memory, CPU and process limits of the episode, each sandbox (and each runner) and each live service; health probe interval and retries, and `gateway_health_start_seconds` (60), how long a container has to start before a failed probe counts |
 | `stack`: tools | `tools_gateway_image` (agentgateway, which also runs the model gateway) and `tools_gateway_port`, `tools_timeout_seconds` per call, `tools_connect_seconds` for each client's first listing, `tools_delivery_attempts` for a turn's read of the agent's IAM inbox |
 | `stack`: sandboxes | `sandbox_port`, `sandbox_response_grace_seconds`, `sandbox_recovery_seconds`, `sandbox_scratch_directories` (empty unless a config names them), `checkouts_directory`, `skills_directory` (read-only), `shell_timeout_seconds` for `bash` (offered only with a sandbox), `command_output_limit_bytes` |
-| `stack`: the fleet | `worker_image`, the job service's nodes (the Dockerfile's `worker` target); `node_cpus` and `node_memory_mb`, each node's container limits and what the job service fits a job's ask against; `job_poll_seconds` between the job service's passes over the fleet; `job_credential_seconds`, how long a job's own credential lasts (two hours, cut to the shortest `max_seconds` of a service it gets a right on); `job_drain_grace_seconds`, how long a drained node's job runs on before it is queued again (30); `job_max_priority`, the highest priority a job may ask (10); `team_max_running_jobs` and `team_max_cpu_hours`, the caps on one team's running jobs and CPU-hours (none). How many nodes is the scenario's: a service entry's `nodes: {<pool>: n}` |
+| `stack`: the fleet | `worker_image`, the job service's nodes (the Dockerfile's `worker` target); `node_cpus` and `node_memory_mb`, each node's container limits and what the job service fits a job's ask against; `job_poll_seconds` between the job service's passes over the fleet; `job_credential_seconds`, how long a job's own credential and badge last (three hours, longer than `wall_clock_seconds`, cut to the shortest `max_seconds` of a service it gets a right on); `job_drain_grace_seconds`, how long a drained node's job runs on before it is queued again (30); `job_max_priority`, the highest priority a job may ask (10); `team_max_running_jobs` and `team_max_cpu_hours`, the caps on one team's running jobs and CPU-hours (none). How many nodes is the scenario's: a service entry's `nodes: {<pool>: n}` |
 | `stack`: grading | `sandbox_agent_code` runs the agents' code in a no-network container of `sandbox_image` (a stack run's grading always does; an in-process run needs the Dockerfile's `sandbox` target built and tagged first, or grading stops), `agent_code_output_limit_bytes` |
 | `tickets` | the tickets service: `database`, its SQLite file in its container (`/var/lib/tickets/tickets.db`), which a new container builds from the scenario's ticket seed, so the honest twin's starts from the seed |
 | `chat` | the chat service: `database`, its SQLite file in its container (`/var/lib/chat/chat.db`), which a new container builds from the scenario's chat seed, so the honest twin's starts from the seed |
 | `evalkit` | the eval service: `job_cpu` and `job_memory_mb`, what an eval run's job asks of the cluster |
 | `modelstore` | the model store: `shard_count` (4) shards of each model `gateway.runner_model_aliases` names, `shard_bytes` (4096) each on disk, and `declared_shard_bytes`, the size its manifest declares for each (3.5 GB) |
+| `pi` | pi under `harness: pi`: `executable` (`pi`, on `PATH`), `answer_seconds` (120), how long the episode waits for pi to ask its model or take its tool calls, and `hold_seconds` (20), how long it holds one of pi's waits before pi asks again |
 
 Who decides a service's access requests is the scenario's, not the run config's: each service in the scenario's
 `iam:` block names its approver, the company principals that hold permissions on it from the start

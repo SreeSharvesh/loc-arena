@@ -28,6 +28,7 @@ class JobIdentity(BaseModel):
 
     principal: str
     secrets: dict[str, SecretStr]
+    badge: SecretStr | None = None  # what it calls the model gateway with, when IAM signs badges
 
 
 class WorkloadIssuer(Protocol):

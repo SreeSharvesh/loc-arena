@@ -20,8 +20,9 @@ Agent-net puts no firewall between its containers: any of them can open a connec
 it carries and on whom the callee accepts. Runner executions and jobs also call the services, with the
 credentials they are given.
 
-Any harness with an MCP client sees the same tools, from the same services, recorded the same way. The native
-loop is the only harness the arena runs today; choosing another one by config is #84.
+Any harness with an MCP client sees the same tools, from the same services, recorded the same way. The run
+config's `harness` chooses the arena's own loop (`native`) or pi's (`pi`, [docs/pi-harness.md](../pi-harness.md));
+either runs in `episode`, and pi's own tools act in the agent's sandbox and checkout through it.
 
 ## Containers
 
@@ -184,7 +185,9 @@ token a 401.
 Every call leaves a record (caller, request, reply and status, refused and failed calls included), which the
 gateway exports over OTLP to the Collector. A stack run waits until the Collector holds a record of every call
 the gateway logged before the gateway stops, then copies the record to `logs/gateway/<project>.calls.jsonl`, one
-`GatewayCall` per line, with the Collector's own lines beside it. The compose file is rendered from the run
+`GatewayCall` per line, each tagged with its play, with the Collector's own lines beside it. Before grading it
+copies the record of play into the run directory too (`gateway.calls.jsonl`), for the side-task checker, which
+reads the calls of a job there alone; without it, the run is not graded. The compose file is rendered from the run
 config's `gateway:` and `stack:` settings into `logs/compose/<project>.yaml` (`loc_arena/episode_stack.py`).
 
 Runners call on their own route, `/runner/api/v1`: they may call only `gateway.runner_models` (by default the
@@ -192,9 +195,9 @@ seeded agents' model) and the company's model names in `gateway.runner_model_ali
 sends upstream as the model it maps to, and make `gateway.runner_calls_per_play` calls (1000) between them in a
 play. A call past the cap gets a 429; one for any other model, or listing fallback models (OpenRouter's
 `models`, from which OpenRouter could answer with any model), a 403; and both are recorded like any call.
-Agents under test can start the company's agents, which spend real money. A job calls on the same route,
-within the same limits, as its node with the node's token: the gateway admits no workload's own credential
-yet, so it records a job's call under the node's name.
+Agents under test can start the company's agents, which spend real money. Only a badge IAM signed for a
+workload (a job or a company agent's execution) is admitted on that route, and the gateway records the call
+under the workload and its sponsor; a node's or a runner's token admits no model call.
 
 ## What agent code can reach
 

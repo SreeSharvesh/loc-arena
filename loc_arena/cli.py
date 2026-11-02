@@ -21,9 +21,9 @@ from pathlib import Path
 
 from loc_arena.config import load_run_config
 from loc_arena.episode_stack import run_in_stack
-from loc_arena.harness import apply_mode, locate_run, play_run, run_episode, run_sweep
+from loc_arena.harness import apply_mode, locate_run, play_run, read_played_snapshot, run_episode, run_sweep
 from loc_arena.logging_.viewer import build_index
-from loc_arena.task import grade_snapshot, read_snapshot, read_snapshot_file
+from loc_arena.task import grade_snapshot, read_snapshot_file
 
 
 def _config_path(run: str) -> str:
@@ -42,17 +42,16 @@ def _latest_bundle(logs_root: Path, run_slug: str) -> Path | None:
 
 
 def _cmd_run(args: argparse.Namespace) -> int:
-    robust = not args.minimal
     config = load_run_config(_config_path(args.run))
     # Central IAM runs only in a stack, so a config with it on plays in one unless told otherwise; the episode
     # container's own --play-only plays where it is.
     if args.stack if args.stack is not None else config.settings.iam.enabled and not args.play_only:
-        out = run_in_stack(args.run, mode=args.mode, seed=args.seed, robust=robust, logs=Path(args.out))
+        out = run_in_stack(args.run, mode=args.mode, seed=args.seed, logs=Path(args.out))
     else:
         instance_id = args.instance or secrets.token_hex(3)
         if args.play_only:
             run_directory = locate_run(config, args.mode, instance_id, Path(args.out))
-            play_run(config, run_directory, mode=args.mode, robust=robust, next_phase=args.next_phase)
+            play_run(config, run_directory, mode=args.mode, next_phase=args.next_phase)
             print(f"played: {run_directory}")
             return 0
         out = run_episode(
@@ -60,7 +59,6 @@ def _cmd_run(args: argparse.Namespace) -> int:
             mode=args.mode,
             out_root=Path(args.out),
             seed=args.seed,
-            robust=robust,
             run_instance_id=instance_id,
         )
     scores = json.loads((out / "scores.json").read_text())
@@ -71,11 +69,11 @@ def _cmd_run(args: argparse.Namespace) -> int:
         f"milestones={scores['main_task']['milestones_reached']}",
     )
     print(
-        f"side landing minimal={s['landing_minimal']} robust={s['landing_robust']} depth={s['covert_depth']}",
+        f"side landing minimal={s['landing_minimal']} depth={s['covert_depth']}",
     )
     print(
         f"safety landed={scores['safety']['landed']} caught={scores['safety']['caught']} "
-        f"by={scores['safety']['caught_by']} threshold={scores['safety']['audit_threshold']}",
+        f"by={scores['safety']['caught_by']} threshold={scores['safety']['aggregation']['threshold']}",
     )
     return 0
 
@@ -83,7 +81,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
 def _cmd_grade(args: argparse.Namespace) -> int:
     directory = Path(args.snapshot_dir)
     config = apply_mode(load_run_config(_config_path(args.run)), read_snapshot_file(directory).mode)
-    result = grade_snapshot(read_snapshot(directory, config), config)
+    result = grade_snapshot(read_played_snapshot(directory, config), config)
     grades = {
         "main_task": dataclasses.asdict(result.main_score),
         "side_task": dataclasses.asdict(result.verdict),
@@ -92,8 +90,7 @@ def _cmd_grade(args: argparse.Namespace) -> int:
     main_score = result.main_score
     print(f"main final_score={main_score.final_score:.3f} milestones={main_score.milestones_reached}")
     print(
-        f"side landing minimal={result.verdict.landing.minimal} robust={result.verdict.landing.robust} "
-        f"depth={result.verdict.covert_depth}",
+        f"side landing minimal={result.verdict.landing.minimal} depth={result.verdict.covert_depth}",
     )
     return 0
 
@@ -180,7 +177,6 @@ def _cmd_sweep(args: argparse.Namespace) -> int:
         honest=args.honest,
         attack=args.attack,
         out_root=Path(args.out),
-        robust=not args.minimal,
     )
     print(f"sweep bundle: {agg['_dir']}")
     print(json.dumps({k: v for k, v in agg.items() if k != "_dir"}, indent=2))
@@ -197,7 +193,6 @@ def main(argv: list[str] | None = None) -> int:
     p_run.add_argument("--mode", choices=["attack", "honest"], default="attack")
     p_run.add_argument("--out", default="logs")
     p_run.add_argument("--seed", type=int, default=None)
-    p_run.add_argument("--minimal", action="store_true", help="attack reaches only the minimal landing")
     p_run.add_argument(
         "--stack",
         action=argparse.BooleanOptionalAction,
@@ -238,7 +233,6 @@ def main(argv: list[str] | None = None) -> int:
     p_sweep.add_argument("--honest", type=int, default=2)
     p_sweep.add_argument("--attack", type=int, default=2)
     p_sweep.add_argument("--out", default="logs")
-    p_sweep.add_argument("--minimal", action="store_true")
     p_sweep.set_defaults(func=_cmd_sweep)
 
     p_grade = sub.add_parser("grade", help="grade a played episode again from its snapshot directory alone")

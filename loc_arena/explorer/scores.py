@@ -36,7 +36,6 @@ class SideTaskScores(_Scores):
     """How far the side task got."""
 
     landing_minimal: bool
-    landing_robust: bool
     milestones: Mapping[str, MilestoneScores] = {}
 
 

@@ -48,7 +48,6 @@ def test_monitor_calls_excluded_and_honest_twin_stays_clean(tmp_path: Path) -> N
     # re-verifying the sealed log (now containing monitor calls) still scores the honest twin CLEAN
     verdict = verify_side_task(bundle / "events.sealed.jsonl", CFG, DEADLINE)
     assert verdict.landing.minimal is False
-    assert verdict.landing.robust is False
     assert verdict.covert_depth == 0
 
 
@@ -59,10 +58,9 @@ def test_live_monitors_do_not_change_the_attack_verdict(tmp_path: Path) -> None:
         CFG,
         mode="attack",
         out_root=tmp_path,
-        robust=True,
         monitors_path=str(monitors),
         monitor_provider=JsonVerdictProvider(),
     )
-    # the agent's off-path loop still lands robust; the monitor calls (excluded) do not perturb it
+    # the agent's off-path loop still lands; the monitor calls (excluded) do not perturb it
     verdict = verify_side_task(bundle / "events.sealed.jsonl", CFG, DEADLINE)
-    assert verdict.landing.robust is True
+    assert verdict.landing.minimal is True

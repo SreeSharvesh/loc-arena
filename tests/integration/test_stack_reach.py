@@ -447,8 +447,8 @@ services = CodeServices(
     stack=config.settings.stack,
     sandboxes=sandboxes,
 )
-bash = lambda command: services.run("bash", {{"command": command, "actor_uid": {AGENT!r}}})["stdout"].strip()
-print(json.dumps({{name: bash(command) for name, command in json.load(sys.stdin).items()}}))
+run = lambda command: services.run("bash", {{"command": command, "actor_uid": {AGENT!r}}})
+print(json.dumps({{n: (r := run(c)).get("stdout", str(r)).strip() for n, c in json.load(sys.stdin).items()}}))
 """
 
 
@@ -753,7 +753,7 @@ class StackRun:
 
     def read_outcome(self, row: str) -> str:
         """The one token the probe of ``row`` printed, in the sandbox or the service container it ran in."""
-        return self.probes[row]["stdout"].strip()
+        return self.probes[row].get("stdout", f"no output: {self.probes[row]}").strip()
 
     def locate(self, agent: str) -> str:
         """The name the notes board records for requests from ``agent``'s sandbox: container and network."""
@@ -933,7 +933,7 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
         **{runner_token_variable(name): secrets.token_urlsafe(32) for name in list_runner_services(CONFIG)},
         **{node_token_variable(name): secrets.token_urlsafe(32) for name in list_node_services(CONFIG)},
         TOOLS_GATEWAY_CONFIG_VARIABLE: render_tools_gateway_config(STACK_CONFIG, tokens, issued, inbox_keys),
-        **issue_gateway_secrets(CONFIG.settings, held, sandboxes, {}, "attack"),
+        **issue_gateway_secrets(CONFIG.settings, held, sandboxes, "attack", badges=True),  # IAM runs here
         iam_bootstrap.BOOTSTRAP_VARIABLE: iam_bootstrap.render_bootstrap(STACK_CONFIG),
         **{
             iam_bootstrap.service_credential_variable(name): secrets.token_urlsafe(32)
@@ -950,7 +950,7 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
             issued,
             inbox_keys,
         ),
-        **issue_gateway_secrets(CONFIG.settings, held, sandboxes, {}, "twin"),
+        **issue_gateway_secrets(CONFIG.settings, held, sandboxes, "twin", badges=True),  # IAM runs here
         iam_bootstrap.BOOTSTRAP_VARIABLE: iam_bootstrap.render_bootstrap(apply_mode(STACK_CONFIG, "honest")),
     }
     call_log = directory / "calls.jsonl"

@@ -86,20 +86,25 @@ def test_a_nodes_token_is_mounted_in_that_node_and_the_job_service_alone(compose
     assert holders == {"node-1", OWNER}
 
 
-def test_a_nodes_jobs_call_the_gateway_as_that_node_on_the_runners_route_for_a_model_it_allows(
+def test_a_nodes_jobs_call_the_runners_route_by_badge_and_the_nodes_token_admits_no_model_call(
     compose: ComposeDocument,
 ) -> None:
     attack, _ = issue_secrets(AURORA)
     settings = NodeServerSettings.model_validate_json(compose["services"]["node-1"]["command"][-1])
 
-    routes = yaml.safe_load(attack[MODEL_GATEWAY_CONFIG_VARIABLE])["binds"][0]["listeners"][0]["routes"]
-    runners = next(route for route in routes if route["name"] == "runners")["policies"]["apiKey"]["keys"]
+    config = attack[MODEL_GATEWAY_CONFIG_VARIABLE]
+    runners = next(
+        route
+        for route in yaml.safe_load(config)["binds"][0]["listeners"][0]["routes"]
+        if route["name"] == "runners"
+    )
     digest = hashlib.sha256(attack[node_token_variable("node-1")].encode()).hexdigest()
     assert (settings.gateway_url, settings.gateway_model) == (
         "http://gateway:8080/runner/api/v1",
         "deepseek/deepseek-v4.1-flash",
     )
-    assert {"keyHash": f"sha256:{digest}", "metadata": {"caller": "node-1", "role": "runner"}} in runners
+    assert runners["policies"]["authorization"]["rules"][0]["allow"].startswith("has(jwt.sub) && ")
+    assert digest not in config
 
 
 def test_each_play_gives_every_node_a_new_token() -> None:

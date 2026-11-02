@@ -14,15 +14,22 @@ import os
 import re
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, NamedTuple, cast
 
-from sandbox_server.wire import CommandRequest
+from sandbox_server.wire import CommandRequest, CommandResult
 
 from loc_arena.sandbox import SandboxClient, SandboxError
 from loc_arena.settings import StackSettings
 
 _MAX_READ = 200_000  # cap a read so a huge file can't blow the context
 _MAX_MATCHES = 200
+
+
+class SkillsFolder(NamedTuple):
+    """Where the sandboxes mount the skills (``mounted``), and the folder holding them here (``source``)."""
+
+    mounted: Path
+    source: Path
 
 
 class CodeServices:
@@ -37,16 +44,19 @@ class CodeServices:
         repos: list[str],
         stack: StackSettings,
         sandboxes: Mapping[str, SandboxClient] | None = None,
+        skills: SkillsFolder | None = None,
     ) -> None:
         """Act on ``checkout``, whose ``repos`` are importable, under the ``stack`` settings.
 
         ``sandboxes``, each agent's by its id, are given only in the episode container: an agent's code then
-        runs in its own, ``bash`` included. Without them, ``bash`` is refused.
+        runs in its own, ``bash`` included. Without them, ``bash`` is refused. ``read_file`` and ``list_dir``
+        also read the ``skills`` folder.
         """
         self._checkout = checkout.resolve()
         self._repos = list(repos)
         self._stack = stack
         self._sandboxes = sandboxes
+        self._skills = skills._replace(source=skills.source.resolve()) if skills else None
 
     def _resolve(self, rel: str) -> Path:
         """Resolve ``rel`` under the checkout, refusing any path that escapes it (workspace confinement)."""
@@ -54,6 +64,14 @@ class CodeServices:
         if p != self._checkout and self._checkout not in p.parents:
             raise ValueError(f"path escapes the checkout: {rel}")
         return p
+
+    def _resolve_read(self, rel: str) -> Path:
+        """Resolve ``rel`` for a read: inside the skills folder when it names one, else under the checkout."""
+        if self._skills and Path(rel).is_relative_to(self._skills.mounted):
+            p = (self._skills.source / Path(rel).relative_to(self._skills.mounted)).resolve()
+            if p == self._skills.source or self._skills.source in p.parents:
+                return p
+        return self._resolve(rel)
 
     def _pythonpath(self) -> str:
         """The ``PYTHONPATH`` that makes the seven repos importable: each repo dir under the checkout."""
@@ -68,10 +86,13 @@ class CodeServices:
             return {"error": f"bad args for {tool}: {exc}", "tool": tool}
         except SandboxError as exc:  # agent code can kill its own sandbox: the episode plays on
             return {"error": str(exc), "tool": tool}
+        # a path the filesystem refuses, as a name too long: an error result, with no host path in it
+        except OSError as exc:
+            return {"error": f"{tool} failed: {exc.strerror}", "tool": tool}
 
     # --- code tools ----------------------------------------------------------------------------------
     def _t_read_file(self, args: dict[str, Any]) -> dict[str, Any]:
-        p = self._resolve(str(args.get("path", "")))
+        p = self._resolve_read(str(args.get("path", "")))
         if not p.is_file():
             return {"error": "not a file", "path": str(args.get("path", ""))}
         text = p.read_text(errors="replace")
@@ -97,7 +118,7 @@ class CodeServices:
         return {"path": args["path"], "replaced": count}
 
     def _t_list_dir(self, args: dict[str, Any]) -> dict[str, Any]:
-        p = self._resolve(str(args.get("path", "")))
+        p = self._resolve_read(str(args.get("path", "")))
         if not p.is_dir():
             return {"error": "not a directory", "path": args.get("path", "")}
         entries = [
@@ -131,23 +152,53 @@ class CodeServices:
 
     # --- shell ---------------------------------------------------------------------------------------
     def _t_bash(self, args: dict[str, Any]) -> dict[str, Any]:
-        """Run ``bash -c <command>`` in the checkout, in the agent's sandbox; a timeout kills its session.
-
-        Not a login shell: Debian's ``/etc/profile`` would reset ``PATH`` and drop the image's virtualenv.
-        """
+        """Run ``bash -c <command>`` in the checkout, in the agent's sandbox; a timeout kills its session."""
         if self._sandboxes is None:
             return {"error": "bash runs only in a stack run's sandbox", "tool": "bash"}
-        agent = str(args["actor_uid"])
-        if agent not in self._sandboxes:
-            raise SandboxError(f"{agent} has no sandbox, so its command did not run")
         timeout = self._stack.shell_timeout_seconds
-        request = CommandRequest(
-            argv=["bash", "-c", str(args["command"])],
-            directory=self._checkout,
-            timeout_seconds=timeout,
-            environment={"PYTHONPATH": self._pythonpath()},
-        )
-        res = self._sandboxes[agent].run(request)
+        res = self._run_in_sandbox(str(args["actor_uid"]), str(args["command"]), self._checkout, timeout)
         if res.returncode is None:
             return {**res.model_dump(), "error": f"timed out after {timeout:g} seconds"}
         return res.model_dump()
+
+    def _run_in_sandbox(self, agent: str, command: str, directory: Path, timeout: float) -> CommandResult:
+        """Run ``command`` in ``agent``'s sandbox.
+
+        Not a login shell: Debian's ``/etc/profile`` would reset ``PATH`` and drop the image's virtualenv.
+        """
+        if self._sandboxes is None or agent not in self._sandboxes:
+            raise SandboxError(f"{agent} has no sandbox, so its command did not run")
+        request = CommandRequest(
+            argv=["bash", "-c", command],
+            directory=directory,
+            timeout_seconds=timeout,
+            environment={"PYTHONPATH": self._pythonpath()},
+        )
+        return self._sandboxes[agent].run(request)
+
+    # --- pi's operations: what pi's own tools do to a file, or run, each at an absolute path ----------
+    def read_bytes(self, path: str) -> bytes:
+        """The bytes of the file at ``path``, in the checkout or the skills folder."""
+        return self._resolve_read(path).read_bytes()
+
+    def check_readable(self, path: str) -> None:
+        """Raise ``FileNotFoundError`` unless ``path``, in the checkout or the skills folder, is a file."""
+        if not self._resolve_read(path).is_file():
+            raise FileNotFoundError(f"no such file: {path}")
+
+    def write_text(self, path: str, content: str) -> None:
+        """Write ``content`` to the file at ``path`` in the checkout."""
+        self._resolve(path).write_text(content)
+
+    def make_directory(self, path: str) -> None:
+        """Make the directory ``path`` in the checkout, and its parents."""
+        self._resolve(path).mkdir(parents=True, exist_ok=True)
+
+    def command_limit(self, timeout: float | None) -> float:
+        """How long a command asked to run within ``timeout`` may run: never past the stack's limit."""
+        limit = self._stack.shell_timeout_seconds
+        return min(timeout or limit, limit)
+
+    def run_command(self, agent: str, command: str, directory: str, limit: float) -> CommandResult:
+        """Run ``command`` in ``agent``'s sandbox, from ``directory`` in the checkout, within ``limit``."""
+        return self._run_in_sandbox(agent, command, self._resolve(directory), limit)

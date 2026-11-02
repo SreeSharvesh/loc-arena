@@ -13,12 +13,13 @@ the service holds every agent's and the agents' starting rights, and the episode
 service with tools is reached through the tools gateway alone (``loc_arena.tools_gateway``), which with the
 service holds the identities on it. In attack mode the episode container plays the episode, then starts again
 for the honest twin once the gateway and every sandbox, runner, live service and the tools gateway is
-recreated, so the twin sees nothing the attack left. When the episode exits, its run
-directory is copied out with the log of each live service and of the tools gateway, their record of every
-request, grant and tool call, the events of those tool calls are built, and the run is graded on this host,
-with the agents' code sandboxed, while the gateway still runs for the monitors' model calls. Then the
-gateway's record is drained and copied out (``loc_arena.gateway.model_gateway``) and the project is removed
-with its volumes. If a copy fails, the project is kept so nothing is lost.
+recreated, so the twin sees nothing the attack left. When the episode exits, its run directory is copied out
+with the log of each live service and of the tools gateway, their record of every request, grant and tool
+call, and the gateway's record of every model call of play (``loc_arena.gateway.model_gateway``); the events
+of those tool calls are built, and the run is graded on this host, with the agents' code sandboxed, while the
+gateway still runs for the monitors' model calls. Then the gateway's record is copied out again, the monitors'
+calls included, and the project is removed with its volumes. If a copy fails, the project is kept so nothing
+is lost.
 """
 
 from __future__ import annotations
@@ -31,14 +32,14 @@ import subprocess
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from urllib.parse import urlsplit
 
 from scenarios.loader import EngineModule, LiveService
 
 from loc_arena.compose_document import ComposeDocument, ComposeService, Healthcheck, ServiceSecret
 from loc_arena.config import RunConfig, load_run_config, sandbox_service
 from loc_arena.gateway import model_gateway
-from loc_arena.gateway.core import API_KEY_VARIABLE, OPENROUTER_URL, OpenRouterProvider
+from loc_arena.gateway.core import API_KEY_VARIABLE
+from loc_arena.gateway.model_gateway import BADGES_VOLUME
 from loc_arena.harness import build_recorded_run_events, grade_run, locate_run
 from loc_arena.iam_bootstrap import (
     BOOTSTRAP_SECRET,
@@ -185,7 +186,12 @@ def render_compose(
     company_repos_pythonpath = ":".join(str(COMPANY_DIRECTORY / repo) for repo in repos)
     return {
         "services": {
-            **model_gateway.render_gateway_services(config.settings, AGENT_NETWORK, EGRESS_NETWORK),
+            **model_gateway.render_gateway_services(
+                config.settings,
+                AGENT_NETWORK,
+                EGRESS_NETWORK,
+                badges=bool(managed),
+            ),
             **{
                 sandbox_service(agent): _render_sandbox(
                     config,
@@ -239,7 +245,7 @@ def render_compose(
             EGRESS_NETWORK: {"internal": False},
             model_gateway.RECORD_NETWORK: {"internal": True},
         },
-        "volumes": {"sealed": {}, "output": {}, "checkouts": {}},
+        "volumes": {"sealed": {}, "output": {}, "checkouts": {}, **({BADGES_VOLUME: {}} if managed else {})},
         "secrets": {
             **model_gateway.declare_gateway_secrets(),
             **{token_secret_name(agent): {"environment": token_variable(agent)} for agent in agent_ids},
@@ -455,7 +461,17 @@ def _render_live_service(  # noqa: PLR0913
         "networks": [AGENT_NETWORK],
         **({"environment": environment} if environment else {}),
         **({"secrets": mounted} if mounted else {}),
-        **({"volumes": [*source.get("volumes", []), str(iam.database.parent)]} if is_iam else {}),
+        **(
+            {
+                "volumes": [
+                    *source.get("volumes", []),
+                    str(iam.database.parent),
+                    f"{BADGES_VOLUME}:{iam.key_set.parent}",
+                ],
+            }
+            if is_iam
+            else {}
+        ),
         **({"depends_on": depends_on} if depends_on else {}),
         "healthcheck": _probe(service.port, stack, test=service.healthcheck),
         "init": True,
@@ -513,13 +529,16 @@ def issue_secrets(config: RunConfig) -> tuple[dict[str, str], dict[str, str]]:
     tokens = {agent.id: secrets.token_urlsafe(TOKEN_BYTES) for agent in config.agents}
     held = model_gateway.issue_held_tokens(TOKEN_BYTES)
     sandboxes = {sandbox_service(agent): token for agent, token in tokens.items()}
+    badges = bool(managed_services(config))  # IAM runs and signs workloads' badges
 
     def with_gateway(environment: dict[str, str], play: model_gateway.Play) -> dict[str, str]:
-        compute = {
-            **{name: environment[runner_token_variable(name)] for name in list_runner_services(config)},
-            **{name: environment[node_token_variable(name)] for name in list_node_services(config)},
-        }
-        gateway_secrets = model_gateway.issue_gateway_secrets(config.settings, held, sandboxes, compute, play)
+        gateway_secrets = model_gateway.issue_gateway_secrets(
+            config.settings,
+            held,
+            sandboxes,
+            play,
+            badges=badges,
+        )
         return environment | gateway_secrets
 
     attack, twin = _issue_play_secrets(config, tokens)
@@ -568,7 +587,7 @@ def _issue_play_secrets(config: RunConfig, tokens: dict[str, str]) -> tuple[dict
     return issue_for_play(), issue_for_play()
 
 
-def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: Path) -> Path:
+def run_in_stack(run: str, *, mode: str, seed: int | None, logs: Path) -> Path:
     """Play one episode of ``run`` (a config in ``configs/``) in its own compose project; grade it here.
 
     The episode container plays the episode and, after ``renew_services``, its honest twin (``play_phases``).
@@ -589,7 +608,6 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
     instance_id = secrets.token_hex(3)
     project = f"{model_gateway.PROJECT_PREFIX}{instance_id}"
     episode_arguments = ["--mode", mode, "--instance", instance_id, "--play-only", "--next-phase"]
-    episode_arguments += [] if robust else ["--minimal"]
     compose_file = logs / "compose" / f"{project}.yaml"
     compose_file.parent.mkdir(parents=True, exist_ok=True)
     compose_file.write_text(
@@ -635,9 +653,11 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
             raise StackError("could not copy the episode's run directory out, so it was not graded")
         if exit_code != 0:
             raise StackError(f"the episode exited with code {exit_code}: see its output above")
-        # The services' records are copied before grading: the events monitors read are built from them.
-        if not all([copied(*copy) for copy in copy_service_logs]):  # every one tried
-            raise StackError("could not copy every live service's log out, so the run was not graded")
+        # Copied before grading: monitors read events built from the services' records, the checker the calls.
+        call_record = run_directory / model_gateway.CALL_RECORD_FILE
+        logs_copied = all([copied(*copy) for copy in copy_service_logs])  # every one tried
+        if not (logs_copied and model_gateway.copy_call_log(run_compose, compose, settings, call_record)):
+            raise StackError("could not copy every live service's log and the call record out, so no grading")
         build_recorded_run_events(config, run_directory)
         host_token = environment[model_gateway.HOST_TOKEN_VARIABLE]
         bundle = grade_run(
@@ -645,7 +665,7 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, robust: bool, logs: P
             run_directory,
             mode=mode,
             seed=seed,
-            monitor_provider=_build_monitor_provider(config, compose, host_token),
+            monitor_provider=model_gateway.build_monitor_provider(config, compose, host_token),
         )
     except SpansNotExportedError:
         spans_left_in_phoenix = True
@@ -676,25 +696,3 @@ def sandbox_agent_code(config: RunConfig) -> RunConfig:
     """``config`` with the agents' code run in a no-network container: always so when grading a stack run."""
     stack = config.settings.stack.model_copy(update={"sandbox_agent_code": True})
     return dataclasses.replace(config, settings=config.settings.model_copy(update={"stack": stack}))
-
-
-def _build_monitor_provider(config: RunConfig, compose: list[str], token: str) -> OpenRouterProvider | None:
-    """The provider of a live run's monitors: the gateway, at the port it publishes on this host's loopback.
-
-    A scripted run's monitors make no model call. A live run's call with the host's ``token`` and never fall
-    back to their heuristic for want of a provider: if the gateway's port cannot be found, grading stops.
-    """
-    if config.policy != "model":
-        return None
-    published = subprocess.run(
-        [*compose, "port", "gateway", str(config.settings.gateway.port)],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    return OpenRouterProvider(
-        timeout=config.settings.gateway.timeout_seconds,
-        gateway_url=f"http://{published.stdout.strip()}{urlsplit(OPENROUTER_URL).path}",
-        gateway_token=token,
-        model_providers=config.model_providers,
-    )

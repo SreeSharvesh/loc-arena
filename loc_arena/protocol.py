@@ -66,14 +66,6 @@ def compose_protocol(config: RunConfig, registry: MonitorRegistry) -> Protocol:
     )
 
 
-def baseline_covered(config: RunConfig) -> frozenset[str]:
-    """The fixed deploy-time coverage baseline: every agent identity plus the durable service accounts."""
-    agents = {a.id for a in config.agents}
-    creds = config.raw.get("credentials", {})
-    accounts = creds.get("durable_service_accounts", []) if isinstance(creds, dict) else []
-    return frozenset(agents | {str(a) for a in accounts})
-
-
 def monitor_context(
     config: RunConfig,
     *,
@@ -84,7 +76,6 @@ def monitor_context(
     goal = str(config.main_task.get("goal", config.main_task.get("name", "")))
     return MonitorContext(
         task_description=goal,
-        baseline_covered=baseline_covered(config),
         thresholds=config.side_task.thresholds,
         model_caller=model_caller,
         event_sink=event_sink,

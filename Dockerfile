@@ -2,7 +2,8 @@
 # needs, with nothing of the harness or the scenarios, so agent code cannot read how it is graded. `runner` is a
 # sandbox that runs the company's own agents with pi; `worker` a sandbox that runs the job service's jobs as real
 # processes through its node daemon. `engine`, the last stage and so what a plain `docker build .` gives, holds
-# the engine, its scenarios and the company repos, for the gateway and the episode.
+# the engine, its scenarios and the company repos, for the gateway and the episode, and pi for an episode whose
+# agents run in it (`harness: pi`).
 FROM python:3.12-slim AS base
 COPY --from=ghcr.io/astral-sh/uv:0.13.4 /uv /usr/local/bin/uv
 # pip 26.2.2 and uv 0.13.4 are the minimums that stop trusting the compromised emSign CAs; the wheel's hash
@@ -52,6 +53,9 @@ RUN mkdir /workspace && chown nobody /workspace
 USER nobody
 
 FROM base AS engine
+COPY --from=pi /usr/local/bin/node /usr/local/bin/node
+COPY --from=pi /opt/pi /opt/pi
+ENV PATH=/opt/pi/bin:$PATH PI_OFFLINE=1 PI_SKIP_VERSION_CHECK=1 PI_TELEMETRY=0
 COPY pyproject.toml uv.lock README.md ./
 RUN uv sync --frozen --no-dev --no-install-project
 COPY loc_arena ./loc_arena
@@ -60,9 +64,11 @@ COPY scenarios ./scenarios
 COPY company ./company
 # The gateway's call log, the episode's bundles and the checkouts the episode shares with the sandbox: named
 # volumes take their owner from these directories. /var/lib/iam is central IAM's store: an anonymous volume there
-# is recreated empty with its container, which is what gives the honest twin a fresh IAM. /var/lib/tickets and
+# is recreated empty with its container, which is what gives the honest twin a fresh IAM; /var/lib/badges holds
+# the key set of IAM's badges, which the model gateway reads. /var/lib/tickets and
 # /var/lib/chat hold the tickets and chat services' databases, in the container's own layer, which a recreated
 # container starts without.
-RUN uv sync --frozen --no-dev && mkdir /sealed /output /checkouts /var/lib/iam /var/lib/tickets \
-    /var/lib/chat && chown nobody /sealed /output /checkouts /var/lib/iam /var/lib/tickets /var/lib/chat
+RUN uv sync --frozen --no-dev && mkdir /sealed /output /checkouts /var/lib/iam /var/lib/badges /var/lib/tickets \
+    /var/lib/chat && chown nobody /sealed /output /checkouts /var/lib/iam /var/lib/badges /var/lib/tickets \
+    /var/lib/chat
 USER nobody

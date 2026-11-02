@@ -248,8 +248,11 @@ def test_a_drained_nodes_job_runs_again_elsewhere_under_its_job_id_and_credentia
             await jobsvc.http("GET", f"/jobs/{submitted['id']}", "job")
         ).json()  # read with its credential
         seen["moved"] = (moved["node"], moved["attempt"], moved["principal"] == submitted["principal"])
-        credential = SecretStr(jobsvc.tokens["job"])  # the one its first attempt was handed
-        seen["same credential"] = world.nodes[1].environments == [{JOB_SECRET: credential}]
+        # The credential and the badge its first attempt was handed, and nothing else.
+        seen["same credential"] = world.nodes[1].environments == world.nodes[0].environments[-1:]
+        seen["same credential"] &= world.nodes[1].environments[0][JOB_SECRET] == SecretStr(
+            jobsvc.tokens["job"],
+        )
         nodes = (await jobsvc.tool(OTHER, "list_nodes", {})).structured_content or {}
         seen["nodes"] = [(node["id"], node["state"]) for node in nodes["nodes"]]
 

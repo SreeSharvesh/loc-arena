@@ -105,4 +105,5 @@ class IamIdentityIssuer:
         return AgentIdentity(
             principal=workload.principal,
             secrets={service: SecretStr(secret) for service, secret in issued.items()},
+            badge=None if workload.badge is None else SecretStr(workload.badge),
         )
