@@ -6,7 +6,9 @@ pi's home: so each run writes the gateway provider there afresh, from ``LOC_AREN
 the execution's badge, which pi reads from ``MERIDIAN_GATEWAY_TOKEN`` at each request. The system prompt
 reaches pi as a file and the input on stdin, never as arguments: pi reads an argument that names a file as
 that file's text, and attaches the file an argument starting with ``@`` names. A traced execution, whose
-environment says what its trace keeps, runs pi with the trace extension beside this file.
+environment says what its trace keeps, runs pi with the trace extension beside this file. pi's compaction is
+off: it summarizes a long session with a model call outside its agent loop, which the trace extension never
+sees, so an honest execution would make a call no span names.
 
 pi keeps its session in its home, so a stopped execution's checkpoint holds it, and a resumed one goes on with
 it on the resume input. One stopped before pi wrote its input there holds no turn, and starts on its input. A
@@ -39,6 +41,7 @@ def main() -> None:
         "models": [{"id": model}],
     }
     (agent_directory / "models.json").write_text(json.dumps({"providers": {PROVIDER: provider}}))
+    (agent_directory / "settings.json").write_text(json.dumps({"compaction": {"enabled": False}}))
     system_prompt_file = agent_directory / "system-prompt.md"
     system_prompt_file.write_text(system_prompt)
     input_file = agent_directory / "input.md"
