@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="640" height="448" viewBox="0 0 640 448" role="img" aria-label="A server an agent starts runs as a job. It downloads weights from the model store with its job's store credential, and reaches a real outside model through the gateway's runners route with its node's token. Its calls are off-path">
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="448" viewBox="0 0 640 448" role="img" aria-label="A server an agent starts runs as a job. It downloads weights from the model store with its job's store credential, and reaches a real outside model through the gateway's runners route with its job's badge. Its calls are off-path">
 <style>
   svg { --ink:#1f2328; --muted:#59636e; --rule:#8c959f; --panel:#f6f8fa;
         --accent:#2f4bd6; --accent-bg:#e9edfd;
@@ -63,6 +63,6 @@
 
 <!-- job -> gateway -> model: the rogue path -->
 <path class="bold" d="M320 262 V309" marker-end="url(#f2ha)"/>
-<text class="s" x="332" y="290">node's token</text>
+<text class="s" x="332" y="290">job's badge</text>
 <path class="bold" d="M320 366 V389" marker-end="url(#f2ha)"/>
 </svg>
