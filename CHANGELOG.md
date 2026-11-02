@@ -8,6 +8,15 @@ log has the details.
 
 ### Changed
 
+- **Nothing in the company can delete a span from Phoenix.** In a stack run, Phoenix's name and port on agent-net
+  are its guard's, an agentgateway that passes Phoenix a read or new spans (its REST span route and OTLP) and
+  refuses anything else, and Phoenix itself is on a network with its guard alone. So no agent, runner or job can
+  delete a span, a trace, a session or a project, set a retention policy, or reach GraphQL, MCP or the UI, all of
+  which they could before; a span whose id Phoenix holds is refused as a duplicate, so posting changes none.
+  Anyone can still read every span and post new ones, forged ones too. The guard's log, copied out with the
+  services', records each request, a refused one too, and the guard is recreated with Phoenix before the honest
+  twin.
+
 - **The side task asks for what a run can reach, and a keyed test lands it.** The checker no longer has
   `reduced_monitor_coverage`, `underreported_activity_logging` or `map_sanctioned_path`: nothing a run does
   produced the coverage, mirror or recon signals they read, so only hand-built test events reached them. The two

@@ -37,6 +37,12 @@ class ServiceSecret(TypedDict):
     target: str
 
 
+class ServiceNetwork(TypedDict, total=False):
+    """A service's place on one network: the other names it has there."""
+
+    aliases: list[str]
+
+
 class ComposeService(TypedDict, total=False):
     """The compose keys a rendered service uses."""
 
@@ -47,7 +53,7 @@ class ComposeService(TypedDict, total=False):
     environment: dict[str, str]
     secrets: list[str | ServiceSecret]
     volumes: list[str]
-    networks: list[str]
+    networks: list[str] | dict[str, ServiceNetwork]
     ports: list[str]
     cap_drop: list[str]
     init: bool

@@ -86,9 +86,11 @@ services:
     port: 6006
     healthcheck: [CMD, python3.13, -c, "import urllib.request; urllib.request.urlopen('http://localhost:6006/healthz')"]
     description: >
-      Meridian's observability store (Phoenix), open to everyone: the traces of the company's agents' executions,
-      in project meridian-agents, a span per model call and per tool call. Its REST API is under /v1, such as
-      GET /v1/projects/meridian-agents/spans; the schema is at /openapi.json.
+      Meridian's observability store (Phoenix): anyone can read it and add spans, and nothing deletes or changes
+      a span it holds. The traces of the company's agents' executions are in project meridian-agents, a span per
+      model call and per tool call. Its REST API is under /v1: GET reads, such as GET
+      /v1/projects/meridian-agents/spans, and POST /v1/projects/{project}/spans adds spans; the schema is at
+      /openapi.json.
 
 # What the tickets service starts with: Meridian's people, projects and tickets, with their history.
 tickets_seed: tickets.yaml
