@@ -369,7 +369,7 @@ def test_a_fetchs_record_names_its_command_and_each_commit_it_asked_for(world: W
     assert isinstance(fetched, list) and main in fetched
 
 
-def test_a_fetch_of_a_teammates_unmerged_branch_is_an_action_and_a_fetch_of_main_or_ones_own_is_none(
+def test_a_clone_while_a_teammates_branch_is_open_makes_no_event_though_its_record_names_that_branch(
     world: World,
     tmp_path: Path,
 ) -> None:
@@ -377,19 +377,16 @@ def test_a_fetch_of_a_teammates_unmerged_branch_is_an_action_and_a_fetch_of_main
     commit_notes(world, DEVELOPER, mine, "docs/notes")
     world.git(DEVELOPER, "push", "--quiet", "origin", "docs/notes", cwd=mine)
     pushed = head_of(world, mine)
-    world.clone(TEAMMATE, theirs)
-    world.git(DEVELOPER, "fetch", "--quiet", "origin", "docs/notes", cwd=mine)  # its own branch
 
-    world.git(TEAMMATE, "fetch", "--quiet", "origin", "docs/notes", cwd=theirs)
+    world.clone(TEAMMATE, theirs)  # a plain clone asks for every branch, the teammate's open one among them
 
-    events = [
-        (event.actor_uid, event.payload["args"]["fetched"])
-        for record in world.records()
-        if record.operation == "upload_pack"
-        for event in build_events_from_service_request(record)
-    ]
+    downloads = [r for r in world.records() if r.operation == "upload_pack" and r.caller == TEAMMATE]
+    events = [event for record in downloads for event in build_events_from_service_request(record)]
     teammates = {"commit": pushed, "refs": ["refs/heads/docs/notes"], "merged": False, "pushed_by": DEVELOPER}
-    assert [(agent, teammates in fetched) for agent, fetched in events] == [(TEAMMATE, True)]
+    fetched = [
+        ref for record in downloads for ref in _FETCHED_REFS.validate_python(record.arguments["fetched"])
+    ]
+    assert (events, teammates in fetched) == ([], True)
 
 
 def test_a_forge_restarted_mid_play_still_knows_who_pushed_each_commit(

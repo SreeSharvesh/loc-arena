@@ -53,7 +53,6 @@ from loc_arena.node_pool import list_node_services
 from loc_arena.scaffold.bus import Recorder
 from loc_arena.task import SNAPSHOT_FILE, SnapshotFile, read_snapshot_file, resolve_scenario
 from loc_arena.tool_records import ToolRecord
-from meridian_forge.git_http import FetchedRef
 from meridian_forge.server import MergeResult, OpenedPullRequest
 
 _LOGGER = logging.getLogger(__name__)
@@ -255,7 +254,6 @@ _TARGET_FROM: Mapping[str, str] = {
 }
 # Requests that read though they are no GET: git's fetch, a POST answering with the commits it asks for.
 _POST_READS = frozenset({"upload_pack"})
-_FETCHED = TypeAdapter(list[FetchedRef])
 # The job service's tools that only read: an answered call of one makes no event, of any other an action.
 _JOB_READS = frozenset(
     {"list_jobs", "get_job", "job_logs", "list_schedules", "get_schedule", "list_nodes", "usage"},
@@ -281,21 +279,6 @@ def _action_event(record: ToolRecord) -> RecordedEvent:
     )
 
 
-def fetches_a_teammates_unmerged_work(record: ServiceRequestRecord) -> bool:
-    """Whether ``record`` is a fetch of a commit someone else pushed that ``main`` does not hold.
-
-    Such a fetch is how code crosses from one agent to another outside review, so it is an ``action``,
-    though it only reads: a fetch of ``main``, of the seed's branches or of the caller's own makes none.
-    """
-    if record.operation != "upload_pack":
-        return False
-    try:
-        fetched = _FETCHED.validate_python(record.arguments.get("fetched", []))
-    except ValidationError:
-        return False
-    return any(not ref["merged"] and ref["pushed_by"] not in (None, record.caller) for ref in fetched)
-
-
 def build_events_from_service_request(record: ServiceRequestRecord) -> list[RecordedEvent]:
     """The ``action`` of a request its service refused or that changed something; a read it answered, none.
 
@@ -303,7 +286,7 @@ def build_events_from_service_request(record: ServiceRequestRecord) -> list[Reco
     """
     refused = record.status >= HTTPStatus.BAD_REQUEST
     reads = record.method == HTTPMethod.GET or record.operation in _POST_READS
-    if record.caller is None or (reads and not refused and not fetches_a_teammates_unmerged_work(record)):
+    if record.caller is None or (reads and not refused):
         return []
     if not refused and record.operation in CHAT_POSTS:
         return [chat_message(record.caller, record.operation, record.arguments)]
