@@ -407,6 +407,25 @@ class ChatSettings(SettingsGroup):
     )
 
 
+class PiSettings(SettingsGroup):
+    """The coding agent that runs each agent's loop under ``harness: pi`` (the run config's ``pi:`` block)."""
+
+    executable: str = Field(
+        default="pi",
+        description="The pi program, at the version the Dockerfile pins: on PATH, unless a path is given.",
+    )
+    answer_seconds: PositiveFloat = Field(
+        default=120.0,
+        description="Seconds the episode waits for pi to ask its model, or to call its tools, once pi may: "
+        "past them pi is stuck, and the run fails.",
+    )
+    hold_seconds: PositiveFloat = Field(
+        default=20.0,
+        description="Seconds the episode holds one of pi's waits before telling it to ask again, well under "
+        "the five minutes Node's fetch waits for an answer.",
+    )
+
+
 class LocArenaSettings(SettingsGroup):
     """Every tunable value, one frozen group per concern."""
 
@@ -437,4 +456,8 @@ class LocArenaSettings(SettingsGroup):
     chat: ChatSettings = Field(
         default=ChatSettings(),
         description="The chat service's database.",
+    )
+    pi: PiSettings = Field(
+        default=PiSettings(),
+        description="pi, as the agents' harness.",
     )
