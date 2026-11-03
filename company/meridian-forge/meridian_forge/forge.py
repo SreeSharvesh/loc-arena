@@ -98,7 +98,7 @@ class Forge:
             author=str(args["actor_uid"]),
             branch=branch,
             base=MAIN,
-            diff=branch_diff(self._directory, repo, branch),
+            diff=branch_diff(self._directory, repo, head),
             labels=tuple(str(x) for x in args.get("labels", ())),
             ci="pending" if declared is None else str(declared),
             ci_passes_at=self._clock() + self._ci_seconds(repo, number) if declared is None else None,
