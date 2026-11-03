@@ -10,7 +10,8 @@ arena's other tools beside them. The episode keeps everything a turn is made of:
   operations the episode serves (files in the checkout, commands in the agent's sandbox); any other call the
   episode runs itself. The turn logs each as the agent's action, as it logs a native call;
 - the results reach pi as the agent's next turn starts, after the IAM inbox's new items, which pi takes as
-  steering messages, so pi asks its model again only then.
+  steering messages and has queued before it is handed the results, so pi asks its model again only then,
+  with both.
 
 A reply without a tool call ends pi's run; the next turn prompts it to go on, as the native loop nudges.
 """
@@ -171,13 +172,19 @@ class _Session:
     rejected: set[str] = field(default_factory=set)  # calls pi answered itself, as one with bad arguments
     settled: bool = True
     ended: str | None = None  # why pi stopped, once it has
+    unanswered: set[str] = field(default_factory=set)  # the ids of the commands pi has not answered yet
+    commands: int = 0
     stderr: deque[str] = field(default_factory=lambda: deque(maxlen=40))
 
-    def send(self, command: dict[str, Any]) -> None:
-        """Write one RPC command to pi."""
+    def send(self, command: dict[str, Any]) -> str:
+        """Write one RPC command to pi; the id pi answers it under."""
         assert self.process.stdin is not None
-        self.process.stdin.write(json.dumps(command).encode() + b"\n")
+        command_id = f"command-{self.commands}"
+        self.commands += 1
+        self.unanswered.add(command_id)
+        self.process.stdin.write(json.dumps({**command, "id": command_id}).encode() + b"\n")
         self.process.stdin.flush()
+        return command_id
 
     def wait(self, ready: Any, seconds: float, what: str) -> None:
         """Wait, holding the condition, until ``ready()``; raise once pi stopped or ``seconds`` passed."""
@@ -418,14 +425,16 @@ class PiBridge:
                     session.rejected.add(event["toolCallId"])
                 elif kind == "agent_settled":
                     session.settled = True
-                elif kind == "response" and not event.get("success"):
-                    _LOGGER.error(
-                        "%s's pi refused %s: %s",
-                        session.agent,
-                        event.get("command"),
-                        event.get("error"),
-                    )
-                    session.ended = f"it refused {event.get('command')}: {event.get('error')}"
+                elif kind == "response":
+                    session.unanswered.discard(event.get("id"))
+                    if not event.get("success"):
+                        _LOGGER.error(
+                            "%s's pi refused %s: %s",
+                            session.agent,
+                            event.get("command"),
+                            event.get("error"),
+                        )
+                        session.ended = f"it refused {event.get('command')}: {event.get('error')}"
                 session.condition.notify_all()
         with session.condition:
             session.ended = session.ended or f"it exited with {session.process.wait()}"
@@ -481,9 +490,15 @@ class PiAgentPolicy:
             elif self._state is _PiState.ENDED:
                 session.wait(lambda: session.settled, self._answer_seconds, "settle")
                 self._prompt([*inbox, NUDGE])
-            else:  # steering reaches the model before pi's next call, once the calls it waits for are done
-                for text in inbox:
-                    session.send({"type": "steer", "message": text})
+            else:
+                # pi reads commands on stdin and results over the bridge, with no order between the two: once
+                # pi has answered each steer, it is queued for the model call the results let pi make.
+                steers = {session.send({"type": "steer", "message": text}) for text in inbox}
+                session.wait(
+                    lambda: session.unanswered.isdisjoint(steers),
+                    self._answer_seconds,
+                    "take its inbox",
+                )
                 self._hand_back(results)
             self._state = _PiState.ASKING
             session.wait(lambda: session.request is not None, self._answer_seconds, "ask its model")

@@ -500,6 +500,9 @@ log has the details.
 
 ### Fixed
 
+- **Under `harness: pi`, an inbox item always reaches the agent's next model call.** The turn now waits for pi to
+  answer each steering message before it hands back the last turn's results: they travel on different channels,
+  so pi could ask its model with the results before it had read the inbox from stdin.
 - **The explorer shows what agents said:** the prose beside each action, as a scratch note, so refusals show.
 - **The file tools read the skills folder the brief names.** A stack run's brief tells agents to read each
   skill's SKILL.md in `/skills`, but `read_file` and `list_dir` refused every path outside the checkout: 42 calls
