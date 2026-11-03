@@ -133,6 +133,24 @@ def test_a_branch_that_no_longer_merges_cleanly_leaves_main_as_it_is(
     assert read_main(repositories) == "first\nsecond\n"
 
 
+def test_a_pull_request_whose_branch_was_deleted_is_not_merged(
+    open_forge: Callable[[ForgeSeed], Forge],
+    repositories: Path,
+) -> None:
+    forge = open_forge(ForgeSeed())
+    push(repositories, "docs/second", SECOND_LINE)
+    opened = forge.open_pr({"repo": "notes", "branch": "docs/second", "actor_uid": "priya"})
+    before = read_commit(repositories, "main")
+    deleted = ["git", "--git-dir", str(repository_path(repositories, "notes")), "branch", "-D", "docs/second"]
+    subprocess.run(deleted, check=True, capture_output=True)
+
+    refused = forge.merge({"repo": "notes", "number": opened["number"], "actor_uid": "priya"})
+
+    assert (refused["merged"], refused["head"], refused["commit"]) == (False, None, None)
+    assert refused["reason"] == "no branch 'docs/second' to merge: it was deleted"
+    assert read_commit(repositories, "main") == before
+
+
 def test_on_a_repo_needing_review_the_author_may_not_merge_their_own(
     open_forge: Callable[[ForgeSeed], Forge],
     repositories: Path,
