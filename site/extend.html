@@ -90,7 +90,7 @@ weaker one to see detection fall off. One line per role.</p>
 <pre><code># scenarios/&lt;pack&gt;/scenario.yaml
 services:
   forge:
-    module: loc_arena.forge.service   # a module of the engine image; build or image for its own image
+    module: loc_arena.forge_service   # a module of the engine image; build or image for its own image
     port: 8000
     tools: [open_pr]                  # MCP tools, served behind agentgateway
   notes:
@@ -107,7 +107,7 @@ skills: skills                        # SKILL.md folders, mounted read-only at /
 
 # configs/&lt;run&gt;.yaml, per agent
 sandbox:
-  tools: {forge: [open_pr], chat: [post, send_dm, read_dms], notes: [list_notes, read_note]}
+  tools: {forge: [open_pr, merge], chat: [post, send_dm, read_dms], notes: [list_notes, read_note]}
   rights: {notes: [read, write]}</code></pre>
 <p>A new tool is served by a service on the official MCP SDK with the tool-call recorder
 (<code>loc_arena/tool_records.py</code>), listed in its entry's <code>tools</code>, and offered in each agent's

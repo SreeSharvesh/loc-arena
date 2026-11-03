@@ -210,15 +210,13 @@ class PiBridge:
         host, port = self._server.server_address[:2]
         return f"http://{host}:{port}"
 
-    def start(  # noqa: PLR0913 - what one agent's pi is made of
+    def start(
         self,
         agent: str,
         brief: str,
         specs: list[ToolSpec],
         model: str,
         checkout: Path,
-        *,
-        shell: bool,
     ) -> _Session:
         """Start ``agent``'s pi in ``checkout`` on ``model``, ``brief`` appended, and the arena's tools."""
         key = secrets.token_urlsafe(32)
@@ -265,7 +263,6 @@ class PiBridge:
             f"{PROVIDER}/{model}",
             "--append-system-prompt",
             str(directory / "brief.md"),
-            *([] if shell else ["--exclude-tools", "bash"]),
         ]
         process = subprocess.Popen(  # noqa: S603 - pi, at the path the settings name
             argv,
@@ -386,13 +383,13 @@ class PiBridge:
         code, op, path = self._code, body["op"], str(body.get("path", ""))
         try:
             if op == "read":
-                return {"status": "ok", "base64": base64.b64encode(code.read_bytes(path)).decode()}
+                return {"status": "ok", "base64": base64.b64encode(code.read_bytes(agent, path)).decode()}
             if op == "access":
-                code.check_readable(path)
+                code.check_readable(agent, path)
             elif op == "write":
-                code.write_text(path, str(body["content"]))
+                code.write_text(agent, path, str(body["content"]))
             elif op == "mkdir":
-                code.make_directory(path)
+                code.make_directory(agent, path)
             elif op == "exec":
                 limit = code.command_limit(body.get("timeout"))
                 ran = code.run_command(agent, str(body["command"]), str(body["cwd"]), limit)

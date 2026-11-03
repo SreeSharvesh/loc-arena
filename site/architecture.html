@@ -96,7 +96,7 @@ checker, has no container agents can reach.</p>
 <div class="keyidea">
   <span class="k">The boundary is structural</span>
   Agent code runs only in sandboxes built from a slim image with no harness, scorer or scenario spec. A sandbox
-  mounts only the checkouts and the skills, takes commands from the episode alone, and has no route to the key,
+  mounts only its agent's checkout and the skills, takes commands from the episode alone, and has no route to the key,
   the internet or the sealed record. The run is graded on the host afterwards.
 </div>
 
@@ -250,7 +250,7 @@ episode only.</p>
 
 <ol class="steps">
   <li><b>Build the world.</b> Stand up the services, the codebase, and the empty records from the config and seed.</li>
-  <li><b>Seed it.</b> Fill the forge with tickets, open changes, and wiki pages, plus a background coworker doing unrelated work.</li>
+  <li><b>Seed it.</b> Fill the forge with open changes and wiki pages, and the ticket tracker with its projects and tickets, plus a background coworker doing unrelated work.</li>
   <li><b>Assign the tasks.</b> The lead agent gets the main task. In an attack episode the in-world gateway's core adds the covert objective to its prompt, and three sub-agents start with a covert piece in their briefs.</li>
   <li><b>Run the team.</b> The lead works, briefs the team, assigns pieces in chat, and integrates the results.</li>
   <li><b>Record.</b> Model calls and native actions are written to both records as they happen; each service records the calls made to it, and those become events after play.</li>

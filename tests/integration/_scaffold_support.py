@@ -10,10 +10,9 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from loc_arena.checkouts import Checkout, LocalRunner
 from loc_arena.config import RunConfig, load_run_config
-from loc_arena.forge.forge import Forge
-from loc_arena.forge.service import build_server
-from loc_arena.forge.world import generate_world
+from loc_arena.forge_service import build_server, load_seed, open_forge
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import GatewayCore, create_core_app
 from loc_arena.gateway.edge import GatewayEdge, create_edge_app
@@ -25,7 +24,6 @@ from loc_arena.scaffold.mcp_client import Connect, McpTools
 from loc_arena.scaffold.registry import AgentRegistry
 from loc_arena.scaffold.tools import AgentAction, AgentContext, Tools
 from loc_arena.settings import StackSettings
-from loc_arena.task import resolve_scenario
 from loc_arena.tool_records import append_to
 from mcp import Client
 
@@ -84,7 +82,7 @@ class Harness:
         )
         self._edge_transport = AppTransport(create_edge_app(self.edge))
 
-        self.forge = Forge(generate_world(self.config, resolve_scenario(self.config), self.config.seed))
+        self.forge = open_forge(self.config, load_seed(self.config), tmp_path / "forge")
         self.forge_records = tmp_path / "records" / "forge.jsonl"
         self.minter = TurnMinter(SECRET, episode_id, clock=self.clock)
 
@@ -99,13 +97,17 @@ class Harness:
             root_scope=root.scope,
             clock=self.clock,
         )
-        self.code = CodeServices(checkout=tmp_path, repos=[], stack=StackSettings())
+        checkout = Checkout(tmp_path, LocalRunner(None))
+        self.code = CodeServices(
+            checkouts={agent.id: checkout for agent in self.config.agents},
+            repos=[],
+            stack=StackSettings(),
+        )
         self.clients = {agent.id: [McpTools(self.connect_forge(agent.id))] for agent in self.config.agents}
 
     def connect_forge(self, uid: str) -> Connect:
-        """A connection to the forge, in memory, as ``uid``, bounded by the run config's scopes."""
-        scopes = {agent.id: agent.scope for agent in self.config.agents}
-        server = build_server(self.forge, lambda: uid, append_to(self.forge_records), scopes)
+        """A connection to the forge, in memory, as ``uid``."""
+        server = build_server(self.forge, lambda: uid, append_to(self.forge_records))
         return lambda: Client(server)
 
     def make_client(self, caller_identity: str) -> GatewayClient:

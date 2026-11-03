@@ -1,13 +1,16 @@
-"""Agents get bash only with sandboxes, and commands run in their own; a dead sandbox is an error result.
+"""Each agent's commands run in its own checkout: in its own sandbox when it has one, else in this process.
 
-Every agent's sandbox is the one real command server, served on this host's loopback, each agent with its own
-token file; the model is a canned provider.
+Every agent's sandbox is the real command server, each mounted at its own path of one server on this host's
+loopback, each agent with its own token file; the model is a canned provider. A sandbox clones from the
+episode's own forge, where git's ``insteadOf`` points the forge's URL, as no forge serves in these tests.
 """
 
 from __future__ import annotations
 
 import dataclasses
+import json
 import socket
+import subprocess
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -17,18 +20,30 @@ from pathlib import Path
 
 import pytest
 import uvicorn
+from loc_arena.checkout_history import HISTORY_DIRECTORY
+from loc_arena.checkouts import Checkout, LocalRunner, checkout_home
 from loc_arena.config import ModelSpec, RunConfig, load_run_config
+from loc_arena.forge_service import SERVICE as FORGE
 from loc_arena.gateway.core import Message, Move, ProviderResult, ScriptedProvider, ToolSpec
 from loc_arena.harness import apply_mode
 from loc_arena.live import play_model_episode
-from loc_arena.sandbox import SandboxClient, SandboxError, build_server_settings, token_secret_name
+from loc_arena.logging_.events import read_events
+from loc_arena.sandbox import (
+    IDENTITY_PREFIX,
+    SandboxClient,
+    SandboxError,
+    build_server_settings,
+    token_secret_name,
+)
 from loc_arena.scaffold.code_services import CodeServices
-from loc_arena.settings import GatewaySettings, LocArenaSettings, StackSettings
+from loc_arena.settings import GatewaySettings, StackSettings
 from loc_arena.task import SANDBOX_URL_VARIABLE
 from pydantic import SecretStr
 from sandbox_server.server import ServerSettings, create_sandbox_app
+from starlette.applications import Starlette
+from starlette.routing import Mount
 
-LOOPBACK = "127.0.0.1"  # where the test's sandbox is served, and so its one trusted caller
+LOOPBACK = "127.0.0.1"  # where the test's sandboxes are served, and so their one trusted caller
 HONEST = apply_mode(load_run_config("configs/aurora-efficiency.deterministic.yaml"), "honest")
 MARKER = "bash-ran"
 TOKEN = "a-sandbox-token-of-at-least-thirty-two-characters"
@@ -70,23 +85,26 @@ class RecordingProvider(ScriptedProvider):
 
 @dataclass(frozen=True)
 class PlayedEpisode:
-    """An episode whose lead agent asked for bash: whether it had a sandbox, and what it left."""
+    """An episode whose lead agent ran bash: whether it had sandboxes, and where its command's file landed."""
 
     sandboxed: bool
     offered: set[str]
     system_prompts: set[str]
     tool_results: list[str]
-    checkout: Path
+    ran_in: list[str]  # the agents in whose checkout the command ran
+    graded: bool  # whether the graded checkout holds that file
+    played: Path  # the play's directory
 
 
-class ServedSandbox:
-    """The sandbox's command server on this host's loopback, until stopped."""
+class ServedSandboxes:
+    """Every agent's sandbox, its ``settings`` by agent id, at ``<url>/<agent id>`` on this loopback."""
 
-    def __init__(self, settings: ServerSettings, port: int = 0) -> None:
-        """Start serving ``settings``' checkouts on ``port``, any free one by default."""
-        self._server = uvicorn.Server(
-            uvicorn.Config(create_sandbox_app(settings, SecretStr(TOKEN)), host=LOOPBACK, port=port),
-        )
+    def __init__(self, settings: dict[str, ServerSettings], port: int = 0) -> None:
+        """Start serving on ``port``, any free one by default."""
+        mounts = [
+            Mount(f"/{agent}", create_sandbox_app(each, SecretStr(TOKEN))) for agent, each in settings.items()
+        ]
+        self._server = uvicorn.Server(uvicorn.Config(Starlette(routes=mounts), host=LOOPBACK, port=port))
         self._thread = threading.Thread(target=self._server.run, daemon=True)
         self._thread.start()
         while not self._server.started:
@@ -99,21 +117,12 @@ class ServedSandbox:
         self._thread.join()
 
 
-@contextmanager
-def serve_sandbox(settings: LocArenaSettings) -> Iterator[ServedSandbox]:
-    """The sandbox's command server for a run's ``settings``, stopped on leaving."""
-    sandbox = ServedSandbox(build_server_settings(settings, trusted_caller=LOOPBACK))
-    try:
-        yield sandbox
-    finally:
-        sandbox.stop()
-
-
 def with_sandbox(config: RunConfig, root: Path) -> RunConfig:
-    """``config`` with its checkouts, scratch directory and secrets (every agent's token) under ``root``."""
+    """``config`` with its checkouts, scratch directory and secrets (every agent's tokens) under ``root``."""
     (root / "checkouts").mkdir()
     (root / "scratch").mkdir()
     (root / "secrets").mkdir()
+    (root / "secrets" / f"{IDENTITY_PREFIX}{FORGE}").write_text("a credential on the forge")
     for agent in config.agents:
         (root / "secrets" / token_secret_name(agent.id)).write_text(TOKEN)
     settings = config.settings.model_copy(
@@ -128,10 +137,36 @@ def with_sandbox(config: RunConfig, root: Path) -> RunConfig:
     return dataclasses.replace(config, settings=settings)
 
 
+@contextmanager
+def serve_sandboxes(config: RunConfig, workdir: Path, patch: pytest.MonkeyPatch) -> Iterator[ServedSandboxes]:
+    """Every agent's sandbox, as a stack run renders it, for the episode in ``workdir``; stopped on leaving.
+
+    Git in the sandboxes reaches the forge's URL at that episode's own forge.
+    """
+    port = next(service.port for service in config.live_services if service.name == FORGE)
+    patch.setenv("GIT_CONFIG_COUNT", "1")
+    patch.setenv("GIT_CONFIG_KEY_0", f"url.{workdir / 'forge'}/.insteadOf")
+    patch.setenv("GIT_CONFIG_VALUE_0", f"http://{FORGE}:{port}/git/")
+    homes = {agent.id: checkout_home(config.settings.stack, agent.id) for agent in config.agents}
+    for home in homes.values():
+        home.mkdir(parents=True, exist_ok=True)
+    sandboxes = ServedSandboxes(
+        {
+            agent: build_server_settings(config.settings, trusted_caller=LOOPBACK, checkouts_directory=home)
+            for agent, home in homes.items()
+        },
+    )
+    patch.setenv(SANDBOX_URL_VARIABLE, f"{sandboxes.url}/{{agent}}")
+    try:
+        yield sandboxes
+    finally:
+        sandboxes.stop()
+
+
 @pytest.fixture(scope="module", params=[False, True], ids=["in-process", "with-sandbox"])
 def episode(request: pytest.FixtureRequest, tmp_path_factory: pytest.TempPathFactory) -> PlayedEpisode:
     moves = [
-        Move(tool="bash", args={"command": f"touch {MARKER}"}),
+        Move(tool="bash", args={"command": f"touch {MARKER} && pwd"}),
         Move(tool="read_file", args={"path": "/skills/run-tests/SKILL.md"}),
     ]
     provider = RecordingProvider({"agent-main": moves})
@@ -140,24 +175,31 @@ def episode(request: pytest.FixtureRequest, tmp_path_factory: pytest.TempPathFac
         if not request.param:
             patch.delenv(SANDBOX_URL_VARIABLE, raising=False)
             snapshot = play_model_episode(HONEST, root / "run", provider=provider)
+            checkouts = root / "run" / "checkouts"
         else:
             config = with_sandbox(HONEST, root)
-            with serve_sandbox(config.settings) as sandbox:
-                patch.setenv(SANDBOX_URL_VARIABLE, sandbox.url)
+            with serve_sandboxes(config, root / "run", patch):
                 snapshot = play_model_episode(config, root / "run", provider=provider)
+            checkouts = root / "checkouts"
+    ran = [
+        Path(json.loads(result)["stdout"].strip()) for result in provider.tool_results if '"stdout"' in result
+    ]
+    # Each turn resends the conversation, so a result shows once per later turn.
+    ran_in = sorted({directory.parent.name for directory in ran if directory.is_relative_to(checkouts)})
+    graded = (snapshot.checkout / MARKER).exists()
     return PlayedEpisode(
         request.param,
         provider.offered,
         provider.system_prompts,
         provider.tool_results,
-        snapshot.checkout,
+        ran_in,
+        graded,
+        root / "run",
     )
 
 
-def test_bash_is_offered_only_with_a_sandbox(episode: PlayedEpisode) -> None:
-    offered = "bash" in episode.offered
-
-    assert offered is episode.sandboxed
+def test_bash_is_offered_with_or_without_a_sandbox(episode: PlayedEpisode) -> None:
+    assert "bash" in episode.offered
 
 
 def test_the_agents_are_told_of_the_skills_folder_only_with_a_sandbox(episode: PlayedEpisode) -> None:
@@ -180,52 +222,52 @@ def test_the_agents_are_told_of_the_live_services_only_with_a_sandbox(episode: P
     assert told is episode.sandboxed
 
 
-def test_a_bash_call_changes_the_graded_checkout_only_with_a_sandbox(episode: PlayedEpisode) -> None:
-    ran = (episode.checkout / MARKER).exists()
+def test_a_bash_call_runs_in_its_agents_own_checkout_and_nothing_unmerged_is_graded(
+    episode: PlayedEpisode,
+) -> None:
+    assert (episode.ran_in, episode.graded) == (["agent-main"], False)
 
-    assert ran is episode.sandboxed
+
+def test_each_native_call_leaves_a_checkout_event_on_the_sealed_log_alone_naming_the_tree_it_left(
+    episode: PlayedEpisode,
+) -> None:
+    sealed, mirror = (read_events(episode.played / f"events.{log}.jsonl") for log in ("sealed", "mirror"))
+    captured = [
+        (e.tool, e.payload["tree"]) for e in sealed if e.kind == "checkout" and e.actor_uid == "agent-main"
+    ]
+    store = episode.played / HISTORY_DIRECTORY
+    listed = ["git", "--git-dir", str(store), "ls-tree", "--name-only"]
+    held = [
+        MARKER in subprocess.run([*listed, tree], capture_output=True, text=True, check=True).stdout.split()
+        for _, tree in captured
+    ]
+
+    # As cloned, after the bash that made the file, after the read that changed nothing, and at the end.
+    assert [tool for tool, _ in captured] == [None, "bash", "read_file", None]
+    assert held == [False, True, True, True]
+    assert [e for e in mirror if e.kind == "checkout"] == []
 
 
-def test_bash_without_a_sandbox_is_refused(tmp_path: Path) -> None:
-    services = CodeServices(checkout=tmp_path, repos=[], stack=StackSettings())
-
-    result = services.run("bash", {"command": f"touch {MARKER}"})
-
-    assert (result, (tmp_path / MARKER).exists()) == (
-        {"error": "bash runs only in a stack run's sandbox", "tool": "bash"},
-        False,
+def test_bash_of_an_agent_with_no_checkout_is_refused_and_runs_nowhere(tmp_path: Path) -> None:
+    services = CodeServices(
+        checkouts={"agent-main": Checkout(tmp_path, LocalRunner(None))},
+        repos=[],
+        stack=StackSettings(),
     )
 
+    result = services.run("bash", {"command": f"touch {MARKER}", "actor_uid": "serving-agent"})
 
-def test_bash_of_an_agent_with_no_sandbox_is_refused_and_runs_nowhere(tmp_path: Path) -> None:
-    config = with_sandbox(HONEST, tmp_path)
-    checkout = tmp_path / "checkouts" / "checkout"
-    checkout.mkdir()
-    with serve_sandbox(config.settings) as sandbox:
-        services = CodeServices(
-            checkout=checkout,
-            repos=[],
-            stack=config.settings.stack,
-            sandboxes={"agent-main": client_of(sandbox.url, recovery_seconds=1)},
-        )
-
-        result = services.run("bash", {"command": f"touch {MARKER}", "actor_uid": "serving-agent"})
-
-    assert (result, (checkout / MARKER).exists()) == (
-        {"error": "serving-agent has no sandbox, so its command did not run", "tool": "bash"},
+    assert (result, (tmp_path / MARKER).exists()) == (
+        {"error": "serving-agent has no checkout, so nothing ran", "tool": "bash"},
         False,
     )
 
 
 def test_a_sandbox_that_died_gives_the_agent_an_error_result_and_the_episode_plays_on(tmp_path: Path) -> None:
     config = with_sandbox(HONEST, tmp_path)
-    with (
-        serve_sandbox(config.settings) as sandbox,
-        pytest.MonkeyPatch.context() as patch,
-    ):
-        patch.setenv(SANDBOX_URL_VARIABLE, sandbox.url)
+    with pytest.MonkeyPatch.context() as patch, serve_sandboxes(config, tmp_path / "run", patch) as sandboxes:
         bash = Move(tool="bash", args={"command": f"touch {MARKER}"})
-        provider = RecordingProvider({"agent-main": [bash]}, before_first_turn=sandbox.stop)
+        provider = RecordingProvider({"agent-main": [bash]}, before_first_turn=sandboxes.stop)
 
         play_model_episode(config, tmp_path / "run", provider=provider)
 
@@ -237,18 +279,13 @@ def test_a_sandbox_that_died_gives_the_agent_an_error_result_and_the_episode_pla
 
 def test_an_episode_with_a_sandbox_starts_without_what_an_earlier_one_left(tmp_path: Path) -> None:
     config = with_sandbox(HONEST, tmp_path)
-    (tmp_path / "checkouts" / "an-earlier-episode").mkdir()
+    earlier = tmp_path / "checkouts" / "agent-main" / "an-earlier-episode"
+    earlier.mkdir(parents=True)
     (tmp_path / "scratch" / "planted.py").write_text("planted")
-    with (
-        serve_sandbox(config.settings) as sandbox,
-        pytest.MonkeyPatch.context() as patch,
-    ):
-        patch.setenv(SANDBOX_URL_VARIABLE, sandbox.url)
-
+    with pytest.MonkeyPatch.context() as patch, serve_sandboxes(config, tmp_path / "run", patch):
         play_model_episode(config, tmp_path / "run", provider=RecordingProvider({}))
 
-    left = (list((tmp_path / "scratch").iterdir()), (tmp_path / "checkouts" / "an-earlier-episode").exists())
-    assert left == ([], False)
+    assert (list((tmp_path / "scratch").iterdir()), earlier.exists()) == ([], False)
 
 
 def free_port() -> int:
@@ -264,12 +301,14 @@ def client_of(url: str, recovery_seconds: float) -> SandboxClient:
 @pytest.fixture
 def returning_sandbox(tmp_path: Path) -> Iterator[tuple[Path, int]]:
     """A sandbox down at first, as a restarting one is, serving the checkouts half a second later."""
-    settings = build_server_settings(with_sandbox(HONEST, tmp_path).settings, trusted_caller=LOOPBACK)
+    config = with_sandbox(HONEST, tmp_path)
+    checkouts = tmp_path / "checkouts"
+    settings = build_server_settings(config.settings, trusted_caller=LOOPBACK, checkouts_directory=checkouts)
     port = free_port()
-    returned: list[ServedSandbox] = []
-    starting = threading.Timer(0.5, lambda: returned.append(ServedSandbox(settings, port)))
+    returned: list[ServedSandboxes] = []
+    starting = threading.Timer(0.5, lambda: returned.append(ServedSandboxes({"agent-main": settings}, port)))
     starting.start()
-    yield tmp_path / "checkouts", port
+    yield checkouts, port
     starting.join()
     returned[0].stop()
 
@@ -279,7 +318,9 @@ def test_a_reset_waits_for_a_sandbox_that_is_coming_back(returning_sandbox: tupl
     (checkouts / "an-earlier-episode").mkdir()
     (checkouts / "this-episode").mkdir()
 
-    client_of(f"http://{LOOPBACK}:{port}", recovery_seconds=10).reset(keep=checkouts / "this-episode")
+    client_of(f"http://{LOOPBACK}:{port}/agent-main", recovery_seconds=10).reset(
+        keep=checkouts / "this-episode",
+    )
 
     assert sorted(path.name for path in checkouts.iterdir()) == ["this-episode"]
 

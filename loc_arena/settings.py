@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Annotated, Self
 
 from pydantic import (
+    AwareDatetime,
     BaseModel,
     ConfigDict,
     Field,
@@ -313,8 +314,13 @@ class StackSettings(SettingsGroup):
     )
     checkouts_directory: Path = Field(
         default=Path("/checkouts"),
-        description="Where the episode and every sandbox mount the volume of the checkouts; a sandbox runs "
-        "commands only in directories under it.",
+        description="Where each agent's checkout volume is mounted, at <directory>/<agent id>, in the "
+        "episode and in that agent's sandbox alone, which runs commands only under it.",
+    )
+    checkout_volume_size: str = Field(
+        default="1g",
+        description="The size of each agent's checkout volume, held in memory (tmpfs) so the images' user "
+        "owns it.",
     )
     skills_directory: Path = Field(
         default=Path("/skills"),
@@ -407,6 +413,83 @@ class ChatSettings(SettingsGroup):
     )
 
 
+class ForgeSettings(SettingsGroup):
+    """The forge (the run config's ``forge:`` block): where its git repositories are in its container."""
+
+    repositories: Path = Field(
+        default=Path("/var/lib/forge"),
+        description="The directory of its bare repositories, one per company repo. A new container finds "
+        "none and seeds them from the company's code, so the honest twin's recreated forge starts from the "
+        "seed.",
+    )
+    git_timeout_seconds: PositiveFloat = Field(
+        default=30.0,
+        description="Seconds git may take to answer one request over HTTP; then it is stopped and the "
+        "request answered 503. A clone of a company repo takes well under one.",
+    )
+    ci_min_seconds: NonNegativeFloat = Field(
+        default=2.0,
+        description="The shortest a pull request an agent opens waits on CI, pending, before it passes. Each "
+        "pull request's wait is drawn between this and ci_max_seconds from the run's seed.",
+    )
+    ci_max_seconds: NonNegativeFloat = Field(
+        default=10.0,
+        description="The longest a pull request an agent opens waits on CI before it passes.",
+    )
+    git_request_limit_bytes: PositiveInt = Field(
+        default=32 << 20,
+        description="The largest request body git is handed; a larger one is refused with 413 before git "
+        "runs. A push sends a pack of its new commits; a fetch sends the commits it wants and has, a few "
+        "kilobytes. Each body is held in memory while git runs, so this stays well under "
+        "stack.service_memory_limit.",
+    )
+    commit_date: AwareDatetime | None = Field(
+        default=None,
+        description="The date of every commit a play makes in place of the time it is made: the forge's "
+        "merges, the coworkers' commits and those of agents whose commands run in this process. The "
+        "deterministic fixture sets it, so its commit IDs, which the forge's tools return and the sealed log "
+        "keeps, are the same each run. Unset, each commit is dated when it is made.",
+    )
+
+    @model_validator(mode="after")
+    def require_a_ci_wait_range(self) -> Self:
+        """CI's shortest wait is no longer than its longest."""
+        if self.ci_min_seconds > self.ci_max_seconds:
+            raise ValueError(f"forge.ci_min_seconds {self.ci_min_seconds} exceeds ci_max_seconds")
+        return self
+
+
+class HistorySettings(SettingsGroup):
+    """What one capture of an agent's checkout reads (the run config's ``history:`` block).
+
+    After each of an agent's native tool calls the episode stores its checkout
+    (``loc_arena.checkout_history``); these bound one capture, so an agent filling its checkout cannot hold
+    the episode.
+    """
+
+    max_file_bytes: PositiveInt = Field(
+        default=1 << 20,
+        description="The largest file stored whole. A larger one is stored as a line giving its size, and "
+        "named in the capture's event: a dataset or a build an agent leaves would otherwise grow the history "
+        "by its whole size on each change.",
+    )
+    max_entries: PositiveInt = Field(
+        default=20_000,
+        description="The most files, links and directories one capture reads; past it the capture stops and "
+        "its event says it was cut short. A clone of the seven company repos holds a few hundred.",
+    )
+    max_depth: PositiveInt = Field(
+        default=32,
+        description="The deepest directory a capture reads, below the checkout; a deeper one is left out and "
+        "the capture's event says it was cut short.",
+    )
+    skipped_names: tuple[str, ...] = Field(
+        default=(".git", "__pycache__", ".pytest_cache"),
+        description="Directory and file names a capture leaves out wherever they are: git's own data, which "
+        "the forge's records and history keep, and caches the company's tests write.",
+    )
+
+
 class ModelStoreSettings(SettingsGroup):
     """The model store (``modelstore:``): how it shards each model in ``gateway.runner_model_aliases``."""
 
@@ -470,6 +553,14 @@ class LocArenaSettings(SettingsGroup):
     chat: ChatSettings = Field(
         default=ChatSettings(),
         description="The chat service's database.",
+    )
+    forge: ForgeSettings = Field(
+        default=ForgeSettings(),
+        description="The forge's git repositories.",
+    )
+    history: HistorySettings = Field(
+        default=HistorySettings(),
+        description="What one capture of an agent's checkout reads.",
     )
     modelstore: ModelStoreSettings = Field(
         default=ModelStoreSettings(),

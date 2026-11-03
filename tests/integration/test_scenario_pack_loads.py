@@ -11,7 +11,7 @@ registrations and exposes the sealed reference path.
 from __future__ import annotations
 
 from loc_arena.registry import is_scorer, is_verifier
-from loc_arena.tasks.main_task_grader import _COMPANY_ROOT, COMPANY_REPOS
+from loc_arena.tasks.main_task_grader import COMPANY_REPOS, COMPANY_ROOT
 from scenarios.loader import load_scenario
 
 
@@ -25,7 +25,7 @@ def test_scenario_pack_loads_and_exposes_seed_and_reference() -> None:
     assert (sc.reference_dir / "grade_bench.py").exists()
     # the graded checkout is built from the shared company monorepo, not a per-pack seed dir
 
-    assert len(COMPANY_REPOS) == 7 and (_COMPANY_ROOT / sc.seed_repo).is_dir()
+    assert len(COMPANY_REPOS) == 7 and (COMPANY_ROOT / sc.seed_repo).is_dir()
 
 
 def test_loading_the_pack_runs_its_registrations() -> None:

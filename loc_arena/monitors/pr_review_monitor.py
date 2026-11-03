@@ -1,11 +1,10 @@
 """PR reviewer monitor.
 
-Enforces the firewall: it reads only the observable PR fields declared in its inputs (diff,
-title, body, target repo, actor), never the sealed log. Scoped in ``monitors.yaml`` to the
-``monitor-policy`` repo. In ``heuristic`` mode it scores a coverage-changing PR with a rule; in ``live``
-mode it sends those declared fields to the trusted-monitor model THROUGH THE GATEWAY and parses a strict
-JSON verdict, falling back to the heuristic on a parse failure. A change made without a PR, this monitor
-never sees.
+Enforces the firewall: it reads only the observable PR fields declared in its inputs (diff, title, body,
+target repo, actor), never the sealed log. Scoped in ``monitors.yaml`` to the ``meridian-controlplane``
+repo. In ``heuristic`` mode it scores a coverage-changing PR with a rule; in ``live`` mode it sends those
+declared fields to the trusted-monitor model THROUGH THE GATEWAY and parses a strict JSON verdict, falling
+back to the heuristic on a parse failure. A change made without a PR, this monitor never sees.
 """
 
 from __future__ import annotations

@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import pytest
+from loc_arena.checkouts import Checkout, LocalRunner
 from loc_arena.gateway.core import GenerateResponse, Move
 from loc_arena.sandbox import SandboxError
 from loc_arena.scaffold.code_services import CodeServices, SkillsFolder
@@ -13,6 +14,7 @@ from loc_arena.scaffold.pi_harness import arena_tools, as_pi_move, read_chat_req
 from loc_arena.scaffold.tool_specs import agent_tool_specs
 from loc_arena.settings import StackSettings
 
+AGENT = "agent-main"
 SERVED = {"type": "function", "function": {"name": "open_pr", "description": "Open a PR.", "parameters": {}}}
 
 
@@ -21,7 +23,7 @@ def names(specs: list[dict]) -> list[str]:
 
 
 def test_an_agent_keeps_the_arena_tools_pi_has_no_tool_for() -> None:
-    kept = arena_tools(agent_tool_specs(shell=True, served=[SERVED]))
+    kept = arena_tools(agent_tool_specs([SERVED]))
 
     assert names(kept) == ["list_dir", "search_code", "open_pr", "finish"]
 
@@ -138,7 +140,7 @@ def code(tmp_path: Path) -> CodeServices:
     (skills / "profile" / "SKILL.md").write_text("# profile\n")
     (tmp_path / "secret.txt").write_text("not the agent's")
     return CodeServices(
-        checkout=checkout,
+        checkouts={AGENT: Checkout(checkout, LocalRunner(None))},
         repos=["repo"],
         stack=StackSettings(),
         skills=SkillsFolder(Path("/skills"), skills),
@@ -147,14 +149,14 @@ def code(tmp_path: Path) -> CodeServices:
 
 def test_pis_operations_act_on_the_checkout(code: CodeServices, tmp_path: Path) -> None:
     checkout = tmp_path / "checkout"
-    code.make_directory(str(checkout / "repo" / "new"))
-    code.write_text(str(checkout / "repo" / "new" / "b.py"), "b = 2\n")
-    code.check_readable(str(checkout / "repo" / "a.py"))
+    code.make_directory(AGENT, str(checkout / "repo" / "new"))
+    code.write_text(AGENT, str(checkout / "repo" / "new" / "b.py"), "b = 2\n")
+    code.check_readable(AGENT, str(checkout / "repo" / "a.py"))
 
-    assert code.read_bytes(str(checkout / "repo" / "new" / "b.py")) == b"b = 2\n"
-    assert code.read_bytes("/skills/profile/SKILL.md") == b"# profile\n"
+    assert code.read_bytes(AGENT, str(checkout / "repo" / "new" / "b.py")) == b"b = 2\n"
+    assert code.read_bytes(AGENT, "/skills/profile/SKILL.md") == b"# profile\n"
     with pytest.raises(FileNotFoundError):
-        code.check_readable(str(checkout / "repo" / "missing.py"))
+        code.check_readable(AGENT, str(checkout / "repo" / "missing.py"))
 
 
 @pytest.mark.parametrize("operation", ["read_bytes", "check_readable", "write_text", "make_directory"])
@@ -167,19 +169,19 @@ def test_pis_operations_refuse_a_path_outside_the_checkout(
     arguments = [outside, "overwritten"] if operation == "write_text" else [outside]
 
     with pytest.raises(ValueError, match="escapes the checkout"):
-        getattr(code, operation)(*arguments)
+        getattr(code, operation)(AGENT, *arguments)
 
     assert (tmp_path / "secret.txt").read_text() == "not the agent's"
 
 
 def test_pis_skills_folder_is_read_only(code: CodeServices) -> None:
     with pytest.raises(ValueError, match="escapes the checkout"):
-        code.write_text("/skills/profile/SKILL.md", "rewritten")
+        code.write_text(AGENT, "/skills/profile/SKILL.md", "rewritten")
 
 
-def test_a_command_runs_only_in_a_sandbox(code: CodeServices, tmp_path: Path) -> None:
-    with pytest.raises(SandboxError, match="has no sandbox"):
-        code.run_command("agent-main", "ls", str(tmp_path / "checkout"), 5)
+def test_a_command_of_an_agent_with_no_checkout_does_not_run(code: CodeServices, tmp_path: Path) -> None:
+    with pytest.raises(SandboxError, match="has no checkout"):
+        code.run_command("agent-other", "ls", str(tmp_path / "checkout"), 5)
 
 
 @pytest.mark.parametrize(("asked", "limit"), [(None, 30), (5, 5), (600, 30)])
@@ -188,6 +190,6 @@ def test_a_command_runs_within_what_it_asks_but_never_past_the_stacks_limit(
     asked: float | None,
     limit: float,
 ) -> None:
-    code = CodeServices(checkout=tmp_path, repos=[], stack=StackSettings(shell_timeout_seconds=30))
+    code = CodeServices(checkouts={}, repos=[], stack=StackSettings(shell_timeout_seconds=30))
 
     assert code.command_limit(asked) == limit

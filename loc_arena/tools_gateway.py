@@ -7,12 +7,13 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
 from loc_arena.yaml_documents import dump_document
 
 if TYPE_CHECKING:  # loc_arena.episode_stack imports this module
+    from loc_arena.compose_document import ComposeService
     from loc_arena.config import RunConfig
     from loc_arena.episode_stack import Identity
 
@@ -25,6 +26,25 @@ MCP_PATH = "/mcp"  # the MCP route of the tools gateway and of each service with
 def serves_tools(config: RunConfig) -> bool:
     """Whether a stack run of ``config`` runs the tools gateway: a live service of its scenario has tools."""
     return any(service.tools for service in config.live_services)
+
+
+def render_tools_gateway(config: RunConfig, tool_services: Sequence[str], network: str) -> ComposeService:
+    """The tools gateway: its pinned image, on ``network`` alone, bounded as a live service, config a secret.
+
+    It starts once every service it puts on its route is healthy.
+    """
+    stack = config.settings.stack
+    return {
+        "image": stack.tools_gateway_image,
+        "command": ["-f", str(config.settings.gateway.secrets_dir / TOOLS_GATEWAY_CONFIG_SECRET_NAME)],
+        "secrets": [TOOLS_GATEWAY_CONFIG_SECRET_NAME],
+        "cap_drop": ["ALL"],
+        "mem_limit": stack.service_memory_limit,
+        "cpus": stack.service_cpus,
+        "pids_limit": stack.service_pids_limit,
+        "networks": [network],
+        "depends_on": {service: {"condition": "service_healthy"} for service in tool_services},
+    }
 
 
 def render_tools_gateway_config(

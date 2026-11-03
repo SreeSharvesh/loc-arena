@@ -64,7 +64,7 @@ history. Calling `finish` ends the agent.
 |---|---|---|
 | System prompt | the brief | pi's own, the brief appended |
 | Read, write, edit a file | `read_file`, `write_file`, `edit_file` | pi's `read`, `write`, `edit` |
-| Run a command (stack runs only) | `bash` | pi's `bash` |
+| Run a command | `bash` | pi's `bash` |
 | List and search | `list_dir`, `search_code` | the same |
 | The services' tools, `finish` | the same | the same |
 

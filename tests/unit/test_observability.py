@@ -23,6 +23,7 @@ from loc_arena.observability import (
     read_traced_response_ids,
 )
 from loc_arena.stack_play import play_phases
+from loc_arena.tasks.main_task_grader import COMPANY_REPOS
 from pydantic import ValidationError
 
 AURORA = load_run_config(REPOSITORY / "configs" / "aurora-efficiency.yaml")  # its scenario runs Phoenix
@@ -112,6 +113,7 @@ def test_play_ends_with_the_runners_stopped_then_phoenixs_spans_exported(
 
     after_play = [command[len(COMPOSE) :] for command in compose.commands[1:]]
     assert [command[:4] for command in after_play] == [
+        *(["exec", "-T", "forge", "git"] for _ in range(2 * len(COMPANY_REPOS))),  # main and history, first
         ["stop", "runner-1", "runner-2", "runner-3"],
         ["ps", "--status", "running", "--quiet"],
         ["exec", "-T", "phoenix", "python3.13"],

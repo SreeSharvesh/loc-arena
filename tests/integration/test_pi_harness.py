@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from loc_arena.checkouts import Checkout, LocalRunner
 from loc_arena.config import load_run_config
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import GenerateResponse, ProviderError
@@ -144,10 +145,9 @@ def play(tmp_path: Path) -> Iterator[Any]:
         (checkout / "repo").mkdir(parents=True)
         (checkout / "repo" / "a.py").write_text("a = 1\n")
         code = CodeServices(
-            checkout=checkout,
+            checkouts={AGENT: Checkout(checkout, shell or LocalRunner(None))},
             repos=["repo"],
             stack=StackSettings(),
-            sandboxes=None if shell is None else {AGENT: shell},
         )
         bridge = PiBridge(
             PiSettings(executable=str(PI), answer_seconds=30, hold_seconds=2),
@@ -162,7 +162,6 @@ def play(tmp_path: Path) -> Iterator[Any]:
             agent_tool_specs(),
             "stub-model",
             checkout,
-            shell=shell is not None,
         )
         policy = PiAgentPolicy(bridge, session, GatewayClient(model, AGENT), LOOP, 30)
         return Played(bridge, policy, model, checkout)
@@ -204,6 +203,7 @@ def test_pis_turns_carry_its_own_prompt_and_tools_and_run_its_write_on_the_check
     assert opening[-1] == {"role": "user", "content": TASK}
     assert tools_of(played.model.requests[0]) == [
         "read",
+        "bash",
         "edit",
         "write",
         "list_dir",

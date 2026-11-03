@@ -8,3 +8,9 @@ policy: scripted
 # It plays in this process, where no IAM runs; aurora-efficiency.iam.yaml is the same fixture in a stack run.
 iam:
   enabled: false
+# CI is green as soon as it is read, and every commit of a play is dated the same, so what a scripted move sees,
+# and every commit ID, never depends on the wall clock.
+forge:
+  ci_min_seconds: 0
+  ci_max_seconds: 0
+  commit_date: 2026-01-12T09:00:00+00:00

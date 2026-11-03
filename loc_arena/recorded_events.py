@@ -8,23 +8,25 @@ that time and the native turn of its agent running then, else turn 0, and are wr
 play to the sealed log, and to the mirror log unless sealed-only. A call its service refused (it carries
 ``error.type``) makes a blocked ``action`` with the service's reason. A successful call makes zero or more
 events: chat's ``post``, ``reply`` and ``send_dm`` a ``message``, over MCP or HTTP alike; the forge's
-``open_pr`` a ``pr`` and an ``action``. A live service with rights and no tools records a request in its log
-as a line naming its operation (``ServiceRequestRecord``); its other lines are not records. A request it
-refused makes a blocked ``action``, and one that changed something an ``action``; a read it answered makes
-none, but for a model store's shard download, an ``action``. A service with tools and rights both (the eval,
-tickets, notes, chat and model store services) records a tool call or
-a request per line, and each line is read as what it names. The job service, reached both ways, writes both
-kinds of record, and each change of a job's state is a ``job`` event of its owner; the process facts each node
-of its fleet writes (``services/node-<n>.log``) are ``process`` events on the sealed log alone. Neither comes
-from an agent's call, so either may fall outside every turn, unnoted. A job's own calls carry its workload
-principal (``job-<id>``), which is no agent of the run: each record a workload made is its sponsor's, by IAM's
-``workload_issued`` audit line, and each of its events names the ``workload``; it too may fall outside every
-turn, unnoted. A seeded job, another team's work the job service starts with, is marked ``seed`` on its
-``job`` events, and its owner is a principal of the company: each record of one is placed as an agent's is,
-its events of the actor role ``company``, in turn 0. Each line of ``unattributed_records.jsonl`` in the run
-directory is a record and the ``reason`` it was not placed: not a valid record, outside every phase window, or
-not an agent of the run; or no covering turn, a native agent's record outside all its turns, whose events are
-built in turn 0. Grading never builds, so grading a run again adds nothing.
+``open_pr`` a ``pr`` and an ``action``, its ``merge`` an ``action`` and, if it landed, a ``pr`` with the diff
+it merged. A live service with rights and no tools records a request in its log as a line naming its operation
+(``ServiceRequestRecord``); its other lines are not records. A request it refused makes a blocked ``action``,
+and one that changed something an ``action``; a read it answered makes none, the forge's git fetch among them,
+though it is a POST, while its git push is an action, and so is a model store's shard download, a read that
+copies. A service with tools and rights both (the eval, tickets, notes, chat and model store services, the
+forge) records a tool call or a request per line, and each line is read as what
+it names. The job service, reached both ways, writes both kinds of record, and each change of a job's state is
+a ``job`` event of its owner; the process facts each node of its fleet writes (``services/node-<n>.log``) are
+``process`` events on the sealed log alone. Neither comes from an agent's call, so either may fall outside
+every turn, unnoted. A job's own calls carry its workload principal (``job-<id>``), which is no agent of the
+run: each record a workload made is its sponsor's, by IAM's ``workload_issued`` audit line, and each of its
+events names the ``workload``; it too may fall outside every turn, unnoted. A seeded job, another team's work
+the job service starts with, is marked ``seed`` on its ``job`` events, and its owner is a principal of the
+company: each record of one is placed as an agent's is, its events of the actor role ``company``, in turn 0.
+Each line of ``unattributed_records.jsonl`` in the run directory is a record and the ``reason`` it was not
+placed: not a valid record, outside every phase window, or not an agent of the run; or no covering turn, a
+native agent's record outside all its turns, whose events are built in turn 0. Grading never builds, so
+grading a run again adds nothing.
 """
 
 from __future__ import annotations
@@ -45,7 +47,6 @@ from sandbox_server.confinement import resolve_inside
 from scenarios.loader import LiveService
 
 from loc_arena.config import RunConfig
-from loc_arena.forge.service import OpenedPullRequest
 from loc_arena.iam_seed import load_seed
 from loc_arena.logging_.agent_trace import EpisodeTrace
 from loc_arena.logging_.events import AppendOnlyLog, EventKind, read_events
@@ -53,6 +54,7 @@ from loc_arena.node_pool import list_node_services
 from loc_arena.scaffold.bus import Recorder
 from loc_arena.task import SNAPSHOT_FILE, SnapshotFile, read_snapshot_file, resolve_scenario
 from loc_arena.tool_records import ToolRecord
+from meridian_forge.server import MergeResult, OpenedPullRequest
 
 _LOGGER = logging.getLogger(__name__)
 SERVICE_LOGS = "services"  # a stack run's copy of each live service's log, in the run directory
@@ -60,6 +62,7 @@ RECORDS = "records"  # where an in-process run's services record, in each episod
 UNATTRIBUTED_FILE = "unattributed_records.jsonl"
 COMPANY_ROLE = "company"  # the actor role of a company principal's events: no agent of the run
 _OPENED_PULL_REQUEST = TypeAdapter(OpenedPullRequest)
+_MERGE_RESULT = TypeAdapter(MergeResult)
 _JSON_OBJECT = TypeAdapter(dict[str, JsonValue])
 
 
@@ -110,6 +113,7 @@ class _ProcessFact(BaseModel):
     owner: str
     attempt: int = 1
     argv: list[str] | None = None
+    checkout: dict[str, str] | None = None  # at its start, the commit of each repo's main it runs, by repo
     exit_code: int | None = None
 
 
@@ -150,27 +154,28 @@ class RecordedEvent:
 
 
 def build_pull_request(record: ToolRecord, agent_ids: Sequence[str]) -> list[RecordedEvent]:
-    """The ``pr`` event of the pull request the forge opened, with the fields the PR review monitor reads.
+    """The ``pr`` event of a pull request the forge opened or merged, with the fields the PR monitor reads.
 
-    Raises ``ValidationError`` when the record's result is not the forge's ``open_pr`` result.
+    A merge's is its merger's, with the diff it merged: a branch may move after its pull request opens, so
+    what merges is reviewed as it merged. A refused merge makes none. Raises ``ValidationError`` when the
+    record's result is not the forge's ``open_pr`` or ``merge`` result.
     """
     _ = agent_ids
-    opened = _OPENED_PULL_REQUEST.validate_python(record.result)
-    return [
-        RecordedEvent(
-            "pr",
-            record.agent,
-            opened["repo"],
-            {
-                "number": opened["number"],
-                "target_repo": opened["repo"],
-                "pr_title": opened["title"],
-                "pr_body": str(record.arguments.get("body", "")),
-                "diff": str(record.arguments.get("diff", "")),
-                "ci": opened["ci"],
-            },
-        ),
-    ]
+    if record.tool == "merge":
+        merged = _MERGE_RESULT.validate_python(record.result)
+        if not merged["merged"]:
+            return []
+        pr: dict[str, Any] = {**merged, "merged": True}
+    else:
+        pr = {**_OPENED_PULL_REQUEST.validate_python(record.result), "body": record.arguments.get("body", "")}
+    payload = {
+        "number": pr["number"],
+        "target_repo": pr["repo"],
+        "pr_title": pr["title"],
+        "pr_body": str(pr["body"]),
+    }
+    payload |= {key: pr[key] for key in ("head", "diff", "ci", "merged") if key in pr}
+    return [RecordedEvent("pr", record.agent, str(pr["repo"]), payload)]
 
 
 def chat_message(
@@ -212,6 +217,7 @@ CHAT_POSTS: frozenset[str] = frozenset({"post", "reply", "send_dm"})
 # the tools gateway's prefixMode: never). A builder raises ValidationError on a result that is not its tool's.
 EVENT_BUILDERS: Mapping[str, Callable[[ToolRecord, Sequence[str]], list[RecordedEvent]]] = {
     "open_pr": build_pull_request,
+    "merge": build_pull_request,
     **dict.fromkeys(CHAT_POSTS, build_message),
 }
 
@@ -219,13 +225,13 @@ EVENT_BUILDERS: Mapping[str, Callable[[ToolRecord, Sequence[str]], list[Recorded
 # The tools whose successful call is also an action (the eval, tickets and notes services' changes among them;
 # their reads are none), and the argument naming what a call or request addresses.
 _ACTIONS = {
-    *("open_pr", "register_eval", "retire_eval", "start_run", "publish_run"),
+    *("open_pr", "merge", "register_eval", "retire_eval", "start_run", "publish_run"),
     *("create_project", "edit_project", "create_ticket", "edit_ticket", "comment_on_ticket"),
     *("write_note", "delete_note"),
     "edit_message",
 }
 _TARGET_FROM: Mapping[str, str] = {
-    "open_pr": "repo",
+    **dict.fromkeys(("open_pr", "merge"), "repo"),
     "post": "channel",
     "send_dm": "member",
     "register_agent": "name",
@@ -245,8 +251,11 @@ _TARGET_FROM: Mapping[str, str] = {
     **dict.fromkeys(("edit_project", "create_ticket"), "project"),
     **dict.fromkeys(("get_ticket", "edit_ticket", "comment_on_ticket"), "ticket"),
     **dict.fromkeys(("read_note", "write_note", "delete_note"), "key"),
+    **dict.fromkeys(("info_refs", "upload_pack", "receive_pack"), "repo"),
     **dict.fromkeys(("read_manifest", "download_shard"), "model"),
 }
+# Requests that read though they are no GET: git's fetch, a POST answering with the commits it asks for.
+_POST_READS = frozenset({"upload_pack"})
 # The reads over HTTP that are actions all the same: a download takes a copy of what it reads.
 _HTTP_READ_ACTIONS = frozenset({"download_shard"})
 # The job service's tools that only read: an answered call of one makes no event, of any other an action.
@@ -281,8 +290,8 @@ def build_events_from_service_request(record: ServiceRequestRecord) -> list[Reco
     model store is an action, a read that copies.
     """
     refused = record.status >= HTTPStatus.BAD_REQUEST
-    answered_read = record.method == HTTPMethod.GET and record.operation not in _HTTP_READ_ACTIONS
-    if record.caller is None or (answered_read and not refused):
+    reads = record.method == HTTPMethod.GET or record.operation in _POST_READS
+    if record.caller is None or (reads and not refused and record.operation not in _HTTP_READ_ACTIONS):
         return []
     if not refused and record.operation in CHAT_POSTS:
         return [chat_message(record.caller, record.operation, record.arguments)]

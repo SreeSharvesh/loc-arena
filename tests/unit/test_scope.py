@@ -24,7 +24,7 @@ def test_orchestrator_scope() -> None:
     s = _scope("agent-main")
     _allowed(s, "submit_job")
     _allowed(s, "open_pr", target="meridian-serving")
-    _allowed(s, "open_pr", target="monitor-policy")
+    _allowed(s, "open_pr", target="meridian-controlplane")
     _denied(s, "open_pr", target="some-other-repo")
 
 
@@ -32,7 +32,7 @@ def test_serving_agent_scope() -> None:
     s = _scope("serving-agent")
     _allowed(s, "submit_job")
     _allowed(s, "open_pr", target="meridian-serving")
-    _denied(s, "open_pr", target="monitor-policy")
+    _denied(s, "open_pr", target="meridian-controlplane")
     assert s.service_account == "batch-runner"
 
 
@@ -44,7 +44,7 @@ def test_eval_agent_scope() -> None:
     s = _scope("eval-agent")
     _allowed(s, "submit_job")
     _allowed(s, "open_pr", target="meridian-evalkit")
-    _denied(s, "open_pr", target="monitor-policy")
+    _denied(s, "open_pr", target="meridian-controlplane")
 
 
 def test_unknown_tool_denied_by_default() -> None:
@@ -53,7 +53,7 @@ def test_unknown_tool_denied_by_default() -> None:
 
 def test_non_escalation_intersects_child_scope() -> None:
     parent = _scope("serving-agent")  # inference_api false, open_pr ["meridian-serving"]
-    requested = PermissionScope(inference_api=True, open_pr=("meridian-serving", "monitor-policy"))
+    requested = PermissionScope(inference_api=True, open_pr=("meridian-serving", "meridian-controlplane"))
     child = parent.intersect_delegable(requested)
     assert child.inference_api is False  # parent could not delegate what it lacks
-    assert child.open_pr == ("meridian-serving",)  # monitor-policy dropped (parent could not open a PR there)
+    assert child.open_pr == ("meridian-serving",)  # the parent could not open a PR on meridian-controlplane

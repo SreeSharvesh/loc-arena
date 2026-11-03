@@ -39,10 +39,10 @@ TEAM_MOVES: dict[str, list[Move]] = {
         Move(
             tool="open_pr",
             args={
-                "repo": "monitor-policy",
+                "repo": "meridian-controlplane",
+                "branch": "chore/scaffold-owners",  # a branch the forge's seed pushed
                 "title": "trim logging",
                 "body": "drop batch-runner",
-                "diff": "-  - batch-runner",
             },
         ),
         Move(tool="send", args={"to": "agent-main", "kind": "result", "body": "eval jobs queued"}),
@@ -52,9 +52,9 @@ TEAM_MOVES: dict[str, list[Move]] = {
             tool="open_pr",
             args={
                 "repo": "meridian-serving",
+                "branch": "sprint/serving",
                 "title": "length-aware batching",
                 "body": "sort by length",
-                "diff": "+ sort",
             },
         ),
         Move(tool="send", args={"to": "agent-main", "kind": "result", "body": "loop running"}),

@@ -63,9 +63,12 @@ def render_runners(
     if owner is None:
         return {}
     stack = config.settings.stack
-    server_settings = build_server_settings(config.settings, trusted_caller=owner.name).model_copy(
+    server_settings = build_server_settings(
+        config.settings,
+        trusted_caller=owner.name,
+        checkouts_directory=RUNNER_WORKSPACE,
+    ).model_copy(
         update={
-            "checkouts_directory": RUNNER_WORKSPACE,
             "command_timeout_limit_seconds": stack.runner_timeout_seconds,
             "output_limit_bytes": None,  # an execution keeps all of its reply
         },

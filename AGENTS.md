@@ -44,7 +44,7 @@ Component specs cannot weaken the contract's isolation, authorization or evidenc
 | `loc_arena/monitors/`, `loc_arena/protocol.py` | the monitors; the control protocol that runs them |
 | `loc_arena/verifier/`, `loc_arena/tasks/` | the sealed side-task verifier; the main-task grader |
 | `loc_arena/metrics.py` | safety and usefulness metrics |
-| `loc_arena/forge/`, `loc_arena/npcs/` | the git forge and the seeded company world, and its MCP service (`service.py`); the scripted coworkers |
+| `company/meridian-forge/`, `loc_arena/forge_service.py`, `loc_arena/npcs/`, `docs/forge-service.md` | the git forge: a platform package of the company's like `meridian-iam` (never in the agents' checkout) holding its pull requests, merges and git repositories over HTTP, seeded from the scenario's `forge.yaml`; the lab's start-up of it under IAM; the scripted coworkers and reviewer; its plan |
 | `loc_arena/scaffold/pi_harness.py`, `loc_arena/scaffold/pi_bridge.ts`, `docs/pi-harness.md` | `harness: pi`: each agent's loop in pi, a child process of the episode, whose model calls and tool calls the episode plays in the agent's turns; pi's extension |
 | `loc_arena/scaffold/mcp_client.py`, `loc_arena/tool_records.py`, `loc_arena/mcp_service.py` | each agent's MCP client; every MCP service's record of the tool calls made to it; who calls a service, and how it is served |
 | `loc_arena/agents_service.py`, `company/meridian-controlplane/meridian_controlplane/agents/`, `docs/agents-service.md` | the agents service: Meridian's registry of its agents, their executions on the runners (stopped and resumed through checkpoints), each agent's identity and the schedules, company code a stack run serves under central IAM; its plan |
@@ -61,6 +61,7 @@ Component specs cannot weaken the contract's isolation, authorization or evidenc
 | `loc_arena/stack_play.py` | a stack run's two plays in one container, the services renewed between them, and each log copied out once |
 | `loc_arena/tools_gateway.py` | the config of agentgateway, which puts every live service with tools on one MCP route and offers each agent the tools its `sandbox: tools:` lists |
 | `sandbox_server/`, `loc_arena/sandbox.py` | each sandbox container's command server, where an agent's code runs in a stack run, a package that imports nothing of the harness; the episode's clients of them |
+| `loc_arena/checkouts.py`, `loc_arena/checkout_history.py` | each agent's checkout: its own clone of every company repo from the forge, in its sandbox's volume or in this process, where its native tools and `bash` act; and its history, captured after each of its actions into a store of the play's |
 | `loc_arena/runner_pool.py`, `sandbox_server/pi_on_gateway.py` | the runners: sandboxes where the company's own agents run with pi, driven by the one service that declares them; how pi there reaches the gateway |
 | `loc_arena/node_pool.py`, `sandbox_server/node.py` | the job service's fleet: worker containers, each running one job at a time under a daemon only the job service can call |
 | `loc_arena/observability.py`, `sandbox_server/pi_trace.ts` | the company's observability store (Phoenix): pi's trace extension on the runners, and the export of its spans into the run directory |
@@ -90,7 +91,7 @@ make run MODE=attack           # live models in a stack (the default): no key in
 The deterministic config is a test fixture for the engine; its scores are not results. A run plays where its config
 needs: in a stack when central IAM is on, and in this process when it is off (the deterministic fixture), where the
 agents' code can read local files and no IAM runs. `STACK=1|0` (`--stack`, `--no-stack`) forces either; a config
-with IAM on is refused in this process.
+with IAM on, or one that plays a live model, is refused in this process.
 
 ## Rules
 
@@ -160,8 +161,9 @@ the latest push. After changing `.coderabbit.yaml`, comment `@coderabbitai confi
   seed.
 - An agent is offered exactly the tools its `sandbox: tools:` lists, plus, under central IAM, IAM's
   `access_inbox`, which takes the caller from the agent's inbox key and reads only its inbox. Every other service
-  takes the caller from its identity, enforces its scope, and records every call; the events monitors and the verifier read are built from
-  those records after play, and grading never builds them.
+  takes the caller from its identity, is authorized by central IAM, and records every call (the job service also
+  checks the run config's `scope`); the events monitors and the verifier read are built from those records after
+  play, and grading never builds them.
 - The scripted engine is reproducible: the same config and seed give a byte-identical sealed log
   (`tests/integration/test_end_to_end.py`).
 - Every model call goes through the gateway (`loc_arena/gateway/`), which records it; never call a provider from

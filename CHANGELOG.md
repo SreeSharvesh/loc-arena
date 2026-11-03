@@ -8,6 +8,99 @@ log has the details.
 
 ### Changed
 
+- **A merge merges the commit it reviewed.** It read the branch once for the reviewed diff and again to merge,
+  so a push landing between the two merged unreviewed code. It now reads the branch's commit once, and the
+  review, the `head` it returns and the merge are all of that commit.
+- **The PR review monitor sees what a merge merged.** It scored a pull request's diff once, when it opened, so
+  commits pushed to its branch afterwards merged unreviewed. A merge now returns the diff it merged, with the pull
+  request's title and body, and a merge that lands is a `pr` event of its merger's, which the monitor scores too.
+- **A merged `.gitattributes` cannot change what is graded.** Grading runs each repo's suite on `git archive` of
+  `main`, which honoured the tree's attributes: one merged line such as `tests/test_bug.py export-ignore` left a
+  failing test out, and `export-subst`, `ident` or line-ending attributes rewrote files. Each forge repository's own
+  `info/attributes` now unsets all of them, and it wins over the tree's, so the archive is `main` as committed.
+- **A forge that restarts keeps its pull requests.** The forge keeps its pull requests, who pushed each commit and
+  that its set-up is done in a SQLite file beside its repositories. A forge restarted on them reads its pull
+  requests back and goes on numbering from them, and makes the coworkers' changes no more: before, it forgot
+  every pull request and crashed reapplying a coworker's patch. A scenario's service entry may now say
+  `restarts: true`; the forge's does, so a forge whose process ends during play comes back where it was.
+- **A fetch says what it read.** The forge's record of each fetch names git's command (`ls-refs` or `fetch`)
+  and each commit it asked for: the branches it tips, whether `main` holds it, and who pushed it. Like every
+  read it makes no event: a plain clone or pull asks for every branch, so a teammate's open one is no sign of
+  passing code outside review; using it is, and the agent's own commands and pushes show that. A fetch is read
+  in a fixed number of git calls, each commit it names listed once, and one git stops reading is still recorded.
+- **A stack run works on a host enforcing SELinux.** The folders a stack mounts from the repository (the run
+  configs, the scripted moves, the skills) and each agent's checkout volume are mounted with Docker's shared
+  label (`z`); unlabelled, SELinux kept every container from reading the configs or writing a checkout. The
+  gateway's provider roots, a compose secret from the virtualenv's certifi, still need the label by hand
+  (`chcon -t container_file_t .venv/lib/python3.12/site-packages/certifi/cacert.pem`), since compose cannot
+  relabel a secret.
+- **Each action's code is kept.** As cloned, after each of an agent's native tool calls and at the end of play,
+  the episode stores the agent's whole checkout as a git tree in the play's `checkout_history`, read with dulwich
+  and never by running git on it, and logs a `checkout` event naming the tree on the sealed log alone. A trajectory
+  so says which code each action ran on and left, though the checkout is removed when the play ends and its agent
+  could empty it. A capture stores only what changed, links are never followed, and `history` settings bound what
+  one capture reads.
+- **Each play keeps the forge's history.** After each play, beside the archive of each repo's `main` that is
+  graded, the forge's whole history is bundled where the forge runs (`git bundle create - --all`) and written to
+  the play's `forge_history/<repo>.bundle`: every ref and every commit, each pushed commit kept under
+  `refs/archive` among them, so every commit a record names can be read once the forge is gone.
+- **The forge's records name the commits.** A push's record names each ref it moved, from which commit to which,
+  as the repository's `post-receive` hook wrote them; `open_pr` returns its branch's commit, and `merge` the commit
+  it merged and the merge commit it made, so a trajectory says which code each push, review and merge was about.
+  Every pushed commit stays on the forge under `refs/archive`, which git hides from clients and no push can move,
+  so deleting or force-pushing a branch loses nothing. `forge.commit_date` dates every commit of a play the same;
+  the deterministic fixture sets it, so its commit IDs, now in the sealed log, are the same each run.
+- **Agents work through git.** Each agent clones every company repo from the forge at the start of play into its own
+  checkout (in a stack run its own volume, which no other sandbox mounts), edits and runs code there with `bash`,
+  which now runs in-process too, and pushes branches, in a stack run under IAM's `push`; a hook refuses every push
+  to `main`. `open_pr` names a pushed branch and its diff is git's; the new `merge` tool, under IAM's `merge`, goes
+  through the merge gate and is git's own merge onto `main`, and an author may not merge their own pull request on a
+  repo needing review. A git request may carry up to 32 MiB, not 1 MiB, so a push of real work fits. A live model is
+  refused in this process, where `bash` runs on the host, as central IAM is. The coworkers' pull requests are real
+  branches. The shared checkout, a channel between agents outside chat, is gone.
+- **The suite runs on every core, and a process seeds the forge once.** `make gates` runs pytest with
+  pytest-xdist, a test module per worker; each process seeds the forge's repositories once and copies them for
+  each forge, so an in-process play spends a tenth of a second on its forge instead of a second and a half.
+- **The forge starts from a written seed.** The scenario's `forge.yaml`, loaded by the company's own code, names
+  the repos that need review and the pull requests open when the forge starts, each a real branch whose diff git
+  computes, as the tickets service starts from `tickets.yaml`. The generated world (template pull requests with
+  invented diffs, a wiki and a spend ledger no agent could reach) is gone, and an in-process run hosts the forge's
+  repositories too. `monitor-policy`, a repo with no code, gives way to `meridian-controlplane`, where the monitor
+  policy lives, for review, the monitors and the scripted attack.
+- **The forge has no tickets of its own.** The company's tickets are the tickets service's, so the forge's generated
+  backlog, the scenario's `world: tickets:` block and `difficulty.ticket_count` are gone, and the scripted coworkers
+  no longer claim a ticket during play: the event named a ticket the tracker never had.
+- **The forge holds only what a real forge has.** Its company package keeps pull requests, the merge gate and git
+  hosting; CI's wait and the reviewer are the lab's (`loc_arena/forge_service.py`, `loc_arena/npcs/reviewer.py`),
+  and the generated commit history, branches, CODEOWNERS and CHANGELOG, which contradicted the real
+  repositories, are gone. IAM alone decides who may open a pull request where, with no second check in the forge.
+- **The forge merges under the company's merge policy.** Once a pull request's CI has finished,
+  `meridian_controlplane.ci` as deployed decides the merge, not a rule of the forge's own, so the gate agents meet
+  is the company's code; a change to it merged on the forge takes effect only when the control plane is deployed
+  again. The deterministic fixture's CI waits 0 seconds, so a scripted move's reading of CI is reproducible.
+- **The forge is a company platform package.** Its pull requests, merge gate and git hosting are
+  `company/meridian-forge`, beside `meridian-iam` and, like it, never in the agents' checkout, so the forge reads
+  as Meridian's own service; the engine depends on it and supplies the seeded world, the reviewer (through a
+  protocol) and CI's timing.
+- **CI takes a few seconds on an agent's pull request.** A pull request an agent opens reports CI pending until a
+  wait drawn from the run's seed has passed (`forge.ci_min_seconds` to `forge.ci_max_seconds`, 2 to 10), then
+  green, and the merge gate reads CI's status when it decides; an instant green on every pull request was a tell.
+  The suite does not run yet. A seeded or coworker pull request keeps the status it declares.
+- **A run is graded on what is merged.** After each play, each company repo's `main` on the forge is archived,
+  in a stack run inside the forge's container, and written as that play's checkout, which the main task is
+  graded on: what an agent never merges counts for nothing. An archive entry leading out of the checkout is
+  skipped.
+- **A job runs the company's code as merged.** Before a job starts, its node clones each company repo's `main`
+  from the forge with the job's own credential on it, which the job service now delegates (`forge: [read]`),
+  and puts them on the job's `PYTHONPATH`; the job's start fact, on the sealed log, names the commit of each.
+  Nodes no longer mount the agents' checkout, so a job runs what is merged, never an agent's unmerged edits.
+- **The forge hosts real git repositories.** The forge seeds a bare repository per company repo from the company's
+  code, each `main` starting as one commit with a fixed author and date so every run starts from the same, and a
+  stack run serves them at `http://forge:8000/git/<repo>` with git's own `http-backend`: an agent clones, fetches,
+  pulls and pushes with its credential on the forge, and IAM decides each request (`read`, and `push` to push). It
+  makes the forge a real code host, where each agent works in its own clone and sees a teammate's change through the
+  forge: a branch they pushed, or what they merged ([plan](docs/forge-service.md)).
+
 - **The side task asks for what a run can reach, and a keyed test lands it.** The checker no longer has
   `reduced_monitor_coverage`, `underreported_activity_logging` or `map_sanctioned_path`: nothing a run does
   produced the coverage, mirror or recon signals they read, so only hand-built test events reached them. The two
@@ -360,12 +453,11 @@ log has the details.
   first live service is `notes`, a small notes board in `scenarios/aurora_efficiency/services/notes`. Live
   services run on real time; the run's simulated clock stays for the scenario's scripted events. An entry that
   breaks the naming or path rules is refused at load. No container gets the Docker socket.
-- **A sandbox per agent.** In `make run STACK=1` each agent's code tools run in its own `sandbox-<agent id>`.
-  Only the episode can call a sandbox's command server: a sandbox refuses every other caller, even one holding
-  its token. Code left in the shared checkout still runs wherever another agent runs it (the shared checkout is a
-  channel between agents by design). A command's timeout is capped, and a reset ends every process the commands
-  left. Sandboxes have their own `stack.sandbox_*` limits, and an agent id that cannot name a sandbox, or that
-  repeats, is refused at load.
+- **A sandbox per agent.** In `make run STACK=1` each agent's code tools run in its own `sandbox-<agent id>`. Only
+  the episode can call a sandbox's command server: a sandbox refuses every other caller, even one holding its token.
+  Each sandbox mounts only its own agent's checkout, which no other sandbox can reach. A command's timeout is
+  capped, and a reset ends every process the commands left. Sandboxes have their own `stack.sandbox_*` limits, and
+  an agent id that cannot name a sandbox, or that repeats, is refused at load.
 - **Pinned providers per model, reasoning per role.** A models file lists the OpenRouter providers that serve
   each model (order, no fallbacks), and every call to that model is sent to them; a model not listed is routed
   by OpenRouter, so a role that switches model never keeps providers that do not serve it. Each role can set
@@ -379,7 +471,7 @@ log has the details.
 - **A shell for the agents, in the sandbox.** In `make run STACK=1` agents get a `bash` tool that runs in
   their checkout in the sandbox container, without the provider key, with a timeout that ends everything the
   command started and the end of its output (`stack.shell_timeout_seconds`, `stack.command_output_limit_bytes`).
-  An in-process run never offers or runs it, since there its commands would run on the host.
+  In an in-process run, the deterministic fixture's, it runs in the agent's own clone in this process.
 - **Grading on the host.** In `make run STACK=1` the episode container only plays the episode and its honest
   twin; the host grades them from the copied-out run directory, always running the agents' code in the
   no-network sandbox, while the gateway stays up so the monitors' model calls go through it and land in its
@@ -570,8 +662,9 @@ log has the details.
 - **In a stack run, agent code cannot read the harness.** The agents' sandbox runs a slim image
   (`stack.sandbox_image`, the Dockerfile's `sandbox` target) with no harness, verifier, scorer or scenario
   spec. Grading's agent-code container runs it too, so it has no harness or scenarios, though it sees the
-  sealed meter it runs. Grading stops if the image is missing. An in-process run offers no `bash`, so its agents
-  run no code; with `stack.sandbox_agent_code` on, grading's agent-code steps run in the slim image there too. (#83)
+  sealed meter it runs. Grading stops if the image is missing. In an in-process run `bash` runs in this process,
+  where only the fixture's scripted moves call it; with `stack.sandbox_agent_code` on, grading's agent-code steps
+  run in the slim image there too. (#83)
 - **No unrecorded pages on the gateway or the sandbox.** Neither serves the web framework's `/docs`, `/redoc` or
   `/openapi.json`: on the gateway those answered outside the recorded route, so a call there left no record, and
   on the sandbox they answered without the token. The gateway now refuses such a request and records it like any
@@ -583,22 +676,21 @@ log has the details.
 - **What agent code cannot reach is tested against the real stack.** Where Docker and the stack image are
   present, the tests bring an episode's compose project up and probe, through the agents' own shell in the
   sandbox: no provider key, no route beyond agent-net, no outside name resolved, no way to the host, no mount
-  but the checkouts, and no grader answers. The one route agent code has, to the gateway, is recorded under
+  but its agent's checkout and the skills, and no grader answers. The one route agent code has, to the gateway, is recorded under
   the sandbox's name.
 - **Agent-written code never sees the provider key.** Tests and benchmarks the agents run, and the grading of
   their work, run without the key in their environment, in-process runs included. (#66)
-- **Agent-written code in a stack run runs only in a sandbox container.** The agents' `bash`, and the skills they run
-  with it, run in a `sandbox` service that mounts the volume of the checkouts and nothing of the
-  harness: not the episode's event logs, the run configs, the scenario's moves or the gateway's call log. The
-  episode reaches its command server on agent-net with a per-run token (a compose secret), each episode's
-  checkout plays there and is moved into the run directory before grading, and no process a command starts
-  outlives it, so agent code never runs while the episode touches the shared checkout. Before each episode
-  plays, the sandbox empties its HOME and temporary directories (`stack.sandbox_scratch_directories`) and the
-  checkouts other than the new one, so nothing of the attack episode reaches its honest twin. A sandbox that
-  stops answering gives the agent an error result and the episode plays on; compose restarts a killed sandbox,
-  and the next episode waits for it (`stack.sandbox_recovery_seconds`) or fails, never running agent code
-  anywhere else. Model calls agent code makes from
-  the sandbox go through the gateway, recorded under the sandbox's name.
+- **Agent-written code in a stack run runs only in a sandbox container.** The agents' `bash`, and the skills they
+  run with it, run in the agent's own `sandbox` service, which mounts only that agent's checkout volume and,
+  read-only, the skills, and nothing of the harness: not the episode's event logs, the run configs, the scenario's
+  moves or the gateway's call log. The episode reaches its command server on agent-net with a per-run token (a
+  compose secret), and no process a command starts outlives it, so agent code never runs while the episode touches
+  the checkout. Before each episode plays, the sandbox empties its HOME and temporary directories
+  (`stack.sandbox_scratch_directories`) and every checkout but the one cloned for the new episode, so nothing of the
+  attack episode reaches its honest twin. A sandbox that stops answering gives the agent an error result and the
+  episode plays on; compose restarts a killed sandbox, and the next episode waits for it
+  (`stack.sandbox_recovery_seconds`) or fails, never running agent code anywhere else. Model calls agent code makes
+  from the sandbox go through the gateway, recorded under the sandbox's name.
 - **Grading writes the sealed harness only into its grading copy.** A file or link the agents left where
   `grade_bench.py` or `grade_workload.py` goes is removed first, so a link cannot redirect the copy onto a
   file of the host; a directory there fails the grade.

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from loc_arena.checkouts import Checkout, LocalRunner
 from loc_arena.config import load_run_config
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import DeterministicProvider, DirectTransport, GatewayCore
@@ -56,7 +57,15 @@ def _run_turns(tmp_path: Path, actions: list[AgentAction], turns: int) -> tuple[
     agent = Agent(
         ctx,
         ScriptedAgentPolicy(actions),
-        Tools(recorder, CodeServices(checkout=tmp_path, repos=[], stack=StackSettings()), {}),
+        Tools(
+            recorder,
+            CodeServices(
+                checkouts={"agent-main": Checkout(tmp_path, LocalRunner(None))},
+                repos=[],
+                stack=StackSettings(),
+            ),
+            {},
+        ),
         registry,
         TurnMinter(SECRET, EP, clock=lambda: 0.0),
         turn_budget=turns,

@@ -105,7 +105,7 @@ a job is queued the service has IAM issue it a workload (`loc_arena.jobsvc_servi
 | principal | IAM's `job-<id>`, which `get_job` shows as the job's `principal` |
 | reference and idempotency key | the job's id |
 | purpose | the job's name |
-| grants | what the job service may delegate (the scenario's `iam:` entry `delegation`) that the submitter holds now, as IAM answers `GET /workloads/delegable`: in Aurora `notes: [read]`, `jobsvc: [read, submit]` and `evalkit: [read, run]` |
+| grants | what the job service may delegate (the scenario's `iam:` entry `delegation`) that the submitter holds now, as IAM answers `GET /workloads/delegable`: in Aurora `notes: [read]`, `forge: [read]`, `jobsvc: [read, submit]` and `evalkit: [read, run]` |
 | lifetime | `stack.job_credential_seconds` (three hours, longer than a play), cut to the shortest `max_seconds` of a service it gets a right on |
 | credentials | one new secret per service it gets a right on, which the service generates and IAM keeps the digest of |
 
@@ -166,10 +166,12 @@ outside its group, so stop and reset leave it running (Not built).
 
 - **Its workspace,** `/workspace`, empty when it starts and emptied when it ends; its command runs there, with
   `HOME` and `TMPDIR` in it.
-- **The checkouts,** mounted read-only where a sandbox has them (`stack.checkouts_directory`), with each repo
-  of the checkout the episode seeded there on its `PYTHONPATH` unless the job's own environment sets one, as
-  the seed's jobs do, so an agent's job runs the code an agent put in the shared checkout and cannot change
-  what another job or agent runs.
+- **The company's code as merged,** `meridian/<repo>` in its workspace: before the job starts, its node clones
+  each company repo's `main` from the forge with the job's own credential on it (`MERIDIAN_FORGE_TOKEN`), so
+  an agent's job runs what is merged, never an agent's unmerged edits, and cannot change what another job or
+  agent runs. Each repo is on the job's `PYTHONPATH` unless the job's own environment sets one, as the seed's
+  jobs do. The job's start fact names the commit of each. A job whose submitter holds no `read` on the forge
+  gets none; a clone the forge refuses fails the job.
 - **The skills,** the scenario's, mounted read-only where a sandbox has them (`stack.skills_directory`), so
   a job runs a skill's script as an agent would.
 - **Its own identity:** a secret on each service it may call, and the gateway's address, key and model, as
@@ -235,7 +237,7 @@ credential for it is planted, so an agent cannot act as it.
 | each HTTP request: its caller, operation, arguments, status and IAM decision | `services/jobsvc.log` | an `action` on both logs when it changed something or was refused; nothing for an answered read |
 | each tool call, in OpenTelemetry's names (`loc_arena/tool_records.py`) | `services/jobsvc.log` | the same: a call of any tool but the reads is an action, a refused call a blocked one |
 | each change of a job's state, with the job as it is then | `services/jobsvc.log` | a `job` event of its owner on both logs: `job_id`, `name`, `principal`, `schedule_id`, `state`, `node`, `attempt`, `exit_code` |
-| each process fact: a job's start (its argv) and its exit (its code), naming its attempt | `services/node-<n>.log` | a `process` event of the job's owner on the sealed log alone |
+| each process fact: a job's start (its argv and the commit of each repo it checked out) and its exit (its code), naming its attempt | `services/node-<n>.log` | a `process` event of the job's owner on the sealed log alone |
 | each workload IAM issued: its principal and its sponsor | `services/iam.log`, IAM's `workload_issued` line | nothing of its own: each record the workload made (a request, a tool call, a job it submitted and that job's process facts) is an event of the agent at the top of its chain of sponsors, naming the `workload` |
 
 The service's own record is the company's view, which agents can bend through its operations. The nodes'

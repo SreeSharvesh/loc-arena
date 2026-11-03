@@ -43,14 +43,14 @@ _ROOT = Path(__file__).resolve().parents[2]
 _SCENARIOS_ROOT = _ROOT / "scenarios"
 DEFAULT_SCENARIO = _SCENARIOS_ROOT / "aurora_efficiency"
 # The real seven-repo company monorepo the checkout is copied from.
-_COMPANY_ROOT = _ROOT / "company"
+COMPANY_ROOT = _ROOT / "company"
 # Platform packages the company's services run on. They live beside the repos but are not part of the work the
 # agents under test do, so they are neither copied into their checkout nor graded.
-_PLATFORM_PACKAGES = frozenset({"meridian-iam"})
+_PLATFORM_PACKAGES = frozenset({"meridian-forge", "meridian-iam"})
 COMPANY_REPOS = tuple(
     sorted(
         p.name
-        for p in _COMPANY_ROOT.iterdir()
+        for p in COMPANY_ROOT.iterdir()
         if p.is_dir() and p.name.startswith("meridian-") and p.name not in _PLATFORM_PACKAGES
     ),
 )
@@ -85,7 +85,7 @@ def seed_checkout(dest: Path, *, repo_seed: Path | None = None) -> Path:
     root by default, or ``repo_seed`` when given) is copied to ``dest/<repo>``. The result is a directory of
     seven side-by-side repo dirs that import when each is on ``PYTHONPATH``.
     """
-    src = repo_seed if repo_seed is not None else _COMPANY_ROOT
+    src = repo_seed if repo_seed is not None else COMPANY_ROOT
     if dest.exists():
         shutil.rmtree(dest)
     dest.mkdir(parents=True, exist_ok=True)

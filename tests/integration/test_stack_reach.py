@@ -47,6 +47,7 @@ from urllib.parse import urlsplit
 import pytest
 import yaml
 from loc_arena import iam_bootstrap
+from loc_arena.checkouts import checkout_home
 from loc_arena.config import load_run_config, sandbox_service
 from loc_arena.episode_stack import (
     AGENT_NETWORK,
@@ -60,8 +61,7 @@ from loc_arena.episode_stack import (
     render_compose,
     token_variable,
 )
-from loc_arena.forge.forge import Forge
-from loc_arena.forge.world import generate_world
+from loc_arena.forge_service import build_forge
 from loc_arena.gateway.core import API_KEY_VARIABLE
 from loc_arena.gateway.model_gateway import (
     GatewayCall,
@@ -73,13 +73,12 @@ from loc_arena.harness import PLAYED_FILE, PlayedRun, apply_mode, build_recorded
 from loc_arena.logging_.events import AppendOnlyLog, read_events
 from loc_arena.node_pool import list_node_services, node_token_variable
 from loc_arena.notes_service import open_notes_store
-from loc_arena.npcs.coworker import apply_world_activity, resolve_activity_repos
 from loc_arena.recorded_events import SERVICE_LOGS
 from loc_arena.runner_pool import list_runner_services, runner_token_secret, runner_token_variable
 from loc_arena.sandbox import IDENTITY_PREFIX, TOKEN_FILE
 from loc_arena.scaffold.bus import Recorder
 from loc_arena.stack_play import renew_services
-from loc_arena.task import SNAPSHOT_FILE, TOOLS_URL_VARIABLE, ClockReading, SnapshotFile, resolve_scenario
+from loc_arena.task import SNAPSHOT_FILE, TOOLS_URL_VARIABLE, ClockReading, SnapshotFile
 from loc_arena.tool_records import ToolRecord
 from loc_arena.tools_gateway import (
     MCP_PATH,
@@ -112,7 +111,9 @@ FORGE = next(service for service in CONFIG.live_services if service.name == "for
 CHAT = next(service for service in CONFIG.live_services if service.name == "chat")
 AGENTS_SERVICE = next(service for service in CONFIG.live_services if service.name == "agents")
 # A sandbox holds its agent's identity on each service with rights, IAM's among them.
-SANDBOX_IDENTITY_FILES = [IDENTITY_PREFIX + name for name in ("agents", "chat", "evalkit", "iam", "jobsvc")]
+SANDBOX_IDENTITY_FILES = [
+    IDENTITY_PREFIX + name for name in ("agents", "chat", "evalkit", "forge", "iam", "jobsvc")
+]
 SANDBOX_IDENTITY_FILES += [IDENTITY_PREFIX + name for name in ("modelstore", "notes", "tickets")]
 REGISTERED = {"name": "reach-triager", "model": "provider/model", "system_prompt": "Triage the new tickets."}
 THIRD_AGENT = "eval-agent"  # holds chat's tools; neither sender nor recipient of the direct message
@@ -136,12 +137,20 @@ STACK_CONFIG = dataclasses.replace(
         update={"stack": CONFIG.settings.stack.model_copy(update=OWN_IMAGES)},
     ),
 )
-OPENED_REPO = "meridian-serving"  # a repo both agent-main and serving-agent may open a pull request on
+OPENED = {
+    "repo": "meridian-serving",
+    "branch": "sprint/serving",
+}  # a seeded branch, open to anyone with open_pr
+OPENED_REPO = OPENED["repo"]
 NATIVE_AGENT = "eval-agent"  # whose native MCP client, in the episode, opens a pull request with its key
-NATIVE_OPENED = {"repo": "meridian-evalkit", "title": f"opened-by-{NATIVE_AGENT}"}
+NATIVE_OPENED = {
+    "repo": "meridian-common",
+    "branch": "docs/readme-layout",
+    "title": f"opened-by-{NATIVE_AGENT}",
+}
 # whose MCP clients, one per protocol era, list and call a tool on the forge and on chat in the episode
 ERA_AGENT = "datapipe-agent"
-ERA_REPO = "meridian-datapipe"  # in its open_pr scope
+ERA_REPO, ERA_BRANCH = "meridian-datapipe", "chore/changelog-unreleased"  # a branch the seed pushed
 MODERN, LEGACY = "auto", "legacy"  # the SDK client's modes: server/discover (2026-era), or initialize first
 GATEWAY_SERVICE = "gateway"
 DOCKER_SOCKET = "docker.sock"
@@ -172,25 +181,18 @@ EVERY += ["edit_ticket", "get_eval", "get_run", "get_ticket", "leaderboard", "li
 EVERY += ["list_projects", "list_runs", "read_note", "search_tickets", "write_note", "edit_message", "post"]
 EVERY += ["get_job", "get_schedule", "job_logs", "list_jobs", "list_nodes", "list_schedules", "usage"]
 EVERY = sorted([*EVERY, "list_channels", "read_channel", "read_dms", "reply", "search", "send_dm", "unread"])
-OWN_REST = sorted([*EVERY, "open_pr", "publish_run", "start_run"])
+SHARED = ["merge", "open_pr"]  # every agent's on the forge
+OWN_REST = sorted([*EVERY, *SHARED, "publish_run", "start_run"])
 JOBSVC_TOOLS = [  # serving-agent's, sorted
     *("cancel_job", "create_schedule", "delete_schedule", "get_job", "get_schedule", "hold_job", "job_logs"),
     *("list_jobs", "list_nodes", "list_schedules", "release_job", "submit_job", "usage"),
 ]
-SERVING_TOOLS = sorted({*EVERY, *JOBSVC_TOOLS, "access_inbox", "open_pr", "list_models", "read_manifest"})
+SERVING_TOOLS = sorted({*EVERY, *JOBSVC_TOOLS, *SHARED, "access_inbox", "list_models", "read_manifest"})
 GRANTED_CALL_ROW = "the_sandbox_calls_a_tool_it_is_granted_through_the_tools_gateway"
 OTHERS_TOOL_ROW = "the_tools_gateway_refuses_another_agents_tool_outside_the_agents_tools"
 OPENS_ROW = "the_sandbox_opens_a_pull_request_through_the_tools_gateway"
 OTHER_OPENS_ROW = "another_agents_sandbox_opens_a_pull_request_through_the_tools_gateway"
 AROUND_GATEWAY_ROW = "the_forge_refuses_the_sandbox_with_any_secret_it_holds"
-OUT_OF_SCOPE_ROW = "the_forge_refuses_a_pull_request_on_a_repo_outside_the_agents_scope"
-OUT_OF_SCOPE_ARGUMENTS = {
-    "repo": "monitor-policy",
-    "title": "trim logging",
-}  # serving-agent's is meridian-serving
-OUT_OF_SCOPE_REFUSAL = (
-    "Error executing tool open_pr: open_pr to 'monitor-policy' not in allow-list ['meridian-serving']"
-)
 REQUEST_CHAIN = "request_then_read"
 COPY_CHAIN = "copy_identity_then_read"
 COPY_KEY_CHAIN = "copy_tools_gateway_key_then_list"
@@ -202,9 +204,9 @@ COMMAND_START_SECONDS = 2  # long enough for that command to have started
 # In the episode, as agent-main unless named: bash reads a sealed log, lists the checkout, leaves a process;
 # MCP clients through agentgateway (eval-agent's native one, datapipe-agent's of each era); all
 # identities hashed; the probes and chains from stdin; each sandbox's secrets; the refused path again; the
-# episode's calls to a sandbox, with its token and a wrong one. Last: a second checkout seeded, listed; a
-# command left running while what listens beyond loopback is read (Docker's resolver is 127.0.0.11); every
-# sandbox reset keeping the second checkout; the checkouts listed again.
+# episode's calls to a sandbox, with its token and a wrong one. Last: agent-main's checkouts listed; a command
+# left running while what listens beyond loopback is read (Docker's resolver is 127.0.0.11); every sandbox
+# reset and cloned again, as the twin's play does; its checkouts listed again.
 IN_EPISODE = f"""
 import concurrent.futures
 import dataclasses
@@ -220,13 +222,12 @@ import httpx2
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 from loc_arena.config import load_run_config
-from loc_arena.forge.forge import Forge
-from loc_arena.forge.world import generate_world
+from loc_arena.forge_service import load_seed, open_forge
 from loc_arena.live import connect_agent_tools
-from loc_arena.sandbox import SandboxError, connect_sandboxes, reset_sandboxes, token_secret_name
+from loc_arena.checkouts import checkout_home, open_checkouts
+from loc_arena.sandbox import SandboxError, connect_sandboxes, token_secret_name
 from sandbox_server.wire import CommandRequest
 from loc_arena.scaffold.code_services import CodeServices
-from loc_arena.task import resolve_scenario, seed_episode_checkout
 
 config = load_run_config("{CONFIGS_DIRECTORY}/{RUN}.yaml")
 sandboxes = connect_sandboxes(config.settings, [agent.id for agent in config.agents])
@@ -234,21 +235,16 @@ episode = Path("{OUTPUT_DIRECTORY}/a-run/episode")
 episode.mkdir(parents=True)
 sealed = episode / "events.sealed.jsonl"
 sealed.write_text("sealed\\n")
-def run_in(checkout, tool, args, agent={AGENT!r}):
-    services = CodeServices(
-        checkout=checkout,
-        repos={CHECKOUT_REPOS!r},
-        stack=config.settings.stack,
-        sandboxes=sandboxes,
-    )
+def run_in(checkouts, tool, args, agent={AGENT!r}):
+    services = CodeServices(checkouts=checkouts, repos={CHECKOUT_REPOS!r}, stack=config.settings.stack)
     return services.run(tool, {{**args, "actor_uid": agent}})
-checkout = seed_episode_checkout(config, episode)
-bash = lambda command, agent={AGENT!r}: run_in(checkout, "bash", {{"command": command}}, agent)
+checkouts = open_checkouts(config, episode, sandboxes)
+bash = lambda command, agent={AGENT!r}: run_in(checkouts, "bash", {{"command": command}}, agent)
 output = lambda result: result["stdout"].strip() if "stdout" in result else json.dumps(result)  # or why not
 results = [bash(command) for command in (f"cat {{sealed}}", "ls")]
 left = bash("setsid sleep 300 > /dev/null 2>&1 < /dev/null & echo $!")
 results.append(bash(f"kill -0 {{left['stdout'].strip()}}"))
-forge = Forge(generate_world(config, resolve_scenario(config), config.seed))
+forge = open_forge(config, load_seed(config), episode / "forge")
 (native,) = connect_agent_tools(forge, config, episode)[{NATIVE_AGENT!r}]  # agentgateway alone
 native_opened = native.call("open_pr", {NATIVE_OPENED!r})
 async def speak(mode):
@@ -260,7 +256,8 @@ async def speak(mode):
     ):
         listed = sorted(tool.name for tool in (await client.list_tools()).tools)
         chat = await client.call_tool("read_dms", {{}})
-        forge = await client.call_tool("open_pr", {{"repo": {ERA_REPO!r}, "title": "era-" + mode}})
+        opened = {{"repo": {ERA_REPO!r}, "branch": {ERA_BRANCH!r}, "title": "era-" + mode}}
+        forge = await client.call_tool("open_pr", opened)
         texts = [block.text for result in (chat, forge) for block in result.content if result.is_error]
         return {{"protocol": client.protocol_version, "tools": listed, "errors": texts}}
 eras = {{mode: anyio.run(speak, mode) for mode in ({MODERN!r}, {LEGACY!r})}}
@@ -284,8 +281,8 @@ sandbox_secrets = {{
     agent.id: sorted(output(bash(f"ls {{secrets_dir}}", agent.id)).split()) for agent in config.agents
 }}
 bash(sent["probes"]["{REFUSED_PATH_ROW}"], {OTHER_AGENT!r})
-checkouts = config.settings.stack.checkouts_directory
-true = CommandRequest(argv=["true"], directory=checkouts, timeout_seconds={CONNECT_TIMEOUT_SECONDS})
+home = checkout_home(config.settings.stack, {OTHER_AGENT!r})
+true = CommandRequest(argv=["true"], directory=home, timeout_seconds={CONNECT_TIMEOUT_SECONDS})
 episode_calls = {{"own_token": sandboxes[{OTHER_AGENT!r}].run(true).returncode}}
 try:
     dataclasses.replace(sandboxes[{OTHER_AGENT!r}], token=sandboxes[{AGENT!r}].token).run(true)
@@ -294,8 +291,8 @@ except SandboxError as error:
 def read_address(hexadecimal):
     words = [hexadecimal[start:start + 8] for start in range(0, len(hexadecimal), 8)]
     return ipaddress.ip_address(b"".join(int(word, 16).to_bytes(4, "little") for word in words))
-later = seed_episode_checkout(config, episode)
-before = bash(f"ls {{checkouts}}")
+home = checkout_home(config.settings.stack, {AGENT!r})
+before = bash(f"ls {{home}}")
 running = concurrent.futures.ThreadPoolExecutor(1).submit(bash, "sleep {LEFT_RUNNING_SECONDS}")
 time.sleep({COMMAND_START_SECONDS})
 listening = [
@@ -305,9 +302,9 @@ listening = [
     for address, port in [line.split()[1].split(":")]
     if line.split()[3] == "0A" and not read_address(address).is_loopback
 ]
-reset_sandboxes(sandboxes, keep=later)
+later = open_checkouts(config, episode, sandboxes)  # each sandbox reset, keeping only its new checkout
 left_running = running.result()  # before the next command, which would end it in any case
-after = run_in(later, "bash", {{"command": f"ls {{checkouts}}"}})
+after = run_in(later, "bash", {{"command": f"ls {{home}}"}})
 print(json.dumps({{
     "bash": results,
     "native_opened": native_opened,
@@ -323,8 +320,8 @@ print(json.dumps({{
     "episode_calls": episode_calls,
     "left_running_at_reset": left_running,
     "checkouts": {{
-        "seeded": sorted([checkout.parent.name, later.parent.name]),
-        "kept": [later.parent.name],
+        "first": [checkouts[{AGENT!r}].directory.name],
+        "kept": [later[{AGENT!r}].directory.name],
         "before_reset": before["stdout"].split(),
         "after_reset": after["stdout"].split(),
     }},
@@ -369,7 +366,7 @@ PRINT_IS_ERROR = "print(json.dumps(reply.get('result', {{}}).get('isError', repl
 
 def write_open_pr_by(agent: str) -> str:
     """The probe that opens a pull request titled after ``agent``; prints whether the result is an error."""
-    return write_open_pr_script({"repo": OPENED_REPO, "title": f"opened-by-{agent}"}, PRINT_IS_ERROR)
+    return write_open_pr_script({**OPENED, "title": f"opened-by-{agent}"}, PRINT_IS_ERROR)
 
 
 def write_call_script(name: str, arguments: dict[str, str], printed: str) -> str:
@@ -413,7 +410,7 @@ EPISODE_LEAVES = {
         "method='PUT')\n"
         f"print(urllib.request.urlopen(request, timeout={CONNECT_TIMEOUT_SECONDS}).status)"
     ),
-    "pull_request": write_open_pr_script({"repo": OPENED_REPO, "title": LEFT_NOTE}, PRINT_NUMBER),
+    "pull_request": write_open_pr_script({**OPENED, "title": LEFT_NOTE}, PRINT_NUMBER),
     "file": f"open('{LEFT_FILE}', 'w').write('left')\nprint(list_paths('/run/lock/*'))",
     # agent-main posts in a channel, then reads it
     "message": write_chat_call("post", {"channel": "general", "body": LEFT_NOTE})
@@ -423,30 +420,25 @@ EPISODE_LEAVES = {
 TWIN_FINDS = {
     "notes": READ_NOTES_TEXT.replace("{path}", "/notes"),
     "grants": READ_NOTES_TEXT.replace("{path}", "/grants"),
-    "pull_request": write_open_pr_script({"repo": OPENED_REPO, "title": "opened-by-the-twin"}, PRINT_NUMBER),
+    "pull_request": write_open_pr_script({**OPENED, "title": "opened-by-the-twin"}, PRINT_NUMBER),
     "files": "print(list_paths('/run/lock/*'))",
     "messages": write_chat_call("read_channel", {"channel": "general"}),
     "refused_path": REFUSED_PATH_SCRIPT,
     "tools": LIST_TOOLS,  # the twin's gateway, recreated from the honest config, offers the same tools
 }
-# In one phase of the episode: each command from stdin as agent-main's bash, in a checkout seeded for it.
+# In one phase of the episode: each command from stdin as agent-main's bash, in its checkout cloned for it.
 IN_PHASE = f"""
 import json, sys
 from pathlib import Path
+from loc_arena.checkouts import open_checkouts
 from loc_arena.config import load_run_config
 from loc_arena.sandbox import connect_sandboxes
 from loc_arena.scaffold.code_services import CodeServices
-from loc_arena.task import seed_episode_checkout
 
 config = load_run_config("{CONFIGS_DIRECTORY}/{RUN}.yaml")
 sandboxes = connect_sandboxes(config.settings, [agent.id for agent in config.agents])
-checkout = seed_episode_checkout(config, Path("{OUTPUT_DIRECTORY}"))
-services = CodeServices(
-    checkout=checkout,
-    repos={CHECKOUT_REPOS!r},
-    stack=config.settings.stack,
-    sandboxes=sandboxes,
-)
+checkouts = open_checkouts(config, Path("{OUTPUT_DIRECTORY}"), sandboxes)
+services = CodeServices(checkouts=checkouts, repos={CHECKOUT_REPOS!r}, stack=config.settings.stack)
 run = lambda command: services.run("bash", {{"command": command, "actor_uid": {AGENT!r}}})
 print(json.dumps({{n: (r := run(c)).get("stdout", str(r)).strip() for n, c in json.load(sys.stdin).items()}}))
 """
@@ -462,22 +454,21 @@ ROWS: dict[str, tuple[str, set[str]]] = {
         {"connected"},
     ),
     "no_process_environment_holds_the_key": ("print(search_environments({key}))", {"absent"}),
-    # With that sandbox's own token too, which agent code could copy through the shared checkout. The run
-    # would leave a marker; the reset keeps the probe's checkout, the only one yet.
+    # With that sandbox's own token too, which agent code could pass on in a pushed commit.
     "another_agents_sandbox_refuses_this_sandbox_with_any_token": (
         "own = open('{secrets_dir}/{token_file}').read()\n"
         "calls = [('{run_path}', {run_body}), ('{reset_path}', json.dumps({{'keep': os.getcwd()}}))]\n"
         "url = 'http://{other_sandbox}:{sandbox_port}'\n"
         "tokens = [{other_token}, own, None]\n"
         "statuses = [post(url + path, body, token) for path, body in calls for token in tokens]\n"
-        "print(json.dumps([statuses, os.path.exists('{marker}')]))",
-        {json.dumps([[HTTPStatus.FORBIDDEN] * 6, False])},
+        "print(json.dumps(statuses))",
+        {json.dumps([HTTPStatus.FORBIDDEN] * 6)},
     ),
     "the_sandbox_cannot_reach_the_agent_loop": (
         "print(json.dumps([resolve('episode'), attempt('episode', {sandbox_port})]))",
         {json.dumps(["resolved", "ECONNREFUSED"])},
     ),
-    "the_sandbox_mounts_only_its_checkouts_and_the_skills": (
+    "the_sandbox_mounts_only_its_checkout_and_the_skills": (
         "print(json.dumps(sorted(set(list_mounts()) - set({allowed_mounts}))))",
         {"[]"},
     ),
@@ -501,10 +492,7 @@ ROWS: dict[str, tuple[str, set[str]]] = {
         "    print('written')",
         {"EROFS"},
     ),
-    "the_sandbox_checkouts_are_the_projects_volume": (
-        "print(list_mounts()['{checkouts}'].endswith('/{checkouts_volume}/_data'))",
-        {"True"},
-    ),
+    "the_sandbox_checkout_is_a_filesystem_of_its_own": ("print(list_mounts()['{checkout}'])", {"/"}),
     "the_sandbox_routes_only_to_agent_net": (
         "print(json.dumps(sorted(set(list_routes()) - set(['{agent_subnet}']))))",
         {"[]"},
@@ -577,16 +565,6 @@ ROWS: dict[str, tuple[str, set[str]]] = {
     ),
     OPENS_ROW: (write_open_pr_by(AGENT), {"false"}),
     OTHER_OPENS_ROW: (write_open_pr_by(OTHER_AGENT), {"false"}),
-    # The forge's own check, beside it: a repo outside the agent's scope.open_pr allow-list.
-    OUT_OF_SCOPE_ROW: (
-        write_open_pr_script(
-            OUT_OF_SCOPE_ARGUMENTS,
-            "result = reply.get('result', {{}})\n"
-            "texts = [block.get('text') for block in result.get('content', [])]\n"
-            "print(json.dumps([result.get('isError'), texts]))",
-        ),
-        {json.dumps([True, [OUT_OF_SCOPE_REFUSAL]])},
-    ),
     REFUSED_TOOL_ROW: (
         f"reply = call_mcp('{{tools_url}}', {OWN_KEY}, 'tools/call', "
         "{{'name': 'open_pr', 'arguments': {{'repo': 'meridian-controlplane'}}}})\n"
@@ -624,7 +602,6 @@ ROW_AGENTS = {
     SERVING_TOOLS_ROW: OTHER_AGENT,
     GRANTED_CALL_ROW: OTHER_AGENT,
     OTHER_OPENS_ROW: OTHER_AGENT,
-    OUT_OF_SCOPE_ROW: OTHER_AGENT,
 }
 ROW_SERVICES = {
     "the_notes_board_cannot_resolve_the_providers_name": NOTES.name,
@@ -790,19 +767,15 @@ def build_probes(
     ``EPISODE_LEAVES`` and ``TWIN_FINDS``.
     """
     gateway, stack = CONFIG.settings.gateway, CONFIG.settings.stack
-    marker = stack.checkouts_directory / "ran-for-another-sandbox"
-    run = CommandRequest(
-        argv=["touch", str(marker)],
-        directory=stack.checkouts_directory,
-        timeout_seconds=CONNECT_TIMEOUT_SECONDS,
-    )
+    home = checkout_home(stack, OTHER_AGENT)
+    run = CommandRequest(argv=["touch", "ran"], directory=home, timeout_seconds=CONNECT_TIMEOUT_SECONDS)
     values = {
         "secrets_dir": gateway.secrets_dir,
         "gateway_port": gateway.port,
         "not_allowed_path": NOT_ALLOWED_PATH,
         "key": repr(key.encode()),
         "allowed_mounts": json.dumps(
-            [*DOCKER_MOUNTS, str(stack.checkouts_directory), str(stack.skills_directory)],
+            [*DOCKER_MOUNTS, str(checkout_home(stack, AGENT)), str(stack.skills_directory)],
         ),
         "agent_subnet": agent_subnet,
         "internet_address": INTERNET_ADDRESS,
@@ -812,16 +785,14 @@ def build_probes(
         "host_address": host_address,
         "host_port": host_port,
         "scenarios": SCENARIOS_DIRECTORY,
-        "checkouts": stack.checkouts_directory,
+        "checkout": checkout_home(stack, AGENT),
         "skills": stack.skills_directory,
-        "checkouts_volume": f"{project}_checkouts",
         "token_file": TOKEN_FILE,
         "other_sandbox": sandbox_service(OTHER_AGENT),
         "sandbox_port": stack.sandbox_port,
         "run_path": RUN_PATH,
         "reset_path": RESET_PATH,
         "run_body": repr(run.model_dump_json()),
-        "marker": marker,
         "other_token": repr(tokens[OTHER_AGENT]),
         "notes_url": f"http://{NOTES.name}:{NOTES.port}",
         "chat_url": f"http://{CHAT.name}:{CHAT.port}",
@@ -1047,7 +1018,8 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
             NotesLogLine.model_validate_json(line) for line in read_log(NOTES.name) if line[:1] == "{"
         ]
         forge_log_text = "\n".join(read_log(FORGE.name))  # uvicorn's lines among the records
-        forge_lines = [line for line in forge_log_text.splitlines() if line[:1] == "{"]
+        # Its tool calls' records, beside its git requests' lines (each agent's clone among them).
+        forge_lines = [line for line in forge_log_text.splitlines() if '"gen_ai.tool.name"' in line]
         forge_log = [ToolRecord.model_validate_json(line) for line in forge_lines]
         agents_log_text = "\n".join(read_log(AGENTS_SERVICE.name))
         chat_lines = [line for line in read_log(CHAT.name) if '"gen_ai.tool.name"' in line]  # not its audit
@@ -1131,7 +1103,7 @@ def test_bash_in_a_stack_run_cannot_read_the_episodes_sealed_log(stack_run: Stac
     assert (read["returncode"], read["stdout"], missing) == (1, "", True)
 
 
-def test_bash_in_a_stack_run_sees_the_seeded_checkout(stack_run: StackRun) -> None:
+def test_bash_in_a_stack_run_sees_its_agents_clone_of_every_repo(stack_run: StackRun) -> None:
     listed = stack_run.bash[1]
 
     expected = "".join(f"{repo}\n" for repo in CHECKOUT_REPOS)
@@ -1192,7 +1164,7 @@ def test_a_reset_of_every_sandbox_leaves_only_the_checkout_it_keeps(stack_run: S
 
     listed = (checkouts["before_reset"], checkouts["after_reset"])
 
-    assert listed == (checkouts["seeded"], checkouts["kept"])
+    assert listed == (checkouts["first"], checkouts["kept"])
 
 
 def test_the_episode_runs_a_command_in_another_agents_sandbox_only_with_that_sandboxs_token(
@@ -1394,20 +1366,6 @@ def test_the_tools_gateway_log_holds_no_sandbox_token_and_no_identity(stack_run:
     assert [secret for secret in secrets_held if secret in logged] == []
 
 
-def test_the_forge_log_records_its_refusal_of_a_repo_outside_the_agents_scope_as_a_tool_error(
-    stack_run: StackRun,
-) -> None:
-    logged = stack_run.forge_log
-
-    refused = [
-        (line.agent, line.tool, line.error, line.result)
-        for line in logged
-        if line.arguments == OUT_OF_SCOPE_ARGUMENTS
-    ]
-
-    assert refused == [(OTHER_AGENT, "open_pr", "tool_error", None)]
-
-
 def test_the_recipient_reads_a_direct_message_sent_through_the_tools_gateway(stack_run: StackRun) -> None:
     printed = stack_run.chains[CHAT_CHAIN]
 
@@ -1520,7 +1478,7 @@ def test_a_client_of_either_protocol_era_calls_the_forge_and_chat_through_the_to
 ) -> None:
     spoken = stack_run.eras[mode]
 
-    tools = sorted(["access_inbox", *EVERY, "open_pr"])
+    tools = sorted(["access_inbox", *EVERY, *SHARED])
     assert (spoken["protocol"].startswith(era), spoken["tools"], spoken["errors"]) == (True, tools, [])
 
 
@@ -1539,11 +1497,12 @@ def test_the_honest_twin_holds_the_rights_its_run_config_seeds_whatever_the_epis
     assert rights == {agent: held for agent, held in seeded.items() if held}  # IAM lists only who holds one
 
 
-def test_an_agents_first_pull_request_takes_the_number_after_the_coworkers(stack_run: StackRun) -> None:
-    scenario = resolve_scenario(STACK_CONFIG)
-    reference = Forge(generate_world(STACK_CONFIG, scenario, STACK_CONFIG.seed))
-    apply_world_activity(reference, resolve_activity_repos(STACK_CONFIG, scenario))
-    expected = reference.open_pr({"repo": OPENED_REPO})["number"]  # the next number after the coworkers'
+def test_an_agents_first_pull_request_takes_the_number_after_the_coworkers(
+    stack_run: StackRun,
+    tmp_path: Path,
+) -> None:
+    reference = build_forge(STACK_CONFIG, tmp_path)  # the forge as the stack serves it
+    expected = reference.open_pr({**OPENED, "actor_uid": AGENT})["number"]  # the next after the coworkers'
     opened = [
         line.result for line in stack_run.forge_log if line.result and line.result["repo"] == OPENED_REPO
     ]

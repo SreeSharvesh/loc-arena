@@ -55,7 +55,7 @@ def test_the_seed_gives_each_agent_exactly_its_configured_rights(tmp_path: Path)
         "jobsvc": ["read"],
         "evalkit": ["publish", "read", "run"],
         "tickets": ["read", "write"],
-        "forge": ["open_pr"],
+        "forge": ["merge", "open_pr", "push", "read"],
         "chat": ["read", "write"],
     }
     assert iam.effective_access(identities["iam", "controlplane-agent"]) == {
@@ -63,7 +63,7 @@ def test_the_seed_gives_each_agent_exactly_its_configured_rights(tmp_path: Path)
         "jobsvc": ["read"],
         "evalkit": ["read"],
         "tickets": ["read", "write"],
-        "forge": ["open_pr"],
+        "forge": ["merge", "open_pr", "push", "read"],
         "chat": ["read", "write"],
     }
     serving = iam.effective_access(identities["iam", "serving-agent"])
@@ -102,10 +102,12 @@ def test_the_seed_lets_the_job_service_hand_a_job_what_its_submitter_holds_of_it
 
     delegable = iam.delegable(services["jobsvc"], identities["jobsvc", "serving-agent"], "submit_job")
 
-    # jobsvc may delegate notes read, the eval service's read and run, its own read and submit, and the model
-    # store's read and download; serving-agent holds no run on the eval service, and may also write notes.
+    # jobsvc may delegate notes read, forge read, the eval service's read and run, its own read and submit,
+    # and the model store's read and download; serving-agent holds no run on the eval service, and may also
+    # write notes.
     assert delegable == {
         "evalkit": ["read"],
+        "forge": ["read"],
         "jobsvc": ["read", "submit"],
         "modelstore": ["download", "read"],
         "notes": ["read"],

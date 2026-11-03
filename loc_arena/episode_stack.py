@@ -3,23 +3,22 @@
 The gateway is the only container with the provider key and a route out (agent-net and egress-net). The
 episode container plays (``loc_arena.cli run --play-only``) on agent-net alone, so its model calls can only go
 to the gateway. Each agent's code runs in its own sandbox, ``sandbox-<agent id>``, also on agent-net alone,
-which mounts only the volume of the checkouts: never the episode's logs, the run configs or the gateway's call
-log. Only the episode can call a sandbox's command server: a sandbox refuses every other caller, even one
-holding its token. Code left in the shared checkout still runs wherever another agent runs it (the shared
-checkout is a channel between agents by design). Each live service of the scenario runs in its own container
-on agent-net alone, with no published port, and one may hand work to runners (``loc_arena.runner_pool``). On
-one with rights, every agent has its own identity, generated per run: its sandbox holds that agent's alone,
-the service holds every agent's and the agents' starting rights, and the episode and the gateway hold none. A
-service with tools is reached through the tools gateway alone (``loc_arena.tools_gateway``), which with the
-service holds the identities on it. In attack mode the episode container plays the episode, then starts again
-for the honest twin once the gateway and every sandbox, runner, live service and the tools gateway is
-recreated, so the twin sees nothing the attack left. When the episode exits, its run directory is copied out
-with the log of each live service and of the tools gateway, their record of every request, grant and tool
-call, and the gateway's record of every model call of play (``loc_arena.gateway.model_gateway``); the events
-of those tool calls are built, and the run is graded on this host, with the agents' code sandboxed, while the
-gateway still runs for the monitors' model calls. Then the gateway's record is copied out again, the monitors'
-calls included, and the project is removed with its volumes. If a copy fails, the project is kept so nothing
-is lost.
+which mounts only that agent's checkout volume: never another agent's, the episode's logs, the run configs or
+the gateway's call log. Only the episode can call a sandbox's command server: a sandbox refuses every other
+caller, even one holding its token. Each live service of the scenario runs in its own container on agent-net
+alone, with no published port, and one may hand work to runners (``loc_arena.runner_pool``). On one with
+rights, every agent has its own identity, generated per run: its sandbox holds that agent's alone, the service
+holds every agent's and the agents' starting rights, and the episode and the gateway hold none. A service with
+tools is reached through the tools gateway alone (``loc_arena.tools_gateway``), which with the service holds
+the identities on it. In attack mode the episode container plays the episode, then starts again for the honest
+twin once the gateway and every sandbox, runner, live service and the tools gateway is recreated, so the twin
+sees nothing the attack left. When the episode exits, its run directory is copied out with the log of each
+live service and of the tools gateway, their record of every request, grant and tool call, and the gateway's
+record of every model call of play (``loc_arena.gateway.model_gateway``); the events of those tool calls are
+built, and the run is graded on this host on what each play merged on the forge's main
+(``loc_arena.merged_main``), with the agents' code sandboxed, while the gateway still runs for the monitors'
+model calls. Then the gateway's record is copied out again, the monitors' calls included, and the project is
+removed with its volumes. If a copy fails, the project is kept so nothing is lost.
 """
 
 from __future__ import annotations
@@ -35,6 +34,7 @@ from pathlib import Path, PurePosixPath
 
 from scenarios.loader import EngineModule, LiveService
 
+from loc_arena.checkouts import checkout_home, checkout_mount, render_checkout_volumes
 from loc_arena.compose_document import ComposeDocument, ComposeService, Healthcheck, ServiceSecret
 from loc_arena.config import RunConfig, load_run_config, sandbox_service
 from loc_arena.gateway import model_gateway
@@ -55,6 +55,7 @@ from loc_arena.iam_bootstrap import (
 )
 from loc_arena.iam_wiring import service_environment
 from loc_arena.identity_variables import find_shared_identity_variable, holds_identities, identity_variable
+from loc_arena.merged_main import write_played_forges
 from loc_arena.node_pool import (
     NODE_TARGET,
     declare_node_token_secrets,
@@ -89,6 +90,7 @@ from loc_arena.tools_gateway import (
     TOOLS_GATEWAY_CONFIG_SECRET_NAME,
     TOOLS_GATEWAY_CONFIG_VARIABLE,
     TOOLS_GATEWAY_SERVICE,
+    render_tools_gateway,
     render_tools_gateway_config,
     serves_tools,
 )
@@ -104,6 +106,9 @@ REPOSITORY = Path(__file__).resolve().parents[1]  # its Dockerfile and configs/
 PLATFORM_PACKAGE = "meridian-iam"  # on every engine service's path, never in the agents' checkout
 IAM_MANIFEST_DIRECTORY = PurePosixPath("/srv")  # where a built managed service finds its own manifest
 ENGINE_DIRECTORY = PurePosixPath("/app")  # the repository, in the engine image
+# How a folder of this host is mounted: read-only, and relabelled for every container (SELinux's shared
+# label), without which a host enforcing SELinux keeps containers out of a user's home; elsewhere a no-op.
+HOST_FOLDER = "ro,z"
 TOKEN_BYTES = 32  # the entropy of each sandbox token and of each agent's identity on a live service
 NEVER_STARTED = (
     f"the episode never started: is {API_KEY_VARIABLE} set in .env or the shell, or did a live service fail "
@@ -158,22 +163,23 @@ def render_compose(
     The images hold neither the scenario's sealed ``reference/`` nor its ``scripted/`` moves, so an agent with
     a shell cannot read the answer. Only a scripted episode, which plays them, gets ``scripted/`` mounted. The
     sandboxes' image holds no harness and no scenarios either, so agent code cannot read how it is graded;
-    each sandbox mounts only the scenario's skills folder, read-only. Every service an agent reaches runs
-    under central IAM, so a run config that turns it off cannot run in a stack.
+    each sandbox mounts only the scenario's skills folder, read-only. Each folder mounted from this host is
+    labelled for containers (``z``), so a host enforcing SELinux lets them read it. Every service an agent
+    reaches runs under central IAM, so a run config that turns it off cannot run in a stack.
     """
     if not config.settings.iam.enabled:
         raise StackError("a stack run needs central IAM: this run config turns iam.enabled off")
     stack = config.settings.stack
     scenario = resolve_scenario(config)
-    skills = [f"{scenario.skills_dir}:{stack.skills_directory}:ro"] if scenario.skills_dir else []
+    skills = [f"{scenario.skills_dir}:{stack.skills_directory}:{HOST_FOLDER}"] if scenario.skills_dir else []
     scripted = []
     if config.policy == "scripted":
         target = SCENARIOS_DIRECTORY / scenario.directory.name / scenario.scripted_dir.name
-        scripted = [f"{scenario.scripted_dir}:{target}:ro"]
-    configs = f"{repository / 'configs'}:{CONFIGS_DIRECTORY}:ro"
-    checkouts = f"checkouts:{stack.checkouts_directory}"
+        scripted = [f"{scenario.scripted_dir}:{target}:{HOST_FOLDER}"]
+    configs = f"{repository / 'configs'}:{CONFIGS_DIRECTORY}:{HOST_FOLDER}"
     engine = _build_from(repository, ENGINE_TARGET, stack.image)
     agent_ids = [agent.id for agent in config.agents]
+    checkouts = [checkout_mount(stack, agent) for agent in agent_ids]
     services = config.live_services
     tool_services = [service.name for service in services if service.tools]
     # A service with rights too (IAM) is reached from the sandboxes as well, so they keep its identity.
@@ -228,14 +234,16 @@ def render_compose(
                 skills,
             ),
             **(
-                {TOOLS_GATEWAY_SERVICE: _render_tools_gateway(config, tool_services)} if tool_services else {}
+                {TOOLS_GATEWAY_SERVICE: render_tools_gateway(config, tool_services, AGENT_NETWORK)}
+                if tool_services
+                else {}
             ),
             EPISODE_SERVICE: _render_episode(
                 config,
                 engine,
                 run,
                 episode_arguments,
-                [f"output:{OUTPUT_DIRECTORY}", checkouts, configs, *scripted],
+                [f"output:{OUTPUT_DIRECTORY}", *checkouts, configs, *scripted],
             ),
         },
         "networks": {
@@ -245,7 +253,12 @@ def render_compose(
             EGRESS_NETWORK: {"internal": False},
             model_gateway.RECORD_NETWORK: {"internal": True},
         },
-        "volumes": {"sealed": {}, "output": {}, "checkouts": {}, **({BADGES_VOLUME: {}} if managed else {})},
+        "volumes": {
+            "sealed": {},
+            "output": {},
+            **render_checkout_volumes(stack, agent_ids),
+            **({BADGES_VOLUME: {}} if managed else {}),
+        },
         "secrets": {
             **model_gateway.declare_gateway_secrets(),
             **{token_secret_name(agent): {"environment": token_variable(agent)} for agent in agent_ids},
@@ -354,7 +367,11 @@ def _render_sandbox(
         # It mounts no config, so it gets its settings in its command.
         "command": [
             *["python", "-m", "sandbox_server"],
-            build_server_settings(config.settings, trusted_caller=EPISODE_SERVICE).model_dump_json(),
+            build_server_settings(
+                config.settings,
+                trusted_caller=EPISODE_SERVICE,
+                checkouts_directory=checkout_home(stack, agent_id),
+            ).model_dump_json(),
         ],
         # Its token under the one name every sandbox's command server reads; its identity on each service
         # under that service's name.
@@ -366,7 +383,7 @@ def _render_sandbox(
                 if identity.agent_id == agent_id
             ),
         ],
-        "volumes": [f"checkouts:{stack.checkouts_directory}", *skills],
+        "volumes": [checkout_mount(stack, agent_id), *skills],
         "networks": [AGENT_NETWORK],
         "healthcheck": _probe(stack.sandbox_port, stack),
         "init": True,  # reaps the processes the agent's commands leave behind
@@ -475,25 +492,7 @@ def _render_live_service(  # noqa: PLR0913
         **({"depends_on": depends_on} if depends_on else {}),
         "healthcheck": _probe(service.port, stack, test=service.healthcheck),
         "init": True,
-    }
-
-
-def _render_tools_gateway(config: RunConfig, tool_services: Sequence[str]) -> ComposeService:
-    """The tools gateway: its pinned image, on agent-net alone, bounded as a live service, config a secret.
-
-    It starts once every service it puts on its route is healthy.
-    """
-    stack = config.settings.stack
-    return {
-        "image": stack.tools_gateway_image,
-        "command": ["-f", str(config.settings.gateway.secrets_dir / TOOLS_GATEWAY_CONFIG_SECRET_NAME)],
-        "secrets": [TOOLS_GATEWAY_CONFIG_SECRET_NAME],
-        "cap_drop": ["ALL"],
-        "mem_limit": stack.service_memory_limit,
-        "cpus": stack.service_cpus,
-        "pids_limit": stack.service_pids_limit,
-        "networks": [AGENT_NETWORK],
-        "depends_on": {service: {"condition": "service_healthy"} for service in tool_services},
+        **({"restart": "unless-stopped"} if service.restarts else {}),
     }
 
 
@@ -648,11 +647,12 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, logs: Path) -> Path:
         # Started on its own, the gateway outlives the episode: the monitors call it while this host grades.
         if not model_gateway.start_gateway(run_compose, compose, settings):
             raise StackError("the gateway did not start to accept calls: see compose's output above")
-        exit_code = play_phases(config, compose, mode, service_logs, environment, twin_environment)
+        exit_code, forges = play_phases(config, compose, mode, service_logs, environment, twin_environment)
         if not copied(copy_output):
             raise StackError("could not copy the episode's run directory out, so it was not graded")
         if exit_code != 0:
             raise StackError(f"the episode exited with code {exit_code}: see its output above")
+        write_played_forges(run_directory, forges)  # each play is graded on what it merged on main
         # Copied before grading: monitors read events built from the services' records, the checker the calls.
         call_record = run_directory / model_gateway.CALL_RECORD_FILE
         logs_copied = all([copied(*copy) for copy in copy_service_logs])  # every one tried

@@ -269,7 +269,7 @@ def play_run(
     ``next_phase`` only the first phase ``played.json`` lacks plays, so a stack run can renew its services
     before the twin; with none left, it raises ``ValueError``.
     """
-    live.refuse_central_iam_in_process(config, "play it in a stack (STACK=1, --stack)")
+    live.refuse_to_play_in_process(config, "play it in a stack (STACK=1, --stack)")
     run_directory.mkdir(parents=True, exist_ok=True)
     start = time.perf_counter()
     played_file = run_directory / PLAYED_FILE
@@ -524,7 +524,7 @@ def run_sweep(
     Writes each episode's bundle plus ``scores.aggregate.json`` and a summary ``report.html`` under
     ``logs/<run_id>/sweep-<timestamp>/`` (calibration + a safety number).
     """
-    live.refuse_central_iam_in_process(config, "a sweep plays only here, so sweep a config with IAM off")
+    live.refuse_to_play_in_process(config, "a sweep plays only here, so sweep the deterministic fixture")
     sweep_dir = (out_root or Path("logs")) / config.run_slug / f"sweep-{datetime.now(UTC):%Y%m%dT%H%M%SZ}"
     sweep_dir.mkdir(parents=True, exist_ok=True)
 

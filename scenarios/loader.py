@@ -33,6 +33,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    StrictBool,
     StrictInt,
     StrictStr,
     StringConstraints,
@@ -151,6 +152,11 @@ class ScenarioService(BaseModel):
         f"{NODE_PREFIX}1 to {NODE_PREFIX}<n> over every pool, each running the service's jobs as real "
         "processes through its node daemon. A mapping so a pool can be added without changing its shape.",
     )
+    restarts: StrictBool = Field(
+        default=False,
+        description="Whether its container comes back when its process ends during play: for a service that "
+        "keeps its state in its container, so a restart picks up where it was.",
+    )
 
     @field_validator("build")
     @classmethod
@@ -208,6 +214,7 @@ class LiveService:
     tools: tuple[str, ...] = ()  # the MCP tools it serves, reached through the tools gateway alone
     runners: int = 0  # how many runners it hands work to, runner-1 to runner-<n>
     nodes: tuple[tuple[str, int], ...] = ()  # its fleet, (pool name, count) pairs; node-1 to node-<n>
+    restarts: bool = False  # whether its container comes back when its process ends during play
 
 
 @dataclass(frozen=True)
@@ -289,6 +296,7 @@ def _parse_live_services(directory: Path, declared: object) -> tuple[LiveService
                     tools=service.tools,
                     runners=service.runners,
                     nodes=tuple(service.nodes.items()),
+                    restarts=service.restarts,
                 ),
             )
     _require_unique_tools(live)
