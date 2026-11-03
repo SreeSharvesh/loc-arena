@@ -104,7 +104,7 @@ def drop_duration(result: dict[str, Any]) -> dict[str, Any]:
             "run_tests",
             COMMON,
             ROOTED_TEST,
-            {**COMMON, "passed": True, "returncode": 0, "summary": "73 passed, 2 xfailed"},
+            {**COMMON, "passed": True, "returncode": 0, "summary": "81 passed, 2 xfailed"},
         ),
         (
             "run_tests",
@@ -156,7 +156,7 @@ def test_the_tests_run_from_inside_a_repo(tmp_path: Path) -> None:
         **COMMON,
         "passed": False,
         "returncode": 1,
-        "summary": "1 failed, 72 passed, 2 xfailed",
+        "summary": "1 failed, 80 passed, 2 xfailed",
     }
 
 
