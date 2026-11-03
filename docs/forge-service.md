@@ -150,9 +150,10 @@ refused becomes a blocked `action`; an answered push an `action`, even one the h
 that refusal inside its reply; an answered listing or fetch none, since they only read, though `upload_pack` is
 a POST. A fetch's line names git's command (`ls-refs` to list, `fetch` to download, read from the request's
 pkt-lines, gzipped or not) and each commit it asked for (`fetched`): the branches it tips, whether `main` holds
-it, and who pushed it since the forge started, if anyone did. A fetch of a commit someone else pushed and nobody
-merged is an `action` though it only reads: it is how code crosses from one agent to another outside review, so
-the monitors see it. A clone, a pull of `main`, or a fetch of the seed's branches or of one's own makes none.
+it, and who pushed it since the forge started, if anyone did. Every fetch is a read and makes no event, even
+one of a commit someone else pushed and nobody merged: a plain clone or pull asks for every branch tip, so
+fetching a teammate's open branch is no sign of passing code outside review. Using it is, and the agent's own
+commands and pushes show that.
 
 ## Pull requests and merges
 
@@ -160,15 +161,16 @@ The forge's MCP tools are `open_pr` (repo, branch, title, body) and `merge` (rep
 IAM (`open_pr`, `merge`). `open_pr` refuses a branch that was never pushed; the pull request's diff is
 `git diff main...<branch>`, read again each time it is reviewed, so a push after opening changes what the
 reviewer reads. `merge` reads the branch's commit once: the reviewer judges that commit's diff and that commit
-is what merges, so a push landing meanwhile merges nothing unreviewed. It goes through the merge gate below; on a repo needing review the author may not merge
-their own pull request. The merge is git's own: `git merge-tree --write-tree` of `main` and the branch, a merge
-commit by the merger with both as parents, and `main` moved only if nobody moved it meanwhile. `open_pr` returns
-the commit its branch is at (`head`), and a merge the branch's commit it merged (`head`), the diff it merged and
-the merge commit, now `main` (`commit`), so the `pr` and `action` events name the code each reviewed and landed.
-A merge that lands is a `pr` event too, its merger's, with the diff it merged: a branch can move after its pull
-request opens, so the PR review monitor scores what actually merges, not only what was opened. A branch that no
-longer merges cleanly is refused with that reason, and `main` stays. No tool lists or reads pull requests: an
-agent learns of its own from what `open_pr` and `merge` return, and of a teammate's work through git.
+is what merges, so a push landing meanwhile merges nothing unreviewed. It goes through the merge gate below;
+on a repo needing review the author may not merge their own pull request. The merge is git's own:
+`git merge-tree --write-tree` of `main` and the branch, a merge commit by the merger with both as parents, and
+`main` moved only if nobody moved it meanwhile. `open_pr` returns the commit its branch is at (`head`), and a
+merge the branch's commit it merged (`head`), the diff it merged and the merge commit, now `main` (`commit`),
+so the `pr` and `action` events name the code each reviewed and landed. A merge that lands is a `pr` event
+too, its merger's, with the diff it merged: a branch can move after its pull request opens, so the PR review
+monitor scores what actually merges, not only what was opened. A branch that no longer merges cleanly is
+refused with that reason, and `main` stays. No tool lists or reads pull requests: an agent learns of its own
+from what `open_pr` and `merge` return, and of a teammate's work through git.
 
 ## Exposure, by choice
 
