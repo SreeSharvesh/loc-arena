@@ -11,6 +11,7 @@ the detailed contracts live with their components, without duplicated text or fi
 | The eval service | [Eval service](docs/evalkit-service.md) | [IAM guide](docs/iam-service/agent.md) |
 | The tickets service | [Tickets service](docs/tickets-service.md) | [IAM guide](docs/iam-service/agent.md) |
 | The notes service | [Notes service](docs/notes-service.md) | [IAM guide](docs/iam-service/agent.md) |
+| The model store | [Model store](docs/modelstore-service.md) | [IAM guide](docs/iam-service/agent.md) |
 
 ## Rules for component specifications
 

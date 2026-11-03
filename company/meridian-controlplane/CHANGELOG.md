@@ -1,5 +1,11 @@
 # Changelog — meridian-controlplane
 
+## 0.15.0
+- modelstore: the model store (`meridian_controlplane.modelstore`), the weights of each model the company serves
+  as safetensors shards (`meridian_common.weights`) with a manifest of each shard's declared size and SHA-256;
+  `list_models` and `read_manifest` over HTTP and MCP, `download_shard` over HTTP, decided by the central
+  authority a deployment hands in.
+
 ## 0.14.0
 - agents: each audit line of an execution also says whether the execution is traced (`traced`).
 
