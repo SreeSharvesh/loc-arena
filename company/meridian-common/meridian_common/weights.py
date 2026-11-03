@@ -45,7 +45,7 @@ class ShardHeader:
 def encode_shard(header: ShardHeader, size: int) -> bytes:
     """The shard ``header`` describes: at most ``size`` bytes, or as few as its header allows.
 
-    The filler is the same for the same model and place, so a shard's checksum is too.
+    The filler is the same for the same model and place; the checksum changes with the model's key.
     """
     metadata = {
         "format": "pt",
@@ -77,7 +77,7 @@ def read_shard_header(data: bytes) -> ShardHeader:
     try:
         document = json.loads(data[LENGTH_BYTES : LENGTH_BYTES + length])
         metadata = document["__metadata__"]
-        return ShardHeader(
+        header = ShardHeader(
             model=str(metadata["meridian_model"]),
             model_key=str(metadata["model_key"]),
             index=int(metadata["shard"]),
@@ -85,3 +85,6 @@ def read_shard_header(data: bytes) -> ShardHeader:
         )
     except (ValueError, KeyError, TypeError) as error:
         raise WeightsError(f"not a Meridian shard header: {error}") from error
+    if not 1 <= header.index <= header.count:
+        raise WeightsError(f"shard {header.index} of {header.count} is out of range")
+    return header

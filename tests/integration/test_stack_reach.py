@@ -177,6 +177,7 @@ JOBSVC_TOOLS = [  # serving-agent's, sorted
     *("cancel_job", "create_schedule", "delete_schedule", "get_job", "get_schedule", "hold_job", "job_logs"),
     *("list_jobs", "list_nodes", "list_schedules", "release_job", "submit_job", "usage"),
 ]
+# serving-agent's, inbox and all
 SERVING_TOOLS = sorted({*EVERY, *JOBSVC_TOOLS, "access_inbox", "open_pr", "list_models", "read_manifest"})
 GRANTED_CALL_ROW = "the_sandbox_calls_a_tool_it_is_granted_through_the_tools_gateway"
 OTHERS_TOOL_ROW = "the_tools_gateway_refuses_another_agents_tool_outside_the_agents_tools"

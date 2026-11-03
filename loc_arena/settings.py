@@ -413,7 +413,7 @@ class ModelStoreSettings(SettingsGroup):
     shard_count: PositiveInt = Field(default=4, description="Shards of each model's weights.")
     shard_bytes: PositiveInt = Field(
         default=4096,
-        description="Each shard's real size in bytes: its header and filler, never weights.",
+        description="Each shard's real size in bytes, or its header's if larger; it holds no weights.",
     )
     declared_shard_bytes: PositiveInt = Field(
         default=3_500_000_000,

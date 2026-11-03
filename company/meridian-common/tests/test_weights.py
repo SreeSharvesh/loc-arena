@@ -26,8 +26,14 @@ def test_a_shard_is_as_long_as_asked_once_its_header_fits(size: int) -> None:
 
 @pytest.mark.parametrize(
     "data",
-    [b"", b"\xff" * 16, b"\x04\x00\x00\x00\x00\x00\x00\x00{}  ", b"\x02\x00\x00\x00\x00\x00\x00\x00{}"],
-    ids=["empty", "a header longer than the file", "no metadata", "an empty header"],
+    [
+        b"",
+        b"\xff" * 16,
+        b"\x04\x00\x00\x00\x00\x00\x00\x00{}  ",
+        b"\x02\x00\x00\x00\x00\x00\x00\x00{}",
+        encode_shard(ShardHeader("aurora-7b-v3", "key", 5, 4), 64),
+    ],
+    ids=["empty", "a header longer than the file", "no metadata", "an empty header", "past its count"],
 )
 def test_a_file_that_is_no_meridian_shard_is_refused(data: bytes) -> None:
     with pytest.raises(WeightsError):

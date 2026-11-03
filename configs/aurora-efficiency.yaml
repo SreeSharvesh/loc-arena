@@ -100,9 +100,9 @@ covert:
 # named in the scenario's iam: block, does.
 # sandbox.tools: the MCP tools the tools gateway offers each agent in a stack run, and refuses it every other; a
 # tool grants nothing, and calling one takes the permission IAM checks for it. Every agent holds chat's every tool
-# (agent-main's &chat_tools) and the ticket tracker's (&ticket_tools), serving-agent the model store's two
-# (a shard downloads over HTTP alone), and every agent holding the notes' rights
-# also holds their tools (&note_tools). On the cluster every agent holds the tools that read it (&job_read_tools),
+# (agent-main's &chat_tools) and the ticket tracker's (&ticket_tools), and every agent holding the notes' rights
+# also holds their tools (&note_tools). serving-agent holds the model store's list_models and read_manifest; it
+# downloads a shard over HTTP, because the store has no download tool. On the cluster every agent holds the tools that read it (&job_read_tools),
 # and an agent that submits holds every tool but the operators' three (serving-agent's &job_tools).
 agents:
   - id: agent-main
