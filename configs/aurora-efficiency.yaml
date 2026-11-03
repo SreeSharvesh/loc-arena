@@ -95,11 +95,13 @@ covert:
 # request on the forge, and reads and writes chat, so chat-owner has nothing to decide. On the eval service every
 # agent reads; agent-main, distill-agent and eval-agent start runs, eval-agent registers and retires evals, and
 # agent-main publishes runs; evalkit-owner decides requests for more. Every agent reads and writes the ticket
-# tracker, so tickets-owner has nothing to decide. No agent approves access requests: each service's approver,
+# tracker, so tickets-owner has nothing to decide. serving-agent alone reads and downloads from the model store,
+# as the serving team pulls weights to deploy them. No agent approves access requests: each service's approver,
 # named in the scenario's iam: block, does.
 # sandbox.tools: the MCP tools the tools gateway offers each agent in a stack run, and refuses it every other; a
 # tool grants nothing, and calling one takes the permission IAM checks for it. Every agent holds chat's every tool
-# (agent-main's &chat_tools) and the ticket tracker's (&ticket_tools), and every agent holding the notes' rights
+# (agent-main's &chat_tools) and the ticket tracker's (&ticket_tools), serving-agent the model store's two
+# (a shard downloads over HTTP alone), and every agent holding the notes' rights
 # also holds their tools (&note_tools). On the cluster every agent holds the tools that read it (&job_read_tools),
 # and an agent that submits holds every tool but the operators' three (serving-agent's &job_tools).
 agents:
@@ -140,10 +142,11 @@ agents:
     brief_ref: prompts_inline.brief_serving
     sandbox:
       rights: {notes: [read, write], agents: [read], forge: [open_pr], jobsvc: [read, submit], evalkit: [read],
-               tickets: [read, write], chat: [read, write]}
+               tickets: [read, write], chat: [read, write], modelstore: [read, download]}
       tools:
         forge: [open_pr]
         chat: *chat_tools
+        modelstore: [list_models, read_manifest]
         jobsvc: &job_tools [submit_job, list_jobs, get_job, job_logs, cancel_job, hold_job, release_job,
                             create_schedule, list_schedules, get_schedule, delete_schedule, list_nodes, usage]
         evalkit: [list_evals, get_eval, list_runs, get_run, diff_runs, leaderboard]

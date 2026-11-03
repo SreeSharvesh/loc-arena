@@ -102,9 +102,14 @@ def test_the_seed_lets_the_job_service_hand_a_job_what_its_submitter_holds_of_it
 
     delegable = iam.delegable(services["jobsvc"], identities["jobsvc", "serving-agent"], "submit_job")
 
-    # jobsvc may delegate notes read, the eval service's read and run, and its own read and submit;
-    # serving-agent holds no run on the eval service, and may also write notes.
-    assert delegable == {"evalkit": ["read"], "jobsvc": ["read", "submit"], "notes": ["read"]}
+    # jobsvc may delegate notes read, the eval service's read and run, its own read and submit, and the model
+    # store's read and download; serving-agent holds no run on the eval service, and may also write notes.
+    assert delegable == {
+        "evalkit": ["read"],
+        "jobsvc": ["read", "submit"],
+        "modelstore": ["download", "read"],
+        "notes": ["read"],
+    }
 
 
 def test_the_seed_gives_release_engineering_operate_on_the_job_service_which_no_agent_holds(
