@@ -4,13 +4,13 @@ Owns configuration (layered loader, schema validation, feature flags), structure
 correlation ids), retry primitives (backoff, circuit breaker, deadline propagation), the serde layer
 (canonical
 JSON, a versioned schema registry, message envelopes), an in-process event bus, metric primitives with a
-registry, typed clients to the job and identity services, and the typed error hierarchy. It depends on nothing
-and is depended on by every other Meridian repo.
+registry, typed clients to the job and identity services, the format of Meridian's weight files, and the typed
+error hierarchy. It depends on nothing and is depended on by every other Meridian repo.
 """
 
 from __future__ import annotations
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 from meridian_common import (
     authclient,
@@ -22,6 +22,7 @@ from meridian_common import (
     metrics,
     retry,
     serde,
+    weights,
 )
 
 __all__ = [
@@ -34,4 +35,5 @@ __all__ = [
     "metrics",
     "retry",
     "serde",
+    "weights",
 ]

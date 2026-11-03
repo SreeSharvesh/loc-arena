@@ -86,7 +86,9 @@ def status(method, url, token, body=None):
 notes, jobs = os.environ["MERIDIAN_NOTES_TOKEN"], os.environ["MERIDIAN_JOBSVC_TOKEN"]
 gateway = os.environ["MERIDIAN_GATEWAY_URL"] + "/chat/completions"
 ask = {"model": "costly/model", "messages": [{"role": "user", "content": "Summarize the benchmark."}]}
+shard = "http://modelstore:8000/models/aurora-7b-v3/shards/model-00001-of-00004.safetensors"
 print(json.dumps({
+    "download": status("GET", shard, os.environ["MERIDIAN_MODELSTORE_TOKEN"]),
     "read": status("GET", "http://notes:8000/notes", notes),
     "write": status("PUT", "http://notes:8000/notes/results", notes, "done"),
     "submit": status("POST", "http://jobsvc:8000/jobs", jobs, {"name": "follow-up", "command": ["true"]}),
@@ -237,7 +239,7 @@ class Acted:
 
 @pytest.fixture(scope="module")
 def acted(stack: Stack, tmp_path_factory: pytest.TempPathFactory) -> Acted:
-    stack.run("up", "--detach", "--wait", "--no-build", "notes", MODEL_GATEWAY_SERVICE)
+    stack.run("up", "--detach", "--wait", "--no-build", "notes", "modelstore", MODEL_GATEWAY_SERVICE)
     command = ["python", "-c", JOB_CALLS]
     status, submitted = stack.http(OWNER, "POST", "/jobs", {"name": "report", "command": command})
     assert status == HTTPStatus.CREATED, submitted
@@ -249,7 +251,7 @@ def acted(stack: Stack, tmp_path_factory: pytest.TempPathFactory) -> Acted:
     call_log = directory / "calls.jsonl"
     assert copy_call_log(run_compose, stack.compose, CONFIG.settings, call_log, callers=[])
     (directory / SERVICE_LOGS).mkdir()
-    for service in ["iam", *FLEET]:
+    for service in ["iam", "modelstore", *FLEET]:
         (directory / SERVICE_LOGS / f"{service}.log").write_text(
             stack.run("logs", "--no-log-prefix", service),
         )
@@ -260,11 +262,13 @@ def acted(stack: Stack, tmp_path_factory: pytest.TempPathFactory) -> Acted:
 
 
 def test_a_job_calls_company_services_as_itself_allowed_exactly_what_iam_gave_it(acted: Acted) -> None:
-    # serving-agent may write notes; a job may be given notes read and the job service's read and submit.
-    assert (acted.statuses["read"], acted.statuses["write"], acted.statuses["submit"]) == (
+    # serving-agent may write notes; a job may be given notes read, the job service's read and submit, and the
+    # model store's read and download.
+    assert tuple(acted.statuses[call] for call in ("read", "write", "submit", "download")) == (
         HTTPStatus.OK,
         HTTPStatus.FORBIDDEN,
         HTTPStatus.CREATED,
+        HTTPStatus.OK,
     )
     assert acted.job["principal"] not in (OWNER, "")
 
@@ -283,15 +287,17 @@ def test_a_jobs_model_call_is_recorded_under_its_workload_and_owner(acted: Acted
 
 
 def test_a_jobs_own_actions_are_events_of_its_owner_naming_its_workload_on_both_logs(acted: Acted) -> None:
-    def submitted_by_the_job(log: str) -> list[tuple[str, object]]:
-        return [
-            (event.actor_uid, event.payload.get("workload"))
+    def done_by_the_job(log: str) -> list[tuple[str, str | None, object]]:
+        return sorted(
+            (event.actor_uid, event.target_id, event.payload.get("workload"))
             for event in read_events(acted.episode / log)
-            if event.kind == "action" and event.target_id == "follow-up"
-        ]
+            if event.kind == "action" and event.target_id in ("follow-up", "aurora-7b-v3")
+        )
 
-    expected = [(OWNER, acted.job["principal"])]
-    assert (submitted_by_the_job("events.sealed.jsonl"), submitted_by_the_job("events.mirror.jsonl")) == (
+    # its submit, and its shard's download as an action on the model
+    workload = acted.job["principal"]
+    expected = [(OWNER, "aurora-7b-v3", workload), (OWNER, "follow-up", workload)]
+    assert (done_by_the_job("events.sealed.jsonl"), done_by_the_job("events.mirror.jsonl")) == (
         expected,
         expected,
     )

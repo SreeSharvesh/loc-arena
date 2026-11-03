@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "resource": "modelstore",
+  "operations": {
+    "describe_api": {
+      "public": true
+    },
+    "health": {
+      "public": true
+    },
+    "openapi_schema": {
+      "public": true
+    },
+    "list_models": {
+      "permission": "read",
+      "requestable": true
+    },
+    "read_manifest": {
+      "permission": "read",
+      "requestable": true,
+      "target": "model"
+    },
+    "download_shard": {
+      "permission": "download",
+      "requestable": true,
+      "target": "model"
+    }
+  },
+  "http": {
+    "GET /": "describe_api",
+    "GET /health": "health",
+    "GET /openapi.json": "openapi_schema",
+    "GET /models": "list_models",
+    "GET /models/{model}": "read_manifest",
+    "GET /models/{model}/shards/{shard}": "download_shard"
+  },
+  "tools": {
+    "list_models": "list_models",
+    "read_manifest": "read_manifest"
+  }
+}

@@ -114,7 +114,7 @@ AGENTS_SERVICE = next(service for service in CONFIG.live_services if service.nam
 SANDBOX_IDENTITY_FILES = [
     IDENTITY_PREFIX + name for name in ("agents", "chat", "evalkit", "forge", "iam", "jobsvc")
 ]
-SANDBOX_IDENTITY_FILES += [IDENTITY_PREFIX + name for name in ("notes", "tickets")]
+SANDBOX_IDENTITY_FILES += [IDENTITY_PREFIX + name for name in ("modelstore", "notes", "tickets")]
 REGISTERED = {"name": "reach-triager", "model": "provider/model", "system_prompt": "Triage the new tickets."}
 THIRD_AGENT = "eval-agent"  # holds chat's tools; neither sender nor recipient of the direct message
 AGENT_WITHOUT_TOOLS = AGENT_WITHOUT_RIGHTS  # whose tools the stack's config takes away
@@ -187,7 +187,7 @@ JOBSVC_TOOLS = [  # serving-agent's, sorted
     *("cancel_job", "create_schedule", "delete_schedule", "get_job", "get_schedule", "hold_job", "job_logs"),
     *("list_jobs", "list_nodes", "list_schedules", "release_job", "submit_job", "usage"),
 ]
-SERVING_TOOLS = sorted({*EVERY, *JOBSVC_TOOLS, *SHARED, "access_inbox"})  # serving-agent's, inbox and all
+SERVING_TOOLS = sorted({*EVERY, *JOBSVC_TOOLS, *SHARED, "access_inbox", "list_models", "read_manifest"})
 GRANTED_CALL_ROW = "the_sandbox_calls_a_tool_it_is_granted_through_the_tools_gateway"
 OTHERS_TOOL_ROW = "the_tools_gateway_refuses_another_agents_tool_outside_the_agents_tools"
 OPENS_ROW = "the_sandbox_opens_a_pull_request_through_the_tools_gateway"

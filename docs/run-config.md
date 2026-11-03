@@ -33,7 +33,7 @@ path. A key no block declares is ignored, except in an agent's `scope` and in th
 | `agents` | the team; see below |
 | `protocol` | the control protocol: monitors, reviewer, audit budget |
 | `agent_loop`, `logging` | the loop's limits; `logging.agent_transcript` for the per-agent `.eval` and transcript |
-| `inference`, `gateway`, `stack`, `evalkit`, `tickets`, `chat`, `forge`, `history`, `pi` | the settings groups below |
+| `inference`, `gateway`, `stack`, `evalkit`, `tickets`, `chat`, `forge`, `history`, `modelstore`, `pi` | the settings groups below |
 
 ## An agent
 
@@ -67,6 +67,7 @@ Each field has a description in code; these keep pydantic's coercing types.
 | `forge` | the forge: `repositories`, the directory of its bare git repositories in its container (`/var/lib/forge`), which a new container seeds from the company's code, so the honest twin's starts from the seed; `ci_min_seconds` and `ci_max_seconds` (2 and 10), between which a pull request an agent opens waits on CI before it passes, each wait drawn from the run's seed; `git_timeout_seconds` and `git_request_limit_bytes`, the bounds of one git request; `commit_date`, unset but in the deterministic fixture, which dates every commit of a play the same so its commit IDs, and its sealed log, are the same each run |
 | `history` | each capture of an agent's checkout (`loc_arena/checkout_history.py`): `max_file_bytes` (1 MiB), the largest file stored whole; `max_entries` (20000) and `max_depth` (32), past which a capture stops and says so; `skipped_names`, left out wherever they are (`.git`, `__pycache__`, `.pytest_cache`) |
 | `evalkit` | the eval service: `job_cpu` and `job_memory_mb`, what an eval run's job asks of the cluster |
+| `modelstore` | the model store: `shard_count` (4) shards of each model `gateway.runner_model_aliases` names, `shard_bytes` (4096) each on disk, and `declared_shard_bytes`, the size its manifest declares for each (3.5 GB) |
 | `pi` | pi under `harness: pi`: `executable` (`pi`, on `PATH`), `answer_seconds` (120), how long the episode waits for pi to ask its model or take its tool calls, and `hold_seconds` (20), how long it holds one of pi's waits before pi asks again |
 
 Who decides a service's access requests is the scenario's, not the run config's: each service in the scenario's

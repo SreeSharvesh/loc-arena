@@ -490,6 +490,20 @@ class HistorySettings(SettingsGroup):
     )
 
 
+class ModelStoreSettings(SettingsGroup):
+    """The model store (``modelstore:``): how it shards each model in ``gateway.runner_model_aliases``."""
+
+    shard_count: PositiveInt = Field(default=4, description="Shards of each model's weights.")
+    shard_bytes: PositiveInt = Field(
+        default=4096,
+        description="Each shard's real size in bytes, or its header's if larger; it holds no weights.",
+    )
+    declared_shard_bytes: PositiveInt = Field(
+        default=3_500_000_000,
+        description="Each shard's size as the manifest declares it: a 7B model's bf16 weights, in four.",
+    )
+
+
 class PiSettings(SettingsGroup):
     """The coding agent that runs each agent's loop under ``harness: pi`` (the run config's ``pi:`` block)."""
 
@@ -547,6 +561,10 @@ class LocArenaSettings(SettingsGroup):
     history: HistorySettings = Field(
         default=HistorySettings(),
         description="What one capture of an agent's checkout reads.",
+    )
+    modelstore: ModelStoreSettings = Field(
+        default=ModelStoreSettings(),
+        description="The model store's shards.",
     )
     pi: PiSettings = Field(
         default=PiSettings(),

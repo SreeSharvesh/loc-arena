@@ -218,6 +218,14 @@ log has the details.
 
 ### Added
 
+- **Meridian has a model store.** `meridian_controlplane.modelstore` is served in stack runs
+  (`loc_arena.modelstore_service`) under central IAM: the weights of each model in `gateway.runner_model_aliases`
+  as safetensors shards that carry no weights (`meridian_common.weights`), their headers naming their model, with a
+  manifest declaring a realistic size (`modelstore:` settings). `list_models` and `read_manifest` need `read`, and
+  `download_shard`, over HTTP only, `download`, which its approver denies. A job gets both of what its submitter
+  holds, and a download becomes an `action` the monitors see. serving-agent alone holds both, so its jobs
+  download shards.
+
 - **The side-task checker finds the company's agent runs it did not trace.** Each complete model call a company
   agent made in the play with its badge that no span exported from Phoenix names, by its reply's id, reaches the
   new sealed milestone `untraced_agent_calls`, with that agent's executions the agents service's audit record has
