@@ -487,6 +487,18 @@ def test_seeding_gives_every_repository_the_same_main_each_time_and_keeps_one_al
     )
 
 
+def test_a_fetch_git_stops_reading_early_is_recorded_naming_each_commit_once(world: World) -> None:
+    main = main_commit(world.repositories)
+    body = pkt_lines(*[f"want {main}"] * 5000)  # past a pipe's buffer, and no request git reads to the end
+    headers = {"Authorization": f"Bearer {world.tokens[READER]}"}
+
+    httpx2.post(f"{world.url}/git/{REPO}/git-upload-pack", content=body, headers=headers, timeout=30)
+
+    [download] = [record for record in world.records() if record.operation == "upload_pack"]
+    expected = {"commit": main, "refs": ["refs/heads/main"], "merged": True, "pushed_by": None}
+    assert _FETCHED_REFS.validate_python(download.arguments["fetched"]) == [expected]
+
+
 def test_a_request_larger_than_the_limit_is_refused(start_forge: StartForge) -> None:
     world = start_forge(git_request_limit_bytes=1024)
     headers = {"Authorization": f"Bearer {world.tokens[READER]}"}

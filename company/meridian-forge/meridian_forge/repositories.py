@@ -179,12 +179,9 @@ def branch_tips(directory: Path, repo: str) -> dict[str, list[str]]:
     return tips
 
 
-def on_main(directory: Path, repo: str, commit: str) -> bool:
-    """Whether ``repo``'s ``main`` holds ``commit``: it was merged, or ``main`` started from it."""
-    bare = str(repository_path(directory, repo))
-    git = ["git", "--git-dir", bare, "merge-base", "--is-ancestor", commit, MAIN]
-    environment = {"PATH": os.environ["PATH"], **ISOLATED_GIT}
-    return subprocess.run(git, capture_output=True, check=False, env=environment).returncode == 0
+def main_history(directory: Path, repo: str) -> set[str]:
+    """Every commit ``repo``'s ``main`` holds: each one merged, and those ``main`` started from."""
+    return set(run_git(["--git-dir", str(repository_path(directory, repo)), "rev-list", MAIN]).split())
 
 
 def branch_diff(directory: Path, repo: str, revision: str) -> str:

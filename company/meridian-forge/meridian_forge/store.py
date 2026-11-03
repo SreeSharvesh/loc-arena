@@ -55,13 +55,10 @@ class ForgeStore:
         rows = [(pr.repo, pr.number, _PULL_REQUEST.dump_json(pr)) for pr in pull_requests]
         self._connection.executemany("INSERT OR REPLACE INTO pull_requests VALUES (?, ?, ?)", rows)
 
-    def pusher_of(self, repo: str, commit: str) -> str | None:
-        """Who pushed ``commit`` to ``repo``; none if no push brought it."""
-        row = self._connection.execute(
-            "SELECT pusher FROM pushes WHERE repo = ? AND commit_id = ?",
-            (repo, commit),
-        ).fetchone()
-        return None if row is None else row[0]
+    def pushers(self, repo: str) -> dict[str, str | None]:
+        """Who pushed each commit a push brought to ``repo``, by commit."""
+        rows = self._connection.execute("SELECT commit_id, pusher FROM pushes WHERE repo = ?", (repo,))
+        return dict(rows.fetchall())
 
     def save_pushes(self, repo: str, pushed: Mapping[str, str | None]) -> None:
         """Keep who pushed each commit of ``pushed`` to ``repo``, by commit."""

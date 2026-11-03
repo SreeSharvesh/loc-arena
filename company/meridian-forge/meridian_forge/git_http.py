@@ -32,7 +32,7 @@ from meridian_forge.repositories import (
     REF_UPDATES_VARIABLE,
     REPOSITORY_SUFFIX,
     branch_tips,
-    on_main,
+    main_history,
 )
 from meridian_forge.store import ForgeStore
 
@@ -131,15 +131,18 @@ def create_git_api(
         check_repo(repo)
         body = await read_body(request, bounds.request_limit_bytes)
         command, wants = read_upload_request(body, request.headers.get("content-encoding", ""), bounds)
+        # A fixed number of reads however many commits the request names, so no request holds the forge.
         tips = branch_tips(bounds.repositories, repo) if wants else {}
+        merged = main_history(bounds.repositories, repo) if wants else set()
+        pushers = store.pushers(repo) if wants else {}
         fetched = [
             FetchedRef(
                 commit=commit,
                 refs=tips.get(commit, []),
-                merged=on_main(bounds.repositories, repo, commit),
-                pushed_by=store.pusher_of(repo, commit),
+                merged=commit in merged,
+                pushed_by=pushers.get(commit),
             )
-            for commit in wants
+            for commit in dict.fromkeys(wants)
         ]
         request.state.arguments = {"repo": repo, "command": command, "fetched": fetched}
         return await serve_git(repo, request, body)
@@ -190,8 +193,12 @@ async def run_http_backend(
         "HTTP_CONTENT_ENCODING": request.headers.get("content-encoding", ""),
         "GIT_PROTOCOL": request.headers.get("git-protocol", ""),
     }
-    with anyio.move_on_after(bounds.timeout_seconds) as deadline:
-        result = await anyio.run_process(["git", "http-backend"], input=body, env=environment, check=False)
+    # The body is git's input as a file, not a pipe, so git may stop reading it early, as it does a request it
+    # refuses, without the forge failing to answer, and so to record, the request.
+    with tempfile.TemporaryFile() as given, anyio.move_on_after(bounds.timeout_seconds) as deadline:
+        given.write(body)
+        given.seek(0)
+        result = await anyio.run_process(["git", "http-backend"], stdin=given, env=environment, check=False)
     if deadline.cancelled_caught:  # the process was killed when its wait was cancelled
         raise HTTPException(HTTPStatus.SERVICE_UNAVAILABLE, "git took too long to answer")
     end = _HEADERS_END.search(result.stdout)

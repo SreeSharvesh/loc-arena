@@ -26,7 +26,8 @@ log has the details.
 - **A fetch says what it read.** The forge's record of each fetch names git's command (`ls-refs` or `fetch`)
   and each commit it asked for: the branches it tips, whether `main` holds it, and who pushed it. Like every
   read it makes no event: a plain clone or pull asks for every branch, so a teammate's open one is no sign of
-  passing code outside review; using it is, and the agent's own commands and pushes show that.
+  passing code outside review; using it is, and the agent's own commands and pushes show that. A fetch is read
+  in a fixed number of git calls, each commit it names listed once, and one git stops reading is still recorded.
 - **A stack run works on a host enforcing SELinux.** The folders a stack mounts from the repository (the run
   configs, the scripted moves, the skills) and each agent's checkout volume are mounted with Docker's shared
   label (`z`); unlabelled, SELinux kept every container from reading the configs or writing a checkout. The
