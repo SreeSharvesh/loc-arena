@@ -170,6 +170,7 @@ class _Session:
     calls: dict[str, _Call] = field(default_factory=dict)
     rejected: set[str] = field(default_factory=set)  # calls pi answered itself, as one with bad arguments
     settled: bool = True
+    steered: int = 0  # the steering messages pi has queued
     ended: str | None = None  # why pi stopped, once it has
     stderr: deque[str] = field(default_factory=lambda: deque(maxlen=40))
 
@@ -415,6 +416,8 @@ class PiBridge:
                     session.rejected.add(event["toolCallId"])
                 elif kind == "agent_settled":
                     session.settled = True
+                elif kind == "response" and event.get("command") == "steer" and event.get("success"):
+                    session.steered += 1
                 elif kind == "response" and not event.get("success"):
                     _LOGGER.error(
                         "%s's pi refused %s: %s",
@@ -479,8 +482,12 @@ class PiAgentPolicy:
                 session.wait(lambda: session.settled, self._answer_seconds, "settle")
                 self._prompt([*inbox, NUDGE])
             else:  # steering reaches the model before pi's next call, once the calls it waits for are done
+                queued = session.steered + len(inbox)
                 for text in inbox:
                     session.send({"type": "steer", "message": text})
+                # stdin and the bridge are two channels: results handed back before pi queued the inbox
+                # would let pi ask its model without it
+                session.wait(lambda: session.steered >= queued, self._answer_seconds, "queue the inbox")
                 self._hand_back(results)
             self._state = _PiState.ASKING
             session.wait(lambda: session.request is not None, self._answer_seconds, "ask its model")
