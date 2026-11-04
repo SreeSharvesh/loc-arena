@@ -68,10 +68,16 @@ class ComposeNetwork(TypedDict, total=False):
     driver_opts: dict[str, str]
 
 
+class ComposeVolume(TypedDict, total=False):
+    """The compose keys a rendered volume uses."""
+
+    driver_opts: dict[str, str]
+
+
 class ComposeDocument(TypedDict):
     """A rendered compose file."""
 
     services: dict[str, ComposeService]
     networks: dict[str, ComposeNetwork]
-    volumes: dict[str, dict[str, str]]
+    volumes: dict[str, ComposeVolume]
     secrets: dict[str, dict[str, str]]

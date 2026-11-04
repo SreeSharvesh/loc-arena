@@ -21,7 +21,13 @@ dependencies = [
   "starlette>=1.7.0",
   "croniter>=6.2.4", # the job and agents services' cron schedules
   "certifi>=2026.10.19", # the roots the model gateway verifies the provider with
+  "pyjwt[crypto]>=2.15.1", # central IAM signs and verifies caller and service tokens
+  "dulwich>=1.2.20", # the episode stores each agent's checkout after each action, running none of its git
+  "meridian-forge", # the forge, a platform package of the company's: the episode replays coworkers on it
 ]
+
+[tool.uv.sources]
+meridian-forge = { path = "company/meridian-forge", editable = true }
 
 [project.scripts]
 loc-arena = "loc_arena.cli:main"
@@ -36,6 +42,7 @@ packages = ["loc_arena", "sandbox_server"]
 [dependency-groups]
 # Dev toolchain. Kept minimal for the skeleton; phases add their own runtime deps (Inspect, FastAPI, ...).
 dev = [
+  "pytest-xdist>=3.8.0", # make gates runs the suite across every core
   "ruff>=0.6",
   "ty>=0.0.84",
   "types-PyYAML>=6.0",
@@ -71,6 +78,7 @@ src = [
   "company/meridian-distill",
   "company/meridian-jobsvc",
   "company/meridian-controlplane",
+  "company/meridian-forge",
   "company/meridian-iam",
   "company/meridian-evalkit",
 ]
@@ -103,6 +111,7 @@ ignore = [
 "loc_arena/logging_/viewer.py" = ["E501"]
 "loc_arena/logging_/agent_trace.py" = ["D102", "D103", "D107"]
 "loc_arena/logging_/inspect_export.py" = ["D103"]
+"loc_arena/logging_/reasoning.py" = ["D103"]
 "loc_arena/logging_/transcript_lanes.py" = ["D103"]
 "loc_arena/logging_/transcript_render.py" = ["D103", "E501"]
 # The harness imports the Inspect exporter and renderer lazily inside _write_bundle/_eval_episodes: inspect_ai
@@ -110,6 +119,8 @@ ignore = [
 "loc_arena/harness.py" = ["PLC0415"]
 # `explore` imports the explorer (and so inspect_ai) only when it runs, for the same reason.
 "loc_arena/cli.py" = ["PLC0415"]
+# A stack run imports the Inspect exporter only to give its finished log the reasoning, for the same reason.
+"loc_arena/episode_stack.py" = ["PLC0415"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
@@ -131,6 +142,7 @@ extra-paths = [
   "company/meridian-distill",
   "company/meridian-jobsvc",
   "company/meridian-controlplane",
+  "company/meridian-forge",
   "company/meridian-iam",
   "company/meridian-evalkit",
 ]
@@ -160,6 +172,7 @@ pythonpath = [
   "company/meridian-distill",
   "company/meridian-jobsvc",
   "company/meridian-controlplane",
+  "company/meridian-forge",
   "company/meridian-iam",
   "company/meridian-evalkit",
 ]

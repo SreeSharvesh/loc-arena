@@ -20,8 +20,9 @@ Agent-net puts no firewall between its containers: any of them can open a connec
 it carries and on whom the callee accepts. Runner executions and jobs also call the services, with the
 credentials they are given.
 
-Any harness with an MCP client sees the same tools, from the same services, recorded the same way. The native
-loop is the only harness the arena runs today; choosing another one by config is #84.
+Any harness with an MCP client sees the same tools, from the same services, recorded the same way. The run
+config's `harness` chooses the arena's own loop (`native`) or pi's (`pi`, [docs/pi-harness.md](../pi-harness.md));
+either runs in `episode`, and pi's own tools act in the agent's sandbox and checkout through it.
 
 ## Containers
 
@@ -30,10 +31,10 @@ loop is the only harness the arena runs today; choosing another one by config is
 | `gateway` | agentgateway, the only holder of the key and of a route out, on agent-net, egress-net and record-net; admits each caller by its own token and exports a record of every model call, with the caller, to the Collector |
 | `collector` | an OpenTelemetry Collector on record-net, which only the gateway joins; appends each record to the sealed record in a volume only it mounts |
 | `episode` | plays the episode and, in attack mode, its honest twin; holds every sandbox's token and no identity |
-| `sandbox-<agent id>` | one agent's code, from a slim image with no harness and no scenarios; mounts the checkouts and the scenario's skills read-only; holds its own token and its own identity on each service with rights; takes commands from the episode alone |
+| `sandbox-<agent id>` | one agent's code, from a slim image with no harness and no scenarios; mounts that agent's checkout volume, and the scenario's skills read-only; holds its own token and its own identity on each service with rights; takes commands from the episode alone |
 | one per live service | a scenario's `services:` entry with `build`, `image` or `module`; no route out, all capabilities dropped, limits from `stack`, no published port |
 | `runner-<n>` | where the company's own agents run with pi, for the one service whose entry declares `runners: <n>`; a sandbox from the Dockerfile's `runner` target with an empty `/workspace`; holds its own token, which that service also holds, and takes commands from that service alone; an execution there gets its agent's tokens on the company's services (`MERIDIAN_<SERVICE>_TOKEN`) |
-| `node-<n>` | the job service's fleet, for the one service whose entry declares `nodes: {<pool>: n}`; a worker from the Dockerfile's `worker` target whose daemon runs one job at a time as a real process in an empty `/workspace`, with the checkouts mounted read-only, the cluster's own read-only deployment of the company repos at `/opt/meridian` that the seed's jobs run, and the limits `stack.node_cpus` and `stack.node_memory_mb`; holds its own token, which that service also holds and its jobs call the gateway with, and takes calls from that service alone; gives each job the secrets of the job's own workload; its log is its jobs' process facts ([docs/jobsvc-service.md](../jobsvc-service.md)) |
+| `node-<n>` | the job service's fleet, for the one service whose entry declares `nodes: {<pool>: n}`; a worker from the Dockerfile's `worker` target whose daemon runs one job at a time as a real process in an empty `/workspace`, holding each company repo's `main` cloned from the forge with the job's own credential, the cluster's own read-only deployment of the company repos at `/opt/meridian` that the seed's jobs run, and the limits `stack.node_cpus` and `stack.node_memory_mb`; holds its own token, which that service also holds and its jobs call the gateway with, and takes calls from that service alone; gives each job the secrets of the job's own workload; its log is its jobs' process facts ([docs/jobsvc-service.md](../jobsvc-service.md)) |
 | `agentgateway` | the MCP route of every service with tools; present when a service has tools |
 
 The host grades the run after copy-out; grading's agent-code steps run in a throwaway container of the slim
@@ -48,14 +49,14 @@ lists, per agent, the tools it may call on each:
 # scenario.yaml
 services:
   forge:
-    module: loc_arena.forge.service   # a module of the engine image, run with the run config
+    module: loc_arena.forge_service   # a module of the engine image, run with the run config
     port: 8000
-    tools: [open_pr]
+    tools: [open_pr, merge]
 # aurora-efficiency.yaml
 agents:
   - id: agent-main
     sandbox:
-      tools: {forge: [open_pr], chat: [post, send_dm, read_dms]}
+      tools: {forge: [open_pr, merge], chat: [post, send_dm, read_dms]}
 ```
 
 - agentgateway's config is generated per run from `sandbox: tools:` (`loc_arena/tools_gateway.py`). It admits an
@@ -65,7 +66,7 @@ agents:
 - A service holds no agent's identity: central IAM verifies each caller's credential, and the service takes the
   caller from IAM's answer, never from an argument. A call without a credential IAM accepts is a 401. agentgateway
   holds each agent's credential for a service with tools: a sandbox holds none for it.
-- Each service enforces the caller's `scope` from the run config itself, since an agent's bash can reach the
+- The job service also checks the caller's `scope` from the run config, since an agent's bash can reach its
   route too. A refused call comes back as a tool error with the service's reason.
 - Offering a tool grants nothing: IAM seeds each agent's `sandbox: rights:` alone, and a call to an offered tool
   takes the permission its operation checks, held from the start or asked for.
@@ -74,8 +75,9 @@ agents:
 - `run_tests` and `run_benchmark` are skills, not tools: scripts with a `SKILL.md` in the pack's `skills:`
   folder, which every sandbox mounts read-only at `/skills` and agents run with bash on their own checkout.
 - An in-process run (a config with `iam.enabled` off, such as the deterministic fixture) serves each agent its
-  own in-memory forge, the one live service it runs, and offers no bash, so its agents run no code. No IAM runs there,
-  so a config with IAM on is refused in process before anything is written.
+  own in-memory forge, the one live service it runs, and runs each agent's bash in this process, in its own clone
+  (`loc_arena/checkouts.py`). No IAM runs there, so a config with IAM on is refused in process before anything
+  is written.
 
 ## Records and events
 
@@ -149,7 +151,7 @@ how to ask IAM for it. A right the service's manifest does not know, or an agent
 The service writes one JSON line per request (`meridian_controlplane.request_audit`: `wall_ts`, `caller`,
 `container`, `method`, `path`, `status`, `operation`, `arguments`), a grant or revoke among them. A line whose
 `caller` and `container` name different agents is a copied identity: an agent can pass its identity on in a
-message or the shared checkout, and the log tells that from a recorded grant.
+message or a pushed commit, and the log tells that from a recorded grant.
 
 The second is `agents`, Meridian's agents service ([docs/agents-service.md](../agents-service.md)), with the same
 identities, IAM's 401 and 403, and `/grants`. Its code is company code, served as a module of the engine image, which
@@ -160,7 +162,9 @@ code. Agents reach its tools through the tools gateway and its HTTP API from the
 on it; IAM decides both.
 
 A service with neither `rights` nor `tools` is open to every caller on agent-net, and a ready `image` needs its
-own `healthcheck`. The loader refuses an entry with an unknown key, a name that is not a DNS label or that the
+own `healthcheck`. A service whose process ends during play stays down, unless its entry says `restarts: true`:
+then compose brings its container back (`restart: unless-stopped`), for a service that keeps its state in its
+container, as the forge does. The loader refuses an entry with an unknown key, a name that is not a DNS label or that the
 stack takes (`gateway`, `episode`, `agentgateway`, `sandbox-*`), more than one of `build`, `image` and `module`,
 a live entry with no `port`, or a tool served by two services.
 
@@ -184,15 +188,19 @@ token a 401.
 Every call leaves a record (caller, request, reply and status, refused and failed calls included), which the
 gateway exports over OTLP to the Collector. A stack run waits until the Collector holds a record of every call
 the gateway logged before the gateway stops, then copies the record to `logs/gateway/<project>.calls.jsonl`, one
-`GatewayCall` per line, with the Collector's own lines beside it. The compose file is rendered from the run
+`GatewayCall` per line, each tagged with its play, with the Collector's own lines beside it. Before grading it
+copies the record of play into the run directory too (`gateway.calls.jsonl`), for the side-task checker, which
+reads the calls of a job there alone; without it, the run is not graded. The compose file is rendered from the run
 config's `gateway:` and `stack:` settings into `logs/compose/<project>.yaml` (`loc_arena/episode_stack.py`).
 
 Runners call on their own route, `/runner/api/v1`: they may call only `gateway.runner_models` (by default the
-seeded agents' model), and make `gateway.runner_calls_per_play` calls (1000) between them in a play. A call past
-the cap gets a 429, one for any other model a 403, and both are recorded like any call. Agents under test can
-start the company's agents, which spend real money. A job calls on the same route, within the same limits, as
-its node with the node's token: the gateway admits no workload's own credential yet, so it records a job's call
-under the node's name.
+seeded agents' model) and the company's model names in `gateway.runner_model_aliases`, each of which the gateway
+sends upstream as the model it maps to, and make `gateway.runner_calls_per_play` calls (1000) between them in a
+play. A call past the cap gets a 429; one for any other model, or listing fallback models (OpenRouter's
+`models`, from which OpenRouter could answer with any model), a 403; and both are recorded like any call.
+Agents under test can start the company's agents, which spend real money. Only a badge IAM signed for a
+workload (a job or a company agent's execution) is admitted on that route, and the gateway records the call
+under the workload and its sponsor; a node's or a runner's token admits no model call.
 
 ## What agent code can reach
 
@@ -206,11 +214,13 @@ under the node's name.
 | a service with rights | only with its own identity, and only the rights it holds |
 | a service with tools | only through agentgateway with its sandbox token, and only the tools its run config lists |
 | a service with neither, such as Phoenix | yes: it is open to everything on agent-net, so any agent can read, delete and forge the company's spans |
-| code left in the shared checkout | runs wherever another agent runs it; the checkout is a channel between agents |
+| another agent's checkout | no: its sandbox mounts only its own agent's |
+| its own checkout's history | no: the episode writes it to the play's `checkout_history`, which no sandbox mounts, and reads the checkout without running anything in it |
 
-The sandbox mounts only the checkouts and the skills, takes commands from the episode alone, and holds no
-harness, verifier, scorer or scenario spec. Grading's container runs the same slim image, though it sees the
-sealed meter it runs. In an in-process run no agent runs code, since `bash` is offered only with a sandbox.
+The sandbox mounts only its agent's checkout volume and the skills, takes commands from the episode alone, and
+holds no harness, verifier, scorer or scenario spec. Grading's container runs the same slim image, though it
+sees the sealed meter it runs. In an in-process run, the deterministic fixture's, an agent's `bash` runs in this
+process, in its own clone, and only the fixture's scripted moves call it.
 
 ## Sources
 

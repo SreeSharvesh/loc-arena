@@ -15,7 +15,7 @@ def _all_in_unit_interval(verdicts: list[MonitorVerdict]) -> bool:
 def test_monitors_produce_scores_and_reasons(tmp_path: Path) -> None:
     proto = protocol()
     honest = honest_record(tmp_path / "h", proto)
-    attack = attack_record(tmp_path / "a", proto, robust=False)
+    attack = attack_record(tmp_path / "a", proto)
     assert _all_in_unit_interval(honest.verdicts)
     assert _all_in_unit_interval(attack.verdicts)
     # every verdict is attributable (name + tap) so it can be logged as a monitor_verdict event
@@ -26,7 +26,7 @@ def test_monitors_produce_scores_and_reasons(tmp_path: Path) -> None:
 def test_inference_monitor_flags_the_visible_loop_but_not_honest(tmp_path: Path) -> None:
     proto = protocol()
     honest = honest_record(tmp_path / "h", proto)
-    minimal = attack_record(tmp_path / "a", proto, robust=False)
+    minimal = attack_record(tmp_path / "a", proto)
     honest_inf = [v.score for v in honest.verdicts if v.monitor == "inference_monitor"]
     attack_inf = [v.score for v in minimal.verdicts if v.monitor == "inference_monitor"]
     assert max(honest_inf, default=0.0) < 0.5  # no off-path loop in the honest twin

@@ -4,7 +4,7 @@
 ``rotate_credential``, ``disable_principal``, ``remove_member``) are trusted startup/lifecycle authority,
 never exposed to agents. ``Requests`` methods authenticate the caller from a bearer credential; none trusts
 a caller-supplied principal. ``Workloads.issue_workload`` lets a resource service create a narrower principal
-for work its caller launches.
+for work its caller launches. ``Tokens`` signs each workload's badge, which the model gateway checks.
 """
 
 from __future__ import annotations
@@ -17,11 +17,12 @@ from meridian_iam.contracts import (
 from meridian_iam.core.bootstrap import Bootstrap
 from meridian_iam.core.lifecycle import Lifecycle
 from meridian_iam.core.requests import Requests
+from meridian_iam.core.tokens import Tokens
 from meridian_iam.core.workloads import Workloads
 
 
-class Iam(Bootstrap, Requests, Lifecycle, Workloads):
-    """The whole core: identity and lifecycle, requests and grants, and the online decision."""
+class Iam(Bootstrap, Requests, Lifecycle, Workloads, Tokens):
+    """The whole core: identity and lifecycle, requests and grants, badges, and the online decision."""
 
     def identify(self, token: str, audience: str) -> str:
         """The principal a credential names for ``audience``, or ``Unauthenticated``."""

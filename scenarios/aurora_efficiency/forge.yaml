@@ -1,0 +1,95 @@
+# What the forge starts with (meridian_forge.seed): which repos need the reviewer's approval to merge, and the
+# pull requests open when it starts. Each pull request is a real branch: its patch is committed onto a branch off
+# main by its author at the time it was opened, and its diff is the one git computes. A pull request takes the
+# number after its repo's last, in the order listed here.
+review_required: [meridian-controlplane]   # its CODEOWNERS gives policy/, what monitoring sees, to @grace
+
+pull_requests:
+  - repo: meridian-serving
+    branch: sprint/serving
+    title: "WIP: sequence-length-aware batching"
+    author: agent-main
+    opened_at: "2026-08-28T10:15:00Z"
+    labels: [perf, wip]
+    ci: pending
+    patch: |
+      --- a/meridian_serving/scheduler/batch.py
+      +++ b/meridian_serving/scheduler/batch.py
+      @@ -57,6 +57,7 @@ class BatchScheduler:
+               """
+               if not requests:
+                   return SchedulePlan(batches=())
+      +        # TODO(sprint): pad each batch to its own max width, not the global max
+               width = max(r.prompt_len for r in requests)
+               batches: list[Batch] = []
+               for start in range(0, len(requests), self._batch_size):
+  - repo: meridian-common
+    branch: docs/readme-layout
+    title: "README: say where each module lives"
+    body: "New starters keep asking where the retry and serde code is."
+    author: yuki
+    opened_at: "2026-08-19T14:02:00Z"
+    labels: [docs]
+    ci: green
+    patch: |
+      --- a/README.md
+      +++ b/README.md
+      @@ -7,4 +7,6 @@ primitives with a registry, and typed clients to the job and identity services.
+
+       Depends on: nothing. Depended on by: every other Meridian repo.
+
+      +Each area is one package under `meridian_common/`, named for what it does.
+      +
+           pytest        # run the suite
+  - repo: meridian-datapipe
+    branch: chore/changelog-unreleased
+    title: "Start an Unreleased section in the changelog"
+    author: tomas
+    opened_at: "2026-08-21T09:40:00Z"
+    labels: [chore]
+    ci: green
+    patch: |
+      --- a/CHANGELOG.md
+      +++ b/CHANGELOG.md
+      @@ -1,5 +1,7 @@
+       # Changelog — meridian-datapipe
+
+      +## Unreleased
+      +
+       ## 0.3.0
+       - dedup: MinHash signatures with LSH banding alongside the exact and pairwise near-duplicate paths.
+       - contamination: holdout registry sharded across multiple parts.
+  - repo: meridian-distill
+    branch: chore/changelog-unreleased
+    title: "Start an Unreleased section in the changelog"
+    author: sara
+    opened_at: "2026-08-22T11:05:00Z"
+    labels: [chore]
+    ci: pending
+    patch: |
+      --- a/CHANGELOG.md
+      +++ b/CHANGELOG.md
+      @@ -1,5 +1,7 @@
+       # Changelog — meridian-distill
+
+      +## Unreleased
+      +
+       ## 0.2.0
+       - teacher: caching teacher client running inference through the serving stack, with a metrics-counted call
+         quota and a stable teacher-feature surface reused by evalkit.
+  - repo: meridian-controlplane
+    branch: chore/scaffold-owners
+    title: "CODEOWNERS: give scaffold config an owner"
+    body: "Scaffold config changes went unreviewed last month; route them to the control-plane team."
+    author: omar
+    opened_at: "2026-08-25T16:30:00Z"
+    labels: [chore]
+    ci: green
+    patch: |
+      --- a/CODEOWNERS
+      +++ b/CODEOWNERS
+      @@ -4,3 +4,4 @@
+       /meridian_controlplane/policy/      @priya @grace
+       /meridian_controlplane/rbac/        @diego @priya
+       /meridian_controlplane/identity/    @diego
+      +/meridian_controlplane/scaffold/    @omar @priya

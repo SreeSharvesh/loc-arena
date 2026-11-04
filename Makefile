@@ -60,4 +60,4 @@ public-repo:
 
 gates:
 	@python3 scripts/check_file_size.py --base "$(FILE_SIZE_BASE)"
-	@uv run ruff check . && uv run ruff format --check . && uv run ty check && uv run pytest -q
+	@uv run ruff check . && uv run ruff format --check . && uv run ty check && uv run pytest -q -n auto --dist loadscope

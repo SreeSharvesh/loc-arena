@@ -194,6 +194,15 @@ issued by the launching service (`POST /workloads`). It never gets the caller's 
   permission it may delegate that the caller holds, behind issuance's gate. It changes nothing, and the service
   then asks for exactly that.
 
+IAM also signs each workload a badge: a JWT (ES256, `meridian_iam.core.tokens`) naming the workload (`sub`),
+its `kind` and its `sponsor`, with audience `agentgateway`, ending when the workload does. It carries identity
+only; grants stay in IAM. With `create_app(iam, badges=True)` a workload's reply carries it beside the
+workload, signed after the audited issue, so no badge reaches the audit log; a stopped workload gets none. The
+model gateway verifies it against the key set `write_key_set` writes, in place since agentgateway watches the
+file's inode. The signing key lives in IAM's store, which only IAM mounts, so a restart keeps every badge
+valid; whoever reads the store can sign badges. A stack run serves badges and writes the key set to the
+volume the model gateway reads (`settings.iam.key_set`).
+
 An executable agent definition is not a principal. Registering one is a launch: the agent gets a workload
 whenever its registrant holds any of the delegation, and its executions run as it ([agents
 service](../agents-service.md)). Letting a caller discover the permissions a definition needs before launch
@@ -294,11 +303,12 @@ requests from the inbox.
 | IAM HTTP service, stdlib client, guard and HTTP/ASGI/MCP adapters (slice 4) | Implemented; tested against a real server and real SQLite, including IAM outage and decision mismatch |
 | Notes (`meridian_controlplane.notes`, HTTP and MCP) | IAM mode through the agents service's `CentralAuthority` protocol, implemented by `loc_arena.agents_iam`: one guard decides its routes and its tools, and it starts only if together they are exactly its manifest's operations. Reads need `read` and changes `write`; `/grants` forwards to IAM as the caller, and access requests go to IAM's own `/requests` |
 | Agents service (`meridian_controlplane.agents`, HTTP; slice 6) | IAM mode through the company package's `CentralAuthority` protocol, implemented by `loc_arena.agents_iam`: the service takes an authority and keeps no rights. `register_agent` and `create_schedule` are its launch operations: each agent registered and each schedule created through the API whose caller holds any of the delegation gets a workload (section 6) through the package's `IdentityIssuer`. An agent's executions run as its workload, and IAM decides each firing of such a schedule (`start_execution`) as its workload; a seeded schedule holds none, and its firings are not decided |
-| Forge MCP (slice 7) | IAM mode through `loc_arena.iam_wiring`; the forge's repo scope check still applies on top. Started outside IAM, it does not start |
+| Forge MCP (slice 7) | IAM mode through `loc_arena.iam_wiring`; IAM alone decides who may open a pull request where. Started outside IAM, it does not start. The forge also serves its git repositories over HTTP (`meridian_forge.git_http`): one guard decides its routes and its tools: listing refs and fetching need `read`, pushing `push`, and its tools `open_pr` and `merge` their own ([forge](../forge-service.md)) |
 | Chat (`meridian_controlplane.chat`, HTTP and MCP) | IAM mode through the company package's `Authority` protocol, implemented by `loc_arena.agents_iam`: one guard decides its routes and its tools, and it starts only if together they are exactly its manifest's operations. Reads need `read` and changes `write`; anyone holding `write` may message anyone in the chat, and the service's one own check is that only a message's author edits it |
 | Job service (`meridian_jobsvc`, HTTP and MCP) | IAM mode through the company package's `CentralAuthority` protocol, implemented by `loc_arena.jobsvc_service`: one guard decides its routes and its tools, and it starts only if together they are exactly its manifest's operations. `cancel_job` is `authenticated`, with the service's own ownership check. `submit_job` and `create_schedule` are its launch operations: each job runs under a workload (section 6) issued before it is queued, and a schedule's runs under the one issued when it is created, through the company package's `WorkloadIssuer` protocol. `hold_job`, `release_job` and `delete_schedule` are `authenticated` with the same ownership check; the operators' routes and `drain_node` need `operate`, which is not requestable and which the scenario seeds to a principal of the company (`holders`). It also runs the run config's `scope` check on submissions, as the MCP services do |
 | Eval service (`meridian_evalkit.service`, HTTP and MCP) | IAM mode through the company package's `Authority` protocol, implemented by `loc_arena.agents_iam` and served by `loc_arena.evalkit_service`: one guard decides its routes and its tools, and it starts only if together they are exactly its manifest's operations. `read`, `run`, `curate` and `publish` are all requestable, and `evalkit-owner` approves each. `bind_job` and `report_results`, which a run's job calls over HTTP, are `authenticated`: the registry binds a run to its first caller and refuses a report from any other, and cannot yet tell a job from its owner, since a decision does not name the caller's kind. A run's job holds a credential on the service through the job service's delegation (`evalkit: [read, run]`). It runs no run-config `scope` check |
 | Tickets (`meridian_controlplane.tickets`, HTTP and MCP) | IAM mode through the company package's `Authority` protocol, implemented by `loc_arena.agents_iam`: one guard decides its routes and its tools, and it starts only if together they are exactly its manifest's operations. Reads need `read` and changes `write` |
+| Model store (`meridian_controlplane.modelstore`, HTTP and MCP) | IAM mode through the tickets package's `Authority` protocol, implemented by `loc_arena.agents_iam`: one guard decides its routes and its tools, and it starts only if together they are exactly its manifest's operations. Listing and reading a manifest need `read`, and downloading a shard, over HTTP only, `download`. `modelstore-owner` approves `read` and denies `download`, which is held from the start. A job gets both through the job service's delegation (`modelstore: [read, download]`) |
 | Sandbox command server, tools gateway exposure, inference gateway | Unchanged boundaries: the gateway's static tool list is an upper bound, IAM is the dynamic check |
 | Stack wiring (slice 8) | `iam` live service, anonymous store volume, per-play bootstrap, per-play identities and credentials, honest-twin recreation. Verified in Docker (`tests/integration/test_iam_docker.py`) |
 | Audit and evidence (slice 9) | Resource records carry the IAM `decision` ID; IAM's own log is correlation-only, so no action is counted twice |
@@ -362,8 +372,7 @@ Not done, and not claimed:
   support.
 - **The rest of the workload lifecycle.** Nothing ends a workload when its job finishes, so a finished job's
   credential works until it expires; a workload cannot renew; issuance is not tied to the decision that allowed
-  the launch; and neither the inference gateway nor the tools gateway accepts workload secrets yet, so a job calls
-  the gateway as its node and each service directly. There is no quota on issuance, no limit on how deep
+  the launch; and the tools gateway accepts no workload secret, so a job calls each service directly. There is no quota on issuance, no limit on how deep
   workloads may launch workloads, and no cleanup of expired ones. A core caller that passes a secret of the
   wrong type, or an injected ID generator that repeats itself, gets an unaudited error rather than an audited
   refusal; the HTTP route validates types first.

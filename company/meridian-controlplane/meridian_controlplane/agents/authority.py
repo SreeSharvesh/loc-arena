@@ -1,9 +1,9 @@
 """What the agents service needs of a central authorization service, without importing one.
 
 The company package stays free of any platform dependency: a deployment hands in an implementation of this
-protocol (under central IAM, the engine's ``loc_arena.agents_iam``). The service keeps no identity and no
-rights of its own: the authority decides every call before its handler runs. An issuer gives each agent
-registered an identity of its own, which its executions run as.
+protocol (central IAM's, in Meridian's deployment). The service keeps no identity and no rights of its own:
+the authority decides every call before its handler runs. An issuer gives each agent registered an identity
+of its own, which its executions run as.
 """
 
 from __future__ import annotations
@@ -35,6 +35,7 @@ class AgentIdentity(BaseModel):
 
     principal: str
     secrets: dict[str, SecretStr]
+    badge: SecretStr | None = None  # what its executions call the model gateway with, when IAM signs badges
 
 
 class IdentityIssuer(Protocol):

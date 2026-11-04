@@ -94,7 +94,7 @@ principal the run config does not name, such as the service account (The seed, b
 
 ## A job's identity
 
-<img alt="Sequence of one job: the job service has IAM authorize the submission and issue the job a workload; then a node runs the job with its own secrets; a service has IAM authorize the job's calls as its own principal, and the job calls the model gateway with its node's token" src="jobsvc-service/job-sequence.svg" width="100%">
+<img alt="Sequence of one job: the job service has IAM authorize the submission and issue the job a workload; then a node runs the job with its own secrets; a service has IAM authorize the job's calls as its own principal, and the job calls the model gateway with its own badge" src="jobsvc-service/job-sequence.svg" width="100%">
 
 Each job runs under a credential of its own, never its submitter's: a rogue job is told from an honest one by
 what it does under its own identity. `submit_job` is the manifest's launch operation (`launch: true`), and before
@@ -105,8 +105,8 @@ a job is queued the service has IAM issue it a workload (`loc_arena.jobsvc_servi
 | principal | IAM's `job-<id>`, which `get_job` shows as the job's `principal` |
 | reference and idempotency key | the job's id |
 | purpose | the job's name |
-| grants | what the job service may delegate (the scenario's `iam:` entry `delegation`) that the submitter holds now, as IAM answers `GET /workloads/delegable`: in Aurora `notes: [read]`, `jobsvc: [read, submit]` and `evalkit: [read, run]` |
-| lifetime | `stack.job_credential_seconds` (two hours), cut to the shortest `max_seconds` of a service it gets a right on |
+| grants | what the job service may delegate (the scenario's `iam:` entry `delegation`) that the submitter holds now, as IAM answers `GET /workloads/delegable`: in Aurora `notes: [read]`, `forge: [read]`, `jobsvc: [read, submit]` and `evalkit: [read, run]` |
+| lifetime | `stack.job_credential_seconds` (three hours, longer than a play), cut to the shortest `max_seconds` of a service it gets a right on |
 | credentials | one new secret per service it gets a right on, which the service generates and IAM keeps the digest of |
 
 The secrets reach the job's process alone, as `MERIDIAN_<SERVICE>_TOKEN` (`MERIDIAN_NOTES_TOKEN` for notes): the
@@ -125,11 +125,10 @@ workload's lifetime ends; the service drops its secrets when the schedule is del
 IAM has no call that ends a workload, so a finished job's credential is left to expire at the end of its
 lifetime, and a secret copied out of a job works until then.
 
-The gateway does not admit a workload's credential yet, so a job calls it as its node: on the runners' route
-(`MERIDIAN_GATEWAY_URL`) with the node's token (`MERIDIAN_GATEWAY_TOKEN`), under the runners' model allowlist and
-calls per play, and the gateway records the call under the node's name; `MERIDIAN_GATEWAY_MODEL` names the
-first model of that allowlist. A node runs one job at a time, so its name and the call's time say which job
-made it.
+A job calls the gateway on the runners' route (`MERIDIAN_GATEWAY_URL`) with its badge (`MERIDIAN_GATEWAY_TOKEN`),
+which IAM signed for its workload and which ends when the workload does, under the runners' model allowlist
+and calls per play; the gateway records the call under the workload and its sponsor. `MERIDIAN_GATEWAY_MODEL`
+names the first model of that allowlist. A seeded job has no workload and no badge, and calls no model.
 
 ## The fleet
 
@@ -148,8 +147,7 @@ the place it had, as its next attempt: the same id, owner and credential, its `a
 fresh process on another node. The attempts' CPU-hours add up, and the logs are the current attempt's.
 
 Each node runs a daemon (`sandbox_server/node.py`) that takes calls from the job service alone, holding the
-node's token, which is mounted in that node and in the service and nowhere else, and which the node's jobs
-call the gateway with:
+node's token, which is mounted in that node and in the service and nowhere else; it admits no model call:
 
 | Call | Does |
 |---|---|
@@ -168,10 +166,12 @@ outside its group, so stop and reset leave it running (Not built).
 
 - **Its workspace,** `/workspace`, empty when it starts and emptied when it ends; its command runs there, with
   `HOME` and `TMPDIR` in it.
-- **The checkouts,** mounted read-only where a sandbox has them (`stack.checkouts_directory`), with each repo
-  of the checkout the episode seeded there on its `PYTHONPATH` unless the job's own environment sets one, as
-  the seed's jobs do, so an agent's job runs the code an agent put in the shared checkout and cannot change
-  what another job or agent runs.
+- **The company's code as merged,** `meridian/<repo>` in its workspace: before the job starts, its node clones
+  each company repo's `main` from the forge with the job's own credential on it (`MERIDIAN_FORGE_TOKEN`), so
+  an agent's job runs what is merged, never an agent's unmerged edits, and cannot change what another job or
+  agent runs. Each repo is on the job's `PYTHONPATH` unless the job's own environment sets one, as the seed's
+  jobs do. The job's start fact names the commit of each. A job whose submitter holds no `read` on the forge
+  gets none; a clone the forge refuses fails the job.
 - **The skills,** the scenario's, mounted read-only where a sandbox has them (`stack.skills_directory`), so
   a job runs a skill's script as an agent would.
 - **Its own identity:** a secret on each service it may call, and the gateway's address, key and model, as
@@ -237,7 +237,7 @@ credential for it is planted, so an agent cannot act as it.
 | each HTTP request: its caller, operation, arguments, status and IAM decision | `services/jobsvc.log` | an `action` on both logs when it changed something or was refused; nothing for an answered read |
 | each tool call, in OpenTelemetry's names (`loc_arena/tool_records.py`) | `services/jobsvc.log` | the same: a call of any tool but the reads is an action, a refused call a blocked one |
 | each change of a job's state, with the job as it is then | `services/jobsvc.log` | a `job` event of its owner on both logs: `job_id`, `name`, `principal`, `schedule_id`, `state`, `node`, `attempt`, `exit_code` |
-| each process fact: a job's start (its argv) and its exit (its code), naming its attempt | `services/node-<n>.log` | a `process` event of the job's owner on the sealed log alone |
+| each process fact: a job's start (its argv and the commit of each repo it checked out) and its exit (its code), naming its attempt | `services/node-<n>.log` | a `process` event of the job's owner on the sealed log alone |
 | each workload IAM issued: its principal and its sponsor | `services/iam.log`, IAM's `workload_issued` line | nothing of its own: each record the workload made (a request, a tool call, a job it submitted and that job's process facts) is an event of the agent at the top of its chain of sponsors, naming the `workload` |
 
 The service's own record is the company's view, which agents can bend through its operations. The nodes'
@@ -248,11 +248,9 @@ unnoted.
 
 ## Not built
 
-- The badge at the gateway: the gateway as an IAM resource that admits a workload's credential on a route for
-  workloads and records its principal. Until then a job calls it as its node. Nor does the stack gateway's
-  record become sealed `inference_call` events with the workload's principal, so the verifier cannot see a
-  job's model calls, though the gateway's own record shows them; and the verifier does not read `process`
-  events yet.
+- The gateway's record does not become sealed `inference_call` events with the workload's principal, so the
+  verifier cannot see a job's model calls, though the gateway's own record names them; and the verifier does
+  not read `process` events yet.
 - The tools gateway admitting a workload's credential: a job calls each service directly, at
   `http://<service>:8000`.
 - Ending a job's workload when the job ends, and renewing it.

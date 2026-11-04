@@ -3,7 +3,7 @@
 One live service of the scenario may declare how many runners it hands work to (``runners:``). A runner is
 a sandbox of the Dockerfile's ``runner`` target: its command server takes commands from that service alone,
 which must also hold the runner's token, and runs them in an empty workspace that each reset empties again. pi
-there reaches the gateway on the runners' route with the runner's token, and the gateway limits the models
+there reaches the gateway on the runners' route with the execution's badge, and the gateway limits the models
 runners may call and how often (``gateway.runner_*``); a traced execution's pi reaches the scenario's Phoenix
 too. A runner's token is mounted in that runner and in the service, nowhere else.
 """
@@ -16,7 +16,6 @@ from scenarios.loader import RUNNER_PREFIX, LiveService
 
 from loc_arena.compose_document import ComposeService, Healthcheck
 from loc_arena.config import RunConfig
-from loc_arena.gateway.core import GATEWAY_TOKEN_FILE_VARIABLE
 from loc_arena.gateway.model_gateway import runners_api_url
 from loc_arena.observability import PHOENIX_ENDPOINT_VARIABLE, PHOENIX_SERVICE, find_phoenix
 from loc_arena.sandbox import TOKEN_FILE, build_server_settings
@@ -64,9 +63,12 @@ def render_runners(
     if owner is None:
         return {}
     stack = config.settings.stack
-    server_settings = build_server_settings(config.settings, trusted_caller=owner.name).model_copy(
+    server_settings = build_server_settings(
+        config.settings,
+        trusted_caller=owner.name,
+        checkouts_directory=RUNNER_WORKSPACE,
+    ).model_copy(
         update={
-            "checkouts_directory": RUNNER_WORKSPACE,
             "command_timeout_limit_seconds": stack.runner_timeout_seconds,
             "output_limit_bytes": None,  # an execution keeps all of its reply
         },
@@ -74,7 +76,6 @@ def render_runners(
     phoenix = find_phoenix(config)
     environment = {
         GATEWAY_API_VARIABLE: runners_api_url(config.settings),
-        GATEWAY_TOKEN_FILE_VARIABLE: str(config.settings.gateway.secrets_dir / TOKEN_FILE),
         **({PHOENIX_ENDPOINT_VARIABLE: f"http://{PHOENIX_SERVICE}:{phoenix.port}"} if phoenix else {}),
     }
     shared_image: ComposeService = {**built, "pull_policy": "never"}

@@ -278,15 +278,17 @@ def test_a_checkpoint_of_one_runner_puts_what_its_user_wrote_back_on_another(poo
     )
 
 
-def test_the_gateway_names_a_runners_pi_and_refuses_it_a_model_runners_may_not_call(pool: RunnerPool) -> None:
+def test_a_runners_pi_without_an_executions_badge_gets_no_model_call(pool: RunnerPool) -> None:
     result = pool.run_on_runner("runner-1", "pi-on-gateway", COSTLY_MODEL, "Summarize.", "hi")
 
-    by_runner = {
-        (call.caller, call.status, call.request["model"])
+    answered = [
+        call
         for call in pool.read_gateway_calls()
-        if isinstance(call.request, dict) and call.request["model"] == COSTLY_MODEL
-    }
-    assert (result["returncode"], by_runner) == (1, {("runner-1", HTTPStatus.FORBIDDEN, COSTLY_MODEL)})
+        if isinstance(call.request, dict)
+        and call.request["model"] == COSTLY_MODEL
+        and call.status == HTTPStatus.OK
+    ]
+    assert (result["returncode"], answered) == (1, [])
 
 
 def test_an_execution_runs_pi_on_a_runner_whose_model_calls_the_gateway_answers(pool: RunnerPool) -> None:
@@ -294,15 +296,16 @@ def test_an_execution_runs_pi_on_a_runner_whose_model_calls_the_gateway_answers(
 
     execution = json.loads(pool.run_in(SANDBOX, "python", "-c", RUN_AN_AGENT, COSTLY_MODEL, task))
 
+    # The agent's own workload makes the call, with its registrant as sponsor: never the runner.
     refused_from = {
-        call.caller
+        (call.caller.startswith("job-"), call.sponsor)
         for call in pool.read_gateway_calls()
         if call.status == HTTPStatus.FORBIDDEN and task in json.dumps(call.request)
     }
     assert (execution["state"], execution["started_by"], refused_from) == (
         "failed",
         "agent-main",
-        {execution["runner"]},
+        {(True, "agent-main")},
     )
 
 

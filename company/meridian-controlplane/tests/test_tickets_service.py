@@ -45,7 +45,7 @@ MANIFEST = json.loads((Path(tickets_package.__file__).parent / "iam-manifest.jso
 class StandInAuthority:
     """Each caller's identity and rights, checked against the service's manifest before any handler runs.
 
-    It decides as a deployment's central authority does; the engine tests the service under the real one.
+    It decides as a deployment's central authority does; the deployment tests the service under the real one.
     """
 
     def __init__(self) -> None:
@@ -68,7 +68,7 @@ class StandInAuthority:
             raise HTTPException(HTTPStatus.FORBIDDEN, f"needs {declared['permission']!r}")
 
     def verify_routes(self, app: FastAPI) -> None:
-        """The deployment's authority checks the routes against the manifest; the engine tests that."""
+        """The deployment's authority checks the routes against the manifest; its own tests cover that."""
 
 
 @dataclass

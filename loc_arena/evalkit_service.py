@@ -5,7 +5,9 @@ A stack run starts it as the scenario's ``evalkit`` entry: ``python -m loc_arena
 port: the MCP tools at ``/mcp``, which agents reach through the tools gateway, and the HTTP API beside them,
 which they call from their sandbox with their credential on the service. Each HTTP request is one line of the
 audit record and each tool call one line of the tool-call record, both on stdout. The registry starts from
-the package's seed, and agents' edits to the package do not go live.
+the package's seed, and agents' edits to the package do not go live. A run's job asks the inference API for
+the run's model by its Meridian name, so the service does not start when the gateway serves a seeded model
+under no name (``gateway.runner_model_aliases``).
 """
 
 from __future__ import annotations
@@ -37,12 +39,15 @@ def main(arguments: list[str]) -> None:
     """Serve entry ``arguments[1]`` of the run config at ``arguments[0]``, under central IAM."""
     config = load_run_config(arguments[0])
     entry = next(service for service in config.live_services if service.name == arguments[1])
-    settings = config.settings
+    settings, seed = config.settings, load_seed()
+    if unserved := sorted(set(seed.models) - set(settings.gateway.runner_model_aliases)):
+        raise ValueError(
+            f"gateway.runner_model_aliases has no {', '.join(unserved)}: every eval run on one would fail",
+        )
     registry = EvalkitRegistry(
-        load_seed(),
+        seed,
         url=f"http://{entry.name}:{entry.port}",
         resources=JobResources(cpu=settings.evalkit.job_cpu, memory_mb=settings.evalkit.job_memory_mb),
-        served=settings.evalkit.models,
     )
     guard = guard_from_environment(os.environ)  # IAM decides every call: no identity or rights table here
     api = create_evalkit_api(registry, write_record_line, load_iam_authority(guard))

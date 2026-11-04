@@ -75,7 +75,7 @@
 <text x="481.5" y="433" text-anchor="middle" dominant-baseline="central"><tspan class="s">5 read run, items</tspan></text>
 <path class="thin" d="M573 528 H711" marker-end="url(#hr)"/>
 <text x="642.5" y="498" text-anchor="middle" dominant-baseline="central"><tspan class="m">6 chat/completions</tspan></text>
-<text x="642.5" y="513" text-anchor="middle" dominant-baseline="central"><tspan class="s">the node's token</tspan></text>
+<text x="642.5" y="513" text-anchor="middle" dominant-baseline="central"><tspan class="s">the job's badge</tspan></text>
 <path class="dash" d="M712 576 H574" marker-end="url(#hr)"/>
 <text x="642.5" y="561" text-anchor="middle" dominant-baseline="central"><tspan class="s">answer</tspan></text>
 <path class="thin" d="M573 592 H600 V608 H574" marker-end="url(#hr)"/>

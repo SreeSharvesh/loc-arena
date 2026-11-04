@@ -57,8 +57,9 @@ def test_every_field_of_a_settings_group_is_described(group: type[BaseModel]) ->
         {"inference": {"batch_generat": {}}},
         {"inference": {"batch_generate": {"teacher_token_quota": -1}}},
         {"gateway": {"runner_models": ["", "deepseek/deepseek-v4.1-flash"]}},
+        {"forge": {"ci_min_seconds": 5, "ci_max_seconds": 1}},
     ],
-    ids=["unknown-key", "negative-quota", "empty-runner-model"],
+    ids=["unknown-key", "negative-quota", "empty-runner-model", "ci-wait-range-inverted"],
 )
 def test_an_invalid_settings_block_is_rejected(block: Mapping[str, Mapping[str, JsonValue]]) -> None:
     with pytest.raises(ValidationError):
@@ -82,10 +83,26 @@ def test_the_settings_alone_load_with_a_run_configs_override(tmp_path: Path) -> 
     assert settings.gateway.port == 9090
 
 
-def test_an_eval_model_served_outside_the_runners_route_is_a_config_error(tmp_path: Path) -> None:
-    run_config = _write_run_config(tmp_path, "evalkit: {models: {aurora-7b-v3: acme/other-model}}")
+@pytest.mark.parametrize(
+    ("gateway", "named"),
+    [
+        ("{runner_model_aliases: {aurora-7b-v3: acme/other-model}}", "acme/other-model"),
+        (
+            "{runner_models: [deepseek/deepseek-v4.1-flash, acme/second-model], "
+            "runner_model_aliases: {acme/second-model: deepseek/deepseek-v4.1-flash}}",
+            "acme/second-model",
+        ),
+    ],
+    ids=["maps-outside-runner-models", "renames-a-runner-model"],
+)
+def test_an_alias_that_is_not_a_new_name_for_a_runner_model_is_a_config_error(
+    tmp_path: Path,
+    gateway: str,
+    named: str,
+) -> None:
+    run_config = _write_run_config(tmp_path, f"gateway: {gateway}")
 
-    with pytest.raises(ConfigError, match="acme/other-model"):
+    with pytest.raises(ConfigError, match=named):
         load_run_config(run_config, CONFIGS)
 
 

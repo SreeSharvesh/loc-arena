@@ -1,0 +1,172 @@
+"""A pull request names a pushed branch, and a merge is git's own merge of it onto main, under the gate."""
+
+from __future__ import annotations
+
+import subprocess
+from collections.abc import Callable
+from pathlib import Path
+
+import pytest
+
+from meridian_forge.forge import Forge, ForgeError
+from meridian_forge.models import PullRequest
+from meridian_forge.repositories import commit_branch, identity, repository_path, seed_repositories
+from meridian_forge.review import ReviewDecision
+from meridian_forge.seed import ForgeSeed, open_seeded_forge
+from meridian_forge.store import ForgeStore
+
+SECOND_LINE = "--- a/NOTES.md\n+++ b/NOTES.md\n@@ -1 +1,2 @@\n first\n+second\n"
+OTHER_SECOND_LINE = "--- a/NOTES.md\n+++ b/NOTES.md\n@@ -1 +1,2 @@\n first\n+another\n"
+
+
+def push(repositories: Path, branch: str, patch: str) -> None:
+    commit_branch(repositories, "notes", branch, patch, f"Change {branch}", identity("priya"))
+
+
+def read_commit(repositories: Path, revision: str) -> str:
+    bare = str(repository_path(repositories, "notes"))
+    parsed = ["git", "--git-dir", bare, "rev-parse", revision]
+    return subprocess.run(parsed, capture_output=True, text=True, check=True).stdout.strip()
+
+
+def read_main(repositories: Path) -> str:
+    bare = str(repository_path(repositories, "notes"))
+    shown = ["git", "--git-dir", bare, "show", "main:NOTES.md"]
+    return subprocess.run(shown, capture_output=True, text=True, check=True).stdout
+
+
+def test_a_merge_puts_the_branch_on_main(
+    open_forge: Callable[[ForgeSeed], Forge],
+    repositories: Path,
+) -> None:
+    forge = open_forge(ForgeSeed())
+    push(repositories, "docs/second", SECOND_LINE)
+    opened = forge.open_pr({"repo": "notes", "branch": "docs/second", "actor_uid": "priya"})
+
+    merged = forge.merge({"repo": "notes", "number": opened["number"], "actor_uid": "priya"})
+
+    assert opened["diff"].endswith("@@ -1 +1,2 @@\n first\n+second\n")
+    assert merged["merged"], merged["reason"]
+    assert read_main(repositories) == "first\nsecond\n"
+
+
+def test_a_pull_request_names_its_branchs_commit_and_a_merge_the_commit_it_merged_and_the_one_it_made(
+    open_forge: Callable[[ForgeSeed], Forge],
+    repositories: Path,
+) -> None:
+    forge = open_forge(ForgeSeed())
+    push(repositories, "docs/second", SECOND_LINE)
+    pushed = read_commit(repositories, "docs/second")
+
+    opened = forge.open_pr({"repo": "notes", "branch": "docs/second", "actor_uid": "priya"})
+    merged = forge.merge({"repo": "notes", "number": opened["number"], "actor_uid": "priya"})
+
+    made = read_commit(repositories, "main")
+    assert (opened["head"], merged["head"], merged["commit"]) == (pushed, pushed, made)
+    assert read_commit(repositories, "main^2") == pushed  # the merge commit's second parent is the branch
+
+
+def test_a_push_landing_while_the_reviewer_reads_the_diff_is_not_merged(
+    tmp_path: Path,
+    repositories: Path,
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "NOTES.md").write_text("first\n")
+    seed_repositories(repositories, {"notes": source})
+    push(repositories, "docs/second", SECOND_LINE)
+    reviewed = read_commit(repositories, "docs/second")
+
+    class PushingWhileReviewing:
+        """Approves what it reads, while the author pushes more to the branch."""
+
+        def review(self, pr: PullRequest) -> ReviewDecision:
+            later = "--- /dev/null\n+++ b/LATER.md\n@@ -0,0 +1 @@\n+unreviewed\n"
+            commit_branch(repositories, "notes", "docs/later", later, "Add more", identity("priya"))
+            moved = [
+                "git",
+                "--git-dir",
+                str(repository_path(repositories, "notes")),
+                "branch",
+                "-f",
+                "docs/second",
+                "docs/later",
+            ]
+            subprocess.run(moved, check=True)
+            return ReviewDecision("+second" in pr.diff and "unreviewed" not in pr.diff, "reviewed", "grace")
+
+    forge = open_seeded_forge(
+        repositories,
+        ["notes"],
+        ForgeSeed(review_required=("notes",)),
+        ForgeStore(tmp_path / "forge.db"),
+        reviewer=PushingWhileReviewing(),
+        ci_seconds=lambda _repo, _number: 0.0,
+    )
+    opened = forge.open_pr({"repo": "notes", "branch": "docs/second", "actor_uid": "priya"})
+
+    merged = forge.merge({"repo": "notes", "number": opened["number"], "actor_uid": "omar"})
+
+    assert (merged["merged"], merged["head"], read_commit(repositories, "main^2")) == (
+        True,
+        reviewed,
+        reviewed,
+    )
+    assert "unreviewed" not in (merged["diff"] or "")
+
+
+def test_a_branch_that_no_longer_merges_cleanly_leaves_main_as_it_is(
+    open_forge: Callable[[ForgeSeed], Forge],
+    repositories: Path,
+) -> None:
+    forge = open_forge(ForgeSeed())
+    push(repositories, "docs/second", SECOND_LINE)
+    push(repositories, "docs/another", OTHER_SECOND_LINE)
+    for branch in ("docs/second", "docs/another"):
+        forge.open_pr({"repo": "notes", "branch": branch, "actor_uid": "priya"})
+    forge.merge({"repo": "notes", "number": 1, "actor_uid": "priya"})
+
+    conflicting = forge.merge({"repo": "notes", "number": 2, "actor_uid": "priya"})
+
+    assert (conflicting["merged"], conflicting["head"], conflicting["commit"]) == (False, None, None)
+    assert "does not merge cleanly" in conflicting["reason"]
+    assert read_main(repositories) == "first\nsecond\n"
+
+
+def test_a_pull_request_whose_branch_was_deleted_is_not_merged(
+    open_forge: Callable[[ForgeSeed], Forge],
+    repositories: Path,
+) -> None:
+    forge = open_forge(ForgeSeed())
+    push(repositories, "docs/second", SECOND_LINE)
+    opened = forge.open_pr({"repo": "notes", "branch": "docs/second", "actor_uid": "priya"})
+    before = read_commit(repositories, "main")
+    deleted = ["git", "--git-dir", str(repository_path(repositories, "notes")), "branch", "-D", "docs/second"]
+    subprocess.run(deleted, check=True, capture_output=True)
+
+    refused = forge.merge({"repo": "notes", "number": opened["number"], "actor_uid": "priya"})
+
+    assert (refused["merged"], refused["head"], refused["commit"]) == (False, None, None)
+    assert refused["reason"] == "no branch 'docs/second' to merge: it was deleted"
+    assert read_commit(repositories, "main") == before
+
+
+def test_on_a_repo_needing_review_the_author_may_not_merge_their_own(
+    open_forge: Callable[[ForgeSeed], Forge],
+    repositories: Path,
+) -> None:
+    forge = open_forge(ForgeSeed(review_required=("notes",)))
+    push(repositories, "docs/second", SECOND_LINE)
+    forge.open_pr({"repo": "notes", "branch": "docs/second", "actor_uid": "priya"})
+
+    by_author = forge.merge({"repo": "notes", "number": 1, "actor_uid": "priya"})
+    by_teammate = forge.merge({"repo": "notes", "number": 1, "actor_uid": "omar"})
+
+    assert (by_author["merged"], by_teammate["merged"]) == (False, True)
+
+
+def test_a_pull_request_of_a_branch_never_pushed_is_refused(open_forge: Callable[[ForgeSeed], Forge]) -> None:
+    forge = open_forge(ForgeSeed())
+
+    with pytest.raises(ForgeError, match="push it first"):
+        forge.open_pr({"repo": "notes", "branch": "docs/nowhere", "actor_uid": "priya"})

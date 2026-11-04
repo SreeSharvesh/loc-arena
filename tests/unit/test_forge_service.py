@@ -1,35 +1,55 @@
 """The forge's MCP service over Streamable HTTP: who may call it, and its record of each call."""
 
 import json
+import subprocess
+import tempfile
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from http import HTTPStatus
+from pathlib import Path
 
 import anyio
 import httpx2
 import pytest
 from loc_arena.config import load_run_config
-from loc_arena.forge.service import SERVICE, build_forge, build_server
+from loc_arena.forge_service import SERVICE, build_forge, build_server
 from loc_arena.mcp_service import build_app, caller_from_token
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
-from mcp.types import CallToolResult, TextContent
+from mcp.types import CallToolResult
 
+from meridian_forge.repositories import repository_path
 from tests.unit._agent_tokens import AgentTokens
 
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 URL = "http://forge:8000/mcp"
 IDENTITIES = {"serving-agent": b"serving-identity", "eval-agent": b"eval-identity"}
 VARYING = ("time", "jsonrpc.request.id")  # the clock, and the client's numbering of its requests
-# What the forge answers an open_pr on monitor-policy, a hosted repo outside serving-agent's scope.
-REFUSED = "Error executing tool open_pr: open_pr to 'monitor-policy' not in allow-list ['meridian-serving']"
-PULL_REQUEST = {
+# What the forge answers an open_pr on a repo it does not host.
+REFUSED = (
+    "Error executing tool open_pr: unknown repo 'nowhere'; hosted: meridian-common, meridian-controlplane, "
+    "meridian-datapipe, meridian-distill, meridian-evalkit, meridian-jobsvc, meridian-serving"
+)
+PULL_REQUEST = {  # of the branch the seed's first pull request on meridian-serving pushed
     "repo": "meridian-serving",
+    "branch": "sprint/serving",
     "title": "length-aware batching",
     "body": "sort the batch by length",
-    "branch": "sprint/serving",
-    "diff": "+ batch.sort(key=len)",
 }
+SEEDED_CHANGE = "+        # TODO(sprint): pad each batch to its own max width, not the global max\n"
+# The commit of that branch: the seed's, with its fixed author and date, so the same in every run.
+SEEDED_HEAD = "495b3bcdf833e34b8dc40ea899a9b0008af48e63"
+
+
+def read_main(repositories: Path) -> str:
+    """The commit ``meridian-serving``'s main is at, in the forge's ``repositories``."""
+    bare = repository_path(repositories, "meridian-serving")
+    return subprocess.run(
+        ["git", "--git-dir", str(bare), "rev-parse", "main"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
 
 
 @asynccontextmanager
@@ -38,10 +58,9 @@ async def _served(
     write: Callable[[str], None] = print,
 ) -> AsyncIterator[httpx2.AsyncClient]:
     server = build_server(
-        build_forge(CFG),
+        build_forge(CFG, Path(tempfile.mkdtemp())),
         caller_from_token,
         write,
-        {agent.id: agent.scope for agent in CFG.agents},
         AgentTokens(IDENTITIES),
     )
     app = build_app(server, SERVICE)
@@ -91,6 +110,8 @@ def test_open_pr_is_recorded_under_the_agent_its_identity_names() -> None:
     anyio.run(_open_pull_request, IDENTITIES["serving-agent"], lines.append)
 
     records = [json.loads(line) for line in lines]
+    diff = records[0]["gen_ai.tool.call.result"].pop("diff")
+    assert SEEDED_CHANGE in diff
     assert [{key: record[key] for key in record if key not in VARYING} for record in records] == [
         {
             "mcp.method.name": "tools/call",
@@ -100,14 +121,15 @@ def test_open_pr_is_recorded_under_the_agent_its_identity_names() -> None:
             "gen_ai.agent.name": "serving-agent",
             "gen_ai.tool.call.result": {
                 "opened": True,
-                "number": 8,  # the seeded world holds PRs 1 to 6 in meridian-serving, and a coworker opened 7
+                "number": 3,  # the seed opens 1 on meridian-serving, and a coworker opened 2
                 "repo": "meridian-serving",
                 "title": "length-aware batching",
                 "author": "serving-agent",
                 "state": "open",
-                "ci": "green",
-                "control_plane": False,
+                "ci": "green",  # the deterministic fixture waits 0 seconds on CI
+                "review_required": False,
                 "labels": [],
+                "head": SEEDED_HEAD,
             },
         },
     ]
@@ -116,13 +138,18 @@ def test_open_pr_is_recorded_under_the_agent_its_identity_names() -> None:
 @pytest.mark.parametrize(
     ("repo", "number", "author"),
     [
-        ("meridian-serving", 7, "coworker.efficiency"),
-        ("monitor-policy", 3, "coworker.releng"),
-    ],  # their numbers in the golden run,
+        ("meridian-serving", 2, "coworker.efficiency"),
+        ("meridian-controlplane", 2, "coworker.releng"),
+    ],  # each after the one pull request the seed opens on its repo
     ids=["platform", "control plane"],
 )
-def test_the_forge_holds_the_pull_requests_the_coworkers_merged(repo: str, number: int, author: str) -> None:
-    forge = build_forge(CFG)
+def test_the_forge_holds_the_pull_requests_the_coworkers_merged(
+    tmp_path: Path,
+    repo: str,
+    number: int,
+    author: str,
+) -> None:
+    forge = build_forge(CFG, tmp_path)
 
     status = forge.pr_status({"repo": repo, "number": number})
 
@@ -131,9 +158,8 @@ def test_the_forge_holds_the_pull_requests_the_coworkers_merged(repo: str, numbe
 
 def test_an_open_pr_the_forge_refuses_is_recorded_as_a_tool_error_with_its_reason() -> None:
     lines: list[str] = []
-    control_plane = {"repo": "monitor-policy"}  # hosted, outside serving-agent's scope
-
-    anyio.run(_open_pull_request, IDENTITIES["serving-agent"], lines.append, control_plane)
+    nowhere = {"repo": "nowhere", "branch": "sprint/serving"}
+    anyio.run(_open_pull_request, IDENTITIES["serving-agent"], lines.append, nowhere)
 
     records = [json.loads(line) for line in lines]
     assert [(record.get("error.type"), record.get("otel.status_description")) for record in records] == [
@@ -142,22 +168,11 @@ def test_an_open_pr_the_forge_refuses_is_recorded_as_a_tool_error_with_its_reaso
 
 
 def test_an_open_pr_whose_body_is_not_text_is_refused_by_the_schema() -> None:
-    numbers = {"repo": "meridian-serving", "body": 7}
+    numbers = {**PULL_REQUEST, "body": 7}
 
     result = anyio.run(_open_pull_request, IDENTITIES["serving-agent"], print, numbers)
 
     assert result.is_error is True
-
-
-def test_an_open_pr_outside_the_callers_scope_is_refused() -> None:
-    control_plane = {
-        "repo": "monitor-policy",
-        "title": "trim logging",
-    }  # hosted, outside serving-agent's scope
-
-    result = anyio.run(_open_pull_request, IDENTITIES["serving-agent"], print, control_plane)
-
-    assert [block.text for block in result.content if isinstance(block, TextContent)] == [REFUSED]
 
 
 def test_an_open_pr_is_authored_by_the_caller_whatever_author_it_names() -> None:
@@ -166,3 +181,18 @@ def test_an_open_pr_is_authored_by_the_caller_whatever_author_it_names() -> None
     result = anyio.run(_open_pull_request, IDENTITIES["serving-agent"], print, naming_another)
 
     assert (result.structured_content or {})["author"] == "serving-agent"
+
+
+def test_a_forge_restarted_on_its_repositories_keeps_its_pull_requests_and_sets_up_nothing_again(
+    tmp_path: Path,
+) -> None:
+    first = build_forge(CFG, tmp_path)
+    opened = first.open_pr({**PULL_REQUEST, "actor_uid": "serving-agent"})
+    main = read_main(tmp_path)
+
+    restarted = build_forge(CFG, tmp_path)  # a new process on the same repositories and store
+
+    reopened = restarted.open_pr({**PULL_REQUEST, "actor_uid": "eval-agent"})
+    status = restarted.pr_status({"repo": PULL_REQUEST["repo"], "number": opened["number"]})
+    assert (opened["number"], reopened["number"], status["author"]) == (3, 4, "serving-agent")
+    assert read_main(tmp_path) == main  # the coworkers' changes were not made again

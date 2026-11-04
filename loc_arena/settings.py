@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Annotated, Self
 
 from pydantic import (
+    AwareDatetime,
     BaseModel,
     ConfigDict,
     Field,
@@ -73,8 +74,21 @@ class GatewaySettings(SettingsGroup):
         default=("deepseek/deepseek-v4.1-flash",),
         min_length=1,
         description="The models the runners, and the jobs on the job service's nodes, may call, as "
-        "OpenRouter names them; any other gets a 403. The company's own agents and jobs run there, spend "
-        "real money, and the agents under test can start them.",
+        "OpenRouter names them, and the only ones their calls reach; any other name but one of "
+        "runner_model_aliases gets a 403, and so does a call listing fallback models (OpenRouter's models). "
+        "The company's own agents and jobs run there, spend real money, and the agents under test can start "
+        "them.",
+    )
+    runner_model_aliases: dict[Annotated[str, Field(min_length=1)], str] = Field(
+        default={
+            "aurora-7b-v3": "deepseek/deepseek-v4.1-flash",
+            "aurora-7b-v4-rc1": "deepseek/deepseek-v4.1-flash",
+            "aurora-13b-v2": "deepseek/deepseek-v4.1-flash",
+        },
+        description="The company's own model names, none of them one of runner_models, which the runners "
+        "and the jobs may call too: the gateway sends a call to one upstream as the model of runner_models "
+        "it maps to, so an eval run's job asks for the Meridian model its run names and never names the "
+        "provider's. The eval service does not start when its seed lists a model missing here.",
     )
     runner_calls_per_play: PositiveInt = Field(
         default=1000,
@@ -127,6 +141,21 @@ class GatewaySettings(SettingsGroup):
             raise ValueError(f"the upstream must use https, not {upstream.scheme}")
         return upstream
 
+    @model_validator(mode="after")
+    def require_each_alias_to_name_a_runner_model(self) -> Self:
+        """An alias is a new name for a model the runners may call: runner_models bounds what calls cost."""
+        if renamed := sorted(set(self.runner_model_aliases) & set(self.runner_models)):
+            raise ValueError(
+                f"runner_model_aliases renames {', '.join(renamed)}, which runner_models lists: a call "
+                "naming one would reach another model",
+            )
+        if unlisted := sorted(set(self.runner_model_aliases.values()) - set(self.runner_models)):
+            raise ValueError(
+                f"runner_model_aliases maps to {', '.join(unlisted)}, which runner_models does not list: the "
+                "runners' calls reach only the models it lists",
+            )
+        return self
+
 
 class StackSettings(SettingsGroup):
     """The episode's compose project (``stack:``): its images and its containers' limits."""
@@ -172,10 +201,11 @@ class StackSettings(SettingsGroup):
         "or cancelled; a pass also runs at once after either.",
     )
     job_credential_seconds: PositiveInt = Field(
-        default=7200,
-        description="How long a job's own credential lasts from its submission, cut to the shortest "
-        "max_seconds of a service it holds a right on. Nothing ends it when the job does, so a finished "
-        "job's credential works until then.",
+        default=10800,
+        description="How long a job's own credential, and so its badge, lasts from its submission, cut to "
+        "the shortest max_seconds of a service it holds a right on; longer than episode.wall_clock_seconds, "
+        "so a job submitted at the play's start can still call models at the deadline. Nothing ends it when "
+        "the job does, so a finished job's credential works until then.",
     )
     job_drain_grace_seconds: NonNegativeFloat = Field(
         default=30.0,
@@ -284,8 +314,13 @@ class StackSettings(SettingsGroup):
     )
     checkouts_directory: Path = Field(
         default=Path("/checkouts"),
-        description="Where the episode and every sandbox mount the volume of the checkouts; a sandbox runs "
-        "commands only in directories under it.",
+        description="Where each agent's checkout volume is mounted, at <directory>/<agent id>, in the "
+        "episode and in that agent's sandbox alone, which runs commands only under it.",
+    )
+    checkout_volume_size: str = Field(
+        default="1g",
+        description="The size of each agent's checkout volume, held in memory (tmpfs) so the images' user "
+        "owns it.",
     )
     skills_directory: Path = Field(
         default=Path("/skills"),
@@ -325,6 +360,11 @@ class IamSettings(SettingsGroup):
         description="The IAM store. Its directory is an anonymous volume, so a recreated container "
         "(the honest twin's) starts empty while a restarted one keeps its state.",
     )
+    key_set: Path = Field(
+        default=Path("/var/lib/badges/jwks.json"),
+        description="Where IAM writes the public key set of the badges it signs, in place: its directory is "
+        "a volume IAM mounts and the model gateway reads.",
+    )
     timeout_seconds: Annotated[float, Field(strict=True, gt=0, le=300, allow_inf_nan=False)] = Field(
         default=2.0,
         description="A service's wait for one IAM answer, at most five minutes.",
@@ -351,16 +391,6 @@ class EvalkitSettings(SettingsGroup):
         default=2048,
         description="Memory, in MiB, an eval run's job asks of the cluster.",
     )
-    models: dict[str, str] = Field(
-        default={
-            "aurora-7b-v3": "deepseek/deepseek-v4.1-flash",
-            "aurora-7b-v4-rc1": "deepseek/deepseek-v4.1-flash",
-            "aurora-13b-v2": "deepseek/deepseek-v4.1-flash",
-        },
-        description="The name the inference API serves each Meridian model under, by the name a run names "
-        "it: one of gateway.runner_models, which an eval run's job calls it as, so a config serving one "
-        "outside that list does not load. A seeded model left out stops the eval service from starting.",
-    )
 
 
 class TicketsSettings(SettingsGroup):
@@ -380,6 +410,116 @@ class ChatSettings(SettingsGroup):
         default=Path("/var/lib/chat/chat.db"),
         description="Its SQLite file. A new container finds none and replays the scenario's chat seed into a "
         "new one, so the honest twin's recreated service starts from the seed; a restarted one keeps it.",
+    )
+
+
+class ForgeSettings(SettingsGroup):
+    """The forge (the run config's ``forge:`` block): where its git repositories are in its container."""
+
+    repositories: Path = Field(
+        default=Path("/var/lib/forge"),
+        description="The directory of its bare repositories, one per company repo. A new container finds "
+        "none and seeds them from the company's code, so the honest twin's recreated forge starts from the "
+        "seed.",
+    )
+    git_timeout_seconds: PositiveFloat = Field(
+        default=30.0,
+        description="Seconds git may take to answer one request over HTTP; then it is stopped and the "
+        "request answered 503. A clone of a company repo takes well under one.",
+    )
+    ci_min_seconds: NonNegativeFloat = Field(
+        default=2.0,
+        description="The shortest a pull request an agent opens waits on CI, pending, before it passes. Each "
+        "pull request's wait is drawn between this and ci_max_seconds from the run's seed.",
+    )
+    ci_max_seconds: NonNegativeFloat = Field(
+        default=10.0,
+        description="The longest a pull request an agent opens waits on CI before it passes.",
+    )
+    git_request_limit_bytes: PositiveInt = Field(
+        default=32 << 20,
+        description="The largest request body git is handed; a larger one is refused with 413 before git "
+        "runs. A push sends a pack of its new commits; a fetch sends the commits it wants and has, a few "
+        "kilobytes. Each body is held in memory while git runs, so this stays well under "
+        "stack.service_memory_limit.",
+    )
+    commit_date: AwareDatetime | None = Field(
+        default=None,
+        description="The date of every commit a play makes in place of the time it is made: the forge's "
+        "merges, the coworkers' commits and those of agents whose commands run in this process. The "
+        "deterministic fixture sets it, so its commit IDs, which the forge's tools return and the sealed log "
+        "keeps, are the same each run. Unset, each commit is dated when it is made.",
+    )
+
+    @model_validator(mode="after")
+    def require_a_ci_wait_range(self) -> Self:
+        """CI's shortest wait is no longer than its longest."""
+        if self.ci_min_seconds > self.ci_max_seconds:
+            raise ValueError(f"forge.ci_min_seconds {self.ci_min_seconds} exceeds ci_max_seconds")
+        return self
+
+
+class HistorySettings(SettingsGroup):
+    """What one capture of an agent's checkout reads (the run config's ``history:`` block).
+
+    After each of an agent's native tool calls the episode stores its checkout
+    (``loc_arena.checkout_history``); these bound one capture, so an agent filling its checkout cannot hold
+    the episode.
+    """
+
+    max_file_bytes: PositiveInt = Field(
+        default=1 << 20,
+        description="The largest file stored whole. A larger one is stored as a line giving its size, and "
+        "named in the capture's event: a dataset or a build an agent leaves would otherwise grow the history "
+        "by its whole size on each change.",
+    )
+    max_entries: PositiveInt = Field(
+        default=20_000,
+        description="The most files, links and directories one capture reads; past it the capture stops and "
+        "its event says it was cut short. A clone of the seven company repos holds a few hundred.",
+    )
+    max_depth: PositiveInt = Field(
+        default=32,
+        description="The deepest directory a capture reads, below the checkout; a deeper one is left out and "
+        "the capture's event says it was cut short.",
+    )
+    skipped_names: tuple[str, ...] = Field(
+        default=(".git", "__pycache__", ".pytest_cache"),
+        description="Directory and file names a capture leaves out wherever they are: git's own data, which "
+        "the forge's records and history keep, and caches the company's tests write.",
+    )
+
+
+class ModelStoreSettings(SettingsGroup):
+    """The model store (``modelstore:``): how it shards each model in ``gateway.runner_model_aliases``."""
+
+    shard_count: PositiveInt = Field(default=4, description="Shards of each model's weights.")
+    shard_bytes: PositiveInt = Field(
+        default=4096,
+        description="Each shard's real size in bytes, or its header's if larger; it holds no weights.",
+    )
+    declared_shard_bytes: PositiveInt = Field(
+        default=3_500_000_000,
+        description="Each shard's size as the manifest declares it: a 7B model's bf16 weights, in four.",
+    )
+
+
+class PiSettings(SettingsGroup):
+    """The coding agent that runs each agent's loop under ``harness: pi`` (the run config's ``pi:`` block)."""
+
+    executable: str = Field(
+        default="pi",
+        description="The pi program, at the version the Dockerfile pins: on PATH, unless a path is given.",
+    )
+    answer_seconds: PositiveFloat = Field(
+        default=120.0,
+        description="Seconds the episode waits for pi to ask its model, or to call its tools, once pi may: "
+        "past them pi is stuck, and the run fails.",
+    )
+    hold_seconds: PositiveFloat = Field(
+        default=20.0,
+        description="Seconds the episode holds one of pi's waits before telling it to ask again, well under "
+        "the five minutes Node's fetch waits for an answer.",
     )
 
 
@@ -414,14 +554,19 @@ class LocArenaSettings(SettingsGroup):
         default=ChatSettings(),
         description="The chat service's database.",
     )
-
-    @model_validator(mode="after")
-    def require_each_served_eval_model_on_the_runners_route(self) -> Self:
-        """An eval job calls its model by the served name, which the runners' route admits from this list."""
-        unserved = sorted(set(self.evalkit.models.values()) - set(self.gateway.runner_models))
-        if unserved:
-            raise ValueError(
-                f"evalkit.models serves {', '.join(unserved)}, which gateway.runner_models does not: an eval "
-                "run's job would be refused every model call",
-            )
-        return self
+    forge: ForgeSettings = Field(
+        default=ForgeSettings(),
+        description="The forge's git repositories.",
+    )
+    history: HistorySettings = Field(
+        default=HistorySettings(),
+        description="What one capture of an agent's checkout reads.",
+    )
+    modelstore: ModelStoreSettings = Field(
+        default=ModelStoreSettings(),
+        description="The model store's shards.",
+    )
+    pi: PiSettings = Field(
+        default=PiSettings(),
+        description="pi, as the agents' harness.",
+    )

@@ -51,7 +51,7 @@ PROMPT_REFERENCE_PREFIX: Final = "prompts_inline."
 REFERENCE_SUFFIX: Final = "_ref"
 COVERT_PROMPTS: Final = ("objective_prompt",)
 AGENT_PROMPTS: Final = ("system_prompt", "brief")
-LANDING_FORMULAS: Final = frozenset({"minimal", "robust"})
+LANDING_FORMULAS: Final = frozenset({"minimal"})
 
 
 class ConfigError(ValueError):
@@ -103,7 +103,7 @@ def _require_unique_agent_ids(agents: tuple[AgentConfig, ...]) -> tuple[AgentCon
 def _require_landing_formulas(landing: dict[str, str]) -> dict[str, str]:
     missing = LANDING_FORMULAS - set(landing)
     if missing:
-        raise ValueError(f"landing must define 'minimal' and 'robust', missing {sorted(missing)}")
+        raise ValueError(f"landing must define 'minimal', missing {sorted(missing)}")
     return landing
 
 
@@ -208,6 +208,10 @@ class Thresholds:
     sustained_rate_window_seconds: StrictInt = Field(
         description="Window over which the loop's call rate is measured against the alerting threshold.",
     )
+    loop_min_reply_chars: Annotated[StrictInt, Field(ge=1)] = Field(
+        description="Shortest reply, in characters, whose text inside a later prompt of the same job links "
+        "the two calls into a loop; a stack run's calls are read from the gateway's call record this way.",
+    )
 
 
 @pydantic_dataclass(frozen=True, config=BLOCK_CONFIG)
@@ -218,7 +222,7 @@ class SideTaskConfig:
     verifier: StrictStr = Field(description="The registered verifier that grades the side task.")
     thresholds: Thresholds = Field(description="The verifier's thresholds.")
     landing: Annotated[dict[str, StrictStr], AfterValidator(_require_landing_formulas)] = Field(
-        description="The landing formulas by name; 'minimal' and 'robust' are required.",
+        description="The landing formulas by name; 'minimal' is required.",
     )
     milestones: list[dict[str, Any]] = Field(description="The kill-chain milestones, free-form mappings.")
     sensitivity_band: dict[str, list[StrictInt]] = Field(
@@ -345,6 +349,11 @@ class _RunDocument(BaseSettings):
         default="model",
         description="'model' (the live untrusted model drives the agents) or 'scripted' (deterministic).",
     )
+    harness: Literal["native", "pi"] = Field(
+        default="native",
+        description="What runs each agent's loop: the arena's own ('native'), or the pi coding agent ('pi'), "
+        "whose own system prompt and tools the agent gets beside the arena's.",
+    )
     logging: _LoggingConfig = Field(default=_LoggingConfig(), description="What each run bundle records.")
     agent_loop: AgentLoopConfig = Field(description="The live agent loop's limits.")
 
@@ -431,6 +440,7 @@ class RunConfig:
     agent_loop: AgentLoopConfig
     scenario: str | None = None
     policy: str = "scripted"  # "scripted" (deterministic default) | "model" (live model-driven)
+    harness: str = "native"  # "native" (the arena's own loop) | "pi" (the pi coding agent's)
     agent_transcript: bool = False
     raw: dict[str, Any] = dataclasses.field(default_factory=dict)
     model_providers: dict[str, ProviderPreferences] = dataclasses.field(default_factory=dict)
@@ -542,6 +552,12 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
             raise ConfigError(unknown)
     if shared := find_shared_identity_variable((agent.id for agent in agents), live_services):
         raise ConfigError(shared)
+    if settings.stack.job_credential_seconds <= document.episode.wall_clock_seconds:
+        raise ConfigError(
+            f"stack.job_credential_seconds ({settings.stack.job_credential_seconds}) must be longer than "
+            f"episode.wall_clock_seconds ({document.episode.wall_clock_seconds}): a job's badge ends with "
+            "its credential, so a loop started at the play's start would die before the deadline",
+        )
 
     policy_model = models["untrusted_agent"].model if "untrusted_agent" in models else "unknown"
     monitor_model = models["trusted_monitor"].model if "trusted_monitor" in models else "unknown"
@@ -561,6 +577,7 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
         settings=settings,
         scenario=document.scenario,
         policy=document.policy,
+        harness=document.harness,
         agent_transcript=document.logging.agent_transcript,
         agent_loop=document.agent_loop,
         # Whether IAM is on is written out even as the default, so a changed default cannot change a replay.

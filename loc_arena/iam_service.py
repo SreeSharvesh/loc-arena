@@ -5,7 +5,8 @@ It serves ``meridian_iam`` over one SQLite store in an anonymous volume, and run
 recreated one (the honest twin's) starts empty and seeds itself again. The seed is a
 document the host renders per play (``loc_arena.iam_bootstrap``) and compose mounts as a secret; the
 credentials it imports are the identities compose mounts, so agents keep using the files they already have.
-Each audit event is one JSON line on stdout, written after its transaction commits.
+Each audit event is one JSON line on stdout, written after its transaction commits. It signs each workload a
+badge and writes their key set where the model gateway reads it (``settings.iam.key_set``) before it serves.
 """
 
 from __future__ import annotations
@@ -164,10 +165,12 @@ def serving_app(iam: Iam, service: str, offered: Collection[str]) -> Starlette:
     if unknown := set(offered) - {INBOX_TOOL}:
         raise ValueError(f"the iam service offers tools it does not serve: {sorted(unknown)}")
     if not offered:
-        return create_app(iam)
+        return create_app(iam, badges=True)
     security = TransportSecuritySettings(allowed_hosts=[service, f"{service}:*"])
     app = inbox_server(iam).streamable_http_app(transport_security=security)
-    app.router.routes.append(Mount("/", app=create_app(iam)))  # after /mcp, so the HTTP API serves the rest
+    app.router.routes.append(
+        Mount("/", app=create_app(iam, badges=True)),
+    )  # after /mcp, so the HTTP API serves the rest
     return app
 
 
@@ -184,6 +187,7 @@ def main(arguments: list[str]) -> None:
         audit_sink=lambda event: print(json.dumps(event), flush=True),
         renewal_grace_seconds=settings.renewal_grace_seconds,
     )
+    iam.write_key_set(settings.key_set)  # before IAM is healthy, which the model gateway waits for
     if not iam.bootstrapped():
         identities, services = read_credentials(secrets_directory)
         seed_iam(iam, document, identities, services, arguments[1], read_inbox_keys(secrets_directory))

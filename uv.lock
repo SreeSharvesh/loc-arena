@@ -356,6 +356,33 @@ wheels = [
 ]
 
 [[package]]
+name = "dulwich"
+version = "1.2.20"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "urllib3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/18/92/e47acfff672d6219d1bba1c210f902c1ad4a58d8c68eb89fe0b786f00a68/dulwich-1.2.20.tar.gz", hash = "sha256:28e1f48098d2cb157e722588466070cbefdfe8093c2a141c568b01362296c0f3", size = 1443547, upload-time = "2026-10-26T21:42:03.075Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/58/6e/3734008fc0a82e13dc271c6ac9f8b2befe92e38fcdcddbf745f2ab931f42/dulwich-1.2.20-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:68ba3113b2dde2d5ed9860b515ee9f1c6d223e83863379d78bd50cd6d04bd651", size = 1501984, upload-time = "2026-10-26T21:40:57.011Z" },
+    { url = "https://files.pythonhosted.org/packages/18/2e/4b2737b08cfa21f936bf9bbf1faee9b087d118511f9da7ea45b2e3e550cc/dulwich-1.2.20-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:da4b7680adb8dbedbbeaf4ea353e4896e9280c107125abf1fa9d3ec12e7de5a8", size = 1420036, upload-time = "2026-10-26T21:40:58.437Z" },
+    { url = "https://files.pythonhosted.org/packages/7d/c5/0fbce61daca1e8756dcc7aecb5c6c99ec31e8fb44d81ad1d81d59180aba2/dulwich-1.2.20-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:ea6ea35c8b4fd24d386694863e1366e309e317b0e4d3696bcdbfdf5d0c014732", size = 1556566, upload-time = "2026-10-26T21:40:59.827Z" },
+    { url = "https://files.pythonhosted.org/packages/77/30/28f195c80fef25a5160db928366421ff0c3be3ae166510b9b6cdf687f431/dulwich-1.2.20-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:2ffd41bca7ac53b8a719311209f29641c26dfcbd466bd73adc6e465221f3ed17", size = 1531577, upload-time = "2026-10-26T21:41:01.351Z" },
+    { url = "https://files.pythonhosted.org/packages/cf/5d/b9619ea3ca7f825e9289d1fdc6d68071cf5aaa12341b763a9e89d05c8431/dulwich-1.2.20-cp312-cp312-win32.whl", hash = "sha256:270444e33d8c5ce66ece03442abed126f62384af72c2c4cf17a87aade7837cf9", size = 1162112, upload-time = "2026-10-26T21:41:02.692Z" },
+    { url = "https://files.pythonhosted.org/packages/62/04/75e08b364288781b47ab39153680f8bb64e366a7bd8f6828c5a20ccfc6cb/dulwich-1.2.20-cp312-cp312-win_amd64.whl", hash = "sha256:d33cbe3e3576a78d4c1192a6aec5d95990c4219f85b791b3cfd89032c07a823c", size = 1120360, upload-time = "2026-10-26T21:41:04.135Z" },
+    { url = "https://files.pythonhosted.org/packages/08/c8/217841f8ae98909dd2045cfd9e9060791ae1dc9c0d2239672ae318b28796/dulwich-1.2.20-py3-none-any.whl", hash = "sha256:ab521391c3475e7c507f14aeacad0cdf26e97ba5050d8010a1ff34e417c9a842", size = 758582, upload-time = "2026-10-26T21:42:01.525Z" },
+]
+
+[[package]]
+name = "execnet"
+version = "2.1.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/bf/89/780e11f9588d9e7128a3f87788354c7946a9cbb1401ad38a48c4db9a4f07/execnet-2.1.2.tar.gz", hash = "sha256:63d83bfdd9a23e35b9c6a3261412324f964c2ec8dcd8d3c6916ee9373e0befcd", size = 166622, upload-time = "2025-11-12T09:56:37.75Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ab/84/02fc1827e8cdded4aa65baef11296a9bbe595c474f0d6d758af082d849fd/execnet-2.1.2-py3-none-any.whl", hash = "sha256:67fba928dd5a544b783f6056f449e5e3931a5c378b128bc18501f7ea79e296ec", size = 40708, upload-time = "2025-11-12T09:56:36.333Z" },
+]
+
+[[package]]
 name = "fastapi"
 version = "0.141.1"
 source = { registry = "https://pypi.org/simple" }
@@ -674,13 +701,16 @@ dependencies = [
     { name = "anyio" },
     { name = "certifi" },
     { name = "croniter" },
+    { name = "dulwich" },
     { name = "fastapi" },
     { name = "httpx2" },
     { name = "inspect-ai" },
     { name = "mcp" },
+    { name = "meridian-forge" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pygments" },
+    { name = "pyjwt", extra = ["crypto"] },
     { name = "pytest" },
     { name = "pyyaml" },
     { name = "starlette" },
@@ -690,6 +720,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "pytest-xdist" },
     { name = "ruff" },
     { name = "ty" },
     { name = "types-pygments" },
@@ -711,13 +742,16 @@ requires-dist = [
     { name = "anyio", specifier = ">=4.15.1" },
     { name = "certifi", specifier = ">=2026.10.19" },
     { name = "croniter", specifier = ">=6.2.4" },
+    { name = "dulwich", specifier = ">=1.2.20" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx2", specifier = ">=2.13.1" },
     { name = "inspect-ai", specifier = ">=0.3.239,<0.4" },
     { name = "mcp", specifier = ">=2.3.0" },
+    { name = "meridian-forge", editable = "company/meridian-forge" },
     { name = "pydantic", specifier = ">=2.13.5" },
     { name = "pydantic-settings", specifier = ">=2.15.0" },
     { name = "pygments", specifier = ">=2.18" },
+    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.15.1" },
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "starlette", specifier = ">=1.7.0" },
@@ -727,6 +761,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "pytest-xdist", specifier = ">=3.8.0" },
     { name = "ruff", specifier = ">=0.6" },
     { name = "ty", specifier = ">=0.0.84" },
     { name = "types-pygments", specifier = ">=2.18" },
@@ -817,6 +852,27 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d6/54/cfe61301667036ec958cb99bd3efefba235e65cdeb9c84d24a8293ba1d90/mdurl-0.1.2.tar.gz", hash = "sha256:bb413d29f5eea38f31dd4754dd7377d4465116fb207585f97bf925588687c1ba", size = 8729, upload-time = "2022-08-14T12:40:10.846Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b3/38/89ba8ad64ae25be8de66a6d463314cf1eb366222074cfda9ee839c56a4b4/mdurl-0.1.2-py3-none-any.whl", hash = "sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8", size = 9979, upload-time = "2022-08-14T12:40:09.779Z" },
+]
+
+[[package]]
+name = "meridian-forge"
+version = "0.1.0"
+source = { editable = "company/meridian-forge" }
+dependencies = [
+    { name = "anyio" },
+    { name = "fastapi" },
+    { name = "mcp" },
+    { name = "pydantic" },
+    { name = "pyyaml" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anyio", specifier = ">=4.15.1" },
+    { name = "fastapi", specifier = ">=0.115" },
+    { name = "mcp", specifier = ">=2.3.0" },
+    { name = "pydantic", specifier = ">=2.13.5" },
+    { name = "pyyaml", specifier = ">=6.0" },
 ]
 
 [[package]]
@@ -1095,6 +1151,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/e4/47/b9efed96c114afcfa3c9d3fe98a76a1d14c74a9e266d397cf6eb64be5e01/pytest-9.1.1.tar.gz", hash = "sha256:1088fbde8f2b49d95a549a195707afa7a76a3ce9bcadc26b6d71f0ffda5fe313", size = 1636369, upload-time = "2026-06-19T10:58:32.857Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/24/25/1de2678b631f5a49215c6c96fff41ba892b0a34df68d6d80292b1b48aa7f/pytest-9.1.1-py3-none-any.whl", hash = "sha256:37a86b45efb9a47a61a36449063e8e18d0cab3161329fc099eb21783169c4f0c", size = 386536, upload-time = "2026-06-19T10:58:31.347Z" },
+]
+
+[[package]]
+name = "pytest-xdist"
+version = "3.8.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "execnet" },
+    { name = "pytest" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/78/b4/439b179d1ff526791eb921115fca8e44e596a13efeda518b9d845a619450/pytest_xdist-3.8.0.tar.gz", hash = "sha256:7e578125ec9bc6050861aa93f2d59f1d8d085595d6551c2c90b6f4fad8d3a9f1", size = 88069, upload-time = "2025-07-01T13:30:59.346Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ca/31/d4e37e9e550c2b92a9cbc2e4d0b7420a27224968580b5a447f420847c975/pytest_xdist-3.8.0-py3-none-any.whl", hash = "sha256:202ca578cfeb7370784a8c33d6d05bc6e13b4f25b5053c30a152269fd10f0b88", size = 46396, upload-time = "2025-07-01T13:30:56.632Z" },
 ]
 
 [[package]]

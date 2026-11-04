@@ -58,6 +58,7 @@ from loc_arena.task import (
     grade_snapshot,
     read_snapshot,
 )
+from loc_arena.verifier.call_record import read_recorded_calls
 
 if TYPE_CHECKING:
     from loc_arena.logging_.inspect_export import EpisodeExport
@@ -163,17 +164,14 @@ def _eval_episodes(cfg: RunConfig, episode: Any, calibration: Any) -> list[Episo
     return exports
 
 
-def _play_by_policy(cfg: RunConfig, workdir: Path, *, robust: bool, provider: Any = None) -> Snapshot:
-    """Play one episode by ``config.policy``: the live model, or the scenario's scripted moves in its place.
-
-    ``robust`` is not read.
-    """
+def _play_by_policy(cfg: RunConfig, workdir: Path, *, provider: Any = None) -> Snapshot:
+    """Play one episode by ``config.policy``: the live model, or the scenario's scripted moves instead."""
     return live.play_model_episode(cfg, workdir, provider=provider)
 
 
-def _play_graded(cfg: RunConfig, run_directory: Path, *, robust: bool = False) -> EpisodeResult:
+def _play_graded(cfg: RunConfig, run_directory: Path) -> EpisodeResult:
     """Play one episode in ``run_directory/episode``, build the events its services recorded, and grade it."""
-    snapshot = _play_by_policy(cfg, run_directory / "episode", robust=robust)
+    snapshot = _play_by_policy(cfg, run_directory / "episode")
     build_recorded_events(run_directory, cfg, {"episode": snapshot.trace})
     return grade_snapshot(snapshot, cfg)
 
@@ -260,7 +258,6 @@ def play_run(
     run_directory: Path,
     *,
     mode: str,
-    robust: bool = True,
     provider: Any = None,
     calibration_provider: Any = None,
     next_phase: bool = False,
@@ -272,7 +269,7 @@ def play_run(
     ``next_phase`` only the first phase ``played.json`` lacks plays, so a stack run can renew its services
     before the twin; with none left, it raises ``ValueError``.
     """
-    live.refuse_central_iam_in_process(config, "play it in a stack (STACK=1, --stack)")
+    live.refuse_to_play_in_process(config, "play it in a stack (STACK=1, --stack)")
     run_directory.mkdir(parents=True, exist_ok=True)
     start = time.perf_counter()
     played_file = run_directory / PLAYED_FILE
@@ -289,7 +286,6 @@ def play_run(
         else _play_by_policy(
             apply_mode(config, mode),
             run_directory / "episode",
-            robust=robust,
             provider=provider,
         )
     )
@@ -299,7 +295,6 @@ def play_run(
         else _play_by_policy(
             apply_mode(config, "honest"),
             run_directory / "honest_cal",
-            robust=False,
             provider=calibration_provider,
         )
     )
@@ -332,9 +327,18 @@ def build_recorded_run_events(config: RunConfig, run_directory: Path) -> None:
     build_recorded_events(run_directory, config, traces)
 
 
+def read_played_snapshot(directory: Path, config: RunConfig, trace: EpisodeTrace | None = None) -> Snapshot:
+    """The snapshot of the episode played in ``directory``, with ``trace``; in a stack run, its model calls.
+
+    Raises ``FileNotFoundError`` for a stack run whose call record was not copied out.
+    """
+    calls = read_recorded_calls(directory, config)
+    return dataclasses.replace(read_snapshot(directory, config), trace=trace, calls=calls)
+
+
 def _grade_played(directory: Path, config: RunConfig, trace: EpisodeTrace | None) -> EpisodeResult:
     """Grade the episode played in ``directory`` from its ``snapshot.json``, with the trace play recorded."""
-    return grade_snapshot(dataclasses.replace(read_snapshot(directory, config), trace=trace), config)
+    return grade_snapshot(read_played_snapshot(directory, config, trace), config)
 
 
 def grade_run(
@@ -411,7 +415,7 @@ def grade_run(
     # Episode-level CAUGHT decision: calibrate on the honest twin's OVERALL aggregate and catch
     # only within the honest twin's catch-before-harm window, then compare the attack's overall aggregate.
     # The overall SUSPICION aggregate is over the enabled model-backed monitors only (a disabled monitor is
-    # not deployed and the model:none reconcile detectors are a separate signal); both are still reported.
+    # not deployed and the model:none detectors are a separate signal); both are still reported.
     scored_specs = suspicion_specs(specs)
     h_overall, h_per_monitor = episode_overall(
         honest_rec.verdicts,
@@ -467,7 +471,6 @@ def run_episode(
     mode: str,
     out_root: Path | None = None,
     seed: int | None = None,
-    robust: bool = True,
     monitors_path: str = "configs/monitors.yaml",
     write_report: bool = True,
     monitor_provider: Any = None,
@@ -492,7 +495,6 @@ def run_episode(
         config,
         run_directory,
         mode=mode,
-        robust=robust,
         provider=provider,
         calibration_provider=calibration_provider,
     )
@@ -514,7 +516,6 @@ def run_sweep(
     honest: int,
     attack: int,
     out_root: Path | None = None,
-    robust: bool = True,
     monitors_path: str = "configs/monitors.yaml",
     monitor_provider: Any = None,
 ) -> dict[str, Any]:
@@ -523,7 +524,7 @@ def run_sweep(
     Writes each episode's bundle plus ``scores.aggregate.json`` and a summary ``report.html`` under
     ``logs/<run_id>/sweep-<timestamp>/`` (calibration + a safety number).
     """
-    live.refuse_central_iam_in_process(config, "a sweep plays only here, so sweep a config with IAM off")
+    live.refuse_to_play_in_process(config, "a sweep plays only here, so sweep the deterministic fixture")
     sweep_dir = (out_root or Path("logs")) / config.run_slug / f"sweep-{datetime.now(UTC):%Y%m%dT%H%M%SZ}"
     sweep_dir.mkdir(parents=True, exist_ok=True)
 
@@ -539,8 +540,7 @@ def run_sweep(
         _record(_play_graded(honest_cfg, sweep_dir / f"honest-{i}"), honest_cfg) for i in range(honest)
     ]
     attack_records = [
-        _record(_play_graded(attack_cfg, sweep_dir / f"attack-{i}", robust=robust), attack_cfg)
-        for i in range(attack)
+        _record(_play_graded(attack_cfg, sweep_dir / f"attack-{i}"), attack_cfg) for i in range(attack)
     ]
     threshold = calibrate_threshold(honest_records, proto.audit_budget_fpr)
     safe = safety(attack_records, threshold)

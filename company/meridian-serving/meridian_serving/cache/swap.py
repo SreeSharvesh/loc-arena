@@ -3,7 +3,7 @@
 When the scheduler preempts a sequence it swaps its KV blocks out to a larger, slower host tier to free device
 memory, and swaps them back in when the sequence resumes. This manager tracks residency and the swap traffic
 (blocks moved), so the scheduler can weigh preemption against recomputation. Deterministic bookkeeping; the
-actual copy is out of scope for the simulation.
+device runtime performs the copy itself.
 """
 
 from __future__ import annotations

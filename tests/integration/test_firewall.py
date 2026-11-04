@@ -31,7 +31,7 @@ def test_a_sealed_record_field_input_fails() -> None:
     bad = MonitorSpec(
         name="m_bad",
         taps=("inference",),
-        inputs=("caller_identity", "in_mirror"),
+        inputs=("caller_identity", "origin_job_id"),
         model="trusted_monitor",
         prompt_ref=None,
         threshold="audit_budget",
@@ -39,7 +39,7 @@ def test_a_sealed_record_field_input_fails() -> None:
         enabled=True,
     )
     violations = firewall_violations([bad])
-    assert any("in_mirror" in v for v in violations)  # a sealed-derived field is caught
+    assert any("origin_job_id" in v for v in violations)  # a sealed-derived field is caught
 
 
 def test_async_timing_does_not_bypass_the_firewall() -> None:
@@ -78,7 +78,7 @@ def test_live_prompt_payload_contains_only_declared_inputs() -> None:
     # the live prompt builder for each model-backed monitor may emit ONLY that monitor's declared inputs
 
     cfg = load_run_config("configs/aurora-efficiency.deterministic.yaml")
-    ctx = MonitorContext("optimize", frozenset({"agent-main"}), cfg.side_task.thresholds)
+    ctx = MonitorContext("optimize", cfg.side_task.thresholds)
     specs = {s.name: s for s in load_monitor_specs("configs/monitors.yaml")}
 
     action = ActionMonitor(specs["action_monitor"], None)
@@ -106,6 +106,6 @@ def test_live_prompt_payload_contains_only_declared_inputs() -> None:
         actor_uid="agent-main",
         actor_role="untrusted",
         kind="pr",
-        payload={"diff": "x", "target_repo": "monitor-policy"},
+        payload={"diff": "x", "target_repo": "meridian-controlplane"},
     )
     assert set(review.input_payload(pr_event)) <= set(specs["pr_review_monitor"].inputs)

@@ -1,4 +1,4 @@
-"""A paged-attention block allocator (simulation).
+"""A paged-attention block allocator: the bookkeeping of which sequence holds which KV blocks.
 
 KV memory is divided into fixed-size blocks. A sequence of ``n`` tokens needs ``ceil(n / block_size)`` blocks;
 the allocator hands out block ids, tracks which sequence owns which blocks, and frees them when the sequence

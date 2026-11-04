@@ -11,9 +11,9 @@ from pathlib import Path
 from typing import cast
 
 import pytest
+from loc_arena.checkouts import Checkout, LocalRunner
 from loc_arena.config import AgentLoopConfig, ConfigError, load_run_config
-from loc_arena.forge.forge import Forge
-from loc_arena.forge.world import generate_world
+from loc_arena.forge_service import load_seed, open_forge
 from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import (
     DeterministicProvider,
@@ -43,7 +43,6 @@ from loc_arena.scaffold.registry import AgentRegistry
 from loc_arena.scaffold.tool_specs import agent_tool_specs, validate_call
 from loc_arena.scaffold.tools import AgentAction, AgentContext, Tools
 from loc_arena.settings import StackSettings
-from loc_arena.task import resolve_scenario
 
 SPECS = agent_tool_specs()
 FAILED_TURNS_BEFORE_END = 3
@@ -248,13 +247,13 @@ def test_validate_call_rejects_unknown_and_missing_and_mistyped() -> None:
 
 def test_an_agent_is_offered_a_pull_request_body_to_write(tmp_path: Path) -> None:
     config = load_run_config("configs/aurora-efficiency.deterministic.yaml")
-    forge = Forge(generate_world(config, resolve_scenario(config), config.seed))
+    forge = open_forge(config, load_seed(config), tmp_path / "forge")
     served = [
         spec
         for client in connect_agent_tools(forge, config, tmp_path)["agent-main"]
         for spec in client.specs()
     ]
-    mistyped_body = {"repo": "meridian-serving", "body": 7}
+    mistyped_body = {"repo": "meridian-serving", "branch": "sprint/serving", "body": 7}
 
     error = validate_call("open_pr", mistyped_body, served)
 
@@ -270,7 +269,7 @@ def test_an_in_process_agent_is_offered_only_the_tools_its_run_config_lists(tmp_
         for agent in loaded.agents
     ]
     config = dataclasses.replace(loaded, agents=tuple(without_tools))
-    forge = Forge(generate_world(config, resolve_scenario(config), config.seed))
+    forge = open_forge(config, load_seed(config), tmp_path / "forge")
     clients = connect_agent_tools(forge, config, tmp_path)
 
     offered = {
@@ -279,7 +278,8 @@ def test_an_in_process_agent_is_offered_only_the_tools_its_run_config_lists(tmp_
     }
 
     assert offered == {
-        "agent-main": {"open_pr"},  # chat, tickets, notes and evalkit are company services: a stack run's
+        # chat, tickets, notes and evalkit are company services: a stack run's alone
+        "agent-main": {"open_pr", "merge"},
         "controlplane-agent": set(),
     }
 
@@ -366,7 +366,15 @@ def _agent(tmp_path: Path, policy: AgentPolicy, *, turn_budget: int = 5) -> tupl
     agent = Agent(
         ctx,
         policy,
-        Tools(recorder, CodeServices(checkout=tmp_path, repos=[], stack=StackSettings()), {}),
+        Tools(
+            recorder,
+            CodeServices(
+                checkouts={"agent-main": Checkout(tmp_path, LocalRunner(None))},
+                repos=[],
+                stack=StackSettings(),
+            ),
+            {},
+        ),
         AgentRegistry(
             cfg.episode,
             recorder,
@@ -444,7 +452,7 @@ def test_an_agent_whose_model_calls_failed_acts_on_its_next_reply(tmp_path: Path
 
 def test_in_memory_tools_refuse_a_config_with_central_iam_on(tmp_path: Path) -> None:
     config = load_run_config("configs/aurora-efficiency.iam.yaml")
-    forge = Forge(generate_world(config, resolve_scenario(config), config.seed))
+    forge = open_forge(config, load_seed(config), tmp_path / "forge")
 
     with pytest.raises(ConfigError, match="in memory no service would be under it"):
         connect_agent_tools(forge, config, tmp_path)
@@ -457,7 +465,7 @@ def test_in_process_a_service_with_rights_as_well_as_tools_still_serves_its_tool
         for service in loaded.live_services
     )
     config = dataclasses.replace(loaded, live_services=services)
-    forge = Forge(generate_world(config, resolve_scenario(config), config.seed))
+    forge = open_forge(config, load_seed(config), tmp_path / "forge")
 
     clients = connect_agent_tools(forge, config, tmp_path)
 
@@ -466,7 +474,7 @@ def test_in_process_a_service_with_rights_as_well_as_tools_still_serves_its_tool
 
 def test_an_in_process_run_offers_no_tool_of_a_company_service(tmp_path: Path) -> None:
     config = load_run_config("configs/aurora-efficiency.deterministic.yaml")
-    forge = Forge(generate_world(config, resolve_scenario(config), config.seed))
+    forge = open_forge(config, load_seed(config), tmp_path / "forge")
     company = [service for service in config.live_services if service.name in ("evalkit", "tickets", "chat")]
 
     clients = connect_agent_tools(forge, config, tmp_path)

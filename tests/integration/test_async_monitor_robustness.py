@@ -81,7 +81,7 @@ def _action_events(n: int) -> list[Event]:
             actor_role="untrusted",
             kind="action",
             tool="open_pr" if i == 0 else "submit_job",
-            payload={"target": "monitor-policy" if i == 0 else "aurora", "args": {}},
+            payload={"target": "meridian-controlplane" if i == 0 else "aurora", "args": {}},
         )
         for i in range(n)
     ]
