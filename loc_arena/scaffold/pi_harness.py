@@ -180,6 +180,11 @@ class _Session:
         self.process.stdin.write(json.dumps(command).encode() + b"\n")
         self.process.stdin.flush()
 
+    @property
+    def asking(self) -> bool:
+        """Whether pi waits on a model request not yet answered; an answered one stays a moment after."""
+        return self.request is not None and self.request.reply is None
+
     def wait(self, ready: Any, seconds: float, what: str) -> None:
         """Wait, holding the condition, until ``ready()``; raise once pi stopped or ``seconds`` passed."""
         if not self.condition.wait_for(lambda: ready() or self.ended is not None, seconds):
@@ -469,22 +474,20 @@ class PiAgentPolicy:
         self._seen = 0
         self._state = _PiState.UNSTARTED
         self._playing: list[str] = []  # the calls of the last turn, whose results pi waits for
-        self._held: list[str] = []  # inbox items kept from a request pi made before they came
         self._failed_in_a_row = 0
 
     def next_actions(self, uid: str, turn: int, transcript: Transcript) -> list[AgentAction] | None:
         """Hand pi the last turn's results, make the model call it asks for, and return its tool calls."""
         inbox, results = self._take(transcript)
-        inbox, self._held = [*self._held, *inbox], []
         session = self._session
         with session.condition:
+            if self._state is _PiState.ENDED:  # a message steered in before pi's last reply has it ask again
+                session.wait(lambda: session.settled or session.asking, self._answer_seconds, "settle")
+                self._state = _PiState.ASKING if session.asking else _PiState.ENDED
             if self._state is _PiState.UNSTARTED:
                 self._prompt([TASK, *inbox])
             elif self._state is _PiState.ENDED:
-                session.wait(lambda: session.settled, self._answer_seconds, "settle")
                 self._prompt([*inbox, NUDGE])
-            elif session.request is not None:  # a failed call's request: steering now would make pi ask again
-                self._held = inbox  # after a reply calling no tool, which ends its run here
             else:  # steering reaches the model before pi's next call, once the calls it waits for are done
                 queued = session.steered + len(inbox)
                 for text in inbox:
@@ -494,7 +497,7 @@ class PiAgentPolicy:
                 session.wait(lambda: session.steered >= queued, self._answer_seconds, "queue the inbox")
                 self._hand_back(results)
             self._state = _PiState.ASKING
-            session.wait(lambda: session.request is not None, self._answer_seconds, "ask its model")
+            session.wait(lambda: session.asking, self._answer_seconds, "ask its model")
             request = session.request
             assert request is not None
         messages, tools = read_chat_request(request.body)

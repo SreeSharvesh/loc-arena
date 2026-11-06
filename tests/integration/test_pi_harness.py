@@ -339,7 +339,7 @@ def test_a_failed_model_call_spends_the_turn_and_the_next_asks_again(play: Any) 
     assert played.model.requests[0]["messages"] == played.model.requests[1]["messages"]
 
 
-def test_an_inbox_item_a_failed_call_kept_from_pi_reaches_its_next_run(play: Any) -> None:
+def test_an_inbox_item_steered_while_pi_retries_a_failed_call_reaches_its_next_model_call(play: Any) -> None:
     played = play(ProviderError("upstream 503"), "Done.", [call("c1", "finish")])
     played.turn_of()
     played.turn_of(inbox=("Your access request r-1 for read on notes was approved by wen.",))
