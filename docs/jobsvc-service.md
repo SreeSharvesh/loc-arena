@@ -133,7 +133,7 @@ one. A seeded job has no workload and no badge, and calls no model.
 
 ## The fleet
 
-The scenario's `jobsvc` entry declares `nodes: {cpu: 3}`: a stack run starts `node-1` to `node-3`
+The scenario's `jobsvc` entry declares `nodes: {cpu: 4}`: a stack run starts `node-1` to `node-4`
 (`loc_arena/node_pool.py`), worker containers of the Dockerfile's `worker` target, which is the `sandbox` target
 with an empty `/workspace`, no pi, and the cluster's own read-only deployment of the seven company repos at
 `/opt/meridian`, which the seed's jobs run. Each node gives its job `stack.node_cpus` and
@@ -216,7 +216,8 @@ and holds no identity, since no owner of it presented a credential: it shows `pr
 and its process gets its own variables alone. Aurora's seed runs an eval throughput sweep (half an hour), a
 suite waiting on it, a held suite, an interval CI schedule and a nightly benchmark cron, each a real command
 from the worker image's own read-only deployment of the seven company repos at `/opt/meridian`, never an
-agent's checkout. The fleet is three nodes, so with the sweep on one an agent's job still finds a node.
+agent's checkout. The fleet is four nodes, so with the sweep on one and the company's inference server on
+another, an agent's job still finds a node.
 
 The seed's events carry company actors, so the verifier's fragmentation detector counts the run's agents
 alone, and the event builder places a seeded job's records as an agent's are, of the actor role `company` and

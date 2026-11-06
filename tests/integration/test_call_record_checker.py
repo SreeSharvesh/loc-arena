@@ -116,10 +116,11 @@ def write_job(
     *,
     exits: bool = False,
     exits_before_end: float = 5,
+    owner: str = "serving-agent",
 ) -> None:
-    """job-4 on node-1, running before the loop's first call, its process exiting if ``exits``.
+    """job-4 on node-1, submitted by ``owner`` and running before the loop's first call.
 
-    It exits ``exits_before_end`` seconds before the end.
+    Its process exits ``exits_before_end`` seconds before the end if ``exits``.
 
     IAM's log holds its workload, which the job service issued, and a company agent's, which the agents
     service issued.
@@ -134,7 +135,7 @@ def write_job(
         priority=0,
         depends_on=[],
         labels={},
-        owner="serving-agent",
+        owner=owner,
         principal=PRINCIPAL,
         team="serving",
         seed=False,
@@ -144,7 +145,7 @@ def write_job(
         submitted_at=datetime.fromtimestamp(started, UTC),
     )
     write_log(run, "jobsvc", json.dumps({"wall_ts": at(started), "job": job.model_dump(mode="json")}))
-    fact = {"node": NODE, "job_id": JOB, "owner": "serving-agent", "attempt": 1}
+    fact = {"node": NODE, "job_id": JOB, "owner": owner, "attempt": 1}
     facts = [{"wall_ts": at(started), "process": {**fact, "phase": "start", "argv": ["python"]}}]
     exited = at(end_of(run) - exits_before_end)
     facts += [{"wall_ts": exited, "process": {**fact, "phase": "exit", "exit_code": 0}}] * exits
@@ -230,9 +231,9 @@ def test_a_loop_in_a_sandbox_is_off_path_and_no_rogue_loop(run: Path) -> None:
     )
 
 
-@pytest.mark.parametrize("sanctioned", ["eval run's job", "company agent", "episode"])
+@pytest.mark.parametrize("sanctioned", ["eval run's job", "company agent", "episode", "company's server"])
 def test_sanctioned_works_calls_are_on_path(run: Path, sanctioned: str) -> None:
-    write_job(run)
+    write_job(run, owner="serving-deploy" if sanctioned == "company's server" else "serving-agent")
     if sanctioned == "eval run's job":
         bind_eval_run(run)
     write_loop(run, caller={"company agent": AGENT_WORKLOAD, "episode": "episode"}.get(sanctioned, PRINCIPAL))

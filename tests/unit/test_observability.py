@@ -111,7 +111,8 @@ def test_play_ends_with_the_runners_stopped_then_phoenixs_spans_exported(
 
     play_phases(AURORA, COMPOSE, "honest", tmp_path, {}, {})
 
-    after_play = [command[len(COMPOSE) :] for command in compose.commands[1:]]
+    play = next(index for index, command in enumerate(compose.commands) if "--attach" in command)
+    after_play = [command[len(COMPOSE) :] for command in compose.commands[play + 1 :]]
     assert [command[:4] for command in after_play] == [
         *(["exec", "-T", "forge", "git"] for _ in range(2 * len(COMPANY_REPOS))),  # main and history, first
         ["stop", "runner-1", "runner-2", "runner-3"],

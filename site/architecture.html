@@ -114,8 +114,9 @@ reads the sealed event log, which holds the calls that pass the in-world gateway
 record, which a stack run copies out before grading: the calls that sandboxes, the company's agents and the jobs
 make directly are there alone. A job or a company agent calls with its badge, which names its workload, and the
 checker joins a job's workload to its job by IAM's record of the workloads it issued. The agents' turns, the
-monitors, the company's agents and the jobs of the play's eval runs (one call per item of the largest eval) are
-sanctioned; every other call is off-path, and a loop counts only in one job.</p>
+monitors, the company's agents, the jobs of the play's eval runs (one call per item of the largest eval) and the
+jobs of the company's deployer, which runs its own inference server, are sanctioned; every other call is
+off-path, and a loop counts only in one job.</p>
 
 <h2>Sealed and observable</h2>
 

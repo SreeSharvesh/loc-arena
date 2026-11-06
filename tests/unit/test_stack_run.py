@@ -5,6 +5,7 @@ Compose is a fake that records each call; the run directory, the logs and the me
 
 from __future__ import annotations
 
+import json
 import socket
 import subprocess
 from collections.abc import Iterator
@@ -16,19 +17,20 @@ from loc_arena.config import load_run_config
 from loc_arena.episode_stack import StackError, run_in_stack
 from loc_arena.gateway import model_gateway
 from loc_arena.observability import EXPORT_SPANS
-from loc_arena.stack_play import renew_services
+from loc_arena.stack_play import DEPLOY, renew_services
 from loc_arena.tasks.main_task_grader import COMPANY_REPOS
 
 from tests.unit._reasoning_support import read_shown_reasoning, write_bundle, write_call_log
 from tests.unit._stack_support import COMPOSE_PREFIX_LENGTH, NOTES_LOG, FakeDocker
 
 SCRIPTED_CONFIG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+IAM_DB = str(SCRIPTED_CONFIG.settings.iam.database)
 AURORA_AGENTS = ["AGENT_MAIN", "CONTROLPLANE_AGENT", "DATAPIPE_AGENT", "DISTILL_AGENT", "EVAL_AGENT"]
 AURORA_AGENTS += ["JOBSVC_AGENT", "SERVING_AGENT"]
 # The services agents hold an identity on, in the order a stack run's compose file declares them.
 SERVICES = tuple("notes forge chat jobsvc agents evalkit tickets modelstore iam".split())
 # The containers whose log a stack run copies, in that order: those, Phoenix, the fleet and the tools gateway.
-LOGGED = (*SERVICES[:-1], "phoenix", "iam", "node-1", "node-2", "node-3", "agentgateway")
+LOGGED = (*SERVICES[:-1], "phoenix", "iam", "node-1", "node-2", "node-3", "node-4", "agentgateway")
 
 
 @pytest.fixture
@@ -279,8 +281,8 @@ def test_an_attack_stack_run_drains_the_record_then_renews_every_container_but_t
 
     commands = [call[COMPOSE_PREFIX_LENGTH:] for call in docker.calls]
     plays = [index for index, command in enumerate(commands) if command[0] == "up" and "--attach" in command]
-    between = [
-        command[:2] if command[0] == "cp" else command for command in commands[plays[0] + 1 : plays[1]]
+    between = [  # up to the company's server's deploy, which comes right before each play
+        command[:2] if command[0] == "cp" else command for command in commands[plays[0] + 1 : plays[1] - 2]
     ]
     renewed = ["sandbox-agent-main", "sandbox-serving-agent", "sandbox-distill-agent", "sandbox-eval-agent"]
     renewed += ["sandbox-datapipe-agent", "sandbox-jobsvc-agent", "sandbox-controlplane-agent"]
@@ -313,6 +315,38 @@ def test_an_attack_stack_run_drains_the_record_then_renews_every_container_but_t
     ]
 
 
+def test_the_company_server_is_submitted_by_its_deployer_from_iams_container_right_before_each_play(
+    docker: FakeDocker,
+    tmp_path: Path,
+) -> None:
+    docker.plays_passing = 1
+
+    with pytest.raises(StackError, match="exited with code 1"):
+        run_aurora_in_stack(tmp_path, mode="attack")
+
+    commands = [call[COMPOSE_PREFIX_LENGTH:] for call in docker.calls]
+    plays = [index for index, command in enumerate(commands) if command[0] == "up" and "--attach" in command]
+    deploys = [(commands[play - 2], commands[play - 1]) for play in plays]
+    assert [(started[:4], submitted[:7]) for started, submitted in deploys] == [
+        (
+            ["up", "--detach", "--wait", "--no-recreate"],
+            ["exec", "-T", "iam", "python", "-c", DEPLOY, IAM_DB],
+        ),
+    ] * 2
+    assert {(*submitted[7:-1], *json.loads(submitted[-1])["command"][:5]) for _, submitted in deploys} == {
+        (
+            "serving-deploy",
+            "jobsvc",
+            "http://jobsvc:8000/jobs",
+            "python",
+            "-m",
+            "meridian_serving.http",
+            "--model",
+            "aurora-7b-v3",
+        ),
+    }
+
+
 def test_a_stack_runs_service_log_holds_the_lines_of_the_episodes_container_and_then_the_honest_twins(
     docker: FakeDocker,
     tmp_path: Path,
@@ -330,7 +364,7 @@ def test_a_log_that_cannot_be_copied_before_the_honest_twin_keeps_the_project_an
     tmp_path: Path,
 ) -> None:
     docker.plays_passing = 1
-    docker.failing = "notes"
+    docker.failing = "node-1"  # the compose service named by its log's copy alone
 
     with pytest.raises(StackError, match="kept compose project"):
         run_aurora_in_stack(tmp_path, mode="attack")

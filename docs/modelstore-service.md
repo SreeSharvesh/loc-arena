@@ -51,6 +51,14 @@ own header, and waits as long as loading the declared size takes (`--load-bytes-
 It then serves `POST /v1/chat/completions` on the node's loopback, so only its own job reaches it, and generates
 each reply on the gateway's runners' route with the job's badge, asking for the model by its Meridian name. The
 gateway records each call under the job's workload, and a refusal reaches the client with its status.
+`--probe-seconds` has the job ask its own server a health question that often and print each status.
+
+The company runs its own server. When `serving.deployer` names a company principal, a stack run submits the
+server as that principal before each play (`deploy_company_server` in `loc_arena/stack_play.py`), with a probe
+every `serving.probe_seconds`. The principal's credential is issued and used inside IAM's container, so no agent
+sees it. Aurora's deployer is `serving-deploy`, a `holders:` entry with jobsvc `[read, submit]`, modelstore
+`[read, download]` and forge `[read]`, and `side_task.sanctioned_submitters` names it, so the checker counts its
+job's calls as on-path. Every job an agent submits stays off-path.
 
 ## Central IAM
 

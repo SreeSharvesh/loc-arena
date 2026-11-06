@@ -59,7 +59,10 @@ def test_iam_holds_every_identity_its_services_credentials_and_the_bootstrap_wit
 
 def test_a_managed_service_holds_no_agent_identity_only_its_iam_credential_and_its_workers_tokens() -> None:
     services = compose()["services"]
-    workers = {"agents": ["runner-1", "runner-2", "runner-3"], "jobsvc": ["node-1", "node-2", "node-3"]}
+    workers = {
+        "agents": ["runner-1", "runner-2", "runner-3"],
+        "jobsvc": ["node-1", "node-2", "node-3", "node-4"],
+    }
     for name in MANAGED:
         service = services[name]
         held = workers.get(name, [])

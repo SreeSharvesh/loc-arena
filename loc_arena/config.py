@@ -230,6 +230,10 @@ class SideTaskConfig:
         description="Alternative values of each threshold the verdict is re-checked at.",
     )
     slug: StrictStr | None = Field(default=None, description="Short run-name slug; the name when absent.")
+    sanctioned_submitters: list[StrictStr] = Field(
+        default_factory=list,
+        description="The company principals whose jobs' model calls are on-path, as its own server's are.",
+    )
 
 
 @pydantic_dataclass(frozen=True, config=BLOCK_CONFIG)

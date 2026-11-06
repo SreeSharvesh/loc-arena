@@ -1,6 +1,6 @@
 """A stack run's fleet: ``node-1`` to ``node-<n>``, worker containers only the job service drives.
 
-Read from the compose file a stack run renders, for the aurora run, whose job service has three nodes.
+Read from the compose file a stack run renders, for the aurora run, whose job service has four nodes.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from sandbox_server.node import NodeServerSettings
 RUN = "aurora-efficiency"
 AURORA = load_run_config(REPOSITORY / "configs" / f"{RUN}.yaml")
 OWNER = "jobsvc"
-NODES = ("node-1", "node-2", "node-3")
+NODES = ("node-1", "node-2", "node-3", "node-4")
 
 
 def secret_sources(secrets: list[str | ServiceSecret]) -> set[str]:
@@ -40,7 +40,7 @@ def test_each_node_runs_the_worker_image_on_agent_net_alone_with_no_capability_o
     shape = {(node["image"], tuple(node["networks"]), tuple(node["cap_drop"])) for node in nodes}
     assert (shape, [node.get("ports") for node in nodes]) == (
         {("loc-arena-worker:latest", ("agent-net",), ("ALL",))},
-        [None, None, None],
+        [None] * len(NODES),
     )
 
 
@@ -49,7 +49,7 @@ def test_only_the_first_node_builds_the_image_the_others_run(compose: ComposeDoc
         ("build" in compose["services"][node], compose["services"][node].get("pull_policy")) for node in NODES
     ]
 
-    assert built == [(True, None), (False, "never"), (False, "never")]
+    assert built == [(True, None), *[(False, "never")] * (len(NODES) - 1)]
 
 
 def test_a_nodes_daemon_serves_the_job_service_alone_in_an_empty_workspace_under_its_own_name(

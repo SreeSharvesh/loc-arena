@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import functools
+import json
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
@@ -22,6 +23,17 @@ from loc_arena.runner_pool import list_runner_services
 from loc_arena.tools_gateway import TOOLS_GATEWAY_SERVICE, serves_tools
 
 EPISODE_SERVICE = "episode"  # the agent loop's compose service: the one caller every sandbox serves
+# Run in IAM's container: the deployer's credential, issued and used there so it never leaves IAM, submits the
+# server's job.
+DEPLOY = """
+import sys, time, urllib.request
+from meridian_iam.core import Iam
+from meridian_iam.core.base import SCOPE_PREFIX
+database, deployer, service, url, job = sys.argv[1:6]
+token = Iam(database, lambda: int(time.time())).issue_credential(deployer, [service, SCOPE_PREFIX + service])
+headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+urllib.request.urlopen(urllib.request.Request(url, job.encode(), headers), timeout=30).close()
+"""
 
 
 class StackError(RuntimeError):
@@ -107,6 +119,33 @@ def renew_services(
         )
 
 
+def deploy_company_server(
+    config: RunConfig,
+    compose: list[str],
+    run_compose: Callable[..., subprocess.CompletedProcess[bytes]],
+) -> None:
+    """Start the live services and submit the company's own inference server as its deployer, if it has one.
+
+    The job runs ``meridian_serving.http`` with its health probe, from the checkout of main its node makes.
+    Raises ``StackError`` when the services do not start or the job service does not take the job.
+    """
+    serving = config.settings.serving
+    job_service = next((service for service in config.live_services if service.nodes), None)
+    if serving.deployer is None or job_service is None:
+        return
+    services = [service.name for service in config.live_services]
+    if run_compose([*compose, "up", "--detach", "--wait", "--no-recreate", *services]).returncode != 0:
+        raise StackError("the live services did not start for the company's server: see compose's output")
+    server = ["python", "-m", "meridian_serving.http", "--model", serving.model]
+    server += ["--probe-seconds", str(serving.probe_seconds)]
+    job = {"name": f"{serving.model}-serving", "command": server}
+    url = f"http://{job_service.name}:{job_service.port}/jobs"
+    database = str(config.settings.iam.database)
+    submit = ["exec", "-T", config.settings.iam.service, "python", "-c", DEPLOY, database, serving.deployer]
+    if run_compose([*compose, *submit, job_service.name, url, json.dumps(job)]).returncode != 0:
+        raise StackError(f"the job service did not take {serving.deployer}'s server: see compose's output")
+
+
 def play_phases(
     config: RunConfig,
     compose: list[str],
@@ -116,6 +155,8 @@ def play_phases(
     twin_environment: dict[str, str],
 ) -> tuple[int, dict[str, PlayedForge]]:
     """Play the episode and, in attack mode, the honest twin in the same container after ``renew_services``.
+
+    Before each play the company's own server is deployed (``deploy_company_server``).
 
     Never recreated, the container plays its image of the first play again, whatever its tag now names. The
     twin plays under ``twin_environment``, on containers recreated with its own credentials. Then the runners
@@ -131,12 +172,14 @@ def play_phases(
 
     played: dict[str, PlayedForge | None] = {}
     played_in = environment
+    deploy_company_server(config, compose, functools.partial(subprocess.run, env=played_in))
     exit_code = subprocess.run(play, env=played_in).returncode
     if exit_code == 0:
         played[EPISODE_PHASE] = read_forge(played_in)
     if exit_code == 0 and mode != "honest":
         renew_services(config, compose, service_logs, environment, twin_environment)
         played_in = twin_environment
+        deploy_company_server(config, compose, functools.partial(subprocess.run, env=played_in))
         exit_code = subprocess.run(play, env=played_in).returncode
         if exit_code == 0:
             played[TWIN_PHASE] = read_forge(played_in)
