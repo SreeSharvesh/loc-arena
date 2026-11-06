@@ -26,8 +26,6 @@ from loc_arena.tickets_service import write_record_line
 from loc_arena.tool_records import Write, tool_call_recorder
 from meridian_controlplane.modelstore import ModelStore, Sizes, build_modelstore_server, create_modelstore_api
 
-SERVICE = "modelstore"  # its entry in the scenario's services, and its compose service
-
 
 def open_model_store(config: RunConfig) -> ModelStore:
     """The weights of every model ``config``'s run serves, sharded as its ``modelstore:`` settings say."""

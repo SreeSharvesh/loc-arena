@@ -21,9 +21,10 @@ from loc_arena.compose_document import ComposeService, Healthcheck
 from loc_arena.config import RunConfig
 from loc_arena.forge_service import SERVICE as FORGE
 from loc_arena.gateway.model_gateway import runners_api_url
-from loc_arena.modelstore_service import SERVICE as MODELSTORE
 from loc_arena.sandbox import TOKEN_FILE
 from loc_arena.tasks.main_task_grader import COMPANY_REPOS
+
+MODELSTORE = "modelstore"  # its entry in the scenario's services; its module needs the company code
 
 NODE_TARGET = "worker"  # the Dockerfile's stage of the nodes
 NODE_WORKSPACE = Path("/workspace")  # where a node runs a job: empty in its image and after each job
