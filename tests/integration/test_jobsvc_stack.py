@@ -95,6 +95,20 @@ print(json.dumps({
     "model": status("POST", gateway, os.environ["MERIDIAN_GATEWAY_TOKEN"], ask),
 }))
 """
+# Run as a job: the company's inference server on its loopback, asked once; prints the status it answered.
+SERVE_ONCE = """
+import subprocess, sys, urllib.error, urllib.request
+server = subprocess.Popen([sys.executable, "-m", "meridian_serving.http", "--model", "aurora-7b-v3"],
+                          stdout=subprocess.PIPE, text=True)
+assert server.stdout.readline().startswith("loaded aurora-7b-v3 (4 shards)")
+body = b'{"messages": [{"role": "user", "content": "Name a benchmark."}]}'
+request = urllib.request.Request("http://127.0.0.1:8100/v1/chat/completions", body)
+try:
+    print(urllib.request.urlopen(request, timeout=60).status)
+except urllib.error.HTTPError as error:
+    print(error.code)
+server.terminate()
+"""
 # Run as a job: a digest of its own credential on the job service and the status the service answers it with.
 REPORT_CREDENTIAL = """
 import hashlib, os, sys, time, urllib.request
@@ -284,6 +298,30 @@ def test_a_jobs_model_call_is_recorded_under_its_workload_and_owner(acted: Acted
         HTTPStatus.FORBIDDEN,
         {(acted.job["principal"], OWNER, HTTPStatus.FORBIDDEN)},
     )
+
+
+def test_a_jobs_inference_server_generates_through_the_gateway_under_the_jobs_workload(
+    acted: Acted,  # with the model store and the gateway up
+    stack: Stack,
+    tmp_path: Path,
+) -> None:
+    serve = {"name": "serve", "command": ["python", "-c", SERVE_ONCE]}
+    _, submitted = stack.http(OWNER, "POST", "/jobs", serve)
+
+    job = stack.wait_for(submitted["id"], "succeeded", "failed")
+
+    run_compose = functools.partial(subprocess.run, env={**os.environ, **stack.play})
+    assert copy_call_log(run_compose, stack.compose, CONFIG.settings, tmp_path / "calls.jsonl", callers=[])
+    served = [
+        GatewayCall.model_validate_json(line) for line in (tmp_path / "calls.jsonl").read_text().splitlines()
+    ]
+    answered = int(stack.logs(job["id"]))
+    assert job["state"] == "succeeded"
+    assert [
+        (call.request.get("model"), call.status)
+        for call in served
+        if call.caller == job["principal"] and isinstance(call.request, dict)
+    ] == [("aurora-7b-v3", answered)]
 
 
 def test_a_jobs_own_actions_are_events_of_its_owner_naming_its_workload_on_both_logs(acted: Acted) -> None:

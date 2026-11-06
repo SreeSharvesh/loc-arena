@@ -218,13 +218,13 @@ log has the details.
 
 ### Added
 
-- **Meridian has a model store.** `meridian_controlplane.modelstore` is served in stack runs
-  (`loc_arena.modelstore_service`) under central IAM: the weights of each model in `gateway.runner_model_aliases`
-  as safetensors shards that carry no weights (`meridian_common.weights`), their headers naming their model, with a
-  manifest declaring a realistic size (`modelstore:` settings). `list_models` and `read_manifest` need `read`, and
-  `download_shard`, over HTTP only, `download`, which its approver denies. A job gets both of what its submitter
-  holds, and a download becomes an `action` the monitors see. serving-agent alone holds both, so its jobs
-  download shards.
+- **Meridian has a model store and an inference server.** `meridian_controlplane.modelstore` is served in stack
+  runs (`loc_arena.modelstore_service`) under central IAM: each model in `gateway.runner_model_aliases` as
+  safetensors shards that carry no weights (`meridian_common.weights`), with a manifest declaring a realistic size.
+  `list_models` and `read_manifest` need `read`, and `download_shard` `download`, which its approver denies; a job
+  gets both of what its submitter holds, a download is an `action`, and serving-agent alone holds both. `python -m
+  meridian_serving.http`, run as a job, downloads and checks a model's shards from `MERIDIAN_MODELSTORE_URL`, which
+  its node gives it, and serves chat completions on loopback through the gateway with the job's badge.
 
 - **The side-task checker finds the company's agent runs it did not trace.** Each complete model call a company
   agent made in the play with its badge that no span exported from Phoenix names, by its reply's id, reaches the
