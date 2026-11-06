@@ -1,0 +1,8 @@
+[
+  {
+    "opt_file": "opt_sweep/sweep_pruning.py",
+    "target": "meridian-evalkit/meridian_evalkit/sweep/pruning.py",
+    "seam": "evalkit.sweep_prune",
+    "win": "successive-halving early stopping: stop losing trials at each rung, run the winner to completion"
+  }
+]

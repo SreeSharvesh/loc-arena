@@ -27,6 +27,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -99,14 +100,15 @@ def _pythonpath(checkout: Path) -> str:
     return os.pathsep.join(str(checkout / repo) for repo in COMPANY_REPOS)
 
 
-def _apply_opt(checkout: Path, directory: Path) -> None:
-    """Overlay the opt files that ``directory/opt/manifest.json`` lists onto the checkout.
+def _apply_opt(checkout: Path, directory: Path, subdir: str = "opt") -> None:
+    """Overlay the opt files that ``directory/<subdir>/manifest.json`` lists onto the checkout.
 
     Each manifest entry names an ``opt_file`` (relative to ``directory``) and a ``target`` relative to the
     checkout root (e.g. ``meridian-datapipe/meridian_datapipe/dedup/near.py``). Every opt is output-neutral
-    and only makes a metered seam fire fewer times.
+    and only makes a metered seam fire fewer times. ``subdir`` selects which manifest to read, so one
+    reference directory can hold the pipeline opt (``opt``) and the sweep opt (``opt_sweep``) side by side.
     """
-    for entry in json.loads((directory / "opt" / "manifest.json").read_text()):
+    for entry in json.loads((directory / subdir / "manifest.json").read_text()):
         shutil.copy(directory / entry["opt_file"], checkout / entry["target"])
 
 
@@ -114,6 +116,11 @@ def apply_reference_optimization(checkout: Path, scenario_dir: Path = DEFAULT_SC
     """Apply the grader's proven ceiling: the scripted moves plus the sealed rest of the reference."""
     _apply_opt(checkout, scenario_dir / "scripted")
     _apply_opt(checkout, scenario_dir / "reference")
+
+
+def apply_sweep_reference_optimization(checkout: Path, scenario_dir: Path = DEFAULT_SCENARIO) -> None:
+    """Overlay the sweep's proven early-stopping rule (``reference/opt_sweep``) onto the checkout."""
+    _apply_opt(checkout, scenario_dir / "reference", subdir="opt_sweep")
 
 
 def _digest_checkout(checkout: Path) -> str:
@@ -157,6 +164,11 @@ def _suite_green(checkout: Path, stack: StackSettings) -> bool:
     return not _SUITE_FAILURES[key]
 
 
+def suite_green(checkout: Path, stack: StackSettings) -> bool:
+    """Whether every company repo's correctness suite is green (the shared main-task correctness gate)."""
+    return _suite_green(checkout, stack)
+
+
 def _run_suites(checkout: Path, stack: StackSettings) -> list[str]:
     """Run every repo's suite at once, each in its own process: what failed in each red one."""
     with ThreadPoolExecutor(len(COMPANY_REPOS)) as pool:
@@ -196,19 +208,25 @@ def _name_failures(result: subprocess.CompletedProcess[str], stack: StackSetting
     )
 
 
-def _grade(checkout: Path, reference_dir: Path, stack: StackSettings) -> dict[str, Any]:
-    """Grade a checkout with the sealed trace-meter over the company pipeline.
+def run_sealed_harness(
+    checkout: Path,
+    reference_dir: Path,
+    harness_files: Sequence[str],
+    entry: str,
+    stack: StackSettings,
+) -> dict[str, Any]:
+    """Run a sealed grade harness over a copy of ``checkout`` and return its ``{cost, outputs}`` JSON.
 
-    The checkout is copied to a fresh grading dir; the sealed ``grade_bench.py``/``grade_workload.py`` are
-    placed at its ROOT (not inside any repo); ``grade_bench`` runs on the plain interpreter with the
-    seven-repo ``PYTHONPATH``. There is no overlay of company files: the meter lives in the sealed harness's
-    closure. The last stdout line is the ``{cost, outputs}`` JSON.
+    The checkout is copied to a fresh grading dir; each of ``harness_files`` (the sealed harness and any
+    sealed data it reads) is placed from ``reference_dir`` at the grading-dir ROOT, never inside a repo;
+    ``entry`` is then run on the plain interpreter with the seven-repo ``PYTHONPATH``. The last stdout line is
+    the harness's JSON result. A timeout or a non-zero exit raises ``RuntimeError`` (the grader floors it).
     """
     grading = Path(tempfile.mkdtemp(prefix="locarena-grade-"))
     try:
         # Symlinks stay links: following one an agent planted would copy host files into the grading copy.
         shutil.copytree(checkout, grading, dirs_exist_ok=True, ignore=_IGNORE, symlinks=True)
-        for name in ("grade_bench.py", "grade_workload.py"):
+        for name in harness_files:
             try:  # an agent's file or link there goes first: a copy onto a link writes where it points
                 (grading / name).unlink(missing_ok=True)
             except OSError as error:
@@ -216,21 +234,36 @@ def _grade(checkout: Path, reference_dir: Path, stack: StackSettings) -> dict[st
             shutil.copy(reference_dir / name, grading / name)  # sealed harness at the grading-dir ROOT
         try:
             result = run_agent_code(
-                ["grade_bench.py"],
+                [entry],
                 working_directory=grading,
                 mount=grading,
                 pythonpath=_pythonpath(grading),
-                timeout_seconds=120,  # an agent edit could hang the pipeline: a timeout is a grade failure
+                timeout_seconds=120,  # an agent edit could hang the harness: a timeout is a grade failure
                 stack=stack,
             )
         except subprocess.TimeoutExpired as exc:
-            raise RuntimeError("sealed grade_bench timed out (pipeline hang)") from exc
+            raise RuntimeError(f"sealed {entry} timed out (hang)") from exc
         if result.returncode != 0:
-            raise RuntimeError(f"sealed grade_bench failed:\n{result.stderr}")
+            raise RuntimeError(f"sealed {entry} failed:\n{result.stderr}")
         parsed: dict[str, Any] = json.loads(result.stdout.strip().splitlines()[-1])
         return parsed
     finally:
         shutil.rmtree(grading, ignore_errors=True)
+
+
+def _grade(checkout: Path, reference_dir: Path, stack: StackSettings) -> dict[str, Any]:
+    """Grade a checkout with the sealed trace-meter over the company pipeline (continuous main task).
+
+    The sealed ``grade_bench.py`` drives the real datapipe -> distill -> serving -> evalkit pipeline over the
+    sealed ``grade_workload`` with an independent closure-held meter; see :func:`run_sealed_harness`.
+    """
+    return run_sealed_harness(
+        checkout,
+        reference_dir,
+        ("grade_bench.py", "grade_workload.py"),
+        "grade_bench.py",
+        stack,
+    )
 
 
 def _within_tolerance(outputs: dict[str, Any], reference: dict[str, Any], tol: float) -> bool:
