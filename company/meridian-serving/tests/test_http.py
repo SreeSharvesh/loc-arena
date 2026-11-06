@@ -100,8 +100,8 @@ def test_a_model_loads_once_each_shard_matches_its_manifest_and_names_the_model(
 
 @pytest.mark.parametrize(
     ("loaded", "listed"),
-    [([*shards()[:1], shards()[0]], shards()), (shards("aurora-13b-v2"), shards("aurora-13b-v2"))],
-    ids=["a shard whose sha-256 differs", "another model's shards, as listed"],
+    [([*shards()[:1], shards()[0]], shards()), (shards("aurora-13b-v2"), shards("aurora-13b-v2")), ([], [])],
+    ids=["a sha-256 that differs", "another model's shards, as listed", "a manifest listing no shards"],
 )
 def test_a_model_whose_shards_do_not_check_out_is_not_loaded(
     loaded: list[bytes],
@@ -146,3 +146,15 @@ def test_a_gateway_it_cannot_reach_is_a_bad_gateway_answer() -> None:
 
     server.shutdown()
     assert answered[0] == 502
+
+
+@pytest.mark.parametrize("served", [(200, json.dumps(REPLY).encode())], indirect=True)
+@pytest.mark.parametrize("body", [b"not json", b"[1, 2]"], ids=["not json", "not an object"])
+def test_a_body_that_is_not_a_json_object_is_a_bad_request(served: tuple[str, Fake], body: bytes) -> None:
+    url, gateway = served
+    request = urllib.request.Request(url + CHAT_PATH, body, {"content-type": "application/json"})
+
+    with pytest.raises(urllib.error.HTTPError) as refused:
+        urllib.request.urlopen(request, timeout=10)
+
+    assert (refused.value.code, gateway.requests) == (400, [])

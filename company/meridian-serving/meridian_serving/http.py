@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import http.client
 import json
 import os
 import sys
@@ -65,14 +66,17 @@ def load_model(
     """Download and check each of ``model``'s shards, take its load time, and return how many there were."""
     try:
         manifest = json.loads(store.call(f"/models/{model}"))
+        if not manifest["shards"]:
+            raise LoadError(f"{model}'s manifest lists no shards")
         for shard in manifest["shards"]:
             data = store.call(f"/models/{model}/shards/{shard['name']}")
             if hashlib.sha256(data).hexdigest() != shard["sha256"]:
                 raise LoadError(f"{shard['name']} does not match its manifest's SHA-256")
             if (header := read_shard_header(data)).model != model:
                 raise LoadError(f"{shard['name']} is a shard of {header.model}")
-    except (urllib.error.URLError, WeightsError) as error:
-        raise LoadError(f"{model} did not load: {error}") from error
+    # a store unreachable, slow or cut off, a manifest that is not one, a shard that is not one
+    except (OSError, http.client.HTTPException, KeyError, ValueError, WeightsError) as error:
+        raise LoadError(f"{model} did not load: {error!r}") from error
     sleep(manifest["declared_bytes"] / bytes_per_second)
     return len(manifest["shards"])
 
@@ -85,14 +89,20 @@ def serve_model(model: str, gateway: Endpoint, *, port: int) -> ThreadingHTTPSer
             if self.path != CHAT_PATH:
                 self.send_error(HTTPStatus.NOT_FOUND)
                 return
-            body = json.loads(self.rfile.read(int(self.headers["content-length"])))
-            asked = json.dumps({**body, "model": model}).encode()
             try:
-                status, reply = HTTPStatus.OK, gateway.call("/chat/completions", asked)
+                body = json.loads(self.rfile.read(int(self.headers.get("content-length", 0))))
+                asked = json.dumps({**body, "model": model}).encode()
+            except (ValueError, TypeError):
+                self.answer(HTTPStatus.BAD_REQUEST, b'{"detail": "the body is not a JSON object"}')
+                return
+            try:
+                self.answer(HTTPStatus.OK, gateway.call("/chat/completions", asked))
             except urllib.error.HTTPError as error:  # the gateway's refusal is the client's
-                status, reply = error.code, error.read()
-            except urllib.error.URLError as error:  # a gateway it cannot reach
-                status, reply = HTTPStatus.BAD_GATEWAY, json.dumps({"detail": str(error.reason)}).encode()
+                self.answer(error.code, error.read())
+            except (OSError, http.client.HTTPException) as error:  # unreachable, too slow, or cut off
+                self.answer(HTTPStatus.BAD_GATEWAY, json.dumps({"detail": repr(error)}).encode())
+
+        def answer(self, status: int, reply: bytes) -> None:
             self.send_response(status)
             self.send_header("content-type", "application/json")
             self.send_header("content-length", str(len(reply)))

@@ -300,8 +300,8 @@ def test_a_jobs_model_call_is_recorded_under_its_workload_and_owner(acted: Acted
     )
 
 
-def test_a_jobs_inference_server_generates_through_the_gateway_under_the_jobs_workload(
-    acted: Acted,  # with the model store and the gateway up
+def test_a_jobs_inference_server_asks_the_gateway_under_the_jobs_workload_and_answers_with_its_status(
+    acted: Acted,  # with the model store and the gateway up; the gateway's key is a placeholder
     stack: Stack,
     tmp_path: Path,
 ) -> None:
