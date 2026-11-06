@@ -2,6 +2,9 @@
 
 import dataclasses
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -21,6 +24,12 @@ SCORES = {
         "aggregation": {"threshold": 0.3},
     },
 }
+
+
+def test_the_cli_loads_without_the_company_code_on_its_path() -> None:
+    """The host puts the company's code on its path only to play, so importing the CLI must not need it."""
+    host = {name: value for name, value in os.environ.items() if name != "PYTHONPATH"}
+    subprocess.run([sys.executable, "-c", "import loc_arena.cli"], env=host, check=True, capture_output=True)
 
 
 @pytest.fixture
