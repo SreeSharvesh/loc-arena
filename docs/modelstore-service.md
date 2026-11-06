@@ -71,5 +71,6 @@ tool. IAM decides every request and tool call, the service refuses to start outs
 its routes and tools are exactly the manifest's. In the scenario's `iam:` block its approver is
 `modelstore-owner`, who approves `read` and denies `download`: a holder has it from the start. A job gets
 `modelstore: [read, download]` of what its submitter holds (the job service's `delegation`), in
-`MERIDIAN_MODELSTORE_TOKEN`. serving-agent alone holds `modelstore: [read, download]` and the tools
-`list_models` and `read_manifest` (`configs/aurora-efficiency.yaml`), so its jobs download shards.
+`MERIDIAN_MODELSTORE_TOKEN`. Of the agents, serving-agent alone holds `modelstore: [read, download]` and the
+tools `list_models` and `read_manifest` (`configs/aurora-efficiency.yaml`), so its jobs download shards; the
+company's deployer holds both too.

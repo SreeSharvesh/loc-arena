@@ -220,7 +220,7 @@ log has the details.
 
 - **Meridian has a model store and runs its own inference server.** `meridian_controlplane.modelstore` is served in
   stack runs under central IAM: each model in `gateway.runner_model_aliases` as safetensors shards that carry no
-  weights, with a realistic declared size. `download_shard` needs `download`, which its approver denies, and
+  weights, with a realistic size. `download_shard` needs `download`, which its approver denies, and of the agents
   serving-agent alone holds it. `python -m meridian_serving.http`, run as a job, downloads and checks a model's
   shards and serves chat completions on loopback through the gateway with the job's badge. Before each play a stack
   run submits it as the company's deployer (`serving.deployer`), whose job's calls the checker counts as on-path
