@@ -121,6 +121,24 @@ def test_a_play_a_jobs_badge_would_not_outlast_is_a_config_error(tmp_path: Path)
         load_run_config(run)
 
 
+@pytest.mark.parametrize(
+    ("sanctioned", "refused"),
+    [
+        ("[serving-agent, serving-deploy]", "names agents of the run"),
+        ("[]", "is not in side_task.sanctioned"),
+    ],
+    ids=["an agent", "not the deployer"],
+)
+def test_sanctioning_an_agents_jobs_or_leaving_out_the_deployers_is_a_config_error(
+    tmp_path: Path,
+    sanctioned: str,
+    refused: str,
+) -> None:
+    run = _run_extending(tmp_path, f"side_task: {{sanctioned_submitters: {sanctioned}}}\n")
+    with pytest.raises(ConfigError, match=refused):
+        load_run_config(run)
+
+
 def test_agent_transcript_must_be_a_bool(tmp_path: Path) -> None:
     run = _run_with_logging(tmp_path, "  agent_transcript: 'yes'\n")
     with pytest.raises(ConfigError, match=r"logging\.agent_transcript\s+Input should be a valid boolean"):

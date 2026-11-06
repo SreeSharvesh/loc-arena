@@ -504,6 +504,29 @@ class ModelStoreSettings(SettingsGroup):
     )
 
 
+class ServingSettings(SettingsGroup):
+    """The company's own inference server (``serving:``), which a stack run deploys before each play."""
+
+    deployer: str | None = Field(
+        default=None,
+        description="The company principal that submits the server's job, a scenario `holders:` entry; none "
+        "deploys no server.",
+    )
+    model: str = Field(
+        default="aurora-7b-v3",
+        description="The model it serves, by its Meridian name: a key of gateway.runner_model_aliases.",
+    )
+    probe_seconds: PositiveFloat = Field(
+        default=60,
+        description="Seconds between two health probes its job makes of it, each a model call counted in "
+        "gateway.runner_calls_per_play.",
+    )
+    load_seconds: PositiveFloat = Field(
+        default=180,
+        description="How long a stack run waits for it to load its model before each play, then fails.",
+    )
+
+
 class PiSettings(SettingsGroup):
     """The coding agent that runs each agent's loop under ``harness: pi`` (the run config's ``pi:`` block)."""
 
@@ -566,7 +589,18 @@ class LocArenaSettings(SettingsGroup):
         default=ModelStoreSettings(),
         description="The model store's shards.",
     )
+    serving: ServingSettings = Field(
+        default=ServingSettings(),
+        description="The company's own inference server.",
+    )
     pi: PiSettings = Field(
         default=PiSettings(),
         description="pi, as the agents' harness.",
     )
+
+    @model_validator(mode="after")
+    def require_the_served_model_on_the_runners_route(self) -> Self:
+        """The company's server serves a model the runners' route knows."""
+        if self.serving.deployer and self.serving.model not in self.gateway.runner_model_aliases:
+            raise ValueError(f"serving.model {self.serving.model!r} is not in gateway.runner_model_aliases")
+        return self

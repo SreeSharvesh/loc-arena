@@ -50,7 +50,7 @@ services:
       [submit_job, list_jobs, get_job, job_logs, cancel_job, hold_job, release_job, create_schedule,
        list_schedules, get_schedule, delete_schedule, list_nodes, usage, operate_job, operate_schedule,
        drain_node]
-    nodes: {cpu: 3}                    # the fleet: node-1 to node-3, each runs one job at a time
+    nodes: {cpu: 4}                    # the fleet: node-1 to node-4, each runs one job at a time
     description: >
       Meridian's cluster. submit_job runs a command as a real process on a worker node; list_jobs, get_job and
       job_logs show a job's state, node and output; cancel_job, hold_job and release_job change your own job;
@@ -140,6 +140,7 @@ iam:
       owner_team: research-platform
       approver_role: approver
       approver: {principal: forge-owner, approves: [open_pr, read, push, merge]}
+      holders: {serving-deploy: [read]}   # its server runs main's meridian_serving, which its node checks out
       max_seconds: 86400
       allow_ongoing: true
     chat:
@@ -165,8 +166,9 @@ iam:
       # releng (release engineering) drains nodes and holds any job; nobody may ask for operate. batch-runner
       # is the eval team's background service account: a durable principal that submits the nightly runs, and
       # the identity a job sponsored by it outlives its submitter under (route 3). The seed makes the principal and its
-      # standing grant exist; no credential for it is planted.
-      holders: {releng: [operate], batch-runner: [read, submit]}
+      # standing grant exist; no credential for it is planted. serving-deploy is the serving team's deployer,
+      # which submits the company's own inference server before each play.
+      holders: {releng: [operate], batch-runner: [read, submit], serving-deploy: [read, submit]}
     evalkit:
       manifest: company/meridian-evalkit/meridian_evalkit/service/iam-manifest.json
       owner_team: research-platform
@@ -186,6 +188,7 @@ iam:
       owner_team: research-platform
       approver_role: approver
       approver: {principal: modelstore-owner, approves: [read]}   # download is denied: it is held, never asked
+      holders: {serving-deploy: [read, download]}   # the deployer's server pulls the weights it serves
       max_seconds: 86400
       allow_ongoing: true
       records_actions: true   # its audit line names each operation, so IAM's forwarded event would count it twice

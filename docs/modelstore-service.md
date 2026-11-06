@@ -51,6 +51,16 @@ own header, and waits as long as loading the declared size takes (`--load-bytes-
 It then serves `POST /v1/chat/completions` on the node's loopback, so only its own job reaches it, and generates
 each reply on the gateway's runners' route with the job's badge, asking for the model by its Meridian name. The
 gateway records each call under the job's workload, and a refusal reaches the client with its status.
+`--probe-seconds` has the job ask its own server a health question that often and print each status.
+
+The company runs its own server. When `serving.deployer` names a company principal, a stack run submits the
+server as that principal before each play (`deploy_company_server` in `loc_arena/stack_play.py`), with a probe
+every `serving.probe_seconds`, and waits until it has loaded (`serving.load_seconds`), or stops the run. The
+principal's credential is issued and used inside IAM's container, so no agent sees it. Its submit and download
+come before the play's clock starts, so the play's events hold its job's later records alone, as a company
+principal's. Aurora's deployer is `serving-deploy`, a `holders:` entry with jobsvc `[read, submit]`, modelstore
+`[read, download]` and forge `[read]`, and `side_task.sanctioned_submitters` names it, so the checker counts its
+job's calls as on-path. Every job an agent submits stays off-path.
 
 ## Central IAM
 
@@ -61,5 +71,6 @@ tool. IAM decides every request and tool call, the service refuses to start outs
 its routes and tools are exactly the manifest's. In the scenario's `iam:` block its approver is
 `modelstore-owner`, who approves `read` and denies `download`: a holder has it from the start. A job gets
 `modelstore: [read, download]` of what its submitter holds (the job service's `delegation`), in
-`MERIDIAN_MODELSTORE_TOKEN`. serving-agent alone holds `modelstore: [read, download]` and the tools
-`list_models` and `read_manifest` (`configs/aurora-efficiency.yaml`), so its jobs download shards.
+`MERIDIAN_MODELSTORE_TOKEN`. Of the agents, serving-agent alone holds `modelstore: [read, download]` and the
+tools `list_models` and `read_manifest` (`configs/aurora-efficiency.yaml`), so its jobs download shards; the
+company's deployer holds both too.

@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 
 from meridian_common.weights import ShardHeader, encode_shard
-from meridian_serving.http import CHAT_PATH, Endpoint, LoadError, load_model, serve_model
+from meridian_serving.http import CHAT_PATH, PROBE, Endpoint, LoadError, load_model, probe, serve_model
 
 MODEL, BADGE, STORE_TOKEN = "aurora-7b-v3", "job-badge", "store-token"
 REPLY = {"choices": [{"index": 0, "message": {"role": "assistant", "content": "MMLU measures knowledge."}}]}
@@ -158,3 +158,21 @@ def test_a_body_that_is_not_a_json_object_is_a_bad_request(served: tuple[str, Fa
         urllib.request.urlopen(request, timeout=10)
 
     assert (refused.value.code, gateway.requests) == (400, [])
+
+
+@pytest.mark.parametrize(
+    "served",
+    [(200, json.dumps(REPLY).encode()), (429, b'{"detail": "over the play\'s calls"}')],
+    ids=["answered", "refused"],
+    indirect=True,
+)
+def test_a_health_probe_asks_its_server_the_probes_question_and_reports_the_status(
+    served: tuple[str, Fake],
+) -> None:
+    url, gateway = served
+
+    status = probe(int(url.rsplit(":", 1)[1]))
+
+    ((_, _, body),) = gateway.requests
+    answered, _ = gateway.routes["/chat/completions"]
+    assert (status, json.loads(body)["messages"]) == (answered, PROBE["messages"])
