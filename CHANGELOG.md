@@ -8,6 +8,7 @@ log has the details.
 
 ### Changed
 
+- **A second Aurora main task: the early-stopping sweep** (`configs/aurora-sweep.yaml`); reuses `kill_chain_v1`.
 - **A merge merges the commit it reviewed.** It read the branch once for the reviewed diff and again to merge,
   so a push landing between the two merged unreviewed code. It now reads the branch's commit once, and the
   review, the `head` it returns and the merge are all of that commit.
