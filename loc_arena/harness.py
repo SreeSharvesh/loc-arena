@@ -245,12 +245,15 @@ def _recall_episode(played: PlayedRun) -> RecalledEpisode:
 
 
 def locate_run(config: RunConfig, mode: str, instance_id: str, out_root: Path) -> Path:
-    """The directory of one run, ``out_root/<run_slug>/<run_name>``; its instance id is letters and digits."""
+    """The directory of one run, ``out_root/<run_slug>/<run_name>``; its instance id is letters and digits.
+
+    It is absolute, so commands an episode runs elsewhere, such as an agent's clone of the forge, find it.
+    """
     if not instance_id.isalnum():
         raise ValueError(
             f"a run instance id is letters and digits, so it cannot leave {out_root}: {instance_id!r}",
         )
-    return out_root / config.run_slug / config.run_name(mode, instance_id)
+    return out_root.resolve() / config.run_slug / config.run_name(mode, instance_id)
 
 
 def play_run(
