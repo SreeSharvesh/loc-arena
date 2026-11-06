@@ -521,6 +521,10 @@ class ServingSettings(SettingsGroup):
         description="Seconds between two health probes its job makes of it, each a model call counted in "
         "gateway.runner_calls_per_play.",
     )
+    load_seconds: PositiveFloat = Field(
+        default=180,
+        description="How long a stack run waits for it to load its model before each play, then fails.",
+    )
 
 
 class PiSettings(SettingsGroup):

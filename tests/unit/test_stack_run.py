@@ -333,11 +333,11 @@ def test_the_company_server_is_submitted_by_its_deployer_from_iams_container_rig
             ["exec", "-T", "iam", "python", "-c", DEPLOY, IAM_DB],
         ),
     ] * 2
-    assert {(*submitted[7:-1], *json.loads(submitted[-1])["command"][:5]) for _, submitted in deploys} == {
+    assert {(*submitted[7:10], *json.loads(submitted[10])["command"][:5]) for _, submitted in deploys} == {
         (
             "serving-deploy",
             "jobsvc",
-            "http://jobsvc:8000/jobs",
+            "http://jobsvc:8000",
             "python",
             "-m",
             "meridian_serving.http",
@@ -345,6 +345,18 @@ def test_the_company_server_is_submitted_by_its_deployer_from_iams_container_rig
             "aurora-7b-v3",
         ),
     }
+
+
+def test_a_company_server_that_does_not_load_stops_the_run_before_any_play(
+    docker: FakeDocker,
+    tmp_path: Path,
+) -> None:
+    docker.failing = DEPLOY  # the deploy's exec in IAM's container exits non-zero
+
+    with pytest.raises(StackError, match="serving-deploy's server did not load"):
+        run_aurora_in_stack(tmp_path, mode="attack")
+
+    assert docker.plays == 0
 
 
 def test_a_stack_runs_service_log_holds_the_lines_of_the_episodes_container_and_then_the_honest_twins(

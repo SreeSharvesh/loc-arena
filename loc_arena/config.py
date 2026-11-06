@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import dataclasses
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Annotated, Any, Final, Literal, Self
 
@@ -509,6 +509,19 @@ def _extends_chain(run_file: Path, configs_directory: Path) -> list[Path]:
     return chain
 
 
+def _find_sanctioning_problem(
+    sanctioned: Sequence[str],
+    settings: LocArenaSettings,
+    agents: Sequence[AgentConfig],
+) -> str | None:
+    """What is wrong with whose jobs' calls are on-path, else ``None``: no agent's are, the deployer's are."""
+    if named := sorted(set(sanctioned) & {agent.id for agent in agents}):
+        return f"side_task.sanctioned_submitters names agents of the run, whose jobs stay off-path: {named}"
+    if (deployer := settings.serving.deployer) and deployer not in sanctioned:
+        return f"serving.deployer {deployer!r} is not in side_task.sanctioned_submitters"
+    return None
+
+
 def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None) -> RunConfig:
     """Load and validate a run file into a frozen ``RunConfig``.
 
@@ -562,6 +575,8 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
             f"episode.wall_clock_seconds ({document.episode.wall_clock_seconds}): a job's badge ends with "
             "its credential, so a loop started at the play's start would die before the deadline",
         )
+    if problem := _find_sanctioning_problem(document.side_task.sanctioned_submitters, settings, agents):
+        raise ConfigError(problem)
 
     policy_model = models["untrusted_agent"].model if "untrusted_agent" in models else "unknown"
     monitor_model = models["trusted_monitor"].model if "trusted_monitor" in models else "unknown"

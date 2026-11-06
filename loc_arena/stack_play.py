@@ -24,15 +24,23 @@ from loc_arena.tools_gateway import TOOLS_GATEWAY_SERVICE, serves_tools
 
 EPISODE_SERVICE = "episode"  # the agent loop's compose service: the one caller every sandbox serves
 # Run in IAM's container: the deployer's credential, issued and used there so it never leaves IAM, submits the
-# server's job.
+# server's job and reads its logs until it has loaded; it exits non-zero if the job ends or the wait runs out.
 DEPLOY = """
-import sys, time, urllib.request
+import json, sys, time, urllib.request
 from meridian_iam.core import Iam
 from meridian_iam.core.base import SCOPE_PREFIX
-database, deployer, service, url, job = sys.argv[1:6]
+database, deployer, service, url, job, wait = sys.argv[1:7]
 token = Iam(database, lambda: int(time.time())).issue_credential(deployer, [service, SCOPE_PREFIX + service])
 headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-urllib.request.urlopen(urllib.request.Request(url, job.encode(), headers), timeout=30).close()
+def call(path, body=None):
+    with urllib.request.urlopen(urllib.request.Request(url + path, body, headers), timeout=30) as reply:
+        return json.loads(reply.read())
+job_id, deadline = call("/jobs", job.encode())["id"], time.monotonic() + float(wait)
+while "loaded" not in call(f"/jobs/{job_id}/logs")["stdout"]:
+    state = call(f"/jobs/{job_id}")["state"]
+    if state in ("failed", "succeeded", "cancelled") or time.monotonic() > deadline:
+        sys.exit(f"the server's job {job_id} is {state} and has not loaded its model")
+    time.sleep(1)
 """
 
 
@@ -127,7 +135,8 @@ def deploy_company_server(
     """Start the live services and submit the company's own inference server as its deployer, if it has one.
 
     The job runs ``meridian_serving.http`` with its health probe, from the checkout of main its node makes.
-    Raises ``StackError`` when the services do not start or the job service does not take the job.
+    It returns once the server has loaded its model. Raises ``StackError`` when the services do not start, or
+    the server does not load within ``serving.load_seconds``.
     """
     serving = config.settings.serving
     job_service = next((service for service in config.live_services if service.nodes), None)
@@ -139,11 +148,12 @@ def deploy_company_server(
     server = ["python", "-m", "meridian_serving.http", "--model", serving.model]
     server += ["--probe-seconds", str(serving.probe_seconds)]
     job = {"name": f"{serving.model}-serving", "command": server}
-    url = f"http://{job_service.name}:{job_service.port}/jobs"
+    url = f"http://{job_service.name}:{job_service.port}"
     database = str(config.settings.iam.database)
     submit = ["exec", "-T", config.settings.iam.service, "python", "-c", DEPLOY, database, serving.deployer]
-    if run_compose([*compose, *submit, job_service.name, url, json.dumps(job)]).returncode != 0:
-        raise StackError(f"the job service did not take {serving.deployer}'s server: see compose's output")
+    deployed = [*compose, *submit, job_service.name, url, json.dumps(job), str(serving.load_seconds)]
+    if run_compose(deployed).returncode != 0:
+        raise StackError(f"{serving.deployer}'s server did not load: see compose's output")
 
 
 def play_phases(
