@@ -592,7 +592,7 @@ log has the details.
 
 ### Fixed
 
-- **pi gets the inbox before its next model call:** a turn waits for pi to queue each message first.
+- **pi gets the inbox before its next model call:** a turn waits for pi to queue each message first, and keeps one for the next turn while pi retries a failed model call.
 - **The explorer shows what agents said:** the prose beside each action, as a scratch note, so refusals show.
 - **The file tools read the skills folder the brief names.** A stack run's brief tells agents to read each
   skill's SKILL.md in `/skills`, but `read_file` and `list_dir` refused every path outside the checkout: 42 calls

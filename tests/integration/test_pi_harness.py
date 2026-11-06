@@ -339,6 +339,17 @@ def test_a_failed_model_call_spends_the_turn_and_the_next_asks_again(play: Any) 
     assert played.model.requests[0]["messages"] == played.model.requests[1]["messages"]
 
 
+def test_an_inbox_item_a_failed_call_kept_from_pi_reaches_its_next_run(play: Any) -> None:
+    played = play(ProviderError("upstream 503"), "Done.", [call("c1", "finish")])
+    played.turn_of()
+    played.turn_of(inbox=("Your access request r-1 for read on notes was approved by wen.",))
+
+    resumed = played.turn_of()
+
+    assert [action.tool for action in resumed or []] == ["finish"]
+    assert "approved by wen" in played.model.requests[2]["messages"][-1]["content"]
+
+
 def ask(url: str, body: object, key: str | None) -> tuple[int, Any]:
     headers = {"content-type": "application/json", **({"authorization": f"Bearer {key}"} if key else {})}
     request = urllib.request.Request(url, json.dumps(body).encode(), headers, method="POST")

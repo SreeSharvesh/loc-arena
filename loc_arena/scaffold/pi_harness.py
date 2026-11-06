@@ -469,11 +469,13 @@ class PiAgentPolicy:
         self._seen = 0
         self._state = _PiState.UNSTARTED
         self._playing: list[str] = []  # the calls of the last turn, whose results pi waits for
+        self._held: list[str] = []  # inbox items kept from a request pi made before they came
         self._failed_in_a_row = 0
 
     def next_actions(self, uid: str, turn: int, transcript: Transcript) -> list[AgentAction] | None:
         """Hand pi the last turn's results, make the model call it asks for, and return its tool calls."""
         inbox, results = self._take(transcript)
+        inbox, self._held = [*self._held, *inbox], []
         session = self._session
         with session.condition:
             if self._state is _PiState.UNSTARTED:
@@ -481,6 +483,8 @@ class PiAgentPolicy:
             elif self._state is _PiState.ENDED:
                 session.wait(lambda: session.settled, self._answer_seconds, "settle")
                 self._prompt([*inbox, NUDGE])
+            elif session.request is not None:  # a failed call's request: steering now would make pi ask again
+                self._held = inbox  # after a reply calling no tool, which ends its run here
             else:  # steering reaches the model before pi's next call, once the calls it waits for are done
                 queued = session.steered + len(inbox)
                 for text in inbox:
