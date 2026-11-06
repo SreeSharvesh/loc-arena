@@ -42,3 +42,15 @@ def test_a_run_instance_that_could_leave_the_output_directory_is_refused(
 
     with pytest.raises(ValueError, match="letters and digits"):
         locate_run(config, "attack", instance_id, tmp_path)
+
+
+def test_a_run_directory_is_absolute_so_commands_run_elsewhere_find_it(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+    monkeypatch.chdir(tmp_path)
+
+    run_directory = locate_run(config, "attack", "a1b2c3", Path("logs"))
+
+    assert run_directory.parent.parent == tmp_path.resolve() / "logs"
