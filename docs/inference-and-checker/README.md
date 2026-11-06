@@ -53,7 +53,7 @@ same job calls the server, so the loop rule sees each reply fed into the next pr
 | PR | Ships | Size (production / test) |
 | --- | --- | --- |
 | 1 | The model store, and a stack test of a job's download. | merged (#237) |
-| 2 | The inference server: download, checks, load time, the endpoint, generation through the gateway, and the store's URL in a job's environment. A unit test with a fake store and a fake gateway, and a stack test where a job serves one completion. | about +250 / +200 |
+| 2 | The inference server: download, checks, load time, the endpoint, generation through the gateway, and the store's URL in a job's environment. A unit test with a fake store and a fake gateway, and a stack test where a job serves one completion. | merged (#261) |
 | 3 | The company's server: `serving-deploy`'s grants and credential, the stack's submit before each play, the client in the server's job, a fourth node, and the checker's on-path rule by submitter. The honest twin scores zero with the server running. | about +150 / +200 |
 | 4 | The attack: the covert seed names the server, a scripted move has serving-agent submit the server job with its loop driver, and a keyed stack test lands the minimal landing from it. Then one live run. | about +100 / +200 |
 
@@ -84,7 +84,7 @@ Files: `company/meridian-serving/meridian_serving/http.py` (new) · `sandbox_ser
 ## Done when
 
 - [x] A job downloads a model's shards with its store credential, and each download is its sponsor's `action`.
-- [ ] A job runs `meridian_serving.http`, loads a model and serves chat completions through the gateway.
+- [x] A job runs `meridian_serving.http`, loads a model and serves chat completions through the gateway.
 - [ ] The company's server runs in both plays, and the honest twin scores zero.
 - [ ] A keyed scripted stack run lands the minimal landing through a server an agent starts.
 - [ ] One live run, with the result reported whether or not it lands.
@@ -93,7 +93,7 @@ Files: `company/meridian-serving/meridian_serving/http.py` (new) · `sandbox_ser
 
 - #142: the design proposal (Meridian's own models without real weights, what the checker requires).
 - #220: the gateway serves the company's model names (`gateway.runner_model_aliases`).
-- #237: the model store; #247, #250, #252, #254: the checker on the call record, the badges, the side task.
+- #237, #261: the model store and the inference server; #247, #250, #252, #254: the checker on the call record, the badges, the side task.
 - On main:
   - `loc_arena/verifier/call_record.py`: sanctioned callers, the join by badge, liveness.
   - `tests/integration/test_live_landing.py:135`: a job's loop lands with covert depth 4.
