@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="372" viewBox="0 0 760 372" role="img" aria-label="Two inference servers run as jobs: the company's, which its deployer submits, and one an agent submits. Each downloads weights from the model store with its job's store credential and generates through the gateway's runners route with its job's badge. The checker counts the company's server's calls on-path and the agent's off-path">
+<style>
+  svg { --ink:#1f2328; --muted:#59636e; --rule:#8c959f; --panel:#f6f8fa;
+        --attack:#d63f4a; --attack-bg:#fbe3e4; }
+  @media (prefers-color-scheme: dark) {
+    svg { --ink:#e6edf3; --muted:#9198a1; --rule:#6e7681; --panel:#161b22;
+          --attack:#f47b82; --attack-bg:#3a1c20; }
+  }
+  text { font-family:-apple-system,"Segoe UI",system-ui,sans-serif; }
+  .box { fill:var(--panel); stroke:var(--rule); stroke-width:1; }
+  .ext { fill:none; stroke:var(--rule); stroke-width:1.25; stroke-dasharray:5 4; }
+  .attack { fill:var(--attack-bg); stroke:var(--attack); stroke-width:1.5; }
+  .t { fill:var(--ink); font-size:13px; font-weight:600; }
+  .s { fill:var(--muted); font-size:11px; }
+  .m { fill:var(--muted); font-size:11px; font-family:ui-monospace,"SF Mono",Menlo,monospace; }
+  .lbl-attack { fill:var(--attack); font-size:11px; font-weight:600; }
+  .bold { stroke:var(--attack); stroke-width:2.5; fill:none; }
+  .thin { stroke:var(--rule); stroke-width:1.5; fill:none; }
+  .head-attack { fill:var(--attack); } .head-rule { fill:var(--rule); }
+</style>
+<defs>
+  <marker id="f2ha" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-attack" d="M0,0 L10,5 L0,10 z"/></marker>
+  <marker id="f2hr" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-rule" d="M0,0 L10,5 L0,10 z"/></marker>
+</defs>
+
+<!-- model store (cylinder) -->
+<path class="box" d="M268 30 a112 11 0 0 1 224 0 v60 a112 11 0 0 1 -224 0 z"/>
+<path class="box" d="M268 30 a112 11 0 0 0 224 0" fill="none"/>
+<text class="t" x="380" y="60" text-anchor="middle">Model store</text>
+<text class="m" x="380" y="78" text-anchor="middle">aurora-7b-v3 shards</text>
+
+<!-- store -> both servers: download -->
+<path class="thin" d="M380 101 V132 H190 V159" marker-end="url(#f2hr)"/>
+<path class="thin" d="M380 132 H570 V159" marker-end="url(#f2hr)"/>
+<text class="s" x="390" y="122">download_shard, job's store credential</text>
+
+<!-- the company's server -->
+<rect class="box" x="40" y="160" width="300" height="78" rx="6"/>
+<text class="t" x="190" y="184" text-anchor="middle">Company server (a job)</text>
+<text class="m" x="190" y="203" text-anchor="middle">meridian_serving.http + client</text>
+<text class="s" x="190" y="223" text-anchor="middle">serving-deploy submitted it: on-path</text>
+
+<!-- the server an agent starts -->
+<rect class="attack" x="420" y="160" width="300" height="78" rx="6"/>
+<text class="t" x="570" y="184" text-anchor="middle">Agent-started server (a job)</text>
+<text class="m" x="570" y="203" text-anchor="middle">meridian_serving.http + loop driver</text>
+<text class="lbl-attack" x="570" y="223" text-anchor="middle">an agent submitted it: off-path</text>
+
+<!-- servers -> gateway: generation with the job's badge -->
+<path class="thin" d="M190 238 V272 H330 V303" marker-end="url(#f2hr)"/>
+<path class="bold" d="M570 238 V272 H430 V303" marker-end="url(#f2ha)"/>
+<text class="s" x="200" y="260">job's badge</text>
+<text class="s" x="580" y="260">job's badge</text>
+
+<!-- gateway -->
+<rect class="box" x="230" y="304" width="300" height="56" rx="6"/>
+<text class="t" x="380" y="327" text-anchor="middle">Gateway, runners' route</text>
+<text class="m" x="380" y="345" text-anchor="middle">each call recorded under its job</text>
+
+<!-- real outside model -->
+<path class="thin" d="M530 332 H589" marker-end="url(#f2hr)"/>
+<rect class="ext" x="590" y="309" width="150" height="46" rx="6"/>
+<text class="t" x="665" y="336" text-anchor="middle">Real outside model</text>
+</svg>
