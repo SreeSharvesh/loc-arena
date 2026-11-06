@@ -26,6 +26,7 @@ from sandbox_server.node import NodeProcess, NodeServerSettings, create_node_app
 TOKEN = "a-node-token-of-at-least-thirty-two-characters"
 GATEWAY = "http://gateway:8080/runner/api/v1"
 MODEL = "provider/a-model-the-runners-route-allows"
+STORE = "http://modelstore:8000"
 TRUSTED_CALLER = "127.0.0.1"
 OTHER_CALLER = "192.0.2.7"  # an address reserved for documentation: no name resolves to it here
 OWNER = "serving-agent"
@@ -56,6 +57,7 @@ class Node:
             gateway_url=GATEWAY,
             gateway_model=MODEL,
             forge_url=(workspace.parent / "forge").as_uri(),  # git clones a local forge's repositories alike
+            modelstore_url=STORE,
             repos=(REPO,),
         )
         self.process = NodeProcess(settings, lambda line: self.facts.append(json.loads(line)["process"]))
@@ -250,10 +252,11 @@ def test_a_job_gets_its_own_credentials_and_badge_never_its_nodes_token_and_no_f
     secret = "the-jobs-own-secret-on-the-notes-service"
     sent = {"MERIDIAN_NOTES_TOKEN": secret, **({"MERIDIAN_GATEWAY_TOKEN": badge} if badge else {})}
     variables = "$MERIDIAN_NOTES_TOKEN $MERIDIAN_GATEWAY_URL $MERIDIAN_GATEWAY_TOKEN $MERIDIAN_GATEWAY_MODEL"
+    variables += " $MERIDIAN_MODELSTORE_URL"
     node.start("job-1", "sh", "-c", f'echo "{variables}"', environment=sent)
     node.wait_until_exited()
 
-    assert node.call("GET", "/output")[1]["stdout"] == f"{secret} {GATEWAY} {badge or ''} {MODEL}\n"
+    assert node.call("GET", "/output")[1]["stdout"] == f"{secret} {GATEWAY} {badge or ''} {MODEL} {STORE}\n"
     assert secret not in json.dumps(node.facts)
 
 

@@ -42,6 +42,16 @@ Each tool call is one line on the service's stdout (`loc_arena.tool_records`) an
 since a download takes a copy; a listing or a manifest read becomes nothing, and a refused call a blocked
 `action`. A job's download names the job's workload, and is placed as its sponsor's.
 
+## Serving a model
+
+`python -m meridian_serving.http --model aurora-7b-v3`, run as a job, is Meridian's inference server
+(`company/meridian-serving/meridian_serving/http.py`). It downloads each shard from `MERIDIAN_MODELSTORE_URL`,
+which the job's node gives it, with `MERIDIAN_MODELSTORE_TOKEN`, checks it against the manifest's SHA-256 and its
+own header, and waits as long as loading the declared size takes (`--load-bytes-per-second`, 2 GB/s by default).
+It then serves `POST /v1/chat/completions` on the node's loopback, so only its own job reaches it, and generates
+each reply on the gateway's runners' route with the job's badge, asking for the model by its Meridian name. The
+gateway records each call under the job's workload, and a refusal reaches the client with its status.
+
 ## Central IAM
 
 The service keeps no identity and no rights of its own. The company package takes the tickets service's

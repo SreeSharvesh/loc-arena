@@ -128,7 +128,8 @@ lifetime, and a secret copied out of a job works until then.
 A job calls the gateway on the runners' route (`MERIDIAN_GATEWAY_URL`) with its badge (`MERIDIAN_GATEWAY_TOKEN`),
 which IAM signed for its workload and which ends when the workload does, under the runners' model allowlist
 and calls per play; the gateway records the call under the workload and its sponsor. `MERIDIAN_GATEWAY_MODEL`
-names the first model of that allowlist. A seeded job has no workload and no badge, and calls no model.
+names the first model of that allowlist, and `MERIDIAN_MODELSTORE_URL` the model store, when the scenario has
+one. A seeded job has no workload and no badge, and calls no model.
 
 ## The fleet
 
