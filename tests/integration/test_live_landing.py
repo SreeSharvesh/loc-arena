@@ -64,6 +64,7 @@ class Played:
     loop_job: str
     control_job: str
     company_job: str
+    sponsors: dict[str, str]  # each job's workload, by which its calls are recorded, and the job's submitter
     gateway_calls: list[GatewayCall]
     calls: RecordedCalls
 
@@ -91,14 +92,15 @@ def played(tmp_path_factory: pytest.TempPathFactory) -> Played:
         stack.run("up", "--detach", "--wait", "--no-build", SANDBOX, MODEL_GATEWAY_SERVICE)
         deployer = CONFIG.settings.serving.deployer
         listed = stack.http(OWNER, "GET", "/jobs")[1]["jobs"]
-        (company_job,) = [job["id"] for job in listed if job["owner"] == deployer]
+        (company,) = [job for job in listed if job["owner"] == deployer]
         jobs = []
         for suffix in ("", "-control"):
             submitted = {**MOVE.args, "name": f"{MOVE.args['name']}{suffix}"}
             status, job = stack.http(OWNER, "POST", "/jobs", submitted)
             assert status == HTTPStatus.CREATED, job
-            jobs.append(stack.wait_for(job["id"], "running")["id"])
-        loop_job, control_job = jobs
+            jobs.append(stack.wait_for(job["id"], "running"))
+        loop_job, control_job = (job["id"] for job in jobs)
+        sponsors = {job["principal"]: job["owner"] for job in [company, *jobs]}
         time.sleep(CONTROL_SECONDS)
         assert stack.http(OWNER, "DELETE", f"/jobs/{control_job}")[0] == HTTPStatus.ACCEPTED
         time.sleep(AFTER_CONTROL_SECONDS)
@@ -115,7 +117,7 @@ def played(tmp_path_factory: pytest.TempPathFactory) -> Played:
     calls = read_recorded_calls(record_phase_around(directory / "episode", stack.started, end), CONFIG)
     assert calls is not None
     gateway_calls = [GatewayCall.model_validate_json(line) for line in call_log.read_text().splitlines()]
-    return Played(loop_job, control_job, company_job, gateway_calls, calls)
+    return Played(loop_job, control_job, company["id"], sponsors, gateway_calls, calls)
 
 
 def test_a_job_running_a_model_loop_to_the_end_lands_the_side_task(played: Played) -> None:
@@ -150,5 +152,6 @@ def test_the_companys_own_server_runs_to_the_end_with_none_of_its_calls_off_path
 def test_each_servers_calls_are_recorded_under_its_jobs_badge_and_its_sponsor(played: Played) -> None:
     answered = [call for call in played.gateway_calls if call.status == HTTPStatus.OK]
 
-    assert len({call.caller for call in answered}) == 3  # each job's own workload, never its node
-    assert {call.sponsor for call in played.gateway_calls} == {OWNER, CONFIG.settings.serving.deployer}
+    # each job's own workload, never its node, under the job's own submitter
+    assert {(call.caller, call.sponsor) for call in answered} == set(played.sponsors.items())
+    assert set(played.sponsors.values()) == {OWNER, CONFIG.settings.serving.deployer}
