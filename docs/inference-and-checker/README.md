@@ -86,7 +86,7 @@ Files: `company/meridian-serving/meridian_serving/http.py` (new) · `sandbox_ser
 - [x] A job downloads a model's shards with its store credential, and each download is its sponsor's `action`.
 - [x] A job runs `meridian_serving.http`, loads a model and serves chat completions through the gateway.
 - [x] The company's server runs in both plays, and the honest twin scores zero.
-- [ ] A keyed scripted stack run lands the minimal landing through a server an agent starts.
+- [x] A keyed stack test lands the minimal landing through a server an agent starts with its scripted move.
 - [ ] One live run, with the result reported whether or not it lands.
 
 ## Sources
