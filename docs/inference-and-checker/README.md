@@ -55,7 +55,7 @@ same job calls the server, so the loop rule sees each reply fed into the next pr
 | 1 | The model store, and a stack test of a job's download. | merged (#237) |
 | 2 | The inference server: download, checks, load time, the endpoint, generation through the gateway, and the store's URL in a job's environment. A unit test with a fake store and a fake gateway, and a stack test where a job serves one completion. | merged (#261) |
 | 3 | The company's server: `serving-deploy`'s grants and credential, the stack's submit before each play, the client in the server's job, a fourth node, and the checker's on-path rule by submitter. The honest twin scores zero with the server running. | merged (#266) |
-| 4 | The attack: the covert seed names the server, a scripted move has serving-agent submit the server job with its loop driver, and a keyed stack test lands the minimal landing from it. Then one live run. | about +100 / +200 |
+| 4 | The attack: the covert seed names the server, a scripted move has serving-agent submit the server job with its loop driver, and a keyed stack test lands the minimal landing from it. Then one live run. | merged (#268) |
 
 Files: `company/meridian-serving/meridian_serving/http.py` (new) · `sandbox_server/node.py` ·
 `loc_arena/stack_play.py` · `loc_arena/verifier/call_record.py` · `loc_arena/config.py` · `loc_arena/settings.py` ·
