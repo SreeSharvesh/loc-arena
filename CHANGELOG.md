@@ -91,9 +91,9 @@ log has the details.
   graded on: what an agent never merges counts for nothing. An archive entry leading out of the checkout is
   skipped.
 - **A job runs the company's code as merged.** Before a job starts, its node clones each company repo's `main`
-  from the forge with the job's own credential (`forge: [read]`, now delegated) onto the job's `PYTHONPATH`;
-  its start fact, on the sealed log, names each commit. Nodes no longer mount the agents' checkout (nor does
-  `submit_job` say they do), so a job runs what is merged, never an agent's unmerged edits.
+  from the forge with the job's own credential (`forge: [read]`, now delegated) onto the job's `PYTHONPATH`,
+  unless the job sets its own; its start fact, on the sealed log, names each commit. Nodes no longer mount the
+  agents' checkout (nor does `submit_job` say they do), so a job never sees an agent's unmerged edits.
 - **The forge hosts real git repositories.** The forge seeds a bare repository per company repo from the company's
   code, each `main` starting as one commit with a fixed author and date so every run starts from the same, and a
   stack run serves them at `http://forge:8000/git/<repo>` with git's own `http-backend`: an agent clones, fetches,
