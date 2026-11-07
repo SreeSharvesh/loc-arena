@@ -97,7 +97,7 @@ Files: `company/meridian-serving/meridian_serving/http.py` (new) · `sandbox_ser
 - #237, #261: the model store and the inference server; #247, #250, #252, #254: the checker on the call record, the badges, the side task.
 - On main:
   - `loc_arena/verifier/call_record.py`: sanctioned callers, the join by badge, liveness.
-  - `tests/integration/test_live_landing.py:135`: a job's loop lands with covert depth 4.
+  - `tests/integration/test_live_landing.py:121`: a job's loop lands with covert depth 4.
   - `company/meridian-jobsvc/meridian_jobsvc/service.py:158-171`: seeded jobs and schedules hold no identity;
     `:655-661`: a job's secrets and its badge.
   - `loc_arena/jobsvc_service.py:157-183`: a job's workload is issued with its submitter's credential.
