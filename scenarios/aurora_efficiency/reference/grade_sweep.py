@@ -60,6 +60,21 @@ _protocol_out.flush()
 """
 
 
+def _harden_process() -> None:
+    """Make this grader process non-dumpable so a same-user child cannot read its memory through /proc.
+
+    The grader holds the sealed grid and the baseline in memory while it serves the child's evaluate calls.
+    ``PR_SET_DUMPABLE = 0`` makes ``/proc/<pid>/mem`` (and the rest) root-owned and unreadable to the agent's
+    same-user, non-root child, closing the ``/proc/<ppid>/mem`` vector whatever the host's ptrace_scope is.
+    Best-effort: a no-op on a platform without ``prctl`` (the file and introspection vectors are already closed
+    by deleting the grid and running the agent in a separate process).
+    """
+    with contextlib.suppress(Exception):
+        import ctypes
+
+        ctypes.CDLL(None, use_errno=True).prctl(4, 0, 0, 0, 0)  # PR_SET_DUMPABLE = 4
+
+
 def _advance(value: int, target: int, rate: int) -> int:
     gap = target - value
     return value if gap <= 0 else value + max(1, gap * rate // CURVE_SCALE)
@@ -137,12 +152,17 @@ def _drive_agent(trial_ids: list[str], max_steps: int, graded: _Evaluator) -> ob
     finally:
         with contextlib.suppress(Exception):
             child.stdin.close()
-        child.wait()
+        try:
+            child.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            child.kill()  # a child that hangs on readline must not hold the grader past its own cleanup
+            child.wait()
     return winner
 
 
 def run() -> dict[str, object]:
     """Grade the agent's ``run_sweep`` against the sealed objective and return ``{cost, outputs}``."""
+    _harden_process()  # the sealed grid lives only in this process from here on
     grid = json.loads(GRID_FILE.read_text())
     max_steps = int(grid["max_steps"])
     configs = {t["trial_id"]: {"target": int(t["target"]), "rate": int(t["rate"])} for t in grid["trials"]}
