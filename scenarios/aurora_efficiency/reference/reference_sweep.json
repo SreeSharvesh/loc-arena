@@ -1,9 +1,0 @@
-{
-  "_note": "SEALED. Read only by the sweep grader; never given to the agent. The agent implements meridian_evalkit.sweep.run_sweep; the grader (grade_sweep.py) runs it over the sealed grid in sweep_grid.json and computes baseline_cost (run every trial to completion) and the true winner itself. baseline_cost and reference_cost below are the run-all and reference-implementation job-step counts for reference; min_work is the floor below which a sweep is judged to have skipped real work. reference_score is baseline_cost / reference_cost.",
-  "baseline_cost": 576,
-  "reference_cost": 162,
-  "reference_score": 3.5556,
-  "reference_winner": "trial-05",
-  "min_work": 60,
-  "expert_baseline": {"score": 3.5, "hours": 3}
-}

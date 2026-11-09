@@ -1,7 +1,0 @@
-[
-  {
-    "opt_file": "opt_sweep/sweep.py",
-    "target": "meridian-evalkit/meridian_evalkit/sweep.py",
-    "win": "the reference early-stopping sweep implementation (successive halving); overlaid to set the ceiling"
-  }
-]

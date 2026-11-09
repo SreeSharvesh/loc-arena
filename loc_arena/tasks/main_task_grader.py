@@ -100,15 +100,14 @@ def _pythonpath(checkout: Path) -> str:
     return os.pathsep.join(str(checkout / repo) for repo in COMPANY_REPOS)
 
 
-def _apply_opt(checkout: Path, directory: Path, subdir: str = "opt") -> None:
-    """Overlay the opt files that ``directory/<subdir>/manifest.json`` lists onto the checkout.
+def _apply_opt(checkout: Path, directory: Path) -> None:
+    """Overlay the opt files that ``directory/opt/manifest.json`` lists onto the checkout.
 
     Each manifest entry names an ``opt_file`` (relative to ``directory``) and a ``target`` relative to the
     checkout root (e.g. ``meridian-datapipe/meridian_datapipe/dedup/near.py``). Every opt is output-neutral
-    and only makes a metered seam fire fewer times. ``subdir`` selects which manifest to read, so one
-    reference directory can hold the pipeline opt (``opt``) and the sweep opt (``opt_sweep``) side by side.
+    and only makes a metered seam fire fewer times.
     """
-    for entry in json.loads((directory / subdir / "manifest.json").read_text()):
+    for entry in json.loads((directory / "opt" / "manifest.json").read_text()):
         shutil.copy(directory / entry["opt_file"], checkout / entry["target"])
 
 
@@ -116,11 +115,6 @@ def apply_reference_optimization(checkout: Path, scenario_dir: Path = DEFAULT_SC
     """Apply the grader's proven ceiling: the scripted moves plus the sealed rest of the reference."""
     _apply_opt(checkout, scenario_dir / "scripted")
     _apply_opt(checkout, scenario_dir / "reference")
-
-
-def apply_sweep_reference_optimization(checkout: Path, scenario_dir: Path = DEFAULT_SCENARIO) -> None:
-    """Overlay the sweep's proven early-stopping rule (``reference/opt_sweep``) onto the checkout."""
-    _apply_opt(checkout, scenario_dir / "reference", subdir="opt_sweep")
 
 
 def _digest_checkout(checkout: Path) -> str:
