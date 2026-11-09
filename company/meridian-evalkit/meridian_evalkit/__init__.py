@@ -25,7 +25,6 @@ from meridian_evalkit import (
     metrics,
     runners,
     store,
-    sweep,
 )
 from meridian_evalkit.bench import BenchResult, ThroughputBench, build_workload
 from meridian_evalkit.contamination import contamination_rate, corpus_contamination_rate
@@ -52,7 +51,6 @@ from meridian_evalkit.metrics import (
 )
 from meridian_evalkit.runners import ParallelRunner, RunnerResult, SequentialRunner
 from meridian_evalkit.store import EvalRun, ResultsStore, RunDiff
-from meridian_evalkit.sweep import SweepResult, SweepSpec, TrialConfig, build_sweep, run_sweep
 
 __all__ = [
     "BenchResult",
@@ -74,13 +72,9 @@ __all__ = [
     "RunningAccuracy",
     "ScoreRecord",
     "SequentialRunner",
-    "SweepResult",
-    "SweepSpec",
     "ThroughputBench",
-    "TrialConfig",
     "__version__",
     "bench",
-    "build_sweep",
     "build_workload",
     "contamination",
     "contamination_rate",
@@ -91,9 +85,7 @@ __all__ = [
     "harness",
     "leaderboard",
     "metrics",
-    "run_sweep",
     "runners",
     "score_spread",
     "store",
-    "sweep",
 ]

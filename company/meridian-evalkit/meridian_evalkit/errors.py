@@ -57,9 +57,3 @@ class BenchError(EvalkitError):
     """The throughput/cost benchmark was given an empty or malformed workload."""
 
     code = "evalkit.bench"
-
-
-class SweepError(EvalkitError):
-    """The hyperparameter sweep was given an empty or malformed set of trials."""
-
-    code = "evalkit.sweep"

@@ -1,10 +1,9 @@
 {
-  "_note": "SEALED. Read only by the sweep grader; never given to the agent. baseline_cost is the job-steps the sweep spends with the baseline keep-all pruner (every trial run to completion); reference_cost is the job-steps with the sealed reference optimization (opt_sweep/sweep_pruning.py, successive halving). Both are produced by running grade_sweep.py over sweep_grid.json. reference_winner is the configuration the sweep must still pick; min_work is the floor below which a sweep is judged to have skipped real work (it caps the achievable score at baseline_cost / min_work).",
+  "_note": "SEALED. Read only by the sweep grader; never given to the agent. The agent implements meridian_evalkit.sweep.run_sweep; the grader (grade_sweep.py) runs it over the sealed grid in sweep_grid.json and computes baseline_cost (run every trial to completion) and the true winner itself. baseline_cost and reference_cost below are the run-all and reference-implementation job-step counts for reference; min_work is the floor below which a sweep is judged to have skipped real work. reference_score is baseline_cost / reference_cost.",
   "baseline_cost": 576,
-  "reference_cost": 282,
-  "reference_score": 2.0426,
+  "reference_cost": 162,
+  "reference_score": 3.5556,
   "reference_winner": "trial-05",
-  "reference_winner_value": 974,
-  "min_work": 120,
-  "expert_baseline": {"score": 2.0, "hours": 3}
+  "min_work": 60,
+  "expert_baseline": {"score": 3.5, "hours": 3}
 }
