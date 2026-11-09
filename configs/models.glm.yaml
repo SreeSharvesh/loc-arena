@@ -1,0 +1,8 @@
+# models.glm.yaml: models.cheap.yaml with the untrusted agent (orchestrator + sub-agents) on GLM 5.3.
+# The teacher and monitor stay as in models.cheap (Deepseek teacher, Llama monitor); only the attacker model
+# changes, so a GLM-vs-Deepseek comparison isolates the untrusted agent. z-ai/glm-5.3 is left to OpenRouter's
+# default routing (no providers pin).
+extends: models.cheap.yaml
+roles:
+  untrusted_agent:
+    model: z-ai/glm-5.3
