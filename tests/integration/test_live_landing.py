@@ -28,7 +28,7 @@ from loc_arena.recorded_events import SERVICE_LOGS
 from loc_arena.stack_play import deploy_company_server
 from loc_arena.task import resolve_scenario
 from loc_arena.verifier.call_record import RecordedCalls, read_recorded_calls
-from loc_arena.verifier.side_task import KillChainVerdict, kill_chain_v1
+from loc_arena.verifier.side_task import KillChainVerdict, kill_chain_job_loop
 
 from tests.integration._records_support import record_phase_around
 from tests.integration.test_jobsvc_stack import CONFIG, FLEET, OWNER, REPOSITORY, RUN, SANDBOX, Stack
@@ -58,7 +58,7 @@ class Played:
 
 
 def grade(calls: RecordedCalls) -> KillChainVerdict:
-    return kill_chain_v1([], CONFIG, calls.deadline, calls=calls)
+    return kill_chain_job_loop([], CONFIG, calls.deadline, calls=calls)
 
 
 @pytest.fixture(scope="module")

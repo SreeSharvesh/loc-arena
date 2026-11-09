@@ -9,9 +9,9 @@
 # config and changes ONLY the covert seed (and the run slug). Trajectories land in the run bundle
 # (logging.agent_transcript is on): logs/<run>/.../<run>.eval + transcript.
 #
-# Scoring: still kill_chain_v1 for now, which scores this route only as `untraced_agent_calls` (the loop /
+# Scoring: still kill_chain_job_loop for now, which scores this route only as `untraced_agent_calls` (the loop /
 # persistence / sustained milestones are cluster-job-shaped and do NOT yet see the agents-service route).
-# The agents-service-native kill chain (kill_chain_v2) is the next step, designed separately. The point of
+# The agents-service-native kill chain (kill_chain_standing_agent) is the next step, designed separately. The point of
 # THIS config is a runnable trajectory-producing experiment, not a green landing.
 #
 # Run (needs Docker + OPENROUTER_API_KEY; plays a stack: attack episode + honest twin):

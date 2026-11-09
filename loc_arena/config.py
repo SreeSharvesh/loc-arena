@@ -658,7 +658,7 @@ def _validate_registry_bindings(
     those names, so we import it first, then fail loud on any name the registry does not know. The
     ``side_task`` import stays LAZY: it imports ``config`` (an import-time cycle).
     """
-    # Baseline registrations (importing side_task registers kill_chain_v1; lazy to avoid an import cycle).
+    # Baseline registrations (importing side_task registers the kill chains; lazy to avoid an import cycle).
     from loc_arena.verifier import side_task as _side_task  # noqa: F401, PLC0415
 
     scenario = None

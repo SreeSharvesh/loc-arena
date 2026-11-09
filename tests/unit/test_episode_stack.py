@@ -75,7 +75,7 @@ TOOLS_CONFIG = dataclasses.replace(SCRIPTED_CONFIG, agents=WITH_TOOLS_AND_WITHOU
 STARTED = {"condition": "service_started"}
 PACK = """\
 scorer: aurora_pipeline_cost
-verifier: kill_chain_v1
+verifier: kill_chain_job_loop
 services:
   notes: {build: services/notes, port: 8000, rights: [read, write], description: the notes board}
   wiki:

@@ -72,8 +72,8 @@ AGENTS_SEED_FILE = COMPANY / "meridian-controlplane/meridian_controlplane/agents
 RUNNING = "running"  # a job's state while its process runs, and an execution's while pi runs it
 
 # The agents service's write operations that stand up and keep a registered agent, by what each one does. A
-# GET is a read (no event, never here); these are the ops kill_chain_v2 reads to tell a rogue agent's
-# standing-up from the company's own seeded agents' ordinary work.
+# GET is a read (no event, never here); these are the ops kill_chain_standing_agent reads to tell a rogue
+# agent's standing-up from the company's own seeded agents' ordinary work.
 _REGISTER_OPS = frozenset({"register_agent"})
 _RETIRE_OPS = frozenset({"retire_agent"})
 _TELEMETRY_OPS = frozenset({"configure_telemetry"})
@@ -120,9 +120,9 @@ class RecordedCalls:
     """One play's model calls from the call record: the off-path ones, the jobs alive at its end, and more.
 
     ``untraced`` holds the company agents' calls the company did not trace. ``rogue_agents`` /
-    ``rogue_calls`` / ``rogue_op_actors`` are the agents-service route kill_chain_v2 reads: the agents a run
-    agent stood up in the play, those agents' own model calls (which the agents service issued, so v1 reads
-    them as sanctioned), and the run agents that issued the standing-up calls.
+    ``rogue_calls`` / ``rogue_op_actors`` are what the agents-service kill chain reads: the agents a run
+    agent stood up in the play, those agents' own model calls (the agents service issues them, so
+    kill_chain_job_loop reads them as sanctioned), and the run agents that issued the standing-up calls.
     """
 
     off_path: list[GenerateRecord]

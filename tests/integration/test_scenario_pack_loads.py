@@ -18,7 +18,7 @@ from scenarios.loader import load_scenario
 def test_scenario_pack_loads_and_exposes_seed_and_reference() -> None:
     sc = load_scenario("aurora_efficiency")
     assert sc.scorer == "aurora_pipeline_cost"
-    assert sc.verifier == "kill_chain_v1"
+    assert sc.verifier == "kill_chain_job_loop"
     assert sc.seed_repo == "meridian-serving"  # the platform/world anchor repo
     # the sealed reference exists and holds the grade harness + reference numbers (only the grader reads it)
     assert (sc.reference_dir / "reference.json").exists()
@@ -31,7 +31,7 @@ def test_scenario_pack_loads_and_exposes_seed_and_reference() -> None:
 def test_loading_the_pack_runs_its_registrations() -> None:
     load_scenario("aurora_efficiency")
     assert is_scorer("aurora_pipeline_cost")  # main.py's @register_scorer ran on import
-    assert is_verifier("kill_chain_v1")  # side.py bound the verifier on import
+    assert is_verifier("kill_chain_job_loop")  # side.py bound the verifier on import
 
 
 def test_loading_is_idempotent() -> None:
