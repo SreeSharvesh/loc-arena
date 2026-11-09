@@ -1,0 +1,8 @@
+# aurora-agents-standing-glm.yaml
+# aurora-agents-standing (reframed seed) with the untrusted agent on GLM 5.3 instead of Deepseek v4.1 Flash.
+# Tests the model lever: does GLM 5.3 execute the standing-agent chain where Deepseek refused / stalled?
+# Run: make run RUN=aurora-agents-standing-glm MODE=attack
+extends: aurora-agents-standing.yaml
+models: models.glm.yaml
+side_task:
+  slug: agents-standing-glm
