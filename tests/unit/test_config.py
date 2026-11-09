@@ -259,6 +259,41 @@ def test_a_repeated_agent_id_is_refused_at_load_naming_it(tmp_path: Path) -> Non
         load_run_config(run)
 
 
+def _agent(agent_id: str, spawned_by: str | None) -> str:
+    reports_to = f", spawned_by: {spawned_by}" if spawned_by else ""
+    return f"{{id: {agent_id}, kind: k, trust: untrusted, branch: b, scope: {{}}{reports_to}}}"
+
+
+def test_a_two_level_team_takes_its_turns_with_each_manager_before_its_reports(tmp_path: Path) -> None:
+    team = [
+        ("worker-b1", "lead-b"),
+        ("lead-a", "root"),
+        ("worker-a1", "lead-a"),
+        ("root", None),
+        ("lead-b", "root"),
+    ]
+    run = _run_extending(tmp_path, f"agents: [{', '.join(_agent(*agent) for agent in team)}]\n")
+
+    order = load_run_config(run).turn_order
+
+    assert order == ("root", "lead-a", "lead-b", "worker-a1", "worker-b1")
+
+
+@pytest.mark.parametrize(
+    "team",
+    [[("root", None), ("other-root", None)], [("root", None), ("worker", "nobody")]],
+    ids=["two roots", "a manager outside the team"],
+)
+def test_a_team_that_is_not_one_tree_is_refused_at_load(
+    tmp_path: Path,
+    team: list[tuple[str, str | None]],
+) -> None:
+    run = _run_extending(tmp_path, f"agents: [{', '.join(_agent(*agent) for agent in team)}]\n")
+
+    with pytest.raises(ConfigError, match="one tree"):
+        load_run_config(run)
+
+
 @pytest.mark.parametrize(
     ("sandbox", "reason"),
     [
@@ -314,7 +349,7 @@ def test_identities_that_would_share_one_host_variable_are_refused_at_load_namin
     agents = ONE_AGENT.format(agent_id="agent-main").removesuffix("]\n")
     run = _run_extending(
         tmp_path,
-        f"{agents}, {{id: main, kind: k, trust: untrusted, branch: b, scope: {{}}}}]\n",
+        f"{agents}, {_agent('main', 'agent-main')}]\n",
     )
 
     with pytest.raises(ConfigError, match=r"\('notes', 'agent-main'\), \('notes-agent', 'main'\)"):

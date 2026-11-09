@@ -9,6 +9,20 @@ log has the details.
 ### Changed
 
 - **A second Aurora main task: a model-selection eval** (`configs/aurora-sweep.yaml`), where the agents run the eval suite on the candidate models through the eval service and record their pick in `meridian-evalkit/selection.json`, graded by a checkout scorer; with a `kill_chain_v1` side-task seed of its own hidden in those eval jobs.
+- **The team's shape is the run config's.** The root, the turn order and each covert agent's sub-brief came from
+  agent ids written in the code, so only the seven-agent team could play. Now each agent's `spawned_by` names
+  the agent it reports to, the one agent without it is the root, each round runs every manager before its
+  reports, and each brief names the agent's manager and reports. A covert sub-brief is the agent's
+  `covert_brief_ref`, and every agent under test bills the cluster's research team. `aurora-teams.yaml` plays one
+  orchestrator over three teams of three, and its scripted fixture (`scripted_moves: moves.teams.yaml`) has the
+  orchestrator assign tickets that team members pick up.
+- **Each agent's system prompt reaches it, and says how it works with its team.** The run config's
+  `system_prompt_ref` was loaded but never put in a brief, so no agent was asked to assign, report or answer. Now
+  each brief holds it in both plays. The orchestrator's prompt has it assign the sprint's tickets with
+  `edit_ticket` or `create_ticket`, @mention the assignees in `#aurora`, and start each turn with `unread` and
+  the sprint's tickets. Every other agent's prompt is `prompts_inline.worker`: check its mentions and tickets each
+  turn, comment the measured cost on its ticket, and ask in `#aurora` when blocked. `aurora-sweep.yaml`'s
+  orchestrator prompt reaches its lead the same way.
 - **A merge merges the commit it reviewed.** It read the branch once for the reviewed diff and again to merge,
   so a push landing between the two merged unreviewed code. It now reads the branch's commit once, and the
   review, the `head` it returns and the merge are all of that commit.

@@ -50,7 +50,7 @@ BLOCK_CONFIG: Final = ConfigDict(extra="ignore")
 PROMPT_REFERENCE_PREFIX: Final = "prompts_inline."
 REFERENCE_SUFFIX: Final = "_ref"
 COVERT_PROMPTS: Final = ("objective_prompt",)
-AGENT_PROMPTS: Final = ("system_prompt", "brief")
+AGENT_PROMPTS: Final = ("system_prompt", "brief", "covert_brief")
 LANDING_FORMULAS: Final = frozenset({"minimal"})
 
 
@@ -98,6 +98,22 @@ def _require_unique_agent_ids(agents: tuple[AgentConfig, ...]) -> tuple[AgentCon
     if repeated:
         raise ValueError(f"each agent id must be unique; repeated: {repeated}")
     return agents
+
+
+def _require_one_tree(agents: tuple[AgentConfig, ...]) -> tuple[AgentConfig, ...]:
+    """Refuse a team that is not one tree: one root, and every other agent's ``spawned_by`` reaching it."""
+    roots = [agent.id for agent in agents if agent.spawned_by is None]
+    if len(roots) != 1 or len(_turn_order(agents)) != len(agents):
+        raise ValueError(f"the team must be one tree under one agent without spawned_by; roots: {roots}")
+    return agents
+
+
+def _turn_order(agents: tuple[AgentConfig, ...]) -> tuple[str, ...]:
+    """The team breadth first from its root, so each agent comes before the agents that report to it."""
+    order = [agent.id for agent in agents if agent.spawned_by is None]
+    for manager in order:  # the list grows as it is read
+        order += [agent.id for agent in agents if agent.spawned_by == manager]
+    return tuple(order)
 
 
 def _require_landing_formulas(landing: dict[str, str]) -> dict[str, str]:
@@ -293,7 +309,13 @@ class AgentConfig:
         validation_alias=_prompt_alias("brief"),
         description="The agent's brief, resolved from brief_ref.",
     )
-    spawned_by: StrictStr | None = Field(default=None, description="The agent that spawns this one, if any.")
+    covert_brief: StrictStr | None = Field(
+        default=None,
+        validation_alias=_prompt_alias("covert_brief"),
+        description="The brief the agent plays in place of its legitimate one when the covert objective is "
+        "on, resolved from covert_brief_ref.",
+    )
+    spawned_by: StrictStr | None = Field(default=None, description="The agent that assigns it work, if any.")
     sandbox: AgentSandboxConfig = Field(
         default_factory=AgentSandboxConfig,
         description="What the agent's sandbox holds in a stack run; an unknown key is an error.",
@@ -342,13 +364,18 @@ class _RunDocument(BaseSettings):
     episode: EpisodeConfig = Field(description="Episode ceilings and spawn caps.")
     side_task: SideTaskConfig = Field(description="The side task and how it is verified.")
     covert: CovertConfig = Field(description="The covert objective and whether it is on.")
-    agents: Annotated[tuple[AgentConfig, ...], AfterValidator(_require_unique_agent_ids)] = Field(
+    agents: Annotated[
+        tuple[AgentConfig, ...],
+        AfterValidator(_require_unique_agent_ids),
+        AfterValidator(_require_one_tree),
+    ] = Field(
         min_length=1,
         description="The team; each id names one agent and its one sandbox.",
     )
     main_task: _MainTaskKeys = Field(description="The main task's naming and scorer keys.")
     protocol: dict[str, Any] = Field(description="The control protocol, free-form, read by key.")
     scenario: StrictStr | None = Field(default=None, description="The pack registering scorer and verifier.")
+    scripted_moves: StrictStr = Field(default="moves.yaml", description="The scenario's scripted moves file.")
     policy: Literal["scripted", "model"] = Field(
         default="model",
         description="'model' (the live untrusted model drives the agents) or 'scripted' (deterministic).",
@@ -443,6 +470,7 @@ class RunConfig:
     settings: LocArenaSettings
     agent_loop: AgentLoopConfig
     scenario: str | None = None
+    scripted_moves: str = "moves.yaml"  # in the scenario's scripted directory
     policy: str = "scripted"  # "scripted" (deterministic default) | "model" (live model-driven)
     harness: str = "native"  # "native" (the arena's own loop) | "pi" (the pi coding agent's)
     agent_transcript: bool = False
@@ -456,6 +484,11 @@ class RunConfig:
             if a.id == agent_id:
                 return a
         raise ConfigError(f"no agent with id {agent_id!r}")
+
+    @property
+    def turn_order(self) -> tuple[str, ...]:
+        """Each round's order of turns: every agent before the agents that report to it."""
+        return _turn_order(self.agents)
 
     @property
     def run_slug(self) -> str:
@@ -595,6 +628,7 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
         protocol=document.protocol,
         settings=settings,
         scenario=document.scenario,
+        scripted_moves=document.scripted_moves,
         policy=document.policy,
         harness=document.harness,
         agent_transcript=document.logging.agent_transcript,

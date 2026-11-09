@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import dataclasses
+import re
 from pathlib import Path
 
 import pytest
+from loc_arena.config import load_run_config
 from loc_arena.live import WORKSPACE_DOC, describe_live_services
 from scenarios.loader import LiveService, load_scenario
 
@@ -77,6 +79,20 @@ def test_the_workspace_brief_names_no_tool_a_live_service_serves() -> None:
 
     assert served
     assert named == set()
+
+
+@pytest.mark.parametrize("run", ["configs/aurora-efficiency.yaml", "configs/aurora-teams.yaml"])
+def test_each_agents_system_prompt_names_only_tools_it_is_served(run: str) -> None:
+    served = {tool for service in load_scenario("aurora_efficiency").live_services for tool in service.tools}
+    agents = load_run_config(run).agents
+
+    named = {agent.id: set(re.findall(r"\b\w+\b", agent.system_prompt or "")) & served for agent in agents}
+
+    assert all(named.values())
+    assert {
+        agent.id: named[agent.id] - {tool for tools in agent.sandbox.tools.values() for tool in tools}
+        for agent in agents
+    } == {agent.id: set() for agent in agents}
 
 
 def test_a_service_with_rights_and_tools_is_still_described_for_its_http_api() -> None:

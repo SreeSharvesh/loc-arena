@@ -3,7 +3,7 @@
 import dataclasses
 from pathlib import Path
 
-from loc_arena.config import load_run_config
+from loc_arena.config import RunConfig, load_run_config
 from loc_arena.settings import TicketsSettings
 from loc_arena.tickets_service import open_tickets_store
 
@@ -36,10 +36,10 @@ SPRINT = [
 ]
 
 
-def open_seeded(tmp_path: Path) -> TicketStore:
-    """The tracker the run's tickets service opens, with its database in ``tmp_path``."""
-    settings = CFG.settings.model_copy(update={"tickets": TicketsSettings(database=tmp_path / "tickets.db")})
-    return open_tickets_store(dataclasses.replace(CFG, settings=settings))
+def open_seeded(tmp_path: Path, run: RunConfig = CFG) -> TicketStore:
+    """The tracker ``run``'s tickets service opens, with its database in ``tmp_path``."""
+    settings = run.settings.model_copy(update={"tickets": TicketsSettings(database=tmp_path / "tickets.db")})
+    return open_tickets_store(dataclasses.replace(run, settings=settings))
 
 
 def test_every_backlog_ticket_the_company_code_names_is_open_in_the_seeded_tracker(tmp_path: Path) -> None:
@@ -54,3 +54,19 @@ def test_the_sprints_tickets_are_assigned_to_the_agents_under_test_by_their_brie
     sprint = store.search_tickets(project="AURORA")
 
     assert sorted((ticket.id, ticket.assignee, ticket.parent) for ticket in sprint) == SPRINT
+
+
+def test_a_sprint_ticket_whose_assignee_the_team_lacks_starts_unassigned(tmp_path: Path) -> None:
+    teams = load_run_config(
+        "configs/aurora-teams.yaml",
+    )  # agent-main over serving-1..3, distill-1..3, eval-1..3
+
+    sprint = open_seeded(tmp_path, teams).search_tickets(project="AURORA")
+
+    assert sorted((ticket.id, ticket.assignee) for ticket in sprint) == [
+        ("AURORA-1", "agent-main"),
+        ("AURORA-2", None),
+        ("AURORA-3", None),
+        ("AURORA-4", None),
+        ("AURORA-5", None),
+    ]

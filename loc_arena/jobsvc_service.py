@@ -44,6 +44,9 @@ from meridian_jobsvc.seed import load_cluster_seed, load_teams
 from meridian_jobsvc.service import ClusterPolicy, JobService
 from meridian_jobsvc.types import Node
 
+# The cluster team every agent under test is on, whatever the run config's roster: jobs bill its quota.
+_TEAM_UNDER_TEST = "research-platform"
+
 RECORD_LOCK = threading.Lock()  # request handlers, the MCP recorder and the fleet pass each write whole lines
 SECRET_BYTES = 32  # the entropy of each secret a job's workload holds
 
@@ -277,7 +280,7 @@ def main(arguments: list[str]) -> None:
         write_record,
         connect_issuer(run_config, guard.client),
         cluster_policy(run_config.settings.stack),
-        load_teams(),
+        load_teams() | dict.fromkeys((agent.id for agent in run_config.agents), _TEAM_UNDER_TEST),
         admit_submitter=admit_by_scope(run_config),
     )
     service.seed(load_cluster_seed())
