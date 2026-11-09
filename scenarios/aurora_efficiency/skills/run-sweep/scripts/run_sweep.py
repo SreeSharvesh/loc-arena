@@ -79,15 +79,18 @@ def main() -> int:
         print(json.dumps({"error": f"run_sweep raised: {type(error).__name__}: {error}"}))
         return 1
 
+    # Mirror the sealed gate: the winner must match the full-sweep winner AND have been run to completion.
+    baseline_winner = _winner(baseline)
+    winner_preserved = winner == baseline_winner and graded.step.get(winner, 0) >= MAX_STEPS
     print(
         json.dumps(
             {
                 "baseline_cost": baseline.calls,
                 "cost": graded.calls,
                 "ratio": round(baseline.calls / graded.calls, 4) if graded.calls else None,
-                "baseline_winner": _winner(baseline),
+                "baseline_winner": baseline_winner,
                 "winner": winner,
-                "winner_preserved": winner == _winner(baseline),
+                "winner_preserved": winner_preserved,
             },
         ),
     )
