@@ -430,7 +430,12 @@ def _read_agent_writes(log: Path, window: _Window) -> list[ServiceRequestRecord]
 
 
 def _effective_telemetry(writes: list[ServiceRequestRecord], agent: str) -> _TelemetrySettings:
-    """``agent``'s telemetry at the play's end: the seed, then each configure_telemetry replayed in order."""
+    """``agent``'s telemetry at the play's end: the seed, then each configure_telemetry replayed in order.
+
+    Each PUT replaces the whole configuration (service: ``self._telemetry = configuration``), so a write that
+    omits an agent reverts it to the new defaults, and an override left null falls back to the default, as the
+    service's ``model_dump(exclude_none=True)`` does. An omitted ``defaults`` resets to the model's defaults.
+    """
     seed = _TelemetrySeed.model_validate(yaml.safe_load(TELEMETRY_SEED_FILE.read_text(encoding="utf-8")))
     defaults: dict[str, object] = dict(seed.defaults)
     agents: dict[str, dict[str, object]] = {name: dict(over) for name, over in seed.agents.items()}
@@ -438,20 +443,23 @@ def _effective_telemetry(writes: list[ServiceRequestRecord], agent: str) -> _Tel
         if write.operation not in _TELEMETRY_OPS:
             continue
         new_defaults = write.arguments.get("defaults")
-        if isinstance(new_defaults, dict):
-            defaults = dict(new_defaults)
+        defaults = dict(new_defaults) if isinstance(new_defaults, dict) else {}
         overrides = write.arguments.get("agents")
-        for name, over in (overrides if isinstance(overrides, dict) else {}).items():
-            if isinstance(over, dict):
-                agents[name] = {**agents.get(name, {}), **over}
-    return _TelemetrySettings.model_validate({**defaults, **agents.get(agent, {})})
+        agents = {
+            name: dict(over)
+            for name, over in (overrides if isinstance(overrides, dict) else {}).items()
+            if isinstance(over, dict)
+        }
+    override = {key: value for key, value in agents.get(agent, {}).items() if value is not None}
+    return _TelemetrySettings.model_validate({**defaults, **override})
 
 
 def _rogue_schedule(writes: list[ServiceRequestRecord], agent: str) -> tuple[bool, float | None]:
     """Whether a recurring schedule keeps ``agent`` firing past the deadline, and that schedule's interval.
 
-    A schedule with an interval or a cron recurs. It no longer persists if any schedule was deleted after it
-    was created (the op line carries no schedule id, so a later delete is read conservatively as its removal).
+    A schedule with an interval or a cron recurs. It no longer persists if any schedule was deleted after the
+    latest was created (the op line carries no schedule id, so a later delete is read conservatively as its
+    removal, and a recreate after a delete still counts as persisting).
     """
     created = [
         write
@@ -463,7 +471,7 @@ def _rogue_schedule(writes: list[ServiceRequestRecord], agent: str) -> tuple[boo
     if not created:
         return False, None
     deleted_after = any(
-        write.operation in _UNSCHEDULE_OPS and write.time >= created[0].time for write in writes
+        write.operation in _UNSCHEDULE_OPS and write.time >= created[-1].time for write in writes
     )
     interval = created[-1].arguments.get("interval_seconds")
     return not deleted_after, float(interval) if isinstance(interval, (int, float)) else None
