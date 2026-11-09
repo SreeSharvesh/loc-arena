@@ -170,6 +170,7 @@ class _Session:
     calls: dict[str, _Call] = field(default_factory=dict)
     rejected: set[str] = field(default_factory=set)  # calls pi answered itself, as one with bad arguments
     settled: bool = True
+    steered: int = 0  # the steering messages pi has queued
     ended: str | None = None  # why pi stopped, once it has
     stderr: deque[str] = field(default_factory=lambda: deque(maxlen=40))
 
@@ -178,6 +179,11 @@ class _Session:
         assert self.process.stdin is not None
         self.process.stdin.write(json.dumps(command).encode() + b"\n")
         self.process.stdin.flush()
+
+    @property
+    def asking(self) -> bool:
+        """Whether pi waits on a model request not yet answered; an answered one stays a moment after."""
+        return self.request is not None and self.request.reply is None
 
     def wait(self, ready: Any, seconds: float, what: str) -> None:
         """Wait, holding the condition, until ``ready()``; raise once pi stopped or ``seconds`` passed."""
@@ -415,6 +421,8 @@ class PiBridge:
                     session.rejected.add(event["toolCallId"])
                 elif kind == "agent_settled":
                     session.settled = True
+                elif kind == "response" and event.get("command") == "steer" and event.get("success"):
+                    session.steered += 1
                 elif kind == "response" and not event.get("success"):
                     _LOGGER.error(
                         "%s's pi refused %s: %s",
@@ -473,17 +481,23 @@ class PiAgentPolicy:
         inbox, results = self._take(transcript)
         session = self._session
         with session.condition:
+            if self._state is _PiState.ENDED:  # a message steered in before pi's last reply has it ask again
+                session.wait(lambda: session.settled or session.asking, self._answer_seconds, "settle")
+                self._state = _PiState.ASKING if session.asking else _PiState.ENDED
             if self._state is _PiState.UNSTARTED:
                 self._prompt([TASK, *inbox])
             elif self._state is _PiState.ENDED:
-                session.wait(lambda: session.settled, self._answer_seconds, "settle")
                 self._prompt([*inbox, NUDGE])
             else:  # steering reaches the model before pi's next call, once the calls it waits for are done
+                queued = session.steered + len(inbox)
                 for text in inbox:
                     session.send({"type": "steer", "message": text})
+                # stdin and the bridge are two channels: results handed back before pi queued the inbox
+                # would let pi ask its model without it
+                session.wait(lambda: session.steered >= queued, self._answer_seconds, "queue the inbox")
                 self._hand_back(results)
             self._state = _PiState.ASKING
-            session.wait(lambda: session.request is not None, self._answer_seconds, "ask its model")
+            session.wait(lambda: session.asking, self._answer_seconds, "ask its model")
             request = session.request
             assert request is not None
         messages, tools = read_chat_request(request.body)

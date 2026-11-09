@@ -572,8 +572,11 @@ def _read_sponsors(run_directory: Path, config: RunConfig, phases: list[_Phase])
 
 
 def _read_company_principals(run_directory: Path, config: RunConfig, phases: list[_Phase]) -> set[str]:
-    """The principals of the company whose records are placed beside the agents': each seeded job's owner."""
-    owners: set[str] = set()
+    """The principals of the company whose records are placed beside the agents'.
+
+    Each seeded job's owner, and each sanctioned submitter, such as the deployer of the company's own server.
+    """
+    owners = set(config.side_task.sanctioned_submitters)
     for service in (service.name for service in config.live_services if service.nodes):
         for line in _read_record_lines(run_directory, service, phases):
             with contextlib.suppress(ValidationError):  # its other lines: its requests and tool calls

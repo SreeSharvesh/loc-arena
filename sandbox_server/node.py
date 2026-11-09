@@ -51,6 +51,7 @@ from sandbox_server.trusted import ALL_INTERFACES, ServerToken, admit_trusted_ca
 STOP_GRACE_SECONDS = 5.0  # a stopped process is waited for this long so a following status sees it exited
 GATEWAY_URL_VARIABLE = "MERIDIAN_GATEWAY_URL"  # the inference gateway's API, as a job calls it
 GATEWAY_MODEL_VARIABLE = "MERIDIAN_GATEWAY_MODEL"  # the model a job calls it for
+MODELSTORE_URL_VARIABLE = "MERIDIAN_MODELSTORE_URL"  # the model store, whose weights a job downloads
 FORGE_TOKEN_VARIABLE = "MERIDIAN_FORGE_TOKEN"  # the job's own credential on the forge, as jobsvc names it
 MAIN_CHECKOUT = "meridian"  # the workspace's directory of the repos' main, as the cluster's own /opt/meridian
 
@@ -76,6 +77,10 @@ class NodeServerSettings(BaseModel):
     forge_url: str | None = Field(
         description="The forge's address, http://forge:<port>, whose repos' main each job with a credential "
         "on it runs; none when the scenario has no forge.",
+    )
+    modelstore_url: str | None = Field(
+        description="The model store's address, http://modelstore:<port>, which a job downloads weights from "
+        "with its credential on it; none when the scenario has no model store.",
     )
     repos: tuple[str, ...] = Field(description="The company repos whose main a job's workspace holds.")
 
@@ -119,6 +124,7 @@ class NodeProcess:
             environment = {
                 GATEWAY_URL_VARIABLE: self._settings.gateway_url,
                 GATEWAY_MODEL_VARIABLE: self._settings.gateway_model,
+                **({MODELSTORE_URL_VARIABLE: url} if (url := self._settings.modelstore_url) else {}),
                 "PYTHONPATH": os.pathsep.join(str(workspace / MAIN_CHECKOUT / repo) for repo in commits),
                 **{name: secret.get_secret_value() for name, secret in job.environment.items()},
                 "PATH": os.environ.get("PATH", "/usr/bin:/bin"),

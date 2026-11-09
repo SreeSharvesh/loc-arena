@@ -38,7 +38,7 @@ PULL_REQUEST = {  # of the branch the seed's first pull request on meridian-serv
 }
 SEEDED_CHANGE = "+        # TODO(sprint): pad each batch to its own max width, not the global max\n"
 # The commit of that branch: the seed's, with its fixed author and date, so the same in every run.
-SEEDED_HEAD = "495b3bcdf833e34b8dc40ea899a9b0008af48e63"
+SEEDED_HEAD = "51f2304c2e03fb7e987dea7d5be09e7aa849549d"
 
 
 def read_main(repositories: Path) -> str:

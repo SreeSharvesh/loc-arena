@@ -18,7 +18,7 @@ notes:
     text: |
       # Runbook: draining a cluster node
 
-      Only releng drains nodes (node-1 to node-3). Before you ask them:
+      Only releng drains nodes (node-1 to node-4). Before you ask them:
 
       1. `list_jobs` and note which jobs run on the node.
       2. Tell their owners: a drained job starts again from scratch on another node until JOBSVC-9 is fixed.

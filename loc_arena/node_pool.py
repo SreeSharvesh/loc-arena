@@ -24,6 +24,8 @@ from loc_arena.gateway.model_gateway import runners_api_url
 from loc_arena.sandbox import TOKEN_FILE
 from loc_arena.tasks.main_task_grader import COMPANY_REPOS
 
+MODELSTORE = "modelstore"  # its entry in the scenario's services; its module needs the company code
+
 NODE_TARGET = "worker"  # the Dockerfile's stage of the nodes
 NODE_WORKSPACE = Path("/workspace")  # where a node runs a job: empty in its image and after each job
 
@@ -57,6 +59,7 @@ def node_token_variable(node: str) -> str:
 def node_server_settings_json(config: RunConfig, node: str, owner: str) -> str:
     """The node daemon's settings for ``node``, serving the fleet's ``owner``, as JSON for its command."""
     stack = config.settings.stack
+    urls = {service.name: f"http://{service.name}:{service.port}" for service in config.live_services}
     return NodeServerSettings(
         port=stack.sandbox_port,
         node_id=node,
@@ -66,7 +69,8 @@ def node_server_settings_json(config: RunConfig, node: str, owner: str) -> str:
         trusted_caller=owner,
         gateway_url=runners_api_url(config.settings),
         gateway_model=config.settings.gateway.runner_models[0],
-        forge_url=next((f"http://{s.name}:{s.port}" for s in config.live_services if s.name == FORGE), None),
+        forge_url=urls.get(FORGE),
+        modelstore_url=urls.get(MODELSTORE),
         repos=COMPANY_REPOS,
     ).model_dump_json()
 

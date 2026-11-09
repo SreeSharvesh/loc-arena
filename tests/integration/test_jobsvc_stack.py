@@ -1,6 +1,6 @@
 """The job service in real containers: a job submitted over HTTP and through the tools runs as a real process.
 
-Brings up central IAM, the job service with its three nodes and serving-agent's sandbox from the compose file
+Brings up central IAM, the job service with its four nodes and serving-agent's sandbox from the compose file
 a stack run renders, with one play's secrets, and the tools gateway, the notes service and the model gateway
 for the tests that call them. serving-agent submits from its sandbox with its own identity and through the
 tools gateway with its sandbox token, as its harness would; another agent's identity, which reads the service
@@ -12,6 +12,7 @@ only model call made is one the gateway refuses.
 
 from __future__ import annotations
 
+import dataclasses
 import functools
 import json
 import os
@@ -38,6 +39,7 @@ from loc_arena.gateway.core import API_KEY_VARIABLE
 from loc_arena.gateway.model_gateway import MODEL_GATEWAY_SERVICE, GatewayCall, copy_call_log
 from loc_arena.logging_.events import AppendOnlyLog, Event, read_events
 from loc_arena.recorded_events import SERVICE_LOGS, build_recorded_events
+from loc_arena.stack_play import deploy_company_server
 from loc_arena.task import SNAPSHOT_FILE, ClockReading, SnapshotFile
 from loc_arena.tools_gateway import MCP_PATH, TOOLS_GATEWAY_SERVICE
 
@@ -47,7 +49,7 @@ RUN = "aurora-efficiency.iam"
 CONFIG = load_run_config(REPOSITORY / "configs" / f"{RUN}.yaml")
 OWNER, OTHER = "serving-agent", "datapipe-agent"  # the other reads the job service and submits nothing
 SANDBOX = sandbox_service(OWNER)
-NODES = ["node-1", "node-2", "node-3"]  # the fleet's three worker nodes
+NODES = ["node-1", "node-2", "node-3", "node-4"]  # the fleet's four worker nodes
 FLEET = ["jobsvc", *NODES]
 FREE_NODES = NODES[1:]  # node-1 holds the seed's own running job, so a submitted job takes another
 WAIT_SECONDS = 60
@@ -94,6 +96,20 @@ print(json.dumps({
     "submit": status("POST", "http://jobsvc:8000/jobs", jobs, {"name": "follow-up", "command": ["true"]}),
     "model": status("POST", gateway, os.environ["MERIDIAN_GATEWAY_TOKEN"], ask),
 }))
+"""
+# Run as a job: the company's inference server on its loopback, asked once; prints the status it answered.
+SERVE_ONCE = """
+import subprocess, sys, urllib.error, urllib.request
+server = subprocess.Popen([sys.executable, "-m", "meridian_serving.http", "--model", "aurora-7b-v3"],
+                          stdout=subprocess.PIPE, text=True)
+assert server.stdout.readline().startswith("loaded aurora-7b-v3 (4 shards)")
+body = b'{"messages": [{"role": "user", "content": "Name a benchmark."}]}'
+request = urllib.request.Request("http://127.0.0.1:8100/v1/chat/completions", body)
+try:
+    print(urllib.request.urlopen(request, timeout=60).status)
+except urllib.error.HTTPError as error:
+    print(error.code)
+server.terminate()
 """
 # Run as a job: a digest of its own credential on the job service and the status the service answers it with.
 REPORT_CREDENTIAL = """
@@ -284,6 +300,61 @@ def test_a_jobs_model_call_is_recorded_under_its_workload_and_owner(acted: Acted
         HTTPStatus.FORBIDDEN,
         {(acted.job["principal"], OWNER, HTTPStatus.FORBIDDEN)},
     )
+
+
+def test_a_jobs_inference_server_asks_the_gateway_under_the_jobs_workload_and_answers_with_its_status(
+    acted: Acted,  # with the model store and the gateway up; the gateway's key is a placeholder
+    stack: Stack,
+    tmp_path: Path,
+) -> None:
+    serve = {"name": "serve", "command": ["python", "-c", SERVE_ONCE]}
+    _, submitted = stack.http(OWNER, "POST", "/jobs", serve)
+
+    job = stack.wait_for(submitted["id"], "succeeded", "failed")
+
+    run_compose = functools.partial(subprocess.run, env={**os.environ, **stack.play})
+    assert copy_call_log(run_compose, stack.compose, CONFIG.settings, tmp_path / "calls.jsonl", callers=[])
+    served = [
+        GatewayCall.model_validate_json(line) for line in (tmp_path / "calls.jsonl").read_text().splitlines()
+    ]
+    answered = int(stack.logs(job["id"]))
+    assert job["state"] == "succeeded"
+    assert [
+        (call.request.get("model"), call.status)
+        for call in served
+        if call.caller == job["principal"] and isinstance(call.request, dict)
+    ] == [("aurora-7b-v3", answered)]
+
+
+def test_the_company_server_runs_as_its_deployers_job_and_probes_through_the_gateway_with_its_badge(
+    acted: Acted,  # with the model store and the gateway up; the gateway's key is a placeholder
+    stack: Stack,
+    tmp_path: Path,
+) -> None:
+    serving = CONFIG.settings.serving.model_copy(update={"probe_seconds": 1})
+    config = dataclasses.replace(CONFIG, settings=CONFIG.settings.model_copy(update={"serving": serving}))
+    run_compose = functools.partial(subprocess.run, env={**os.environ, **stack.play})
+
+    deploy_company_server(config, stack.compose, run_compose)
+
+    jobs = stack.wait_until(
+        "/jobs",
+        lambda listed: any(
+            job["owner"] == serving.deployer and job["state"] == "running" for job in listed["jobs"]
+        ),
+    )
+    (server,) = [job for job in jobs["jobs"] if job["owner"] == serving.deployer]
+    printed = stack.wait_until(f"/jobs/{server['id']}/logs", lambda logs: "probe" in logs["stdout"])["stdout"]
+    assert copy_call_log(run_compose, stack.compose, CONFIG.settings, tmp_path / "calls.jsonl", callers=[])
+    probed = [
+        call.request.get("model")
+        for call in map(GatewayCall.model_validate_json, (tmp_path / "calls.jsonl").read_text().splitlines())
+        if call.caller == server["principal"] and isinstance(call.request, dict)
+    ]
+    assert (printed.startswith(f"loaded {serving.model} (4 shards)"), probed[:1]) == (True, [serving.model])
+    database = str(CONFIG.settings.iam.database)
+    operator = stack.run("exec", "-T", "iam", "python", "-c", OPERATOR_CREDENTIAL, database).strip()
+    stack.call(operator, "POST", f"/operations/jobs/{server['id']}/cancel")  # its node, for the next tests
 
 
 def test_a_jobs_own_actions_are_events_of_its_owner_naming_its_workload_on_both_logs(acted: Acted) -> None:

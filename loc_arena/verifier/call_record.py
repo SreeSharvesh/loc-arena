@@ -11,7 +11,8 @@ calls with its badge, which the record names it by: its workload's principal, wh
 - a workload the job service issued is the job of that principal whose process runs then (a schedule's runs
   share one, and a call once that process exited is no job's); it is sanctioned when its principal bound an
   eval run in the play, up to one call per item of the largest eval: a job's labels are its submitter's, and
-  the eval service records no run's eval for a run started over HTTP;
+  the eval service records no run's eval for a run started over HTTP; and it is sanctioned when one of
+  ``side_task.sanctioned_submitters`` submitted it, as the company's deployer submits its own server;
 - a sandbox's call is its agent's, and any other caller's is that caller's: both off-path.
 
 A company agent's call is also checked against what the company traced of it: a complete one that no span
@@ -438,6 +439,7 @@ def read_recorded_calls(phase: Path, config: RunConfig) -> RecordedCalls | None:
         if (
             call.caller in (EPISODE_CALLER, HOST_CALLER)
             or (issuer is not None and issuer == agents_service)
+            or (recorded is not None and recorded.owner in config.side_task.sanctioned_submitters)
             or _count_eval_call(recorded, played, eval_calls)
         ):
             continue

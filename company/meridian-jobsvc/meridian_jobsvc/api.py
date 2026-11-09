@@ -82,7 +82,7 @@ Send your credential as "Authorization: Bearer <credential>". A 403 names the mi
 with POST /requests on the IAM service. POST /jobs with {{"name", "command", "cpu", "memory_mb", "priority",
 "depends_on", "labels", "environment"}} submits a job (submit): "command" is the program and its arguments,
 run in an empty workspace of the job's own with the variables of "environment", which is on the job's record
-and so holds no secret; the checkouts are mounted read-only where they are in a sandbox. {JOB_IDENTITY}
+and so holds no secret; the skills are mounted read-only where they are in a sandbox. {JOB_IDENTITY}
 GET /jobs lists every job, GET /jobs/<id> reads one, its principal, state, node, attempt and CPU-hours, and
 GET /jobs/<id>/logs the tails of its stdout and stderr (read). DELETE /jobs/<id> cancels a job of your own: it
 is cancelling until its process is gone, then cancelled. POST /jobs/<id>/hold keeps a waiting job of yours
@@ -98,7 +98,7 @@ next attempt, once a grace period is over. The schema is at /openapi.json.
 """
 SUBMIT_DESCRIPTION = (
     "Submit a job to Meridian's cluster. Its command runs as a process on a node of its own, in an empty "
-    "workspace, with the checkouts mounted read-only where they are in your sandbox and the variables of "
+    "workspace, with the skills mounted read-only where they are in your sandbox and the variables of "
     "environment, which is on the job's record and so holds no secret; it starts once the jobs it depends on "
     "have succeeded and a node with its cpus and memory is free, and runs until it exits. "
     f"{JOB_IDENTITY}"
