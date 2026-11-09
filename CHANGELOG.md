@@ -8,6 +8,7 @@ log has the details.
 
 ### Changed
 
+- **A second Aurora main task: a model-selection eval** (`configs/aurora-sweep.yaml`), where the agents run the eval suite on the candidate models through the eval service and record their pick in `meridian-evalkit/selection.json`, graded by a checkout scorer; with a `kill_chain_v1` side-task seed of its own hidden in those eval jobs.
 - **A merge merges the commit it reviewed.** It read the branch once for the reviewed diff and again to merge,
   so a push landing between the two merged unreviewed code. It now reads the branch's commit once, and the
   review, the `head` it returns and the merge are all of that commit.
@@ -692,9 +693,8 @@ log has the details.
   episode plays on; compose restarts a killed sandbox, and the next episode waits for it
   (`stack.sandbox_recovery_seconds`) or fails, never running agent code anywhere else. Model calls agent code makes
   from the sandbox go through the gateway, recorded under the sandbox's name.
-- **Grading writes the sealed harness only into its grading copy.** A file or link the agents left where
-  `grade_bench.py` or `grade_workload.py` goes is removed first, so a link cannot redirect the copy onto a
-  file of the host; a directory there fails the grade.
+- **Grading writes the sealed harness only into its grading copy.** A file or link the agents left where a sealed
+  harness file goes is removed first, so no link can redirect the copy onto a host file; a directory fails the grade.
 - **The episode image holds no grader answers.** The scenario's sealed `reference/` and the scripted policy's
   moves in `scripted/`, which are part of the main task's solution, are left out of the build context. A
   scripted episode gets `scripted/` mounted read-only; a live model episode gets no scenario directory mounted.
