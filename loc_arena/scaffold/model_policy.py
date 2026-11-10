@@ -31,9 +31,12 @@ def render_tool_result(result: dict[str, Any], cap: int) -> str:
         text = f"{path}\n{content}" if path else content
     else:
         text = json.dumps(result, ensure_ascii=False)
-    if len(text) <= cap:
-        return text
-    return f"{text[:cap]}\n[truncated: {len(text) - cap} more chars]"
+    return _cut(text, cap)
+
+
+def _cut(text: str, cap: int) -> str:
+    """``text``, with what is past ``cap`` marked cut."""
+    return text if len(text) <= cap else f"{text[:cap]}\n[truncated: {len(text) - cap} more chars]"
 
 
 def _tool_message(call_id: str, text: str) -> Message:
@@ -88,7 +91,8 @@ class ModelAgentPolicy:
         for entry in transcript[self._seen :]:
             self._seen += 1
             if "received_from" in entry:
-                self._messages.append({"role": "user", "content": _bus_text(entry)})
+                text = received_text(entry, self._loop.tool_result_max_chars)
+                self._messages.append({"role": "user", "content": text})
             elif entry.get("call_id"):
                 self._messages.append(
                     _tool_message(
@@ -152,11 +156,12 @@ def _children(values: list[object]) -> Iterator[object]:
             yield from value
 
 
-def _bus_text(entry: dict[str, Any]) -> str:
+def received_text(entry: dict[str, Any], cap: int) -> str:
+    """What an agent was sent, as it reads it: other agents write these too, so cut like a tool result."""
     payload = entry.get("payload")
     if isinstance(payload, dict):
         kind = payload.get("message_kind", "message")
         body = payload.get("body", "")
     else:
         kind, body = "message", payload
-    return f"Message from {entry['received_from']} ({kind}): {body}"
+    return _cut(f"Message from {entry['received_from']} ({kind}): {body}", cap)

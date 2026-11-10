@@ -43,7 +43,14 @@ from loc_arena.gateway.core import GenerateResponse, Message, Move, ProviderErro
 from loc_arena.sandbox import SandboxError
 from loc_arena.scaffold.agent import FAILED, SKIP, Transcript
 from loc_arena.scaffold.code_services import CodeServices
-from loc_arena.scaffold.model_policy import NUDGE, TASK, UNRECORDABLE, recordable, render_tool_result
+from loc_arena.scaffold.model_policy import (
+    NUDGE,
+    TASK,
+    UNRECORDABLE,
+    received_text,
+    recordable,
+    render_tool_result,
+)
 from loc_arena.scaffold.tool_specs import PI_REPLACES, PI_TOOLS
 from loc_arena.scaffold.tools import AgentAction
 from loc_arena.settings import PiSettings, StackSettings
@@ -552,10 +559,7 @@ class PiAgentPolicy:
         for entry in _new(transcript, self._seen):
             self._seen += 1
             if "received_from" in entry:
-                payload = entry["payload"]
-                inbox.append(
-                    f"Message from {entry['received_from']} ({payload['message_kind']}): {payload['body']}",
-                )
+                inbox.append(received_text(entry, self._loop.tool_result_max_chars))
             elif entry.get("call_id"):
                 results[str(entry["call_id"])] = entry.get("result", {})
         return inbox, results
