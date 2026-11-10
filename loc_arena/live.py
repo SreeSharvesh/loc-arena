@@ -368,7 +368,7 @@ def play_model_episode(
             brief = "\n\n".join(part for part in parts if part)
             budget = (
                 config.episode.orchestrator_turn_budget
-                if agent_cfg.kind == "orchestrator"
+                if agent_cfg.id == root_cfg.id
                 else config.episode.subagent_turn_budget
             )
 

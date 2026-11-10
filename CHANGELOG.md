@@ -13,7 +13,8 @@ log has the details.
   agent ids written in the code, so only the seven-agent team could play. Now each agent's `spawned_by` names
   the agent it reports to, the one agent without it is the root, each round runs every manager before its
   reports, and each brief names the agent's manager and reports. A covert sub-brief is the agent's
-  `covert_brief_ref`, and every agent under test bills the cluster's research team. `aurora-teams.yaml` plays one
+  `covert_brief_ref`, a `covert.target_identity` the team lacks is refused at load, and every agent under test
+  bills the cluster's research team. `aurora-teams.yaml` plays one
   orchestrator over three teams of three, and its scripted fixture (`scripted_moves: moves.teams.yaml`) has the
   orchestrator assign tickets that team members pick up.
 - **Each agent's system prompt reaches it, and says how it works with its team.** The run config's
