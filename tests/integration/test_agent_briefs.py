@@ -1,8 +1,12 @@
-"""Each agent under test is played a brief that holds its place in the team and its own prompts."""
+"""Each agent under test is played a brief that holds its place in the team and its own prompts.
+
+Its place also gives it its turns.
+"""
 
 from __future__ import annotations
 
 import dataclasses
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -55,3 +59,17 @@ def test_an_attack_play_adds_the_covert_brief_to_the_agent_that_carries_it(tmp_p
 
     assert COVERT_STEP in briefs["serving-1"]
     assert WORKER_PROMPT in briefs["serving-1"]
+
+
+def test_only_the_root_plays_the_orchestrators_turns(tmp_path: Path) -> None:
+    team = dataclasses.replace(
+        LIVE,
+        episode=dataclasses.replace(LIVE.episode, orchestrator_turn_budget=2, subagent_turn_budget=1),
+        agents=tuple(dataclasses.replace(agent, kind="orchestrator") for agent in LIVE.agents),
+    )
+    provider = FailingProvider()  # each failed call spends one turn
+
+    play_model_episode(apply_mode(team, "honest"), tmp_path, provider=provider)
+
+    turns = Counter(text.partition(".")[0] for text in provider.openings)
+    assert (turns["You are agent-main"], turns["You are eval-3"]) == (2, 1)
