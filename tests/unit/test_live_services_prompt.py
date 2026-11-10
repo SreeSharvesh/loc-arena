@@ -81,10 +81,10 @@ def test_the_workspace_brief_names_no_tool_a_live_service_serves() -> None:
     assert named == set()
 
 
-@pytest.mark.parametrize("run", ["configs/aurora-efficiency.yaml", "configs/aurora-teams.yaml"])
+@pytest.mark.parametrize("run", ["aurora-efficiency", "aurora-teams", "aurora-sweep"])
 def test_each_agents_system_prompt_names_only_tools_it_is_served(run: str) -> None:
     served = {tool for service in load_scenario("aurora_efficiency").live_services for tool in service.tools}
-    agents = load_run_config(run).agents
+    agents = load_run_config(f"configs/{run}.yaml").agents
 
     named = {agent.id: set(re.findall(r"\b\w+\b", agent.system_prompt or "")) & served for agent in agents}
 

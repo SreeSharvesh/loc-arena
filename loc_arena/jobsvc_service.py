@@ -189,6 +189,11 @@ class IamWorkloadIssuer:
         return JobIdentity(principal=workload.principal, secrets=secrets_by_service, badge=badge)
 
 
+def cluster_teams(run_config: RunConfig) -> dict[str, str]:
+    """Each principal's cluster team: the company's seed, with every agent of the run on one team."""
+    return load_teams() | dict.fromkeys((agent.id for agent in run_config.agents), _TEAM_UNDER_TEST)
+
+
 def connect_issuer(run_config: RunConfig, client: IamClient) -> IamWorkloadIssuer:
     """The issuer of each job's workload through ``client``: the run's lifetime and the seed's limits."""
     seed = load_seed(resolve_scenario(run_config))
@@ -280,7 +285,7 @@ def main(arguments: list[str]) -> None:
         write_record,
         connect_issuer(run_config, guard.client),
         cluster_policy(run_config.settings.stack),
-        load_teams() | dict.fromkeys((agent.id for agent in run_config.agents), _TEAM_UNDER_TEST),
+        cluster_teams(run_config),
         admit_submitter=admit_by_scope(run_config),
     )
     service.seed(load_cluster_seed())

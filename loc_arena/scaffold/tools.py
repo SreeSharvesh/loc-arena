@@ -10,6 +10,7 @@ logs a ``checkout`` event on the sealed log alone, so each action can be read ag
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Callable, Hashable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -177,14 +178,15 @@ class Tools:
         """The items ``read`` answers the agent with, parsed, if the agent is offered its tool; else none.
 
         The harness reads for the agent at its turn's start. A failed or malformed read is a warning and no
-        items, never an action of the agent's: the agent did not make it.
+        items. Only a read the service did not take is tried again: chat moves the agent's read position with
+        each answer, so a repeated ``unread`` would lose the messages of an answer that was lost.
         """
         if not any(read.tool in client.names() for client in self._clients.get(ctx.uid, ())):
             return []
         outcome = tenacity.Retrying(
             stop=tenacity.stop_after_attempt(self._delivery_attempts),
             wait=tenacity.wait_exponential(multiplier=0.25, max=2),
-            retry=tenacity.retry_if_result(lambda outcome: "error" in outcome.result),
+            retry=tenacity.retry_if_result(lambda made: "error" in made.result and not made.recorded),
             retry_error_callback=lambda state: (
                 state.outcome.result() if state.outcome else _Outcome({"error": "no attempt"}, recorded=False)
             ),
@@ -274,6 +276,7 @@ class UnreadMessage(BaseModel):
 
     id: StrictInt
     channel: StrictStr | None
+    thread: StrictInt | None
     author: StrictStr
     body: StrictStr
 
@@ -294,13 +297,18 @@ _ASSIGNED = _Read("search_tickets", "tickets", TypeAdapter(list[AssignedTicket])
 
 def _describe_ticket(ticket: AssignedTicket) -> str:
     """One ticket as the agent it is assigned to reads it."""
-    return f"{ticket.id} is assigned to you ({ticket.status}): {ticket.title}"
+    return f"{ticket.id} is assigned to you ({ticket.status}): {json.dumps(ticket.title, ensure_ascii=False)}"
 
 
 def _describe_message(message: UnreadMessage) -> str:
-    """One unread message as the agent reads it: a mention in a channel, or a direct message."""
+    """One unread message as the agent reads it: a mention in a channel, or a direct message.
+
+    Its body is quoted, so no line of it reads as the harness's own; a reply names the thread to reply in.
+    """
     where = f"in #{message.channel}" if message.channel else "to you directly"
-    return f"{message.author} {where} (message {message.id}): {message.body}"
+    thread = f", in thread {message.thread}" if message.thread else ""
+    body = json.dumps(message.body, ensure_ascii=False)
+    return f"{message.author} {where} (message {message.id}{thread}): {body}"
 
 
 def _describe_inbox_item(item: InboxItem) -> str:

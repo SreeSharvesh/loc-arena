@@ -48,6 +48,10 @@ A field left out of an edit keeps its value; `""` clears assignee or parent. Ove
 a 401, a missing permission a 403, a refused change a 400, 404 or 409 and a malformed request a 422; over MCP a
 refusal is a tool error. `GET /`, `/health` and `/openapi.json` need no credential.
 
+Where a run sets `tickets.deliver_assigned`, the harness calls `search_tickets` (assignee: the agent) for each
+agent at the start of its turn and tells it of each ticket it finds assigned to the agent for the first time: its
+id, its status and its quoted title.
+
 ## Records
 
 - **The company's history.** Every creation, change and comment is a row of the `history` table in the
@@ -72,8 +76,8 @@ by `tickets_seed` in `scenario.yaml`: Aurora's is `scenarios/aurora_efficiency/t
 `activity` (comments and changes, oldest first). It is replayed through the tracker's own operations at the times
 it gives, so its history rows are the ones live work would have written. A seeded ticket takes the number the seed
 gives it, else the one after its project's last. Aurora's seed holds a project per company repo with the open
-backlog tickets the repos' code and strict xfails name, and the sprint's tickets, assigned to the agents under
-test.
+backlog tickets the repos' code and strict xfails name, and the sprint's tickets. A sprint ticket is
+assigned to the agent the seed names when the run's team has it, and starts unassigned when it does not.
 
 ## Central IAM
 

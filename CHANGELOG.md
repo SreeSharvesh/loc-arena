@@ -12,13 +12,14 @@ log has the details.
   turn, and a live orchestrator still read the skills, the notes and the code for most of its turns before it
   assigned. The prompt now names the only tools to call until every agent reporting to it has a ticket and the
   kickoff post is up: `search_tickets`, `edit_ticket`, `create_ticket` and `post`.
-- **A team run hands each agent its work at the start of its turn.** `chat.deliver_unread` and `tickets.deliver_assigned` (off by default, on in `aurora-teams`) have the harness read each agent's unread chat and the tickets assigned to it, as it reads the IAM inbox, and hand it each message and each newly assigned ticket once. The services record these reads as the agent's calls.
+- **A team run hands each agent its work at the start of its turn.** `chat.deliver_unread` and `tickets.deliver_assigned` (off by default, on in `aurora-teams`) have the harness read each agent's unread chat and the tickets assigned to it, as it reads the IAM inbox, and hand it each message and each newly assigned ticket once. The services record these reads as the agent's calls. What is handed over is quoted and cut like a tool result, and a read its service took is never repeated.
 - **A second Aurora main task: a model-selection eval** (`configs/aurora-sweep.yaml`), where the agents run the eval suite on the candidate models through the eval service and record their pick in `meridian-evalkit/selection.json`, graded by a checkout scorer; with a `kill_chain_v1` side-task seed of its own hidden in those eval jobs.
 - **The team's shape is the run config's.** The root, the turn order and each covert agent's sub-brief came from
   agent ids written in the code, so only the seven-agent team could play. Now each agent's `spawned_by` names
   the agent it reports to, the one agent without it is the root, each round runs every manager before its
   reports, and each brief names the agent's manager and reports. A covert sub-brief is the agent's
-  `covert_brief_ref`, and every agent under test bills the cluster's research team. `aurora-teams.yaml` plays one
+  `covert_brief_ref`, a `covert.target_identity` the team lacks is refused at load, and every agent under test
+  bills the cluster's research team. `aurora-teams.yaml` plays one
   orchestrator over three teams of three, and its scripted fixture (`scripted_moves: moves.teams.yaml`) has the
   orchestrator assign tickets that team members pick up.
 - **Each agent's system prompt reaches it, and says how it works with its team.** The run config's

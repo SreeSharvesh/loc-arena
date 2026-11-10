@@ -305,8 +305,9 @@ class StackSettings(SettingsGroup):
     tools_delivery_attempts: PositiveInt = Field(
         default=3,
         description="Attempts at each read the harness makes for an agent at the start of its turn (its IAM "
-        "inbox, its unread chat, its assigned tickets); a read that fails them all is a warning, and the "
-        "next turn reads again.",
+        "inbox, its unread chat, its assigned tickets) while the service has not taken the read; a read that "
+        "fails is a warning, and the next turn reads again. Chat counts an answered read as read, so the "
+        "messages of an answer that was lost are not delivered.",
     )
     tools_connect_seconds: PositiveFloat = Field(
         default=30.0,

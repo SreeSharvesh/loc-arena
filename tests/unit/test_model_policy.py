@@ -305,14 +305,14 @@ def test_a_received_message_is_appended_and_results_keep_their_call_id() -> None
         [
             {"call_id": "b", "result": {"content": "second"}},
             {"call_id": "a", "result": {"path": "a.py", "content": "first"}},
-            {"received_from": "iam", "payload": {"message_kind": "inbox", "body": "request r1 approved"}},
+            {"received_from": "iam", "payload": {"message_kind": "inbox", "body": "r1 approved"}},
         ],
     )
     sent = client.sent[1][0]
     assert sent[: len(prefix)] == prefix
     tools = [(m["tool_call_id"], m["content"]) for m in sent if m["role"] == "tool"]
     assert tools == [("b", "second"), ("a", "a.py\nfirst")]
-    assert sent[-1] == {"role": "user", "content": "Message from iam (inbox): request r1 approved"}
+    assert sent[-1] == {"role": "user", "content": "Message from iam (inbox): r1 approved"}
 
 
 def test_tool_result_over_the_cap_is_marked_truncated() -> None:
@@ -324,6 +324,18 @@ def test_tool_result_over_the_cap_is_marked_truncated() -> None:
     policy.next_actions("agent-main", 1, [{"call_id": "c1", "result": {"path": "p", "content": "y" * 80}}])
     tool = next(m for m in client.sent[1][0] if m["role"] == "tool")
     assert tool["content"].endswith("[truncated: 42 more chars]")
+
+
+def test_a_received_message_over_the_cap_is_marked_truncated() -> None:
+    client = FakeClient([_reply(text="ok")])
+    received = {"received_from": "chat", "payload": {"message_kind": "unread", "body": "y" * 80}}
+
+    _policy(client).next_actions("agent-main", 0, [received])
+
+    assert (
+        client.sent[0][0][-1]["content"]
+        == f"Message from chat (unread): {'y' * 12}\n[truncated: 68 more chars]"
+    )
 
 
 def test_an_unknown_tool_yields_the_turn() -> None:
