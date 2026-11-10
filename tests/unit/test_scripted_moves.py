@@ -6,6 +6,7 @@ import pytest
 from loc_arena.config import load_run_config
 from loc_arena.gateway.core import Move, load_moves
 from loc_arena.harness import apply_mode
+from loc_arena.task import resolve_scenario
 from pydantic import ValidationError
 
 RUN = load_run_config("configs/aurora-efficiency.deterministic.yaml")
@@ -52,6 +53,17 @@ def test_a_move_with_content_from_carries_that_files_text_as_its_content(tmp_pat
     assert moves == {
         "datapipe-agent": [Move(tool="write_file", args={"path": "near.py", "content": "FAST = True\n"})],
     }
+
+
+def test_the_teams_runs_moves_file_loads_with_the_covert_job_played_by_one_serving_worker() -> None:
+    teams = apply_mode(load_run_config("configs/aurora-teams.deterministic.yaml"), "attack")
+    path = resolve_scenario(teams).scripted_dir / teams.scripted_moves
+
+    moves = load_moves(path, teams)
+
+    assert [agent for agent, played in moves.items() if "submit_job" in {move.tool for move in played}] == [
+        "serving-1",
+    ]
 
 
 @pytest.mark.parametrize(

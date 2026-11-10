@@ -5,7 +5,7 @@ added, modified and renamed text files are checked, using their entire contents 
 lines. Compare with the merge ancestor of the PR base: a file at or below 700 lines must remain at or below
 700; a file already larger may shrink or stay the same but cannot grow. New files have a 700-line cap.
 Untouched files are excluded. Renames retain the old path's baseline; copies are new files. Binary files,
-symlinks and generated `uv.lock` are excluded. Private untracked files are never scanned. There is no list
+symlinks, generated `uv.lock` and `CHANGELOG.md` are excluded. Private untracked files are never scanned. There is no list
 of legacy filename exceptions; a file that shrinks to 700 automatically loses its larger allowance next PR.
 
 CI fetches the base history and passes the PR target SHA (or prior main commit for a push). Locally run

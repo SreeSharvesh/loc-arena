@@ -39,7 +39,7 @@ Component specs cannot weaken the contract's isolation, authorization or evidenc
 | `loc_arena/config.py` | typed loader and validator for the run configs in `configs/` |
 | `loc_arena/registry.py` | scorers and verifiers, dispatched by the names the configs give |
 | `loc_arena/scaffold/` | the multi-agent scaffold: agents, dual-capture recorder, the tool layer and its native tools, each agent's MCP client |
-| `loc_arena/live.py`, `loc_arena/task.py` | the episode both policies play (the scripted one replays `scripted/moves.yaml` in place of a model); what every episode shares and its grading |
+| `loc_arena/live.py`, `loc_arena/task.py` | the episode both policies play (the scripted one replays the scenario's `scripted_moves` file in place of a model); what every episode shares and its grading |
 | `loc_arena/gateway/` | the inference gateway every model call goes through (edge, core, transport); `model_gateway.py` renders the gateway container (agentgateway, which holds the key) and the OpenTelemetry Collector that writes its record, and copies that record out |
 | `loc_arena/monitors/`, `loc_arena/protocol.py` | the monitors; the control protocol that runs them |
 | `loc_arena/verifier/`, `loc_arena/tasks/` | the sealed side-task verifier; the main-task grader |
@@ -134,7 +134,7 @@ with IAM on, or one that plays a live model, is refused in this process.
 Every PR runs `scripts/check_file_size.py`, also the first check in `make gates`. Each added, modified or
 renamed UTF-8 text file is checked in full, comments and blank lines included. Files at or below 700 lines
 must stay at or below 700; files already larger cannot exceed their size in the PR base. Untouched files are
-not checked. Binary files, symlinks and generated `uv.lock` are excluded; there are no legacy
+not checked. Binary files, symlinks, generated `uv.lock` and `CHANGELOG.md` are excluded; there are no legacy
 filename-specific ceilings. The check compares against the PR base's merge ancestor, not just changed lines.
 Locally it includes tracked working-tree/staged edits; use `make gates FILE_SIZE_BASE=<target-ref>` for a stack
 branch targeting another branch. Fetch the target first. Split oversized edited files by responsibility.

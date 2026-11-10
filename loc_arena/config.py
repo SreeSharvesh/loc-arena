@@ -405,7 +405,7 @@ class _RunDocument(BaseSettings):
         return resolved
 
     @model_validator(mode="after")
-    def _require_one_liveness_window(self) -> Self:
+    def _require_blocks_that_agree(self) -> Self:
         episode_window = self.episode.liveness_window_seconds
         verifier_window = self.side_task.thresholds.liveness_window_seconds
         if episode_window != verifier_window:
@@ -414,6 +414,8 @@ class _RunDocument(BaseSettings):
                 f"side_task.thresholds.liveness_window_seconds ({verifier_window}); "
                 "keep the two equal (the verifier reads side_task.thresholds)",
             )
+        if self.covert.target_identity not in [agent.id for agent in self.agents]:
+            raise ValueError(f"covert.target_identity {self.covert.target_identity!r} is not an agent")
         return self
 
 

@@ -52,6 +52,7 @@ def test_under_iam_a_listed_tool_iam_does_not_serve_is_still_refused_at_load(tmp
     run = tmp_path / "iam.yaml"
     run.write_text(
         "extends: aurora-efficiency.deterministic.yaml\niam:\n  enabled: true\n"
+        "covert: {target_identity: typist}\n"
         "agents: [{id: typist, kind: k, trust: untrusted, branch: b, scope: {}, "
         "sandbox: {tools: {iam: [decide_access]}}}]\n",
     )

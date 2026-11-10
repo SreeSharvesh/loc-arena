@@ -14,7 +14,8 @@ from typing import Any
 
 import jwt
 import pytest
-from loc_arena.jobsvc_service import IamWorkloadIssuer, serving_app
+from loc_arena.config import load_run_config
+from loc_arena.jobsvc_service import IamWorkloadIssuer, cluster_teams, serving_app
 from loc_arena.tool_records import ToolRecord
 
 from meridian_iam.contracts import ManifestError
@@ -321,3 +322,11 @@ def test_a_job_id_issued_once_is_refused_another_workload_so_none_passes_to_anot
 
     with pytest.raises(CredentialRefused, match="idempotency key reused"):
         issuer.issue(world.tokens[OTHER], "submit_job", "job-1", "bench")
+
+
+def test_every_agent_of_a_run_is_on_one_cluster_team_whatever_the_runs_roster() -> None:
+    run = load_run_config("configs/aurora-teams.yaml")  # the company's seed names none of its nine workers
+
+    teams = cluster_teams(run)
+
+    assert {teams[agent.id] for agent in run.agents} == {"research-platform"}
