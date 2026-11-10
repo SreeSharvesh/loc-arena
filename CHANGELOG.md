@@ -474,11 +474,11 @@ log has the details.
   first live service is `notes`, a small notes board in `scenarios/aurora_efficiency/services/notes`. Live
   services run on real time; the run's simulated clock stays for the scenario's scripted events. An entry that
   breaks the naming or path rules is refused at load. No container gets the Docker socket.
-- **A sandbox per agent.** In `make run STACK=1` each agent's code tools run in its own `sandbox-<agent id>`. Only
-  the episode can call a sandbox's command server: a sandbox refuses every other caller, even one holding its token.
-  Each sandbox mounts only its own agent's checkout, which no other sandbox can reach. A command's timeout is
-  capped, and a reset ends every process the commands left. Sandboxes have their own `stack.sandbox_*` limits, and
-  an agent id that cannot name a sandbox, or that repeats, is refused at load.
+- **A sandbox per agent.** In `make run STACK=1` each agent's code tools run in its own `sandbox-<agent id>`. A
+  sandbox's command server refuses every caller but the episode, even one holding its token. Each sandbox mounts only
+  its own agent's checkout, which no other sandbox can reach. A command's timeout is capped. A reset ends every
+  process the commands left, waits for the commands it ended, and holds new ones until it is over. Sandboxes have
+  their own `stack.sandbox_*` limits, and an agent id that cannot name a sandbox, or that repeats, is refused at load.
 - **Pinned providers per model, reasoning per role.** A models file lists the OpenRouter providers that serve
   each model (order, no fallbacks), and every call to that model is sent to them; a model not listed is routed
   by OpenRouter, so a role that switches model never keeps providers that do not serve it. Each role can set
