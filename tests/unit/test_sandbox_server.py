@@ -310,26 +310,22 @@ def test_a_command_run_right_after_a_reset_outlives_the_end_of_the_command_the_r
     assert result["returncode"] == 0
 
 
-def test_a_command_run_right_after_a_reset_outlives_the_end_of_a_command_sent_while_the_reset_waited(
-    checkouts: Path,
-    pids: Path,
-) -> None:
+def test_a_command_sent_during_a_reset_starts_once_the_reset_is_over(checkouts: Path, pids: Path) -> None:
+    """Started sooner, it would be ended by the late kill of the handler the reset waits for."""
     server = serve(checkouts, end_leftovers=end_recorded(pids, late_seconds=LATE_SECONDS))
     start_recorded(server, checkouts, pids)
-    resetting = concurrent.futures.ThreadPoolExecutor(1).submit(post_reset, server, checkouts / "episode")
+    concurrent.futures.ThreadPoolExecutor(1).submit(post_reset, server, checkouts / "episode")
     while any(pids.iterdir()):  # until the reset has ended that command, and waits for its handler
         time.sleep(0.01)
-    start_recorded(server, checkouts, pids)
-    resetting.result()
 
     result = sleep_recorded(server, checkouts, pids, 2 * LATE_SECONDS)
 
     assert result["returncode"] == 0
 
 
-def test_a_reset_ends_a_command_its_first_kill_missed(checkouts: Path, pids: Path) -> None:
+def test_a_reset_ends_a_command_its_first_kills_missed(checkouts: Path, pids: Path) -> None:
     """A kill misses a command whose process has not started yet, and the reset waits for that command too."""
-    server = serve(checkouts, end_leftovers=end_recorded(pids, missed=1))
+    server = serve(checkouts, end_leftovers=end_recorded(pids, missed=2))
     running = start_recorded(server, checkouts, pids)
 
     post_reset(server, checkouts / "episode")

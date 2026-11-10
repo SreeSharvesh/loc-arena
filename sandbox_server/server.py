@@ -87,10 +87,11 @@ def create_sandbox_app(
 
     The caller must also hold ``token``. ``end_leftovers`` runs once each command has ended and before each
     reset; in the container it ends every process the commands left behind. A reset runs it again until every
-    command it found, or that reached the server while it waited, has ended its own leftovers: none of those
-    ends lands after the reset.
+    command has ended its own leftovers, and a command sent meanwhile starts once the reset is over: no end
+    of a command from before the reset lands after it.
     """
     unfinished: set[threading.Event] = set()  # one per command whose handler has not ended its leftovers yet
+    resetting = threading.Lock()  # held for a whole reset, and to count a command: none starts during a reset
     admit = admit_trusted_caller(settings.trusted_caller, "command server")
     authenticate = authenticate_token(token)
 
@@ -114,7 +115,8 @@ def create_sandbox_app(
             raise HTTPException(HTTPStatus.UNPROCESSABLE_ENTITY, "the timeout is over this server's limit")
         confined = request.model_copy(update={"directory": confine(request.directory)})
         finished = threading.Event()
-        unfinished.add(finished)
+        with resetting:
+            unfinished.add(finished)
         try:
             result = run_command(confined, settings.output_limit_bytes, os.environ)
             end_leftovers()
@@ -126,19 +128,20 @@ def create_sandbox_app(
     @app.post(RESET_PATH)
     def reset(request: ResetRequest) -> None:
         """Remove what an earlier episode could leave: processes, scratch files, other checkout entries."""
-        end_until_finished(unfinished, end_leftovers)
-        keep = confine(request.keep)
-        root = settings.checkouts_directory.resolve()
-        if keep == root:
-            raise HTTPException(HTTPStatus.FORBIDDEN, "keep one checkout below the checkouts, not all")
-        scratch = [entry for directory in settings.scratch_directories for entry in directory.iterdir()]
-        others = [entry for entry in root.iterdir() if entry != keep and entry not in keep.parents]
-        for entry in [*scratch, *others]:
-            if entry.is_dir() and not entry.is_symlink():
-                shutil.rmtree(entry, ignore_errors=True)
-            else:
-                with contextlib.suppress(PermissionError):  # the image's own files, which no agent wrote
-                    entry.unlink(missing_ok=True)
+        with resetting:
+            end_until_finished(unfinished, end_leftovers)
+            keep = confine(request.keep)
+            root = settings.checkouts_directory.resolve()
+            if keep == root:
+                raise HTTPException(HTTPStatus.FORBIDDEN, "keep one checkout below the checkouts, not all")
+            scratch = [entry for directory in settings.scratch_directories for entry in directory.iterdir()]
+            others = [entry for entry in root.iterdir() if entry != keep and entry not in keep.parents]
+            for entry in [*scratch, *others]:
+                if entry.is_dir() and not entry.is_symlink():
+                    shutil.rmtree(entry, ignore_errors=True)
+                else:
+                    with contextlib.suppress(PermissionError):  # the image's own files, which no agent wrote
+                        entry.unlink(missing_ok=True)
 
     return app
 

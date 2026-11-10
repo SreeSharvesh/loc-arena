@@ -457,7 +457,7 @@ log has the details.
 - **A sandbox per agent.** In `make run STACK=1` each agent's code tools run in its own `sandbox-<agent id>`. A
   sandbox's command server refuses every caller but the episode, even one holding its token. Each sandbox mounts only
   its own agent's checkout, which no other sandbox can reach. A command's timeout is capped. A reset ends every
-  process the commands left and waits for the commands it ended, so their closing kill misses the next. Sandboxes have
+  process the commands left, waits for the commands it ended, and holds new ones until it is over. Sandboxes have
   their own `stack.sandbox_*` limits, and an agent id that cannot name a sandbox, or that repeats, is refused at load.
 - **Pinned providers per model, reasoning per role.** A models file lists the OpenRouter providers that serve
   each model (order, no fallbacks), and every call to that model is sent to them; a model not listed is routed
