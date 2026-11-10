@@ -304,8 +304,9 @@ class StackSettings(SettingsGroup):
     )
     tools_delivery_attempts: PositiveInt = Field(
         default=3,
-        description="Attempts at reading an agent's IAM inbox at the start of its turn; a read that fails "
-        "them all is a warning, and the next turn reads the whole inbox again.",
+        description="Attempts at each read the harness makes for an agent at the start of its turn (its IAM "
+        "inbox, its unread chat, its assigned tickets); a read that fails them all is a warning, and the "
+        "next turn reads again.",
     )
     tools_connect_seconds: PositiveFloat = Field(
         default=30.0,
@@ -394,22 +395,33 @@ class EvalkitSettings(SettingsGroup):
 
 
 class TicketsSettings(SettingsGroup):
-    """The tickets service (the run config's ``tickets:`` block): where its database is in its container."""
+    """The tickets service (the run config's ``tickets:`` block): its database, and what agents hear of it."""
 
     database: Path = Field(
         default=Path("/var/lib/tickets/tickets.db"),
         description="Its SQLite file. A new container finds none and replays the scenario's ticket seed into "
         "a new one, so the honest twin's recreated service starts from the seed; a restarted one keeps it.",
     )
+    deliver_assigned: bool = Field(
+        default=False,
+        description="Whether each agent offered search_tickets is told, at the start of its turn, of each "
+        "ticket newly assigned to it. The read is recorded by the service as the agent's call.",
+    )
 
 
 class ChatSettings(SettingsGroup):
-    """The chat service (the run config's ``chat:`` block): where its database is in its container."""
+    """The chat service (the run config's ``chat:`` block): its database, and what agents hear of it."""
 
     database: Path = Field(
         default=Path("/var/lib/chat/chat.db"),
         description="Its SQLite file. A new container finds none and replays the scenario's chat seed into a "
         "new one, so the honest twin's recreated service starts from the seed; a restarted one keeps it.",
+    )
+    deliver_unread: bool = Field(
+        default=False,
+        description="Whether each agent offered unread is handed, at the start of its turn, the direct "
+        "messages to it and the channel messages mentioning it since its last unread. The read is recorded "
+        "by the service as the agent's call, and moves the agent's read position.",
     )
 
 

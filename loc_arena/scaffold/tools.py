@@ -11,7 +11,7 @@ logs a ``checkout`` event on the sealed log alone, so each action can be read ag
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Hashable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
@@ -61,6 +61,14 @@ class _Outcome(NamedTuple):
     recorded: bool
 
 
+class Received(NamedTuple):
+    """What the harness hands an agent at its turn's start: the service it is from, its kind and its text."""
+
+    sender: str
+    kind: str
+    body: str
+
+
 class Tools:
     """Executes an agent's action: dispatch it, and log it unless a service records it."""
 
@@ -71,21 +79,22 @@ class Tools:
         clients: Mapping[str, Sequence[McpTools]],
         *,
         delivery_attempts: int = 1,
+        deliver_unread: bool = False,
+        deliver_assigned: bool = False,
         history: CheckoutHistory | None = None,
         pi: PiBridge | None = None,
     ) -> None:
         """Wire the tool layer to the recorder, the native tools, each agent's MCP clients by its id.
 
         With a ``history``, each native call is followed by a capture of the caller's checkout. ``pi`` runs
-        the calls of pi's own tools, under ``harness: pi``.
+        the calls of pi's own tools, under ``harness: pi``. ``deliver_unread`` and ``deliver_assigned`` hand
+        each agent its unread chat and its newly assigned tickets at its turn's start (``receive_work``).
         """
         self._pi = pi
         self._recorder = recorder
         self._delivery_attempts = delivery_attempts
-        self._inbox_delivered: dict[
-            str,
-            set[tuple[str, str]],
-        ] = {}  # by agent: (request, state) pairs it was shown
+        self._deliver_unread, self._deliver_assigned = deliver_unread, deliver_assigned
+        self._delivered: dict[str, set[Hashable]] = {}  # by agent: the inbox items and tickets it was shown
         self._code = code
         self._clients = clients
         self._history = history
@@ -164,15 +173,13 @@ class Tools:
                 tool=tool,
             )
 
-    def receive_inbox(self, ctx: AgentContext) -> list[str]:
-        """Each new item of the agent's IAM inbox, as a message to it, when it is offered ``access_inbox``.
+    def _read[Item](self, ctx: AgentContext, read: _Read[Item], args: dict[str, str]) -> list[Item]:
+        """The items ``read`` answers the agent with, parsed, if the agent is offered its tool; else none.
 
-        The harness reads the inbox for the agent at its turn's start, so an approver learns of a request and
-        a requester of its outcome without having to look. Each (request, state) is delivered once. A failed
-        or malformed read is a warning, never an action of the agent's: the agent did not make it, and the
-        next turn reads the whole inbox again, so nothing is lost.
+        The harness reads for the agent at its turn's start. A failed or malformed read is a warning and no
+        items, never an action of the agent's: the agent did not make it.
         """
-        if not any(INBOX_TOOL in client.names() for client in self._clients.get(ctx.uid, ())):
+        if not any(read.tool in client.names() for client in self._clients.get(ctx.uid, ())):
             return []
         outcome = tenacity.Retrying(
             stop=tenacity.stop_after_attempt(self._delivery_attempts),
@@ -181,27 +188,67 @@ class Tools:
             retry_error_callback=lambda state: (
                 state.outcome.result() if state.outcome else _Outcome({"error": "no attempt"}, recorded=False)
             ),
-        )(self._run, ctx.uid, INBOX_TOOL, {})
+        )(self._run, ctx.uid, read.tool, args)
         if "error" in outcome.result:
-            _LOGGER.warning("%s's inbox could not be read: %s", ctx.uid, outcome.result["error"])
+            _LOGGER.warning("%s's %s could not be read: %s", ctx.uid, read.what, outcome.result["error"])
             return []
         try:
-            items = _INBOX.validate_python(outcome.result.get("result"))
+            return read.items.validate_python(outcome.result.get(read.field))
         except ValidationError as error:
-            _LOGGER.warning("%s's inbox came back malformed: %s", ctx.uid, error)
+            _LOGGER.warning("%s's %s came back malformed: %s", ctx.uid, read.what, error)
             return []
-        seen = self._inbox_delivered.setdefault(ctx.uid, set())
-        fresh = [item for item in items if (item.request, item.state) not in seen]
-        seen.update((item.request, item.state) for item in fresh)
+
+    def _new_to[Item](self, uid: str, items: list[Item], key: Callable[[Item], Hashable]) -> list[Item]:
+        """Those of ``items`` that ``uid`` was not shown yet, by ``key``; they now count as shown."""
+        seen = self._delivered.setdefault(uid, set())
+        fresh = [item for item in items if key(item) not in seen]
+        seen.update(key(item) for item in fresh)
+        return fresh
+
+    def receive_inbox(self, ctx: AgentContext) -> list[str]:
+        """Each new item of the agent's IAM inbox, as a message to it, when it is offered ``access_inbox``.
+
+        So an approver learns of a request and a requester of its outcome without having to look. Each
+        (request, state) is delivered once. After a failed read the next turn reads the whole inbox again, so
+        nothing is lost.
+        """
+        fresh = self._new_to(ctx.uid, self._read(ctx, _INBOX, {}), lambda item: (item.request, item.state))
         return [_describe_inbox_item(item) for item in fresh]
+
+    def receive_work(self, ctx: AgentContext) -> list[Received]:
+        """The agent's new work, where the run delivers it: its unread chat, then each ticket assigned to it.
+
+        The read is the agent's own ``unread`` and ``search_tickets``, made for it, so each service records it
+        as the agent's call: an answered read makes no event, and a refused one a blocked action of the
+        agent's. Chat keeps the agent's read position, so a message comes once; a ticket comes once, the first
+        time it is found assigned to the agent.
+        """
+        work: list[Received] = []
+        if self._deliver_unread:
+            unread = self._read(ctx, _UNREAD, {})
+            work += [Received("chat", "unread", _describe_message(message)) for message in unread]
+        if self._deliver_assigned:
+            tickets = self._new_to(ctx.uid, self._read(ctx, _ASSIGNED, {"assignee": ctx.uid}), lambda t: t.id)
+            work += [Received("tickets", "assigned", _describe_ticket(ticket)) for ticket in tickets]
+        return work
+
+
+@dataclass(frozen=True)
+class _Read[Item]:
+    """A read the harness makes for an agent: its tool, the field of the answer holding the items, their name.
+
+    The episode container has no company packages, so the harness parses each answer into its own shape at
+    the tool boundary; an answer that does not fit is a failed read.
+    """
+
+    tool: str
+    field: str
+    items: TypeAdapter[list[Item]]
+    what: str
 
 
 class InboxItem(BaseModel):
-    """One item of an agent's IAM inbox, the fields of ``meridian_iam``'s item the harness reads.
-
-    The episode container has no company packages, so the harness parses ``access_inbox``'s answer into this
-    shape at the tool boundary; an answer that does not fit is a failed read.
-    """
+    """One item of an agent's IAM inbox, the fields of ``meridian_iam``'s item the harness reads."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -217,7 +264,43 @@ class InboxItem(BaseModel):
     decision_reason: StrictStr | None
 
 
-_INBOX = TypeAdapter(list[InboxItem])
+_INBOX = _Read(INBOX_TOOL, "result", TypeAdapter(list[InboxItem]), "inbox")
+
+
+class UnreadMessage(BaseModel):
+    """One message of chat's ``unread`` answer, the fields the harness reads."""
+
+    model_config = ConfigDict(frozen=True)
+
+    id: StrictInt
+    channel: StrictStr | None
+    author: StrictStr
+    body: StrictStr
+
+
+class AssignedTicket(BaseModel):
+    """One ticket of ``search_tickets``'s answer, the fields the harness reads."""
+
+    model_config = ConfigDict(frozen=True)
+
+    id: StrictStr
+    title: StrictStr
+    status: StrictStr
+
+
+_UNREAD = _Read("unread", "messages", TypeAdapter(list[UnreadMessage]), "unread messages")
+_ASSIGNED = _Read("search_tickets", "tickets", TypeAdapter(list[AssignedTicket]), "assigned tickets")
+
+
+def _describe_ticket(ticket: AssignedTicket) -> str:
+    """One ticket as the agent it is assigned to reads it."""
+    return f"{ticket.id} is assigned to you ({ticket.status}): {ticket.title}"
+
+
+def _describe_message(message: UnreadMessage) -> str:
+    """One unread message as the agent reads it: a mention in a channel, or a direct message."""
+    where = f"in #{message.channel}" if message.channel else "to you directly"
+    return f"{message.author} {where} (message {message.id}): {message.body}"
 
 
 def _describe_inbox_item(item: InboxItem) -> str:

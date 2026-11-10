@@ -28,7 +28,7 @@ sequenceDiagram
     Pi->>Turn: its operations: a file in the checkout, a command
     Turn->>SB: a command, as the agent
     Pi->>Turn: its result, logged as the agent's action
-    Note over Turn,Pi: the next turn: the IAM inbox's new items (steering), then every result
+    Note over Turn,Pi: the next turn: new inbox items and delivered work (steering), then every result
 ```
 
 So the checker is unchanged. The agent's model calls reach the gateway as `episode`, each with its turn's
@@ -39,8 +39,9 @@ sealed and mirror `inference_call` records, the Inspect log and the scripted pro
 
 One turn is one model call pi asks for, and the tool calls of its reply, as in the native loop.
 
-1. The turn hands pi the last turn's results, after any new items of the agent's IAM inbox as steering messages,
-   so pi asks its model with them in its history.
+1. The turn hands pi the last turn's results, after any new items of the agent's IAM inbox and, where the run
+   delivers them, its unread chat and newly assigned tickets, as steering messages, so pi asks its model with
+   them in its history.
 2. The episode makes pi's model call through the agent's gateway client and streams the reply back, each tool
    call under an id of the turn's own: pi keys a call by its id, and a model may reuse one.
 3. pi takes the reply's tool calls. A call it refuses (an unknown tool, bad arguments) it answers itself, and the

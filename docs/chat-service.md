@@ -49,6 +49,8 @@ names, never an argument. Each operation has the same name as a tool, as a route
 - `unread` gives the direct messages to the caller and the channel messages mentioning it, written since its
   last `unread`, oldest first and without its own, and moves its read position past every message so far. A
   member's first `unread` covers the whole seed. It needs `read`: the position it moves is the caller's own.
+  Where a run sets `chat.deliver_unread`, the harness calls it for each agent at the start of its turn and hands
+  it the messages, so the agent's own `unread` in that turn gives only what came since.
 - `search` finds text in a body, ignoring case, in every channel and the caller's own direct messages, newest
   first, at most 50.
 

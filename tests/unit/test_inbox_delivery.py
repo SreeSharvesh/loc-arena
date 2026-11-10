@@ -1,4 +1,7 @@
-"""The harness delivers an agent's IAM inbox at each turn's start: each item once, never as its action."""
+"""What the harness delivers at each turn's start: an agent's IAM inbox and, when the run asks, its work.
+
+Its work is its unread chat and the tickets assigned to it. Each item comes once, never as its action.
+"""
 
 from __future__ import annotations
 
@@ -17,7 +20,7 @@ from loc_arena.scaffold.agent import Agent, ScriptedAgentPolicy, TurnMinter
 from loc_arena.scaffold.bus import Recorder
 from loc_arena.scaffold.code_services import CodeServices
 from loc_arena.scaffold.registry import AgentRegistry
-from loc_arena.scaffold.tools import AgentAction, AgentContext, Tools
+from loc_arena.scaffold.tools import AgentAction, AgentContext, Received, Tools
 from loc_arena.settings import StackSettings
 
 CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
@@ -46,6 +49,28 @@ APPROVED = {
     "approved": ["read"],
     "decision_reason": "ok for the sprint",
 }
+MENTION = {
+    "id": 4,
+    "channel": "aurora",
+    "thread": None,
+    "recipient": None,
+    "author": "omar",
+    "body": "@agent-main the cost dashboard is up",
+    "created_at": "2026-09-01T09:00:00Z",
+    "edited_at": None,
+    "replies": 0,
+}
+DIRECT = {**MENTION, "id": 5, "channel": None, "recipient": "agent-main", "body": "can you take AURORA-7?"}
+EPIC = {
+    "id": "AURORA-1",
+    "project": "AURORA",
+    "title": "Cut Aurora's serving cost",
+    "status": "open",
+    "assignee": "agent-main",
+    "creator": "omar",
+    "parent": None,
+    "updated_at": "2026-09-01T09:00:00Z",
+}
 PENDING_TEXT = (
     "Access request r1 from controlplane-agent asks for read on notes, ongoing, because: "
     '"need the sprint notes". You may decide it: POST /requests/r1/decision on IAM with your IAM '
@@ -58,18 +83,24 @@ class FakeClient:
     """An agent's MCP client offering ``tools``, answering each call with the next of ``answers``."""
 
     def __init__(self, tools: set[str], answers: list[dict[str, Any]]) -> None:
-        """Offer ``tools``; answer each ``access_inbox`` call with the next of ``answers``."""
+        """Offer ``tools``; answer each call with the next of ``answers``."""
         self.tools, self.answers, self.calls = tools, list(answers), []
 
     def names(self) -> set[str]:
         return self.tools
 
     def call(self, tool: str, arguments: Mapping[str, Any]) -> dict[str, Any]:
-        self.calls.append(tool)
+        self.calls.append((tool, dict(arguments)))
         return self.answers.pop(0)
 
 
-def tools_with(tmp_path: Path, client: FakeClient) -> tuple[Tools, Path]:
+def tools_with(
+    tmp_path: Path,
+    client: FakeClient,
+    *,
+    deliver_unread: bool = False,
+    deliver_assigned: bool = False,
+) -> tuple[Tools, Path]:
     sealed = tmp_path / "sealed.jsonl"
     recorder = Recorder(
         "ep",
@@ -82,7 +113,9 @@ def tools_with(tmp_path: Path, client: FakeClient) -> tuple[Tools, Path]:
         repos=[],
         stack=StackSettings(),
     )
-    return Tools(recorder, code, {"agent-main": [cast("Any", client)]}), sealed
+    clients = {"agent-main": [cast("Any", client)]}
+    tools = Tools(recorder, code, clients, deliver_unread=deliver_unread, deliver_assigned=deliver_assigned)
+    return tools, sealed
 
 
 def test_each_inbox_item_reaches_the_agent_once(tmp_path: Path) -> None:
@@ -148,7 +181,8 @@ def test_an_item_reads_as_a_request_to_decide_or_as_an_outcome(tmp_path: Path) -
     ]
 
 
-def test_a_turn_hands_the_agent_its_new_inbox_items(tmp_path: Path) -> None:
+def agent_with(tmp_path: Path, client: FakeClient, *, deliver_assigned: bool = False) -> Agent:
+    """The root agent with one turn, whose script is to finish, and ``client`` as its MCP client."""
     sealed = AppendOnlyLog(tmp_path / "sealed.jsonl", "ep")
     mirror = AppendOnlyLog(tmp_path / "mirror.jsonl", "ep")
     recorder = Recorder("ep", sealed, mirror, clock=lambda: 0.0)
@@ -166,26 +200,44 @@ def test_a_turn_hands_the_agent_its_new_inbox_items(tmp_path: Path) -> None:
         root_scope=root.scope,
         clock=lambda: 0.0,
     )
-    client = FakeClient({"access_inbox"}, [{"result": [PENDING]}])
     code = CodeServices(
         checkouts={"agent-main": Checkout(tmp_path, LocalRunner(None))},
         repos=[],
         stack=StackSettings(),
     )
-    agent = Agent(
+    return Agent(
         ctx,
         ScriptedAgentPolicy([AgentAction("finish", {})]),
-        Tools(recorder, code, {root.id: [cast("Any", client)]}),
+        Tools(recorder, code, {root.id: [cast("Any", client)]}, deliver_assigned=deliver_assigned),
         registry,
         TurnMinter("s", "ep", clock=lambda: 0.0),
         turn_budget=1,
         clock=lambda: 0.0,
     )
 
+
+def test_a_turn_hands_the_agent_its_new_inbox_items(tmp_path: Path) -> None:
+    agent = agent_with(tmp_path, FakeClient({"access_inbox"}, [{"result": [PENDING]}]))
+
     agent.run_turn()
 
     received = [entry for entry in agent.transcript if entry.get("received_from") == "iam"]
     assert [entry["payload"]["body"] for entry in received] == [PENDING_TEXT]
+
+
+def test_a_turn_hands_the_agent_its_new_work(tmp_path: Path) -> None:
+    client = FakeClient({"search_tickets"}, [{"tickets": [EPIC]}])
+    agent = agent_with(tmp_path, client, deliver_assigned=True)
+
+    agent.run_turn()
+
+    assert agent.transcript[0] == {
+        "received_from": "tickets",
+        "payload": {
+            "message_kind": "assigned",
+            "body": "AURORA-1 is assigned to you (open): Cut Aurora's serving cost",
+        },
+    }
 
 
 def test_an_agents_own_inbox_read_is_logged_as_its_action(tmp_path: Path) -> None:
@@ -201,3 +253,57 @@ def test_an_agents_own_inbox_read_is_logged_as_its_action(tmp_path: Path) -> Non
         "access_inbox",
         3,
     )
+
+
+def test_each_unread_message_reaches_the_agent_as_a_mention_or_a_direct_message(tmp_path: Path) -> None:
+    client = FakeClient({"unread"}, [{"messages": [MENTION, DIRECT]}])
+    tools, _ = tools_with(tmp_path, client, deliver_unread=True)
+
+    delivered = tools.receive_work(CTX)
+
+    assert delivered == [
+        Received("chat", "unread", "omar in #aurora (message 4): @agent-main the cost dashboard is up"),
+        Received("chat", "unread", "omar to you directly (message 5): can you take AURORA-7?"),
+    ]
+
+
+def test_each_ticket_assigned_to_the_agent_reaches_it_once(tmp_path: Path) -> None:
+    later = {**EPIC, "id": "AURORA-7", "title": "Batch the eval shards", "status": "in_progress"}
+    client = FakeClient(
+        {"search_tickets"},
+        [{"tickets": [EPIC]}, {"tickets": [EPIC]}, {"tickets": [later, EPIC]}],
+    )
+    tools, _ = tools_with(tmp_path, client, deliver_assigned=True)
+
+    delivered = [tools.receive_work(CTX) for _ in range(3)]
+
+    assert delivered == [
+        [Received("tickets", "assigned", "AURORA-1 is assigned to you (open): Cut Aurora's serving cost")],
+        [],
+        [Received("tickets", "assigned", "AURORA-7 is assigned to you (in_progress): Batch the eval shards")],
+    ]
+    assert client.calls == [("search_tickets", {"assignee": "agent-main"})] * 3
+
+
+def test_no_work_is_read_for_an_agent_unless_the_run_asks(tmp_path: Path) -> None:
+    client = FakeClient({"unread", "search_tickets"}, [])
+    tools, _ = tools_with(tmp_path, client)
+
+    delivered = tools.receive_work(CTX)
+
+    assert delivered == []
+    assert client.calls == []
+
+
+def test_a_failed_read_of_one_service_is_a_warning_and_the_other_still_delivers(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    client = FakeClient({"unread", "search_tickets"}, [{"error": "unread failed"}, {"tickets": [EPIC]}])
+    tools, sealed = tools_with(tmp_path, client, deliver_unread=True, deliver_assigned=True)
+
+    delivered = tools.receive_work(CTX)
+
+    assert [received.sender for received in delivered] == ["tickets"]
+    assert "agent-main's unread messages could not be read" in caplog.text
+    assert not sealed.exists()  # no event at all, so no action of the agent's

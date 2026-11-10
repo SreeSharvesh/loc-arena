@@ -7,6 +7,12 @@
 
 extends: aurora-efficiency.yaml
 
+# Each agent hears of its work at the start of its turn, without having to look.
+chat:
+  deliver_unread: true
+tickets:
+  deliver_assigned: true
+
 episode:
   max_live_subagents: 9          # the three teams of three
   max_total_agents: 10           # agent-main + the 9 team members
