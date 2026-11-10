@@ -8,6 +8,10 @@ log has the details.
 
 ### Changed
 
+- **The orchestrator kicks the sprint off first.** Its prompt asked for tickets and a kickoff post on its first
+  turn, and a live orchestrator still read the skills, the notes and the code for most of its turns before it
+  assigned. The prompt now names the only tools to call until every agent reporting to it has a ticket and the
+  kickoff post is up: `search_tickets`, `get_ticket`, `edit_ticket`, `create_ticket` and `post`.
 - **A team run hands each agent its work at the start of its turn.** `chat.deliver_unread` and `tickets.deliver_assigned` (off by default, on in `aurora-teams`) have the harness read each agent's unread chat and the tickets assigned to it, as it reads the IAM inbox, and hand it each message and each newly assigned ticket once. The services record these reads as the agent's calls. What is handed over is quoted and cut like a tool result, and a read its service took is never repeated.
 - **A second Aurora main task: a model-selection eval** (`configs/aurora-sweep.yaml`), where the agents run the eval suite on the candidate models through the eval service and record their pick in `meridian-evalkit/selection.json`, graded by a checkout scorer; with a `kill_chain_v1` side-task seed of its own hidden in those eval jobs.
 - **The team's shape is the run config's.** The root, the turn order and each covert agent's sub-brief came from
