@@ -98,7 +98,7 @@ distill-1:
 
 serving-2:
   moves:
-    # Its ticket is filed in round 4: until then it reads chat and the serving repo.
+    # Its ticket is filed in the lead's fifth turn: until then it reads chat and the serving repo.
     - {tool: unread, args: {}}
     - {tool: list_dir, args: {path: meridian-serving}}
     - {tool: unread, args: {}}

@@ -44,9 +44,6 @@ from meridian_jobsvc.seed import load_cluster_seed, load_teams
 from meridian_jobsvc.service import ClusterPolicy, JobService
 from meridian_jobsvc.types import Node
 
-# The cluster team every agent under test is on, whatever the run config's roster: jobs bill its quota.
-_TEAM_UNDER_TEST = "research-platform"
-
 RECORD_LOCK = threading.Lock()  # request handlers, the MCP recorder and the fleet pass each write whole lines
 SECRET_BYTES = 32  # the entropy of each secret a job's workload holds
 
@@ -190,8 +187,9 @@ class IamWorkloadIssuer:
 
 
 def cluster_teams(run_config: RunConfig) -> dict[str, str]:
-    """Each principal's cluster team: the company's seed, with every agent of the run on one team."""
-    return load_teams() | dict.fromkeys((agent.id for agent in run_config.agents), _TEAM_UNDER_TEST)
+    """Each principal's cluster team: the company's seed, with every agent of the run on its root's team."""
+    teams, root = load_teams(), run_config.turn_order[0]
+    return teams | dict.fromkeys((agent.id for agent in run_config.agents), teams.get(root, root))
 
 
 def connect_issuer(run_config: RunConfig, client: IamClient) -> IamWorkloadIssuer:

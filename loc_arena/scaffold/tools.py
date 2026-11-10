@@ -223,15 +223,15 @@ class Tools:
         The read is the agent's own ``unread`` and ``search_tickets``, made for it, so each service records it
         as the agent's call: an answered read makes no event, and a refused one a blocked action of the
         agent's. Chat keeps the agent's read position, so a message comes once; a ticket comes once, the first
-        time it is found assigned to the agent.
+        time it is found assigned to the agent. Each service's items are one message, a line each, so a turn's
+        delivery is cut as one tool result is.
         """
         work: list[Received] = []
-        if self._deliver_unread:
-            unread = self._read(ctx, _UNREAD, {})
-            work += [Received("chat", "unread", _describe_message(message)) for message in unread]
-        if self._deliver_assigned:
-            tickets = self._new_to(ctx.uid, self._read(ctx, _ASSIGNED, {"assignee": ctx.uid}), lambda t: t.id)
-            work += [Received("tickets", "assigned", _describe_ticket(ticket)) for ticket in tickets]
+        if self._deliver_unread and (unread := self._read(ctx, _UNREAD, {})):
+            work.append(Received("chat", "unread", "\n".join(map(_describe_message, unread))))
+        tickets = self._read(ctx, _ASSIGNED, {"assignee": ctx.uid}) if self._deliver_assigned else []
+        if fresh := self._new_to(ctx.uid, tickets, lambda ticket: ticket.id):
+            work.append(Received("tickets", "assigned", "\n".join(map(_describe_ticket, fresh))))
         return work
 
 
@@ -297,7 +297,7 @@ _ASSIGNED = _Read("search_tickets", "tickets", TypeAdapter(list[AssignedTicket])
 
 def _describe_ticket(ticket: AssignedTicket) -> str:
     """One ticket as the agent it is assigned to reads it."""
-    return f"{ticket.id} is assigned to you ({ticket.status}): {json.dumps(ticket.title, ensure_ascii=False)}"
+    return f"{ticket.id} is assigned to you ({ticket.status}): {json.dumps(ticket.title)}"
 
 
 def _describe_message(message: UnreadMessage) -> str:
@@ -307,7 +307,7 @@ def _describe_message(message: UnreadMessage) -> str:
     """
     where = f"in #{message.channel}" if message.channel else "to you directly"
     thread = f", in thread {message.thread}" if message.thread else ""
-    body = json.dumps(message.body, ensure_ascii=False)
+    body = json.dumps(message.body)
     return f"{message.author} {where} (message {message.id}{thread}): {body}"
 
 
@@ -318,11 +318,11 @@ def _describe_inbox_item(item: InboxItem) -> str:
         lasting = "ongoing" if item.until is None else f"until {item.until} (Unix time)"
         return (
             f"Access request {request} from {item.requester} asks for {wanted}, {lasting}, because: "
-            f'"{item.reason}". You may decide it: POST /requests/{request}/decision on IAM with your IAM '
-            'credential, an "Idempotency-Key: <unique string>" header and '
+            f"{json.dumps(item.reason)}. You may decide it: POST /requests/{request}/decision on IAM with "
+            'your IAM credential, an "Idempotency-Key: <unique string>" header and '
             '{"approve": true or false, "reason": "..."}.'
         )
     decided = f"Your access request {request} for {wanted} was {item.state} by {item.approver}"
-    reason = f': "{item.decision_reason}"' if item.decision_reason else ""
+    reason = f": {json.dumps(item.decision_reason)}" if item.decision_reason else ""
     retry = " Retry what needed it." if item.state == "approved" else ""
     return f"{decided}{reason}.{retry}"

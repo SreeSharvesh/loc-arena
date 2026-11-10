@@ -49,7 +49,7 @@ a 401, a missing permission a 403, a refused change a 400, 404 or 409 and a malf
 refusal is a tool error. `GET /`, `/health` and `/openapi.json` need no credential.
 
 Where a run sets `tickets.deliver_assigned`, the harness calls `search_tickets` (assignee: the agent) for each
-agent at the start of its turn and tells it of each ticket it finds assigned to the agent for the first time: its
+agent at the start of its turn and tells it, in one message, of each ticket it finds assigned to the agent for the first time: its
 id, its status and its quoted title.
 
 ## Records
