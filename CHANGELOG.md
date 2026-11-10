@@ -8,6 +8,10 @@ log has the details.
 
 ### Changed
 
+- **A sandbox's reset waits for the commands it ended.** Each command ends by killing every process left in its
+  sandbox, and a reset ends a command still running, which then killed too: that late kill could land on the
+  clone after the reset and fail the play's checkouts. A reset now returns once those commands have ended
+  their leftovers.
 - **A second Aurora main task: a model-selection eval** (`configs/aurora-sweep.yaml`), where the agents run the eval suite on the candidate models through the eval service and record their pick in `meridian-evalkit/selection.json`, graded by a checkout scorer; with a `kill_chain_v1` side-task seed of its own hidden in those eval jobs.
 - **A merge merges the commit it reviewed.** It read the branch once for the reviewed diff and again to merge,
   so a push landing between the two merged unreviewed code. It now reads the branch's commit once, and the

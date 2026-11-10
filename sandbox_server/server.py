@@ -12,6 +12,7 @@ import contextlib
 import os
 import shutil
 import signal
+import threading
 from collections.abc import Callable
 from http import HTTPStatus
 from pathlib import Path
@@ -76,8 +77,10 @@ def create_sandbox_app(
     """The command server: runs a command under ``settings.checkouts_directory`` for its trusted caller.
 
     The caller must also hold ``token``. ``end_leftovers`` runs once each command has ended and before each
-    reset; in the container it ends every process the commands left behind.
+    reset; in the container it ends every process the commands left behind. A reset returns once every command
+    it found running has ended its leftovers too, so that end never lands on the command after the reset.
     """
+    unfinished: set[threading.Event] = set()  # one per command whose handler has not ended its leftovers yet
     admit = admit_trusted_caller(settings.trusted_caller, "command server")
     authenticate = authenticate_token(token)
 
@@ -100,14 +103,22 @@ def create_sandbox_app(
         if request.timeout_seconds > settings.command_timeout_limit_seconds:
             raise HTTPException(HTTPStatus.UNPROCESSABLE_ENTITY, "the timeout is over this server's limit")
         confined = request.model_copy(update={"directory": confine(request.directory)})
-        result = run_command(confined, settings.output_limit_bytes, os.environ)
-        end_leftovers()
+        finished = threading.Event()
+        unfinished.add(finished)
+        try:
+            result = run_command(confined, settings.output_limit_bytes, os.environ)
+            end_leftovers()
+        finally:
+            unfinished.discard(finished)
+            finished.set()
         return result
 
     @app.post(RESET_PATH)
     def reset(request: ResetRequest) -> None:
         """Remove what an earlier episode could leave: processes, scratch files, other checkout entries."""
         end_leftovers()
+        for finished in list(unfinished):
+            finished.wait()
         keep = confine(request.keep)
         root = settings.checkouts_directory.resolve()
         if keep == root:

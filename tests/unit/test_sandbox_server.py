@@ -6,10 +6,15 @@ trusted caller is this host's loopback address.
 
 from __future__ import annotations
 
+import concurrent.futures
+import contextlib
 import json
+import os
+import signal
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from http import HTTPStatus
 from pathlib import Path
 from typing import Any
@@ -26,6 +31,7 @@ OUTPUT_LIMIT_BYTES = 10_000
 TRUSTED_CALLER = "127.0.0.1"
 OTHER_CALLER = "192.0.2.7"  # an address reserved for documentation: no name resolves to it here
 TIMEOUT_LIMIT_SECONDS = 30.0
+LATE_SECONDS = 0.3  # how long after a command ends its handler's kill of leftovers lands, on a busy server
 
 
 @pytest.fixture
@@ -39,6 +45,7 @@ def serve(
     output_limit_bytes: int = OUTPUT_LIMIT_BYTES,
     scratch: Path | None = None,
     caller: str = TRUSTED_CALLER,
+    end_leftovers: Callable[[], None] = lambda: None,
 ) -> TestClient:
     """The command server over ``checkouts``, as ``caller`` reaches it, with ``scratch`` if given."""
     settings = ServerSettings(
@@ -50,7 +57,8 @@ def serve(
         trusted_caller=TRUSTED_CALLER,
         command_timeout_limit_seconds=TIMEOUT_LIMIT_SECONDS,
     )
-    return TestClient(create_sandbox_app(settings, SecretStr(TOKEN)), client=(caller, 50000))
+    app = create_sandbox_app(settings, SecretStr(TOKEN), end_leftovers=end_leftovers)
+    return TestClient(app, client=(caller, 50000))
 
 
 def post_command(
@@ -64,9 +72,13 @@ def post_command(
     stdin: str = "",
     output_limit_bytes: int = OUTPUT_LIMIT_BYTES,
     caller: str = TRUSTED_CALLER,
+    server: TestClient | None = None,
 ) -> tuple[int, Any]:
-    """The status and the parsed body of a request from ``caller`` to run ``command`` with bash."""
-    response = serve(checkouts, output_limit_bytes, caller=caller).post(
+    """The status and the parsed body of a request from ``caller`` to run ``command`` with bash.
+
+    It goes to ``server`` if given, else to a new one.
+    """
+    response = (server or serve(checkouts, output_limit_bytes, caller=caller)).post(
         "/run",
         json={
             "argv": ["bash", "-c", command],
@@ -78,6 +90,12 @@ def post_command(
         headers={"authorization": f"Bearer {token}"} if token else {},
     )
     return response.status_code, response.json()
+
+
+def post_reset(server: TestClient, keep: Path) -> int:
+    """The status of a request to ``server`` to reset its sandbox, keeping ``keep``."""
+    reply = server.post("/reset", json={"keep": str(keep)}, headers={"authorization": f"Bearer {TOKEN}"})
+    return reply.status_code
 
 
 @pytest.mark.parametrize(
@@ -220,13 +238,9 @@ def test_a_reset_clears_the_scratch_directories_and_every_other_checkout_entry_b
     (checkouts / "pytest.ini").write_text("[pytest]")
     (checkouts / "episode" / "checkout").mkdir()
     (checkouts / "episode" / "checkout" / "kept.py").write_text("kept")
-    client = serve(checkouts, scratch=scratch)
+    server = serve(checkouts, scratch=scratch)
 
-    client.post(
-        "/reset",
-        json={"keep": str(checkouts / "episode" / "checkout")},
-        headers={"authorization": f"Bearer {TOKEN}"},
-    )
+    post_reset(server, checkouts / "episode" / "checkout")
 
     left = (sorted(scratch.iterdir()), sorted(checkouts.iterdir()))
     assert (left, (checkouts / "episode" / "checkout" / "kept.py").read_text()) == (
@@ -238,13 +252,43 @@ def test_a_reset_clears_the_scratch_directories_and_every_other_checkout_entry_b
 def test_a_reset_that_would_keep_the_whole_checkouts_directory_is_refused(checkouts: Path) -> None:
     (checkouts / "stray").mkdir()
 
-    response = serve(checkouts).post(
-        "/reset",
-        json={"keep": str(checkouts)},
-        headers={"authorization": f"Bearer {TOKEN}"},
-    )
+    status = post_reset(serve(checkouts), checkouts)
 
-    assert (response.status_code, (checkouts / "stray").exists()) == (HTTPStatus.FORBIDDEN, True)
+    assert (status, (checkouts / "stray").exists()) == (HTTPStatus.FORBIDDEN, True)
+
+
+def test_a_command_run_right_after_a_reset_outlives_the_end_of_the_command_the_reset_ended(
+    tmp_path: Path,
+    checkouts: Path,
+) -> None:
+    """A reset ends a command still running, whose handler then ends leftovers too: here late, as it can be.
+
+    Ending leftovers kills each command, which records its process id, as the container's kills every process.
+    """
+    pids = tmp_path / "pids"
+    pids.mkdir()
+    delays = iter([0, LATE_SECONDS])  # before the reset's kill, then before the ended command's
+
+    def kill_commands() -> None:
+        time.sleep(next(delays, 0))
+        for recorded in pids.iterdir():
+            with contextlib.suppress(ProcessLookupError):  # it ended meanwhile
+                os.kill(int(recorded.name), signal.SIGKILL)
+            recorded.unlink(missing_ok=True)
+
+    server = serve(checkouts, end_leftovers=kill_commands)
+
+    def sleep_recorded(seconds: float) -> Any:
+        return post_command(checkouts, f"touch {pids}/$$; exec sleep {seconds}", server=server)[1]
+
+    running = concurrent.futures.ThreadPoolExecutor(1).submit(sleep_recorded, 10)
+    while not (any(pids.iterdir()) or running.done()):  # until that command has started
+        time.sleep(0.01)
+    post_reset(server, checkouts / "episode")
+
+    result = sleep_recorded(2 * LATE_SECONDS)
+
+    assert result["returncode"] == 0
 
 
 def test_the_command_server_loads_nothing_of_the_harness() -> None:
