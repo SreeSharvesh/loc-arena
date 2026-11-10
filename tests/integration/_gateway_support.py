@@ -124,11 +124,13 @@ class AlternatingVerdictProvider:
 class FailingProvider:
     """A dead provider: every call fails but those numbered in ``answered`` (from 1), which give a verdict.
 
-    A failed call raises ``error``, a ``ProviderError`` by default. It records the role's spec of every call.
+    A failed call raises ``error``, a ``ProviderError`` by default. It records the role's spec and the opening
+    message of every call.
     """
 
     def __init__(self, *, answered: Container[int] = frozenset(), error: Exception | None = None) -> None:
         self.specs: list[ModelSpec | None] = []
+        self.openings: list[str] = []
         self._answered = answered
         self._error = error
 
@@ -143,6 +145,7 @@ class FailingProvider:
         spec: ModelSpec | None = None,
     ) -> ProviderResult:
         self.specs.append(spec)
+        self.openings.append(messages[0]["content"])
         if len(self.specs) in self._answered:
             return JsonVerdictProvider().generate(model, messages, temperature, max_tokens, tools)
         raise self._error or ProviderError(f"call {len(self.specs)} failed")

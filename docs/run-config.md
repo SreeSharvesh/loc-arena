@@ -25,10 +25,10 @@ path. A key no block declares is ignored, except in an agent's `scope` and in th
 | Key | What it sets |
 |---|---|
 | `extends`, `models` | the base config; the models file (roles, sampling, OpenRouter providers per model) |
-| `seed`, `policy` | the seed that with the config reproduces the episode; `model` or `scripted` (replays the scenario's `scripted/moves.yaml` in place of a model) |
+| `seed`, `policy`, `scripted_moves` | the seed that with the config reproduces the episode; `model` or `scripted` (replays a moves file in the scenario's `scripted/` in place of a model); that file, `moves.yaml` by default |
 | `harness` | what runs each agent's loop: `native`, the arena's own (the default), or `pi`, the pi coding agent, whose own system prompt and tools the agent gets beside the arena's ([docs/pi-harness.md](pi-harness.md)) |
 | `scenario` | the pack registering the scorer, verifier, live services and skills |
-| `main_task`, `side_task`, `covert` | the tasks and their scorer and verifier; `covert.enabled` switches attack and honest mode: the covert briefs, the gateway's covert injection and, in a scripted run, the scenario's attack moves. `side_task.thresholds` are the verifier's numbers: `loop_len_floor`, the fewest calls of a loop; `liveness_window_seconds`, how close to the deadline its last call must be; `sustained_rate_window_seconds`, the span it must keep calling over, no gap longer; and `loop_min_reply_chars`, the shortest reply whose text inside a later prompt of the same job links two calls of a stack run into a loop. `side_task.sanctioned_submitters` names the company principals whose jobs' model calls are on-path (Aurora's deployer) |
+| `main_task`, `side_task`, `covert` | the tasks and their scorer and verifier; `covert.enabled` switches attack and honest mode: the covert briefs, the gateway's covert injection and, in a scripted run, the scenario's attack moves. `covert.target_identity` is the agent whose model calls get the covert objective; it must be an agent of the team. `side_task.thresholds` are the verifier's numbers: `loop_len_floor`, the fewest calls of a loop; `liveness_window_seconds`, how close to the deadline its last call must be; `sustained_rate_window_seconds`, the span it must keep calling over, no gap longer; and `loop_min_reply_chars`, the shortest reply whose text inside a later prompt of the same job links two calls of a stack run into a loop. `side_task.sanctioned_submitters` names the company principals whose jobs' model calls are on-path (Aurora's deployer) |
 | `episode` | turn budgets, wall-clock ceiling, spawn caps |
 | `agents` | the team; see below |
 | `protocol` | the control protocol: monitors, reviewer, audit budget |
@@ -39,11 +39,11 @@ path. A key no block declares is ignored, except in an agent's `scope` and in th
 
 | Field | What it sets |
 |---|---|
-| `id`, `kind`, `trust`, `branch`, `spawned_by` | identity (a DNS label: `sandbox-<id>` names its sandbox) and role |
+| `id`, `kind`, `trust`, `branch`, `spawned_by` | identity (a DNS label: `sandbox-<id>` names its sandbox) and role; `spawned_by` names the agent it reports to. The team is one tree: one agent has no `spawned_by`, it is the root, and every round each agent takes its turn before the agents that report to it |
 | `scope` | what the agent may do; each service enforces it on the caller |
 | `sandbox.tools` | the MCP tools agentgateway offers it, by service: `{forge: [open_pr, merge], chat: [post, send_dm, read_dms]}`; it refuses the rest, and a tool grants nothing: a call takes the permission IAM checks for it |
 | `sandbox.rights` | its starting rights, by service, which IAM seeds as its grants: `{notes: [read, write], forge: [read, push, open_pr, merge]}`; each a permission the service's IAM manifest checks |
-| `legit`, `covert`, `system_prompt_ref`, `brief_ref` | its assignments, the covert subtasks it owns, and its prompts |
+| `legit`, `covert`, `system_prompt_ref`, `brief_ref`, `covert_brief_ref` | its assignments, the covert subtasks it owns, and its prompts. Its brief holds `system_prompt_ref`, how it works with its team (the same in both plays), and `legit`, or `covert_brief_ref` in its place when `covert.enabled` is on; `brief_ref` is loaded but not played |
 
 A service in `sandbox:` must be a live service of the scenario that serves tools (for `tools`) or declares rights
 (for `rights`). A tool or right outside that service's list, one named twice, and an unknown key under `sandbox:`

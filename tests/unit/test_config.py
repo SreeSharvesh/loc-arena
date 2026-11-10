@@ -12,8 +12,12 @@ from pydantic import ValidationError
 
 RUN = "configs/aurora-efficiency.deterministic.yaml"
 OVERRIDDEN_IDLE_TIMEOUT_SECONDS = 301
-ONE_AGENT = "agents: [{{id: {agent_id}, kind: k, trust: untrusted, branch: b, scope: {{}}}}]\n"
+ONE_AGENT = (
+    "covert: {{target_identity: {agent_id}}}\n"
+    "agents: [{{id: {agent_id}, kind: k, trust: untrusted, branch: b, scope: {{}}}}]\n"
+)
 INLINE_PROMPT_AGENT = (
+    "covert: {target_identity: inline-agent}\n"
     "agents: [{id: inline-agent, kind: k, trust: untrusted, branch: b, scope: {}, "
     "system_prompt: inline text}]\n"
 )
@@ -252,10 +256,52 @@ def test_an_agent_id_whose_sandbox_name_is_63_characters_loads(tmp_path: Path) -
 
 
 def test_a_repeated_agent_id_is_refused_at_load_naming_it(tmp_path: Path) -> None:
-    agents = ONE_AGENT.format(agent_id="twin").removeprefix("agents: [").removesuffix("]\n")
-    run = _run_extending(tmp_path, f"agents: [{agents}, {agents}]\n")
+    run = _run_extending(tmp_path, f"agents: [{_agent('twin', None)}, {_agent('twin', None)}]\n")
 
     with pytest.raises(ConfigError, match="twin"):
+        load_run_config(run)
+
+
+def _agent(agent_id: str, spawned_by: str | None) -> str:
+    reports_to = f", spawned_by: {spawned_by}" if spawned_by else ""
+    return f"{{id: {agent_id}, kind: k, trust: untrusted, branch: b, scope: {{}}{reports_to}}}"
+
+
+def test_a_two_level_team_takes_its_turns_with_each_manager_before_its_reports(tmp_path: Path) -> None:
+    team = [
+        ("worker-b1", "lead-b"),
+        ("lead-a", "root"),
+        ("worker-a1", "lead-a"),
+        ("root", None),
+        ("lead-b", "root"),
+    ]
+    agents = f"agents: [{', '.join(_agent(*agent) for agent in team)}]\n"
+    run = _run_extending(tmp_path, f"covert: {{target_identity: root}}\n{agents}")
+
+    order = load_run_config(run).turn_order
+
+    assert order == ("root", "lead-a", "lead-b", "worker-a1", "worker-b1")
+
+
+@pytest.mark.parametrize(
+    "team",
+    [[("root", None), ("other-root", None)], [("root", None), ("worker", "nobody")]],
+    ids=["two roots", "a manager outside the team"],
+)
+def test_a_team_that_is_not_one_tree_is_refused_at_load(
+    tmp_path: Path,
+    team: list[tuple[str, str | None]],
+) -> None:
+    run = _run_extending(tmp_path, f"agents: [{', '.join(_agent(*agent) for agent in team)}]\n")
+
+    with pytest.raises(ConfigError, match="one tree"):
+        load_run_config(run)
+
+
+def test_a_covert_target_outside_the_team_is_refused_at_load(tmp_path: Path) -> None:
+    run = _run_extending(tmp_path, "covert: {target_identity: former-lead}\n")
+
+    with pytest.raises(ConfigError, match="covert.target_identity 'former-lead' is not an agent"):
         load_run_config(run)
 
 
@@ -314,7 +360,7 @@ def test_identities_that_would_share_one_host_variable_are_refused_at_load_namin
     agents = ONE_AGENT.format(agent_id="agent-main").removesuffix("]\n")
     run = _run_extending(
         tmp_path,
-        f"{agents}, {{id: main, kind: k, trust: untrusted, branch: b, scope: {{}}}}]\n",
+        f"{agents}, {_agent('main', 'agent-main')}]\n",
     )
 
     with pytest.raises(ConfigError, match=r"\('notes', 'agent-main'\), \('notes-agent', 'main'\)"):
