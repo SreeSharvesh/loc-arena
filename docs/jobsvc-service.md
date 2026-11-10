@@ -197,9 +197,10 @@ A job's CPU-hours are its cpus times the wall time each attempt ran, from the pa
 that saw its process gone, so they match the job's real wall time to within `stack.job_poll_seconds`; a running
 attempt's count to now. Each ended attempt is charged to the job's team in the service's ledger
 (`accountant/ledger.py`), and `usage` reports each team's and each job's. A job's team is its submitter's, never a
-field a submitter sets: every agent of the run is on `research-platform`, and each other principal is on the
-team the company's seed gives it (`meridian_jobsvc/seed.yaml`); a job's own job counts against the team of the agent at the top of its chain, and a
-principal on no team is a team of its own.
+field a submitter sets: every agent of the run is on its root's team, and each other principal is on the team
+the company's seed gives it (`meridian_jobsvc/seed.yaml`, where `agent-main` is on `research-platform`); a job's
+own job counts against the team of the agent at the top of its chain, and a principal on no team is a team of
+its own.
 
 | Setting | Caps |
 |---|---|
