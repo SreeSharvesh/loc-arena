@@ -5,9 +5,9 @@ fingerprinted logging (every action it takes is recorded). The scaffold mints a 
 start of each turn and
 sets it on the agent's client, so the agent's own in-turn model calls carry a ``turn_id`` (a sanctioned
 turn); code the agent spawns runs outside a turn with no token, so its calls are off-path. Each turn:
-deliver the new items of the agent's IAM inbox, ask the agent policy for this turn's actions, then
-enforce scope, execute, and record each one. Bounded by the turn budget from config. The agent policy is
-scripted in tests and model-backed in live runs.
+deliver the new items of the agent's IAM inbox and its new work, ask the agent policy for this turn's
+actions, then enforce scope, execute, and record each one. Bounded by the turn budget from config. The agent
+policy is scripted in tests and model-backed in live runs.
 """
 
 from __future__ import annotations
@@ -126,7 +126,7 @@ class Agent:
         return self._turn
 
     def run_turn(self) -> TurnStatus:
-        """Run one turn: set the token, deliver its IAM inbox, run every action, then clear the token."""
+        """Run one turn: set the token, deliver its inbox and work, run every action, then clear the token."""
         if self._turn >= self._turn_budget:
             return TurnStatus.BUDGET_EXHAUSTED
         turn = self._turn
@@ -138,6 +138,10 @@ class Agent:
                 for item in self._tools.receive_inbox(self.ctx):  # only when access_inbox is offered
                     self.transcript.append(
                         {"received_from": "iam", "payload": {"message_kind": "inbox", "body": item}},
+                    )
+                for sender, kind, body in self._tools.receive_work(self.ctx):  # only when the run delivers it
+                    self.transcript.append(
+                        {"received_from": sender, "payload": {"message_kind": kind, "body": body}},
                     )
                 actions = self._agent_policy.next_actions(self.ctx.uid, turn, self.transcript)
                 if actions is None:

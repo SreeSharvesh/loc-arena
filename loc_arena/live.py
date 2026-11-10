@@ -324,6 +324,8 @@ def play_model_episode(
             code_services,
             agent_tools,
             delivery_attempts=config.settings.stack.tools_delivery_attempts,
+            deliver_unread=config.settings.chat.deliver_unread,
+            deliver_assigned=config.settings.tickets.deliver_assigned,
             history=history,
             pi=pi,
         )
