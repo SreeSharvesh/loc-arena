@@ -31,13 +31,20 @@ OUTPUT_LIMIT_BYTES = 10_000
 TRUSTED_CALLER = "127.0.0.1"
 OTHER_CALLER = "192.0.2.7"  # an address reserved for documentation: no name resolves to it here
 TIMEOUT_LIMIT_SECONDS = 30.0
-LATE_SECONDS = 0.3  # how long after a command ends its handler's kill of leftovers lands, on a busy server
+LATE_SECONDS = 0.3  # how long after it is asked for a late kill of leftovers lands, as on a busy server
 
 
 @pytest.fixture
 def checkouts(tmp_path: Path) -> Path:
     (tmp_path / "checkouts" / "episode").mkdir(parents=True)
     return tmp_path / "checkouts"
+
+
+@pytest.fixture
+def pids(tmp_path: Path) -> Path:
+    """Where a command records its process id while it runs, for ``end_recorded`` to end it."""
+    (tmp_path / "pids").mkdir()
+    return tmp_path / "pids"
 
 
 def serve(
@@ -96,6 +103,38 @@ def post_reset(server: TestClient, keep: Path) -> int:
     """The status of a request to ``server`` to reset its sandbox, keeping ``keep``."""
     reply = server.post("/reset", json={"keep": str(keep)}, headers={"authorization": f"Bearer {TOKEN}"})
     return reply.status_code
+
+
+def end_recorded(pids: Path, *, late_seconds: float = 0, missed: int = 0) -> Callable[[], None]:
+    """What ends every command recorded in ``pids``, as the container's kill ends every process.
+
+    Each kill lands ``late_seconds`` after it is asked for, and the first ``missed`` kills end nothing.
+    """
+    misses = iter(range(missed))
+
+    def kill_commands() -> None:
+        time.sleep(late_seconds)
+        if next(misses, None) is not None:
+            return
+        for recorded in pids.iterdir():
+            with contextlib.suppress(ProcessLookupError):  # it ended meanwhile
+                os.killpg(int(recorded.name), signal.SIGKILL)
+            recorded.unlink(missing_ok=True)
+
+    return kill_commands
+
+
+def sleep_recorded(server: TestClient, checkouts: Path, pids: Path, seconds: float = 10) -> Any:
+    """What ``server`` answers to a command that sleeps ``seconds``, recorded in ``pids`` while it runs."""
+    return post_command(checkouts, f"touch {pids}/$$; sleep {seconds}; rm {pids}/$$", server=server)[1]
+
+
+def start_recorded(server: TestClient, checkouts: Path, pids: Path) -> concurrent.futures.Future[Any]:
+    """A command sleeping on ``server``, handed back once it runs: its answer comes when it ends."""
+    running = concurrent.futures.ThreadPoolExecutor(1).submit(sleep_recorded, server, checkouts, pids)
+    while not (any(pids.iterdir()) or running.done()):
+        time.sleep(0.01)
+    return running
 
 
 @pytest.mark.parametrize(
@@ -258,37 +297,44 @@ def test_a_reset_that_would_keep_the_whole_checkouts_directory_is_refused(checko
 
 
 def test_a_command_run_right_after_a_reset_outlives_the_end_of_the_command_the_reset_ended(
-    tmp_path: Path,
     checkouts: Path,
+    pids: Path,
 ) -> None:
-    """A reset ends a command still running, whose handler then ends leftovers too: here late, as it can be.
-
-    Ending leftovers kills each command, which records its process id, as the container's kills every process.
-    """
-    pids = tmp_path / "pids"
-    pids.mkdir()
-    delays = iter([0, LATE_SECONDS])  # before the reset's kill, then before the ended command's
-
-    def kill_commands() -> None:
-        time.sleep(next(delays, 0))
-        for recorded in pids.iterdir():
-            with contextlib.suppress(ProcessLookupError):  # it ended meanwhile
-                os.kill(int(recorded.name), signal.SIGKILL)
-            recorded.unlink(missing_ok=True)
-
-    server = serve(checkouts, end_leftovers=kill_commands)
-
-    def sleep_recorded(seconds: float) -> Any:
-        return post_command(checkouts, f"touch {pids}/$$; exec sleep {seconds}", server=server)[1]
-
-    running = concurrent.futures.ThreadPoolExecutor(1).submit(sleep_recorded, 10)
-    while not (any(pids.iterdir()) or running.done()):  # until that command has started
-        time.sleep(0.01)
+    """A reset ends a running command, whose handler then ends leftovers too: late, as each kill is here."""
+    server = serve(checkouts, end_leftovers=end_recorded(pids, late_seconds=LATE_SECONDS))
+    start_recorded(server, checkouts, pids)
     post_reset(server, checkouts / "episode")
 
-    result = sleep_recorded(2 * LATE_SECONDS)
+    result = sleep_recorded(server, checkouts, pids, 2 * LATE_SECONDS)
 
     assert result["returncode"] == 0
+
+
+def test_a_command_run_right_after_a_reset_outlives_the_end_of_a_command_sent_while_the_reset_waited(
+    checkouts: Path,
+    pids: Path,
+) -> None:
+    server = serve(checkouts, end_leftovers=end_recorded(pids, late_seconds=LATE_SECONDS))
+    start_recorded(server, checkouts, pids)
+    resetting = concurrent.futures.ThreadPoolExecutor(1).submit(post_reset, server, checkouts / "episode")
+    while any(pids.iterdir()):  # until the reset has ended that command, and waits for its handler
+        time.sleep(0.01)
+    start_recorded(server, checkouts, pids)
+    resetting.result()
+
+    result = sleep_recorded(server, checkouts, pids, 2 * LATE_SECONDS)
+
+    assert result["returncode"] == 0
+
+
+def test_a_reset_ends_a_command_its_first_kill_missed(checkouts: Path, pids: Path) -> None:
+    """A kill misses a command whose process has not started yet, and the reset waits for that command too."""
+    server = serve(checkouts, end_leftovers=end_recorded(pids, missed=1))
+    running = start_recorded(server, checkouts, pids)
+
+    post_reset(server, checkouts / "episode")
+
+    assert running.result()["returncode"] == -signal.SIGKILL
 
 
 def test_the_command_server_loads_nothing_of_the_harness() -> None:

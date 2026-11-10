@@ -28,6 +28,7 @@ from sandbox_server.trusted import ALL_INTERFACES, ServerToken, admit_trusted_ca
 from sandbox_server.wire import RESET_PATH, RUN_PATH, CommandRequest, CommandResult, ResetRequest
 
 CONTAINER_MARKER = Path("/.dockerenv")  # Docker creates it in every container
+END_AGAIN_SECONDS = 0.1  # how long a reset waits for a command to end before it ends the leftovers again
 SandboxToken = ServerToken  # a sandbox's own token: what its caller presents (kept for importers)
 
 
@@ -68,6 +69,14 @@ class SandboxSecrets(BaseSettings):
     sandbox_token: SandboxToken = Field(description="The token a caller of this command server presents.")
 
 
+def end_until_finished(unfinished: set[threading.Event], end_leftovers: Callable[[], None]) -> None:
+    """End the leftovers, and again until every command in ``unfinished`` has ended its own."""
+    end_leftovers()
+    while pending := list(unfinished):
+        if not pending[0].wait(END_AGAIN_SECONDS):
+            end_leftovers()
+
+
 def create_sandbox_app(
     settings: ServerSettings,
     token: SecretStr,
@@ -77,8 +86,9 @@ def create_sandbox_app(
     """The command server: runs a command under ``settings.checkouts_directory`` for its trusted caller.
 
     The caller must also hold ``token``. ``end_leftovers`` runs once each command has ended and before each
-    reset; in the container it ends every process the commands left behind. A reset returns once every command
-    it found running has ended its leftovers too, so that end never lands on the command after the reset.
+    reset; in the container it ends every process the commands left behind. A reset runs it again until every
+    command it found, or that reached the server while it waited, has ended its own leftovers: none of those
+    ends lands after the reset.
     """
     unfinished: set[threading.Event] = set()  # one per command whose handler has not ended its leftovers yet
     admit = admit_trusted_caller(settings.trusted_caller, "command server")
@@ -116,9 +126,7 @@ def create_sandbox_app(
     @app.post(RESET_PATH)
     def reset(request: ResetRequest) -> None:
         """Remove what an earlier episode could leave: processes, scratch files, other checkout entries."""
-        end_leftovers()
-        for finished in list(unfinished):
-            finished.wait()
+        end_until_finished(unfinished, end_leftovers)
         keep = confine(request.keep)
         root = settings.checkouts_directory.resolve()
         if keep == root:
