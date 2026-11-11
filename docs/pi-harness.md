@@ -40,13 +40,14 @@ new calls and waits for a command still running, so nothing acts after the check
 
 A loop starts on its task. When its model answers without a tool call the loop is idle. Only a notice starts it
 again: one line that says something happened in a topic the agent subscribed to. What happened is for the agent
-to read with its tools. Nothing else prompts a loop, and an agent gets no notice of what it did itself. A reply posted over chat's HTTP
+to read with its tools. Nothing else prompts a loop, and an agent gets no notice of what it did itself; what a
+job of its own did counts as another member's. A reply posted over chat's HTTP
 API names no channel in its record, so it notifies nobody; a reply made with the `reply` tool does.
 
 | Topic | A notice when |
 | --- | --- |
 | `dm` | another member sent the agent a direct message |
-| `job` | a job of the agent changed state |
+| `job` | a job the agent submitted changed state. A job that one of its jobs submitted is that job's, and notifies nobody |
 | `ticket` | a ticket was assigned to the agent |
 | `channel:<name>` | another member wrote in that channel |
 | `repo:<name>` | another member opened or merged a pull request in that repo |
@@ -58,7 +59,7 @@ Each agent starts with the topics of `pi.subscriptions` (`dm`, `job`, `ticket`) 
 | --- | --- |
 | 1. A service records a call, a request or a job's change of state | its log, and its file on the records volume (`stack.records_directory`), which only the services and the episode mount |
 | 2. The episode reads the new lines every `pi.notice_poll_seconds` and builds their events | the mapping the post-play builder uses (`loc_arena.recorded_events`) |
-| 3. Each event becomes a notice for each agent subscribed to its topic | `notices.jsonl` in the play's directory: the agent, the topic, the text, and `sent`, false when the agent's session had ended |
+| 3. Each event becomes a notice for each agent subscribed to its topic | `notices.jsonl` in the play's directory: the agent, the topic, the text, and `sent`, false when the agent's session had ended or its pi read its input no more |
 | 4. The episode gives the notice to the agent's pi as a prompt | an idle loop starts a run on it; a working loop gets it before its next model call |
 
 ## How play and a session end
@@ -73,7 +74,7 @@ the play's directory holds each agent's end, with pi's exit code and its last er
 | `finished` | the loop was idle when play ended. An answer cut at the model's output cap leaves a loop idle like any other |
 | `budget` | the gateway refused a model call past the agent's turn budget (`episode.orchestrator_turn_budget` for the lead, `episode.subagent_turn_budget` for the others): its route admits that many requests in a play. A request the provider failed, pi's retry of it and a call pi makes to summarize a long session each count as one. The session takes no later notice |
 | `ceiling` | the loop was still working when `episode.wall_clock_seconds` passed |
-| `failed` | pi failed otherwise, past its own retries, or exited. It counts in the run's `failed_model_calls` |
+| `failed` | the loop's last run failed otherwise, past pi's own retries, or pi exited. A loop whose run failed is idle: a notice starts it again. It counts in the run's `failed_model_calls` |
 
 ## Events
 

@@ -93,6 +93,16 @@ def test_a_change_of_a_jobs_state_notifies_its_owner(config: RunConfig, tmp_path
     assert noticed == [Notice("eval-agent", "job", "Your job bench (job-1) is now succeeded.")]
 
 
+def test_a_notice_is_one_short_line_however_long_a_name_in_it(config: RunConfig, tmp_path: Path) -> None:
+    notices = Notices(config, AGENTS)
+    job = {"id": "job-1", "name": "x" * 5000, "owner": "eval-agent", "state": "running"}
+    record_writer(tmp_path, "jobsvc")(json.dumps({"wall_ts": NOW, "job": job}))
+
+    noticed = notices.read()
+
+    assert [len(notice.text) for notice in noticed] == [300]
+
+
 def test_a_ticket_assigned_to_an_agent_notifies_it(config: RunConfig, tmp_path: Path) -> None:
     notices = Notices(config, AGENTS)
     record_call(tmp_path, "tickets", "agent-main", "edit_ticket", ticket="PLAT-7", assignee="eval-agent")
@@ -247,6 +257,14 @@ def test_a_subscription_to_what_is_no_topic_is_refused(config: RunConfig) -> Non
 
     with pytest.raises(ValueError, match="no topic 'channel:'"):
         notices.subscribe("eval-agent", "channel:")
+
+
+def test_a_run_config_whose_starting_subscriptions_name_no_topic_is_refused(config: RunConfig) -> None:
+    pi = config.settings.pi.model_copy(update={"subscriptions": ("dms",)})
+    misspelt = dataclasses.replace(config, settings=config.settings.model_copy(update={"pi": pi}))
+
+    with pytest.raises(ValueError, match="no topic 'dms'"):
+        Notices(misspelt, AGENTS)
 
 
 def test_a_service_writes_each_record_line_to_stdout_and_to_its_file(

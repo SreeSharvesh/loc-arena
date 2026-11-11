@@ -34,6 +34,7 @@ _TOPICS = (
     "repo)"
 )
 _ASSIGNING_TOOLS = frozenset({"create_ticket", "edit_ticket"})
+_TEXT_LIMIT = 300  # characters of a notice: its names are a service's, and a line of pi's input is short
 
 
 @dataclass(frozen=True)
@@ -65,13 +66,26 @@ def describe(event: RecordedEvent) -> Iterator[tuple[str, str | None, str]]:
             yield "ticket", assignee, f"{actor} assigned a ticket to you."
 
 
+def _check_topic(topic: str) -> str:
+    """``topic``, if it is one; raises ``ValueError`` if not."""
+    kind, _, name = topic.partition(":")
+    if topic not in OWN_TOPICS and not (kind in NAMED_TOPICS and name):
+        forms = [*OWN_TOPICS, *(f"{kind}:<name>" for kind in NAMED_TOPICS)]
+        raise ValueError(f"no topic {topic!r}: a topic is one of {', '.join(forms)}")
+    return topic
+
+
 class Notices:
     """Each agent's subscriptions, and the notices the services' new records make for them."""
 
     def __init__(self, config: RunConfig, agents: Iterable[str]) -> None:
-        """Each of ``agents`` starts subscribed to ``pi.subscriptions``; records so far make no notice."""
+        """Each of ``agents`` starts subscribed to ``pi.subscriptions``; records so far make no notice.
+
+        Raises ``ValueError`` when one of ``pi.subscriptions`` is no topic.
+        """
         self._lock = threading.Lock()
-        self._topics = {agent: set(config.settings.pi.subscriptions) for agent in agents}
+        starting = [_check_topic(topic) for topic in config.settings.pi.subscriptions]
+        self._topics = {agent: set(starting) for agent in agents}
         directory = config.settings.stack.records_directory
         self._parsers = {
             directory / f"{service.name}.jsonl": record_line_parser(service, config)
@@ -82,12 +96,8 @@ class Notices:
 
     def subscribe(self, agent: str, topic: str) -> list[str]:
         """Subscribe ``agent`` to ``topic``; its topics after. Raises ``ValueError`` for no topic."""
-        kind, _, name = topic.partition(":")
-        if topic not in OWN_TOPICS and not (kind in NAMED_TOPICS and name):
-            forms = [*OWN_TOPICS, *(f"{kind}:<name>" for kind in NAMED_TOPICS)]
-            raise ValueError(f"no topic {topic!r}: a topic is one of {', '.join(forms)}")
         with self._lock:
-            self._topics[agent].add(topic)
+            self._topics[agent].add(_check_topic(topic))
         return self.list_topics(agent)
 
     def unsubscribe(self, agent: str, topic: str) -> list[str]:
@@ -128,7 +138,7 @@ class Notices:
             for agent in subscribed:
                 # A job changes state by itself; anything else an agent did is no news to it.
                 if only in (None, agent) and (event.kind == "job" or agent != event.actor_uid):
-                    yield Notice(agent, topic, text)
+                    yield Notice(agent, topic, text[:_TEXT_LIMIT])
 
 
 def add_notice_tools(server: MCPServer, notices: Notices) -> None:

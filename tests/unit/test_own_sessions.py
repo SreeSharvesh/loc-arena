@@ -176,6 +176,32 @@ def test_play_ends_every_session_though_one_stopped_reading_its_notices(
     assert {agent: end.reason for agent, end in ended.items()} == dict.fromkeys(BRIEFS, "finished")
 
 
+def test_a_session_whose_last_run_failed_still_takes_a_notice(config: RunConfig, tmp_path: Path) -> None:
+    write_home(tmp_path / "agent-main", **message_from_agent_main(config, tmp_path))
+    write_home(tmp_path / "eval-agent", stop="error", error="500 upstream failed")
+
+    ended = play(config, tmp_path)
+
+    taken = (inputs_of(tmp_path / "eval-agent"), ended["eval-agent"])
+    assert taken == ([TASK, NOTICE], SessionEnd("failed", 0, "500 upstream failed"))
+
+
+def test_a_session_whose_pi_reads_its_input_no_more_does_not_hold_play_past_the_ceiling(
+    config: RunConfig,
+    tmp_path: Path,
+) -> None:
+    flood = message_from_agent_main(config, tmp_path)
+    flood["record"] = "\n".join([flood["record"]] * 2000)  # more than a pipe holds
+    write_home(tmp_path / "agent-main", **flood)
+    write_home(tmp_path / "eval-agent", sleep="30")
+
+    ended = play(config, tmp_path, seconds=2)
+
+    noticed = [json.loads(line) for line in (tmp_path / "notices.jsonl").read_text().splitlines()]
+    unsent = sum(not notice["sent"] for notice in noticed)
+    assert (ended["eval-agent"].reason, len(noticed), unsent > 0) == ("ceiling", 2000, True)
+
+
 def test_a_session_whose_models_answer_was_cut_at_its_output_cap_is_idle_like_any_other(
     config: RunConfig,
     tmp_path: Path,

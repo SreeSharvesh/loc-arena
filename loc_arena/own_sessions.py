@@ -19,7 +19,6 @@ the services' records hold nothing new, or at the episode's wall-clock ceiling.
 
 from __future__ import annotations
 
-import contextlib
 import json
 import logging
 import os
@@ -78,7 +77,8 @@ class SessionEnd:
     """How an agent's session ended, and why: pi's exit code, none at the ceiling, and its last error.
 
     ``finished``: idle when play ended. ``ceiling``: still working at the wall clock. ``budget``: the gateway
-    refused a model call past the agent's turn budget. ``failed``: pi failed otherwise, or exited.
+    refused a model call past the agent's turn budget. ``failed``: its last run failed otherwise, past pi's
+    own retries, or pi exited.
     """
 
     reason: EndReason
@@ -119,6 +119,8 @@ class _Session:
                 cwd=home,
                 env=environment,
             )
+        assert self._pi.stdin is not None
+        os.set_blocking(self._pi.stdin.fileno(), False)  # a pi that reads no more never holds play up
         self._lock = threading.Lock()
         self._owed = 0  # prompts pi has not answered yet
         self._running = False
@@ -135,10 +137,9 @@ class _Session:
         with self._lock:
             if self._end is not None or self._pi.stdin is None:
                 return False
-            try:
-                self._pi.stdin.write(json.dumps(command).encode() + b"\n")
-                self._pi.stdin.flush()
-            except OSError:  # pi is gone: its end is read where its output ends
+            try:  # a line this short reaches a pipe whole or not at all
+                os.write(self._pi.stdin.fileno(), json.dumps(command).encode() + b"\n")
+            except OSError:  # pi is gone, or reads its input no more
                 return False
             self._owed += 1
             return True
@@ -153,7 +154,12 @@ class _Session:
         for line in self._pi.stdout:
             try:
                 event = _PiEvent.model_validate_json(line)
-            except ValueError:  # no event of pi's protocol, or one a session does not follow
+            except ValueError:  # no event of pi's protocol as a session follows it
+                _LOGGER.warning(
+                    "%s: a line of pi's was not followed: %r",
+                    self._errors.parent.name,
+                    line[:200],
+                )
                 continue
             with self._lock:
                 self._take(event)
@@ -173,11 +179,9 @@ class _Session:
             self._last = event.message
         elif event.type == "agent_settled":  # pi goes on with nothing by itself, its retries included
             self._running = False
-            if self._last.stop_reason == "error":
-                error = str(self._last.error_message)
-                # the provider's own 429 has another body: a failure
-                reason: EndReason = "budget" if error == BUDGET_REFUSAL else "failed"
-                self._end = SessionEnd(reason, None, error[-_STDERR_TAIL:])
+            # The gateway admits no later call of its agent's; after any other error a notice starts pi again.
+            if self._last.stop_reason == "error" and self._last.error_message == BUDGET_REFUSAL:
+                self._end = SessionEnd("budget", None, BUDGET_REFUSAL)
 
     def _read_errors(self) -> str:
         return self._errors.read_text(errors="replace")[-_STDERR_TAIL:]
@@ -185,12 +189,12 @@ class _Session:
     def stop(self) -> SessionEnd:
         """End the session, closing pi's input: how it ended, still working there or idle."""
         with self._lock:
-            working = self._running or self._owed > 0
-            self._end = self._end or SessionEnd("ceiling" if working else "finished")
-            # Closing flushes a prompt pi never read, into a pipe it may have closed.
-            with contextlib.suppress(OSError):
-                assert self._pi.stdin is not None
-                self._pi.stdin.close()
+            idle = SessionEnd("finished")
+            if self._last.stop_reason == "error":  # the provider's own 429 among them: no budget refusal
+                idle = SessionEnd("failed", None, str(self._last.error_message)[-_STDERR_TAIL:])
+            self._end = self._end or (SessionEnd("ceiling") if self._running or self._owed > 0 else idle)
+            assert self._pi.stdin is not None
+            self._pi.stdin.close()
             return self._end
 
     def wait(self, seconds: float) -> int | None:
@@ -302,20 +306,16 @@ def play_sessions(
     ceiling = monotonic() + seconds
     sessions: dict[str, _Session] = {}
     ended: dict[str, SessionEnd] = {}
-    for agent, brief in briefs.items():
-        try:
-            home = homes / agent
-            pi = write_pi_home(home, config, agent, brief)
-            environment = {"HOME": str(home), "PATH": os.environ["PATH"], **_PI_ENVIRONMENT}
-            sessions[agent] = _Session(pi, home, environment)
-            sessions[agent].prompt(TASK)
-        except (
-            OSError,
-            KeyError,
-            ValueError,
-        ) as error:  # its home or pi could not be set up
-            ended[agent] = SessionEnd("failed", None, str(error))
+    environment = {"PATH": os.environ["PATH"], **_PI_ENVIRONMENT}
     try:
+        for agent, brief in briefs.items():
+            try:
+                home = homes / agent
+                pi = write_pi_home(home, config, agent, brief)
+                sessions[agent] = _Session(pi, home, {"HOME": str(home), **environment})
+                sessions[agent].prompt(TASK)
+            except (OSError, KeyError, ValueError) as error:  # its home or pi could not be set up
+                ended[agent] = SessionEnd("failed", None, str(error))
         while monotonic() < ceiling:
             # Idle sessions write no record, so what is read after this check is all there will be.
             idle = not any(session.is_working() for session in sessions.values())
