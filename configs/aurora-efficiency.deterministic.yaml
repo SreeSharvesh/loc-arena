@@ -5,6 +5,7 @@
 extends: aurora-efficiency.yaml
 models: models.cheap.yaml
 policy: scripted
+harness: native   # the scripted moves play in the arena's own loop
 # It plays in this process, where no IAM runs; aurora-efficiency.iam.yaml is the same fixture in a stack run.
 iam:
   enabled: false

@@ -45,6 +45,7 @@ from loc_arena.gateway.core import (
     OPENROUTER_URL,
     OpenRouterProvider,
 )
+from loc_arena.gateway.loop_routes import NEVER_REFILLS, Loops, render_loop_routes
 from loc_arena.settings import LocArenaSettings
 from loc_arena.yaml_documents import dump_document
 
@@ -76,10 +77,10 @@ ACCESS_LOG_SCOPE = "agentgateway.access"  # the OTLP scope of agentgateway's acc
 PROJECT_PREFIX = "locarena-"  # each stack run's compose project is locarena-<instance id>
 UNKNOWN_CALLER = "unknown"
 CALL_RECORD_FILE = "gateway.calls.jsonl"  # the run directory's copy of the call record, which grading reads
-NEVER_REFILLS = "87600h"  # a rate-limit bucket that refills once in ten years counts calls per play
 POLL_SECONDS = 0.5
 
 Play = Literal["attack", "twin"]
+PHASE_PLAYS: dict[str, Play] = {"episode": "attack", "honest_cal": "twin"}  # by the phase's directory
 RunCompose = Callable[..., subprocess.CompletedProcess[str]]
 PLAY_TAG: TypeAdapter[Play | None] = TypeAdapter(Play | None)  # a record's play tag, parsed
 
@@ -190,8 +191,12 @@ def render_model_gateway_config(
     play: Play,
     *,
     badges: bool,
+    loops: Loops | None = None,
 ) -> str:
     """The gateway's config (agentgateway v1.6 schema) for ``callers`` in ``play``, as a compose secret.
+
+    Each agent in ``loops`` has a route of its own for its loop's model calls (``harness: pi``), which admits
+    the episode's token alone and that agent's calls in the play, and sends each upstream with ``overrides``.
 
     ``callers`` are admitted by the SHA-256 of their token on the callers' route. The runners' route admits a
     badge IAM signed alone (its key set in ``settings.iam.key_set``), so nothing without ``badges`` (a stack
@@ -246,6 +251,7 @@ def render_model_gateway_config(
         },
         "ai": {"routes": {"*": "passthrough"}},  # forwarded as the caller sent it
     }
+    episode = {"caller": EPISODE_CALLER}
     runner_models = json.dumps([*gateway.runner_models, *gateway.runner_model_aliases])
     routes = [
         {
@@ -288,6 +294,12 @@ def render_model_gateway_config(
             },
             "backends": backends,
         },
+        *render_loop_routes(
+            loops,
+            {**shared, "apiKey": {**by_token, "keys": [key for key in keys if key["metadata"] == episode]}},
+            backends,
+            CHAT_PATH,
+        ),
         {
             # Any other path: refused, its body read first so the record keeps it, its caller named if known.
             "name": "refused",
@@ -413,8 +425,11 @@ def issue_gateway_secrets(
     play: Play,
     *,
     badges: bool,
+    loops: Loops | None = None,
 ) -> dict[str, str]:
     """One play's gateway secrets by host variable: the ``held`` tokens and configs admitting its callers.
+
+    ``loops`` holds each agent whose loop calls the gateway itself.
 
     The callers by token are the episode, the host and each sandbox in ``sandboxes``; with ``badges`` (a stack
     with IAM), workloads call by badge.
@@ -426,7 +441,13 @@ def issue_gateway_secrets(
     ]
     return {
         **held,
-        MODEL_GATEWAY_CONFIG_VARIABLE: render_model_gateway_config(settings, callers, play, badges=badges),
+        MODEL_GATEWAY_CONFIG_VARIABLE: render_model_gateway_config(
+            settings,
+            callers,
+            play,
+            badges=badges,
+            loops=loops,
+        ),
         COLLECTOR_CONFIG_VARIABLE: render_collector_config(settings),
     }
 

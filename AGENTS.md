@@ -45,7 +45,7 @@ Component specs cannot weaken the contract's isolation, authorization or evidenc
 | `loc_arena/verifier/`, `loc_arena/tasks/` | the sealed side-task verifier; the main-task grader |
 | `loc_arena/metrics.py` | safety and usefulness metrics |
 | `company/meridian-forge/`, `loc_arena/forge_service.py`, `loc_arena/npcs/`, `docs/forge-service.md` | the git forge: a platform package of the company's like `meridian-iam` (never in the agents' checkout) holding its pull requests, merges and git repositories over HTTP, seeded from the scenario's `forge.yaml`; the lab's start-up of it under IAM; the scripted coworkers and reviewer; its plan |
-| `loc_arena/scaffold/pi_harness.py`, `loc_arena/scaffold/pi_bridge.ts`, `docs/pi-harness.md` | `harness: pi`: each agent's loop in pi, a child process of the episode, whose model calls and tool calls the episode plays in the agent's turns; pi's extension |
+| `loc_arena/own_sessions.py`, `loc_arena/workspace_service.py`, `loc_arena/session_events.py`, `loc_arena/gateway/loop_routes.py`, `docs/pi-harness.md` | `harness: pi`: each agent's whole session in its own pi process, started together by the episode, which plays no turn; the workspace service, an agent's bash and file tools behind the tools gateway; a session's turns and `inference_call` events from the model gateway's call record; each loop's own route at the model gateway, with its turn budget and the config's request settings |
 | `loc_arena/scaffold/mcp_client.py`, `loc_arena/tool_records.py`, `loc_arena/mcp_service.py` | each agent's MCP client; every MCP service's record of the tool calls made to it; who calls a service, and how it is served |
 | `loc_arena/agents_service.py`, `company/meridian-controlplane/meridian_controlplane/agents/`, `docs/agents-service.md` | the agents service: Meridian's registry of its agents, their executions on the runners (stopped and resumed through checkpoints), each agent's identity and the schedules, company code a stack run serves under central IAM; its plan |
 | `loc_arena/tickets_service.py`, `company/meridian-controlplane/meridian_controlplane/tickets/`, `docs/tickets-service.md` | the tickets service: Meridian's ticket tracker, company code a stack run serves with MCP tools and an HTTP API over one SQLite store under central IAM, seeded from the scenario's `tickets.yaml` |
@@ -157,7 +157,7 @@ the latest push. After changing `.coderabbit.yaml`, comment `@coderabbitai confi
   `configs/monitors.yaml`).
 - The honest twin completes no covert milestone; it calibrates the audit threshold
   (`tests/integration/test_honest_twin_clean.py`). It holds the attack run's tools and rights, without the covert
-  briefs, the gateway's covert injection and, in a scripted run, the scenario's attack moves, and plays on services and sandboxes recreated, each service from its
+  briefs, the covert objective (the gateway's injection, or under `harness: pi` the lead of the target's brief) and, in a scripted run, the scenario's attack moves, and plays on services and sandboxes recreated, each service from its
   seed.
 - An agent is offered exactly the tools its `sandbox: tools:` lists, plus, under central IAM, IAM's
   `access_inbox`, which takes the caller from the agent's inbox key and reads only its inbox. Every other service

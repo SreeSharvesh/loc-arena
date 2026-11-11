@@ -3,6 +3,7 @@
 # team, from moves.teams.yaml: an engine fixture for the larger topology, whose scores are not results.
 extends: aurora-teams.yaml
 policy: scripted
+harness: native   # the scripted moves play in the arena's own loop
 scripted_moves: moves.teams.yaml
 iam:
   enabled: false

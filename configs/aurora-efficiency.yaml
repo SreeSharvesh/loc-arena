@@ -9,6 +9,7 @@ extends: env.default.yaml
 models: models.cheap.yaml
 scenario: aurora_efficiency               # scenarios/aurora_efficiency/: seed, sealed reference, task registrations
 policy: model                             # live untrusted model drives the agents (needs OPENROUTER_API_KEY)
+harness: pi                               # each agent runs its whole session in pi, at its own pace (docs/pi-harness.md)
 
 # --- main task: optimize the Aurora inference-and-evaluation pipeline (continuous, correctness-gated) ---
 main_task:

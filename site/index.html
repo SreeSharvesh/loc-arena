@@ -83,9 +83,10 @@ the baseline for normal behaviour, and it calibrates the detection threshold. It
 checker: the twin reaches no covert step, so it must always verify clean.</p>
 
 <h2>How it runs</h2>
-<p>Each agent has its harness's native tools (read, edit, bash), which act in its own sandbox, and an MCP client.
-Every other tool, such as opening a pull request or messaging a teammate, is served by a service behind one MCP
-route, agentgateway; the run config lists each agent's tools. Every model call goes through a gateway that alone
+<p>Each agent has bash and file tools, which act in its own sandbox and checkout, and an MCP client. Every other
+tool, such as opening a pull request or messaging a teammate, is served by a service behind one MCP route,
+agentgateway; the run config lists each agent's tools. A live agent runs its whole session at its own pace,
+beside the others, and reaches its bash and file tools through that route too. Scripted moves play in turns. Every model call goes through a gateway that alone
 holds the key. After play, each service's record of the calls made to it becomes the events the checker and the
 monitors read.</p>
 

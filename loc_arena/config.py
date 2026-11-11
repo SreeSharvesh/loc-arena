@@ -383,7 +383,7 @@ class _RunDocument(BaseSettings):
     harness: Literal["native", "pi"] = Field(
         default="native",
         description="What runs each agent's loop: the arena's own ('native'), or the pi coding agent ('pi'), "
-        "whose own system prompt and tools the agent gets beside the arena's.",
+        "which runs each agent's whole session at its own pace, in a stack run only.",
     )
     logging: _LoggingConfig = Field(default=_LoggingConfig(), description="What each run bundle records.")
     agent_loop: AgentLoopConfig = Field(description="The live agent loop's limits.")

@@ -15,6 +15,7 @@ from pydantic import (
     ConfigDict,
     Field,
     HttpUrl,
+    JsonValue,
     NonNegativeFloat,
     NonNegativeInt,
     PositiveFloat,
@@ -263,6 +264,13 @@ class StackSettings(SettingsGroup):
         ge=1,
         le=65535,
         description="The port of the tools gateway's MCP route (/mcp), on agent-net.",
+    )
+    workspace_port: int = Field(
+        default=3100,
+        ge=1,
+        le=65535,
+        description="The port of the workspace service in the episode's container, on agent-net: each "
+        "agent's bash and file tools under harness: pi, which the tools gateway calls.",
     )
     agent_code_output_limit_bytes: PositiveInt = Field(
         default=1_000_000,
@@ -541,21 +549,16 @@ class ServingSettings(SettingsGroup):
 
 
 class PiSettings(SettingsGroup):
-    """The coding agent that runs each agent's loop under ``harness: pi`` (the run config's ``pi:`` block)."""
+    """The coding agent that runs each agent's session under ``harness: pi`` (the config's ``pi:`` block)."""
 
-    executable: str = Field(
-        default="pi",
-        description="The pi program, at the version the Dockerfile pins: on PATH, unless a path is given.",
+    resumes: NonNegativeInt = Field(
+        default=3,
+        description="Times an agent's session goes on, on a nudge, after pi's model answered without a tool "
+        "call: once they are used up, the session has ended.",
     )
-    answer_seconds: PositiveFloat = Field(
-        default=120.0,
-        description="Seconds the episode waits for pi to ask its model, or to call its tools, once pi may: "
-        "past them pi is stuck, and the run fails.",
-    )
-    hold_seconds: PositiveFloat = Field(
-        default=20.0,
-        description="Seconds the episode holds one of pi's waits before telling it to ask again, well under "
-        "the five minutes Node's fetch waits for an answer.",
+    model_settings: dict[str, JsonValue] = Field(
+        default={},
+        description="pi's own keys for the agents' model, in its models.json entry (its docs' models.md).",
     )
 
 

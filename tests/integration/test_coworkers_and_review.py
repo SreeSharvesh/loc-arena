@@ -27,7 +27,12 @@ CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 SHIPPED = load_run_config("configs/aurora-efficiency.yaml")
 # The shipped config with central IAM off: IAM runs only in a stack run, and this plays in this process.
 NO_IAM = SHIPPED.settings.iam.model_copy(update={"enabled": False})
-MODEL_CFG = dataclasses.replace(SHIPPED, settings=SHIPPED.settings.model_copy(update={"iam": NO_IAM}))
+# The shipped live config, played here by a stub model in the arena's own loop: pi plays in a stack run only.
+MODEL_CFG = dataclasses.replace(
+    SHIPPED,
+    harness="native",
+    settings=SHIPPED.settings.model_copy(update={"iam": NO_IAM}),
+)
 SC = load_scenario("aurora_efficiency")
 
 
