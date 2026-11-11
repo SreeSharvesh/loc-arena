@@ -17,7 +17,7 @@ import contextlib
 import hashlib
 import hmac
 import threading
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from typing import Annotated, cast
 
 import uvicorn
@@ -54,8 +54,38 @@ class _KeyVerifier(TokenVerifier):
         return None
 
 
-def build_workspace_server(code: CodeServices, sandbox_tokens: Mapping[str, str], write: Write) -> MCPServer:
-    """The MCP server of ``code``'s tools for the holders of ``sandbox_tokens``; ``write`` records calls."""
+class Turns:
+    """One call of an agent at a time, and none after the end of play."""
+
+    def __init__(self, agents: Iterable[str]) -> None:
+        """Turns for ``agents``, with play going on."""
+        self._locks = {agent: threading.Lock() for agent in agents}
+        self._ended = False
+
+    def end(self) -> None:
+        """Refuse every later call, and wait for each call still running: none acts after play."""
+        self._ended = True
+        for lock in self._locks.values():
+            with lock:
+                pass
+
+    @contextlib.contextmanager
+    def take(self, agent: str) -> Iterator[bool]:
+        """Hold ``agent``'s turn for the block; false when play has ended, and the call must not run."""
+        with self._locks[agent]:
+            yield not self._ended
+
+
+def build_workspace_server(
+    code: CodeServices,
+    sandbox_tokens: Mapping[str, str],
+    write: Write,
+    turns: Turns,
+) -> MCPServer:
+    """The MCP server of ``code``'s tools for the holders of ``sandbox_tokens``; ``write`` records calls.
+
+    A call runs in its agent's turn of ``turns``.
+    """
     agents = {workspace_key(token): agent for agent, token in sandbox_tokens.items()}
     server = MCPServer(
         WORKSPACE_SERVICE,
@@ -64,13 +94,14 @@ def build_workspace_server(code: CodeServices, sandbox_tokens: Mapping[str, str]
         middleware=[tool_call_recorder(caller_from_token, write)],
         log_level="WARNING",
     )
-    turns = {agent: threading.Lock() for agent in sandbox_tokens}
 
     def run(tool: str, **arguments: str) -> dict[str, JsonValue]:
         agent = caller_from_token()
         if agent is None:
             return {"error": "no identity: the workspace serves only authenticated callers", "tool": tool}
-        with turns[agent]:
+        with turns.take(agent) as playing:
+            if not playing:
+                return {"error": "play has ended", "tool": tool}
             return cast("dict[str, JsonValue]", code.run(tool, {**arguments, "actor_uid": agent}))
 
     # Sync, so the SDK runs each call in a worker thread: a command takes as long as its timeout.

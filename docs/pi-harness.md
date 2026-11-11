@@ -32,7 +32,8 @@ The agent is offered its `sandbox: tools:` on the company's services, and the wo
 The workspace service runs in the episode's container, on the code tools the native loop calls: a file tool
 reads and writes the agent's checkout, and a command runs in the agent's sandbox. The tools gateway names the
 agent to it with that agent's workspace key, derived from its sandbox token. It runs one call of an agent at a
-time, and records every call in `records/workspace.jsonl` of the play's directory.
+time, and records every call in `records/workspace.jsonl` of the play's directory. At the end of play it refuses
+new calls and waits for a command still running, so nothing acts after the checkouts are captured.
 
 ## How a session ends
 

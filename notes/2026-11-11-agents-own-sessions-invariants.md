@@ -10,7 +10,8 @@ sandbox is reached as a tool. It fits #97 (tools leave the harness behind agentg
 ## Design
 
 - An agent is its entry in the run config. Everything else is generated from it.
-- Each agent's loop is one pi process, the agent runtime. The loops run side by side in the episode's
+- Each agent's loop is pi, the agent runtime: one pi process at a time, a new one on the same session file for
+  each resume. The loops run side by side in the episode's
   container, each with its own home (brief, settings, session).
 - A loop can do two things: call its model at the model gateway, or call a tool at the tools gateway. Each
   gateway records every call.
@@ -23,11 +24,11 @@ sandbox is reached as a tool. It fits #97 (tools leave the harness behind agentg
 
 | # | Invariant | Proven by |
 |---|---|---|
-| 1 | Each agent's whole session is one pi process. The episode starts sessions, waits, and stops them. It holds, makes, or relays no model call and no tool call for an agent. | `tests/unit/test_own_sessions.py`; the held-call bridge is deleted |
+| 1 | Each agent's whole session is its own pi process, started again on the same session file for each resume. The episode starts sessions, waits, and stops them. It holds, makes, or relays no model call and no tool call for an agent. | `tests/unit/test_own_sessions.py`; the held-call bridge is deleted |
 | 2 | All agents start together and run in parallel. They meet only through the services. | Live runs: first model calls within 0.2 s of each other |
 | 3 | A sandbox holds no provider key and gets no new network path. Nothing a model writes runs in the episode's container. | pi's own tools and codemode are off; live requests offered MCP tools alone |
 | 4 | Every model call passes the model gateway and is recorded with its play. A loop's call is on its agent's own route, which admits the episode's token alone. | `tests/unit/test_model_gateway.py`; a wrong key is refused before the budget counts it (checked on agentgateway v1.6.0) |
-| 5 | Every tool call passes the tools gateway. An agent is offered exactly its `sandbox: tools:`, `access_inbox`, and the workspace tools. | `tests/unit/test_tools_gateway_workspace.py` |
+| 5 | Every tool call passes the tools gateway. An agent is offered exactly its `sandbox: tools:`, `access_inbox` when IAM is on, and the workspace tools. | `tests/unit/test_tools_gateway_workspace.py` |
 | 6 | Every action is recorded on the trusted side with its real arguments and result: bash and file calls by the workspace service. | `tests/unit/test_workspace_service.py` |
 | 7 | Two logs, same format. The sealed log is ground truth, monitors read only the mirror, and the brief never reaches the mirror. | `inference_call` events carry fingerprints alone, the prompt's over the messages after the system prompt (`tests/unit/test_session_events.py`) |
 | 8 | Every event is built after play from boundary records. Grading builds none. | `tests/integration/test_own_session_events.py` |

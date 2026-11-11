@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import socket
+import threading
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,7 @@ from loc_arena.scaffold.mcp_client import over_http
 from loc_arena.settings import StackSettings
 from loc_arena.workspace_service import (
     WORKSPACE_TOOLS,
+    Turns,
     build_workspace_server,
     serve_workspace,
     workspace_key,
@@ -30,12 +32,17 @@ def records(tmp_path: Path) -> list[dict[str, Any]]:
 
 
 @pytest.fixture
-def url(tmp_path: Path, records: list[dict[str, Any]]) -> Iterator[str]:
+def turns() -> Turns:
+    return Turns(TOKENS)
+
+
+@pytest.fixture
+def url(tmp_path: Path, records: list[dict[str, Any]], turns: Turns) -> Iterator[str]:
     checkouts = {agent: Checkout(tmp_path / agent, LocalRunner(output_limit_bytes=None)) for agent in TOKENS}
     for checkout in checkouts.values():
         checkout.directory.mkdir()
     code = CodeServices(checkouts=checkouts, repos=[], stack=StackSettings(shell_timeout_seconds=30))
-    server = build_workspace_server(code, TOKENS, lambda line: records.append(json.loads(line)))
+    server = build_workspace_server(code, TOKENS, lambda line: records.append(json.loads(line)), turns)
     with socket.socket() as free:
         free.bind(("127.0.0.1", 0))
         port = free.getsockname()[1]
@@ -57,6 +64,30 @@ def test_an_agents_command_runs_in_its_own_checkout(url: str, tmp_path: Path) ->
 
     made = {agent: (tmp_path / agent / "note.txt").exists() for agent in TOKENS}
     assert made == {"agent-a": False, "agent-b": True}
+
+
+def test_a_call_after_the_end_of_play_does_not_run(url: str, turns: Turns, tmp_path: Path) -> None:
+    turns.end()
+
+    refused = call(url, workspace_key(TOKENS["agent-a"]), "bash", {"command": "echo late > late.txt"})
+
+    assert (refused["error"], (tmp_path / "agent-a" / "late.txt").exists()) == ("play has ended", False)
+
+
+def test_the_end_of_play_waits_for_a_running_command(url: str, turns: Turns, tmp_path: Path) -> None:
+    key = workspace_key(TOKENS["agent-a"])
+    running = threading.Thread(
+        target=call,
+        args=(url, key, "bash", {"command": "sleep 1; echo x > done.txt"}),
+    )
+    running.start()
+    while not turns._locks["agent-a"].locked():  # noqa: SLF001 - the command has started
+        threading.Event().wait(0.01)
+
+    turns.end()
+
+    assert (tmp_path / "agent-a" / "done.txt").exists()
+    running.join()
 
 
 def test_a_file_an_agent_writes_is_the_file_it_reads(url: str) -> None:
@@ -102,7 +133,8 @@ def test_it_offers_the_native_code_tools(url: str) -> None:
 
 def test_a_service_that_cannot_start_stops_the_play(url: str) -> None:
     taken = int(url.rsplit(":", 1)[1].split("/")[0])
-    server = build_workspace_server(CodeServices(checkouts={}, repos=[], stack=StackSettings()), {}, print)
+    code = CodeServices(checkouts={}, repos=[], stack=StackSettings())
+    server = build_workspace_server(code, {}, print, Turns(()))
 
     with pytest.raises(RuntimeError, match="could not start"), serve_workspace(server, "127.0.0.1", taken):
         pass

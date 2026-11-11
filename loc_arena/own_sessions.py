@@ -39,7 +39,7 @@ from loc_arena.scaffold.code_services import CodeServices
 from loc_arena.stack_play import EPISODE_SERVICE
 from loc_arena.task import TOOLS_URL_VARIABLE
 from loc_arena.tool_records import append_to
-from loc_arena.workspace_service import WORKSPACE_SERVICE, build_workspace_server, serve_workspace
+from loc_arena.workspace_service import WORKSPACE_SERVICE, Turns, build_workspace_server, serve_workspace
 
 _LOGGER = logging.getLogger(__name__)
 LOOPS_DIRECTORY = "loops"  # in a play's directory: each loop's home, with its brief and its session
@@ -249,9 +249,11 @@ def play_own_sessions(
     secrets_dir = config.settings.gateway.secrets_dir
     tokens = {agent: (secrets_dir / token_secret_name(agent)).read_text().strip() for agent in briefs}
     records = append_to(directory / RECORDS_DIRECTORY / f"{WORKSPACE_SERVICE}.jsonl")
-    workspace = build_workspace_server(code, tokens, records)
+    turns = Turns(briefs)
+    workspace = build_workspace_server(code, tokens, records, turns)
     briefs = {agent: brief_loop(config, agent, brief) for agent, brief in briefs.items()}
     with serve_workspace(workspace, EPISODE_SERVICE, config.settings.stack.workspace_port):
         ended = play_sessions(config, briefs, directory / LOOPS_DIRECTORY, seconds)
+        turns.end()  # a command still running ends before the checkouts are captured
     record_session_ends(directory, ended)
     return ended
