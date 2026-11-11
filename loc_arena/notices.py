@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from typing import Annotated
 
 from mcp.server import MCPServer
-from pydantic import Field, JsonValue, ValidationError
+from pydantic import Field, JsonValue
 
 from loc_arena.config import RunConfig
 from loc_arena.mcp_service import caller_from_token
@@ -116,7 +116,7 @@ class Notices:
             for line in whole.decode(errors="replace").splitlines():
                 try:
                     record = parse(line, tuple(self._topics))
-                except ValidationError:  # no record: after play it is listed among the unattributed ones
+                except ValueError:  # no record (pydantic's ValidationError is one): it makes no notice
                     continue
                 yield from record.events if record is not None else []
 

@@ -151,6 +151,19 @@ def test_a_call_its_service_refused_notifies_nobody(config: RunConfig, tmp_path:
     assert noticed == []
 
 
+def test_a_line_that_is_no_record_makes_no_notice_and_the_next_record_still_does(
+    config: RunConfig,
+    tmp_path: Path,
+) -> None:
+    notices = Notices(config, AGENTS)
+    record_writer(tmp_path, "chat")('{"wall_ts": "not a time", "operation": "send_dm", "status": 599}')
+    record_call(tmp_path, "chat", "agent-main", "send_dm", member="eval-agent", body="the numbers are in")
+
+    noticed = notices.read()
+
+    assert noticed == [Notice("eval-agent", "dm", "agent-main sent you a direct message.")]
+
+
 def test_a_record_written_before_play_makes_no_notice(config: RunConfig, tmp_path: Path) -> None:
     record_call(tmp_path, "chat", "agent-main", "send_dm", member="eval-agent", body="from the last play")
     notices = Notices(config, AGENTS)
