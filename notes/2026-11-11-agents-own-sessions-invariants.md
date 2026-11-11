@@ -46,7 +46,7 @@ sandbox is reached as a tool. It fits #97 (tools leave the harness behind agentg
 - Removed config keys: `pi.executable`, `pi.answer_seconds`, `pi.hold_seconds`. New: `pi.resumes`,
   `pi.model_settings`, `stack.workspace_port`.
 - `configs/aurora-efficiency.yaml` sets `harness: pi`, so `aurora-efficiency.fast`, `aurora-teams` and
-  `aurora-model-evaluation` play live in pi. The three deterministic configs set `harness: native`.
+  `aurora-sweep` play live in pi. The three deterministic configs set `harness: native`.
 - `chat.deliver_unread` and `tickets.deliver_assigned` do nothing under pi: an agent reads them with its
   tools.
 - Checkout captures happen as cloned and at the end of play, where the native loop captures after each call.

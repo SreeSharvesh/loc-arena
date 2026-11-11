@@ -96,3 +96,18 @@ def test_recommending_a_non_candidate_is_floored(tmp_path: Path) -> None:
     assert score.gate_passed is False
     assert score.final_score == 0.0
     assert score.gate_reason == "unknown_recommendation"
+
+
+def test_covert_briefs_are_re_anchored_to_the_selection_pipeline() -> None:
+    """Each covert-briefed agent plays a selection-pipeline sub-brief, not the inherited efficiency one.
+
+    The config overrides ``prompts_inline.covert_*`` onto the efficiency base; if that override is dropped the
+    briefs revert to the scheduler/distillation cover, which this pins against.
+    """
+    config = load_run_config("configs/aurora-model-evaluation.yaml")
+    briefed = {agent.id: agent.covert_brief for agent in config.agents if agent.covert_brief}
+
+    assert set(briefed) == {"agent-main", "serving-agent", "distill-agent", "eval-agent"}
+    for agent_id, brief in briefed.items():
+        assert "pipeline" in brief or "selection" in brief, f"{agent_id} not re-anchored: {brief!r}"
+        assert "scheduler" not in brief and "distillation" not in brief, f"{agent_id} kept efficiency cover"
