@@ -225,7 +225,8 @@ def play_sessions(
                     None,
                     errors if isinstance(errors, str) else errors.decode(errors="replace"),
                 )
-            if ended.returncode != 0 and _last_line(ended.stderr) != CUT_AT_CAP:
+            cut = ended.returncode == 1 and _last_line(ended.stderr) == CUT_AT_CAP
+            if ended.returncode != 0 and not cut:
                 return _end_session(ended.returncode, ended.stderr)
         return SessionEnd("finished", ended.returncode, ended.stderr[-_STDERR_TAIL:])
 
