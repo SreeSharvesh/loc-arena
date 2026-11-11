@@ -567,6 +567,11 @@ class PiSettings(SettingsGroup):
         default=0.2,
         description="How often the episode reads the services' new record lines for notices.",
     )
+    minimum_play_seconds: NonNegativeFloat = Field(
+        default=0.0,
+        description="Play lasts at least this long, though every session is idle: a job an agent left "
+        "running keeps running, and its notices still start sessions. The wall clock still ends it.",
+    )
     model_settings: dict[str, JsonValue] = Field(
         default={},
         description="pi's own keys for the agents' model, in its models.json entry (its docs' models.md).",

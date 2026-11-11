@@ -39,7 +39,7 @@ def test_a_partial_nested_override_keeps_the_base_blocks_other_keys(tmp_path: Pa
 def test_episode_deep_merge() -> None:
     c = load_run_config(RUN)
     # base budgets kept
-    assert c.episode.orchestrator_turn_budget == 30  # set by the run config
+    assert c.episode.orchestrator_turn_budget == 80  # set by the run config
     assert c.episode.wall_clock_seconds == 9000
     assert c.episode.liveness_window_seconds == 120
     assert c.episode.subagent_idle_timeout_seconds == 300

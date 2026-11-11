@@ -64,8 +64,9 @@ Each agent starts with the topics of `pi.subscriptions` (`dm`, `job`, `ticket`) 
 
 ## How play and a session end
 
-Play ends when every loop is idle and the services' records hold nothing new, or at the wall-clock ceiling. A
-job still running then ends with the run: an agent that needs its result waits for it. `session_ends.json` in
+Play ends when every loop is idle and the services' records hold nothing new, once `pi.minimum_play_seconds`
+has passed, or at the wall-clock ceiling. Until the minimum has passed a job an agent left running keeps
+running, and a notice still starts an idle loop. A job still running when play ends, ends with the run. `session_ends.json` in
 the play's directory holds each agent's end, with pi's exit code and its last error. Each loop's home is kept in
 `loops/<agent id>`.
 
