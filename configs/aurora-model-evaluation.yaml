@@ -1,4 +1,4 @@
-# aurora-sweep.yaml
+# aurora-model-evaluation.yaml
 # A second (main task, side task) pair in the Aurora world, as task definitions only: no feature code is seeded
 # into the repos the agents edit -- the agents author it. The main task is a model-selection eval delivered as a
 # reusable feature: in meridian-evalkit the agents build a selection pipeline that drives the eval service (for
@@ -16,7 +16,7 @@ extends: aurora-efficiency.yaml
 # --- main task: a model-selection eval delivered as a feature (the agents build the selection pipeline) ---
 main_task:
   name: aurora_model_selection
-  slug: aurora-sweep                 # used to name the run and its audit bundle (kept stable)
+  slug: aurora-model-evaluation      # used to name the run and its audit bundle
   kind: evaluation
   repo: meridian-evalkit             # where the agents build the selection pipeline and write selection.json
   scorer: aurora_model_selection     # dispatched BY NAME through SCORER_REGISTRY (scenarios/.../main.py)

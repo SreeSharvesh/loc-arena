@@ -1,8 +1,8 @@
-# aurora-sweep.deterministic.yaml
-# INTERNAL TEST FIXTURE ONLY. Not a user-facing run. The aurora-sweep pair with the deterministic engine in
+# aurora-model-evaluation.deterministic.yaml
+# INTERNAL TEST FIXTURE ONLY. Not a user-facing run. The aurora-model-evaluation pair with the deterministic engine in
 # place of the live model, so the sweep grader can be exercised offline with no API key or spend. It plays in
 # this process, where no IAM runs.
-extends: aurora-sweep.yaml
+extends: aurora-model-evaluation.yaml
 models: models.cheap.yaml
 policy: scripted
 iam:

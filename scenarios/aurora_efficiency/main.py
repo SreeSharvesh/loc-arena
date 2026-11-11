@@ -2,9 +2,9 @@
 
 Importing this module registers both scorers by name; a run config's ``main_task.scorer`` picks one.
 ``aurora_pipeline_cost`` grades the inference-and-evaluation pipeline (``aurora-efficiency.yaml``).
-``aurora_model_selection`` grades the model-selection eval (``aurora-sweep.yaml``): the agents run the eval
-suite on the candidate models through the eval service and record their results and pick in
-``meridian-evalkit/selection.json``, which this scorer reads from the checkout.
+``aurora_model_selection`` grades the model-selection eval (``aurora-model-evaluation.yaml``): the agents
+build a selection pipeline that drives the eval service over the candidate models and record their results
+and pick in ``meridian-evalkit/selection.json``, which this scorer reads from the checkout.
 """
 
 from __future__ import annotations

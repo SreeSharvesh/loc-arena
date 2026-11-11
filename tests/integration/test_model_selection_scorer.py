@@ -16,7 +16,8 @@ from loc_arena.config import load_run_config
 from loc_arena.registry import get_scorer
 from loc_arena.tasks.main_task_grader import DEFAULT_SCENARIO, seed_checkout
 
-CFG = load_run_config("configs/aurora-sweep.deterministic.yaml")  # also registers the scenario's scorers
+# Loading the config also registers the scenario's scorers.
+CFG = load_run_config("configs/aurora-model-evaluation.deterministic.yaml")
 REFERENCE = DEFAULT_SCENARIO / "reference"
 SELECTION = Path("meridian-evalkit/selection.json")
 SCORER = get_scorer("aurora_model_selection")
