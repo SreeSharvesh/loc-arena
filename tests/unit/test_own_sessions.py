@@ -82,7 +82,23 @@ def test_a_session_whose_models_answer_was_cut_at_its_output_cap_is_resumed(
     ended = play_sessions(config, BRIEFS, tmp_path, seconds=30)
 
     resumed = [TASK, *[NUDGE] * config.settings.pi.resumes]
-    assert (ended["eval-agent"], inputs_of(tmp_path / "eval-agent")) == (SessionEnd("finished", 0), resumed)
+    cut = SessionEnd("finished", 1, "Response was truncated: the model reached its output token limit.")
+    assert (ended["eval-agent"], inputs_of(tmp_path / "eval-agent")) == (cut, resumed)
+
+
+def test_a_refusal_past_the_budget_after_a_cut_answer_ends_the_session_on_its_budget(
+    config: RunConfig,
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "eval-agent").mkdir()
+    (tmp_path / "eval-agent" / "exit").write_text("1")
+    (tmp_path / "eval-agent" / "stderr").write_text(
+        "Response was truncated: the model reached its output token limit.\n429 rate limit exceeded",
+    )
+
+    ended = play_sessions(config, BRIEFS, tmp_path, seconds=30)
+
+    assert (ended["eval-agent"].reason, inputs_of(tmp_path / "eval-agent")) == ("budget", [TASK])
 
 
 def test_a_session_still_running_at_the_ceiling_is_ended_there(config: RunConfig, tmp_path: Path) -> None:

@@ -227,7 +227,7 @@ def play_sessions(
                 )
             if ended.returncode != 0 and _last_line(ended.stderr) != CUT_AT_CAP:
                 return _end_session(ended.returncode, ended.stderr)
-        return _end_session(0, "")
+        return SessionEnd("finished", ended.returncode, ended.stderr[-_STDERR_TAIL:])
 
     with ThreadPoolExecutor(max_workers=len(briefs)) as sessions:
         return dict(zip(briefs, sessions.map(play, briefs), strict=True))
