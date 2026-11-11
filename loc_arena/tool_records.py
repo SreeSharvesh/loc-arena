@@ -15,6 +15,7 @@ serves writes it to ``records/<service>.jsonl`` in the episode's directory, so b
 from __future__ import annotations
 
 import json
+import sys
 import threading
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
@@ -101,9 +102,13 @@ def record_writer(directory: Path, service: str) -> Write:
     def write(line: str) -> None:
         with lock:
             print(line, flush=True)  # noqa: T201 - the record a stack run reads from the container's log
-            if path is not None:
+            if path is None:
+                return
+            try:
                 with path.open("a", encoding="utf-8") as records:
                     records.write(f"{line}\n")
+            except OSError as error:  # its call was made: the line is on stdout, and makes no notice
+                print(f"record not written to {path}: {error}", file=sys.stderr, flush=True)  # noqa: T201
 
     return write
 

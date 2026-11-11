@@ -102,6 +102,36 @@ def test_a_ticket_assigned_to_an_agent_notifies_it(config: RunConfig, tmp_path: 
     assert noticed == [Notice("eval-agent", "ticket", "agent-main assigned a ticket to you.")]
 
 
+def test_a_ticket_an_agent_assigned_to_itself_notifies_nobody(config: RunConfig, tmp_path: Path) -> None:
+    notices = Notices(config, AGENTS)
+    record_call(tmp_path, "tickets", "eval-agent", "edit_ticket", ticket="PLAT-7", assignee="eval-agent")
+
+    noticed = notices.read()
+
+    assert noticed == []
+
+
+def test_a_reply_over_http_whose_record_names_no_channel_notifies_nobody(
+    config: RunConfig,
+    tmp_path: Path,
+) -> None:
+    notices = Notices(config, AGENTS)
+    notices.subscribe("eval-agent", "channel:None")
+    request = {
+        "wall_ts": NOW,
+        "caller": "agent-main",
+        "method": "POST",
+        "status": 201,
+        "operation": "reply",
+        "arguments": {"message": "m-4", "body": "agreed"},
+    }
+    record_writer(tmp_path, "chat")(json.dumps(request))
+
+    noticed = notices.read()
+
+    assert noticed == []
+
+
 def test_a_pull_request_opened_in_a_repo_notifies_the_repos_subscribers(
     config: RunConfig,
     tmp_path: Path,
@@ -239,3 +269,16 @@ def test_a_service_with_no_records_directory_writes_stdout_alone(
     write('{"a": 1}')
 
     assert (capsys.readouterr().out, [*tmp_path.iterdir()]) == ('{"a": 1}\n', [])
+
+
+def test_a_service_whose_records_file_cannot_be_written_still_writes_stdout(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    (tmp_path / "chat.jsonl").mkdir()
+    write = record_writer(tmp_path, "chat")
+
+    write('{"a": 1}')
+
+    written = capsys.readouterr()
+    assert (written.out, "record not written" in written.err) == ('{"a": 1}\n', True)

@@ -53,6 +53,10 @@ for line in sys.stdin:
     answer = dict(role="assistant", stopReason=read("stop", "stop"), errorMessage=read("error"))
     say(type="message_end", message=answer)
     say(type="agent_settled")
+    if read("deaf"):  # it stops reading its input, and goes on living for a while
+        os.close(0)
+        time.sleep(float(read("deaf")))
+        sys.exit(0)
 """
 BRIEFS = {"agent-main": "You are agent-main.", "eval-agent": "You are eval-agent."}
 NOTICE = "Notice: agent-main sent you a direct message."
@@ -158,6 +162,18 @@ def test_each_notice_is_recorded_with_whether_its_agents_session_took_it(
             "sent": False,
         },
     ]
+
+
+def test_play_ends_every_session_though_one_stopped_reading_its_notices(
+    config: RunConfig,
+    tmp_path: Path,
+) -> None:
+    write_home(tmp_path / "agent-main", **message_from_agent_main(config, tmp_path))
+    write_home(tmp_path / "eval-agent", deaf="2")
+
+    ended = play(config, tmp_path)
+
+    assert {agent: end.reason for agent, end in ended.items()} == dict.fromkeys(BRIEFS, "finished")
 
 
 def test_a_session_whose_models_answer_was_cut_at_its_output_cap_is_idle_like_any_other(

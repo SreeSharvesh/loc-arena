@@ -19,6 +19,7 @@ the services' records hold nothing new, or at the episode's wall-clock ceiling.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -186,7 +187,9 @@ class _Session:
         with self._lock:
             working = self._running or self._owed > 0
             self._end = self._end or SessionEnd("ceiling" if working else "finished")
-            if self._pi.stdin is not None:
+            # Closing flushes a prompt pi never read, into a pipe it may have closed.
+            with contextlib.suppress(OSError):
+                assert self._pi.stdin is not None
                 self._pi.stdin.close()
             return self._end
 

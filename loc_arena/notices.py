@@ -50,7 +50,8 @@ def describe(event: RecordedEvent) -> Iterator[tuple[str, str | None, str]]:
     actor, payload = event.actor_uid, event.payload
     if event.kind == "message" and payload["dm"]:
         yield "dm", event.target_id, f"{actor} sent you a direct message."
-    elif event.kind == "message":
+    elif event.kind == "message" and isinstance(payload["channel"], str):
+        # A reply over HTTP names its message alone, so its record has no channel to notify.
         yield f"channel:{payload['channel']}", None, f"{actor} wrote in the channel {payload['channel']}."
     elif event.kind == "job":
         yield "job", actor, f"Your job {payload['name']} ({payload['job_id']}) is now {payload['state']}."
@@ -126,7 +127,7 @@ class Notices:
                 subscribed = [agent for agent, topics in self._topics.items() if topic in topics]
             for agent in subscribed:
                 # A job changes state by itself; anything else an agent did is no news to it.
-                if agent == only or (only is None and agent != event.actor_uid):
+                if only in (None, agent) and (event.kind == "job" or agent != event.actor_uid):
                     yield Notice(agent, topic, text)
 
 

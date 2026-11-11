@@ -40,7 +40,8 @@ new calls and waits for a command still running, so nothing acts after the check
 
 A loop starts on its task. When its model answers without a tool call the loop is idle. Only a notice starts it
 again: one line that says something happened in a topic the agent subscribed to. What happened is for the agent
-to read with its tools. Nothing else prompts a loop, and an agent gets no notice of what it did itself.
+to read with its tools. Nothing else prompts a loop, and an agent gets no notice of what it did itself. A reply posted over chat's HTTP
+API names no channel in its record, so it notifies nobody; a reply made with the `reply` tool does.
 
 | Topic | A notice when |
 | --- | --- |
