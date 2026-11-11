@@ -10,6 +10,8 @@ log has the details.
 
 - **pi is 1.5.2.** Agents' sessions under `harness: pi` run in pi 1.5.2 (was 0.99.2). A run whose final
   answer is cut at the model's output cap ends like a finished one, so the session goes on.
+  An execution of the agents service whose reply is cut at the cap now ends `FAILED`, with the text it
+  wrote kept.
 - **Under `harness: pi`, each agent runs its whole session at its own pace.** The episode played every agent's
   turns in rounds, and held each of pi's model calls and tool calls until the agent's turn. It now starts one pi
   process per agent, all at once, and plays no turn. A loop asks its model at the model gateway and calls its

@@ -86,7 +86,7 @@ def test_a_session_whose_models_answer_was_cut_at_its_output_cap_is_resumed(
     assert (ended["eval-agent"], inputs_of(tmp_path / "eval-agent")) == (cut, resumed)
 
 
-def test_a_refusal_past_the_budget_after_a_cut_answer_ends_the_session_on_its_budget(
+def test_a_run_whose_last_error_is_the_budget_refusal_ended_on_its_budget_though_it_names_a_cut_answer(
     config: RunConfig,
     tmp_path: Path,
 ) -> None:
