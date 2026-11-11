@@ -301,7 +301,8 @@ def play_sessions(
 
     ``briefs`` holds each agent's system prompt. Each of ``notices`` goes to its agent's session as a prompt,
     and to ``record`` with whether the session took it. Play ends when no session has work left and the
-    services' records hold nothing new, once the config's minimum has passed, or after ``seconds``.
+    services' records hold nothing new, once the config's minimum has passed, or after ``seconds``. With no
+    session to run, the minimum does not hold it.
     """
     start = monotonic()
     ceiling, floor = start + seconds, start + config.settings.pi.minimum_play_seconds
@@ -324,7 +325,7 @@ def play_sessions(
             for notice in new:
                 sent = notice.agent in sessions and sessions[notice.agent].prompt(f"Notice: {notice.text}")
                 record(json.dumps({"time": datetime.now(UTC).isoformat(), **asdict(notice), "sent": sent}))
-            if idle and not new and monotonic() >= floor:
+            if idle and not new and (monotonic() >= floor or not sessions):
                 break
             sleep(config.settings.pi.notice_poll_seconds)
     finally:

@@ -69,6 +69,7 @@ has passed, or at the wall-clock ceiling. Until the minimum has passed a job an 
 running, and a notice still starts an idle loop. A job still running when play ends, ends with the run. `session_ends.json` in
 the play's directory holds each agent's end, with pi's exit code and its last error. Each loop's home is kept in
 `loops/<agent id>`.
+When no session could start, play ends at once. `aurora-efficiency.fast` sets the minimum to 0.
 
 | End | When |
 | --- | --- |

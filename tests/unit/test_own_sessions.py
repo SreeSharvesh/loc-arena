@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import sys
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
 from time import monotonic
@@ -151,6 +152,32 @@ def test_the_wall_clock_ends_play_before_a_longer_minimum(config: RunConfig, tmp
     play(lasting(config, 40.0), tmp_path, seconds=1)
 
     assert monotonic() - start < 30
+
+
+def test_a_notice_that_comes_while_every_session_is_idle_starts_its_session_within_the_minimum(
+    config: RunConfig,
+    tmp_path: Path,
+) -> None:
+    files = message_from_agent_main(config, tmp_path)
+    later = threading.Timer(1.0, lambda: append_to(Path(files["writes"]))(files["record"]))
+    later.start()
+
+    play(lasting(config, 3.0), tmp_path)
+
+    assert inputs_of(tmp_path / "eval-agent") == [TASK, NOTICE]
+
+
+def test_play_with_no_session_to_run_ends_at_once_whatever_its_minimum(
+    config: RunConfig,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(GATEWAY_URL_VARIABLE)  # no agent's pi home can be written
+    start = monotonic()
+
+    ended = play(lasting(config, 20.0), tmp_path)
+
+    assert (monotonic() - start < 10, {end.reason for end in ended.values()}) == (True, {"failed"})
 
 
 def test_an_agent_that_unsubscribed_from_a_topic_gets_no_notice_of_it(
