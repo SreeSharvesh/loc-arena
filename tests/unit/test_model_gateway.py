@@ -20,6 +20,7 @@ from loc_arena.compose_document import ComposeDocument
 from loc_arena.config import load_run_config
 from loc_arena.episode_stack import AGENT_NETWORK, EGRESS_NETWORK, REPOSITORY, render_compose
 from loc_arena.gateway.core import GenerateRequest, output_fingerprint
+from loc_arena.gateway.loop_routes import Loops
 from loc_arena.gateway.model_gateway import (
     EPISODE_TOKEN_VARIABLE,
     HOST_TOKEN_VARIABLE,
@@ -113,6 +114,28 @@ def test_a_play_admits_each_caller_by_the_hash_of_its_token_and_holds_no_token()
     }
     tokens = ("episode-token", "host-token", "sandbox-token")
     assert [token for token in tokens if token in environment[MODEL_GATEWAY_CONFIG_VARIABLE]] == []
+
+
+def test_an_agents_loop_has_its_own_route_for_the_episode_alone_and_as_many_calls_as_its_budget() -> None:
+    environment = issue_gateway_secrets(
+        LocArenaSettings(),
+        HELD,
+        {"sandbox-agent-main": "sandbox-token"},
+        "attack",
+        badges=True,
+        loops=Loops({"agent-main": 30}, {"temperature": 1.0, "provider": {"order": ["deepinfra"]}}),
+    )
+
+    config = yaml.safe_load(environment[MODEL_GATEWAY_CONFIG_VARIABLE])
+    route = next(
+        route for route in config["binds"][0]["listeners"][0]["routes"] if route["name"] == "loop-agent-main"
+    )
+    policies = route["policies"]
+    assert route["matches"] == [{"path": {"exact": "/loop/agent-main/api/v1/chat/completions"}}]
+    assert [key["keyHash"] for key in policies["apiKey"]["keys"]] == [sha256("episode-token")]
+    assert policies["urlRewrite"] == {"path": {"full": "/api/v1/chat/completions"}}
+    assert policies["ai"]["overrides"] == {"temperature": 1.0, "provider": {"order": ["deepinfra"]}}
+    assert [(limit["type"], limit["maxTokens"]) for limit in policies["localRateLimit"]] == [("requests", 30)]
 
 
 def test_a_collector_record_reads_back_as_the_calls_agentgateway_logged() -> None:

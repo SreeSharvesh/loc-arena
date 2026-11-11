@@ -1,97 +1,73 @@
 # pi as the agents' harness
 
-`harness: pi` in a run config runs each agent's loop in [pi](https://github.com/earendil-works/pi), the coding
-agent the company's own agents run in on the runners, instead of the arena's own loop (`harness: native`, the
-default). The agent gets pi's system prompt with its brief appended, pi's own read, write, edit and bash, and the
-arena's tools pi has no tool for. Everything a turn is made of stays the episode's: the model call, its turn
-token, the tool calls and their records.
+`harness: pi` in a run config runs each agent's whole session in [pi](https://github.com/earendil-works/pi), the
+coding agent the company's own agents run in on the runners, in place of the arena's own loop
+(`harness: native`, the default). The episode starts every agent's loop at once and plays no turn. It runs in a
+stack run only.
 
-`loc_arena/scaffold/pi_harness.py` · `loc_arena/scaffold/pi_bridge.ts` · `configs/aurora-efficiency.deterministic-pi.yaml`
+`loc_arena/own_sessions.py` · `loc_arena/workspace_service.py` · `loc_arena/session_events.py` · `loc_arena/gateway/loop_routes.py`
 
-## Where pi runs
+## What a loop is
 
-Each agent's pi is a child process of the episode, in RPC mode, working in the agent's checkout. Its model
-provider and its tools all point at the bridge, a server on the episode's loopback that answers each agent's
-pi under that agent's key alone. Nothing on agent-net can reach it, and agent code never runs where pi does.
+Each agent's loop is one pi process in the episode's container, with its own home: its brief as pi's system
+prompt, pi's settings and its session. A loop can do two things, and each passes a gateway that records it.
 
-```mermaid
-sequenceDiagram
-    participant Turn as The agent's turn (episode)
-    participant Pi as The agent's pi (episode, loopback)
-    participant GW as Gateway
-    participant SB as The agent's sandbox
-    Pi->>Turn: model request (held)
-    Turn->>GW: the call, with the turn's token
-    Turn-->>Pi: the reply, streamed
-    Pi->>Turn: each tool call (held)
-    Turn->>Pi: run pi's own tool
-    Pi->>Turn: its operations: a file in the checkout, a command
-    Turn->>SB: a command, as the agent
-    Pi->>Turn: its result, logged as the agent's action
-    Note over Turn,Pi: the next turn: new inbox items and delivered work (steering), then every result
-```
+| A loop | Where | As | Recorded by |
+| --- | --- | --- | --- |
+| asks its model | the model gateway, on its agent's own route (`/loop/<agent id>/api/v1`) | the episode's caller | the gateway's call record (`gateway.calls.jsonl`) |
+| calls a tool | the tools gateway (`/mcp`) | its agent, with the agent's sandbox token | the service that takes the call |
 
-So the checker is unchanged. The agent's model calls reach the gateway as `episode`, each with its turn's
-`turn_id`, like a native turn's. Its code still calls as `sandbox-<agent>`. The gateway's covert injection, the
-sealed and mirror `inference_call` records, the Inspect log and the scripted provider all work as they do natively.
+The gateway sends each model call upstream with the request fields the run config sets for the agents' role:
+its temperature, its `max_tokens` (as `max_completion_tokens`, the field pi sends), its model's provider routing
+and its reasoning, whatever pi sent for them.
 
-## A turn
+A loop runs nothing itself: pi's own tools and its codemode are off. So nothing a model writes runs beside the
+other agents' loops, briefs and keys.
 
-One turn is one model call pi asks for, and the tool calls of its reply, as in the native loop.
+## The agent's tools
 
-1. The turn hands pi the last turn's results, after any new items of the agent's IAM inbox and, where the run
-   delivers them, its unread chat and newly assigned tickets, as steering messages, so pi asks its model with
-   them in its history.
-2. The episode makes pi's model call through the agent's gateway client and streams the reply back, each tool
-   call under an id of the turn's own: pi keys a call by its id, and a model may reuse one.
-3. pi takes the reply's tool calls. A call it refuses (an unknown tool, bad arguments) it answers itself, and the
-   turn plays none of it, as the native loop sends a malformed call back unplayed. A call whose arguments the
-   event log cannot record (NaN, a lone surrogate, nesting too deep) the turn refuses, as natively, and pi
-   answers it as failed.
-4. The turn plays the rest in order. pi's own tool runs pi's code on operations the episode serves: a file read or
-   written under the checkout (or read in the skills folder), and a command run in the agent's sandbox within
-   `stack.shell_timeout_seconds`. Any other tool the episode runs itself, as natively. Each is logged as the
-   agent's action, or recorded by its service, as a native call is. pi's own tool's result is logged as pi told
-   its model: its text, whether it failed (a command that exited nonzero, timed out, or whose sandbox broke),
-   and a command's exit code.
+The agent is offered its `sandbox: tools:` on the company's services, and the workspace service's tools: `bash`,
+`read_file`, `write_file`, `edit_file`, `list_dir` and `search_code`. pi names each `mcp__meridian__<tool>`.
 
-A reply that calls no tool ends pi's run; the next turn prompts it to go on, as the native loop nudges, and four
-such turns in a row end the agent. A failed model call spends the turn, and the next one asks again with the same
-history. Calling `finish` ends the agent.
+The workspace service runs in the episode's container, on the code tools the native loop calls: a file tool
+reads and writes the agent's checkout, and a command runs in the agent's sandbox. The tools gateway names the
+agent to it with that agent's workspace key, derived from its sandbox token. It runs one call of an agent at a
+time, and records every call in `records/workspace.jsonl` of the play's directory.
 
-## What the agent is offered
+## How a session ends
 
-| | Under `harness: native` | Under `harness: pi` |
-|---|---|---|
-| System prompt | the brief | pi's own, the brief appended |
-| Read, write, edit a file | `read_file`, `write_file`, `edit_file` | pi's `read`, `write`, `edit` |
-| Run a command | `bash` | pi's `bash` |
-| List and search | `list_dir`, `search_code` | the same |
-| The services' tools, `finish` | the same | the same |
+pi's run ends when its model answers without a tool call. The session then goes on, on a nudge, `pi.resumes`
+times. `session_ends.json` in the play's directory holds each agent's end, with pi's exit code and the end of
+its error output. Each loop's home is kept in `loops/<agent id>`.
 
-pi's other built-in tools stay off. Its `grep` and `find` run `rg` and `fd` where pi runs, and fetch them from the
-internet when they are missing. A scripted move of a tool pi's own replace is played as the call of pi's
-(`write_file` as `write`), so the deterministic fixture plays under pi too.
+| End | When |
+| --- | --- |
+| `finished` | the model answered without a tool call once more than `pi.resumes` |
+| `budget` | the gateway refused a model call past the agent's turn budget (`episode.orchestrator_turn_budget` for the lead, `episode.subagent_turn_budget` for the others): its route admits that many requests in a play. A request the provider failed, pi's retry of it and a call pi makes to summarize a long session each count as one |
+| `ceiling` | `episode.wall_clock_seconds` passed |
+| `failed` | pi failed otherwise, past its own retries. It counts in the run's `failed_model_calls` |
 
-## What is turned off in pi
+## Events
 
-Each of these would make a model call the episode did not ask for, act where pi runs, or end a wait the turns
-hold: compaction, automatic retry, prompt-cache warming, the HTTP idle timeout, every extension but the bridge,
-skills, prompt templates, context files (`AGENTS.md`), sessions on disk, telemetry and update checks. pi gets no provider key
-and no variable of the episode's but `PATH`.
+The post-play builder (`loc_arena.recorded_events`) makes a session's events from the two records.
 
-## Settings
+| Event | From |
+| --- | --- |
+| `inference_call` | each model call of the loop the gateway answered, a call that summarizes a long session among them: the agent's turn of that number, from 1. Fingerprints alone; the prompt's is over the messages after the system prompt, which holds the brief. Its `credential_kind` is `turn_token`, the tag of a sanctioned turn: the agent's own route admitted the call |
+| `action` of a workspace tool | the workspace service's record, with the call's arguments and result |
+| `action`, `message`, `pr`, `job` of a company tool | that service's record, as under the native loop |
+| `checkout` (sealed log only) | the episode, as cloned and at the end of play |
 
-`pi:` in the run config: `executable` (`pi`, found on `PATH`), `answer_seconds` (120), how long the episode waits
-for pi to ask its model or take its tool calls before the run fails, and `hold_seconds` (20), how long the bridge
-holds one of pi's waits before pi asks again. The engine image carries Node and pi at the versions the runner image
-pins.
+A tool call is placed in the turn whose span holds its time: from the agent's model call to its next one. A
+model request that offered a tool the loop would run itself is reported in `unattributed_records.jsonl`.
 
-## Known gaps
+## Differences from the native loop
 
-- pi's system prompt names its documentation in its install, which the agent's `read` cannot reach: reads stay in
-  the checkout and the skills folder.
-- Steering reaches pi's model only after the calls pi waits for: an inbox item that arrives while pi's next request
-  already waits (after a reply whose every call pi refused, or a failed model call) reaches the model one call
-  later than natively.
-- pi's session is not kept in the run bundle.
+| | `harness: native` | `harness: pi` |
+| --- | --- | --- |
+| Scheduling | the episode plays the agents' turns in rounds | every loop runs at its own pace, at once |
+| Bounds | a turn budget per agent, the wall clock | the same turn budget, as model calls at the gateway; `pi.resumes`; the wall clock |
+| New chat and tickets | handed to the agent at its turn's start (`chat.deliver_unread`, `tickets.deliver_assigned`) | read by the agent with its tools; those two settings do nothing |
+| Checkout captures | after each native call | as cloned and at the end of play |
+| The covert objective (`covert.objective_prompt`) | the gateway core puts it before the target agent's first message, on each call | the episode puts it before the target agent's brief, in pi's system prompt |
+| A call from an agent's sandbox to the model gateway | off-path | off-path |

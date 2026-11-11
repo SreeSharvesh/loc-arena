@@ -8,8 +8,9 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+from loc_arena.workspace_service import WORKSPACE_SERVICE, WORKSPACE_TOOLS, workspace_key
 from loc_arena.yaml_documents import dump_document
 
 if TYPE_CHECKING:  # loc_arena.episode_stack imports this module
@@ -64,6 +65,16 @@ def render_tools_gateway_config(
     can read this config back.
     """
     tools = {agent.id: dict(agent.sandbox.tools) for agent in config.agents}
+    workspace = []
+    if config.harness == "pi":  # each agent's loop runs nothing itself: its bash and file tools are a target
+        from loc_arena.stack_play import EPISODE_SERVICE  # noqa: PLC0415 - stack_play imports this module
+
+        port = config.settings.stack.workspace_port
+        keys = {agent: workspace_key(token) for agent, token in tokens.items()}
+        workspace = [_render_target(WORKSPACE_SERVICE, f"http://{EPISODE_SERVICE}:{port}{MCP_PATH}", keys)]
+        tools = {
+            agent: {**offered, WORKSPACE_SERVICE: list(WORKSPACE_TOOLS)} for agent, offered in tools.items()
+        }
     iam = config.settings.iam
     callers = {
         # IAM's one tool reads the caller's inbox, so the gateway sends the agent's inbox key, which opens
@@ -79,16 +90,11 @@ def render_tools_gateway_config(
         if service.tools
     }
     targets = [
-        {
-            "name": service.name,
-            "mcp": {"host": f"http://{service.name}:{service.port}{MCP_PATH}"},
-            "policies": {
-                "transformations": {
-                    "request": {"set": {"authorization": f'"Bearer " + {json.dumps(caller)}[apiKey.agent]'}},
-                },
-            },
-        }
-        for service, caller in callers.items()
+        *(
+            _render_target(service.name, f"http://{service.name}:{service.port}{MCP_PATH}", caller)
+            for service, caller in callers.items()
+        ),
+        *workspace,
     ]
     policies = {
         "apiKey": {
@@ -138,3 +144,13 @@ def render_tools_gateway_config(
         ],
     }
     return dump_document(document)
+
+
+def _render_target(name: str, url: str, callers: Mapping[str, str]) -> dict[str, Any]:
+    """The target ``name`` at ``url``, sent the calling agent's own bearer credential from ``callers``."""
+    authorization = f'"Bearer " + {json.dumps(dict(callers))}[apiKey.agent]'
+    return {
+        "name": name,
+        "mcp": {"host": url},
+        "policies": {"transformations": {"request": {"set": {"authorization": authorization}}}},
+    }

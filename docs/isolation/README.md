@@ -22,7 +22,8 @@ credentials they are given.
 
 Any harness with an MCP client sees the same tools, from the same services, recorded the same way. The run
 config's `harness` chooses the arena's own loop (`native`) or pi's (`pi`, [docs/pi-harness.md](../pi-harness.md));
-either runs in `episode`, and pi's own tools act in the agent's sandbox and checkout through it.
+either runs in `episode`. Under pi, the agent's bash and file tools are the workspace service's, behind the
+tools gateway like the company's tools, and act in the agent's sandbox and checkout.
 
 ## Containers
 

@@ -46,6 +46,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, JsonValue, Typ
 from sandbox_server.confinement import resolve_inside
 from scenarios.loader import LiveService
 
+from loc_arena import session_events
 from loc_arena.config import RunConfig
 from loc_arena.iam_seed import load_seed
 from loc_arena.logging_.agent_trace import EpisodeTrace
@@ -54,6 +55,7 @@ from loc_arena.node_pool import list_node_services
 from loc_arena.scaffold.bus import Recorder
 from loc_arena.task import SNAPSHOT_FILE, SnapshotFile, read_snapshot_file, resolve_scenario
 from loc_arena.tool_records import ToolRecord
+from loc_arena.workspace_service import WORKSPACE_SERVICE
 from meridian_forge.server import MergeResult, OpenedPullRequest
 
 _LOGGER = logging.getLogger(__name__)
@@ -151,6 +153,7 @@ class RecordedEvent:
     tool: str | None = None
     result: dict[str, Any] | None = None
     to_mirror: bool = True  # false for a sealed-only event the monitors never see
+    actor_role: str | None = None  # its actor's role on this event, when not its role in the run
 
 
 def build_pull_request(record: ToolRecord, agent_ids: Sequence[str]) -> list[RecordedEvent]:
@@ -359,6 +362,13 @@ def _parse_tool_call_line(line: str, agent_ids: Sequence[str]) -> _ParsedRecordL
     return _ParsedRecordLine(record.time.timestamp(), record.agent, build_events(record, agent_ids))
 
 
+def _parse_workspace_line(line: str, agent_ids: Sequence[str]) -> _ParsedRecordLine:
+    """A call of the workspace service's: an agent's bash or file tool, each an ``action``."""
+    _ = agent_ids
+    record = ToolRecord.model_validate_json(line)
+    return _ParsedRecordLine(record.time.timestamp(), record.agent, [_action_event(record)])
+
+
 def _parse_tool_call_or_request_line(line: str, agent_ids: Sequence[str]) -> _ParsedRecordLine | None:
     """A service's line, tools and rights both: a tool call's record if it names a tool, else a request's."""
     if "gen_ai.tool.name" in _JSON_OBJECT.validate_json(line):
@@ -506,13 +516,19 @@ def build_recorded_events(
     ``traces`` holds each episode's trace by the name of its directory in ``run_directory``; an episode that
     did not play is skipped.
     """
+    roles = {agent.id: agent.kind for agent in config.agents}
+    agent_ids = tuple(roles)
+    # Under harness: pi the agents ran their own sessions: their turns are their model calls.
+    sessions = {name: session_events.read_play_calls(run_directory, name, config) for name in traces}
     phases = [
-        _Phase(run_directory / name, read_snapshot_file(run_directory / name), trace)
+        _Phase(
+            run_directory / name,
+            read_snapshot_file(run_directory / name),
+            session_events.trace_sessions(sessions[name]) if sessions[name] else trace,
+        )
         for name, trace in traces.items()
         if (run_directory / name / SNAPSHOT_FILE).exists()
     ]
-    roles = {agent.id: agent.kind for agent in config.agents}
-    agent_ids = tuple(roles)
     roles |= dict.fromkeys(_read_company_principals(run_directory, config, phases) - set(roles), COMPANY_ROLE)
     sponsors = _read_sponsors(run_directory, config, phases)
     record_line_parsers: list[tuple[str, RecordLineParser]] = [
@@ -522,9 +538,18 @@ def build_recorded_events(
             if service.tools or service.rights
         ),
         *((node, _attribute_workloads(_parse_process_line, sponsors)) for node in list_node_services(config)),
+        *([(WORKSPACE_SERVICE, _parse_workspace_line)] if config.harness == "pi" else []),
     ]
     unattributed: list[str] = []
     built: dict[Path, list[_Placed]] = {phase.directory: [] for phase in phases}
+    for phase in phases:
+        calls = [call for call in sessions[phase.directory.name] if phase.holds(call.wall)]
+        for call in calls:
+            payload = session_events.build_inference_payload(call)
+            role = session_events.UNTRUSTED_ROLE
+            event = RecordedEvent("inference_call", call.agent, None, payload, actor_role=role)
+            built[phase.directory].append(_Placed(phase, call.wall, [event], call.turn))
+        unattributed += session_events.describe_local_tools(calls)
     for service, parse_record_line in record_line_parsers:
         for line in _read_record_lines(run_directory, service, phases):
             placed, reason = _place(line, parse_record_line, phases, roles, agent_ids)
@@ -658,7 +683,7 @@ def _write_events(phase: _Phase, built: list[_Placed], roles: Mapping[str, str])
             write = recorder.dual if event.to_mirror else recorder.sealed
             write(
                 actor_uid=event.actor_uid,
-                actor_role=roles[event.actor_uid],
+                actor_role=event.actor_role or roles[event.actor_uid],
                 kind=event.kind,
                 payload=event.payload,
                 target_id=event.target_id,

@@ -8,6 +8,14 @@ log has the details.
 
 ### Changed
 
+- **Under `harness: pi`, each agent runs its whole session at its own pace.** The episode played every agent's
+  turns in rounds, and held each of pi's model calls and tool calls until the agent's turn. It now starts one pi
+  process per agent, all at once, and plays no turn. A loop asks its model at the model gateway and calls its
+  tools at the tools gateway; its bash and file tools are the new workspace service's, so a loop runs nothing
+  itself. A session's turns are its model calls in the gateway's call record, and the gateway admits as many as
+  the agent's turn budget. `pi.resumes` and the wall clock also bound a session; `pi.executable`, `pi.answer_seconds` and `pi.hold_seconds` are gone, and so is the in-process
+  fixture `configs/aurora-efficiency.deterministic-pi.yaml`: `harness: pi` plays in a stack run only
+  ([docs/pi-harness.md](docs/pi-harness.md)).
 - **The orchestrator kicks the sprint off first.** Its prompt asked for tickets and a kickoff post on its first
   turn, and a live orchestrator still read the skills, the notes and the code for most of its turns before it
   assigned. The prompt now names the only tools to call until every agent reporting to it has a ticket and the
