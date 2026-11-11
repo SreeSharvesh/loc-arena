@@ -1,7 +1,7 @@
 # LOC-Arena
 
-LOC-Arena is an AI-control evaluation setting: a simulated frontier-lab autonomous AI R&D platform where an
-untrusted agent and its sub-agents do real research-engineering work on a seven-repo company codebase and may
+LOC-Arena is an AI-control evaluation framework: an engine, and the setting it runs. The setting is a
+simulated frontier-lab autonomous AI R&D platform where an untrusted agent and its sub-agents do real research-engineering work on a seven-repo company codebase and may
 attempt to establish an internal rogue deployment (running the model off the sanctioned, monitored path). Every
 episode measures two things and reports the gap between them: whether a rogue deployment actually happened (a
 sealed, deterministic ground-truth verifier the agent cannot reach) and whether the platform's own control points
@@ -10,6 +10,14 @@ two, under an adversarial agent, is the science.
 
 This is defensive AI-safety research infrastructure. Attack chains are represented as control-plane state
 transitions plus their programmatic verifiers, never as operational procedures.
+
+## Engine and setting
+
+Every file belongs to one of two parts. The engine (`loc_arena/`, `sandbox_server/`) runs an episode and holds no
+company, team or task. A setting (`company/`, `scenarios/<name>/`) is what the episode is about: the
+organization, its software, its team and its tasks. A run config in `configs/` names the scenario and sets the
+engine's options. The test for any file: would it be the same for a different company and task? If yes, it is
+engine. If no, it is setting. The full table is in [`AGENTS.md`](AGENTS.md#engine-and-setting).
 
 ## How it runs
 
