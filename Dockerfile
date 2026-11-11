@@ -71,8 +71,9 @@ COPY company ./company
 # is recreated empty with its container, which is what gives the honest twin a fresh IAM; /var/lib/badges holds
 # the key set of IAM's badges, which the model gateway reads. /var/lib/tickets and /var/lib/chat hold the tickets
 # and chat services' databases and /var/lib/forge the forge's git repositories, each in the container's own
-# layer, which a recreated container starts without.
-RUN uv sync --frozen --no-dev && mkdir /sealed /output /checkouts /var/lib/iam /var/lib/badges /var/lib/tickets \
-    /var/lib/chat /var/lib/forge && chown nobody /sealed /output /checkouts /var/lib/iam /var/lib/badges \
-    /var/lib/tickets /var/lib/chat /var/lib/forge
+# layer, which a recreated container starts without. /records is where each live service writes its record lines
+# and the episode reads them during play.
+RUN uv sync --frozen --no-dev && mkdir /sealed /output /checkouts /records /var/lib/iam /var/lib/badges \
+    /var/lib/tickets /var/lib/chat /var/lib/forge && chown nobody /sealed /output /checkouts /records \
+    /var/lib/iam /var/lib/badges /var/lib/tickets /var/lib/chat /var/lib/forge
 USER nobody

@@ -10,7 +10,7 @@ from loc_arena.config import load_run_config
 from loc_arena.recorded_events import (
     ServiceRequestRecord,
     _parse_service_request_line,
-    _record_line_parser,
+    record_line_parser,
 )
 
 PLAIN = load_run_config("configs/aurora-efficiency.deterministic.yaml")
@@ -27,7 +27,7 @@ AGENTS = ("agent-main", "serving-agent")
 
 def parse(config, event: Mapping[str, Any]):  # noqa: ANN001, ANN201 - the parsed line, or None
     iam = next(service for service in config.live_services if service.name == "iam")
-    return _record_line_parser(iam, config)(json.dumps(event), AGENTS)
+    return record_line_parser(iam, config)(json.dumps(event), AGENTS)
 
 
 def test_an_authorization_decision_is_correlation_only_so_no_action_is_counted_twice(tmp_path: Path) -> None:
@@ -35,7 +35,7 @@ def test_an_authorization_decision_is_correlation_only_so_no_action_is_counted_t
     decision = {"at": 1, "kind": "authorize", "actor": "agent-main", "allow": True, "decision": "d"}
     assert parse(config, decision) is None  # the resource's own record of the call is the action
     agents = next(service for service in config.live_services if service.name == "agents")
-    assert _record_line_parser(agents, config) is _parse_service_request_line
+    assert record_line_parser(agents, config) is _parse_service_request_line
 
 
 def test_a_direct_management_mutation_is_an_action_of_the_agent_that_made_it(tmp_path: Path) -> None:
@@ -154,7 +154,7 @@ def test_a_malformed_iam_line_is_not_an_action(tmp_path: Path) -> None:
 
 def test_a_service_named_iam_is_an_ordinary_service_when_the_run_does_not_enable_iam() -> None:
     agents = next(service for service in PLAIN.live_services if service.name == "agents")
-    assert _record_line_parser(agents, PLAIN) is _parse_service_request_line
+    assert record_line_parser(agents, PLAIN) is _parse_service_request_line
 
 
 def test_a_services_request_record_carries_the_decision_that_joins_it_to_iams_event() -> None:

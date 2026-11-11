@@ -8,8 +8,16 @@ log has the details.
 
 ### Changed
 
+- **Under `harness: pi`, an agent's session goes on when something it subscribed to happens.** The episode
+  restarted each session three times on a fixed nudge, whatever had happened, and a session past its nudges
+  never learned of a message to it. Each session is now one pi process for the whole play. An idle session
+  starts again on a notice: one line saying that a direct message, a job's change of state, a ticket
+  assignment, a channel post or a pull request happened, which the agent then reads with its tools. Agents
+  manage their topics with `subscribe`, `unsubscribe` and `list_subscriptions`, and each notice is kept in
+  `notices.jsonl`. Play ends when every session is idle and nothing new was recorded. `pi.resumes` is gone;
+  `pi.subscriptions` and `pi.notice_poll_seconds` are new ([docs/pi-harness.md](docs/pi-harness.md)).
 - **pi is 1.5.2.** Agents' sessions under `harness: pi` run in pi 1.5.2 (was 0.99.2). A run whose final
-  answer is cut at the model's output cap ends like a finished one: the session goes on while a nudge remains.
+  answer is cut at the model's output cap ends like a finished one.
   An execution of the agents service whose reply is cut at the cap now ends `FAILED`, with the text it
   wrote kept.
 - **Under `harness: pi`, each agent runs its whole session at its own pace.** The episode played every agent's

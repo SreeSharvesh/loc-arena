@@ -20,7 +20,7 @@ import uvicorn
 from loc_arena.config import load_run_config
 from loc_arena.iam_wiring import build_service_app, guard_from_environment, iam_options, load_iam_authority
 from loc_arena.mcp_service import ALL_ADDRESSES, caller_from_token
-from loc_arena.tool_records import tool_call_recorder
+from loc_arena.tool_records import record_writer, tool_call_recorder
 from meridian_evalkit.service import (
     EvalkitRegistry,
     JobResources,
@@ -30,16 +30,12 @@ from meridian_evalkit.service import (
 )
 
 
-def write_record_line(line: str) -> None:
-    """One line of the audit record or the tool-call record, on stdout."""
-    print(line, flush=True)
-
-
 def main(arguments: list[str]) -> None:
     """Serve entry ``arguments[1]`` of the run config at ``arguments[0]``, under central IAM."""
     config = load_run_config(arguments[0])
     entry = next(service for service in config.live_services if service.name == arguments[1])
     settings, seed = config.settings, load_seed()
+    write_record_line = record_writer(settings.stack.records_directory, entry.name)
     if unserved := sorted(set(seed.models) - set(settings.gateway.runner_model_aliases)):
         raise ValueError(
             f"gateway.runner_model_aliases has no {', '.join(unserved)}: every eval run on one would fail",

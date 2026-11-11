@@ -5,12 +5,12 @@ coding agent the company's own agents run in on the runners, in place of the are
 (`harness: native`, the default). The episode starts every agent's loop at once and plays no turn. It runs in a
 stack run only.
 
-`loc_arena/own_sessions.py` · `loc_arena/workspace_service.py` · `loc_arena/session_events.py` · `loc_arena/gateway/loop_routes.py`
+`loc_arena/own_sessions.py` · `loc_arena/notices.py` · `loc_arena/workspace_service.py` · `loc_arena/session_events.py` · `loc_arena/gateway/loop_routes.py`
 
 ## What a loop is
 
-Each agent's loop is one pi process in the episode's container, with its own home: its brief as pi's system
-prompt, pi's settings and its session. A loop can do two things, and each passes a gateway that records it.
+Each agent's loop is one pi process in the episode's container for the whole play, in pi's RPC mode, with its
+own home: its brief as pi's system prompt, pi's settings and its session. A loop can do two things, and each passes a gateway that records it.
 
 | A loop | Where | As | Recorded by |
 | --- | --- | --- | --- |
@@ -27,7 +27,8 @@ other agents' loops, briefs and keys.
 ## The agent's tools
 
 The agent is offered its `sandbox: tools:` on the company's services, and the workspace service's tools: `bash`,
-`read_file`, `write_file`, `edit_file`, `list_dir` and `search_code`. pi names each `mcp__meridian__<tool>`.
+`read_file`, `write_file`, `edit_file`, `list_dir` and `search_code`, and its subscription tools (below). pi
+names each `mcp__meridian__<tool>`.
 
 The workspace service runs in the episode's container, on the code tools the native loop calls: a file tool
 reads and writes the agent's checkout, and a command runs in the agent's sandbox. The tools gateway names the
@@ -35,18 +36,43 @@ agent to it with that agent's workspace key, derived from its sandbox token. It 
 time, and records every call in `records/workspace.jsonl` of the play's directory. At the end of play it refuses
 new calls and waits for a command still running, so nothing acts after the checkouts are captured.
 
-## How a session ends
+## Notices
 
-pi's run ends when its model answers without a tool call. The session then goes on, on a nudge, `pi.resumes`
-times. `session_ends.json` in the play's directory holds each agent's end, with pi's exit code and the end of
-its error output. Each loop's home is kept in `loops/<agent id>`.
+A loop starts on its task. When its model answers without a tool call the loop is idle. Only a notice starts it
+again: one line that says something happened in a topic the agent subscribed to. What happened is for the agent
+to read with its tools. Nothing else prompts a loop, and an agent gets no notice of what it did itself.
+
+| Topic | A notice when |
+| --- | --- |
+| `dm` | another member sent the agent a direct message |
+| `job` | a job of the agent changed state |
+| `ticket` | a ticket was assigned to the agent |
+| `channel:<name>` | another member wrote in that channel |
+| `repo:<name>` | another member opened or merged a pull request in that repo |
+
+Each agent starts with the topics of `pi.subscriptions` (`dm`, `job`, `ticket`) and changes its own with
+`subscribe`, `unsubscribe` and `list_subscriptions`, served with the workspace tools and recorded like them.
+
+| Step | Where |
+| --- | --- |
+| 1. A service records a call, a request or a job's change of state | its log, and its file on the records volume (`stack.records_directory`), which only the services and the episode mount |
+| 2. The episode reads the new lines every `pi.notice_poll_seconds` and builds their events | the mapping the post-play builder uses (`loc_arena.recorded_events`) |
+| 3. Each event becomes a notice for each agent subscribed to its topic | `notices.jsonl` in the play's directory: the agent, the topic, the text, and `sent`, false when the agent's session had ended |
+| 4. The episode gives the notice to the agent's pi as a prompt | an idle loop starts a run on it; a working loop gets it before its next model call |
+
+## How play and a session end
+
+Play ends when every loop is idle and the services' records hold nothing new, or at the wall-clock ceiling. A
+job still running then ends with the run: an agent that needs its result waits for it. `session_ends.json` in
+the play's directory holds each agent's end, with pi's exit code and its last error. Each loop's home is kept in
+`loops/<agent id>`.
 
 | End | When |
 | --- | --- |
-| `finished` | the model answered without a tool call once more than `pi.resumes`. An answer cut at the model's output cap ends a run the same way |
-| `budget` | the gateway refused a model call past the agent's turn budget (`episode.orchestrator_turn_budget` for the lead, `episode.subagent_turn_budget` for the others): its route admits that many requests in a play. A request the provider failed, pi's retry of it and a call pi makes to summarize a long session each count as one |
-| `ceiling` | `episode.wall_clock_seconds` passed |
-| `failed` | pi failed otherwise, past its own retries. It counts in the run's `failed_model_calls` |
+| `finished` | the loop was idle when play ended. An answer cut at the model's output cap leaves a loop idle like any other |
+| `budget` | the gateway refused a model call past the agent's turn budget (`episode.orchestrator_turn_budget` for the lead, `episode.subagent_turn_budget` for the others): its route admits that many requests in a play. A request the provider failed, pi's retry of it and a call pi makes to summarize a long session each count as one. The session takes no later notice |
+| `ceiling` | the loop was still working when `episode.wall_clock_seconds` passed |
+| `failed` | pi failed otherwise, past its own retries, or exited. It counts in the run's `failed_model_calls` |
 
 ## Events
 
@@ -67,8 +93,8 @@ model request that offered a tool the loop would run itself is reported in `unat
 | | `harness: native` | `harness: pi` |
 | --- | --- | --- |
 | Scheduling | the episode plays the agents' turns in rounds | every loop runs at its own pace, at once |
-| Bounds | a turn budget per agent, the wall clock | the same turn budget, as model calls at the gateway; `pi.resumes`; the wall clock |
-| New chat and tickets | handed to the agent at its turn's start (`chat.deliver_unread`, `tickets.deliver_assigned`) | read by the agent with its tools; those two settings do nothing |
+| Bounds | a turn budget per agent, the wall clock | the same turn budget, as model calls at the gateway; the wall clock |
+| New chat and tickets | handed to the agent at its turn's start (`chat.deliver_unread`, `tickets.deliver_assigned`) | read by the agent with its tools, on a notice or when it chooses; those two settings do nothing |
 | Checkout captures | after each native call | as cloned and at the end of play |
 | The covert objective (`covert.objective_prompt`) | the gateway core puts it before the target agent's first message, on each call | the episode puts it before the target agent's brief, in pi's system prompt |
 | A call from an agent's sandbox to the model gateway | off-path | off-path |

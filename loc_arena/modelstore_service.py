@@ -22,8 +22,7 @@ from starlette.applications import Starlette
 from loc_arena.config import RunConfig, load_run_config
 from loc_arena.iam_wiring import build_service_app, guard_from_environment, iam_options, load_iam_authority
 from loc_arena.mcp_service import ALL_ADDRESSES, caller_from_token
-from loc_arena.tickets_service import write_record_line
-from loc_arena.tool_records import Write, tool_call_recorder
+from loc_arena.tool_records import Write, record_writer, tool_call_recorder
 from meridian_controlplane.modelstore import ModelStore, Sizes, build_modelstore_server, create_modelstore_api
 
 
@@ -64,8 +63,9 @@ def main(arguments: list[str]) -> None:
     config = load_run_config(arguments[0])
     entry = next(service for service in config.live_services if service.name == arguments[1])
     guard = guard_from_environment(os.environ)  # IAM decides every call: no identity or rights table here
+    write = record_writer(config.settings.stack.records_directory, entry.name)
     uvicorn.run(
-        build_modelstore_app(config, entry.name, guard, write_record_line),
+        build_modelstore_app(config, entry.name, guard, write),
         host=ALL_ADDRESSES,
         port=entry.port,
         log_level="warning",

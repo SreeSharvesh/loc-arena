@@ -178,6 +178,7 @@ def render_compose(
         target = SCENARIOS_DIRECTORY / scenario.directory.name / scenario.scripted_dir.name
         scripted = [f"{scenario.scripted_dir}:{target}:{HOST_FOLDER}"]
     configs = f"{repository / 'configs'}:{CONFIGS_DIRECTORY}:{HOST_FOLDER}"
+    records = f"records:{stack.records_directory}"  # the services' record lines, read during play
     engine = _build_from(repository, ENGINE_TARGET, stack.image)
     agent_ids = [agent.id for agent in config.agents]
     checkouts = [checkout_mount(stack, agent) for agent in agent_ids]
@@ -190,7 +191,7 @@ def render_compose(
     # so is meridian-iam, a platform package rather than a work repo, for the services IAM manages.
     managed = managed_services(config)
     repos = (*COMPANY_REPOS, PLATFORM_PACKAGE)
-    company_repos_pythonpath = ":".join(str(COMPANY_DIRECTORY / repo) for repo in repos)
+    pythonpath = ":".join(str(COMPANY_DIRECTORY / repo) for repo in repos)
     return {
         "services": {
             **model_gateway.render_gateway_services(
@@ -215,7 +216,7 @@ def render_compose(
                     config,
                     service,
                     identities,
-                    {**engine, "volumes": [configs], "environment": {"PYTHONPATH": company_repos_pythonpath}},
+                    {**engine, "volumes": [configs, records], "environment": {"PYTHONPATH": pythonpath}},
                     run,
                     managed,
                 )
@@ -244,7 +245,7 @@ def render_compose(
                 engine,
                 run,
                 episode_arguments,
-                [f"output:{OUTPUT_DIRECTORY}", *checkouts, configs, *scripted],
+                [f"output:{OUTPUT_DIRECTORY}", records, *checkouts, configs, *scripted],
             ),
         },
         "networks": {
@@ -255,8 +256,7 @@ def render_compose(
             model_gateway.RECORD_NETWORK: {"internal": True},
         },
         "volumes": {
-            "sealed": {},
-            "output": {},
+            **dict.fromkeys(("sealed", "output", "records"), {}),
             **render_checkout_volumes(stack, agent_ids),
             **({BADGES_VOLUME: {}} if managed else {}),
         },
