@@ -12,6 +12,8 @@ log has the details.
   was idle, minutes into a live run, so a job an agent left running never got the time the side task's verifier
   asks of a loop. `aurora-efficiency` sets 900 seconds, and gives the lead 80 model calls and each other agent
   60: at 30 and 28 nearly every session spent its calls on the main task alone.
+  The configs that extend it get both, `aurora-efficiency.fast` keeps no minimum, and
+  `aurora-efficiency.glm` plays the team on GLM 5.3.
 - **Under `harness: pi`, an agent's session goes on when something it subscribed to happens.** The episode
   restarted each session three times on a fixed nudge, whatever had happened, and a session past its nudges
   never learned of a message to it. Each session is now one pi process for the whole play. An idle session
