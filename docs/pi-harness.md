@@ -57,7 +57,7 @@ Each agent starts with the topics of `pi.subscriptions` (`dm`, `job`, `ticket`) 
 
 | Step | Where |
 | --- | --- |
-| 1. A service records a call, a request or a job's change of state | its log, and its file on the records volume (`stack.records_directory`), which only the services and the episode mount |
+| 1. A service records a call, a request or a job's change of state | its log, and its file on the records volume (`stack.records_directory`), which only the services that run an engine module and the episode mount. A service built from its own Dockerfile writes its log alone, so its records make no notice |
 | 2. The episode reads the new lines every `pi.notice_poll_seconds` and builds their events | the mapping the post-play builder uses (`loc_arena.recorded_events`) |
 | 3. Each event becomes a notice for each agent subscribed to its topic | `notices.jsonl` in the play's directory: the agent, the topic, the text, and `sent`, false when the agent's session had ended or its pi read its input no more |
 | 4. The episode gives the notice to the agent's pi as a prompt | an idle loop starts a run on it; a working loop gets it before its next model call |

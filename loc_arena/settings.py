@@ -335,7 +335,9 @@ class StackSettings(SettingsGroup):
     records_directory: Path = Field(
         default=Path("/records"),
         description="Where each live service and the episode mount the records volume: a service writes its "
-        "record lines to <service>.jsonl there, and the episode reads them during play to send notices.",
+        "record lines to <service>.jsonl there, and the episode reads them during play to send notices. The "
+        "engine image creates it for the services' user: at another path a service cannot write, and says so "
+        "in its log at each record.",
     )
     skills_directory: Path = Field(
         default=Path("/skills"),
