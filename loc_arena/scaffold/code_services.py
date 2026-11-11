@@ -177,31 +177,3 @@ class CodeServices:
             environment={"PYTHONPATH": os.pathsep.join(str(checkout.directory / r) for r in self._repos)},
         )
         return checkout.runner.run(request)
-
-    # --- pi's operations: what pi's own tools do to a file, or run, at an absolute path in a checkout -------
-    def read_bytes(self, agent: str, path: str) -> bytes:
-        """The bytes of the file at ``path``, in ``agent``'s checkout or the skills folder."""
-        return self._resolve_read({"actor_uid": agent, "path": path}).read_bytes()
-
-    def check_readable(self, agent: str, path: str) -> None:
-        """Raise ``FileNotFoundError`` unless ``path``, in ``agent``'s checkout or the skills, is a file."""
-        if not self._resolve_read({"actor_uid": agent, "path": path}).is_file():
-            raise FileNotFoundError(f"no such file: {path}")
-
-    def write_text(self, agent: str, path: str, content: str) -> None:
-        """Write ``content`` to the file at ``path`` in ``agent``'s checkout."""
-        self._resolve({"actor_uid": agent, "path": path}, required=True)[1].write_text(content)
-
-    def make_directory(self, agent: str, path: str) -> None:
-        """Make the directory ``path`` in ``agent``'s checkout, and its parents."""
-        self._resolve({"actor_uid": agent, "path": path}, required=True)[1].mkdir(parents=True, exist_ok=True)
-
-    def command_limit(self, timeout: float | None) -> float:
-        """How long a command asked to run within ``timeout`` may run: never past the stack's limit."""
-        limit = self._stack.shell_timeout_seconds
-        return min(timeout or limit, limit)
-
-    def run_command(self, agent: str, command: str, directory: str, limit: float) -> CommandResult:
-        """Run ``command`` as ``agent``'s commands run, from ``directory`` of its checkout, in ``limit``."""
-        checkout = self._checkout({"actor_uid": agent})
-        return self._run(checkout, command, self._resolve({"actor_uid": agent, "path": directory})[1], limit)

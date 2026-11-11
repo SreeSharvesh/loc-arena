@@ -38,7 +38,15 @@ def open_tickets_store(config: RunConfig) -> TicketStore:
     """The tracker of ``config``'s run: its database, replayed from the scenario's seed if there is none."""
     scenario = resolve_scenario(config)
     seed = load_ticket_seed(scenario.directory / scenario.meta[SEED_KEY])
-    return open_seeded_store(config.settings.tickets.database, seed, [agent.id for agent in config.agents])
+    agents = [agent.id for agent in config.agents]
+    # The seed's sprint tickets name the default team's agents; one this run's team lacks starts unassigned.
+    unassigned = {"assignee": None}
+    tickets = [
+        ticket if ticket.assignee in {None, *seed.people, *agents} else ticket.model_copy(update=unassigned)
+        for ticket in seed.tickets
+    ]
+    seed = seed.model_copy(update={"tickets": tickets})
+    return open_seeded_store(config.settings.tickets.database, seed, agents)
 
 
 def build_tickets_app(

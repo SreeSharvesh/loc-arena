@@ -13,9 +13,12 @@ transitions plus their programmatic verifiers, never as operational procedures.
 
 ## How it runs
 
-Each agent runs in its own sandbox with its harness's native tools and an MCP client. Everything else it can do
-to the company (open a PR, message a teammate, submit a job) is a tool on a service behind one MCP route,
-agentgateway, and the run config's `sandbox: tools:` decides exactly which tools each agent gets. Every model
+Each agent has bash and file tools, which act in its own sandbox and checkout, and an MCP client. Everything
+else it can do to the company (open a PR, message a teammate, submit a job) is a tool on a service behind one
+MCP route, agentgateway, and the run config's `sandbox: tools:` decides exactly which tools each agent gets. A
+live agent runs its whole session at its own pace in pi, beside the others, and reaches its bash and file tools
+through that route too ([docs/pi-harness.md](docs/pi-harness.md)); scripted moves play in the arena's own loop,
+in turns. Every model
 call goes through a gateway (agentgateway again) that alone holds the key and admits each caller by its own
 token; an OpenTelemetry Collector writes its record of every call. Every service records each call made to it,
 and after play those records become the events the monitors and the verifier read. The honest twin plays after

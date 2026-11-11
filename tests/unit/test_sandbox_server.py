@@ -6,10 +6,15 @@ trusted caller is this host's loopback address.
 
 from __future__ import annotations
 
+import concurrent.futures
+import contextlib
 import json
+import os
+import signal
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from http import HTTPStatus
 from pathlib import Path
 from typing import Any
@@ -26,6 +31,7 @@ OUTPUT_LIMIT_BYTES = 10_000
 TRUSTED_CALLER = "127.0.0.1"
 OTHER_CALLER = "192.0.2.7"  # an address reserved for documentation: no name resolves to it here
 TIMEOUT_LIMIT_SECONDS = 30.0
+LATE_SECONDS = 0.3  # how long after it is asked for a late kill of leftovers lands, as on a busy server
 
 
 @pytest.fixture
@@ -34,11 +40,19 @@ def checkouts(tmp_path: Path) -> Path:
     return tmp_path / "checkouts"
 
 
+@pytest.fixture
+def pids(tmp_path: Path) -> Path:
+    """Where a command records its process id while it runs, for ``end_recorded`` to end it."""
+    (tmp_path / "pids").mkdir()
+    return tmp_path / "pids"
+
+
 def serve(
     checkouts: Path,
     output_limit_bytes: int = OUTPUT_LIMIT_BYTES,
     scratch: Path | None = None,
     caller: str = TRUSTED_CALLER,
+    end_leftovers: Callable[[], None] = lambda: None,
 ) -> TestClient:
     """The command server over ``checkouts``, as ``caller`` reaches it, with ``scratch`` if given."""
     settings = ServerSettings(
@@ -50,7 +64,8 @@ def serve(
         trusted_caller=TRUSTED_CALLER,
         command_timeout_limit_seconds=TIMEOUT_LIMIT_SECONDS,
     )
-    return TestClient(create_sandbox_app(settings, SecretStr(TOKEN)), client=(caller, 50000))
+    app = create_sandbox_app(settings, SecretStr(TOKEN), end_leftovers=end_leftovers)
+    return TestClient(app, client=(caller, 50000))
 
 
 def post_command(
@@ -64,9 +79,13 @@ def post_command(
     stdin: str = "",
     output_limit_bytes: int = OUTPUT_LIMIT_BYTES,
     caller: str = TRUSTED_CALLER,
+    server: TestClient | None = None,
 ) -> tuple[int, Any]:
-    """The status and the parsed body of a request from ``caller`` to run ``command`` with bash."""
-    response = serve(checkouts, output_limit_bytes, caller=caller).post(
+    """The status and the parsed body of a request from ``caller`` to run ``command`` with bash.
+
+    It goes to ``server`` if given, else to a new one.
+    """
+    response = (server or serve(checkouts, output_limit_bytes, caller=caller)).post(
         "/run",
         json={
             "argv": ["bash", "-c", command],
@@ -78,6 +97,44 @@ def post_command(
         headers={"authorization": f"Bearer {token}"} if token else {},
     )
     return response.status_code, response.json()
+
+
+def post_reset(server: TestClient, keep: Path) -> int:
+    """The status of a request to ``server`` to reset its sandbox, keeping ``keep``."""
+    reply = server.post("/reset", json={"keep": str(keep)}, headers={"authorization": f"Bearer {TOKEN}"})
+    return reply.status_code
+
+
+def end_recorded(pids: Path, *, late_seconds: float = 0, missed: int = 0) -> Callable[[], None]:
+    """What ends every command recorded in ``pids``, as the container's kill ends every process.
+
+    Each kill lands ``late_seconds`` after it is asked for, and the first ``missed`` kills end nothing.
+    """
+    misses = iter(range(missed))
+
+    def kill_commands() -> None:
+        time.sleep(late_seconds)
+        if next(misses, None) is not None:
+            return
+        for recorded in pids.iterdir():
+            with contextlib.suppress(ProcessLookupError):  # it ended meanwhile
+                os.killpg(int(recorded.name), signal.SIGKILL)
+            recorded.unlink(missing_ok=True)
+
+    return kill_commands
+
+
+def sleep_recorded(server: TestClient, checkouts: Path, pids: Path, seconds: float = 10) -> Any:
+    """What ``server`` answers to a command that sleeps ``seconds``, recorded in ``pids`` while it runs."""
+    return post_command(checkouts, f"touch {pids}/$$; sleep {seconds}; rm {pids}/$$", server=server)[1]
+
+
+def start_recorded(server: TestClient, checkouts: Path, pids: Path) -> concurrent.futures.Future[Any]:
+    """A command sleeping on ``server``, handed back once it runs: its answer comes when it ends."""
+    running = concurrent.futures.ThreadPoolExecutor(1).submit(sleep_recorded, server, checkouts, pids)
+    while not (any(pids.iterdir()) or running.done()):
+        time.sleep(0.01)
+    return running
 
 
 @pytest.mark.parametrize(
@@ -220,13 +277,9 @@ def test_a_reset_clears_the_scratch_directories_and_every_other_checkout_entry_b
     (checkouts / "pytest.ini").write_text("[pytest]")
     (checkouts / "episode" / "checkout").mkdir()
     (checkouts / "episode" / "checkout" / "kept.py").write_text("kept")
-    client = serve(checkouts, scratch=scratch)
+    server = serve(checkouts, scratch=scratch)
 
-    client.post(
-        "/reset",
-        json={"keep": str(checkouts / "episode" / "checkout")},
-        headers={"authorization": f"Bearer {TOKEN}"},
-    )
+    post_reset(server, checkouts / "episode" / "checkout")
 
     left = (sorted(scratch.iterdir()), sorted(checkouts.iterdir()))
     assert (left, (checkouts / "episode" / "checkout" / "kept.py").read_text()) == (
@@ -238,13 +291,46 @@ def test_a_reset_clears_the_scratch_directories_and_every_other_checkout_entry_b
 def test_a_reset_that_would_keep_the_whole_checkouts_directory_is_refused(checkouts: Path) -> None:
     (checkouts / "stray").mkdir()
 
-    response = serve(checkouts).post(
-        "/reset",
-        json={"keep": str(checkouts)},
-        headers={"authorization": f"Bearer {TOKEN}"},
-    )
+    status = post_reset(serve(checkouts), checkouts)
 
-    assert (response.status_code, (checkouts / "stray").exists()) == (HTTPStatus.FORBIDDEN, True)
+    assert (status, (checkouts / "stray").exists()) == (HTTPStatus.FORBIDDEN, True)
+
+
+def test_a_command_run_right_after_a_reset_outlives_the_end_of_the_command_the_reset_ended(
+    checkouts: Path,
+    pids: Path,
+) -> None:
+    """A reset ends a running command, whose handler then ends leftovers too: late, as each kill is here."""
+    server = serve(checkouts, end_leftovers=end_recorded(pids, late_seconds=LATE_SECONDS))
+    start_recorded(server, checkouts, pids)
+    post_reset(server, checkouts / "episode")
+
+    result = sleep_recorded(server, checkouts, pids, 2 * LATE_SECONDS)
+
+    assert result["returncode"] == 0
+
+
+def test_a_command_sent_during_a_reset_starts_once_the_reset_is_over(checkouts: Path, pids: Path) -> None:
+    """Started sooner, it would be ended by the late kill of the handler the reset waits for."""
+    server = serve(checkouts, end_leftovers=end_recorded(pids, late_seconds=LATE_SECONDS))
+    start_recorded(server, checkouts, pids)
+    concurrent.futures.ThreadPoolExecutor(1).submit(post_reset, server, checkouts / "episode")
+    while any(pids.iterdir()):  # until the reset has ended that command, and waits for its handler
+        time.sleep(0.01)
+
+    result = sleep_recorded(server, checkouts, pids, 2 * LATE_SECONDS)
+
+    assert result["returncode"] == 0
+
+
+def test_a_reset_ends_a_command_its_first_kills_missed(checkouts: Path, pids: Path) -> None:
+    """A kill misses a command whose process has not started yet, and the reset waits for that command too."""
+    server = serve(checkouts, end_leftovers=end_recorded(pids, missed=2))
+    running = start_recorded(server, checkouts, pids)
+
+    post_reset(server, checkouts / "episode")
+
+    assert running.result()["returncode"] == -signal.SIGKILL
 
 
 def test_the_command_server_loads_nothing_of_the_harness() -> None:

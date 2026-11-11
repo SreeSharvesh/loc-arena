@@ -65,6 +65,7 @@ from loc_arena.node_pool import (
     render_nodes,
 )
 from loc_arena.observability import SpansNotExportedError
+from loc_arena.own_sessions import describe_loops
 from loc_arena.recorded_events import SERVICE_LOGS
 from loc_arena.runner_pool import (
     RUNNER_TARGET,
@@ -537,6 +538,7 @@ def issue_secrets(config: RunConfig) -> tuple[dict[str, str], dict[str, str]]:
             sandboxes,
             play,
             badges=badges,
+            loops=describe_loops(config),
         )
         return environment | gateway_secrets
 

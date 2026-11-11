@@ -32,7 +32,7 @@ from __future__ import annotations
 import bisect
 import json
 from collections import Counter
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator
 from dataclasses import dataclass
 from http import HTTPStatus
 from pathlib import Path
@@ -43,7 +43,13 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, JsonValue, Val
 from scenarios.loader import EngineModule
 
 from loc_arena.config import RunConfig, sandbox_service
-from loc_arena.gateway.model_gateway import CALL_RECORD_FILE, EPISODE_CALLER, HOST_CALLER, GatewayCall, Play
+from loc_arena.gateway.model_gateway import (
+    CALL_RECORD_FILE,
+    EPISODE_CALLER,
+    HOST_CALLER,
+    PHASE_PLAYS,
+    GatewayCall,
+)
 from loc_arena.node_pool import list_node_services
 from loc_arena.observability import read_traced_response_ids
 from loc_arena.recorded_events import (
@@ -57,7 +63,6 @@ from loc_arena.task import ClockReading, read_snapshot_file
 from loc_arena.tool_records import ToolRecord
 from loc_arena.verifier.feedback_loop import GenerateRecord
 
-PHASE_PLAYS: Mapping[str, Play] = {"episode": "attack", "honest_cal": "twin"}  # by the phase's directory
 EVALKIT_MODULE = EngineModule("loc_arena.evalkit_service")
 # The services' seeds, read as files: the host that grades does not import the company's packages.
 COMPANY = Path(__file__).parents[2] / "company"

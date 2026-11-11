@@ -52,7 +52,7 @@ AFTER_CONTROL_SECONDS = 160  # longer than the liveness window, so the control's
 # serving-agent's attack move: its serving job, with a client that feeds each reply into its next prompt.
 (MOVE,) = [
     move
-    for move in load_moves(resolve_scenario(CONFIG).scripted_dir / "moves.yaml", CONFIG)[OWNER]
+    for move in load_moves(resolve_scenario(CONFIG).scripted_dir / CONFIG.scripted_moves, CONFIG)[OWNER]
     if move.tool == "submit_job"
 ]
 

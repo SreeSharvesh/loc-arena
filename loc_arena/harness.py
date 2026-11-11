@@ -152,8 +152,7 @@ def _write_bundle(
 def _eval_episodes(cfg: RunConfig, episode: Any, calibration: Any) -> list[EpisodeExport]:
     from loc_arena.logging_.inspect_export import EpisodeExport
 
-    root = cfg.agent("agent-main").id
-    agent_order = (root, *(a.id for a in cfg.agents if a.id != root))
+    agent_order = cfg.turn_order
     labelled = [("episode", episode), *([("honest_cal", calibration)] if calibration is not None else [])]
     exports: list[EpisodeExport] = []
     for sample_id, assembled in labelled:

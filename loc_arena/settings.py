@@ -15,6 +15,7 @@ from pydantic import (
     ConfigDict,
     Field,
     HttpUrl,
+    JsonValue,
     NonNegativeFloat,
     NonNegativeInt,
     PositiveFloat,
@@ -264,6 +265,13 @@ class StackSettings(SettingsGroup):
         le=65535,
         description="The port of the tools gateway's MCP route (/mcp), on agent-net.",
     )
+    workspace_port: int = Field(
+        default=3100,
+        ge=1,
+        le=65535,
+        description="The port of the workspace service in the episode's container, on agent-net: each "
+        "agent's bash and file tools under harness: pi, which the tools gateway calls.",
+    )
     agent_code_output_limit_bytes: PositiveInt = Field(
         default=1_000_000,
         description="Bytes of an agent-code run's stdout and of its stderr kept, counted from the end.",
@@ -304,8 +312,10 @@ class StackSettings(SettingsGroup):
     )
     tools_delivery_attempts: PositiveInt = Field(
         default=3,
-        description="Attempts at reading an agent's IAM inbox at the start of its turn; a read that fails "
-        "them all is a warning, and the next turn reads the whole inbox again.",
+        description="Attempts at each read the harness makes for an agent at the start of its turn (its IAM "
+        "inbox, its unread chat, its assigned tickets) while the service has not taken the read; a read that "
+        "fails is a warning, and the next turn reads again. Chat counts an answered read as read, so the "
+        "messages of an answer that was lost are not delivered.",
     )
     tools_connect_seconds: PositiveFloat = Field(
         default=30.0,
@@ -394,22 +404,33 @@ class EvalkitSettings(SettingsGroup):
 
 
 class TicketsSettings(SettingsGroup):
-    """The tickets service (the run config's ``tickets:`` block): where its database is in its container."""
+    """The tickets service (the run config's ``tickets:`` block): its database, and what agents hear of it."""
 
     database: Path = Field(
         default=Path("/var/lib/tickets/tickets.db"),
         description="Its SQLite file. A new container finds none and replays the scenario's ticket seed into "
         "a new one, so the honest twin's recreated service starts from the seed; a restarted one keeps it.",
     )
+    deliver_assigned: bool = Field(
+        default=False,
+        description="Whether each agent offered search_tickets is told, at the start of its turn, of each "
+        "ticket newly assigned to it. The read is recorded by the service as the agent's call.",
+    )
 
 
 class ChatSettings(SettingsGroup):
-    """The chat service (the run config's ``chat:`` block): where its database is in its container."""
+    """The chat service (the run config's ``chat:`` block): its database, and what agents hear of it."""
 
     database: Path = Field(
         default=Path("/var/lib/chat/chat.db"),
         description="Its SQLite file. A new container finds none and replays the scenario's chat seed into a "
         "new one, so the honest twin's recreated service starts from the seed; a restarted one keeps it.",
+    )
+    deliver_unread: bool = Field(
+        default=False,
+        description="Whether each agent offered unread is handed, at the start of its turn, the direct "
+        "messages to it and the channel messages mentioning it since its last unread. The read is recorded "
+        "by the service as the agent's call, and moves the agent's read position.",
     )
 
 
@@ -528,21 +549,16 @@ class ServingSettings(SettingsGroup):
 
 
 class PiSettings(SettingsGroup):
-    """The coding agent that runs each agent's loop under ``harness: pi`` (the run config's ``pi:`` block)."""
+    """The coding agent that runs each agent's session under ``harness: pi`` (the config's ``pi:`` block)."""
 
-    executable: str = Field(
-        default="pi",
-        description="The pi program, at the version the Dockerfile pins: on PATH, unless a path is given.",
+    resumes: NonNegativeInt = Field(
+        default=3,
+        description="Times an agent's session goes on, on a nudge, after pi's model answered without a tool "
+        "call: once they are used up, the session has ended.",
     )
-    answer_seconds: PositiveFloat = Field(
-        default=120.0,
-        description="Seconds the episode waits for pi to ask its model, or to call its tools, once pi may: "
-        "past them pi is stuck, and the run fails.",
-    )
-    hold_seconds: PositiveFloat = Field(
-        default=20.0,
-        description="Seconds the episode holds one of pi's waits before telling it to ask again, well under "
-        "the five minutes Node's fetch waits for an answer.",
+    model_settings: dict[str, JsonValue] = Field(
+        default={},
+        description="pi's own keys for the agents' model, in its models.json entry (its docs' models.md).",
     )
 
 

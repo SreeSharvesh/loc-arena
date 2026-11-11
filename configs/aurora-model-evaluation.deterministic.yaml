@@ -5,6 +5,7 @@
 extends: aurora-model-evaluation.yaml
 models: models.cheap.yaml
 policy: scripted
+harness: native   # the scripted moves play in the arena's own loop
 iam:
   enabled: false
 forge:
