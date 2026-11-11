@@ -214,7 +214,10 @@ def play_sessions(
                 )
             except subprocess.TimeoutExpired as stopped:
                 errors = stopped.stderr or ""
-                return _end_session(None, errors if isinstance(errors, str) else errors.decode())
+                return _end_session(
+                    None,
+                    errors if isinstance(errors, str) else errors.decode(errors="replace"),
+                )
             if ended.returncode != 0:
                 return _end_session(ended.returncode, ended.stderr)
         return _end_session(0, "")

@@ -78,10 +78,10 @@ def test_the_end_of_play_waits_for_a_running_command(url: str, turns: Turns, tmp
     key = workspace_key(TOKENS["agent-a"])
     running = threading.Thread(
         target=call,
-        args=(url, key, "bash", {"command": "sleep 1; echo x > done.txt"}),
+        args=(url, key, "bash", {"command": "touch started; sleep 1; echo x > done.txt"}),
     )
     running.start()
-    while not turns._locks["agent-a"].locked():  # noqa: SLF001 - the command has started
+    while running.is_alive() and not (tmp_path / "agent-a" / "started").exists():
         threading.Event().wait(0.01)
 
     turns.end()
