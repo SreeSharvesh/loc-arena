@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from loc_arena.config import load_run_config
 from loc_arena.evalkit_service import main
-from loc_arena.recorded_events import _record_line_parser
+from loc_arena.recorded_events import record_line_parser
 
 CONFIGS = Path(__file__).parents[2] / "configs"
 CONFIG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
@@ -18,7 +18,7 @@ AGENTS = tuple(agent.id for agent in CONFIG.agents)
 
 
 def test_a_service_with_tools_and_rights_records_tool_calls_and_requests_both() -> None:
-    parse = _record_line_parser(EVALKIT, CONFIG)
+    parse = record_line_parser(EVALKIT, CONFIG)
     tool_call = {
         "time": "2026-09-01T12:00:00+00:00",
         "gen_ai.tool.name": "start_run",

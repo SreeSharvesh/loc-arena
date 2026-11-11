@@ -533,7 +533,7 @@ def build_recorded_events(
     sponsors = _read_sponsors(run_directory, config, phases)
     record_line_parsers: list[tuple[str, RecordLineParser]] = [
         *(
-            (service.name, _attribute_workloads(_record_line_parser(service, config), sponsors))
+            (service.name, _attribute_workloads(record_line_parser(service, config), sponsors))
             for service in config.live_services
             if service.tools or service.rights
         ),
@@ -563,7 +563,7 @@ def build_recorded_events(
         (run_directory / UNATTRIBUTED_FILE).write_text("".join(f"{note}\n" for note in unattributed))
 
 
-def _record_line_parser(service: LiveService, config: RunConfig) -> RecordLineParser:
+def record_line_parser(service: LiveService, config: RunConfig) -> RecordLineParser:
     """How a service's log lines become events: a tool call, a request, or (central IAM) correlation only."""
     if config.settings.iam.enabled and service.name == config.settings.iam.service:
         seed = load_seed(resolve_scenario(config))

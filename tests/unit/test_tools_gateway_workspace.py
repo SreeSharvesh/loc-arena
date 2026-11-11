@@ -30,7 +30,9 @@ def test_under_pi_each_agent_is_offered_the_workspace_tools_under_its_own_worksp
     assert workspace["mcp"] == {"host": f"http://episode:{OWN_SESSIONS.settings.stack.workspace_port}/mcp"}
     assert f'"eval-agent": "{key}"' in sent
     assert "token-of-eval-agent" not in sent
-    assert '"workspace": ["bash", "read_file"' in route["policies"]["mcpAuthorization"]["rules"][0]["allow"]
+    offered = '"workspace": ["bash", "read_file", "write_file", "edit_file", "list_dir", "search_code", '
+    offered += '"subscribe", "unsubscribe", "list_subscriptions"]'
+    assert offered in route["policies"]["mcpAuthorization"]["rules"][0]["allow"]
 
 
 def test_the_native_loop_has_no_workspace_target() -> None:

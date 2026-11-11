@@ -10,6 +10,7 @@ import json
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
+from loc_arena.notices import NOTICE_TOOLS
 from loc_arena.workspace_service import WORKSPACE_SERVICE, WORKSPACE_TOOLS, workspace_key
 from loc_arena.yaml_documents import dump_document
 
@@ -66,14 +67,17 @@ def render_tools_gateway_config(
     """
     tools = {agent.id: dict(agent.sandbox.tools) for agent in config.agents}
     workspace = []
-    if config.harness == "pi":  # each agent's loop runs nothing itself: its bash and file tools are a target
+    if (
+        config.harness == "pi"
+    ):  # a loop runs nothing itself: its bash, file and subscription tools are a target
         from loc_arena.stack_play import EPISODE_SERVICE  # noqa: PLC0415 - stack_play imports this module
 
         port = config.settings.stack.workspace_port
         keys = {agent: workspace_key(token) for agent, token in tokens.items()}
         workspace = [_render_target(WORKSPACE_SERVICE, f"http://{EPISODE_SERVICE}:{port}{MCP_PATH}", keys)]
         tools = {
-            agent: {**offered, WORKSPACE_SERVICE: list(WORKSPACE_TOOLS)} for agent, offered in tools.items()
+            agent: {**offered, WORKSPACE_SERVICE: [*WORKSPACE_TOOLS, *NOTICE_TOOLS]}
+            for agent, offered in tools.items()
         }
     iam = config.settings.iam
     callers = {

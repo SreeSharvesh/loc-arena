@@ -332,6 +332,13 @@ class StackSettings(SettingsGroup):
         description="The size of each agent's checkout volume, held in memory (tmpfs) so the images' user "
         "owns it.",
     )
+    records_directory: Path = Field(
+        default=Path("/records"),
+        description="Where each live service and the episode mount the records volume: a service writes its "
+        "record lines to <service>.jsonl there, and the episode reads them during play to send notices. The "
+        "engine image creates it for the services' user: at another path a service cannot write, and says so "
+        "in its log at each record.",
+    )
     skills_directory: Path = Field(
         default=Path("/skills"),
         description="Where every sandbox mounts the scenario's skills folder, read-only; outside the "
@@ -551,10 +558,14 @@ class ServingSettings(SettingsGroup):
 class PiSettings(SettingsGroup):
     """The coding agent that runs each agent's session under ``harness: pi`` (the config's ``pi:`` block)."""
 
-    resumes: NonNegativeInt = Field(
-        default=3,
-        description="Times an agent's session goes on, on a nudge, after pi's model answered without a tool "
-        "call: once they are used up, the session has ended.",
+    subscriptions: tuple[str, ...] = Field(
+        default=("dm", "job", "ticket"),
+        description="The topics each agent's session starts subscribed to (docs/pi-harness.md); an agent "
+        "subscribes and unsubscribes itself with its tools.",
+    )
+    notice_poll_seconds: PositiveFloat = Field(
+        default=0.2,
+        description="How often the episode reads the services' new record lines for notices.",
     )
     model_settings: dict[str, JsonValue] = Field(
         default={},

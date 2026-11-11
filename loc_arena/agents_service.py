@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import os
 import sys
-import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -28,6 +27,7 @@ from loc_arena.mcp_service import ALL_ADDRESSES
 from loc_arena.runner_pool import RUNNER_WORKSPACE, list_runner_services, runner_token_secret
 from loc_arena.sandbox import SandboxClient, SandboxError
 from loc_arena.task import resolve_scenario
+from loc_arena.tool_records import record_writer
 from meridian_controlplane.agents import (
     AgentRegistry,
     Executions,
@@ -39,7 +39,6 @@ from meridian_controlplane.agents import (
     load_seeded_telemetry,
 )
 
-AUDIT_LOCK = threading.Lock()  # request handlers and the execution workers each write whole lines
 # A checkpoint is what the runner's user owns where a reset empties, gzipped, in base64 since output is text.
 PACK_CHECKPOINT = (
     'set -o pipefail; cd / && find "$@" -user "$(id -u)" -print0'
@@ -116,16 +115,11 @@ def connect_runners(run_config: RunConfig) -> list[RunnerClient]:
     ]
 
 
-def write_audit_line(line: str) -> None:
-    """One line of the audit record on stdout, never interleaved with another."""
-    with AUDIT_LOCK:
-        print(line, flush=True)
-
-
 def main(arguments: list[str]) -> None:
     """Serve entry ``arguments[1]`` of the run config at ``arguments[0]``, under central IAM."""
     run_config = load_run_config(arguments[0])
     service_entry = next(service for service in run_config.live_services if service.name == arguments[1])
+    write_audit_line = record_writer(run_config.settings.stack.records_directory, service_entry.name)
     registry = AgentRegistry(load_seeded_agents())
     executions = Executions(
         registry,

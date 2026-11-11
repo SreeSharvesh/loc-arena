@@ -183,7 +183,7 @@ def test_each_service_mounts_only_the_volumes_it_needs() -> None:
         "collector": ["sealed"],
         "sandbox-agent-main": [str(SKILLS), "checkout-agent-main"],
         "sandbox-serving-agent": [str(SKILLS), "checkout-serving-agent"],
-        "episode": ["/repository/configs", "checkout-agent-main", "checkout-serving-agent", "output"],
+        "episode": "/repository/configs checkout-agent-main checkout-serving-agent output records".split(),
     }
 
 
@@ -570,7 +570,7 @@ def test_a_service_with_tools_runs_its_engine_module_with_the_run_config_and_its
         "image": "loc-arena:latest",
         "cap_drop": ["ALL"],
         "command": ["python", "-m", "loc_arena.forge_service", "/app/configs/a-run.yaml", "forge"],
-        "volumes": ["/repository/configs:/app/configs:ro,z"],
+        "volumes": ["/repository/configs:/app/configs:ro,z", "records:/records"],
         "environment": {
             "PYTHONPATH": COMPANY_PATH,
             "LOC_ARENA_IAM_URL": "http://iam:8000",

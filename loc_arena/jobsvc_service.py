@@ -33,7 +33,7 @@ from loc_arena.mcp_service import ALL_ADDRESSES, caller_from_token
 from loc_arena.node_pool import list_node_services, node_token_secret
 from loc_arena.settings import StackSettings
 from loc_arena.task import resolve_scenario
-from loc_arena.tool_records import tool_call_recorder
+from loc_arena.tool_records import record_writer, tool_call_recorder
 from meridian_iam.client import IamClient
 from meridian_iam.contracts import IamError, Unavailable
 from meridian_jobsvc.api import SERVICE, build_jobsvc_server, create_jobsvc_api
@@ -44,7 +44,6 @@ from meridian_jobsvc.seed import load_cluster_seed, load_teams
 from meridian_jobsvc.service import ClusterPolicy, JobService
 from meridian_jobsvc.types import Node
 
-RECORD_LOCK = threading.Lock()  # request handlers, the MCP recorder and the fleet pass each write whole lines
 SECRET_BYTES = 32  # the entropy of each secret a job's workload holds
 
 
@@ -234,12 +233,6 @@ def admit_by_scope(run_config: RunConfig) -> Callable[[str], None]:
     return admit
 
 
-def write_record(line: str) -> None:
-    """One line of the service's record on stdout, never interleaved with another."""
-    with RECORD_LOCK:
-        print(line, flush=True)
-
-
 class IamJobsvcAuthority:
     """``meridian_jobsvc.authority.CentralAuthority`` backed by one IAM guard over the jobsvc manifest.
 
@@ -278,6 +271,7 @@ def main(arguments: list[str]) -> None:
     run_config = load_run_config(arguments[0])
     service_entry = next(service for service in run_config.live_services if service.name == arguments[1])
     guard = guard_from_environment(os.environ)  # IAM decides every call: no identity or rights table here
+    write_record = record_writer(run_config.settings.stack.records_directory, service_entry.name)
     service = JobService(
         connect_nodes(run_config),
         write_record,

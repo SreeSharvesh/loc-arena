@@ -6,14 +6,17 @@ attributes the OpenTelemetry semantic conventions give an MCP tool call (``mcp.m
 ``gen_ai.tool.call.arguments``, ``gen_ai.tool.call.result`` on success, ``error.type`` on failure) and the
 calling agent as ``gen_ai.agent.name``, plus its ``time``. A failure also carries the error's text as
 ``otel.status_description``, the span status description OpenTelemetry exports to formats outside OTLP, which
-the MCP conventions fill with the error's message. A service in a container writes it to stdout; one
-an in-process run serves writes it to ``records/<service>.jsonl`` in the episode's directory, so both runs
-leave the same lines. ``ToolRecord`` reads one back.
+the MCP conventions fill with the error's message. A service in a container writes it to stdout, and to its
+file on the records volume, which the episode reads during play (``loc_arena.notices``); one an in-process run
+serves writes it to ``records/<service>.jsonl`` in the episode's directory, so both runs leave the same lines.
+``ToolRecord`` reads one back.
 """
 
 from __future__ import annotations
 
 import json
+import sys
+import threading
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
@@ -86,6 +89,28 @@ def tool_call_recorder(
         return result
 
     return record
+
+
+def record_writer(directory: Path, service: str) -> Write:
+    """A ``Write`` of ``service``'s record: each line whole on stdout, and in its file of ``directory``.
+
+    The file is ``<service>.jsonl``; a service started where no ``directory`` is mounted writes stdout alone.
+    """
+    path = directory / f"{service}.jsonl" if directory.is_dir() else None
+    lock = threading.Lock()  # request handlers and a service's own threads each write whole lines
+
+    def write(line: str) -> None:
+        with lock:
+            print(line, flush=True)  # noqa: T201 - the record a stack run reads from the container's log
+            if path is None:
+                return
+            try:
+                with path.open("a", encoding="utf-8") as records:
+                    records.write(f"{line}\n")
+            except OSError as error:  # its call was made: the line is on stdout, and makes no notice
+                print(f"record not written to {path}: {error}", file=sys.stderr, flush=True)  # noqa: T201
+
+    return write
 
 
 def append_to(path: Path) -> Write:

@@ -40,7 +40,7 @@ from loc_arena.npcs.coworker import apply_world_activity, resolve_activity_repos
 from loc_arena.npcs.reviewer import Reviewer
 from loc_arena.task import resolve_scenario
 from loc_arena.tasks.main_task_grader import COMPANY_REPOS, COMPANY_ROOT, seed_checkout
-from loc_arena.tool_records import Write, tool_call_recorder
+from loc_arena.tool_records import Write, record_writer, tool_call_recorder
 from meridian_forge.forge import Forge
 from meridian_forge.git_http import GitBounds, create_git_api
 from meridian_forge.repositories import repository_path, seed_repositories
@@ -179,7 +179,7 @@ def main(arguments: list[str]) -> None:
     entry = next((service for service in config.live_services if service.name == SERVICE), None)
     if entry is None:
         raise SystemExit(f"the scenario of {arguments[0]} has no {SERVICE!r} service")
-    app = build_forge_app(config, guard, functools.partial(print, flush=True))
+    app = build_forge_app(config, guard, record_writer(config.settings.stack.records_directory, SERVICE))
     uvicorn.run(app, host=ALL_ADDRESSES, port=entry.port, log_level="warning", access_log=False)
 
 
