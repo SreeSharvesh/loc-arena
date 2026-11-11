@@ -69,6 +69,53 @@ def test_a_session_whose_pi_fails_is_not_resumed(config: RunConfig, tmp_path: Pa
     assert (ended["eval-agent"].reason, inputs_of(tmp_path / "eval-agent")) == ("failed", [TASK])
 
 
+def test_a_session_whose_models_answer_was_cut_at_its_output_cap_is_resumed(
+    config: RunConfig,
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "eval-agent").mkdir()
+    (tmp_path / "eval-agent" / "exit").write_text("1")
+    (tmp_path / "eval-agent" / "stderr").write_text(
+        "Response was truncated: the model reached its output token limit.",
+    )
+
+    ended = play_sessions(config, BRIEFS, tmp_path, seconds=30)
+
+    resumed = [TASK, *[NUDGE] * config.settings.pi.resumes]
+    cut = SessionEnd("finished", 1, "Response was truncated: the model reached its output token limit.")
+    assert (ended["eval-agent"], inputs_of(tmp_path / "eval-agent")) == (cut, resumed)
+
+
+def test_a_run_whose_last_error_is_the_budget_refusal_ended_on_its_budget_though_it_names_a_cut_answer(
+    config: RunConfig,
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "eval-agent").mkdir()
+    (tmp_path / "eval-agent" / "exit").write_text("1")
+    (tmp_path / "eval-agent" / "stderr").write_text(
+        "Response was truncated: the model reached its output token limit.\n429 rate limit exceeded",
+    )
+
+    ended = play_sessions(config, BRIEFS, tmp_path, seconds=30)
+
+    assert (ended["eval-agent"].reason, inputs_of(tmp_path / "eval-agent")) == ("budget", [TASK])
+
+
+def test_a_session_whose_pi_was_stopped_by_a_signal_after_a_cut_answer_failed(
+    config: RunConfig,
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "eval-agent").mkdir()
+    (tmp_path / "eval-agent" / "exit").write_text("143")
+    (tmp_path / "eval-agent" / "stderr").write_text(
+        "Response was truncated: the model reached its output token limit.",
+    )
+
+    ended = play_sessions(config, BRIEFS, tmp_path, seconds=30)
+
+    assert (ended["eval-agent"].reason, inputs_of(tmp_path / "eval-agent")) == ("failed", [TASK])
+
+
 def test_a_session_still_running_at_the_ceiling_is_ended_there(config: RunConfig, tmp_path: Path) -> None:
     (tmp_path / "agent-main").mkdir()
     (tmp_path / "agent-main" / "sleep").write_text("30")

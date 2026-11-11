@@ -64,6 +64,8 @@ _PI_ENVIRONMENT = {"PI_OFFLINE": "1", "PI_SKIP_VERSION_CHECK": "1", "PI_TELEMETR
 
 EndReason = Literal["finished", "ceiling", "budget", "failed"]
 BUDGET_REFUSAL = "429 rate limit exceeded"  # pi's last error when the gateway refused a call past the budget
+# pi's last error when its model's final answer was cut at the output cap: that run ended, as a finished one
+CUT_AT_CAP = "Response was truncated: the model reached its output token limit."
 
 
 @dataclass(frozen=True)
@@ -87,8 +89,13 @@ def _end_session(exit_code: int | None, errors: str) -> SessionEnd:
         return SessionEnd("ceiling", None, stderr)
     if exit_code == 0:
         return SessionEnd("finished", 0)
-    last = stderr.strip().rpartition("\n")[2].strip()  # the provider's own 429 has another body: a failure
-    return SessionEnd("budget" if last == BUDGET_REFUSAL else "failed", exit_code, stderr)
+    # the provider's own 429 has another body: a failure
+    return SessionEnd("budget" if _last_line(stderr) == BUDGET_REFUSAL else "failed", exit_code, stderr)
+
+
+def _last_line(errors: str) -> str:
+    """The last line of a run's error output."""
+    return errors.strip().rpartition("\n")[2].strip()
 
 
 def describe_loops(config: RunConfig) -> Loops | None:
@@ -218,9 +225,10 @@ def play_sessions(
                     None,
                     errors if isinstance(errors, str) else errors.decode(errors="replace"),
                 )
-            if ended.returncode != 0:
+            cut = ended.returncode == 1 and _last_line(ended.stderr) == CUT_AT_CAP
+            if ended.returncode != 0 and not cut:
                 return _end_session(ended.returncode, ended.stderr)
-        return _end_session(0, "")
+        return SessionEnd("finished", ended.returncode, ended.stderr[-_STDERR_TAIL:])
 
     with ThreadPoolExecutor(max_workers=len(briefs)) as sessions:
         return dict(zip(briefs, sessions.map(play, briefs), strict=True))

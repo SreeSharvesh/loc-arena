@@ -43,7 +43,7 @@ its error output. Each loop's home is kept in `loops/<agent id>`.
 
 | End | When |
 | --- | --- |
-| `finished` | the model answered without a tool call once more than `pi.resumes` |
+| `finished` | the model answered without a tool call once more than `pi.resumes`. An answer cut at the model's output cap ends a run the same way |
 | `budget` | the gateway refused a model call past the agent's turn budget (`episode.orchestrator_turn_budget` for the lead, `episode.subagent_turn_budget` for the others): its route admits that many requests in a play. A request the provider failed, pi's retry of it and a call pi makes to summarize a long session each count as one |
 | `ceiling` | `episode.wall_clock_seconds` passed |
 | `failed` | pi failed otherwise, past its own retries. It counts in the run's `failed_model_calls` |
