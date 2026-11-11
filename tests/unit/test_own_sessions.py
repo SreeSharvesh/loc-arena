@@ -69,6 +69,22 @@ def test_a_session_whose_pi_fails_is_not_resumed(config: RunConfig, tmp_path: Pa
     assert (ended["eval-agent"].reason, inputs_of(tmp_path / "eval-agent")) == ("failed", [TASK])
 
 
+def test_a_session_whose_models_answer_was_cut_at_its_output_cap_is_resumed(
+    config: RunConfig,
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "eval-agent").mkdir()
+    (tmp_path / "eval-agent" / "exit").write_text("1")
+    (tmp_path / "eval-agent" / "stderr").write_text(
+        "Response was truncated: the model reached its output token limit.",
+    )
+
+    ended = play_sessions(config, BRIEFS, tmp_path, seconds=30)
+
+    resumed = [TASK, *[NUDGE] * config.settings.pi.resumes]
+    assert (ended["eval-agent"], inputs_of(tmp_path / "eval-agent")) == (SessionEnd("finished", 0), resumed)
+
+
 def test_a_session_still_running_at_the_ceiling_is_ended_there(config: RunConfig, tmp_path: Path) -> None:
     (tmp_path / "agent-main").mkdir()
     (tmp_path / "agent-main" / "sleep").write_text("30")
