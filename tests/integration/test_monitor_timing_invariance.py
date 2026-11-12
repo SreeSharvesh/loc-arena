@@ -20,7 +20,7 @@ from loc_arena.monitors.registry import (
 )
 from loc_arena.protocol import compose_protocol, monitor_context
 
-CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+CFG = load_run_config("configs/aurora-efficiency.yaml")
 
 
 def _mirror_events() -> list[Event]:

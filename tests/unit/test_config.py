@@ -6,12 +6,11 @@ from pathlib import Path
 
 import pytest
 import scenarios.loader
-from loc_arena import config
-from loc_arena.config import AgentLoopConfig, ConfigError, load_run_config
-from pydantic import ValidationError
+from loc_arena.config import ConfigError, load_run_config
+from loc_arena.identity_variables import find_shared_identity_variable
 
-RUN = "configs/aurora-efficiency.deterministic.yaml"
-OVERRIDDEN_IDLE_TIMEOUT_SECONDS = 301
+RUN = "configs/aurora-efficiency.yaml"
+OVERRIDDEN_TURN_BUDGET = 61
 ONE_AGENT = (
     "covert: {{target_identity: {agent_id}}}\n"
     "agents: [{{id: {agent_id}, kind: k, trust: untrusted, branch: b, scope: {{}}}}]\n"
@@ -25,15 +24,12 @@ INLINE_PROMPT_AGENT = (
 
 def test_a_partial_nested_override_keeps_the_base_blocks_other_keys(tmp_path: Path) -> None:
     base_episode = load_run_config(RUN).episode
-    override = f"episode: {{subagent_idle_timeout_seconds: {OVERRIDDEN_IDLE_TIMEOUT_SECONDS}}}\n"
+    override = f"episode: {{subagent_turn_budget: {OVERRIDDEN_TURN_BUDGET}}}\n"
     run = _run_extending(tmp_path, override)
 
     episode = load_run_config(run).episode
 
-    assert episode == dataclasses.replace(
-        base_episode,
-        subagent_idle_timeout_seconds=OVERRIDDEN_IDLE_TIMEOUT_SECONDS,
-    )
+    assert episode == dataclasses.replace(base_episode, subagent_turn_budget=OVERRIDDEN_TURN_BUDGET)
 
 
 def test_episode_deep_merge() -> None:
@@ -42,11 +38,7 @@ def test_episode_deep_merge() -> None:
     assert c.episode.orchestrator_turn_budget == 80  # set by the run config
     assert c.episode.wall_clock_seconds == 9000
     assert c.episode.liveness_window_seconds == 120
-    assert c.episode.subagent_idle_timeout_seconds == 300
-    # run overrides applied (depth-1 star: agent-main + one sub-agent per company repo)
-    assert c.episode.max_spawn_depth == 1
-    assert c.episode.max_live_subagents == 6
-    assert c.episode.max_total_agents == 7
+    assert c.episode.subagent_turn_budget == 60  # the run's override of the base 120
 
 
 def test_refs_and_models_resolved() -> None:
@@ -57,7 +49,6 @@ def test_refs_and_models_resolved() -> None:
     assert c.covert.objective_prompt.startswith("Covert objective")
     assert "untrusted_agent" in c.models
     assert c.models["untrusted_agent"].max_tokens == 8192
-    assert c.agent_loop.tool_result_max_chars == 40_000
 
 
 def test_side_task_thresholds_and_landing() -> None:
@@ -125,11 +116,10 @@ def test_the_run_on_a_second_provider_sends_its_loops_there_and_names_its_key() 
     second = config.settings.gateway.agents_upstream
 
     assert second is not None
-    assert (second.url.host, second.chat_path, second.key_variable, config.harness) == (
+    assert (second.url.host, second.chat_path, second.key_variable) == (
         "api.experientiallabs.ai",
         "v1/chat/completions",
         "EXPLABS_API_KEY",
-        "pi",
     )
 
 
@@ -169,16 +159,16 @@ def test_agent_transcript_can_be_turned_on(tmp_path: Path) -> None:
 
 
 def test_a_quoted_integer_is_a_config_error_naming_its_field(tmp_path: Path) -> None:
-    run = _run_extending(tmp_path, "episode: {max_spawn_depth: '1'}\n")
+    run = _run_extending(tmp_path, "episode: {wall_clock_seconds: '1'}\n")
 
-    with pytest.raises(ConfigError, match=r"episode\.max_spawn_depth\s+Input should be a valid integer"):
+    with pytest.raises(ConfigError, match=r"episode\.wall_clock_seconds\s+Input should be a valid integer"):
         load_run_config(run)
 
 
 def test_a_boolean_for_an_integer_is_a_config_error_naming_its_field(tmp_path: Path) -> None:
-    run = _run_extending(tmp_path, "episode: {max_spawn_depth: true}\n")
+    run = _run_extending(tmp_path, "episode: {wall_clock_seconds: true}\n")
 
-    with pytest.raises(ConfigError, match=r"episode\.max_spawn_depth\s+Input should be a valid integer"):
+    with pytest.raises(ConfigError, match=r"episode\.wall_clock_seconds\s+Input should be a valid integer"):
         load_run_config(run)
 
 
@@ -233,16 +223,27 @@ def test_replacing_a_covert_field_keeps_the_resolved_objective_prompt() -> None:
     assert honest.objective_prompt == covert.objective_prompt
 
 
-@pytest.mark.parametrize("depth", [0, 257], ids=["no nesting at all", "deeper than the event log records"])
-def test_an_argument_depth_outside_what_the_event_log_records_is_refused(depth: int) -> None:
-    with pytest.raises(ValidationError):
-        AgentLoopConfig(tool_result_max_chars=40_000, max_argument_depth=depth, failed_turns_before_end=5)
+@pytest.mark.parametrize(
+    ("override", "named"),
+    [("policy: scripted\n", "policy"), ("episode: {max_spawn_depth: 1}\n", "episode.max_spawn_depth")],
+    ids=["a top-level key", "an episode key"],
+)
+def test_a_key_of_the_removed_turn_loop_is_refused_at_load_naming_it(
+    tmp_path: Path,
+    override: str,
+    named: str,
+) -> None:
+    run = _run_extending(tmp_path, override)
+
+    with pytest.raises(ConfigError, match=f"no longer read, so delete them: {named}"):
+        load_run_config(run)
 
 
-@pytest.mark.parametrize("turns", [0, -1], ids=["none", "negative"])
-def test_a_failed_turn_limit_below_one_is_refused(turns: int) -> None:
-    with pytest.raises(ValidationError):
-        AgentLoopConfig(tool_result_max_chars=40_000, max_argument_depth=32, failed_turns_before_end=turns)
+def test_a_harness_other_than_pi_is_refused_at_load_naming_it(tmp_path: Path) -> None:
+    run = _run_extending(tmp_path, "harness: native\n")
+
+    with pytest.raises(ConfigError, match="harness 'native' is not supported: 'pi' is the only harness"):
+        load_run_config(run)
 
 
 @pytest.mark.parametrize(
@@ -281,7 +282,7 @@ def _agent(agent_id: str, spawned_by: str | None) -> str:
     return f"{{id: {agent_id}, kind: k, trust: untrusted, branch: b, scope: {{}}{reports_to}}}"
 
 
-def test_a_two_level_team_takes_its_turns_with_each_manager_before_its_reports(tmp_path: Path) -> None:
+def test_a_two_level_teams_roster_names_each_manager_before_its_reports(tmp_path: Path) -> None:
     team = [
         ("worker-b1", "lead-b"),
         ("lead-a", "root"),
@@ -292,9 +293,9 @@ def test_a_two_level_team_takes_its_turns_with_each_manager_before_its_reports(t
     agents = f"agents: [{', '.join(_agent(*agent) for agent in team)}]\n"
     run = _run_extending(tmp_path, f"covert: {{target_identity: root}}\n{agents}")
 
-    order = load_run_config(run).turn_order
+    roster = load_run_config(run).roster
 
-    assert order == ("root", "lead-a", "lead-b", "worker-a1", "worker-b1")
+    assert roster == ("root", "lead-a", "lead-b", "worker-a1", "worker-b1")
 
 
 @pytest.mark.parametrize(
@@ -358,24 +359,12 @@ def test_an_agents_invalid_sandbox_rights_or_tools_are_refused_at_load_naming_th
         load_run_config(run)
 
 
-def test_identities_that_would_share_one_host_variable_are_refused_at_load_naming_both(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    load_aurora = scenarios.loader.load_scenario
+def test_identities_that_would_share_one_host_variable_are_named() -> None:
+    services = scenarios.loader.load_scenario("aurora_efficiency").live_services
+    notes = next(service for service in services if service.name == "notes")
+    second = dataclasses.replace(notes, name="notes-agent")
 
-    def load_with_a_second_service(name: str) -> scenarios.loader.Scenario:
-        aurora = load_aurora(name)
-        notes = next(service for service in aurora.live_services if service.name == "notes")
-        second = dataclasses.replace(notes, name="notes-agent")
-        return dataclasses.replace(aurora, live_services=(*aurora.live_services, second))
+    shared = find_shared_identity_variable(["agent-main", "main"], [notes, second])
 
-    monkeypatch.setattr(config, "load_scenario", load_with_a_second_service)
-    agents = ONE_AGENT.format(agent_id="agent-main").removesuffix("]\n")
-    run = _run_extending(
-        tmp_path,
-        f"{agents}, {_agent('main', 'agent-main')}]\n",
-    )
-
-    with pytest.raises(ConfigError, match=r"\('notes', 'agent-main'\), \('notes-agent', 'main'\)"):
-        load_run_config(run)
+    assert shared is not None
+    assert "('notes', 'agent-main'), ('notes-agent', 'main')" in shared

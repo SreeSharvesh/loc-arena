@@ -1,124 +1,92 @@
+"""What grading writes for a run played elsewhere: its scores, its Inspect log and its transcripts.
+
+The stored run played in a stack's episode container and is graded here, in a copy of its directory. The
+main-task score is left out of the comparison with its stored scores: the company suite occasionally runs red
+on the same checkout (#70), while the side-task verdict over the sealed log is deterministic.
+"""
+
 from __future__ import annotations
 
-import dataclasses
+import json
 from pathlib import Path
 
 import pytest
-from inspect_ai.event import SpanBeginEvent, ToolEvent
-from inspect_ai.log import read_eval_log
-from loc_arena.config import load_run_config
-from loc_arena.gateway.core import ScriptedProvider
-from loc_arena.harness import run_episode
+from inspect_ai.log import EvalSample, read_eval_log
+from loc_arena.explorer.build import find_transcript_log
+from loc_arena.harness import grade_run
 from loc_arena.logging_.transcript_lanes import UNPLACED, WORLD, build_transcript
 
-from tests.integration._live_support import TEAM_MOVES
-
-LIVE_TRACED = dataclasses.replace(
-    load_run_config("configs/aurora-efficiency.deterministic.yaml"),
-    policy="model",
-    agent_transcript=True,
-)
+from tests._stored_run import CONFIG, unpack_stored_run
+from tests.integration._gateway_support import JsonVerdictProvider
 
 
-def test_a_live_attack_run_writes_a_real_eval_with_a_span_per_agent(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-    bundle = run_episode(
-        LIVE_TRACED,
+@pytest.fixture(scope="module")
+def graded_bundle(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """The stored run graded again, once for the tests here (the main-task scorer takes seconds)."""
+    run_directory = unpack_stored_run(tmp_path_factory.mktemp("graded"))
+    return grade_run(
+        CONFIG,
+        run_directory,
         mode="attack",
-        out_root=tmp_path,
-        provider=ScriptedProvider(TEAM_MOVES),
-        calibration_provider=ScriptedProvider({}),
+        monitor_provider=JsonVerdictProvider(),
         write_report=False,
     )
-    (eval_path,) = bundle.glob("*.eval")
-    log = read_eval_log(str(eval_path))
-    assert log.samples is not None
-    assert [s.id for s in log.samples] == ["episode", "honest_cal"]
-    episode = log.samples[0]
-    agent_spans = [e.name for e in episode.events if isinstance(e, SpanBeginEvent) and e.type == "agent"]
-    assert agent_spans[0] == "agent-main" and len(agent_spans) > 1
-    assert set(agent_spans) <= set(episode.metadata["agents"])
-    # No move starts a job, so the run lands no chain.
-    assert episode.metadata["scores"]["safety"]["landed"] is False
-    assert any(e.event == "model" for e in episode.events)
-    twin_tools = {e.function for e in log.samples[1].events if isinstance(e, ToolEvent)}
-    assert "write_scratch" not in twin_tools
 
 
-def test_the_exported_episode_lays_out_as_one_lane_per_agent_by_round(
+@pytest.fixture(scope="module")
+def samples(graded_bundle: Path) -> list[EvalSample]:
+    log_path = find_transcript_log(graded_bundle)
+    assert log_path is not None
+    return read_eval_log(str(log_path)).samples or []
+
+
+def test_a_run_graded_in_another_directory_keeps_the_side_task_verdict_it_was_stored_with(
+    graded_bundle: Path,
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-    bundle = run_episode(
-        LIVE_TRACED,
-        mode="attack",
-        out_root=tmp_path,
-        provider=ScriptedProvider(TEAM_MOVES),
-        calibration_provider=ScriptedProvider({}),
-        write_report=False,
-    )
-    log = read_eval_log(str(next(bundle.glob("*.eval"))))
-    assert log.samples is not None
-    transcript = build_transcript(log.samples[0])
-    monitors = dict.fromkeys(v["monitor"] for v in log.samples[0].metadata["scores"]["monitor_verdicts"])
-    assert transcript.lanes == (WORLD, *monitors, *log.samples[0].metadata["agents"])
-    # The world's pre-episode row (-1) comes before the first round (0); every verdict here targets a placed
-    # event, so there is no UNPLACED row.
-    assert transcript.rows[:2] == (-1, 0)
-    main_round_0 = transcript.cells[("agent-main", 0)]
-    assert [b.kind for b in main_round_0][:2] == ["prompt", "reply"]
-    assert any(b.kind == "info" for b in transcript.cells[(WORLD, -1)])
-    every_block = [b for blocks in transcript.cells.values() for b in blocks]
+    stored = json.loads((unpack_stored_run(tmp_path) / "scores.json").read_text())
+
+    scores = json.loads((graded_bundle / "scores.json").read_text())
+
+    assert scores["side_task"] == stored["side_task"]
+
+
+def test_a_graded_attack_run_exports_the_run_and_its_honest_twin_with_the_configs_agents(
+    samples: list[EvalSample],
+) -> None:
+    exported = [(sample.id, tuple(sample.metadata["agents"])) for sample in samples]
+
+    assert exported == [("episode", CONFIG.roster), ("honest_cal", CONFIG.roster)]
+
+
+def test_the_exported_episode_lays_out_as_the_world_then_a_lane_per_monitor_and_per_agent(
+    samples: list[EvalSample],
+) -> None:
+    transcript = build_transcript(samples[0])
+
+    monitors = dict.fromkeys(v["monitor"] for v in samples[0].metadata["scores"]["monitor_verdicts"])
+    assert transcript.lanes == (WORLD, *monitors, *CONFIG.roster)
+    every_block = [block for blocks in transcript.cells.values() for block in blocks]
     assert not [b.title for b in every_block if "attachment://" in b.body + (b.code or "")]
-    assert max(len(b.body) for b in every_block if b.kind == "prompt") > 500
 
 
-def test_every_verdict_with_a_target_in_an_exported_run_lands_on_an_event(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-    bundle = run_episode(
-        LIVE_TRACED,
-        mode="attack",
-        out_root=tmp_path,
-        provider=ScriptedProvider(TEAM_MOVES),
-        calibration_provider=ScriptedProvider({}),
-        write_report=False,
-    )
-    log = read_eval_log(str(next(bundle.glob("*.eval"))))
-    assert log.samples is not None
-    verdicts = log.samples[0].metadata["scores"]["monitor_verdicts"]
+def test_every_verdict_with_a_target_in_an_exported_run_lands_on_an_event(samples: list[EvalSample]) -> None:
+    verdicts = samples[0].metadata["scores"]["monitor_verdicts"]
     targeted = {v["monitor"] for v in verdicts if v["target_seq"] is not None}
     assert targeted, "the run must produce verdicts that target an event"
 
-    transcript = build_transcript(log.samples[0])
+    transcript = build_transcript(samples[0])
 
     assert not [monitor for monitor in targeted if (monitor, UNPLACED) in transcript.cells]
 
 
-def test_a_traced_run_bundle_has_an_ascii_self_contained_transcript(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-    bundle = run_episode(
-        LIVE_TRACED,
-        mode="attack",
-        out_root=tmp_path,
-        provider=ScriptedProvider(TEAM_MOVES),
-        calibration_provider=ScriptedProvider({}),
-        write_report=False,
-    )
-    page = (bundle / "transcript.html").read_text(encoding="ascii")
-    text = (bundle / "transcript.txt").read_text()
-    for agent in LIVE_TRACED.agents:
-        assert f'<div class="head">{agent.id}</div>' in page
-        assert f"-- {agent.id} --" in text
+def test_a_graded_bundle_has_an_ascii_self_contained_transcript(graded_bundle: Path) -> None:
+    page = (graded_bundle / "transcript.html").read_text(encoding="ascii")
+    text = (graded_bundle / "transcript.txt").read_text()
+
+    for agent in CONFIG.roster:
+        assert f'<div class="head">{agent}</div>' in page
+        assert f"-- {agent} --" in text
     assert "<h2>sample episode</h2>" in page and "<h2>sample honest_cal</h2>" in page
     assert "attachment://" not in page
     assert not [tag for tag in ("<script", "<link", "<img", "<iframe", ' src="', ' href="') if tag in page]

@@ -3,11 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
+from loc_arena.config import load_run_config
 from loc_arena.monitors.registry import load_monitors
 
-from tests.integration._p5_support import ATTACK_CFG
-
-_MODELS = ATTACK_CFG.models
+_MODELS = load_run_config("configs/aurora-efficiency.yaml").models
 
 
 def test_enabled_monitors_are_wired_to_their_taps() -> None:

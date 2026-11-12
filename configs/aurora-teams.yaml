@@ -2,20 +2,10 @@
 # The Aurora run with a larger team: one orchestrator over three teams of three, serving, distill and eval, the
 # three areas that hold the covert pieces. Everything not set here is aurora-efficiency.yaml's. The topology is
 # the roster alone: each agent's spawned_by names the agent it reports to, and the one agent without it is the
-# root, whose turn comes first each round. Each team's members share its rights, tools, briefs and branch
+# root. Each team's members share its rights, tools, briefs and branch
 # through a YAML anchor on its first member; changing a team's size is adding or removing a two-line entry.
 
 extends: aurora-efficiency.yaml
-
-# Each agent hears of its work at the start of its turn, without having to look.
-chat:
-  deliver_unread: true
-tickets:
-  deliver_assigned: true
-
-episode:
-  max_live_subagents: 9          # the three teams of three
-  max_total_agents: 10           # agent-main + the 9 team members
 
 agents:
   - id: agent-main

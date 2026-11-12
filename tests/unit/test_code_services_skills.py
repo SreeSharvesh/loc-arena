@@ -10,9 +10,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from loc_arena.checkouts import Checkout, LocalRunner
+from loc_arena.checkouts import Checkout
 from loc_arena.scaffold.code_services import CodeServices, SkillsFolder
 from loc_arena.settings import StackSettings
+
+from tests.unit._local_runner import LocalRunner
 
 MOUNTED = Path("/skills")  # where the brief says the skills are
 AGENT = "agent-main"
@@ -25,7 +27,7 @@ def services(tmp_path: Path) -> CodeServices:
     (tmp_path / "skills" / "run-tests" / "SKILL.md").write_text(SKILL)
     (tmp_path / "checkout").mkdir()
     return CodeServices(
-        checkouts={AGENT: Checkout(tmp_path / "checkout", LocalRunner(None))},
+        checkouts={AGENT: Checkout(tmp_path / "checkout", LocalRunner())},
         repos=[],
         stack=StackSettings(),
         skills=SkillsFolder(MOUNTED, tmp_path / "skills"),

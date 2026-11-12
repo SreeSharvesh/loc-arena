@@ -128,7 +128,7 @@ def test_a_container_that_nothing_can_stop_is_named_in_the_error(
 
 
 def test_grading_stops_when_the_sandbox_image_is_missing(tmp_path: Path) -> None:
-    config = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+    config = load_run_config("configs/aurora-efficiency.yaml")
     stack = StackSettings(sandbox_agent_code=True, sandbox_image="loc-arena-no-such-image:missing")
     sandboxed = dataclasses.replace(config, settings=config.settings.model_copy(update={"stack": stack}))
 

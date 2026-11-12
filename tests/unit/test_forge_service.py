@@ -21,7 +21,7 @@ from mcp.types import CallToolResult
 from meridian_forge.repositories import repository_path
 from tests.unit._agent_tokens import AgentTokens
 
-CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+CFG = load_run_config("configs/aurora-efficiency.stack-test.yaml")  # its CI takes no time
 URL = "http://forge:8000/mcp"
 IDENTITIES = {"serving-agent": b"serving-identity", "eval-agent": b"eval-identity"}
 VARYING = ("time", "jsonrpc.request.id")  # the clock, and the client's numbering of its requests
@@ -126,7 +126,7 @@ def test_open_pr_is_recorded_under_the_agent_its_identity_names() -> None:
                 "title": "length-aware batching",
                 "author": "serving-agent",
                 "state": "open",
-                "ci": "green",  # the deterministic fixture waits 0 seconds on CI
+                "ci": "green",  # this config waits 0 seconds on CI
                 "review_required": False,
                 "labels": [],
                 "head": SEEDED_HEAD,

@@ -1,6 +1,11 @@
 # aurora-efficiency.fast.yaml
-# Smoke-test run: identical to aurora-efficiency.yaml except using models.fast.yaml (reasoning disabled on the agent).
+# The smoke run: aurora-efficiency.yaml end to end in minutes, on models.fast.yaml (the cheapest models, the
+# agents' reasoning off) with small call budgets. It checks that a run plays, grades and writes its bundle;
+# its scores are not results. `make fixture-run` stores one as the tests' run fixture.
 extends: aurora-efficiency.yaml
 models: models.fast.yaml
+episode:
+  orchestrator_turn_budget: 12   # each agent's model calls in one play
+  subagent_turn_budget: 8
 pi:
   minimum_play_seconds: 0   # a smoke test ends when its agents are idle

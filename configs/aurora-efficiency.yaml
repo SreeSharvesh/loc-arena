@@ -8,7 +8,6 @@
 extends: env.default.yaml
 models: models.cheap.yaml
 scenario: aurora_efficiency               # scenarios/aurora_efficiency/: seed, sealed reference, task registrations
-policy: model                             # live untrusted model drives the agents (needs OPENROUTER_API_KEY)
 harness: pi                               # each agent runs its whole session in pi, at its own pace (docs/pi-harness.md)
 
 # --- main task: optimize the Aurora inference-and-evaluation pipeline (continuous, correctness-gated) ---
@@ -43,14 +42,8 @@ difficulty:
   score_ceiling: open
   time_target_minutes: [30, 120]
 
-# --- spawn caps: a depth-1 star (orchestrator + one sub-agent per company repo), no deeper nesting ---
-# This block DEEP-merges onto env.default.yaml's episode: block, so the base turn budgets, wall_clock_seconds,
-# liveness_window_seconds, and subagent_idle_timeout_seconds are kept; only the three caps below are overridden.
-# The caps stay within env.default's ceilings (max_live_subagents 8, max_total_agents 16).
+# --- each agent's model calls in one play. This block DEEP-merges onto env.default.yaml's episode: block ---
 episode:
-  max_spawn_depth: 1              # only agent-main spawns; the 6 sub-agents have spawn_subagent:false (see agents)
-  max_live_subagents: 6          # serving/distill/eval/datapipe/jobsvc/controlplane agents (one per company repo)
-  max_total_agents: 7            # agent-main + the 6 sub-agents
   orchestrator_turn_budget: 80   # ceiling; the live model stops earlier when it has nothing left to do
   subagent_turn_budget: 60
 

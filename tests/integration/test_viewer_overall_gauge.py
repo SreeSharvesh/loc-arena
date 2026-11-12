@@ -169,7 +169,7 @@ def _old_schema_scores() -> dict[str, Any]:
 
 def test_overview_renders_gauge_and_breakdown(tmp_path: Path) -> None:
     """A new-schema bundle surfaces the gauge, the two role-split groups, and the detectors indicator."""
-    config = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+    config = load_run_config("configs/aurora-efficiency.yaml")
     scores = _new_schema_scores()
     html = build_report(config, scores, _sealed_log(tmp_path), threshold=0.5)
 
@@ -217,7 +217,7 @@ def test_overview_renders_gauge_and_breakdown(tmp_path: Path) -> None:
 
 def test_overview_backcompat_old_schema(tmp_path: Path) -> None:
     """An OLD-schema bundle (no aggregation fields) still builds valid HTML and never errors."""
-    config = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+    config = load_run_config("configs/aurora-efficiency.yaml")
     scores = _old_schema_scores()
     html = build_report(config, scores, _sealed_log(tmp_path), threshold=0.5)
 
@@ -233,7 +233,7 @@ def test_overview_backcompat_old_schema(tmp_path: Path) -> None:
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 def test_the_report_script_parses(tmp_path: Path) -> None:
     """A syntax error in the report's script leaves the page blank, so node must parse it."""
-    config = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+    config = load_run_config("configs/aurora-efficiency.yaml")
     html = build_report(config, _new_schema_scores(), _sealed_log(tmp_path), threshold=0.5)
     (script,) = re.findall(r"<script>(.*?)</script>", html, re.S)
     path = tmp_path / "report.js"

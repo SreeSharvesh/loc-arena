@@ -8,7 +8,7 @@ import pytest
 from loc_arena import cli
 from loc_arena.config import load_run_config
 
-CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+CFG = load_run_config("configs/aurora-efficiency.yaml")
 
 
 def _bundle(tmp_path: Path) -> Path:

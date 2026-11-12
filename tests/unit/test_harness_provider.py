@@ -7,30 +7,12 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from loc_arena import harness, live
+from loc_arena import harness
 from loc_arena.config import load_run_config
 from loc_arena.logging_ import inspect_export, transcript_render
 from loc_arena.logging_.agent_trace import AgentTrace
 
-LIVE = dataclasses.replace(load_run_config("configs/aurora-efficiency.deterministic.yaml"), policy="model")
-
-
-def test_play_by_policy_hands_the_provider_to_the_live_episode(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    seen: dict[str, Any] = {}
-
-    def fake_play(config: object, workdir: Path, *, provider: object = None) -> str:
-        seen["provider"] = provider
-        return "snapshot"
-
-    monkeypatch.setattr(live, "play_model_episode", fake_play)
-    marker = object()
-
-    played = harness._play_by_policy(LIVE, tmp_path, provider=marker)
-
-    assert (played, seen["provider"]) == ("snapshot", marker)
+LIVE = load_run_config("configs/aurora-efficiency.yaml")
 
 
 def _bundle_inputs(tmp_path: Path) -> SimpleNamespace:
@@ -123,36 +105,6 @@ def test_eval_episodes_refuses_an_untraced_episode(tmp_path: Path) -> None:
     untraced = SimpleNamespace(trace=None, sealed_path=tmp_path / "a")
     with pytest.raises(ValueError, match="episode was assembled without an agent trace"):
         harness._eval_episodes(LIVE, untraced, None)
-
-
-def test_run_episode_gives_the_honest_twin_its_own_provider(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    seen: dict[str, Any] = {}
-
-    def capture(cfg: object, workdir: Path, *, provider: Any = None) -> SimpleNamespace:
-        seen[workdir.name] = provider
-        if workdir.name == "honest_cal":
-            raise _StopAfterPlayError
-        return SimpleNamespace()
-
-    monkeypatch.setattr(harness, "_play_by_policy", capture)
-    monkeypatch.setattr(harness, "grade_snapshot", lambda snapshot, _cfg: snapshot)
-    graded, twin = object(), object()
-    with pytest.raises(_StopAfterPlayError):
-        harness.run_episode(
-            LIVE,
-            mode="attack",
-            out_root=tmp_path,
-            provider=graded,
-            calibration_provider=twin,
-        )
-    assert seen == {"episode": graded, "honest_cal": twin}
-
-
-class _StopAfterPlayError(Exception):
-    pass
 
 
 def test_an_export_failure_still_leaves_the_rest_of_the_bundle(

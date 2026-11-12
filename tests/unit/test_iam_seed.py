@@ -5,30 +5,31 @@ import json
 from pathlib import Path
 
 import pytest
-from loc_arena.config import ConfigError, load_run_config
+from loc_arena.config import ConfigError, RunConfig, load_run_config
 from loc_arena.iam_bootstrap import managed_services, render_bootstrap
 from loc_arena.iam_seed import IamSeed, add_iam_service
 from loc_arena.settings import IamSettings
 from scenarios.loader import load_scenario
 
-PLAIN = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+LIVE = load_run_config("configs/aurora-efficiency.yaml")
 MANAGED = ("notes", "agents", "forge", "chat", "jobsvc", "evalkit", "tickets", "modelstore")
 ENABLED = IamSettings(enabled=True)
-AGENTS = [agent.id for agent in PLAIN.agents]
+AGENTS = [agent.id for agent in LIVE.agents]
 
 
-def with_iam(tmp_path: Path):  # noqa: ANN201 - the deterministic fixture with IAM on, as aurora-efficiency.iam.yaml
+def with_iam(tmp_path: Path, *, enabled: bool = True) -> RunConfig:
     run = tmp_path / "iam.yaml"
-    run.write_text("extends: aurora-efficiency.deterministic.yaml\niam:\n  enabled: true\n")
+    run.write_text(f"extends: aurora-efficiency.yaml\niam:\n  enabled: {str(enabled).lower()}\n")
     return load_run_config(run, Path("configs"))
 
 
-def test_iam_is_on_unless_the_run_config_turns_it_off() -> None:
-    live = load_run_config("configs/aurora-efficiency.yaml")
-    assert [service.name for service in live.live_services][-1] == "iam"
-    assert managed_services(live) == MANAGED
-    assert "iam" not in [service.name for service in PLAIN.live_services]
-    assert managed_services(PLAIN) == ()
+def test_iam_is_on_unless_the_run_config_turns_it_off(tmp_path: Path) -> None:
+    plain = with_iam(tmp_path, enabled=False)
+
+    assert [service.name for service in LIVE.live_services][-1] == "iam"
+    assert managed_services(LIVE) == MANAGED
+    assert "iam" not in [service.name for service in plain.live_services]
+    assert managed_services(plain) == ()
 
 
 def test_agents_are_pointed_at_iams_own_description(tmp_path: Path) -> None:
@@ -45,13 +46,12 @@ def test_under_iam_every_agent_is_offered_its_inbox_and_iam_serves_only_that_too
 
     assert iam.tools == ("access_inbox",)
     assert all(agent.sandbox.tools["iam"] == ("access_inbox",) for agent in config.agents)
-    assert all("iam" not in agent.sandbox.tools for agent in PLAIN.agents)
 
 
 def test_under_iam_a_listed_tool_iam_does_not_serve_is_still_refused_at_load(tmp_path: Path) -> None:
     run = tmp_path / "iam.yaml"
     run.write_text(
-        "extends: aurora-efficiency.deterministic.yaml\niam:\n  enabled: true\n"
+        "extends: aurora-efficiency.yaml\niam:\n  enabled: true\n"
         "covert: {target_identity: typist}\n"
         "agents: [{id: typist, kind: k, trust: untrusted, branch: b, scope: {}, "
         "sandbox: {tools: {iam: [decide_access]}}}]\n",
@@ -150,7 +150,7 @@ def test_the_bootstrap_gives_each_agent_its_configured_rights_and_tools_and_name
 )
 def test_the_iam_settings_are_strict_scalars_with_bounds(tmp_path: Path, block: str) -> None:
     run = tmp_path / "bad.yaml"
-    run.write_text(f"extends: aurora-efficiency.deterministic.yaml\niam:\n  {block}\n")
+    run.write_text(f"extends: aurora-efficiency.yaml\niam:\n  {block}\n")
     with pytest.raises(ConfigError):
         load_run_config(run, Path("configs"))
 
@@ -160,8 +160,7 @@ def test_valid_iam_settings_are_accepted_including_a_whole_number_where_a_float_
 ) -> None:
     run = tmp_path / "ok.yaml"
     run.write_text(
-        "extends: aurora-efficiency.deterministic.yaml\niam:\n  enabled: true\n  port: 65535\n"
-        "  timeout_seconds: 2\n",
+        "extends: aurora-efficiency.yaml\niam:\n  enabled: true\n  port: 65535\n  timeout_seconds: 2\n",
     )
     settings = load_run_config(run, Path("configs")).settings.iam
     assert (settings.enabled, settings.port, settings.timeout_seconds) == (True, 65535, 2.0)

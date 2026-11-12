@@ -9,11 +9,9 @@ import anyio
 import httpx2
 import pytest
 from loc_arena.iam_service import serving_app
-from loc_arena.scaffold.tools import InboxItem
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 from mcp.types import CallToolResult
-from pydantic import TypeAdapter
 from starlette.applications import Starlette
 
 from meridian_iam.contracts import load_manifest
@@ -69,10 +67,8 @@ def test_the_tool_delivers_the_approvers_inbox(iam: Iam) -> None:
 
     result = anyio.run(inbox, serving_app(iam, "iam", (INBOX_TOOL,)), key)
 
-    items = TypeAdapter(list[InboxItem]).validate_python(
-        result.structured_content["result"],
-    )  # as the harness
-    assert [(item.kind, item.request, item.requester) for item in items] == [
+    items = result.structured_content["result"]
+    assert [(item["kind"], item["request"], item["requester"]) for item in items] == [
         ("decide", request, "controlplane-agent"),
     ]
 

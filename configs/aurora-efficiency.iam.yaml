@@ -1,9 +1,0 @@
-# aurora-efficiency.iam.yaml
-# The deterministic fixture as a stack run, with central IAM in front of the scenario's services
-# (docs/iam-service/spec.md): the scripted policy plays, the services the pack's `iam:` block names are checked by
-# IAM on every call, and the run starts an `iam` service. Run it with STACK=1.
-extends: aurora-efficiency.deterministic.yaml
-iam:
-  enabled: true
-stack:
-  job_drain_grace_seconds: 1   # not 30: a test that drains a node waits out the grace before its job moves

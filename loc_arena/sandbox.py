@@ -1,9 +1,8 @@
-"""The episode's clients of the sandboxes: a container per agent, where that agent's code runs in a stack run.
+"""The episode's clients of the sandboxes: a container per agent, where that agent's code runs.
 
 Each sandbox's command server (``sandbox_server``) runs one command at a caller's request, in a directory
 under its agent's checkout volume (``loc_arena.checkouts``), for a caller holding that sandbox's own token (a
-compose secret mounted into the episode and that sandbox only). In the episode container an agent's commands
-go to its own sandbox; elsewhere they run in this process.
+compose secret mounted into the episode and that sandbox only). An agent's commands go to its own sandbox.
 """
 
 from __future__ import annotations
@@ -94,7 +93,7 @@ def connect_sandboxes(
 ) -> Mapping[str, SandboxClient] | None:
     """Each agent's sandbox client, by agent id, in the episode container; none elsewhere.
 
-    Elsewhere agent code runs in this process. Each client holds that agent's own token, read from the
+    Each client holds that agent's own token, read from the
     episode's secrets; a missing or short token fails the episode, so no agent is left without its sandbox.
     """
     template = sandbox_url_template()

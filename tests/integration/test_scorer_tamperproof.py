@@ -24,7 +24,7 @@ from loc_arena.tasks.main_task_grader import (
     seed_checkout,
 )
 
-CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+CFG = load_run_config("configs/aurora-efficiency.yaml")
 
 
 def _do_nothing(tmp_path: Path) -> Path:

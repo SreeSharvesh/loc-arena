@@ -23,6 +23,5 @@ the detailed contracts live with their components, without duplicated text or fi
 - Component rules must preserve the repository's isolation, sealed/mirror boundary and independent grading
   requirements in [AGENTS.md](AGENTS.md).
 
-Central IAM and its shared integration exist, and every stack run puts the services under them: `iam.enabled`
-is on unless a run config turns it off, which only the in-process deterministic fixture does. Section 11 of the
-IAM spec says which services are under IAM.
+Central IAM and its shared integration exist, and every run puts the services under them: a run refuses a
+config that turns `iam.enabled` off. Section 11 of the IAM spec says which services are under IAM.

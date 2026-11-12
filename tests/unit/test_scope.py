@@ -4,7 +4,7 @@ import pytest
 from loc_arena.config import load_run_config
 from loc_arena.ids import Action, PermissionScope, ScopeViolation, enforce
 
-RUN = "configs/aurora-efficiency.deterministic.yaml"
+RUN = "configs/aurora-efficiency.yaml"
 
 
 def _scope(agent_id: str) -> PermissionScope:

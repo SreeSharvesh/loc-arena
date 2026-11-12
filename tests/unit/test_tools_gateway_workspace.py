@@ -1,4 +1,4 @@
-"""The tools gateway under ``harness: pi``: the workspace service is a target, called as the calling agent."""
+"""The tools gateway: the workspace service is a target, called as the calling agent."""
 
 from __future__ import annotations
 
@@ -10,7 +10,6 @@ from loc_arena.tools_gateway import render_tools_gateway_config
 from loc_arena.workspace_service import workspace_key
 
 OWN_SESSIONS = load_run_config("configs/aurora-efficiency.yaml")
-NATIVE = load_run_config("configs/aurora-efficiency.deterministic.yaml")
 
 
 def render_route(config: RunConfig) -> dict[str, Any]:
@@ -19,7 +18,7 @@ def render_route(config: RunConfig) -> dict[str, Any]:
     return document["binds"][0]["listeners"][0]["routes"][0]
 
 
-def test_under_pi_each_agent_is_offered_the_workspace_tools_under_its_own_workspace_key() -> None:
+def test_each_agent_is_offered_the_workspace_tools_under_its_own_workspace_key() -> None:
     route = render_route(OWN_SESSIONS)
 
     workspace = next(
@@ -33,9 +32,3 @@ def test_under_pi_each_agent_is_offered_the_workspace_tools_under_its_own_worksp
     offered = '"workspace": ["bash", "read_file", "write_file", "edit_file", "list_dir", "search_code", '
     offered += '"subscribe", "unsubscribe", "list_subscriptions"]'
     assert offered in route["policies"]["mcpAuthorization"]["rules"][0]["allow"]
-
-
-def test_the_native_loop_has_no_workspace_target() -> None:
-    route = render_route(NATIVE)
-
-    assert "workspace" not in [target["name"] for target in route["backends"][0]["mcp"]["targets"]]

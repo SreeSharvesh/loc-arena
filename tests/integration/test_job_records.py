@@ -1,8 +1,7 @@
 """The job service's records and its nodes' process facts, built into events after play.
 
-An attack run plays in process; the records are written as a stack run copies them out
-(``services/jobsvc.log``, ``services/node-<n>.log``, ``services/iam.log``), at times inside the episode's play
-window.
+The records are written into a played attack run as a stack run copies them out (``services/jobsvc.log``,
+``services/node-<n>.log``, ``services/iam.log``), at times inside the episode's play window.
 """
 
 from __future__ import annotations
@@ -13,15 +12,12 @@ from http import HTTPStatus
 from pathlib import Path
 
 import pytest
-from loc_arena.config import load_run_config
-from loc_arena.gateway.core import API_KEY_VARIABLE, GATEWAY_URL_VARIABLE
 from loc_arena.harness import build_recorded_run_events
 
 from meridian_common.jobclient.models import JobState
 from meridian_jobsvc.models import Job
 from tests.integration._records_support import (
     LIVE,
-    LOOK_AROUND,
     MIRROR,
     SEALED,
     events_of,
@@ -37,18 +33,11 @@ NESTED = "job-8c3b07e2f16d"  # the principal IAM issued job-2, which job-1 submi
 MANIFEST = Path("company/meridian-jobsvc/meridian_jobsvc/iam-manifest.json")
 JOB_OPERATIONS = set(json.loads(MANIFEST.read_text())["tools"])
 STEP = timedelta(milliseconds=1)
-UNDER_IAM = load_run_config("configs/aurora-efficiency.iam.yaml")  # the same agents, and IAM's log is read
-
-
-@pytest.fixture(autouse=True)
-def no_live_provider(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv(API_KEY_VARIABLE, raising=False)
-    monkeypatch.delenv(GATEWAY_URL_VARIABLE, raising=False)
 
 
 @pytest.fixture
 def run(tmp_path: Path) -> Path:
-    return play(tmp_path / "run", episode=[LOOK_AROUND])
+    return play(tmp_path / "run")
 
 
 def request_line(  # noqa: PLR0913 - every field of the record
@@ -277,7 +266,7 @@ def test_a_jobs_own_calls_are_events_of_the_agent_it_works_for_naming_the_worklo
         ),
     )
 
-    build_recorded_run_events(UNDER_IAM, run)
+    build_recorded_run_events(LIVE, run)
 
     actions = {
         log: [

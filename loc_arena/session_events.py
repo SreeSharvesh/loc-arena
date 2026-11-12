@@ -4,7 +4,7 @@ An agent's loop asks its model as the episode's caller on the agent's own route 
 (``/loop/<agent id>/...``), so the call record holds each agent's model calls in order. Each call the gateway
 answered is one turn of its agent, numbered from 1: the reply and the tool calls the loop made on it, until
 the agent's next call.
-A turn's ``inference_call`` event carries what a native turn's does, with fingerprints alone: the prompt's
+A turn's ``inference_call`` event carries fingerprints alone, never text: the prompt's
 is over the messages after the system prompt, which holds the agent's brief and so, in an attack, its covert
 brief. The tool calls of a turn are recorded by the services that took them, the workspace service among
 them, and are placed in the turn whose span holds their time.
@@ -72,9 +72,7 @@ class SessionCall:
 
 
 def read_play_calls(run_directory: Path, phase: str, config: RunConfig) -> list[SessionCall]:
-    """The session calls of the play in the directory ``phase``; none unless the agents ran their own."""
-    if config.harness != "pi":
-        return []
+    """The session calls of the play in the directory ``phase``."""
     return read_session_calls(run_directory, PHASE_PLAYS[phase], [agent.id for agent in config.agents])
 
 
@@ -131,12 +129,12 @@ def build_turns(calls: Sequence[SessionCall]) -> tuple[TurnRecord, ...]:
 
 
 def trace_sessions(calls: Sequence[SessionCall]) -> EpisodeTrace:
-    """The trace of a play whose agents ran their own sessions: its turns, and nothing a native turn adds."""
+    """The trace of a play's sessions: its turns alone."""
     return EpisodeTrace(build_turns(calls), {}, {}, {}, (), 0)
 
 
 def build_inference_payload(session_call: SessionCall) -> dict[str, JsonValue]:
-    """The ``inference_call`` payload of ``session_call``, as a native turn's: fingerprints, never text."""
+    """The ``inference_call`` payload of ``session_call``: fingerprints, never text."""
     call = session_call.call
     request = call.request if isinstance(call.request, dict) else {}
     messages = request.get("messages")

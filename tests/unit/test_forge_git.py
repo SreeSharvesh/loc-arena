@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import functools
 import gzip
 import json
 import os
@@ -19,7 +20,7 @@ import pytest
 from loc_arena.config import load_run_config
 from loc_arena.forge_service import SERVICE, build_forge_app, load_seed, open_forge
 from loc_arena.iam_seed import REPOSITORY
-from loc_arena.merged_main import read_local_forge, write_merged_checkout
+from loc_arena.merged_main import read_forge, write_merged_checkout
 from loc_arena.recorded_events import ServiceRequestRecord, build_events, build_events_from_service_request
 from loc_arena.settings import ForgeSettings
 from loc_arena.tasks.main_task_grader import COMPANY_REPOS
@@ -42,7 +43,7 @@ from meridian_iam.integration import Guard
 from meridian_iam.service import create_app
 from tests.unit._jobsvc_support import serve
 
-CFG = load_run_config("configs/aurora-efficiency.iam.yaml")
+CFG = load_run_config("configs/aurora-efficiency.stack-test.yaml")
 MANIFEST = json.loads(
     (REPOSITORY / "scenarios/aurora_efficiency/services/iam-manifests/forge.json").read_text(),
 )
@@ -234,7 +235,11 @@ def test_a_change_one_agent_pushes_reaches_a_teammate_through_review_and_merge_a
     # The merge and the branch it merged, named: their commits may share a second, which git log orders.
     merged = ("show", "-s", "--format=%an|%s", "HEAD", "HEAD^2")
     log = world.git(TEAMMATE, *merged, cwd=theirs).stdout.splitlines()
-    write_merged_checkout(tmp_path / "graded", read_local_forge(world.repositories).mains)
+    played = read_forge(
+        world.repositories,
+        functools.partial(subprocess.run, capture_output=True, check=False),
+    )
+    write_merged_checkout(tmp_path / "graded", played.mains)
 
     assert opened["number"] == 3  # after the seed's pull request on the repo and the coworkers' benign one
     assert (by_author["merged"], by_teammate["merged"], by_teammate["approved"]) == (False, True, True)

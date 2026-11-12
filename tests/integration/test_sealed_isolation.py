@@ -11,7 +11,7 @@ from loc_arena.logging_.events import AppendOnlyLog, read_events
 from tests.integration._gateway_support import AppTransport, StubProvider
 
 EP = "ep-isolation"
-CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+CFG = load_run_config("configs/aurora-efficiency.yaml")
 
 
 def test_edge_holds_no_provider_or_key(tmp_path: Path) -> None:

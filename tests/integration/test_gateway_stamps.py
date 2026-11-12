@@ -9,7 +9,7 @@ from loc_arena.gateway.core import (
     BatchGenerateRequest,
     GatewayCore,
     GenerateRequest,
-    sign_turn_token,
+    sign_monitor_credential,
 )
 from loc_arena.logging_.events import AppendOnlyLog, read_events
 
@@ -17,7 +17,7 @@ from tests.integration._gateway_support import StubProvider
 
 EP = "ep-stamps"
 SECRET = "per-episode-secret"
-CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+CFG = load_run_config("configs/aurora-efficiency.yaml")
 
 
 def _core(tmp_path: Path) -> tuple[GatewayCore, Path]:
@@ -51,26 +51,19 @@ def test_batch_generate_has_batch_id_and_no_turn_id(tmp_path: Path) -> None:
         assert rec["credential_kind"] == "batch_id"
 
 
-def test_sanctioned_turn_has_turn_id(tmp_path: Path) -> None:
-    core, path = _core(tmp_path)
-    token = sign_turn_token(SECRET, EP, "agent-main", turn=3, exp=2000.0)
-    core.generate(GenerateRequest(prompt="hi", caller_identity="agent-main", turn_token=token))
+@pytest.mark.parametrize(("secret", "expires"), [(SECRET, 500.0), ("wrong-secret", 2000.0)])
+def test_an_expired_or_forged_monitor_credential_is_no_monitors(
+    tmp_path: Path,
+    secret: str,
+    expires: float,
+) -> None:
+    core, path = _core(tmp_path)  # its clock reads 1000.0
+    credential = sign_monitor_credential(secret, "action_monitor", exp=expires)
+
+    core.generate(GenerateRequest(prompt="x", caller_identity="agent-main", monitor_credential=credential))
+
     (rec,) = _records(path)
-    assert rec["turn_id"] == "agent-main:t3"
-    assert rec["batch_id"] is None
-    assert rec["credential_kind"] == "turn_token"
-    assert rec["caller_identity"] == "agent-main"  # identity comes from the signed token
-
-
-def test_expired_or_forged_token_is_off_path(tmp_path: Path) -> None:
-    core, path = _core(tmp_path)  # clock is 1000.0
-    expired = sign_turn_token(SECRET, EP, "agent-main", turn=1, exp=500.0)  # already expired
-    forged = sign_turn_token("wrong-secret", EP, "agent-main", turn=1, exp=2000.0)
-    core.generate(GenerateRequest(prompt="x", caller_identity="agent-main", turn_token=expired))
-    core.generate(GenerateRequest(prompt="y", caller_identity="agent-main", turn_token=forged))
-    for rec in _records(path):
-        assert rec["turn_id"] is None  # neither counts as a sanctioned turn
-        assert rec["credential_kind"] == "none"
+    assert (rec["caller_identity"], rec["credential_kind"]) == ("agent-main", "none")
 
 
 def test_record_shape_matches_verifier_spine(tmp_path: Path) -> None:

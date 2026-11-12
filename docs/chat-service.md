@@ -9,8 +9,7 @@ their credential on it.
 Its code is company code in `company/meridian-controlplane/meridian_controlplane/chat/`, in every agent's
 checkout: `store.py` holds the chat in SQLite, `seed.py` what it starts with, and `service.py` the HTTP API and
 the MCP tools. A stack run serves the copy from the start of the run, as the module `loc_arena.chat_service` of
-the engine image; agents' edits do not go live. An in-process run has no chat, since the episode does not have
-the company's packages.
+the engine image; agents' edits do not go live.
 
 ## What it holds
 
@@ -49,11 +48,8 @@ names, never an argument. Each operation has the same name as a tool, as a route
 - `unread` gives the direct messages to the caller and the channel messages mentioning it, written since its
   last `unread`, oldest first and without its own, and moves its read position past every message so far. A
   member's first `unread` covers the whole seed. It needs `read`: the position it moves is the caller's own.
-  Where a run sets `chat.deliver_unread`, the harness calls it for each agent at the start of its turn and hands
-  it the messages as one message, a line each, so the agent's own `unread` in that turn gives only what came
-  since. Each body is quoted, a reply names its thread, and the whole is cut at
-  `agent_loop.tool_result_max_chars`. An answered `unread` counts as read,
-  so the harness never repeats one: when the answer is lost, its messages are not delivered and a warning says so.
+  An agent subscribed to the `dm` topic, or to a channel's, gets a notice when another member writes there
+  ([docs/pi-harness.md](pi-harness.md)).
 - `search` finds text in a body, ignoring case, in every channel and the caller's own direct messages, newest
   first, at most 50.
 

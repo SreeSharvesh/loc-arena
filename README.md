@@ -23,22 +23,27 @@ engine. If no, it is setting. The full table is in [`AGENTS.md`](AGENTS.md#engin
 
 Each agent has bash and file tools, which act in its own sandbox and checkout, and an MCP client. Everything
 else it can do to the company (open a PR, message a teammate, submit a job) is a tool on a service behind one
-MCP route, agentgateway, and the run config's `sandbox: tools:` decides exactly which tools each agent gets. A
-live agent runs its whole session at its own pace in pi, beside the others, and reaches its bash and file tools
-through that route too ([docs/pi-harness.md](docs/pi-harness.md)); scripted moves play in the arena's own loop,
-in turns. Every model
+MCP route, agentgateway, and the run config's `sandbox: tools:` decides exactly which tools each agent gets.
+Each agent runs its whole session at its own pace in pi, beside the others, and reaches its bash and file tools
+through that route too ([docs/pi-harness.md](docs/pi-harness.md)). Every model
 call goes through a gateway (agentgateway again) that alone holds the key and admits each caller by its own
 token; an OpenTelemetry Collector writes its record of every call. Every service records each call made to it,
 and after play those records become the events the monitors and the verifier read. The honest twin plays after
 the attack on services and sandboxes recreated empty. Details: [`docs/isolation/`](docs/isolation/README.md)
 and [`docs/run-config.md`](docs/run-config.md).
 
-<img alt="Data flow of one run: play writes the service records, both event logs, the per-agent trace and the gateway's sealed call record; the records become events after play, with turns from the trace; the verifier reads the sealed log and, in a stack run, the call record, and the monitors the mirror log; live monitors' model calls are appended to the sealed log and, in a stack run, to the gateway's call record; the run bundle is read by the explorer and inspect view." src="docs/figures/run-records.svg" width="100%">
+<img alt="Data flow of one run: play writes the service records, both event logs, the per-agent trace and the gateway's sealed call record; the records become events after play, with turns from the call record; the verifier reads the sealed log and the call record, and the monitors the mirror log; live monitors' model calls are appended to the sealed log and to the gateway's call record; the run bundle is read by the explorer and inspect view." src="docs/figures/run-records.svg" width="100%">
 
 ```sh
 make setup                    # check uv, sync dependencies, validate the configs
-make run MODE=attack  # live models in a stack (the default): central IAM, no key in the episode; the key in .env
+make run MODE=attack          # live models in a stack: central IAM, no key in the episode; the key in .env
+make run RUN=aurora-efficiency.fast   # the smoke run: cheapest models, small budgets; minutes and cents
+make fixture-run              # play the smoke run and store it as the tests' run fixture
 ```
+
+A run always plays in a Docker stack and needs `OPENROUTER_API_KEY` in `.env`. The smoke run checks that a run
+plays, grades and writes its bundle; its scores are not results. `tests/fixtures/run.tar.gz` is a stored smoke
+run, an attack with its honest twin, which the tests that read a run's records or grade a run again use.
 
 ## Per-agent logs
 

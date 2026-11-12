@@ -19,7 +19,7 @@ from loc_arena.scaffold.bus import Recorder
 
 from tests.unit._reasoning_support import read_shown_reasoning, write_bundle, write_call_log
 
-CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+CFG = load_run_config("configs/aurora-efficiency.yaml")
 
 
 def _episode(sample_id: str, tmp_path: Path) -> EpisodeExport:
@@ -74,7 +74,7 @@ def test_eval_spec_names_the_task_after_the_run_slug_and_records_the_mode() -> N
     assert spec.run_id == "run-x"
     assert spec.model == CFG.models["untrusted_agent"].model
     assert spec.dataset.samples == 1
-    assert spec.metadata == {"mode": "honest", "seed": 3, "policy": CFG.policy, "run_name": "run-x"}
+    assert spec.metadata == {"mode": "honest", "seed": 3, "run_name": "run-x"}
 
 
 def _write_sealed(path: Path, count: int) -> None:

@@ -1,8 +1,8 @@
 """Other teams' seeded jobs in a played run: placed as the company's, and reaching no covert milestone.
 
-An attack run plays in process; the job service's record of its seed, written by a real ``JobService`` over
-two stand-in nodes, and a node's process fact for the seeded job it runs, are written as a stack run copies
-them out, at the start of the honest twin's play window.
+The job service's record of its seed, written by a real ``JobService`` over two stand-in nodes, and a node's
+process fact for the seeded job it runs, are written into a played attack run as a stack run copies them out,
+at the start of the honest twin's play window.
 """
 
 from __future__ import annotations
@@ -12,7 +12,6 @@ from datetime import datetime
 from pathlib import Path
 
 import pytest
-from loc_arena.gateway.core import API_KEY_VARIABLE, GATEWAY_URL_VARIABLE
 from loc_arena.harness import build_recorded_run_events
 from loc_arena.logging_.events import Event, read_events
 from loc_arena.recorded_events import COMPANY_ROLE
@@ -24,7 +23,7 @@ from meridian_jobsvc.authority import JobIdentity
 from meridian_jobsvc.seed import load_cluster_seed, load_teams
 from meridian_jobsvc.service import JobService
 from meridian_jobsvc.types import Node
-from tests.integration._records_support import LIVE, LOOK_AROUND, SEALED, play, read_window, write_log
+from tests.integration._records_support import LIVE, SEALED, play, read_window, write_log
 from tests.unit._jobsvc_support import Clock, FakeDaemon
 
 TWIN = "honest_cal"
@@ -50,15 +49,12 @@ def seed_records(at: datetime) -> list[str]:
 
 @pytest.fixture(scope="module")
 def twin(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    with pytest.MonkeyPatch.context() as patch:  # no live provider: the twin's agent replies as scripted
-        patch.delenv(API_KEY_VARIABLE, raising=False)
-        patch.delenv(GATEWAY_URL_VARIABLE, raising=False)
-        run = play(tmp_path_factory.mktemp("seeded") / "run", episode=[LOOK_AROUND], twin=[LOOK_AROUND])
-        started, _ = read_window(run / TWIN)
-        write_log(run, "jobsvc", *seed_records(started))
-        start = {"node": "node-1", "phase": "start", "job_id": "job-1", "owner": "wen", "argv": ["python"]}
-        write_log(run, "node-1", json.dumps({"wall_ts": started.isoformat(), "process": start}))
-        build_recorded_run_events(LIVE, run)
+    run = play(tmp_path_factory.mktemp("seeded") / "run")
+    started, _ = read_window(run / TWIN)
+    write_log(run, "jobsvc", *seed_records(started))
+    start = {"node": "node-1", "phase": "start", "job_id": "job-1", "owner": "wen", "argv": ["python"]}
+    write_log(run, "node-1", json.dumps({"wall_ts": started.isoformat(), "process": start}))
+    build_recorded_run_events(LIVE, run)
     return run / TWIN
 
 

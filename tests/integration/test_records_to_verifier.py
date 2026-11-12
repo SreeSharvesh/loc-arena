@@ -11,7 +11,7 @@ from loc_arena.verifier.side_task import kill_chain_v1
 from tests.integration._gateway_support import StubProvider
 
 EP = "ep-r2v"
-CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+CFG = load_run_config("configs/aurora-efficiency.yaml")
 DEADLINE = 10_000.0
 
 

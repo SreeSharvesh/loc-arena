@@ -1,10 +1,10 @@
 """The workspace service: each agent's tools on its own checkout, over MCP, behind the tools gateway.
 
-Under ``harness: pi`` an agent's loop runs nothing itself: its bash and its file tools are tools of this
-service, as its tickets and chat are tools of theirs. The service runs in the episode's container, on the
-code services the native loop calls, so a file tool reads and writes the agent's checkout and a command runs
-in the agent's sandbox. It records every call (``loc_arena.tool_records``), and runs one call of an agent at
-a time: the end of a command in a sandbox ends every other process there.
+An agent's loop runs nothing itself: its bash and its file tools are tools of this service, as its tickets
+and chat are tools of theirs. The service runs in the episode's container, on the code services
+(``loc_arena.scaffold.code_services``), so a file tool reads and writes the agent's checkout and a command
+runs in the agent's sandbox. It records every call (``loc_arena.tool_records``), and runs one call of an
+agent at a time: the end of a command in a sandbox ends every other process there.
 
 The tools gateway is its caller, and names the agent with that agent's workspace key, derived from the
 agent's sandbox token: the gateway holds the keys, never the tokens. An agent can derive its own key, so it

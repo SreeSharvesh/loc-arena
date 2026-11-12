@@ -21,18 +21,21 @@ from loc_arena.iam_bootstrap import (
 from loc_arena.tools_gateway import TOOLS_GATEWAY_CONFIG_VARIABLE
 
 REPOSITORY = Path(__file__).resolve().parents[2]
-CONFIG = load_run_config("configs/aurora-efficiency.iam.yaml")
-PLAIN = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+CONFIG = load_run_config("configs/aurora-efficiency.stack-test.yaml")
 MANAGED = ("notes", "agents", "forge", "chat", "jobsvc", "evalkit", "tickets")
 
 
 def compose(config=CONFIG):  # noqa: ANN001, ANN201 - a RunConfig, and the rendered document
-    return render_compose(config, REPOSITORY, "aurora-efficiency.iam", [])
+    return render_compose(config, REPOSITORY, "aurora-efficiency.stack-test", [])
 
 
-def test_a_run_config_that_turns_iam_off_cannot_run_in_a_stack() -> None:
+def test_a_run_config_that_turns_iam_off_cannot_run_in_a_stack(tmp_path: Path) -> None:
+    run = tmp_path / "plain.yaml"
+    run.write_text("extends: aurora-efficiency.yaml\niam:\n  enabled: false\n")
+    plain = load_run_config(run, Path("configs"))
+
     with pytest.raises(StackError, match="a stack run needs central IAM"):
-        compose(PLAIN)
+        compose(plain)
 
 
 def test_iam_holds_every_identity_its_services_credentials_and_the_bootstrap_with_an_anonymous_volume() -> (
@@ -43,7 +46,7 @@ def test_iam_holds_every_identity_its_services_credentials_and_the_bootstrap_wit
         "python",
         "-m",
         "loc_arena.iam_service",
-        "/app/configs/aurora-efficiency.iam.yaml",
+        "/app/configs/aurora-efficiency.stack-test.yaml",
         "iam",
     ]
     mounted = set(iam["secrets"])
@@ -162,7 +165,14 @@ def test_a_managed_service_with_a_ready_image_is_refused() -> None:
         from scenarios.loader import LiveService  # noqa: PLC0415
 
         image = LiveService("notes", "some/image", 8000, None, ("true",), (), "", ())
-        _render_live_service(CONFIG, image, issue_identities(CONFIG), {}, "aurora-efficiency.iam", ("notes",))
+        _render_live_service(
+            CONFIG,
+            image,
+            issue_identities(CONFIG),
+            {},
+            "aurora-efficiency.stack-test",
+            ("notes",),
+        )
 
 
 def test_a_stack_refuses_a_service_agents_reach_that_is_not_under_iam() -> None:

@@ -1,26 +1,21 @@
 """Each agent's checkout: its own clone of every company repo on the forge, where it works and its code runs.
 
-In a stack run an agent's checkout is in its own volume, mounted at ``checkouts_directory/<agent id>`` in the
-episode and in that agent's sandbox alone, and is cloned there from the forge over HTTP with the agent's own
-credential on it; the sandbox is reset to keep only the new checkout first. In this process it is under
-``checkouts/<agent id>`` of the episode's directory, cloned from the episode's own forge. Either way each
-clone commits as its agent and pushes back to where it was cloned from. The episode's native tools read and
-write the checkout, and its commands run there: in the agent's sandbox, or here (``LocalRunner``). A checkout
-lasts the play: what an agent leaves in it and never pushes is graded nowhere.
+An agent's checkout is in its own volume, mounted at ``checkouts_directory/<agent id>`` in the episode and in
+that agent's sandbox alone, and is cloned there from the forge over HTTP with the agent's own credential on
+it; the sandbox is reset to keep only the new checkout first. Each clone commits as its agent and pushes back
+to the forge. The workspace service's tools read and write the checkout, and its commands run in the agent's
+sandbox. A checkout lasts the play: what an agent leaves in it and never pushes is graded nowhere.
 """
 
 from __future__ import annotations
 
-import os
 import shutil
 import tempfile
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 from typing import Protocol
 
-from sandbox_server.command import run_command
 from sandbox_server.wire import CommandRequest, CommandResult
 
 from loc_arena.compose_document import ComposeVolume
@@ -29,9 +24,8 @@ from loc_arena.forge_service import SERVICE as FORGE
 from loc_arena.sandbox import IDENTITY_PREFIX, SandboxClient
 from loc_arena.settings import StackSettings
 from loc_arena.tasks.main_task_grader import COMPANY_REPOS
-from meridian_forge.repositories import EMAIL_DOMAIN, ISOLATED_GIT
+from meridian_forge.repositories import EMAIL_DOMAIN
 
-GIT_DATES = ("GIT_AUTHOR_DATE", "GIT_COMMITTER_DATE")  # what git dates a commit with, when set
 IMAGE_USER_ID = 65534  # nobody, whom the episode's and the sandboxes' images run as
 # Clones each of $REPOS from $FORGE into the working directory, all at once, each clone committing as $AGENT
 # and sending the credential in $TOKEN_FILE, if any, as a bearer token on every request to the forge.
@@ -49,27 +43,11 @@ class CheckoutError(RuntimeError):
 
 
 class CommandRunner(Protocol):
-    """Where an agent's commands run: its sandbox, or this process."""
+    """Where an agent's commands run: its sandbox."""
 
     def run(self, request: CommandRequest) -> CommandResult:
         """Run ``request`` and return what it did."""
         ...
-
-
-@dataclass(frozen=True)
-class LocalRunner:
-    """Runs an agent's commands in this process, without the provider key or this host's git configuration.
-
-    Each commit a command makes is dated ``commit_date`` if given, else when it is made.
-    """
-
-    output_limit_bytes: int | None
-    commit_date: datetime | None = None
-
-    def run(self, request: CommandRequest) -> CommandResult:
-        """Run ``request`` here, its output's tails kept to ``output_limit_bytes``."""
-        dated = dict.fromkeys(GIT_DATES, self.commit_date.isoformat()) if self.commit_date else {}
-        return run_command(request, self.output_limit_bytes, {**os.environ, **ISOLATED_GIT, **dated})
 
 
 @dataclass(frozen=True)
@@ -101,33 +79,20 @@ def render_checkout_volumes(stack: StackSettings, agent_ids: Iterable[str]) -> d
     return {f"checkout-{agent_id}": volume for agent_id in agent_ids}
 
 
-def open_checkouts(
-    config: RunConfig,
-    workdir: Path,
-    sandboxes: Mapping[str, SandboxClient] | None,
-) -> dict[str, Checkout]:
-    """Clone each agent's checkout from the forge, in its sandbox with ``sandboxes``, else in this process.
+def open_checkouts(config: RunConfig, sandboxes: Mapping[str, SandboxClient]) -> dict[str, Checkout]:
+    """Clone each agent's checkout from the forge, in its sandbox of ``sandboxes``.
 
     Raises ``CheckoutError`` if a clone fails.
     """
     stack = config.settings.stack
-    if sandboxes is None:
-        root, forge, token_file = workdir / "checkouts", str(workdir / "forge"), ""
-        runners: Mapping[str, CommandRunner] = {
-            agent.id: LocalRunner(stack.command_output_limit_bytes, config.settings.forge.commit_date)
-            for agent in config.agents
-        }
-    else:
-        port = next(service.port for service in config.live_services if service.name == FORGE)
-        root, forge = stack.checkouts_directory, f"http://{FORGE}:{port}/git"
-        token_file = str(config.settings.gateway.secrets_dir / f"{IDENTITY_PREFIX}{FORGE}")
-        runners = sandboxes
+    port = next(service.port for service in config.live_services if service.name == FORGE)
+    root, forge = stack.checkouts_directory, f"http://{FORGE}:{port}/git"
+    token_file = str(config.settings.gateway.secrets_dir / f"{IDENTITY_PREFIX}{FORGE}")
     checkouts = {}
     for agent in config.agents:
         (root / agent.id).mkdir(parents=True, exist_ok=True)
         directory = Path(tempfile.mkdtemp(dir=root / agent.id)).resolve()
-        if sandboxes is not None:  # what an earlier episode left there goes before the clone
-            sandboxes[agent.id].reset(keep=directory)
+        sandboxes[agent.id].reset(keep=directory)  # what an earlier episode left there goes before the clone
         environment = {
             "FORGE": forge,
             "REPOS": " ".join(COMPANY_REPOS),
@@ -141,10 +106,10 @@ def open_checkouts(
             timeout_seconds=stack.shell_timeout_seconds,
             environment=environment,
         )
-        cloned = runners[agent.id].run(request)
+        cloned = sandboxes[agent.id].run(request)
         if cloned.returncode != 0:
             raise CheckoutError(f"{agent.id} could not clone the forge's repos: {cloned.stderr.strip()}")
-        checkouts[agent.id] = Checkout(directory, runners[agent.id])
+        checkouts[agent.id] = Checkout(directory, sandboxes[agent.id])
     return checkouts
 
 

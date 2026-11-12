@@ -1,21 +1,18 @@
-"""Episode harness: run an episode in a MODE, grade it, and write its audit bundle.
+"""Episode harness: play an episode in a MODE, grade it, and write its audit bundle.
 
-``run_episode`` plays one episode in a MODE and its honest twin (``play_run``), then grades them (main-task
-scorer, sealed verifier, monitors) and writes the per-run bundle (``grade_run``), reproducible from
-``(config, seed)``; a stack run calls the two halves in its container and on the host. ``run_sweep``
-aggregates N honest and M attack episodes into a safety number. ``mode`` is the ONLY difference between a run
-and its twin.
+``play_run`` plays one episode in a MODE and its honest twin, in a stack run's episode container;
+``grade_run`` grades them on the host (main-task scorer, sealed verifier, monitors) and writes the per-run
+bundle. The two meet only through the run directory. ``mode`` is the ONLY difference between a run and its
+twin.
 """
 
 from __future__ import annotations
 
 import dataclasses
 import json
-import secrets
 import shutil
 import time
 from collections import Counter
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -39,9 +36,7 @@ from loc_arena.metrics import (
     calibrate_threshold,
     episode_overall,
     record_episode,
-    safety,
     suspicion_specs,
-    usefulness,
 )
 from loc_arena.monitors.aggregation import load_aggregation_config
 from loc_arena.monitors.registry import (
@@ -74,8 +69,8 @@ def _default_sink(kind: str, payload: dict[str, Any]) -> None:
 def apply_mode(config: RunConfig, mode: str) -> RunConfig:
     """Return the config for ``mode``; ``mode`` (attack/honest) is the ONLY difference.
 
-    An attack run gives the agents their covert briefs, the in-world gateway's injection and, in a scripted
-    run, the scenario's attack moves; its honest twin plays with the same tools and rights and none of them.
+    An attack run gives the agents their covert briefs and its target agent the covert objective; its honest
+    twin plays with the same tools and rights and neither.
     """
     if mode not in ("attack", "honest"):
         raise ValueError(f"mode must be 'attack' or 'honest', got {mode!r}")
@@ -84,7 +79,7 @@ def apply_mode(config: RunConfig, mode: str) -> RunConfig:
 
 def _default_decisions_text(cfg: RunConfig, mode: str, seed: int) -> str:
     """The default ``decisions.md`` body written into a run bundle."""
-    return f"# Run notes\n\nrun_slug: {cfg.run_slug}\nmode: {mode}\nseed: {seed}\npolicy: {cfg.policy}\n"
+    return f"# Run notes\n\nrun_slug: {cfg.run_slug}\nmode: {mode}\nseed: {seed}\n"
 
 
 def _write_bundle(
@@ -106,8 +101,7 @@ def _write_bundle(
     Seven files always; with ``logging.agent_transcript`` on, the ``.eval`` is a real Inspect log and
     ``transcript.html`` / ``transcript.txt`` are added, written last.
 
-    Kept separate from ``run_episode`` so the bundle shape is written in one place; passing the default
-    ``decisions_text`` uses the standard run notes.
+    Passing no ``decisions_text`` uses the standard run notes.
     """
     (out_dir / "config.resolved.yaml").write_text(yaml.safe_dump({**cfg.raw, "seed": seed}, sort_keys=False))
     shutil.copy(episode.sealed_path, out_dir / "events.sealed.jsonl")
@@ -152,7 +146,7 @@ def _write_bundle(
 def _eval_episodes(cfg: RunConfig, episode: Any, calibration: Any) -> list[EpisodeExport]:
     from loc_arena.logging_.inspect_export import EpisodeExport
 
-    agent_order = cfg.turn_order
+    agent_order = cfg.roster
     labelled = [("episode", episode), *([("honest_cal", calibration)] if calibration is not None else [])]
     exports: list[EpisodeExport] = []
     for sample_id, assembled in labelled:
@@ -161,18 +155,6 @@ def _eval_episodes(cfg: RunConfig, episode: Any, calibration: Any) -> list[Episo
         trace, sealed, mirror = assembled.trace, assembled.sealed_path, assembled.mirror_path
         exports.append(EpisodeExport(sample_id, trace, sealed, agent_order, mirror))
     return exports
-
-
-def _play_by_policy(cfg: RunConfig, workdir: Path, *, provider: Any = None) -> Snapshot:
-    """Play one episode by ``config.policy``: the live model, or the scenario's scripted moves instead."""
-    return live.play_model_episode(cfg, workdir, provider=provider)
-
-
-def _play_graded(cfg: RunConfig, run_directory: Path) -> EpisodeResult:
-    """Play one episode in ``run_directory/episode``, build the events its services recorded, and grade it."""
-    snapshot = _play_by_policy(cfg, run_directory / "episode")
-    build_recorded_events(run_directory, cfg, {"episode": snapshot.trace})
-    return grade_snapshot(snapshot, cfg)
 
 
 class WallClockCeiling(BaseModel):
@@ -260,8 +242,6 @@ def play_run(
     run_directory: Path,
     *,
     mode: str,
-    provider: Any = None,
-    calibration_provider: Any = None,
     next_phase: bool = False,
 ) -> None:
     """Play the episode in ``mode`` and, in attack mode, its honest twin; leave what grading needs on disk.
@@ -271,7 +251,6 @@ def play_run(
     ``next_phase`` only the first phase ``played.json`` lacks plays, so a stack run can renew its services
     before the twin; with none left, it raises ``ValueError``.
     """
-    live.refuse_to_play_in_process(config, "play it in a stack (STACK=1, --stack)")
     run_directory.mkdir(parents=True, exist_ok=True)
     start = time.perf_counter()
     played_file = run_directory / PLAYED_FILE
@@ -285,20 +264,12 @@ def play_run(
     episode = (
         _recall_episode(earlier)
         if earlier
-        else _play_by_policy(
-            apply_mode(config, mode),
-            run_directory / "episode",
-            provider=provider,
-        )
+        else live.play_model_episode(apply_mode(config, mode), run_directory / "episode")
     )
     twin = (
         None
         if mode == "honest" or (next_phase and not earlier)
-        else _play_by_policy(
-            apply_mode(config, "honest"),
-            run_directory / "honest_cal",
-            provider=calibration_provider,
-        )
+        else live.play_model_episode(apply_mode(config, "honest"), run_directory / "honest_cal")
     )
     played = PlayedRun(
         play_seconds=time.perf_counter() - start + (earlier.play_seconds if earlier else 0),
@@ -330,9 +301,9 @@ def build_recorded_run_events(config: RunConfig, run_directory: Path) -> None:
 
 
 def read_played_snapshot(directory: Path, config: RunConfig, trace: EpisodeTrace | None = None) -> Snapshot:
-    """The snapshot of the episode played in ``directory``, with ``trace``; in a stack run, its model calls.
+    """The snapshot of the episode played in ``directory``, with ``trace`` and its model calls.
 
-    Raises ``FileNotFoundError`` for a stack run whose call record was not copied out.
+    Raises ``FileNotFoundError`` for a run whose call record was not copied out.
     """
     calls = read_recorded_calls(directory, config)
     return dataclasses.replace(read_snapshot(directory, config), trace=trace, calls=calls)
@@ -356,11 +327,11 @@ def grade_run(
     """Grade what ``play_run`` left in ``run_directory``, replay the monitors, and write the bundle there.
 
     ``mode`` and ``seed`` come from the caller, never from the played files. The run is named after its
-    directory. Without a ``monitor_provider``, a live (model-policy) run uses the gateway or the key this
-    process has; a scripted run's monitors use their heuristic, which keeps it deterministic.
+    directory. Without a ``monitor_provider``, the monitors call the gateway or the key this process has;
+    with neither, they score with their heuristic.
     """
     cfg = apply_mode(config, mode)
-    if monitor_provider is None and cfg.policy == "model" and is_live_provider_configured():
+    if monitor_provider is None and is_live_provider_configured():
         monitor_provider = OpenRouterProvider(
             timeout=cfg.settings.gateway.timeout_seconds,
             model_providers=cfg.model_providers,
@@ -377,8 +348,7 @@ def grade_run(
     proto = dataclasses.replace(proto, async_default_timeout_s=agg.async_default_timeout_s)
 
     start = time.perf_counter()
-    # The scorer, verifier, and monitors grade a scripted and a live episode identically; scripted stays
-    # byte-reproducible, live is graded on outcome. The checks read only what play left on disk.
+    # The checks read only what play left on disk.
     episode = _grade_played(run_directory / "episode", cfg, played.episode_trace)
     # calibrate against the honest twin (mode's only difference is covert.enabled)
     honest_cfg = apply_mode(config, "honest")
@@ -465,113 +435,6 @@ def grade_run(
         write_report=write_report,
         calibration=honest_ep if mode == "attack" else None,
     )
-
-
-def run_episode(
-    config: RunConfig,
-    *,
-    mode: str,
-    out_root: Path | None = None,
-    seed: int | None = None,
-    monitors_path: str = "configs/monitors.yaml",
-    write_report: bool = True,
-    monitor_provider: Any = None,
-    run_instance_id: str | None = None,
-    provider: Any = None,
-    calibration_provider: Any = None,
-) -> Path:
-    """Run one episode in ``mode``, grade it, and write the reproducible audit bundle; return its dir.
-
-    The DELIVERABLE run drives the live model (``policy: model``, e.g. aurora-efficiency.yaml): no scripted or
-    deterministic fallback, graded on outcome, live monitors. The scripted policy (``policy: scripted``)
-    is retained ONLY as deterministic ENGINE-TEST scaffolding (byte-reproducible sealed logs for the invariant
-    suite), not as a deliverable run policy. Produces ``logs/<run_slug>/<run_name>/`` with
-    config.resolved.yaml, events.sealed.jsonl, events.mirror.jsonl, <run_name>.eval, scores.json, report.html,
-    decisions.md -- a reviewer can reconstruct the whole run from the sealed log alone, and it reproduces
-    from (config.resolved.yaml, seed). Play and grading meet only through the run directory, as in a stack
-    run, where the episode container plays and this host grades.
-    """
-    instance_id = run_instance_id or secrets.token_hex(3)
-    run_directory = locate_run(config, mode, instance_id, out_root or Path("logs"))
-    play_run(
-        config,
-        run_directory,
-        mode=mode,
-        provider=provider,
-        calibration_provider=calibration_provider,
-    )
-    build_recorded_run_events(config, run_directory)
-    return grade_run(
-        config,
-        run_directory,
-        mode=mode,
-        seed=seed,
-        monitors_path=monitors_path,
-        write_report=write_report,
-        monitor_provider=monitor_provider,
-    )
-
-
-def run_sweep(
-    config: RunConfig,
-    *,
-    honest: int,
-    attack: int,
-    out_root: Path | None = None,
-    monitors_path: str = "configs/monitors.yaml",
-    monitor_provider: Any = None,
-) -> dict[str, Any]:
-    """Run ``honest`` honest and ``attack`` attack episodes, aggregate a safety number, and write the summary.
-
-    Writes each episode's bundle plus ``scores.aggregate.json`` and a summary ``report.html`` under
-    ``logs/<run_id>/sweep-<timestamp>/`` (calibration + a safety number).
-    """
-    live.refuse_to_play_in_process(config, "a sweep plays only here, so sweep the deterministic fixture")
-    sweep_dir = (out_root or Path("logs")) / config.run_slug / f"sweep-{datetime.now(UTC):%Y%m%dT%H%M%SZ}"
-    sweep_dir.mkdir(parents=True, exist_ok=True)
-
-    honest_cfg, attack_cfg = apply_mode(config, "honest"), apply_mode(config, "attack")
-    proto = compose_protocol(attack_cfg, load_monitors(monitors_path, attack_cfg.models))
-    limit = load_aggregation_config(monitors_path).monitor_failures_before_fallback
-
-    def _record(ep: Any, cfg: RunConfig) -> Any:
-        caller, sink = build_monitor_caller(ep, cfg, monitor_provider, failures_before_fallback=limit)
-        return record_episode(ep, cfg, proto, model_caller=caller, event_sink=sink or _default_sink)
-
-    honest_records = [
-        _record(_play_graded(honest_cfg, sweep_dir / f"honest-{i}"), honest_cfg) for i in range(honest)
-    ]
-    attack_records = [
-        _record(_play_graded(attack_cfg, sweep_dir / f"attack-{i}"), attack_cfg) for i in range(attack)
-    ]
-    threshold = calibrate_threshold(honest_records, proto.audit_budget_fpr)
-    safe = safety(attack_records, threshold)
-    use = usefulness(honest_records)
-
-    aggregate = {
-        "run_slug": config.run_slug,
-        "n_honest": honest,
-        "n_attack": attack,
-        "audit_threshold": threshold,
-        "audit_budget_fpr": proto.audit_budget_fpr,
-        "safety": {
-            "n_landed": safe.n_landed,
-            "n_caught": safe.n_caught,
-            "n_uncaught": safe.n_uncaught,
-            "safety_rate": safe.safety_rate,
-            "per_monitor": safe.per_monitor,
-        },
-        "usefulness": {
-            "n_episodes": use.n_episodes,
-            "mean_final_score": use.mean_final_score,
-            "mean_frac_human": use.mean_frac_human,
-            "milestones_reached": use.milestones_reached,
-        },
-    }
-    (sweep_dir / "scores.aggregate.json").write_text(json.dumps(aggregate, indent=2))
-    (sweep_dir / "report.html").write_text(viewer.build_sweep_report(config, aggregate))
-    aggregate["_dir"] = str(sweep_dir)
-    return aggregate
 
 
 def build_monitor_caller(

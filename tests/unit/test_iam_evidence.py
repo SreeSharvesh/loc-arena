@@ -13,12 +13,12 @@ from loc_arena.recorded_events import (
     record_line_parser,
 )
 
-PLAIN = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+PLAIN = load_run_config("configs/aurora-efficiency.yaml")
 
 
 def iam_config(tmp_path: Path):  # noqa: ANN201 - a RunConfig with IAM enabled
     run = tmp_path / "iam.yaml"
-    run.write_text("extends: aurora-efficiency.deterministic.yaml\niam:\n  enabled: true\n")
+    run.write_text("extends: aurora-efficiency.yaml\niam:\n  enabled: true\n")
     return load_run_config(run, Path("configs"))
 
 

@@ -73,6 +73,7 @@ from loc_arena.harness import PLAYED_FILE, PlayedRun, apply_mode, build_recorded
 from loc_arena.logging_.events import AppendOnlyLog, read_events
 from loc_arena.node_pool import list_node_services, node_token_variable
 from loc_arena.notes_service import open_notes_store
+from loc_arena.notices import NOTICE_TOOLS
 from loc_arena.recorded_events import SERVICE_LOGS
 from loc_arena.runner_pool import list_runner_services, runner_token_secret, runner_token_variable
 from loc_arena.sandbox import IDENTITY_PREFIX, TOKEN_FILE
@@ -86,13 +87,14 @@ from loc_arena.tools_gateway import (
     TOOLS_GATEWAY_SERVICE,
     render_tools_gateway_config,
 )
+from loc_arena.workspace_service import WORKSPACE_TOOLS
 from pydantic import BaseModel, ConfigDict, Field
 from sandbox_server.wire import RESET_PATH, RUN_PATH, CommandRequest
 
-from tests.integration._docker_support import image_exists
+from tests.integration._docker_support import SERVE_WORKSPACE, image_exists
 from tests.integration._probe_prelude import CONNECT_TIMEOUT_SECONDS, PRELUDE
 
-RUN = "aurora-efficiency.iam"
+RUN = "aurora-efficiency.stack-test"
 CONFIG = load_run_config(REPOSITORY / "configs" / f"{RUN}.yaml")
 
 pytestmark = pytest.mark.skipif(
@@ -142,12 +144,6 @@ OPENED = {
     "branch": "sprint/serving",
 }  # a seeded branch, open to anyone with open_pr
 OPENED_REPO = OPENED["repo"]
-NATIVE_AGENT = "eval-agent"  # whose native MCP client, in the episode, opens a pull request with its key
-NATIVE_OPENED = {
-    "repo": "meridian-common",
-    "branch": "docs/readme-layout",
-    "title": f"opened-by-{NATIVE_AGENT}",
-}
 # whose MCP clients, one per protocol era, list and call a tool on the forge and on chat in the episode
 ERA_AGENT = "datapipe-agent"
 ERA_REPO, ERA_BRANCH = "meridian-datapipe", "chore/changelog-unreleased"  # a branch the seed pushed
@@ -172,7 +168,7 @@ REFUSED_REGISTER_ROW = "the_agents_service_refuses_a_registration_from_an_agent_
 OWN_TOKEN_ROW = "the_sandbox_holds_only_its_own_token"
 OWN_IDENTITY_ROW = "the_sandbox_holds_only_its_own_identity"
 OWN_TOOLS_ROW = "the_tools_gateway_offers_an_agent_exactly_its_tools"
-NO_TOOLS_ROW = "the_tools_gateway_offers_an_agent_without_tools_nothing"
+NO_TOOLS_ROW = "the_tools_gateway_offers_an_agent_without_service_tools_the_workspace_alone"
 REFUSED_TOOL_ROW = "the_tools_gateway_refuses_a_tool_outside_the_agents_tools"
 SERVING_TOOLS_ROW = "the_tools_gateway_offers_an_agent_its_tools_across_services"
 # Every agent's with tools: the eval and job services' reads, the whole ticket tracker, the notes and chat.
@@ -180,7 +176,10 @@ EVERY = ["comment_on_ticket", "create_project", "create_ticket", "delete_note", 
 EVERY += ["edit_ticket", "get_eval", "get_run", "get_ticket", "leaderboard", "list_evals", "list_notes"]
 EVERY += ["list_projects", "list_runs", "read_note", "search_tickets", "write_note", "edit_message", "post"]
 EVERY += ["get_job", "get_schedule", "job_logs", "list_jobs", "list_nodes", "list_schedules", "usage"]
-EVERY = sorted([*EVERY, "list_channels", "read_channel", "read_dms", "reply", "search", "send_dm", "unread"])
+EVERY += ["list_channels", "read_channel", "read_dms", "reply", "search", "send_dm", "unread"]
+EVERY = sorted(
+    [*EVERY, *WORKSPACE_TOOLS, *NOTICE_TOOLS],
+)  # with the workspace service's, which the episode serves
 SHARED = ["merge", "open_pr"]  # every agent's on the forge
 OWN_REST = sorted([*EVERY, *SHARED, "publish_run", "start_run"])
 JOBSVC_TOOLS = [  # serving-agent's, sorted
@@ -202,7 +201,7 @@ CHAIN_PREVIOUS = "PREVIOUS_OUTPUT"  # in a chain step's command: replaced by wha
 LEFT_RUNNING_SECONDS = 60  # a command still running when its sandbox is reset, unless the reset ends it
 COMMAND_START_SECONDS = 2  # long enough for that command to have started
 # In the episode, as agent-main unless named: bash reads a sealed log, lists the checkout, leaves a process;
-# MCP clients through agentgateway (eval-agent's native one, datapipe-agent's of each era); all
+# MCP clients through agentgateway (datapipe-agent's of each era); all
 # identities hashed; the probes and chains from stdin; each sandbox's secrets; the refused path again; the
 # episode's calls to a sandbox, with its token and a wrong one. Last: agent-main's checkouts listed; a command
 # left running while what listens beyond loopback is read (Docker's resolver is 127.0.0.11); every sandbox
@@ -222,13 +221,11 @@ import httpx2
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 from loc_arena.config import load_run_config
-from loc_arena.forge_service import load_seed, open_forge
-from loc_arena.live import connect_agent_tools
 from loc_arena.checkouts import checkout_home, open_checkouts
 from loc_arena.sandbox import SandboxError, connect_sandboxes, token_secret_name
 from sandbox_server.wire import CommandRequest
 from loc_arena.scaffold.code_services import CodeServices
-
+{SERVE_WORKSPACE}
 config = load_run_config("{CONFIGS_DIRECTORY}/{RUN}.yaml")
 sandboxes = connect_sandboxes(config.settings, [agent.id for agent in config.agents])
 episode = Path("{OUTPUT_DIRECTORY}/a-run/episode")
@@ -238,15 +235,14 @@ sealed.write_text("sealed\\n")
 def run_in(checkouts, tool, args, agent={AGENT!r}):
     services = CodeServices(checkouts=checkouts, repos={CHECKOUT_REPOS!r}, stack=config.settings.stack)
     return services.run(tool, {{**args, "actor_uid": agent}})
-checkouts = open_checkouts(config, episode, sandboxes)
+checkouts = open_checkouts(config, sandboxes)
+code = CodeServices(checkouts=checkouts, repos={CHECKOUT_REPOS!r}, stack=config.settings.stack)
+serving = serve_agents_workspace(config, code, lambda line: None)
 bash = lambda command, agent={AGENT!r}: run_in(checkouts, "bash", {{"command": command}}, agent)
 output = lambda result: result["stdout"].strip() if "stdout" in result else json.dumps(result)  # or why not
 results = [bash(command) for command in (f"cat {{sealed}}", "ls")]
 left = bash("setsid sleep 300 > /dev/null 2>&1 < /dev/null & echo $!")
 results.append(bash(f"kill -0 {{left['stdout'].strip()}}"))
-forge = open_forge(config, load_seed(config), episode / "forge")
-(native,) = connect_agent_tools(forge, config, episode)[{NATIVE_AGENT!r}]  # agentgateway alone
-native_opened = native.call("open_pr", {NATIVE_OPENED!r})
 async def speak(mode):
     key = (config.settings.gateway.secrets_dir / token_secret_name({ERA_AGENT!r})).read_text().strip()
     url = os.environ[{TOOLS_URL_VARIABLE!r}]
@@ -302,12 +298,11 @@ listening = [
     for address, port in [line.split()[1].split(":")]
     if line.split()[3] == "0A" and not read_address(address).is_loopback
 ]
-later = open_checkouts(config, episode, sandboxes)  # each sandbox reset, keeping only its new checkout
+later = open_checkouts(config, sandboxes)  # each sandbox reset, keeping only its new checkout
 left_running = running.result()  # before the next command, which would end it in any case
 after = run_in(later, "bash", {{"command": f"ls {{home}}"}})
 print(json.dumps({{
     "bash": results,
-    "native_opened": native_opened,
     "eras": eras,
     "episode_harness": here.stdout.strip(),
     "probes": probes,
@@ -434,11 +429,12 @@ from loc_arena.checkouts import open_checkouts
 from loc_arena.config import load_run_config
 from loc_arena.sandbox import connect_sandboxes
 from loc_arena.scaffold.code_services import CodeServices
-
+{SERVE_WORKSPACE}
 config = load_run_config("{CONFIGS_DIRECTORY}/{RUN}.yaml")
 sandboxes = connect_sandboxes(config.settings, [agent.id for agent in config.agents])
-checkouts = open_checkouts(config, Path("{OUTPUT_DIRECTORY}"), sandboxes)
+checkouts = open_checkouts(config, sandboxes)
 services = CodeServices(checkouts=checkouts, repos={CHECKOUT_REPOS!r}, stack=config.settings.stack)
+serving = serve_agents_workspace(config, services, lambda line: None)
 run = lambda command: services.run("bash", {{"command": command, "actor_uid": {AGENT!r}}})
 print(json.dumps({{n: (r := run(c)).get("stdout", str(r)).strip() for n, c in json.load(sys.stdin).items()}}))
 """
@@ -518,7 +514,6 @@ ROWS: dict[str, tuple[str, set[str]]] = {
         {"ENETUNREACH"},
     ),
     "the_sandbox_holds_no_reference_answer": ("print(list_paths('{scenarios}/*/reference'))", {"[]"}),
-    "the_sandbox_holds_no_scripted_move": ("print(list_paths('{scenarios}/*/scripted'))", {"[]"}),
     HARNESS_ROW: ("print(find_harness())", {json.dumps({"modules": [], "paths": []})}),
     REFUSED_PATH_ROW: (REFUSED_PATH_SCRIPT, {str(int(HTTPStatus.FORBIDDEN))}),
     # The live service. The reader's read is the control of the refusals beside it and of every "no" below.
@@ -544,7 +539,7 @@ ROWS: dict[str, tuple[str, set[str]]] = {
     # The tools gateway. The agents' own pull requests are the controls of its refusals and the forge's. Every
     # agent is also offered access_inbox, its own IAM inbox.
     OWN_TOOLS_ROW: (LIST_TOOLS, {json.dumps(["access_inbox", *OWN_REST])}),
-    NO_TOOLS_ROW: (LIST_TOOLS, {"[]"}),
+    NO_TOOLS_ROW: (LIST_TOOLS, {json.dumps(sorted([*WORKSPACE_TOOLS, *NOTICE_TOOLS]))}),
     # Behind the same route, a tool is offered and callable only where the run config grants it: jobsvc's too.
     SERVING_TOOLS_ROW: (LIST_TOOLS, {json.dumps(SERVING_TOOLS)}),
     GRANTED_CALL_ROW: (write_call_script("usage", {}, PRINT_IS_ERROR), {"false"}),
@@ -718,7 +713,6 @@ class StackRun:
     agents_log_text: str
     played_from: float
     played_until: float
-    native_opened: dict[str, Any]
     eras: dict[str, dict[str, Any]]
     forge_identities: dict[str, str]
     chat_log: list[ToolRecord]
@@ -1181,10 +1175,12 @@ def test_a_reset_ends_a_command_still_running_in_the_sandbox(stack_run: StackRun
     assert ended["returncode"] == -signal.SIGKILL
 
 
-def test_nothing_listens_in_the_episode_container_beyond_its_loopback(stack_run: StackRun) -> None:
+def test_the_episode_container_listens_beyond_its_loopback_for_the_workspace_service_alone(
+    stack_run: StackRun,
+) -> None:
     listening = stack_run.episode_listening
 
-    assert listening == []
+    assert listening == [f"0.0.0.0:{CONFIG.settings.stack.workspace_port}"]
 
 
 def test_the_host_holds_no_address_on_agent_net(stack_run: StackRun) -> None:
@@ -1323,7 +1319,7 @@ def test_the_forge_log_names_the_agent_whose_key_made_each_call_through_the_tool
         if line.error is None and line.agent != ERA_AGENT
     )
 
-    agents = sorted([AGENT, NATIVE_AGENT, OTHER_AGENT])
+    agents = sorted([AGENT, OTHER_AGENT])
     assert calls == [(agent, "open_pr", f"opened-by-{agent}") for agent in agents]
 
 
@@ -1429,12 +1425,6 @@ def write_played_run(directory: Path, stack_run: StackRun) -> Path:
     return run
 
 
-def test_the_native_client_opens_a_pull_request_through_the_tools_gateway(stack_run: StackRun) -> None:
-    opened = stack_run.native_opened
-
-    assert (opened.get("opened"), opened.get("author")) == (True, NATIVE_AGENT)
-
-
 def test_the_pr_events_built_from_the_forges_log_name_the_agent_whose_key_opened_each_pull_request(
     stack_run: StackRun,
     tmp_path: Path,
@@ -1449,7 +1439,7 @@ def test_the_pr_events_built_from_the_forges_log_name_the_agent_whose_key_opened
         for event in mirror
         if event.kind == "pr" and event.actor_uid != ERA_AGENT
     )
-    assert built == [(agent, f"opened-by-{agent}") for agent in sorted([AGENT, NATIVE_AGENT, OTHER_AGENT])]
+    assert built == [(agent, f"opened-by-{agent}") for agent in sorted([AGENT, OTHER_AGENT])]
 
 
 def test_the_actions_built_from_the_agents_services_log_name_who_registered_and_who_was_refused(

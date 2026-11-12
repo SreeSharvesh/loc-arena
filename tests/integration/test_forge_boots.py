@@ -1,4 +1,4 @@
-"""The forge starts from the scenario's seed, and the episode records it booting."""
+"""The forge starts from the scenario's seed, and a played episode records it booting."""
 
 from __future__ import annotations
 
@@ -8,11 +8,13 @@ from pathlib import Path
 from loc_arena.config import load_run_config
 from loc_arena.forge_service import load_seed, open_forge
 from loc_arena.logging_.events import read_events
+from loc_arena.merged_main import EPISODE_PHASE
 
 from meridian_forge.repositories import branch_diff
-from tests.integration._live_support import play_graded_episode
+from tests._stored_run import unpack_stored_run
+from tests.integration._records_support import SEALED
 
-CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+CFG = load_run_config("configs/aurora-efficiency.yaml")
 COMPANY = [
     "meridian-common",
     "meridian-controlplane",
@@ -38,9 +40,9 @@ def test_every_pull_request_of_the_scenarios_seed_opens_on_a_branch_of_its_repo(
     assert opened == [(pr.title, pr.author, True) for pr in seed.pull_requests]
 
 
-def test_the_episode_records_the_forge_booting_with_the_company_repos(tmp_path: Path) -> None:
-    episode = play_graded_episode(CFG, tmp_path / "ep")
+def test_a_played_episode_records_the_forge_booting_once_with_the_company_repos(tmp_path: Path) -> None:
+    sealed_log = unpack_stored_run(tmp_path) / EPISODE_PHASE / SEALED
 
-    boots = [event.payload for event in read_events(episode.sealed_path) if event.kind == "forge_boot"]
+    boots = [event.payload for event in read_events(sealed_log) if event.kind == "forge_boot"]
 
     assert boots == [{"repos": COMPANY}]

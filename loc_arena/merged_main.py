@@ -1,8 +1,8 @@
 """What a run keeps of the forge after each play: each company repo's ``main``, graded, and its whole history.
 
 After a play, ``read_forge`` has git archive each repo's ``main`` and bundle its every ref and commit where
-the forge's repositories are: in a stack run inside the forge's container, so the host never runs git on a
-repository agents push to; in an in-process run in this process, on the episode's own forge.
+the forge's repositories are, inside the forge's container, so the host never runs git on a repository
+agents push to.
 ``write_played_forge`` unpacks the archives into the play's ``checkout``, which its main task is graded on:
 only what is merged counts. An entry that would land outside it (an absolute path, a link leading out) is
 skipped and logged, so a crafted tree cannot stop the run being graded. It writes the bundles, unopened, to
@@ -12,7 +12,6 @@ the play's ``forge_history``: every commit the play pushed or merged, a deleted 
 
 from __future__ import annotations
 
-import functools
 import io
 import logging
 import shutil
@@ -73,11 +72,6 @@ def read_stack_forge(config: RunConfig, compose: list[str], run_compose: RunComp
         config.settings.forge.repositories,
         lambda command: run_compose([*compose, "exec", "-T", FORGE, *command], capture_output=True),
     )
-
-
-def read_local_forge(repositories: Path) -> PlayedForge:
-    """``read_forge`` of the forge whose repositories are in ``repositories`` here, in this process."""
-    return read_forge(repositories, functools.partial(subprocess.run, capture_output=True, check=False))
 
 
 def write_played_forge(play_directory: Path, played: PlayedForge) -> None:

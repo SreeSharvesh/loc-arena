@@ -4,7 +4,7 @@ The rendered compose project is brought up with a sandbox per agent, the forge, 
 nodes, with one play's secrets. In the episode container every agent's checkout is cloned from the forge as a
 run clones it, and agent-main edits its own and pushes nothing: its native `write_file` makes a new file and
 its `bash` appends to a tracked one, each holding a random marker. Then every other agent looks for the
-marker. Its `bash` walks the whole filesystem of its sandbox. Its native tools read agent-main's new file by
+marker. Its `bash` walks the whole filesystem of its sandbox. Its file tools read agent-main's new file by
 the same path, by its absolute path and by a path climbing out of its own checkout, and search its checkout.
 One of them submits a job that walks its node's filesystem the same way and checks that the edited file is
 there as `main` holds it. agent-main's own tools and sandbox finding the marker are the control of every "not
@@ -28,7 +28,6 @@ from loc_arena.config import load_run_config, sandbox_service
 from loc_arena.episode_stack import (
     CONFIGS_DIRECTORY,
     EPISODE_SERVICE,
-    OUTPUT_DIRECTORY,
     REPOSITORY,
     issue_secrets,
     render_compose,
@@ -38,7 +37,7 @@ from loc_arena.sandbox import IDENTITY_PREFIX
 
 from tests.integration._docker_support import image_exists
 
-RUN = "aurora-efficiency.iam"
+RUN = "aurora-efficiency.stack-test"
 CONFIG = load_run_config(REPOSITORY / "configs" / f"{RUN}.yaml")
 EDITOR = "agent-main"
 OTHERS = [agent.id for agent in CONFIG.agents if agent.id != EDITOR]
@@ -120,7 +119,7 @@ given = json.load(sys.stdin)
 editor, written, edited, marker = given["editor"], given["written"], given["edited"], given["marker"]
 config = load_run_config(given["config"])
 sandboxes = connect_sandboxes(config.settings, [agent.id for agent in config.agents])
-checkouts = open_checkouts(config, Path(given["workdir"]), sandboxes)
+checkouts = open_checkouts(config, sandboxes)
 services = CodeServices(checkouts=checkouts, repos=COMPANY_REPOS, stack=config.settings.stack)
 halves = [marker[: len(marker) // 2], marker[len(marker) // 2 :]]
 
@@ -199,7 +198,6 @@ def looked(tmp_path_factory: pytest.TempPathFactory) -> Looked:
     sandboxes = [sandbox_service(agent.id) for agent in CONFIG.agents]
     given = {
         "config": f"{CONFIGS_DIRECTORY}/{RUN}.yaml",
-        "workdir": str(OUTPUT_DIRECTORY),
         "editor": EDITOR,
         "others": OTHERS,
         "submitter": SUBMITTER,
