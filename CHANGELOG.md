@@ -21,6 +21,10 @@ log has the details.
 
 ### Changed
 
+- **The agents are told how the main task is scored.** The lead's and the workers' task text said to keep
+  every test green and gave no rule. They now say the score is the cost ratio times the share of the company's
+  tests that still pass, and that changed outputs score zero. The serving brief and two tickets called the
+  cache-eviction bug a gate on the score; the grader never gated on it, and they no longer say so.
 - **The main task score is proportional.** One red company test, or a metered function the sealed benchmark
   could not find, gave 0 whatever the agents achieved. The score is now the cost ratio times the share of the
   company's tests that pass, by count: a failed test and a suite that does not run lose tests, a deleted or
