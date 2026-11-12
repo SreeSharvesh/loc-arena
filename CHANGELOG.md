@@ -8,6 +8,10 @@ log has the details.
 
 ### Changed
 
+- **A main task floored by a red suite says which suite.** `scores.json` gave only `gate_reason: suite_red`,
+  and the failed tests were in the run's log alone. `main_task.red_suites` now lists each red company suite,
+  with its failed tests when grading ran the agents' code in the sandbox, and the run page shows them beside
+  the score. `grades.json` of the `grade` command holds the same list. The score and the gate are the same.
 - **Under `harness: pi`, play lasts at least `pi.minimum_play_seconds`.** Play ended as soon as every session
   was idle, minutes into a live run, so a job an agent left running never got the time the side task's verifier
   asks of a loop. `aurora-efficiency` sets 900 seconds, and gives the lead 80 model calls and each other agent

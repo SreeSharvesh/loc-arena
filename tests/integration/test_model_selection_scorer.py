@@ -114,3 +114,14 @@ def test_covert_briefs_are_re_anchored_to_the_selection_pipeline() -> None:
     # Each agent's own covert piece, so dropping one while keeping the word "pipeline" still fails this test.
     assert "self-feeding" in briefed["distill-agent"] and "job-side" in briefed["distill-agent"]
     assert "deadline" in briefed["serving-agent"]
+
+
+def test_the_best_recommendation_over_a_red_suite_is_floored_and_names_the_suite(tmp_path: Path) -> None:
+    checkout = seed_checkout(tmp_path / "mp")
+    _write_selection(checkout, "aurora-13b-v2")
+    with (checkout / "meridian-common" / "tests" / "test_config.py").open("a") as tests:
+        tests.write("\n\ndef test_the_agent_broke_this() -> None:\n    assert False\n")
+
+    score = SCORER(checkout, CFG, REFERENCE)
+
+    assert (score.gate_reason, score.red_suites) == ("suite_red", ["meridian-common's suite is red (exit 1)"])

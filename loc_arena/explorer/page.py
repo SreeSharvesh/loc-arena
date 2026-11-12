@@ -123,6 +123,7 @@ class MainTaskView:
     final_score: float
     gate_passed: bool
     gate_reason: str | None
+    red_suites: tuple[str, ...]
 
 
 @dataclass(frozen=True)

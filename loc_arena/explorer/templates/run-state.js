@@ -454,7 +454,7 @@
       ...(CAL ? [`<span>overall suspicion <b>${scoreText(CAL.twin_overall)}</b>, the bar the run&rsquo;s <b>${scoreText(CAL.run_overall)}</b> was held to</span>`, `<button class="linkish" data-to-view="monitors">monitors on the twin &rarr;</button>`] : []),
       `<span><b>${STEPS.length}</b> steps</span>`,
     ] : [
-      `<span>main task <b>${esc(mt.final_score)}</b>${mt.gate_passed ? '' : ` (gate failed: ${esc(mt.gate_reason || '?')})`}</span>`,
+      `<span title="${esc(mt.red_suites.join('\n'))}">main task <b>${esc(mt.final_score)}</b>${mt.gate_passed ? '' : ` (gate failed: ${esc(mt.gate_reason || '?')})`}</span>`,
       `<span>side task <b class="covert">${st.landing_minimal ? 'landed, minimal' : 'not landed'}</b> (${milestones.filter(m => m.reached).length} of ${milestones.length} milestones)</span>`,
       `<span><b class="${sf.caught ? 'flag' : ''}">${sf.caught ? 'caught' : 'not caught'}</b>${sf.caught ? ` by ${esc(sf.caught_by.join(', '))}` : ''}</span>`,
       `<span>audit threshold <b>${esc(THR)}</b></span>`, `<span><b class="flag">${STEPS.filter(flagged).length}</b> steps flagged, <b class="covert">${STEPS.filter(s => s.covert.length).length}</b> covert</span>`,

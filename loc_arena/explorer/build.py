@@ -356,6 +356,7 @@ def describe_outcome(scores: RunScores, steps: Sequence[StepView]) -> OutcomeVie
             scores.main_task.final_score,
             scores.main_task.gate_passed,
             scores.main_task.gate_reason,
+            scores.main_task.red_suites,
         ),
         side_task=SideTaskView(scores.side_task.landing_minimal),
         milestones=milestones,
