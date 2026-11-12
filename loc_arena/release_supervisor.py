@@ -21,6 +21,7 @@ from __future__ import annotations
 import contextlib
 import hmac
 import os
+import queue
 import shutil
 import signal
 import socket
@@ -52,6 +53,7 @@ RELEASE_PATH = "/release"  # POST: take a release; GET: the release the service 
 CURRENT = "current"  # in the releases directory: the link to the release the service runs
 LOOPBACK = "127.0.0.1"
 READ_BYTES = 4096  # of the service's stderr, at a time
+LOGGED_READS = 256  # reads of its stderr that wait to be logged; a read past them is kept, and not logged
 BODY_MARGIN_BYTES = 4096  # what a release's request holds beside its archives: its name and theirs
 # A release or a repo names a directory: one path component, never a relative one.
 Name = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")]
@@ -106,7 +108,8 @@ class SupervisedService:
         self._stopped = threading.Event()
         self._process: subprocess.Popen[bytes] | None = None
         self._errors = bytearray()  # the end of the running process's stderr
-        self._copier = threading.Thread()
+        self._reader = threading.Thread()  # of that stderr
+        self._to_log: queue.Queue[bytes] = queue.Queue(LOGGED_READS)
 
     def start(self) -> None:
         """Start the service on the release it ran last, and keep it running until ``stop``."""
@@ -114,6 +117,7 @@ class SupervisedService:
         with self._lock:
             self._spawn(self._find_current())
         threading.Thread(target=self._keep_running, daemon=True).start()
+        threading.Thread(target=_log_errors, args=(self._to_log,), daemon=True).start()
 
     def stop(self) -> None:
         """End the service's process, and start it no more."""
@@ -182,10 +186,10 @@ class SupervisedService:
             start_new_session=True,
         )
         errors = bytearray()
-        copy = (process.stderr, errors, self._settings.error_bytes)
+        read = (process.stderr, errors, self._settings.error_bytes, self._to_log)
         self._process, self._errors = process, errors
-        self._copier = threading.Thread(target=_copy_errors, args=copy, daemon=True)
-        self._copier.start()
+        self._reader = threading.Thread(target=_read_errors, args=read, daemon=True)
+        self._reader.start()
         print(f"supervisor: started the service on {_name(release) or 'the image'}", flush=True)  # noqa: T201
 
     def _end(self) -> None:
@@ -200,8 +204,8 @@ class SupervisedService:
                 os.killpg(process.pid, signal.SIGKILL)  # the group it leads: its children too
             process.wait()
         self._end_leftovers()
-        if self._copier.is_alive():  # none before the service first started
-            self._copier.join(self._settings.stop_seconds)  # its stderr has closed: its last errors are in
+        if self._reader.is_alive():  # none before the service first started
+            self._reader.join(self._settings.stop_seconds)  # its stderr has closed: its last errors are in
 
     def _answers(self, wait_seconds: float) -> bool:
         """Whether the service's own process is alive and its port accepts within ``wait_seconds``."""
@@ -229,13 +233,23 @@ class SupervisedService:
                     print(f"supervisor: the service did not start: {error}", flush=True)  # noqa: T201
 
 
-def _copy_errors(stream: IO[bytes], kept: bytearray, kept_bytes: int) -> None:
-    """Pass a process's stderr on to this container's, keeping its last ``kept_bytes`` in ``kept``."""
+def _read_errors(stream: IO[bytes], kept: bytearray, kept_bytes: int, to_log: queue.Queue[bytes]) -> None:
+    """Keep the last ``kept_bytes`` of a process's stderr in ``kept``, and hand each read on ``to_log``.
+
+    Reading never waits for the logging: what a full queue cannot take is kept and not logged.
+    """
     while chunk := stream.read1(READ_BYTES):  # ty: ignore[unresolved-attribute] - a pipe's buffered reader
-        sys.stderr.write(chunk.decode(errors="replace"))
-        sys.stderr.flush()
         kept += chunk
         del kept[:-kept_bytes]
+        with contextlib.suppress(queue.Full):
+            to_log.put_nowait(chunk)
+
+
+def _log_errors(to_log: queue.Queue[bytes]) -> None:
+    """Write what the service's processes wrote to stderr on this container's, as it comes."""
+    while True:
+        sys.stderr.write(to_log.get().decode(errors="replace"))
+        sys.stderr.flush()
 
 
 def _name(release: Path | None) -> str | None:

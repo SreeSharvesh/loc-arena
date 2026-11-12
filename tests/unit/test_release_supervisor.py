@@ -13,6 +13,7 @@ import socket
 import sys
 import tarfile
 import time
+import types
 import urllib.request
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
@@ -23,6 +24,7 @@ from typing import Any
 import anyio
 import pytest
 from fastapi.testclient import TestClient
+from loc_arena import release_supervisor
 from loc_arena.deploy_service import SupervisorRollout
 from loc_arena.release_supervisor import (
     RELEASE_PATH,
@@ -187,6 +189,28 @@ def test_a_failed_releases_errors_reach_the_reply_cut_to_their_end(supervised: S
     state = supervised.call("POST", release("deploy-1", noisy))
 
     assert (len(state["detail"]), state["detail"].endswith("the last words")) == (ERROR_BYTES, True)
+
+
+def test_a_failed_releases_errors_reach_the_reply_while_logging_them_stalls(
+    supervised: Supervised,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class StalledLog:
+        """A log each write to which takes longer than the supervisor waits for a service to end."""
+
+        def write(self, text: str) -> int:
+            time.sleep(5)
+            return len(text)
+
+        def flush(self) -> None:
+            pass
+
+    # The supervisor's own view of sys: its logging stalls, and nothing else's.
+    monkeypatch.setattr(release_supervisor, "sys", types.SimpleNamespace(stderr=StalledLog()))
+
+    state = supervised.call("POST", release("deploy-1", "def broken(:\n"))
+
+    assert "SyntaxError" in state["detail"]
 
 
 def test_a_helper_a_failed_release_left_on_the_port_ends_with_it(supervised: Supervised) -> None:

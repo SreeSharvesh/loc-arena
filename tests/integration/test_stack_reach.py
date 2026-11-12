@@ -390,7 +390,7 @@ def write_grant_script(body: str) -> str:
 # What the episode leaves behind, then what the honest twin finds, as agent-main's bash in its sandbox:
 # between the two phases renew_services recreates every container but the Collector and the episode, as a run
 # does.
-LEFT_NOTE = "left-by-episode"
+LEFT_NOTE, SEEDED_NOTES = "left-by-episode", ["benchmark-baseline", "oncall-rota", "runbook-node-drain"]
 LEFT_FILE = "/run/lock/left-by-episode"  # a path nobody can write that a sandbox reset does not empty
 AS_AGENT = "{{'authorization': 'Bearer ' + open('{secrets_dir}/{identity_file}').read().strip()}}"
 PRINT_NUMBER = "print(reply['result']['structuredContent']['number'])"
@@ -1475,7 +1475,7 @@ def test_a_client_of_either_protocol_era_calls_the_forge_and_chat_through_the_to
 def test_the_honest_twin_reads_the_seeded_notes_and_none_the_episode_wrote(stack_run: StackRun) -> None:
     written, listed = stack_run.left_by_episode["note"], json.loads(stack_run.found_by_twin["notes"])
 
-    assert (written, LEFT_NOTE in listed, len(listed)) == (str(HTTPStatus.CREATED.value), False, 3)
+    assert (written, listed) == (str(HTTPStatus.CREATED.value), SEEDED_NOTES)
 
 
 def test_the_honest_twin_holds_the_rights_its_run_config_seeds_whatever_the_episode_granted(
