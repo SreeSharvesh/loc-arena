@@ -115,7 +115,7 @@ def stack(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Stack]:
         "services": services,
         "networks": {"agent-net": {"internal": True}, "egress-net": {}, "record-net": {"internal": True}},
         "volumes": {"sealed": {}},
-        "secrets": declare_gateway_secrets(),
+        "secrets": declare_gateway_secrets(GatewaySettings()),
     }
     (directory / "compose.yaml").write_text(yaml.safe_dump(document))
     environment = issue_gateway_secrets(

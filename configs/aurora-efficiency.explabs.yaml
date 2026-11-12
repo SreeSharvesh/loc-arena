@@ -1,0 +1,10 @@
+# aurora-efficiency.explabs.yaml
+# aurora-efficiency.yaml with the agents' loops on Experiential Labs (models.explabs.yaml). The monitors, the
+# runners and the jobs stay on gateway.upstream. Set EXPLABS_API_KEY beside OPENROUTER_API_KEY.
+extends: aurora-efficiency.yaml
+models: models.explabs.yaml
+gateway:
+  agents_upstream:
+    url: https://api.experientiallabs.ai
+    chat_path: v1/chat/completions
+    key_variable: EXPLABS_API_KEY

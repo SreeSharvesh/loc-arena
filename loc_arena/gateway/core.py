@@ -34,7 +34,7 @@ import httpx2
 import yaml
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError, model_validator
-from sandbox_server.command import API_KEY_VARIABLE
+from sandbox_server.command import API_KEY_VARIABLE, drop_provider_keys
 from sandbox_server.confinement import resolve_inside
 
 from loc_arena.config import ModelSpec, ProviderPreferences, RunConfig
@@ -47,8 +47,8 @@ GATEWAY_TOKEN_FILE_VARIABLE = "LOC_ARENA_GATEWAY_TOKEN_FILE"  # names the file o
 
 
 def environment_without_key() -> dict[str, str]:
-    """This process's environment minus the provider key: for subprocesses that run agent-written code."""
-    return {name: value for name, value in os.environ.items() if name != API_KEY_VARIABLE}
+    """This process's environment minus each provider key: for subprocesses that run agent-written code."""
+    return drop_provider_keys(os.environ)
 
 
 def is_live_provider_configured() -> bool:

@@ -21,6 +21,10 @@ The gateway sends each model call upstream with the request fields the run confi
 its temperature, its `max_tokens` (as `max_completion_tokens`, the field pi sends), its model's provider routing
 and its reasoning, whatever pi sent for them.
 
+With `gateway.agents_upstream` the loops' calls go to that provider, on its chat path and under its own key,
+and carry no provider routing, which is OpenRouter's field. The monitors, the runners and the jobs stay on
+`gateway.upstream`. Both keys are secrets of the gateway container alone.
+
 A loop runs nothing itself: pi's own tools and its codemode are off. So nothing a model writes runs beside the
 other agents' loops, briefs and keys.
 

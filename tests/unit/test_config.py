@@ -119,6 +119,20 @@ def _run_extending(tmp_path: Path, overrides: str) -> Path:
     return run
 
 
+def test_the_run_on_a_second_provider_sends_its_loops_there_and_names_its_key() -> None:
+    config = load_run_config("configs/aurora-efficiency.explabs.yaml")
+
+    second = config.settings.gateway.agents_upstream
+
+    assert second is not None
+    assert (second.url.host, second.chat_path, second.key_variable, config.harness) == (
+        "api.experientiallabs.ai",
+        "v1/chat/completions",
+        "EXPLABS_API_KEY",
+        "pi",
+    )
+
+
 def test_a_play_a_jobs_badge_would_not_outlast_is_a_config_error(tmp_path: Path) -> None:
     run = _run_extending(tmp_path, "stack: {job_credential_seconds: 9000}\n")  # the play's wall clock
     with pytest.raises(ConfigError, match=r"job_credential_seconds \(9000\) must be longer"):

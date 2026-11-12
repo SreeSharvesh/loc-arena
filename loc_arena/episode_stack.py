@@ -112,8 +112,8 @@ ENGINE_DIRECTORY = PurePosixPath("/app")  # the repository, in the engine image
 HOST_FOLDER = "ro,z"
 TOKEN_BYTES = 32  # the entropy of each sandbox token and of each agent's identity on a live service
 NEVER_STARTED = (
-    f"the episode never started: is {API_KEY_VARIABLE} set in .env or the shell, or did a live service fail "
-    "to become healthy? See above and the copied logs in {logs}"
+    f"the episode never started: is {API_KEY_VARIABLE} (and the agents' upstream's key) set in .env or the "
+    "shell, or did a live service fail to become healthy? See above and the copied logs in {logs}"
 )
 GATEWAY_MODE_OPTION = "com.docker.network.bridge.gateway_mode_ipv4"
 ENGINE_TARGET = "engine"  # the Dockerfile's stage of the gateway and the episode
@@ -261,7 +261,7 @@ def render_compose(
             **({BADGES_VOLUME: {}} if managed else {}),
         },
         "secrets": {
-            **model_gateway.declare_gateway_secrets(),
+            **model_gateway.declare_gateway_secrets(config.settings.gateway),
             **{token_secret_name(agent): {"environment": token_variable(agent)} for agent in agent_ids},
             **{identity.secret_name: {"environment": identity.variable} for identity in identities},
             **declare_runner_token_secrets(config),

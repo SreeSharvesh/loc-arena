@@ -36,7 +36,8 @@ from loc_arena.gateway.model_gateway import (
 )
 from loc_arena.logging_.events import AppendOnlyLog, Event
 from loc_arena.logging_.reasoning import read_reasoning
-from loc_arena.settings import GatewaySettings, LocArenaSettings
+from loc_arena.settings import AgentsUpstream, GatewaySettings, LocArenaSettings
+from pydantic import HttpUrl, ValidationError
 
 RECORD = (Path(__file__).parent / "data" / "collector_record.jsonl").read_text(encoding="utf-8")
 HELD = {EPISODE_TOKEN_VARIABLE: "episode-token", HOST_TOKEN_VARIABLE: "host-token"}
@@ -44,6 +45,14 @@ STACK_CONFIG = dataclasses.replace(
     load_run_config("configs/aurora-efficiency.deterministic.yaml"),
     live_services=(),
 )
+
+
+SECOND = AgentsUpstream(
+    url=HttpUrl("https://api.second.example"),
+    chat_path="v1/chat/completions",
+    key_variable="SECOND_API_KEY",
+)
+WITH_SECOND = LocArenaSettings(gateway=GatewaySettings(agents_upstream=SECOND))
 
 
 def render(settings: LocArenaSettings | None = None) -> ComposeDocument:
@@ -136,6 +145,88 @@ def test_an_agents_loop_has_its_own_route_for_the_episode_alone_and_as_many_call
     assert policies["urlRewrite"] == {"path": {"full": "/api/v1/chat/completions"}}
     assert policies["ai"]["overrides"] == {"temperature": 1.0, "provider": {"order": ["deepinfra"]}}
     assert [(limit["type"], limit["maxTokens"]) for limit in policies["localRateLimit"]] == [("requests", 30)]
+
+
+def routes_with_a_loop(settings: LocArenaSettings) -> dict[str, Any]:
+    """The gateway's routes by name, for a play with agent-main's loop."""
+    environment = issue_gateway_secrets(
+        settings,
+        HELD,
+        {"sandbox-agent-main": "sandbox-token"},
+        "attack",
+        badges=True,
+        loops=Loops({"agent-main": 30}, {"temperature": 1.0}),
+    )
+    config = yaml.safe_load(environment[MODEL_GATEWAY_CONFIG_VARIABLE])
+    return {route["name"]: route for route in config["binds"][0]["listeners"][0]["routes"]}
+
+
+def test_with_an_agents_upstream_a_loops_calls_go_there_on_its_path_under_its_key() -> None:
+    route = routes_with_a_loop(WITH_SECOND)["loop-agent-main"]
+
+    sent = (
+        route["backends"][0]["ai"]["hostOverride"],
+        route["backends"][0]["ai"]["provider"]["custom"]["formats"][0]["path"],
+        route["policies"]["urlRewrite"],
+        route["policies"]["backendAuth"],
+    )
+
+    assert sent == (
+        "api.second.example:443",
+        "/v1/chat/completions",
+        {"path": {"full": "/v1/chat/completions"}},
+        {"key": {"file": "/run/secrets/agents_upstream_key"}},
+    )
+
+
+def test_with_an_agents_upstream_the_loop_is_still_called_on_the_path_the_episode_knows() -> None:
+    route = routes_with_a_loop(WITH_SECOND)["loop-agent-main"]
+
+    assert route["matches"] == [{"path": {"exact": "/loop/agent-main/api/v1/chat/completions"}}]
+
+
+@pytest.mark.parametrize("name", ["callers", "runners"])
+def test_with_an_agents_upstream_every_other_route_keeps_the_first_upstream_and_its_key(name: str) -> None:
+    route = routes_with_a_loop(WITH_SECOND)[name]
+
+    sent = (route["backends"][0]["ai"]["hostOverride"], route["policies"]["backendAuth"])
+
+    assert sent == ("openrouter.ai:443", {"key": {"file": "/run/secrets/openrouter_api_key"}})
+
+
+def test_the_agents_upstreams_key_is_a_secret_of_the_gateway_alone_from_its_host_variable() -> None:
+    compose = render(WITH_SECOND)
+
+    holders = [
+        name
+        for name, service in compose["services"].items()
+        if "agents_upstream_key" in service.get("secrets", [])
+    ]
+
+    assert (holders, compose["secrets"]["agents_upstream_key"]) == (
+        ["gateway"],
+        {"environment": "SECOND_API_KEY"},
+    )
+
+
+def test_a_run_with_no_agents_upstream_declares_no_second_key() -> None:
+    compose = render()
+
+    assert "agents_upstream_key" not in compose["secrets"]
+
+
+def test_an_agents_upstream_over_cleartext_is_refused() -> None:
+    with pytest.raises(ValidationError, match="https"):
+        AgentsUpstream(
+            url=HttpUrl("http://api.second.example"),
+            chat_path="v1/chat/completions",
+            key_variable="SECOND_API_KEY",
+        )
+
+
+def test_an_upstream_over_cleartext_is_refused() -> None:
+    with pytest.raises(ValidationError, match="https"):
+        GatewaySettings(upstream=HttpUrl("http://openrouter.ai"))
 
 
 def test_a_collector_record_reads_back_as_the_calls_agentgateway_logged() -> None:

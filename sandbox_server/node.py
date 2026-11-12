@@ -33,7 +33,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from sandbox_server.command import API_KEY_VARIABLE, read_tail
+from sandbox_server.command import drop_provider_keys, read_tail
 from sandbox_server.node_wire import (
     OUTPUT_PATH,
     RESET_PATH,
@@ -322,8 +322,7 @@ def main() -> None:
             "it runs only in its container: it kills the job's whole process group on stop and reset",
         )
     token = NodeSecrets(_secrets_dir=settings.secrets_dir).sandbox_token
-    environment = dict(os.environ)
-    environment.pop(API_KEY_VARIABLE, None)  # the provider key never reaches a job
+    environment = drop_provider_keys(os.environ)  # a provider key never reaches a job
     os.environ.clear()
     os.environ.update(environment)
     process = NodeProcess(settings, lambda line: print(line, flush=True))
