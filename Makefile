@@ -10,7 +10,7 @@ MODE ?= attack
 LOGS ?= logs
 FILE_SIZE_BASE ?= origin/main
 
-.PHONY: run view explore help gates setup public-repo fixture-run
+.PHONY: run view explore help gates images setup public-repo fixture-run
 
 help:
 	@echo "make setup                                # check toolchain, sync deps, validate config"
@@ -21,6 +21,7 @@ help:
 	@echo "make explore [LOGS=logs]                  # build the run explorer over every run in LOGS and open it"
 	@echo "make fixture-run                          # play the smoke run and store it as the tests' run fixture"
 	@echo "make gates                                # ruff + ruff format + ty + pytest"
+	@echo "make images                               # build this checkout's sandbox and engine images, which the Docker tests need"
 	@echo "  (a run needs Docker Engine 28 or later)"
 
 setup:
@@ -44,6 +45,13 @@ fixture-run:
 
 public-repo:
 	@uv run python scripts/make_public.py
+
+# The sandbox and engine images under this checkout's own names (the stack settings' defaults): the Docker tests
+# skip without them. A run builds every image it starts itself.
+STACK_IMAGES = $(shell uv run python -c "from loc_arena.settings import StackSettings as S; print(S().sandbox_image, S().image)")
+
+images:
+	@docker build --target sandbox -t $(word 1,$(STACK_IMAGES)) . && docker build -t $(word 2,$(STACK_IMAGES)) .
 
 gates:
 	@python3 scripts/check_file_size.py --base "$(FILE_SIZE_BASE)"

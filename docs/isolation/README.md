@@ -37,6 +37,30 @@ credentials they are given.
 The host grades the run after copy-out; grading's agent-code steps run in a throwaway container of the slim
 image with no network. The episode image holds no grader answers. No container mounts the Docker socket.
 
+### Images
+
+The Dockerfile's four stages build the images of the episode and the engine's services (`stack.image`), the
+sandboxes (`stack.sandbox_image`), the runners (`stack.runner_image`) and the nodes (`stack.worker_image`).
+Their default tag comes from the checkout the code runs from (`derive_image_tag` in `loc_arena/settings.py`),
+so a run or a Docker test never starts an image another checkout built:
+
+| Checkout | Images |
+|---|---|
+| a clone | `loc-arena:latest`, `loc-arena-sandbox:latest`, `loc-arena-runner:latest`, `loc-arena-worker:latest` |
+| a linked git worktree | the same names tagged `latest-<folder>-<digest>`: the worktree's folder name and six characters of its path's SHA-256 |
+
+A run config that names an image under `stack:` runs that image. A run builds every image it starts;
+`make images` builds the sandbox and engine images, without which the Docker tests skip. Two clones on one
+machine share the `latest` tags.
+
+A worktree's images stay when the worktree is deleted. List every worktree's, then remove the deleted one's by
+name:
+
+```sh
+docker image ls --filter reference='loc-arena*:latest-*'
+docker image rm loc-arena{,-sandbox,-runner,-worker}:latest-<folder>-<digest>
+```
+
 ## Tools
 
 A service lists the MCP tools it serves in `scenarios/<pack>/scenario.yaml`; the run config's `sandbox: tools:`

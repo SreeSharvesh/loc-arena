@@ -554,7 +554,7 @@ def test_a_service_with_tools_runs_its_engine_module_with_the_run_config_and_its
 
     assert forge == {
         "build": {"context": "/repository", "target": "engine"},
-        "image": "loc-arena:latest",
+        "image": stack.image,
         "cap_drop": ["ALL"],
         "command": ["python", "-m", "loc_arena.forge_service", "/app/configs/a-run.yaml", "forge"],
         "volumes": ["/repository/configs:/app/configs:ro,z", "records:/records"],

@@ -6,6 +6,8 @@ it finds into ``RunConfig.settings``; a group the config leaves out takes the de
 
 from __future__ import annotations
 
+import hashlib
+import re
 from pathlib import Path
 from typing import Annotated, Self
 
@@ -24,6 +26,21 @@ from pydantic import (
     StrictBool,
     model_validator,
 )
+
+
+def derive_image_tag(checkout: Path) -> str:
+    """The tag of the images built from ``checkout``: ``latest``, or a linked git worktree's own.
+
+    Git gives a linked worktree a ``.git`` file where a clone has a folder. Its tag carries the folder's name
+    and a digest of its path, so no two worktrees build over, or start, each other's images.
+    """
+    if not (checkout / ".git").is_file():
+        return "latest"
+    name = re.sub(r"[^\w.-]", "-", checkout.name, flags=re.ASCII)[:64]
+    return f"latest-{name}-{hashlib.sha256(str(checkout).encode()).hexdigest()[:6]}"
+
+
+IMAGE_TAG = derive_image_tag(Path(__file__).resolve().parents[1])  # of the checkout this code runs from
 
 
 class SettingsGroup(BaseModel):
@@ -180,21 +197,24 @@ class GatewaySettings(SettingsGroup):
 
 
 class StackSettings(SettingsGroup):
-    """The episode's compose project (``stack:``): its images and its containers' limits."""
+    """The episode's compose project (``stack:``): its images and its containers' limits.
+
+    The four images built from the Dockerfile are tagged ``IMAGE_TAG`` unless the config names them.
+    """
 
     image: str = Field(
-        default="loc-arena:latest",
+        default=f"loc-arena:{IMAGE_TAG}",
         description="The image of the episode: the Dockerfile's `engine` target.",
     )
     sandbox_image: str = Field(
-        default="loc-arena-sandbox:latest",
+        default=f"loc-arena-sandbox:{IMAGE_TAG}",
         description="The image agent code runs in, every agent's sandbox's and the grader's throwaway "
         "container's: the Dockerfile's `sandbox` target, which holds no harness and no scenarios.",
     )
     episode_memory_limit: str = Field(default="4g", description="Memory limit of the episode container.")
     episode_cpus: PositiveFloat = Field(default=2.0, description="CPUs the episode container may use.")
     runner_image: str = Field(
-        default="loc-arena-runner:latest",
+        default=f"loc-arena-runner:{IMAGE_TAG}",
         description="The image of each runner, where the company's agents run with pi: the Dockerfile's "
         "`runner` target. Runners take a sandbox's limits.",
     )
@@ -203,7 +223,7 @@ class StackSettings(SettingsGroup):
         description="Seconds one run of a company agent may take in its runner before it is killed.",
     )
     worker_image: str = Field(
-        default="loc-arena-worker:latest",
+        default=f"loc-arena-worker:{IMAGE_TAG}",
         description="The image of each node of the job service's fleet, where its jobs run as processes: the "
         "Dockerfile's `worker` target. A worker takes a service's limits.",
     )

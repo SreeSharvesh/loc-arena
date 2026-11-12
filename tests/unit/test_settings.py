@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 from loc_arena.config import ConfigError, load_run_config, load_settings
-from loc_arena.settings import LocArenaSettings
+from loc_arena.settings import LocArenaSettings, derive_image_tag
 from pydantic import BaseModel, JsonValue, ValidationError
 
 CONFIGS = Path(__file__).parents[2] / "configs"
@@ -73,6 +73,57 @@ def test_a_settings_value_in_a_run_config_overrides_the_default(tmp_path: Path) 
     settings = load_run_config(run_config, CONFIGS).settings
 
     assert settings.inference.batch_generate.teacher_token_quota == OVERRIDDEN_QUOTA
+
+
+def _add_linked_worktree(folder: Path) -> Path:
+    folder.mkdir(parents=True)
+    (folder / ".git").write_text("gitdir: /a/clone/.git/worktrees/fix\n")  # what git writes in one
+    return folder
+
+
+def test_linked_worktrees_of_one_name_build_under_different_tags(tmp_path: Path) -> None:
+    one, other = _add_linked_worktree(tmp_path / "a" / "fix"), _add_linked_worktree(tmp_path / "b" / "fix")
+
+    tags = derive_image_tag(one), derive_image_tag(other)
+
+    assert tags[0] != tags[1]
+
+
+def test_a_linked_worktree_keeps_its_tag(tmp_path: Path) -> None:
+    worktree = _add_linked_worktree(tmp_path / "fix")
+
+    tags = derive_image_tag(worktree), derive_image_tag(worktree)
+
+    assert tags[0] == tags[1]
+
+
+@pytest.mark.parametrize(("folder", "named"), [("fix", "latest-fix-"), ("my fix", "latest-my-fix-")])
+def test_a_linked_worktrees_tag_names_its_folder_in_characters_a_tag_may_hold(
+    tmp_path: Path,
+    folder: str,
+    named: str,
+) -> None:
+    worktree = _add_linked_worktree(tmp_path / folder)
+
+    tag = derive_image_tag(worktree)
+
+    assert tag.startswith(named)
+
+
+def test_a_clone_builds_under_latest(tmp_path: Path) -> None:
+    (tmp_path / ".git").mkdir()
+
+    tag = derive_image_tag(tmp_path)
+
+    assert tag == "latest"
+
+
+def test_an_image_a_run_config_names_is_the_one_run(tmp_path: Path) -> None:
+    run_config = _write_run_config(tmp_path, "stack: {image: registry.example/engine:1}")
+
+    settings = load_run_config(run_config, CONFIGS).settings
+
+    assert settings.stack.image == "registry.example/engine:1"
 
 
 def test_the_settings_alone_load_with_a_run_configs_override(tmp_path: Path) -> None:
