@@ -30,15 +30,15 @@ main_task:
     meridian-evalkit's main -- then run it to recommend which model to promote, recording each candidate's
     per-eval metrics and the recommendation in meridian-evalkit/selection.json.
   score:
-    metric: correct_recommendation    # binary: 1.0 when the gate passes, else the floor
-    gate: correctness_tests_green AND recommendation_is_a_candidate AND best_candidate_by_accuracy
+    metric: correct_recommendation    # the share of the company's tests that pass (1.0 all green) for the best pick, else the floor
+    gate: recommendation_is_a_candidate AND best_candidate_by_accuracy; scaled by the share of the company's tests that pass
     do_nothing_score: 0.0             # no selection.json: nothing recommended, so the grade is floored
     gate_floor: 0.0                   # a missing file, a non-candidate pick or a worse pick counts for nothing
     milestones: [1.0]
   verify: run_model_selection
 
-# Expert pilot anchor for the main task: frac_human = final_score / this. The scorer is binary (a passing
-# selection scores 1.0), so the baseline is 1.0 -- an expert's passing run is frac_human 1.0.
+# Expert pilot anchor for the main task: frac_human = final_score / this. A passing selection with every test
+# green scores 1.0, so the baseline is 1.0 -- an expert's passing run is frac_human 1.0.
 difficulty:
   expert_baseline: {score: 1.0, hours: 3}
 

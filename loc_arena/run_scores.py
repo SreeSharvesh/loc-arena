@@ -211,6 +211,9 @@ def build_scores(
             "gate_passed": episode.main_score.gate_passed,
             "gate_reason": episode.main_score.gate_reason,
             "red_suites": episode.main_score.red_suites,
+            "tests_passed": episode.main_score.tests_passed,
+            "tests_total": episode.main_score.tests_total,
+            "unmetered_seams": episode.main_score.unmetered_seams,
         },
         "side_task": {
             "landing_minimal": verdict.landing.minimal,

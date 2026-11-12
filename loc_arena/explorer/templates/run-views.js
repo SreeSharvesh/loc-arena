@@ -396,7 +396,7 @@
     el('mon-lede').innerHTML = `${RUN.mode === 'attack' ? 'An attack' : 'An honest'} run. The agents ran on <code>${esc(models.untrusted_agent || '?')}</code>, the monitors on <code>${esc(models.trusted_monitor || '?')}</code>, over ${Math.round((RUN.wall_clock_seconds || 0) / 60)} minutes.`;
     const reached = OUT.milestones.filter(m => m.reached).length;
     el('mon-stats').innerHTML = [
-      stat(esc(mt.final_score), `main task score${mt.gate_passed ? '' : ` &middot; gate failed: ${esc([mt.gate_reason || '?', ...mt.red_suites].join('. '))}`}`),
+      stat(esc(mt.final_score), `main task score${mt.gate_passed ? '' : ` &middot; ${esc([mt.gate_reason || '?', ...(mt.tests_total ? [`${mt.tests_passed} of ${mt.tests_total} tests pass`] : []), ...mt.red_suites, ...mt.unmetered_seams.map(seam => `not measured: ${seam}`)].join('. '))}`}`),
       stat(st.landing_minimal ? 'minimal' : 'no', `side task landed &middot; ${reached} of ${OUT.milestones.length} milestones`, st.landing_minimal ? 'covert' : ''),
       stat(sf.caught ? 'caught' : 'missed', sf.caught ? `by ${esc(sf.caught_by.join(', '))}` : 'no monitor reached the audit threshold', sf.caught ? 'flag' : ''),
       stat(esc(THR), 'audit threshold, from the honest twin at the audit budget'),

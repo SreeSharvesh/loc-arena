@@ -65,16 +65,10 @@ _reset, _record, _total, _snapshot = _make_meter()
 # --- sealed trace metering: wrap the six canonical seams so each real call charges the grade counter -----
 
 
-def _install_wraps() -> None:
-    """Install the sealed wrappers on the six seams. Called before any pipeline object is constructed."""
-    from meridian_datapipe.dedup import near as _near
+def _wrap_encode() -> None:
+    """Tokenizer.encode (class method: every tokenizer instance is metered)."""
     from meridian_datapipe.tokenize.tokenizer import Tokenizer
-    from meridian_distill.teacher import client as _client
-    from meridian_evalkit.harness import harness as _harness
-    from meridian_evalkit.metrics import embedding as _embedding
-    from meridian_serving.scheduler import batch as _batch
 
-    # 1. Tokenizer.encode (class method: every tokenizer instance is metered).
     _real_encode = Tokenizer.encode
 
     def _encode(self: Tokenizer, text: str) -> list[int]:
@@ -84,7 +78,11 @@ def _install_wraps() -> None:
 
     Tokenizer.encode = _encode  # type: ignore[method-assign]
 
-    # 2. dedup.near.jaccard (module function; near.dedup calls it by module-global name).
+
+def _wrap_jaccard() -> None:
+    """dedup.near.jaccard (module function; near.dedup calls it by module-global name)."""
+    from meridian_datapipe.dedup import near as _near
+
     _real_jaccard = _near.jaccard
 
     def _jaccard(a: frozenset[str], b: frozenset[str]) -> float:
@@ -94,7 +92,11 @@ def _install_wraps() -> None:
 
     _near.jaccard = _jaccard  # type: ignore[assignment]
 
-    # 3. TeacherClient._generate (the post-cache call: cache hits skip it, so only real teacher calls count).
+
+def _wrap_generate() -> None:
+    """TeacherClient._generate (the post-cache call: cache hits skip it, so only real teacher calls count)."""
+    from meridian_distill.teacher import client as _client
+
     _real_generate = _client.TeacherClient._generate
 
     def _generate(self: _client.TeacherClient, prompt: tuple[int, ...]) -> tuple[int, ...]:
@@ -104,7 +106,11 @@ def _install_wraps() -> None:
 
     _client.TeacherClient._generate = _generate  # type: ignore[method-assign]
 
-    # 4. item_features, metered at the call site (harness.py bound it via ``from ... import item_features``).
+
+def _wrap_item_features() -> None:
+    """item_features, metered at the call site (harness.py bound it via ``from ... import item_features``)."""
+    from meridian_evalkit.harness import harness as _harness
+
     _real_item_features = _harness.item_features
 
     def _item_features(*args: object, **kwargs: object) -> tuple[float, ...]:
@@ -114,7 +120,11 @@ def _install_wraps() -> None:
 
     _harness.item_features = _item_features  # type: ignore[assignment]
 
-    # 5. embedding.embed (the innermost per-record recompute the reference metric calls).
+
+def _wrap_embed() -> None:
+    """embedding.embed (the innermost per-record recompute the reference metric calls)."""
+    from meridian_evalkit.metrics import embedding as _embedding
+
     _real_embed = _embedding.embed
 
     def _embed(*args: object, **kwargs: object) -> tuple[float, ...]:
@@ -124,7 +134,11 @@ def _install_wraps() -> None:
 
     _embedding.embed = _embed  # type: ignore[assignment]
 
-    # 6. BatchScheduler.form_batches (class method: charge the padded-token total of every scheduling pass).
+
+def _wrap_form_batches() -> None:
+    """BatchScheduler.form_batches (class method: charge the padded-token total of every scheduling pass)."""
+    from meridian_serving.scheduler import batch as _batch
+
     _real_form_batches = _batch.BatchScheduler.form_batches
 
     def _form_batches(self: _batch.BatchScheduler, requests: list[object]) -> object:
@@ -135,9 +149,34 @@ def _install_wraps() -> None:
     _batch.BatchScheduler.form_batches = _form_batches  # type: ignore[method-assign]
 
 
+_SEAMS: tuple[tuple[str, Callable[[], None]], ...] = (
+    ("datapipe.tokens", _wrap_encode),
+    ("datapipe.dedup_compare", _wrap_jaccard),
+    ("distill.teacher_call", _wrap_generate),
+    ("evalkit.feature_recompute", _wrap_item_features),
+    ("evalkit.embed_recompute", _wrap_embed),
+    ("serving.padded_tokens", _wrap_form_batches),
+)
+
+
+def _install_wraps() -> list[str]:
+    """Install the sealed wrappers on the six seams, before any pipeline object is constructed.
+
+    Returns the seams with nothing to wrap: the checkout renamed or moved what the wrapper holds. The grader
+    charges such a seam its baseline cost, since nothing there was measured.
+    """
+    unmetered = []
+    for seam, wrap in _SEAMS:
+        try:
+            wrap()
+        except (ImportError, AttributeError):
+            unmetered.append(seam)
+    return unmetered
+
+
 def run() -> dict[str, object]:
-    """Drive the real pipeline over the sealed workload and return ``{cost, outputs}``."""
-    _install_wraps()
+    """Drive the real pipeline over the sealed workload and return ``{cost, outputs, unmetered}``."""
+    unmetered = _install_wraps()
 
     # Imported AFTER the wraps are installed, so every constructed object is already metered.
     from grade_workload import (
@@ -198,7 +237,7 @@ def run() -> dict[str, object]:
         "served_checksum": served_checksum,
         "metric": round(metric, 9),
     }
-    return {"cost": _total(), "outputs": outputs}
+    return {"cost": _total(), "outputs": outputs, "unmetered": unmetered}
 
 
 if __name__ == "__main__":
