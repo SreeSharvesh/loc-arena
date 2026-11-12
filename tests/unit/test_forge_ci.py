@@ -14,7 +14,7 @@ from meridian_forge.forge import Forge
 from meridian_forge.repositories import commit_branch, identity
 from meridian_forge.store import ForgeStore
 
-CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+CFG = load_run_config("configs/aurora-efficiency.stack-test.yaml")  # its CI takes no time
 REPO = "meridian-serving"  # a platform repo: green CI alone merges it
 CONTROL_PLANE_REPO = "meridian-controlplane"  # a repo the policy says needs review
 
@@ -106,7 +106,7 @@ def test_a_wait_is_the_same_for_the_same_run_repo_and_pull_request_and_within_it
     assert all(2.0 <= wait <= 10.0 for wait in waits) and len(set(waits)) > 1
 
 
-def test_the_deterministic_fixture_merges_a_pull_request_as_soon_as_it_opens(tmp_path: Path) -> None:
+def test_a_forge_whose_ci_takes_no_time_merges_a_pull_request_as_soon_as_it_opens(tmp_path: Path) -> None:
     forge = open_forge(CFG, load_seed(CFG), tmp_path)
     number = open_pull_request(forge, tmp_path)
 

@@ -1,10 +1,10 @@
 """The events monitors and the verifier read, built after play from each service's record of its tool calls.
 
-Each call to a live service with tools is one record (``loc_arena.tool_records``): in process, in
-``records/<service>.jsonl`` of the episode's directory; in a stack run, among the lines of the service's log
-that start with ``{``, copied to ``services/<service>.log`` in the run directory. A record belongs to the
+Each call to a live service with tools is one record (``loc_arena.tool_records``), among the lines of the
+service's log that start with ``{``, copied to ``services/<service>.log`` in the run directory; the workspace
+service's are in ``records/<service>.jsonl`` of the play's directory. A record belongs to the
 episode, or the honest twin, whose play window holds its time. Its events take the episode clock's reading at
-that time and the native turn of its agent running then, else turn 0, and are written after every event of
+that time and the turn of its agent running then, else turn 0, and are written after every event of
 play to the sealed log, and to the mirror log unless sealed-only. A call its service refused (it carries
 ``error.type``) makes a blocked ``action`` with the service's reason. A successful call makes zero or more
 events: chat's ``post``, ``reply`` and ``send_dm`` a ``message``, over MCP or HTTP alike; the forge's
@@ -25,7 +25,7 @@ the job service starts with, is marked ``seed`` on its ``job`` events, and its o
 company: each record of one is placed as an agent's is, its events of the actor role ``company``, in turn 0.
 Each line of ``unattributed_records.jsonl`` in the run directory is a record and the ``reason`` it was not
 placed: not a valid record, outside every phase window, or not an agent of the run; or no covering turn, a
-native agent's record outside all its turns, whose events are built in turn 0. Grading never builds, so
+record of an agent outside all its turns, whose events are built in turn 0. Grading never builds, so
 grading a run again adds nothing.
 """
 
@@ -60,7 +60,7 @@ from meridian_forge.server import MergeResult, OpenedPullRequest
 
 _LOGGER = logging.getLogger(__name__)
 SERVICE_LOGS = "services"  # a stack run's copy of each live service's log, in the run directory
-RECORDS = "records"  # where an in-process run's services record, in each episode's directory
+RECORDS = "records"  # where the services the episode itself serves record, in each play's directory
 UNATTRIBUTED_FILE = "unattributed_records.jsonl"
 COMPANY_ROLE = "company"  # the actor role of a company principal's events: no agent of the run
 _OPENED_PULL_REQUEST = TypeAdapter(OpenedPullRequest)
@@ -320,7 +320,7 @@ def build_events(record: ToolRecord, agent_ids: Sequence[str]) -> list[RecordedE
 
 @dataclass(frozen=True)
 class _Phase:
-    """One played episode: its directory, its snapshot, and the native turns of its trace."""
+    """One played episode: its directory, its snapshot, and the turns of its trace."""
 
     directory: Path
     snapshot: SnapshotFile
@@ -337,7 +337,7 @@ class _Phase:
         return self.snapshot.clock[bisect.bisect_right(walls, wall) - 1].ts
 
     def find_turn(self, agent: str, wall: float) -> int | None:
-        """The turn of ``agent`` running at ``wall``: 0 if it has no native turn, none if none ran."""
+        """The turn of ``agent`` running at ``wall``: 0 if it has no turn at all, none if none ran then."""
         turns = [turn for turn in self.trace.turns if turn.ref.agent_uid == agent] if self.trace else []
         covering = (turn.ref.turn for turn in turns if turn.wall_start <= wall <= turn.wall_end)
         return next(covering, None if turns else 0)
@@ -518,7 +518,7 @@ def build_recorded_events(
     """
     roles = {agent.id: agent.kind for agent in config.agents}
     agent_ids = tuple(roles)
-    # Under harness: pi the agents ran their own sessions: their turns are their model calls.
+    # The agents ran their own sessions: their turns are their model calls.
     sessions = {name: session_events.read_play_calls(run_directory, name, config) for name in traces}
     phases = [
         _Phase(
@@ -538,7 +538,7 @@ def build_recorded_events(
             if service.tools or service.rights
         ),
         *((node, _attribute_workloads(_parse_process_line, sponsors)) for node in list_node_services(config)),
-        *([(WORKSPACE_SERVICE, _parse_workspace_line)] if config.harness == "pi" else []),
+        (WORKSPACE_SERVICE, _parse_workspace_line),
     ]
     unattributed: list[str] = []
     built: dict[Path, list[_Placed]] = {phase.directory: [] for phase in phases}
@@ -635,10 +635,10 @@ def _attribute_workloads(parse: RecordLineParser, sponsors: Mapping[str, str]) -
 
 
 def _read_record_lines(run_directory: Path, service: str, phases: list[_Phase]) -> Iterator[str]:
-    """A service's record lines: those of its log in a stack run, else of each episode's records file."""
+    """A service's record lines: those of its log in the run directory, and of each play's records file."""
     stack_log = run_directory / SERVICE_LOGS / f"{service}.log"
-    in_process = [phase.directory / RECORDS / f"{service}.jsonl" for phase in phases]
-    for path in (path for path in [stack_log, *in_process] if path.exists()):
+    served_by_episode = [phase.directory / RECORDS / f"{service}.jsonl" for phase in phases]
+    for path in (path for path in [stack_log, *served_by_episode] if path.exists()):
         # A line not starting with "{" is one the service logged around its records, such as uvicorn's.
         lines = path.read_text(encoding="utf-8").splitlines()
         yield from (line for line in lines if line.startswith("{"))

@@ -80,7 +80,7 @@ class _MutableClock:
 
 @dataclass(frozen=True)
 class EpisodeResult:
-    """The result of a scripted episode: the main-task score, the sealed verdict, and the artifact paths."""
+    """A graded episode: the main-task score, the sealed verdict, and the artifact paths."""
 
     main_score: MainTaskScore
     verdict: KillChainVerdict

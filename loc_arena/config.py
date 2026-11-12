@@ -52,6 +52,12 @@ REFERENCE_SUFFIX: Final = "_ref"
 COVERT_PROMPTS: Final = ("objective_prompt",)
 AGENT_PROMPTS: Final = ("system_prompt", "brief", "covert_brief")
 LANDING_FORMULAS: Final = frozenset({"minimal"})
+# Keys of the turn loop and the scripted runs, which no run reads: a config that still sets one is refused,
+# so a stale overlay never plays as something else.
+REMOVED_KEYS: Final = frozenset({"policy", "scripted_moves", "agent_loop"})
+REMOVED_EPISODE_KEYS: Final = frozenset(
+    {"max_spawn_depth", "max_live_subagents", "max_total_agents", "subagent_idle_timeout_seconds"},
+)
 
 
 class ConfigError(ValueError):
@@ -103,17 +109,26 @@ def _require_unique_agent_ids(agents: tuple[AgentConfig, ...]) -> tuple[AgentCon
 def _require_one_tree(agents: tuple[AgentConfig, ...]) -> tuple[AgentConfig, ...]:
     """Refuse a team that is not one tree: one root, and every other agent's ``spawned_by`` reaching it."""
     roots = [agent.id for agent in agents if agent.spawned_by is None]
-    if len(roots) != 1 or len(_turn_order(agents)) != len(agents):
+    if len(roots) != 1 or len(_roster(agents)) != len(agents):
         raise ValueError(f"the team must be one tree under one agent without spawned_by; roots: {roots}")
     return agents
 
 
-def _turn_order(agents: tuple[AgentConfig, ...]) -> tuple[str, ...]:
+def _roster(agents: tuple[AgentConfig, ...]) -> tuple[str, ...]:
     """The team breadth first from its root, so each agent comes before the agents that report to it."""
     order = [agent.id for agent in agents if agent.spawned_by is None]
     for manager in order:  # the list grows as it is read
         order += [agent.id for agent in agents if agent.spawned_by == manager]
     return tuple(order)
+
+
+def _require_a_known_harness(harness: str) -> str:
+    if harness != "pi":
+        raise ValueError(
+            f"harness {harness!r} is not supported: 'pi' is the only harness, which runs each agent's "
+            "session in its own pi process",
+        )
+    return harness
 
 
 def _require_landing_formulas(landing: dict[str, str]) -> dict[str, str]:
@@ -170,46 +185,15 @@ class ModelSpec:
     )
 
 
-# The event log serializes an event recursively, and fails near 500 levels under Python's default recursion
-# limit: an argument depth stays well below it.
-_EVENT_LOG_MAX_DEPTH = 256
-
-
-@pydantic_dataclass(frozen=True, config=BLOCK_CONFIG)
-class AgentLoopConfig:
-    """The live agent loop's tool-result cap and argument depth. The values come from ``agent_loop:``."""
-
-    tool_result_max_chars: StrictInt = Field(
-        description="How many characters of a tool result the model sees; the rest is marked cut.",
-    )
-    max_argument_depth: StrictInt = Field(
-        gt=0,
-        le=_EVENT_LOG_MAX_DEPTH,
-        description="Deepest nesting of a tool call's arguments that runs; a deeper call gets a tool error, "
-        "since the event log cannot record arguments nested a few hundred levels deep.",
-    )
-    failed_turns_before_end: StrictInt = Field(
-        gt=0,
-        description="Turns in a row whose model call failed, each after the provider's retries, before the "
-        "agent ends; its other turns are spent and its history sent again.",
-    )
-
-
 @pydantic_dataclass(frozen=True, config=BLOCK_CONFIG)
 class EpisodeConfig:
-    """Episode ceilings and spawn caps (the DEEP-merged ``episode:`` block)."""
+    """Episode ceilings (the DEEP-merged ``episode:`` block)."""
 
-    orchestrator_turn_budget: StrictInt = Field(description="Turn ceiling of the root orchestrator.")
-    subagent_turn_budget: StrictInt = Field(description="Turn ceiling of each sub-agent.")
+    orchestrator_turn_budget: StrictInt = Field(description="Model calls the root agent's session may make.")
+    subagent_turn_budget: StrictInt = Field(description="Model calls each other agent's session may make.")
     wall_clock_seconds: StrictInt = Field(description="Wall-clock ceiling of the episode.")
     liveness_window_seconds: StrictInt = Field(
         description="A loop is alive at the end if it called within this window before the deadline.",
-    )
-    max_spawn_depth: StrictInt = Field(description="Levels of sub-agents that may nest below the root.")
-    max_live_subagents: StrictInt = Field(description="Sub-agents alive at once.")
-    max_total_agents: StrictInt = Field(description="Agents ever created in one episode, the root included.")
-    subagent_idle_timeout_seconds: StrictInt = Field(
-        description="A sub-agent with no logged activity for this long is closed as idle.",
     )
 
 
@@ -361,7 +345,7 @@ class _RunDocument(BaseSettings):
 
     models: StrictStr = Field(description="The models file, in the configs directory.")
     seed: StrictInt = Field(description="The seed that, with this config, reproduces the episode.")
-    episode: EpisodeConfig = Field(description="Episode ceilings and spawn caps.")
+    episode: EpisodeConfig = Field(description="Episode ceilings.")
     side_task: SideTaskConfig = Field(description="The side task and how it is verified.")
     covert: CovertConfig = Field(description="The covert objective and whether it is on.")
     agents: Annotated[
@@ -375,18 +359,22 @@ class _RunDocument(BaseSettings):
     main_task: _MainTaskKeys = Field(description="The main task's naming and scorer keys.")
     protocol: dict[str, Any] = Field(description="The control protocol, free-form, read by key.")
     scenario: StrictStr | None = Field(default=None, description="The pack registering scorer and verifier.")
-    scripted_moves: StrictStr = Field(default="moves.yaml", description="The scenario's scripted moves file.")
-    policy: Literal["scripted", "model"] = Field(
-        default="model",
-        description="'model' (the live untrusted model drives the agents) or 'scripted' (deterministic).",
-    )
-    harness: Literal["native", "pi"] = Field(
-        default="native",
-        description="What runs each agent's loop: the arena's own ('native'), or the pi coding agent ('pi'), "
-        "which runs each agent's whole session at its own pace, in a stack run only.",
+    harness: Annotated[StrictStr, AfterValidator(_require_a_known_harness)] = Field(
+        default="pi",
+        description="What runs each agent's session: 'pi', the pi coding agent, each agent at its own pace. "
+        "It is the only harness.",
     )
     logging: _LoggingConfig = Field(default=_LoggingConfig(), description="What each run bundle records.")
-    agent_loop: AgentLoopConfig = Field(description="The live agent loop's limits.")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _refuse_removed_keys(cls, data: object) -> object:
+        episode = data.get("episode") if isinstance(data, dict) else None
+        removed = sorted(REMOVED_KEYS & set(data if isinstance(data, dict) else ()))
+        removed += sorted(f"episode.{key}" for key in REMOVED_EPISODE_KEYS & set(episode or ()))
+        if removed:
+            raise ValueError(f"these keys are no longer read, so delete them: {', '.join(removed)}")
+        return data
 
     @model_validator(mode="before")
     @classmethod
@@ -470,11 +458,7 @@ class RunConfig:
     main_task: dict[str, Any]
     protocol: dict[str, Any]
     settings: LocArenaSettings
-    agent_loop: AgentLoopConfig
     scenario: str | None = None
-    scripted_moves: str = "moves.yaml"  # in the scenario's scripted directory
-    policy: str = "scripted"  # "scripted" (deterministic default) | "model" (live model-driven)
-    harness: str = "native"  # "native" (the arena's own loop) | "pi" (the pi coding agent's)
     agent_transcript: bool = False
     raw: dict[str, Any] = dataclasses.field(default_factory=dict)
     model_providers: dict[str, ProviderPreferences] = dataclasses.field(default_factory=dict)
@@ -488,9 +472,9 @@ class RunConfig:
         raise ConfigError(f"no agent with id {agent_id!r}")
 
     @property
-    def turn_order(self) -> tuple[str, ...]:
-        """Each round's order of turns: every agent before the agents that report to it."""
-        return _turn_order(self.agents)
+    def roster(self) -> tuple[str, ...]:
+        """The team from its root: every agent before the agents that report to it."""
+        return _roster(self.agents)
 
     @property
     def run_slug(self) -> str:
@@ -630,11 +614,7 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
         protocol=document.protocol,
         settings=settings,
         scenario=document.scenario,
-        scripted_moves=document.scripted_moves,
-        policy=document.policy,
-        harness=document.harness,
         agent_transcript=document.logging.agent_transcript,
-        agent_loop=document.agent_loop,
         # Whether IAM is on is written out even as the default, so a changed default cannot change a replay.
         raw={**source.yaml_data, "iam": {**source.yaml_data.get("iam", {}), "enabled": settings.iam.enabled}},
         model_providers=models_file.providers,

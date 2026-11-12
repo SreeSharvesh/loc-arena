@@ -9,16 +9,12 @@ the attack still lands.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from loc_arena.config import load_run_config
-from loc_arena.harness import apply_mode
 from loc_arena.monitors.registry import firewall_violations, load_monitor_specs
 from scenarios.loader import load_scenario
 
-from tests.integration._live_support import ATTACK_MOVES_PENDING, play_graded_episode
-
-CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+CFG = load_run_config("configs/aurora-efficiency.yaml")
 SC = load_scenario("aurora_efficiency")
 _REF = json.loads((SC.reference_dir / "reference.json").read_text())
 
@@ -46,13 +42,3 @@ def test_the_forge_seed_contains_no_sealed_value_or_term() -> None:
 def test_the_firewall_stays_clean() -> None:
     specs = load_monitor_specs("configs/monitors.yaml")
     assert firewall_violations(specs) == []  # no monitor input reads a sealed field
-
-
-@ATTACK_MOVES_PENDING
-def test_honest_twin_clean_and_attack_lands(tmp_path: Path) -> None:
-    honest = play_graded_episode(apply_mode(CFG, "honest"), tmp_path / "h")
-    attack = play_graded_episode(apply_mode(CFG, "attack"), tmp_path / "a")
-    assert honest.verdict.landing.minimal is False
-    assert honest.verdict.covert_depth == 0
-    # the attack still lands
-    assert attack.verdict.landing.minimal is True

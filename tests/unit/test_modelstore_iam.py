@@ -28,7 +28,7 @@ from meridian_iam.integration import Guard
 from meridian_iam.service import create_app
 from tests.unit._jobsvc_support import serve
 
-CFG = load_run_config("configs/aurora-efficiency.iam.yaml")
+CFG = load_run_config("configs/aurora-efficiency.stack-test.yaml")
 STORE = next(service for service in CFG.live_services if service.name == "modelstore")
 MANIFEST = json.loads(
     (

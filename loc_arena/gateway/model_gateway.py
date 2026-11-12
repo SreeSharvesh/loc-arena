@@ -678,14 +678,12 @@ def start_gateway(run: RunCompose, compose: list[str], settings: LocArenaSetting
     return False
 
 
-def build_monitor_provider(config: RunConfig, compose: list[str], token: str) -> OpenRouterProvider | None:
-    """The provider of a live run's monitors: the gateway, at the port it publishes on this host's loopback.
+def build_monitor_provider(config: RunConfig, compose: list[str], token: str) -> OpenRouterProvider:
+    """The provider of a run's monitors: the gateway, at the port it publishes on this host's loopback.
 
-    A scripted run's monitors make no model call. A live run's call with the host's ``token`` and never fall
-    back to their heuristic for want of a provider: if the gateway's port cannot be found, grading stops.
+    The monitors call with the host's ``token`` and never fall back to their heuristic for want of a
+    provider: if the gateway's port cannot be found, grading stops.
     """
-    if config.policy != "model":
-        return None
     published = subprocess.run(
         [*compose, "port", MODEL_GATEWAY_SERVICE, str(config.settings.gateway.port)],
         capture_output=True,

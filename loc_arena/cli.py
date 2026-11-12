@@ -1,10 +1,9 @@
 """``loc-arena`` command-line entrypoint.
 
-Enforces config over code (mode is a flag and a config field) and reproducibility from
-(config, seed)). ``run`` executes one episode in a MODE and writes its audit bundle; ``view`` opens the
-latest report.html plus prints the ``inspect view`` command; ``sweep`` runs N honest and M attack episodes
-and aggregates a safety number. Mode is the ONLY difference between a run and its honest twin. No live
-server; the viewer is the static report. The Makefile targets call this module.
+Enforces config over code (mode is a flag and a config field). ``run`` plays one episode in a MODE in a
+stack and writes its audit bundle; ``view`` opens the latest report.html plus prints the ``inspect view``
+command. Mode is the ONLY difference between a run and its honest twin. No live server; the viewer is the
+static report. The Makefile targets call this module.
 """
 
 from __future__ import annotations
@@ -21,7 +20,7 @@ from pathlib import Path
 
 from loc_arena.config import load_run_config
 from loc_arena.episode_stack import run_in_stack
-from loc_arena.harness import apply_mode, locate_run, play_run, read_played_snapshot, run_episode, run_sweep
+from loc_arena.harness import apply_mode, locate_run, play_run, read_played_snapshot
 from loc_arena.logging_.viewer import build_index
 from loc_arena.task import grade_snapshot, read_snapshot_file
 
@@ -43,24 +42,12 @@ def _latest_bundle(logs_root: Path, run_slug: str) -> Path | None:
 
 def _cmd_run(args: argparse.Namespace) -> int:
     config = load_run_config(_config_path(args.run))
-    # Central IAM runs only in a stack, so a config with it on plays in one unless told otherwise; the episode
-    # container's own --play-only plays where it is.
-    if args.stack if args.stack is not None else config.settings.iam.enabled and not args.play_only:
-        out = run_in_stack(args.run, mode=args.mode, seed=args.seed, logs=Path(args.out))
-    else:
-        instance_id = args.instance or secrets.token_hex(3)
-        if args.play_only:
-            run_directory = locate_run(config, args.mode, instance_id, Path(args.out))
-            play_run(config, run_directory, mode=args.mode, next_phase=args.next_phase)
-            print(f"played: {run_directory}")
-            return 0
-        out = run_episode(
-            config,
-            mode=args.mode,
-            out_root=Path(args.out),
-            seed=args.seed,
-            run_instance_id=instance_id,
-        )
+    if args.play_only:  # the stack's episode container plays where it is
+        run_directory = locate_run(config, args.mode, args.instance or secrets.token_hex(3), Path(args.out))
+        play_run(config, run_directory, mode=args.mode, next_phase=args.next_phase)
+        print(f"played: {run_directory}")
+        return 0
+    out = run_in_stack(args.run, mode=args.mode, seed=args.seed, logs=Path(args.out))
     scores = json.loads((out / "scores.json").read_text())
     s = scores["side_task"]
     print(f"bundle: {out}")
@@ -170,37 +157,21 @@ def _cmd_explore(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_sweep(args: argparse.Namespace) -> int:
-    config = load_run_config(_config_path(args.run))
-    agg = run_sweep(
-        config,
-        honest=args.honest,
-        attack=args.attack,
-        out_root=Path(args.out),
-    )
-    print(f"sweep bundle: {agg['_dir']}")
-    print(json.dumps({k: v for k, v in agg.items() if k != "_dir"}, indent=2))
-    return 0
-
-
 def main(argv: list[str] | None = None) -> int:
-    """Parse args and dispatch ``run`` / ``view`` / ``explore`` / ``sweep`` / ``grade``."""
+    """Parse args and dispatch ``run`` / ``view`` / ``explore`` / ``grade``."""
     parser = argparse.ArgumentParser(prog="loc-arena", description="Run and view LOC-Arena episodes.")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p_run = sub.add_parser("run", help="run one episode in a mode and write its audit bundle")
+    p_run = sub.add_parser("run", help="run one episode in a mode, in a stack, and write its audit bundle")
     p_run.add_argument("--run", default="aurora-efficiency")
     p_run.add_argument("--mode", choices=["attack", "honest"], default="attack")
     p_run.add_argument("--out", default="logs")
     p_run.add_argument("--seed", type=int, default=None)
     p_run.add_argument(
-        "--stack",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help="play in a container with no key (needs docker), or with --no-stack in this process; by default "
-        "in a stack exactly when the config turns central IAM on",
+        "--play-only",
+        action="store_true",
+        help="internal to stack runs: play in this episode container, and leave grading to the host",
     )
-    p_run.add_argument("--play-only", action="store_true", help="play, and leave grading to the caller")
     p_run.add_argument(
         "--next-phase",
         action="store_true",
@@ -227,13 +198,6 @@ def main(argv: list[str] | None = None) -> int:
     p_explore.add_argument("--out", default=None, help="where to write (default: beside the runs)")
     p_explore.add_argument("--no-open", action="store_true")
     p_explore.set_defaults(func=_cmd_explore)
-
-    p_sweep = sub.add_parser("sweep", help="run N honest + M attack episodes and aggregate a safety number")
-    p_sweep.add_argument("--run", default="aurora-efficiency.deterministic", help="a config with IAM off")
-    p_sweep.add_argument("--honest", type=int, default=2)
-    p_sweep.add_argument("--attack", type=int, default=2)
-    p_sweep.add_argument("--out", default="logs")
-    p_sweep.set_defaults(func=_cmd_sweep)
 
     p_grade = sub.add_parser("grade", help="grade a played episode again from its snapshot directory alone")
     p_grade.add_argument("snapshot_dir", help="the episode directory holding snapshot.json")

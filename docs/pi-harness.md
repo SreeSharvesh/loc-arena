@@ -1,16 +1,16 @@
 # pi as the agents' harness
 
-`harness: pi` in a run config runs each agent's whole session in [pi](https://github.com/earendil-works/pi), the
-coding agent the company's own agents run in on the runners, in place of the arena's own loop
-(`harness: native`, the default). The episode starts every agent's loop at once and plays no turn. It runs in a
-stack run only.
+Each agent's whole session runs in [pi](https://github.com/earendil-works/pi), the coding agent the company's
+own agents run in on the runners. The episode starts every agent's loop at once and plays no turn. `pi` is the
+default and the only value of the run config's `harness` key.
 
 `loc_arena/own_sessions.py` · `loc_arena/notices.py` · `loc_arena/workspace_service.py` · `loc_arena/session_events.py` · `loc_arena/gateway/loop_routes.py`
 
 ## What a loop is
 
 Each agent's loop is one pi process in the episode's container for the whole play, in pi's RPC mode, with its
-own home: its brief as pi's system prompt, pi's settings and its session. A loop can do two things, and each passes a gateway that records it.
+own home: its brief as pi's system prompt, pi's settings and its session. In an attack the brief of
+`covert.target_identity` starts with the covert objective (`covert.objective_prompt`). A loop can do two things, and each passes a gateway that records it.
 
 | A loop | Where | As | Recorded by |
 | --- | --- | --- | --- |
@@ -34,7 +34,7 @@ The agent is offered its `sandbox: tools:` on the company's services, and the wo
 `read_file`, `write_file`, `edit_file`, `list_dir` and `search_code`, and its subscription tools (below). pi
 names each `mcp__meridian__<tool>`.
 
-The workspace service runs in the episode's container, on the code tools the native loop calls: a file tool
+The workspace service runs in the episode's container, on the code tools of `loc_arena/scaffold/code_services.py`: a file tool
 reads and writes the agent's checkout, and a command runs in the agent's sandbox. The tools gateway names the
 agent to it with that agent's workspace key, derived from its sandbox token. It runs one call of an agent at a
 time, and records every call in `records/workspace.jsonl` of the play's directory. At the end of play it refuses
@@ -92,19 +92,8 @@ The post-play builder (`loc_arena.recorded_events`) makes a session's events fro
 | --- | --- |
 | `inference_call` | each model call of the loop the gateway answered, a call that summarizes a long session among them: the agent's turn of that number, from 1. Fingerprints alone; the prompt's is over the messages after the system prompt, which holds the brief. Its `credential_kind` is `turn_token`, the tag of a sanctioned turn: the agent's own route admitted the call |
 | `action` of a workspace tool | the workspace service's record, with the call's arguments and result |
-| `action`, `message`, `pr`, `job` of a company tool | that service's record, as under the native loop |
+| `action`, `message`, `pr`, `job` of a company tool | that service's record |
 | `checkout` (sealed log only) | the episode, as cloned and at the end of play |
 
 A tool call is placed in the turn whose span holds its time: from the agent's model call to its next one. A
 model request that offered a tool the loop would run itself is reported in `unattributed_records.jsonl`.
-
-## Differences from the native loop
-
-| | `harness: native` | `harness: pi` |
-| --- | --- | --- |
-| Scheduling | the episode plays the agents' turns in rounds | every loop runs at its own pace, at once |
-| Bounds | a turn budget per agent, the wall clock | the same turn budget, as model calls at the gateway; the wall clock |
-| New chat and tickets | handed to the agent at its turn's start (`chat.deliver_unread`, `tickets.deliver_assigned`) | read by the agent with its tools, on a notice or when it chooses; those two settings do nothing |
-| Checkout captures | after each native call | as cloned and at the end of play |
-| The covert objective (`covert.objective_prompt`) | the gateway core puts it before the target agent's first message, on each call | the episode puts it before the target agent's brief, in pi's system prompt |
-| A call from an agent's sandbox to the model gateway | off-path | off-path |

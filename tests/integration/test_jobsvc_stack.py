@@ -37,15 +37,16 @@ from loc_arena.episode_stack import (
 )
 from loc_arena.gateway.core import API_KEY_VARIABLE
 from loc_arena.gateway.model_gateway import MODEL_GATEWAY_SERVICE, GatewayCall, copy_call_log
-from loc_arena.logging_.events import AppendOnlyLog, Event, read_events
+from loc_arena.logging_.events import read_events
 from loc_arena.recorded_events import SERVICE_LOGS, build_recorded_events
 from loc_arena.stack_play import deploy_company_server
-from loc_arena.task import SNAPSHOT_FILE, ClockReading, SnapshotFile
 from loc_arena.tools_gateway import MCP_PATH, TOOLS_GATEWAY_SERVICE
 
-from tests.integration._docker_support import image_exists
+from tests.integration._docker_support import image_exists, serve_workspace
+from tests.integration._mcp_probe import CALL_TOOL
+from tests.integration._records_support import record_phase_around
 
-RUN = "aurora-efficiency.iam"
+RUN = "aurora-efficiency.stack-test"
 CONFIG = load_run_config(REPOSITORY / "configs" / f"{RUN}.yaml")
 OWNER, OTHER = "serving-agent", "datapipe-agent"  # the other reads the job service and submits nothing
 SANDBOX = sandbox_service(OWNER)
@@ -127,15 +128,15 @@ import sys, time
 from meridian_iam.core import Iam
 print(Iam(sys.argv[1], lambda: int(time.time())).issue_credential("releng", ["jobsvc", "iam:jobsvc"]))
 """
-# Run in the IAM container (the engine image): a tool call with the MCP client the agents use, as the holder
-# of the token on stdin. A token never goes in an argument, where any process on the host could read it.
-TOOL_CALL = """
-import json, sys
-from loc_arena.scaffold.mcp_client import McpTools, over_http
+# Run in the IAM container (the engine image): a tool call over MCP, as the holder of the token on stdin. A
+# token never goes in an argument, where any process on the host could read it.
+TOOL_CALL = (
+    CALL_TOOL
+    + """
 url, tool, arguments = sys.argv[1:4]
-token = sys.stdin.read()
-print(json.dumps(McpTools(lambda: over_http(url, token, 30)).call(tool, json.loads(arguments))))
+print(json.dumps(call_tool(url, sys.stdin.read(), tool, json.loads(arguments))))
 """
+)
 
 
 @dataclass
@@ -238,6 +239,7 @@ def stack(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Stack]:
         running.run("build", "jobsvc", "node-1", SANDBOX)
         # With IAM and the nodes, and the forge, whose main each node checks out for a job.
         running.run("up", "--detach", "--wait", "--no-build", "jobsvc", "forge", SANDBOX)
+        serve_workspace(running.compose, {**os.environ, **running.play}, CONFIG, RUN)  # for the tools gateway
         yield running
     finally:
         running.run("down", "--volumes", "--remove-orphans")
@@ -553,23 +555,3 @@ def test_the_honest_twin_starts_with_the_seed_alone_and_none_of_the_attacks_jobs
     }
     assert all(name != "left" for _, name, _ in twin_jobs)  # the attack's job is gone
     assert set(stack.run("ps", "--quiet", *FLEET).split()).isdisjoint(containers)  # no node of the attack's
-
-
-def record_phase_around(phase: Path, start: float, end: float) -> Path:
-    """A played episode's directory whose play window runs from ``start`` to ``end``, with empty logs."""
-    phase.mkdir(parents=True)
-    for log in ("events.sealed.jsonl", "events.mirror.jsonl"):
-        AppendOnlyLog(phase / log, "episode-1").append(
-            Event("episode-1", 0, 100.0, "system", "sealed", "tick"),
-        )
-    snapshot = SnapshotFile(
-        sealed_path=Path("events.sealed.jsonl"),
-        mirror_path=Path("events.mirror.jsonl"),
-        checkout=Path("checkout"),
-        deadline_ts=10_000.0,
-        mode="attack",
-        clock=(ClockReading(wall=start, ts=100.0),),
-        finished_at=end,
-    )
-    (phase / SNAPSHOT_FILE).write_text(snapshot.model_dump_json())
-    return phase

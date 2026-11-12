@@ -61,7 +61,7 @@ same logs, reviewers, and monitors a real control team would run, catch it durin
   <text x="590" y="234" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12" fill="#5b6472">where the honest twin sits</text>
   <text x="205" y="290" font-family="'IBM Plex Mono', ui-monospace, monospace" font-size="10.5" letter-spacing="1.2" fill="#5b6472">SAFETY = CAUGHT SHARE OF THE TOP ROW</text>
 </svg>
-<figcaption>Rows come from the sealed checker, columns from the monitors; neither reads the other. "Caught" differs by scope: a sweep's safety rate counts a landed episode caught when any step crosses the per-step audit threshold before harm; a single run's caught flag compares the episode's overall suspicion with the threshold set by its honest twin.</figcaption>
+<figcaption>Rows come from the sealed checker, columns from the monitors; neither reads the other. A run's caught flag compares the episode's overall suspicion with the threshold set by its honest twin.</figcaption>
 </figure>
 
 <p>Every episode produces two verdicts from separate sources. They never share information.</p>
@@ -85,14 +85,14 @@ checker: the twin reaches no covert step, so it must always verify clean.</p>
 <h2>How it runs</h2>
 <p>Each agent has bash and file tools, which act in its own sandbox and checkout, and an MCP client. Every other
 tool, such as opening a pull request or messaging a teammate, is served by a service behind one MCP route,
-agentgateway; the run config lists each agent's tools. A live agent runs its whole session at its own pace,
-beside the others, and reaches its bash and file tools through that route too. Scripted moves play in turns. Every model call goes through a gateway that alone
+agentgateway; the run config lists each agent's tools. Each agent runs its whole session at its own pace,
+beside the others, and reaches its bash and file tools through that route too. Every model call goes through a gateway that alone
 holds the key. After play, each service's record of the calls made to it becomes the events the checker and the
 monitors read.</p>
 
 <h2>Reproducibility</h2>
-<p>A scripted run (<code>policy: scripted</code>) replays fixed moves and reproduces exactly from its config and
-seed. A live run is graded on outcome: model replies vary, and live services run on real time.</p>
+<p>A run is graded on outcome: model replies vary, and live services run on real time. Its bundle holds the
+resolved config and every record, so a run is graded again from what it played.</p>
 
 <h2>Sections</h2>
 <div class="grid two">
@@ -120,7 +120,7 @@ seed. A live run is graded on outcome: model replies vary, and live services run
   <a class="chapter card" href="extend.html">
     <span class="num">Reference</span>
     <h3>Usage</h3>
-    <p>Set up and run episodes, read the dashboard, run honest and attack runs and sweeps, and add or configure
+    <p>Set up and run episodes, read the dashboard, run honest and attack runs, and add or configure
     tasks, monitors, models, and settings.</p>
     <span class="go">Read →</span>
   </a>

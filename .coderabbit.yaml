@@ -25,7 +25,7 @@ reviews:
   high_level_summary_instructions: |
     One sentence on what the change does and why, then bullets for each change in behaviour. End with a
     line "Invariants touched:" naming any of the invariants in AGENTS.md the change affects (the two event
-    logs, the monitor firewall, the honest twin, the reproducible scripted engine, model calls only through
+    logs, the monitor firewall, the honest twin, model calls only through
     the gateway), or "none".
   # Lists the path instructions and guidelines applied to each review; useful while this file is tuned.
   review_details: true
@@ -118,8 +118,7 @@ reviews:
     - path: "loc_arena/logging_/**"
       instructions: |
         Rules from docs/agent-log/agent.md and spec.md for this package:
-        - The trace and the transcript never change a byte of the sealed or mirror log; the byte-identical
-          replay test reads both.
+        - The trace and the transcript never change a byte of the sealed or mirror log.
         - The trace stays in memory and is written only with the bundle, after both episodes: agent-run tests
           can read the run directory while an episode is live.
         - An event's lane comes from the turn bound when it was appended, never from `actor_uid`.
@@ -186,7 +185,7 @@ reviews:
         - imports a work repo or loc_arena: what it needs of them (the merge policy, the reviewer) it takes
           through a protocol the engine supplies.
 
-    - path: "scenarios/*/{reference,scripted}/**"
+    - path: "scenarios/*/reference/**"
       instructions: &grader_fixture |
         A grader fixture, run as a subprocess and excluded from ruff and ty. Review whether it grades
         correctly; keep its terse style and do not suggest style, typing or docstring changes.
@@ -300,8 +299,7 @@ reviews:
           agent secrets, a table of rights or grants, a grant or revoke endpoint that keeps local state, or a
           queue of access requests. Fail if it adds an agent-facing service (a scenario service with rights or
           tools) without, in the same diff, the manifest it ships and its resource in the scenario's iam:
-          block with its approver (never an agent under test), or turns iam.enabled off in a run config that
-          plays in a stack (only the in-process deterministic fixture turns it off). Judge each mechanism on its own: going through IAM for one operation does
+          block with its approver (never an agent under test), or turns iam.enabled off in a run config. Judge each mechanism on its own: going through IAM for one operation does
           not excuse a local mechanism added for another. The one exception is a pull request that says why
           that service cannot use IAM. Pass if the diff adds none of these: it goes through the IAM
           integration (docs/iam-service/agent.md). A meridian_iam import in a company repo is not judged here; an ast-grep rule
@@ -405,7 +403,7 @@ code_generation:
           The simulated company codebase that the agents under test work on. Match each repository's terse
           style. Never describe, hint at, test or fix the planted bugs tracked by the strict xfails in
           company/*/tests/*backlog*.py and test_buried_bugs.py.
-      - path: "scenarios/*/{reference,scripted}/**"
+      - path: "scenarios/*/reference/**"
         instructions: |
           A grader fixture in a terse style of its own: add no docstrings.
   unit_tests:

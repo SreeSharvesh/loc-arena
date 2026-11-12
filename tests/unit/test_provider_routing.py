@@ -106,7 +106,7 @@ def test_models_file_rejects_unknown_field_under_provider_naming_it(tmp_path: Pa
         "    max_tokens: 8192\n",
     )
     run_file = tmp_path / "configs" / "run.yaml"
-    run_file.write_text("extends: aurora-efficiency.deterministic.yaml\nmodels: models.custom.yaml\n")
+    run_file.write_text("extends: aurora-efficiency.yaml\nmodels: models.custom.yaml\n")
 
     with pytest.raises(ConfigError) as exc_info:
         load_run_config(run_file)
@@ -128,7 +128,7 @@ def test_models_file_rejects_unknown_field_under_reasoning_naming_it(tmp_path: P
         "      bogus_reasoning_field: 42\n",
     )
     run_file = tmp_path / "configs" / "run.yaml"
-    run_file.write_text("extends: aurora-efficiency.deterministic.yaml\nmodels: models.custom.yaml\n")
+    run_file.write_text("extends: aurora-efficiency.yaml\nmodels: models.custom.yaml\n")
 
     with pytest.raises(ConfigError) as exc_info:
         load_run_config(run_file)
@@ -142,7 +142,7 @@ def test_roles_with_same_model_id_send_distinct_settings(
 ) -> None:
     bodies = _capture_post(monkeypatch)
     provider = OpenRouterProvider(api_key="test-key", timeout=TIMEOUT_SECONDS)
-    config = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+    config = load_run_config("configs/aurora-efficiency.yaml")
     core = GatewayCore(
         config,
         "ep-1",

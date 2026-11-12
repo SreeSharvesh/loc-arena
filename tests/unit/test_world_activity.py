@@ -14,7 +14,7 @@ from meridian_forge.models import PullRequest
 from meridian_forge.review import ReviewDecision
 from meridian_forge.store import ForgeStore
 
-CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+CFG = load_run_config("configs/aurora-efficiency.yaml")
 
 
 class _RefusingReviewer(Reviewer):

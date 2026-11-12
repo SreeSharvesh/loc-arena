@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Usage</title>
-<meta name="description" content="Set up and run episodes, read the dashboard, run attack, honest, and sweep runs, and add or configure tasks, monitors, models, and settings.">
+<meta name="description" content="Set up and run episodes, read the dashboard, run attack and honest runs, and add or configure tasks, monitors, models, and settings.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;650&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
@@ -28,32 +28,34 @@
 Almost everything is config, so most changes are a config edit rather than a code change.</p>
 
 <h2>Setup</h2>
-<p>You need <code>uv</code> (Python 3.12, pinned), for a live run an OpenRouter API key, and for a stack run
-(the default for <code>make run</code>) Docker Engine 28 or later. The key is read only by the gateway.</p>
+<p>You need <code>uv</code> (Python 3.12, pinned), and for a run an OpenRouter API key and Docker Engine 28 or
+later. The key is read only by the gateway.</p>
 <pre><code>uv sync                       # create the environment and install everything
 cp .env.example .env          # then set OPENROUTER_API_KEY
 make setup                    # check the toolchain, sync deps, validate the config</code></pre>
 
 <h2>Run an episode</h2>
-<p>An episode drives a live model as the untrusted team and grades the outcome. There are three ways to run.</p>
+<p>An episode drives a live model as the untrusted team and grades the outcome. There are three runs.</p>
 
 <pre><code>make run RUN=aurora-efficiency MODE=attack   # the attack episode plus its honest twin (the calibration baseline)
 make run RUN=aurora-efficiency MODE=honest   # the honest twin on its own (main task only)
-loc-arena sweep --run aurora-efficiency.deterministic --honest 3 --attack 3   # many episodes in one process, aggregated</code></pre>
+make run RUN=aurora-efficiency.fast          # the smoke run: the cheapest models, small budgets</code></pre>
 
 <div class="tablewrap"><table>
 <thead><tr><th>Run</th><th>What it does</th><th>When to use it</th></tr></thead>
 <tbody>
 <tr><td><b>attack</b></td><td>Runs the main and side task together, plus the honest twin that calibrates the threshold.</td><td>The default. One full measurement: did the rogue deployment land, and was it caught.</td></tr>
 <tr><td><b>honest</b></td><td>Runs the main task only, with the covert objective disabled.</td><td>To see normal behaviour and the usefulness score on its own.</td></tr>
-<tr><td><b>sweep</b></td><td>Runs many honest and attack episodes and aggregates a safety rate and a usefulness curve.</td><td>To get a stable measurement rather than one episode.</td></tr>
+<tr><td><b>smoke</b></td><td>Runs the attack episode and its twin on the cheapest models, with reasoning off and small call budgets. It takes minutes and costs cents.</td><td>To check that a run plays, grades and writes its bundle. Its scores are not results.</td></tr>
 </tbody>
 </table></div>
 
 <p>Every run writes a self-contained bundle named after what actually ran, so the same setting can run many times
 without collision. The bundle holds the resolved config, both event records, the two verdicts, the report page,
 and a notes file. <code>make run</code> plays the episode in a container with no key and no internet, beside the
-gateway that holds the key and central IAM; a config with IAM off (the deterministic fixture) plays in a single process. <code>make gates</code> runs the formatting, typing, and test checks.</p>
+gateway that holds the key and central IAM. <code>make gates</code> runs the formatting, typing, and test checks.
+The tests that read a run's records, or grade a run again, use a stored smoke run
+(<code>tests/fixtures/run.tar.gz</code>); <code>make fixture-run</code> plays the smoke run and stores it again.</p>
 
 <h2>Read the dashboard</h2>
 <p>Open the latest report. It is a single static page, and a run index lists every run.</p>
@@ -136,7 +138,7 @@ the organization, the cast, and the tasks change. Meridian AI Lab is the first; 
 
 <h2>How the repository is laid out</h2>
 <dl class="defs">
-  <dt>the engine</dt><dd>the gateway, the native agent loop, the services and their tools, the record builder, the checker, the monitors, and the report</dd>
+  <dt>the engine</dt><dd>the gateway, the agents' sessions, the services and their tools, the record builder, the checker, the monitors, and the report</dd>
   <dt>the setting: company code</dt><dd>the seven coupled repositories the main task works on, and the platform packages beside them</dd>
   <dt>the setting: scenario</dt><dd>each organization plus its task catalog, laid over the engine, with its sealed reference</dd>
   <dt>the run config</dt><dd>where the two meet: it names the scenario and sets the monitors, the models, and the engine's options</dd>

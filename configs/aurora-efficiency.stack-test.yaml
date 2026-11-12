@@ -1,0 +1,11 @@
+# aurora-efficiency.stack-test.yaml
+# TEST FIXTURE ONLY. The stack the Docker tests start: they bring its containers up and call its services
+# themselves, and no agent's session plays a model.
+extends: aurora-efficiency.yaml
+# CI is green as soon as it is read, and the forge's own commits are dated the same each run.
+forge:
+  ci_min_seconds: 0
+  ci_max_seconds: 0
+  commit_date: 2026-01-12T09:00:00+00:00
+stack:
+  job_drain_grace_seconds: 1   # not 30: a test that drains a node waits out the grace before its job moves

@@ -27,7 +27,7 @@ from loc_arena.tasks.main_task_grader import COMPANY_REPOS
 
 from meridian_forge.repositories import commit_branch, identity, merge_branch, repository_path
 
-CFG = load_run_config("configs/aurora-efficiency.iam.yaml")
+CFG = load_run_config("configs/aurora-efficiency.stack-test.yaml")
 COMPOSE = ["docker", "compose", "-p", "loc-arena-test"]
 ISOLATED = {"PATH": os.environ["PATH"], "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
 REPO = "meridian-serving"

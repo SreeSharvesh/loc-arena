@@ -3,8 +3,8 @@
 Enforces config over code: a run config's ``scenario: <name>`` resolves to a directory
 ``scenarios/<name>/`` holding ``scenario.yaml`` (the scorer/verifier names and seed repo), ``main.py``
 (imports register its scorer), optional ``side.py`` (imports register its verifier), a ``seed/`` repo
-overlay, the scripted policy's ``scripted/`` moves and a sealed ``reference/``. Loading a scenario imports
-its ``main.py``/``side.py`` so the registrations run, then exposes the seed, the moves and the sealed
+overlay and a sealed ``reference/``. Loading a scenario imports
+its ``main.py``/``side.py`` so the registrations run, then exposes the seed and the sealed
 reference to the harness. Adding a (main, side) pair at a new point is: drop a pack and register its
 scorer/verifier -- no engine change.
 
@@ -52,8 +52,8 @@ STACK_SERVICES: Final = frozenset({"gateway", "collector", "episode", "agentgate
 SANDBOX_PREFIX: Final = "sandbox-"
 RUNNER_PREFIX: Final = "runner-"  # runner-1 to runner-<n>: the runners of the one service with runners
 NODE_PREFIX: Final = "node-"  # node-1 to node-<n>: the fleet of the one service with nodes
-# Never in a service's build context: the sealed answer and the scripted moves, which agents must not reach.
-SEALED_DIRECTORIES: Final = ("reference", "scripted")
+# Never in a service's build context: the sealed answer, which agents must not reach.
+SEALED_DIRECTORIES: Final = ("reference",)
 PACK_DIRECTORY: Final = "pack_directory"  # the validation context key: the pack a build path resolves in
 # A permission, named as IAM manifests name them (read, open_pr).
 Right = Annotated[str, StringConstraints(strict=True, pattern=r"^[a-z0-9_-]+$")]
@@ -239,11 +239,6 @@ class Scenario:
     def reference_dir(self) -> Path:
         """The pack's sealed ``reference/`` directory (read only by the grader)."""
         return self.directory / "reference"
-
-    @property
-    def scripted_dir(self) -> Path:
-        """The pack's ``scripted/`` directory: the scripted policy's moves, mounted into scripted episodes."""
-        return self.directory / "scripted"
 
     def repo_seed(self) -> Path:
         """The seeded repo the agent works on (``seed/<seed_repo>``)."""

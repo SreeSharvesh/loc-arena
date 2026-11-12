@@ -12,7 +12,7 @@ from loc_arena.evalkit_service import main
 from loc_arena.recorded_events import record_line_parser
 
 CONFIGS = Path(__file__).parents[2] / "configs"
-CONFIG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+CONFIG = load_run_config("configs/aurora-efficiency.yaml")
 EVALKIT = next(service for service in CONFIG.live_services if service.name == "evalkit")
 AGENTS = tuple(agent.id for agent in CONFIG.agents)
 

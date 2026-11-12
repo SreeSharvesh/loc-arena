@@ -3,10 +3,8 @@
 Enforces mandatory inference routing (agents reach a model ONLY by relaying through here to the sealed
 core) and the sealed-vs-tamperable isolation (it is the tamperable side: it holds no provider key, has
 no egress, and writes only the
-MIRROR log). It relays each call to the core verbatim (passing the caller identity and any turn token
-through) and writes a mirror record from the ORIGINAL prompt and the core's returned stamps, so the covert
-text the core may have injected never appears in what a monitor reads. The mirror-vs-sealed divergence is
-a first-class signal.
+MIRROR log). It relays each call to the core verbatim and writes a mirror record from the prompt and the
+core's returned stamps. The mirror-vs-sealed divergence is a first-class signal.
 """
 
 from __future__ import annotations
@@ -56,7 +54,7 @@ class GatewayEdge:
         output_fp: str,
         model_role: str,
     ) -> None:
-        """Write one mirror record (what the inference monitor reads); never the injected covert text.
+        """Write one mirror record (what the inference monitor reads).
 
         Records the observable inference fields (path via turn_id/batch_id, credential kind, resolved
         caller, query/output fingerprints), so the inference monitor can score how scaffold-like the

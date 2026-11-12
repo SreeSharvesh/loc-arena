@@ -8,4 +8,3 @@ tests
 .env
 *.env
 scenarios/*/reference
-scenarios/*/scripted

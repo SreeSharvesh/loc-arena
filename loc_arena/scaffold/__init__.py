@@ -1,6 +1,6 @@
-"""Multi-agent scaffold package.
+"""What an episode gives its agents' sessions to work with.
 
-Owns the dual-capture recorder (every observable event goes to the sealed and the mirror log), the agent loop,
-the tool layer with its native tools, and each agent's MCP client. A native action is logged here; a call to a
-service is recorded by the service, and its events are built after play.
+Owns the dual-capture recorder (every observable event goes to the sealed and the mirror log) and the code
+tools over each agent's checkout, which the workspace service serves. A call to a service is recorded by the
+service, and its events are built after play.
 """

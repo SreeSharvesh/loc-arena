@@ -21,8 +21,7 @@ The end state, which every step below moves towards and none works against:
 - **Each agent works in its own clone**, pushes branches, opens pull requests and merges; a teammate's change
   reaches it once merged and pulled. What is merged on `main` is what is graded and, later, deployed.
 - **CI runs each repo's own checks** (its `.meridian-ci.yaml`) on a pull request's branch, in a runner container.
-- **Everyone else acts through the same services.** Coworkers' activity is written in YAML, as the scripted
-  agents' is in `moves.yaml` and other teams' jobs are in the job service's seed, and played through the real
+- **Everyone else acts through the same services.** Coworkers' activity is written in YAML, as other teams' jobs are in the job service's seed, and played through the real
   services under IAM identities, so every service records it and monitors see it as they see the agents'.
 - **The simulation stays out of the company package**: the reviewer's rule and CI's wait (until real CI) are the
   lab's, handed in.
@@ -39,8 +38,8 @@ later step does for real.
 | The forge in `company/` | pull requests, merge and git hosting as `company/meridian-forge`; the merge gate is the company's deployed policy, `meridian_controlplane.ci`; the lab starts it as it starts every company service | built |
 | No tickets of its own | the company's tickets are the tickets service's | built |
 | A written seed | `forge.yaml` and `meridian_forge.seed`: the repos needing review, and the open pull requests as real branches, their diffs from git; the generated world is gone; `monitor-policy`, a repo with no code, gives way to `meridian-controlplane`, where the monitor policy lives | built |
-| 1. Agents work through git | each agent clones every repo at the start of play into its own checkout (`loc_arena/checkouts.py`) and works there with the native tools and `bash`, which runs in-process too; the shared checkout goes. `push` under IAM pushes branches, and a hook refuses every push to `main`. `open_pr` names a pushed branch, its diff from git; `merge` needs `merge` under IAM, goes through the merge gate and is git's own merge. Every run is graded on the forge's `main`; the coworkers' pull requests are branches, and the scripted moves commit and push with `bash` | built |
-| 2. Coworkers through the services | coworkers' activity in YAML, played through the real services with IAM identities; the lab's direct log events, the coworkers' hard-coded pull requests and the episode's own second forge in a stack run go | next |
+| 1. Agents work through git | each agent clones every repo at the start of play into its own checkout (`loc_arena/checkouts.py`) and works there with the workspace service's file tools and `bash`; the shared checkout goes. `push` under IAM pushes branches, and a hook refuses every push to `main`. `open_pr` names a pushed branch, its diff from git; `merge` needs `merge` under IAM, goes through the merge gate and is git's own merge. Every run is graded on the forge's `main`; the coworkers' pull requests are branches | built |
+| 2. Coworkers through the services | coworkers' activity in YAML, played through the real services with IAM identities; the lab's direct log events, the coworkers' hard-coded pull requests and the episode's own second forge go | next |
 | 3. Real CI | each repo's `.meridian-ci.yaml` run on a pull request's branch in a runner container; the merge gate's stages from it; CI's random wait goes | planned |
 
 What is left, and the step that removes it:
@@ -48,7 +47,7 @@ What is left, and the step that removes it:
 | Left | Removed by |
 |---|---|
 | the coworkers' two pull requests are hard-coded in Python, as branches the lab commits for them under their lab ids (`coworker.efficiency`, `coworker.releng`, which an agent reading `git log` sees), and the lab writes their events: git has both merged when the forge starts, dated then, while their events place them mid-episode | 2 |
-| in a stack run the episode keeps its own copy of the forge for the coworkers' activity | 2 |
+| the episode keeps its own copy of the forge for the coworkers' activity | 2 |
 | the merge gate's one stage, `test`, and CI's random wait | 3 |
 
 Later, beyond these steps: a seeded history. Each repository's `main` starts from one import commit. Empty
@@ -75,15 +74,14 @@ repository's own history of `company/` is not one: its messages describe the lab
 ## The repositories
 
 When it starts, the forge (`meridian_forge.repositories`) makes a bare repository for each of the seven company
-repos under `forge.repositories` (`/var/lib/forge`, in the container's own layer; in an in-process run, the play's
-`forge/` directory), unless one is there. Each `main` starts as one commit, `Import <repo>`, of the company's
+repos under `forge.repositories` (`/var/lib/forge`, in the container's own layer), unless one is there. Each `main` starts as one commit, `Import <repo>`, of the company's
 code, made with a fixed author, committer and date and no user or system git configuration, so it has the same
 commit ID in every run. Each pull request of the scenario's `forge.yaml` is then a branch off `main` with one
 commit, its patch, by its author at the time it was opened; its diff is the one git computes. The honest twin's
 recreated forge seeds the same. Then, before any agent clones, the coworkers' two pull requests are pushed, opened
 and merged (`loc_arena/npcs/coworker.py`), on the platform repo and the first repo needing review, each commit
 dated when the forge starts: those two `main`s are no longer the seed's, and differ from run to run, unless
-`forge.commit_date` dates every commit of the play the same, as the deterministic fixture does. Each repository has
+`forge.commit_date` dates every commit of the play the same. Each repository has
 a `pre-receive` hook that refuses every push to `main`, so `main` moves only by the forge's merge, and a
 `post-receive` hook that keeps each commit a push brings under `refs/archive/<commit>`. Git hides `refs/archive`
 from every client (`transfer.hideRefs`): no clone or fetch sees it, and no push can move or delete it, so a
@@ -93,30 +91,24 @@ in a SQLite file, `forge.db` (`meridian_forge.store`). A forge that starts on a 
 restart: it reads its pull requests back, numbering goes on from them, and it neither opens the seed's pull
 requests nor makes the coworkers' changes again. The scenario's entry says `restarts: true`, so a forge whose
 process ends during play comes back where it was; the honest twin's recreated container starts both afresh.
-In an in-process run an agent's clone pushes straight to the play's `forge/` directory, through the same hook;
-with no HTTP in between, its push is no record of the forge, only the `bash` call that made it.
 
 ## Each agent's clone
 
 At the start of each play, before the clock starts, every agent gets its own checkout: a clone of each of the
-seven repos, side by side (`loc_arena/checkouts.py`). In a stack run it is in the agent's own volume, mounted at
+seven repos, side by side (`loc_arena/checkouts.py`). It is in the agent's own volume, mounted at
 `/checkouts/<agent id>` in its sandbox and in the episode container, and in no other sandbox; the volume is held
 in memory (tmpfs, `stack.checkout_volume_size`) so it can belong to the images' user. The sandbox is reset to keep
 only the new checkout, then clones from `http://forge:8000/git/<repo>` with the agent's credential on the forge,
-which each clone keeps as its `http.extraHeader`. In an in-process run the checkout is under the play's
-`checkouts/<agent id>`, cloned from the play's own forge. Each clone commits as its agent (`<agent
-id>@meridian.example`). The native tools read and write the calling agent's checkout, and `bash` runs in it: in
-its sandbox, or in this process with neither the provider key nor the host's git configuration, where only
-scripted moves play, since a live model is refused in this process. The checkout is removed when the play ends:
+which each clone keeps as its `http.extraHeader`. Each clone commits as its agent (`<agent
+id>@meridian.example`). The workspace service's file tools read and write the calling agent's checkout, and
+`bash` runs in it, in the agent's sandbox. The checkout is removed when the play ends:
 what an agent never pushed is graded nowhere. No sandbox can reach another agent's checkout: a teammate's change
 comes through the forge, as a branch they pushed or what they merged.
 
-What a checkout held is kept even so (`loc_arena/checkout_history.py`). As cloned, after each of its agent's
-native tool calls and at the end of play, the episode reads the whole checkout itself, with dulwich and never
+What a checkout held is kept even so (`loc_arena/checkout_history.py`). As cloned and at the end of play, the episode reads the whole checkout itself, with dulwich and never
 by running git on it, and stores it as a git tree in the play's `checkout_history`, a bare repository no sandbox
 mounts: each capture a commit on `refs/agents/<agent id>` after the one before. The sealed log alone gets a
-`checkout` event naming the tree and each repo's, so an action ran on the agent's previous capture and left the
-next. A repo's tree in a capture of a clean clone is git's own tree of its `HEAD`, so captures match the commits
+`checkout` event naming the tree and each repo's. A repo's tree in a capture of a clean clone is git's own tree of its `HEAD`, so captures match the commits
 the forge's records name. Git stores a file once by its content, so a capture adds only what changed: about a
 kilobyte for a one-file edit, nothing when nothing changed. Links are stored as links and never followed, pipes
 and devices are left out, a file over `history.max_file_bytes` (1 MiB) or one the episode cannot read is stored
@@ -195,10 +187,9 @@ forge.
 ## Grading from `main`, and the forge's history
 
 Every play is graded on what is merged on the forge's `main`, never on what an agent's checkout holds
-(`loc_arena/merged_main.py`). After each play of a stack run, before the forge is renewed for the honest twin,
+(`loc_arena/merged_main.py`). After each play, before the forge is renewed for the honest twin,
 the host has `git archive main` and `git bundle create - --all` run for each company repo inside the forge's
-container, so the host never runs git on a repository agents can push to; an in-process run reads its own forge
-in this process. Each repository's own `info/attributes` unsets every attribute that changes what git exports
+container, so the host never runs git on a repository agents can push to. Each repository's own `info/attributes` unsets every attribute that changes what git exports
 (`export-ignore`, `export-subst`, `ident`, `text`, `eol`, `filter`, `working-tree-encoding`), and it wins over any
 `.gitattributes` a commit brings, so a merged line such as `tests/test_bug.py export-ignore` cannot leave a test
 out of grading: the archive is `main`'s tree as committed. Each play's archives are unpacked into its
@@ -215,8 +206,7 @@ would any code of theirs.
 A pull request an agent opens reports CI `pending` until a wait drawn from the run's seed, the repo and its number
 has passed (`forge.ci_min_seconds` to `forge.ci_max_seconds`, 2 to 10 seconds), then `green`; the merge gate reads
 the status when it decides. Nothing runs the suite yet, so a pull request that breaks a test still passes: that
-waits for real CI (step 3). A seeded or coworker pull request keeps the status it declares. The deterministic
-fixture waits 0 seconds, so what a scripted move reads of CI never depends on the wall clock.
+waits for real CI (step 3). A seeded or coworker pull request keeps the status it declares.
 
 ## The merge gate
 

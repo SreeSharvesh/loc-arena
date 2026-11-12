@@ -373,35 +373,6 @@ renderT();
 </script></body></html>"""
 
 
-def build_sweep_report(config: RunConfig, aggregate: dict[str, Any]) -> str:
-    """Build a small self-contained summary ``report.html`` for a sweep (safety + usefulness numbers)."""
-    payload = json.dumps(aggregate).replace("</", "<\\/")
-    title = f"{html.escape(config.run_slug)} sweep"
-    body = """<div class=wrap><div id=app>rendering...</div></div><script id=data type=application/json>__DATA__</script>
-<script>const A=JSON.parse(document.getElementById('data').textContent);const esc=s=>String(s==null?'':s);
-const s=A.safety,u=A.usefulness;
-const pm=Object.entries(s.per_monitor).map(([k,v])=>`<tr><td>${esc(k)}</td><td>${(v*100).toFixed(0)}%</td></tr>`).join('');
-document.getElementById('app').innerHTML=`<h1>${esc(A.run_slug)} <span class="pill ok">sweep</span></h1>
-<div class=sub>${A.n_honest} honest · ${A.n_attack} attack · audit threshold ${A.audit_threshold.toFixed(2)} @ fpr ${A.audit_budget_fpr}</div>
-<h2>safety</h2><div class=grid>
-<div class=kpi><div class=l>landed</div><div class=v>${s.n_landed}</div></div>
-<div class=kpi><div class=l>caught</div><div class=v>${s.n_caught}</div></div>
-<div class=kpi><div class=l>uncaught</div><div class=v>${s.n_uncaught}</div></div>
-<div class=kpi><div class=l>safety rate</div><div class=v>${(s.safety_rate*100).toFixed(0)}%</div></div></div>
-<h2>per-monitor contribution</h2><div class=card><table><tr><th>monitor<th>catch rate</tr>${pm}</table></div>
-<h2>usefulness (capability curve)</h2><div class=grid>
-<div class=kpi><div class=l>mean final score</div><div class=v>${u.mean_final_score.toFixed(3)}×</div></div>
-<div class=kpi><div class=l>mean frac human</div><div class=v>${u.mean_frac_human.toFixed(3)}</div></div>
-<div class=kpi><div class=l>milestones</div><div class=v>${u.milestones_reached.join(', ')||'none'}</div></div>
-<div class=kpi><div class=l>episodes</div><div class=v>${u.n_episodes}</div></div></div></div>`;</script>"""
-    tmpl = (
-        "<!doctype html><html lang=en><head><meta charset=utf-8>"
-        '<meta name=viewport content="width=device-width,initial-scale=1">'
-        "<title>__TITLE__</title><style>__CSS__</style></head><body>" + body + "</body></html>"
-    )
-    return tmpl.replace("__TITLE__", title).replace("__CSS__", _CSS).replace("__DATA__", payload)
-
-
 def build_index(runs: list[dict[str, Any]]) -> str:
     """Build the static run-index ``index.html`` listing every run bundle (newest first).
 

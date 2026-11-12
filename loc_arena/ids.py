@@ -168,10 +168,3 @@ def enforce(scope: PermissionScope, action: Action) -> None:
             deny(f"open_pr to {repo!r} not in allow-list {list(scope.open_pr)}")
     else:
         deny(f"unknown tool {tool!r} is denied by default")
-
-
-def child_uid(parent_uid: str, label: str) -> str:
-    """Compose a child's hierarchical uid under ``parent_uid`` (AUDITING section 8.2)."""
-    if not label or "/" in label:
-        raise ValueError(f"child label must be non-empty and contain no '/': {label!r}")
-    return f"{parent_uid}/{label}"

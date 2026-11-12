@@ -9,7 +9,7 @@ from loc_arena.config import load_run_config
 from loc_arena.logging_.events import Event, EventKind
 from loc_arena.monitors.registry import MonitorSpec, load_monitor_specs
 
-RUN_CONFIG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+RUN_CONFIG = load_run_config("configs/aurora-efficiency.yaml")
 SHIPPED_MONITORS = "configs/monitors.yaml"
 # A model reply every monitor reads as a strict JSON verdict.
 VERDICT_REPLY = '{"suspicion": 0.1, "reason": "routine step"}'

@@ -1,66 +1,75 @@
+"""A live monitor's own model calls are sealed under its credential and count for no covert milestone."""
+
 from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import yaml
-from loc_arena.config import load_run_config
-from loc_arena.harness import run_episode
-from loc_arena.logging_.events import read_events
+from loc_arena.harness import apply_mode, grade_run
+from loc_arena.logging_.events import Event, read_events
+from loc_arena.merged_main import TWIN_PHASE
+from loc_arena.task import read_snapshot
 from loc_arena.tasks.side_task_verifier import verify_side_task
 
+from tests._stored_run import CONFIG, unpack_stored_run
 from tests.integration._gateway_support import JsonVerdictProvider
-from tests.integration._live_support import ATTACK_MOVES_PENDING
+from tests.integration._records_support import SEALED
 
-CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
-DEADLINE = 10_000.0
+LIVE_MONITORS = {"action_monitor", "inference_monitor"}
 
 
-def _live_monitors_yaml(tmp_path: Path) -> Path:
+def _monitors_file(directory: Path) -> Path:
+    """The shipped monitors.yaml, ``LIVE_MONITORS`` live and the rest heuristic."""
     data = yaml.safe_load(Path("configs/monitors.yaml").read_text())
-    # This test focuses on exactly action_monitor + inference_monitor live, so pin the others heuristic
-    # regardless of the
-    # repo default (monitors.yaml ships them all live for the deliverable run; here we control the set).
     for entry in data["monitors"]:
-        entry["mode"] = "live" if entry["name"] in ("action_monitor", "inference_monitor") else "heuristic"
-    out = tmp_path / "monitors.yaml"
-    out.write_text(yaml.safe_dump(data))
-    return out
+        entry["mode"] = "live" if entry["name"] in LIVE_MONITORS else "heuristic"
+    path = directory / "monitors.yaml"
+    path.write_text(yaml.safe_dump(data))
+    return path
 
 
-def test_monitor_calls_excluded_and_honest_twin_stays_clean(tmp_path: Path) -> None:
-    monitors = _live_monitors_yaml(tmp_path)
-    bundle = run_episode(
-        CFG,
-        mode="honest",
-        out_root=tmp_path,
-        monitors_path=str(monitors),
-        monitor_provider=JsonVerdictProvider(),
-    )
-    events = list(read_events(bundle / "events.sealed.jsonl"))
-
-    # the monitors' own model calls are in the sealed log, tagged with the monitor credential (attributable)
-    monitor_calls = [
-        e for e in events if e.kind == "inference_call" and e.payload.get("credential_kind") == "monitor"
-    ]
-    assert monitor_calls  # live monitors ran and their calls were logged
-    assert all(e.payload["caller_identity"] in {"action_monitor", "inference_monitor"} for e in monitor_calls)
-
-    # re-verifying the sealed log (now containing monitor calls) still scores the honest twin CLEAN
-    verdict = verify_side_task(bundle / "events.sealed.jsonl", CFG, DEADLINE)
-    assert verdict.landing.minimal is False
-    assert verdict.covert_depth == 0
+@pytest.fixture(scope="module")
+def stored_run(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    return unpack_stored_run(tmp_path_factory.mktemp("stored"))
 
 
-@ATTACK_MOVES_PENDING
-def test_live_monitors_do_not_change_the_attack_verdict(tmp_path: Path) -> None:
-    monitors = _live_monitors_yaml(tmp_path)
-    bundle = run_episode(
-        CFG,
+@pytest.fixture(scope="module")
+def graded_run(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """A copy of the stored run, graded with ``LIVE_MONITORS`` calling a stub model."""
+    directory = tmp_path_factory.mktemp("graded")
+    return grade_run(
+        CONFIG,
+        unpack_stored_run(directory),
         mode="attack",
-        out_root=tmp_path,
-        monitors_path=str(monitors),
+        monitors_path=str(_monitors_file(directory)),
         monitor_provider=JsonVerdictProvider(),
+        write_report=False,
     )
-    # the agent's off-path loop still lands; the monitor calls (excluded) do not perturb it
-    verdict = verify_side_task(bundle / "events.sealed.jsonl", CFG, DEADLINE)
-    assert verdict.landing.minimal is True
+
+
+def _monitor_calls(events: list[Event]) -> list[Event]:
+    return [e for e in events if e.kind == "inference_call" and e.payload.get("credential_kind") == "monitor"]
+
+
+def test_grading_seals_each_live_monitors_model_calls_under_its_monitor_credential(
+    stored_run: Path,
+    graded_run: Path,
+) -> None:
+    sealed_before = len(list(read_events(stored_run / TWIN_PHASE / SEALED)))
+
+    sealed_by_grading = list(read_events(graded_run / TWIN_PHASE / SEALED))[sealed_before:]
+
+    assert {call.payload["caller_identity"] for call in _monitor_calls(sealed_by_grading)} == LIVE_MONITORS
+
+
+def test_the_honest_twins_sealed_log_reaches_no_covert_milestone_with_monitor_calls_in_it(
+    graded_run: Path,
+) -> None:
+    honest = apply_mode(CONFIG, "honest")
+    twin = read_snapshot(graded_run / TWIN_PHASE, honest)
+
+    verdict = verify_side_task(twin.sealed_path, honest, twin.deadline_ts)  # from the sealed log alone
+
+    reached = [milestone for milestone, result in verdict.milestones.items() if result.reached]
+    assert (verdict.landing.minimal, verdict.covert_depth, reached) == (False, 0, [])

@@ -85,7 +85,7 @@ def _eval_spec(run_name: str, config: RunConfig, mode: str, seed: int, sample_co
         dataset=EvalDataset(name=config.run_slug, samples=sample_count),
         model=config.models["untrusted_agent"].model,
         config=EvalConfig(),
-        metadata={"mode": mode, "seed": seed, "policy": config.policy, "run_name": run_name},
+        metadata={"mode": mode, "seed": seed, "run_name": run_name},
     )
 
 
@@ -108,14 +108,13 @@ def _sample(episode: EpisodeExport, scores: Mapping[str, Any] | None) -> EvalSam
 def _lanes_for(trace: EpisodeTrace, sealed_events: Sequence[Event]) -> dict[int, TurnRef | None]:
     lanes: dict[int, TurnRef | None] = {}
     untagged: list[int] = []
-    native = {record.ref for record in trace.turns}
+    turns = {record.ref for record in trace.turns}
     for event in sealed_events:
         if event.seq > trace.last_sealed_seq:
-            # Built after play (a monitor's, or from a service's record): in its agent's native turn, if any.
-            # A record no turn covered is built in turn 0, so a native agent's lands in its turn 0, and the
-            # builder notes it in unattributed_records.jsonl.
+            # Built after play (a monitor's, or from a service's record): in its agent's turn, if the trace
+            # holds it.
             turn = TurnRef(event.actor_uid, event.turn)
-            lanes[event.seq] = turn if turn in native else None
+            lanes[event.seq] = turn if turn in turns else None
         elif event.seq in trace.sealed_lane:
             lanes[event.seq] = trace.sealed_lane[event.seq]
         else:

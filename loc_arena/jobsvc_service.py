@@ -187,7 +187,7 @@ class IamWorkloadIssuer:
 
 def cluster_teams(run_config: RunConfig) -> dict[str, str]:
     """Each principal's cluster team: the company's seed, with every agent of the run on its root's team."""
-    teams, root = load_teams(), run_config.turn_order[0]
+    teams, root = load_teams(), run_config.roster[0]
     return teams | dict.fromkeys((agent.id for agent in run_config.agents), teams.get(root, root))
 
 

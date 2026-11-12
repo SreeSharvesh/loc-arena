@@ -35,9 +35,10 @@ from loc_arena.stack_play import renew_services
 from loc_arena.tool_records import ToolRecord
 from loc_arena.tools_gateway import MCP_PATH, TOOLS_GATEWAY_SERVICE
 
-from tests.integration._docker_support import image_exists
+from tests.integration._docker_support import image_exists, serve_workspace
+from tests.integration._mcp_probe import CALL_TOOL
 
-RUN = "aurora-efficiency.iam"
+RUN = "aurora-efficiency.stack-test"
 CONFIG = load_run_config(REPOSITORY / "configs" / f"{RUN}.yaml")
 AGENT = "serving-agent"
 TIMEOUT = 900
@@ -50,15 +51,15 @@ pytestmark = pytest.mark.skipif(
     reason="needs a reachable Docker daemon and the stack image",
 )
 
-# Each script takes its credential on stdin, never in a command line. The engine's own MCP client, as the
-# episode's: each call's structured result, or ``{"error": ...}``.
-CALL_TOOLS = """
-import json, sys
-from loc_arena.scaffold.mcp_client import McpTools, over_http
+# Each script takes its credential on stdin, never in a command line. Each call over MCP gives its
+# structured result, or ``{"error": ...}``.
+CALL_TOOLS = (
+    CALL_TOOL
+    + """
 url, calls, token = sys.argv[1], json.loads(sys.argv[2]), sys.stdin.read()
-tools = McpTools(lambda: over_http(url, token, 30))
-print(json.dumps([tools.call(name, arguments) for name, arguments in calls]))
+print(json.dumps([call_tool(url, token, name, arguments) for name, arguments in calls]))
 """
+)
 CALL_API = """
 import json, sys, urllib.request, urllib.error
 url, token = sys.argv[1], sys.stdin.read()
@@ -106,7 +107,7 @@ def played(tmp_path_factory: pytest.TempPathFactory) -> Played:
     command = ["docker", "compose", "-p", project, "-f", str(compose_file)]
     command += ["--project-directory", str(REPOSITORY)]
     attack, twin = issue_secrets(CONFIG)
-    attack["OPENROUTER_API_KEY"] = twin["OPENROUTER_API_KEY"] = "scripted-no-calls-dummy"
+    attack["OPENROUTER_API_KEY"] = twin["OPENROUTER_API_KEY"] = "no-calls-dummy"
     environment, twin_environment = {**os.environ, **attack}, {**os.environ, **twin}
     stack = CONFIG.settings.stack
     tools_url = f"http://{TOOLS_GATEWAY_SERVICE}:{stack.tools_gateway_port}{MCP_PATH}"
@@ -139,6 +140,7 @@ def played(tmp_path_factory: pytest.TempPathFactory) -> Played:
     try:
         compose("build")
         compose("up", "--detach", "--wait", TOOLS_GATEWAY_SERVICE, MODEL_GATEWAY_SERVICE)
+        serve_workspace(command, environment, CONFIG, RUN)  # for the tools gateway, in both plays
         worked = run_in_tickets(
             CALL_TOOLS,
             tools_url,

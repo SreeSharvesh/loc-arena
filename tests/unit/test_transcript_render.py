@@ -12,7 +12,7 @@ from loc_arena.logging_.inspect_export import EpisodeExport, write_run_eval
 from loc_arena.logging_.transcript_lanes import UNPLACED, WORLD, Block, SampleTranscript
 from loc_arena.logging_.transcript_render import write_transcripts
 
-CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+CFG = load_run_config("configs/aurora-efficiency.yaml")
 
 
 def _exported(tmp_path: Path) -> Path:

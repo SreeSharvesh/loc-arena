@@ -161,22 +161,17 @@ def render_compose(
 ) -> ComposeDocument:
     """The compose file of one episode of ``run``; ``episode_arguments`` go to ``loc_arena.cli run``.
 
-    The images hold neither the scenario's sealed ``reference/`` nor its ``scripted/`` moves, so an agent with
-    a shell cannot read the answer. Only a scripted episode, which plays them, gets ``scripted/`` mounted. The
-    sandboxes' image holds no harness and no scenarios either, so agent code cannot read how it is graded;
-    each sandbox mounts only the scenario's skills folder, read-only. Each folder mounted from this host is
-    labelled for containers (``z``), so a host enforcing SELinux lets them read it. Every service an agent
-    reaches runs under central IAM, so a run config that turns it off cannot run in a stack.
+    The images do not hold the scenario's sealed ``reference/``, so an agent with a shell cannot read the
+    answer. The sandboxes' image holds no harness and no scenarios either, so agent code cannot read how it is
+    graded; each sandbox mounts only the scenario's skills folder, read-only. Each folder mounted from this
+    host is labelled for containers (``z``), so a host enforcing SELinux lets them read it. Every service an
+    agent reaches runs under central IAM, so a run config that turns it off cannot run in a stack.
     """
     if not config.settings.iam.enabled:
         raise StackError("a stack run needs central IAM: this run config turns iam.enabled off")
     stack = config.settings.stack
     scenario = resolve_scenario(config)
     skills = [f"{scenario.skills_dir}:{stack.skills_directory}:{HOST_FOLDER}"] if scenario.skills_dir else []
-    scripted = []
-    if config.policy == "scripted":
-        target = SCENARIOS_DIRECTORY / scenario.directory.name / scenario.scripted_dir.name
-        scripted = [f"{scenario.scripted_dir}:{target}:{HOST_FOLDER}"]
     configs = f"{repository / 'configs'}:{CONFIGS_DIRECTORY}:{HOST_FOLDER}"
     records = f"records:{stack.records_directory}"  # the services' record lines, read during play
     engine = _build_from(repository, ENGINE_TARGET, stack.image)
@@ -245,7 +240,7 @@ def render_compose(
                 engine,
                 run,
                 episode_arguments,
-                [f"output:{OUTPUT_DIRECTORY}", records, *checkouts, configs, *scripted],
+                [f"output:{OUTPUT_DIRECTORY}", records, *checkouts, configs],
             ),
         },
         "networks": {

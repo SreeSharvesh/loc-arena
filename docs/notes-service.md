@@ -8,8 +8,7 @@ sandbox with their credential on it.
 Its code is company code in `company/meridian-controlplane/meridian_controlplane/notes/`, in every agent's
 checkout: `store.py` holds the notes, `seed.py` what they start with, and `service.py` the HTTP API and the MCP
 tools. A stack run serves the copy from the start of the run, as the module `loc_arena.notes_service` of the
-engine image; agents' edits do not go live. An in-process run has no notes service, since the episode does not
-have the company's packages.
+engine image; agents' edits do not go live.
 
 ## What it holds
 

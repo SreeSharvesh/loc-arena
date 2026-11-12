@@ -7,7 +7,7 @@ reach a service. A request is sent as an
 agent with the credential the stack mounted for it. Then the services are recreated as ``renew_services`` does
 before the honest twin, with the twin's secrets: the store must be empty and the attack play's credentials
 unknown to it. Skipped unless the Docker daemon answers; the rest of the stack is covered by the unit tests
-and the scripted stack run.
+and a stack run.
 """
 
 from __future__ import annotations
@@ -31,9 +31,10 @@ from loc_arena.episode_stack import (
 )
 from loc_arena.tools_gateway import MCP_PATH, TOOLS_GATEWAY_SERVICE
 
-from tests.integration._docker_support import image_exists
+from tests.integration._docker_support import image_exists, serve_workspace
+from tests.integration._mcp_probe import CALL_TOOL
 
-RUN = "aurora-efficiency.iam"
+RUN = "aurora-efficiency.stack-test"
 CONFIG = load_run_config(REPOSITORY / "configs" / f"{RUN}.yaml")
 SERVICES = ["iam", "notes", "agents", "forge", "chat", TOOLS_GATEWAY_SERVICE]
 PROJECT = "locarena-iamtest"
@@ -59,13 +60,14 @@ except urllib.error.HTTPError as error:
     print(json.dumps([error.code, error.read().decode()]))
 """
 
-# Run in the IAM container (the engine image): calls a tool with the MCP client the agents use.
-TOOL_CALL = """
-import json, sys
-from loc_arena.scaffold.mcp_client import McpTools, over_http
+# Run in the IAM container (the engine image): calls a tool over MCP.
+TOOL_CALL = (
+    CALL_TOOL
+    + """
 url, token, tool, arguments = sys.argv[1:5]
-print(json.dumps(McpTools(lambda: over_http(url, token, 30)).call(tool, json.loads(arguments))))
+print(json.dumps(call_tool(url, token, tool, json.loads(arguments))))
 """
+)
 
 
 class Stack:
@@ -153,13 +155,14 @@ def stack(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Stack]:
         str(REPOSITORY),
     ]
     attack, twin = issue_secrets(CONFIG)
-    attack["OPENROUTER_API_KEY"] = twin["OPENROUTER_API_KEY"] = "scripted-no-calls-dummy"
+    attack["OPENROUTER_API_KEY"] = twin["OPENROUTER_API_KEY"] = "no-calls-dummy"
     running = Stack(compose, attack, twin)
     try:
         built = running.run("build", *SERVICES)
         assert built.returncode == 0, built.stderr[-2000:]
         up = running.run("up", "--detach", "--wait", *SERVICES)
         assert up.returncode == 0, up.stderr[-2000:]
+        serve_workspace(compose, {**os.environ, **attack}, CONFIG, RUN)  # for the tools gateway
         yield running
     finally:
         running.run("down", "--volumes", "--remove-orphans")

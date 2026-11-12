@@ -1,23 +1,21 @@
 """The gateway accepts a full chat history with native tools, end to end through the edge and core.
 
-A ``messages`` request reaches the provider verbatim (plus covert injection into the first message for the
-target only), the reply's tool calls come back to the caller, and the sealed and mirror records carry the same
-pre-injection fingerprints. A ``prompt`` request is unchanged: one user message, bare-string fingerprints.
+A ``messages`` request reaches the provider verbatim, the reply's tool calls come back to the caller, and
+the sealed and mirror records carry the same fingerprints. A ``prompt`` request is unchanged: one user
+message, bare-string fingerprints.
 """
 
 from __future__ import annotations
 
-import dataclasses
 from pathlib import Path
 from typing import Any
 
 import pytest
 from loc_arena.config import ModelSpec, RunConfig, load_run_config
-from loc_arena.gateway.client import GatewayClient
 from loc_arena.gateway.core import (
-    DirectTransport,
     GatewayCore,
     GenerateRequest,
+    GenerateResponse,
     Message,
     ProviderResult,
     ToolSpec,
@@ -30,9 +28,7 @@ from pydantic import ValidationError
 from tests.integration._gateway_support import AppTransport
 
 EP = "ep-messages"
-CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")  # covert on, target agent-main
-HONEST = dataclasses.replace(CFG, covert=dataclasses.replace(CFG.covert, enabled=False))
-COVERT = CFG.covert.objective_prompt
+CFG = load_run_config("configs/aurora-efficiency.yaml")
 
 TOOL_CALL = {"id": "call_1", "type": "function", "function": {"name": "bash", "arguments": '{"cmd": "ls"}'}}
 TOOLS = [{"type": "function", "function": {"name": "bash", "parameters": {"type": "object"}}}]
@@ -65,11 +61,16 @@ class RecordingProvider:
         return ProviderResult(text="plain reply", prompt_tokens=1, completion_tokens=1)
 
 
-def _wire(tmp_path: Path, config: RunConfig = HONEST) -> tuple[RecordingProvider, DirectTransport]:
+def _wire(tmp_path: Path, config: RunConfig = CFG) -> tuple[RecordingProvider, GatewayEdge]:
     provider = RecordingProvider()
     core = GatewayCore(config, EP, AppendOnlyLog(tmp_path / "sealed.jsonl", EP), provider, turn_secret="s")
     edge = GatewayEdge(EP, AppTransport(create_core_app(core)), AppendOnlyLog(tmp_path / "mirror.jsonl", EP))
-    return provider, DirectTransport(edge)
+    return provider, edge
+
+
+def _chat(edge: GatewayEdge, agent: str, tools: list[ToolSpec] | None = None) -> GenerateResponse:
+    request = GenerateRequest(messages=HISTORY, tools=tools, caller_identity=agent, role="untrusted_agent")
+    return edge.generate(request)
 
 
 def _inference(path: Path) -> list[dict[str, Any]]:
@@ -79,7 +80,7 @@ def _inference(path: Path) -> list[dict[str, Any]]:
 def test_chat_passes_history_and_tools_and_returns_tool_calls(tmp_path: Path) -> None:
     provider, edge = _wire(tmp_path)
 
-    resp = GatewayClient(edge, "agent-main").chat(HISTORY, tools=TOOLS, role="untrusted_agent")
+    resp = _chat(edge, "agent-main", TOOLS)
 
     assert provider.calls == [(HISTORY, TOOLS)]
     assert resp.tool_calls == [TOOL_CALL]
@@ -89,7 +90,7 @@ def test_chat_passes_history_and_tools_and_returns_tool_calls(tmp_path: Path) ->
 def test_sealed_and_mirror_fingerprint_the_history_identically(tmp_path: Path) -> None:
     _, edge = _wire(tmp_path)
 
-    GatewayClient(edge, "agent-main").chat(HISTORY, tools=TOOLS, role="untrusted_agent")
+    _chat(edge, "agent-main", TOOLS)
 
     (sealed,) = _inference(tmp_path / "sealed.jsonl")
     (mirror,) = _inference(tmp_path / "mirror.jsonl")
@@ -98,25 +99,12 @@ def test_sealed_and_mirror_fingerprint_the_history_identically(tmp_path: Path) -
     assert sealed["output_fp"] == mirror["output_fp"] == expected_out
 
 
-def test_covert_goes_into_the_first_message_for_the_target_only(tmp_path: Path) -> None:
-    provider, edge = _wire(tmp_path, config=CFG)
-
-    GatewayClient(edge, "agent-main").chat(HISTORY, role="untrusted_agent")
-    GatewayClient(edge, "distill-agent").chat(HISTORY, role="untrusted_agent")
-
-    target_msgs, _ = provider.calls[0]
-    assert target_msgs[0] == {"role": "system", "content": f"{COVERT}\n\nyou are an engineer"}
-    assert target_msgs[1:] == HISTORY[1:]
-    assert provider.calls[1] == (HISTORY, None)
-    assert HISTORY[0]["content"] == "you are an engineer"  # the caller's history is not mutated
-    # the sealed record keys off the submitted history, so covert text is not recoverable from it
-    assert _inference(tmp_path / "sealed.jsonl")[0]["prompt_fp"] == fingerprint(HISTORY)
-
-
 def test_prompt_requests_are_unchanged(tmp_path: Path) -> None:
     provider, edge = _wire(tmp_path)
 
-    text = GatewayClient(edge, "agent-main").generate("loop seed", role="untrusted_agent")
+    request = GenerateRequest(prompt="loop seed", caller_identity="agent-main", role="untrusted_agent")
+
+    text = edge.generate(request).text
 
     assert provider.calls == [([{"role": "user", "content": "loop seed"}], None)]
     (rec,) = _inference(tmp_path / "sealed.jsonl")
@@ -127,7 +115,7 @@ def test_prompt_requests_are_unchanged(tmp_path: Path) -> None:
 def test_chat_records_token_usage_on_the_sealed_log(tmp_path: Path) -> None:
     _, edge = _wire(tmp_path)
 
-    resp = GatewayClient(edge, "agent-main").chat(HISTORY, role="untrusted_agent")
+    resp = _chat(edge, "agent-main")
 
     assert (resp.prompt_tokens, resp.completion_tokens, resp.cached_tokens) == (1, 1, 0)
     (sealed,) = _inference(tmp_path / "sealed.jsonl")

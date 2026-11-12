@@ -19,7 +19,7 @@ from tests.integration._docker_support import image_exists
 
 HOST_ONLY_VARIABLE = "LOC_ARENA_TEST_HOST_ONLY"
 SANDBOX = StackSettings(sandbox_agent_code=True)
-CONFIG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+CONFIG = load_run_config("configs/aurora-efficiency.yaml")
 SANDBOXED_CONFIG = dataclasses.replace(CONFIG, settings=CONFIG.settings.model_copy(update={"stack": SANDBOX}))
 
 

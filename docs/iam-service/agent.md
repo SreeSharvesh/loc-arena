@@ -37,8 +37,7 @@ How to change `company/meridian-iam/` and how to put a service under it. The con
 
 ## Building a service on IAM
 
-Every agent-facing service must be guarded. `iam.enabled` is on unless a config turns it off, a config with it on
-plays in a stack, a stack run refuses a config with it off, and a config whose scenario lets agents reach a
+Every agent-facing service must be guarded. `iam.enabled` is on, a run refuses a config that turns it off, and a config whose scenario lets agents reach a
 service outside its `iam:` block does not load. No service keeps rights of its own, and each refuses to start
 outside IAM. A service that starts work for its caller (a
 job, an eval run, an agent run) also issues that work an identity of its own. A service calling another
