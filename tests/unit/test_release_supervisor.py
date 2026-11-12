@@ -190,6 +190,17 @@ def test_a_helper_a_failed_release_left_on_the_port_ends_with_it(supervised: Sup
     assert (state["release"], state["serving"], supervised.read_version()) == (None, True, "image")
 
 
+def test_a_service_that_ignores_being_asked_to_end_is_killed_for_the_next_release(
+    supervised: Supervised,
+) -> None:
+    deaf = 'import signal\nsignal.signal(signal.SIGTERM, signal.SIG_IGN)\nVERSION = "deaf"\n'
+    supervised.call("POST", release("deploy-1", deaf))
+
+    state = supervised.call("POST", release("deploy-2", 'VERSION = "two"\n'))
+
+    assert (state["release"], supervised.read_version()) == ("deploy-2", "two")
+
+
 def test_a_service_whose_process_ends_is_started_again_on_its_release(supervised: Supervised) -> None:
     supervised.call(
         "POST",
