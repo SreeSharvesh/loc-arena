@@ -58,14 +58,14 @@ CHAT_PATH = "/chat/completions"  # pi adds it to its provider's URL itself
 TASK = "Begin. Use your tools to do the work."
 _STDERR_TAIL = 2000  # characters of a session's error output kept
 _STOP_SECONDS = 5  # how long the sessions' pi processes get to exit once their input is closed
-_SETTINGS = {
+PI_SETTINGS = {
     "compaction": {"enabled": True},  # a long session summarizes itself, with a model call like any other
     "cacheWarming": "off",  # no model call the agent's loop did not make
     "defaultProjectTrust": "never",
     "enableInstallTelemetry": False,
     "quietStartup": True,
 }
-_PI_ENVIRONMENT = {"PI_OFFLINE": "1", "PI_SKIP_VERSION_CHECK": "1", "PI_TELEMETRY": "0"}
+PI_ENVIRONMENT = {"PI_OFFLINE": "1", "PI_SKIP_VERSION_CHECK": "1", "PI_TELEMETRY": "0"}
 
 
 EndReason = Literal["finished", "ceiling", "budget", "failed"]
@@ -263,7 +263,7 @@ def write_pi_home(home: Path, config: RunConfig, agent: str, brief: str) -> list
         "models": [{"id": model, "maxTokens": role.max_tokens, **settings.pi.model_settings}],
     }
     (directory / "models.json").write_text(json.dumps({"providers": {PROVIDER: provider}}))
-    (directory / "settings.json").write_text(json.dumps(_SETTINGS))
+    (directory / "settings.json").write_text(json.dumps(PI_SETTINGS))
     key_file = shlex.quote(str(settings.gateway.secrets_dir / token_secret_name(agent)))
     server = {
         "url": os.environ[TOOLS_URL_VARIABLE],
@@ -307,7 +307,7 @@ def play_sessions(
     ceiling, floor = start + seconds, start + config.settings.pi.minimum_play_seconds
     sessions: dict[str, _Session] = {}
     ended: dict[str, SessionEnd] = {}
-    environment = {"PATH": os.environ["PATH"], **_PI_ENVIRONMENT}
+    environment = {"PATH": os.environ["PATH"], **PI_ENVIRONMENT}
     try:
         for agent, brief in briefs.items():
             try:

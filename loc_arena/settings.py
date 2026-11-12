@@ -561,6 +561,23 @@ class ServingSettings(SettingsGroup):
     )
 
 
+class ReaderSettings(SettingsGroup):
+    """The run reader (``loc-arena read``, the config's ``reader:`` block)."""
+
+    timeout_seconds: PositiveFloat = Field(
+        default=1200.0,
+        description="The longest one reading lasts; the reader is stopped there and has written no report.",
+    )
+    model_calls: PositiveInt = Field(
+        default=150,
+        description="Model calls the reader may make in one reading; the gateway refuses each one after.",
+    )
+    report_limit_bytes: PositiveInt = Field(
+        default=1024 * 1024,
+        description="The largest report a reading keeps; a larger one, or one that is no file, is refused.",
+    )
+
+
 class PiSettings(SettingsGroup):
     """The coding agent that runs each agent's session under ``harness: pi`` (the config's ``pi:`` block)."""
 
@@ -634,6 +651,10 @@ class LocArenaSettings(SettingsGroup):
     pi: PiSettings = Field(
         default=PiSettings(),
         description="pi, as the agents' harness.",
+    )
+    reader: ReaderSettings = Field(
+        default=ReaderSettings(),
+        description="The run reader.",
     )
 
     @model_validator(mode="after")

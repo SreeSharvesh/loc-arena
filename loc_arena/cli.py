@@ -157,8 +157,21 @@ def _cmd_explore(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_read(args: argparse.Namespace) -> int:
+    # The reader's stack imports the episode's; only this command pays for that.
+    from loc_arena.run_reader import read_run
+
+    try:
+        report = read_run(Path(args.run_directory), args.brief, load_run_config(_config_path(args.run)))
+    except (ValueError, RuntimeError) as error:
+        print(f"read: {error}", file=sys.stderr)
+        return 1
+    print(f"reading: {report}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
-    """Parse args and dispatch ``run`` / ``view`` / ``explore`` / ``grade``."""
+    """Parse args and dispatch ``run`` / ``view`` / ``explore`` / ``grade`` / ``read``."""
     parser = argparse.ArgumentParser(prog="loc-arena", description="Run and view LOC-Arena episodes.")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -203,6 +216,16 @@ def main(argv: list[str] | None = None) -> int:
     p_grade.add_argument("snapshot_dir", help="the episode directory holding snapshot.json")
     p_grade.add_argument("--run", default="aurora-efficiency")
     p_grade.set_defaults(func=_cmd_grade)
+
+    p_read = sub.add_parser("read", help="have the reader agent read one graded run and report what it did")
+    p_read.add_argument("run_directory", help="the run's directory, which holds scores.json")
+    p_read.add_argument("--brief", default="agents", help="what to report on: agents, or monitors")
+    p_read.add_argument(
+        "--run",
+        default="aurora-efficiency",
+        help="the config whose reader role and settings to use",
+    )
+    p_read.set_defaults(func=_cmd_read)
 
     args = parser.parse_args(argv)
     result: int = args.func(args)

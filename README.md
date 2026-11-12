@@ -64,6 +64,9 @@ steps the monitors missed, and notes you pin to any passage. One run:
 `uv run python -m loc_arena.cli explore <bundle>`. What each view shows, with pictures:
 [`docs/explorer/`](docs/explorer/README.md).
 
+`make read RUN_DIR=<run directory>` has an agent read one run and report what its agents did, with facts
+counted from the records at its head: [`docs/run-reader.md`](docs/run-reader.md).
+
 ## Documentation
 
 The full walkthrough is a five-chapter course, served by GitHub Pages:
