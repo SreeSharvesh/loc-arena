@@ -11,17 +11,20 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
+import math
 import os
 import secrets
 import sys
 import webbrowser
 import zipfile
+from datetime import UTC, datetime
 from pathlib import Path
 
 from loc_arena.config import load_run_config
 from loc_arena.episode_stack import run_in_stack
 from loc_arena.harness import apply_mode, locate_run, play_run, read_played_snapshot
 from loc_arena.logging_.viewer import build_index
+from loc_arena.merged_main import EPISODE_PHASE
 from loc_arena.task import grade_snapshot, read_snapshot_file
 
 
@@ -29,15 +32,32 @@ def _config_path(run: str) -> str:
     return run if run.endswith(".yaml") else f"configs/{run}.yaml"
 
 
+def _read_finished(bundle: Path) -> float:
+    """When ``bundle``'s run finished playing: a bundle's name ends in a random id, so it says nothing.
+
+    The run's own record of it, which a copy of the bundle keeps; else when its report was written, and the
+    epoch for a bundle that is going away.
+    """
+    try:
+        finished = read_snapshot_file(bundle / EPISODE_PHASE).finished_at
+    except (
+        OSError,
+        ValueError,
+    ):  # no snapshot, or one that does not parse (pydantic's error is a ValueError)
+        finished = None
+    try:
+        recorded = finished is not None and math.isfinite(finished)  # a damaged snapshot can hold any number
+        return finished if recorded else (bundle / "report.html").stat().st_mtime
+    except OSError:
+        return 0.0
+
+
 def _latest_bundle(logs_root: Path, run_slug: str) -> Path | None:
     run_dir = logs_root / run_slug
     if not run_dir.exists():
         return None
-    bundles = sorted(
-        (d for d in run_dir.iterdir() if d.is_dir() and (d / "report.html").exists()),
-        reverse=True,
-    )
-    return bundles[0] if bundles else None
+    bundles = (d for d in run_dir.iterdir() if d.is_dir() and (d / "report.html").exists())
+    return max(bundles, key=_read_finished, default=None)
 
 
 def _cmd_run(args: argparse.Namespace) -> int:
@@ -88,13 +108,11 @@ def _build_run_index(logs_root: Path) -> Path | None:
     Each ``href`` is the report.html relative to where the index lives (``logs_root``).
     """
     logs_root.mkdir(parents=True, exist_ok=True)
-    scores_paths = list(logs_root.glob("*/*/scores.json"))
+    graded = (path.parent for path in logs_root.glob("*/*/scores.json"))
+    bundles = [bundle for bundle in graded if (bundle / "report.html").exists()]
     runs: list[dict[str, object]] = []
-    for scores_path in sorted(scores_paths, reverse=True):
-        bundle = scores_path.parent
-        report = bundle / "report.html"
-        if not report.exists():
-            continue
+    for bundle in sorted(bundles, key=_read_finished, reverse=True):
+        scores_path, report = bundle / "scores.json", bundle / "report.html"
         try:
             scores = json.loads(scores_path.read_text())
         except (OSError, ValueError):
@@ -103,7 +121,7 @@ def _build_run_index(logs_root: Path) -> Path | None:
             {
                 "run_name": scores.get("run_name", bundle.name),
                 "mode": scores.get("mode", ""),
-                "ts": bundle.name,
+                "ts": datetime.fromtimestamp(_read_finished(bundle), UTC).isoformat(timespec="seconds"),
                 "href": Path(os.path.relpath(report, logs_root)).as_posix(),
                 "scores": scores,
             },
@@ -133,7 +151,7 @@ def _cmd_view(args: argparse.Namespace) -> int:
         if any(zipfile.is_zipfile(eval_file) for eval_file in bundle.glob("*.eval")):
             print(f"inspect view: inspect view --log-dir {bundle}")
     if not args.no_open:
-        target = index if index is not None else (bundle / "report.html" if bundle else None)
+        target = bundle / "report.html" if bundle is not None else index
         if target is not None:
             try:
                 webbrowser.open(target.resolve().as_uri())

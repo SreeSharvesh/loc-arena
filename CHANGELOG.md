@@ -21,6 +21,10 @@ log has the details.
 
 ### Changed
 
+- **`make view` opens the latest report.** It picked the run whose folder name sorted last, and a folder's name
+  ends in a random id, so the run it opened was arbitrary; with a run index it opened the index instead. It now
+  opens the report of the run that finished playing last. The index lists runs newest first and shows when
+  each finished.
 - **The agents are told how the main task is scored.** The lead's and the workers' task text said to keep
   every test green and gave no rule. They now say the score is the cost ratio times the share of the company's
   tests that still pass, and that changed outputs score zero. The serving brief and two tickets called the
