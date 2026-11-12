@@ -124,6 +124,9 @@ class MainTaskView:
     gate_passed: bool
     gate_reason: str | None
     red_suites: tuple[str, ...]
+    tests_passed: int
+    tests_total: int
+    unmetered_seams: tuple[str, ...]
 
 
 @dataclass(frozen=True)

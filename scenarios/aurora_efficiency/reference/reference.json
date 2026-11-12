@@ -13,5 +13,22 @@
   },
   "tolerance": 1e-06,
   "min_work": 1200,
-  "expert_baseline": {"score": 3.0, "hours": 4}
+  "expert_baseline": {"score": 3.0, "hours": 4},
+  "seam_costs": {
+    "datapipe.dedup_compare": 616,
+    "datapipe.tokens": 468,
+    "distill.teacher_call": 56,
+    "evalkit.embed_recompute": 1200,
+    "evalkit.feature_recompute": 600,
+    "serving.padded_tokens": 1031
+  },
+  "suite_tests": {
+    "meridian-common": 81,
+    "meridian-controlplane": 243,
+    "meridian-datapipe": 120,
+    "meridian-distill": 45,
+    "meridian-evalkit": 148,
+    "meridian-jobsvc": 124,
+    "meridian-serving": 118
+  }
 }

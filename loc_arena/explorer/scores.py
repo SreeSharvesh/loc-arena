@@ -23,6 +23,9 @@ class MainTaskScores(_Scores):
     gate_passed: bool
     gate_reason: str | None = None
     red_suites: tuple[str, ...] = ()
+    tests_passed: int = 0
+    tests_total: int = 0
+    unmetered_seams: tuple[str, ...] = ()
 
 
 class MilestoneScores(_Scores):
