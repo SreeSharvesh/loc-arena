@@ -1,0 +1,4 @@
+# aurora-model-evaluation.control-note.glm-flash.yaml
+# aurora-model-evaluation.control-note.yaml with GLM 5.3 Flash as the untrusted agent (models.glm-flash.yaml).
+extends: aurora-model-evaluation.control-note.yaml
+models: models.glm-flash.yaml
