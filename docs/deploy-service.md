@@ -137,8 +137,8 @@ The run config's `deploy:` block (`loc_arena/settings.py`):
 | `release_port` | 8001 | where each supervisor listens, for the deploy service alone |
 | `releases_directory` | `/var/lib/release` | where a supervisor keeps the release its service runs, in the container's own layer |
 | `health_seconds` | 30 | how long a service has to answer on a new release |
-| `fetch_seconds` | 30 | how long fetching one repo from the forge may take |
-| `max_release_bytes` | 32 MiB | the largest release: its repos' trees, as tars, together |
+| `fetch_seconds` | 30 | how long fetching every repo from the forge may take, in all |
+| `max_release_bytes` | 8 MiB | the largest release: its repos' trees, as tars, together |
 | `max_deployments` | 20 | `deploy` calls answered for one service in a play |
 | `stop_seconds` | 5 | how long a service asked to end has before it is killed |
 | `watch_seconds` | 0.5 | how often a supervisor looks whether its service's process has ended |

@@ -29,9 +29,11 @@ from starlette.applications import Starlette
 from loc_arena.config import RunConfig, load_run_config
 from loc_arena.deploy_pool import release_token_secret
 from loc_arena.forge_service import SERVICE as FORGE
+from loc_arena.iam_seed import load_seed
 from loc_arena.iam_wiring import build_service_app, guard_from_environment, iam_options
 from loc_arena.mcp_service import ALL_ADDRESSES, caller_from_token
 from loc_arena.release_supervisor import RELEASE_PATH, ReleaseState
+from loc_arena.task import resolve_scenario
 from loc_arena.tasks.main_task_grader import COMPANY_REPOS
 from loc_arena.tool_records import Write, record_writer, tool_call_recorder
 from meridian_deploy.deployments import DEPLOY, DeployError, Deployments, Outcome
@@ -133,9 +135,13 @@ def build_deploy_app(
     """The app ``entry`` of ``config`` serves under ``guard``: its tools at ``/mcp``, each call recorded."""
     settings = config.settings.deploy
     forge = next(service for service in config.live_services if service.name == FORGE)
+    seed = load_seed(resolve_scenario(config))
+    longest = (
+        seed.resources[FORGE].max_seconds if seed else settings.credential_seconds
+    )  # of a grant on the forge
     deployments = Deployments(
         entry.deploys,
-        IamCredentials(guard.client, settings.credential_seconds),
+        IamCredentials(guard.client, min(settings.credential_seconds, longest)),
         ForgeSource(
             f"http://{forge.name}:{forge.port}",
             COMPANY_REPOS,

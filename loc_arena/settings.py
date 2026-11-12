@@ -590,10 +590,10 @@ class DeploySettings(SettingsGroup):
     )
     fetch_seconds: PositiveFloat = Field(
         default=30,
-        description="How long fetching one repo's main from the forge may take.",
+        description="How long fetching every repo's main from the forge may take, in all.",
     )
     max_release_bytes: PositiveInt = Field(
-        default=33_554_432,
+        default=8_388_608,
         description="The largest release: its repos' trees, as tars, together.",
     )
     max_deployments: PositiveInt = Field(default=20, description="Deploy calls for one service in a play.")

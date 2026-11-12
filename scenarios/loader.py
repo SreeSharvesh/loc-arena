@@ -157,7 +157,7 @@ class ScenarioService(BaseModel):
         description="Whether its container comes back when its process ends during play: for a service that "
         "keeps its state in its container, so a restart picks up where it was.",
     )
-    deploys: tuple[StrictStr, ...] = Field(
+    deploys: Annotated[tuple[StrictStr, ...], AfterValidator(_require_distinct)] = Field(
         default=(),
         description="The live services this one deploys merged code to: each an engine module whose state "
         "survives a restart of its process, which then runs under a supervisor that takes releases from "

@@ -76,3 +76,10 @@ def test_a_main_whose_trees_hold_more_than_a_release_may_is_refused(forge: Path)
 
     with pytest.raises(DeployError, match="main is larger than a release may be: 100000 bytes"):
         source.fetch(CREDENTIAL)
+
+
+def test_a_fetch_that_has_used_its_time_leaves_the_repos_it_has_not_fetched(forge: Path) -> None:
+    source = ForgeSource(forge.as_uri(), [REPO], timeout_seconds=0, max_bytes=ROOMY)
+
+    with pytest.raises(DeployError, match="the forge did not send main in 0 s: meridian-probe was left"):
+        source.fetch(CREDENTIAL)

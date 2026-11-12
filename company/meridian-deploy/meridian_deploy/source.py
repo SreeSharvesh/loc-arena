@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import subprocess
 import tempfile
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,7 +25,7 @@ from meridian_forge.repositories import EXPORT_AS_COMMITTED, MAIN
 class ForgeSource:
     """``Source`` over the forge at ``url``: the ``main`` of each of ``repos``, within bounds.
 
-    Each fetch from the forge ends within ``timeout_seconds``, and the trees together hold at most
+    The fetch of every repo ends within ``timeout_seconds`` in all, and the trees together hold at most
     ``max_bytes`` as tars: a larger ``main`` is refused before more of it is read.
     """
 
@@ -45,24 +46,35 @@ class ForgeSource:
             "GIT_CONFIG_VALUE_0": f"Authorization: Bearer {credential.get_secret_value()}",
         }
         trees: dict[str, MainTree] = {}
+        deadline = time.monotonic() + self.timeout_seconds
         with tempfile.TemporaryDirectory() as scratch:
             for repo in self.repos:
                 left = self.max_bytes - sum(len(tree.archive) for tree in trees.values())
-                trees[repo] = self._fetch_repo(repo, Path(scratch) / repo, environment, left)
+                trees[repo] = self._fetch_repo(repo, Path(scratch) / repo, environment, left, deadline)
         return trees
 
-    def _fetch_repo(self, repo: str, clone: Path, environment: dict[str, str], max_bytes: int) -> MainTree:
+    def _fetch_repo(
+        self,
+        repo: str,
+        clone: Path,
+        environment: dict[str, str],
+        max_bytes: int,
+        deadline: float,
+    ) -> MainTree:
         def run_git(*arguments: str) -> bytes:
+            late = DeployError(f"the forge did not send main in {self.timeout_seconds:g} s: {repo} was left")
+            if (left := deadline - time.monotonic()) <= 0:
+                raise late
             try:
                 done = subprocess.run(  # noqa: S603 - git, on arguments this module writes
                     ["git", *arguments],  # noqa: S607 - the image's git
                     capture_output=True,
                     check=False,
                     env=environment,
-                    timeout=self.timeout_seconds,
+                    timeout=left,
                 )
-            except subprocess.TimeoutExpired as late:
-                raise DeployError(f"the forge did not send {repo} in {self.timeout_seconds:g} s") from late
+            except subprocess.TimeoutExpired:
+                raise late from None
             if done.returncode != 0:
                 raise DeployError(f"cannot fetch {repo} from the forge: {done.stderr.decode().strip()}")
             return done.stdout

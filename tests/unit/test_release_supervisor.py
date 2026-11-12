@@ -24,7 +24,12 @@ import anyio
 import pytest
 from fastapi.testclient import TestClient
 from loc_arena.deploy_service import SupervisorRollout
-from loc_arena.release_supervisor import RELEASE_PATH, SupervisedService, create_supervisor_app
+from loc_arena.release_supervisor import (
+    RELEASE_PATH,
+    ReleaseState,
+    SupervisedService,
+    create_supervisor_app,
+)
 from loc_arena.settings import DeploySettings
 from pydantic import SecretStr
 from starlette.types import ASGIApp
@@ -228,6 +233,15 @@ def test_a_supervisor_started_again_runs_the_release_it_held(tmp_path: Path, sup
     assert version == "kept"
 
 
+def test_a_supervisor_whose_service_never_started_stops_without_error(tmp_path: Path) -> None:
+    settings = DeploySettings(releases_directory=tmp_path / "releases")
+    service = SupervisedService(["true"], 1, settings, {}, lambda: None)
+
+    service.stop()
+
+    assert service.read_state() == ReleaseState(release=None, serving=False)
+
+
 def test_stopping_the_supervisor_ends_the_service(supervised: Supervised) -> None:
     supervised.client.__exit__(None, None, None)
 
@@ -287,7 +301,8 @@ def test_a_request_is_refused_on_its_head_before_any_of_its_body_is_read(
     async def send(message: dict[str, Any]) -> None:
         sent.append(message)
 
-    anyio.run(supervised.client.app, {**scope, "headers": [h for h in headers if h[1]]}, read_body, send)
+    sent_headers = [header for header in headers if header[1]]
+    anyio.run(supervised.client.app, {**scope, "headers": sent_headers}, read_body, send)
 
     assert sent[0]["status"] == refused
 

@@ -200,7 +200,8 @@ class SupervisedService:
                 os.killpg(process.pid, signal.SIGKILL)  # the group it leads: its children too
             process.wait()
         self._end_leftovers()
-        self._copier.join(self._settings.stop_seconds)  # its stderr has closed: its last errors are in
+        if self._copier.is_alive():  # none before the service first started
+            self._copier.join(self._settings.stop_seconds)  # its stderr has closed: its last errors are in
 
     def _answers(self, wait_seconds: float) -> bool:
         """Whether the service's own process is alive and its port accepts within ``wait_seconds``."""
