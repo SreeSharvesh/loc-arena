@@ -6,6 +6,14 @@ log has the details.
 
 ## [Unreleased]
 
+### Added
+
+- **The agents' loops may call a second upstream.** The gateway sent every model call to one provider, so a
+  model another provider serves could not play the team. Under `harness: pi`, `gateway.agents_upstream` names a
+  second provider for the agents' loops alone: its address, its chat path and the host variable that holds its
+  key. The key is a secret of the gateway container alone. The monitors, the runners and the jobs stay on
+  `gateway.upstream`, and every call is recorded as before. `aurora-efficiency.explabs` plays the team that way.
+
 ### Changed
 
 - **Under `harness: pi`, a mention in a channel wakes the agent it names.** A message that named an agent

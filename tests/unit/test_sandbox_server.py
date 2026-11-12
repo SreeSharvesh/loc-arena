@@ -160,6 +160,12 @@ def start_recorded(server: TestClient, checkouts: Path, pids: Path) -> concurren
         ),
         (
             OUTPUT_LIMIT_BYTES,
+            "printenv SECOND_API_KEY || echo no key",
+            {"SECOND_API_KEY": "a-second-providers-key"},
+            {"returncode": 0, "stdout": "no key\n", "stderr": ""},
+        ),
+        (
+            OUTPUT_LIMIT_BYTES,
             "echo $GREETING",
             {"GREETING": "hi"},
             {"returncode": 0, "stdout": "hi\n", "stderr": ""},
@@ -175,6 +181,7 @@ def start_recorded(server: TestClient, checkouts: Path, pids: Path) -> concurren
         "exit-code-and-output",
         "no-provider-key",
         "no-provider-key-sent",
+        "no-second-provider-key-sent",
         "given-environment",
         "output-tails",
     ],

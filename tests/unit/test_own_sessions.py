@@ -22,8 +22,10 @@ from loc_arena.own_sessions import (
     play_sessions,
     record_session_ends,
 )
+from loc_arena.settings import AgentsUpstream
 from loc_arena.task import TOOLS_URL_VARIABLE
 from loc_arena.tool_records import append_to
+from pydantic import HttpUrl
 
 # A stand-in for pi in RPC mode: it records each prompt and its arguments, then does what its home says.
 PI = f"""#!{sys.executable}
@@ -379,6 +381,22 @@ def test_each_loop_may_make_its_agents_turn_budget_of_calls_sent_with_the_config
         "provider": {"order": ["together", "baseten", "deepseek"], "allow_fallbacks": False},
         "reasoning": {"effort": "none"},
     }
+
+
+def test_a_loop_on_the_agents_own_upstream_is_sent_without_openrouters_provider_routing() -> None:
+    fast = load_run_config("configs/aurora-efficiency.fast.yaml")
+    second = AgentsUpstream(
+        url=HttpUrl("https://api.second.example"),
+        chat_path="v1/chat",
+        key_variable="SECOND_API_KEY",
+    )
+    gateway = fast.settings.gateway.model_copy(update={"agents_upstream": second})
+    config = dataclasses.replace(fast, settings=fast.settings.model_copy(update={"gateway": gateway}))
+
+    loops = describe_loops(config)
+
+    assert loops is not None
+    assert "provider" not in loops.overrides
 
 
 def test_the_native_loop_has_no_loop_at_the_gateway() -> None:

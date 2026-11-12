@@ -207,7 +207,7 @@ under the workload and its sponsor; a node's or a runner's token admits no model
 
 | Agent code can reach | In a stack run |
 |---|---|
-| the OpenRouter key, the internet, DNS, the host's files and `.env` | no |
+| the OpenRouter key and the key of `gateway.agents_upstream`, the internet, DNS, the host's files and `.env` | no |
 | the sealed call log or the Collector, the grader's reference answers, the episode's logs | no |
 | the agent loop (it listens on no port) | no |
 | another agent's sandbox or credentials | no |

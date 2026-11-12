@@ -15,6 +15,7 @@ from typing import Any
 from pydantic import JsonValue
 
 LOOP_ROUTE_PREFIX = "loop"
+AGENTS_KEY_SECRET_NAME = "agents_upstream_key"  # the key of gateway.agents_upstream, when a run sets one
 NEVER_REFILLS = "87600h"  # a rate-limit bucket that refills once in ten years counts calls per play
 
 
@@ -35,8 +36,12 @@ def render_loop_routes(
     policies: Mapping[str, Any],
     backends: Sequence[Mapping[str, Any]],
     chat_path: str,
+    upstream_chat_path: str,
 ) -> list[dict[str, Any]]:
-    """Each loop's route (agentgateway v1.6 schema): ``policies``, the episode alone admitted, and its own."""
+    """Each loop's route (agentgateway v1.6 schema): ``policies``, the episode alone admitted, and its own.
+
+    The episode calls a loop on ``chat_path``; its calls reach ``backends`` on ``upstream_chat_path``.
+    """
     if loops is None:
         return []
     return [
@@ -48,7 +53,7 @@ def render_loop_routes(
                 # Parsed as a chat completion, so the overrides are set on it.
                 "ai": {"routes": {"*": "completions"}, "overrides": dict(loops.overrides)},
                 "authorization": {"rules": [{"allow": "size(request.body) >= 0"}]},
-                "urlRewrite": {"path": {"full": f"/{chat_path}"}},
+                "urlRewrite": {"path": {"full": f"/{upstream_chat_path}"}},
                 "localRateLimit": [
                     {
                         "type": "requests",

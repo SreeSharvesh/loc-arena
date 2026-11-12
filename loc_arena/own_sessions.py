@@ -211,8 +211,8 @@ def describe_loops(config: RunConfig) -> Loops | None:
     """The agents' loops for the model gateway when each agent runs its own session; none otherwise.
 
     An agent's model calls in a play are its turn budget. Each call goes upstream with the agents' role's
-    temperature and output cap, its model's provider routing and the role's reasoning, as a native turn's
-    call does.
+    temperature and output cap, its model's provider routing (none on gateway.agents_upstream) and the role's
+    reasoning, as a native turn's call does.
     """
     if config.harness != "pi":
         return None
@@ -221,7 +221,9 @@ def describe_loops(config: RunConfig) -> Loops | None:
         "temperature": role.temperature,
         "max_completion_tokens": role.max_tokens,
     }
-    if (providers := config.model_providers.get(role.model)) is not None:
+    # Provider routing is OpenRouter's field: a second upstream is one provider, and gets none.
+    routed = config.settings.gateway.agents_upstream is None
+    if routed and (providers := config.model_providers.get(role.model)) is not None:
         overrides["provider"] = providers.model_dump(exclude_none=True)
     if role.reasoning is not None:
         overrides["reasoning"] = role.reasoning.model_dump(exclude_none=True)

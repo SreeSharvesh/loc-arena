@@ -30,11 +30,11 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 from urllib.parse import urlsplit
 
 import certifi
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, JsonValue, TypeAdapter, ValidationError
 
 from loc_arena.compose_document import ComposeService
 from loc_arena.config import RunConfig
@@ -45,8 +45,8 @@ from loc_arena.gateway.core import (
     OPENROUTER_URL,
     OpenRouterProvider,
 )
-from loc_arena.gateway.loop_routes import NEVER_REFILLS, Loops, render_loop_routes
-from loc_arena.settings import LocArenaSettings
+from loc_arena.gateway.loop_routes import AGENTS_KEY_SECRET_NAME, NEVER_REFILLS, Loops, render_loop_routes
+from loc_arena.settings import GatewaySettings, LocArenaSettings
 from loc_arena.yaml_documents import dump_document
 
 MODEL_GATEWAY_SERVICE = "gateway"  # its compose service and host name
@@ -219,17 +219,22 @@ def render_model_gateway_config(
         }
         for caller in callers
     ]
-    upstream, roots = gateway.upstream, str(gateway.secrets_dir / PROVIDER_ROOTS_SECRET_NAME)
-    backends = [
-        {
-            "ai": {
-                "name": "upstream",
-                "hostOverride": f"{upstream.host}:{upstream.port}",
-                "provider": {"custom": {"formats": [{"type": "completions", "path": f"/{CHAT_PATH}"}]}},
-                **({"policies": {"backendTLS": {"root": roots}}} if upstream.scheme == "https" else {}),
+    roots = str(gateway.secrets_dir / PROVIDER_ROOTS_SECRET_NAME)
+
+    def reach(name: str, upstream: HttpUrl, chat_path: str) -> list[dict[str, Any]]:
+        return [
+            {
+                "ai": {
+                    "name": name,
+                    "hostOverride": f"{upstream.host}:{upstream.port}",
+                    "provider": {"custom": {"formats": [{"type": "completions", "path": f"/{chat_path}"}]}},
+                    **({"policies": {"backendTLS": {"root": roots}}} if upstream.scheme == "https" else {}),
+                },
             },
-        },
-    ]
+        ]
+
+    backends = reach("upstream", gateway.upstream, CHAT_PATH)
+    second = gateway.agents_upstream
     by_token = {
         "mode": "strict",
         "location": {"header": {"name": "authorization", "prefix": "Bearer "}},
@@ -296,9 +301,19 @@ def render_model_gateway_config(
         },
         *render_loop_routes(
             loops,
-            {**shared, "apiKey": {**by_token, "keys": [key for key in keys if key["metadata"] == episode]}},
-            backends,
+            {
+                **shared,
+                "apiKey": {**by_token, "keys": [key for key in keys if key["metadata"] == episode]},
+                # The loops' own upstream, when the run sets one, takes its own key.
+                **(
+                    {"backendAuth": {"key": {"file": str(gateway.secrets_dir / AGENTS_KEY_SECRET_NAME)}}}
+                    if second
+                    else {}
+                ),
+            },
+            reach("agents-upstream", second.url, second.chat_path) if second else backends,
             CHAT_PATH,
+            second.chat_path if second else CHAT_PATH,
         ),
         {
             # Any other path: refused, its body read first so the record keeps it, its caller named if known.
@@ -387,7 +402,12 @@ def render_gateway_services(
         MODEL_GATEWAY_SERVICE: {
             "image": stack.tools_gateway_image,
             "command": ["-f", str(gateway.secrets_dir / MODEL_GATEWAY_CONFIG_SECRET_NAME)],
-            "secrets": [KEY_SECRET_NAME, MODEL_GATEWAY_CONFIG_SECRET_NAME, PROVIDER_ROOTS_SECRET_NAME],
+            "secrets": [
+                KEY_SECRET_NAME,
+                *([AGENTS_KEY_SECRET_NAME] if gateway.agents_upstream else []),
+                MODEL_GATEWAY_CONFIG_SECRET_NAME,
+                PROVIDER_ROOTS_SECRET_NAME,
+            ],
             "cap_drop": ["ALL"],
             "networks": [agent_network, egress_network, RECORD_NETWORK],
             "ports": [f"127.0.0.1::{gateway.port}"],
@@ -465,13 +485,15 @@ def render_episode_environment(settings: LocArenaSettings) -> dict[str, str]:
     }
 
 
-def declare_gateway_secrets() -> dict[str, dict[str, str]]:
-    """The provider key, the gateway's and the Collector's configs and the episode's token: host variables.
+def declare_gateway_secrets(gateway: GatewaySettings) -> dict[str, dict[str, str]]:
+    """The provider keys, the gateway's and the Collector's configs and the episode's token: host variables.
 
     The provider's roots are certifi's file: too large for a variable.
     """
+    second = gateway.agents_upstream
     return {
         KEY_SECRET_NAME: {"environment": API_KEY_VARIABLE},
+        **({AGENTS_KEY_SECRET_NAME: {"environment": second.key_variable}} if second else {}),
         PROVIDER_ROOTS_SECRET_NAME: {"file": certifi.where()},
         MODEL_GATEWAY_CONFIG_SECRET_NAME: {"environment": MODEL_GATEWAY_CONFIG_VARIABLE},
         COLLECTOR_CONFIG_SECRET_NAME: {"environment": COLLECTOR_CONFIG_VARIABLE},

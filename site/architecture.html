@@ -107,7 +107,7 @@ in memory and offered no shell, so its agents run no code.</p>
 <h2>The path for model calls</h2>
 
 <p>Every model call travels the same path. An agent holds no model key and never contacts a provider directly. It
-sends its request with its own token to the gateway, which holds the only provider key and is the only component
+sends its request with its own token to the gateway, which alone holds a provider key and is the only component
 with an outbound route. Each call is recorded, with the caller that made it.</p>
 
 <p>There is one path, so one component sees every call, and the gateway's call record is complete. The checker

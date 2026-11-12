@@ -14,6 +14,12 @@ from sandbox_server.wire import CommandRequest, CommandResult
 
 # The variable the gateway's key travels in. The harness takes its name from here, so the two cannot differ.
 API_KEY_VARIABLE = "OPENROUTER_API_KEY"
+_KEY_SUFFIX = "_API_KEY"  # how a provider key's variable ends: the first, and gateway.agents_upstream's
+
+
+def drop_provider_keys(environment: Mapping[str, str]) -> dict[str, str]:
+    """``environment`` without any provider key: what a process that runs agent-reachable code is given."""
+    return {name: value for name, value in environment.items() if not name.endswith(_KEY_SUFFIX)}
 
 
 def run_command(
@@ -21,15 +27,14 @@ def run_command(
     output_limit_bytes: int | None,
     base_environment: Mapping[str, str],
 ) -> CommandResult:
-    """Run ``request`` in ``base_environment`` plus its own, without the provider key.
+    """Run ``request`` in ``base_environment`` plus its own, without a provider key.
 
-    The key is dropped from both environments, whoever sent it. A timeout kills the command's whole session,
+    A key is dropped from both environments, whoever sent it. A timeout kills the command's whole session,
     children included. It reads ``request.stdin`` from a temporary file, so one that never reads it cannot
     block. Its stdout and stderr go to temporary files and come back as their last ``output_limit_bytes``
     bytes, or whole with no limit.
     """
-    environment = {**base_environment, **request.environment}
-    environment.pop(API_KEY_VARIABLE, None)
+    environment = drop_provider_keys({**base_environment, **request.environment})
     with (
         tempfile.TemporaryFile() as stdin,
         tempfile.TemporaryFile() as stdout,

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Annotated, Self
 
 from pydantic import (
+    AfterValidator,
     AwareDatetime,
     BaseModel,
     ConfigDict,
@@ -21,7 +22,6 @@ from pydantic import (
     PositiveFloat,
     PositiveInt,
     StrictBool,
-    field_validator,
     model_validator,
 )
 
@@ -59,12 +59,41 @@ class InferenceSettings(SettingsGroup):
     )
 
 
-class GatewaySettings(SettingsGroup):
-    """The model gateway (``gateway:``): its one upstream, what it forwards, and the record of every call."""
+def _require_https(url: HttpUrl) -> HttpUrl:
+    """Refuse an upstream the key would reach in cleartext."""
+    if url.scheme != "https":
+        raise ValueError(f"the upstream must use https, not {url.scheme}")
+    return url
 
-    upstream: HttpUrl = Field(
+
+class AgentsUpstream(SettingsGroup):
+    """A second upstream, for the model calls of the agents' loops alone (``gateway.agents_upstream``)."""
+
+    url: Annotated[HttpUrl, AfterValidator(_require_https)] = Field(
+        description="Where the loops' calls go; HTTPS only, since requests carry the key.",
+    )
+    chat_path: Annotated[str, Field(pattern=r"^[^/]")] = Field(
+        description="The upstream's chat completions path, with no leading slash: v1/chat/completions.",
+    )
+    key_variable: Annotated[str, Field(pattern=r"^\w+_API_KEY$")] = Field(
+        description="The name of the host variable that holds this upstream's key; it ends in _API_KEY, as "
+        "every variable kept from the agents' code does. The key reaches the gateway container alone, as a "
+        "compose secret.",
+    )
+
+
+class GatewaySettings(SettingsGroup):
+    """The model gateway (``gateway:``): its upstream, what it forwards, and the record of every call."""
+
+    upstream: Annotated[HttpUrl, AfterValidator(_require_https)] = Field(
         default=HttpUrl("https://openrouter.ai"),
-        description="The one upstream every request goes to; HTTPS only, since requests carry the key.",
+        description="The upstream every request goes to, but the loops' with agents_upstream; HTTPS only, "
+        "since requests carry the key.",
+    )
+    agents_upstream: AgentsUpstream | None = Field(
+        default=None,
+        description="Under harness pi, the upstream of the agents' loops, for a model another provider "
+        "serves; the monitors, the runners and the jobs stay on upstream. Unset: the loops use upstream too.",
     )
     allowed_paths: tuple[str, ...] = Field(
         default=("api/v1/chat/completions", "api/v1/completions", "api/v1/models"),
@@ -133,14 +162,6 @@ class GatewaySettings(SettingsGroup):
         "model gateway its (model_gateway_config), in the Collector its (collector_config), and in the "
         "episode its own key to the model gateway (gateway_token).",
     )
-
-    @field_validator("upstream")
-    @classmethod
-    def require_https(cls, upstream: HttpUrl) -> HttpUrl:
-        """Refuse an upstream the key would reach in cleartext."""
-        if upstream.scheme != "https":
-            raise ValueError(f"the upstream must use https, not {upstream.scheme}")
-        return upstream
 
     @model_validator(mode="after")
     def require_each_alias_to_name_a_runner_model(self) -> Self:

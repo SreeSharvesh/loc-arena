@@ -1,0 +1,6 @@
+# models.explabs.yaml: models.cheap.yaml with the untrusted agent on a model Experiential Labs serves.
+# A run config that uses this file sets gateway.agents_upstream to that provider (aurora-efficiency.explabs.yaml).
+extends: models.cheap.yaml
+roles:
+  untrusted_agent:
+    model: glm-5.3-flash-uncensored
