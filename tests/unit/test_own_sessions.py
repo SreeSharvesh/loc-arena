@@ -5,8 +5,10 @@ from __future__ import annotations
 import dataclasses
 import json
 import sys
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
+from time import monotonic
 
 import pytest
 from loc_arena.config import RunConfig, load_run_config
@@ -75,7 +77,8 @@ def config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> RunConfig:
     config = load_run_config("configs/aurora-efficiency.yaml")
     (tmp_path / "records").mkdir()
     stack = config.settings.stack.model_copy(update={"records_directory": tmp_path / "records"})
-    return dataclasses.replace(config, settings=config.settings.model_copy(update={"stack": stack}))
+    pi = config.settings.pi.model_copy(update={"minimum_play_seconds": 0.0})  # the run config's is minutes
+    return dataclasses.replace(config, settings=config.settings.model_copy(update={"stack": stack, "pi": pi}))
 
 
 def play(config: RunConfig, tmp_path: Path, seconds: float = 30) -> dict[str, SessionEnd]:
@@ -128,6 +131,53 @@ def test_a_notice_of_a_topic_an_idle_agent_subscribed_to_starts_its_session_agai
 
     woken = (inputs_of(tmp_path / "eval-agent"), ended["eval-agent"])
     assert woken == ([TASK, NOTICE], SessionEnd("finished", 0))  # play went on until it was idle again
+
+
+def lasting(config: RunConfig, minimum: float) -> RunConfig:
+    pi = config.settings.pi.model_copy(update={"minimum_play_seconds": minimum})
+    return dataclasses.replace(config, settings=config.settings.model_copy(update={"pi": pi}))
+
+
+def test_play_lasts_its_minimum_though_every_session_is_idle(config: RunConfig, tmp_path: Path) -> None:
+    start = monotonic()
+
+    ended = play(lasting(config, 2.0), tmp_path)
+
+    assert (monotonic() - start >= 2.0, ended) == (True, dict.fromkeys(BRIEFS, SessionEnd("finished", 0)))
+
+
+def test_the_wall_clock_ends_play_before_a_longer_minimum(config: RunConfig, tmp_path: Path) -> None:
+    start = monotonic()
+
+    play(lasting(config, 40.0), tmp_path, seconds=1)
+
+    assert monotonic() - start < 30
+
+
+def test_a_notice_that_comes_while_every_session_is_idle_starts_its_session_within_the_minimum(
+    config: RunConfig,
+    tmp_path: Path,
+) -> None:
+    files = message_from_agent_main(config, tmp_path)
+    later = threading.Timer(1.0, lambda: append_to(Path(files["writes"]))(files["record"]))
+    later.start()
+
+    play(lasting(config, 3.0), tmp_path)
+
+    assert inputs_of(tmp_path / "eval-agent") == [TASK, NOTICE]
+
+
+def test_play_with_no_session_to_run_ends_at_once_whatever_its_minimum(
+    config: RunConfig,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(GATEWAY_URL_VARIABLE)  # no agent's pi home can be written
+    start = monotonic()
+
+    ended = play(lasting(config, 20.0), tmp_path)
+
+    assert (monotonic() - start < 10, {end.reason for end in ended.values()}) == (True, {"failed"})
 
 
 def test_an_agent_that_unsubscribed_from_a_topic_gets_no_notice_of_it(
@@ -322,7 +372,7 @@ def test_each_loop_may_make_its_agents_turn_budget_of_calls_sent_with_the_config
     loops = describe_loops(fast)
 
     assert loops is not None
-    assert (loops.calls["agent-main"], loops.calls["eval-agent"]) == (30, 28)
+    assert (loops.calls["agent-main"], loops.calls["eval-agent"]) == (80, 60)
     assert loops.overrides == {
         "temperature": 1.0,
         "max_completion_tokens": 8192,

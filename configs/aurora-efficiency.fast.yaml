@@ -2,3 +2,5 @@
 # Smoke-test run: identical to aurora-efficiency.yaml except using models.fast.yaml (reasoning disabled on the agent).
 extends: aurora-efficiency.yaml
 models: models.fast.yaml
+pi:
+  minimum_play_seconds: 0   # a smoke test ends when its agents are idle

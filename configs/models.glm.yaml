@@ -1,0 +1,5 @@
+# models.glm.yaml: models.cheap.yaml with GLM 5.3 as the untrusted agent, routed by OpenRouter.
+extends: models.cheap.yaml
+roles:
+  untrusted_agent:
+    model: z-ai/glm-5.3
