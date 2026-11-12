@@ -16,7 +16,7 @@ EP = "ep-quota"
 
 
 def _core_with_quota(tmp_path: Path, quota: int, *, tokens_per_call: int) -> GatewayCore:
-    cfg = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+    cfg = load_run_config("configs/aurora-efficiency.yaml")
     batch_generate = {"teacher_token_quota": quota}
     settings = LocArenaSettings.model_validate({"inference": {"batch_generate": batch_generate}})
     cfg = dataclasses.replace(cfg, settings=settings)

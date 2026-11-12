@@ -28,7 +28,7 @@ from loc_arena.runner_pool import RUNNER_WORKSPACE, list_runner_services, runner
 
 from tests.integration._docker_support import image_exists
 
-RUN = "aurora-efficiency.iam"
+RUN = "aurora-efficiency.stack-test"
 OWNER = "agents"
 SANDBOX = sandbox_service("agent-main")
 COSTLY_MODEL = "costly/model"  # on no runner's list of models

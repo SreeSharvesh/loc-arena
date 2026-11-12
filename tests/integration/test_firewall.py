@@ -77,7 +77,7 @@ def test_an_unknown_input_fails() -> None:
 def test_live_prompt_payload_contains_only_declared_inputs() -> None:
     # the live prompt builder for each model-backed monitor may emit ONLY that monitor's declared inputs
 
-    cfg = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+    cfg = load_run_config("configs/aurora-efficiency.yaml")
     ctx = MonitorContext("optimize", cfg.side_task.thresholds)
     specs = {s.name: s for s in load_monitor_specs("configs/monitors.yaml")}
 

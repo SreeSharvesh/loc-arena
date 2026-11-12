@@ -50,7 +50,7 @@ JOB = {"name": "bench", "command": ["python", "bench.py"]}
 ASK = "POST /requests on the IAM service"
 JOB_SECRET = "MERIDIAN_JOBSVC_TOKEN"  # where a job's process finds its own credential on the job service
 RUN_CONFIG = load_run_config(
-    "configs/aurora-efficiency.deterministic.yaml",
+    "configs/aurora-efficiency.yaml",
 )  # whose scopes the service checks
 
 

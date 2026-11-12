@@ -304,7 +304,7 @@ class StackSettings(SettingsGroup):
     command_output_limit_bytes: PositiveInt = Field(
         default=10_000,
         description="Bytes of the stdout and of the stderr of an agent's bash command kept, counted from the "
-        "end; small enough that both fit in one tool result (`agent_loop.tool_result_max_chars`).",
+        "end; small enough that both fit in one tool result.",
     )
     sandbox_port: int = Field(
         default=8090,
@@ -330,18 +330,6 @@ class StackSettings(SettingsGroup):
     tools_timeout_seconds: PositiveFloat = Field(
         default=300.0,
         description="Seconds one MCP tool call through agentgateway may take before it is an error result.",
-    )
-    tools_delivery_attempts: PositiveInt = Field(
-        default=3,
-        description="Attempts at each read the harness makes for an agent at the start of its turn (its IAM "
-        "inbox, its unread chat, its assigned tickets) while the service has not taken the read; a read that "
-        "fails is a warning, and the next turn reads again. Chat counts an answered read as read, so the "
-        "messages of an answer that was lost are not delivered.",
-    )
-    tools_connect_seconds: PositiveFloat = Field(
-        default=30.0,
-        description="Seconds each agent's MCP client keeps retrying its first listing of tools, while "
-        "agentgateway starts; then the episode fails.",
     )
     checkouts_directory: Path = Field(
         default=Path("/checkouts"),
@@ -383,7 +371,7 @@ class IamSettings(SettingsGroup):
     enabled: StrictBool = Field(
         default=True,
         description="Run central IAM as a live service and put the scenario's ``iam:`` services under it. "
-        "Only a stack run starts IAM, so an in-process run (the deterministic fixture) turns it off.",
+        "A run needs it: a stack refuses a config that turns it off.",
     )
     service: Annotated[str, Field(strict=True, pattern=r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")] = Field(
         default="iam",
@@ -432,33 +420,22 @@ class EvalkitSettings(SettingsGroup):
 
 
 class TicketsSettings(SettingsGroup):
-    """The tickets service (the run config's ``tickets:`` block): its database, and what agents hear of it."""
+    """The tickets service (the run config's ``tickets:`` block): its database."""
 
     database: Path = Field(
         default=Path("/var/lib/tickets/tickets.db"),
         description="Its SQLite file. A new container finds none and replays the scenario's ticket seed into "
         "a new one, so the honest twin's recreated service starts from the seed; a restarted one keeps it.",
     )
-    deliver_assigned: bool = Field(
-        default=False,
-        description="Whether each agent offered search_tickets is told, at the start of its turn, of each "
-        "ticket newly assigned to it. The read is recorded by the service as the agent's call.",
-    )
 
 
 class ChatSettings(SettingsGroup):
-    """The chat service (the run config's ``chat:`` block): its database, and what agents hear of it."""
+    """The chat service (the run config's ``chat:`` block): its database."""
 
     database: Path = Field(
         default=Path("/var/lib/chat/chat.db"),
         description="Its SQLite file. A new container finds none and replays the scenario's chat seed into a "
         "new one, so the honest twin's recreated service starts from the seed; a restarted one keeps it.",
-    )
-    deliver_unread: bool = Field(
-        default=False,
-        description="Whether each agent offered unread is handed, at the start of its turn, the direct "
-        "messages to it and the channel messages mentioning it since its last unread. The read is recorded "
-        "by the service as the agent's call, and moves the agent's read position.",
     )
 
 
@@ -494,10 +471,8 @@ class ForgeSettings(SettingsGroup):
     )
     commit_date: AwareDatetime | None = Field(
         default=None,
-        description="The date of every commit a play makes in place of the time it is made: the forge's "
-        "merges, the coworkers' commits and those of agents whose commands run in this process. The "
-        "deterministic fixture sets it, so its commit IDs, which the forge's tools return and the sealed log "
-        "keeps, are the same each run. Unset, each commit is dated when it is made.",
+        description="The date of the forge's merges and the coworkers' commits in place of the time each "
+        "is made, so their commit IDs are the same each run. Unset, each commit is dated when it is made.",
     )
 
     @model_validator(mode="after")
@@ -511,7 +486,7 @@ class ForgeSettings(SettingsGroup):
 class HistorySettings(SettingsGroup):
     """What one capture of an agent's checkout reads (the run config's ``history:`` block).
 
-    After each of an agent's native tool calls the episode stores its checkout
+    The episode stores each agent's checkout as cloned and at the end of play
     (``loc_arena.checkout_history``); these bound one capture, so an agent filling its checkout cannot hold
     the episode.
     """

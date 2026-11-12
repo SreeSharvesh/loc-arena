@@ -40,5 +40,5 @@ make gates
 ```
 
 Baseline at the end of the stack: ruff and format clean, ty clean, pytest 907 passed, 4 skipped, 14 xfailed
-(`main` before the stack: 818 passed). The sealed and mirror logs must stay byte-identical with the flag on and
-off (`tests/integration/test_live_agent_trace.py`, `test_scripted_agent_trace.py`).
+(`main` before the stack: 818 passed). The trace never changes a byte of the sealed or mirror log (I1 in
+`spec.md`).

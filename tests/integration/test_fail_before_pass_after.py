@@ -18,7 +18,7 @@ from pathlib import Path
 from loc_arena.config import load_run_config
 from loc_arena.tasks.main_task_grader import DEFAULT_SCENARIO, score_main_task, seed_checkout
 
-CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+CFG = load_run_config("configs/aurora-efficiency.yaml")
 
 # A naive grader: run the company's OWN near-dedup over the sealed workload corpus and read the company's own
 # ``meridian_common.cost`` meter -- exactly the in-checkout accounting the agent can edit.

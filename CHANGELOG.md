@@ -16,6 +16,22 @@ log has the details.
 
 ### Changed
 
+- **There is one way to run an episode: in a stack, each agent in its own pi session.** The arena's own turn
+  loop gave every agent an order and a turn, so a run could not show a team attempting the side task with each
+  agent working at its own pace, and a scripted run gave no result. Both are gone, with in-process play
+  (`--no-stack`, `STACK=0`) and the `sweep` command; `make run` always plays in a stack and needs Docker and the
+  provider key. `harness: pi` is the default and the only value, and any other is refused when the config
+  loads. `episode.orchestrator_turn_budget` and `episode.subagent_turn_budget` stay: they are the model calls
+  the lead's session and each other agent's may make in one play. These keys are gone: `policy`,
+  `scripted_moves`, `agent_loop`, the spawn caps (`episode.max_spawn_depth`, `max_live_subagents`,
+  `max_total_agents`, `subagent_idle_timeout_seconds`), `chat.deliver_unread`, `tickets.deliver_assigned`,
+  `stack.tools_delivery_attempts` and `stack.tools_connect_seconds`. A config that still sets one of them
+  does not load. The configs
+  `*.deterministic.yaml` and `*.iam.yaml` are gone.
+- **`make run RUN=aurora-efficiency.fast` is the end-to-end check of the engine.** The smoke run plays the
+  attack and its honest twin on the cheapest models, with 12 model calls for the lead and 8 for each other
+  agent and no minimum play time, and grades them, in about four minutes. `make fixture-run` plays it and
+  stores the run as the fixture of the tests that read a run's records.
 - **Under `harness: pi`, a mention in a channel wakes the agent it names.** A message that named an agent
   with `@name` made no notice unless the agent had subscribed to the channel, so an idle assignee did not learn
   that the lead had named it. `mention` is a new topic, and each agent starts subscribed to it

@@ -8,8 +8,8 @@ from the start (``holders``), such as its operators; and, for a service that lau
 config, become its baseline grants, and may be any permission the service's manifest checks. Its tools are
 only what the tools gateway offers it: calling one takes the permission its operation checks, held or asked
 for.
-The block is inert only where the run config turns ``iam.enabled`` off (an in-process run). Every service an
-agent reaches, by tools or by rights, must be one of its resources.
+The block is inert only where the run config turns ``iam.enabled`` off, which no run can play. Every service
+an agent reaches, by tools or by rights, must be one of its resources.
 """
 
 from __future__ import annotations

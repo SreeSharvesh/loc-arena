@@ -6,6 +6,7 @@ Identities and starting rights sit in their sandbox and service alone; services'
 from __future__ import annotations
 
 import dataclasses
+import json
 from pathlib import Path
 from typing import Any
 
@@ -21,9 +22,11 @@ from loc_arena.episode_stack import (
     sandbox_agent_code,
 )
 from loc_arena.gateway import core
+from loc_arena.notices import NOTICE_TOOLS
 from loc_arena.settings import GatewaySettings, LocArenaSettings, StackSettings
 from loc_arena.task import SANDBOX_URL_VARIABLE, TOOLS_URL_VARIABLE
 from loc_arena.tools_gateway import render_tools_gateway_config
+from loc_arena.workspace_service import WORKSPACE_SERVICE, WORKSPACE_TOOLS
 from sandbox_server.server import ServerSettings
 from scenarios.loader import SCENARIOS_ROOT, EngineModule, LiveService, load_scenario
 
@@ -32,7 +35,7 @@ COMPANY = ("common", "controlplane", "datapipe", "distill", "evalkit", "jobsvc",
 COMPANY_PATH = ":".join(
     f"/app/company/meridian-{repo}" for repo in (*COMPANY, "iam")
 )  # the engine image's company repos, and the IAM client
-SCRIPTED_CONFIG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+SCRIPTED_CONFIG = load_run_config("configs/aurora-efficiency.yaml")
 TWO_AGENTS = (SCRIPTED_CONFIG.agent("agent-main"), SCRIPTED_CONFIG.agent("serving-agent"))
 SANDBOXES = ["sandbox-agent-main", "sandbox-serving-agent"]
 SANDBOXES_WITH_ONE_WITH_NO_RIGHT = ["sandbox-agent-main", "sandbox-controlplane-agent"]
@@ -85,11 +88,10 @@ services:
 """
 
 
-def render(settings: LocArenaSettings | None = None, *, policy: str = "scripted") -> ComposeDocument:
+def render(settings: LocArenaSettings | None = None) -> ComposeDocument:
     config = dataclasses.replace(
         SCRIPTED_CONFIG,
         settings=settings or LocArenaSettings(),
-        policy=policy,
         agents=TWO_AGENTS,
         live_services=(),
     )
@@ -171,7 +173,7 @@ def test_the_episode_and_every_sandbox_are_only_on_the_network_with_no_route_out
 
 
 def test_each_service_mounts_only_the_volumes_it_needs() -> None:
-    compose = render(policy="model")
+    compose = render()
 
     sources = {
         name: sorted(volume.split(":")[0] for volume in service.get("volumes", []))
@@ -365,23 +367,8 @@ def test_the_limits_of_the_episode_and_of_every_sandbox_come_from_their_own_sett
     assert limits == expected
 
 
-def test_a_scripted_episode_gets_the_scripted_moves_mounted_read_only() -> None:
-    compose = render(policy="scripted")
-
-    mounts = scenario_mounts(compose)
-
-    source = SCENARIOS_ROOT / "aurora_efficiency" / "scripted"
-    assert mounts == {
-        "gateway": [],
-        "collector": [],
-        "sandbox-agent-main": [SKILLS_MOUNT],
-        "sandbox-serving-agent": [SKILLS_MOUNT],
-        "episode": [f"{source}:/app/scenarios/aurora_efficiency/scripted:ro,z"],
-    }
-
-
-def test_a_live_model_episode_mounts_only_the_scenarios_skills_read_only_in_every_sandbox() -> None:
-    compose = render(policy="model")
+def test_an_episode_mounts_only_the_scenarios_skills_read_only_in_every_sandbox() -> None:
+    compose = render()
 
     mounts = scenario_mounts(compose)
 
@@ -395,7 +382,7 @@ def test_a_live_model_episode_mounts_only_the_scenarios_skills_read_only_in_ever
 
 
 def test_grading_a_stack_run_sandboxes_the_agent_code_its_config_runs_in_process() -> None:
-    config = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+    config = load_run_config("configs/aurora-efficiency.yaml")
     assert not config.settings.stack.sandbox_agent_code
 
     graded_with = sandbox_agent_code(config)
@@ -665,10 +652,12 @@ def test_the_tools_gateway_allows_each_agent_exactly_the_tools_its_run_config_li
 
     rules = route["policies"]["mcpAuthorization"]
 
+    workspace = json.dumps([*WORKSPACE_TOOLS, *NOTICE_TOOLS])  # every agent's bash, file and notice tools
     assert rules == {
         "rules": [
             {
-                "allow": 'mcp.tool.name in {"agent-main": {"forge": ["open_pr"]}, "controlplane-agent": {}}'
+                "allow": 'mcp.tool.name in {"agent-main": {"forge": ["open_pr"], '
+                f'"workspace": {workspace}}}, "controlplane-agent": {{"workspace": {workspace}}}}}'
                 "[apiKey.agent][mcp.tool.target]",
             },
         ],
@@ -682,7 +671,8 @@ def test_the_tools_gateway_forwards_each_call_with_the_callers_identity_on_the_s
 
     (backend,) = route["backends"]
 
-    assert backend["mcp"]["targets"] == [
+    services = [target for target in backend["mcp"]["targets"] if target["name"] != WORKSPACE_SERVICE]
+    assert services == [
         {
             "name": "forge",
             "mcp": {"host": "http://forge:8000/mcp"},
@@ -744,7 +734,7 @@ def test_the_tools_gateway_logs_each_request_as_json_naming_the_agent_and_a_tool
 
 
 def test_only_a_live_service_whose_scenario_says_so_comes_back_when_its_process_ends() -> None:
-    config = load_run_config("configs/aurora-efficiency.iam.yaml")
+    config = load_run_config("configs/aurora-efficiency.stack-test.yaml")
 
     services = render_compose(config, REPOSITORY, "a-run", [])["services"]
 

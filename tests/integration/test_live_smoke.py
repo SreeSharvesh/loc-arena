@@ -21,7 +21,7 @@ EP = "ep-live"
 
 
 def test_live_edge_to_core_one_real_call_one_sealed_record(tmp_path: Path) -> None:
-    cfg = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+    cfg = load_run_config("configs/aurora-efficiency.yaml")
     sealed_path = tmp_path / "sealed.jsonl"
     core = GatewayCore(
         cfg,

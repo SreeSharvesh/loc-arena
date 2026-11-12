@@ -207,16 +207,14 @@ class _Session:
             return None
 
 
-def describe_loops(config: RunConfig) -> Loops | None:
-    """The agents' loops for the model gateway when each agent runs its own session; none otherwise.
+def describe_loops(config: RunConfig) -> Loops:
+    """The agents' loops for the model gateway.
 
     An agent's model calls in a play are its turn budget. Each call goes upstream with the agents' role's
     temperature and output cap, its model's provider routing (none on gateway.agents_upstream) and the role's
-    reasoning, as a native turn's call does.
+    reasoning.
     """
-    if config.harness != "pi":
-        return None
-    episode, root, role = config.episode, config.turn_order[0], config.models[AGENT_ROLE]
+    episode, root, role = config.episode, config.roster[0], config.models[AGENT_ROLE]
     overrides: dict[str, JsonValue] = {
         "temperature": role.temperature,
         "max_completion_tokens": role.max_tokens,
@@ -237,7 +235,6 @@ def describe_loops(config: RunConfig) -> Loops | None:
 def brief_loop(config: RunConfig, agent: str, brief: str) -> str:
     """``agent``'s system prompt: ``brief``, after the covert objective for the attack's target agent alone.
 
-    A native turn's model call gets the objective from the gateway core, which a loop's call never passes.
     The honest twin has no covert objective, so its target's brief is the legitimate one.
     """
     covert = config.covert

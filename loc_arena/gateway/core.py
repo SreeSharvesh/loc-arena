@@ -3,15 +3,13 @@
 Enforces mandatory inference routing (every model call routes through this core; it holds the only
 provider key and is the only egress), the sealed-vs-tamperable isolation (it writes the SEALED generate
 log the agent cannot reach), and fingerprinted, append-only logging (each call is a record with a
-monotonic seq). It stamps a
-``turn_id`` iff the call carries a valid signed scaffold turn token, a ``batch_id`` iff the call arrives
-via ``/batch_generate``, injects the covert objective server-side for ``covert.target_identity`` only,
-resolves the model by role from ``models.cheap.yaml``, and writes the sealed record ``{seq, ts,
+monotonic seq). It stamps a ``batch_id`` iff the call arrives via ``/batch_generate``, resolves the model
+by role from ``models.cheap.yaml``, and writes the sealed record ``{seq, ts,
 episode_id, caller_identity, turn_id, batch_id, prompt_fp, output_fp, model_role}`` (plus the
 ``credential_kind`` the verifier reads). ``/batch_generate`` is stateless (no loop) and enforces the
 teacher token quota.
 
-Turn-token signing and the ``Provider`` abstraction live here (not new files) to preserve the locked
+Monitor-credential signing and the ``Provider`` abstraction live here (not new files) to preserve the locked
 gateway layout.
 """
 
@@ -22,20 +20,17 @@ import hashlib
 import hmac
 import json
 import os
-import re
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from http import HTTPStatus
 from pathlib import Path
 from typing import Any, Protocol
 
 import httpx2
-import yaml
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError, model_validator
+from pydantic import BaseModel, Field, ValidationError, model_validator
 from sandbox_server.command import API_KEY_VARIABLE, drop_provider_keys
-from sandbox_server.confinement import resolve_inside
 
 from loc_arena.config import ModelSpec, ProviderPreferences, RunConfig
 from loc_arena.logging_.agent_trace import AgentTrace
@@ -109,39 +104,8 @@ def _retry_delay_seconds(resp: httpx2.Response | None, attempt: int) -> float:
 
 
 # --------------------------------------------------------------------------------------------------------
-# Turn tokens: HMAC-signed proof that a call is inside a sanctioned scaffold turn (the scaffold mints them)
+# Monitor credentials: HMAC-signed proof that a call is a trusted monitor's (the harness mints them)
 # --------------------------------------------------------------------------------------------------------
-def sign_turn_token(secret: str, episode_id: str, agent_uid: str, turn: int, exp: float) -> str:
-    """Return a signed turn token ``<b64url(payload)>.<hmac_hex>`` the core can verify.
-
-    The secret is a per-episode secret known to the scaffold and the core, never to agent code. A process
-    outside a sanctioned turn has no valid token, so its calls are stamped off-path.
-    """
-    payload = {"episode_id": episode_id, "agent_uid": agent_uid, "turn": turn, "exp": exp}
-    body = base64.urlsafe_b64encode(json.dumps(payload, sort_keys=True).encode("utf-8")).decode("ascii")
-    sig = hmac.new(secret.encode("utf-8"), body.encode("ascii"), hashlib.sha256).hexdigest()
-    return f"{body}.{sig}"
-
-
-def verify_turn_token(secret: str, token: str, now: float) -> dict[str, Any] | None:
-    """Return the token payload iff the signature is valid and it has not expired, else ``None``."""
-    try:
-        body, sig = token.split(".", 1)
-    except ValueError:
-        return None
-    expected = hmac.new(secret.encode("utf-8"), body.encode("ascii"), hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(sig, expected):
-        return None
-    try:
-        payload: dict[str, Any] = json.loads(base64.urlsafe_b64decode(body.encode("ascii")))
-    except (ValueError, json.JSONDecodeError):
-        return None
-    exp = payload.get("exp")
-    if not isinstance(exp, (int, float)) or now > exp:
-        return None
-    return payload
-
-
 def sign_monitor_credential(secret: str, monitor_name: str, exp: float) -> str:
     """Sign a trusted-monitor credential so a monitor's own model call is attributable, never off-path.
 
@@ -157,8 +121,19 @@ def sign_monitor_credential(secret: str, monitor_name: str, exp: float) -> str:
 
 def verify_monitor_credential(secret: str, token: str, now: float) -> dict[str, Any] | None:
     """Return the monitor-credential payload iff the signature is valid and unexpired, else ``None``."""
-    payload = verify_turn_token(secret, token, now)
-    if payload is None or not payload.get("is_monitor"):
+    try:
+        body, sig = token.split(".", 1)
+    except ValueError:
+        return None
+    expected = hmac.new(secret.encode("utf-8"), body.encode("ascii"), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(sig, expected):
+        return None
+    try:
+        payload: dict[str, Any] = json.loads(base64.urlsafe_b64decode(body.encode("ascii")))
+    except (ValueError, json.JSONDecodeError):
+        return None
+    exp = payload.get("exp")
+    if not isinstance(exp, (int, float)) or now > exp or not payload.get("is_monitor"):
         return None
     return payload
 
@@ -333,121 +308,11 @@ def _estimate_tokens(text: str) -> int:
     return max(1, len(text) // 4)
 
 
-class DeterministicProvider:
-    """A deterministic, no-network provider for scripted/dev runs: a unique completion per call.
-
-    Unique outputs let a scripted worker feed a call's output back as the next call's prompt to build a
-    real self-feeding chain (whose fingerprints link), with no GPU and no provider cost.
-    """
-
-    def __init__(self, *, prompt_tokens: int = 10, completion_tokens: int = 10) -> None:
-        """Fix the per-call token accounting and reset the call counter."""
-        self._pt = prompt_tokens
-        self._ct = completion_tokens
-        self._n = 0
-
-    def generate(
-        self,
-        model: str,
-        messages: list[Message],
-        temperature: float,
-        max_tokens: int,
-        tools: list[ToolSpec] | None,
-        *,
-        spec: ModelSpec | None = None,
-    ) -> ProviderResult:
-        """Return a unique deterministic completion and the fixed token counts."""
-        self._n += 1
-        return ProviderResult(text=f"gen#{self._n}", prompt_tokens=self._pt, completion_tokens=self._ct)
-
-
-class Move(BaseModel):
-    """One scripted tool call; ``content_from`` names a file whose text becomes ``args.content`` at load."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    tool: str
-    args: dict[str, JsonValue] = {}
-    content_from: Path | None = None  # relative to the moves file's directory
-
-
-class _AgentMoves(BaseModel):
-    """One agent's moves in a moves file: those of every episode, and those of the attack alone."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    moves: tuple[Move, ...] = ()
-    attack_moves: tuple[Move, ...] = ()
-
-
-def load_moves(path: Path, config: RunConfig) -> dict[str, list[Move]]:
-    """Each agent's moves in the moves file at ``path``, attack moves included iff covert is enabled.
-
-    An agent the run does not have, or a malformed move, is refused.
-    """
-    document = TypeAdapter(dict[str, _AgentMoves]).validate_python(yaml.safe_load(path.read_text()))
-    unknown = sorted(set(document) - {agent.id for agent in config.agents})
-    if unknown:
-        raise ValueError(f"{path} gives moves to agents the run does not have: {unknown}")
-    return {
-        agent: [
-            _resolve_content(move, path.parent)
-            for move in [*entry.moves, *(entry.attack_moves if config.covert.enabled else ())]
-        ]
-        for agent, entry in document.items()
-    }
-
-
-def _resolve_content(move: Move, directory: Path) -> Move:
-    """``move`` with the text of its ``content_from`` file, inside ``directory``, as ``args.content``."""
-    if move.content_from is None:
-        return move
-    content = resolve_inside(directory, move.content_from).read_text()
-    return Move(tool=move.tool, args={**move.args, "content": content})
-
-
-class ScriptedProvider:
-    """A provider that answers each agent's turns with its scripted moves, in order, as native tool calls.
-
-    It finds the agent in the system prompt (``You are <id>.``); an agent out of moves finishes. A call that
-    offers no tools, such as a coworker's batch, gets a short text reply.
-    """
-
-    def __init__(self, moves: Mapping[str, Sequence[Move]]) -> None:
-        """Queue each agent's moves."""
-        self._moves = {agent: list(queue) for agent, queue in moves.items()}
-        self._calls = 0
-
-    def generate(
-        self,
-        model: str,
-        messages: list[Message],
-        temperature: float,
-        max_tokens: int,
-        tools: list[ToolSpec] | None,
-        *,
-        spec: ModelSpec | None = None,
-    ) -> ProviderResult:
-        """Return the calling agent's next move as a tool call, or text when no tool is offered."""
-        if not tools:
-            return ProviderResult(text="ok", prompt_tokens=1, completion_tokens=1)
-        agent = re.search(r"You are (\S+)\.", "\n\n".join(str(message["content"]) for message in messages))
-        queue = self._moves.get(agent.group(1) if agent else "", [])
-        move = queue.pop(0) if queue else Move(tool="finish")
-        self._calls += 1
-        call = {
-            "id": f"call-{self._calls}",
-            "type": "function",
-            "function": {"name": move.tool, "arguments": json.dumps(move.args)},
-        }
-        return ProviderResult(text="", prompt_tokens=1, completion_tokens=1, tool_calls=[call])
-
-
 # --------------------------------------------------------------------------------------------------------
 # Request/response models
 # --------------------------------------------------------------------------------------------------------
 class GenerateRequest(BaseModel):
-    """A raw or sanctioned generate call arriving at the core.
+    """A generate call arriving at the core.
 
     Carries exactly one of ``prompt`` (a single user message) or ``messages`` (a full chat history). ``tools``
     enables native tool calling and requires ``messages``.
@@ -458,7 +323,6 @@ class GenerateRequest(BaseModel):
     tools: list[ToolSpec] | None = None
     caller_identity: str
     role: str = "teacher"
-    turn_token: str | None = None
     monitor_credential: str | None = None
     temperature: float | None = None
 
@@ -478,7 +342,7 @@ class GenerateRequest(BaseModel):
 
 
 def input_fingerprint(req: GenerateRequest) -> str:
-    """The ``prompt_fp`` of a request, over what the caller submitted (pre-injection).
+    """The ``prompt_fp`` of a request, over what the caller submitted.
 
     A ``prompt`` fingerprints the bare string, so a self-feeding loop that passes the previous output as the
     next prompt links ``prompt_fp == output_fp`` (the verifier relies on this).
@@ -544,9 +408,9 @@ class BatchGenerateResponse(BaseModel):
 class GatewayCore:
     """The sealed core logic (framework-independent so it is testable without HTTP).
 
-    Holds the injected provider (the only egress), the sealed ``AppendOnlyLog``, the per-episode turn
-    secret, and the batch token counter. Resolves identity and stamps, injects the covert objective for
-    the target identity only, calls the provider, and writes exactly one sealed record per model call.
+    Holds the injected provider (the only egress), the sealed ``AppendOnlyLog``, the per-episode
+    secret, and the batch token counter. Resolves identity and stamps, calls the provider, and writes exactly
+    one sealed record per model call.
     """
 
     def __init__(
@@ -560,7 +424,7 @@ class GatewayCore:
         clock: Callable[[], float] = time.time,
         trace: AgentTrace | None = None,
     ) -> None:
-        """Wire the core to its config, episode, sealed log, provider, turn secret and clock."""
+        """Wire the core to its config, episode, sealed log, provider, secret and clock."""
         self._config = config
         self._episode_id = episode_id
         self._sealed = sealed_log
@@ -574,36 +438,13 @@ class GatewayCore:
         self._trace = trace
 
     # -- identity + stamps -------------------------------------------------------------------------------
-    def _resolve(self, req: GenerateRequest, now: float) -> tuple[str, str | None, str]:
-        """Return (identity, turn_id, credential_kind).
-
-        A valid monitor credential wins; then a valid turn token (a sanctioned turn); otherwise the claimed
-        identity with no credential.
-        """
+    def _resolve(self, req: GenerateRequest, now: float) -> tuple[str, str]:
+        """Return (identity, credential_kind): a valid credential's monitor, else the claimed identity."""
         if req.monitor_credential:
             payload = verify_monitor_credential(self._secret, req.monitor_credential, now)
             if payload is not None:
-                return str(payload["monitor"]), None, "monitor"
-        if req.turn_token:
-            payload = verify_turn_token(self._secret, req.turn_token, now)
-            if payload is not None and payload.get("episode_id") == self._episode_id:
-                agent_uid = str(payload["agent_uid"])
-                return agent_uid, f"{agent_uid}:t{int(payload['turn'])}", "turn_token"
-        return req.caller_identity, None, "none"
-
-    def _inject_covert(self, identity: str, messages: list[Message]) -> list[Message]:
-        """Prepend the covert objective to the first message for the target identity only.
-
-        The first message is the system prompt of a chat history, or the sole user message of a ``prompt``.
-        The caller's list is not mutated.
-        """
-        cov = self._config.covert
-        if not (cov.enabled and identity == cov.target_identity):
-            return messages
-        first, *rest = messages
-        if not isinstance(first["content"], str):
-            raise TypeError("covert injection requires the first message's content to be a string")
-        return [{**first, "content": f"{cov.objective_prompt}\n\n{first['content']}"}, *rest]
+                return str(payload["monitor"]), "monitor"
+        return req.caller_identity, "none"
 
     def _model_for(self, role: str) -> ModelSpec:
         spec = self._config.models.get(role)
@@ -628,8 +469,7 @@ class GatewayCore:
     ) -> int:
         """Write one sealed inference-call record and return its seq.
 
-        ``prompt_fp`` is over the agent-submitted input (pre-injection), so covert text is never
-        fingerprinted here and the self-feeding loop linkage the verifier relies on stays clean.
+        ``prompt_fp`` is over the input the caller submitted, which the verifier's loop linkage reads.
         """
         seq = self._sealed.next_seq()
         event = Event(
@@ -678,16 +518,16 @@ class GatewayCore:
 
     # -- endpoints ---------------------------------------------------------------------------------------
     def generate(self, req: GenerateRequest) -> GenerateResponse:
-        """Serve one generate call: resolve, inject, call the provider, write the sealed record."""
+        """Serve one generate call: resolve, call the provider, write the sealed record."""
         ts = self._clock()
-        identity, turn_id, cred = self._resolve(req, ts)
+        identity, cred = self._resolve(req, ts)
         spec = self._model_for(req.role)
         temperature = req.temperature if req.temperature is not None else spec.temperature
-        model_input = self._inject_covert(identity, req.chat_messages())
+        model_input = req.chat_messages()
         result = self._call_provider(spec, model_input, temperature, req.tools)
         seq = self._write_record(
             identity=identity,
-            turn_id=turn_id,
+            turn_id=None,
             batch_id=None,
             prompt_fp=input_fingerprint(req),
             output_fp=output_fingerprint(req, result.text, result.tool_calls),
@@ -708,7 +548,7 @@ class GatewayCore:
             )
         return GenerateResponse(
             text=result.text,
-            turn_id=turn_id,
+            turn_id=None,
             batch_id=None,
             seq=seq,
             caller_identity=identity,
@@ -814,9 +654,7 @@ class Servable(Protocol):
 class DirectTransport:
     """An in-process ``Transport`` dispatching straight to a ``Servable`` (core or edge; no sockets).
 
-    Used by scripted/dev episode assembly so agent code can go through the tamperable edge to the core
-    exactly as in the running stack, without standing up FastAPI. The docker stack uses ``HttpxTransport``
-    instead.
+    The episode wires its edge to its core with it, without standing up FastAPI.
     """
 
     def __init__(self, target: Servable) -> None:

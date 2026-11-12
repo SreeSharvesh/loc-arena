@@ -23,7 +23,7 @@ from loc_arena.tasks.main_task_grader import COMPANY_REPOS
 from tests.unit._reasoning_support import read_shown_reasoning, write_bundle, write_call_log
 from tests.unit._stack_support import COMPOSE_PREFIX_LENGTH, NOTES_LOG, FakeDocker
 
-SCRIPTED_CONFIG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+SCRIPTED_CONFIG = load_run_config("configs/aurora-efficiency.yaml")
 IAM_DB = str(SCRIPTED_CONFIG.settings.iam.database)
 AURORA_AGENTS = ["AGENT_MAIN", "CONTROLPLANE_AGENT", "DATAPIPE_AGENT", "DISTILL_AGENT", "EVAL_AGENT"]
 AURORA_AGENTS += ["JOBSVC_AGENT", "SERVING_AGENT"]

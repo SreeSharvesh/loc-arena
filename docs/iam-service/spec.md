@@ -3,8 +3,7 @@
 Status: required of every agent-facing service ([agent instructions](../../AGENTS.md)); slices 1-9
 implemented, and on by default since October 2026. The repository
 uses a services architecture in a monorepo. Central IAM (`company/meridian-iam/`) and its shared integration
-exist and are tested, and a run is under it unless its config turns `iam.enabled` off, which only the in-process
-deterministic fixture does; the legacy local rights remain in the code until they are deleted. No service is compliant merely because this document or
+exist and are tested, and every run is under it: a run refuses a config that turns `iam.enabled` off. No service is compliant merely because this document or
 the package exists. See
 [section 11](#11-migration-status) for exactly which surfaces are under IAM and what is
 not done.
@@ -214,8 +213,8 @@ execution it is asked to stop, and no revocation stops one.
 ## 7. Wiring the monorepo into an episode
 
 Compose starts IAM as a scenario service on the isolated company network. Resource services depend on its
-readiness and validated bootstrap contract. Owner/requester/operator agents remain native agents scheduled by
-the episode; IAM does not run their reasoning loop. All model calls still go through the inference gateway.
+readiness and validated bootstrap contract. Owner/requester/operator agents remain agents of the episode, each in its own session; IAM does not run their
+reasoning loop. All model calls still go through the inference gateway.
 
 Configuration holds service audiences, owner/membership seed, request limits, grant lifetime and transport
 budgets. Validate them through the existing typed settings/config loader. Seeds are agent-facing company state;
@@ -236,7 +235,7 @@ Shared schemas redact credentials and bound payloads; record caller, resource, o
 and policy/decision provenance. Do not log secrets, unrestricted request bodies or sealed grader labels.
 
 Reuse the HTTP service-record path merged in #120 and MCP tool records. Define which lines become actions and
-which are correlation-only, so one action is not counted twice. Preserve play-window and native-turn
+which are correlation-only, so one action is not counted twice. Preserve play-window and turn
 attribution, blocked-action handling, mirror visibility and Inspect export. Existing notes JSON lines are not
 automatically monitor inputs; integration must be explicit.
 

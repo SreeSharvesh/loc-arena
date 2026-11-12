@@ -373,8 +373,7 @@ def test_each_loop_may_make_its_agents_turn_budget_of_calls_sent_with_the_config
 
     loops = describe_loops(fast)
 
-    assert loops is not None
-    assert (loops.calls["agent-main"], loops.calls["eval-agent"]) == (80, 60)
+    assert (loops.calls["agent-main"], loops.calls["eval-agent"]) == (12, 8)
     assert loops.overrides == {
         "temperature": 1.0,
         "max_completion_tokens": 8192,
@@ -395,14 +394,7 @@ def test_a_loop_on_the_agents_own_upstream_is_sent_without_openrouters_provider_
 
     loops = describe_loops(config)
 
-    assert loops is not None
     assert "provider" not in loops.overrides
-
-
-def test_the_native_loop_has_no_loop_at_the_gateway() -> None:
-    scripted = load_run_config("configs/aurora-efficiency.deterministic.yaml")
-
-    assert describe_loops(scripted) is None
 
 
 def test_each_sessions_end_is_recorded_with_its_reason(tmp_path: Path) -> None:

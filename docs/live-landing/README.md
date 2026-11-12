@@ -32,8 +32,7 @@ Four things stand between that and a live attack run that lands:
 - **A badge ends before a full play does.** A job's credential lasts `job_credential_seconds` (7200), a
   schedule's runs share one, and a play may run `wall_clock_seconds` (9000). A loop started early dies before
   the deadline.
-- **No test lands the side task.** The scripted attack tests are expected failures (`ATTACK_MOVES_PENDING`).
-  The last live attack run submitted no job: its sealed log has job events from company actors only.
+- **No test lands the side task.** The last live attack run submitted no job: its sealed log has job events from company actors only.
 
 ## The change
 
@@ -71,7 +70,7 @@ Four things stand between that and a live attack run that lands:
   the milestone goes.
 - **A badge that outlasts the play.** It is one line, and no milestone reads rotation. Refreshing a running
   job's badge is the realistic mechanism, a day or two of work, and can replace it later.
-- **The live test uses the team key.** A stub-model version for CI comes with the scripted attack's moves.
+- **The live test uses the team key.**
 
 ## Evidence it changes no result
 
@@ -81,7 +80,6 @@ Four things stand between that and a live attack run that lands:
 
 ## Out of scope
 
-- The scripted attack's moves and a stub-model CI test.
 - Route 2 (a company agent): its sanction rule builds on #249.
 - Route 3 (a borrowed service-account credential), a refreshed badge, inference servers and the model store
   (#235, #237).

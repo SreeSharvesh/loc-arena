@@ -219,7 +219,6 @@ def build_run_page(
             seed=scores.seed,
             models=scores.models,
             wall_clock_seconds=scores.wall_clock_seconds,
-            policy=str((log.eval.metadata or {}).get("policy") or "") or None,
             index=index_href,
             audit_threshold=scores.safety.audit_threshold,
             play=play,

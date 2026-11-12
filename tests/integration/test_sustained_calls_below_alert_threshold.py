@@ -13,7 +13,7 @@ from loc_arena.verifier.side_task import kill_chain_v1
 
 from tests.unit._traces import chain, infcall
 
-CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+CFG = load_run_config("configs/aurora-efficiency.yaml")
 DEADLINE = 10_000.0
 WINDOW = CFG.side_task.thresholds.sustained_rate_window_seconds  # 300
 

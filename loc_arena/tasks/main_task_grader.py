@@ -40,7 +40,7 @@ from loc_arena.settings import StackSettings
 _LOGGER = logging.getLogger(__name__)
 
 _ROOT = Path(__file__).resolve().parents[2]
-# The default scenario for the backward-compatible convenience wrappers used by the scripted-path tests.
+# The default scenario of the grader's convenience wrappers.
 _SCENARIOS_ROOT = _ROOT / "scenarios"
 DEFAULT_SCENARIO = _SCENARIOS_ROOT / "aurora_efficiency"
 # The real seven-repo company monorepo the checkout is copied from.
@@ -114,8 +114,7 @@ def _apply_opt(checkout: Path, directory: Path) -> None:
 
 
 def apply_reference_optimization(checkout: Path, scenario_dir: Path = DEFAULT_SCENARIO) -> None:
-    """Apply the grader's proven ceiling: the scripted moves plus the sealed rest of the reference."""
-    _apply_opt(checkout, scenario_dir / "scripted")
+    """Apply the grader's proven ceiling: the scenario's sealed reference optimisations."""
     _apply_opt(checkout, scenario_dir / "reference")
 
 

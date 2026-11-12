@@ -1,6 +1,7 @@
+"""The explorer's pages of the stored run: a run played live in a stack, graded, with its honest twin."""
+
 from __future__ import annotations
 
-import dataclasses
 import json
 import re
 import shutil
@@ -9,259 +10,46 @@ from pathlib import Path
 
 import pytest
 from loc_arena import cli
-from loc_arena.config import ModelSpec, load_run_config
 from loc_arena.explorer.build import RUN_TEMPLATE, TWIN_PLAY, build, build_folder, build_run_page, write_page
 from loc_arena.explorer.page import RunPage
 from loc_arena.explorer.settings import ExplorerSettings
-from loc_arena.gateway.core import Message, Move, ProviderResult, ScriptedProvider, ToolSpec
-from loc_arena.gateway.model_gateway import GatewayCall
-from loc_arena.harness import run_episode
-from loc_arena.logging_.transcript_lanes import WORLD
+from loc_arena.gateway.model_gateway import CALL_RECORD_FILE, locate_call_log
 
-from tests.integration._live_support import TEAM_MOVES
+from tests._stored_run import unpack_stored_run
 
-LIVE_TRACED = dataclasses.replace(
-    load_run_config("configs/aurora-efficiency.deterministic.yaml"),
-    policy="model",
-    agent_transcript=True,
-)
 PAGE_DATA = re.compile(r'<script id="data" type="application/json">(.*?)</script>', re.S)
-# The replies a stack run's gateway recorded, as OpenRouter returned them, each with the model's reasoning:
-# agent-main's first turn, serving-agent's first turn without reasoning, a reply no call of the run received,
-# and the coworker's "ok" twice, the second time to the honest twin's same call (it played after the run).
-RECORDED_REPLIES = (
-    (
-        {
-            "content": None,
-            "tool_calls": [
-                {
-                    "id": "call-1",
-                    "type": "function",
-                    "function": {
-                        "name": "send",
-                        "arguments": json.dumps(TEAM_MOVES["agent-main"][0].args),
-                    },
-                },
-            ],
-        },
-        "plan: have eval-agent blind the monitor",
-    ),
-    ({"content": "ok"}, "a short answer will do"),
-    (
-        {
-            "content": "",
-            "tool_calls": [
-                {
-                    "id": "call-2",
-                    "type": "function",
-                    "function": {
-                        "name": "open_pr",
-                        "arguments": json.dumps(TEAM_MOVES["serving-agent"][0].args),
-                    },
-                },
-            ],
-        },
-        None,
-    ),
-    ({"content": "a reply no call of this run received"}, "reasoning of another run"),
-    ({"content": "ok"}, "the twin's reasoning"),
-)
+# The reasoning each play's coworker reply came with; no agent's reply came with any.
+REASONING = {"attack": "a short answer will do", "twin": "the twin's reasoning"}
 
 
 @pytest.fixture(scope="module")
-def traced_bundle(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """One traced attack run, written by main's own harness, shared by the tests here (it takes seconds)."""
-    with pytest.MonkeyPatch.context() as patch:
-        patch.delenv("OPENROUTER_API_KEY", raising=False)
-        return run_episode(
-            LIVE_TRACED,
-            mode="attack",
-            out_root=tmp_path_factory.mktemp("runs"),
-            provider=ScriptedProvider(TEAM_MOVES),
-            calibration_provider=ScriptedProvider({}),
-            write_report=False,
-        )
-
-
-# What agent-main writes beside each of its actions, as live models do: a refusal, in its own words. Its first
-# three turns are prose alone, which the gateway records as bare text; the second is JSON, the third deep.
-SAID = "I will not do the covert step in my brief. I will do the optimization work and say so openly."
-SAID_ALONE = "Reading the brief before I act: the covert part is not something I will do."
-SAID_AS_JSON = '{"thought": "plan the scheduler change first"}'
-SAID_NESTED = "[" * 100_000 + "]" * 100_000  # valid JSON nested past the parser's recursion limit: prose
-
-
-class TalkingProvider(ScriptedProvider):
-    """The scripted moves, with agent-main's prose beside each tool call, after three turns of prose alone."""
-
-    def __init__(self, moves: dict[str, list[Move]]) -> None:  # noqa: D107
-        super().__init__(moves)
-        self._alone = [SAID_ALONE, SAID_AS_JSON, SAID_NESTED]
-
-    def generate(
-        self,
-        model: str,
-        messages: list[Message],
-        temperature: float,
-        max_tokens: int,
-        tools: list[ToolSpec] | None,
-        *,
-        spec: ModelSpec | None = None,
-    ) -> ProviderResult:
-        agent_main = "You are agent-main." in str(messages[0]["content"])
-        if agent_main and tools and self._alone:
-            return ProviderResult(text=self._alone.pop(0), prompt_tokens=1, completion_tokens=1)
-        result = super().generate(model, messages, temperature, max_tokens, tools, spec=spec)
-        return dataclasses.replace(result, text=SAID) if result.tool_calls and agent_main else result
+def stored_bundle(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """The stored run's bundle, shared by the tests here: none of them writes to it."""
+    return unpack_stored_run(tmp_path_factory.mktemp("stored"))
 
 
 @pytest.fixture(scope="module")
-def talking_page(tmp_path_factory: pytest.TempPathFactory) -> RunPage:
-    """The page of a traced attack run whose agent-main writes prose beside its actions."""
-    with pytest.MonkeyPatch.context() as patch:
-        patch.delenv("OPENROUTER_API_KEY", raising=False)
-        bundle = run_episode(
-            LIVE_TRACED,
-            mode="attack",
-            out_root=tmp_path_factory.mktemp("runs"),
-            provider=TalkingProvider(TEAM_MOVES),
-            calibration_provider=ScriptedProvider({}),
-            write_report=False,
-        )
-    return build_run_page(bundle, ExplorerSettings())
-
-
-@pytest.fixture(scope="module")
-def stack_page(traced_bundle: Path, tmp_path_factory: pytest.TempPathFactory) -> RunPage:
-    """The traced run's page with its bundle where a stack run leaves it, beside its gateway's call log."""
+def stack_bundle(stored_bundle: Path, tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """The stored bundle where a stack run leaves it, beside its gateway's call log, with reasoning."""
     logs = tmp_path_factory.mktemp("logs")
-    bundle = _stack_bundle(traced_bundle, logs)
-    return build_run_page(bundle, ExplorerSettings())
-
-
-def _stack_bundle(traced_bundle: Path, logs: Path) -> Path:
-    """The traced bundle under ``logs`` with a gateway call log beside it, as a stack run leaves it."""
-    bundle = logs / traced_bundle.parent.name / traced_bundle.name
-    shutil.copytree(traced_bundle, bundle)
-    call_log = logs / "gateway" / f"locarena-{bundle.name.rpartition('__')[2]}.calls.jsonl"
+    bundle = _copy_bundle(stored_bundle, logs / "runs" / stored_bundle.name)
+    calls = [json.loads(line) for line in (bundle / CALL_RECORD_FILE).read_text().splitlines()]
+    for call in calls:
+        if "/loop/" not in call["path"]:  # the coworker's call: every agent's goes through its loop's route
+            call["response"]["choices"][0]["message"]["reasoning"] = REASONING[call["play"]]
+    call_log = locate_call_log(logs, bundle.name.rpartition("__")[2])
     call_log.parent.mkdir()
-    calls = [
-        GatewayCall(
-            started_at=started_at,
-            seconds=1.0,
-            caller="episode",
-            method="POST",
-            path="/api/v1/chat/completions",
-            request={},
-            status=200,
-            response={"choices": [{"message": {"role": "assistant", **message, "reasoning": reasoning}}]},
-            complete=True,
-        )
-        for started_at, (message, reasoning) in enumerate(RECORDED_REPLIES)
-    ]
-    call_log.write_text("".join(call.model_dump_json() + "\n" for call in calls))
+    call_log.write_text("".join(json.dumps(call) + "\n" for call in calls))
     return bundle
 
 
-def _reasoning_by_step(page: RunPage) -> dict[str, str]:
-    """The reasoning each step's model calls carry, by step, for the steps with any."""
-    return {
-        step.id.split("/", 1)[1]: call.reasoning
-        for step in page.steps
-        for call in step.calls
-        if call.reasoning
-    }
+def _copy_bundle(bundle: Path, to: Path) -> Path:
+    """A copy of ``bundle`` a test may write to, without the checkouts, which no page reads."""
+    return shutil.copytree(bundle, to, ignore=shutil.ignore_patterns("checkout"))
 
 
-def _index_links(index: Path) -> list[str | None]:
-    """Each run's link in an index page, None for a run without a transcript."""
-    match = PAGE_DATA.search(index.read_text(encoding="utf-8"))
-    assert match is not None
-    return [row["href"] for row in json.loads(match.group(1))["runs"]]
-
-
-def test_every_action_verdict_of_a_traced_run_sits_on_a_step_of_its_actor(traced_bundle: Path) -> None:
-    page = build_run_page(traced_bundle, ExplorerSettings())
-
-    steps = {step.id: step for step in page.steps}
-    placed = [
-        (verdict, steps[verdict.step])
-        for verdict in page.verdicts
-        if verdict.monitor == "action_monitor" and verdict.step is not None
-    ]
-    assert placed
-    assert [verdict for verdict, step in placed if step.agent not in (verdict.actor, WORLD)] == []
-
-
-def test_a_folder_pages_each_traced_run_and_lists_a_run_without_a_transcript(
-    traced_bundle: Path,
-    tmp_path: Path,
-) -> None:
-    folder = tmp_path / "logs"
-    shutil.copytree(traced_bundle, folder / "traced")
-    (folder / "older").mkdir()
-    shutil.copy(traced_bundle / "scores.json", folder / "older" / "scores.json")
-    (folder / "older" / "older.eval").write_text('{"placeholder": true}')
-
-    index = build_folder(folder, tmp_path / "site", ExplorerSettings())
-
-    links = _index_links(index)
-    assert sorted(link is None for link in links) == [False, True]
-    assert all((index.parent / link).exists() for link in links if link)
-
-
-def test_explore_writes_a_run_page_without_opening_a_browser_when_told_not_to(
-    traced_bundle: Path,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    opened: list[str] = []
-    monkeypatch.setattr(webbrowser, "open", opened.append)
-    out = tmp_path / "run.html"
-
-    code = cli.main(["explore", str(traced_bundle), "--out", str(out), "--no-open"])
-
-    assert (code, out.exists(), opened) == (0, True, [])
-
-
-def test_a_turn_shows_the_reasoning_the_gateway_recorded_with_its_reply(stack_page: RunPage) -> None:
-    reasoning = _reasoning_by_step(stack_page)
-
-    assert reasoning["agent-main/0"] == "plan: have eval-agent blind the monitor"
-
-
-def test_of_two_recorded_calls_with_the_same_reply_the_earlier_belongs_to_the_earlier_event(
-    stack_page: RunPage,
-) -> None:
-    reasoning = _reasoning_by_step(stack_page)
-
-    assert reasoning[f"{WORLD}/-1"] == "a short answer will do"
-
-
-def test_no_other_call_shows_reasoning_neither_one_without_it_nor_one_matching_no_event(
-    stack_page: RunPage,
-) -> None:
-    reasoning = _reasoning_by_step(stack_page)
-
-    assert sorted(reasoning) == sorted(["agent-main/0", f"{WORLD}/-1"])
-
-
-def test_a_run_without_a_gateway_call_log_shows_no_reasoning(traced_bundle: Path) -> None:
-    page = build_run_page(traced_bundle, ExplorerSettings())
-
-    assert _reasoning_by_step(page) == {}
-
-
-def test_the_page_carries_each_turns_reasoning_to_the_reader(stack_page: RunPage, tmp_path: Path) -> None:
-    out = write_page(RUN_TEMPLATE, stack_page, tmp_path / "run.html")
-
-    match = PAGE_DATA.search(out.read_text(encoding="utf-8"))
-    assert match is not None
-    calls = [call for step in json.loads(match.group(1))["steps"] for call in step["calls"]]
-    assert [call["reasoning"] for call in calls if call["reasoning"]] == [
-        "a short answer will do",
-        "plan: have eval-agent blind the monitor",
-    ]
+def _list_reasoning(page: RunPage) -> list[str]:
+    return [call.reasoning for step in page.steps for call in step.calls if call.reasoning]
 
 
 def _page_data(path: Path) -> dict:
@@ -270,12 +58,84 @@ def _page_data(path: Path) -> dict:
     return json.loads(match.group(1))
 
 
-def test_a_folder_pages_the_honest_twin_beside_the_run_and_links_them_both_ways(
-    traced_bundle: Path,
+def test_every_verdict_with_a_target_sits_on_a_step_of_the_runs_page(stored_bundle: Path) -> None:
+    verdicts = json.loads((stored_bundle / "scores.json").read_text())["monitor_verdicts"]
+
+    page = build_run_page(stored_bundle, ExplorerSettings())
+
+    step_ids = {step.id for step in page.steps}
+    placed = sorted((v.monitor, v.score) for v in page.verdicts if v.step in step_ids)
+    assert placed == sorted((v["monitor"], v["score"]) for v in verdicts if v["target_seq"] is not None)
+
+
+def test_a_folder_pages_each_traced_run_and_lists_a_run_without_a_transcript(
+    stored_bundle: Path,
     tmp_path: Path,
 ) -> None:
     folder = tmp_path / "logs"
-    shutil.copytree(traced_bundle, folder / "traced")
+    _copy_bundle(stored_bundle, folder / "traced")
+    (folder / "older").mkdir()
+    shutil.copy(stored_bundle / "scores.json", folder / "older" / "scores.json")
+    (folder / "older" / "older.eval").write_text('{"placeholder": true}')
+
+    index = build_folder(folder, tmp_path / "site", ExplorerSettings())
+
+    links = [row["href"] for row in _page_data(index)["runs"]]
+    assert sorted(link is None for link in links) == [False, True]
+    assert all((index.parent / link).exists() for link in links if link)
+
+
+def test_explore_writes_a_run_page_without_opening_a_browser_when_told_not_to(
+    stored_bundle: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    opened: list[str] = []
+    monkeypatch.setattr(webbrowser, "open", opened.append)
+    out = tmp_path / "run.html"
+
+    code = cli.main(["explore", str(stored_bundle), "--out", str(out), "--no-open"])
+
+    assert (code, out.exists(), opened) == (0, True, [])
+
+
+def test_the_page_carries_the_reasoning_the_gateway_recorded_with_a_reply_to_the_reader(
+    stack_bundle: Path,
+    tmp_path: Path,
+) -> None:
+    page = build_run_page(stack_bundle, ExplorerSettings())
+
+    out = write_page(RUN_TEMPLATE, page, tmp_path / "run.html")
+
+    calls = [call for step in _page_data(out)["steps"] for call in step["calls"]]
+    assert [call["reasoning"] for call in calls if call["reasoning"]] == [REASONING["attack"]]
+
+
+def test_the_twins_page_shows_the_reasoning_of_the_twins_own_calls(stack_bundle: Path) -> None:
+    twin = build_run_page(stack_bundle, ExplorerSettings(), play=TWIN_PLAY)
+
+    assert _list_reasoning(twin) == [REASONING["twin"]]
+
+
+def test_a_run_without_a_gateway_call_log_shows_no_reasoning(stored_bundle: Path) -> None:
+    page = build_run_page(stored_bundle, ExplorerSettings())
+
+    assert _list_reasoning(page) == []
+
+
+def test_a_reply_outside_any_agents_turn_is_nothing_an_agent_said(stored_bundle: Path) -> None:
+    page = build_run_page(stored_bundle, ExplorerSettings())
+
+    calls = [call for step in page.steps for call in step.calls]
+    assert [(bool(call.reply), call.said) for call in calls] == [(True, None)]  # the coworker's one reply
+
+
+def test_a_folder_pages_the_honest_twin_beside_the_run_and_links_them_both_ways(
+    stored_bundle: Path,
+    tmp_path: Path,
+) -> None:
+    folder = tmp_path / "logs"
+    _copy_bundle(stored_bundle, folder / "traced")
 
     index = build_folder(folder, tmp_path / "site", ExplorerSettings())
 
@@ -291,29 +151,18 @@ def test_a_folder_pages_the_honest_twin_beside_the_run_and_links_them_both_ways(
     assert twin["run"]["audit_threshold"] == run["run"]["audit_threshold"]
 
 
-def test_the_twins_page_is_the_twins_own_play_not_the_runs(traced_bundle: Path) -> None:
-    run = build_run_page(traced_bundle, ExplorerSettings())
-    twin = build_run_page(traced_bundle, ExplorerSettings(), play=TWIN_PLAY)
+def test_the_twins_page_is_the_twins_own_play_not_the_runs(stored_bundle: Path) -> None:
+    run = build_run_page(stored_bundle, ExplorerSettings())
+    twin = build_run_page(stored_bundle, ExplorerSettings(), play=TWIN_PLAY)
 
     assert twin.steps and twin.steps != run.steps
     assert (twin.run.name, twin.run.mode) == (run.run.name + "__honest_twin", "honest")
 
 
-def test_the_twins_calls_pair_after_the_runs_so_a_reply_both_share_goes_to_the_run_first(
-    traced_bundle: Path,
-    tmp_path: Path,
-) -> None:
-    bundle = _stack_bundle(traced_bundle, tmp_path)
+def test_the_twins_page_shows_the_twins_own_verdicts_not_the_runs(stored_bundle: Path) -> None:
+    scores = json.loads((stored_bundle / "scores.json").read_text())
 
-    twin = build_run_page(bundle, ExplorerSettings(), play=TWIN_PLAY)
-
-    assert _reasoning_by_step(twin) == {f"{WORLD}/-1": "the twin's reasoning"}
-
-
-def test_the_twins_page_shows_the_twins_own_verdicts_not_the_runs(traced_bundle: Path) -> None:
-    scores = json.loads((traced_bundle / "scores.json").read_text())
-
-    twin = build_run_page(traced_bundle, ExplorerSettings(), play=TWIN_PLAY)
+    twin = build_run_page(stored_bundle, ExplorerSettings(), play=TWIN_PLAY)
 
     shown = sorted((v.monitor, v.score, v.reason) for v in twin.verdicts)
     assert shown == sorted(
@@ -322,11 +171,11 @@ def test_the_twins_page_shows_the_twins_own_verdicts_not_the_runs(traced_bundle:
     assert shown != sorted((v["monitor"], v["score"], v["reason"]) for v in scores["monitor_verdicts"])
 
 
-def test_both_pages_hold_the_run_to_the_bar_its_honest_twin_set(traced_bundle: Path) -> None:
-    safety = json.loads((traced_bundle / "scores.json").read_text())["safety"]
+def test_both_pages_hold_the_run_to_the_bar_its_honest_twin_set(stored_bundle: Path) -> None:
+    safety = json.loads((stored_bundle / "scores.json").read_text())["safety"]
 
-    run = build_run_page(traced_bundle, ExplorerSettings())
-    twin = build_run_page(traced_bundle, ExplorerSettings(), play=TWIN_PLAY)
+    run = build_run_page(stored_bundle, ExplorerSettings())
+    twin = build_run_page(stored_bundle, ExplorerSettings(), play=TWIN_PLAY)
 
     assert run.calibration is not None and run.calibration == twin.calibration
     assert (run.calibration.run_overall, run.calibration.bar) == (
@@ -337,11 +186,10 @@ def test_both_pages_hold_the_run_to_the_bar_its_honest_twin_set(traced_bundle: P
 
 
 def test_a_bundle_graded_before_the_twins_scores_were_kept_shows_the_twin_without_them(
-    traced_bundle: Path,
+    stored_bundle: Path,
     tmp_path: Path,
 ) -> None:
-    bundle = tmp_path / "bundle"
-    shutil.copytree(traced_bundle, bundle)
+    bundle = _copy_bundle(stored_bundle, tmp_path / "bundle")
     scores = json.loads((bundle / "scores.json").read_text())
     del scores["honest_twin"]
     (bundle / "scores.json").write_text(json.dumps(scores))
@@ -351,30 +199,10 @@ def test_a_bundle_graded_before_the_twins_scores_were_kept_shows_the_twin_withou
     assert (twin.verdicts, twin.calibration) == ((), None)
 
 
-def test_a_single_bundle_writes_the_twins_page_beside_its_own(traced_bundle: Path, tmp_path: Path) -> None:
-    bundle = tmp_path / "bundle"
-    shutil.copytree(traced_bundle, bundle)
+def test_a_single_bundle_writes_the_twins_page_beside_its_own(stored_bundle: Path, tmp_path: Path) -> None:
+    bundle = _copy_bundle(stored_bundle, tmp_path / "bundle")
 
     page = build(bundle, None, ExplorerSettings())
 
     assert page == bundle / "explorer.html"
     assert (bundle / "explorer__honest_twin.html").exists()
-
-
-def test_a_turn_shows_what_its_agent_said_beside_its_action(talking_page: RunPage) -> None:
-    said = {call.said for step in talking_page.steps for call in step.calls if call.identity == "agent-main"}
-
-    assert said == {SAID_ALONE, SAID_AS_JSON, SAID_NESTED, SAID}
-
-
-def test_a_turn_with_no_prose_says_nothing(traced_bundle: Path) -> None:
-    page = build_run_page(traced_bundle, ExplorerSettings())
-
-    assert [call.said for step in page.steps for call in step.calls if call.said] == []
-
-
-def test_each_turn_an_agent_spoke_in_is_one_scratch_note(talking_page: RunPage) -> None:
-    notes = [(said.sender, said.text) for said in talking_page.communication if said.kind == "scratch"]
-
-    # agent-main's four turns in this run: three of prose alone, then the refusal beside its first action
-    assert notes == [("agent-main", text) for text in (SAID_ALONE, SAID_AS_JSON, SAID_NESTED, SAID)]

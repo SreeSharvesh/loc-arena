@@ -66,19 +66,16 @@ def render_tools_gateway_config(
     can read this config back.
     """
     tools = {agent.id: dict(agent.sandbox.tools) for agent in config.agents}
-    workspace = []
-    if (
-        config.harness == "pi"
-    ):  # a loop runs nothing itself: its bash, file and subscription tools are a target
-        from loc_arena.stack_play import EPISODE_SERVICE  # noqa: PLC0415 - stack_play imports this module
+    # An agent's session runs nothing itself: its bash, file and subscription tools are a target.
+    from loc_arena.stack_play import EPISODE_SERVICE  # noqa: PLC0415 - stack_play imports this module
 
-        port = config.settings.stack.workspace_port
-        keys = {agent: workspace_key(token) for agent, token in tokens.items()}
-        workspace = [_render_target(WORKSPACE_SERVICE, f"http://{EPISODE_SERVICE}:{port}{MCP_PATH}", keys)]
-        tools = {
-            agent: {**offered, WORKSPACE_SERVICE: [*WORKSPACE_TOOLS, *NOTICE_TOOLS]}
-            for agent, offered in tools.items()
-        }
+    port = config.settings.stack.workspace_port
+    keys = {agent: workspace_key(token) for agent, token in tokens.items()}
+    workspace = [_render_target(WORKSPACE_SERVICE, f"http://{EPISODE_SERVICE}:{port}{MCP_PATH}", keys)]
+    tools = {
+        agent: {**offered, WORKSPACE_SERVICE: [*WORKSPACE_TOOLS, *NOTICE_TOOLS]}
+        for agent, offered in tools.items()
+    }
     iam = config.settings.iam
     callers = {
         # IAM's one tool reads the caller's inbox, so the gateway sends the agent's inbox key, which opens

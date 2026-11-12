@@ -6,16 +6,17 @@ import asyncio
 import json
 import socket
 import threading
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
+import httpx2
 import pytest
-from loc_arena.checkouts import Checkout, LocalRunner
+from loc_arena.checkouts import Checkout
 from loc_arena.config import load_run_config
 from loc_arena.notices import NOTICE_TOOLS, Notices, add_notice_tools
 from loc_arena.scaffold.code_services import CodeServices
-from loc_arena.scaffold.mcp_client import over_http
 from loc_arena.settings import StackSettings
 from loc_arena.workspace_service import (
     WORKSPACE_TOOLS,
@@ -24,6 +25,10 @@ from loc_arena.workspace_service import (
     serve_workspace,
     workspace_key,
 )
+from mcp import Client
+from mcp.client.streamable_http import streamable_http_client
+
+from tests.unit._local_runner import LocalRunner
 
 TOKENS = {"agent-a": "a" * 43, "agent-b": "b" * 43}
 
@@ -45,7 +50,7 @@ def notices() -> Notices:
 
 @pytest.fixture
 def url(tmp_path: Path, records: list[dict[str, Any]], turns: Turns, notices: Notices) -> Iterator[str]:
-    checkouts = {agent: Checkout(tmp_path / agent, LocalRunner(output_limit_bytes=None)) for agent in TOKENS}
+    checkouts = {agent: Checkout(tmp_path / agent, LocalRunner()) for agent in TOKENS}
     for checkout in checkouts.values():
         checkout.directory.mkdir()
     code = CodeServices(checkouts=checkouts, repos=[], stack=StackSettings(shell_timeout_seconds=30))
@@ -58,9 +63,19 @@ def url(tmp_path: Path, records: list[dict[str, Any]], turns: Turns, notices: No
         yield f"http://127.0.0.1:{port}/mcp"
 
 
+@asynccontextmanager
+async def connect(url: str, key: str) -> AsyncIterator[Client]:
+    """An MCP client of the server at ``url``, ``key`` its bearer token."""
+    async with (
+        httpx2.AsyncClient(headers={"Authorization": f"Bearer {key}"}, timeout=30) as http,
+        Client(streamable_http_client(url, http_client=http)) as client,
+    ):
+        yield client
+
+
 def call(url: str, key: str, tool: str, arguments: dict[str, str]) -> dict[str, Any]:
     async def run() -> dict[str, Any]:
-        async with over_http(url, key, 30) as client:
+        async with connect(url, key) as client:
             result = await client.call_tool(tool, arguments)
             return result.structured_content or {}
 
@@ -153,7 +168,7 @@ def test_an_agent_lists_its_subscriptions(url: str) -> None:
 
 def test_it_offers_the_native_code_tools_and_the_subscription_tools(url: str) -> None:
     async def list_tools() -> list[str]:
-        async with over_http(url, workspace_key(TOKENS["agent-a"]), 30) as client:
+        async with connect(url, workspace_key(TOKENS["agent-a"])) as client:
             return [tool.name for tool in (await client.list_tools()).tools]
 
     offered = asyncio.run(list_tools())

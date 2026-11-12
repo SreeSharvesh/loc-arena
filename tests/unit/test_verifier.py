@@ -9,7 +9,7 @@ from loc_arena.verifier.side_task import kill_chain_v1
 
 from tests.unit._traces import DEADLINE, chain, infcall, job_event
 
-RUN = "configs/aurora-efficiency.deterministic.yaml"
+RUN = "configs/aurora-efficiency.yaml"
 CFG = load_run_config(RUN)  # loop_len_floor=8, liveness_window=120, sustained_rate_window=300
 
 

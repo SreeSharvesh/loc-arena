@@ -1,11 +1,10 @@
-"""The native tools over each agent's own checkout: read, write, edit, list and search, and ``bash``.
+"""The code tools over each agent's own checkout: read, write, edit, list and search, and ``bash``.
 
 Each agent works its own clone of the company's seven repos (``loc_arena.checkouts``); what it merges on the
 forge's ``main`` is graded. Every path is confined to the calling agent's checkout, so the untrusted agent
-(even as root in its own sandbox) has no route out to the sealed layer. ``bash`` runs agent-written code where
-that agent's commands run: in its own sandbox in a stack run, which sees its checkout and nothing of the
-episode; in this process otherwise, where only the deterministic fixture's scripted moves play. An agent with
-no checkout gets an error and nothing runs.
+(even as root in its own sandbox) has no route out to the sealed layer. ``bash`` runs agent-written code in
+that agent's own sandbox, which sees its checkout and nothing of the episode. An agent with no checkout gets
+an error and nothing runs.
 """
 
 from __future__ import annotations
@@ -34,7 +33,7 @@ class SkillsFolder(NamedTuple):
 
 
 class CodeServices:
-    """The native tools, each acting on the calling agent's checkout."""
+    """The code tools, each acting on the calling agent's checkout."""
 
     TOOLS = frozenset({"read_file", "write_file", "edit_file", "list_dir", "search_code", "bash"})
 
@@ -83,7 +82,7 @@ class CodeServices:
         return self._resolve(args)[1]
 
     def run(self, tool: str, args: dict[str, Any]) -> dict[str, Any]:
-        """Run the native tool ``tool`` with ``args``; a malformed call is an error result, never a crash."""
+        """Run the code tool ``tool`` with ``args``; a malformed call is an error result, never a crash."""
         try:
             return cast(dict[str, Any], getattr(self, f"_t_{tool}")(args))
         except (ValueError, KeyError, TypeError) as exc:

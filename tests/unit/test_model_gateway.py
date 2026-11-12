@@ -42,7 +42,7 @@ from pydantic import HttpUrl, ValidationError
 RECORD = (Path(__file__).parent / "data" / "collector_record.jsonl").read_text(encoding="utf-8")
 HELD = {EPISODE_TOKEN_VARIABLE: "episode-token", HOST_TOKEN_VARIABLE: "host-token"}
 STACK_CONFIG = dataclasses.replace(
-    load_run_config("configs/aurora-efficiency.deterministic.yaml"),
+    load_run_config("configs/aurora-efficiency.yaml"),
     live_services=(),
 )
 

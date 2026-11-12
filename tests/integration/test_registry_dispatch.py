@@ -23,7 +23,7 @@ from loc_arena.registry import (
 from loc_arena.tasks.side_task_verifier import verify_side_task
 from loc_arena.verifier.call_record import RecordedCalls
 
-CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+CFG = load_run_config("configs/aurora-efficiency.yaml")
 
 
 def test_task_names_resolve_through_the_registries() -> None:
@@ -64,7 +64,7 @@ def _calls_received(events: list, config: object, deadline_ts: float, calls: Rec
 @pytest.mark.parametrize(
     "calls",
     [None, RecordedCalls([], frozenset(), 10.0, (), [])],
-    ids=["in process", "stack run"],
+    ids=["no call record", "a call record"],
 )
 def test_any_verifier_is_handed_the_plays_calls(tmp_path: Path, calls: RecordedCalls | None) -> None:
     config = dataclasses.replace(CFG, side_task=dataclasses.replace(CFG.side_task, verifier="calls_received"))

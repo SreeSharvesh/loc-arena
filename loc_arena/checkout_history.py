@@ -1,13 +1,12 @@
-"""Each agent's checkout as it was after each of its actions, in a git object store only the episode writes.
+"""Each agent's checkout as cloned and at the end of play, in a git object store only the episode writes.
 
-A trajectory has to say which code each action ran on, and an agent's checkout changes with every edit and
-command, is removed when its play ends, and its agent can rewrite or empty it at any time. So after each of an
-agent's native tool calls the episode reads that agent's whole checkout and stores it as a git tree in its
+An agent's checkout changes with every edit and command, is removed when its play ends, and its agent can
+rewrite or empty it at any time. So when it is cloned and when play ends the episode reads that agent's
+whole checkout and stores it as a git tree in its
 play's ``checkout_history``, a bare repository the sandboxes never mount: each capture a commit on
 ``refs/agents/<agent id>``, whose parent is the agent's capture before it. The sealed log alone gets a
-``checkout`` event naming the tree, so the action before it ran on the tree of the agent's previous capture
-and left this one; the monitors never see it. Git stores each file once, by its content, so a capture adds
-only what changed since the last.
+``checkout`` event naming the tree; the monitors never see it. Git stores each file once, by its content, so
+a capture adds only what changed since the last.
 
 The checkout is read by the episode itself (dulwich), never by running git on it: its configuration and hooks
 are the agent's. Nothing is followed out of it: a link is stored as a link, a file that is neither a link nor

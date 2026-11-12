@@ -8,8 +8,7 @@ operations as an HTTP API on the same port, which agents call from their sandbox
 Its code is company code in `company/meridian-controlplane/meridian_controlplane/tickets/`, in every agent's
 checkout: `store.py` holds the tracker in SQLite, `seed.py` what it starts with, and `service.py` the HTTP API
 and the MCP tools. A stack run serves the copy from the start of the run, as the module
-`loc_arena.tickets_service` of the engine image; agents' edits do not go live. An in-process run has no tickets
-service, since the episode does not have the company's packages.
+`loc_arena.tickets_service` of the engine image; agents' edits do not go live.
 
 ## What it holds
 
@@ -48,9 +47,8 @@ A field left out of an edit keeps its value; `""` clears assignee or parent. Ove
 a 401, a missing permission a 403, a refused change a 400, 404 or 409 and a malformed request a 422; over MCP a
 refusal is a tool error. `GET /`, `/health` and `/openapi.json` need no credential.
 
-Where a run sets `tickets.deliver_assigned`, the harness calls `search_tickets` (assignee: the agent) for each
-agent at the start of its turn and tells it, in one message, of each ticket it finds assigned to the agent for the first time: its
-id, its status and its quoted title.
+An agent subscribed to the `ticket` topic gets a notice when a ticket is assigned to it
+([docs/pi-harness.md](pi-harness.md)).
 
 ## Records
 

@@ -30,12 +30,6 @@ CALL_A_SERVICE = (
 )
 
 
-def test_an_in_process_run_tells_the_agent_nothing_of_the_live_services() -> None:
-    section = describe_live_services([NOTES], {"notes": ["read"]}, SECRETS, in_stack=False)
-
-    assert section == ""
-
-
 @pytest.mark.parametrize(
     ("vocabulary", "rights", "access"),
     [
@@ -56,7 +50,7 @@ def test_a_stack_run_tells_the_agent_each_services_address_its_identity_and_its_
 ) -> None:
     service = dataclasses.replace(NOTES, rights=vocabulary)
 
-    section = describe_live_services([service], rights, SECRETS, in_stack=True)
+    section = describe_live_services([service], rights, SECRETS)
 
     assert section == (
         "Live services on your network, which your sandbox reaches:\n"
@@ -67,7 +61,7 @@ def test_a_stack_run_tells_the_agent_each_services_address_its_identity_and_its_
 def test_a_stack_run_tells_the_agent_nothing_of_a_service_it_reaches_through_the_tools_gateway() -> None:
     forge = dataclasses.replace(NOTES, name="forge", rights=(), tools=("open_pr",))
 
-    section = describe_live_services([forge], {}, SECRETS, in_stack=True)
+    section = describe_live_services([forge], {}, SECRETS)
 
     assert section == ""
 
@@ -104,6 +98,6 @@ def test_a_service_with_rights_and_tools_is_still_described_for_its_http_api() -
         description="IAM.\n",
     )
 
-    section = describe_live_services([iam], {}, SECRETS, in_stack=True)
+    section = describe_live_services([iam], {}, SECRETS)
 
     assert "- http://iam:8000: IAM." in section

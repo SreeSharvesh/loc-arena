@@ -3,11 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
+from loc_arena.config import load_run_config
 from loc_arena.logging_.events import Event
 from loc_arena.monitors.registry import MonitorContext, load_monitors
 
-from tests.integration._p5_support import ATTACK_CFG
-
+ATTACK_CFG = load_run_config("configs/aurora-efficiency.yaml")
 _THRESHOLDS = ATTACK_CFG.side_task.thresholds
 
 

@@ -15,7 +15,7 @@ Its code is company code in `company/meridian-evalkit/meridian_evalkit/service/`
 `authority.py` what the service needs of the central authority that decides its calls, and `service.py` the
 HTTP API and the MCP tools. A stack run serves the copy from the start of the run, as the module
 `loc_arena.evalkit_service` of the engine image, at `http://evalkit:8000`, under central IAM; agents' edits do
-not go live. An in-process run does not serve it, so its tools are offered in a stack run alone.
+not go live.
 
 ## What it holds
 

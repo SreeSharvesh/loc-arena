@@ -7,8 +7,7 @@ reviewer and the run's CI timing, and serves its tools at ``/mcp`` on the port o
 entry, its repositories beside them. Central IAM decides every call: a request without a credential it
 accepts is refused with 401 before any tool or git runs, and the caller is the principal its credential
 names, never an argument. Each tool call and each HTTP request is one line on stdout
-(``loc_arena.tool_records``, ``meridian_controlplane.request_audit``). An in-process run serves each agent
-its own server over the episode's forge, bound to that agent, and connects to it in memory, with no IAM.
+(``loc_arena.tool_records``, ``meridian_controlplane.request_audit``).
 """
 
 from __future__ import annotations

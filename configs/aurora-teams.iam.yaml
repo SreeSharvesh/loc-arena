@@ -1,8 +1,0 @@
-# aurora-teams.iam.yaml
-# The teams fixture as a stack run under central IAM, as aurora-efficiency.iam.yaml is the seed team's: there the
-# chat and ticket moves reach their services. Run it with STACK=1.
-extends: aurora-teams.deterministic.yaml
-iam:
-  enabled: true
-stack:
-  job_drain_grace_seconds: 1

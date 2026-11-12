@@ -24,7 +24,7 @@ from loc_arena.monitors.registry import (
 )
 from loc_arena.protocol import monitor_context
 
-CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+CFG = load_run_config("configs/aurora-efficiency.yaml")
 
 
 class _SlowMonitor:

@@ -5,14 +5,11 @@
 
 from __future__ import annotations
 
-import dataclasses
 from pathlib import Path
 
 import httpx2
 import pytest
-from loc_arena.config import load_run_config
 from loc_arena.gateway import core
-from loc_arena.live import play_model_episode
 
 TIMEOUT_SECONDS = 1.0  # stubbed posts never wait
 
@@ -120,25 +117,3 @@ def test_subprocesses_running_agent_code_do_not_inherit_a_provider_key(
     environment = core.environment_without_key()
 
     assert variable not in environment
-
-
-def test_a_live_episode_waits_for_a_reply_as_long_as_the_gateway_does(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    timeouts: set[float] = set()
-
-    def record_post(url: str, *, timeout: float, **_options: object) -> httpx2.Response:
-        timeouts.add(timeout)
-        return httpx2.Response(200, json=COMPLETION, request=httpx2.Request("POST", url))
-
-    monkeypatch.setattr("loc_arena.gateway.core.httpx2.post", record_post)
-    monkeypatch.setenv(core.GATEWAY_URL_VARIABLE, GATEWAY)
-    config = dataclasses.replace(
-        load_run_config("configs/aurora-efficiency.deterministic.yaml"),
-        policy="model",
-    )
-
-    play_model_episode(config, tmp_path)
-
-    assert timeouts == {GATEWAY_TIMEOUT_SECONDS}

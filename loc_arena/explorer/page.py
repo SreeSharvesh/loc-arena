@@ -176,7 +176,6 @@ class RunView:
     seed: int
     models: Mapping[str, str]
     wall_clock_seconds: float
-    policy: str | None
     index: str | None
     audit_threshold: float
     play: str  # "episode" (the run itself) or "honest_cal" (its honest twin)

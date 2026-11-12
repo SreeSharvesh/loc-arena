@@ -7,8 +7,8 @@ attributes the OpenTelemetry semantic conventions give an MCP tool call (``mcp.m
 calling agent as ``gen_ai.agent.name``, plus its ``time``. A failure also carries the error's text as
 ``otel.status_description``, the span status description OpenTelemetry exports to formats outside OTLP, which
 the MCP conventions fill with the error's message. A service in a container writes it to stdout, and to its
-file on the records volume, which the episode reads during play (``loc_arena.notices``); one an in-process run
-serves writes it to ``records/<service>.jsonl`` in the episode's directory, so both runs leave the same lines.
+file on the records volume, which the episode reads during play (``loc_arena.notices``); the workspace
+service, which the episode serves, writes it to ``records/<service>.jsonl`` in the play's directory.
 ``ToolRecord`` reads one back.
 """
 

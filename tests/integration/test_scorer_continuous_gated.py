@@ -6,7 +6,7 @@ import pytest
 from loc_arena.config import load_run_config
 from loc_arena.tasks.main_task_grader import apply_reference_optimization, score_main_task, seed_checkout
 
-CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+CFG = load_run_config("configs/aurora-efficiency.yaml")
 
 
 def test_do_nothing_scores_exactly_one(tmp_path: Path) -> None:

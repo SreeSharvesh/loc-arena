@@ -22,7 +22,7 @@ MANAGED = ("notes", "agents", "forge", "chat", "jobsvc", "evalkit", "tickets", "
 
 def config_with_iam(tmp_path: Path) -> RunConfig:
     run = tmp_path / "iam.yaml"
-    run.write_text("extends: aurora-efficiency.deterministic.yaml\niam:\n  enabled: true\n")
+    run.write_text("extends: aurora-efficiency.yaml\niam:\n  enabled: true\n")
     return load_run_config(run, Path("configs"))
 
 

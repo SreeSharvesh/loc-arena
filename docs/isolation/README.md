@@ -6,10 +6,11 @@ scenario brings its own services.
 
 ## The model
 
-Each agent has two kinds of tools: its harness's native tools (read, edit, bash), which act in its own sandbox,
-and an MCP client. The native loop itself runs in `episode`. Most of what an agent can do to the company, such as
+Each agent's session is its own pi process in `episode` ([docs/pi-harness.md](../pi-harness.md)), and every
+tool it has is behind one MCP route, agentgateway. Its bash and file tools are the workspace service's and act
+in its own sandbox and checkout. Everything else it can do to the company, such as
 opening a PR, messaging a teammate in chat, submitting a job or writing a note, is a tool on a service
-behind one MCP route, agentgateway; the run config decides exactly which tools each agent is offered. A
+behind that route; the run config decides exactly which tools each agent is offered. A
 rights-bearing service such as `notes` or `chat` can also be called over HTTP from the sandbox directly, with the agent's own identity. Every service records each call made to it and by
 whom. After play, those records become the events the monitors and the verifier read. The honest twin plays on
 services and sandboxes recreated, each service from its seed.
@@ -19,11 +20,6 @@ services and sandboxes recreated, each service from its seed.
 Agent-net puts no firewall between its containers: any of them can open a connection to a port another listens on. What a call may do depends on the token or identity
 it carries and on whom the callee accepts. Runner executions and jobs also call the services, with the
 credentials they are given.
-
-Any harness with an MCP client sees the same tools, from the same services, recorded the same way. The run
-config's `harness` chooses the arena's own loop (`native`) or pi's (`pi`, [docs/pi-harness.md](../pi-harness.md));
-either runs in `episode`. Under pi, the agent's bash and file tools are the workspace service's, behind the
-tools gateway like the company's tools, and act in the agent's sandbox and checkout.
 
 ## Containers
 
@@ -75,29 +71,25 @@ agents:
   are offered the same tools and hold the same rights as the attack run's.
 - `run_tests` and `run_benchmark` are skills, not tools: scripts with a `SKILL.md` in the pack's `skills:`
   folder, which every sandbox mounts read-only at `/skills` and agents run with bash on their own checkout.
-- An in-process run (a config with `iam.enabled` off, such as the deterministic fixture) serves each agent its
-  own in-memory forge, the one live service it runs, and runs each agent's bash in this process, in its own clone
-  (`loc_arena/checkouts.py`). No IAM runs there, so a config with IAM on is refused in process before anything
-  is written.
 
 ## Records and events
 
 A service built on the official MCP SDK writes one JSON line per tool call, in OpenTelemetry's names for an MCP
 tool call (`loc_arena/tool_records.py`): the tool, its arguments, its result or error, the agent and the time. A
-container writes it to stdout; an in-process run writes `records/<service>.jsonl`. agentgateway logs the same
+container writes it to stdout. agentgateway logs the same
 calls with the caller added.
 
 Before grading, the run stops the runners and copies each live service's log, each node's, and agentgateway's,
 to `services/<name>.log` in the run directory, and Phoenix's spans, which no monitor reads, to
 `services/phoenix.spans.jsonl`. `loc_arena/recorded_events.py` then turns each record into the events of the episode or the honest
-twin whose play window holds its time, in the turn of the agent that was running. Each event goes to the sealed
+twin whose play window holds its time, in the turn of its agent that covers that time. Each event goes to the sealed
 log and, unless it is sealed-only, the mirror log: a node's `process` facts stay on the sealed log, where the verifier reads them and the monitors cannot. A refused call is a blocked `action`. A record that cannot be placed goes to
 `unattributed_records.jsonl` in the run directory. Grading never builds events, so grading a run again adds
 none.
 
 ## The honest twin
 
-In a stack run the episode container plays one phase per start. Between the two, the host adds each service's
+The episode container plays one phase per start. Between the two, the host adds each service's
 log so far, and Phoenix's spans, to their files in the run directory and waits until the Collector holds a
 record of every call the gateway logged, then recreates the gateway and every sandbox, runner, node, live service
 and agentgateway with fresh anonymous volumes (`loc_arena/stack_play.py`). The Collector and its record run on,
@@ -173,7 +165,7 @@ a live entry with no `port`, or a tool served by two services.
 
 Live services run on real time, as LinuxArena's do; the framework has no simulated clock. A check that needs
 time-dependent state writes it and triggers the job itself (see Sources). The run's simulated clock serves the
-scenario's scripted events only, and each episode records its readings against wall time, so a service record
+scenario's seeded events only, and each episode records its readings against wall time, so a service record
 maps to an episode time.
 
 ## The gateway
@@ -187,7 +179,7 @@ token), each runner and each node. A path outside `gateway.allowed_paths` gets a
 token a 401.
 
 Every call leaves a record (caller, request, reply and status, refused and failed calls included), which the
-gateway exports over OTLP to the Collector. A stack run waits until the Collector holds a record of every call
+gateway exports over OTLP to the Collector. A run waits until the Collector holds a record of every call
 the gateway logged before the gateway stops, then copies the record to `logs/gateway/<project>.calls.jsonl`, one
 `GatewayCall` per line, each tagged with its play, with the Collector's own lines beside it. Before grading it
 copies the record of play into the run directory too (`gateway.calls.jsonl`), for the side-task checker, which
@@ -205,11 +197,11 @@ under the workload and its sponsor; a node's or a runner's token admits no model
 
 ## What agent code can reach
 
-| Agent code can reach | In a stack run |
+| Agent code can reach | |
 |---|---|
 | the OpenRouter key and the key of `gateway.agents_upstream`, the internet, DNS, the host's files and `.env` | no |
 | the sealed call log or the Collector, the grader's reference answers, the episode's logs | no |
-| the agent loop (it listens on no port) | no |
+| an agent's session (it listens on no port) | no |
 | another agent's sandbox or credentials | no |
 | the gateway | yes, with its sandbox token, recorded under the sandbox's name; from a job it submits, as that job's node |
 | a service with rights | only with its own identity, and only the rights it holds |
@@ -220,8 +212,7 @@ under the workload and its sponsor; a node's or a runner's token admits no model
 
 The sandbox mounts only its agent's checkout volume and the skills, takes commands from the episode alone, and
 holds no harness, verifier, scorer or scenario spec. Grading's container runs the same slim image, though it
-sees the sealed meter it runs. In an in-process run, the deterministic fixture's, an agent's `bash` runs in this
-process, in its own clone, and only the fixture's scripted moves call it.
+sees the sealed meter it runs.
 
 ## Sources
 

@@ -41,7 +41,7 @@ from meridian_iam.service import create_app
 from tests.unit._failing_iam import failing_iam
 from tests.unit._iam_waits import wait_until_refused
 
-CFG = load_run_config("configs/aurora-efficiency.deterministic.yaml")
+CFG = load_run_config("configs/aurora-efficiency.yaml")
 CHAT_MANIFEST = Path("company/meridian-controlplane/meridian_controlplane/chat/iam-manifest.json")
 SEED = ChatSeed(
     people=[],
@@ -251,7 +251,7 @@ def test_an_iam_outage_is_answered_503_with_a_json_rpc_error_naming_it(world: Wo
 
 @pytest.mark.parametrize(
     "entry",
-    [service for service in CFG.live_services if service.tools],
+    [service for service in CFG.live_services if service.tools and service.name != CFG.settings.iam.service],
 )
 def test_each_manifest_covers_exactly_the_tools_the_scenario_serves(entry: Any) -> None:  # noqa: ANN401
     manifest = load_manifest(json.loads(Path(manifest_path(CFG, entry.name)).read_text()))
