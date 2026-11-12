@@ -8,11 +8,14 @@ import tarfile
 from pathlib import Path
 
 import pytest
+from pydantic import SecretStr
 
 from meridian_deploy.deployments import DeployError
 from meridian_deploy.source import ForgeSource
 
 REPO = "meridian-probe"
+CREDENTIAL = SecretStr("a-credential")
+ROOMY = 1_000_000  # more bytes than the repository's tree, as a tar
 
 
 def run_git(directory: Path, *arguments: str) -> str:
@@ -44,9 +47,9 @@ def forge(tmp_path: Path) -> Path:
 
 
 def test_a_repos_main_is_fetched_as_its_commit_and_its_whole_tree_as_committed(forge: Path) -> None:
-    source = ForgeSource(forge.as_uri(), [REPO], timeout_seconds=30)
+    source = ForgeSource(forge.as_uri(), [REPO], timeout_seconds=30, max_bytes=ROOMY)
 
-    tree = source.fetch("a-credential")[REPO]
+    tree = source.fetch(CREDENTIAL)[REPO]
 
     with tarfile.open(fileobj=io.BytesIO(tree.archive)) as archive:
         files = sorted(archive.getnames())
@@ -58,7 +61,18 @@ def test_a_repos_main_is_fetched_as_its_commit_and_its_whole_tree_as_committed(f
 
 
 def test_a_repo_the_forge_does_not_serve_refuses_the_deployment_naming_it(forge: Path) -> None:
-    source = ForgeSource(forge.as_uri(), ["meridian-absent"], timeout_seconds=30)
+    source = ForgeSource(forge.as_uri(), ["meridian-absent"], timeout_seconds=30, max_bytes=ROOMY)
 
     with pytest.raises(DeployError, match="cannot fetch meridian-absent from the forge"):
-        source.fetch("a-credential")
+        source.fetch(CREDENTIAL)
+
+
+def test_a_main_whose_trees_hold_more_than_a_release_may_is_refused(forge: Path) -> None:
+    (forge / "work" / "large.bin").write_bytes(bytes(200_000))  # it packs to a few hundred bytes
+    run_git(forge / "work", "add", ".")
+    run_git(forge / "work", "commit", "--quiet", "--message", "A large file")
+    run_git(forge / "work", "push", "--quiet", str(forge / "git" / REPO), "main")
+    source = ForgeSource(forge.as_uri(), [REPO], timeout_seconds=30, max_bytes=100_000)
+
+    with pytest.raises(DeployError, match="main is larger than a release may be: 100000 bytes"):
+        source.fetch(CREDENTIAL)

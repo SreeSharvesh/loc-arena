@@ -22,6 +22,7 @@ from typing import Any
 import httpx2
 import uvicorn
 from mcp.server.auth.middleware.auth_context import get_access_token
+from pydantic import SecretStr
 from scenarios.loader import LiveService
 from starlette.applications import Starlette
 
@@ -30,7 +31,7 @@ from loc_arena.deploy_pool import release_token_secret
 from loc_arena.forge_service import SERVICE as FORGE
 from loc_arena.iam_wiring import build_service_app, guard_from_environment, iam_options
 from loc_arena.mcp_service import ALL_ADDRESSES, caller_from_token
-from loc_arena.release_supervisor import RELEASE_PATH, STOP_GRACE_SECONDS, ReleaseState
+from loc_arena.release_supervisor import RELEASE_PATH, ReleaseState
 from loc_arena.tasks.main_task_grader import COMPANY_REPOS
 from loc_arena.tool_records import Write, record_writer, tool_call_recorder
 from meridian_deploy.deployments import DEPLOY, DeployError, Deployments, Outcome
@@ -40,6 +41,7 @@ from meridian_iam.client import IamClient
 from meridian_iam.contracts import IamError
 
 SECRET_BYTES = 32
+REPLY_MARGIN_SECONDS = 10.0  # past a supervisor's slowest hand-over, how long its reply is waited for
 
 
 @dataclass(frozen=True)
@@ -53,7 +55,7 @@ class IamCredentials:
     client: IamClient
     ttl_seconds: int
 
-    def issue(self, reference: str, purpose: str) -> str:
+    def issue(self, reference: str, purpose: str) -> SecretStr:
         """The forge credential of deployment ``reference``; IAM's refusal is the deployment's."""
         presented = get_access_token()
         caller = None if presented is None else presented.token
@@ -73,27 +75,32 @@ class IamCredentials:
             )
         except IamError as error:
             raise DeployError(f"IAM did not issue the deployment a credential: {error}") from error
-        return secret
+        return SecretStr(secret)
 
 
 @dataclass(frozen=True)
 class SupervisorRollout:
     """``meridian_deploy.deployments.Rollout``: each service's supervisor, called with its token."""
 
-    tokens: Mapping[str, str]  # each deployed service's supervisor's token
+    tokens: Mapping[str, SecretStr]  # each deployed service's supervisor's token
     port: int
     timeout_seconds: float
 
     def hand_over(self, service: str, release: str, archives: Mapping[str, bytes]) -> Outcome:
-        """Send ``release`` to ``service``'s supervisor, and wait for the release its service then runs."""
+        """Send ``release`` to ``service``'s supervisor, and wait for the release its service then runs.
+
+        When its reply is lost or late, the supervisor is asked what its service runs, which it answers once
+        the hand-over has ended: a release it took is not then recorded as one it did not.
+        """
+        url = f"http://{service}:{self.port}{RELEASE_PATH}"
+        headers = {"Authorization": f"Bearer {self.tokens[service].get_secret_value()}"}
         packed = {repo: base64.b64encode(archive).decode() for repo, archive in archives.items()}
+        body = {"name": release, "archives": packed}
         try:
-            response = httpx2.post(
-                f"http://{service}:{self.port}{RELEASE_PATH}",
-                json={"name": release, "archives": packed},
-                headers={"Authorization": f"Bearer {self.tokens[service]}"},
-                timeout=self.timeout_seconds,
-            )
+            try:
+                response = httpx2.post(url, json=body, headers=headers, timeout=self.timeout_seconds)
+            except httpx2.HTTPError:
+                response = httpx2.get(url, headers=headers, timeout=self.timeout_seconds)
             response.raise_for_status()
         except httpx2.HTTPStatusError as error:
             raise DeployError(f"{service}'s supervisor refused the release: {error.response.text}") from error
@@ -109,12 +116,12 @@ def connect_supervisors(config: RunConfig, entry: LiveService) -> SupervisorRoll
     A hand-over waits for a service to end and answer twice at most: on the release, then on the one before.
     """
     settings, secrets_dir = config.settings.deploy, config.settings.gateway.secrets_dir
-    tokens = {name: (secrets_dir / release_token_secret(name)).read_text().strip() for name in entry.deploys}
-    return SupervisorRollout(
-        tokens,
-        settings.release_port,
-        2 * (settings.health_seconds + STOP_GRACE_SECONDS),
-    )
+    tokens = {
+        name: SecretStr((secrets_dir / release_token_secret(name)).read_text().strip())
+        for name in entry.deploys
+    }
+    slowest = 2 * (settings.health_seconds + 2 * settings.stop_seconds)
+    return SupervisorRollout(tokens, settings.release_port, slowest + REPLY_MARGIN_SECONDS)
 
 
 def build_deploy_app(
@@ -129,7 +136,12 @@ def build_deploy_app(
     deployments = Deployments(
         entry.deploys,
         IamCredentials(guard.client, settings.credential_seconds),
-        ForgeSource(f"http://{forge.name}:{forge.port}", COMPANY_REPOS, settings.fetch_seconds),
+        ForgeSource(
+            f"http://{forge.name}:{forge.port}",
+            COMPANY_REPOS,
+            settings.fetch_seconds,
+            settings.max_release_bytes,
+        ),
         connect_supervisors(config, entry),
         settings.max_deployments,
     )

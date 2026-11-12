@@ -49,8 +49,11 @@ A deployment ends one of two ways, and both are recorded:
 - **`failed`:** it did not. The service runs the release it ran before, and the reply holds the end of the
   failed process's errors.
 
-A release whose commits are the ones the service serves is refused as nothing to deploy. A service takes one
-deployment at a time, and at most `deploy.max_deployments` in a play. The deployments are in memory.
+A release whose commits are the ones the service serves is refused as nothing to deploy, and a `main` whose
+trees hold more than `deploy.max_release_bytes` is refused before more of it is read. A service takes one
+deployment at a time. `deploy` is answered for one service at most `deploy.max_deployments` times in a play,
+refused calls among them, since each issues a workload and fetches from the forge. A hand-over no supervisor
+answers is a `failed` deployment that says so. The deployments are in memory.
 
 ## How a release reaches a service
 
@@ -63,14 +66,22 @@ takes calls from one trusted caller, here the deploy service, which holds that s
 2. It sends the archives to the service's supervisor with the deployment's reference.
 3. The supervisor unpacks them into a new directory under `deploy.releases_directory`, in its own container,
    with Python's `data` filter, which refuses an entry that would land outside.
-4. It ends the service's process and starts it with the release's repos ahead of the image's on
-   `PYTHONPATH`, as resolved directories, so a running process never mixes two releases.
-5. Once the service answers on its port, the `current` link moves to the release in one rename, and the
-   other releases are removed. If it does not answer in time, the link stays where it was, the release is
-   removed, and the service starts again on the release it ran.
+4. It ends the service: it asks its process to end, kills its process group after `deploy.stop_seconds`,
+   then kills every other process in the container but its init and itself, as a sandbox does between
+   commands. No process of an earlier release holds the service's port or runs beside a later one.
+5. It starts the service with the release's repos ahead of the image's on `PYTHONPATH`, as resolved
+   directories, so a running process never mixes two releases.
+6. Once the service's process is alive and its port answers, the `current` link moves to the release in one
+   rename, and the other releases are removed. If it does not answer in time, the link stays where it was,
+   the release is removed, and the service starts again on the release it ran. The reply holds the last
+   `deploy.error_bytes` of what the failed process wrote to stderr.
 
-The supervisor imports nothing of a release. It starts the service again when its process ends by itself,
-and ends it when its container stops. A container that is recreated, as each is before the honest twin, holds
+The supervisor imports nothing of a release. It looks every `deploy.watch_seconds` whether the service's
+process has ended by itself and starts it again, and it ends it when its container stops. It refuses a
+request on its head, before any of its body is read: one from another address than the deploy service's, one
+without its token, and a release that declares no length or more than `deploy.max_release_bytes` holds in
+base64. When a supervisor's reply is lost or late, the deploy service asks it what its service runs, which it
+answers once the hand-over has ended, and records that. A container that is recreated, as each is before the honest twin, holds
 no release and runs the image's code, so the twin starts on the same code as the episode.
 
 A client keeps working across a deployment. Every service's MCP endpoint keeps no session
@@ -127,8 +138,11 @@ The run config's `deploy:` block (`loc_arena/settings.py`):
 | `releases_directory` | `/var/lib/release` | where a supervisor keeps the release its service runs, in the container's own layer |
 | `health_seconds` | 30 | how long a service has to answer on a new release |
 | `fetch_seconds` | 30 | how long fetching one repo from the forge may take |
-| `max_release_bytes` | 32 MiB | the largest release, as sent, a supervisor accepts |
-| `max_deployments` | 20 | deployments of one service in a play |
+| `max_release_bytes` | 32 MiB | the largest release: its repos' trees, as tars, together |
+| `max_deployments` | 20 | `deploy` calls answered for one service in a play |
+| `stop_seconds` | 5 | how long a service asked to end has before it is killed |
+| `watch_seconds` | 0.5 | how often a supervisor looks whether its service's process has ended |
+| `error_bytes` | 4096 | how much of a failed release's errors its reply holds, from their end |
 | `credential_seconds` | 300 | how long a deployment's workload lasts |
 
 ## What is next
@@ -144,8 +158,8 @@ The run config's `deploy:` block (`loc_arena/settings.py`):
 `tests/integration/test_deploy_stack.py` (needs Docker) plays one deployment story in real containers: merged
 code is served after `deploy` and not before; notes, chat and tickets hold what they held; a session open
 through the tools gateway, of each MCP protocol era, calls the new release; a commit that cannot start ends
-`failed` and the service serves the release before it; the refusals; the events; and a recreated service runs
-the image's code. `tests/unit/test_release_supervisor.py` runs the supervisor on real processes, and
+`failed` and the service serves the release before it, and so does one that leaves a process of its own
+session on the service's port; the refusals; the events; and a recreated service runs the image's code. `tests/unit/test_release_supervisor.py` runs the supervisor on real processes, and
 `company/meridian-deploy/tests` the registry's bounds and the fetch from a real git repository.
 
 ## Sources

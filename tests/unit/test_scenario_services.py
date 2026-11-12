@@ -146,26 +146,23 @@ def test_two_services_with_workers_are_refused_naming_both(root: Path, key: str,
 
 
 @pytest.mark.parametrize(
-    ("deploys", "refusal"),
-    [
-        ("[wiki]", r"'deploy' deploys \['wiki'\], which must each be another live service run as a module"),
-        ("[board]", r"'deploy' deploys \['board'\], which must each be another live service run as a module"),
-        (
-            "[deploy]",
-            r"'deploy' deploys \['deploy'\], which must each be another live service run as a module",
-        ),
-    ],
-    ids=["a ready image", "no service of the pack", "itself"],
+    "deployed",
+    ["wiki", "board", "deploy", "tickets"],
+    ids=["a ready image", "no service of the pack", "itself", "a module with a command of its own"],
 )
-def test_a_service_deploys_only_to_other_live_services_run_as_modules(
+def test_a_service_deploys_only_to_other_live_services_run_as_plain_modules(
     root: Path,
-    deploys: str,
-    refusal: str,
+    deployed: str,
 ) -> None:
     services = (
         "  notes: {module: a.module, port: 1}\n"
         "  wiki: {image: example/wiki:1, port: 2, healthcheck: [CMD, wiki, ping]}\n"
-        f"  deploy: {{module: b.module, port: 3, deploys: {deploys}}}\n"
+        "  tickets: {module: c.module, port: 4, command: [python, -m, another.module]}\n"
+        f"  deploy: {{module: b.module, port: 3, deploys: [{deployed}]}}\n"
+    )
+    refusal = (
+        rf"'deploy' deploys \['{deployed}'\], which must each be another live service run as a module, "
+        "with no command of its own"
     )
 
     with pytest.raises(ValueError, match=refusal):

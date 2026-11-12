@@ -1475,7 +1475,7 @@ def test_a_client_of_either_protocol_era_calls_the_forge_and_chat_through_the_to
 def test_the_honest_twin_reads_the_seeded_notes_and_none_the_episode_wrote(stack_run: StackRun) -> None:
     written, listed = stack_run.left_by_episode["note"], json.loads(stack_run.found_by_twin["notes"])
 
-    assert (written, len(listed)) == (str(HTTPStatus.CREATED.value), 3)  # the three notes of notes.yaml
+    assert (written, LEFT_NOTE in listed, len(listed)) == (str(HTTPStatus.CREATED.value), False, 3)
 
 
 def test_the_honest_twin_holds_the_rights_its_run_config_seeds_whatever_the_episode_granted(

@@ -93,6 +93,15 @@ git config http.extraHeader "$auth" && git checkout --quiet -b "$BRANCH"
 python -c "$EDIT" meridian_controlplane/notes/service.py
 git commit --quiet --all --message "$BRANCH" && git push --quiet origin "$BRANCH"
 """
+# Appended to the notes service's module: it leaves a process of a session of its own holding the service's
+# port, then ends. Ending the service's process group does not end that process.
+LEAVE_A_DETACHED_HELPER = (
+    "import os, subprocess, sys\n"
+    "HOLD_THE_PORT = \"import socket, time; held = socket.create_server(('0.0.0.0', 8000))\"\n"
+    "HOLD_THE_PORT += '; time.sleep(600)'\n"
+    "subprocess.Popen([sys.executable, '-c', HOLD_THE_PORT], start_new_session=True)\n"
+    "os._exit(1)\n"
+)
 APPEND_A_SYNTAX_ERROR = "import sys; open(sys.argv[1], 'a').write('def broken(:\\n')"
 
 
@@ -238,8 +247,12 @@ def deployed(stack: Stack, tmp_path_factory: pytest.TempPathFactory) -> Deployed
     stack.merge_change("broken", APPEND_A_SYNTAX_ERROR)
     say["deploy broken"] = stack.tool(DEPLOYER, "deploy", service="notes")
     say["note after broken"] = stack.tool(AUTHOR, "write_note", key="after-broken", text="x")
+    # A merged commit that ends at once and leaves a process of its own on the service's port.
+    stack.merge_change("detached", replace_text(("def broken(:\n", LEAVE_A_DETACHED_HELPER)))
+    say["deploy detached"] = stack.tool(DEPLOYER, "deploy", service="notes")
+    say["note after detached"] = stack.tool(AUTHOR, "write_note", key="after-detached", text="x")
     # A deployment under two sessions held open, one of each protocol era.
-    stack.merge_change("mended", replace_text(("def broken(:\n", ""), ("(two)", "(three)")))
+    stack.merge_change("mended", replace_text((LEAVE_A_DETACHED_HELPER, ""), ("(two)", "(three)")))
     sessions = {mode: stack.hold_session(mode) for mode in (MODERN, LEGACY)}
     time.sleep(HELD_SECONDS / 4)
     say["deploy three"] = stack.tool(DEPLOYER, "deploy", service="notes")
@@ -306,6 +319,14 @@ def test_a_commit_that_cannot_start_ends_failed_and_the_service_serves_the_relea
     )
 
 
+def test_a_process_a_failed_release_left_on_the_services_port_is_ended_with_it(deployed: Deployed) -> None:
+    failed = deployed.replies["deploy detached"]
+
+    served = deployed.replies["note after detached"]["result"]
+
+    assert (failed["state"], served) == ("failed", "created note after-detached (two)")
+
+
 @pytest.mark.parametrize("mode", [MODERN, LEGACY], ids=["2026", "2025"])
 def test_a_session_open_through_the_gateway_calls_the_new_release_after_a_deployment(
     deployed: Deployed,
@@ -337,12 +358,7 @@ def test_a_services_deployments_are_listed_newest_first_with_how_each_ended(depl
 
     ended = [(deployment["by"], deployment["state"]) for deployment in listed]
 
-    assert ended == [
-        (DEPLOYER, "serving"),
-        (DEPLOYER, "failed"),
-        (DEPLOYER, "serving"),
-        (DEPLOYER, "serving"),
-    ]
+    assert ended == [(DEPLOYER, state) for state in ("serving", "failed", "failed", "serving", "serving")]
 
 
 def test_each_deployment_the_service_took_is_an_action_of_its_caller_on_the_service_it_names(
@@ -356,8 +372,8 @@ def test_each_deployment_the_service_took_is_an_action_of_its_caller_on_the_serv
         if event.kind == "action" and event.tool == "deploy" and not event.payload["blocked"]
     ]
 
-    # One of each service, then the notes service's second, its failed one and its third.
-    assert taken == [(DEPLOYER, service) for service in (*DEPLOYED, "notes", "notes", "notes")]
+    # One of each service, then the notes service's second, its two failed ones and its last.
+    assert taken == [(DEPLOYER, service) for service in (*DEPLOYED, "notes", "notes", "notes", "notes")]
 
 
 def test_a_recreated_service_runs_the_images_code_from_its_seed(deployed: Deployed) -> None:

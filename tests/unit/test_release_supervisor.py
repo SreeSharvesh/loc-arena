@@ -20,17 +20,45 @@ from http import HTTPStatus
 from pathlib import Path
 from typing import Any
 
+import anyio
 import pytest
 from fastapi.testclient import TestClient
+from loc_arena.deploy_service import SupervisorRollout
 from loc_arena.release_supervisor import RELEASE_PATH, SupervisedService, create_supervisor_app
 from loc_arena.settings import DeploySettings
 from pydantic import SecretStr
+from starlette.types import ASGIApp
+
+from tests.unit._jobsvc_support import serve
 
 TOKEN = "a-supervisor-token-of-at-least-thirty-two-characters"
 DEPLOYER = "127.0.0.1"
 OTHER_CALLER = "192.0.2.7"  # an address reserved for documentation: no name resolves to it here
 REPO = "meridian-probe"
 WAIT_SECONDS = 20
+ERROR_BYTES = 256
+MAX_RELEASE_BYTES = 100_000
+# A server that answers "helper" on the port it is given, whatever release the service runs.
+HELPER = """
+import sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-Length", "6")
+        self.end_headers()
+        self.wfile.write(b"helper")
+    def log_message(self, *arguments):
+        pass
+HTTPServer(("127.0.0.1", int(sys.argv[1])), Handler).serve_forever()
+"""
+# A release whose module starts that helper on the service's port and ends at once: the release has failed,
+# and the helper, left running, would answer for whatever release the service runs next.
+LEAVES_A_HELPER = f"""
+import os, subprocess, sys
+subprocess.Popen([sys.executable, "-c", {HELPER!r}, sys.argv[1]])
+os._exit(1)
+"""
 # The service: it answers every GET with the version of the probe module it imported when it started.
 SERVICE = """
 import sys
@@ -91,15 +119,27 @@ class Supervised:
             return None
 
 
-def supervise(tmp_path: Path, port: int) -> TestClient:
+def build_supervisor(tmp_path: Path, port: int) -> ASGIApp:
+    """A supervisor's app over the service on ``port``, whose image and releases are in ``tmp_path``."""
     image = tmp_path / "image" / REPO
     image.mkdir(parents=True, exist_ok=True)
     (image / "probe.py").write_text('VERSION = "image"\n')
-    settings = DeploySettings(releases_directory=tmp_path / "releases", health_seconds=WAIT_SECONDS)
+    settings = DeploySettings(
+        releases_directory=tmp_path / "releases",
+        health_seconds=WAIT_SECONDS,
+        stop_seconds=2,
+        watch_seconds=0.1,
+        error_bytes=ERROR_BYTES,
+    )
     command = [sys.executable, "-c", SERVICE, str(port)]
-    service = SupervisedService(command, port, settings, {"PYTHONPATH": str(image)})
-    app = create_supervisor_app(service, SecretStr(TOKEN), DEPLOYER, max_release_bytes=100_000)
-    return TestClient(app, client=(DEPLOYER, 50000))
+    # Outside a container nothing is ended but the service's own process group.
+    service = SupervisedService(command, port, settings, {"PYTHONPATH": str(image)}, lambda: None)
+    return create_supervisor_app(service, SecretStr(TOKEN), DEPLOYER, max_release_bytes=MAX_RELEASE_BYTES)
+
+
+def supervise(tmp_path: Path, port: int) -> TestClient:
+    """That supervisor, called from its deployer's address; entering it starts the service."""
+    return TestClient(build_supervisor(tmp_path, port), client=(DEPLOYER, 50000))
 
 
 @pytest.fixture
@@ -134,6 +174,20 @@ def test_a_release_that_cannot_start_leaves_the_service_on_the_release_it_ran(su
     assert (state["release"], state["serving"], "SyntaxError" in state["detail"]) == ("deploy-1", True, True)
     assert supervised.read_version() == "one"
     assert sorted(entry.name for entry in supervised.releases.iterdir()) == ["current", "deploy-1"]
+
+
+def test_a_failed_releases_errors_reach_the_reply_cut_to_their_end(supervised: Supervised) -> None:
+    noisy = 'import sys\nsys.stderr.write("x" * 100_000 + "the last words")\nsys.exit(1)\n'
+
+    state = supervised.call("POST", release("deploy-1", noisy))
+
+    assert (len(state["detail"]), state["detail"].endswith("the last words")) == (ERROR_BYTES, True)
+
+
+def test_a_helper_a_failed_release_left_on_the_port_ends_with_it(supervised: Supervised) -> None:
+    state = supervised.call("POST", release("deploy-1", LEAVES_A_HELPER))
+
+    assert (state["release"], state["serving"], supervised.read_version()) == (None, True, "image")
 
 
 def test_a_service_whose_process_ends_is_started_again_on_its_release(supervised: Supervised) -> None:
@@ -193,3 +247,53 @@ def test_a_release_over_the_size_bound_is_refused_before_it_is_read(supervised: 
     refused = supervised.client.post(RELEASE_PATH, json=body, headers={"Authorization": f"Bearer {TOKEN}"})
 
     assert (refused.status_code, supervised.read_version()) == (HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "image")
+
+
+@pytest.mark.parametrize(
+    ("caller", "token", "length", "refused"),
+    [
+        (OTHER_CALLER, TOKEN, "10", HTTPStatus.FORBIDDEN),
+        (DEPLOYER, "another-token", "10", HTTPStatus.UNAUTHORIZED),
+        (DEPLOYER, TOKEN, "", HTTPStatus.LENGTH_REQUIRED),
+        (DEPLOYER, TOKEN, "999999999", HTTPStatus.REQUEST_ENTITY_TOO_LARGE),
+    ],
+    ids=["another caller", "another token", "no length", "too long"],
+)
+def test_a_request_is_refused_on_its_head_before_any_of_its_body_is_read(
+    supervised: Supervised,
+    caller: str,
+    token: str,
+    length: str,
+    refused: HTTPStatus,
+) -> None:
+    headers = [(b"authorization", f"Bearer {token}".encode()), (b"content-length", length.encode())]
+    scope = {"type": "http", "method": "POST", "path": RELEASE_PATH, "client": (caller, 50000)}
+    sent: list[dict[str, Any]] = []
+
+    async def read_body() -> dict[str, Any]:
+        raise AssertionError("the body was read")
+
+    async def send(message: dict[str, Any]) -> None:
+        sent.append(message)
+
+    anyio.run(supervised.client.app, {**scope, "headers": [h for h in headers if h[1]]}, read_body, send)
+
+    assert sent[0]["status"] == refused
+
+
+def test_a_hand_over_whose_reply_comes_late_is_recorded_as_what_the_service_then_runs(tmp_path: Path) -> None:
+    with socket.socket() as free:
+        free.bind(("127.0.0.1", 0))
+        port = free.getsockname()[1]
+    server, url = serve(build_supervisor(tmp_path, port))  # over real HTTP: its lifespan starts the service
+    slow = {REPO: base64.b64decode(pack('import time\ntime.sleep(4)\nVERSION = "slow"\n'))}
+    rollout = SupervisorRollout(
+        {"127.0.0.1": SecretStr(TOKEN)},
+        int(url.rsplit(":", 1)[1]),
+        timeout_seconds=3,
+    )
+
+    outcome = rollout.hand_over("127.0.0.1", "deploy-1", slow)  # its reply takes longer than the timeout
+
+    server.should_exit = True
+    assert (outcome.release, outcome.serving) == ("deploy-1", True)

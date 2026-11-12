@@ -7,32 +7,41 @@ each company repo's tree as a tar. The supervisor unpacks one beside the release
 (``deploy.releases_directory``, in the container's own layer), ends the service's process, and starts it with
 the new release's repos ahead of the image's on ``PYTHONPATH``. Once the service answers on its port, the
 ``current`` link moves to the new release and the others are removed; if it does not answer within
-``deploy.health_seconds``, the link stays, and the service starts again on the release it ran. The supervisor
-imports nothing of a release, starts the service again when its process ends by itself, and ends it when its
-container stops. Its own lines on stdout never start with ``{``, so none is read as a record of the service's.
+``deploy.health_seconds``, the link stays, and the service starts again on the release it ran.
+
+Before it starts the service, the supervisor ends every process the last one left: its process group, then
+whatever else runs in the container, so no process of an earlier release holds the service's port or runs
+beside a later one. It imports nothing of a release, starts the service again when its process ends by
+itself, and ends it when its container stops. It refuses a request on its head, before any of its body is
+read. Its own lines on stdout never start with ``{``, so none is read as a record of the service's.
 """
 
 from __future__ import annotations
 
-import collections
 import contextlib
+import hmac
 import os
 import shutil
+import signal
 import socket
 import subprocess
 import sys
 import threading
 import time
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from http import HTTPStatus
 from pathlib import Path
-from typing import Annotated
+from typing import IO, Annotated
 
 import uvicorn
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 from pydantic import Base64Bytes, BaseModel, ConfigDict, Field, SecretStr, StringConstraints, TypeAdapter
-from sandbox_server.trusted import ALL_INTERFACES, ServerToken, admit_trusted_caller, authenticate_token
+from sandbox_server.server import CONTAINER_MARKER, end_leftover_processes
+from sandbox_server.trusted import ALL_INTERFACES, ServerToken, resolve_addresses
 from scenarios.loader import EngineModule
+from starlette.datastructures import Headers
+from starlette.responses import JSONResponse
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from loc_arena.config import load_run_config
 from loc_arena.deploy_pool import RELEASE_TOKEN_FILE, find_deployer
@@ -42,9 +51,8 @@ from loc_arena.settings import DeploySettings
 RELEASE_PATH = "/release"  # POST: take a release; GET: the release the service runs
 CURRENT = "current"  # in the releases directory: the link to the release the service runs
 LOOPBACK = "127.0.0.1"
-STOP_GRACE_SECONDS = 5.0  # a process told to end is waited for this long, then killed
-WATCH_SECONDS = 0.5  # how often the supervisor looks whether the service's process has ended by itself
-ERROR_TAIL_LINES = 40  # of a failed process's errors, what a refused release's answer holds
+READ_BYTES = 4096  # of the service's stderr, at a time
+BODY_MARGIN_BYTES = 4096  # what a release's request holds beside its archives: its name and theirs
 # A release or a repo names a directory: one path component, never a relative one.
 Name = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")]
 
@@ -68,6 +76,11 @@ class ReleaseState(BaseModel):
     detail: str = ""  # why the release last handed over is not the one running: the end of its errors
 
 
+def limit_release_request(max_release_bytes: int) -> int:
+    """The longest request that hands over a release of ``max_release_bytes``: its archives in base64."""
+    return max_release_bytes * 4 // 3 + BODY_MARGIN_BYTES
+
+
 class ReleaseTakenError(Exception):
     """A release handed over under the name of one the supervisor holds."""
 
@@ -81,14 +94,19 @@ class SupervisedService:
         port: int,
         settings: DeploySettings,
         environment: Mapping[str, str],
+        end_leftovers: Callable[[], None],
     ) -> None:
-        """Run ``command``, listening on ``port``, in ``environment``; ``settings`` place its releases."""
+        """Run ``command``, listening on ``port``, in ``environment``; ``settings`` place its releases.
+
+        ``end_leftovers`` ends every process the service left outside its own process group.
+        """
         self._command, self._port, self._settings = list(command), port, settings
-        self._environment = dict(environment)
+        self._environment, self._end_leftovers = dict(environment), end_leftovers
         self._lock = threading.Lock()  # one change of the process at a time
         self._stopped = threading.Event()
-        self._errors: collections.deque[str] = collections.deque(maxlen=ERROR_TAIL_LINES)
-        self._process: subprocess.Popen[str] | None = None
+        self._process: subprocess.Popen[bytes] | None = None
+        self._errors = bytearray()  # the end of the running process's stderr
+        self._copier = threading.Thread()
 
     def start(self) -> None:
         """Start the service on the release it ran last, and keep it running until ``stop``."""
@@ -104,9 +122,10 @@ class SupervisedService:
             self._end()
 
     def read_state(self) -> ReleaseState:
-        """The release the service runs now, and whether it answers."""
-        current = self._find_current()
-        return ReleaseState(release=_name(current), serving=self._answers(wait_seconds=0))
+        """The release the service runs, once no hand-over is under way, and whether it answers."""
+        with self._lock:
+            current = self._find_current()
+            return ReleaseState(release=_name(current), serving=self._answers(wait_seconds=0))
 
     def take(self, release: Release) -> ReleaseState:
         """Have the service run ``release``; the state says which release it runs once this returns.
@@ -124,15 +143,20 @@ class SupervisedService:
             unpacked = incoming.replace(releases / release.name)
             self._end()
             self._spawn(unpacked)
-            if self._answers(self._settings.health_seconds):
-                link = releases / f".{CURRENT}"
-                link.unlink(missing_ok=True)
-                link.symlink_to(unpacked.name)
-                link.replace(releases / CURRENT)  # atomic: a reader finds the old release or the new
+            failure = None if self._answers(self._settings.health_seconds) else ""
+            if failure is None:
+                try:
+                    link = releases / f".{CURRENT}"
+                    link.unlink(missing_ok=True)
+                    link.symlink_to(unpacked.name)
+                    link.replace(releases / CURRENT)  # atomic: a reader finds the old release or the new
+                except OSError as error:
+                    failure = f"the release could not be made current: {error}"
+            if failure is None:
                 _remove_all_but(releases, unpacked)
                 return ReleaseState(release=unpacked.name, serving=True)
-            detail = "".join(self._errors) or f"it did not answer on port {self._port}"
-            self._end()
+            self._end()  # before its errors are read: every line it wrote is then in
+            detail = failure or self._errors.decode(errors="replace") or f"no answer on port {self._port}"
             shutil.rmtree(unpacked, ignore_errors=True)
             self._spawn(previous)
             serving = self._answers(self._settings.health_seconds)
@@ -144,44 +168,42 @@ class SupervisedService:
         return link.resolve() if link.is_symlink() and link.exists() else None
 
     def _spawn(self, release: Path | None) -> None:
-        """Start the service with the repos of ``release``, as resolved directories, ahead of the image's."""
+        """Start the service with the repos of ``release``, as resolved directories, ahead of the image's.
+
+        It leads a process group of its own, so the group ends with it.
+        """
         repos = sorted(str(repo) for repo in release.iterdir() if repo.is_dir()) if release else []
         image = self._environment.get("PYTHONPATH", "")
         environment = {**self._environment, "PYTHONPATH": os.pathsep.join([*repos, image])}
-        self._errors.clear()
-        self._process = subprocess.Popen(  # noqa: S603 - the service's own module, named by the scenario
+        process = subprocess.Popen(  # noqa: S603 - the service's own module, named by the scenario
             self._command,
             env=environment,
             stderr=subprocess.PIPE,
-            text=True,
-            errors="replace",
+            start_new_session=True,
         )
-        threading.Thread(target=self._copy_errors, args=(self._process,), daemon=True).start()
+        errors = bytearray()
+        copy = (process.stderr, errors, self._settings.error_bytes)
+        self._process, self._errors = process, errors
+        self._copier = threading.Thread(target=_copy_errors, args=copy, daemon=True)
+        self._copier.start()
         print(f"supervisor: started the service on {_name(release) or 'the image'}", flush=True)  # noqa: T201
 
-    def _copy_errors(self, process: subprocess.Popen[str]) -> None:
-        """Pass the process's stderr on to this container's, keeping its last lines."""
-        assert process.stderr is not None  # noqa: S101 - spawned with a pipe
-        for line in process.stderr:
-            sys.stderr.write(line)
-            sys.stderr.flush()
-            if process is self._process:
-                self._errors.append(line)
-
     def _end(self) -> None:
-        """End the service's process: ask it to, wait, then kill it."""
+        """End the service: ask its process to end, kill its group, then end whatever else it left."""
         process = self._process
-        if process is None or process.poll() is not None:
-            return
-        process.terminate()
-        try:
-            process.wait(STOP_GRACE_SECONDS)
-        except subprocess.TimeoutExpired:
-            process.kill()
+        if process is not None:
+            if process.poll() is None:
+                process.terminate()
+                with contextlib.suppress(subprocess.TimeoutExpired):
+                    process.wait(self._settings.stop_seconds)
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.killpg(process.pid, signal.SIGKILL)  # the group it leads: its children too
             process.wait()
+        self._end_leftovers()
+        self._copier.join(self._settings.stop_seconds)  # its stderr has closed: its last errors are in
 
     def _answers(self, wait_seconds: float) -> bool:
-        """Whether the service's own process accepts a connection on its port within ``wait_seconds``."""
+        """Whether the service's own process is alive and its port accepts within ``wait_seconds``."""
         deadline = time.monotonic() + wait_seconds
         while True:
             if self._process is None or self._process.poll() is not None:
@@ -194,11 +216,25 @@ class SupervisedService:
 
     def _keep_running(self) -> None:
         """Start the service again, on the release it ran, whenever its process has ended by itself."""
-        while not self._stopped.wait(WATCH_SECONDS):
+        while not self._stopped.wait(self._settings.watch_seconds):
             with self._lock:
-                if not self._stopped.is_set() and self._process and self._process.poll() is not None:
-                    print(f"supervisor: the service ended with {self._process.returncode}", flush=True)  # noqa: T201
+                if self._stopped.is_set() or self._process is None or self._process.poll() is None:
+                    continue
+                print(f"supervisor: the service ended with {self._process.returncode}", flush=True)  # noqa: T201
+                self._end()
+                try:
                     self._spawn(self._find_current())
+                except OSError as error:  # no process to be had now: the next look tries again
+                    print(f"supervisor: the service did not start: {error}", flush=True)  # noqa: T201
+
+
+def _copy_errors(stream: IO[bytes], kept: bytearray, kept_bytes: int) -> None:
+    """Pass a process's stderr on to this container's, keeping its last ``kept_bytes`` in ``kept``."""
+    while chunk := stream.read1(READ_BYTES):  # ty: ignore[unresolved-attribute] - a pipe's buffered reader
+        sys.stderr.write(chunk.decode(errors="replace"))
+        sys.stderr.flush()
+        kept += chunk
+        del kept[:-kept_bytes]
 
 
 def _name(release: Path | None) -> str | None:
@@ -213,12 +249,44 @@ def _remove_all_but(releases: Path, kept: Path) -> None:
             shutil.rmtree(entry, ignore_errors=True)
 
 
+def admit_deployer_alone(app: ASGIApp, deployer: str, token: SecretStr, max_request_bytes: int) -> ASGIApp:
+    """``app`` behind what it asks of a caller, checked on a request's head before any body is read.
+
+    The request comes from an address ``deployer`` resolves to, carries ``token``, and one that hands over
+    a release declares a length within ``max_request_bytes``.
+    """
+
+    def refuse(scope: Scope) -> tuple[HTTPStatus, str] | None:
+        headers, client = Headers(scope=scope), scope.get("client")
+        # Looked up on each request: the deployer's address is known only once it is up.
+        if client is None or client[0] not in resolve_addresses(deployer):
+            return HTTPStatus.FORBIDDEN, f"only the {deployer} service may call this supervisor"
+        scheme, _, presented = headers.get("authorization", "").partition(" ")
+        held = token.get_secret_value().encode()
+        if scheme.lower() != "bearer" or not hmac.compare_digest(presented.encode(), held):
+            return HTTPStatus.UNAUTHORIZED, "a supervisor's token is required"
+        declared = headers.get("content-length", "")
+        if scope["method"] == "POST" and not (declared.isascii() and declared.isdecimal()):
+            return HTTPStatus.LENGTH_REQUIRED, "a release declares its length"
+        if scope["method"] == "POST" and int(declared) > max_request_bytes:
+            return HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "the release is larger than a release may be"
+        return None
+
+    async def admit(scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http" and (refusal := refuse(scope)) is not None:
+            await JSONResponse({"detail": refusal[1]}, refusal[0])(scope, receive, send)
+            return
+        await app(scope, receive, send)
+
+    return admit
+
+
 def create_supervisor_app(
     service: SupervisedService,
     token: SecretStr,
     deployer: str,
     max_release_bytes: int,
-) -> FastAPI:
+) -> ASGIApp:
     """The supervisor of ``service``: it answers ``deployer`` alone, holding ``token``."""
 
     @contextlib.asynccontextmanager
@@ -227,39 +295,20 @@ def create_supervisor_app(
         yield
         service.stop()
 
-    def refuse_a_large_release(request: Request) -> None:
-        declared = request.headers.get("Content-Length", "")
-        if not (declared.isascii() and declared.isdecimal()):
-            raise HTTPException(HTTPStatus.LENGTH_REQUIRED, "a release declares its length")
-        if int(declared) > max_release_bytes:
-            raise HTTPException(
-                HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
-                f"a release holds at most {max_release_bytes} bytes",
-            )
-
-    app = FastAPI(
-        lifespan=run_service,
-        dependencies=[
-            Depends(admit_trusted_caller(deployer, "supervisor")),
-            Depends(authenticate_token(token)),
-        ],
-        docs_url=None,
-        redoc_url=None,
-        openapi_url=None,
-    )
+    app = FastAPI(lifespan=run_service, docs_url=None, redoc_url=None, openapi_url=None)
 
     @app.get(RELEASE_PATH)
     def read_release() -> ReleaseState:
         return service.read_state()
 
-    @app.post(RELEASE_PATH, dependencies=[Depends(refuse_a_large_release)])
+    @app.post(RELEASE_PATH)
     def take_release(release: Release) -> ReleaseState:
         try:
             return service.take(release)
         except ReleaseTakenError as taken:
             raise HTTPException(HTTPStatus.CONFLICT, str(taken)) from taken
 
-    return app
+    return admit_deployer_alone(app, deployer, token, limit_release_request(max_release_bytes))
 
 
 def main(arguments: list[str]) -> None:
@@ -274,10 +323,20 @@ def main(arguments: list[str]) -> None:
     token = TypeAdapter(ServerToken).validate_python(token_file.read_text().strip())
     if not isinstance(entry.source, EngineModule):
         raise SystemExit(f"{entry.name!r} is no module of the engine image, so it cannot be supervised")
+    if not CONTAINER_MARKER.exists():
+        raise SystemExit("it runs only in its container: it kills every process its service leaves behind")
     command = [sys.executable, "-m", entry.source.name, *arguments]
-    service = SupervisedService(command, entry.port, settings, os.environ)
+    service = SupervisedService(command, entry.port, settings, os.environ, end_leftover_processes)
     app = create_supervisor_app(service, token, deployer.name, settings.max_release_bytes)
-    uvicorn.run(app, host=ALL_INTERFACES, port=settings.release_port, log_level="warning", access_log=False)
+    # The caller is the peer that connected: no header names another, whoever sends it.
+    uvicorn.run(
+        app,
+        host=ALL_INTERFACES,
+        port=settings.release_port,
+        log_level="warning",
+        access_log=False,
+        proxy_headers=False,
+    )
 
 
 if __name__ == "__main__":

@@ -50,8 +50,9 @@ counted again (`records_actions` in the scenario's `iam:` block).
 
 ## Seed
 
-Each start of the service writes the scenario's note seed through the store, in the order it lists them, within
-the same bounds, so the honest twin's recreated service starts where the episode's did. The seed is named by
+A service that finds no database writes the scenario's note seed through the store, in the order it lists them,
+within the same bounds, so the honest twin's recreated service starts where the episode's did; a process that
+starts again on its database writes no seed. The seed is named by
 `notes_seed` in `scenario.yaml`: Aurora's is `scenarios/aurora_efficiency/notes.yaml`, a list of `key` and `text`
 pairs naming only people, repos, nodes and tickets the scenario's other seeds hold.
 

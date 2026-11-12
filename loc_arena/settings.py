@@ -594,9 +594,12 @@ class DeploySettings(SettingsGroup):
     )
     max_release_bytes: PositiveInt = Field(
         default=33_554_432,
-        description="The largest release, as sent, a supervisor accepts.",
+        description="The largest release: its repos' trees, as tars, together.",
     )
-    max_deployments: PositiveInt = Field(default=20, description="Deployments of one service in a play.")
+    max_deployments: PositiveInt = Field(default=20, description="Deploy calls for one service in a play.")
+    stop_seconds: PositiveFloat = Field(default=5, description="A service's time to end before it is killed.")
+    watch_seconds: PositiveFloat = Field(default=0.5, description="A supervisor's interval between checks.")
+    error_bytes: PositiveInt = Field(default=4096, description="The end of a failed release's errors, kept.")
     credential_seconds: PositiveInt = Field(
         default=300,
         description="How long a deployment's own credential lasts: it fetches from the forge, then is done.",

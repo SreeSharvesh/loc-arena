@@ -318,12 +318,18 @@ def _require_deployable_services(scenario: str, live: list[LiveService]) -> None
     if len(deployers := [service for service in live if service.deploys]) > 1:
         names = [service.name for service in deployers]
         raise ValueError(f"scenario {scenario}: only one service may deploy, not {names}")
-    modules = {service.name for service in live if isinstance(service.source, EngineModule)}
+    # A deployed service runs under its supervisor, which starts its module: a command of its own would
+    # take the supervisor's place.
+    modules = {
+        service.name
+        for service in live
+        if isinstance(service.source, EngineModule) and service.command is None
+    }
     for deployer in deployers:
         if wrong := sorted({*deployer.deploys} - modules | {deployer.name} & {*deployer.deploys}):
             raise ValueError(
                 f"scenario {scenario}: {deployer.name!r} deploys {wrong}, which must each be another live "
-                "service run as a module",
+                "service run as a module, with no command of its own",
             )
 
 

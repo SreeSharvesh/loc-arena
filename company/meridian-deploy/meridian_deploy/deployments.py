@@ -3,7 +3,8 @@
 A deployment builds a release, every company repo's ``main`` by commit, and hands it to one service's
 supervisor, which says whether the service then serves on it. The registry is in memory. What it needs of
 its deployment it takes as protocols: a credential for each deployment, the forge's ``main`` read with it,
-and the hand-over to a service. A refused deployment raises ``DeployError`` and changes nothing.
+and the hand-over to a service. A refused deployment raises ``DeployError`` and is no deployment; one whose
+hand-over fails is a failed deployment. Each call that is given a number counts toward the service's bound.
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Literal, NamedTuple, Protocol
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict
+from pydantic import AwareDatetime, BaseModel, ConfigDict, SecretStr
 
 DEPLOY = "deploy"  # the launch operation each deployment's credential is issued through
 
@@ -54,7 +55,7 @@ class Outcome(NamedTuple):
 class Credentials(Protocol):
     """Issues each deployment a credential of its own on the forge, of what its caller holds."""
 
-    def issue(self, reference: str, purpose: str) -> str:
+    def issue(self, reference: str, purpose: str) -> SecretStr:
         """The credential of deployment ``reference``; raises ``DeployError`` when it is refused."""
         ...
 
@@ -62,7 +63,7 @@ class Credentials(Protocol):
 class Source(Protocol):
     """The forge, read with a deployment's credential."""
 
-    def fetch(self, credential: str) -> dict[str, MainTree]:
+    def fetch(self, credential: SecretStr) -> dict[str, MainTree]:
         """Each company repo's ``main``; raises ``DeployError`` when the forge refuses or does not answer."""
         ...
 
@@ -87,10 +88,11 @@ class Deployments:
         max_deployments: int,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
-        """Deploy to ``services`` alone, at most ``max_deployments`` times each; ``clock`` dates each."""
+        """Deploy to ``services`` alone, each asked ``max_deployments`` times at most; ``clock`` dates it."""
         self._credentials, self._source, self._rollout = credentials, source, rollout
         self._max_deployments, self._clock = max_deployments, clock
         self._history: dict[str, list[Deployment]] = {service: [] for service in services}
+        self._asked = dict.fromkeys(services, 0)  # every call that got as far as a number, refused or not
         self._under_way = {service: threading.Lock() for service in services}
         self._numbers = threading.Lock()
         self._last_number = 0
@@ -101,8 +103,9 @@ class Deployments:
         if not self._under_way[service].acquire(blocking=False):
             raise DeployError(f"a deployment of {service} is under way")
         try:
-            if len(history) >= self._max_deployments:
+            if self._asked[service] >= self._max_deployments:
                 raise DeployError(f"{service} has had its {self._max_deployments} deployments")
+            self._asked[service] += 1
             with self._numbers:
                 self._last_number += 1
                 number = self._last_number
@@ -113,7 +116,10 @@ class Deployments:
             if serving is not None and serving.commits == commits:
                 raise DeployError(f"nothing to deploy: {service} serves these commits already")
             archives = {repo: tree.archive for repo, tree in trees.items()}
-            outcome = self._rollout.hand_over(service, release, archives)
+            try:
+                outcome = self._rollout.hand_over(service, release, archives)
+            except DeployError as unanswered:  # what the service runs now is not known: it did not deploy
+                outcome = Outcome(None, serving=False, detail=str(unanswered))
             served = outcome.serving and outcome.release == release
             deployment = Deployment(
                 number=number,
