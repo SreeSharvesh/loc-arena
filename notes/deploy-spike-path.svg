@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="272" viewBox="0 0 640 272" role="img" aria-label="Merged code goes from the forge through a deployer into a release volume, and the service loads it after its supervisor restarts it">
+<style>
+  svg { --ink:#1f2328; --muted:#59636e; --rule:#8c959f; --panel:#f6f8fa;
+        --accent:#2f4bd6; --accent-bg:#e9edfd; }
+  @media (prefers-color-scheme: dark) {
+    svg { --ink:#e6edf3; --muted:#9198a1; --rule:#6e7681; --panel:#161b22;
+          --accent:#8098ff; --accent-bg:#1b2340; }
+  }
+  text { font-family:-apple-system,"Segoe UI",system-ui,sans-serif; }
+  .box { fill:var(--panel); stroke:var(--rule); stroke-width:1; }
+  .focus { fill:var(--accent-bg); stroke:var(--accent); stroke-width:1.5; }
+  .region { fill:none; stroke:var(--rule); stroke-width:1; }
+  .t { fill:var(--ink); font-size:13px; font-weight:600; }
+  .s { fill:var(--muted); font-size:11px; }
+  .m { fill:var(--muted); font-size:11px; font-family:ui-monospace,"SF Mono",Menlo,monospace; }
+  .bold { stroke:var(--ink); stroke-width:2.5; fill:none; }
+  .thin { stroke:var(--rule); stroke-width:1.25; fill:none; }
+  .head-ink { fill:var(--ink); } .head-rule { fill:var(--rule); }
+</style>
+<defs>
+  <marker id="hi" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-ink" d="M0,0 L10,5 L0,10 z"/></marker>
+  <marker id="hr" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-rule" d="M0,0 L10,5 L0,10 z"/></marker>
+</defs>
+<g class="node"><rect class="box" x="32" y="32" width="160" height="56" rx="6"/>
+  <text class="t" x="112" y="51" text-anchor="middle" dominant-baseline="central">Agent's sandbox</text>
+  <text class="s" x="112" y="69" text-anchor="middle" dominant-baseline="central">push, open_pr, merge</text></g>
+<g class="node"><rect class="box" x="240" y="32" width="160" height="56" rx="6"/>
+  <text class="t" x="320" y="51" text-anchor="middle" dominant-baseline="central">Forge</text>
+  <text class="m" x="320" y="69" text-anchor="middle" dominant-baseline="central">main</text></g>
+<g class="node"><rect class="box" x="448" y="32" width="160" height="56" rx="6"/>
+  <text class="t" x="528" y="51" text-anchor="middle" dominant-baseline="central">Deployer</text>
+  <text class="s" x="528" y="69" text-anchor="middle" dominant-baseline="central">archives main</text></g>
+<g class="node"><path class="box" d="M448 172 v48 a80 8 0 0 0 160 0 v-48"/>
+  <ellipse class="box" cx="528" cy="172" rx="80" ry="8"/>
+  <text class="t" x="528" y="196" text-anchor="middle" dominant-baseline="central">Releases</text>
+  <text class="m" x="528" y="213" text-anchor="middle" dominant-baseline="central">/releases/current</text></g>
+<rect class="region" x="32" y="128" width="368" height="112" rx="6"/>
+<text class="s" x="48" y="148" dominant-baseline="central">Service container</text>
+<g class="node"><rect class="box" x="48" y="168" width="136" height="56" rx="14"/>
+  <text class="t" x="116" y="187" text-anchor="middle" dominant-baseline="central">Supervisor</text>
+  <text class="s" x="116" y="205" text-anchor="middle" dominant-baseline="central">watches current</text></g>
+<g class="node"><rect class="focus" x="248" y="168" width="136" height="56" rx="14"/>
+  <text class="t" x="316" y="187" text-anchor="middle" dominant-baseline="central">Service</text>
+  <text class="s" x="316" y="205" text-anchor="middle" dominant-baseline="central">new code in 3 to 7 s</text></g>
+<path class="thin" d="M192 60 H239" marker-end="url(#hr)"/>
+<path class="bold" d="M400 60 H447" marker-end="url(#hi)"/>
+<path class="bold" d="M528 88 V163" marker-end="url(#hi)"/>
+<text class="s" x="516" y="126" text-anchor="end" dominant-baseline="central">release, under 1 s</text>
+<path class="bold" d="M448 196 H385" marker-end="url(#hi)"/>
+<text class="s" x="426" y="184" text-anchor="middle" dominant-baseline="central">loads</text>
+<path class="thin" d="M184 196 H247" marker-end="url(#hr)"/>
+<text class="s" x="216" y="184" text-anchor="middle" dominant-baseline="central">restarts</text>
+</svg>
