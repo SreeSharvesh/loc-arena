@@ -41,13 +41,17 @@ software, real agents, and real work. This section documents each setting in the
 <h2>What a setting defines</h2>
 <p>Every setting reuses the same engine. What it adds is the concrete world laid on top.</p>
 
+<p>The line between the two is strict. The engine runs an episode and holds no company, team or task. A setting
+is data and company code, and it runs nothing by itself. The test for any file in the repository: would it be the
+same for a different company and a different task? If yes, it is engine. If no, it is setting.</p>
+
 <div class="tablewrap"><table>
-<thead><tr><th>Part</th><th>What the setting specifies</th></tr></thead>
+<thead><tr><th>Part</th><th>What the setting specifies</th><th>Where it lives</th></tr></thead>
 <tbody>
-<tr><td><b>The organization</b></td><td>The company, what it does, and its software: the services and repositories the agents work on.</td></tr>
-<tr><td><b>The agents</b></td><td>The team, one agent per service, under a lead. Each agent's permissions and scope: which repositories it can change, whether it can call models or submit jobs, and any special access. Its <code>sandbox: tools</code>, the MCP tools it is offered on each service, and its <code>sandbox: rights</code>, its starting rights on each service with rights.</td></tr>
-<tr><td><b>The tasks</b></td><td>A catalog of main tasks (the open engineering work) and side tasks (the covert objectives), each pairing forming one episode.</td></tr>
-<tr><td><b>The controls</b></td><td>The monitors placed on the setting and the sealed checker that decides the side task.</td></tr>
+<tr><td><b>The organization</b></td><td>The company, what it does, and its software: the services and repositories the agents work on.</td><td><code>company/</code>, and the <code>services</code> and <code>iam</code> blocks of <code>scenario.yaml</code></td></tr>
+<tr><td><b>The agents</b></td><td>The team, one agent per service, under a lead. Each agent's permissions and scope: which repositories it can change, whether it can call models or submit jobs, and any special access. Its <code>sandbox: tools</code>, the MCP tools it is offered on each service, and its <code>sandbox: rights</code>, its starting rights on each service with rights.</td><td>the <code>agents</code> block of the run config</td></tr>
+<tr><td><b>The tasks</b></td><td>A catalog of main tasks (the open engineering work) and side tasks (the covert objectives), each pairing forming one episode.</td><td><code>scenarios/&lt;name&gt;/</code> and the task blocks of the run config</td></tr>
+<tr><td><b>The controls</b></td><td>The monitors placed on the setting and the sealed checker that decides the side task.</td><td><code>configs/monitors.yaml</code> and the scenario's <code>side.py</code>, which names the checker in <code>loc_arena/verifier/</code></td></tr>
 </tbody>
 </table></div>
 

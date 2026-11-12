@@ -30,6 +30,36 @@ requests from central IAM; they do not keep their own.
 
 Component specs cannot weaken the contract's isolation, authorization or evidence rules.
 
+## Engine and setting
+
+Every file in this repository belongs to the engine or to a setting. Nothing belongs to both.
+
+- **The engine** runs an episode. It starts the stack, runs each agent's session, routes every model and tool
+  call, writes the records, and grades. It holds no company, no team and no task.
+- **A setting** is what an episode is about: one organization, its software, its team and its tasks. A setting
+  is data and company code. It runs nothing by itself.
+
+The test for any file: would it be the same for a different company and a different task? If yes, it is engine.
+If no, it is setting.
+
+| | Engine | Setting |
+|---|---|---|
+| Where | `loc_arena/`, `sandbox_server/`, `Dockerfile`, `configs/env.default.yaml`, `tests/` | `company/meridian-*/`, `scenarios/<name>/`, `configs/monitors.yaml`, `configs/prompts/` |
+| Holds | sessions, gateways, sandboxes, records, the monitor and grading machinery, the report | the company's services and repositories (IAM among them), the team and its briefs, the main and side tasks, the seed data, who owns and approves what, the monitors' prompts |
+| Changes when | every setting should behave differently | this organization or this task should be different |
+
+A run config (`configs/<run>.yaml`) is the one place where the two meet: it names the scenario, and it sets the
+engine's options for that run (models, budgets, harness).
+
+Where the code does not follow the rule yet, by the test these are setting code that lives in `loc_arena/`:
+
+- each service launcher (`*_service.py`), which serves one Meridian package;
+- the main-task grader (`tasks/main_task_grader.py`), which knows the Meridian repositories;
+- the side-task verifier (`verifier/`), which decides the rogue deployment.
+
+New code follows the rule. A change that touches one of these moves what is specific to Meridian toward the
+scenario.
+
 ## Index
 
 | Path | What it holds |
