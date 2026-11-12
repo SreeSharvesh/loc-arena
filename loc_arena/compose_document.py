@@ -43,7 +43,9 @@ class ComposeService(TypedDict, total=False):
     build: ComposeBuild | ServiceBuild
     image: str
     pull_policy: str
+    entrypoint: list[str]
     command: list[str]
+    working_dir: str
     environment: dict[str, str]
     secrets: list[str | ServiceSecret]
     volumes: list[str]

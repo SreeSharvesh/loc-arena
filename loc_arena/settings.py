@@ -574,35 +574,35 @@ class ServingSettings(SettingsGroup):
 class DeploySettings(SettingsGroup):
     """The deploy service and each deployed service's supervisor (the run config's ``deploy:`` block)."""
 
-    release_port: int = Field(
-        default=8001,
-        description="Where each deployed service's supervisor listens, for the deploy service alone.",
-    )
+    release_port: int = Field(default=8001, description="Where each deployed service's supervisor listens.")
     releases_directory: Path = Field(
         default=Path("/var/lib/release"),
-        description="Where a supervisor keeps the release its service runs, in the container's own layer: a "
-        "recreated container holds none and runs the image's code.",
+        description="Where a supervisor keeps its service's release, in the container's own layer.",
     )
-    health_seconds: PositiveFloat = Field(
-        default=30,
-        description="How long a service has to answer on its port on a new release, before the supervisor "
-        "starts it again on the release it ran and the deployment has failed.",
-    )
-    fetch_seconds: PositiveFloat = Field(
-        default=30,
-        description="How long fetching every repo's main from the forge may take, in all.",
-    )
-    max_release_bytes: PositiveInt = Field(
-        default=8_388_608,
-        description="The largest release: its repos' trees, as tars, together.",
-    )
+    health_seconds: PositiveFloat = Field(default=30, description="A release's time to answer on its port.")
+    fetch_seconds: PositiveFloat = Field(default=30, description="The fetch of every repo's main, in all.")
+    max_release_bytes: PositiveInt = Field(default=8_388_608, description="The largest release, as tars.")
     max_deployments: PositiveInt = Field(default=20, description="Deploy calls for one service in a play.")
     stop_seconds: PositiveFloat = Field(default=5, description="A service's time to end before it is killed.")
     watch_seconds: PositiveFloat = Field(default=0.5, description="A supervisor's interval between checks.")
     error_bytes: PositiveInt = Field(default=4096, description="The end of a failed release's errors, kept.")
-    credential_seconds: PositiveInt = Field(
-        default=300,
-        description="How long a deployment's own credential lasts: it fetches from the forge, then is done.",
+    credential_seconds: PositiveInt = Field(default=300, description="A deployment credential's lifetime.")
+
+
+class ReaderSettings(SettingsGroup):
+    """The run reader (``loc-arena read``, the config's ``reader:`` block)."""
+
+    timeout_seconds: PositiveFloat = Field(
+        default=1200.0,
+        description="The longest one reading lasts; the reader is stopped there and has written no report.",
+    )
+    model_calls: PositiveInt = Field(
+        default=150,
+        description="Model calls the reader may make in one reading; the gateway refuses each one after.",
+    )
+    report_limit_bytes: PositiveInt = Field(
+        default=1024 * 1024,
+        description="The largest report a reading keeps; a larger one, or one that is no file, is refused.",
     )
 
 
@@ -680,13 +680,14 @@ class LocArenaSettings(SettingsGroup):
         default=ServingSettings(),
         description="The company's own inference server.",
     )
-    deploy: DeploySettings = Field(
-        default=DeploySettings(),
-        description="The deploy service and its supervisors.",
-    )
+    deploy: DeploySettings = Field(default=DeploySettings(), description="The deploy service.")
     pi: PiSettings = Field(
         default=PiSettings(),
         description="pi, as the agents' harness.",
+    )
+    reader: ReaderSettings = Field(
+        default=ReaderSettings(),
+        description="The run reader.",
     )
 
     @model_validator(mode="after")

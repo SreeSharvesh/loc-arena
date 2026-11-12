@@ -8,11 +8,12 @@ fields the run config sets for the agents' model, whatever the loop sent for the
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from pydantic import JsonValue
+from pydantic import JsonValue, SecretStr
 
 LOOP_ROUTE_PREFIX = "loop"
 AGENTS_KEY_SECRET_NAME = "agents_upstream_key"  # the key of gateway.agents_upstream, when a run sets one
@@ -29,6 +30,9 @@ class Loops:
 
     calls: Mapping[str, int]
     overrides: Mapping[str, JsonValue]
+    # The one caller the loops' routes admit, and its token; none: the episode.
+    caller: tuple[str, SecretStr] | None = None
+    allow: str = "size(request.body) >= 0"  # the rule a call passes: any body, read so the record keeps it
 
 
 def render_loop_routes(
@@ -38,12 +42,19 @@ def render_loop_routes(
     chat_path: str,
     upstream_chat_path: str,
 ) -> list[dict[str, Any]]:
-    """Each loop's route (agentgateway v1.6 schema): ``policies``, the episode alone admitted, and its own.
+    """Each loop's route (agentgateway v1.6 schema): ``policies``, its one caller alone admitted, and its own.
 
     The episode calls a loop on ``chat_path``; its calls reach ``backends`` on ``upstream_chat_path``.
     """
     if loops is None:
         return []
+    if loops.caller is not None:
+        name, token = loops.caller
+        key = {
+            "keyHash": f"sha256:{hashlib.sha256(token.get_secret_value().encode()).hexdigest()}",
+            "metadata": {"caller": name},
+        }
+        policies = {**policies, "apiKey": {**policies["apiKey"], "keys": [key]}}
     return [
         {
             "name": f"{LOOP_ROUTE_PREFIX}-{agent}",
@@ -52,7 +63,7 @@ def render_loop_routes(
                 **policies,
                 # Parsed as a chat completion, so the overrides are set on it.
                 "ai": {"routes": {"*": "completions"}, "overrides": dict(loops.overrides)},
-                "authorization": {"rules": [{"allow": "size(request.body) >= 0"}]},
+                "authorization": {"rules": [{"allow": loops.allow}]},
                 "urlRewrite": {"path": {"full": f"/{upstream_chat_path}"}},
                 "localRateLimit": [
                     {

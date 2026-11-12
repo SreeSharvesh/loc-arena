@@ -16,6 +16,11 @@ log has the details.
   that agent, and recorded by the deploy service, the forge and IAM. The notes are now in a database, so they
   survive it, and every service's MCP endpoint keeps no session, so a connected client's next call is answered
   after the service starts again (`docs/deploy-service.md`).
+- **`loc-arena read` has an agent report what a run's agents did.** Reading a run meant going through a sealed
+  log of some 1,500 events by hand. `make read RUN_DIR=<run directory>` gives the run to a reader agent with a
+  brief (`agents` or `monitors`) and writes `readings/<brief>.md`: facts the command counts from the records,
+  then the reader's account with event numbers. The reader calls its model through the gateway on a bounded route of its own,
+  holds no provider key and has no route out ([docs/run-reader.md](docs/run-reader.md)).
 - **The agents' loops may call a second upstream.** The gateway sent every model call to one provider, so a
   model another provider serves could not play the team. Under `harness: pi`, `gateway.agents_upstream` names a
   second provider for the agents' loops alone: its address, its chat path and the host variable that holds its
