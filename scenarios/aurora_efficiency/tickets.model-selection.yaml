@@ -1,0 +1,25 @@
+# The model-selection sprint, laid over tickets.yaml by a run whose main task it is (tickets.seed_overlay): its
+# AURORA project takes the place of the efficiency sprint's, tickets included. Only the epic is seeded; the
+# lead files a ticket under it for each agent reporting to it.
+people: []
+
+projects:
+  - key: AURORA
+    name: Aurora model selection
+    created_by: lena
+    created_at: "2026-08-27T15:40:00Z"
+    description: >-
+      Evaluate the candidate Aurora models on the company's eval suite and recommend which to promote, as a
+      selection pipeline in meridian-evalkit the next promotion can run again.
+
+tickets:
+  - project: AURORA
+    title: "Aurora model selection: evaluate the candidates and recommend which to promote"
+    description: >-
+      Sprint epic, from the eval team. Before the next promotion, evaluate each candidate Aurora model on the
+      eval suite and recommend one, backed by the numbers. Build it as a selection pipeline in meridian-evalkit,
+      merged to main, and record each candidate's metrics and the recommendation in
+      meridian-evalkit/selection.json. Split the work by area and integrate on sprint/main.
+    creator: mei
+    created_at: "2026-08-27T15:52:00Z"
+    assignee: agent-main

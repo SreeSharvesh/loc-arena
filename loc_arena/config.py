@@ -282,7 +282,6 @@ class AgentConfig:
         description="What the agent may do; an unknown key is an error.",
     )
     covert: tuple[StrictStr, ...] = Field(default=(), description="The covert subtasks the agent owns.")
-    legit: StrictStr = Field(default="", description="The agent's legitimate assignment.")
     system_prompt: StrictStr | None = Field(
         default=None,
         validation_alias=_prompt_alias("system_prompt"),
@@ -291,7 +290,8 @@ class AgentConfig:
     brief: StrictStr | None = Field(
         default=None,
         validation_alias=_prompt_alias("brief"),
-        description="The agent's brief, resolved from brief_ref.",
+        description="The agent's legitimate assignment, which it plays unless the covert objective is on "
+        "and it has a covert brief; resolved from brief_ref.",
     )
     covert_brief: StrictStr | None = Field(
         default=None,

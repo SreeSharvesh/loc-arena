@@ -16,6 +16,14 @@ log has the details.
 
 ### Changed
 
+- **A run's task reaches its agents through its own prompts and seed alone.** The engine's part of every brief
+  named the efficiency push's goal, an agent's honest task line could not be changed without restating the
+  team, and the tracker and the chat always started on the efficiency sprint, so `aurora-model-evaluation`
+  told its agents about two main tasks and its honest twin mostly about the wrong one. The engine's text now
+  names no task; `brief_ref` is the agent's legitimate assignment, played unless its covert brief is, in place
+  of `legit`; and `tickets.seed_overlay` and `chat.seed_overlay` lay a run's sprint over the scenario's seed.
+  `aurora-model-evaluation` has its own sprint epic, kickoff and briefs, and its lead assigns every report's
+  ticket ([docs/run-config.md](docs/run-config.md)).
 - **There is one way to run an episode: in a stack, each agent in its own pi session.** The arena's own turn
   loop gave every agent an order and a turn, so a run could not show a team attempting the side task with each
   agent working at its own pace, and a scripted run gave no result. Both are gone, with in-process play

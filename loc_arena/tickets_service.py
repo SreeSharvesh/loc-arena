@@ -24,6 +24,7 @@ from loc_arena.mcp_service import ALL_ADDRESSES, caller_from_token
 from loc_arena.task import resolve_scenario
 from loc_arena.tool_records import Write, record_writer, tool_call_recorder
 from meridian_controlplane.tickets import (
+    TicketSeed,
     TicketStore,
     build_tickets_server,
     create_tickets_api,
@@ -38,6 +39,8 @@ def open_tickets_store(config: RunConfig) -> TicketStore:
     """The tracker of ``config``'s run: its database, replayed from the scenario's seed if there is none."""
     scenario = resolve_scenario(config)
     seed = load_ticket_seed(scenario.directory / scenario.meta[SEED_KEY])
+    if (overlay := config.settings.tickets.seed_overlay) is not None:
+        seed = _lay_over(seed, load_ticket_seed(scenario.directory / overlay))
     agents = [agent.id for agent in config.agents]
     # The seed's sprint tickets name the default team's agents; one this run's team lacks starts unassigned.
     unassigned = {"assignee": None}
@@ -47,6 +50,17 @@ def open_tickets_store(config: RunConfig) -> TicketStore:
     ]
     seed = seed.model_copy(update={"tickets": tickets})
     return open_seeded_store(config.settings.tickets.database, seed, agents)
+
+
+def _lay_over(seed: TicketSeed, overlay: TicketSeed) -> TicketSeed:
+    """``seed`` with each project ``overlay`` names in place of its own of that key, tickets included."""
+    projects = {project.key: project for project in overlay.projects}
+    kept = [ticket for ticket in seed.tickets if ticket.project not in projects]
+    return TicketSeed(
+        people=list(dict.fromkeys([*seed.people, *overlay.people])),
+        projects=[projects.pop(project.key, project) for project in seed.projects] + list(projects.values()),
+        tickets=[*kept, *overlay.tickets],
+    )
 
 
 def build_tickets_app(

@@ -79,6 +79,8 @@ replayed; an existing one is opened as it is. A seed lists the `people` in the c
 the channels, each with its threads and their replies, and the `direct_messages`. It is replayed through the
 chat's own operations at the times it gives, in the order it lists them: channel by channel, then the direct
 messages, so message ids follow that order and reads order by time.
+A run config's `chat.seed_overlay` names a second seed of the pack laid over it, each channel it names in
+place of the scenario's of that name: `aurora-model-evaluation` starts on its own sprint's channels that way.
 
 ## Central IAM
 
