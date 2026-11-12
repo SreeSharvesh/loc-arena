@@ -169,8 +169,9 @@ class SupervisedService:
 
     def _describe_failure(self) -> str:
         """Why the service did not answer: its last errors, said to be incomplete while its stderr is open."""
+        held = self._reader.is_alive()  # asked first: a reader that ends after this has every error in
         errors = bytes(self._errors).decode(errors="replace") or f"no answer on port {self._port}"
-        return f"{errors}\n{STDERR_HELD}" if self._reader.is_alive() else errors
+        return f"{errors}\n{STDERR_HELD}" if held else errors
 
     def _find_current(self) -> Path | None:
         """The directory of the release the ``current`` link names; none on the image's code."""

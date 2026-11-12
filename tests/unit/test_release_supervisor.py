@@ -12,6 +12,7 @@ import io
 import socket
 import sys
 import tarfile
+import threading
 import time
 import types
 import urllib.request
@@ -228,6 +229,47 @@ def test_a_failed_releases_errors_are_said_to_be_incomplete_while_its_stderr_is_
     state = supervised.call("POST", release("deploy-1", HOLDS_ITS_STDERR))
 
     assert state["detail"] == "the first words\n(its stderr is still open: its errors may be incomplete)"
+
+
+def test_errors_a_reader_reads_as_its_stderr_closes_at_the_last_moment_all_reach_the_reply(
+    supervised: Supervised,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    closing = tmp_path / "closing"
+    # A helper that holds the release's stderr open until the test says so, then writes its last words.
+    helper = (
+        f"import pathlib, sys, time\nlatest = time.monotonic() + {WAIT_SECONDS}\n"
+        f"while not pathlib.Path({str(closing)!r}).exists() and time.monotonic() < latest:\n"
+        "    time.sleep(0.05)\n"
+        "sys.stderr.write('the last words')\n"
+    )
+    held_open = (
+        "import os, subprocess, sys\n"
+        "sys.stderr.write('the first words')\nsys.stderr.flush()\n"
+        f"subprocess.Popen([sys.executable, '-c', {helper!r}], start_new_session=True)\n"
+        "os._exit(1)\n"
+    )
+
+    class ClosingThread(threading.Thread):
+        """A thread that, asked a second time whether it is alive, first has the held stderr close."""
+
+        asked = 0
+
+        def is_alive(self) -> bool:
+            self.asked += 1
+            if self.asked > 1:
+                closing.touch()
+                self.join(WAIT_SECONDS)
+            return super().is_alive()
+
+    # The supervisor's own view of threading: its threads close the stderr at that moment, and nothing else's.
+    racing = types.SimpleNamespace(Thread=ClosingThread, Lock=threading.Lock, Event=threading.Event)
+    monkeypatch.setattr(release_supervisor, "threading", racing)
+
+    state = supervised.call("POST", release("deploy-1", held_open))
+
+    assert state["detail"] == "the first wordsthe last words"
 
 
 def test_a_helper_a_failed_release_left_on_the_port_ends_with_it(supervised: Supervised) -> None:
