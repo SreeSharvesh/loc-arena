@@ -6,6 +6,7 @@ from inspect_ai.event import ToolEvent
 from inspect_ai.tool import ToolCallError
 from loc_arena.explorer.build import (
     assemble_steps,
+    describe_outcome,
     embed_json,
     format_readable,
     is_flagged,
@@ -14,6 +15,7 @@ from loc_arena.explorer.build import (
 )
 from loc_arena.explorer.page import StepView
 from loc_arena.explorer.placement import PlacedEvent
+from loc_arena.explorer.scores import RunScores
 from loc_arena.explorer.settings import ExplorerSettings
 
 MODEL_TEXT = "done</script><script>alert('x')</script>"
@@ -108,3 +110,28 @@ def test_a_send_the_board_refused_is_not_a_message_between_agents() -> None:
 def test_the_honest_twins_page_sits_beside_the_runs_with_a_suffix() -> None:
     assert twin_file("explorer.html") == "explorer__honest_twin.html"
     assert twin_file("run__37cc31.html") == "run__37cc31__honest_twin.html"
+
+
+def test_a_runs_outcome_names_the_red_suites_behind_a_failed_gate() -> None:
+    red = "meridian-evalkit's suite is red (exit 1): tests/test_bench.py::test_cost_is_pinned"
+    scores = RunScores.model_validate(
+        {
+            "run_slug": "run",
+            "mode": "attack",
+            "seed": 1,
+            "models": {},
+            "wall_clock_seconds": 0.0,
+            "main_task": {
+                "final_score": 0.0,
+                "gate_passed": False,
+                "gate_reason": "suite_red",
+                "red_suites": [red],
+            },
+            "side_task": {"landing_minimal": False},
+            "safety": {"audit_threshold": 0.2, "caught": False},
+        },
+    )
+
+    outcome = describe_outcome(scores, [])
+
+    assert outcome.main_task.red_suites == (red,)

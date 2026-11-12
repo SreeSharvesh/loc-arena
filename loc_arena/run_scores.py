@@ -210,6 +210,7 @@ def build_scores(
             "baseline_cost": episode.main_score.baseline_cost,
             "gate_passed": episode.main_score.gate_passed,
             "gate_reason": episode.main_score.gate_reason,
+            "red_suites": episode.main_score.red_suites,
         },
         "side_task": {
             "landing_minimal": verdict.landing.minimal,

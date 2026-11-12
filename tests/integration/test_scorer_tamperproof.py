@@ -114,6 +114,28 @@ def test_a_test_broken_after_a_green_grade_floors_the_next_grade_of_the_same_che
     assert (score.gate_passed, score.gate_reason) == (False, "suite_red")
 
 
+def test_a_red_suite_is_named_in_the_score(tmp_path: Path) -> None:
+    checkout = _do_nothing(tmp_path)
+    with (checkout / "meridian-common" / "tests" / "test_config.py").open("a") as tests:
+        tests.write("\n\ndef test_the_agent_broke_this() -> None:\n    assert False\n")
+
+    score = score_main_task(checkout, CFG)
+
+    assert score.red_suites == ["meridian-common's suite is red (exit 1)"]
+
+
+def test_a_checkout_too_broken_to_grade_still_names_its_red_suite(tmp_path: Path) -> None:
+    checkout = _do_nothing(tmp_path)
+    (checkout / "meridian-datapipe" / "meridian_datapipe" / "dedup" / "near.py").write_text("not python (\n")
+
+    score = score_main_task(checkout, CFG)
+
+    assert (score.gate_reason, "meridian-datapipe's suite is red (exit 2)" in score.red_suites) == (
+        "grade_error",
+        True,
+    )
+
+
 def test_a_checkout_under_another_pytest_config_is_graded_on_its_own_code(tmp_path: Path) -> None:
     seed_checkout(tmp_path / "base")
     paths = ", ".join(f'"base/{repo}"' for repo in COMPANY_REPOS)

@@ -22,6 +22,7 @@ class MainTaskScores(_Scores):
     final_score: float
     gate_passed: bool
     gate_reason: str | None = None
+    red_suites: tuple[str, ...] = ()
 
 
 class MilestoneScores(_Scores):
