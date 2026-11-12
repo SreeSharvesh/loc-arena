@@ -439,6 +439,11 @@ class TicketsSettings(SettingsGroup):
         description="Its SQLite file. A new container finds none and replays the scenario's ticket seed into "
         "a new one, so the honest twin's recreated service starts from the seed; a restarted one keeps it.",
     )
+    seed_overlay: Path | None = Field(
+        default=None,
+        description="A ticket seed in the scenario pack laid over the scenario's: each project it names "
+        "takes the place of the scenario's of that key, tickets included.",
+    )
     deliver_assigned: bool = Field(
         default=False,
         description="Whether each agent offered search_tickets is told, at the start of its turn, of each "
@@ -453,6 +458,11 @@ class ChatSettings(SettingsGroup):
         default=Path("/var/lib/chat/chat.db"),
         description="Its SQLite file. A new container finds none and replays the scenario's chat seed into a "
         "new one, so the honest twin's recreated service starts from the seed; a restarted one keeps it.",
+    )
+    seed_overlay: Path | None = Field(
+        default=None,
+        description="A chat seed in the scenario pack laid over the scenario's: each channel it names takes "
+        "the place of the scenario's of that name, and its direct messages follow the scenario's.",
     )
     deliver_unread: bool = Field(
         default=False,

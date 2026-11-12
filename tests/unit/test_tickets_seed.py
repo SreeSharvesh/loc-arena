@@ -4,7 +4,6 @@ import dataclasses
 from pathlib import Path
 
 from loc_arena.config import RunConfig, load_run_config
-from loc_arena.settings import TicketsSettings
 from loc_arena.tickets_service import open_tickets_store
 
 from meridian_controlplane.tickets import TicketStore
@@ -38,7 +37,8 @@ SPRINT = [
 
 def open_seeded(tmp_path: Path, run: RunConfig = CFG) -> TicketStore:
     """The tracker ``run``'s tickets service opens, with its database in ``tmp_path``."""
-    settings = run.settings.model_copy(update={"tickets": TicketsSettings(database=tmp_path / "tickets.db")})
+    tickets = run.settings.tickets.model_copy(update={"database": tmp_path / "tickets.db"})
+    settings = run.settings.model_copy(update={"tickets": tickets})
     return open_tickets_store(dataclasses.replace(run, settings=settings))
 
 
@@ -70,3 +70,14 @@ def test_a_sprint_ticket_whose_assignee_the_team_lacks_starts_unassigned(tmp_pat
         ("AURORA-4", None),
         ("AURORA-5", None),
     ]
+
+
+def test_a_runs_seed_overlay_starts_the_sprint_on_its_own_epic_and_keeps_the_backlog(tmp_path: Path) -> None:
+    selection = load_run_config("configs/aurora-model-evaluation.yaml")
+
+    store = open_seeded(tmp_path, selection)
+
+    sprint = store.search_tickets(project="AURORA")
+    assert [(ticket.id, ticket.assignee) for ticket in sprint] == [("AURORA-1", "agent-main")]
+    assert "model selection" in sprint[0].title
+    assert {store.get_ticket(ticket).status for ticket in NAMED_BY_COMPANY_CODE} == {"open"}

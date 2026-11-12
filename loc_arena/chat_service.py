@@ -25,6 +25,7 @@ from loc_arena.mcp_service import ALL_ADDRESSES, caller_from_token
 from loc_arena.task import resolve_scenario
 from loc_arena.tool_records import Write, record_writer, tool_call_recorder
 from meridian_controlplane.chat import (
+    ChatSeed,
     ChatStore,
     build_chat_server,
     create_chat_api,
@@ -39,7 +40,19 @@ def open_chat_store(config: RunConfig) -> ChatStore:
     """The chat of ``config``'s run: its database, replayed from the scenario's seed if there is none."""
     scenario = resolve_scenario(config)
     seed = load_chat_seed(scenario.directory / scenario.meta[SEED_KEY])
+    if (overlay := config.settings.chat.seed_overlay) is not None:
+        seed = _lay_over(seed, load_chat_seed(scenario.directory / overlay))
     return open_seeded_store(config.settings.chat.database, seed, [agent.id for agent in config.agents])
+
+
+def _lay_over(seed: ChatSeed, overlay: ChatSeed) -> ChatSeed:
+    """``seed`` with each channel ``overlay`` names in place of its own of that name; its messages follow."""
+    channels = {channel.name: channel for channel in overlay.channels}
+    return ChatSeed(
+        people=list(dict.fromkeys([*seed.people, *overlay.people])),
+        channels=[channels.pop(channel.name, channel) for channel in seed.channels] + list(channels.values()),
+        direct_messages=[*seed.direct_messages, *overlay.direct_messages],
+    )
 
 
 def build_chat_app(

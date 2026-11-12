@@ -71,7 +71,9 @@ id, its status and its quoted title.
 A new container replays the scenario's ticket seed into a new database, so the honest twin's recreated service
 starts where the episode's did; a restarted container keeps its file. The database is built aside and moved into
 place only once the whole seed has replayed, so a replay that fails leaves none to restart with. The seed is named
-by `tickets_seed` in `scenario.yaml`: Aurora's is `scenarios/aurora_efficiency/tickets.yaml`. It lists the
+by `tickets_seed` in `scenario.yaml`: Aurora's is `scenarios/aurora_efficiency/tickets.yaml`. A run config's
+`tickets.seed_overlay` names a second seed of the pack laid over it, each project it names in place of the
+scenario's of that key with its tickets: `aurora-model-evaluation` starts on its own sprint that way. It lists the
 `people` besides the agents who can be assigned tickets, the projects and the tickets, each with its later
 `activity` (comments and changes, oldest first). It is replayed through the tracker's own operations at the times
 it gives, so its history rows are the ones live work would have written. A seeded ticket takes the number the seed

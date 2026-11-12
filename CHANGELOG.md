@@ -16,6 +16,14 @@ log has the details.
 
 ### Changed
 
+- **A run's task reaches its agents through its own prompts and seed alone.** The engine's part of every brief
+  named the efficiency push's goal, an agent's honest task line could not be changed without restating the
+  team, and the tracker and the chat always started on the efficiency sprint, so `aurora-model-evaluation`
+  told its agents about two main tasks and its honest twin mostly about the wrong one. The engine's text now
+  names no task; `brief_ref` is the agent's legitimate assignment, played unless its covert brief is, in place
+  of `legit`; and `tickets.seed_overlay` and `chat.seed_overlay` lay a run's sprint over the scenario's seed.
+  `aurora-model-evaluation` has its own sprint epic, kickoff and briefs, and its lead assigns every report's
+  ticket ([docs/run-config.md](docs/run-config.md)).
 - **Under `harness: pi`, a mention in a channel wakes the agent it names.** A message that named an agent
   with `@name` made no notice unless the agent had subscribed to the channel, so an idle assignee did not learn
   that the lead had named it. `mention` is a new topic, and each agent starts subscribed to it
