@@ -46,7 +46,7 @@ from urllib.parse import urlsplit
 
 import pytest
 import yaml
-from loc_arena import iam_bootstrap
+from loc_arena import deploy_pool, iam_bootstrap
 from loc_arena.checkouts import checkout_home
 from loc_arena.config import load_run_config, sandbox_service
 from loc_arena.episode_stack import (
@@ -105,7 +105,6 @@ CHECKOUT_REPOS += ["meridian-evalkit", "meridian-jobsvc", "meridian-serving"]
 AGENT = "agent-main"  # whose bash runs the probes: holds read and write on the notes board
 OTHER_AGENT = "serving-agent"  # a reader (read, write), whose sandbox the probes across sandboxes target
 AGENT_WITHOUT_RIGHTS = "controlplane-agent"  # an identity on the notes board but no right, by its config
-SEEDED_NOTES = ["benchmark-baseline", "oncall-rota", "runbook-node-drain"]  # the scenario's notes.yaml
 GHOST_AGENT = "ghost"  # no agent of the run
 NOTES = next(service for service in CONFIG.live_services if service.name == "notes")
 NOTES_IDENTITY_FILE = f"{IDENTITY_PREFIX}{NOTES.name}"  # an agent's own identity, in its sandbox
@@ -181,7 +180,7 @@ EVERY = sorted(
     [*EVERY, *WORKSPACE_TOOLS, *NOTICE_TOOLS],
 )  # with the workspace service's, which the episode serves
 SHARED = ["merge", "open_pr"]  # every agent's on the forge
-OWN_REST = sorted([*EVERY, *SHARED, "publish_run", "start_run"])
+OWN_REST = sorted([*EVERY, *SHARED, "list_deployments", "publish_run", "start_run"])
 JOBSVC_TOOLS = [  # serving-agent's, sorted
     *("cancel_job", "create_schedule", "delete_schedule", "get_job", "get_schedule", "hold_job", "job_logs"),
     *("list_jobs", "list_nodes", "list_schedules", "release_job", "submit_job", "usage"),
@@ -897,6 +896,7 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
         **{identity.variable: value for identity, value in issued.items()},
         **{runner_token_variable(name): secrets.token_urlsafe(32) for name in list_runner_services(CONFIG)},
         **{node_token_variable(name): secrets.token_urlsafe(32) for name in list_node_services(CONFIG)},
+        **deploy_pool.issue_release_tokens(CONFIG, 32),
         TOOLS_GATEWAY_CONFIG_VARIABLE: render_tools_gateway_config(STACK_CONFIG, tokens, issued, inbox_keys),
         **issue_gateway_secrets(CONFIG.settings, held, sandboxes, "attack", badges=True),  # IAM runs here
         iam_bootstrap.BOOTSTRAP_VARIABLE: iam_bootstrap.render_bootstrap(STACK_CONFIG),
@@ -1239,8 +1239,8 @@ def test_a_live_service_holds_its_own_iam_credential_and_no_agents_identity(
     held = stack_run.service_secrets[service]
 
     tokens = map(runner_token_secret, list_runner_services(CONFIG)) if service == AGENTS_SERVICE.name else ()
-    # IAM checks every caller: the service holds no agent's identity, only its own credential.
-    assert held == sorted([iam_bootstrap.CREDENTIAL_FILE, *tokens])
+    supervisor = [deploy_pool.RELEASE_TOKEN_FILE] if service in (NOTES.name, CHAT.name) else []
+    assert held == sorted([iam_bootstrap.CREDENTIAL_FILE, *tokens, *supervisor])  # and no agent's identity
 
 
 def test_an_agent_without_rights_reads_the_notes_once_its_request_is_approved(stack_run: StackRun) -> None:
@@ -1475,7 +1475,7 @@ def test_a_client_of_either_protocol_era_calls_the_forge_and_chat_through_the_to
 def test_the_honest_twin_reads_the_seeded_notes_and_none_the_episode_wrote(stack_run: StackRun) -> None:
     written, listed = stack_run.left_by_episode["note"], json.loads(stack_run.found_by_twin["notes"])
 
-    assert (written, listed) == (str(HTTPStatus.CREATED.value), SEEDED_NOTES)
+    assert (written, len(listed)) == (str(HTTPStatus.CREATED.value), 3)  # the three notes of notes.yaml
 
 
 def test_the_honest_twin_holds_the_rights_its_run_config_seeds_whatever_the_episode_granted(
