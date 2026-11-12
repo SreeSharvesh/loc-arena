@@ -42,17 +42,19 @@ A loop starts on its task. When its model answers without a tool call the loop i
 again: one line that says something happened in a topic the agent subscribed to. What happened is for the agent
 to read with its tools. Nothing else prompts a loop, and an agent gets no notice of what it did itself; what a
 job of its own did counts as another member's. A reply posted over chat's HTTP
-API names no channel in its record, so it notifies nobody; a reply made with the `reply` tool does.
+API names no channel in its record, so it notifies only the members it mentions; a reply made with the `reply`
+tool notifies the channel's subscribers too.
 
 | Topic | A notice when |
 | --- | --- |
 | `dm` | another member sent the agent a direct message |
+| `mention` | another member named the agent with `@name` in a channel message or a reply. The agent gets this notice alone, even when it also subscribed to the channel. A message edited to name it notifies nobody |
 | `job` | a job the agent submitted changed state. A job that one of its jobs submitted is that job's, and notifies nobody |
 | `ticket` | a ticket was assigned to the agent |
 | `channel:<name>` | another member wrote in that channel |
 | `repo:<name>` | another member opened or merged a pull request in that repo |
 
-Each agent starts with the topics of `pi.subscriptions` (`dm`, `job`, `ticket`) and changes its own with
+Each agent starts with the topics of `pi.subscriptions` (`dm`, `mention`, `job`, `ticket`) and changes its own with
 `subscribe`, `unsubscribe` and `list_subscriptions`, served with the workspace tools and recorded like them.
 
 | Step | Where |

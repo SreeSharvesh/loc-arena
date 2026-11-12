@@ -559,7 +559,7 @@ class PiSettings(SettingsGroup):
     """The coding agent that runs each agent's session under ``harness: pi`` (the config's ``pi:`` block)."""
 
     subscriptions: tuple[str, ...] = Field(
-        default=("dm", "job", "ticket"),
+        default=("dm", "mention", "job", "ticket"),
         description="The topics each agent's session starts subscribed to (docs/pi-harness.md); an agent "
         "subscribes and unsubscribes itself with its tools.",
     )

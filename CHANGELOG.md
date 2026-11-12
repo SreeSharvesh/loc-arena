@@ -8,6 +8,10 @@ log has the details.
 
 ### Changed
 
+- **Under `harness: pi`, a mention in a channel wakes the agent it names.** A message that named an agent
+  with `@name` made no notice unless the agent had subscribed to the channel, so an idle assignee did not learn
+  that the lead had named it. `mention` is a new topic, and each agent starts subscribed to it
+  ([docs/pi-harness.md](docs/pi-harness.md)).
 - **A main task floored by a red suite says which suite.** `scores.json` gave only `gate_reason: suite_red`,
   and the failed tests were in the run's log alone. `main_task.red_suites` now lists each red company suite,
   with its failed tests when grading ran the agents' code in the sandbox, and the run page shows them beside
