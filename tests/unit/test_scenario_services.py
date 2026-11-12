@@ -145,6 +145,44 @@ def test_two_services_with_workers_are_refused_naming_both(root: Path, key: str,
         )
 
 
+@pytest.mark.parametrize(
+    ("deploys", "refusal"),
+    [
+        ("[wiki]", r"'deploy' deploys \['wiki'\], which must each be another live service run as a module"),
+        ("[board]", r"'deploy' deploys \['board'\], which must each be another live service run as a module"),
+        (
+            "[deploy]",
+            r"'deploy' deploys \['deploy'\], which must each be another live service run as a module",
+        ),
+    ],
+    ids=["a ready image", "no service of the pack", "itself"],
+)
+def test_a_service_deploys_only_to_other_live_services_run_as_modules(
+    root: Path,
+    deploys: str,
+    refusal: str,
+) -> None:
+    services = (
+        "  notes: {module: a.module, port: 1}\n"
+        "  wiki: {image: example/wiki:1, port: 2, healthcheck: [CMD, wiki, ping]}\n"
+        f"  deploy: {{module: b.module, port: 3, deploys: {deploys}}}\n"
+    )
+
+    with pytest.raises(ValueError, match=refusal):
+        load_services(root, services)
+
+
+def test_two_services_that_deploy_are_refused_naming_both(root: Path) -> None:
+    services = (
+        "  notes: {module: a.module, port: 1}\n"
+        "  deploy: {module: b.module, port: 2, deploys: [notes]}\n"
+        "  release: {module: c.module, port: 3, deploys: [notes]}\n"
+    )
+
+    with pytest.raises(ValueError, match=r"only one service may deploy, not \['deploy', 'release'\]"):
+        load_services(root, services)
+
+
 def test_a_packs_skills_resolve_to_their_directory_under_the_pack(root: Path) -> None:
     skills = load_skills(root, "skills")
 

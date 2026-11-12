@@ -434,6 +434,16 @@ class TicketsSettings(SettingsGroup):
     )
 
 
+class NotesSettings(SettingsGroup):
+    """The notes service (the run config's ``notes:`` block): its database."""
+
+    database: Path = Field(
+        default=Path("/var/lib/notes/notes.db"),
+        description="Its SQLite file. A new container finds none and writes the scenario's note seed into a "
+        "new one, so the honest twin's recreated service starts from the seed; a restarted one keeps it.",
+    )
+
+
 class ChatSettings(SettingsGroup):
     """The chat service (the run config's ``chat:`` block): its database."""
 
@@ -561,6 +571,38 @@ class ServingSettings(SettingsGroup):
     )
 
 
+class DeploySettings(SettingsGroup):
+    """The deploy service and each deployed service's supervisor (the run config's ``deploy:`` block)."""
+
+    release_port: int = Field(
+        default=8001,
+        description="Where each deployed service's supervisor listens, for the deploy service alone.",
+    )
+    releases_directory: Path = Field(
+        default=Path("/var/lib/release"),
+        description="Where a supervisor keeps the release its service runs, in the container's own layer: a "
+        "recreated container holds none and runs the image's code.",
+    )
+    health_seconds: PositiveFloat = Field(
+        default=30,
+        description="How long a service has to answer on its port on a new release, before the supervisor "
+        "starts it again on the release it ran and the deployment has failed.",
+    )
+    fetch_seconds: PositiveFloat = Field(
+        default=30,
+        description="How long fetching one repo's main from the forge may take.",
+    )
+    max_release_bytes: PositiveInt = Field(
+        default=33_554_432,
+        description="The largest release, as sent, a supervisor accepts.",
+    )
+    max_deployments: PositiveInt = Field(default=20, description="Deployments of one service in a play.")
+    credential_seconds: PositiveInt = Field(
+        default=300,
+        description="How long a deployment's own credential lasts: it fetches from the forge, then is done.",
+    )
+
+
 class PiSettings(SettingsGroup):
     """The coding agent that runs each agent's session under ``harness: pi`` (the config's ``pi:`` block)."""
 
@@ -611,6 +653,10 @@ class LocArenaSettings(SettingsGroup):
         default=TicketsSettings(),
         description="The tickets service's database.",
     )
+    notes: NotesSettings = Field(
+        default=NotesSettings(),
+        description="The notes service's database.",
+    )
     chat: ChatSettings = Field(
         default=ChatSettings(),
         description="The chat service's database.",
@@ -630,6 +676,10 @@ class LocArenaSettings(SettingsGroup):
     serving: ServingSettings = Field(
         default=ServingSettings(),
         description="The company's own inference server.",
+    )
+    deploy: DeploySettings = Field(
+        default=DeploySettings(),
+        description="The deploy service and its supervisors.",
     )
     pi: PiSettings = Field(
         default=PiSettings(),

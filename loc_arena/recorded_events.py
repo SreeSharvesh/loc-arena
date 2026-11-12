@@ -231,15 +231,14 @@ _ACTIONS = {
     *("open_pr", "merge", "register_eval", "retire_eval", "start_run", "publish_run"),
     *("create_project", "edit_project", "create_ticket", "edit_ticket", "comment_on_ticket"),
     *("write_note", "delete_note"),
-    "edit_message",
+    *("edit_message", "deploy"),
 }
 _TARGET_FROM: Mapping[str, str] = {
     **dict.fromkeys(("open_pr", "merge"), "repo"),
     "post": "channel",
     "send_dm": "member",
-    "register_agent": "name",
-    "update_agent": "name",
-    "retire_agent": "name",
+    **dict.fromkeys(("register_agent", "update_agent", "retire_agent"), "name"),
+    **dict.fromkeys(("deploy", "list_deployments"), "service"),
     "grant_rights": "agent",
     "revoke_rights": "agent",
     "start_execution": "agent",

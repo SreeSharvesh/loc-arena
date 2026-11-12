@@ -19,7 +19,8 @@ The end state, which every step below moves towards and none works against:
   `forge_seed:`, as `tickets.yaml` is by `tickets_seed:`) holds the forge's settings and the pull requests open
   when it starts, each a real branch; company code (`meridian_forge.seed`) loads it.
 - **Each agent works in its own clone**, pushes branches, opens pull requests and merges; a teammate's change
-  reaches it once merged and pulled. What is merged on `main` is what is graded and, later, deployed.
+  reaches it once merged and pulled. What is merged on `main` is what is graded, and what the
+  [deploy service](deploy-service.md) releases to the services it deploys to.
 - **CI runs each repo's own checks** (its `.meridian-ci.yaml`) on a pull request's branch, in a runner container.
 - **Everyone else acts through the same services.** Coworkers' activity is written in YAML, as other teams' jobs are in the job service's seed, and played through the real
   services under IAM identities, so every service records it and monitors see it as they see the agents'.

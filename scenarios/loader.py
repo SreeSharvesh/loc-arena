@@ -157,6 +157,12 @@ class ScenarioService(BaseModel):
         description="Whether its container comes back when its process ends during play: for a service that "
         "keeps its state in its container, so a restart picks up where it was.",
     )
+    deploys: tuple[StrictStr, ...] = Field(
+        default=(),
+        description="The live services this one deploys merged code to: each an engine module whose state "
+        "survives a restart of its process, which then runs under a supervisor that takes releases from "
+        "this service alone.",
+    )
 
     @field_validator("build")
     @classmethod
@@ -190,6 +196,8 @@ class ScenarioService(BaseModel):
             raise ValueError("runners need a live service (build, image or module) to hand them work")
         if self.nodes and not sources:
             raise ValueError("nodes need a live service (build, image or module) to run jobs on")
+        if self.deploys and not sources:
+            raise ValueError("deploys needs a live service (build, image or module) to deploy from")
         return self
 
 
@@ -215,6 +223,7 @@ class LiveService:
     runners: int = 0  # how many runners it hands work to, runner-1 to runner-<n>
     nodes: tuple[tuple[str, int], ...] = ()  # its fleet, (pool name, count) pairs; node-1 to node-<n>
     restarts: bool = False  # whether its container comes back when its process ends during play
+    deploys: tuple[str, ...] = ()  # the live services it deploys merged code to, each under a supervisor
 
 
 @dataclass(frozen=True)
@@ -292,6 +301,7 @@ def _parse_live_services(directory: Path, declared: object) -> tuple[LiveService
                     runners=service.runners,
                     nodes=tuple(service.nodes.items()),
                     restarts=service.restarts,
+                    deploys=service.deploys,
                 ),
             )
     _require_unique_tools(live)
@@ -299,7 +309,22 @@ def _parse_live_services(directory: Path, declared: object) -> tuple[LiveService
         raise ValueError(f"scenario {directory.name}: only one service may have runners, not {pools}")
     if len(fleets := [service.name for service in live if service.nodes]) > 1:
         raise ValueError(f"scenario {directory.name}: only one service may have nodes, not {fleets}")
+    _require_deployable_services(directory.name, live)
     return tuple(live)
+
+
+def _require_deployable_services(scenario: str, live: list[LiveService]) -> None:
+    """Refuse a second service that deploys, and a deployed service that is no engine module of the pack."""
+    if len(deployers := [service for service in live if service.deploys]) > 1:
+        names = [service.name for service in deployers]
+        raise ValueError(f"scenario {scenario}: only one service may deploy, not {names}")
+    modules = {service.name for service in live if isinstance(service.source, EngineModule)}
+    for deployer in deployers:
+        if wrong := sorted({*deployer.deploys} - modules | {deployer.name} & {*deployer.deploys}):
+            raise ValueError(
+                f"scenario {scenario}: {deployer.name!r} deploys {wrong}, which must each be another live "
+                "service run as a module",
+            )
 
 
 def _require_unique_tools(live: list[LiveService]) -> None:

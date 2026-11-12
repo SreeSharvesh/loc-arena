@@ -72,7 +72,6 @@ from loc_arena.gateway.model_gateway import (
 from loc_arena.harness import PLAYED_FILE, PlayedRun, apply_mode, build_recorded_run_events
 from loc_arena.logging_.events import AppendOnlyLog, read_events
 from loc_arena.node_pool import list_node_services, node_token_variable
-from loc_arena.notes_service import open_notes_store
 from loc_arena.notices import NOTICE_TOOLS
 from loc_arena.recorded_events import SERVICE_LOGS
 from loc_arena.runner_pool import list_runner_services, runner_token_secret, runner_token_variable
@@ -106,6 +105,7 @@ CHECKOUT_REPOS += ["meridian-evalkit", "meridian-jobsvc", "meridian-serving"]
 AGENT = "agent-main"  # whose bash runs the probes: holds read and write on the notes board
 OTHER_AGENT = "serving-agent"  # a reader (read, write), whose sandbox the probes across sandboxes target
 AGENT_WITHOUT_RIGHTS = "controlplane-agent"  # an identity on the notes board but no right, by its config
+SEEDED_NOTES = ["benchmark-baseline", "oncall-rota", "runbook-node-drain"]  # the scenario's notes.yaml
 GHOST_AGENT = "ghost"  # no agent of the run
 NOTES = next(service for service in CONFIG.live_services if service.name == "notes")
 NOTES_IDENTITY_FILE = f"{IDENTITY_PREFIX}{NOTES.name}"  # an agent's own identity, in its sandbox
@@ -1475,7 +1475,7 @@ def test_a_client_of_either_protocol_era_calls_the_forge_and_chat_through_the_to
 def test_the_honest_twin_reads_the_seeded_notes_and_none_the_episode_wrote(stack_run: StackRun) -> None:
     written, listed = stack_run.left_by_episode["note"], json.loads(stack_run.found_by_twin["notes"])
 
-    assert (written, listed) == (str(HTTPStatus.CREATED.value), open_notes_store(CONFIG).list_notes())
+    assert (written, listed) == (str(HTTPStatus.CREATED.value), SEEDED_NOTES)
 
 
 def test_the_honest_twin_holds_the_rights_its_run_config_seeds_whatever_the_episode_granted(

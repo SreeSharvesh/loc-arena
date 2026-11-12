@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "resource": "deploy",
+  "operations": {
+    "deploy": {
+      "permission": "deploy",
+      "requestable": true,
+      "launch": true
+    },
+    "list_deployments": {
+      "permission": "read",
+      "requestable": true,
+      "target": "service"
+    }
+  },
+  "tools": {
+    "deploy": "deploy",
+    "list_deployments": "list_deployments"
+  }
+}
