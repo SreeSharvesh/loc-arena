@@ -66,6 +66,15 @@ import os, subprocess, sys
 subprocess.Popen([sys.executable, "-c", {HELPER!r}, sys.argv[1]])
 os._exit(1)
 """
+# A release that writes an error, leaves a helper in a session of its own holding its stderr open, and ends:
+# outside a container nothing ends that helper, so the service's stderr stays open past the supervisor's wait.
+HOLDS_ITS_STDERR = """
+import os, subprocess, sys
+sys.stderr.write("the first words")
+sys.stderr.flush()
+subprocess.Popen([sys.executable, "-c", "import time; time.sleep(5)"], start_new_session=True)
+os._exit(1)
+"""
 # The service: it answers every GET with the version of the probe module it imported when it started.
 SERVICE = """
 import sys
@@ -211,6 +220,14 @@ def test_a_failed_releases_errors_reach_the_reply_while_logging_them_stalls(
     state = supervised.call("POST", release("deploy-1", "def broken(:\n"))
 
     assert "SyntaxError" in state["detail"]
+
+
+def test_a_failed_releases_errors_are_said_to_be_incomplete_while_its_stderr_is_held_open(
+    supervised: Supervised,
+) -> None:
+    state = supervised.call("POST", release("deploy-1", HOLDS_ITS_STDERR))
+
+    assert state["detail"] == "the first words\n(its stderr is still open: its errors may be incomplete)"
 
 
 def test_a_helper_a_failed_release_left_on_the_port_ends_with_it(supervised: Supervised) -> None:

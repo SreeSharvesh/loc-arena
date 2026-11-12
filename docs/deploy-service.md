@@ -47,7 +47,8 @@ A deployment ends one of two ways, and both are recorded:
 
 - **`serving`:** the service answered on its port on the new release within `deploy.health_seconds`.
 - **`failed`:** it did not. The service runs the release it ran before, and the reply holds the end of the
-  failed process's errors.
+  failed process's errors. If something still holds that process's stderr open once the supervisor's wait is
+  over, `detail` says the errors may be incomplete.
 
 A release whose commits are the ones the service serves is refused as nothing to deploy, and a `main` whose
 trees hold more than `deploy.max_release_bytes` is refused before more of it is read. A service takes one

@@ -53,6 +53,7 @@ RELEASE_PATH = "/release"  # POST: take a release; GET: the release the service 
 CURRENT = "current"  # in the releases directory: the link to the release the service runs
 LOOPBACK = "127.0.0.1"
 READ_BYTES = 4096  # of the service's stderr, at a time
+STDERR_HELD = "(its stderr is still open: its errors may be incomplete)"
 LOGGED_READS = 256  # reads of its stderr that wait to be logged; a read past them is kept, and not logged
 BODY_MARGIN_BYTES = 4096  # what a release's request holds beside its archives: its name and theirs
 # A release or a repo names a directory: one path component, never a relative one.
@@ -159,12 +160,17 @@ class SupervisedService:
             if failure is None:
                 _remove_all_but(releases, unpacked)
                 return ReleaseState(release=unpacked.name, serving=True)
-            self._end()  # before its errors are read: every line it wrote is then in
-            detail = failure or self._errors.decode(errors="replace") or f"no answer on port {self._port}"
+            self._end()  # before its errors are read
+            detail = failure or self._describe_failure()
             shutil.rmtree(unpacked, ignore_errors=True)
             self._spawn(previous)
             serving = self._answers(self._settings.health_seconds)
             return ReleaseState(release=_name(previous), serving=serving, detail=detail)
+
+    def _describe_failure(self) -> str:
+        """Why the service did not answer: its last errors, said to be incomplete while its stderr is open."""
+        errors = bytes(self._errors).decode(errors="replace") or f"no answer on port {self._port}"
+        return f"{errors}\n{STDERR_HELD}" if self._reader.is_alive() else errors
 
     def _find_current(self) -> Path | None:
         """The directory of the release the ``current`` link names; none on the image's code."""
@@ -205,7 +211,7 @@ class SupervisedService:
             process.wait()
         self._end_leftovers()
         if self._reader.is_alive():  # none before the service first started
-            self._reader.join(self._settings.stop_seconds)  # its stderr has closed: its last errors are in
+            self._reader.join(self._settings.stop_seconds)  # until its stderr closes, or something holds it
 
     def _answers(self, wait_seconds: float) -> bool:
         """Whether the service's own process is alive and its port accepts within ``wait_seconds``."""
