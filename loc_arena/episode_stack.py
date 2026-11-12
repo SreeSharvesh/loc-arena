@@ -55,6 +55,7 @@ from loc_arena.iam_bootstrap import (
 )
 from loc_arena.iam_wiring import service_environment
 from loc_arena.identity_variables import find_shared_identity_variable, holds_identities, identity_variable
+from loc_arena.machine_roots import ROOTS_VARIABLE, find_machine_roots, give_builds_machine_roots
 from loc_arena.merged_main import write_played_forges
 from loc_arena.node_pool import (
     NODE_TARGET,
@@ -169,6 +170,8 @@ def render_compose(
     """
     if not config.settings.iam.enabled:
         raise StackError("a stack run needs central IAM: this run config turns iam.enabled off")
+    if (roots := find_machine_roots()) and not roots.is_file():
+        raise StackError(f"{ROOTS_VARIABLE} names {roots}, which is no file")
     stack = config.settings.stack
     scenario = resolve_scenario(config)
     skills = [f"{scenario.skills_dir}:{stack.skills_directory}:{HOST_FOLDER}"] if scenario.skills_dir else []
@@ -187,7 +190,7 @@ def render_compose(
     managed = managed_services(config)
     repos = (*COMPANY_REPOS, PLATFORM_PACKAGE)
     pythonpath = ":".join(str(COMPANY_DIRECTORY / repo) for repo in repos)
-    return {
+    compose: ComposeDocument = {
         "services": {
             **model_gateway.render_gateway_services(
                 config.settings,
@@ -285,6 +288,7 @@ def render_compose(
             ),
         },
     }
+    return give_builds_machine_roots(compose)
 
 
 def _render_episode(

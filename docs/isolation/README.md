@@ -178,6 +178,11 @@ by the SHA-256 of their token, so it holds none: the episode, the host's monitor
 token), each runner and each node. A path outside `gateway.allowed_paths` gets a 403, and a call without a known
 token a 401.
 
+It verifies the provider with certifi's roots. A machine that re-signs outbound HTTPS (a cloud development
+container, a network with an inspecting proxy) names its own certificate bundle in `SSL_CERT_FILE`; a stack run
+there gives the gateway that bundle as its roots, and gives it to every image build as the build secret
+`ca_bundle`, which each step that downloads verifies with and no image keeps (`loc_arena/machine_roots.py`).
+
 Every call leaves a record (caller, request, reply and status, refused and failed calls included), which the
 gateway exports over OTLP to the Collector. A run waits until the Collector holds a record of every call
 the gateway logged before the gateway stops, then copies the record to `logs/gateway/<project>.calls.jsonl`, one

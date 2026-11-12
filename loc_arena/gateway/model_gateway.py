@@ -33,7 +33,6 @@ from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import urlsplit
 
-import certifi
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, JsonValue, TypeAdapter, ValidationError
 
 from loc_arena.compose_document import ComposeService
@@ -46,6 +45,7 @@ from loc_arena.gateway.core import (
     OpenRouterProvider,
 )
 from loc_arena.gateway.loop_routes import AGENTS_KEY_SECRET_NAME, NEVER_REFILLS, Loops, render_loop_routes
+from loc_arena.machine_roots import find_provider_roots
 from loc_arena.settings import GatewaySettings, LocArenaSettings
 from loc_arena.yaml_documents import dump_document
 
@@ -54,8 +54,6 @@ COLLECTOR_SERVICE = "collector"  # the OpenTelemetry Collector's compose service
 RECORD_NETWORK = "record-net"  # the gateway and the Collector alone: no agent can send the Collector a record
 COLLECTOR_PORT = 4317  # the Collector's OTLP gRPC receiver
 KEY_SECRET_NAME = "openrouter_api_key"  # the provider key: a file in the gateway's secrets directory
-# The roots the gateway verifies the provider with: certifi's, kept current by the lock, since the image's own
-# store lags behind distrusts such as the compromised emSign CAs.
 PROVIDER_ROOTS_SECRET_NAME = "provider_roots"
 MODEL_GATEWAY_CONFIG_SECRET_NAME = "model_gateway_config"
 MODEL_GATEWAY_CONFIG_VARIABLE = "LOC_ARENA_MODEL_GATEWAY_CONFIG"
@@ -488,13 +486,13 @@ def render_episode_environment(settings: LocArenaSettings) -> dict[str, str]:
 def declare_gateway_secrets(gateway: GatewaySettings) -> dict[str, dict[str, str]]:
     """The provider keys, the gateway's and the Collector's configs and the episode's token: host variables.
 
-    The provider's roots are certifi's file: too large for a variable.
+    The provider's roots are a file, this machine's bundle or certifi's: too large for a variable.
     """
     second = gateway.agents_upstream
     return {
         KEY_SECRET_NAME: {"environment": API_KEY_VARIABLE},
         **({AGENTS_KEY_SECRET_NAME: {"environment": second.key_variable}} if second else {}),
-        PROVIDER_ROOTS_SECRET_NAME: {"file": certifi.where()},
+        PROVIDER_ROOTS_SECRET_NAME: {"file": find_provider_roots()},
         MODEL_GATEWAY_CONFIG_SECRET_NAME: {"environment": MODEL_GATEWAY_CONFIG_VARIABLE},
         COLLECTOR_CONFIG_SECRET_NAME: {"environment": COLLECTOR_CONFIG_VARIABLE},
         GATEWAY_TOKEN_SECRET_NAME: {"environment": EPISODE_TOKEN_VARIABLE},

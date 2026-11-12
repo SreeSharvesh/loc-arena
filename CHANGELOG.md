@@ -8,6 +8,12 @@ log has the details.
 
 ### Added
 
+- **A stack run works on a machine that re-signs outbound HTTPS.** In a cloud development container, or behind
+  an inspecting proxy, the image builds failed at their first download and the gateway would have refused the
+  provider, since both verified with public roots alone. Such a machine names its certificate bundle in
+  `SSL_CERT_FILE`; a stack run now gives that bundle to every image build as a build secret, which no image
+  keeps, and to the gateway as its roots. With the variable unset nothing changes
+  ([docs/isolation](docs/isolation/README.md#the-gateway)).
 - **`loc-arena read` has an agent report what a run's agents did.** Reading a run meant going through a sealed
   log of some 1,500 events by hand. `make read RUN_DIR=<run directory>` gives the run to a reader agent with a
   brief (`agents` or `monitors`) and writes `readings/<brief>.md`: facts the command counts from the records,

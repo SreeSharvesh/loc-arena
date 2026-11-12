@@ -4,11 +4,15 @@
 # processes through its node daemon. `engine`, the last stage and so what a plain `docker build .` gives, holds
 # the engine, its scenarios and the company repos, for the gateway and the episode, and pi for an episode whose
 # agents run in it (`harness: pi`).
+# A machine that re-signs outbound HTTPS gives the build its certificate bundle as the secret `ca_bundle`
+# (`loc_arena.machine_roots`); each step that downloads then verifies with it, and no image keeps it. With no
+# such secret the steps verify as each tool does by default.
 FROM python:3.12-slim AS base
 COPY --from=ghcr.io/astral-sh/uv:0.13.4 /uv /usr/local/bin/uv
 # pip 26.2.2 and uv 0.13.4 are the minimums that stop trusting the compromised emSign CAs; the wheel's hash
 # keeps the upgrade safe from the old pip that fetches it.
-RUN pip install --no-cache-dir "pip @ https://files.pythonhosted.org/packages/3f/06/3e4420302363fbb71be3c7f35ce042f54bfca330e3e66b3a2e3c4cca579f/pip-26.2.2-py3-none-any.whl#sha256=fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70"
+RUN --mount=type=secret,id=ca_bundle [ ! -f /run/secrets/ca_bundle ] || export PIP_CERT=/run/secrets/ca_bundle; \
+    pip install --no-cache-dir "pip @ https://files.pythonhosted.org/packages/3f/06/3e4420302363fbb71be3c7f35ce042f54bfca330e3e66b3a2e3c4cca579f/pip-26.2.2-py3-none-any.whl#sha256=fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70"
 # git: agents clone and pull the forge's repositories in their sandboxes, and the forge serves them.
 RUN apt-get update && apt-get install --yes --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
@@ -18,6 +22,7 @@ FROM base AS sandbox
 # Only the `sandbox` dependency group: uv omits the project and its dependencies. The lock and pyproject are
 # bound for the sync alone, so the image keeps neither.
 RUN --mount=type=bind,source=uv.lock,target=uv.lock --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
+    --mount=type=secret,id=ca_bundle [ ! -f /run/secrets/ca_bundle ] || export SSL_CERT_FILE=/run/secrets/ca_bundle; \
     uv sync --frozen --only-group sandbox
 COPY sandbox_server ./sandbox_server
 # The checkouts the episode shares with the sandbox: the named volume takes its owner from this directory.
@@ -26,7 +31,9 @@ USER nobody
 
 # pi, the coding agent the runners run, installed with the dependencies its own shrinkwrap pins.
 FROM node:22.23.4-bookworm-slim AS pi
-RUN npm install --global --prefix /opt/pi @earendil-works/pi-coding-agent@1.5.2
+RUN --mount=type=secret,id=ca_bundle \
+    [ ! -f /run/secrets/ca_bundle ] || export NODE_EXTRA_CA_CERTS=/run/secrets/ca_bundle; \
+    npm install --global --prefix /opt/pi @earendil-works/pi-coding-agent@1.5.2
 
 # Its command server serves the agents service alone and runs pi in an empty /workspace. pi calls nothing but the
 # gateway: it neither checks for a newer release nor refreshes its model catalog.
@@ -61,7 +68,8 @@ ENV PATH=/opt/pi/bin:$PATH PI_OFFLINE=1 PI_SKIP_VERSION_CHECK=1 PI_TELEMETRY=0
 COPY pyproject.toml uv.lock README.md ./
 # Third-party dependencies first, for the layer cache: the project and the forge, a company package, come with
 # the code below.
-RUN uv sync --frozen --no-dev --no-install-project --no-install-package meridian-forge
+RUN --mount=type=secret,id=ca_bundle [ ! -f /run/secrets/ca_bundle ] || export SSL_CERT_FILE=/run/secrets/ca_bundle; \
+    uv sync --frozen --no-dev --no-install-project --no-install-package meridian-forge
 COPY loc_arena ./loc_arena
 COPY sandbox_server ./sandbox_server
 COPY scenarios ./scenarios
@@ -73,7 +81,8 @@ COPY company ./company
 # and chat services' databases and /var/lib/forge the forge's git repositories, each in the container's own
 # layer, which a recreated container starts without. /records is where each live service writes its record lines
 # and the episode reads them during play.
-RUN uv sync --frozen --no-dev && mkdir /sealed /output /checkouts /records /var/lib/iam /var/lib/badges \
+RUN --mount=type=secret,id=ca_bundle [ ! -f /run/secrets/ca_bundle ] || export SSL_CERT_FILE=/run/secrets/ca_bundle; \
+    uv sync --frozen --no-dev && mkdir /sealed /output /checkouts /records /var/lib/iam /var/lib/badges \
     /var/lib/tickets /var/lib/chat /var/lib/forge && chown nobody /sealed /output /checkouts /records \
     /var/lib/iam /var/lib/badges /var/lib/tickets /var/lib/chat /var/lib/forge
 USER nobody
