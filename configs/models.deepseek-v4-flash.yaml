@@ -1,0 +1,6 @@
+# models.deepseek-v4-flash.yaml: models.cheap.yaml with DeepSeek V4 Flash as the untrusted agent, routed by
+# OpenRouter.
+extends: models.cheap.yaml
+roles:
+  untrusted_agent:
+    model: deepseek/deepseek-v4-flash
