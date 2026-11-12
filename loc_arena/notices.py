@@ -1,9 +1,10 @@
 """Notices: what tells an agent's session that something it subscribed to happened.
 
 An agent subscribes to topics with its tools (``add_notice_tools``, served with its workspace tools) and
-starts with ``pi.subscriptions``. The topics: ``dm``, a direct message to it;
-``channel:<name>``, a message in that channel; ``job``, a change of state of a job of its own; ``ticket``, a
-ticket assigned to it; ``repo:<name>``, a pull request opened or merged in that repo.
+starts with ``pi.subscriptions``. The topics: ``dm``, a direct message to it; ``mention``, a message in a
+channel that names it; ``channel:<name>``, a message in that channel; ``job``, a change of state of a job
+of its own; ``ticket``, a ticket assigned to it; ``repo:<name>``, a pull request opened or merged in that
+repo.
 
 A notice comes from a record a live service wrote (``loc_arena.tool_records``): the episode reads each
 service's new lines from the records volume and builds their events as the monitors' are built after play
@@ -13,6 +14,7 @@ the agent to read with its tools. An agent gets none for what it did itself, and
 
 from __future__ import annotations
 
+import re
 import threading
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
@@ -25,14 +27,16 @@ from loc_arena.config import RunConfig
 from loc_arena.mcp_service import caller_from_token
 from loc_arena.recorded_events import RecordedEvent, record_line_parser
 
-OWN_TOPICS = ("dm", "job", "ticket")  # topics about the subscriber alone
+OWN_TOPICS = ("dm", "mention", "job", "ticket")  # topics about the subscriber alone
 NAMED_TOPICS = ("channel", "repo")  # topics of one channel or repo: ``channel:<name>``
 NOTICE_TOOLS = ("subscribe", "unsubscribe", "list_subscriptions")  # served with the workspace tools
 _TOPICS = (
-    "dm (a direct message to you), job (a job of yours changed state), ticket (a ticket was assigned to "
-    "you), channel:<name> (a message in that channel), repo:<name> (a pull request opened or merged in that "
-    "repo)"
+    "dm (a direct message to you), mention (a message in a channel names you as @you), job (a job of yours "
+    "changed state), ticket (a ticket was assigned to you), channel:<name> (a message in that channel), "
+    "repo:<name> (a pull request opened or merged in that repo)"
 )
+# Chat's rule for a mention, as its ``unread`` reads one: the engine does not import the company's packages.
+MENTION = re.compile(r"@([\w.-]*\w)")
 _ASSIGNING_TOOLS = frozenset({"create_ticket", "edit_ticket"})
 _TEXT_LIMIT = 300  # characters of a notice: its names are a service's, and a line of pi's input is short
 
@@ -51,9 +55,14 @@ def describe(event: RecordedEvent) -> Iterator[tuple[str, str | None, str]]:
     actor, payload = event.actor_uid, event.payload
     if event.kind == "message" and payload["dm"]:
         yield "dm", event.target_id, f"{actor} sent you a direct message."
-    elif event.kind == "message" and isinstance(payload["channel"], str):
-        # A reply over HTTP names its message alone, so its record has no channel to notify.
-        yield f"channel:{payload['channel']}", None, f"{actor} wrote in the channel {payload['channel']}."
+    elif event.kind == "message":
+        # A reply over HTTP names its message alone, so its record has no channel: only its mentions notify.
+        channel = payload["channel"] if isinstance(payload["channel"], str) else None
+        where = f"the channel {channel}" if channel else "a thread"
+        for member in MENTION.findall(payload["body"]):
+            yield "mention", member, f"{actor} mentioned you in {where}."
+        if channel:
+            yield f"channel:{channel}", None, f"{actor} wrote in the channel {channel}."
     elif event.kind == "job":
         yield "job", actor, f"Your job {payload['name']} ({payload['job_id']}) is now {payload['state']}."
     elif event.kind == "pr":
@@ -132,12 +141,15 @@ class Notices:
                 yield from record.events if record is not None else []
 
     def _notify(self, event: RecordedEvent) -> Iterator[Notice]:
+        noticed: set[str] = set()  # an agent gets one notice of an event: a mention, not its channel's too
         for topic, only, text in describe(event):
             with self._lock:
                 subscribed = [agent for agent, topics in self._topics.items() if topic in topics]
             for agent in subscribed:
                 # A job changes state by itself; anything else an agent did is no news to it.
-                if only in (None, agent) and (event.kind == "job" or agent != event.actor_uid):
+                news = event.kind == "job" or agent != event.actor_uid
+                if only in (None, agent) and news and agent not in noticed:
+                    noticed.add(agent)
                     yield Notice(agent, topic, text[:_TEXT_LIMIT])
 
 

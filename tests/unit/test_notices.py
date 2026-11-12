@@ -9,8 +9,10 @@ from pathlib import Path
 
 import pytest
 from loc_arena.config import RunConfig, load_run_config
-from loc_arena.notices import Notice, Notices
+from loc_arena.notices import MENTION, Notice, Notices
 from loc_arena.tool_records import record_writer
+
+from meridian_controlplane.chat import store
 
 AGENTS = ("agent-main", "eval-agent")
 NOW = datetime(2026, 11, 11, 12, tzinfo=UTC).isoformat()
@@ -247,8 +249,8 @@ def test_an_agent_is_subscribed_to_what_it_subscribed_to_less_what_it_unsubscrib
     left = notices.unsubscribe("eval-agent", "dm")
 
     assert (left, notices.list_topics("agent-main")) == (
-        ["job", "repo:meridian-evalkit", "ticket"],
-        ["dm", "job", "ticket"],
+        ["job", "mention", "repo:meridian-evalkit", "ticket"],
+        ["dm", "job", "mention", "ticket"],
     )
 
 
@@ -300,3 +302,68 @@ def test_a_service_whose_records_file_cannot_be_written_still_writes_stdout(
 
     written = capsys.readouterr()
     assert (written.out, "record not written" in written.err) == ('{"a": 1}\n', True)
+
+
+def test_a_mention_in_a_channel_notifies_the_agent_it_names(config: RunConfig, tmp_path: Path) -> None:
+    notices = Notices(config, [*AGENTS, "serving-agent"])
+    record_call(tmp_path, "chat", "agent-main", "post", channel="aurora", body="@eval-agent, take TKT-7.")
+
+    noticed = notices.read()
+
+    assert noticed == [Notice("eval-agent", "mention", "agent-main mentioned you in the channel aurora.")]
+
+
+def test_an_agent_named_in_a_channel_it_subscribed_to_gets_the_mention_alone(
+    config: RunConfig,
+    tmp_path: Path,
+) -> None:
+    notices = Notices(config, AGENTS)
+    notices.subscribe("eval-agent", "channel:aurora")
+    record_call(
+        tmp_path,
+        "chat",
+        "agent-main",
+        "post",
+        channel="aurora",
+        body="@eval-agent @eval-agent see this",
+    )
+
+    noticed = notices.read()
+
+    assert noticed == [Notice("eval-agent", "mention", "agent-main mentioned you in the channel aurora.")]
+
+
+def test_a_mention_in_a_reply_over_http_notifies_the_agent_it_names(
+    config: RunConfig,
+    tmp_path: Path,
+) -> None:
+    notices = Notices(config, AGENTS)
+    request = {
+        "wall_ts": NOW,
+        "caller": "agent-main",
+        "method": "POST",
+        "status": 201,
+        "operation": "reply",
+        "arguments": {"message": "m-4", "body": "agreed, @eval-agent"},
+    }
+    record_writer(tmp_path, "chat")(json.dumps(request))
+
+    noticed = notices.read()
+
+    assert noticed == [Notice("eval-agent", "mention", "agent-main mentioned you in a thread.")]
+
+
+def test_a_direct_message_that_names_its_reader_is_a_direct_message_notice(
+    config: RunConfig,
+    tmp_path: Path,
+) -> None:
+    notices = Notices(config, AGENTS)
+    record_call(tmp_path, "chat", "agent-main", "send_dm", member="eval-agent", body="@eval-agent, a word")
+
+    noticed = notices.read()
+
+    assert noticed == [Notice("eval-agent", "dm", "agent-main sent you a direct message.")]
+
+
+def test_a_mention_is_what_chat_reads_as_one() -> None:
+    assert (MENTION.pattern, MENTION.flags) == (store.MENTION.pattern, store.MENTION.flags)

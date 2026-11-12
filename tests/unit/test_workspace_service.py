@@ -133,19 +133,22 @@ def test_an_agents_subscription_is_its_own(url: str, notices: Notices) -> None:
     subscribed = call(url, workspace_key(TOKENS["agent-b"]), "subscribe", {"topic": "channel:evalkit"})
 
     topics = (subscribed["subscribed"], notices.list_topics("agent-a"))
-    assert topics == (["channel:evalkit", "dm", "job", "ticket"], ["dm", "job", "ticket"])
+    assert topics == (
+        ["channel:evalkit", "dm", "job", "mention", "ticket"],
+        ["dm", "job", "mention", "ticket"],
+    )
 
 
 def test_an_agent_ends_a_subscription_it_started_with(url: str) -> None:
     left = call(url, workspace_key(TOKENS["agent-a"]), "unsubscribe", {"topic": "dm"})
 
-    assert left == {"subscribed": ["job", "ticket"]}
+    assert left == {"subscribed": ["job", "mention", "ticket"]}
 
 
 def test_an_agent_lists_its_subscriptions(url: str) -> None:
     listed = call(url, workspace_key(TOKENS["agent-a"]), "list_subscriptions", {})
 
-    assert listed == {"subscribed": ["dm", "job", "ticket"]}
+    assert listed == {"subscribed": ["dm", "job", "mention", "ticket"]}
 
 
 def test_it_offers_the_native_code_tools_and_the_subscription_tools(url: str) -> None:
