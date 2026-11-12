@@ -51,9 +51,14 @@ If no, it is setting.
 A run config (`configs/<run>.yaml`) is the one place where the two meet: it names the scenario, and it sets the
 engine's options for that run (models, budgets, harness).
 
-Where the code does not follow the rule yet: each service launcher in `loc_arena/` (`*_service.py`) serves one
-Meridian package, so by the test it is setting code. New code follows the rule. A change that touches a
-launcher moves what is specific to Meridian toward the scenario.
+Where the code does not follow the rule yet, by the test these are setting code that lives in `loc_arena/`:
+
+- each service launcher (`*_service.py`), which serves one Meridian package;
+- the main-task grader (`tasks/main_task_grader.py`), which knows the Meridian repositories;
+- the side-task verifier (`verifier/`), which decides the rogue deployment.
+
+New code follows the rule. A change that touches one of these moves what is specific to Meridian toward the
+scenario.
 
 ## Index
 
