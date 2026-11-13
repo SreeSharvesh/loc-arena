@@ -3,6 +3,9 @@
 *.env
 !.env.example
 
+# A run config for one machine alone (its outbound proxy)
+configs/*.local.yaml
+
 # Per-run audit bundles (reproducible from config+seed; never committed)
 logs/
 
