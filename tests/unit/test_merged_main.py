@@ -315,3 +315,29 @@ def test_what_an_earlier_reading_kept_of_a_deployment_is_gone_when_the_play_depl
 
     assert not (play / DEPLOYED_FILE).exists()
     assert not (play / DEPLOYED_CHECKOUT).exists()
+
+
+@pytest.mark.parametrize(
+    "pushed_as",
+    ["refs/tags/main", "refs/replace/{tip}"],
+    ids=["a tag named main", "a replacement of the last commit of main"],
+)
+def test_what_an_agent_pushes_beside_the_branch_main_is_no_part_of_what_is_graded(
+    pushed_as: str,
+    tmp_path: Path,
+) -> None:
+    repositories, play = tmp_path / "repositories", tmp_path / "episode"
+    open_forge(CFG, load_seed(CFG), repositories)
+    clone = tmp_path / "clone"
+    git = functools.partial(git_in, clone)
+    bare = str(repository_path(repositories, REPO))
+    subprocess.run(["git", "clone", "--quiet", bare, str(clone)], env=ISOLATED, check=True)
+    tip = git("rev-parse", "HEAD")
+    (clone / "UNMERGED.md").write_text("pushed beside main, merged by nobody\n")
+    git("add", "UNMERGED.md")
+    git("commit", "--quiet", "-m", "Work nobody merged")
+    git("push", "--quiet", "origin", f"HEAD:{pushed_as.format(tip=tip)}")
+
+    write_played(repositories, play, "")
+
+    assert not (play / CHECKOUT / REPO / "UNMERGED.md").exists()
