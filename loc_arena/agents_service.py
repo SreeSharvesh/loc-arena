@@ -125,6 +125,7 @@ def main(arguments: list[str]) -> None:
     run_config = load_run_config(arguments[0])
     service_entry = next(service for service in run_config.live_services if service.name == arguments[1])
     write_audit_line = record_writer(run_config.settings.stack.records_directory, service_entry.name)
+    guard = guard_from_environment(os.environ)  # IAM decides every call: no identity or rights table here
     database = Database(run_config.settings.agents_service.database)
     registry = AgentRegistry(load_seeded_agents(), database)
     executions = Executions(
@@ -135,7 +136,6 @@ def main(arguments: list[str]) -> None:
         database,
         load_seeded_telemetry(),
     )
-    guard = guard_from_environment(os.environ)  # IAM decides every call: no identity or rights table here
     seed = load_seed(resolve_scenario(run_config))
     assert seed is not None  # the service runs under central IAM alone, which the seed sets up
     max_seconds = {name: resource.max_seconds for name, resource in seed.resources.items()}

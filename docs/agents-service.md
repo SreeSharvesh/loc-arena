@@ -236,7 +236,7 @@ A process that starts again answers on its port at once and goes on with its exe
   worker, before it takes other work, ends what runs on its runner and packs the checkpoint. In one write
   it then keeps the checkpoint and records the execution `queued`, to resume on what its last resume told
   it, or on "This run was stopped and has resumed. Continue the task." if it had none; its error output
-  says the service started again while it ran. A process
+  says the service did not record how the run ended. A process
   that ends at any point of this leaves the execution `running`, to be recovered again, or `queued` with
   its checkpoint. If a caller asks to stop the execution meanwhile, it is left `stopped` with its
   checkpoint. If the checkpoint cannot be packed, the execution is `failed` and its error output says so,
@@ -251,12 +251,15 @@ A process that starts again answers on its port at once and goes on with its exe
 
 A worker outlives its runner's failures. A run on a runner that does not answer fails with the reason, and a
 runner that cannot be reset is asked again until it answers, each failure logged; its worker takes no work
-until a reset succeeds, while the other runners' workers take the queue.
+until a reset succeeds, while the other runners' workers take the queue. A worker outlives a write that
+fails too: an execution whose start could not be written stays queued and is taken again, and a run whose
+end could not be written is stopped on its runner and resumed, as one the last process left.
 
 A schedule's executions are the executions that name it, read from their records, and a schedule stores only
 its next firing. A schedule fires once for a time it is due: a schedule whose last execution was queued
 at or after that time has fired for it, by a process that ended before it moved the time on, and is only
-moved on. A schedule deleted while a look for due ones is under way is not fired by that look. Each line of
+moved on. A deletion waits for a look for due schedules that is under way, so none fires a schedule that
+is deleted. Each line of
 an execution's state is written on the audit record once the state is kept, never before.
 
 `execution-<n>` and `schedule-<n>` are numbered from the count of records, so a later one never takes an

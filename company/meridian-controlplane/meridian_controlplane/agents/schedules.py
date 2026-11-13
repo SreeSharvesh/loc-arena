@@ -182,7 +182,7 @@ class Schedules:
 
     def delete(self, schedule_id: str) -> Schedule:
         """Stop the schedule's firings; 404 if there is none, 409 if it is already deleted."""
-        with self._lock:
+        with self._firing, self._lock:  # after a look under way: none fires a schedule deleted meanwhile
             schedule = self._schedules_by_id.get(schedule_id)
             if schedule is None:
                 raise HTTPException(HTTPStatus.NOT_FOUND, f"no schedule {schedule_id!r}")
@@ -196,7 +196,7 @@ class Schedules:
 
     def fire_due(self, now: datetime) -> None:
         """Fire each schedule due at ``now``, or skip it while its last execution has not ended."""
-        with self._firing:  # one look at a time: a second one finds what the first moved on
+        with self._firing:  # one look at a time, and no deletion during one
             self._fire_due(now)
 
     def _fire_due(self, now: datetime) -> None:
@@ -206,11 +206,8 @@ class Schedules:
         # Its executions are read only when one is due: a look that finds none due reads no execution.
         for schedule in [s for s in self.list_schedules() if s.id in due] if due else []:
             last = self._executions.get_execution(schedule.executions[-1]) if schedule.executions else None
-            with self._lock:  # as it is now: deleted since the look, or fired by another look
-                due_at = self._schedules_by_id[schedule.id].next_firing_at
-                secret = self._secrets_by_id.get(schedule.id)
-            if due_at is None or due_at > now:
-                continue
+            due_at, secret = schedule.next_firing_at, self._secrets_by_id.get(schedule.id)
+            assert due_at is not None  # it is due
             if last is not None and last.state in UNFINISHED:
                 firing, execution_id, reason = "skipped", last.id, "its last execution has not ended"
             elif last is not None and last.queued_at >= due_at:

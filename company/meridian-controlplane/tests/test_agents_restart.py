@@ -9,6 +9,7 @@ worker and its runner in one process: a stop beside a resume, the first reset, a
 from __future__ import annotations
 
 import json
+import sqlite3
 import threading
 import time
 from collections.abc import Callable
@@ -140,9 +141,9 @@ class Service:
         return execution
 
 
-def start_service(directory: Path, runner: HeldRunner) -> Service:
+def start_service(directory: Path, runner: HeldRunner, database: Database | None = None) -> Service:
     """The service's records on the database in ``directory``, from its seed, as its process starts them."""
-    database = Database(directory / "agents.db")
+    database = database or Database(directory / "agents.db")
     audit_lines: list[str] = []
     authorized: list[tuple[str, str]] = []
     registry = AgentRegistry(load_seeded_agents(), database)
@@ -263,7 +264,7 @@ def test_an_execution_running_when_the_service_ended_is_checkpointed_and_resumes
     assert (again.execution_states(), ended.output, ended.error_output) == (
         ["queued", "running", "completed"],
         "done\n",
-        "the service started again while this ran\n",
+        "the service did not record how this run ended\n",
     )
 
 
@@ -411,7 +412,7 @@ def test_an_execution_whose_checkpoint_cannot_be_taken_once_the_service_starts_a
 
     failed = again.wait_for_state("execution-1", "failed")
     assert (failed.error_output, failed.returncode, runner.commands) == (
-        "the service started again while this ran\ntar: workspace: Permission denied\n",
+        "the service did not record how this run ended\ntar: workspace: Permission denied\n",
         None,
         [],
     )
@@ -516,22 +517,28 @@ def test_an_execution_started_for_a_schedule_is_its_last_one_though_the_schedule
 
 
 def test_a_schedule_whose_firing_was_never_written_fires_once_for_that_time(tmp_path: Path) -> None:
-    runner = HeldRunner()
-    first = start_service(tmp_path, runner)
-    hourly = ScheduleRequest(agent="ticket-triager", input="Triage the new tickets.", interval_seconds=3600)
-    created = first.schedules.create(hourly, LEAD, identity=None)
-    # As a process leaves it that fired for a time just past and ended before it moved the time on.
+    # What a process leaves that fired a schedule for a time just past and ended before it moved the time on:
+    # the execution it started, ended since, and the schedule still due. No scheduler of its own runs here.
+    database, runner = Database(tmp_path / "agents.db"), HeldRunner()
+    registry = AgentRegistry(load_seeded_agents(), database)
+    first = Executions(registry, [runner], NEVER_SECONDS, lambda _: None, database, load_seeded_telemetry())
     due_at = datetime.now(UTC) - timedelta(seconds=1)
-    left = created.model_copy(update={"created_at": due_at - timedelta(hours=1), "next_firing_at": due_at})
-    kept = Database(tmp_path / "agents.db").records(
-        "schedules",
-        Schedule.model_validate_json,
-        Schedule.model_dump_json,
+    database.records("schedules", Schedule.model_validate_json, Schedule.model_dump_json)["schedule-1"] = (
+        Schedule(
+            id="schedule-1",
+            agent="ticket-triager",
+            input="Triage the new tickets.",
+            interval_seconds=3600,
+            created_by=LEAD,
+            principal=None,
+            created_at=due_at - timedelta(hours=1),
+            next_firing_at=due_at,
+        )
     )
-    first.executions.start(ExecutionRequest(agent=hourly.agent, input=hourly.input), LEAD, created.id)
+    first.start(ExecutionRequest(agent="ticket-triager", input="Triage the new tickets."), LEAD, "schedule-1")
     runner.release(1)
-    first.wait_for_state("execution-1", "completed")
-    kept[created.id] = left
+    while first.get_execution("execution-1").state != "completed":
+        time.sleep(0.01)
 
     again = start_service(tmp_path, HeldRunner())
     again.schedules.fire_due(datetime.now(UTC))
@@ -572,3 +579,56 @@ def test_a_cancelled_execution_keeps_no_checkpoint(tmp_path: Path) -> None:
     service.executions.cancel("execution-1")
 
     assert list(kept) == []
+
+
+class StateWriteFailsOnce(Database):
+    """A database whose next write of an execution in ``state`` fails, as a full disk makes one fail."""
+
+    state: str | None = None
+
+    def execute(self, statement: str, *parameters: str) -> list[tuple[str, ...]]:
+        failing = self.state and statement.startswith("INSERT") and parameters[0] == "executions"
+        if failing and f'"state":"{self.state}"' in parameters[2]:
+            self.state = None
+            raise sqlite3.OperationalError("database or disk is full")
+        return super().execute(statement, *parameters)
+
+
+def test_a_run_whose_end_could_not_be_written_is_resumed_and_its_worker_runs_the_next(tmp_path: Path) -> None:
+    database, runner = StateWriteFailsOnce(tmp_path / "agents.db"), HeldRunner()
+    service = start_service(tmp_path, runner, database)
+    service.executions.start(TRIAGE, LEAD)
+    service.wait_for_state("execution-1", "running")
+    database.state = "completed"
+
+    runner.release(1)  # its end is not written: the worker stops it as one a process left, and resumes it
+    while len(runner.commands) < 2:
+        time.sleep(0.01)
+    runner.release(2)
+    service.wait_for_state("execution-1", "completed")
+    service.executions.start(TRIAGE, LEAD)
+    runner.release(3)
+
+    service.wait_for_state("execution-2", "completed")
+    assert service.execution_states() == [
+        "queued",
+        "running",
+        "queued",
+        "running",
+        "completed",
+        "queued",
+        "running",
+        "completed",
+    ]
+
+
+def test_an_execution_whose_start_could_not_be_written_is_taken_again(tmp_path: Path) -> None:
+    database, runner = StateWriteFailsOnce(tmp_path / "agents.db"), HeldRunner()
+    database.state = "running"
+    service = start_service(tmp_path, runner, database)
+
+    service.executions.start(TRIAGE, LEAD)
+    runner.release(1)
+
+    service.wait_for_state("execution-1", "completed")
+    assert service.execution_states() == ["queued", "running", "completed"]

@@ -24,7 +24,7 @@
   },
   "suite_tests": {
     "meridian-common": 89,
-    "meridian-controlplane": 269,
+    "meridian-controlplane": 271,
     "meridian-datapipe": 120,
     "meridian-distill": 45,
     "meridian-evalkit": 151,
