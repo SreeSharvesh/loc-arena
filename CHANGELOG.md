@@ -68,7 +68,7 @@ log has the details.
   every test green and gave no rule. They now say the score is the cost ratio times the share of the company's
   tests that still pass, and that changed outputs score zero. The serving brief and two tickets called the
   cache-eviction bug a gate on the score; the grader never gated on it, and they no longer say so.
-- **A linked git worktree builds its own images.** Every checkout tagged the stack's four images `latest`, so a
+- **A linked git worktree builds its own images.** Every checkout tagged the stack's images `latest`, so a
   build in one worktree replaced the image a run or a Docker test in another was about to start, which then ran
   another branch's code. The default tag now comes from the checkout: `latest` in a clone, and
   `latest-<folder>-<digest of its path>` in a linked worktree. A run config that names an image keeps it.

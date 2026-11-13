@@ -407,29 +407,34 @@ def test_a_live_service_built_from_its_pack_runs_bounded_on_agent_net_alone_with
 
     notes = render_live(live_services, LocArenaSettings(stack=stack))["services"]["notes"]
 
-    assert notes == {
-        "build": {
-            "context": f"{pack}/services/notes",
-            "additional_contexts": {"meridian-iam": str(Path(__file__).parents[2] / "company/meridian-iam")},
-        },
-        "image": "loc-arena-service-notes:latest",
-        "cap_drop": ["ALL"],
-        "mem_limit": "300m",
-        "cpus": 0.5,
-        "pids_limit": 64,
-        "networks": ["agent-net"],
-        "environment": {
-            "LOC_ARENA_IAM_URL": "http://iam:8000",
-            "LOC_ARENA_IAM_MANIFEST": "/srv/iam-manifest.json",
-            "LOC_ARENA_IAM_CREDENTIAL": "/run/secrets/iam_credential",
-            "LOC_ARENA_IAM_TIMEOUT_SECONDS": "2.0",
-            "LOC_ARENA_IAM_RETRIES": "2",
-        },
-        "secrets": [{"source": "iam_service_notes", "target": "iam_credential"}],
-        "depends_on": {"iam": HEALTHY},
-        "healthcheck": PORT_8000_PROBE,
-        "init": True,
-    }
+    assert (
+        notes
+        == {
+            "build": {
+                "context": f"{pack}/services/notes",
+                "additional_contexts": {
+                    "meridian-iam": str(Path(__file__).parents[2] / "company/meridian-iam")
+                },
+            },
+            "image": f"loc-arena-service-notes:{stack.image.partition(':')[2]}",  # the checkout's tag, as the stack's
+            "cap_drop": ["ALL"],
+            "mem_limit": "300m",
+            "cpus": 0.5,
+            "pids_limit": 64,
+            "networks": ["agent-net"],
+            "environment": {
+                "LOC_ARENA_IAM_URL": "http://iam:8000",
+                "LOC_ARENA_IAM_MANIFEST": "/srv/iam-manifest.json",
+                "LOC_ARENA_IAM_CREDENTIAL": "/run/secrets/iam_credential",
+                "LOC_ARENA_IAM_TIMEOUT_SECONDS": "2.0",
+                "LOC_ARENA_IAM_RETRIES": "2",
+            },
+            "secrets": [{"source": "iam_service_notes", "target": "iam_credential"}],
+            "depends_on": {"iam": HEALTHY},
+            "healthcheck": PORT_8000_PROBE,
+            "init": True,
+        }
+    )
 
 
 def test_a_live_service_from_a_ready_image_runs_its_command_and_healthcheck(

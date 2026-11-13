@@ -37,7 +37,7 @@ from tests.integration._mcp_probe import CALL_TOOL
 RUN = "aurora-efficiency.stack-test"
 CONFIG = load_run_config(REPOSITORY / "configs" / f"{RUN}.yaml")
 SERVICES = ["iam", "notes", "agents", "forge", "chat", TOOLS_GATEWAY_SERVICE]
-PROJECT = "locarena-iamtest"
+PROJECT = f"locarena-iamtest-{os.urandom(3).hex()}"  # its own, so two checkouts can run it at once
 TIMEOUT = 600
 DECISION_SECONDS = 15  # how long a test waits for an approver: it decides within a poll of a second
 

@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 from loc_arena.config import ConfigError, load_run_config, load_settings
+from loc_arena import image_tag
 from loc_arena.image_tag import derive_image_tag
 from loc_arena.settings import LocArenaSettings
 from pydantic import BaseModel, JsonValue, ValidationError
@@ -109,6 +110,19 @@ def test_a_linked_worktrees_tag_names_its_folder_in_characters_a_tag_may_hold(
     tag = derive_image_tag(worktree)
 
     assert tag.startswith(named)
+
+
+def test_the_images_a_checkout_builds_are_tagged_as_the_checkout(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(image_tag, "IMAGE_TAG", "latest-fix-0a1b2c")
+
+    stack = LocArenaSettings().stack
+
+    assert (stack.image, stack.sandbox_image, stack.runner_image, stack.worker_image) == (
+        "loc-arena:latest-fix-0a1b2c",
+        "loc-arena-sandbox:latest-fix-0a1b2c",
+        "loc-arena-runner:latest-fix-0a1b2c",
+        "loc-arena-worker:latest-fix-0a1b2c",
+    )
 
 
 def test_a_clone_builds_under_latest(tmp_path: Path) -> None:
