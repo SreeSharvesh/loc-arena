@@ -130,6 +130,7 @@ def relay_while_running(gateway: GatewaySettings) -> Iterator[str | None]:
         raise RuntimeError(f"no relay can listen on gateway.outbound_proxy {address}: {error}") from error
     thread = threading.Thread(target=loop.run_forever, daemon=True)
     thread.start()
+    print(f"relay: {address} to this machine's proxy {proxy}, while this command runs", file=sys.stderr)
     try:
         yield address
     finally:

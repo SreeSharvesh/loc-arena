@@ -232,8 +232,9 @@ printf 'extends: aurora-efficiency.fast.yaml\ngateway:\n  outbound_proxy: 172.17
 export OPENROUTER_API_KEY=placeholder
 ```
 
-Then `make run RUN=aurora-efficiency.fast.local` plays as on any machine. `SSL_CERT_FILE` and `HTTPS_PROXY`
-are the machine's own.
+Then `make run RUN=aurora-efficiency.fast.local` plays as on any machine, and so does `make read` with that
+same `RUN`; each says on its first line that its relay is up. The placeholder key lasts for its shell, so a
+new shell exports it again. `SSL_CERT_FILE` and `HTTPS_PROXY` are the machine's own.
 
 ## What agent code can reach
 

@@ -166,6 +166,20 @@ def test_a_command_on_a_machine_with_its_own_proxy_has_a_relay_while_it_runs(
     assert answer == b"HTTP/1.1 403 Forbidden\r\n\r\n"
 
 
+def test_a_command_says_where_its_relay_listens_and_which_proxy_it_passes_to(
+    address: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:9")
+
+    with relay_while_running(proxied(address)):
+        pass
+
+    said = capsys.readouterr().err
+    assert said == f"relay: {address} to this machine's proxy 127.0.0.1:9, while this command runs\n"
+
+
 def test_the_relay_of_a_command_is_gone_when_the_command_ends(
     address: str,
     monkeypatch: pytest.MonkeyPatch,
