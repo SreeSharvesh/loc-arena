@@ -136,8 +136,11 @@ def relay_while_running(gateway: GatewaySettings) -> Iterator[str | None]:
         loop.call_soon_threadsafe(loop.stop)
         thread.join()
         server.close()
-        for tunnel in asyncio.all_tasks(loop):
-            tunnel.cancel()  # each closes both of its connections as it ends
+        tunnels = asyncio.all_tasks(loop)
+        for tunnel in tunnels:
+            tunnel.cancel()  # each drops both of its connections as it ends
+        if tunnels:
+            loop.run_until_complete(asyncio.gather(*tunnels, return_exceptions=True))
         with contextlib.suppress(TimeoutError):
             loop.run_until_complete(asyncio.wait_for(server.wait_closed(), gateway.timeout_seconds))
         loop.close()
