@@ -22,6 +22,7 @@ from pathlib import Path
 
 from loc_arena.config import load_run_config
 from loc_arena.episode_stack import run_in_stack
+from loc_arena.gateway.proxy_relay import relay_while_running
 from loc_arena.harness import apply_mode, locate_run, play_run, read_played_snapshot
 from loc_arena.logging_.viewer import build_index
 from loc_arena.merged_main import EPISODE_PHASE
@@ -67,7 +68,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
         play_run(config, run_directory, mode=args.mode, next_phase=args.next_phase)
         print(f"played: {run_directory}")
         return 0
-    out = run_in_stack(args.run, mode=args.mode, seed=args.seed, logs=Path(args.out))
+    with relay_while_running(config.settings.gateway):
+        out = run_in_stack(args.run, mode=args.mode, seed=args.seed, logs=Path(args.out))
     scores = json.loads((out / "scores.json").read_text())
     s = scores["side_task"]
     print(f"bundle: {out}")
@@ -180,7 +182,9 @@ def _cmd_read(args: argparse.Namespace) -> int:
     from loc_arena.run_reader import read_run
 
     try:
-        report = read_run(Path(args.run_directory), args.brief, load_run_config(_config_path(args.run)))
+        config = load_run_config(_config_path(args.run))
+        with relay_while_running(config.settings.gateway):
+            report = read_run(Path(args.run_directory), args.brief, config)
     except (ValueError, RuntimeError) as error:
         print(f"read: {error}", file=sys.stderr)
         return 1

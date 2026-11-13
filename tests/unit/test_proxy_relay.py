@@ -4,9 +4,16 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import socket
+import time
 
 import pytest
-from loc_arena.gateway.proxy_relay import find_machine_proxy, list_upstream_hosts, serve_relay
+from loc_arena.gateway.proxy_relay import (
+    find_machine_proxy,
+    list_upstream_hosts,
+    relay_while_running,
+    serve_relay,
+)
 from loc_arena.settings import AgentsUpstream, GatewaySettings
 from pydantic import HttpUrl
 
@@ -121,3 +128,140 @@ def test_the_machines_proxy_is_the_host_and_port_of_an_http_url_in_its_variable(
     found = find_machine_proxy()
 
     assert found == proxy
+
+
+@pytest.fixture
+def address() -> str:
+    """An address of this machine that nothing listens on."""
+    with socket.socket() as free:
+        free.bind(("127.0.0.1", 0))
+        return f"127.0.0.1:{free.getsockname()[1]}"
+
+
+def ask(address: str, request: bytes) -> bytes | None:
+    """What whatever listens on ``address`` answers ``request``; ``None`` when nothing listens there."""
+    host, _, port = address.rpartition(":")
+    try:
+        with socket.create_connection((host, int(port)), timeout=5) as caller:
+            caller.sendall(request)
+            return caller.recv(100)
+    except ConnectionRefusedError:
+        return None
+
+
+def proxied(address: str) -> GatewaySettings:
+    """A gateway whose outbound proxy is ``address``, with a short wait so a failing test fails soon."""
+    return GatewaySettings(outbound_proxy=address, timeout_seconds=1)
+
+
+def test_a_command_on_a_machine_with_its_own_proxy_has_a_relay_while_it_runs(
+    address: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:9")
+
+    with relay_while_running(proxied(address)):
+        answer = ask(address, b"GET / HTTP/1.1\r\n\r\n")
+
+    assert answer == b"HTTP/1.1 403 Forbidden\r\n\r\n"
+
+
+def test_a_command_says_where_its_relay_listens_and_which_proxy_it_passes_to(
+    address: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:9")
+
+    with relay_while_running(proxied(address)):
+        pass
+
+    said = capsys.readouterr().err
+    assert said == f"relay: {address} to this machine's proxy 127.0.0.1:9, while this command runs\n"
+
+
+def test_the_relay_of_a_command_is_gone_when_the_command_ends(
+    address: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:9")
+    with relay_while_running(proxied(address)):
+        pass
+
+    answer = ask(address, b"GET / HTTP/1.1\r\n\r\n")
+
+    assert answer is None
+
+
+@pytest.mark.parametrize("sent_by_the_proxy", [b"", OPENED + bytes(8_000_000)], ids=["no answer", "a flood"])
+def test_a_command_ends_at_once_though_the_relay_still_holds_a_tunnel(
+    sent_by_the_proxy: bytes,
+    address: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    host, _, port = address.rpartition(":")
+    with socket.create_server(("127.0.0.1", 0)) as proxy:
+        proxy.settimeout(5)
+        monkeypatch.setenv("HTTPS_PROXY", f"http://127.0.0.1:{proxy.getsockname()[1]}")
+        started = time.monotonic()
+
+        with relay_while_running(GatewaySettings(outbound_proxy=address)):
+            caller = socket.create_connection((host, int(port)))  # it reads nothing the proxy sends
+            caller.sendall(b"CONNECT openrouter.ai:443 HTTP/1.1\r\n\r\n")
+            held = proxy.accept()[0]
+            held.settimeout(1)
+            with contextlib.suppress(TimeoutError):  # more than the caller's and the relay's buffers take
+                held.sendall(sent_by_the_proxy)
+        held.close()
+        caller.close()
+
+    assert time.monotonic() - started < 5  # far under the 120 seconds the gateway waits
+
+
+@pytest.mark.parametrize(
+    ("named", "outbound"),
+    [
+        ("", "{address}"),  # the machine names no proxy
+        ("http://{address}", "{address}"),  # the machine's proxy is the outbound proxy itself
+        ("http://127.0.0.1:9", "192.0.2.1:3128"),  # the outbound proxy is on another machine
+    ],
+)
+def test_no_relay_runs_where_the_gateway_reaches_its_outbound_proxy_itself(
+    named: str,
+    outbound: str,
+    address: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HTTPS_PROXY", named.format(address=address))
+
+    with relay_while_running(proxied(outbound.format(address=address))) as relayed:
+        pass
+
+    assert relayed is None
+
+
+def test_a_command_says_that_its_outbound_proxy_is_no_address_of_this_machine(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:9")
+
+    with relay_while_running(proxied("192.0.2.1:3128")):
+        pass
+
+    assert (
+        capsys.readouterr().err
+        == "no relay: gateway.outbound_proxy 192.0.2.1:3128 is no address of this machine\n"
+    )
+
+
+def test_a_relay_that_cannot_listen_stops_the_command_naming_the_setting(
+    address: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:9")
+    host, _, port = address.rpartition(":")
+
+    with socket.create_server((host, int(port))), pytest.raises(RuntimeError, match="gateway.outbound_proxy"):  # noqa: PT012
+        with relay_while_running(proxied(address)):
+            pass
