@@ -210,9 +210,9 @@ The forge accepts any tree an agent pushes and merges, so a merged tree can be o
 tree never stops the run, and never leaves it without a grade. Each of those git commands ends within
 `forge.read_timeout_seconds` (30) and prints `forge.read_limit_bytes` (32 MiB) at most, or it is stopped.
 A repo whose `main` git does not archive within them (an entry named `..` or `.git`, a file of gigabytes that
-packs to kilobytes, a tree naming more files than git walks in that time), or whose archive cannot be written
-out (a file name over 255 bytes), has no directory in the `checkout`, and the play's `unread.json` holds the
-reason under `main`, by repo. The play's main task is then
+packs to kilobytes, a tree naming more files than git walks in that time or in its container's memory), or
+whose archive cannot be written out (a file name over 255 bytes), has no directory in the `checkout`, and the
+play's `unread.json` holds the reason under `main`, by repo. The play's main task is then
 not graded: `main_task.final_score` is 0.0, `gate_reason` is `ungradeable`, and `main_task.error` holds the
 reasons, 500 characters at most. `error` is empty for a play that was graded. A history the host cannot read is
 named under `history` in the same file, has no bundle, and changes no score.
