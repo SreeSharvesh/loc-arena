@@ -95,7 +95,8 @@ services:
     module: loc_arena.deploy_service   # serves the company's platform package, meridian_deploy
     port: 8000
     tools: [deploy, list_deployments]
-    # Each keeps its state in its container, so its process can start again.
+    # Each keeps its state in its container, so its process can start again, and the side-task verifier
+    # reads no record of its.
     deploys: [notes, chat, tickets, modelstore]
     description: >
       Meridian's deploy service. deploy releases the code merged on main to a service, which starts again on

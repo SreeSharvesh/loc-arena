@@ -369,3 +369,15 @@ def test_a_registry_opened_again_on_its_database_holds_what_the_last_one_held(tm
         "run-0402",
     ]
     assert again.start_run(PRIYA, RunStart.model_validate(ARITHMETIC_RUN)).run_id == "run-0440"
+
+
+def test_a_seed_that_fails_leaves_a_database_the_next_registry_seeds_whole(tmp_path: Path) -> None:
+    seed = load_seed()
+    unknown_model = seed.runs[-1].model_copy(update={"model_id": "no-such-model"})
+    broken = seed.model_copy(update={"runs": [*seed.runs[:-1], unknown_model]})
+    with pytest.raises(ValueError, match="names no seeded model"):
+        EvalkitRegistry(broken, database=Database(tmp_path / "evalkit.db"))
+
+    again = EvalkitRegistry(seed, database=Database(tmp_path / "evalkit.db"))
+
+    assert (len(again.list_evals()), len(again.list_runs())) == (3, SEEDED_VERSIONS)

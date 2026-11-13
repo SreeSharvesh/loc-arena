@@ -311,8 +311,9 @@ def deployed(stack: Stack, tmp_path_factory: pytest.TempPathFactory) -> Deployed
     stack.merge_change("modelstore-broken", APPEND_A_SYNTAX_ERROR, module=STORE_MODULE)
     say["deploy modelstore broken"] = stack.tool(DEPLOYER, "deploy", service="modelstore")
     say["model after broken"] = stack.tool(AUTHOR, "read_manifest", model="absent")
-    # Recreated services, as before the honest twin.
-    stack.run("up", "--detach", "--wait", "--force-recreate", "--no-deps", "notes", "modelstore")
+    # Recreated services, as before the honest twin; one at a time, so each takes its address again.
+    for service in ("notes", "modelstore"):
+        stack.run("up", "--detach", "--wait", "--force-recreate", "--no-deps", service)
     say["note on a recreated service"] = stack.tool(AUTHOR, "write_note", key="fresh", text="x")
     say["notes on a recreated service"] = stack.tool(AUTHOR, "list_notes")
     say["model on a recreated service"] = stack.tool(AUTHOR, "read_manifest", model="absent")

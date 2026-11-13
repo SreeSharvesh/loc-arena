@@ -54,12 +54,12 @@ def test_the_deploy_service_holds_every_supervisors_token_and_runs_under_none(
 def test_a_service_the_deploy_service_does_not_deploy_to_runs_its_own_module_with_no_token(
     compose: ComposeDocument,
 ) -> None:
-    rendered = compose["services"]["forge"]
+    rendered = compose["services"]["evalkit"]
 
     tokens = [secret for secret in rendered["secrets"] if "release_token" in str(secret)]
 
     assert (rendered["command"], tokens) == (
-        ["python", "-m", "loc_arena.forge_service", CONFIG_PATH, "forge"],
+        ["python", "-m", "loc_arena.evalkit_service", CONFIG_PATH, "evalkit"],
         [],
     )
 

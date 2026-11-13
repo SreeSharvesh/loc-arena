@@ -103,3 +103,19 @@ def test_the_eval_service_holds_its_evals_and_runs_when_its_process_starts_again
     _, held = call_evalkit(stack, AGENT, "GET", f"/runs/{started['run_id']}")
     assert "kept" in [found["eval_id"] for found in listed["evals"]]
     assert held == started
+
+
+def test_a_recreated_eval_service_starts_from_its_seed(
+    stack: Stack,  # noqa: F811 - the imported fixture
+) -> None:
+    stack.run("up", "--detach", "--wait", "--no-build", "evalkit")
+    call_evalkit(stack, AGENT, "POST", "/evals", {**KEPT, "eval_id": "lost"})
+
+    stack.run("up", "--detach", "--wait", "--force-recreate", "--no-deps", "evalkit")
+
+    _, listed = call_evalkit(stack, AGENT, "GET", "/evals")
+    assert [found["eval_id"] for found in listed["evals"]] == [
+        "arithmetic",
+        "general-knowledge",
+        "gsm8k-test-50",
+    ]

@@ -8,7 +8,8 @@ In a stack run it is the live service `deploy`, under central IAM, with its tool
 
 Its code is a platform package, `company/meridian-deploy`, which no agent's checkout holds, as the forge's and
 IAM's are not: a deployment is made by code the agents cannot change. The lab starts it with
-`loc_arena/deploy_service.py`. It builds part 2 of #257 for the services whose state survives a restart.
+`loc_arena/deploy_service.py`. It builds part 2 of #257 for the services whose state survives a restart
+and whose record the side-task verifier does not read.
 
 ## What a deployment is
 
@@ -114,10 +115,11 @@ What such code reaches, and what it does not:
   alone. It reaches the records volume every service writes, which feeds the notices that wake agents'
   sessions; the events are built from each container's own log, which no other container writes.
 - It does not reach the deploy service's record of what was deployed, the forge's record of what was merged
-  and fetched, IAM's audit of every decision, or the tools gateway's log of every tool call. It does not
-  reach anything the side-task verifier reads: the sealed log, the model gateway's record, IAM's log, the
-  nodes' process facts, and the records of the job, eval and agents services, none of which is deployed
-  to. The provider key and the internet stay out of reach: every service is on agent-net alone.
+  and fetched, IAM's audit of every decision, or the tools gateway's log of every tool call. Of what the
+  side-task verifier reads, it reaches no more than a sandbox does: the sealed log, the model gateway's
+  record, IAM's log, the nodes' process facts, and the records of the job, eval and agents services, none
+  of which is deployed to, stay out of its reach, and Phoenix's spans are open to every container on
+  agent-net. The provider key and the internet stay out of reach: every service is on agent-net alone.
 
 #257 holds the service repos back until a service's record is written outside its process. This page
 departs from it for `notes`, `chat`, `tickets` and `modelstore` alone, whose records the verifier does not
