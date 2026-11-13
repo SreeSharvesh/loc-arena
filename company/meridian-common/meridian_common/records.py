@@ -107,6 +107,7 @@ class Records[T](MutableMapping[str, T]):
     def __len__(self) -> int:
         """How many records the collection holds."""
         counted = self._database.execute(
-            "SELECT COUNT(*) FROM records WHERE collection = ?", self._collection
+            "SELECT COUNT(*) FROM records WHERE collection = ?",
+            self._collection,
         )
         return int(counted[0][0])

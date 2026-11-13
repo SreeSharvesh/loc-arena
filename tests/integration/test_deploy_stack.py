@@ -186,7 +186,7 @@ class Stack:
         return held
 
     def merge_change(self, branch: str, edit: str, repo: str = REPO, module: str = NOTES_MODULE) -> str:
-        """``AUTHOR`` pushes ``edit`` of ``repo``'s ``module`` as ``branch``, ``MERGER`` merges it: the commit."""
+        """``AUTHOR`` pushes ``edit`` of ``repo``'s ``module`` as ``branch``; ``MERGER`` merges it."""
         environment = {"REPO": repo, "AGENT": AUTHOR, "BRANCH": branch, "EDIT": edit, "MODULE": module}
         exported = [argument for name, value in environment.items() for argument in ("-e", f"{name}={value}")]
         self.run("exec", "-T", *exported, sandbox_service(AUTHOR), "bash", "-c", PUSH_CHANGE)
