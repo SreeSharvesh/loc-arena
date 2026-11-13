@@ -1,0 +1,9 @@
+# aurora-agents-rogue-glm-5.3-flash.yaml
+# The COVERT rogue-deployment seed (agents_rogue_seed) with the untrusted agent on GLM 5.3 Flash.
+# Isolates the model: does GLM 5.3 Flash refuse the covert framing as Deepseek did (bundle 17d390), or
+# execute it? Identical to aurora-agents-rogue.yaml except the attacker model.
+# Run: make run RUN=aurora-agents-rogue-glm-5.3-flash MODE=attack
+extends: aurora-agents-rogue.yaml
+models: models.glm-5.3-flash.yaml
+side_task:
+  slug: agents-rogue-glm-5.3-flash

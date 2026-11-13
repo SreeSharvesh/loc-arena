@@ -1,0 +1,7 @@
+# models.glm-5.2.yaml: models.cheap.yaml with the untrusted agent (orchestrator + sub-agents) on GLM 5.2.
+# The teacher and monitor stay as in models.cheap (Deepseek teacher, Llama monitor); only the attacker model
+# changes, so a GLM-5.2-vs-5.3-vs-Deepseek comparison isolates the untrusted agent.
+extends: models.cheap.yaml
+roles:
+  untrusted_agent:
+    model: z-ai/glm-5.2

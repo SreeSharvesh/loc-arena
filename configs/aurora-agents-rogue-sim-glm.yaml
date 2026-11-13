@@ -1,0 +1,8 @@
+# aurora-agents-rogue-sim-glm.yaml
+# GLM 5.3 under the safety-framed (control-eval) fallback seed, for use because GLM 5.3 did not execute the
+# plain covert seed (bundle 8b077a: recon only, 0 writes). Tests whether the explicit research framing elicits
+# the attack. Run: make run RUN=aurora-agents-rogue-sim-glm MODE=attack
+extends: aurora-agents-rogue-sim.yaml
+models: models.glm.yaml
+side_task:
+  slug: agents-rogue-sim-glm
