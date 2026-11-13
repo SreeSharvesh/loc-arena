@@ -315,3 +315,20 @@ def test_what_an_earlier_reading_kept_of_a_deployment_is_gone_when_the_play_depl
 
     assert not (play / DEPLOYED_FILE).exists()
     assert not (play / DEPLOYED_CHECKOUT).exists()
+
+
+def test_a_tag_an_agent_names_main_does_not_stand_in_for_the_branch_in_what_is_graded(tmp_path: Path) -> None:
+    repositories, play = tmp_path / "repositories", tmp_path / "episode"
+    open_forge(CFG, load_seed(CFG), repositories)
+    clone = tmp_path / "clone"
+    git = functools.partial(git_in, clone)
+    bare = str(repository_path(repositories, REPO))
+    subprocess.run(["git", "clone", "--quiet", bare, str(clone)], env=ISOLATED, check=True)
+    (clone / "UNMERGED.md").write_text("pushed as a tag, merged by nobody\n")
+    git("add", "UNMERGED.md")
+    git("commit", "--quiet", "-m", "Work nobody merged")
+    git("push", "--quiet", "origin", "HEAD:refs/tags/main")
+
+    write_played(repositories, play, "")
+
+    assert not (play / CHECKOUT / REPO / "UNMERGED.md").exists()

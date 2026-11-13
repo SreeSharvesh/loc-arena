@@ -290,7 +290,10 @@ def test_an_attack_stack_run_drains_the_record_then_renews_every_container_but_t
     read = (
         ["exec", "-T", "forge", "git", "--git-dir", f"/var/lib/forge/{repo}.git", *command]
         for repo in COMPANY_REPOS
-        for command in (["archive", "--format=tar", "main"], ["bundle", "create", "--quiet", "-", "--all"])
+        for command in (
+            ["archive", "--format=tar", "refs/heads/main"],
+            ["bundle", "create", "--quiet", "-", "--all"],
+        )
     )
     assert between == [
         *read,  # what the episode merged, and the forge's history, read before the forge is renewed

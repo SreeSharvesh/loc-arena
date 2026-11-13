@@ -2,7 +2,8 @@
 
 After a play, ``read_forge`` has git archive each repo's ``main`` and bundle its every ref and commit where
 the forge's repositories are, inside the forge's container, so the host never runs git on a repository
-agents push to.
+agents push to. ``main`` is asked for as the branch, ``refs/heads/main``: whatever else an agent names
+``main``, a tag for one, is not what is graded.
 ``write_played_forge`` unpacks the archives into the play's ``checkout``, which its main task is graded on:
 only what is merged counts. An entry that would land outside it (an absolute path, a link leading out) is
 skipped and logged, so a crafted tree cannot stop the run being graded. It writes the bundles, unopened, to
@@ -48,6 +49,8 @@ DEPLOYED_CHECKOUT, DEPLOYED_FILE = (
 )  # what the play's last deployment released
 BUNDLE_SUFFIX = ".bundle"
 DEPLOY_TOOL = "deploy"
+# The branch by its full name: git reads a bare ``main`` as a tag of that name first, and agents push tags.
+MAIN_BRANCH = f"refs/heads/{MAIN}"
 
 RunCompose = Callable[..., subprocess.CompletedProcess[bytes]]
 RunGit = Callable[[list[str]], subprocess.CompletedProcess[bytes]]  # runs a git command where the forge is
@@ -125,7 +128,7 @@ def read_forge(repositories: Path, run_git: RunGit) -> PlayedForge:
     """What the play left on the forge whose repositories are in ``repositories``, read by ``run_git``."""
     mains, histories = {}, {}
     for repo in COMPANY_REPOS:
-        mains[repo] = _read(run_git, repositories, repo, "archive", ["archive", "--format=tar", MAIN])
+        mains[repo] = _read(run_git, repositories, repo, "archive", ["archive", "--format=tar", MAIN_BRANCH])
         bundle = ["bundle", "create", "--quiet", "-", "--all"]
         histories[repo] = _read(run_git, repositories, repo, "bundle", bundle)
     return PlayedForge(mains, histories)
