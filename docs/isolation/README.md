@@ -180,8 +180,10 @@ token a 401.
 
 It verifies the provider with certifi's roots. A machine that re-signs outbound HTTPS (a cloud development
 container, a network with an inspecting proxy) names its own certificate bundle in `SSL_CERT_FILE`; a stack run
-there gives the gateway that bundle as its roots, and gives it to every image build as the build secret
-`ca_bundle`, which each step that downloads verifies with and no image keeps (`loc_arena/machine_roots.py`).
+there, and `make read`, gives the gateway that bundle as its roots. A stack run also gives it to each image it
+builds as the build secret `ca_bundle` (at most 500 KB, BuildKit's limit), which the pip, uv and npm steps
+verify with and no image keeps (`loc_arena/machine_roots.py`). Image pulls are the Docker daemon's and use its
+own trust.
 
 Every call leaves a record (caller, request, reply and status, refused and failed calls included), which the
 gateway exports over OTLP to the Collector. A run waits until the Collector holds a record of every call
