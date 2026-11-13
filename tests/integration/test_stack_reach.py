@@ -292,8 +292,8 @@ running = concurrent.futures.ThreadPoolExecutor(1).submit(bash, "sleep {LEFT_RUN
 time.sleep({COMMAND_START_SECONDS})
 listening = [
     f"{{read_address(address)}}:{{int(port, 16)}}"
-    for table in ("/proc/net/tcp", "/proc/net/tcp6")
-    for line in Path(table).read_text().splitlines()[1:]
+    for table in Path("/proc/net").glob("tcp*")  # tcp, and tcp6 where the kernel has IPv6
+    for line in table.read_text().splitlines()[1:]
     for address, port in [line.split()[1].split(":")]
     if line.split()[3] == "0A" and not read_address(address).is_loopback
 ]
