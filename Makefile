@@ -51,8 +51,8 @@ fixture-run:
 public-repo:
 	@uv run python scripts/make_public.py
 
-# The sandbox and engine images under this checkout's own names (the stack settings' defaults): the Docker tests
-# skip without them. A run builds every image it starts itself.
+# The Dockerfile's four images under this checkout's own names (the stack settings' defaults): a Docker test
+# skips without the one it checks for, and some start the nodes' without building it. A run builds its own.
 STACK_IMAGES = $(shell uv run python -c "from loc_arena.settings import StackSettings as S; s = S(); print(s.sandbox_image, s.runner_image, s.worker_image, s.image)")
 
 images:

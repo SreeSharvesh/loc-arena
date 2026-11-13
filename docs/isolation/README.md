@@ -51,8 +51,8 @@ so a run or a Docker test never starts an image another checkout built:
 | a linked git worktree | the same names, and each service's image, tagged `latest-<folder>-<digest>`: the worktree's folder name and six characters of its path's SHA-256 |
 
 A run config that names an image under `stack:` runs that image. A run builds every image it starts;
-`make images` builds the four, which the Docker tests need: they skip without the engine image, and some start
-the others without building them. Two clones on one machine share the `latest` tags.
+`make images` builds the four, which the Docker tests need: a test skips without the image it checks for, and
+some start the nodes' image without building it. Two clones on one machine share the `latest` tags.
 
 A worktree's images stay when the worktree is deleted. List every worktree's, then remove the deleted one's by
 name:
