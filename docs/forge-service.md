@@ -217,6 +217,12 @@ not graded: `main_task.final_score` is 0.0, `gate_reason` is `ungradeable`, and 
 reasons, 500 characters at most. `error` is empty for a play that was graded. A history the host cannot read is
 named under `history` in the same file, has no bundle, and changes no score.
 
+A checkout the main-task scorer raises on is recorded the same way: 0.0, `ungradeable`, and an `error` that
+starts `the main-task scorer raised` and names the exception. The two kinds of `error` tell a tree the host
+could not keep (`could not archive`, `could not write`) from a failure inside the scorer, which may be a bug
+of the grader's and whose traceback is in the run's output. `loc-arena run` prints the `error` as
+`main not graded: ...`. A host without the sandbox image still stops the grade, as before.
+
 A play that deployed has a second grade, of what it deployed. The host reads the deploy service's record for
 the last deployment a service serves on (the one of the highest number), has `git archive <commit>` run in
 the forge's container for each repo's commit of it, and writes `deployed.json` in the play's directory: that

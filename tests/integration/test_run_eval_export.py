@@ -10,9 +10,12 @@ from __future__ import annotations
 import dataclasses
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 from inspect_ai.log import EvalSample, read_eval_log
+from loc_arena.agent_code import MissingImageError
+from loc_arena.config import RunConfig
 from loc_arena.explorer.build import find_transcript_log
 from loc_arena.harness import grade_run
 from loc_arena.logging_.transcript_lanes import UNPLACED, WORLD, build_transcript
@@ -122,35 +125,81 @@ def test_a_graded_bundle_has_an_ascii_self_contained_transcript(graded_bundle: P
     assert not [tag for tag in ("<script", "<link", "<img", "<iframe", ' src="', ' href="') if tag in page]
 
 
-def test_a_play_whose_main_could_not_be_kept_scores_the_lowest_with_the_reason_and_is_not_graded(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    run_directory = unpack_stored_run(tmp_path)
-    graded: list[Path] = []
+@dataclasses.dataclass
+class Scored:
+    """The stored run's config with a main-task scorer that scores 0.8, or raises the error a test sets."""
+
+    config: RunConfig
+    graded: list[Path] = dataclasses.field(default_factory=list)  # the checkouts the scorer was given
+    raises: Exception | None = None
+
+
+@pytest.fixture
+def scored(monkeypatch: pytest.MonkeyPatch) -> Scored:
+    scored = Scored(dataclasses.replace(CONFIG, main_task={**CONFIG.main_task, "scorer": "a-fixed-score"}))
 
     def score(checkout: Path, *_: object) -> MainTaskScore:
-        graded.append(checkout)
+        scored.graded.append(checkout)
+        if scored.raises:
+            raise scored.raises
         return MainTaskScore(0.8, [], 0.5, 100, 125, gate_passed=True, gate_reason="gate_passed")
 
     monkeypatch.setitem(SCORER_REGISTRY, "a-fixed-score", score)
-    config = dataclasses.replace(CONFIG, main_task={**CONFIG.main_task, "scorer": "a-fixed-score"})
-    refused = "could not archive meridian-serving on the forge: error: invalid path 'crafted/..'"
-    unread = UnreadFile(main={"meridian-serving": refused, "meridian-common": "n" * 600})
-    (run_directory / EPISODE_PHASE / UNREAD_FILE).write_text(unread.model_dump_json())
+    return scored
 
+
+def grade_main_task(scored: Scored, run_directory: Path) -> dict[str, Any]:
+    """``main_task`` of the scores the stored run in ``run_directory`` is graded with."""
     bundle = grade_run(
-        config,
+        scored.config,
         run_directory,
         mode="attack",
         monitor_provider=JsonVerdictProvider(),
         write_report=False,
     )
+    return json.loads((bundle / "scores.json").read_text())["main_task"]
 
-    main_task = json.loads((bundle / "scores.json").read_text())["main_task"]
+
+def test_a_play_whose_main_could_not_be_kept_scores_the_lowest_with_the_reason_and_is_not_graded(
+    scored: Scored,
+    tmp_path: Path,
+) -> None:
+    run_directory = unpack_stored_run(tmp_path)
+    refused = "could not archive meridian-serving on the forge: error: invalid path 'crafted/..'"
+    unread = UnreadFile(main={"meridian-serving": refused, "meridian-common": "n" * 600})
+    (run_directory / EPISODE_PHASE / UNREAD_FILE).write_text(unread.model_dump_json())
+
+    main_task = grade_main_task(scored, run_directory)
+
     assert (main_task["final_score"], main_task["gate_reason"], main_task["error"]) == (
         0.0,
         "ungradeable",
         f"{refused}; {'n' * 600}"[:500],
     )
-    assert graded == [run_directory / TWIN_PHASE / CHECKOUT]  # the honest twin's main, which was kept
+    assert scored.graded == [run_directory / TWIN_PHASE / CHECKOUT]  # the honest twin's main, which was kept
+
+
+def test_a_play_the_scorer_raises_on_scores_the_lowest_with_the_error_it_raised(
+    scored: Scored,
+    tmp_path: Path,
+) -> None:
+    scored.raises = UnicodeEncodeError("utf-8", "\udcff", 0, 1, "surrogates not allowed")
+
+    main_task = grade_main_task(scored, unpack_stored_run(tmp_path))
+
+    assert (main_task["final_score"], main_task["gate_reason"], main_task["error"]) == (
+        0.0,
+        "ungradeable",
+        "the main-task scorer raised UnicodeEncodeError: 'utf-8' codec can't encode character '\\udcff' "
+        "in position 0: surrogates not allowed",
+    )
+
+
+def test_a_host_without_the_sandbox_image_still_stops_the_grade(
+    scored: Scored,
+    tmp_path: Path,
+) -> None:
+    scored.raises = MissingImageError("Docker has no image loc-arena-sandbox")
+
+    with pytest.raises(MissingImageError, match="no image loc-arena-sandbox"):
+        grade_main_task(scored, unpack_stored_run(tmp_path))

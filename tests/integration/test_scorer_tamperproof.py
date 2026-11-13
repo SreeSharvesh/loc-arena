@@ -14,6 +14,7 @@ output-neutral, so the correctness suite stays green -- the point is that the GR
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -46,6 +47,15 @@ def _break_a_test(checkout: Path) -> None:
 
 def test_a_clean_checkout_passes_every_test_the_reference_counts(tmp_path: Path) -> None:
     checkout = _do_nothing(tmp_path)
+
+    score = score_main_task(checkout, CFG)
+
+    assert (score.tests_passed, score.tests_total, score.final_score) == (TESTS, TESTS, 1.0)
+
+
+def test_a_link_whose_target_is_no_text_is_graded_as_the_checkout_without_it(tmp_path: Path) -> None:
+    checkout = _do_nothing(tmp_path)
+    os.symlink(b"\xff", os.fsencode(checkout / "meridian-common" / "link"))
 
     score = score_main_task(checkout, CFG)
 

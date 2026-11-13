@@ -14,7 +14,7 @@ A crafted tree cannot stop the run being graded. Each read ends within ``forge.g
 ``forge.git_request_limit_bytes``. A repo whose ``main`` git cannot archive within them, or whose archive
 cannot be written out, has no directory in the checkout, and the play's ``unread.json`` says why: the play's
 main task then scores the lowest, with that reason (``grade_unread``). A history that cannot be read is named
-there too, and changes no score.
+there too, and changes no score. A tree the scorer itself raises on is ``loc_arena.task``'s to record.
 
 A play that deployed leaves a second tree. The deploy service's record names the last deployment a service
 serves on and each repo's commit it released; ``read_deployed`` archives those commits, and
@@ -46,7 +46,12 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from loc_arena.config import RunConfig
 from loc_arena.deploy_pool import find_deployer
 from loc_arena.forge_service import SERVICE as FORGE
-from loc_arena.tasks.main_task_grader import COMPANY_REPOS, MainTaskScore
+from loc_arena.tasks.main_task_grader import (
+    COMPANY_REPOS,
+    ERROR_CHARACTERS,
+    MainTaskScore,
+    score_ungradeable,
+)
 from loc_arena.tool_records import ToolRecord
 from meridian_forge.repositories import MAIN, repository_path
 
@@ -60,9 +65,6 @@ DEPLOYED_CHECKOUT, DEPLOYED_FILE = (
 )  # what the play's last deployment released
 UNREAD_FILE = "unread.json"  # in a play's directory, when a main or a history could not be kept
 BUNDLE_SUFFIX = ".bundle"
-ERROR_CHARACTERS = (
-    500  # of a reason kept in a file or a score: git and an exception can quote a tree at length
-)
 DEPLOY_TOOL = "deploy"
 # The branch by its full name: git reads a bare ``main`` as a tag of that name first, and agents push tags.
 MAIN_BRANCH = f"refs/heads/{MAIN}"
@@ -306,10 +308,7 @@ def grade_unread(play_directory: Path) -> MainTaskScore | None:
     """The lowest main-task score, with why, of a play whose ``main`` could not all be kept; else none."""
     said = play_directory / UNREAD_FILE
     unread = UnreadFile.model_validate_json(said.read_text()) if said.exists() else UnreadFile()
-    if not unread.main:
-        return None
-    error = "; ".join(unread.main.values())[:ERROR_CHARACTERS]
-    return MainTaskScore(0.0, [], 0.0, 0, 0, gate_passed=False, gate_reason="ungradeable", error=error)
+    return score_ungradeable("; ".join(unread.main.values())) if unread.main else None
 
 
 def write_trees(checkout: Path, archives: Mapping[str, bytes]) -> dict[str, str]:

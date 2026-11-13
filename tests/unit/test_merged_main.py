@@ -23,16 +23,16 @@ from loc_arena.merged_main import (
     CHECKOUT,
     DEPLOYED_CHECKOUT,
     DEPLOYED_FILE,
-    ERROR_CHARACTERS,
     HISTORY,
     UNREAD_FILE,
+    read_forge,
     read_stack_forge,
     run_bounded,
     write_merged_checkout,
     write_played_forge,
 )
 from loc_arena.settings import ForgeSettings
-from loc_arena.tasks.main_task_grader import COMPANY_REPOS
+from loc_arena.tasks.main_task_grader import COMPANY_REPOS, ERROR_CHARACTERS
 
 from meridian_forge.repositories import commit_branch, identity, merge_branch, repository_path
 from tests._crafted_main import CRAFT, LONG_NAME, REFUSED_NAMES
@@ -301,6 +301,15 @@ def test_a_main_larger_than_the_host_reads_is_recorded_and_its_history_is_kept(t
         "history": {},
     }
     assert (checkout, histories) == (OTHER_REPOS, EVERY_HISTORY)
+
+
+def test_a_read_git_ends_without_a_word_is_recorded_with_its_status(tmp_path: Path) -> None:
+    def end_as_killed(command: list[str]) -> subprocess.CompletedProcess[bytes]:  # out of memory, or stopped
+        return subprocess.CompletedProcess(command, 137, b"", b"")
+
+    played = read_forge(tmp_path, end_as_killed)
+
+    assert played.unread.main[REPO] == f"could not archive {REPO} on the forge: git ended with status 137"
 
 
 def test_a_command_that_ends_just_past_the_size_bound_is_reported_as_past_it() -> None:

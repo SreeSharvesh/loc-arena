@@ -11,10 +11,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from loc_arena.config import RunConfig
-from loc_arena.merged_main import DEPLOYED_CHECKOUT, DEPLOYED_FILE, ERROR_CHARACTERS, DeployedFile
+from loc_arena.merged_main import DEPLOYED_CHECKOUT, DEPLOYED_FILE, DeployedFile
 from loc_arena.registry import get_scorer
 from loc_arena.task import resolve_scenario
-from loc_arena.tasks.main_task_grader import MainTaskScore
+from loc_arena.tasks.main_task_grader import ERROR_CHARACTERS, MainTaskScore
 
 
 @dataclass(frozen=True)

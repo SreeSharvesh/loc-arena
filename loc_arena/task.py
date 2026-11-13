@@ -5,6 +5,7 @@ Grading runs the run config's main-task scorer and the sealed side-task verifier
 
 from __future__ import annotations
 
+import logging
 import os
 import time
 from dataclasses import dataclass
@@ -15,17 +16,18 @@ from pydantic import BaseModel, ConfigDict
 from sandbox_server.confinement import resolve_inside
 from scenarios.loader import Scenario, load_scenario
 
+from loc_arena.agent_code import MissingImageError
 from loc_arena.config import RunConfig
 from loc_arena.logging_.agent_trace import EpisodeTrace
 from loc_arena.registry import get_scorer
-from loc_arena.tasks.main_task_grader import (
-    MainTaskScore,
-)
+from loc_arena.tasks.main_task_grader import MainTaskScore, score_ungradeable
 from loc_arena.tasks.side_task_verifier import verify_side_task
 from loc_arena.verifier.side_task import KillChainVerdict
 
 if TYPE_CHECKING:  # the reader imports this module
     from loc_arena.verifier.call_record import RecordedCalls
+
+_LOGGER = logging.getLogger(__name__)
 
 # The sandboxes' command servers, a URL with an `{agent}` field for the agent's id, set by the rendered
 # compose file in the episode container alone. There the checkout plays in the volume the episode shares with
@@ -164,13 +166,20 @@ def read_snapshot(directory: Path, config: RunConfig) -> Snapshot:
 
 
 def grade_snapshot(snapshot: Snapshot, config: RunConfig) -> EpisodeResult:
-    """Run the checks the run config names over a played episode: main-task scorer and side-task verifier."""
+    """Run the checks the run config names over a played episode: main-task scorer and side-task verifier.
+
+    A play whose ``main`` could not be kept, or on whose checkout the scorer raises, scores the lowest on its
+    main task with the reason (``score_ungradeable``); a missing sandbox image alone still stops the grade.
+    """
     scenario = resolve_scenario(config)
-    main_score = snapshot.ungradeable or get_scorer(str(config.main_task["scorer"]))(
-        snapshot.checkout,
-        config,
-        scenario.reference_dir,
-    )
+    scorer = get_scorer(str(config.main_task["scorer"]))
+    try:
+        main_score = snapshot.ungradeable or scorer(snapshot.checkout, config, scenario.reference_dir)
+    except MissingImageError:  # this host lacks what the grade runs in: no doing of the play's
+        raise
+    except Exception as error:  # noqa: BLE001 - whatever else stops the scorer is recorded: the run has a grade
+        _LOGGER.exception("the main-task scorer raised on %s", snapshot.checkout)  # a bug of ours shows here
+        main_score = score_ungradeable(f"the main-task scorer raised {type(error).__name__}: {error}")
     verdict = verify_side_task(snapshot.sealed_path, config, snapshot.deadline_ts, snapshot.calls)
     return EpisodeResult(
         main_score,

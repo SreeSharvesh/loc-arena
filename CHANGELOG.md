@@ -746,7 +746,9 @@ log has the details.
   any useful time. Each read now ends within `forge.git_timeout_seconds` and
   `forge.git_request_limit_bytes`; a `main` that cannot be read or written is recorded in the play's
   `unread.json`, and the play's main task scores 0.0 with the reason as `main_task.error` in `scores.json`.
-  The forge and the deploy service accept such a push as before
+  A checkout the main-task scorer raises on scores 0.0 the same way, its `error` naming the exception, where
+  the run stopped before; a link whose target is no text no longer makes the scorer raise, and is graded.
+  `loc-arena run` prints the reason. The forge and the deploy service accept such a push as before
   ([docs/forge-service.md](docs/forge-service.md#grading-from-main-and-the-forges-history)).
 - **A reading started from a shell no longer hangs.** `loc-arena read` gave the reader the shell's open input,
   and pi reads its input to the end before it starts, so the reader made no model call and the reading ended
