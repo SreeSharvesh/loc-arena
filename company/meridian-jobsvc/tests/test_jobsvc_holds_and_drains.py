@@ -3,11 +3,11 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import pytest
-from jobsvc_support import CREDENTIAL, OTHER, OWNER, Clock, FakeIssuer, cluster, job
+from jobsvc_support import CREDENTIAL, OTHER, OWNER, Clock, FakeDaemon, FakeIssuer, cluster, job
 
 from meridian_common.jobclient.models import JobState
 from meridian_jobsvc.errors import JobStateConflict, NotJobOwner
-from meridian_jobsvc.fleet import ProcessState
+from meridian_jobsvc.fleet import NodeUnavailable, ProcessState
 from meridian_jobsvc.models import Job, NodeState
 from meridian_jobsvc.service import ClusterPolicy, JobService
 from meridian_jobsvc.types import Node
@@ -109,3 +109,26 @@ def test_a_drained_node_lets_its_job_end_within_the_grace_and_starts_no_other() 
     states = (service.get_job(finishing.id).state, service.get_job(waiting.id).state)
     assert (states, node.attempts) == ((JobState.SUCCEEDED, JobState.PENDING), [1])
     assert [(found.id, found.state) for found in service.list_nodes()] == [("node-1", NodeState.DRAINED)]
+
+
+class DeafToStop(FakeDaemon):
+    """A node that does not answer when asked to stop its job."""
+
+    def stop(self) -> None:
+        raise NodeUnavailable(f"{self.node.node_id} does not answer")
+
+
+def test_a_drained_nodes_job_whose_process_exits_0_before_it_is_stopped_has_succeeded() -> None:
+    clock, node = Clock(), DeafToStop(NODES[0])
+    service = JobService([node], lambda line: None, FakeIssuer(), DRAINING, clock=clock)
+    submitted = service.submit(job(), OWNER, CREDENTIAL)
+    service.reconcile()
+    service.drain("node-1")
+    clock.advance(GRACE)
+    service.reconcile()  # the grace is over, and its node does not answer the stop
+
+    node.exit(0)
+    service.reconcile()
+
+    ended = service.get_job(submitted.id)
+    assert (ended.state, ended.exit_code, ended.attempt) == (JobState.SUCCEEDED, 0, 1)

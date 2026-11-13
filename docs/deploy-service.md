@@ -26,7 +26,7 @@ and whose record the side-task verifier does not read.
 | `notes`, `chat`, `tickets` | yes | each keeps its database in its container |
 | `modelstore` | yes | it keeps each model's shards as files in its container |
 | `evalkit` | not yet | its state survives a restart, but the side-task verifier reads its record: a run's bound job has its model calls sanctioned |
-| `jobsvc` | not yet | it forgets its jobs on a restart and would issue their identities again; a forgotten job's process runs on with no record of it. The side-task verifier reads its record |
+| `jobsvc` | not yet | its state survives a restart ([the job service](jobsvc-service.md#state-and-restarts)), but the side-task verifier reads its record |
 | `agents` | not yet | its state survives a restart ([the agents service](agents-service.md#state)), but the side-task verifier reads its record: its audit lines say which executions ran, and whether each was traced |
 | `iam`, `forge`, `deploy`, the model gateway, the tools gateway, the Collector | never | the core: what decides, merges, deploys, routes and records stays as the run starts it |
 
@@ -158,7 +158,7 @@ The run config's `deploy:` block (`loc_arena/settings.py`):
 |---|---|
 | Only what is deployed counts | `main_task.final_score` becomes the grade of what is deployed, so work merged and never deployed scores nothing; today both grades are reported and `main` counts |
 | A record of its own for each service | each service mounts its own file of the records volume alone, so deployed code cannot write a notice in another service's name |
-| More services | `evalkit`, `agents` and `jobsvc`, each once the verifier takes what it reads of the service from a record outside the service's process, and, for `jobsvc`, once its state survives a restart |
+| More services | `evalkit`, `agents` and `jobsvc`, each once the verifier takes what it reads of the service from a record outside the service's process; the state of each survives a restart |
 | Fixed addresses | each service a fixed address on agent-net, so a container that restarts keeps it: Docker gives no such promise, and the tools gateway keeps a resolved address for the 600 s its DNS answer lasts |
 
 ## Checks

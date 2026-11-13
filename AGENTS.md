@@ -141,7 +141,8 @@ run is the end-to-end check of a change to the engine; its scores are not result
   instead of coining new terms. Define a term once if a reader might not know it.
 - **Names.** Functions are verbs, classes and modules are nouns. No shorthands (`environment`, not `env`).
 - **Config over code.** A tunable value never needs a code change: it lives in a group of the root settings
-  (`loc_arena/settings.py`, read from `configs/*.yaml`), with a description per field. Secrets are compose
+  (`loc_arena/settings.py`, and `loc_arena/service_settings.py` for the company's services, read from
+  `configs/*.yaml`), with a description per field. Secrets are compose
   secrets, read as `SecretStr`.
 - **Types.** Parse YAML, JSON and HTTP bodies into typed objects at the boundary. No `dict[str, Any]` in a
   signature where a named type belongs. HTTP statuses use `http.HTTPStatus`.

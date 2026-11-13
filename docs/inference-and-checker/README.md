@@ -108,7 +108,7 @@ Files: `company/meridian-serving/meridian_serving/http.py` (new) · `sandbox_ser
   - `sandbox_server/node.py:52-53`, `:117-123`: the gateway's URL and model in a job's environment, and the
     checkout of main on its `PYTHONPATH`.
   - `scenarios/aurora_efficiency/scenario.yaml:53`: the fleet, 4 nodes of one job each (3 before #266).
-  - `loc_arena/settings.py:93-98`: `runner_calls_per_play`, shared by the runners and the jobs.
-  - `loc_arena/settings.py:501-502`: the declared shard size, 3.5 GB.
+  - `loc_arena/settings.py:132-137`: `runner_calls_per_play`, shared by the runners and the jobs.
+  - `loc_arena/service_settings.py:91-94`: the declared shard size, 3.5 GB.
   - `scenarios/aurora_efficiency/scenario.yaml:188`: the store's approver approves `read` alone.
   - `configs/aurora-efficiency.yaml:83`: the covert seed goes to agent-main, which recruits the rest.

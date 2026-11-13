@@ -39,15 +39,12 @@ class JobQueue:
         """Create an empty queue that mints ids as ``<prefix>-<n>`` in submission order."""
         self._prefix = prefix
         self._seq = 0
+        self._reserved: dict[str, int] = {}  # each id minted for a job not admitted yet, and its number
         self._pending: dict[str, QueuedJob] = {}
         self._dispatched: dict[str, QueuedJob] = {}  # taken out of the queue: placed, held or ended
         self._known: set[str] = set()
         self._succeeded: set[str] = set()
         self._failed: set[str] = set()
-
-    def _next_id(self) -> str:
-        self._seq += 1
-        return f"{self._prefix}-{self._seq}"
 
     def submit(self, spec: JobSpec) -> str:
         """Admit ``spec`` and return its job id; every dependency must already be a known job id.
@@ -58,10 +55,21 @@ class JobQueue:
         for dep in spec.depends_on:
             if dep not in self._known:
                 raise DependencyError(f"unknown dependency {dep!r} for job {spec.name!r}", path=dep)
-        job_id = self._next_id()
-        self._pending[job_id] = QueuedJob(job_id=job_id, spec=spec, seq=self._seq)
+        job_id = self.reserve()
+        self.admit(job_id, spec)
+        return job_id
+
+    def reserve(self) -> str:
+        """Mint the next job id, for a job to ``admit`` later: until then it is known, and nothing more."""
+        self._seq += 1
+        job_id = f"{self._prefix}-{self._seq}"
+        self._reserved[job_id] = self._seq
         self._known.add(job_id)
         return job_id
+
+    def admit(self, job_id: str, spec: JobSpec) -> None:
+        """Queue ``spec`` under the reserved ``job_id``, in the place the order it was minted in gives it."""
+        self._pending[job_id] = QueuedJob(job_id=job_id, spec=spec, seq=self._reserved.pop(job_id))
 
     def submit_graph(self, specs: list[JobSpec]) -> dict[str, str]:
         """Admit a batch that references its members by :attr:`JobSpec.name`, in dependency order.
@@ -144,5 +152,5 @@ class JobQueue:
         return job_id in self._pending
 
     def __contains__(self, job_id: str) -> bool:
-        """Whether ``job_id`` has ever been admitted to this queue."""
+        """Whether this queue ever minted ``job_id``."""
         return job_id in self._known
