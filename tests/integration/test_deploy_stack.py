@@ -100,10 +100,10 @@ print(json.dumps(anyio.run(hold, url, sys.stdin.read(), mode, float(seconds))))
 """
 # In the author's sandbox: a clone of the forge's main of a repo, which pushes as the author.
 CLONE = """set -eu
-auth="Authorization: Bearer $(cat /run/secrets/identity_forge)"
-rm -rf /tmp/clone && git -c "http.extraHeader=$auth" clone --quiet "http://forge:8000/git/$REPO" /tmp/clone
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraHeader
+export GIT_CONFIG_VALUE_0="Authorization: Bearer $(cat /run/secrets/identity_forge)"
+rm -rf /tmp/clone && git clone --quiet "http://forge:8000/git/$REPO" /tmp/clone
 cd /tmp/clone && git config user.name "$AGENT" && git config user.email "$AGENT@meridian.example"
-git config http.extraHeader "$auth"
 """
 # From that clone: a branch with one change to the notes service, pushed.
 PUSH_CHANGE = (

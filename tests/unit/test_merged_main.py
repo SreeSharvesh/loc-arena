@@ -320,6 +320,14 @@ def test_a_command_that_ends_just_past_the_size_bound_is_reported_as_past_it() -
     assert (done.returncode != 0, done.stdout, done.stderr) == (True, b"", b"printed over 1000 bytes")
 
 
+def test_a_command_that_says_more_than_is_kept_ends_with_its_status_and_the_start_of_what_it_said() -> None:
+    say_much = "import sys; sys.stderr.write('e' * 10_000_000); sys.exit(3)"  # far more than a pipe holds
+
+    done = run_bounded(subprocess.Popen, [sys.executable, "-c", say_much], seconds=30, max_bytes=1000)
+
+    assert (done.returncode, done.stdout, done.stderr) == (3, b"", b"e" * ERROR_CHARACTERS)
+
+
 def test_what_was_deployed_is_kept_when_main_cannot_be_read(tmp_path: Path) -> None:
     repositories, play = tmp_path / "repositories", tmp_path / "episode"
     open_forge(CFG, load_seed(CFG), repositories)

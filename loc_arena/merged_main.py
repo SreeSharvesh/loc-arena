@@ -35,11 +35,10 @@ import shutil
 import signal
 import subprocess
 import tarfile
-import tempfile
 import threading
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Annotated, Literal, NamedTuple
+from typing import IO, Annotated, Literal, NamedTuple
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -65,6 +64,7 @@ DEPLOYED_CHECKOUT, DEPLOYED_FILE = (
 )  # what the play's last deployment released
 UNREAD_FILE = "unread.json"  # in a play's directory, when a main or a history could not be kept
 BUNDLE_SUFFIX = ".bundle"
+READ_BYTES = 1 << 16  # of a command's stderr, at a time
 DEPLOY_TOOL = "deploy"
 # The branch by its full name: git reads a bare ``main`` as a tag of that name first, and agents push tags.
 MAIN_BRANCH = f"refs/heads/{MAIN}"
@@ -152,37 +152,40 @@ def run_bounded(
     """``command`` as ``start`` runs it, ended once it takes over ``seconds`` or prints over ``max_bytes``.
 
     Ended, it has printed nothing, its return code is not zero and its stderr is the bound it passed. Of a
-    command's own stderr, the first ``ERROR_CHARACTERS`` bytes are kept.
+    command's own stderr, the first ``ERROR_CHARACTERS`` bytes are kept and the rest is read and dropped, so
+    what a command says fills no memory and no disk.
     """
-    late = threading.Event()
-    with (
-        tempfile.TemporaryFile() as errors,
-        start(command, stdout=subprocess.PIPE, stderr=errors, start_new_session=True) as process,
-    ):
+    late, said = threading.Event(), bytearray()
+    with start(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True) as process:
+        assert process.stdout is not None and process.stderr is not None  # noqa: S101 - opened with pipes
+
+        def keep_start(errors: IO[bytes]) -> None:  # read to its end: git says as much as it has time for
+            while chunk := errors.read(READ_BYTES):
+                said.extend(chunk[: ERROR_CHARACTERS - len(said)])
 
         def end() -> None:  # with what it started: docker runs compose as a child, which holds the pipe open
             # One that has ended already has no group to signal, or on macOS one that refuses the signal.
             with contextlib.suppress(ProcessLookupError, PermissionError):
                 os.killpg(process.pid, signal.SIGKILL)
 
+        reader = threading.Thread(target=keep_start, args=(process.stderr,), daemon=True)
         timer = threading.Timer(seconds, lambda: (late.set(), end()))
+        reader.start()
         timer.start()
         try:
-            assert process.stdout is not None  # noqa: S101 - opened with a pipe
             printed = process.stdout.read(max_bytes + 1)  # no further, whatever a tree unpacks to
             if len(printed) > max_bytes:
                 end()
             process.wait()
+            reader.join()
         finally:
             timer.cancel()
             if process.poll() is None:  # an interrupted read leaves no command running
                 end()
-        errors.seek(0)
-        said = errors.read(ERROR_CHARACTERS)
     if late.is_set() or len(printed) > max_bytes:
         passed = f"took over {seconds:g} s" if late.is_set() else f"printed over {max_bytes} bytes"
         return subprocess.CompletedProcess(command, process.returncode or 1, b"", passed.encode())
-    return subprocess.CompletedProcess(command, process.returncode, printed, said)
+    return subprocess.CompletedProcess(command, process.returncode, printed, bytes(said))
 
 
 def _read(run_git: RunGit, repositories: Path, repo: str, read: str, command: list[str]) -> bytes:
