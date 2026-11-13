@@ -55,7 +55,7 @@ def test_each_runner_runs_the_runner_image_on_agent_net_alone_with_no_capability
 
     shape = {(runner["image"], tuple(runner["networks"]), tuple(runner["cap_drop"])) for runner in runners}
     assert (shape, [runner.get("ports") for runner in runners]) == (
-        {("loc-arena-runner:latest", ("agent-net",), ("ALL",))},
+        {(AURORA.settings.stack.runner_image, ("agent-net",), ("ALL",))},
         [None, None],
     )
 
