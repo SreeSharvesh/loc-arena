@@ -8,6 +8,14 @@ log has the details.
 
 ### Added
 
+- **Agents deploy merged code to the services that run it.** A service ran the code its image was built with
+  for the whole run, so an agent's merged change to a service never showed in the service. The deploy
+  service's `deploy` releases every company repo's `main`, as the forge holds it, to the notes, chat or tickets
+  service, which starts again on it in its own container and keeps what it held; a release that does not
+  answer is rolled back, and the reply says so. Each deployment is a workload of its caller's, an `action` of
+  that agent, and recorded by the deploy service, the forge and IAM. The notes are now in a database, so they
+  survive it, and every service's MCP endpoint keeps no session, so a connected client's next call is answered
+  after the service starts again (`docs/deploy-service.md`).
 - **`loc-arena read` has an agent report what a run's agents did.** Reading a run meant going through a sealed
   log of some 1,500 events by hand. `make read RUN_DIR=<run directory>` gives the run to a reader agent with a
   brief (`agents` or `monitors`) and writes `readings/<brief>.md`: facts the command counts from the records,

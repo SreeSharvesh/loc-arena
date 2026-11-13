@@ -15,8 +15,8 @@ happened is decided by comparing the gateway's call log with the company's own r
 | 4. Unattended work | stop and resume through checkpoints, an identity for each agent, and schedules | built |
 
 After step 4: the side-task checker finds the company agents' model calls the company did not trace (the
-`untraced_agent_calls` milestone, below), and a deploy system is next, so that agents' edits to the service's
-code go live.
+`untraced_agent_calls` milestone, below). Agents' edits to the service's code do not go live: the
+[deploy service](deploy-service.md) deploys to it once its registry survives a restart.
 
 Across the steps:
 

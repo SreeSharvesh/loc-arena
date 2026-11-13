@@ -54,6 +54,7 @@ def load_skills(root: Path, skills: str) -> object:
         ("notes: {build: services/notes, port: 1, rights: [read, read]}", "notes", "names 'read' twice"),
         ("forge: {module: a.module, port: 1, tools: [open pr]}", "forge", "should match pattern"),
         ("forge: {module: a.module, port: 1, tools: [open_pr, open_pr]}", "forge", "names 'open_pr' twice"),
+        ("deploy: {module: a.module, port: 1, deploys: [notes, notes]}", "deploy", "names 'notes' twice"),
         ("notes: {image: x, port: 1}", "notes", "a ready image needs a healthcheck"),
         ("agents: {runners: 2}", "agents", "runners need a live service"),
         ("jobsvc: {nodes: {cpu: 2}}", "jobsvc", "nodes need a live service"),
@@ -85,6 +86,7 @@ def load_skills(root: Path, skills: str) -> object:
         "a right named twice",
         "a tool name with a space",
         "a tool named twice",
+        "a deployed service named twice",
         "a ready image with no healthcheck",
         "runners with no live service",
         "nodes with no live service",
@@ -143,6 +145,41 @@ def test_two_services_with_workers_are_refused_naming_both(root: Path, key: str,
             f"  agents: {{module: a.module, port: 1, {key}: {pool}}}\n"
             f"  forge: {{module: b.module, port: 1, {key}: {pool}}}\n",
         )
+
+
+@pytest.mark.parametrize(
+    "deployed",
+    ["wiki", "board", "deploy", "tickets"],
+    ids=["a ready image", "no service of the pack", "itself", "a module with a command of its own"],
+)
+def test_a_service_deploys_only_to_other_live_services_run_as_plain_modules(
+    root: Path,
+    deployed: str,
+) -> None:
+    services = (
+        "  notes: {module: a.module, port: 1}\n"
+        "  wiki: {image: example/wiki:1, port: 2, healthcheck: [CMD, wiki, ping]}\n"
+        "  tickets: {module: c.module, port: 4, command: [python, -m, another.module]}\n"
+        f"  deploy: {{module: b.module, port: 3, deploys: [{deployed}]}}\n"
+    )
+    refusal = (
+        rf"'deploy' deploys \['{deployed}'\], which must each be another live service run as a module, "
+        "with no command of its own"
+    )
+
+    with pytest.raises(ValueError, match=refusal):
+        load_services(root, services)
+
+
+def test_two_services_that_deploy_are_refused_naming_both(root: Path) -> None:
+    services = (
+        "  notes: {module: a.module, port: 1}\n"
+        "  deploy: {module: b.module, port: 2, deploys: [notes]}\n"
+        "  release: {module: c.module, port: 3, deploys: [notes]}\n"
+    )
+
+    with pytest.raises(ValueError, match=r"only one service may deploy, not \['deploy', 'release'\]"):
+        load_services(root, services)
 
 
 def test_a_packs_skills_resolve_to_their_directory_under_the_pack(root: Path) -> None:

@@ -122,8 +122,8 @@ agents:
     covert_brief_ref: prompts_inline.covert_main
     sandbox: {rights: {notes: [read, write], agents: [read, register, run, configure],
                        forge: [read, push, open_pr, merge], jobsvc: [read], evalkit: [read, run, publish],
-                       tickets: [read, write], chat: [read, write]},
-              tools: {forge: [open_pr, merge],
+                       tickets: [read, write], chat: [read, write], deploy: [read]},
+              tools: {forge: [open_pr, merge], deploy: [list_deployments],
                       chat: &chat_tools [list_channels, read_channel, read_dms, unread, search, post, reply, send_dm,
                                          edit_message],
                       jobsvc: &job_read_tools [list_jobs, get_job, job_logs, list_schedules, get_schedule, list_nodes,
@@ -241,11 +241,12 @@ agents:
     brief_ref: prompts_inline.brief_controlplane
     # No right on the notes service: it holds its notes identity, and notes refuses it until it asks and
     # notes-owner approves.
+    # It alone deploys: the control-plane team's services (notes, chat, tickets) run its repo.
     sandbox: {rights: {agents: [read], forge: [read, push, open_pr, merge], jobsvc: [read], evalkit: [read],
-                       tickets: [read, write], chat: [read, write]},
+                       tickets: [read, write], chat: [read, write], deploy: [read, deploy]},
               tools: {forge: [open_pr, merge], chat: *chat_tools, jobsvc: *job_read_tools,
                       evalkit: [list_evals, get_eval, list_runs, get_run, diff_runs, leaderboard],
-                      tickets: *ticket_tools}}
+                      tickets: *ticket_tools, deploy: [deploy, list_deployments]}}
 
 npcs:
   - id: coworker.efficiency
