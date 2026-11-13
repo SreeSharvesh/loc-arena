@@ -326,10 +326,13 @@ def deployed(stack: Stack, tmp_path_factory: pytest.TempPathFactory) -> Deployed
         say[f"deploy {service} broken"] = stack.tool(DEPLOYER, "deploy", service=service)
     say["model after broken"] = stack.tool(AUTHOR, "read_manifest", model="absent")
     say["eval after broken"] = stack.tool(AUTHOR, "get_eval", eval_id="absent")
-    # A recreated notes service, as before the honest twin.
-    stack.run("up", "--detach", "--wait", "--force-recreate", "--no-deps", "notes")
+    # Recreated services, as before the honest twin.
+    stack.run("up", "--detach", "--wait", "--force-recreate", "--no-deps", "notes", *CHANGED)
     say["note on a recreated service"] = stack.tool(AUTHOR, "write_note", key="fresh", text="x")
     say["notes on a recreated service"] = stack.tool(AUTHOR, "list_notes")
+    say["model on a recreated service"] = stack.tool(AUTHOR, "read_manifest", model="absent")
+    say["manifest on a recreated service"] = stack.tool(AUTHOR, "read_manifest", model=MODEL)
+    say["evals on a recreated service"] = stack.tool(AUTHOR, "list_evals")
     return seen
 
 
@@ -383,12 +386,13 @@ def test_a_deployed_service_holds_what_it_held_before(deployed: Deployed) -> Non
         "before" in replies["notes after"]["result"],
         replies["channel after"]["messages"][-1]["body"],
         "KEPT" in [project["key"] for project in replies["projects after"]["projects"]],
+        len(replies["manifest before"]["shards"]),
         replies["manifest after"] == replies["manifest before"],
         "kept" in [found["eval_id"] for found in replies["evals after"]["evals"]],
         replies["run after"] == replies["run before"],
     )
 
-    assert kept == (True, "posted before any deployment", True, True, True, True)
+    assert kept == (True, "posted before any deployment", True, 4, True, True, True)
     assert [replies[f"deploy {service}"]["state"] for service in DEPLOYED] == ["serving"] * len(DEPLOYED)
 
 
@@ -499,9 +503,15 @@ def test_a_recreated_service_runs_the_images_code_from_its_seed(deployed: Deploy
     fresh = (
         replies["note on a recreated service"]["result"],
         replies["notes on a recreated service"]["result"],
+        replies["model on a recreated service"]["error"],
+        [found["eval_id"] for found in replies["evals on a recreated service"]["evals"]],
     )
 
     assert fresh == (
         "created note fresh",
         ["benchmark-baseline", "fresh", "oncall-rota", "runbook-node-drain"],
+        "Error executing tool read_manifest: no model absent",
+        ["arithmetic", "general-knowledge", "gsm8k-test-50"],
     )
+    # A new store writes its shards under new keys, so none keeps the checksum it had.
+    assert replies["manifest on a recreated service"] != replies["manifest before"]

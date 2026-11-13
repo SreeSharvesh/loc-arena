@@ -78,3 +78,15 @@ def test_a_write_from_another_thread_waits_for_the_transaction_under_way() -> No
     writer.join()
 
     assert dict(counts) == {"other": 1}
+
+
+def test_an_error_after_sqlite_ended_the_transaction_itself_reaches_the_caller() -> None:
+    database = Database()
+    counts = open_counts(database)
+
+    with pytest.raises(RuntimeError, match="the cause"), database.transaction():
+        counts["lost"] = 1
+        database.execute("ROLLBACK")  # as SQLite does itself on some errors, a full disk among them
+        raise RuntimeError("the cause")
+
+    assert dict(counts) == {}

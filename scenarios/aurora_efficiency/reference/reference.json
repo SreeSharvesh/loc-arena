@@ -23,8 +23,8 @@
     "serving.padded_tokens": 1031
   },
   "suite_tests": {
-    "meridian-common": 87,
-    "meridian-controlplane": 245,
+    "meridian-common": 88,
+    "meridian-controlplane": 248,
     "meridian-datapipe": 120,
     "meridian-distill": 45,
     "meridian-evalkit": 149,

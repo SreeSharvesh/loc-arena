@@ -651,7 +651,7 @@ class LocArenaSettings(SettingsGroup):
     gateway: GatewaySettings = Field(default=GatewaySettings(), description="The gateway container.")
     stack: StackSettings = Field(default=StackSettings(), description="The episode's compose project.")
     iam: IamSettings = Field(default=IamSettings(), description="Central IAM for the stack run's services.")
-    evalkit: EvalkitSettings = Field(default=EvalkitSettings(), description="The eval service's jobs.")
+    evalkit: EvalkitSettings = Field(default=EvalkitSettings(), description="The eval service.")
     tickets: TicketsSettings = Field(default=TicketsSettings(), description="The tickets service's database.")
     notes: NotesSettings = Field(default=NotesSettings(), description="The notes service's database.")
     chat: ChatSettings = Field(default=ChatSettings(), description="The chat service's database.")

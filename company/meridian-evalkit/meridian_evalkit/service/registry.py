@@ -2,8 +2,8 @@
 
 An eval is a named set of text items and the metrics a run of it reports; the first metric is its headline,
 the score its leaderboard ranks by. A run is one eval of one model: who started it, the job its caller submits
-to the cluster, the job it is bound to once that job reports in, and its results, appended to the versioned
-``ResultsStore`` so a stored version never changes. The registry keeps its evals, runs and results in a
+to the cluster, the job it is bound to once that job reports in, and its results, kept as a new version each
+time, so a stored version never changes. The registry keeps its evals, runs and results in a
 database (``meridian_common.records``), which it writes its seed into when it is new, so a registry that
 starts again on the same database holds what the last one held. A refused change raises ``EvalServiceError``
 with the HTTP status that says why; who may ask is the service's concern.
@@ -27,7 +27,7 @@ from meridian_common.jobclient import JobSpec
 from meridian_common.records import Database
 from meridian_evalkit.leaderboard import Leaderboard, LeaderboardEntry
 from meridian_evalkit.metrics import default_registry
-from meridian_evalkit.store import EvalRun, ResultsStore, diff_runs
+from meridian_evalkit.store import EvalRun, diff_runs
 
 
 def _load_results(text: str) -> EvalRun:
@@ -287,11 +287,8 @@ class EvalkitRegistry:
         self._database = database or Database()
         self._evals = self._database.records("evals", Eval.model_validate_json, Eval.model_dump_json)
         self._runs = self._database.records("runs", Run.model_validate_json, Run.model_dump_json)
-        # Each stored version of the results, by its number: what the versioned store holds, kept.
+        # Each version of the results, by its number from 1: appended, never changed.
         self._results = self._database.records("results", _load_results, EvalRun.to_json)
-        self._store = ResultsStore()
-        for results in self._results.values():
-            self._store.append(results)
         if not self._evals and not self._runs:
             with self._database.transaction():  # the whole seed, or a database that is still new
                 for seeded_eval in seed.evals:
@@ -499,7 +496,7 @@ class EvalkitRegistry:
             metrics=dict(metrics),
             item_ids=tuple(item_ids),
         )
-        version = self._store.append(results)
+        version = len(self._results) + 1
         self._results[str(version)] = results
         update = {
             "state": RunState.REPORTED,
@@ -535,7 +532,7 @@ class EvalkitRegistry:
         run = self.get_run(run_id)
         if run.results_version is None:
             raise EvalServiceError(HTTPStatus.CONFLICT, f"run {run_id!r} is not reported")
-        return self._store.get(run.results_version)
+        return self._results[str(run.results_version)]
 
     def _job_for(self, run_id: str, eval_id: str, model_id: str) -> JobBody:
         """The job that runs ``run_id``: the runner, from the checkout, on the run's model."""

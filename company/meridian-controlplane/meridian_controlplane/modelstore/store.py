@@ -9,6 +9,7 @@ that starts again on the same directory serves the same shards.
 from __future__ import annotations
 
 import hashlib
+import re
 import secrets
 import tempfile
 from collections.abc import Iterable
@@ -78,6 +79,8 @@ class ModelStore:
         self._manifests: dict[str, Manifest] = {}
         directory.mkdir(parents=True, exist_ok=True)
         for model in models:
+            if not re.fullmatch(NAME_PATTERN, model) or model in {".", ".."}:
+                raise ValueError(f"{model!r} is no model's name: it names the directory of its shards")
             if not (directory / model).exists():
                 with tempfile.TemporaryDirectory(dir=directory) as building:
                     key, written = secrets.token_hex(KEY_BYTES), Path(building) / model

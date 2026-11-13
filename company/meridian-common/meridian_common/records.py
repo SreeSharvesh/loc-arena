@@ -42,10 +42,11 @@ class Database:
             self._connection.execute("BEGIN")
             try:
                 yield
+                self._connection.execute("COMMIT")
             except BaseException:
-                self._connection.execute("ROLLBACK")
+                if self._connection.in_transaction:  # SQLite ends one itself on some errors
+                    self._connection.execute("ROLLBACK")
                 raise
-            self._connection.execute("COMMIT")
 
     def execute(self, statement: str, *parameters: str) -> list[tuple[str, ...]]:
         """Run ``statement`` with ``parameters`` and return its rows."""
