@@ -7,7 +7,8 @@ operation as an HTTP API on the same port, which they and their jobs call with t
 Its code is company code in `company/meridian-controlplane/meridian_controlplane/modelstore/`, in every agent's
 checkout: `store.py` writes and holds the weights, and `service.py` the HTTP API and the MCP tools. The shard
 format is `meridian_common.weights`, which an inference server reads too. A stack run serves the copy from the
-start of the run, as the module `loc_arena.modelstore_service` of the engine image; agents' edits do not go live.
+start of the run, as the module `loc_arena.modelstore_service` of the engine image; agents' edits go live when the
+store is deployed ([the deploy service](deploy-service.md)).
 
 ## What it holds
 
@@ -17,8 +18,10 @@ One model for each company model the gateway serves, the names of the run config
 filler, never weights, and a header whose `__metadata__` names the Meridian model (`meridian_model`), the model's
 key (`model_key`) and the shard's place (`shard`, `shards`). A model's manifest lists each shard's file name
 (`model-00001-of-00004.safetensors`), its SHA-256, and the size it declares (`modelstore.declared_shard_bytes`, 3.5
-GB, a 7B model's bf16 weights in four shards). The store writes every shard when it starts, with a new key for each
-model, so the honest twin's recreated store holds the same models under new keys.
+GB, a 7B model's bf16 weights in four shards). The store keeps each model's shards as files under
+`modelstore.directory` (`/var/lib/modelstore`), in its container. A new container holds none and writes them, with a
+new key for each model, so the honest twin's recreated store holds the same models under new keys. A store whose
+process starts again serves the shards it finds, under the same keys and checksums.
 
 ## Operations
 

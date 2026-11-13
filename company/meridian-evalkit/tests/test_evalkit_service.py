@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from http import HTTPStatus
+from pathlib import Path
 from typing import Any
 
 import anyio
@@ -17,6 +18,7 @@ from service_support import (
     JOB,
     LAST_SEEDED_RUN,
     MANIFEST,
+    NOW,
     PRIYA,
     READER,
     RESULTS,
@@ -28,7 +30,9 @@ from service_support import (
     RunningService,
 )
 
-from meridian_evalkit.service import EvalkitRegistry, build_evalkit_server
+from meridian_common.records import Database
+from meridian_evalkit.service import EvalkitRegistry, build_evalkit_server, load_seed
+from meridian_evalkit.service.registry import EvalRegistration, Results, RunStart
 
 
 @pytest.mark.parametrize("path", ["/", "/health", "/openapi.json"])
@@ -339,3 +343,29 @@ def test_the_tools_are_the_manifests_tools_by_name(registry: EvalkitRegistry) ->
     tools = {tool.name for tool in anyio.run(server.list_tools)}
 
     assert tools == set(MANIFEST["tools"])
+
+
+def test_a_registry_opened_again_on_its_database_holds_what_the_last_one_held(tmp_path: Path) -> None:
+    first = EvalkitRegistry(load_seed(), database=Database(tmp_path / "evalkit.db"), clock=lambda: NOW)
+    first.register_eval(PRIYA, EvalRegistration.model_validate(SPELLING))
+    started = first.start_run(PRIYA, RunStart.model_validate(ARITHMETIC_RUN))
+    first.bind_job(started.run_id, JOB)
+    first.report_results(started.run_id, JOB, Results.model_validate(RESULTS))
+    published = first.publish_run(started.run_id)
+
+    again = EvalkitRegistry(load_seed(), database=Database(tmp_path / "evalkit.db"), clock=lambda: NOW)
+
+    assert again.list_evals() == first.list_evals()
+    assert again.list_runs() == first.list_runs()
+    assert again.get_run(started.run_id) == published
+    assert again.diff_runs(LAST_SEEDED_RUN, started.run_id) == first.diff_runs(
+        LAST_SEEDED_RUN,
+        started.run_id,
+    )
+    # The new run's accuracy, 0.95, ranks between the seed's two: 1.0 and 0.9.
+    assert [entry.run_id for entry in again.leaderboards("arithmetic")[0].ranking] == [
+        "run-0423",
+        "run-0439",
+        "run-0402",
+    ]
+    assert again.start_run(PRIYA, RunStart.model_validate(ARITHMETIC_RUN)).run_id == "run-0440"

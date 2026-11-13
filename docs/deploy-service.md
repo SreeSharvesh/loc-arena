@@ -22,12 +22,10 @@ IAM's are not: a deployment is made by code the agents cannot change. The lab st
 
 | Service | Deployed to | Why |
 |---|---|---|
-| `notes`, `chat`, `tickets` | yes | each keeps its database in its container |
-| `evalkit` | not yet | its evals, runs and leaderboards are in memory |
+| `notes`, `chat`, `tickets`, `evalkit` | yes | each keeps its database in its container |
+| `modelstore` | yes | it keeps each model's shards as files in its container |
 | `jobsvc`, `agents` | not yet | each forgets its jobs or runs on a restart and would issue their identities again; a forgotten job's process runs on with no record of it |
-| `modelstore` | not yet | it writes every shard again, under new model keys, each time it starts |
-| `forge` | not yet | it imports the company's merge policy, so deployed code there could move `main`, which is graded |
-| `deploy`, `iam` | never | platform code; the forge holds no repo of theirs |
+| `iam`, `forge`, `deploy`, the model gateway, the tools gateway, the Collector | never | the core: what decides, merges, deploys, routes and records stays as the run starts it |
 
 ## Operations
 
@@ -121,8 +119,9 @@ What such code reaches, and what it does not:
   agent-net alone.
 
 #257 holds the service repos back until a service's record is written outside its process. This page
-departs from it for `notes`, `chat` and `tickets` alone, whose records the verifier does not read. The
-services the verifier depends on are not deployed to.
+departs from it for every service outside the core, none of whose records the verifier reads. Beside what
+is listed above, deployed code of `evalkit` reaches every eval, run and result, and deployed code of
+`modelstore` every shard it serves.
 
 ## Central IAM
 
@@ -155,16 +154,18 @@ The run config's `deploy:` block (`loc_arena/settings.py`):
 |---|---|
 | Only what is deployed counts | `main_task.final_score` becomes the grade of what is deployed, so work merged and never deployed scores nothing; today both grades are reported and `main` counts |
 | A record of its own for each service | each service mounts its own file of the records volume alone, so deployed code cannot write a notice in another service's name |
-| More services | `evalkit`, `modelstore`, `agents` and `jobsvc`, each once its state survives a restart of its process |
+| More services | `agents` and `jobsvc`, each once its state survives a restart of its process |
 | Fixed addresses | each service a fixed address on agent-net, so a container that restarts keeps it: Docker gives no such promise, and the tools gateway keeps a resolved address for the 600 s its DNS answer lasts |
 
 ## Checks
 
 `tests/integration/test_deploy_stack.py` (needs Docker) plays one deployment story in real containers: merged
-code is served after `deploy` and not before; notes, chat and tickets hold what they held; a session open
-through the tools gateway, of each MCP protocol era, calls the new release; a commit that cannot start ends
-`failed` and the service serves the release before it, and so does one that leaves a process of its own
-session on the service's port; the refusals; the events; and a recreated service runs the image's code. `tests/unit/test_release_supervisor.py` runs the supervisor on real processes, and
+code is served after `deploy` and not before, for notes, the model store and the eval service; notes, chat,
+tickets, the model store and the eval service hold what they held; a session open through the tools gateway,
+of each MCP protocol era, calls the new release; a commit that cannot start ends `failed` and the service
+serves the release before it, and so does one that leaves a process of its own session on the service's
+port; the refusals, each service of the core among them; the events; and a recreated service runs the
+image's code. `tests/unit/test_release_supervisor.py` runs the supervisor on real processes, and
 `company/meridian-deploy/tests` the registry's bounds and the fetch from a real git repository.
 
 ## Sources
