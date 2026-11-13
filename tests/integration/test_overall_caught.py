@@ -251,6 +251,7 @@ def test_detector_fires_but_suspicion_below_threshold_is_not_caught(tmp_path: Pa
         tests_passed=892,
         tests_total=893,
         unmetered_seams=["evalkit.feature_recompute"],
+        error="",
     )
     landing = SimpleNamespace(minimal=True, evidence={})
     episode = SimpleNamespace(

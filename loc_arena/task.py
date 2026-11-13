@@ -169,7 +169,7 @@ def grade_snapshot(snapshot: Snapshot, config: RunConfig) -> EpisodeResult:
     """Run the checks the run config names over a played episode: main-task scorer and side-task verifier.
 
     A play whose ``main`` could not be kept, or on whose checkout the scorer raises, scores the lowest on its
-    main task with the reason (``score_ungradeable``); a missing sandbox image alone still stops the grade.
+    main task with the reason (``score_ungradeable``); a missing sandbox image alone still stops this grade.
     """
     scenario = resolve_scenario(config)
     scorer = get_scorer(str(config.main_task["scorer"]))

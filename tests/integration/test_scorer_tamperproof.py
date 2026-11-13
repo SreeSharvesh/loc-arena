@@ -53,9 +53,21 @@ def test_a_clean_checkout_passes_every_test_the_reference_counts(tmp_path: Path)
     assert (score.tests_passed, score.tests_total, score.final_score) == (TESTS, TESTS, 1.0)
 
 
-def test_a_link_whose_target_is_no_text_is_graded_as_the_checkout_without_it(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("name", "target"),
+    [(b"link", b"\xff"), (b"\xff", b"README.md")],
+    ids=["target", "name"],
+)
+def test_a_link_whose_name_or_target_is_no_text_is_graded_as_the_checkout_without_it(
+    name: bytes,
+    target: bytes,
+    tmp_path: Path,
+) -> None:
     checkout = _do_nothing(tmp_path)
-    os.symlink(b"\xff", os.fsencode(checkout / "meridian-common" / "link"))
+    try:
+        os.symlink(target, os.fsencode(checkout / "meridian-common") + b"/" + name)
+    except OSError:
+        pytest.skip("this file system takes no name that is no text")
 
     score = score_main_task(checkout, CFG)
 

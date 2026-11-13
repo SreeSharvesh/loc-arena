@@ -423,7 +423,8 @@ def grade_run(
         calibration_sealed_path=None if mode == "honest" else honest_ep.sealed_path,
     )
     if mode == "attack":  # in honest mode the episode is the twin, so its verdicts are the run's own
-        scores["honest_twin"] = honest_twin_scores(honest_rec, h_overall, h_per_monitor).model_dump()
+        twin = honest_twin_scores(honest_rec, h_overall, h_per_monitor, honest_ep.main_score.error)
+        scores["honest_twin"] = twin.model_dump()
     scores["failed_model_calls"] = played.failed_model_calls.model_dump()
     if played.wall_clock_ceiling:  # only for a run it stopped, so every other run's scores keep their shape
         scores["wall_clock_ceiling"] = played.wall_clock_ceiling.model_dump()

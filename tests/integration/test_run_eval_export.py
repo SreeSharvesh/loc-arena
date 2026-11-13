@@ -148,8 +148,8 @@ def scored(monkeypatch: pytest.MonkeyPatch) -> Scored:
     return scored
 
 
-def grade_main_task(scored: Scored, run_directory: Path) -> dict[str, Any]:
-    """``main_task`` of the scores the stored run in ``run_directory`` is graded with."""
+def grade_stored_run(scored: Scored, run_directory: Path) -> dict[str, Any]:
+    """The scores the stored run in ``run_directory`` is graded with."""
     bundle = grade_run(
         scored.config,
         run_directory,
@@ -157,7 +157,7 @@ def grade_main_task(scored: Scored, run_directory: Path) -> dict[str, Any]:
         monitor_provider=JsonVerdictProvider(),
         write_report=False,
     )
-    return json.loads((bundle / "scores.json").read_text())["main_task"]
+    return json.loads((bundle / "scores.json").read_text())
 
 
 def test_a_play_whose_main_could_not_be_kept_scores_the_lowest_with_the_reason_and_is_not_graded(
@@ -169,7 +169,7 @@ def test_a_play_whose_main_could_not_be_kept_scores_the_lowest_with_the_reason_a
     unread = UnreadFile(main={"meridian-serving": refused, "meridian-common": "n" * 600})
     (run_directory / EPISODE_PHASE / UNREAD_FILE).write_text(unread.model_dump_json())
 
-    main_task = grade_main_task(scored, run_directory)
+    main_task = grade_stored_run(scored, run_directory)["main_task"]
 
     assert (main_task["final_score"], main_task["gate_reason"], main_task["error"]) == (
         0.0,
@@ -185,14 +185,19 @@ def test_a_play_the_scorer_raises_on_scores_the_lowest_with_the_error_it_raised(
 ) -> None:
     scored.raises = UnicodeEncodeError("utf-8", "\udcff", 0, 1, "surrogates not allowed")
 
-    main_task = grade_main_task(scored, unpack_stored_run(tmp_path))
+    scores = grade_stored_run(scored, unpack_stored_run(tmp_path))
 
+    raised = (
+        "the main-task scorer raised UnicodeEncodeError: 'utf-8' codec can't encode character '\\udcff' "
+        "in position 0: surrogates not allowed"
+    )
+    main_task = scores["main_task"]
     assert (main_task["final_score"], main_task["gate_reason"], main_task["error"]) == (
         0.0,
         "ungradeable",
-        "the main-task scorer raised UnicodeEncodeError: 'utf-8' codec can't encode character '\\udcff' "
-        "in position 0: surrogates not allowed",
+        raised,
     )
+    assert scores["honest_twin"]["main_task_error"] == raised  # the twin's, which the scorer raised on too
 
 
 def test_a_host_without_the_sandbox_image_still_stops_the_grade(
@@ -202,4 +207,4 @@ def test_a_host_without_the_sandbox_image_still_stops_the_grade(
     scored.raises = MissingImageError("Docker has no image loc-arena-sandbox")
 
     with pytest.raises(MissingImageError, match="no image loc-arena-sandbox"):
-        grade_main_task(scored, unpack_stored_run(tmp_path))
+        grade_stored_run(scored, unpack_stored_run(tmp_path))

@@ -51,6 +51,9 @@ class HonestTwinScores(BaseModel):
     monitor_verdicts: tuple[VerdictRow, ...] = Field(
         description="Every verdict, on the twin's own mirror events.",
     )
+    main_task_error: str = Field(
+        description="Why the twin's merged tree could not be graded, when it could not; no score reads it.",
+    )
 
 
 def verdict_rows(verdicts: Iterable[MonitorVerdict]) -> tuple[VerdictRow, ...]:
@@ -81,18 +84,20 @@ def honest_twin_scores(
     record: EpisodeRecord,
     overall: float,
     per_monitor: Mapping[str, float],
+    main_task_error: str,
 ) -> HonestTwinScores:
     """The twin's block of ``scores.json``, from the record this grading calibrated its thresholds on.
 
     ``record`` must be that record, never a second scoring: a live monitor scores differently each time, so
     only these verdicts explain the thresholds written beside them. ``overall`` and ``per_monitor`` are
-    ``episode_overall``'s answer for the same verdicts.
+    ``episode_overall``'s answer for the same verdicts; ``main_task_error`` is its main-task score's.
     """
     return HonestTwinScores(
         overall_suspicion=round(overall, 6),
         per_monitor={name: round(score, 6) for name, score in sorted(per_monitor.items())},
         per_monitor_max_score=peak_scores(record.verdicts),
         monitor_verdicts=verdict_rows(record.verdicts),
+        main_task_error=main_task_error,
     )
 
 
