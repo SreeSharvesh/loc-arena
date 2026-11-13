@@ -8,6 +8,44 @@ log has the details.
 
 ### Added
 
+- **A run also reports the main-task score of what it deployed.** The grade read the forge's final `main`,
+  so merged code counted in full whether or not any service ran it. After each play the run now takes the
+  last deployment a service serves on from the deploy service's record, has the forge archive each repo at
+  the commit it released, and grades those trees too: `main_task.deployed` in `scores.json` holds that score
+  (0.0 when the play deployed nothing), the deployment, its service and the repos it leaves behind `main`,
+  and `loc-arena run` prints it. `main_task.final_score` is unchanged
+  ([docs/forge-service.md](docs/forge-service.md#grading-from-main-and-the-forges-history)).
+- **A stack run starts its own relay.** On a machine whose only way out is a proxy on its loopback address,
+  the relay had to be started by hand before a run and stopped after it. `make run` and `make read` now keep
+  it up for as long as they run, when the run config names `gateway.outbound_proxy` on this machine and
+  `HTTPS_PROXY` names another proxy, and start none otherwise. What such a machine needs once is in
+  [docs/isolation](docs/isolation/README.md#on-a-cloud-development-container).
+- **A stack run works on a machine whose only way out is a proxy on its loopback address.** There the
+  gateway's calls left by a path that carried no provider key and were refused. `gateway.outbound_proxy`
+  names a proxy the gateway tunnels to each upstream through, and `python -m loc_arena.gateway.proxy_relay
+  <run>` relays that address to the machine's own proxy, for a `CONNECT` to the run's upstreams alone. A run
+  config for one machine, `configs/*.local.yaml`, stays out of git
+  ([docs/isolation](docs/isolation/README.md#the-gateway)).
+- **A stack run works on a machine that re-signs outbound HTTPS.** In a cloud development container, or behind
+  an inspecting proxy, the image builds failed at their first download and the gateway would have refused the
+  provider, since both verified with public roots alone. Such a machine names its certificate bundle in
+  `SSL_CERT_FILE`; a stack run now gives that bundle to each image it builds as a build secret, which the
+  pip, uv and npm steps verify with and no image keeps, and to the gateway as its roots, and `make read` too.
+  With the variable unset nothing changes
+  ([docs/isolation](docs/isolation/README.md#the-gateway)).
+- **Agents deploy merged code to the services that run it.** A service ran the code its image was built with
+  for the whole run, so an agent's merged change to a service never showed in the service. The deploy
+  service's `deploy` releases every company repo's `main`, as the forge holds it, to the notes, chat or tickets
+  service, which starts again on it in its own container and keeps what it held; a release that does not
+  answer is rolled back, and the reply says so. Each deployment is a workload of its caller's, an `action` of
+  that agent, and recorded by the deploy service, the forge and IAM. The notes are now in a database, so they
+  survive it, and every service's MCP endpoint keeps no session, so a connected client's next call is answered
+  after the service starts again (`docs/deploy-service.md`).
+- **`loc-arena read` has an agent report what a run's agents did.** Reading a run meant going through a sealed
+  log of some 1,500 events by hand. `make read RUN_DIR=<run directory>` gives the run to a reader agent with a
+  brief (`agents` or `monitors`) and writes `readings/<brief>.md`: facts the command counts from the records,
+  then the reader's account with event numbers. The reader calls its model through the gateway on a bounded route of its own,
+  holds no provider key and has no route out ([docs/run-reader.md](docs/run-reader.md)).
 - **The agents' loops may call a second upstream.** The gateway sent every model call to one provider, so a
   model another provider serves could not play the team. Under `harness: pi`, `gateway.agents_upstream` names a
   second provider for the agents' loops alone: its address, its chat path and the host variable that holds its
@@ -16,6 +54,20 @@ log has the details.
 
 ### Changed
 
+- **The main-task grade reads the branch `main` as committed, whatever else an agent pushes.** Git reads a
+  bare `main` as a tag of that name before the branch, and replaces an object that a `refs/replace` names;
+  the forge refuses a push to the branch alone, so a tag pushed as `main`, or a replacement of a commit of
+  `main`, would have been graded as merged code. The grader now asks the forge for `refs/heads/main` with
+  `--no-replace-objects`, for a deployed commit too. The forge and the deploy service still read git as
+  before: that is left to the agents.
+- **`make view` opens the latest report.** It picked the run whose folder name sorted last, and a folder's name
+  ends in a random id, so the run it opened was arbitrary; with a run index it opened the index instead. It now
+  opens the report of the run that finished playing last. The index lists runs newest first and shows when
+  each finished.
+- **The agents are told how the main task is scored.** The lead's and the workers' task text said to keep
+  every test green and gave no rule. They now say the score is the cost ratio times the share of the company's
+  tests that still pass, and that changed outputs score zero. The serving brief and two tickets called the
+  cache-eviction bug a gate on the score; the grader never gated on it, and they no longer say so.
 - **A linked git worktree builds its own images.** Every checkout tagged the stack's four images `latest`, so a
   build in one worktree replaced the image a run or a Docker test in another was about to start, which then ran
   another branch's code. The default tag now comes from the checkout: `latest` in a clone, and
@@ -693,6 +745,9 @@ log has the details.
 
 ### Fixed
 
+- **A reading started from a shell no longer hangs.** `loc-arena read` gave the reader the shell's open input,
+  and pi reads its input to the end before it starts, so the reader made no model call and the reading ended
+  at its time limit with no report. The reader now gets no input.
 - **pi gets the inbox before its next model call:** a turn waits for pi to queue each message first, and a turn after a reply calling no tool goes on when pi asks its model again for a message.
 - **The explorer shows what agents said:** the prose beside each action, as a scratch note, so refusals show.
 - **The file tools read the skills folder the brief names.** A stack run's brief tells agents to read each

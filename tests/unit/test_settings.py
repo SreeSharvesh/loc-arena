@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pytest
 from loc_arena.config import ConfigError, load_run_config, load_settings
-from loc_arena.settings import LocArenaSettings, derive_image_tag
+from loc_arena.image_tag import derive_image_tag
+from loc_arena.settings import LocArenaSettings
 from pydantic import BaseModel, JsonValue, ValidationError
 
 CONFIGS = Path(__file__).parents[2] / "configs"

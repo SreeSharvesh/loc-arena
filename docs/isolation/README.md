@@ -29,7 +29,7 @@ credentials they are given.
 | `collector` | an OpenTelemetry Collector on record-net, which only the gateway joins; appends each record to the sealed record in a volume only it mounts |
 | `episode` | plays the episode and, in attack mode, its honest twin; holds every sandbox's token and no identity |
 | `sandbox-<agent id>` | one agent's code, from a slim image with no harness and no scenarios; mounts that agent's checkout volume, and the scenario's skills read-only; holds its own token and its own identity on each service with rights; takes commands from the episode alone |
-| one per live service | a scenario's `services:` entry with `build`, `image` or `module`; no route out, all capabilities dropped, limits from `stack`, no published port |
+| one per live service | a scenario's `services:` entry with `build`, `image` or `module`; no route out, all capabilities dropped, limits from `stack`, no published port; a service the deployer's entry lists (`deploys:`) runs under a supervisor on `deploy.release_port`, which holds a token of its own, which the deployer also holds, and takes a release from that deployer alone ([docs/deploy-service.md](../deploy-service.md)) |
 | `runner-<n>` | where the company's own agents run with pi, for the one service whose entry declares `runners: <n>`; a sandbox from the Dockerfile's `runner` target with an empty `/workspace`; holds its own token, which that service also holds, and takes commands from that service alone; an execution there gets its agent's tokens on the company's services (`MERIDIAN_<SERVICE>_TOKEN`) |
 | `node-<n>` | the job service's fleet, for the one service whose entry declares `nodes: {<pool>: n}`; a worker from the Dockerfile's `worker` target whose daemon runs one job at a time as a real process in an empty `/workspace`, holding each company repo's `main` cloned from the forge with the job's own credential, the cluster's own read-only deployment of the company repos at `/opt/meridian` that the seed's jobs run, and the limits `stack.node_cpus` and `stack.node_memory_mb`; holds its own token, which that service also holds and its jobs call the gateway with, and takes calls from that service alone; gives each job the secrets of the job's own workload; its log is its jobs' process facts ([docs/jobsvc-service.md](../jobsvc-service.md)) |
 | `agentgateway` | the MCP route of every service with tools; present when a service has tools |
@@ -41,7 +41,7 @@ image with no network. The episode image holds no grader answers. No container m
 
 The Dockerfile's four stages build the images of the episode and the engine's services (`stack.image`), the
 sandboxes (`stack.sandbox_image`), the runners (`stack.runner_image`) and the nodes (`stack.worker_image`).
-Their default tag comes from the checkout the code runs from (`derive_image_tag` in `loc_arena/settings.py`),
+Their default tag comes from the checkout the code runs from (`derive_image_tag` in `loc_arena/image_tag.py`),
 so a run or a Docker test never starts an image another checkout built:
 
 | Checkout | Images |
@@ -202,6 +202,28 @@ by the SHA-256 of their token, so it holds none: the episode, the host's monitor
 token), each runner and each node. A path outside `gateway.allowed_paths` gets a 403, and a call without a known
 token a 401.
 
+It verifies the provider with certifi's roots. A machine that re-signs outbound HTTPS (a cloud development
+container, a network with an inspecting proxy) names its own certificate bundle in `SSL_CERT_FILE`; a stack run
+there, and `make read`, gives the gateway that bundle as its roots. A stack run also gives it to each image it
+builds as the build secret `ca_bundle` (at most 500 KB, BuildKit's limit), which the pip, uv and npm steps
+verify with and no image keeps (`loc_arena/machine_roots.py`). Image pulls are the Docker daemon's and use its
+own trust. The variable alone decides: a machine that sets it for another reason (a Nix shell, some conda
+environments) has its bundle take the place of certifi's roots too. Compose grants its builder the read of a
+build secret outside the project folder from 5.7.0; with an earlier Compose and Buildx 0.37.2 or later the
+build stops asking for `fs.read`, and `BUILDX_BAKE_ENTITLEMENTS_FS=0` in the environment lets it pass.
+
+On a machine whose only way out is a proxy on its loopback address, which no container reaches, the gateway
+tunnels to each upstream through `gateway.outbound_proxy`, an address of the machine it does reach (the Docker
+bridge's, `172.17.0.1:3128`), where a relay passes each tunnel to the machine's proxy. `make run` and
+`make read` keep that relay up for as long as they run, and start none where `HTTPS_PROXY` names no proxy,
+names the outbound proxy itself, or the outbound proxy is on another machine;
+`uv run python -m loc_arena.gateway.proxy_relay <run>`, from the repository, is the same relay kept up by
+hand, to be stopped before a `make run` that names its address. It listens on that same address and reads the machine's proxy from
+`HTTPS_PROXY` (`http://host:port`; it sends no proxy credentials). It is a way out for any container on a network that is
+not internal, so it passes a `CONNECT` to the run's upstreams alone, as a request it writes itself, and bytes
+only once the proxy has opened the tunnel; the sandboxes, on `agent-net`, do not reach it. A run config that names the proxy belongs to
+that machine: `configs/*.local.yaml` is kept out of git.
+
 Every call leaves a record (caller, request, reply and status, refused and failed calls included), which the
 gateway exports over OTLP to the Collector. A run waits until the Collector holds a record of every call
 the gateway logged before the gateway stops, then copies the record to `logs/gateway/<project>.calls.jsonl`, one
@@ -218,6 +240,25 @@ play. A call past the cap gets a 429; one for any other model, or listing fallba
 Agents under test can start the company's agents, which spend real money. Only a badge IAM signed for a
 workload (a job or a company agent's execution) is admitted on that route, and the gateway records the call
 under the workload and its sponsor; a node's or a runner's token admits no model call.
+
+### On a cloud development container
+
+Such a machine re-signs outbound HTTPS, reaches the internet through a proxy on its loopback address, and
+attaches the provider key outside the machine. Before its first run, a session there starts the Docker daemon
+if none runs, writes the machine's run config, and gives the gateway a placeholder key, which the machine's
+proxy replaces:
+
+```sh
+docker info >/dev/null 2>&1 || (dockerd >/var/log/dockerd.log 2>&1 &)
+for _ in $(seq 30); do docker info >/dev/null 2>&1 && break; sleep 1; done
+printf 'extends: aurora-efficiency.fast.yaml\ngateway:\n  outbound_proxy: 172.17.0.1:3128\n' \
+  > configs/aurora-efficiency.fast.local.yaml
+export OPENROUTER_API_KEY=placeholder
+```
+
+Then `make run RUN=aurora-efficiency.fast.local` plays as on any machine, and so does `make read` with that
+same `RUN`; each says as it starts that its relay is up. The placeholder key lasts for its shell, so a
+new shell exports it again. `SSL_CERT_FILE` and `HTTPS_PROXY` are the machine's own.
 
 ## What agent code can reach
 

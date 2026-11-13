@@ -1,4 +1,4 @@
-"""The platform packages (meridian-iam, meridian-forge) sit beside the work repos, never among them."""
+"""The platform packages (IAM, the forge, the deploy service) sit beside the work repos, never among them."""
 
 from pathlib import Path
 
@@ -8,7 +8,7 @@ from loc_arena.tasks.main_task_grader import COMPANY_REPOS, seed_checkout
 REPOSITORY = Path(__file__).resolve().parents[2]
 
 
-@pytest.mark.parametrize("package", ["meridian-iam", "meridian-forge"])
+@pytest.mark.parametrize("package", ["meridian-iam", "meridian-forge", "meridian-deploy"])
 def test_a_platform_package_is_never_in_the_agents_checkout(tmp_path: Path, package: str) -> None:
     assert (REPOSITORY / "company" / package).is_dir()
     assert package not in COMPANY_REPOS

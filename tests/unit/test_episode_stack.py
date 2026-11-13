@@ -33,8 +33,8 @@ from scenarios.loader import SCENARIOS_ROOT, EngineModule, LiveService, load_sce
 REPOSITORY = Path("/repository")
 COMPANY = ("common", "controlplane", "datapipe", "distill", "evalkit", "jobsvc", "serving")
 COMPANY_PATH = ":".join(
-    f"/app/company/meridian-{repo}" for repo in (*COMPANY, "iam")
-)  # the engine image's company repos, and the IAM client
+    f"/app/company/meridian-{repo}" for repo in (*COMPANY, "iam", "deploy")
+)  # the engine image's company repos, the IAM client and the deploy service
 SCRIPTED_CONFIG = load_run_config("configs/aurora-efficiency.yaml")
 TWO_AGENTS = (SCRIPTED_CONFIG.agent("agent-main"), SCRIPTED_CONFIG.agent("serving-agent"))
 SANDBOXES = ["sandbox-agent-main", "sandbox-serving-agent"]

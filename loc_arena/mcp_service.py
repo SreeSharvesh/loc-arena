@@ -22,6 +22,11 @@ def caller_from_token() -> str | None:
 
 
 def build_app(server: MCPServer, service: str) -> Starlette:
-    """The ASGI app serving ``server`` at ``/mcp`` to requests addressed to the compose ``service``."""
+    """The ASGI app serving ``server`` at ``/mcp`` to requests addressed to the compose ``service``.
+
+    It keeps no MCP session, for a client of the 2025 protocol as for one of 2026, which has none: a service
+    whose process starts again, as a deployment has it do, answers the next call of a client that was
+    connected before.
+    """
     security = TransportSecuritySettings(allowed_hosts=[service, f"{service}:*"])
-    return server.streamable_http_app(transport_security=security)
+    return server.streamable_http_app(stateless_http=True, transport_security=security)

@@ -66,12 +66,14 @@ def test_a_managed_service_holds_no_agent_identity_only_its_iam_credential_and_i
         "agents": ["runner-1", "runner-2", "runner-3"],
         "jobsvc": ["node-1", "node-2", "node-3", "node-4"],
     }
+    deployed = ("notes", "chat", "tickets")  # each also holds the token of the supervisor it runs under
     for name in MANAGED:
         service = services[name]
         held = workers.get(name, [])
         assert service["secrets"] == [
             {"source": f"iam_service_{name}", "target": "iam_credential"},
             *(f"{worker.split('-')[0]}_token_{worker.replace('-', '_')}" for worker in held),
+            *([{"source": f"release_token_{name}", "target": "release_token"}] if name in deployed else []),
         ]
         assert service["depends_on"] == {
             "iam": {"condition": "service_healthy"},

@@ -15,15 +15,22 @@ from inspect_ai.log import EvalSample, read_eval_log
 from loc_arena.explorer.build import find_transcript_log
 from loc_arena.harness import grade_run
 from loc_arena.logging_.transcript_lanes import UNPLACED, WORLD, build_transcript
+from loc_arena.merged_main import DEPLOYED_FILE, EPISODE_PHASE, DeployedFile
 
 from tests._stored_run import CONFIG, unpack_stored_run
 from tests.integration._gateway_support import JsonVerdictProvider
 
+DEPLOYED_ALL = DeployedFile(deployment=4, service="notes", behind_main=[])
+
 
 @pytest.fixture(scope="module")
 def graded_bundle(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """The stored run graded again, once for the tests here (the main-task scorer takes seconds)."""
+    """The stored run graded again, once for the tests here (the main-task scorer takes seconds).
+
+    Its episode is given a last deployment, level with main, as a play that deployed all it merged leaves.
+    """
     run_directory = unpack_stored_run(tmp_path_factory.mktemp("graded"))
+    (run_directory / EPISODE_PHASE / DEPLOYED_FILE).write_text(DEPLOYED_ALL.model_dump_json())
     return grade_run(
         CONFIG,
         run_directory,
@@ -31,6 +38,18 @@ def graded_bundle(tmp_path_factory: pytest.TempPathFactory) -> Path:
         monitor_provider=JsonVerdictProvider(),
         write_report=False,
     )
+
+
+def test_a_run_whose_last_deployment_is_level_with_main_scores_the_same_for_both(graded_bundle: Path) -> None:
+    main_task = json.loads((graded_bundle / "scores.json").read_text())["main_task"]
+
+    assert main_task["deployed"] == {
+        "final_score": main_task["final_score"],
+        "deployment": 4,
+        "service": "notes",
+        "behind_main": [],
+        "error": "",
+    }
 
 
 @pytest.fixture(scope="module")

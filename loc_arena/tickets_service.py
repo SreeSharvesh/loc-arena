@@ -6,7 +6,7 @@ call, on one port: the MCP tools at ``/mcp``, which agents reach through the too
 beside them, which they call from their sandbox with their credential on the service. Each HTTP request is one
 line of the audit record and each tool call one line of the tool-call record, both on stdout. A new container
 replays the scenario's ticket seed into a new database, so the honest twin's recreated service starts where
-the episode's did; agents' edits to the package do not go live.
+the episode's did; agents' edits to the package go live when it is deployed (``docs/deploy-service.md``).
 """
 
 from __future__ import annotations

@@ -18,7 +18,7 @@ requests from central IAM; they do not keep their own.
   bearer-token comparison for agents, a rights table, a grant endpoint that keeps state, or an access-request
   queue.
 - The notes service, the agents service, the job service, the eval service, the tickets service, the chat
-  service, the model store and the forge run under IAM and keep no rights of their own: a run refuses a config
+  service, the model store, the forge and the deploy service run under IAM and keep no rights of their own: a run refuses a config
   that turns `iam.enabled` off, and each service refuses to start outside IAM. A config whose scenario lets agents reach a service outside its `iam:` block, or
   names a service without an approver (a principal of the company that decides its access requests, never an
   agent under test), does not load.
@@ -63,13 +63,13 @@ scenario.
 
 | Path | What it holds |
 |---|---|
-| `loc_arena/cli.py` | the `run`, `view`, `explore` and `grade` commands; the first three are the Makefile targets of the same names |
+| `loc_arena/cli.py` | the `run`, `view`, `explore`, `grade` and `read` commands; all but `grade` are Makefile targets of the same names |
 | `loc_arena/harness.py` | plays an episode and its honest twin, grades them, writes the audit bundle |
 | `loc_arena/config.py` | typed loader and validator for the run configs in `configs/` |
 | `loc_arena/registry.py` | scorers and verifiers, dispatched by the names the configs give |
 | `loc_arena/scaffold/` | the dual-capture recorder, and the code tools over an agent's checkout that the workspace service serves |
 | `loc_arena/live.py`, `loc_arena/task.py` | one episode's play, in a stack run's episode container; what every episode shares and its grading |
-| `loc_arena/gateway/` | the inference gateway every model call goes through (edge, core, transport); `model_gateway.py` renders the gateway container (agentgateway, which holds the key) and the OpenTelemetry Collector that writes its record, and copies that record out |
+| `loc_arena/gateway/` | the inference gateway every model call goes through (edge, core, transport); `model_gateway.py` renders the gateway container (agentgateway, which holds the key) and the OpenTelemetry Collector that writes its record, and copies that record out; `proxy_relay.py` relays the gateway to a machine's own proxy |
 | `loc_arena/monitors/`, `loc_arena/protocol.py` | the monitors; the control protocol that runs them |
 | `loc_arena/verifier/`, `loc_arena/tasks/` | the sealed side-task verifier; the main-task grader |
 | `loc_arena/metrics.py` | safety and usefulness metrics |
@@ -80,12 +80,14 @@ scenario.
 | `loc_arena/tickets_service.py`, `company/meridian-controlplane/meridian_controlplane/tickets/`, `docs/tickets-service.md` | the tickets service: Meridian's ticket tracker, company code a stack run serves with MCP tools and an HTTP API over one SQLite store under central IAM, seeded from the scenario's `tickets.yaml` |
 | `loc_arena/chat_service.py`, `company/meridian-controlplane/meridian_controlplane/chat/`, `docs/chat-service.md` | the chat service: Meridian's chat, the one channel between agents, company code a stack run serves with MCP tools and an HTTP API over one SQLite store under central IAM, seeded from the scenario's `chat.yaml`; the `message` events monitors read are built from its records |
 | `loc_arena/modelstore_service.py`, `company/meridian-controlplane/meridian_controlplane/modelstore/`, `company/meridian-common/meridian_common/weights.py`, `docs/modelstore-service.md` | the model store: the weights of each model in `gateway.runner_model_aliases` as safetensors shards (no real weights) with a manifest of sizes and checksums, company code a stack run serves with MCP reads and an HTTP API under central IAM; the shard format an inference server reads |
-| `loc_arena/notes_service.py`, `company/meridian-controlplane/meridian_controlplane/notes/`, `docs/notes-service.md` | the notes service: the team's shared notes, company code a stack run serves with MCP tools and an HTTP API over one in-memory store under central IAM, seeded from the scenario's `notes.yaml` |
+| `loc_arena/notes_service.py`, `company/meridian-controlplane/meridian_controlplane/notes/`, `docs/notes-service.md` | the notes service: the team's shared notes, company code a stack run serves with MCP tools and an HTTP API over one SQLite store under central IAM, seeded from the scenario's `notes.yaml` |
+| `loc_arena/deploy_service.py`, `company/meridian-deploy/`, `loc_arena/release_supervisor.py`, `loc_arena/deploy_pool.py`, `loc_arena/deployed_score.py`, `docs/deploy-service.md` | the deploy service: a platform package that releases the forge's `main` to the services its scenario entry lists (`deploys:`), each deployment a workload of its caller's; and the supervisor each of those services runs under, which takes a release from the deploy service alone and starts the service's process again on it; `deployed_score.py` grades what a play deployed, beside what it merged |
 | `loc_arena/jobsvc_service.py`, `company/meridian-jobsvc/`, `docs/jobsvc-service.md` | the job service: Meridian's cluster, company code a stack run serves under IAM, running each job as a real process on a node of its fleet; its plan |
 | `loc_arena/evalkit_service.py`, `company/meridian-evalkit/meridian_evalkit/service/`, `company/meridian-evalkit/meridian_evalkit/run.py`, `docs/evalkit-service.md` | the eval service: Meridian's evals, the runs on them, their results and leaderboards, company code a stack run serves with MCP tools and an HTTP API under central IAM; and the runner, the job a run hands out, which scores the model under test through the inference API |
 | `loc_arena/recorded_events.py` | after play, before grading: the events monitors read, built from the services' records |
 | `loc_arena/logging_/` | the sealed and mirror event logs, the per-agent Inspect export, `transcript.html`, `report.html` |
 | `loc_arena/explorer/` | the run explorer behind `make explore` |
+| `loc_arena/run_reader.py`, `loc_arena/reader_briefs/` | the run reader behind `make read` |
 | `loc_arena/episode_stack.py`, `Dockerfile` | `make run`'s stack: the episode in a container with no key or internet, beside the gateway and its Collector, a sandbox per agent and the scenario's live services; its compose file is rendered from the `gateway:` and `stack:` settings |
 | `loc_arena/stack_play.py` | a stack run's two plays in one container, the services renewed between them, and each log copied out once |
 | `loc_arena/tools_gateway.py` | the config of agentgateway, which puts every live service with tools on one MCP route and offers each agent the tools its `sandbox: tools:` lists |
@@ -103,6 +105,7 @@ scenario.
 | `docs/agent-log/` | per-agent logging: `spec.md` (what it guarantees) and `agent.md` (how to work on it) |
 | `docs/isolation/README.md`, `docs/run-config.md` | how a stack run isolates agents and wires their tools and services; the run config's keys and settings |
 | `docs/explorer/README.md` | every view of the run explorer, with screenshots |
+| `docs/run-reader.md` | the run reader: what a reading holds, the briefs, how the reader is isolated |
 | `CHANGELOG.md` | what each system does for a run and how that changed, under Unreleased until a release |
 | `site/` | the course: `architecture.html`, `monitoring.html`, `extend.html` (setup, configure and extend), ... |
 | `scripts/make_public.py` | builds the curated public tree (`make public-repo`); `docs/` is kept out of it |
@@ -116,6 +119,7 @@ make gates        # ruff, ruff format --check, ty, pytest: run before every push
 make images       # build this checkout's sandbox and engine images, which the Docker tests need
 make run MODE=attack           # live models in a stack: no key in the episode; the key in .env
 make run RUN=aurora-efficiency.fast   # the smoke run: the cheapest models, small call budgets, minutes and cents
+                                      # in a cloud development container first: docs/isolation "On a cloud development container"
 make fixture-run               # play the smoke run and store it as the tests' run fixture
 uv run python -m loc_arena.cli grade --run aurora-efficiency "$EPISODE_DIR"   # grade a played episode again from its snapshot.json
 ```

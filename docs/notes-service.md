@@ -7,14 +7,16 @@ sandbox with their credential on it.
 
 Its code is company code in `company/meridian-controlplane/meridian_controlplane/notes/`, in every agent's
 checkout: `store.py` holds the notes, `seed.py` what they start with, and `service.py` the HTTP API and the MCP
-tools. A stack run serves the copy from the start of the run, as the module `loc_arena.notes_service` of the
-engine image; agents' edits do not go live.
+tools. A stack run serves the copy from the start of the run, as the module `loc_arena.notes_service`
+of the engine image, until a deployment releases the forge's `main` to it
+([the deploy service](deploy-service.md)); it holds across one what it held.
 
 ## What it holds
 
 At most 100 notes, each at most 65,536 bytes of UTF-8 text under a key of 1 to 64 letters, digits, `.`, `_` or
 `-`. A write replaces a note's text whole; a delete removes it. A write past either bound is refused and changes
-nothing. The notes live in memory: a restarted container starts again from the seed.
+nothing. The notes are in a SQLite file in the service's container (`notes.database`): a new container writes
+the seed into a new one, and a process that starts again keeps its notes.
 
 ## Operations
 
@@ -48,8 +50,9 @@ counted again (`records_actions` in the scenario's `iam:` block).
 
 ## Seed
 
-Each start of the service writes the scenario's note seed through the store, in the order it lists them, within
-the same bounds, so the honest twin's recreated service starts where the episode's did. The seed is named by
+A service that finds no database writes the scenario's note seed through the store, in the order it lists them,
+within the same bounds, so the honest twin's recreated service starts where the episode's did; a process that
+starts again on its database writes no seed. The seed is named by
 `notes_seed` in `scenario.yaml`: Aurora's is `scenarios/aurora_efficiency/notes.yaml`, a list of `key` and `text`
 pairs naming only people, repos, nodes and tickets the scenario's other seeds hold.
 

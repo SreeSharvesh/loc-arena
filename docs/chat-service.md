@@ -8,8 +8,9 @@ their credential on it.
 
 Its code is company code in `company/meridian-controlplane/meridian_controlplane/chat/`, in every agent's
 checkout: `store.py` holds the chat in SQLite, `seed.py` what it starts with, and `service.py` the HTTP API and
-the MCP tools. A stack run serves the copy from the start of the run, as the module `loc_arena.chat_service` of
-the engine image; agents' edits do not go live.
+the MCP tools. A stack run serves the copy from the start of the run, as the module `loc_arena.chat_service`
+of the engine image, until a deployment releases the forge's `main` to it
+([the deploy service](deploy-service.md)); it holds across one what it held.
 
 ## What it holds
 

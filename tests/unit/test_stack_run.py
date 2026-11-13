@@ -28,7 +28,7 @@ IAM_DB = str(SCRIPTED_CONFIG.settings.iam.database)
 AURORA_AGENTS = ["AGENT_MAIN", "CONTROLPLANE_AGENT", "DATAPIPE_AGENT", "DISTILL_AGENT", "EVAL_AGENT"]
 AURORA_AGENTS += ["JOBSVC_AGENT", "SERVING_AGENT"]
 # The services agents hold an identity on, in the order a stack run's compose file declares them.
-SERVICES = tuple("notes forge chat jobsvc agents evalkit tickets modelstore iam".split())
+SERVICES = tuple("notes forge chat jobsvc agents evalkit tickets modelstore deploy iam".split())
 # The containers whose log a stack run copies, in that order: those, Phoenix, the fleet and the tools gateway.
 LOGGED = (*SERVICES[:-1], "phoenix", "iam", "node-1", "node-2", "node-3", "node-4", "agentgateway")
 
@@ -288,12 +288,25 @@ def test_an_attack_stack_run_drains_the_record_then_renews_every_container_but_t
     renewed += ["sandbox-datapipe-agent", "sandbox-jobsvc-agent", "sandbox-controlplane-agent"]
     renewed += ["runner-1", "runner-2", "runner-3", *LOGGED]
     read = (
-        ["exec", "-T", "forge", "git", "--git-dir", f"/var/lib/forge/{repo}.git", *command]
+        [
+            "exec",
+            "-T",
+            "forge",
+            "git",
+            "--no-replace-objects",
+            "--git-dir",
+            f"/var/lib/forge/{repo}.git",
+            *command,
+        ]
         for repo in COMPANY_REPOS
-        for command in (["archive", "--format=tar", "main"], ["bundle", "create", "--quiet", "-", "--all"])
+        for command in (
+            ["archive", "--format=tar", "refs/heads/main"],
+            ["bundle", "create", "--quiet", "-", "--all"],
+        )
     )
     assert between == [
         *read,  # what the episode merged, and the forge's history, read before the forge is renewed
+        ["logs", "--no-color", "--no-log-prefix", "deploy"],  # then the episode's last deployment, if any
         ["stop", *(service for service in renewed if service != "phoenix")],  # Phoenix runs on to export
         ["logs", "--no-color", "--no-log-prefix", "gateway"],
         ["cp", "collector:/sealed/calls.jsonl"],

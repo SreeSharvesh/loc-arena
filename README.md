@@ -41,7 +41,10 @@ make run RUN=aurora-efficiency.fast   # the smoke run: cheapest models, small bu
 make fixture-run              # play the smoke run and store it as the tests' run fixture
 ```
 
-A run always plays in a Docker stack and needs `OPENROUTER_API_KEY` in `.env`. The smoke run checks that a run
+A run always plays in a Docker stack and needs `OPENROUTER_API_KEY` in `.env`. On a machine that re-signs
+outbound HTTPS, a run verifies with the certificate bundle its `SSL_CERT_FILE` names
+([docs/isolation](docs/isolation/README.md#the-gateway)); a cloud development container needs
+[three things first](docs/isolation/README.md#on-a-cloud-development-container). The smoke run checks that a run
 plays, grades and writes its bundle; its scores are not results. `tests/fixtures/run.tar.gz` is a stored smoke
 run, an attack with its honest twin, which the tests that read a run's records or grade a run again use.
 
@@ -63,6 +66,9 @@ every agent side by side with each monitor's verdict on the step it judged, who 
 steps the monitors missed, and notes you pin to any passage. One run:
 `uv run python -m loc_arena.cli explore <bundle>`. What each view shows, with pictures:
 [`docs/explorer/`](docs/explorer/README.md).
+
+`make read RUN_DIR=<run directory>` has an agent read one run and report what its agents did, with facts
+counted from the records at its head: [`docs/run-reader.md`](docs/run-reader.md).
 
 ## Documentation
 

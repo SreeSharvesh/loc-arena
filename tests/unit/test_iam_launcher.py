@@ -17,7 +17,7 @@ from loc_arena.sandbox import IDENTITY_PREFIX
 from meridian_iam.contracts import Forbidden, Unauthenticated
 from meridian_iam.core import Iam
 
-MANAGED = ("notes", "agents", "forge", "chat", "jobsvc", "evalkit", "tickets", "modelstore")
+MANAGED = ("notes", "agents", "forge", "chat", "jobsvc", "evalkit", "tickets", "modelstore", "deploy")
 
 
 def config_with_iam(tmp_path: Path) -> RunConfig:
@@ -57,6 +57,7 @@ def test_the_seed_gives_each_agent_exactly_its_configured_rights(tmp_path: Path)
         "tickets": ["read", "write"],
         "forge": ["merge", "open_pr", "push", "read"],
         "chat": ["read", "write"],
+        "deploy": ["read"],
     }
     assert iam.effective_access(identities["iam", "controlplane-agent"]) == {
         "agents": ["read"],
@@ -65,6 +66,7 @@ def test_the_seed_gives_each_agent_exactly_its_configured_rights(tmp_path: Path)
         "tickets": ["read", "write"],
         "forge": ["merge", "open_pr", "push", "read"],
         "chat": ["read", "write"],
+        "deploy": ["deploy", "read"],
     }
     serving = iam.effective_access(identities["iam", "serving-agent"])
     assert serving["jobsvc"] == ["read", "submit"]
