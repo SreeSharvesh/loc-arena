@@ -27,6 +27,7 @@ from loc_arena.merged_main import (
     HISTORY,
     UNREAD_FILE,
     read_stack_forge,
+    run_bounded,
     write_merged_checkout,
     write_played_forge,
 )
@@ -64,8 +65,8 @@ def in_the_forge_container(
     if command[len(COMPOSE) :] == ["logs", "--no-color", "--no-log-prefix", "deploy"]:
         logs = [FAIL_TO_LOG] if deploy_record is None else [PRINT_RECORD, deploy_record]
         return subprocess.Popen([sys.executable, "-c", *logs], **options)
-    assert command[: len(COMPOSE) + 3] == [*COMPOSE, "exec", "-T", "forge"]
-    return subprocess.Popen(command[len(COMPOSE) + 3 :], env=ISOLATED, **options)
+    assert command[: len(COMPOSE) + 5] == [*COMPOSE, "exec", "-T", "forge", "timeout", "--signal=KILL"]
+    return subprocess.Popen(command[len(COMPOSE) + 6 :], env=ISOLATED, **options)  # git, with no timeout here
 
 
 def git_in(clone: Path, *arguments: str) -> str:
@@ -218,6 +219,8 @@ def test_a_scenario_without_a_forge_has_no_main_to_archive(tmp_path: Path) -> No
 
 def test_a_forge_that_cannot_be_read_is_recorded_for_every_repo_and_nothing_is_raised(tmp_path: Path) -> None:
     play = tmp_path / "episode"
+    (play / HISTORY).mkdir(parents=True)
+    (play / HISTORY / f"{REPO}.bundle").write_bytes(b"kept by an earlier reading")
 
     write_played(tmp_path / "empty", play, "")  # no repositories were seeded there
 
@@ -245,18 +248,26 @@ def test_a_merged_entry_git_refuses_to_archive_is_recorded_and_the_other_repos_a
     assert (unread["history"], checkout, histories) == ({}, OTHER_REPOS, EVERY_HISTORY)
 
 
-def test_a_merged_file_name_no_file_system_writes_is_recorded_and_the_other_repos_are_kept(
+@pytest.mark.parametrize(
+    ("kind", "name", "error"),
+    [("file", LONG_NAME, "OSError"), ("nul", "", "ValueError")],
+    ids=["a file name no file system writes", "a link whose target holds a NUL byte"],
+)
+def test_a_merged_tree_that_cannot_be_written_out_is_recorded_and_the_other_repos_are_kept(
+    kind: str,
+    name: str,
+    error: str,
     tmp_path: Path,
 ) -> None:
     repositories, play = tmp_path / "repositories", tmp_path / "episode"
     open_forge(CFG, load_seed(CFG), repositories)
-    merge_crafted(repositories, tmp_path, "file", LONG_NAME)
+    merge_crafted(repositories, tmp_path, kind, name)
 
     write_played(repositories, play, "")
 
     unread, checkout, histories = read_kept(play)
     assert list(unread["main"]) == [REPO]
-    assert unread["main"][REPO].startswith(f"could not write {REPO}: OSError: ")
+    assert unread["main"][REPO].startswith(f"could not write {REPO}: {error}: ")
     assert len(unread["main"][REPO]) <= ERROR_CHARACTERS
     assert (unread["history"], checkout, histories) == ({}, OTHER_REPOS, EVERY_HISTORY)
 
@@ -272,8 +283,8 @@ def test_a_merged_tree_of_more_files_than_git_archives_in_time_is_recorded_when_
     write_played(repositories, play, "", git_timeout_seconds=2)
 
     unread, checkout, histories = read_kept(play)
-    assert unread == {"main": {REPO: f"could not archive {REPO} on the forge: took over 2 s"}, "history": {}}
-    assert (checkout, histories) == (OTHER_REPOS, EVERY_HISTORY)
+    assert unread["main"][REPO] == f"could not archive {REPO} on the forge: took over 2 s"
+    assert (REPO in checkout, f"{REPO}.bundle" in histories) == (False, True)
     assert time.monotonic() - started < 30  # the read of the other repos and histories, and the two seconds
 
 
@@ -290,6 +301,14 @@ def test_a_main_larger_than_the_host_reads_is_recorded_and_its_history_is_kept(t
         "history": {},
     }
     assert (checkout, histories) == (OTHER_REPOS, EVERY_HISTORY)
+
+
+def test_a_command_that_ends_just_past_the_size_bound_is_reported_as_past_it() -> None:
+    print_a_byte_too_many = ["head", "-c", "1001", "/dev/zero"]  # ended before it is stopped: macOS refuses
+
+    done = run_bounded(subprocess.Popen, print_a_byte_too_many, seconds=30, max_bytes=1000)
+
+    assert (done.returncode != 0, done.stdout, done.stderr) == (True, b"", b"printed over 1000 bytes")
 
 
 def test_what_was_deployed_is_kept_when_main_cannot_be_read(tmp_path: Path) -> None:

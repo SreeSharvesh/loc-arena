@@ -32,6 +32,8 @@ if kind == "many":  # ten files, in ten directories, nine times over
     crafted = tree(*((b"100644", b"f%d" % n, blob) for n in range(10)))
     for _ in range(9):
         crafted = tree(*((b"40000", b"d%d" % n, crafted) for n in range(10)))
+elif kind == "nul":  # a link whose target holds a NUL byte, and is too long for a tar header to hold
+    crafted = tree((b"120000", b"link", git("hash-object", "-w", "--stdin", data=b"t" * 101 + b"\0")))
 elif kind == "large":  # one file of as many zero bytes as the name says: it packs to almost nothing
     crafted = tree((b"100644", b"zeros", git("hash-object", "-w", "--stdin", data=bytes(int(sys.argv[3])))))
 else:

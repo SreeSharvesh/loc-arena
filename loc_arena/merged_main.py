@@ -159,7 +159,8 @@ def run_bounded(
     ):
 
         def end() -> None:  # with what it started: docker runs compose as a child, which holds the pipe open
-            with contextlib.suppress(ProcessLookupError):
+            # One that has ended already has no group to signal, or on macOS one that refuses the signal.
+            with contextlib.suppress(ProcessLookupError, PermissionError):
                 os.killpg(process.pid, signal.SIGKILL)
 
         timer = threading.Timer(seconds, lambda: (late.set(), end()))
@@ -229,7 +230,7 @@ def read_stack_forge(config: RunConfig, compose: list[str], start: StartCompose)
 
     With a deploy service in the stack, what the play deployed too: the last deployment a service serves on
     in that service's log. A failure to read it is kept as ``deployed_unread``, never raised. Each command
-    ``start`` runs is bounded by the forge's settings (``run_bounded``).
+    ``start`` runs, the read of that log too, is bounded by the forge's settings (``run_bounded``).
     """
     if not any(service.name == FORGE for service in config.live_services):
         return None
@@ -240,7 +241,9 @@ def read_stack_forge(config: RunConfig, compose: list[str], start: StartCompose)
         return run_bounded(start, [*compose, *command], *bounds)
 
     def run_git(command: list[str]) -> subprocess.CompletedProcess[bytes]:
-        return run(["exec", "-T", FORGE, *command])
+        # Stopped in the container too: there a command outlives the compose client that started it.
+        stopped = ["timeout", "--signal=KILL", str(forge.git_timeout_seconds)]
+        return run(["exec", "-T", FORGE, *stopped, *command])
 
     repositories = forge.repositories
     played = read_forge(repositories, run_git)
@@ -264,7 +267,8 @@ def write_played_forge(play_directory: Path, played: PlayedForge) -> None:
 
     What the play deployed is written beside them, in place of any the directory held: ``deployed.json``
     when it deployed or could not be read, and its trees in ``deployed_checkout`` when a repo is behind main.
-    ``unread.json`` is written when a main or a history could not be kept, and removed when each was.
+    ``unread.json`` is written when a main or a history could not be kept. Each takes the place of any the
+    directory held.
     """
     unwritten = write_trees(play_directory / CHECKOUT, played.mains)
     unread = played.unread.model_copy(update={"main": played.unread.main | unwritten})
@@ -272,7 +276,8 @@ def write_played_forge(play_directory: Path, played: PlayedForge) -> None:
     if unread.main or unread.history:
         (play_directory / UNREAD_FILE).write_text(unread.model_dump_json())
     history = play_directory / HISTORY
-    history.mkdir(parents=True, exist_ok=True)
+    shutil.rmtree(history, ignore_errors=True)
+    history.mkdir(parents=True)
     for repo, bundle in played.histories.items():
         (history / f"{repo}{BUNDLE_SUFFIX}").write_bytes(bundle)
     said = play_directory / DEPLOYED_FILE
@@ -318,7 +323,7 @@ def write_trees(checkout: Path, archives: Mapping[str, bytes]) -> dict[str, str]
     for repo, archive in archives.items():
         try:
             write_tree(checkout / repo, archive)
-        except (OSError, tarfile.TarError) as error:
+        except Exception as error:  # noqa: BLE001 - whatever a tree does to tarfile, the others are written
             shutil.rmtree(checkout / repo, ignore_errors=True)
             unwritten[repo] = f"could not write {repo}: {type(error).__name__}: {error}"[:ERROR_CHARACTERS]
     return unwritten

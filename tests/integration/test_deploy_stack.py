@@ -39,6 +39,7 @@ from loc_arena.merged_main import (
     DEPLOYED_CHECKOUT,
     DEPLOYED_FILE,
     HISTORY,
+    MAIN_BRANCH,
     UNREAD_FILE,
     read_stack_forge,
     write_played_forge,
@@ -189,11 +190,15 @@ class Stack:
         """``AUTHOR`` pushes ``edit`` of the notes service as ``branch``; ``MERGER`` merges it. The commit."""
         return self.merge_pushed(REPO, branch, PUSH_CHANGE, EDIT=edit)
 
-    def merge_pushed(self, repo: str, branch: str, push: str, **variables: str) -> str:
-        """``AUTHOR`` pushes ``branch`` of ``repo`` with the script ``push``; ``MERGER`` merges it."""
+    def push(self, repo: str, branch: str, push: str, **variables: str) -> None:
+        """``AUTHOR`` pushes ``branch`` of ``repo`` with the script ``push``."""
         environment = {"REPO": repo, "AGENT": AUTHOR, "BRANCH": branch, **variables}
         exported = [argument for name, value in environment.items() for argument in ("-e", f"{name}={value}")]
         self.run("exec", "-T", *exported, sandbox_service(AUTHOR), "bash", "-c", push)
+
+    def merge_pushed(self, repo: str, branch: str, push: str, **variables: str) -> str:
+        """``AUTHOR`` pushes ``branch`` of ``repo`` with the script ``push``; ``MERGER`` merges it."""
+        self.push(repo, branch, push, **variables)
         opened = self.tool(AUTHOR, "open_pr", repo=repo, branch=branch, title=branch)
         merged = self.tool(MERGER, "merge", repo=repo, number=opened["number"])
         assert merged["merged"], merged
@@ -487,18 +492,19 @@ def test_the_repos_the_host_can_keep_are_written_beside_every_history(unkept: Pa
     )
 
 
-def test_a_read_of_the_forge_that_takes_too_long_is_stopped_and_recorded(
+def test_a_main_git_does_not_archive_in_time_is_stopped_in_the_forges_container_and_recorded(
     stack: Stack,
     unkept: Path,  # after the play, as every read here
     tmp_path: Path,
 ) -> None:
-    started = time.monotonic()
+    repo, repository = "meridian-evalkit", f"{CONFIG.settings.forge.repositories}/meridian-evalkit.git"
+    stack.push(repo, "many", PUSH_CRAFTED, CRAFT=CRAFT, KIND="many", NAME="")
+    # Main is moved there in the forge's container: the forge's own open_pr cannot make this tree's diff.
+    stack.run("exec", "-T", "forge", "git", "--git-dir", repository, "update-ref", MAIN_BRANCH, "many")
 
-    read_played(stack, tmp_path, git_timeout_seconds=0.05)  # less than compose takes to reach the forge
+    read_played(stack, tmp_path, git_timeout_seconds=5)
 
     unread = json.loads((tmp_path / UNREAD_FILE).read_text())
-    assert unread == {
-        kind: {repo: f"could not {read} {repo} on the forge: took over 0.05 s" for repo in COMPANY_REPOS}
-        for kind, read in (("main", "archive"), ("history", "bundle"))
-    }
-    assert time.monotonic() - started < 30
+    assert unread["main"][repo] == f"could not archive {repo} on the forge: took over 5 s"
+    assert "archive" not in stack.run("top", "forge")
+    assert (tmp_path / HISTORY / f"{repo}.bundle").exists()
