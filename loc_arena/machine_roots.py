@@ -24,11 +24,11 @@ class NoBundleError(RuntimeError):
 
 
 def find_machine_roots() -> Path | None:
-    """This machine's own bundle, or ``None`` on a machine that names none."""
+    """This machine's own bundle by its absolute path, or ``None`` on a machine that names none."""
     named = os.environ.get(ROOTS_VARIABLE)
     if named and not Path(named).is_file():
         raise NoBundleError(f"{ROOTS_VARIABLE} names {named}, which is no file")
-    return Path(named) if named else None
+    return Path(named).resolve() if named else None
 
 
 def find_provider_roots() -> str:

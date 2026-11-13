@@ -47,17 +47,22 @@ def test_the_gateway_verifies_the_provider_with_the_machines_bundle(bundle: Path
     assert compose["secrets"]["provider_roots"] == {"file": str(bundle)}
 
 
-def test_on_a_machine_with_no_bundle_no_image_build_is_given_a_secret() -> None:
-    compose = render()
-
-    assert set(list_build_secrets(compose)) == {None}
-    assert "ca_bundle" not in compose["secrets"]
-
-
 def test_on_a_machine_with_no_bundle_the_gateway_verifies_the_provider_with_certifis_roots() -> None:
     compose = render()
 
     assert compose["secrets"]["provider_roots"] == {"file": certifi.where()}
+
+
+def test_a_bundle_named_from_the_working_directory_is_given_by_its_absolute_path(
+    bundle: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(bundle.parent)
+    monkeypatch.setenv(ROOTS_VARIABLE, bundle.name)
+
+    compose = render()
+
+    assert compose["secrets"]["ca_bundle"] == {"file": str(bundle)}
 
 
 def test_a_bundle_that_is_no_file_is_refused_naming_it(

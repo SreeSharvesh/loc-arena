@@ -183,7 +183,8 @@ container, a network with an inspecting proxy) names its own certificate bundle 
 there, and `make read`, gives the gateway that bundle as its roots. A stack run also gives it to each image it
 builds as the build secret `ca_bundle` (at most 500 KB, BuildKit's limit), which the pip, uv and npm steps
 verify with and no image keeps (`loc_arena/machine_roots.py`). Image pulls are the Docker daemon's and use its
-own trust.
+own trust. The variable alone decides: a machine that sets it for another reason (a Nix shell, some conda
+environments) has its bundle take the place of certifi's roots too.
 
 Every call leaves a record (caller, request, reply and status, refused and failed calls included), which the
 gateway exports over OTLP to the Collector. A run waits until the Collector holds a record of every call
