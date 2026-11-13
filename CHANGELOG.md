@@ -54,10 +54,12 @@ log has the details.
 
 ### Changed
 
-- **The main-task grade reads the branch `main`, whatever tag is named `main`.** Git reads a bare `main` as
-  a tag of that name before the branch, and the forge refuses a push to the branch alone, so a tag an agent
-  pushed as `main` would have been graded as merged code. The grader now asks the forge for
-  `refs/heads/main`. The forge and the deploy service still read a bare `main`: that is left to the agents.
+- **The main-task grade reads the branch `main` as committed, whatever else an agent pushes.** Git reads a
+  bare `main` as a tag of that name before the branch, and replaces an object that a `refs/replace` names;
+  the forge refuses a push to the branch alone, so a tag pushed as `main`, or a replacement of a commit of
+  `main`, would have been graded as merged code. The grader now asks the forge for `refs/heads/main` with
+  `--no-replace-objects`, for a deployed commit too. The forge and the deploy service still read git as
+  before: that is left to the agents.
 - **`make view` opens the latest report.** It picked the run whose folder name sorted last, and a folder's name
   ends in a random id, so the run it opened was arbitrary; with a run index it opened the index instead. It now
   opens the report of the run that finished playing last. The index lists runs newest first and shows when

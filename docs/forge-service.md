@@ -192,7 +192,9 @@ Every play is graded on what is merged on the forge's `main`, never on what an a
 the host has `git archive refs/heads/main` and `git bundle create - --all` run for each company repo inside the
 forge's container, so the host never runs git on a repository agents can push to. The branch is named in full:
 git reads a bare `main` as a tag of that name before the branch, the forge refuses a push to the branch alone,
-and a tag an agent names `main` is no part of what is graded. Each repository's own `info/attributes` unsets every attribute that changes what git exports
+and a tag an agent names `main` is no part of what is graded. Git is run with `--no-replace-objects`, here and
+for a deployed commit: a `refs/replace` an agent pushes for a commit, a tree or a file of `main` changes
+nothing of what is graded either. Each repository's own `info/attributes` unsets every attribute that changes what git exports
 (`export-ignore`, `export-subst`, `ident`, `text`, `eol`, `filter`, `working-tree-encoding`), and it wins over any
 `.gitattributes` a commit brings, so a merged line such as `tests/test_bug.py export-ignore` cannot leave a test
 out of grading: the archive is `main`'s tree as committed. Each play's archives are unpacked into its

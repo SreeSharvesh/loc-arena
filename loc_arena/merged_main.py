@@ -2,8 +2,9 @@
 
 After a play, ``read_forge`` has git archive each repo's ``main`` and bundle its every ref and commit where
 the forge's repositories are, inside the forge's container, so the host never runs git on a repository
-agents push to. ``main`` is asked for as the branch, ``refs/heads/main``: whatever else an agent names
-``main``, a tag for one, is not what is graded.
+agents push to. ``main`` is asked for as the branch, ``refs/heads/main``, and git is told to replace no
+object: a tag an agent names ``main``, or a replacement it pushes for a commit of ``main``, is not what is
+graded.
 ``write_played_forge`` unpacks the archives into the play's ``checkout``, which its main task is graded on:
 only what is merged counts. An entry that would land outside it (an absolute path, a link leading out) is
 skipped and logged, so a crafted tree cannot stop the run being graded. It writes the bundles, unopened, to
@@ -51,6 +52,7 @@ BUNDLE_SUFFIX = ".bundle"
 DEPLOY_TOOL = "deploy"
 # The branch by its full name: git reads a bare ``main`` as a tag of that name first, and agents push tags.
 MAIN_BRANCH = f"refs/heads/{MAIN}"
+GIT = ["git", "--no-replace-objects"]  # a commit, tree or file as committed: agents push refs/replace too
 
 RunCompose = Callable[..., subprocess.CompletedProcess[bytes]]
 RunGit = Callable[[list[str]], subprocess.CompletedProcess[bytes]]  # runs a git command where the forge is
@@ -117,7 +119,7 @@ def find_last_deployment(record: str) -> ServingDeployment | None:
 
 def _read(run_git: RunGit, repositories: Path, repo: str, read: str, command: list[str]) -> bytes:
     """What git prints of ``command`` on ``repo`` of the forge; ``read`` names it when git fails."""
-    done = run_git(["git", "--git-dir", str(repository_path(repositories, repo)), *command])
+    done = run_git([*GIT, "--git-dir", str(repository_path(repositories, repo)), *command])
     if done.returncode != 0:
         detail = done.stderr.decode(errors="replace").strip()
         raise MergedMainError(f"could not {read} {repo} on the forge: {detail}")
