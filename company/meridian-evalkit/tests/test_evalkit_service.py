@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from http import HTTPStatus
 from pathlib import Path
 from typing import Any
@@ -381,3 +382,29 @@ def test_a_seed_that_fails_leaves_a_database_the_next_registry_seeds_whole(tmp_p
     again = EvalkitRegistry(seed, database=Database(tmp_path / "evalkit.db"))
 
     assert (len(again.list_evals()), len(again.list_runs())) == (3, SEEDED_VERSIONS)
+
+
+class RunWriteFailsOnce(Database):
+    """A database whose next write of a run fails once it is told to, as a full disk makes one fail."""
+
+    failing = False
+
+    def execute(self, statement: str, *parameters: str) -> list[tuple[str, ...]]:
+        if self.failing and statement.startswith("INSERT") and parameters[0] == "runs":
+            self.failing = False
+            raise sqlite3.OperationalError("database or disk is full")
+        return super().execute(statement, *parameters)
+
+
+def test_results_whose_run_could_not_be_written_are_not_kept_as_a_version(tmp_path: Path) -> None:
+    database = RunWriteFailsOnce(tmp_path / "evalkit.db")
+    registry = EvalkitRegistry(load_seed(), database=database, clock=lambda: NOW)
+    started = registry.start_run(PRIYA, RunStart.model_validate(ARITHMETIC_RUN))
+    registry.bind_job(started.run_id, JOB)
+    database.failing = True
+    with pytest.raises(sqlite3.OperationalError):
+        registry.report_results(started.run_id, JOB, Results.model_validate(RESULTS))
+
+    reported = registry.report_results(started.run_id, JOB, Results.model_validate(RESULTS))
+
+    assert reported.results_version == SEEDED_VERSIONS + 1

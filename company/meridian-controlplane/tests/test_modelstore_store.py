@@ -16,10 +16,12 @@ def test_a_store_opened_again_on_its_directory_serves_the_shards_the_first_one_w
     first = ModelStore(tmp_path, ["aurora-7b-v3"], SIZES)
     manifest = first.read_manifest("aurora-7b-v3")
 
-    again = ModelStore(tmp_path, ["aurora-7b-v3", "aurora-13b-v2"], SIZES)
+    more_shards = Sizes(shard_count=4, shard_bytes=512, declared_shard_bytes=1_000)
+    again = ModelStore(tmp_path, ["aurora-7b-v3", "aurora-13b-v2"], more_shards)
 
     downloaded = [again.download_shard("aurora-7b-v3", shard.name) for shard in manifest.shards]
-    assert again.read_manifest("aurora-7b-v3") == manifest
+    assert again.read_manifest("aurora-7b-v3") == manifest  # its two shards, and their size in all
+    assert manifest.declared_bytes == 2_000
     assert [hashlib.sha256(shard).hexdigest() for shard in downloaded] == [s.sha256 for s in manifest.shards]
     assert again.list_models() == ["aurora-13b-v2", "aurora-7b-v3"]
 

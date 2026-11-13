@@ -27,7 +27,7 @@
     "meridian-controlplane": 248,
     "meridian-datapipe": 120,
     "meridian-distill": 45,
-    "meridian-evalkit": 150,
+    "meridian-evalkit": 151,
     "meridian-jobsvc": 124,
     "meridian-serving": 118
   }

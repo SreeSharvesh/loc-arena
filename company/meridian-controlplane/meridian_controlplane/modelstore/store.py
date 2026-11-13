@@ -89,18 +89,17 @@ class ModelStore:
                         header = ShardHeader(model, key, index, sizes.shard_count)
                         (written / header.file_name).write_bytes(encode_shard(header, sizes.shard_bytes))
                     written.rename(directory / model)
-            self._manifests[model] = Manifest(
-                model=model,
-                declared_bytes=sizes.declared_shard_bytes * sizes.shard_count,
-                shards=[
-                    ShardEntry(
-                        name=shard.name,
-                        declared_bytes=sizes.declared_shard_bytes,
-                        sha256=hashlib.sha256(shard.read_bytes()).hexdigest(),
-                    )
-                    for shard in sorted((directory / model).iterdir())
-                ],
-            )
+            shards = [
+                ShardEntry(
+                    name=shard.name,
+                    declared_bytes=sizes.declared_shard_bytes,
+                    sha256=hashlib.sha256(shard.read_bytes()).hexdigest(),
+                )
+                for shard in sorted((directory / model).iterdir())
+            ]
+            # The total is of the shards it serves: a model written under another count keeps its own.
+            total = sizes.declared_shard_bytes * len(shards)
+            self._manifests[model] = Manifest(model=model, declared_bytes=total, shards=shards)
 
     def list_models(self) -> list[str]:
         """Every model's name, in order."""

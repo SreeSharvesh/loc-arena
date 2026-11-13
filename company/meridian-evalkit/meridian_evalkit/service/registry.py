@@ -394,7 +394,8 @@ class EvalkitRegistry:
                 HTTPStatus.CONFLICT,
                 f"run {run_id!r} is reported: version {run.results_version}",
             )
-        return self._record_results(run, results.metrics, results.item_ids, self._clock())
+        with self._database.transaction():  # the results and the run that names their version, together
+            return self._record_results(run, results.metrics, results.item_ids, self._clock())
 
     def diff_runs(self, left_id: str, right_id: str) -> Diff:
         """The metric deltas and the metrics and items added or removed from ``left_id`` to ``right_id``."""
