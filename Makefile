@@ -23,7 +23,7 @@ help:
 	@echo "make read RUN_DIR=<run directory> [BRIEF=agents|monitors]  # an agent reads one run and reports"
 	@echo "make fixture-run                          # play the smoke run and store it as the tests' run fixture"
 	@echo "make gates                                # ruff + ruff format + ty + pytest"
-	@echo "make images                               # build this checkout's four images, which the Docker tests need"
+	@echo "make images                               # build this checkout's sandbox, worker and engine images, which the Docker tests need"
 	@echo "  (a run needs Docker Engine 28 or later)"
 
 setup:
@@ -51,12 +51,12 @@ fixture-run:
 public-repo:
 	@uv run python scripts/make_public.py
 
-# The Dockerfile's four images under this checkout's own names (the stack settings' defaults): a Docker test
-# skips without the one it checks for, and some start the nodes' without building it. A run builds its own.
-STACK_IMAGES = $(shell uv run python -c "from loc_arena.settings import StackSettings as S; s = S(); print(s.sandbox_image, s.runner_image, s.worker_image, s.image)")
+# The sandbox, worker and engine images under this checkout's own names (the stack settings' defaults): a Docker
+# test skips without the one it checks for, and some start the nodes' without building it. A run builds its own.
+STACK_IMAGES = $(shell uv run python -c "from loc_arena.settings import StackSettings as S; s = S(); print(s.sandbox_image, s.worker_image, s.image)")
 
 images:
-	@set -- $(STACK_IMAGES); for target in sandbox runner worker engine; do \
+	@set -- $(STACK_IMAGES); for target in sandbox worker engine; do \
 		docker build $${SSL_CERT_FILE:+--secret "id=ca_bundle,src=$$SSL_CERT_FILE"} --target $$target -t $$1 . || exit 1; shift; done
 
 gates:
