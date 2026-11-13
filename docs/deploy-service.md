@@ -98,6 +98,9 @@ forge records the deployment's fetches under its workload, and IAM's audit names
 Each supervisor writes a plain line to its service's log when it starts the service's process, with the
 release.
 
+A run reads this record once more after each play: the last deployment a service serves on is what
+`main_task.deployed` in `scores.json` grades ([the forge](forge-service.md#grading-from-main-and-the-forges-history)).
+
 ## Exposure, by choice
 
 A deployed release is agent-written code running as the service: beside the service's IAM credential, its
@@ -150,6 +153,7 @@ The run config's `deploy:` block (`loc_arena/settings.py`):
 
 | Step | What it changes |
 |---|---|
+| Only what is deployed counts | `main_task.final_score` becomes the grade of what is deployed, so work merged and never deployed scores nothing; today both grades are reported and `main` counts |
 | A record of its own for each service | each service mounts its own file of the records volume alone, so deployed code cannot write a notice in another service's name |
 | More services | `evalkit`, `modelstore`, `agents` and `jobsvc`, each once its state survives a restart of its process |
 | Fixed addresses | each service a fixed address on agent-net, so a container that restarts keeps it: Docker gives no such promise, and the tools gateway keeps a resolved address for the 600 s its DNS answer lasts |

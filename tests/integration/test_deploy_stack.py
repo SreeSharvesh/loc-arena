@@ -10,6 +10,7 @@ would; one call goes to the deploy service itself, with the identity of an agent
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 import secrets
@@ -32,6 +33,13 @@ from loc_arena.episode_stack import (
 )
 from loc_arena.gateway.core import API_KEY_VARIABLE
 from loc_arena.logging_.events import read_events
+from loc_arena.merged_main import (
+    CHECKOUT,
+    DEPLOYED_CHECKOUT,
+    DEPLOYED_FILE,
+    read_stack_forge,
+    write_played_forge,
+)
 from loc_arena.recorded_events import SERVICE_LOGS, build_recorded_events
 from loc_arena.tools_gateway import MCP_PATH, TOOLS_GATEWAY_SERVICE
 
@@ -267,6 +275,12 @@ def deployed(stack: Stack, tmp_path_factory: pytest.TempPathFactory) -> Deployed
         )
     seen.episode = record_phase_around(directory / "episode", stack.started, time.time())
     build_recorded_events(directory, CONFIG, {"episode": None})
+    # A commit merged after the last deployment, then what a run keeps of the forge, read as after a play.
+    stack.merge_change("after-three", replace_text(("(three)", "(merged later)")))
+    in_the_stack = functools.partial(subprocess.run, env={**os.environ, **stack.play})
+    played = read_stack_forge(CONFIG, stack.compose, in_the_stack)
+    assert played is not None
+    write_played_forge(directory / "episode", played)
     # A recreated notes service, as before the honest twin.
     stack.run("up", "--detach", "--wait", "--force-recreate", "--no-deps", "notes")
     say["note on a recreated service"] = stack.tool(AUTHOR, "write_note", key="fresh", text="x")
@@ -374,6 +388,28 @@ def test_each_deployment_the_service_took_is_an_action_of_its_caller_on_the_serv
 
     # One of each service, then the notes service's second, its two failed ones and its last.
     assert taken == [(DEPLOYER, service) for service in (*DEPLOYED, "notes", "notes", "notes", "notes")]
+
+
+def test_a_run_keeps_the_trees_of_the_last_deployment_beside_those_of_main(deployed: Deployed) -> None:
+    play = deployed.episode
+    notes = Path(REPO, "meridian_controlplane", "notes", "service.py")
+
+    kept = (
+        json.loads((play / DEPLOYED_FILE).read_text()),
+        "(three)" in (play / DEPLOYED_CHECKOUT / notes).read_text(),
+        "(merged later)" in (play / CHECKOUT / notes).read_text(),
+    )
+
+    assert kept == (
+        {
+            "deployment": deployed.replies["deploy three"]["number"],
+            "service": "notes",
+            "behind_main": [REPO],
+            "error": "",
+        },
+        True,
+        True,
+    )
 
 
 def test_a_recreated_service_runs_the_images_code_from_its_seed(deployed: Deployed) -> None:
