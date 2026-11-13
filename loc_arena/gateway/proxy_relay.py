@@ -85,6 +85,10 @@ async def serve_relay(listen: str, proxy: str, allowed: frozenset[str], timeout:
             writer.write(answer)
             if answer.partition(b" ")[2][:1] == b"2":  # the proxy opened the tunnel: only then do bytes pass
                 await asyncio.gather(_pass(reader, proxy_writer), _pass(proxy_reader, writer))
+        except asyncio.CancelledError:  # the relay stops: bytes a peer has not read go with the tunnel
+            for held in filter(None, (writer, proxy_writer)):
+                held.transport.abort()
+            raise
         finally:
             writer.close()
             if proxy_writer:
@@ -110,7 +114,11 @@ def relay_while_running(gateway: GatewaySettings) -> Iterator[str | None]:
     relay that cannot listen stops the command. As the command ends, so does every tunnel still open.
     """
     proxy, address = find_machine_proxy(), gateway.outbound_proxy
-    if not address or proxy in (None, address) or not _is_of_this_machine(address):
+    if not address or proxy in (None, address):
+        yield None
+        return
+    if not _is_of_this_machine(address):
+        print(f"no relay: gateway.outbound_proxy {address} is no address of this machine", file=sys.stderr)
         yield None
         return
     loop = asyncio.new_event_loop()

@@ -179,20 +179,27 @@ def test_the_relay_of_a_command_is_gone_when_the_command_ends(
     assert answer is None
 
 
+@pytest.mark.parametrize("sent_by_the_proxy", [b"", OPENED + bytes(8_000_000)], ids=["no answer", "a flood"])
 def test_a_command_ends_at_once_though_the_relay_still_holds_a_tunnel(
+    sent_by_the_proxy: bytes,
     address: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     host, _, port = address.rpartition(":")
-    with socket.create_server(("127.0.0.1", 0)) as silent_proxy:  # it takes a tunnel and never answers
-        monkeypatch.setenv("HTTPS_PROXY", f"http://127.0.0.1:{silent_proxy.getsockname()[1]}")
+    with socket.create_server(("127.0.0.1", 0)) as proxy:
+        proxy.settimeout(5)
+        monkeypatch.setenv("HTTPS_PROXY", f"http://127.0.0.1:{proxy.getsockname()[1]}")
         started = time.monotonic()
 
         with relay_while_running(GatewaySettings(outbound_proxy=address)):
-            with socket.create_connection((host, int(port))) as caller:
-                caller.sendall(b"CONNECT openrouter.ai:443 HTTP/1.1\r\n\r\n")
-                held = silent_proxy.accept()[0]  # the relay has dialed: it now waits for an answer
+            caller = socket.create_connection((host, int(port)))  # it reads nothing the proxy sends
+            caller.sendall(b"CONNECT openrouter.ai:443 HTTP/1.1\r\n\r\n")
+            held = proxy.accept()[0]
+            held.settimeout(1)
+            with contextlib.suppress(TimeoutError):  # more than the caller's and the relay's buffers take
+                held.sendall(sent_by_the_proxy)
         held.close()
+        caller.close()
 
     assert time.monotonic() - started < 5  # far under the 120 seconds the gateway waits
 
@@ -217,6 +224,21 @@ def test_no_relay_runs_where_the_gateway_reaches_its_outbound_proxy_itself(
         pass
 
     assert relayed is None
+
+
+def test_a_command_says_that_its_outbound_proxy_is_no_address_of_this_machine(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:9")
+
+    with relay_while_running(proxied("192.0.2.1:3128")):
+        pass
+
+    assert (
+        capsys.readouterr().err
+        == "no relay: gateway.outbound_proxy 192.0.2.1:3128 is no address of this machine\n"
+    )
 
 
 def test_a_relay_that_cannot_listen_stops_the_command_naming_the_setting(

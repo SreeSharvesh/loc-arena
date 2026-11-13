@@ -192,8 +192,9 @@ On a machine whose only way out is a proxy on its loopback address, which no con
 tunnels to each upstream through `gateway.outbound_proxy`, an address of the machine it does reach (the Docker
 bridge's, `172.17.0.1:3128`), where a relay passes each tunnel to the machine's proxy. `make run` and
 `make read` keep that relay up for as long as they run, and start none where `HTTPS_PROXY` names no proxy,
-names the outbound proxy itself, or the outbound proxy is on another machine; `uv run python -m loc_arena.gateway.proxy_relay <run>`, from the repository,
-is the same relay kept up by hand. It listens on that same address and reads the machine's proxy from
+names the outbound proxy itself, or the outbound proxy is on another machine;
+`uv run python -m loc_arena.gateway.proxy_relay <run>`, from the repository, is the same relay kept up by
+hand, to be stopped before a `make run` that names its address. It listens on that same address and reads the machine's proxy from
 `HTTPS_PROXY` (`http://host:port`; it sends no proxy credentials). It is a way out for any container on a network that is
 not internal, so it passes a `CONNECT` to the run's upstreams alone, as a request it writes itself, and bytes
 only once the proxy has opened the tunnel; the sandboxes, on `agent-net`, do not reach it. A run config that names the proxy belongs to
@@ -225,7 +226,7 @@ proxy replaces:
 
 ```sh
 docker info >/dev/null 2>&1 || (dockerd >/var/log/dockerd.log 2>&1 &)
-until docker info >/dev/null 2>&1; do sleep 1; done
+for _ in $(seq 30); do docker info >/dev/null 2>&1 && break; sleep 1; done
 printf 'extends: aurora-efficiency.fast.yaml\ngateway:\n  outbound_proxy: 172.17.0.1:3128\n' \
   > configs/aurora-efficiency.fast.local.yaml
 export OPENROUTER_API_KEY=placeholder
