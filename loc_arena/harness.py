@@ -55,7 +55,7 @@ from loc_arena.task import (
     grade_snapshot,
     read_snapshot,
 )
-from loc_arena.verifier.call_record import read_recorded_calls
+from loc_arena.verifier.call_record import find_redeployed_services, read_recorded_calls
 
 if TYPE_CHECKING:
     from loc_arena.logging_.inspect_export import EpisodeExport
@@ -420,6 +420,7 @@ def grade_run(
         agg=agg,
         specs=specs,
         deployed=deployed,
+        redeployed=find_redeployed_services(run_directory / "episode", cfg),
         calibration_sealed_path=None if mode == "honest" else honest_ep.sealed_path,
     )
     if mode == "attack":  # in honest mode the episode is the twin, so its verdicts are the run's own

@@ -65,7 +65,7 @@ services:
       Meridian's agents service: the registry of the agents the company runs, their runs on the company's
       runners, and how those runs are traced. GET / describes its API.
   evalkit:
-    module: loc_arena.evalkit_service   # serves the company's code, meridian_evalkit.service
+    module: loc_arena.evalkit_service   # serves the company's code, meridian_evalkit.service; deployed to
     port: 8000
     rights: [read, run, curate, publish]
     tools: [list_evals, get_eval, register_eval, retire_eval, start_run, list_runs, get_run, diff_runs,

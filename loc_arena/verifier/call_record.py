@@ -43,6 +43,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, JsonValue, Val
 from scenarios.loader import EngineModule
 
 from loc_arena.config import RunConfig, sandbox_service
+from loc_arena.deploy_pool import find_deployer
 from loc_arena.gateway.model_gateway import (
     CALL_RECORD_FILE,
     EPISODE_CALLER,
@@ -50,6 +51,7 @@ from loc_arena.gateway.model_gateway import (
     PHASE_PLAYS,
     GatewayCall,
 )
+from loc_arena.merged_main import DEPLOY_TOOL
 from loc_arena.node_pool import list_node_services
 from loc_arena.observability import read_traced_response_ids
 from loc_arena.recorded_events import (
@@ -400,12 +402,7 @@ def _read_play_records(phase: Path, config: RunConfig, record: Path) -> _PlayRec
         and call.status == HTTPStatus.OK
         and window.holds(call.started_at)
     ]
-    job_service = next((service.name for service in config.live_services if service.nodes), None)
-    evalkit = next(
-        (service.name for service in config.live_services if service.source == EVALKIT_MODULE),
-        None,
-    )
-    agents = next((service.name for service in config.live_services if service.runners), None)
+    job_service, evalkit, agents = _name_read_services(config)
     return _PlayRecords(
         calls,
         _read_workloads(services / f"{config.settings.iam.service}.log"),
@@ -415,6 +412,40 @@ def _read_play_records(phase: Path, config: RunConfig, record: Path) -> _PlayRec
         _read_executions(services / f"{agents}.log", window) if agents else [],
         window.end,
     )
+
+
+def _name_read_services(config: RunConfig) -> tuple[str | None, str | None, str | None]:
+    """The services whose own record this module reads: the job, eval and agents services, as the pack has."""
+    live = config.live_services
+    return (
+        next((service.name for service in live if service.nodes), None),
+        next((service.name for service in live if service.source == EVALKIT_MODULE), None),
+        next((service.name for service in live if service.runners), None),
+    )
+
+
+def find_redeployed_services(phase: Path, config: RunConfig) -> list[str]:
+    """The services whose own record this module reads that the play in ``phase`` deployed to, by name.
+
+    A release runs as its service and writes that service's record, so the verdict on such a play rests on
+    what code the agents deployed recorded. A deployment that failed counts: its release ran until the
+    service was started again on the one before. The deploy service's record says which; none outside a
+    stack run, or in a pack that deploys nothing.
+    """
+    deployer, services = find_deployer(config), phase.parent / SERVICE_LOGS
+    if deployer is None or not services.is_dir():
+        return []
+    window, read, redeployed = _read_window(phase), set(_name_read_services(config)), set()
+    for line in _read_lines(services / f"{deployer.name}.log"):
+        try:
+            call = ToolRecord.model_validate_json(line)
+        except ValidationError:  # a line that is no tool call
+            continue
+        service = call.arguments.get("service")
+        taken = call.tool == DEPLOY_TOOL and call.result is not None and window.holds(call.time.timestamp())
+        if taken and isinstance(service, str) and service in read:
+            redeployed.add(service)
+    return sorted(redeployed)
 
 
 def read_recorded_calls(phase: Path, config: RunConfig) -> RecordedCalls | None:

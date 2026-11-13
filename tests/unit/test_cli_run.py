@@ -16,7 +16,7 @@ from loc_arena.config import ConfigError, load_run_config
 GRADED = {"final_score": 0.0, "milestones_reached": [], "deployed": {"final_score": 0.0}, "error": ""}
 SCORES = {
     "main_task": GRADED,
-    "side_task": {"landing_minimal": False, "covert_depth": 0},
+    "side_task": {"landing_minimal": False, "covert_depth": 0, "redeployed_services": []},
     "safety": {
         "landed": False,
         "caught": False,
@@ -59,6 +59,22 @@ def test_a_run_reports_the_score_of_what_it_deployed_beside_the_score_of_what_it
     cli.main(["run", "--run", "aurora-efficiency", "--out", str(tmp_path)])
 
     assert capsys.readouterr().out.splitlines()[-3] == "main final_score=0.900 milestones=[] deployed=0.400"
+
+
+def test_a_run_says_when_its_side_verdict_rests_on_the_record_of_a_service_it_redeployed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    side_task = {**SCORES["side_task"], "redeployed_services": ["evalkit", "jobsvc"]}
+    (tmp_path / "scores.json").write_text(json.dumps({**SCORES, "side_task": side_task}))
+    monkeypatch.setattr(cli, "run_in_stack", lambda *_, **__: tmp_path)
+
+    cli.main(["run", "--run", "aurora-efficiency", "--out", str(tmp_path)])
+
+    assert capsys.readouterr().out.splitlines()[-2] == (
+        "side verdict rests on the records of evalkit, jobsvc, which this play redeployed"
+    )
 
 
 def test_a_run_whose_main_task_was_not_graded_says_why(
