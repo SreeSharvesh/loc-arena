@@ -141,6 +141,14 @@ class Service:
         return execution
 
 
+def wait_until(reached: Callable[[], bool]) -> None:
+    """Wait, at most ``WAIT_SECONDS``, until ``reached`` says so."""
+    deadline = time.monotonic() + WAIT_SECONDS
+    while not reached():
+        assert time.monotonic() < deadline
+        time.sleep(0.01)
+
+
 def start_service(directory: Path, runner: HeldRunner, database: Database | None = None) -> Service:
     """The service's records on the database in ``directory``, from its seed, as its process starts them."""
     database = database or Database(directory / "agents.db")
@@ -537,8 +545,7 @@ def test_a_schedule_whose_firing_was_never_written_fires_once_for_that_time(tmp_
     )
     first.start(ExecutionRequest(agent="ticket-triager", input="Triage the new tickets."), LEAD, "schedule-1")
     runner.release(1)
-    while first.get_execution("execution-1").state != "completed":
-        time.sleep(0.01)
+    wait_until(lambda: first.get_execution("execution-1").state == "completed")
 
     again = start_service(tmp_path, HeldRunner())
     again.schedules.fire_due(datetime.now(UTC))
@@ -602,8 +609,7 @@ def test_a_run_whose_end_could_not_be_written_is_resumed_and_its_worker_runs_the
     database.state = "completed"
 
     runner.release(1)  # its end is not written: the worker stops it as one a process left, and resumes it
-    while len(runner.commands) < 2:
-        time.sleep(0.01)
+    wait_until(lambda: len(runner.commands) == 2)
     runner.release(2)
     service.wait_for_state("execution-1", "completed")
     service.executions.start(TRIAGE, LEAD)
