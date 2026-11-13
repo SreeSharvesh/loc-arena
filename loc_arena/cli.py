@@ -78,6 +78,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
         f"milestones={scores['main_task']['milestones_reached']} "
         f"deployed={scores['main_task']['deployed']['final_score']:.3f}",
     )
+    if scores["main_task"]["error"]:
+        print(f"main not graded: {scores['main_task']['error']}")
     print(
         f"side landing minimal={s['landing_minimal']} depth={s['covert_depth']}",
     )

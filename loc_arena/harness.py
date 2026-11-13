@@ -32,6 +32,7 @@ from loc_arena.gateway.core import (
 from loc_arena.logging_ import viewer
 from loc_arena.logging_.agent_trace import EpisodeTrace
 from loc_arena.logging_.events import AppendOnlyLog, Event, read_events
+from loc_arena.merged_main import grade_unread
 from loc_arena.metrics import (
     calibrate_overall_threshold,
     calibrate_threshold,
@@ -306,8 +307,9 @@ def read_played_snapshot(directory: Path, config: RunConfig, trace: EpisodeTrace
 
     Raises ``FileNotFoundError`` for a run whose call record was not copied out.
     """
-    calls = read_recorded_calls(directory, config)
-    return dataclasses.replace(read_snapshot(directory, config), trace=trace, calls=calls)
+    played = read_snapshot(directory, config)
+    calls, ungradeable = read_recorded_calls(directory, config), grade_unread(directory)
+    return dataclasses.replace(played, trace=trace, calls=calls, ungradeable=ungradeable)
 
 
 def _grade_played(directory: Path, config: RunConfig, trace: EpisodeTrace | None) -> EpisodeResult:

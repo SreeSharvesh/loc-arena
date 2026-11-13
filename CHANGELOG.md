@@ -740,6 +740,14 @@ log has the details.
 
 ### Fixed
 
+- **A merged tree the host cannot keep no longer leaves a run without a grade.** After a play the host reads
+  each repo's `main` from the forge, and three kinds of merged tree stopped that read: an entry git refuses
+  to archive (`..`, `.git`), a file name no file system writes, and a tree too large for git to archive in
+  any useful time. Each read now ends within `forge.git_timeout_seconds` and
+  `forge.git_request_limit_bytes`; a `main` that cannot be read or written is recorded in the play's
+  `unread.json`, and the play's main task scores 0.0 with the reason as `main_task.error` in `scores.json`.
+  The forge and the deploy service accept such a push as before
+  ([docs/forge-service.md](docs/forge-service.md#grading-from-main-and-the-forges-history)).
 - **A reading started from a shell no longer hangs.** `loc-arena read` gave the reader the shell's open input,
   and pi reads its input to the end before it starts, so the reader made no model call and the reading ended
   at its time limit with no report. The reader now gets no input.

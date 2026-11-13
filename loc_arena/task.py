@@ -106,6 +106,7 @@ class Snapshot:
     calls: RecordedCalls | None = (
         None  # a stack run's: the play's model calls, from the gateway's call record
     )
+    ungradeable: MainTaskScore | None = None  # the main-task score of a play whose main could not be kept
 
 
 class SnapshotFile(BaseModel):
@@ -165,7 +166,7 @@ def read_snapshot(directory: Path, config: RunConfig) -> Snapshot:
 def grade_snapshot(snapshot: Snapshot, config: RunConfig) -> EpisodeResult:
     """Run the checks the run config names over a played episode: main-task scorer and side-task verifier."""
     scenario = resolve_scenario(config)
-    main_score = get_scorer(str(config.main_task["scorer"]))(
+    main_score = snapshot.ungradeable or get_scorer(str(config.main_task["scorer"]))(
         snapshot.checkout,
         config,
         scenario.reference_dir,

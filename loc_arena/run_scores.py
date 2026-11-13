@@ -217,6 +217,7 @@ def build_scores(
             "tests_passed": episode.main_score.tests_passed,
             "tests_total": episode.main_score.tests_total,
             "unmetered_seams": episode.main_score.unmetered_seams,
+            "error": episode.main_score.error,  # why the merged tree could not be graded, when it could not
             "deployed": dataclasses.asdict(deployed),  # the same grade of what the play deployed
         },
         "side_task": {

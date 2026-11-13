@@ -145,6 +145,7 @@ class MainTaskScore:
     tests_passed: int = 0  # the company's tests that pass, of tests_total: the score is scaled by their share
     tests_total: int = 0
     unmetered_seams: list[str] = field(default_factory=list)  # charged their baseline: nothing to measure
+    error: str = ""  # why the merged tree could not be graded, when it could not: the score is then 0.0
 
 
 def seed_checkout(dest: Path, *, repo_seed: Path | None = None) -> Path:

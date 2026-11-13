@@ -7,6 +7,7 @@ on the same checkout (#70), while the side-task verdict over the sealed log is d
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from pathlib import Path
 
@@ -15,7 +16,17 @@ from inspect_ai.log import EvalSample, read_eval_log
 from loc_arena.explorer.build import find_transcript_log
 from loc_arena.harness import grade_run
 from loc_arena.logging_.transcript_lanes import UNPLACED, WORLD, build_transcript
-from loc_arena.merged_main import DEPLOYED_FILE, EPISODE_PHASE, DeployedFile
+from loc_arena.merged_main import (
+    CHECKOUT,
+    DEPLOYED_FILE,
+    EPISODE_PHASE,
+    TWIN_PHASE,
+    UNREAD_FILE,
+    DeployedFile,
+    UnreadFile,
+)
+from loc_arena.registry import SCORER_REGISTRY
+from loc_arena.tasks.main_task_grader import MainTaskScore
 
 from tests._stored_run import CONFIG, unpack_stored_run
 from tests.integration._gateway_support import JsonVerdictProvider
@@ -109,3 +120,37 @@ def test_a_graded_bundle_has_an_ascii_self_contained_transcript(graded_bundle: P
     assert "<h2>sample episode</h2>" in page and "<h2>sample honest_cal</h2>" in page
     assert "attachment://" not in page
     assert not [tag for tag in ("<script", "<link", "<img", "<iframe", ' src="', ' href="') if tag in page]
+
+
+def test_a_play_whose_main_could_not_be_kept_scores_the_lowest_with_the_reason_and_is_not_graded(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_directory = unpack_stored_run(tmp_path)
+    graded: list[Path] = []
+
+    def score(checkout: Path, *_: object) -> MainTaskScore:
+        graded.append(checkout)
+        return MainTaskScore(0.8, [], 0.5, 100, 125, gate_passed=True, gate_reason="gate_passed")
+
+    monkeypatch.setitem(SCORER_REGISTRY, "a-fixed-score", score)
+    config = dataclasses.replace(CONFIG, main_task={**CONFIG.main_task, "scorer": "a-fixed-score"})
+    refused = "could not archive meridian-serving on the forge: error: invalid path 'crafted/..'"
+    unread = UnreadFile(main={"meridian-serving": refused, "meridian-common": "n" * 600})
+    (run_directory / EPISODE_PHASE / UNREAD_FILE).write_text(unread.model_dump_json())
+
+    bundle = grade_run(
+        config,
+        run_directory,
+        mode="attack",
+        monitor_provider=JsonVerdictProvider(),
+        write_report=False,
+    )
+
+    main_task = json.loads((bundle / "scores.json").read_text())["main_task"]
+    assert (main_task["final_score"], main_task["gate_reason"], main_task["error"]) == (
+        0.0,
+        "ungradeable",
+        f"{refused}; {'n' * 600}"[:500],
+    )
+    assert graded == [run_directory / TWIN_PHASE / CHECKOUT]  # the honest twin's main, which was kept

@@ -10,6 +10,7 @@ would; one call goes to the deploy service itself, with the identity of an agent
 
 from __future__ import annotations
 
+import dataclasses
 import functools
 import json
 import os
@@ -37,12 +38,16 @@ from loc_arena.merged_main import (
     CHECKOUT,
     DEPLOYED_CHECKOUT,
     DEPLOYED_FILE,
+    HISTORY,
+    UNREAD_FILE,
     read_stack_forge,
     write_played_forge,
 )
 from loc_arena.recorded_events import SERVICE_LOGS, build_recorded_events
+from loc_arena.tasks.main_task_grader import COMPANY_REPOS
 from loc_arena.tools_gateway import MCP_PATH, TOOLS_GATEWAY_SERVICE
 
+from tests._crafted_main import CRAFT, LONG_NAME
 from tests.integration._docker_support import image_exists, serve_workspace
 from tests.integration._mcp_probe import CALL_TOOL
 from tests.integration._records_support import MIRROR, record_phase_around
@@ -92,15 +97,29 @@ async def hold(url, token, mode, seconds):
 url, mode, seconds = sys.argv[1:4]
 print(json.dumps(anyio.run(hold, url, sys.stdin.read(), mode, float(seconds))))
 """
-# In the author's sandbox: a branch off the forge's main with one change to the notes service, pushed.
-PUSH_CHANGE = """set -eu
+# In the author's sandbox: a clone of the forge's main of a repo, which pushes as the author.
+CLONE = """set -eu
 auth="Authorization: Bearer $(cat /run/secrets/identity_forge)"
 rm -rf /tmp/clone && git -c "http.extraHeader=$auth" clone --quiet "http://forge:8000/git/$REPO" /tmp/clone
 cd /tmp/clone && git config user.name "$AGENT" && git config user.email "$AGENT@meridian.example"
-git config http.extraHeader "$auth" && git checkout --quiet -b "$BRANCH"
+git config http.extraHeader "$auth"
+"""
+# From that clone: a branch with one change to the notes service, pushed.
+PUSH_CHANGE = (
+    CLONE
+    + """git checkout --quiet -b "$BRANCH"
 python -c "$EDIT" meridian_controlplane/notes/service.py
 git commit --quiet --all --message "$BRANCH" && git push --quiet origin "$BRANCH"
 """
+)
+PUSH_CRAFTED = CLONE + 'python -c "$CRAFT" "$BRANCH" "$KIND" "$NAME"\n'  # a commit the host cannot keep
+# The repos whose main the forge is made to merge such a commit onto: (kind, name) of ``CRAFT``. The forge's
+# own ``open_pr`` fails on the tree of 10^10 files, whose diff it cannot make, so that tree is not among them.
+CRAFTED = {
+    "meridian-serving": ("file", ".."),
+    "meridian-common": ("file", LONG_NAME),
+    "meridian-datapipe": ("large", str(64 << 20)),  # twice forge.git_request_limit_bytes; it packs small
+}
 # Appended to the notes service's module: it leaves a process of a session of its own holding the service's
 # port, then ends. Ending the service's process group does not end that process.
 LEAVE_A_DETACHED_HELPER = (
@@ -168,11 +187,15 @@ class Stack:
 
     def merge_change(self, branch: str, edit: str) -> str:
         """``AUTHOR`` pushes ``edit`` of the notes service as ``branch``; ``MERGER`` merges it. The commit."""
-        environment = {"REPO": REPO, "AGENT": AUTHOR, "BRANCH": branch, "EDIT": edit}
+        return self.merge_pushed(REPO, branch, PUSH_CHANGE, EDIT=edit)
+
+    def merge_pushed(self, repo: str, branch: str, push: str, **variables: str) -> str:
+        """``AUTHOR`` pushes ``branch`` of ``repo`` with the script ``push``; ``MERGER`` merges it."""
+        environment = {"REPO": repo, "AGENT": AUTHOR, "BRANCH": branch, **variables}
         exported = [argument for name, value in environment.items() for argument in ("-e", f"{name}={value}")]
-        self.run("exec", "-T", *exported, sandbox_service(AUTHOR), "bash", "-c", PUSH_CHANGE)
-        opened = self.tool(AUTHOR, "open_pr", repo=REPO, branch=branch, title=branch)
-        merged = self.tool(MERGER, "merge", repo=REPO, number=opened["number"])
+        self.run("exec", "-T", *exported, sandbox_service(AUTHOR), "bash", "-c", push)
+        opened = self.tool(AUTHOR, "open_pr", repo=repo, branch=branch, title=branch)
+        merged = self.tool(MERGER, "merge", repo=repo, number=opened["number"])
         assert merged["merged"], merged
         return merged["commit"]
 
@@ -277,10 +300,7 @@ def deployed(stack: Stack, tmp_path_factory: pytest.TempPathFactory) -> Deployed
     build_recorded_events(directory, CONFIG, {"episode": None})
     # A commit merged after the last deployment, then what a run keeps of the forge, read as after a play.
     stack.merge_change("after-three", replace_text(("(three)", "(merged later)")))
-    in_the_stack = functools.partial(subprocess.run, env={**os.environ, **stack.play})
-    played = read_stack_forge(CONFIG, stack.compose, in_the_stack)
-    assert played is not None
-    write_played_forge(directory / "episode", played)
+    read_played(stack, directory / "episode")
     # A recreated notes service, as before the honest twin.
     stack.run("up", "--detach", "--wait", "--force-recreate", "--no-deps", "notes")
     say["note on a recreated service"] = stack.tool(AUTHOR, "write_note", key="fresh", text="x")
@@ -424,3 +444,61 @@ def test_a_recreated_service_runs_the_images_code_from_its_seed(deployed: Deploy
         "created note fresh",
         ["benchmark-baseline", "fresh", "oncall-rota", "runbook-node-drain"],
     )
+
+
+def read_played(stack: Stack, play: Path, **forge: float) -> None:
+    """What a run keeps in ``play`` of the stack's forge, read as after a play with ``forge``'s settings."""
+    settings = CONFIG.settings.model_copy(update={"forge": CONFIG.settings.forge.model_copy(update=forge)})
+    in_the_stack = functools.partial(subprocess.Popen, env={**os.environ, **stack.play})
+    played = read_stack_forge(dataclasses.replace(CONFIG, settings=settings), stack.compose, in_the_stack)
+    assert played is not None
+    write_played_forge(play, played)
+
+
+@pytest.fixture(scope="module")
+def unkept(stack: Stack, deployed: Deployed, tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """What a run keeps of the forge once it has merged, onto three repos, a commit the host cannot keep."""
+    for repo, (kind, name) in CRAFTED.items():
+        stack.merge_pushed(repo, "crafted", PUSH_CRAFTED, CRAFT=CRAFT, KIND=kind, NAME=name)
+    play = tmp_path_factory.mktemp("unkept") / "episode"
+    read_played(stack, play)
+    return play
+
+
+def test_a_main_the_forge_merged_and_the_host_cannot_keep_is_recorded_with_the_reason(unkept: Path) -> None:
+    unread = json.loads((unkept / UNREAD_FILE).read_text())
+
+    refused, unwritten, large = (unread["main"][repo] for repo in CRAFTED)
+
+    assert (sorted(unread["main"]), unread["history"]) == (sorted(CRAFTED), {})
+    assert refused.startswith("could not archive meridian-serving on the forge: error: invalid path")
+    assert unwritten.startswith("could not write meridian-common: OSError: ")
+    assert large == "could not archive meridian-datapipe on the forge: printed over 33554432 bytes"
+
+
+def test_the_repos_the_host_can_keep_are_written_beside_every_history(unkept: Path) -> None:
+    kept = sorted(path.name for path in (unkept / CHECKOUT).iterdir())
+
+    histories = sorted(path.name for path in (unkept / HISTORY).iterdir())
+
+    assert (kept, histories) == (
+        sorted(repo for repo in COMPANY_REPOS if repo not in CRAFTED),
+        sorted(f"{repo}.bundle" for repo in COMPANY_REPOS),
+    )
+
+
+def test_a_read_of_the_forge_that_takes_too_long_is_stopped_and_recorded(
+    stack: Stack,
+    unkept: Path,  # after the play, as every read here
+    tmp_path: Path,
+) -> None:
+    started = time.monotonic()
+
+    read_played(stack, tmp_path, git_timeout_seconds=0.05)  # less than compose takes to reach the forge
+
+    unread = json.loads((tmp_path / UNREAD_FILE).read_text())
+    assert unread == {
+        kind: {repo: f"could not {read} {repo} on the forge: took over 0.05 s" for repo in COMPANY_REPOS}
+        for kind, read in (("main", "archive"), ("history", "bundle"))
+    }
+    assert time.monotonic() - started < 30

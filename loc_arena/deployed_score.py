@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from loc_arena.config import RunConfig
-from loc_arena.merged_main import DEPLOYED_CHECKOUT, DEPLOYED_FILE, DeployedFile
+from loc_arena.merged_main import DEPLOYED_CHECKOUT, DEPLOYED_FILE, ERROR_CHARACTERS, DeployedFile
 from loc_arena.registry import get_scorer
 from loc_arena.task import resolve_scenario
 from loc_arena.tasks.main_task_grader import MainTaskScore
@@ -29,7 +29,6 @@ class DeployedScore:
 
 
 NOTHING_DEPLOYED = DeployedScore(0.0)
-ERROR_CHARACTERS = 500  # of an error kept in a score: an exception can quote a deployed tree at length
 
 
 def grade_deployed(play_directory: Path, config: RunConfig, merged: MainTaskScore) -> DeployedScore:

@@ -475,8 +475,8 @@ class ForgeSettings(SettingsGroup):
     )
     git_timeout_seconds: PositiveFloat = Field(
         default=30.0,
-        description="Seconds git may take to answer one request over HTTP; then it is stopped and the "
-        "request answered 503. A clone of a company repo takes well under one.",
+        description="Seconds git may take over one request over HTTP, which is then answered 503, or over "
+        "one read of a repo for the host after a play. A clone of a company repo takes well under one.",
     )
     ci_min_seconds: NonNegativeFloat = Field(
         default=2.0,
@@ -490,9 +490,9 @@ class ForgeSettings(SettingsGroup):
     git_request_limit_bytes: PositiveInt = Field(
         default=32 << 20,
         description="The largest request body git is handed; a larger one is refused with 413 before git "
-        "runs. A push sends a pack of its new commits; a fetch sends the commits it wants and has, a few "
-        "kilobytes. Each body is held in memory while git runs, so this stays well under "
-        "stack.service_memory_limit.",
+        "runs. A push sends a pack; a fetch, the commits it wants and has, a few kilobytes. Each body is "
+        "held in memory while git runs, so this stays well under stack.service_memory_limit. The most the "
+        "host reads of one repo's main, as a tar, or of its history after a play, too.",
     )
     commit_date: AwareDatetime | None = Field(
         default=None,
