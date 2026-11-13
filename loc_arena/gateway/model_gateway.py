@@ -219,9 +219,9 @@ def render_model_gateway_config(
     ]
     roots = str(gateway.secrets_dir / PROVIDER_ROOTS_SECRET_NAME)
     tunnel = {"backendTunnel": {"proxy": {"host": gateway.outbound_proxy}}} if gateway.outbound_proxy else {}
-    verified = {"policies": {"backendTLS": {"root": roots}, **tunnel}}
 
     def reach(name: str, upstream: HttpUrl, chat_path: str) -> list[dict[str, Any]]:
+        verified = {"policies": {"backendTLS": {"root": roots}, **tunnel}}
         return [
             {
                 "ai": {

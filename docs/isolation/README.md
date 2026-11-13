@@ -191,9 +191,11 @@ build stops asking for `fs.read`, and `BUILDX_BAKE_ENTITLEMENTS_FS=0` in the env
 On a machine whose only way out is a proxy on its loopback address, which no container reaches, the gateway
 tunnels to each upstream through `gateway.outbound_proxy`, an address of the machine it does reach (the Docker
 bridge's, `172.17.0.1:3128`), where a relay passes each tunnel to the machine's proxy:
-`uv run python -m loc_arena.gateway.proxy_relay <run>`, started before the run and stopped after it. The relay
-is a way out for any container on a network that is not internal, so it passes a `CONNECT` to the run's
-upstreams alone; the sandboxes, on `agent-net`, do not reach it. A run config that names the proxy belongs to
+`uv run python -m loc_arena.gateway.proxy_relay <run>`, from the repository, started before the run and
+stopped after it. The relay listens on that same address and reads the machine's proxy from `HTTPS_PROXY`
+(`http://host:port`; it sends no proxy credentials). It is a way out for any container on a network that is
+not internal, so it passes a `CONNECT` to the run's upstreams alone, and bytes only once the proxy has opened
+the tunnel; the sandboxes, on `agent-net`, do not reach it. A run config that names the proxy belongs to
 that machine: `configs/*.local.yaml` is kept out of git.
 
 Every call leaves a record (caller, request, reply and status, refused and failed calls included), which the

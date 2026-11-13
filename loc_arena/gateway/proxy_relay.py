@@ -21,6 +21,8 @@ from loc_arena.settings import GatewaySettings
 
 PROXY_VARIABLE = "HTTPS_PROXY"  # where a machine names its proxy for HTTPS, as curl and Python read it
 REFUSED = b"HTTP/1.1 403 Forbidden\r\n\r\n"
+HEADER_SECONDS = 10  # the wait for a caller's request, and for the proxy's answer to it
+NO_HEADER = (asyncio.IncompleteReadError, asyncio.LimitOverrunError, OSError)
 
 
 def list_upstream_hosts(gateway: GatewaySettings) -> frozenset[str]:
@@ -36,7 +38,7 @@ def _split(address: str) -> tuple[str, int]:
 
 async def _pass(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
     """Every byte from ``reader`` to ``writer``, which is closed when ``reader`` ends."""
-    with contextlib.suppress(ConnectionError):
+    with contextlib.suppress(OSError):
         while data := await reader.read(65536):
             writer.write(data)
             await writer.drain()
@@ -48,8 +50,8 @@ async def serve_relay(listen: str, proxy: str, allowed: frozenset[str]) -> async
 
     async def relay(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
-            request = await reader.readuntil(b"\r\n\r\n")
-        except (asyncio.IncompleteReadError, asyncio.LimitOverrunError, ConnectionError):
+            request = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), HEADER_SECONDS)
+        except NO_HEADER:
             request = b""
         method, _, target = request.partition(b"\r\n")[0].rpartition(b" ")[0].partition(b" ")
         if method != b"CONNECT" or target.decode(errors="replace") not in allowed:
@@ -62,16 +64,25 @@ async def serve_relay(listen: str, proxy: str, allowed: frozenset[str]) -> async
             writer.close()  # the proxy is not there: the caller sees its connection end
             return
         proxy_writer.write(request)
-        await asyncio.gather(_pass(reader, proxy_writer), _pass(proxy_reader, writer))
+        try:
+            answer = await asyncio.wait_for(proxy_reader.readuntil(b"\r\n\r\n"), HEADER_SECONDS)
+        except NO_HEADER:
+            answer = b""
+        writer.write(answer)
+        if answer.partition(b" ")[2][:1] == b"2":  # the proxy opened the tunnel: only then do bytes pass
+            await asyncio.gather(_pass(reader, proxy_writer), _pass(proxy_reader, writer))
+        proxy_writer.close()
+        writer.close()
 
     return await asyncio.start_server(relay, *_split(listen))
 
 
 async def _relay_run(run: str) -> None:
     gateway = load_run_config(f"configs/{run}.yaml").settings.gateway
-    proxy = urlsplit(os.environ.get(PROXY_VARIABLE, "")).netloc
-    if not gateway.outbound_proxy or not proxy:
-        sys.exit(f"a relay needs gateway.outbound_proxy in {run} and {PROXY_VARIABLE} on this machine")
+    named = urlsplit(os.environ.get(PROXY_VARIABLE, ""))
+    if not gateway.outbound_proxy or not named.hostname or not named.port:
+        sys.exit(f"a relay needs gateway.outbound_proxy in {run} and {PROXY_VARIABLE}=http://host:port here")
+    proxy = f"{named.hostname}:{named.port}"
     allowed = list_upstream_hosts(gateway)
     async with await serve_relay(gateway.outbound_proxy, proxy, allowed) as server:
         print(f"relaying {gateway.outbound_proxy} to {proxy} for {', '.join(sorted(allowed))}", flush=True)

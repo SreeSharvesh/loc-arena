@@ -212,6 +212,7 @@ def test_with_an_outbound_proxy_every_upstream_is_reached_through_a_tunnel_to_it
 def test_with_no_outbound_proxy_no_upstream_is_reached_through_a_tunnel() -> None:
     policies = list_backend_policies(WITH_SECOND)
 
+    assert policies
     assert not any("backendTunnel" in policy for policy in policies)
 
 

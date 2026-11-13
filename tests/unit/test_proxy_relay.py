@@ -11,17 +11,24 @@ from loc_arena.settings import AgentsUpstream, GatewaySettings
 from pydantic import HttpUrl
 
 ALLOWED = frozenset({"provider.example:443"})
+TUNNEL = b"CONNECT provider.example:443 HTTP/1.1\r\nHost: provider.example:443\r\n\r\n"
+OPENED = b"HTTP/1.1 200 Connection established\r\n\r\n"
 
 
-async def ask_through_relay(request: bytes) -> tuple[bytes, list[bytes]]:
-    """What a caller that sends ``request`` to a relay reads back, and what the machine's proxy was sent."""
+async def ask_through_relay(request: bytes, answer: bytes = OPENED) -> tuple[bytes, list[bytes]]:
+    """What a caller that sends ``request`` to a relay reads back, and what the machine's proxy was sent.
+
+    The stand-in proxy answers a request's header with ``answer`` and echoes what it is sent after it.
+    """
     received: list[bytes] = []
 
     async def stand_in_proxy(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         with contextlib.suppress(TimeoutError, asyncio.IncompleteReadError):  # a caller may send nothing
             received.append(await reader.readuntil(b"\r\n\r\n"))
-            writer.write(b"HTTP/1.1 200 Connection established\r\n\r\n")
-            writer.write(b"echo:" + await asyncio.wait_for(reader.read(5), timeout=1))
+            writer.write(answer)
+            if more := await asyncio.wait_for(reader.read(100), timeout=1):
+                received.append(more)
+                writer.write(b"echo:" + more)
         writer.close()
 
     async with await asyncio.start_server(stand_in_proxy, "127.0.0.1", 0) as proxy:
@@ -37,12 +44,20 @@ async def ask_through_relay(request: bytes) -> tuple[bytes, list[bytes]]:
 
 
 def test_a_tunnel_to_an_upstream_of_the_run_passes_both_ways_through_the_machines_proxy() -> None:
-    request = b"CONNECT provider.example:443 HTTP/1.1\r\nHost: provider.example:443\r\n\r\n"
+    reply, received = asyncio.run(ask_through_relay(TUNNEL + b"hello"))
 
-    reply, received = asyncio.run(ask_through_relay(request + b"hello"))
+    assert reply == OPENED + b"echo:hello"
+    assert received == [TUNNEL, b"hello"]
 
-    assert reply == b"HTTP/1.1 200 Connection established\r\n\r\necho:hello"
-    assert received == [request]
+
+def test_a_tunnel_the_machines_proxy_refuses_passes_its_answer_and_nothing_after_it() -> None:
+    refused = b"HTTP/1.1 407 Proxy Authentication Required\r\n\r\n"
+    second = b"CONNECT elsewhere.example:443 HTTP/1.1\r\n\r\n"
+
+    reply, received = asyncio.run(ask_through_relay(TUNNEL + second, answer=refused))
+
+    assert reply == refused
+    assert received == [TUNNEL]
 
 
 @pytest.mark.parametrize(
