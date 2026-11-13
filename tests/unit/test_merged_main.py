@@ -8,7 +8,9 @@ import io
 import json
 import os
 import subprocess
+import sys
 import tarfile
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -22,25 +24,31 @@ from loc_arena.merged_main import (
     DEPLOYED_CHECKOUT,
     DEPLOYED_FILE,
     HISTORY,
-    MergedMainError,
+    UNREAD_FILE,
+    read_forge,
     read_stack_forge,
+    run_bounded,
     write_merged_checkout,
     write_played_forge,
 )
 from loc_arena.settings import ForgeSettings
-from loc_arena.tasks.main_task_grader import COMPANY_REPOS
+from loc_arena.tasks.main_task_grader import COMPANY_REPOS, ERROR_CHARACTERS
 
 from meridian_forge.repositories import commit_branch, identity, merge_branch, repository_path
+from tests._crafted_main import CRAFT, LONG_NAME, REFUSED_NAMES
 
 CFG = load_run_config("configs/aurora-efficiency.stack-test.yaml")
 COMPOSE = ["docker", "compose", "-p", "loc-arena-test"]
 ISOLATED = {"PATH": os.environ["PATH"], "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
 REPO = "meridian-serving"
+# What ``compose logs`` of the deploy service does here: print the record given, or fail as compose does.
+PRINT_RECORD = "import sys; sys.stdout.write(sys.argv[1])"
+FAIL_TO_LOG = "import sys; sys.exit('no such service: deploy')"
 
 
-def config_with_forge_at(repositories: Path) -> Any:  # noqa: ANN401 - a RunConfig
-    settings = CFG.settings.model_copy(update={"forge": ForgeSettings(repositories=repositories)})
-    return dataclasses.replace(CFG, settings=settings)
+def config_with_forge_at(repositories: Path, **bounds: float) -> Any:  # noqa: ANN401 - a RunConfig
+    forge = ForgeSettings(repositories=repositories, **bounds)
+    return dataclasses.replace(CFG, settings=CFG.settings.model_copy(update={"forge": forge}))
 
 
 def in_the_forge_container(
@@ -48,18 +56,17 @@ def in_the_forge_container(
     *,
     deploy_record: str | None = "",
     **options: Any,  # noqa: ANN401
-) -> subprocess.CompletedProcess[bytes]:
-    """Compose's ``exec -T forge <command>``, run here, where this test keeps the forge's repositories.
+) -> subprocess.Popen[Any]:
+    """Compose's ``exec -T forge <command>``, started here, where this test keeps the forge's repositories.
 
     Its ``logs`` of the deploy service answer ``deploy_record``: by default, a play that deployed nothing;
     with none, compose fails to read them.
     """
     if command[len(COMPOSE) :] == ["logs", "--no-color", "--no-log-prefix", "deploy"]:
-        if deploy_record is None:
-            return subprocess.CompletedProcess(command, 1, b"", b"no such service: deploy\n")
-        return subprocess.CompletedProcess(command, 0, deploy_record.encode(), b"")
-    assert command[: len(COMPOSE) + 3] == [*COMPOSE, "exec", "-T", "forge"]
-    return subprocess.run(command[len(COMPOSE) + 3 :], env=ISOLATED, check=False, **options)
+        logs = [FAIL_TO_LOG] if deploy_record is None else [PRINT_RECORD, deploy_record]
+        return subprocess.Popen([sys.executable, "-c", *logs], **options)
+    assert command[: len(COMPOSE) + 5] == [*COMPOSE, "exec", "-T", "forge", "timeout", "--signal=KILL"]
+    return subprocess.Popen(command[len(COMPOSE) + 6 :], env=ISOLATED, **options)  # git, with no timeout here
 
 
 def git_in(clone: Path, *arguments: str) -> str:
@@ -107,12 +114,35 @@ def record_deployment(number: int, state: str, commits: dict[str, str]) -> str:
     )
 
 
-def write_played(repositories: Path, play: Path, deploy_record: str | None) -> None:
+def write_played(repositories: Path, play: Path, deploy_record: str | None, **bounds: float) -> None:
     """What a stack run keeps in ``play`` of the forge in ``repositories`` and of ``deploy_record``."""
     stack = functools.partial(in_the_forge_container, deploy_record=deploy_record)
-    played = read_stack_forge(config_with_forge_at(repositories), COMPOSE, stack)
+    played = read_stack_forge(config_with_forge_at(repositories, **bounds), COMPOSE, stack)
     assert played is not None
     write_played_forge(play, played)
+
+
+def merge_crafted(repositories: Path, scratch: Path, kind: str, name: str = "") -> None:
+    """``REPO``'s main moved by the forge's merge of a pushed commit whose tree is crafted (``CRAFT``)."""
+    clone = scratch / "crafting"
+    bare = str(repository_path(repositories, REPO))
+    subprocess.run(["git", "clone", "--quiet", bare, str(clone)], env=ISOLATED, check=True)
+    subprocess.run([sys.executable, "-c", CRAFT, "crafted", kind, name], cwd=clone, env=ISOLATED, check=True)
+    assert merge_branch(repositories, REPO, "crafted", "Merge crafted", "omar")
+
+
+def read_kept(play: Path) -> tuple[dict[str, dict[str, str]], list[str], list[str]]:
+    """What ``play`` says it could not keep, the repos its checkout holds, and its histories."""
+    unread = json.loads((play / UNREAD_FILE).read_text())
+    return (
+        unread,
+        sorted(path.name for path in (play / CHECKOUT).iterdir()),
+        sorted(path.name for path in (play / HISTORY).iterdir()),
+    )
+
+
+OTHER_REPOS = sorted(repo for repo in COMPANY_REPOS if repo != REPO)
+EVERY_HISTORY = sorted(f"{repo}.bundle" for repo in COMPANY_REPOS)
 
 
 def test_a_checkout_written_from_main_holds_main_and_nothing_the_episode_left(tmp_path: Path) -> None:
@@ -187,9 +217,158 @@ def test_a_scenario_without_a_forge_has_no_main_to_archive(tmp_path: Path) -> No
     assert read_stack_forge(config, COMPOSE, in_the_forge_container) is None
 
 
-def test_a_main_the_forge_cannot_archive_stops_the_run_from_being_graded(tmp_path: Path) -> None:
-    with pytest.raises(MergedMainError, match="could not archive"):  # no repositories were seeded there
-        read_stack_forge(config_with_forge_at(tmp_path / "empty"), COMPOSE, in_the_forge_container)
+def test_a_forge_that_cannot_be_read_is_recorded_for_every_repo_and_nothing_is_raised(tmp_path: Path) -> None:
+    play = tmp_path / "episode"
+    (play / HISTORY).mkdir(parents=True)
+    (play / HISTORY / f"{REPO}.bundle").write_bytes(b"kept by an earlier reading")
+
+    write_played(tmp_path / "empty", play, "")  # no repositories were seeded there
+
+    unread, checkout, histories = read_kept(play)
+    assert (sorted(unread["main"]), sorted(unread["history"])) == (list(COMPANY_REPOS), list(COMPANY_REPOS))
+    assert unread["main"][REPO].startswith(f"could not archive {REPO} on the forge: fatal: not a git repo")
+    assert (checkout, histories) == ([], [])
+
+
+@pytest.mark.parametrize(("kind", "name"), REFUSED_NAMES.values(), ids=list(REFUSED_NAMES))
+def test_a_merged_entry_git_refuses_to_archive_is_recorded_and_the_other_repos_are_kept(
+    kind: str,
+    name: str,
+    tmp_path: Path,
+) -> None:
+    repositories, play = tmp_path / "repositories", tmp_path / "episode"
+    open_forge(CFG, load_seed(CFG), repositories)
+    merge_crafted(repositories, tmp_path, kind, name)
+
+    write_played(repositories, play, "")
+
+    unread, checkout, histories = read_kept(play)
+    assert list(unread["main"]) == [REPO]
+    assert unread["main"][REPO].startswith(f"could not archive {REPO} on the forge: error: invalid path")
+    assert (unread["history"], checkout, histories) == ({}, OTHER_REPOS, EVERY_HISTORY)
+
+
+@pytest.mark.parametrize(
+    ("kind", "name", "error"),
+    [("file", LONG_NAME, "OSError"), ("nul", "", "ValueError")],
+    ids=["a file name no file system writes", "a link whose target holds a NUL byte"],
+)
+def test_a_merged_tree_that_cannot_be_written_out_is_recorded_and_the_other_repos_are_kept(
+    kind: str,
+    name: str,
+    error: str,
+    tmp_path: Path,
+) -> None:
+    repositories, play = tmp_path / "repositories", tmp_path / "episode"
+    open_forge(CFG, load_seed(CFG), repositories)
+    merge_crafted(repositories, tmp_path, kind, name)
+
+    write_played(repositories, play, "")
+
+    unread, checkout, histories = read_kept(play)
+    assert list(unread["main"]) == [REPO]
+    assert unread["main"][REPO].startswith(f"could not write {REPO}: {error}: ")
+    assert len(unread["main"][REPO]) <= ERROR_CHARACTERS
+    assert (unread["history"], checkout, histories) == ({}, OTHER_REPOS, EVERY_HISTORY)
+
+
+def test_a_merged_tree_of_more_files_than_git_archives_in_time_is_recorded_when_the_time_is_up(
+    tmp_path: Path,
+) -> None:
+    repositories, play = tmp_path / "repositories", tmp_path / "episode"
+    open_forge(CFG, load_seed(CFG), repositories)
+    merge_crafted(repositories, tmp_path, "many")
+    started = time.monotonic()
+
+    write_played(repositories, play, "", read_timeout_seconds=2)
+
+    unread, checkout, histories = read_kept(play)
+    assert unread["main"][REPO] == f"could not archive {REPO} on the forge: took over 2 s"
+    assert (REPO in checkout, f"{REPO}.bundle" in histories) == (False, True)
+    assert time.monotonic() - started < 30  # the read of the other repos and histories, and the two seconds
+
+
+def test_a_main_larger_than_the_host_reads_is_recorded_and_its_history_is_kept(tmp_path: Path) -> None:
+    repositories, play = tmp_path / "repositories", tmp_path / "episode"
+    open_forge(CFG, load_seed(CFG), repositories)
+    move_main(repositories, "LARGE.md", "x" * 2_000_000)  # it packs to a few kilobytes
+
+    write_played(repositories, play, "", read_limit_bytes=1_000_000)
+
+    unread, checkout, histories = read_kept(play)
+    assert unread == {
+        "main": {REPO: f"could not archive {REPO} on the forge: printed over 1000000 bytes"},
+        "history": {},
+    }
+    assert (checkout, histories) == (OTHER_REPOS, EVERY_HISTORY)
+
+
+def test_a_read_git_ends_without_a_word_is_recorded_with_its_status(tmp_path: Path) -> None:
+    def end_as_killed(command: list[str]) -> subprocess.CompletedProcess[bytes]:  # out of memory, or stopped
+        return subprocess.CompletedProcess(command, 137, b"", b"")
+
+    played = read_forge(tmp_path, end_as_killed)
+
+    assert played.unread.main[REPO] == f"could not archive {REPO} on the forge: git ended with status 137"
+
+
+def test_a_command_that_ends_just_past_the_size_bound_is_reported_as_past_it() -> None:
+    print_a_byte_too_many = ["head", "-c", "1001", "/dev/zero"]  # ended before it is stopped: macOS refuses
+
+    done = run_bounded(subprocess.Popen, print_a_byte_too_many, seconds=30, max_bytes=1000)
+
+    assert (done.returncode != 0, done.stdout, done.stderr) == (True, b"", b"printed over 1000 bytes")
+
+
+def test_a_command_that_says_more_than_is_kept_ends_with_its_status_and_the_start_of_what_it_said() -> None:
+    say_much = "import sys; sys.stderr.write('e' * 10_000_000); sys.exit(3)"  # far more than a pipe holds
+
+    done = run_bounded(subprocess.Popen, [sys.executable, "-c", say_much], seconds=30, max_bytes=1000)
+
+    assert (done.returncode, done.stdout, done.stderr) == (3, b"", b"e" * ERROR_CHARACTERS)
+
+
+def test_what_was_deployed_is_kept_when_main_cannot_be_read(tmp_path: Path) -> None:
+    repositories, play = tmp_path / "repositories", tmp_path / "episode"
+    open_forge(CFG, load_seed(CFG), repositories)
+    served = record_deployment(1, "serving", read_mains(repositories))
+    merge_crafted(repositories, tmp_path, "file", "..")
+
+    write_played(repositories, play, served)
+
+    assert json.loads((play / DEPLOYED_FILE).read_text()) == {
+        "deployment": 1,
+        "service": "notes",
+        "behind_main": [REPO],
+        "error": "",
+    }
+    assert (play / DEPLOYED_CHECKOUT / REPO / "pyproject.toml").exists()
+
+
+def test_a_deployed_tree_that_cannot_be_written_is_the_error_of_what_was_deployed(tmp_path: Path) -> None:
+    repositories, play = tmp_path / "repositories", tmp_path / "episode"
+    open_forge(CFG, load_seed(CFG), repositories)
+    merge_crafted(repositories, tmp_path, "file", LONG_NAME)
+    served = record_deployment(1, "serving", read_mains(repositories))
+    move_main(repositories, "MERGED_LATER.md", "never released")
+
+    write_played(repositories, play, served)
+
+    deployed = json.loads((play / DEPLOYED_FILE).read_text())
+    assert (deployed["deployment"], deployed["behind_main"]) == (1, [REPO])
+    assert deployed["error"].startswith(f"could not write {REPO}: OSError: ")
+    assert not (play / DEPLOYED_CHECKOUT).exists()
+
+
+def test_a_play_whose_forge_was_read_whole_says_nothing_was_left_unread(tmp_path: Path) -> None:
+    repositories, play = tmp_path / "repositories", tmp_path / "episode"
+    open_forge(CFG, load_seed(CFG), repositories)
+    play.mkdir()
+    (play / UNREAD_FILE).write_text('{"main": {"meridian-serving": "an earlier reading"}}')
+
+    write_played(repositories, play, "")
+
+    assert not (play / UNREAD_FILE).exists()
 
 
 def test_a_plays_history_holds_every_commit_it_pushed_a_deleted_branchs_among_them(tmp_path: Path) -> None:

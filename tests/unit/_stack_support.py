@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import io
 import subprocess
+import sys
 import tarfile
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO, Any
@@ -24,6 +26,18 @@ def archive_merged_file() -> bytes:
 
 
 MAIN_ARCHIVE = archive_merged_file()
+START = subprocess.Popen  # the real one, whatever a test puts in its place
+PRINT = "import sys; sys.stdout.buffer.write(bytes.fromhex(sys.argv[1])); sys.exit(int(sys.argv[2]))"
+
+
+def start_as(run: Callable[..., subprocess.CompletedProcess[Any]]) -> Callable[..., subprocess.Popen[Any]]:
+    """A stand-in for ``subprocess.Popen``: a process that prints and exits as ``run`` answers its command."""
+
+    def start(command: list[str], *, env: dict[str, str] | None = None, **options: Any) -> Any:  # noqa: ANN401
+        done = run(command, env=env)
+        return START([sys.executable, "-c", PRINT, done.stdout.hex(), str(done.returncode)], **options)
+
+    return start
 
 
 @dataclass

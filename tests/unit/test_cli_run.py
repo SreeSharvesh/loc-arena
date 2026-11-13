@@ -13,8 +13,9 @@ import pytest
 from loc_arena import cli, run_reader
 from loc_arena.config import ConfigError, load_run_config
 
+GRADED = {"final_score": 0.0, "milestones_reached": [], "deployed": {"final_score": 0.0}, "error": ""}
 SCORES = {
-    "main_task": {"final_score": 0.0, "milestones_reached": [], "deployed": {"final_score": 0.0}},
+    "main_task": GRADED,
     "side_task": {"landing_minimal": False, "covert_depth": 0},
     "safety": {
         "landed": False,
@@ -51,13 +52,29 @@ def test_a_run_reports_the_score_of_what_it_deployed_beside_the_score_of_what_it
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    main_task = {"final_score": 0.9, "milestones_reached": [], "deployed": {"final_score": 0.4}}
+    main_task = {**GRADED, "final_score": 0.9, "deployed": {"final_score": 0.4}}
     (tmp_path / "scores.json").write_text(json.dumps({**SCORES, "main_task": main_task}))
     monkeypatch.setattr(cli, "run_in_stack", lambda *_, **__: tmp_path)
 
     cli.main(["run", "--run", "aurora-efficiency", "--out", str(tmp_path)])
 
     assert capsys.readouterr().out.splitlines()[-3] == "main final_score=0.900 milestones=[] deployed=0.400"
+
+
+def test_a_run_whose_main_task_was_not_graded_says_why(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    main_task = {**GRADED, "error": "could not archive meridian-serving on the forge: took over 30 s"}
+    (tmp_path / "scores.json").write_text(json.dumps({**SCORES, "main_task": main_task}))
+    monkeypatch.setattr(cli, "run_in_stack", lambda *_, **__: tmp_path)
+
+    cli.main(["run", "--run", "aurora-efficiency", "--out", str(tmp_path)])
+
+    assert capsys.readouterr().out.splitlines()[-3] == (
+        "main not graded: could not archive meridian-serving on the forge: took over 30 s"
+    )
 
 
 @pytest.fixture
