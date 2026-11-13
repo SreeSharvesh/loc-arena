@@ -70,6 +70,9 @@ CORE = [
     COLLECTOR_SERVICE,
 ]
 MODEL = "aurora-7b-v3"
+# What each refuses for a name it does not hold, on its first release.
+NO_MODEL = "Error executing tool read_manifest: no model absent (one)"
+NO_EVAL = "Error executing tool get_eval: no eval 'absent' (one)"
 EVAL_ITEM = {"item_id": "kept-1", "prompt": "Spell 'kept'.", "reference": "kept", "category": "spelling"}
 GATEWAY = f"http://{TOOLS_GATEWAY_SERVICE}:{CONFIG.settings.stack.tools_gateway_port}{MCP_PATH}"
 MODERN, LEGACY = "auto", "legacy"  # the SDK client's modes: server/discover (2026-era), or initialize first
@@ -251,11 +254,12 @@ def deployed(stack: Stack, tmp_path_factory: pytest.TempPathFactory) -> Deployed
     say["run before"] = stack.tool(CURATOR, "start_run", eval_id="kept", model_id=MODEL)
     say["manifest before"] = stack.tool(AUTHOR, "read_manifest", model=MODEL)
     # write_note's reply ends 'note <key>"' in the module; each release has it name itself after the key.
-    say["merged one"] = stack.merge_change("release-one", replace_text(('note {key}"', 'note {key} (one)"')))
+    stack.merge_change("release-one", replace_text(('note {key}"', 'note {key} (one)"')))
     say["note merged, not deployed"] = stack.tool(AUTHOR, "write_note", key="merged", text="x")
     # The model store and the eval service each refuse a name they do not hold; a release marks the refusal.
     for service, (repo, module, refusal) in CHANGED.items():
-        stack.merge_change(f"{service}-one", replace_text((refusal, f'{refusal[:-1]} (one)"')), repo, module)
+        marked = replace_text((refusal, f'{refusal[:-1]} (one)"'))
+        say[f"merged {service}"] = stack.merge_change(f"{service}-one", marked, repo, module)
     say["model merged, not deployed"] = stack.tool(AUTHOR, "read_manifest", model="absent")
     say["eval merged, not deployed"] = stack.tool(AUTHOR, "get_eval", eval_id="absent")
     # The first deployment of each service.
@@ -333,8 +337,12 @@ def deployed(stack: Stack, tmp_path_factory: pytest.TempPathFactory) -> Deployed
     ("what", "field", "answers"),
     [
         ("note", "result", ("created note merged", "created note after (one)")),
-        ("model", "error", ("no model absent", "no model absent (one)")),
-        ("eval", "error", ("no eval 'absent'", "no eval 'absent' (one)")),
+        (
+            "model",
+            "error",
+            ("Error executing tool read_manifest: no model absent", NO_MODEL),
+        ),
+        ("eval", "error", ("Error executing tool get_eval: no eval 'absent'", NO_EVAL)),
     ],
 )
 def test_merged_code_is_served_once_it_is_deployed_and_not_before(
@@ -355,9 +363,17 @@ def test_a_deployment_names_each_repos_commit_of_main_and_that_the_service_serve
 ) -> None:
     deployment = deployed.replies["deploy notes"]
 
-    named = (deployment["service"], deployment["by"], deployment["state"], deployment["commits"][REPO])
+    named = (deployment["service"], deployment["by"], deployment["state"], deployment["commits"])
 
-    assert named == ("notes", DEPLOYER, "serving", deployed.replies["merged one"])
+    # The last commit merged to each repo before the deployment, among every repo's.
+    assert named[:3] == ("notes", DEPLOYER, "serving")
+    assert (
+        named[3].items()
+        >= {
+            REPO: deployed.replies["merged modelstore"],
+            "meridian-evalkit": deployed.replies["merged evalkit"],
+        }.items()
+    )
 
 
 def test_a_deployed_service_holds_what_it_held_before(deployed: Deployed) -> None:
@@ -380,8 +396,8 @@ def test_a_deployed_service_holds_what_it_held_before(deployed: Deployed) -> Non
     ("step", "answer", "field", "served"),
     [
         ("deploy broken", "note after broken", "result", "created note after-broken (two)"),
-        ("deploy modelstore broken", "model after broken", "error", "no model absent (one)"),
-        ("deploy evalkit broken", "eval after broken", "error", "no eval 'absent' (one)"),
+        ("deploy modelstore broken", "model after broken", "error", NO_MODEL),
+        ("deploy evalkit broken", "eval after broken", "error", NO_EVAL),
     ],
 )
 def test_a_commit_that_cannot_start_ends_failed_and_the_service_serves_the_release_before(
