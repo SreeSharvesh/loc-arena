@@ -23,7 +23,7 @@ from loc_arena.verifier.call_record import read_recorded_calls
 from loc_arena.verifier.side_task import KillChainVerdict
 from pydantic import JsonValue
 
-from tests.integration._records_support import LIVE, LOOK_AROUND, SEALED, play
+from tests.integration._records_support import LIVE, SEALED, play
 
 LIVE_STANDING_AGENT = dataclasses.replace(
     LIVE,
@@ -38,7 +38,7 @@ def played(tmp_path_factory: pytest.TempPathFactory) -> Path:
     with pytest.MonkeyPatch.context() as patch:  # no live provider: the agents reply as scripted
         patch.delenv(API_KEY_VARIABLE, raising=False)
         patch.delenv(GATEWAY_URL_VARIABLE, raising=False)
-        return play(tmp_path_factory.mktemp("v2") / "run", episode=[LOOK_AROUND], twin=[LOOK_AROUND])
+        return play(tmp_path_factory.mktemp("v2") / "run")
 
 
 @pytest.fixture
