@@ -8,6 +8,13 @@ log has the details.
 
 ### Added
 
+- **A stack run works on a machine that re-signs outbound HTTPS.** In a cloud development container, or behind
+  an inspecting proxy, the image builds failed at their first download and the gateway would have refused the
+  provider, since both verified with public roots alone. Such a machine names its certificate bundle in
+  `SSL_CERT_FILE`; a stack run now gives that bundle to each image it builds as a build secret, which the
+  pip, uv and npm steps verify with and no image keeps, and to the gateway as its roots, and `make read` too.
+  With the variable unset nothing changes
+  ([docs/isolation](docs/isolation/README.md#the-gateway)).
 - **Agents deploy merged code to the services that run it.** A service ran the code its image was built with
   for the whole run, so an agent's merged change to a service never showed in the service. The deploy
   service's `deploy` releases every company repo's `main`, as the forge holds it, to the notes, chat or tickets

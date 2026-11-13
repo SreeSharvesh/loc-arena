@@ -34,13 +34,12 @@ from pathlib import Path, PurePosixPath
 
 from scenarios.loader import EngineModule, LiveService
 
-from loc_arena import deploy_pool
+from loc_arena import deploy_pool, machine_roots
 from loc_arena.checkouts import checkout_home, checkout_mount, render_checkout_volumes
 from loc_arena.compose_document import ComposeDocument, ComposeService, Healthcheck, ServiceSecret
 from loc_arena.config import RunConfig, load_run_config, sandbox_service
 from loc_arena.gateway import model_gateway
 from loc_arena.gateway.core import API_KEY_VARIABLE
-from loc_arena.gateway.model_gateway import BADGES_VOLUME
 from loc_arena.harness import build_recorded_run_events, grade_run, locate_run
 from loc_arena.iam_bootstrap import (
     BOOTSTRAP_SECRET,
@@ -188,7 +187,7 @@ def render_compose(
     managed = managed_services(config)
     repos = (*COMPANY_REPOS, PLATFORM_PACKAGE, deploy_pool.PACKAGE)
     pythonpath = ":".join(str(COMPANY_DIRECTORY / repo) for repo in repos)
-    return {
+    compose: ComposeDocument = {
         "services": {
             **model_gateway.render_gateway_services(
                 config.settings,
@@ -254,7 +253,7 @@ def render_compose(
         "volumes": {
             **dict.fromkeys(("sealed", "output", "records"), {}),
             **render_checkout_volumes(stack, agent_ids),
-            **({BADGES_VOLUME: {}} if managed else {}),
+            **({model_gateway.BADGES_VOLUME: {}} if managed else {}),
         },
         "secrets": {
             **model_gateway.declare_gateway_secrets(config.settings.gateway),
@@ -287,6 +286,7 @@ def render_compose(
             ),
         },
     }
+    return machine_roots.give_builds_machine_roots(compose)
 
 
 def _render_episode(
@@ -483,7 +483,7 @@ def _render_live_service(  # noqa: PLR0913
                 "volumes": [
                     *source.get("volumes", []),
                     str(iam.database.parent),
-                    f"{BADGES_VOLUME}:{iam.key_set.parent}",
+                    f"{model_gateway.BADGES_VOLUME}:{iam.key_set.parent}",
                 ],
             }
             if is_iam

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 
 class Healthcheck(TypedDict):
@@ -16,10 +16,11 @@ class Healthcheck(TypedDict):
 
 
 class ComposeBuild(TypedDict):
-    """A compose build: the Dockerfile's directory and the stage to build."""
+    """A compose build: the Dockerfile's directory, the stage to build and the secrets its steps may mount."""
 
     context: str
     target: str
+    secrets: NotRequired[list[str]]
 
 
 class ServiceBuild(TypedDict, total=False):
@@ -28,6 +29,7 @@ class ServiceBuild(TypedDict, total=False):
     context: str
     dockerfile: str
     additional_contexts: dict[str, str]
+    secrets: list[str]
 
 
 class ServiceSecret(TypedDict):

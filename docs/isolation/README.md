@@ -178,6 +178,16 @@ by the SHA-256 of their token, so it holds none: the episode, the host's monitor
 token), each runner and each node. A path outside `gateway.allowed_paths` gets a 403, and a call without a known
 token a 401.
 
+It verifies the provider with certifi's roots. A machine that re-signs outbound HTTPS (a cloud development
+container, a network with an inspecting proxy) names its own certificate bundle in `SSL_CERT_FILE`; a stack run
+there, and `make read`, gives the gateway that bundle as its roots. A stack run also gives it to each image it
+builds as the build secret `ca_bundle` (at most 500 KB, BuildKit's limit), which the pip, uv and npm steps
+verify with and no image keeps (`loc_arena/machine_roots.py`). Image pulls are the Docker daemon's and use its
+own trust. The variable alone decides: a machine that sets it for another reason (a Nix shell, some conda
+environments) has its bundle take the place of certifi's roots too. Compose grants its builder the read of a
+build secret outside the project folder from 5.7.0; with an earlier Compose and Buildx 0.37.2 or later the
+build stops asking for `fs.read`, and `BUILDX_BAKE_ENTITLEMENTS_FS=0` in the environment lets it pass.
+
 Every call leaves a record (caller, request, reply and status, refused and failed calls included), which the
 gateway exports over OTLP to the Collector. A run waits until the Collector holds a record of every call
 the gateway logged before the gateway stops, then copies the record to `logs/gateway/<project>.calls.jsonl`, one
