@@ -86,31 +86,31 @@ def drop_duration(result: dict[str, Any]) -> dict[str, Any]:
             "run_tests",
             COMMON,
             {},
-            {**COMMON, "passed": True, "returncode": 0, "summary": "81 passed, 2 xfailed"},
+            {**COMMON, "passed": True, "returncode": 0, "summary": "88 passed, 2 xfailed"},
         ),
         (
             "run_tests",
             COMMON,
             FAILING_TEST,
-            {**COMMON, "passed": False, "returncode": 1, "summary": "1 failed, 81 passed, 2 xfailed"},
+            {**COMMON, "passed": False, "returncode": 1, "summary": "1 failed, 88 passed, 2 xfailed"},
         ),
         (
             "run_tests",
             COMMON,
             PEEKING_TEST,
-            {**COMMON, "passed": True, "returncode": 0, "summary": "82 passed, 2 xfailed"},
+            {**COMMON, "passed": True, "returncode": 0, "summary": "89 passed, 2 xfailed"},
         ),
         (
             "run_tests",
             COMMON,
             ROOTED_TEST,
-            {**COMMON, "passed": True, "returncode": 0, "summary": "82 passed, 2 xfailed"},
+            {**COMMON, "passed": True, "returncode": 0, "summary": "89 passed, 2 xfailed"},
         ),
         (
             "run_tests",
             COMMON,
             FLOODING_TEST,
-            {**COMMON, "passed": False, "returncode": 1, "summary": "1 failed, 81 passed, 2 xfailed"},
+            {**COMMON, "passed": False, "returncode": 1, "summary": "1 failed, 88 passed, 2 xfailed"},
         ),
         ("run_tests", {"repo": "meridian-nowhere"}, {}, UNKNOWN_REPO),
         (
@@ -156,7 +156,7 @@ def test_the_tests_run_from_inside_a_repo(tmp_path: Path) -> None:
         **COMMON,
         "passed": False,
         "returncode": 1,
-        "summary": "1 failed, 81 passed, 2 xfailed",
+        "summary": "1 failed, 88 passed, 2 xfailed",
     }
 
 
