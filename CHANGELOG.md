@@ -48,6 +48,11 @@ log has the details.
 
 ### Changed
 
+- **The model-selection task gives every agent four times the model calls.** It took the efficiency push's
+  budgets, 80 calls for the lead and 60 for each other agent, and every session of a run ended on its budget
+  some ten minutes into a play, with the pipeline unfinished and no calls left for anything else.
+  `aurora-model-evaluation` now sets 320 and 240, which each run that extends it takes. `aurora-efficiency` and
+  the runs on its task keep 80 and 60.
 - **`make view` opens the latest report.** It picked the run whose folder name sorted last, and a folder's name
   ends in a random id, so the run it opened was arbitrary; with a run index it opened the index instead. It now
   opens the report of the run that finished playing last. The index lists runs newest first and shows when
