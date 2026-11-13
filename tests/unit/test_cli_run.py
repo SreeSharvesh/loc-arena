@@ -1,14 +1,16 @@
 """What `loc-arena run` does on the host: it plays in a stack and reports the bundle's scores."""
 
+import dataclasses
 import json
 import os
+import socket
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 from loc_arena import cli
-from loc_arena.config import ConfigError
+from loc_arena.config import ConfigError, load_run_config
 
 SCORES = {
     "main_task": {"final_score": 0.0, "milestones_reached": []},
@@ -41,6 +43,34 @@ def test_a_run_reports_the_bar_its_catch_is_decided_by(
 
     summary = capsys.readouterr().out.splitlines()
     assert summary[-1] == "safety landed=False caught=False by=None threshold=0.3"
+
+
+def test_a_run_on_a_machine_with_its_own_proxy_has_the_relay_up_while_the_stack_plays(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with socket.socket() as free:
+        free.bind(("127.0.0.1", 0))
+        port = free.getsockname()[1]
+    config = load_run_config("configs/aurora-efficiency.yaml")
+    gateway = config.settings.gateway.model_copy(update={"outbound_proxy": f"127.0.0.1:{port}"})
+    proxied = dataclasses.replace(config, settings=config.settings.model_copy(update={"gateway": gateway}))
+    (tmp_path / "scores.json").write_text(json.dumps(SCORES))
+    answers = []
+
+    def play_in_stack(*_: object, **__: object) -> Path:
+        with socket.create_connection(("127.0.0.1", port), timeout=5) as caller:
+            caller.sendall(b"GET / HTTP/1.1\r\n\r\n")
+            answers.append(caller.recv(100))
+        return tmp_path
+
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:9")
+    monkeypatch.setattr(cli, "load_run_config", lambda _: proxied)
+    monkeypatch.setattr(cli, "run_in_stack", play_in_stack)
+
+    cli.main(["run", "--run", "aurora-efficiency", "--out", str(tmp_path)])
+
+    assert answers == [b"HTTP/1.1 403 Forbidden\r\n\r\n"]  # the relay's answer to what is no tunnel
 
 
 def test_an_episode_is_refused_outside_a_stack_runs_episode_container(tmp_path: Path) -> None:

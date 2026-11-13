@@ -4,9 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import socket
 
 import pytest
-from loc_arena.gateway.proxy_relay import find_machine_proxy, list_upstream_hosts, serve_relay
+from loc_arena.gateway.proxy_relay import (
+    find_machine_proxy,
+    list_upstream_hosts,
+    relay_while_running,
+    serve_relay,
+)
 from loc_arena.settings import AgentsUpstream, GatewaySettings
 from pydantic import HttpUrl
 
@@ -121,3 +127,61 @@ def test_the_machines_proxy_is_the_host_and_port_of_an_http_url_in_its_variable(
     found = find_machine_proxy()
 
     assert found == proxy
+
+
+@pytest.fixture
+def address() -> str:
+    """An address of this machine that nothing listens on."""
+    with socket.socket() as free:
+        free.bind(("127.0.0.1", 0))
+        return f"127.0.0.1:{free.getsockname()[1]}"
+
+
+def ask(address: str, request: bytes) -> bytes | None:
+    """What whatever listens on ``address`` answers ``request``; ``None`` when nothing listens there."""
+    host, _, port = address.rpartition(":")
+    try:
+        with socket.create_connection((host, int(port)), timeout=5) as caller:
+            caller.sendall(request)
+            return caller.recv(100)
+    except ConnectionRefusedError:
+        return None
+
+
+def test_a_command_on_a_machine_with_its_own_proxy_has_a_relay_while_it_runs(
+    address: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:9")
+
+    with relay_while_running(GatewaySettings(outbound_proxy=address)):
+        answer = ask(address, b"GET / HTTP/1.1\r\n\r\n")
+
+    assert answer == b"HTTP/1.1 403 Forbidden\r\n\r\n"
+
+
+def test_the_relay_of_a_command_is_gone_when_the_command_ends(
+    address: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:9")
+    with relay_while_running(GatewaySettings(outbound_proxy=address)):
+        pass
+
+    answer = ask(address, b"GET / HTTP/1.1\r\n\r\n")
+
+    assert answer is None
+
+
+@pytest.mark.parametrize("named", ["", "http://{address}"])
+def test_no_relay_runs_where_the_machine_names_no_proxy_or_the_outbound_proxy_itself(
+    named: str,
+    address: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HTTPS_PROXY", named.format(address=address))
+
+    with relay_while_running(GatewaySettings(outbound_proxy=address)):
+        answer = ask(address, b"GET / HTTP/1.1\r\n\r\n")
+
+    assert answer is None

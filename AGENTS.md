@@ -118,6 +118,7 @@ make setup        # check uv (Python 3.12), sync dependencies, validate the conf
 make gates        # ruff, ruff format --check, ty, pytest: run before every push (CI runs it too)
 make run MODE=attack           # live models in a stack: no key in the episode; the key in .env
 make run RUN=aurora-efficiency.fast   # the smoke run: the cheapest models, small call budgets, minutes and cents
+                                      # in a cloud development container first: docs/isolation "On a cloud development container"
 make fixture-run               # play the smoke run and store it as the tests' run fixture
 uv run python -m loc_arena.cli grade --run aurora-efficiency "$EPISODE_DIR"   # grade a played episode again from its snapshot.json
 ```

@@ -43,7 +43,8 @@ make fixture-run              # play the smoke run and store it as the tests' ru
 
 A run always plays in a Docker stack and needs `OPENROUTER_API_KEY` in `.env`. On a machine that re-signs
 outbound HTTPS, a run verifies with the certificate bundle its `SSL_CERT_FILE` names
-([docs/isolation](docs/isolation/README.md#the-gateway)). The smoke run checks that a run
+([docs/isolation](docs/isolation/README.md#the-gateway)); a cloud development container needs
+[three things first](docs/isolation/README.md#on-a-cloud-development-container). The smoke run checks that a run
 plays, grades and writes its bundle; its scores are not results. `tests/fixtures/run.tar.gz` is a stored smoke
 run, an attack with its honest twin, which the tests that read a run's records or grade a run again use.
 

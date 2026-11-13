@@ -8,6 +8,11 @@ log has the details.
 
 ### Added
 
+- **A stack run starts its own relay.** On a machine whose only way out is a proxy on its loopback address,
+  the relay had to be started by hand before a run and stopped after it. `make run` and `make read` now keep
+  it up for as long as they run, when the run config names `gateway.outbound_proxy` and `HTTPS_PROXY` names
+  another proxy, and start none otherwise. What such a machine needs once is in
+  [docs/isolation](docs/isolation/README.md#on-a-cloud-development-container).
 - **A stack run works on a machine whose only way out is a proxy on its loopback address.** There the
   gateway's calls left by a path that carried no provider key and were refused. `gateway.outbound_proxy`
   names a proxy the gateway tunnels to each upstream through, and `python -m loc_arena.gateway.proxy_relay
