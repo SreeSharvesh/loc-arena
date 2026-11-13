@@ -13,7 +13,7 @@ import pytest
 from loc_arena.agent_code import CONTAINER_NAME_PREFIX, run_agent_code
 from loc_arena.config import load_run_config
 from loc_arena.settings import StackSettings
-from loc_arena.tasks.main_task_grader import find_red_suites, score_main_task, seed_checkout
+from loc_arena.tasks.main_task_grader import score_main_task, seed_checkout
 
 from tests.integration._docker_support import image_exists
 
@@ -49,9 +49,9 @@ def run_in_sandbox(
 def test_the_repo_suites_are_green_in_the_sandbox_on_a_fresh_checkout(tmp_path: Path) -> None:
     checkout = seed_checkout(tmp_path / "checkout")
 
-    red_suites = find_red_suites(checkout, SANDBOX)
+    score = score_main_task(checkout, SANDBOXED_CONFIG)
 
-    assert red_suites == []
+    assert (score.red_suites, score.tests_passed) == ([], score.tests_total)
 
 
 def test_sandboxed_code_cannot_open_a_network_connection(tmp_path: Path) -> None:

@@ -5,6 +5,7 @@ A real central IAM decides every call.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from collections.abc import Iterator
 from http import HTTPStatus
@@ -17,6 +18,7 @@ import pytest
 from loc_arena.config import load_run_config
 from loc_arena.iam_seed import REPOSITORY
 from loc_arena.notes_service import build_notes_app
+from loc_arena.settings import NotesSettings
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 from starlette.applications import Starlette
@@ -62,7 +64,8 @@ def world(tmp_path: Path) -> Iterator[tuple[dict[str, str], Starlette]]:
         load_manifest(MANIFEST),
         IamClient(iam_url, iam.issue_credential("notes-svc", ["iam"]), timeout=1),
     )
-    yield tokens, build_notes_app(CFG, NOTES.name, guard, print)
+    settings = CFG.settings.model_copy(update={"notes": NotesSettings(database=tmp_path / "notes.db")})
+    yield tokens, build_notes_app(dataclasses.replace(CFG, settings=settings), NOTES.name, guard, print)
     iam_server.should_exit = True
 
 

@@ -34,12 +34,12 @@ from pathlib import Path, PurePosixPath
 
 from scenarios.loader import EngineModule, LiveService
 
+from loc_arena import deploy_pool, machine_roots
 from loc_arena.checkouts import checkout_home, checkout_mount, render_checkout_volumes
 from loc_arena.compose_document import ComposeDocument, ComposeService, Healthcheck, ServiceSecret
 from loc_arena.config import RunConfig, load_run_config, sandbox_service
 from loc_arena.gateway import model_gateway
 from loc_arena.gateway.core import API_KEY_VARIABLE
-from loc_arena.gateway.model_gateway import BADGES_VOLUME
 from loc_arena.harness import build_recorded_run_events, grade_run, locate_run
 from loc_arena.iam_bootstrap import (
     BOOTSTRAP_SECRET,
@@ -185,9 +185,9 @@ def render_compose(
     # An engine module may serve company code: each company repo's root is on its path, as in a checkout, and
     # so is meridian-iam, a platform package rather than a work repo, for the services IAM manages.
     managed = managed_services(config)
-    repos = (*COMPANY_REPOS, PLATFORM_PACKAGE)
+    repos = (*COMPANY_REPOS, PLATFORM_PACKAGE, deploy_pool.PACKAGE)
     pythonpath = ":".join(str(COMPANY_DIRECTORY / repo) for repo in repos)
-    return {
+    compose: ComposeDocument = {
         "services": {
             **model_gateway.render_gateway_services(
                 config.settings,
@@ -253,7 +253,7 @@ def render_compose(
         "volumes": {
             **dict.fromkeys(("sealed", "output", "records"), {}),
             **render_checkout_volumes(stack, agent_ids),
-            **({BADGES_VOLUME: {}} if managed else {}),
+            **({model_gateway.BADGES_VOLUME: {}} if managed else {}),
         },
         "secrets": {
             **model_gateway.declare_gateway_secrets(config.settings.gateway),
@@ -261,6 +261,7 @@ def render_compose(
             **{identity.secret_name: {"environment": identity.variable} for identity in identities},
             **declare_runner_token_secrets(config),
             **declare_node_token_secrets(config),
+            **deploy_pool.declare_release_token_secrets(config),
             **(
                 {
                     BOOTSTRAP_SECRET: {"environment": BOOTSTRAP_VARIABLE},
@@ -285,6 +286,7 @@ def render_compose(
             ),
         },
     }
+    return machine_roots.give_builds_machine_roots(compose)
 
 
 def _render_episode(
@@ -433,7 +435,8 @@ def _render_live_service(  # noqa: PLR0913
         case EngineModule(name=module):
             # The module reads its own entry of the run config by name.
             arguments = [f"{CONFIGS_DIRECTORY}/{run}.yaml", service.name]
-            source = {**engine, "command": ["python", "-m", module, *arguments]}
+            runs = deploy_pool.run_module(config, service.name, module)
+            source = {**engine, "command": ["python", "-m", runs, *arguments]}
             environment = engine["environment"]
             manifest_in_container = (
                 ENGINE_DIRECTORY / manifest_path(config, service.name) if is_managed else None
@@ -459,6 +462,7 @@ def _render_live_service(  # noqa: PLR0913
     runners = list_runner_services(config) if service.runners else []
     nodes = list_node_services(config) if service.nodes else []
     mounted = [*mounted, *map(runner_token_secret, runners), *map(node_token_secret, nodes)]
+    mounted += deploy_pool.mount_release_tokens(config, service.name)
     depends_on = {
         **({iam.service: {"condition": "service_healthy"}} if is_managed else {}),
         **{runner: {"condition": "service_healthy"} for runner in runners},
@@ -479,7 +483,7 @@ def _render_live_service(  # noqa: PLR0913
                 "volumes": [
                     *source.get("volumes", []),
                     str(iam.database.parent),
-                    f"{BADGES_VOLUME}:{iam.key_set.parent}",
+                    f"{model_gateway.BADGES_VOLUME}:{iam.key_set.parent}",
                 ],
             }
             if is_iam
@@ -559,6 +563,7 @@ def _issue_play_secrets(config: RunConfig, tokens: dict[str, str]) -> tuple[dict
             **{identity.variable: value for identity, value in identities.items()},
             **{runner_token_variable(runner): secrets.token_urlsafe(TOKEN_BYTES) for runner in runners},
             **{node_token_variable(node): secrets.token_urlsafe(TOKEN_BYTES) for node in nodes},
+            **deploy_pool.issue_release_tokens(config, TOKEN_BYTES),
         }
         if managed:
             environment[BOOTSTRAP_VARIABLE] = render_bootstrap(config)

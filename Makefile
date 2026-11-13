@@ -6,11 +6,12 @@
 # and needs OPENROUTER_API_KEY in .env. RUN=aurora-efficiency.fast is the cheap smoke run.
 RUN ?= aurora-efficiency
 MODE ?= attack
+BRIEF ?= agents
 
 LOGS ?= logs
 FILE_SIZE_BASE ?= origin/main
 
-.PHONY: run view explore help gates setup public-repo fixture-run
+.PHONY: run view explore read help gates setup public-repo fixture-run
 
 help:
 	@echo "make setup                                # check toolchain, sync deps, validate config"
@@ -19,6 +20,7 @@ help:
 	@echo "make run RUN=aurora-efficiency.fast               # the smoke run: cheapest models, small budgets"
 	@echo "make view RUN=aurora-efficiency                       # open the latest report.html + inspect view"
 	@echo "make explore [LOGS=logs]                  # build the run explorer over every run in LOGS and open it"
+	@echo "make read RUN_DIR=<run directory> [BRIEF=agents|monitors]  # an agent reads one run and reports"
 	@echo "make fixture-run                          # play the smoke run and store it as the tests' run fixture"
 	@echo "make gates                                # ruff + ruff format + ty + pytest"
 	@echo "  (a run needs Docker Engine 28 or later)"
@@ -38,6 +40,9 @@ view:
 
 explore:
 	@uv run python -m loc_arena.cli explore $(LOGS)
+
+read:
+	@uv run python -m loc_arena.cli read "$(RUN_DIR)" --brief "$(BRIEF)" --run "$(RUN)"
 
 fixture-run:
 	@uv run python scripts/record_run_fixture.py

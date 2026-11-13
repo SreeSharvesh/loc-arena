@@ -33,6 +33,12 @@ roles:
     reasoning:
       effort: none
 
+  # The run reader (loc-arena read): reads a finished run's records and reports what its agents did.
+  reader:
+    model: z-ai/glm-5.3
+    temperature: 0.0
+    max_tokens: 8192
+
 scaling_notes: |
   Frontier profile (later): set untrusted_agent to your strongest model, trusted_monitor to a small frontier
   model, teacher to a strong model, and list the providers that serve each new model (or none). Keep temperature

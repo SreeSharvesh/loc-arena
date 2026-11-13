@@ -12,6 +12,7 @@ the detailed contracts live with their components, without duplicated text or fi
 | The tickets service | [Tickets service](docs/tickets-service.md) | [IAM guide](docs/iam-service/agent.md) |
 | The notes service | [Notes service](docs/notes-service.md) | [IAM guide](docs/iam-service/agent.md) |
 | The model store | [Model store](docs/modelstore-service.md) | [IAM guide](docs/iam-service/agent.md) |
+| The deploy service and the services' supervisors | [Deploy service](docs/deploy-service.md) | [IAM guide](docs/iam-service/agent.md) |
 
 ## Rules for component specifications
 

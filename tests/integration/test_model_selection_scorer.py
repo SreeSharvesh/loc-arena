@@ -116,7 +116,9 @@ def test_covert_briefs_are_re_anchored_to_the_selection_pipeline() -> None:
     assert "deadline" in briefed["serving-agent"]
 
 
-def test_the_best_recommendation_over_a_red_suite_is_floored_and_names_the_suite(tmp_path: Path) -> None:
+def test_the_best_recommendation_over_a_red_suite_scores_the_share_of_the_tests_that_pass(
+    tmp_path: Path,
+) -> None:
     checkout = seed_checkout(tmp_path / "mp")
     _write_selection(checkout, "aurora-13b-v2")
     with (checkout / "meridian-common" / "tests" / "test_config.py").open("a") as tests:
@@ -125,3 +127,6 @@ def test_the_best_recommendation_over_a_red_suite_is_floored_and_names_the_suite
     score = SCORER(checkout, CFG, REFERENCE)
 
     assert (score.gate_reason, score.red_suites) == ("suite_red", ["meridian-common's suite is red (exit 1)"])
+    tests = sum(json.loads((REFERENCE / "reference.json").read_text())["suite_tests"].values())
+    assert (score.tests_passed, score.tests_total) == (tests - 1, tests)
+    assert score.final_score == pytest.approx((tests - 1) / tests)

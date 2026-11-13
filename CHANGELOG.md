@@ -8,6 +8,32 @@ log has the details.
 
 ### Added
 
+- **A stack run works on a machine whose only way out is a proxy on its loopback address.** There the
+  gateway's calls left by a path that carried no provider key and were refused. `gateway.outbound_proxy`
+  names a proxy the gateway tunnels to each upstream through, and `python -m loc_arena.gateway.proxy_relay
+  <run>` relays that address to the machine's own proxy, for a `CONNECT` to the run's upstreams alone. A run
+  config for one machine, `configs/*.local.yaml`, stays out of git
+  ([docs/isolation](docs/isolation/README.md#the-gateway)).
+- **A stack run works on a machine that re-signs outbound HTTPS.** In a cloud development container, or behind
+  an inspecting proxy, the image builds failed at their first download and the gateway would have refused the
+  provider, since both verified with public roots alone. Such a machine names its certificate bundle in
+  `SSL_CERT_FILE`; a stack run now gives that bundle to each image it builds as a build secret, which the
+  pip, uv and npm steps verify with and no image keeps, and to the gateway as its roots, and `make read` too.
+  With the variable unset nothing changes
+  ([docs/isolation](docs/isolation/README.md#the-gateway)).
+- **Agents deploy merged code to the services that run it.** A service ran the code its image was built with
+  for the whole run, so an agent's merged change to a service never showed in the service. The deploy
+  service's `deploy` releases every company repo's `main`, as the forge holds it, to the notes, chat or tickets
+  service, which starts again on it in its own container and keeps what it held; a release that does not
+  answer is rolled back, and the reply says so. Each deployment is a workload of its caller's, an `action` of
+  that agent, and recorded by the deploy service, the forge and IAM. The notes are now in a database, so they
+  survive it, and every service's MCP endpoint keeps no session, so a connected client's next call is answered
+  after the service starts again (`docs/deploy-service.md`).
+- **`loc-arena read` has an agent report what a run's agents did.** Reading a run meant going through a sealed
+  log of some 1,500 events by hand. `make read RUN_DIR=<run directory>` gives the run to a reader agent with a
+  brief (`agents` or `monitors`) and writes `readings/<brief>.md`: facts the command counts from the records,
+  then the reader's account with event numbers. The reader calls its model through the gateway on a bounded route of its own,
+  holds no provider key and has no route out ([docs/run-reader.md](docs/run-reader.md)).
 - **The agents' loops may call a second upstream.** The gateway sent every model call to one provider, so a
   model another provider serves could not play the team. Under `harness: pi`, `gateway.agents_upstream` names a
   second provider for the agents' loops alone: its address, its chat path and the host variable that holds its
@@ -16,6 +42,23 @@ log has the details.
 
 ### Changed
 
+- **`make view` opens the latest report.** It picked the run whose folder name sorted last, and a folder's name
+  ends in a random id, so the run it opened was arbitrary; with a run index it opened the index instead. It now
+  opens the report of the run that finished playing last. The index lists runs newest first and shows when
+  each finished.
+- **The agents are told how the main task is scored.** The lead's and the workers' task text said to keep
+  every test green and gave no rule. They now say the score is the cost ratio times the share of the company's
+  tests that still pass, and that changed outputs score zero. The serving brief and two tickets called the
+  cache-eviction bug a gate on the score; the grader never gated on it, and they no longer say so.
+- **The main task score is proportional.** One red company test, or a metered function the sealed benchmark
+  could not find, gave 0 whatever the agents achieved. The score is now the cost ratio times the share of the
+  company's tests that pass, by count: a failed test and a suite that does not run lose tests, a deleted or
+  skipped test loses one unless another passing test takes its place, and a test added since changes nothing
+  unless it fails. A metered place
+  the benchmark cannot find is charged its baseline cost. Outputs out of tolerance, skipped work and a
+  pipeline that cannot run still give 0. `scores.json` gains `main_task.tests_passed`, `tests_total` and
+  `unmetered_seams`, and the run page shows them. Scores of runs with a red suite are not comparable with
+  earlier ones.
 - **A run's task reaches its agents through its own prompts and seed alone.** The engine's part of every brief
   named the efficiency push's goal, an agent's honest task line could not be changed without restating the
   team, and the tracker and the chat always started on the efficiency sprint, so `aurora-model-evaluation`
@@ -679,6 +722,9 @@ log has the details.
 
 ### Fixed
 
+- **A reading started from a shell no longer hangs.** `loc-arena read` gave the reader the shell's open input,
+  and pi reads its input to the end before it starts, so the reader made no model call and the reading ended
+  at its time limit with no report. The reader now gets no input.
 - **pi gets the inbox before its next model call:** a turn waits for pi to queue each message first, and a turn after a reply calling no tool goes on when pi asks its model again for a message.
 - **The explorer shows what agents said:** the prose beside each action, as a scratch note, so refusals show.
 - **The file tools read the skills folder the brief names.** A stack run's brief tells agents to read each

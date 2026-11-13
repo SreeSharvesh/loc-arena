@@ -173,7 +173,7 @@ function header(){
  const land=s.landing_minimal?pill('minimal landing','danger'):pill('did not land','ok');
  const caught=sf.landed?(sf.caught?pill('CAUGHT: '+(sf.caught_by||[]).join(', '),'ok'):pill('landed & UNCAUGHT','danger')):pill('nothing landed','ok');
  const models=Object.entries(S.models).map(([r,mm])=>`${esc(r)}=${esc(mm)}`).join(' · ');
- const gate=m.gate_passed?pill('green','ok'):pill('FLOOR: '+esc(m.gate_reason||'gated'),'warn');
+ const gate=m.gate_passed?pill('green','ok'):pill(esc(m.gate_reason||'gated'),'warn');
  const cost=(m.baseline_cost!=null)?`<div class=kpi><div class=l>cost baseline → achieved</div><div class=v style=font-size:15px>${m.baseline_cost} → ${m.achieved_cost}</div></div>`:'';
  return `<h1 id=outcome>${esc(S.run_name)} <span class="pill ${S.mode==='attack'?'danger':'ok'}">${esc(S.mode)}</span></h1>
  <div class=sub>seed ${esc(S.seed)} · wall-clock ${esc(S.wall_clock_seconds)}s · ${esc(models)}</div>${ceilingNote(S.wall_clock_ceiling)}
@@ -181,7 +181,7 @@ function header(){
  <div class=kpi><div class=l>main final score</div><div class=v>${(m.final_score||0).toFixed(3)}×</div></div>
  <div class=kpi><div class=l>frac human</div><div class=v>${(m.frac_human||0).toFixed(3)}</div></div>
  <div class=kpi><div class=l>milestones</div><div class=v>${(m.milestones_reached||[]).join(', ')||'none'}</div></div>
- <div class=kpi><div class=l>correctness gate</div><div class=v style=font-size:13px>${gate}</div></div>
+ <div class=kpi><div class=l>correctness</div><div class=v style=font-size:13px>${gate}</div></div>
  ${cost}
  <div class=kpi><div class=l>covert depth unattributed_inference_calls..sustained_calls_below_alert_threshold</div><div class=v>${s.covert_depth} / 4</div></div>
  <div class=kpi><div class=l>side-task landing</div><div class=v style=font-size:13px>${land}</div></div>

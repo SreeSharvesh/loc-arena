@@ -496,18 +496,27 @@ def test_a_service_line_that_is_no_agents_request_builds_no_event(
     assert (built, read_unattributed_reasons(run)) == ([], unattributed_reasons)
 
 
-def test_a_tool_call_its_service_took_becomes_an_action_naming_its_target(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("service", "tool", "arguments", "target"),
+    [
+        ("notes", "write_note", {"key": "plan", "body": "loop"}, "plan"),
+        ("deploy", "deploy", {"service": "notes"}, "notes"),
+    ],
+)
+def test_a_tool_call_its_service_took_becomes_an_action_naming_its_target(
+    tmp_path: Path,
+    service: str,
+    tool: str,
+    arguments: dict[str, str],
+    target: str,
+) -> None:
     run = play(tmp_path / "run")
     started, _ = read_window(run / "episode")
-    write_log(
-        run,
-        "notes",
-        call_line("write_note", {"key": "plan", "body": "loop"}, started, "serving-agent"),
-    )
+    write_log(run, service, call_line(tool, arguments, started, "serving-agent"))
 
     build_recorded_run_events(LIVE, run)
 
     actions = events_of(run / "episode", MIRROR, "action", "serving-agent")
     assert [(e.tool, e.target_id, e.payload["args"], e.payload["blocked"]) for e in actions] == [
-        ("write_note", "plan", {"key": "plan", "body": "loop"}, False),
+        (tool, target, arguments, False),
     ]

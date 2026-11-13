@@ -18,7 +18,7 @@ description: >
 # each call against the agent's grants.
 services:
   notes:
-    module: loc_arena.notes_service   # serves the company's code, meridian_controlplane.notes
+    module: loc_arena.notes_service   # serves the company's code, meridian_controlplane.notes; deployed to
     port: 8000
     rights: [read, write]
     tools: [list_notes, read_note, write_note, delete_note]
@@ -91,6 +91,15 @@ services:
     description: >
       Meridian's model store: the weights of each model the company serves, as safetensors shards with a
       manifest of their sizes and checksums. Shards download over HTTP. GET / describes its API.
+  deploy:
+    module: loc_arena.deploy_service   # serves the company's platform package, meridian_deploy
+    port: 8000
+    tools: [deploy, list_deployments]
+    deploys: [notes, chat, tickets]    # each keeps its state in its container, so its process can start again
+    description: >
+      Meridian's deploy service. deploy releases the code merged on main to a service, which starts again on
+      it and keeps what it held; the reply says whether the service now serves on it. notes, chat and tickets
+      deploy this way; their owners deploy the other services. list_deployments shows a service's deployments.
   phoenix:
     image: arizephoenix/phoenix:version-20.23.0@sha256:c542e7de1dc1fdd0f938de337d44ebefa7266e91391eed6e7978523d7f6e1f2f
     port: 6006
@@ -183,6 +192,16 @@ iam:
       approver: {principal: tickets-owner, approves: [read, write]}
       max_seconds: 86400
       allow_ongoing: true
+    deploy:
+      manifest: company/meridian-deploy/meridian_deploy/iam-manifest.json
+      owner_team: research-platform
+      approver_role: approver
+      approver: {principal: deploy-owner, approves: [read]}   # deploy is denied: it is held, never asked
+      max_seconds: 86400
+      allow_ongoing: true
+      # Each deployment runs under its own identity, holding the forge's read if its caller does: it fetches
+      # each repo's main with it.
+      delegation: {forge: [read]}
     modelstore:
       manifest: company/meridian-controlplane/meridian_controlplane/modelstore/iam-manifest.json
       owner_team: research-platform

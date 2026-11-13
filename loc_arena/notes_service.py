@@ -4,9 +4,10 @@ A stack run starts it as the scenario's ``notes`` entry: ``python -m loc_arena.n
 <entry name>``. It serves ``meridian_controlplane.notes`` under central IAM, which decides every call, on one
 port: the MCP tools at ``/mcp``, which agents reach through the tools gateway, and the HTTP API beside them,
 which they call from their sandbox with their credential on the service. Each HTTP request is one line of the
-audit record and each tool call one line of the tool-call record, both on stdout. The notes live in memory and
-each process starts from the scenario's note seed, so the honest twin's recreated service starts where the
-episode's did; agents' edits to the package do not go live.
+audit record and each tool call one line of the tool-call record, both on stdout. A new container writes the
+scenario's note seed into a new database, so the honest twin's recreated service starts where the episode's
+did, and a restarted process keeps its notes; agents' edits to the package go live when it is deployed
+(``docs/deploy-service.md``).
 """
 
 from __future__ import annotations
@@ -35,9 +36,10 @@ SEED_KEY = "notes_seed"  # the key of scenario.yaml naming the seed file, relati
 
 
 def open_notes_store(config: RunConfig) -> NoteStore:
-    """The notes of ``config``'s run, as the scenario's seed starts them."""
+    """The notes of ``config``'s run: its database, written from the scenario's seed if there is none."""
     scenario = resolve_scenario(config)
-    return open_seeded_store(load_note_seed(scenario.directory / scenario.meta[SEED_KEY]))
+    seed = load_note_seed(scenario.directory / scenario.meta[SEED_KEY])
+    return open_seeded_store(config.settings.notes.database, seed)
 
 
 def build_notes_app(

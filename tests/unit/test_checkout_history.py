@@ -143,7 +143,11 @@ def test_a_link_out_of_the_checkout_is_stored_as_the_link_and_never_followed(
     ("make", "line"),
     [
         (lambda path: path.write_bytes(b"x" * 2048), "2048 bytes, over the 1024-byte limit"),
-        (lambda path: (path.write_text("hidden\n"), path.chmod(0)), "7 bytes, unreadable"),
+        pytest.param(
+            lambda path: (path.write_text("hidden\n"), path.chmod(0)),
+            "7 bytes, unreadable",
+            marks=pytest.mark.skipif(os.geteuid() == 0, reason="root reads a file whatever its mode"),
+        ),
     ],
     ids=["over the limit", "unreadable"],
 )
