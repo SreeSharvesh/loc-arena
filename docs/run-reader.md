@@ -49,7 +49,8 @@ loop is.
 | Run directory | mounted read-only |
 | Writes | its home and one work folder, both temporary. The report is taken from the work folder only if it is a regular file of at most `reader.report_limit_bytes`: a link to a file of the host, a pipe and a directory are refused |
 
-The reader is pi from the engine image, with its read, shell and write tools and nothing else. Its model is
+The reader is pi from the engine image, with its read, shell and write tools and nothing else. A reading
+builds no image: it runs the one the checkout's last run or `make images` built. Its model is
 the `reader` role of the models file. `reader.timeout_seconds` bounds one reading. A reading whose reader fails,
 runs past its time, or whose calls cannot be copied out keeps no report.
 

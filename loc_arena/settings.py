@@ -25,6 +25,8 @@ from pydantic import (
     model_validator,
 )
 
+from loc_arena import image_tag
+
 
 class SettingsGroup(BaseModel):
     """Base of the root and every group: immutable, and an unknown key (a typo in the YAML) is an error."""
@@ -185,21 +187,24 @@ class GatewaySettings(SettingsGroup):
 
 
 class StackSettings(SettingsGroup):
-    """The episode's compose project (``stack:``): its images and its containers' limits."""
+    """The episode's compose project (``stack:``): its images and its containers' limits.
+
+    The four images built from the Dockerfile are tagged ``IMAGE_TAG`` unless the config names them.
+    """
 
     image: str = Field(
-        default="loc-arena:latest",
+        default_factory=lambda: f"loc-arena:{image_tag.IMAGE_TAG}",
         description="The image of the episode: the Dockerfile's `engine` target.",
     )
     sandbox_image: str = Field(
-        default="loc-arena-sandbox:latest",
+        default_factory=lambda: f"loc-arena-sandbox:{image_tag.IMAGE_TAG}",
         description="The image agent code runs in, every agent's sandbox's and the grader's throwaway "
         "container's: the Dockerfile's `sandbox` target, which holds no harness and no scenarios.",
     )
     episode_memory_limit: str = Field(default="4g", description="Memory limit of the episode container.")
     episode_cpus: PositiveFloat = Field(default=2.0, description="CPUs the episode container may use.")
     runner_image: str = Field(
-        default="loc-arena-runner:latest",
+        default_factory=lambda: f"loc-arena-runner:{image_tag.IMAGE_TAG}",
         description="The image of each runner, where the company's agents run with pi: the Dockerfile's "
         "`runner` target. Runners take a sandbox's limits.",
     )
@@ -208,7 +213,7 @@ class StackSettings(SettingsGroup):
         description="Seconds one run of a company agent may take in its runner before it is killed.",
     )
     worker_image: str = Field(
-        default="loc-arena-worker:latest",
+        default_factory=lambda: f"loc-arena-worker:{image_tag.IMAGE_TAG}",
         description="The image of each node of the job service's fleet, where its jobs run as processes: the "
         "Dockerfile's `worker` target. A worker takes a service's limits.",
     )
@@ -642,34 +647,13 @@ class LocArenaSettings(SettingsGroup):
         description="Sanctioned paths and quota.",
     )
     gateway: GatewaySettings = Field(default=GatewaySettings(), description="The gateway container.")
-    stack: StackSettings = Field(
-        default=StackSettings(),
-        description="The episode's compose project.",
-    )
-    iam: IamSettings = Field(
-        default=IamSettings(),
-        description="Central IAM for the stack run's services.",
-    )
-    evalkit: EvalkitSettings = Field(
-        default=EvalkitSettings(),
-        description="The eval service's jobs.",
-    )
-    tickets: TicketsSettings = Field(
-        default=TicketsSettings(),
-        description="The tickets service's database.",
-    )
-    notes: NotesSettings = Field(
-        default=NotesSettings(),
-        description="The notes service's database.",
-    )
-    chat: ChatSettings = Field(
-        default=ChatSettings(),
-        description="The chat service's database.",
-    )
-    forge: ForgeSettings = Field(
-        default=ForgeSettings(),
-        description="The forge's git repositories.",
-    )
+    stack: StackSettings = Field(default=StackSettings(), description="The episode's compose project.")
+    iam: IamSettings = Field(default=IamSettings(), description="Central IAM for the stack run's services.")
+    evalkit: EvalkitSettings = Field(default=EvalkitSettings(), description="The eval service's jobs.")
+    tickets: TicketsSettings = Field(default=TicketsSettings(), description="The tickets service's database.")
+    notes: NotesSettings = Field(default=NotesSettings(), description="The notes service's database.")
+    chat: ChatSettings = Field(default=ChatSettings(), description="The chat service's database.")
+    forge: ForgeSettings = Field(default=ForgeSettings(), description="The forge's git repositories.")
     history: HistorySettings = Field(
         default=HistorySettings(),
         description="What one capture of an agent's checkout reads.",
@@ -683,14 +667,8 @@ class LocArenaSettings(SettingsGroup):
         description="The company's own inference server.",
     )
     deploy: DeploySettings = Field(default=DeploySettings(), description="The deploy service.")
-    pi: PiSettings = Field(
-        default=PiSettings(),
-        description="pi, as the agents' harness.",
-    )
-    reader: ReaderSettings = Field(
-        default=ReaderSettings(),
-        description="The run reader.",
-    )
+    pi: PiSettings = Field(default=PiSettings(), description="pi, as the agents' harness.")
+    reader: ReaderSettings = Field(default=ReaderSettings(), description="The run reader.")
 
     @model_validator(mode="after")
     def require_the_served_model_on_the_runners_route(self) -> Self:
