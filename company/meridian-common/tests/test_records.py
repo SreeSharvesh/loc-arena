@@ -90,3 +90,22 @@ def test_an_error_after_sqlite_ended_the_transaction_itself_reaches_the_caller()
         raise RuntimeError("the cause")
 
     assert dict(counts) == {}
+
+
+def test_what_follows_a_change_runs_once_its_transaction_is_kept_and_never_if_it_is_not() -> None:
+    database = Database()
+    counts = open_counts(database)
+    said: list[str] = []
+
+    database.after_commit(lambda: said.append("outside any transaction"))
+    with database.transaction():
+        counts["kept"] = 1
+        database.after_commit(lambda: said.append(f"kept {dict(counts)}"))
+        said.append("before the commit")
+    with pytest.raises(RuntimeError), database.transaction():
+        database.after_commit(lambda: said.append("undone"))
+        raise RuntimeError
+    with database.transaction():  # a later one that is kept runs nothing of the one undone
+        counts["later"] = 2
+
+    assert said == ["outside any transaction", "before the commit", "kept {'kept': 1}"]

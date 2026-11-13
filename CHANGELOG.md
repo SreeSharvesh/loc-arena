@@ -8,6 +8,13 @@ log has the details.
 
 ### Added
 
+- **The agents service keeps its state across a restart of its process.** Its agents, their identities,
+  its executions, checkpoints, telemetry settings and schedules were in memory, so a process that started
+  again went back to the seed and left what ran on its runners with no record. They are now records in a
+  database in its container (`agents_service.database`): a new container starts from the seed, and a
+  restarted process holds what the last one held, queues its queued executions again, and resumes from a
+  checkpoint each execution that ran when the last one ended, or fails it with the reason when no checkpoint
+  can be taken ([docs/agents-service.md](docs/agents-service.md#state)).
 - **Agents deploy the model store, and the eval service keeps its state across a restart.** Both kept
   their state in memory: a restart of the model store's process changed every shard's checksum, and one of
   the eval service's lost every eval and run since the seed. The model store now keeps its shards as files

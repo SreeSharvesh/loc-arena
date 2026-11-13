@@ -7,7 +7,7 @@ it finds into ``RunConfig.settings``; a group the config leaves out takes the de
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated, Self
+from typing import Annotated, Any, Self
 
 from pydantic import (
     AfterValidator,
@@ -58,6 +58,15 @@ class InferenceSettings(SettingsGroup):
     batch_generate: BatchGenerateSettings = Field(
         default=BatchGenerateSettings(),
         description="The batch route's quota.",
+    )
+
+
+def _place_database(file: str, seed: str) -> Any:  # noqa: ANN401 - a pydantic field
+    """A service's SQLite file under ``/var/lib``, in its container, which a new one writes from ``seed``."""
+    return Field(
+        default=Path("/var/lib") / file,
+        description=f"Its SQLite file. A new container finds none and writes {seed} into a new one, so the "
+        "honest twin's recreated service starts from the seed; a restarted one keeps it.",
     )
 
 
@@ -422,11 +431,7 @@ class IamSettings(SettingsGroup):
 class EvalkitSettings(SettingsGroup):
     """The eval service (the run config's ``evalkit:`` block): its database, and what a run's job asks."""
 
-    database: Path = Field(
-        default=Path("/var/lib/evalkit/evalkit.db"),
-        description="Its SQLite file. A new container finds none and writes the package's seed into a new "
-        "one, so the honest twin's recreated service starts from the seed; a restarted one keeps it.",
-    )
+    database: Path = _place_database("evalkit/evalkit.db", "the package's seed")
     job_cpu: PositiveFloat = Field(default=1.0, description="CPUs an eval run's job asks of the cluster.")
     job_memory_mb: PositiveInt = Field(default=2048, description="Memory, in MiB, an eval run's job asks.")
 
@@ -434,11 +439,7 @@ class EvalkitSettings(SettingsGroup):
 class TicketsSettings(SettingsGroup):
     """The tickets service (the run config's ``tickets:`` block): its database."""
 
-    database: Path = Field(
-        default=Path("/var/lib/tickets/tickets.db"),
-        description="Its SQLite file. A new container finds none and replays the scenario's ticket seed into "
-        "a new one, so the honest twin's recreated service starts from the seed; a restarted one keeps it.",
-    )
+    database: Path = _place_database("tickets/tickets.db", "the scenario's ticket seed")
     seed_overlay: Path | None = Field(
         default=None,
         description="A ticket seed in the scenario pack laid over the scenario's: each project it names "
@@ -449,21 +450,19 @@ class TicketsSettings(SettingsGroup):
 class NotesSettings(SettingsGroup):
     """The notes service (the run config's ``notes:`` block): its database."""
 
-    database: Path = Field(
-        default=Path("/var/lib/notes/notes.db"),
-        description="Its SQLite file. A new container finds none and writes the scenario's note seed into a "
-        "new one, so the honest twin's recreated service starts from the seed; a restarted one keeps it.",
-    )
+    database: Path = _place_database("notes/notes.db", "the scenario's note seed")
+
+
+class AgentsServiceSettings(SettingsGroup):
+    """The agents service (the ``agents_service:`` block; ``agents:`` is the team): its database."""
+
+    database: Path = _place_database("agents/agents.db", "the package's seed")
 
 
 class ChatSettings(SettingsGroup):
     """The chat service (the run config's ``chat:`` block): its database."""
 
-    database: Path = Field(
-        default=Path("/var/lib/chat/chat.db"),
-        description="Its SQLite file. A new container finds none and replays the scenario's chat seed into a "
-        "new one, so the honest twin's recreated service starts from the seed; a restarted one keeps it.",
-    )
+    database: Path = _place_database("chat/chat.db", "the scenario's chat seed")
     seed_overlay: Path | None = Field(
         default=None,
         description="A chat seed in the scenario pack laid over the scenario's: each channel it names takes "
@@ -671,6 +670,10 @@ class LocArenaSettings(SettingsGroup):
     tickets: TicketsSettings = Field(default=TicketsSettings(), description="The tickets service's database.")
     notes: NotesSettings = Field(default=NotesSettings(), description="The notes service's database.")
     chat: ChatSettings = Field(default=ChatSettings(), description="The chat service's database.")
+    agents_service: AgentsServiceSettings = Field(
+        default=AgentsServiceSettings(),
+        description="The agents service's database.",
+    )
     forge: ForgeSettings = Field(default=ForgeSettings(), description="The forge's git repositories.")
     history: HistorySettings = Field(
         default=HistorySettings(),

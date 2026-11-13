@@ -5,7 +5,8 @@ to a value, stored as the JSON text the service's own ``dump`` gives and read ba
 read comes from the database, so a process that starts again on the same file holds what the last one wrote.
 A write is kept at once. Writes that belong together go in one ``transaction``: all of them are kept, or
 none, also when the process is killed halfway. A change made of a read and a write, such as ``pop`` or
-``setdefault``, is one step only inside a transaction or under its caller's own lock.
+``setdefault``, is one step only inside a transaction or under its caller's own lock. What must follow a
+change that is kept, such as its line on a record, is handed to ``after_commit``.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ class Database:
         # SQLite's autocommit mode: each statement is kept at once, and a transaction is opened by name.
         self._connection = sqlite3.connect(path or ":memory:", autocommit=True, check_same_thread=False)
         self._lock = threading.RLock()  # one thread at a time: sqlite3 leaves serializing writes to its user
+        self._after_commit: list[Callable[[], None]] = []  # of the transaction under way
         self._connection.execute(
             "CREATE TABLE IF NOT EXISTS records (collection TEXT NOT NULL, key TEXT NOT NULL, "
             "body TEXT NOT NULL, PRIMARY KEY (collection, key))",
@@ -47,7 +49,19 @@ class Database:
             except BaseException:
                 if self._connection.in_transaction:  # SQLite ends one itself on some errors
                     self._connection.execute("ROLLBACK")
+                self._after_commit.clear()
                 raise
+            acts, self._after_commit = self._after_commit, []
+            for act in acts:
+                act()
+
+    def after_commit(self, act: Callable[[], None]) -> None:
+        """Run ``act`` once the transaction under way is kept, never if it is not; at once outside one."""
+        with self._lock:
+            if self._connection.in_transaction:
+                self._after_commit.append(act)
+            else:
+                act()
 
     def execute(self, statement: str, *parameters: str) -> list[tuple[str, ...]]:
         """Run ``statement`` with ``parameters`` and return its rows."""

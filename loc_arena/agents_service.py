@@ -3,8 +3,12 @@
 A stack run starts it as the scenario's ``agents`` entry: ``python -m loc_arena.agents_service <run config>
 <entry name>``. It serves ``meridian_controlplane.agents`` under central IAM, which decides every call and
 issues each registered agent and created schedule its identity, runs executions on the runners the entry
-declares (``loc_arena.runner_pool``), fires the schedules it starts with, and writes the audit record to
-stdout.
+declares (``loc_arena.runner_pool``), fires its schedules, and writes the audit record to stdout. A new
+container writes the package's seed (agents, telemetry settings, schedules) into a new database
+(``agents_service.database``), so the honest twin's recreated service starts where the episode's did. A
+restarted process keeps its agents with their identities, its executions with their checkpoints, its settings
+and its schedules, and resumes from a checkpoint what ran when the last one ended. Agents' edits to the
+package do not go live: the deploy service does not deploy to it (``docs/deploy-service.md``).
 """
 
 from __future__ import annotations
@@ -28,6 +32,7 @@ from loc_arena.runner_pool import RUNNER_WORKSPACE, list_runner_services, runner
 from loc_arena.sandbox import SandboxClient, SandboxError
 from loc_arena.task import resolve_scenario
 from loc_arena.tool_records import record_writer
+from meridian_common.records import Database
 from meridian_controlplane.agents import (
     AgentRegistry,
     Executions,
@@ -120,23 +125,29 @@ def main(arguments: list[str]) -> None:
     run_config = load_run_config(arguments[0])
     service_entry = next(service for service in run_config.live_services if service.name == arguments[1])
     write_audit_line = record_writer(run_config.settings.stack.records_directory, service_entry.name)
-    registry = AgentRegistry(load_seeded_agents())
+    guard = guard_from_environment(os.environ)  # IAM decides every call: no identity or rights table here
+    database = Database(run_config.settings.agents_service.database)
+    registry = AgentRegistry(load_seeded_agents(), database)
     executions = Executions(
         registry,
         connect_runners(run_config),
         run_config.settings.stack.runner_timeout_seconds,
         write_audit_line,
+        database,
+        load_seeded_telemetry(),
     )
-    executions.configure_telemetry(load_seeded_telemetry())
-    guard = guard_from_environment(os.environ)  # IAM decides every call: no identity or rights table here
     seed = load_seed(resolve_scenario(run_config))
     assert seed is not None  # the service runs under central IAM alone, which the seed sets up
     max_seconds = {name: resource.max_seconds for name, resource in seed.resources.items()}
     issuer = IamIdentityIssuer(guard.client, max_seconds)
     authority = load_iam_authority(guard)
-    schedules = Schedules(executions, authority.authorize, write_audit_line)
-    for seeded in load_seeded_schedules():
-        schedules.create(seeded.schedule, seeded.created_by, identity=None)
+    schedules = Schedules(
+        executions,
+        authority.authorize,
+        write_audit_line,
+        database,
+        load_seeded_schedules(),
+    )
     app = create_agents_service_app(registry, write_audit_line, authority, executions, issuer, schedules)
     uvicorn.run(app, host=ALL_ADDRESSES, port=service_entry.port, log_level="warning", access_log=False)
 
