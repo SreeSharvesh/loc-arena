@@ -39,7 +39,7 @@ image with no network. The episode image holds no grader answers. No container m
 
 ### Images
 
-The Dockerfile's four stages build the images of the episode and the engine's services (`stack.image`), the
+Four of the Dockerfile's stages build the images of the episode and the engine's services (`stack.image`), the
 sandboxes (`stack.sandbox_image`), the runners (`stack.runner_image`) and the nodes (`stack.worker_image`).
 Each live service a scenario builds from its pack has an image of its own, `loc-arena-service-<name>`.
 Their default tag comes from the checkout the code runs from (`derive_image_tag` in `loc_arena/image_tag.py`),

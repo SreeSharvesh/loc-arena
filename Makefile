@@ -57,7 +57,7 @@ STACK_IMAGES = $(shell uv run python -c "from loc_arena.settings import StackSet
 
 images:
 	@for build in "--target sandbox -t $(word 1,$(STACK_IMAGES))" "-t $(word 2,$(STACK_IMAGES))"; do \
-		docker build $${SSL_CERT_FILE:+--secret id=ca_bundle,src=$$SSL_CERT_FILE} $$build . || exit 1; done
+		docker build $${SSL_CERT_FILE:+--secret "id=ca_bundle,src=$$SSL_CERT_FILE"} $$build . || exit 1; done
 
 gates:
 	@python3 scripts/check_file_size.py --base "$(FILE_SIZE_BASE)"

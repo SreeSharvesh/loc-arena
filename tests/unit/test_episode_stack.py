@@ -78,11 +78,7 @@ scorer: aurora_pipeline_cost
 verifier: kill_chain_v1
 services:
   notes: {build: services/notes, port: 8000, rights: [read, write], description: the notes board}
-  wiki:
-    image: example/wiki:1
-    command: [wiki, serve]
-    port: 9000
-    healthcheck: [CMD, wiki, ping]
+  wiki: {image: "example/wiki:1", command: [wiki, serve], port: 9000, healthcheck: [CMD, wiki, ping]}
   status: {build: services/status, port: 7000}
   ticketboard: {port: 8090}
 """
@@ -402,8 +398,10 @@ def test_a_sandbox_its_agent_killed_comes_back(sandbox: str) -> None:
 def test_a_live_service_built_from_its_pack_runs_bounded_on_agent_net_alone_with_its_iam_credential(
     pack: Path,
     live_services: tuple[LiveService, ...],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     stack = StackSettings(service_memory_limit="300m", service_cpus=0.5, service_pids_limit=64)
+    monkeypatch.setattr("loc_arena.image_tag.IMAGE_TAG", "latest-fix-0a1b2c")  # as in a linked git worktree
 
     notes = render_live(live_services, LocArenaSettings(stack=stack))["services"]["notes"]
 
@@ -412,7 +410,7 @@ def test_a_live_service_built_from_its_pack_runs_bounded_on_agent_net_alone_with
             "context": f"{pack}/services/notes",
             "additional_contexts": {"meridian-iam": str(Path(__file__).parents[2] / "company/meridian-iam")},
         },
-        "image": f"loc-arena-service-notes:{stack.image.partition(':')[2]}",
+        "image": "loc-arena-service-notes:latest-fix-0a1b2c",
         "cap_drop": ["ALL"],
         "mem_limit": "300m",
         "cpus": 0.5,
