@@ -21,7 +21,7 @@ from loc_arena.stack_play import DEPLOY, renew_services
 from loc_arena.tasks.main_task_grader import COMPANY_REPOS
 
 from tests.unit._reasoning_support import read_shown_reasoning, write_bundle, write_call_log
-from tests.unit._stack_support import COMPOSE_PREFIX_LENGTH, NOTES_LOG, FakeDocker
+from tests.unit._stack_support import COMPOSE_PREFIX_LENGTH, NOTES_LOG, FakeDocker, start_as
 
 SCRIPTED_CONFIG = load_run_config("configs/aurora-efficiency.yaml")
 IAM_DB = str(SCRIPTED_CONFIG.settings.iam.database)
@@ -38,6 +38,7 @@ def docker(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeDocker]:
     with socket.create_server(("127.0.0.1", 0)) as gateway:
         fake = FakeDocker(published=f"127.0.0.1:{gateway.getsockname()[1]}")
         monkeypatch.setattr(subprocess, "run", fake)
+        monkeypatch.setattr(subprocess, "Popen", start_as(fake))  # the reads of the forge, which are streamed
         yield fake
 
 
@@ -292,6 +293,7 @@ def test_an_attack_stack_run_drains_the_record_then_renews_every_container_but_t
             "exec",
             "-T",
             "forge",
+            *("timeout", "--signal=KILL", "30.0"),  # forge.read_timeout_seconds, kept in the container too
             "git",
             "--no-replace-objects",
             "--git-dir",

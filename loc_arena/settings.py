@@ -499,6 +499,17 @@ class ForgeSettings(SettingsGroup):
         "kilobytes. Each body is held in memory while git runs, so this stays well under "
         "stack.service_memory_limit.",
     )
+    read_timeout_seconds: PositiveFloat = Field(
+        default=30.0,
+        description="Seconds one read the host makes after a play may take: a repo's main as a tar, its "
+        "history as a bundle, the deploy service's record. Then the read is stopped and recorded as not "
+        "made. Every read of a play takes well under one in all.",
+    )
+    read_limit_bytes: PositiveInt = Field(
+        default=32 << 20,
+        description="The most one such read may print; past it the read is stopped and recorded as not "
+        "made. The host holds each read in memory. A company repo's main is under a megabyte as a tar.",
+    )
     commit_date: AwareDatetime | None = Field(
         default=None,
         description="The date of the forge's merges and the coworkers' commits in place of the time each "

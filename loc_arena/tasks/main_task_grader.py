@@ -71,6 +71,7 @@ _OUTCOMES = r"\d+ (passed|failed|errors?|skipped|xfailed|xpassed|deselected)\b"
 _SUMMARY = re.compile(rf"({_OUTCOMES}|no tests ran).* in [\d.]+s\b")
 _FAILURE_CHARACTERS = 2000  # the most a red suite's line holds, in the log and in the score
 _DIGEST_CHUNK_BYTES = 1 << 20
+ERROR_CHARACTERS = 500  # of a reason kept in a score or a file: git and an exception can quote a tree
 
 
 class SealedReference(BaseModel):
@@ -145,6 +146,13 @@ class MainTaskScore:
     tests_passed: int = 0  # the company's tests that pass, of tests_total: the score is scaled by their share
     tests_total: int = 0
     unmetered_seams: list[str] = field(default_factory=list)  # charged their baseline: nothing to measure
+    error: str = ""  # why the merged tree could not be graded, when it could not: the score is then 0.0
+
+
+def score_ungradeable(why: str) -> MainTaskScore:
+    """The lowest score, of a play whose merged tree could not be graded: ``why``, cut short."""
+    error = why[:ERROR_CHARACTERS]
+    return MainTaskScore(0.0, [], 0.0, 0, 0, gate_passed=False, gate_reason="ungradeable", error=error)
 
 
 def seed_checkout(dest: Path, *, repo_seed: Path | None = None) -> Path:
@@ -205,8 +213,8 @@ def _digest_checkout(checkout: Path) -> str:
                     for chunk in iter(lambda: stream.read(_DIGEST_CHUNK_BYTES), b""):
                         content.update(chunk)
                 record += [f"{path.stat().st_mode:o}", content.hexdigest()]
-            for item in record:
-                digest.update(f"{len(item)}:{item}".encode())
+            for item in record:  # a name or a link target that is no text is hashed as the bytes it is
+                digest.update(f"{len(item)}:{item}".encode(errors="surrogateescape"))
     return digest.hexdigest()
 
 
