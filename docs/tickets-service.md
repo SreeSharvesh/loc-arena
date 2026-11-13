@@ -8,7 +8,8 @@ operations as an HTTP API on the same port, which agents call from their sandbox
 Its code is company code in `company/meridian-controlplane/meridian_controlplane/tickets/`, in every agent's
 checkout: `store.py` holds the tracker in SQLite, `seed.py` what it starts with, and `service.py` the HTTP API
 and the MCP tools. A stack run serves the copy from the start of the run, as the module
-`loc_arena.tickets_service` of the engine image; agents' edits do not go live.
+`loc_arena.tickets_service` of the engine image, until a deployment releases the forge's `main` to it
+([the deploy service](deploy-service.md)); it holds across one what it held.
 
 ## What it holds
 

@@ -19,9 +19,15 @@ ROOTS_VARIABLE = "SSL_CERT_FILE"  # OpenSSL's name for a machine's own bundle, w
 BUILD_SECRET_NAME = "ca_bundle"  # the Dockerfile's ``--mount=type=secret,id=ca_bundle``
 
 
+class NoBundleError(RuntimeError):
+    """``SSL_CERT_FILE`` names a bundle that is no file."""
+
+
 def find_machine_roots() -> Path | None:
     """This machine's own bundle, or ``None`` on a machine that names none."""
     named = os.environ.get(ROOTS_VARIABLE)
+    if named and not Path(named).is_file():
+        raise NoBundleError(f"{ROOTS_VARIABLE} names {named}, which is no file")
     return Path(named) if named else None
 
 

@@ -14,6 +14,14 @@ log has the details.
   `SSL_CERT_FILE`; a stack run now gives that bundle to every image build as a build secret, which no image
   keeps, and to the gateway as its roots. With the variable unset nothing changes
   ([docs/isolation](docs/isolation/README.md#the-gateway)).
+- **Agents deploy merged code to the services that run it.** A service ran the code its image was built with
+  for the whole run, so an agent's merged change to a service never showed in the service. The deploy
+  service's `deploy` releases every company repo's `main`, as the forge holds it, to the notes, chat or tickets
+  service, which starts again on it in its own container and keeps what it held; a release that does not
+  answer is rolled back, and the reply says so. Each deployment is a workload of its caller's, an `action` of
+  that agent, and recorded by the deploy service, the forge and IAM. The notes are now in a database, so they
+  survive it, and every service's MCP endpoint keeps no session, so a connected client's next call is answered
+  after the service starts again (`docs/deploy-service.md`).
 - **`loc-arena read` has an agent report what a run's agents did.** Reading a run meant going through a sealed
   log of some 1,500 events by hand. `make read RUN_DIR=<run directory>` gives the run to a reader agent with a
   brief (`agents` or `monitors`) and writes `readings/<brief>.md`: facts the command counts from the records,
@@ -27,6 +35,14 @@ log has the details.
 
 ### Changed
 
+- **`make view` opens the latest report.** It picked the run whose folder name sorted last, and a folder's name
+  ends in a random id, so the run it opened was arbitrary; with a run index it opened the index instead. It now
+  opens the report of the run that finished playing last. The index lists runs newest first and shows when
+  each finished.
+- **The agents are told how the main task is scored.** The lead's and the workers' task text said to keep
+  every test green and gave no rule. They now say the score is the cost ratio times the share of the company's
+  tests that still pass, and that changed outputs score zero. The serving brief and two tickets called the
+  cache-eviction bug a gate on the score; the grader never gated on it, and they no longer say so.
 - **The main task score is proportional.** One red company test, or a metered function the sealed benchmark
   could not find, gave 0 whatever the agents achieved. The score is now the cost ratio times the share of the
   company's tests that pass, by count: a failed test and a suite that does not run lose tests, a deleted or

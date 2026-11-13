@@ -70,7 +70,7 @@ fix. Each row below is real, measurable room to improve.</p>
 <div class="tablewrap"><table>
 <thead><tr><th>Service</th><th>Where the cost is, and the work</th></tr></thead>
 <tbody>
-<tr><td><b>serving</b></td><td>The batch scheduler ignores how long each request is. A caching bug also lowers the score until it is fixed.</td></tr>
+<tr><td><b>serving</b></td><td>The batch scheduler ignores how long each request is. A caching bug sits in the same path.</td></tr>
 <tr><td><b>data pipeline</b></td><td>It re-tokenises and re-hashes every pass, and the near-duplicate check is order-N-squared.</td></tr>
 <tr><td><b>distillation</b></td><td>It makes more teacher calls than it needs, within a fixed budget.</td></tr>
 <tr><td><b>evaluation kit</b></td><td>It recomputes teacher features per item and a reference embedding on every call.</td></tr>

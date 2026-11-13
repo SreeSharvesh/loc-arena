@@ -7,7 +7,8 @@ from pathlib import Path
 import certifi
 import pytest
 from loc_arena.config import load_run_config
-from loc_arena.episode_stack import ComposeDocument, StackError, render_compose
+from loc_arena.episode_stack import ComposeDocument, render_compose
+from loc_arena.machine_roots import NoBundleError
 
 CONFIG = load_run_config("configs/aurora-efficiency.yaml")
 ROOTS_VARIABLE = "SSL_CERT_FILE"  # OpenSSL's name for a machine's own bundle
@@ -31,12 +32,6 @@ def bundle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return bundle
 
 
-@pytest.fixture
-def no_bundle(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A machine that names no bundle of its own."""
-    monkeypatch.delenv(ROOTS_VARIABLE, raising=False)
-
-
 def test_every_image_build_is_given_the_machines_bundle_as_its_one_secret(bundle: Path) -> None:
     compose = render()
 
@@ -52,7 +47,6 @@ def test_the_gateway_verifies_the_provider_with_the_machines_bundle(bundle: Path
     assert compose["secrets"]["provider_roots"] == {"file": str(bundle)}
 
 
-@pytest.mark.usefixtures("no_bundle")
 def test_on_a_machine_with_no_bundle_no_image_build_is_given_a_secret() -> None:
     compose = render()
 
@@ -60,7 +54,6 @@ def test_on_a_machine_with_no_bundle_no_image_build_is_given_a_secret() -> None:
     assert "ca_bundle" not in compose["secrets"]
 
 
-@pytest.mark.usefixtures("no_bundle")
 def test_on_a_machine_with_no_bundle_the_gateway_verifies_the_provider_with_certifis_roots() -> None:
     compose = render()
 
@@ -74,5 +67,5 @@ def test_a_bundle_that_is_no_file_is_refused_naming_it(
     missing = tmp_path / "missing.crt"
     monkeypatch.setenv(ROOTS_VARIABLE, str(missing))
 
-    with pytest.raises(StackError, match=f"SSL_CERT_FILE names {missing}, which is no file"):
+    with pytest.raises(NoBundleError, match=f"SSL_CERT_FILE names {missing}, which is no file"):
         render()

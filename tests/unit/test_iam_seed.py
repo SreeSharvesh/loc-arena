@@ -12,7 +12,7 @@ from loc_arena.settings import IamSettings
 from scenarios.loader import load_scenario
 
 LIVE = load_run_config("configs/aurora-efficiency.yaml")
-MANAGED = ("notes", "agents", "forge", "chat", "jobsvc", "evalkit", "tickets", "modelstore")
+MANAGED = ("notes", "agents", "forge", "chat", "jobsvc", "evalkit", "tickets", "deploy", "modelstore")
 ENABLED = IamSettings(enabled=True)
 AGENTS = [agent.id for agent in LIVE.agents]
 

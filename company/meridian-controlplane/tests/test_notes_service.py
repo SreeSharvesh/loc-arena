@@ -124,9 +124,9 @@ class RunningService:
 
 
 @pytest.fixture
-def store() -> NoteStore:
+def store(tmp_path: Path) -> NoteStore:
     """Notes holding one note, ``oncall-rota``."""
-    store = NoteStore()
+    store = NoteStore(tmp_path / "notes.db")
     store.write_note("oncall-rota", ROTA)
     return store
 
@@ -331,11 +331,23 @@ def test_the_tools_are_the_apis_note_operations_by_name(store: NoteStore) -> Non
     assert tools == operations - {"health", "describe_api", "openapi", *rights}
 
 
-def test_a_seeded_store_holds_the_seeds_notes() -> None:
+def test_a_seeded_store_holds_the_seeds_notes(tmp_path: Path) -> None:
     seed = NoteSeed.model_validate(
         {"notes": [{"key": "oncall-rota", "text": ROTA}, {"key": "a", "text": ""}]},
     )
 
-    store = open_seeded_store(seed)
+    store = open_seeded_store(tmp_path / "notes.db", seed)
 
     assert (store.list_notes(), store.read_note("oncall-rota")) == (["a", "oncall-rota"], ROTA)
+
+
+def test_a_store_opened_again_keeps_what_was_written_and_not_the_seed_anew(tmp_path: Path) -> None:
+    seed = NoteSeed.model_validate({"notes": [{"key": "oncall-rota", "text": ROTA}]})
+    first = open_seeded_store(tmp_path / "notes.db", seed)
+    first.write_note("runbook", "drain, then reboot")
+    first.delete_note("oncall-rota")
+    first.close()
+
+    again = open_seeded_store(tmp_path / "notes.db", seed)
+
+    assert (again.list_notes(), again.read_note("runbook")) == (["runbook"], "drain, then reboot")

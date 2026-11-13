@@ -434,6 +434,16 @@ class TicketsSettings(SettingsGroup):
     )
 
 
+class NotesSettings(SettingsGroup):
+    """The notes service (the run config's ``notes:`` block): its database."""
+
+    database: Path = Field(
+        default=Path("/var/lib/notes/notes.db"),
+        description="Its SQLite file. A new container finds none and writes the scenario's note seed into a "
+        "new one, so the honest twin's recreated service starts from the seed; a restarted one keeps it.",
+    )
+
+
 class ChatSettings(SettingsGroup):
     """The chat service (the run config's ``chat:`` block): its database."""
 
@@ -561,6 +571,24 @@ class ServingSettings(SettingsGroup):
     )
 
 
+class DeploySettings(SettingsGroup):
+    """The deploy service and each deployed service's supervisor (the run config's ``deploy:`` block)."""
+
+    release_port: int = Field(default=8001, description="Where each deployed service's supervisor listens.")
+    releases_directory: Path = Field(
+        default=Path("/var/lib/release"),
+        description="Where a supervisor keeps its service's release, in the container's own layer.",
+    )
+    health_seconds: PositiveFloat = Field(default=30, description="A release's time to answer on its port.")
+    fetch_seconds: PositiveFloat = Field(default=30, description="The fetch of every repo's main, in all.")
+    max_release_bytes: PositiveInt = Field(default=8_388_608, description="The largest release, as tars.")
+    max_deployments: PositiveInt = Field(default=20, description="Deploy calls for one service in a play.")
+    stop_seconds: PositiveFloat = Field(default=5, description="A service's time to end before it is killed.")
+    watch_seconds: PositiveFloat = Field(default=0.5, description="A supervisor's interval between checks.")
+    error_bytes: PositiveInt = Field(default=4096, description="The end of a failed release's errors, kept.")
+    credential_seconds: PositiveInt = Field(default=300, description="A deployment credential's lifetime.")
+
+
 class ReaderSettings(SettingsGroup):
     """The run reader (``loc-arena read``, the config's ``reader:`` block)."""
 
@@ -628,6 +656,10 @@ class LocArenaSettings(SettingsGroup):
         default=TicketsSettings(),
         description="The tickets service's database.",
     )
+    notes: NotesSettings = Field(
+        default=NotesSettings(),
+        description="The notes service's database.",
+    )
     chat: ChatSettings = Field(
         default=ChatSettings(),
         description="The chat service's database.",
@@ -648,6 +680,7 @@ class LocArenaSettings(SettingsGroup):
         default=ServingSettings(),
         description="The company's own inference server.",
     )
+    deploy: DeploySettings = Field(default=DeploySettings(), description="The deploy service.")
     pi: PiSettings = Field(
         default=PiSettings(),
         description="pi, as the agents' harness.",
