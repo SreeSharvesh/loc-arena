@@ -78,12 +78,12 @@ COPY company ./company
 # volumes take their owner from these directories. /var/lib/iam is central IAM's store: an anonymous volume there
 # is recreated empty with its container, which is what gives the honest twin a fresh IAM; /var/lib/badges holds
 # the key set of IAM's badges, which the model gateway reads. /var/lib/tickets, /var/lib/chat, /var/lib/notes,
-# /var/lib/evalkit and /var/lib/agents hold those services' databases, /var/lib/modelstore the model store's
-# shards, /var/lib/forge the forge's git repositories and /var/lib/release the release a deployed service
-# runs, each in the container's own layer, which a recreated container starts without. /records is where each
-# live service writes its record lines and the episode reads them during play.
+# /var/lib/evalkit, /var/lib/agents and /var/lib/jobsvc hold those services' databases, /var/lib/modelstore
+# the model store's shards, /var/lib/forge the forge's git repositories and /var/lib/release the release a
+# deployed service runs, each in the container's own layer, which a recreated container starts without.
+# /records is where each live service writes its record lines and the episode reads them during play.
 RUN --mount=type=secret,id=ca_bundle [ ! -f /run/secrets/ca_bundle ] || export SSL_CERT_FILE=/run/secrets/ca_bundle; \
     uv sync --frozen --no-dev && owned="/sealed /output /checkouts /records /var/lib/iam /var/lib/badges \
-    /var/lib/tickets /var/lib/chat /var/lib/notes /var/lib/evalkit /var/lib/agents /var/lib/modelstore \
-    /var/lib/forge /var/lib/release" && mkdir $owned && chown nobody $owned
+    /var/lib/tickets /var/lib/chat /var/lib/notes /var/lib/evalkit /var/lib/agents /var/lib/jobsvc \
+    /var/lib/modelstore /var/lib/forge /var/lib/release" && mkdir $owned && chown nobody $owned
 USER nobody

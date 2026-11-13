@@ -33,7 +33,7 @@ path. A key no block declares is ignored, except in an agent's `scope` and in th
 | `agents` | the team; see below |
 | `protocol` | the control protocol: monitors, reviewer, audit budget |
 | `logging` | `logging.agent_transcript` for the per-agent `.eval` and transcript |
-| `inference`, `gateway`, `stack`, `iam`, `evalkit`, `tickets`, `chat`, `notes`, `forge`, `history`, `modelstore`, `serving`, `deploy`, `pi` | the settings groups below |
+| `inference`, `gateway`, `stack`, `iam`, `evalkit`, `jobsvc`, `tickets`, `chat`, `notes`, `forge`, `history`, `modelstore`, `serving`, `deploy`, `pi` | the settings groups below |
 
 ## An agent
 
@@ -49,7 +49,7 @@ A service in `sandbox:` must be a live service of the scenario that serves tools
 (for `rights`). A tool or right outside that service's list, one named twice, and an unknown key under `sandbox:`
 are each a `ConfigError`. Every agent holds an identity on each such service, rights or none.
 
-## Settings groups (`loc_arena/settings.py`)
+## Settings groups (`loc_arena/settings.py`, `loc_arena/service_settings.py`)
 
 Each field has a description in code; these keep pydantic's coercing types.
 
@@ -69,6 +69,7 @@ Each field has a description in code; these keep pydantic's coercing types.
 | `forge` | the forge: `repositories`, the directory of its bare git repositories in its container (`/var/lib/forge`), which a new container seeds from the company's code, so the honest twin's starts from the seed; `ci_min_seconds` and `ci_max_seconds` (2 and 10), between which a pull request an agent opens waits on CI before it passes, each wait drawn from the run's seed; `git_timeout_seconds` and `git_request_limit_bytes`, the bounds of one git request; `read_timeout_seconds` and `read_limit_bytes` (30 and 32 MiB), the bounds of each read the host makes after a play (a repo's `main`, its history, the deploy service's record); `commit_date` (unset), which dates every merge of the forge and every commit of the coworkers the same, so their commit IDs are the same each run |
 | `history` | each capture of an agent's checkout (`loc_arena/checkout_history.py`): `max_file_bytes` (1 MiB), the largest file stored whole; `max_entries` (20000) and `max_depth` (32), past which a capture stops and says so; `skipped_names`, left out wherever they are (`.git`, `__pycache__`, `.pytest_cache`) |
 | `agents_service` | the agents service (`agents` is the team): `database`, its SQLite file in its container (`/var/lib/agents/agents.db`), which a new container writes from the package's seed, so the honest twin's starts from the seed; a restarted process keeps it ([docs/agents-service.md](agents-service.md#state)) |
+| `jobsvc` | the job service: `database`, its SQLite file in its container (`/var/lib/jobsvc/jobsvc.db`), which a new container queues the cluster's seed into, so the honest twin's starts from the seed, and which a restarted process keeps its jobs, schedules and their identities in ([docs/jobsvc-service.md](jobsvc-service.md#state-and-restarts)) |
 | `evalkit` | the eval service: `database`, its SQLite file in its container (`/var/lib/evalkit/evalkit.db`), which a new container writes from the package's seed, so the honest twin's starts from the seed; `job_cpu` and `job_memory_mb`, what an eval run's job asks of the cluster |
 | `modelstore` | the model store: `directory` (`/var/lib/modelstore`), where it keeps each model's shards in its container, written by a new container and served again by a restarted one; `shard_count` (4) shards of each model `gateway.runner_model_aliases` names, `shard_bytes` (4096) each on disk, and `declared_shard_bytes`, the size its manifest declares for each (3.5 GB) |
 | `serving` | the company's own inference server, which a run submits before each play: `deployer`, the company principal that submits it (none: no server), `model` (`aurora-7b-v3`), a key of `gateway.runner_model_aliases`, `probe_seconds` (60) between its job's health probes, each a model call, and `load_seconds` (180), how long the run waits for it to load before each play |

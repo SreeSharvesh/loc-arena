@@ -8,6 +8,14 @@ log has the details.
 
 ### Added
 
+- **The job service keeps its state across a restart of its process.** It kept every job, schedule and
+  identity in memory: after a restart a running job's process ran on with no record, a new job got an id IAM
+  had already issued a workload under, and the next pass took busy nodes for free. It now keeps them in a
+  database in its container (`jobsvc.database`), each change one transaction whose lines reach the record
+  once it is kept, and builds its queue again from it. A restarted process follows the jobs still running on
+  the nodes, ends a job as its process ended though the last process did not record it, gives out no id
+  twice, and is not seeded again; a process told to end lets the pass under way end first; a new container
+  starts from the seed ([docs/jobsvc-service.md](docs/jobsvc-service.md#state-and-restarts)).
 - **The agents service keeps its state across a restart of its process.** Its agents, their identities,
   its executions, checkpoints, telemetry settings and schedules were in memory, so a process that started
   again went back to the seed and left what ran on its runners with no record. They are now records in a

@@ -6,17 +6,27 @@ and its MCP tools and issues each job, and each schedule, a workload of its own,
 process on a node of the fleet (``loc_arena.node_pool``) through that node's daemon, keeps a pass over the
 fleet going in the background, and writes its record of requests and of each job's state to stdout. The
 cluster's policy is the run config's (``stack``); its teams, and the other teams' jobs and schedules it starts
-with, the company's own seed, applied before it takes a call, so the honest twin's recreated service starts
-from the same; and it runs the run config's ``scope`` check on each submission, as every service does.
+with, the company's own seed; and it runs the run config's ``scope`` check on each submission, as every
+service does.
+
+The service keeps its jobs, schedules and their identities in a database in its container
+(``jobsvc.database``). A new container finds none and queues the seed before it takes a call, so the honest
+twin's recreated service starts from the same. A process that starts again in its container holds what the
+last one held and follows the jobs still running on the nodes. A process told to end (SIGTERM) answers the
+requests under way, then lets the pass under way end, so no job is left recorded as placed on a node that
+was never asked to start it; a pass that outlasts the container's stop grace is killed, and the next
+process's first pass covers what it left (``docs/jobsvc-service.md``, State and restarts).
 """
 
 from __future__ import annotations
 
+import contextlib
 import os
 import secrets
+import signal
 import sys
 import threading
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -34,6 +44,7 @@ from loc_arena.node_pool import list_node_services, node_token_secret
 from loc_arena.settings import StackSettings
 from loc_arena.task import resolve_scenario
 from loc_arena.tool_records import record_writer, tool_call_recorder
+from meridian_common.records import Database
 from meridian_iam.client import IamClient
 from meridian_iam.contracts import IamError, Unavailable
 from meridian_jobsvc.api import SERVICE, build_jobsvc_server, create_jobsvc_api
@@ -266,6 +277,21 @@ def serving_app(service: JobService, guard: Any, write: Callable[[str], None]) -
     return build_service_app(guard, build_jobsvc_server(service, authority), SERVICE, api)
 
 
+@contextlib.contextmanager
+def reconciling(service: JobService, poll_seconds: float) -> Iterator[None]:
+    """Keep ``service``'s passes over the fleet going in the background, one every ``poll_seconds``.
+
+    They end with the block, once the pass under way is over.
+    """
+    passes = threading.Thread(target=service.run, args=(poll_seconds,), daemon=True)
+    passes.start()
+    try:
+        yield
+    finally:
+        service.stop()
+        passes.join()
+
+
 def main(arguments: list[str]) -> None:
     """Serve entry ``arguments[1]`` of the run config at ``arguments[0]``, under central IAM."""
     run_config = load_run_config(arguments[0])
@@ -279,20 +305,20 @@ def main(arguments: list[str]) -> None:
         cluster_policy(run_config.settings.stack),
         cluster_teams(run_config),
         admit_submitter=admit_by_scope(run_config),
+        database=Database(run_config.settings.jobsvc.database),
     )
     service.seed(load_cluster_seed())
-    threading.Thread(
-        target=service.run,
-        args=(run_config.settings.stack.job_poll_seconds,),
-        daemon=True,
-    ).start()
-    uvicorn.run(
-        serving_app(service, guard, write_record),
-        host=ALL_ADDRESSES,
-        port=service_entry.port,
-        log_level="warning",
-        access_log=False,
-    )
+    # uvicorn ends on SIGTERM, then raises it again under the handler it found. The default one would end
+    # the process there, mid-pass; this one leaves the block instead, which ends the passes first.
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+    with reconciling(service, run_config.settings.stack.job_poll_seconds):
+        uvicorn.run(
+            serving_app(service, guard, write_record),
+            host=ALL_ADDRESSES,
+            port=service_entry.port,
+            log_level="warning",
+            access_log=False,
+        )
 
 
 if __name__ == "__main__":
