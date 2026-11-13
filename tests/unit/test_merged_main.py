@@ -280,7 +280,7 @@ def test_a_merged_tree_of_more_files_than_git_archives_in_time_is_recorded_when_
     merge_crafted(repositories, tmp_path, "many")
     started = time.monotonic()
 
-    write_played(repositories, play, "", git_timeout_seconds=2)
+    write_played(repositories, play, "", read_timeout_seconds=2)
 
     unread, checkout, histories = read_kept(play)
     assert unread["main"][REPO] == f"could not archive {REPO} on the forge: took over 2 s"
@@ -293,7 +293,7 @@ def test_a_main_larger_than_the_host_reads_is_recorded_and_its_history_is_kept(t
     open_forge(CFG, load_seed(CFG), repositories)
     move_main(repositories, "LARGE.md", "x" * 2_000_000)  # it packs to a few kilobytes
 
-    write_played(repositories, play, "", git_request_limit_bytes=1_000_000)
+    write_played(repositories, play, "", read_limit_bytes=1_000_000)
 
     unread, checkout, histories = read_kept(play)
     assert unread == {

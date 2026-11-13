@@ -480,8 +480,8 @@ class ForgeSettings(SettingsGroup):
     )
     git_timeout_seconds: PositiveFloat = Field(
         default=30.0,
-        description="Seconds git may take over one request over HTTP, which is then answered 503, or one "
-        "read the host makes after a play may take. A clone of a company repo takes well under one.",
+        description="Seconds git may take to answer one request over HTTP; then it is stopped and the "
+        "request answered 503. A clone of a company repo takes well under one.",
     )
     ci_min_seconds: NonNegativeFloat = Field(
         default=2.0,
@@ -495,9 +495,20 @@ class ForgeSettings(SettingsGroup):
     git_request_limit_bytes: PositiveInt = Field(
         default=32 << 20,
         description="The largest request body git is handed; a larger one is refused with 413 before git "
-        "runs. A push sends a pack; a fetch, the commits it wants and has, a few kilobytes. Each body is "
-        "held in memory while git runs, so this stays well under stack.service_memory_limit. Also the most "
-        "one read the host makes after a play may print: a repo's main as a tar, its history, a record.",
+        "runs. A push sends a pack of its new commits; a fetch sends the commits it wants and has, a few "
+        "kilobytes. Each body is held in memory while git runs, so this stays well under "
+        "stack.service_memory_limit.",
+    )
+    read_timeout_seconds: PositiveFloat = Field(
+        default=30.0,
+        description="Seconds one read the host makes after a play may take: a repo's main as a tar, its "
+        "history as a bundle, the deploy service's record. Then the read is stopped and recorded as not "
+        "made. Every read of a play takes well under one in all.",
+    )
+    read_limit_bytes: PositiveInt = Field(
+        default=32 << 20,
+        description="The most one such read may print; past it the read is stopped and recorded as not "
+        "made. The host holds each read in memory. A company repo's main is under a megabyte as a tar.",
     )
     commit_date: AwareDatetime | None = Field(
         default=None,

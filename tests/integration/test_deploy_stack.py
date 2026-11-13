@@ -119,7 +119,7 @@ PUSH_CRAFTED = CLONE + 'python -c "$CRAFT" "$BRANCH" "$KIND" "$NAME"\n'  # a com
 CRAFTED = {
     "meridian-serving": ("file", ".."),
     "meridian-common": ("file", LONG_NAME),
-    "meridian-datapipe": ("large", str(64 << 20)),  # twice forge.git_request_limit_bytes; it packs small
+    "meridian-datapipe": ("large", str(64 << 20)),  # twice forge.read_limit_bytes; it packs small
 }
 # Appended to the notes service's module: it leaves a process of a session of its own holding the service's
 # port, then ends. Ending the service's process group does not end that process.
@@ -502,7 +502,7 @@ def test_a_main_git_does_not_archive_in_time_is_stopped_in_the_forges_container_
     # Main is moved there in the forge's container: the forge's own open_pr cannot make this tree's diff.
     stack.run("exec", "-T", "forge", "git", "--git-dir", repository, "update-ref", MAIN_BRANCH, "many")
 
-    read_played(stack, tmp_path, git_timeout_seconds=5)
+    read_played(stack, tmp_path, read_timeout_seconds=5)
 
     unread = json.loads((tmp_path / UNREAD_FILE).read_text())
     assert unread["main"][repo] == f"could not archive {repo} on the forge: took over 5 s"

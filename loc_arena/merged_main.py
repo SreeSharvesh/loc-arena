@@ -10,8 +10,8 @@ only what is merged counts. An entry that would land outside it (an absolute pat
 skipped and logged. It writes the bundles, unopened, to the play's ``forge_history``: every commit the play
 pushed or merged, a deleted branch's too (``refs/archive``), which the records name.
 
-A crafted tree cannot stop the run being graded. Each read ends within ``forge.git_timeout_seconds`` and
-``forge.git_request_limit_bytes``. A repo whose ``main`` git cannot archive within them, or whose archive
+A crafted tree cannot stop the run being graded. Each read ends within ``forge.read_timeout_seconds`` and
+``forge.read_limit_bytes``. A repo whose ``main`` git cannot archive within them, or whose archive
 cannot be written out, has no directory in the checkout, and the play's ``unread.json`` says why: the play's
 main task then scores the lowest, with that reason (``grade_unread``). A history that cannot be read is named
 there too, and changes no score. A tree the scorer itself raises on is ``loc_arena.task``'s to record.
@@ -239,12 +239,11 @@ def read_stack_forge(config: RunConfig, compose: list[str], start: StartCompose)
     forge = config.settings.forge
 
     def run(command: list[str]) -> subprocess.CompletedProcess[bytes]:
-        bounds = (forge.git_timeout_seconds, forge.git_request_limit_bytes)
-        return run_bounded(start, [*compose, *command], *bounds)
+        return run_bounded(start, [*compose, *command], forge.read_timeout_seconds, forge.read_limit_bytes)
 
     def run_git(command: list[str]) -> subprocess.CompletedProcess[bytes]:
         # Stopped in the container too: there a command outlives the compose client that started it.
-        stopped = ["timeout", "--signal=KILL", str(forge.git_timeout_seconds)]
+        stopped = ["timeout", "--signal=KILL", str(forge.read_timeout_seconds)]
         return run(["exec", "-T", FORGE, *stopped, *command])
 
     repositories = forge.repositories

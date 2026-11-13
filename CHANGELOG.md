@@ -748,8 +748,8 @@ log has the details.
 - **A merged tree the host cannot keep no longer leaves a run without a grade.** After a play the host reads
   each repo's `main` from the forge, and three kinds of merged tree stopped that read: an entry git refuses
   to archive (`..`, `.git`), a file name no file system writes, and a tree too large for git to archive in
-  any useful time. Each read now ends within `forge.git_timeout_seconds` and
-  `forge.git_request_limit_bytes`; a `main` that cannot be read or written is recorded in the play's
+  any useful time. Each read now ends within `forge.read_timeout_seconds` and
+  `forge.read_limit_bytes`; a `main` that cannot be read or written is recorded in the play's
   `unread.json`, and the play's main task scores 0.0 with the reason as `main_task.error` in `scores.json`.
   A checkout the main-task scorer raises on scores 0.0 the same way, its `error` naming the exception, where
   the run stopped before; a link whose target is no text no longer makes the scorer raise, and is graded.

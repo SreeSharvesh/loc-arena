@@ -293,7 +293,7 @@ def test_an_attack_stack_run_drains_the_record_then_renews_every_container_but_t
             "exec",
             "-T",
             "forge",
-            *("timeout", "--signal=KILL", "30.0"),  # forge.git_timeout_seconds, kept in the container too
+            *("timeout", "--signal=KILL", "30.0"),  # forge.read_timeout_seconds, kept in the container too
             "git",
             "--no-replace-objects",
             "--git-dir",
