@@ -25,6 +25,7 @@ from loc_arena.episode_stack import run_in_stack
 from loc_arena.harness import apply_mode, locate_run, play_run, read_played_snapshot
 from loc_arena.logging_.viewer import build_index
 from loc_arena.merged_main import EPISODE_PHASE
+from loc_arena.run_watcher import watch_run
 from loc_arena.task import grade_snapshot, read_snapshot_file
 
 
@@ -188,8 +189,17 @@ def _cmd_read(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_watch(args: argparse.Namespace) -> int:
+    directory = Path(args.run_directory) if args.run_directory else None
+    try:
+        watch_run(directory, agent=args.agent, width=args.width, poll_seconds=args.poll_seconds)
+    except KeyboardInterrupt:
+        pass
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
-    """Parse args and dispatch ``run`` / ``view`` / ``explore`` / ``grade`` / ``read``."""
+    """Parse args and dispatch ``run`` / ``view`` / ``explore`` / ``grade`` / ``read`` / ``watch``."""
     parser = argparse.ArgumentParser(prog="loc-arena", description="Run and view LOC-Arena episodes.")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -244,6 +254,25 @@ def main(argv: list[str] | None = None) -> int:
         help="the config whose reader role and settings to use",
     )
     p_read.set_defaults(func=_cmd_read)
+
+    p_watch = sub.add_parser(
+        "watch",
+        help="print each agent's steps of the run playing, or of a finished run",
+    )
+    p_watch.add_argument(
+        "run_directory",
+        nargs="?",
+        help="a finished run's directory (default: the run playing)",
+    )
+    p_watch.add_argument("--agent", default=None, help="only this agent's steps, such as the lead's")
+    p_watch.add_argument("--width", type=int, default=400, help="characters kept of each step")
+    p_watch.add_argument(
+        "--poll-seconds",
+        type=float,
+        default=2.0,
+        help="seconds between reads of a run playing",
+    )
+    p_watch.set_defaults(func=_cmd_watch)
 
     args = parser.parse_args(argv)
     result: int = args.func(args)

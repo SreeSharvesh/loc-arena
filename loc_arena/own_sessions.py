@@ -49,6 +49,9 @@ from loc_arena.workspace_service import WORKSPACE_SERVICE, Turns, build_workspac
 _LOGGER = logging.getLogger(__name__)
 LOOPS_DIRECTORY = "loops"  # in a play's directory: each loop's home, with its brief and its session
 RECORDS_DIRECTORY = "records"  # in a play's directory: where the workspace service records its calls
+SESSION_FILE = (
+    Path(".pi") / "session.jsonl"
+)  # in a loop's home: pi's record of the session, written as it goes
 SESSION_ENDS_FILE = "session_ends.json"  # in a play's directory: how each agent's session ended
 NOTICES_FILE = "notices.jsonl"  # in a play's directory: each notice, and whether its agent's session took it
 AGENT_ROLE = "untrusted_agent"  # the role every agent's loop calls
@@ -276,7 +279,7 @@ def write_pi_home(home: Path, config: RunConfig, agent: str, brief: str) -> list
     (directory / "system-prompt.md").write_text(brief)
     return [
         *["pi", "--model", f"{PROVIDER}/{model}", "--mode", "rpc", "--no-builtin-tools"],
-        *["--session", str(home / ".pi" / "session.jsonl")],
+        *["--session", str(home / SESSION_FILE)],
         *["--system-prompt", str(directory / "system-prompt.md")],
     ]
 

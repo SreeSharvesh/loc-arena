@@ -11,7 +11,7 @@ BRIEF ?= agents
 LOGS ?= logs
 FILE_SIZE_BASE ?= origin/main
 
-.PHONY: run view explore read help gates setup public-repo fixture-run
+.PHONY: run view explore read watch help gates setup public-repo fixture-run
 
 help:
 	@echo "make setup                                # check toolchain, sync deps, validate config"
@@ -21,6 +21,7 @@ help:
 	@echo "make view RUN=aurora-efficiency                       # open the latest report.html + inspect view"
 	@echo "make explore [LOGS=logs]                  # build the run explorer over every run in LOGS and open it"
 	@echo "make read RUN_DIR=<run directory> [BRIEF=agents|monitors]  # an agent reads one run and reports"
+	@echo "make watch [RUN_DIR=<run directory>]      # each agent's steps of the run playing, or of a finished run"
 	@echo "make fixture-run                          # play the smoke run and store it as the tests' run fixture"
 	@echo "make gates                                # ruff + ruff format + ty + pytest"
 	@echo "  (a run needs Docker Engine 28 or later)"
@@ -43,6 +44,9 @@ explore:
 
 read:
 	@uv run python -m loc_arena.cli read "$(RUN_DIR)" --brief "$(BRIEF)" --run "$(RUN)"
+
+watch:
+	@uv run python -m loc_arena.cli watch $(RUN_DIR)
 
 fixture-run:
 	@uv run python scripts/record_run_fixture.py

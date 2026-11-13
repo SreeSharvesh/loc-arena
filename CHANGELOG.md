@@ -8,6 +8,12 @@ log has the details.
 
 ### Added
 
+- **`loc-arena watch` shows each agent's steps while a run plays.** A run wrote its transcript and report
+  only after both plays were graded, so a run whose agents never took up their tasks cost its whole length to
+  find out. `make watch` follows every agent's session in the episode container and prints one line per step
+  (what it thought, said, called and got back), with its play and its name; `make watch RUN_DIR=<run
+  directory>` prints a finished run's the same way. It only reads, and what it prints is the experimenter's
+  view, as the sealed log is.
 - **A stack run works on a machine whose only way out is a proxy on its loopback address.** There the
   gateway's calls left by a path that carried no provider key and were refused. `gateway.outbound_proxy`
   names a proxy the gateway tunnels to each upstream through, and `python -m loc_arena.gateway.proxy_relay

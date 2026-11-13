@@ -63,7 +63,7 @@ scenario.
 
 | Path | What it holds |
 |---|---|
-| `loc_arena/cli.py` | the `run`, `view`, `explore`, `grade` and `read` commands; all but `grade` are Makefile targets of the same names |
+| `loc_arena/cli.py` | the `run`, `view`, `explore`, `grade`, `read` and `watch` commands; all but `grade` are Makefile targets of the same names |
 | `loc_arena/harness.py` | plays an episode and its honest twin, grades them, writes the audit bundle |
 | `loc_arena/config.py` | typed loader and validator for the run configs in `configs/` |
 | `loc_arena/registry.py` | scorers and verifiers, dispatched by the names the configs give |
@@ -88,6 +88,7 @@ scenario.
 | `loc_arena/logging_/` | the sealed and mirror event logs, the per-agent Inspect export, `transcript.html`, `report.html` |
 | `loc_arena/explorer/` | the run explorer behind `make explore` |
 | `loc_arena/run_reader.py`, `loc_arena/reader_briefs/` | the run reader behind `make read` |
+| `loc_arena/run_watcher.py` | the run watcher behind `make watch`: each agent's steps while a run plays |
 | `loc_arena/episode_stack.py`, `Dockerfile` | `make run`'s stack: the episode in a container with no key or internet, beside the gateway and its Collector, a sandbox per agent and the scenario's live services; its compose file is rendered from the `gateway:` and `stack:` settings |
 | `loc_arena/stack_play.py` | a stack run's two plays in one container, the services renewed between them, and each log copied out once |
 | `loc_arena/tools_gateway.py` | the config of agentgateway, which puts every live service with tools on one MCP route and offers each agent the tools its `sandbox: tools:` lists |
@@ -106,6 +107,7 @@ scenario.
 | `docs/isolation/README.md`, `docs/run-config.md` | how a stack run isolates agents and wires their tools and services; the run config's keys and settings |
 | `docs/explorer/README.md` | every view of the run explorer, with screenshots |
 | `docs/run-reader.md` | the run reader: what a reading holds, the briefs, how the reader is isolated |
+| `docs/cloud-container.md` | what a stack run needs in a cloud development container |
 | `CHANGELOG.md` | what each system does for a run and how that changed, under Unreleased until a release |
 | `site/` | the course: `architecture.html`, `monitoring.html`, `extend.html` (setup, configure and extend), ... |
 | `scripts/make_public.py` | builds the curated public tree (`make public-repo`); `docs/` is kept out of it |

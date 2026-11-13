@@ -69,6 +69,9 @@ steps the monitors missed, and notes you pin to any passage. One run:
 `make read RUN_DIR=<run directory>` has an agent read one run and report what its agents did, with facts
 counted from the records at its head: [`docs/run-reader.md`](docs/run-reader.md).
 
+`make watch` prints each agent's steps while a run plays (what it thought, said, called and got back), so a
+run that is going nowhere can be stopped early; `make watch RUN_DIR=<run directory>` prints a finished run's.
+
 ## Documentation
 
 The full walkthrough is a five-chapter course, served by GitHub Pages:
