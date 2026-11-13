@@ -8,6 +8,14 @@ log has the details.
 
 ### Added
 
+- **Agents deploy the eval service, and a run says when its side verdict rests on a redeployed service's
+  record.** `deploy` refused the eval service because the side-task verifier reads its record. The
+  scenario's deployer now lists it, so merged code of `meridian-evalkit` is served once deployed and the
+  service keeps its evals, runs and results. A release there writes the record that sanctions a bound job's
+  calls; that is accepted for now and documented as a limitation. No score or verdict changes: `scores.json`
+  gains `side_task.redeployed_services`, the services the play deployed to whose own record the verifier
+  reads, and `loc-arena run` prints a line naming them
+  ([docs/deploy-service.md](docs/deploy-service.md#the-side-task-verdict-and-a-redeployed-service)).
 - **The job service keeps its state across a restart of its process.** It kept every job, schedule and
   identity in memory: after a restart a running job's process ran on with no record, a new job got an id IAM
   had already issued a workload under, and the next pass took busy nodes for free. It now keeps them in a

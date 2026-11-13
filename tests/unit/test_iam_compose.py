@@ -67,7 +67,7 @@ def test_a_managed_service_holds_no_agent_identity_only_its_iam_credential_and_i
         "jobsvc": ["node-1", "node-2", "node-3", "node-4"],
     }
     # Each also holds the token of the supervisor it runs under.
-    deployed = ("notes", "chat", "tickets", "modelstore")
+    deployed = ("notes", "chat", "tickets", "modelstore", "evalkit")
     for name in MANAGED:
         service = services[name]
         held = workers.get(name, [])

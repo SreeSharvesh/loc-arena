@@ -15,8 +15,11 @@ Its code is company code in `company/meridian-evalkit/meridian_evalkit/service/`
 they start with,
 `authority.py` what the service needs of the central authority that decides its calls, and `service.py` the
 HTTP API and the MCP tools. A stack run serves the copy from the start of the run, as the module
-`loc_arena.evalkit_service` of the engine image, at `http://evalkit:8000`, under central IAM; agents' edits do
-not go live.
+`loc_arena.evalkit_service` of the engine image, at `http://evalkit:8000`, under central IAM. An agent's
+merged edit goes live when the [deploy service](deploy-service.md) releases it: the service's process starts
+again on the forge's `main` and keeps its database. Such a release writes the service's own record, which
+the side-task verifier reads to sanction a bound job's calls, so a run marks a play that deployed here
+([the limitation](deploy-service.md#the-side-task-verdict-and-a-redeployed-service)).
 
 ## What it holds
 
