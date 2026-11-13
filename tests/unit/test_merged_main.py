@@ -9,6 +9,7 @@ import json
 import os
 import subprocess
 import tarfile
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -45,14 +46,17 @@ def config_with_forge_at(repositories: Path) -> Any:  # noqa: ANN401 - a RunConf
 def in_the_forge_container(
     command: list[str],
     *,
-    deploy_record: str = "",
+    deploy_record: str | None = "",
     **options: Any,  # noqa: ANN401
 ) -> subprocess.CompletedProcess[bytes]:
     """Compose's ``exec -T forge <command>``, run here, where this test keeps the forge's repositories.
 
-    Its ``logs`` of the deploy service answer ``deploy_record``: by default, a play that deployed nothing.
+    Its ``logs`` of the deploy service answer ``deploy_record``: by default, a play that deployed nothing;
+    with none, compose fails to read them.
     """
     if command[len(COMPOSE) :] == ["logs", "--no-color", "--no-log-prefix", "deploy"]:
+        if deploy_record is None:
+            return subprocess.CompletedProcess(command, 1, b"", b"no such service: deploy\n")
         return subprocess.CompletedProcess(command, 0, deploy_record.encode(), b"")
     assert command[: len(COMPOSE) + 3] == [*COMPOSE, "exec", "-T", "forge"]
     return subprocess.run(command[len(COMPOSE) + 3 :], env=ISOLATED, check=False, **options)
@@ -103,7 +107,7 @@ def record_deployment(number: int, state: str, commits: dict[str, str]) -> str:
     )
 
 
-def write_played(repositories: Path, play: Path, deploy_record: str) -> None:
+def write_played(repositories: Path, play: Path, deploy_record: str | None) -> None:
     """What a stack run keeps in ``play`` of the forge in ``repositories`` and of ``deploy_record``."""
     stack = functools.partial(in_the_forge_container, deploy_record=deploy_record)
     played = read_stack_forge(config_with_forge_at(repositories), COMPOSE, stack)
@@ -251,32 +255,63 @@ def test_a_deployment_of_the_last_commits_of_main_is_kept_as_level_with_main(tmp
     assert not (play / DEPLOYED_CHECKOUT).exists()
 
 
-@pytest.mark.parametrize("ended", ["none", "failed"])
+@pytest.mark.parametrize(
+    "record_of",
+    [lambda _: "", lambda mains: record_deployment(1, "failed", mains)],
+    ids=["no deployment", "a failed one"],
+)
 def test_a_play_with_no_deployment_a_service_serves_on_keeps_nothing_deployed(
-    ended: str,
+    record_of: Callable[[dict[str, str]], str],
     tmp_path: Path,
 ) -> None:
     repositories, play = tmp_path / "repositories", tmp_path / "episode"
     open_forge(CFG, load_seed(CFG), repositories)
-    record = record_deployment(1, "failed", read_mains(repositories)) if ended == "failed" else ""
 
-    write_played(repositories, play, record)
+    write_played(repositories, play, record_of(read_mains(repositories)))
 
     assert not (play / DEPLOYED_FILE).exists()
     assert not (play / DEPLOYED_CHECKOUT).exists()
 
 
-def test_a_deployment_that_cannot_be_read_is_said_and_main_is_kept_all_the_same(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("record_of", "error"),
+    [
+        (lambda _: None, "no record: no such service: deploy"),
+        (
+            lambda mains: record_deployment(1, "serving", {r: c for r, c in mains.items() if r != REPO}),
+            f"deployment 1 names no commit of {REPO}",
+        ),
+    ],
+    ids=["no record", "a repo with no commit"],
+)
+def test_main_is_kept_though_what_was_deployed_cannot_be_read(
+    record_of: Callable[[dict[str, str]], str | None],
+    error: str,
+    tmp_path: Path,
+) -> None:
     repositories, play = tmp_path / "repositories", tmp_path / "episode"
     open_forge(CFG, load_seed(CFG), repositories)
-    commits = {repo: commit for repo, commit in read_mains(repositories).items() if repo != REPO}
 
-    write_played(repositories, play, record_deployment(1, "serving", commits))
+    write_played(repositories, play, record_of(read_mains(repositories)))
 
     assert json.loads((play / DEPLOYED_FILE).read_text()) == {
         "deployment": None,
         "service": None,
         "behind_main": [],
-        "error": f"deployment 1 names no commit of {REPO}",
+        "error": error,
     }
     assert (play / CHECKOUT / REPO / "pyproject.toml").exists()
+
+
+def test_what_an_earlier_reading_kept_of_a_deployment_is_gone_when_the_play_deployed_nothing(
+    tmp_path: Path,
+) -> None:
+    repositories, play = tmp_path / "repositories", tmp_path / "episode"
+    open_forge(CFG, load_seed(CFG), repositories)
+    (play / DEPLOYED_CHECKOUT).mkdir(parents=True)
+    (play / DEPLOYED_FILE).write_text('{"deployment": 9, "service": "notes", "behind_main": []}')
+
+    write_played(repositories, play, "")
+
+    assert not (play / DEPLOYED_FILE).exists()
+    assert not (play / DEPLOYED_CHECKOUT).exists()

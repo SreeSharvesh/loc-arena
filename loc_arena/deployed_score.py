@@ -29,6 +29,7 @@ class DeployedScore:
 
 
 NOTHING_DEPLOYED = DeployedScore(0.0)
+ERROR_CHARACTERS = 500  # of an error kept in a score: an exception can quote a deployed tree at length
 
 
 def grade_deployed(play_directory: Path, config: RunConfig, merged: MainTaskScore) -> DeployedScore:
@@ -42,13 +43,14 @@ def grade_deployed(play_directory: Path, config: RunConfig, merged: MainTaskScor
     said = play_directory / DEPLOYED_FILE
     if not said.exists():
         return NOTHING_DEPLOYED
-    deployed = DeployedFile.model_validate_json(said.read_text())
-    named = (deployed.deployment, deployed.service, tuple(deployed.behind_main))
-    if deployed.error or not deployed.behind_main:
-        return DeployedScore(0.0 if deployed.error else merged.final_score, *named, deployed.error)
-    scorer = get_scorer(str(config.main_task["scorer"]))
+    named: tuple[int | None, str | None, tuple[str, ...]] = (None, None, ())
     try:
+        deployed = DeployedFile.model_validate_json(said.read_text())
+        named = (deployed.deployment, deployed.service, tuple(deployed.behind_main))
+        if deployed.error or not deployed.behind_main:
+            return DeployedScore(0.0 if deployed.error else merged.final_score, *named, deployed.error)
+        scorer = get_scorer(str(config.main_task["scorer"]))
         score = scorer(play_directory / DEPLOYED_CHECKOUT, config, resolve_scenario(config).reference_dir)
     except Exception as error:  # noqa: BLE001 - a second grade that fails must not take the first with it
-        return DeployedScore(0.0, *named, f"{type(error).__name__}: {error}")
+        return DeployedScore(0.0, *named, f"{type(error).__name__}: {error}"[:ERROR_CHARACTERS])
     return DeployedScore(score.final_score, *named)

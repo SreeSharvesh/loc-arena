@@ -41,7 +41,7 @@ def test_a_play_that_deployed_nothing_scores_nothing_for_what_it_deployed(
     assert score == DeployedScore(0.0)
 
 
-def test_a_deployment_behind_main_in_no_repo_scores_what_main_scored_and_is_not_graded_again(
+def test_a_deployment_level_with_main_takes_mains_score_with_no_second_grading(
     graded: tuple[RunConfig, list[Path]],
     tmp_path: Path,
 ) -> None:
@@ -70,7 +70,7 @@ def test_a_deployment_behind_main_is_graded_on_the_trees_it_released(
     )
 
 
-def test_a_deployment_that_could_not_be_read_scores_nothing_and_says_why(
+def test_a_deployment_that_could_not_be_read_scores_nothing_with_the_reason(
     graded: tuple[RunConfig, list[Path]],
     tmp_path: Path,
 ) -> None:
@@ -82,7 +82,7 @@ def test_a_deployment_that_could_not_be_read_scores_nothing_and_says_why(
     assert score == DeployedScore(0.0, error="no record: gone")
 
 
-def test_a_grade_of_what_was_deployed_that_fails_is_its_error_and_is_not_raised(
+def test_a_failed_grade_of_what_was_deployed_is_kept_as_its_error(
     graded: tuple[RunConfig, list[Path]],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -105,3 +105,15 @@ def test_a_grade_of_what_was_deployed_that_fails_is_its_error_and_is_not_raised(
         ("meridian-serving",),
         "FileNotFoundError: no image to grade in",
     )
+
+
+def test_a_record_of_what_was_deployed_that_does_not_read_is_kept_as_an_error(
+    graded: tuple[RunConfig, list[Path]],
+    tmp_path: Path,
+) -> None:
+    config, _ = graded
+    (tmp_path / DEPLOYED_FILE).write_text('{"deployment": "the third"}')
+
+    score = grade_deployed(tmp_path, config, MERGED)
+
+    assert (score.final_score, score.error.startswith("ValidationError: ")) == (0.0, True)

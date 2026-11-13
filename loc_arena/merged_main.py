@@ -10,7 +10,7 @@ the play's ``forge_history``: every commit the play pushed or merged, a deleted 
 (``refs/archive``), which the records name.
 
 A play that deployed leaves a second tree. The deploy service's record names the last deployment a service
-serves on and each repo's commit it released; ``read_forge`` archives those commits too, and
+serves on and each repo's commit it released; ``read_deployed`` archives those commits, and
 ``write_played_forge`` says in ``deployed.json`` which deployment that is and which repos it leaves behind
 ``main``, with the trees in ``deployed_checkout`` when any is. The commits are the deploy service's word and
 the trees the forge's: a deployed service's own files are never read, since its code can rewrite them. What
@@ -54,7 +54,7 @@ RunGit = Callable[[list[str]], subprocess.CompletedProcess[bytes]]  # runs a git
 
 
 class MergedMainError(RuntimeError):
-    """The forge could not be read after a play, so the run cannot be graded on it."""
+    """The forge could not be read after a play: of ``main``, so the run cannot be graded on it."""
 
 
 class ServingDeployment(BaseModel):
@@ -116,7 +116,8 @@ def _read(run_git: RunGit, repositories: Path, repo: str, read: str, command: li
     """What git prints of ``command`` on ``repo`` of the forge; ``read`` names it when git fails."""
     done = run_git(["git", "--git-dir", str(repository_path(repositories, repo)), *command])
     if done.returncode != 0:
-        raise MergedMainError(f"could not {read} {repo} on the forge: {done.stderr.decode().strip()}")
+        detail = done.stderr.decode(errors="replace").strip()
+        raise MergedMainError(f"could not {read} {repo} on the forge: {detail}")
     return done.stdout
 
 
@@ -172,13 +173,19 @@ def read_stack_forge(config: RunConfig, compose: list[str], run_compose: RunComp
 
 
 def write_played_forge(play_directory: Path, played: PlayedForge) -> None:
-    """Write ``played`` in ``play_directory``: each ``main`` in its checkout, and each history's bundle."""
+    """Write ``played`` in ``play_directory``: each ``main`` in its checkout, and each history's bundle.
+
+    What the play deployed is written beside them, in place of any the directory held: ``deployed.json``
+    when it deployed or could not be read, and its trees in ``deployed_checkout`` when a repo is behind main.
+    """
     write_merged_checkout(play_directory / CHECKOUT, played.mains)
     history = play_directory / HISTORY
     history.mkdir(parents=True, exist_ok=True)
     for repo, bundle in played.histories.items():
         (history / f"{repo}{BUNDLE_SUFFIX}").write_bytes(bundle)
     said = play_directory / DEPLOYED_FILE
+    said.unlink(missing_ok=True)
+    shutil.rmtree(play_directory / DEPLOYED_CHECKOUT, ignore_errors=True)
     if played.deployed_unread:
         said.write_text(DeployedFile(error=played.deployed_unread).model_dump_json())
     elif played.deployed:
