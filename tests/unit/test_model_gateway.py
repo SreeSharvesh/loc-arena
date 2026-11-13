@@ -194,6 +194,33 @@ def test_with_an_agents_upstream_every_other_route_keeps_the_first_upstream_and_
     assert sent == ("openrouter.ai:443", {"key": {"file": "/run/secrets/openrouter_api_key"}})
 
 
+def list_backend_policies(settings: LocArenaSettings) -> list[dict[str, Any]]:
+    """The policies of the backend of each route that has one, for a play with agent-main's loop."""
+    routes = routes_with_a_loop(settings).values()
+    return [route["backends"][0]["ai"]["policies"] for route in routes if route.get("backends")]
+
+
+def test_with_an_outbound_proxy_every_upstream_is_reached_through_a_tunnel_to_it() -> None:
+    gateway = GatewaySettings(agents_upstream=SECOND, outbound_proxy="172.17.0.1:3128")
+
+    policies = list_backend_policies(LocArenaSettings(gateway=gateway))
+
+    assert policies
+    assert all(policy["backendTunnel"] == {"proxy": {"host": "172.17.0.1:3128"}} for policy in policies)
+
+
+def test_with_no_outbound_proxy_no_upstream_is_reached_through_a_tunnel() -> None:
+    policies = list_backend_policies(WITH_SECOND)
+
+    assert policies
+    assert not any("backendTunnel" in policy for policy in policies)
+
+
+def test_an_outbound_proxy_with_no_port_is_refused() -> None:
+    with pytest.raises(ValidationError, match="outbound_proxy"):
+        GatewaySettings(outbound_proxy="172.17.0.1")
+
+
 def test_the_agents_upstreams_key_is_a_secret_of_the_gateway_alone_from_its_host_variable() -> None:
     compose = render(WITH_SECOND)
 

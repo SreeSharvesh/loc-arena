@@ -8,6 +8,12 @@ log has the details.
 
 ### Added
 
+- **A stack run works on a machine whose only way out is a proxy on its loopback address.** There the
+  gateway's calls left by a path that carried no provider key and were refused. `gateway.outbound_proxy`
+  names a proxy the gateway tunnels to each upstream through, and `python -m loc_arena.gateway.proxy_relay
+  <run>` relays that address to the machine's own proxy, for a `CONNECT` to the run's upstreams alone. A run
+  config for one machine, `configs/*.local.yaml`, stays out of git
+  ([docs/isolation](docs/isolation/README.md#the-gateway)).
 - **A stack run works on a machine that re-signs outbound HTTPS.** In a cloud development container, or behind
   an inspecting proxy, the image builds failed at their first download and the gateway would have refused the
   provider, since both verified with public roots alone. Such a machine names its certificate bundle in

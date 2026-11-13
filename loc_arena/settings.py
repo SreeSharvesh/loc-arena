@@ -95,6 +95,11 @@ class GatewaySettings(SettingsGroup):
         description="Under harness pi, the upstream of the agents' loops, for a model another provider "
         "serves; the monitors, the runners and the jobs stay on upstream. Unset: the loops use upstream too.",
     )
+    outbound_proxy: str | None = Field(
+        default=None,
+        pattern=r"^[^\s:/]+:\d+$",
+        description="The host:port of a proxy the gateway tunnels to each upstream through; unset: none.",
+    )
     allowed_paths: tuple[str, ...] = Field(
         default=("api/v1/chat/completions", "api/v1/completions", "api/v1/models"),
         description="Upstream paths a caller may reach; a request on any other path is refused and recorded.",
@@ -636,10 +641,7 @@ class LocArenaSettings(SettingsGroup):
         default=InferenceSettings(),
         description="Sanctioned paths and quota.",
     )
-    gateway: GatewaySettings = Field(
-        default=GatewaySettings(),
-        description="The gateway container.",
-    )
+    gateway: GatewaySettings = Field(default=GatewaySettings(), description="The gateway container.")
     stack: StackSettings = Field(
         default=StackSettings(),
         description="The episode's compose project.",

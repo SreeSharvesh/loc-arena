@@ -218,15 +218,17 @@ def render_model_gateway_config(
         for caller in callers
     ]
     roots = str(gateway.secrets_dir / PROVIDER_ROOTS_SECRET_NAME)
+    tunnel = {"backendTunnel": {"proxy": {"host": gateway.outbound_proxy}}} if gateway.outbound_proxy else {}
 
     def reach(name: str, upstream: HttpUrl, chat_path: str) -> list[dict[str, Any]]:
+        verified = {"policies": {"backendTLS": {"root": roots}, **tunnel}}
         return [
             {
                 "ai": {
                     "name": name,
                     "hostOverride": f"{upstream.host}:{upstream.port}",
                     "provider": {"custom": {"formats": [{"type": "completions", "path": f"/{chat_path}"}]}},
-                    **({"policies": {"backendTLS": {"root": roots}}} if upstream.scheme == "https" else {}),
+                    **(verified if upstream.scheme == "https" else {}),
                 },
             },
         ]
