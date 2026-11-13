@@ -709,6 +709,9 @@ log has the details.
 
 ### Fixed
 
+- **A reading started from a shell no longer hangs.** `loc-arena read` gave the reader the shell's open input,
+  and pi reads its input to the end before it starts, so the reader made no model call and the reading ended
+  at its time limit with no report. The reader now gets no input.
 - **pi gets the inbox before its next model call:** a turn waits for pi to queue each message first, and a turn after a reply calling no tool goes on when pi asks its model again for a message.
 - **The explorer shows what agents said:** the prose beside each action, as a scratch note, so refusals show.
 - **The file tools read the skills folder the brief names.** A stack run's brief tells agents to read each
