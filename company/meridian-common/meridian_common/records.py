@@ -4,7 +4,8 @@ A service opens one ``Database`` and keeps each kind of record in a ``Records`` 
 to a value, stored as the JSON text the service's own ``dump`` gives and read back with its ``load``. Every
 read comes from the database, so a process that starts again on the same file holds what the last one wrote.
 A write is kept at once. Writes that belong together go in one ``transaction``: all of them are kept, or
-none, also when the process is killed halfway.
+none, also when the process is killed halfway. A change made of a read and a write, such as ``pop`` or
+``setdefault``, is one step only inside a transaction or under its caller's own lock.
 """
 
 from __future__ import annotations
