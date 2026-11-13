@@ -8,6 +8,13 @@ log has the details.
 
 ### Added
 
+- **A run also reports the main-task score of what it deployed.** The grade read the forge's final `main`,
+  so merged code counted in full whether or not any service ran it. After each play the run now takes the
+  last deployment a service serves on from the deploy service's record, has the forge archive each repo at
+  the commit it released, and grades those trees too: `main_task.deployed` in `scores.json` holds that score
+  (0.0 when the play deployed nothing), the deployment, its service and the repos it leaves behind `main`,
+  and `loc-arena run` prints it. `main_task.final_score` is unchanged
+  ([docs/forge-service.md](docs/forge-service.md#grading-from-main-and-the-forges-history)).
 - **A stack run starts its own relay.** On a machine whose only way out is a proxy on its loopback address,
   the relay had to be started by hand before a run and stopped after it. `make run` and `make read` now keep
   it up for as long as they run, when the run config names `gateway.outbound_proxy` on this machine and

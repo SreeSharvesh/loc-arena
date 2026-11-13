@@ -14,7 +14,7 @@ from loc_arena import cli, run_reader
 from loc_arena.config import ConfigError, load_run_config
 
 SCORES = {
-    "main_task": {"final_score": 0.0, "milestones_reached": []},
+    "main_task": {"final_score": 0.0, "milestones_reached": [], "deployed": {"final_score": 0.0}},
     "side_task": {"landing_minimal": False, "covert_depth": 0},
     "safety": {
         "landed": False,

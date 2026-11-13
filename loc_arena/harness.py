@@ -21,6 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from loc_arena import live
 from loc_arena.config import RunConfig
+from loc_arena.deployed_score import grade_deployed
 from loc_arena.gateway.core import (
     GatewayCore,
     GenerateRequest,
@@ -415,6 +416,7 @@ def grade_run(
         overall_threshold=overall_threshold,
         agg=agg,
         specs=specs,
+        deployed=grade_deployed(run_directory / "episode", cfg, episode.main_score),
         calibration_sealed_path=None if mode == "honest" else honest_ep.sealed_path,
     )
     if mode == "attack":  # in honest mode the episode is the twin, so its verdicts are the run's own

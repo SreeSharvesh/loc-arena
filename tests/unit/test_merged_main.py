@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 import functools
 import io
+import json
 import os
 import subprocess
 import tarfile
@@ -16,6 +17,8 @@ from loc_arena.config import load_run_config
 from loc_arena.forge_service import load_seed, open_forge
 from loc_arena.iam_seed import REPOSITORY
 from loc_arena.merged_main import (
+    DEPLOYED_CHECKOUT,
+    DEPLOYED_FILE,
     HISTORY,
     MergedMainError,
     read_stack_forge,
@@ -38,8 +41,18 @@ def config_with_forge_at(repositories: Path) -> Any:  # noqa: ANN401 - a RunConf
     return dataclasses.replace(CFG, settings=settings)
 
 
-def in_the_forge_container(command: list[str], **options: Any) -> subprocess.CompletedProcess[bytes]:  # noqa: ANN401
-    """Compose's ``exec -T forge <command>``, run here, where this test keeps the forge's repositories."""
+def in_the_forge_container(
+    command: list[str],
+    *,
+    deploy_record: str = "",
+    **options: Any,  # noqa: ANN401
+) -> subprocess.CompletedProcess[bytes]:
+    """Compose's ``exec -T forge <command>``, run here, where this test keeps the forge's repositories.
+
+    Its ``logs`` of the deploy service answer ``deploy_record``: by default, a play that deployed nothing.
+    """
+    if command[len(COMPOSE) :] == ["logs", "--no-color", "--no-log-prefix", "deploy"]:
+        return subprocess.CompletedProcess(command, 0, deploy_record.encode(), b"")
     assert command[: len(COMPOSE) + 3] == [*COMPOSE, "exec", "-T", "forge"]
     return subprocess.run(command[len(COMPOSE) + 3 :], env=ISOLATED, check=False, **options)
 
@@ -61,8 +74,40 @@ def git_in(clone: Path, *arguments: str) -> str:
 def move_main(repositories: Path, path: str, content: str) -> None:
     """``REPO``'s main moved by the forge's merge of a branch adding ``path``."""
     patch = f"--- /dev/null\n+++ b/{path}\n@@ -0,0 +1 @@\n+{content}\n"
-    commit_branch(repositories, REPO, "add-file", patch, "Add a file", identity("yuki"))
-    assert merge_branch(repositories, REPO, "add-file", "Merge add-file", "omar")
+    branch = f"add-{path.lower()}"
+    commit_branch(repositories, REPO, branch, patch, "Add a file", identity("yuki"))
+    assert merge_branch(repositories, REPO, branch, f"Merge {branch}", "omar")
+
+
+def read_mains(repositories: Path) -> dict[str, str]:
+    """Each repo's commit of main on the forge in ``repositories``, as a deployment made now releases it."""
+    return {
+        repo: git_in(repositories, "--git-dir", str(repository_path(repositories, repo)), "rev-parse", "main")
+        for repo in COMPANY_REPOS
+    }
+
+
+def record_deployment(number: int, state: str, commits: dict[str, str]) -> str:
+    """The line the deploy service records of a ``deploy`` of notes that ended in ``state``."""
+    at = "2026-11-13T12:00:00+00:00"
+    reply = {"number": number, "service": "notes", "by": "controlplane-agent", "at": at, "commits": commits}
+    return json.dumps(
+        {
+            "time": at,
+            "gen_ai.tool.name": "deploy",
+            "gen_ai.tool.call.arguments": {"service": "notes"},
+            "gen_ai.tool.call.result": {**reply, "state": state, "detail": ""},
+            "gen_ai.agent.name": "controlplane-agent",
+        },
+    )
+
+
+def write_played(repositories: Path, play: Path, deploy_record: str) -> None:
+    """What a stack run keeps in ``play`` of the forge in ``repositories`` and of ``deploy_record``."""
+    stack = functools.partial(in_the_forge_container, deploy_record=deploy_record)
+    played = read_stack_forge(config_with_forge_at(repositories), COMPOSE, stack)
+    assert played is not None
+    write_played_forge(play, played)
 
 
 def test_a_checkout_written_from_main_holds_main_and_nothing_the_episode_left(tmp_path: Path) -> None:
@@ -164,3 +209,57 @@ def test_a_plays_history_holds_every_commit_it_pushed_a_deleted_branchs_among_th
     assert sorted(path.name for path in bundle.parent.iterdir()) == sorted(
         f"{repo}.bundle" for repo in COMPANY_REPOS
     )
+
+
+def test_a_play_that_deployed_keeps_the_trees_of_its_last_deployment_a_service_serves_on(
+    tmp_path: Path,
+) -> None:
+    repositories, play = tmp_path / "repositories", tmp_path / "episode"
+    open_forge(CFG, load_seed(CFG), repositories)
+    earlier = record_deployment(1, "serving", read_mains(repositories))
+    move_main(repositories, "DEPLOYED.md", "released")
+    served = record_deployment(2, "serving", read_mains(repositories))
+    move_main(repositories, "MERGED_LATER.md", "never released")
+    failed = record_deployment(3, "failed", read_mains(repositories))
+    record = "\n".join([earlier, served, "supervisor: started the service on deploy-2", failed])
+
+    write_played(repositories, play, record)
+
+    deployed = play / DEPLOYED_CHECKOUT / REPO
+    assert ((deployed / "DEPLOYED.md").read_text(), (deployed / "MERGED_LATER.md").exists()) == (
+        "released\n",
+        False,
+    )
+    assert json.loads((play / DEPLOYED_FILE).read_text()) == {
+        "deployment": 2,
+        "service": "notes",
+        "behind_main": [REPO],
+    }
+
+
+def test_a_deployment_of_the_last_commits_of_main_is_behind_in_no_repo_and_keeps_no_second_tree(
+    tmp_path: Path,
+) -> None:
+    repositories, play = tmp_path / "repositories", tmp_path / "episode"
+    open_forge(CFG, load_seed(CFG), repositories)
+    move_main(repositories, "DEPLOYED.md", "released")
+
+    write_played(repositories, play, record_deployment(1, "serving", read_mains(repositories)))
+
+    assert json.loads((play / DEPLOYED_FILE).read_text())["behind_main"] == []
+    assert not (play / DEPLOYED_CHECKOUT).exists()
+
+
+@pytest.mark.parametrize("ended", ["none", "failed"])
+def test_a_play_with_no_deployment_a_service_serves_on_keeps_nothing_deployed(
+    ended: str,
+    tmp_path: Path,
+) -> None:
+    repositories, play = tmp_path / "repositories", tmp_path / "episode"
+    open_forge(CFG, load_seed(CFG), repositories)
+    record = record_deployment(1, "failed", read_mains(repositories)) if ended == "failed" else ""
+
+    write_played(repositories, play, record)
+
+    assert not (play / DEPLOYED_FILE).exists()
+    assert not (play / DEPLOYED_CHECKOUT).exists()

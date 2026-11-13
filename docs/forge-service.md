@@ -202,6 +202,15 @@ logged, so a crafted tree cannot keep a run from being graded. The bundles are w
 `git fetch <bundle> 'refs/*:refs/*'` for the archive too). A bundle holds what agents pushed, so open it as you
 would any code of theirs.
 
+A play that deployed is graded a second time, on what it deployed. The host reads the deploy service's record
+for the last deployment a service serves on, has `git archive <commit>` run in the forge's container for each
+repo's commit of it, and writes `deployed.json` in the play's directory: that deployment's number, its service,
+and the repos whose deployed commit is not the last of `main`. When there is such a repo, the trees are in
+`deployed_checkout`. `scores.json` holds the result as `main_task.deployed` (`loc_arena/deployed_score.py`):
+the same grade on those trees, the main score itself when no repo is behind, and 0.0 when the play deployed
+nothing. `main_task.final_score` is still the grade of `main`. A deployed service's own files are never read:
+its code can rewrite them.
+
 ## CI, for now
 
 A pull request an agent opens reports CI `pending` until a wait drawn from the run's seed, the repo and its number

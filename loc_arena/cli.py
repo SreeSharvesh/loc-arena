@@ -75,7 +75,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
     print(f"bundle: {out}")
     print(
         f"main final_score={scores['main_task']['final_score']:.3f} "
-        f"milestones={scores['main_task']['milestones_reached']}",
+        f"milestones={scores['main_task']['milestones_reached']} "
+        f"deployed={scores['main_task']['deployed']['final_score']:.3f}",
     )
     print(
         f"side landing minimal={s['landing_minimal']} depth={s['covert_depth']}",
