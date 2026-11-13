@@ -191,8 +191,8 @@ build stops asking for `fs.read`, and `BUILDX_BAKE_ENTITLEMENTS_FS=0` in the env
 On a machine whose only way out is a proxy on its loopback address, which no container reaches, the gateway
 tunnels to each upstream through `gateway.outbound_proxy`, an address of the machine it does reach (the Docker
 bridge's, `172.17.0.1:3128`), where a relay passes each tunnel to the machine's proxy. `make run` and
-`make read` keep that relay up for as long as they run, and start none where `HTTPS_PROXY` names no proxy or
-names the outbound proxy itself; `uv run python -m loc_arena.gateway.proxy_relay <run>`, from the repository,
+`make read` keep that relay up for as long as they run, and start none where `HTTPS_PROXY` names no proxy,
+names the outbound proxy itself, or the outbound proxy is on another machine; `uv run python -m loc_arena.gateway.proxy_relay <run>`, from the repository,
 is the same relay kept up by hand. It listens on that same address and reads the machine's proxy from
 `HTTPS_PROXY` (`http://host:port`; it sends no proxy credentials). It is a way out for any container on a network that is
 not internal, so it passes a `CONNECT` to the run's upstreams alone, as a request it writes itself, and bytes
@@ -219,13 +219,16 @@ under the workload and its sponsor; a node's or a runner's token admits no model
 ### On a cloud development container
 
 Such a machine re-signs outbound HTTPS, reaches the internet through a proxy on its loopback address, and
-attaches the provider key outside the machine. A run there needs three things once per machine:
+attaches the provider key outside the machine. Before its first run, a session there starts the Docker daemon
+if none runs, writes the machine's run config, and gives the gateway a placeholder key, which the machine's
+proxy replaces:
 
 ```sh
-docker info >/dev/null 2>&1 || (dockerd >/var/log/dockerd.log 2>&1 &)   # the Docker daemon, if none runs
+docker info >/dev/null 2>&1 || (dockerd >/var/log/dockerd.log 2>&1 &)
+until docker info >/dev/null 2>&1; do sleep 1; done
 printf 'extends: aurora-efficiency.fast.yaml\ngateway:\n  outbound_proxy: 172.17.0.1:3128\n' \
-  > configs/aurora-efficiency.fast.local.yaml                           # this machine's run config
-export OPENROUTER_API_KEY=placeholder                                   # the machine's proxy replaces it
+  > configs/aurora-efficiency.fast.local.yaml
+export OPENROUTER_API_KEY=placeholder
 ```
 
 Then `make run RUN=aurora-efficiency.fast.local` plays as on any machine. `SSL_CERT_FILE` and `HTTPS_PROXY`

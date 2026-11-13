@@ -181,8 +181,8 @@ def _cmd_read(args: argparse.Namespace) -> int:
     # The reader's stack imports the episode's; only this command pays for that.
     from loc_arena.run_reader import read_run
 
-    config = load_run_config(_config_path(args.run))
     try:
+        config = load_run_config(_config_path(args.run))
         with relay_while_running(config.settings.gateway):
             report = read_run(Path(args.run_directory), args.brief, config)
     except (ValueError, RuntimeError) as error:

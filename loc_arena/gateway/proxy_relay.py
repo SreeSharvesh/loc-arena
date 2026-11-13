@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import socket
 import sys
 import threading
 from collections.abc import Iterator
@@ -92,30 +93,44 @@ async def serve_relay(listen: str, proxy: str, allowed: frozenset[str], timeout:
     return await asyncio.start_server(relay, *_split(listen))
 
 
-@contextlib.contextmanager
-def relay_while_running(gateway: GatewaySettings) -> Iterator[None]:
-    """A relay for as long as a command runs, on a machine whose own proxy is not the gateway's.
+def _is_of_this_machine(address: str) -> bool:
+    """Whether this machine can listen on ``address``: a proxy on another machine needs no relay."""
+    with socket.socket() as probe, contextlib.suppress(OSError):
+        probe.bind((_split(address)[0], 0))
+        return True
+    return False
 
-    None is started with no ``gateway.outbound_proxy``, with no proxy named by this machine, or when the two
-    are one address, which the gateway then reaches itself. A relay that cannot listen raises here.
+
+@contextlib.contextmanager
+def relay_while_running(gateway: GatewaySettings) -> Iterator[str | None]:
+    """A relay for as long as a command runs: the address it listens on, or ``None`` where none is needed.
+
+    None is needed with no ``gateway.outbound_proxy``, with no proxy named by this machine, when the two are
+    one address, or when the outbound proxy is on another machine: the gateway then reaches it itself. A
+    relay that cannot listen stops the command. As the command ends, so does every tunnel still open.
     """
-    proxy = find_machine_proxy()
-    if not gateway.outbound_proxy or proxy in (None, gateway.outbound_proxy):
-        yield
+    proxy, address = find_machine_proxy(), gateway.outbound_proxy
+    if not address or proxy in (None, address) or not _is_of_this_machine(address):
+        yield None
         return
     loop = asyncio.new_event_loop()
-    allowed = list_upstream_hosts(gateway)
-    relay = serve_relay(gateway.outbound_proxy, proxy, allowed, gateway.timeout_seconds)
-    server = loop.run_until_complete(relay)
+    relay = serve_relay(address, proxy, list_upstream_hosts(gateway), gateway.timeout_seconds)
+    try:
+        server = loop.run_until_complete(relay)
+    except OSError as error:
+        loop.close()
+        raise RuntimeError(f"no relay can listen on gateway.outbound_proxy {address}: {error}") from error
     thread = threading.Thread(target=loop.run_forever, daemon=True)
     thread.start()
     try:
-        yield
+        yield address
     finally:
         loop.call_soon_threadsafe(loop.stop)
         thread.join()
         server.close()
-        with contextlib.suppress(TimeoutError):  # a caller that keeps its tunnel does not hold the command
+        for tunnel in asyncio.all_tasks(loop):
+            tunnel.cancel()  # each closes both of its connections as it ends
+        with contextlib.suppress(TimeoutError):
             loop.run_until_complete(asyncio.wait_for(server.wait_closed(), gateway.timeout_seconds))
         loop.close()
 

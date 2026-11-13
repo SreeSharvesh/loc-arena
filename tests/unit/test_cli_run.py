@@ -53,7 +53,9 @@ def test_a_run_on_a_machine_with_its_own_proxy_has_the_relay_up_while_the_stack_
         free.bind(("127.0.0.1", 0))
         port = free.getsockname()[1]
     config = load_run_config("configs/aurora-efficiency.yaml")
-    gateway = config.settings.gateway.model_copy(update={"outbound_proxy": f"127.0.0.1:{port}"})
+    gateway = config.settings.gateway.model_copy(
+        update={"outbound_proxy": f"127.0.0.1:{port}", "timeout_seconds": 1},
+    )
     proxied = dataclasses.replace(config, settings=config.settings.model_copy(update={"gateway": gateway}))
     (tmp_path / "scores.json").write_text(json.dumps(SCORES))
     answers = []
@@ -71,6 +73,15 @@ def test_a_run_on_a_machine_with_its_own_proxy_has_the_relay_up_while_the_stack_
     cli.main(["run", "--run", "aurora-efficiency", "--out", str(tmp_path)])
 
     assert answers == [b"HTTP/1.1 403 Forbidden\r\n\r\n"]  # the relay's answer to what is no tunnel
+
+
+def test_a_reading_with_a_run_config_that_does_not_load_says_so_and_fails(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    status = cli.main(["read", str(tmp_path), "--run", "no-such-run"])
+
+    assert (status, capsys.readouterr().err.startswith("read: ")) == (1, True)
 
 
 def test_an_episode_is_refused_outside_a_stack_runs_episode_container(tmp_path: Path) -> None:
