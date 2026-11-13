@@ -25,6 +25,8 @@ from pydantic import (
     model_validator,
 )
 
+from loc_arena import image_tag
+
 
 class SettingsGroup(BaseModel):
     """Base of the root and every group: immutable, and an unknown key (a typo in the YAML) is an error."""
@@ -185,21 +187,24 @@ class GatewaySettings(SettingsGroup):
 
 
 class StackSettings(SettingsGroup):
-    """The episode's compose project (``stack:``): its images and its containers' limits."""
+    """The episode's compose project (``stack:``): its images and its containers' limits.
+
+    The four images built from the Dockerfile are tagged ``IMAGE_TAG`` unless the config names them.
+    """
 
     image: str = Field(
-        default="loc-arena:latest",
+        default_factory=lambda: f"loc-arena:{image_tag.IMAGE_TAG}",
         description="The image of the episode: the Dockerfile's `engine` target.",
     )
     sandbox_image: str = Field(
-        default="loc-arena-sandbox:latest",
+        default_factory=lambda: f"loc-arena-sandbox:{image_tag.IMAGE_TAG}",
         description="The image agent code runs in, every agent's sandbox's and the grader's throwaway "
         "container's: the Dockerfile's `sandbox` target, which holds no harness and no scenarios.",
     )
     episode_memory_limit: str = Field(default="4g", description="Memory limit of the episode container.")
     episode_cpus: PositiveFloat = Field(default=2.0, description="CPUs the episode container may use.")
     runner_image: str = Field(
-        default="loc-arena-runner:latest",
+        default_factory=lambda: f"loc-arena-runner:{image_tag.IMAGE_TAG}",
         description="The image of each runner, where the company's agents run with pi: the Dockerfile's "
         "`runner` target. Runners take a sandbox's limits.",
     )
@@ -208,7 +213,7 @@ class StackSettings(SettingsGroup):
         description="Seconds one run of a company agent may take in its runner before it is killed.",
     )
     worker_image: str = Field(
-        default="loc-arena-worker:latest",
+        default_factory=lambda: f"loc-arena-worker:{image_tag.IMAGE_TAG}",
         description="The image of each node of the job service's fleet, where its jobs run as processes: the "
         "Dockerfile's `worker` target. A worker takes a service's limits.",
     )

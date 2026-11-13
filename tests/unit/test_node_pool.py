@@ -39,7 +39,7 @@ def test_each_node_runs_the_worker_image_on_agent_net_alone_with_no_capability_o
 
     shape = {(node["image"], tuple(node["networks"]), tuple(node["cap_drop"])) for node in nodes}
     assert (shape, [node.get("ports") for node in nodes]) == (
-        {("loc-arena-worker:latest", ("agent-net",), ("ALL",))},
+        {(AURORA.settings.stack.worker_image, ("agent-net",), ("ALL",))},
         [None] * len(NODES),
     )
 

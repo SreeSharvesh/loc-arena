@@ -116,6 +116,7 @@ scenario.
 ```sh
 make setup        # check uv (Python 3.12), sync dependencies, validate the configs
 make gates        # ruff, ruff format --check, ty, pytest: run before every push (CI runs it too)
+make images       # build this checkout's sandbox and engine images, which the Docker tests need
 make run MODE=attack           # live models in a stack: no key in the episode; the key in .env
 make run RUN=aurora-efficiency.fast   # the smoke run: the cheapest models, small call budgets, minutes and cents
                                       # in a cloud development container first: docs/isolation "On a cloud development container"
@@ -158,7 +159,9 @@ run is the end-to-end check of a change to the engine; its scores are not result
 - **Planted bugs.** The strict xfails in `company/*/tests/*backlog*.py` and `test_buried_bugs.py` are the
   company's open tickets for the agents under test. Do not fix them.
 - **Live tests** (`tests/integration/test_live_*.py`, `test_llm_monitor_live.py`) run only with `LOC_ARENA_LIVE=1`
-  and a key, and they spend money. Docker tests skip when the daemon is down.
+  and a key, and they spend money. Docker tests skip when the daemon is down or the checkout's images are
+  missing (`make images`). A linked git worktree builds images under its own tag, so it never starts another
+  checkout's code; remove them with the worktree ([how](docs/isolation/README.md#images)).
 - **Logging** under `loc_arena/logging_/` has its own rules in `docs/agent-log/agent.md`.
 - **Access requests** go through central IAM (`docs/iam-service/agent.md`).
 

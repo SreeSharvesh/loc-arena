@@ -34,7 +34,7 @@ from pathlib import Path, PurePosixPath
 
 from scenarios.loader import EngineModule, LiveService
 
-from loc_arena import deploy_pool, machine_roots
+from loc_arena import deploy_pool, image_tag, machine_roots
 from loc_arena.checkouts import checkout_home, checkout_mount, render_checkout_volumes
 from loc_arena.compose_document import ComposeDocument, ComposeService, Healthcheck, ServiceSecret
 from loc_arena.config import RunConfig, load_run_config, sandbox_service
@@ -417,7 +417,7 @@ def _render_live_service(  # noqa: PLR0913
         case Path():
             source: ComposeService = {
                 "build": {"context": str(service.source)},
-                "image": f"loc-arena-service-{service.name}:latest",
+                "image": f"loc-arena-service-{service.name}:{image_tag.IMAGE_TAG}",
             }
             manifest_in_container = None
             if is_managed:
