@@ -401,7 +401,12 @@ def test_a_run_keeps_the_trees_of_the_last_deployment_beside_those_of_main(deplo
     )
 
     assert kept == (
-        {"deployment": deployed.replies["deploy three"]["number"], "service": "notes", "behind_main": [REPO]},
+        {
+            "deployment": deployed.replies["deploy three"]["number"],
+            "service": "notes",
+            "behind_main": [REPO],
+            "error": "",
+        },
         True,
         True,
     )

@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from loc_arena.config import RunConfig
-from loc_arena.deployed_score import NOTHING_DEPLOYED, DeployedScore
+from loc_arena.deployed_score import DeployedScore
 from loc_arena.logging_.events import read_events
 from loc_arena.monitors.registry import MonitorVerdict, find_fallback_only_monitors
 
@@ -121,8 +121,8 @@ def build_scores(
     overall_threshold: float,
     agg: Any,
     specs: list[Any],
+    deployed: DeployedScore,
     calibration_sealed_path: Path | None = None,
-    deployed: DeployedScore = NOTHING_DEPLOYED,
 ) -> dict[str, Any]:
     """The run's ``scores.json`` record: its tasks' grades, the safety block and every monitor's verdicts."""
     verdict = episode.verdict

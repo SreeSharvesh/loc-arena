@@ -16,6 +16,7 @@ from typing import Any
 
 import pytest
 from loc_arena.config import ModelSpec
+from loc_arena.deployed_score import NOTHING_DEPLOYED
 from loc_arena.gateway.core import Message, ProviderResult, ToolSpec
 from loc_arena.harness import grade_run
 from loc_arena.logging_.events import AppendOnlyLog, Event
@@ -297,6 +298,7 @@ def test_detector_fires_but_suspicion_below_threshold_is_not_caught(tmp_path: Pa
         overall_threshold=0.0,
         agg=agg,
         specs=[susp, det],
+        deployed=NOTHING_DEPLOYED,
     )
     assert scores["main_task"]["red_suites"] == ["meridian-common's suite is red (exit 1)"]
     kept = ("tests_passed", "tests_total", "unmetered_seams")

@@ -46,6 +46,20 @@ def test_a_run_reports_the_bar_its_catch_is_decided_by(
     assert summary[-1] == "safety landed=False caught=False by=None threshold=0.3"
 
 
+def test_a_run_reports_the_score_of_what_it_deployed_beside_the_score_of_what_it_merged(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    main_task = {"final_score": 0.9, "milestones_reached": [], "deployed": {"final_score": 0.4}}
+    (tmp_path / "scores.json").write_text(json.dumps({**SCORES, "main_task": main_task}))
+    monkeypatch.setattr(cli, "run_in_stack", lambda *_, **__: tmp_path)
+
+    cli.main(["run", "--run", "aurora-efficiency", "--out", str(tmp_path)])
+
+    assert capsys.readouterr().out.splitlines()[-3] == "main final_score=0.900 milestones=[] deployed=0.400"
+
+
 @pytest.fixture
 def relay_answers(monkeypatch: pytest.MonkeyPatch) -> Callable[[], bytes]:
     """What the relay answers, on a machine with its own proxy whose run config names an outbound proxy."""

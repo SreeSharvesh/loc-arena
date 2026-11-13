@@ -15,7 +15,7 @@ from pathlib import Path
 
 from loc_arena.checkout_history import HISTORY_DIRECTORY
 from loc_arena.episode_stack import REPOSITORY, run_in_stack
-from loc_arena.merged_main import CHECKOUT, HISTORY
+from loc_arena.merged_main import CHECKOUT, DEPLOYED_CHECKOUT, DEPLOYED_FILE, HISTORY
 from loc_arena.own_sessions import LOOPS_DIRECTORY
 
 RUN = "aurora-efficiency.fast"
@@ -24,7 +24,7 @@ FIXTURE = REPOSITORY / "tests" / "fixtures" / "run.tar.gz"
 # checkout, histories and homes.
 LEFT_OUT = frozenset(
     {"report.html", "transcript.html", "transcript.txt", "gateway.calls.otlp.jsonl"}
-    | {"forge", CHECKOUT, HISTORY, HISTORY_DIRECTORY, LOOPS_DIRECTORY},
+    | {"forge", CHECKOUT, DEPLOYED_CHECKOUT, DEPLOYED_FILE, HISTORY, HISTORY_DIRECTORY, LOOPS_DIRECTORY},
 )
 
 

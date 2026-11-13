@@ -13,7 +13,9 @@ A play that deployed leaves a second tree. The deploy service's record names the
 serves on and each repo's commit it released; ``read_forge`` archives those commits too, and
 ``write_played_forge`` says in ``deployed.json`` which deployment that is and which repos it leaves behind
 ``main``, with the trees in ``deployed_checkout`` when any is. The commits are the deploy service's word and
-the trees the forge's: a deployed service's own files are never read, since its code can rewrite them.
+the trees the forge's: a deployed service's own files are never read, since its code can rewrite them. What
+the play deployed is a second reading: when it cannot be made, ``deployed.json`` says why and ``main`` is
+kept all the same.
 """
 
 from __future__ import annotations
@@ -71,9 +73,10 @@ class DeployedFile(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    deployment: int
-    service: str
-    behind_main: list[str]  # the repos whose deployed commit is not the last of main
+    deployment: int | None = None  # none when it could not be read
+    service: str | None = None
+    behind_main: list[str] = []  # the repos whose deployed commit is not the last of main
+    error: str = ""  # why what the play deployed could not be read, when it could not
 
 
 class Deployed(NamedTuple):
@@ -89,73 +92,83 @@ class PlayedForge(NamedTuple):
     mains: dict[str, bytes]
     histories: dict[str, bytes]
     deployed: Deployed | None = None  # none when the play deployed nothing a service serves on
+    deployed_unread: str = ""  # why what the play deployed could not be read, when it could not
 
 
 def find_last_deployment(record: str) -> ServingDeployment | None:
-    """The last deployment a service serves on in the deploy service's ``record``; none when it has none."""
-    serving = None
+    """The last deployment a service serves on in the deploy service's ``record``; none when it has none.
+
+    The last is the one of the highest number: the deploy service numbers them as they start, whatever order
+    their calls end in.
+    """
+    serving: list[ServingDeployment] = []
     for line in record.splitlines():
         try:
             call = ToolRecord.model_validate_json(line)
             if call.tool == DEPLOY_TOOL:
-                serving = ServingDeployment.model_validate(call.result)
+                serving.append(ServingDeployment.model_validate(call.result))
         except ValidationError:
             continue  # a line that is no tool call, or a deployment that was refused or failed
-    return serving
+    return max(serving, key=lambda deployment: deployment.number) if serving else None
 
 
-def read_forge(
-    repositories: Path,
-    run_git: RunGit,
-    deployment: ServingDeployment | None = None,
-) -> PlayedForge:
-    """What the play left on the forge whose repositories are in ``repositories``, read by ``run_git``.
+def _read(run_git: RunGit, repositories: Path, repo: str, read: str, command: list[str]) -> bytes:
+    """What git prints of ``command`` on ``repo`` of the forge; ``read`` names it when git fails."""
+    done = run_git(["git", "--git-dir", str(repository_path(repositories, repo)), *command])
+    if done.returncode != 0:
+        raise MergedMainError(f"could not {read} {repo} on the forge: {done.stderr.decode().strip()}")
+    return done.stdout
 
-    With a ``deployment``, each repo's tree at the commit it released too.
-    """
-    mains, histories, trees = {}, {}, {}
+
+def read_forge(repositories: Path, run_git: RunGit) -> PlayedForge:
+    """What the play left on the forge whose repositories are in ``repositories``, read by ``run_git``."""
+    mains, histories = {}, {}
     for repo in COMPANY_REPOS:
-        git = ["git", "--git-dir", str(repository_path(repositories, repo))]
-        reads = [
-            ("archive", ["archive", "--format=tar", MAIN], mains),
-            ("bundle", ["bundle", "create", "--quiet", "-", "--all"], histories),
-        ]
-        if deployment:
-            if repo not in deployment.commits:
-                raise MergedMainError(f"deployment {deployment.number} names no commit of {repo}")
-            reads.append(("archive", ["archive", "--format=tar", deployment.commits[repo]], trees))
-        for read, command, into in reads:
-            done = run_git([*git, *command])
-            if done.returncode != 0:
-                detail = done.stderr.decode().strip()
-                raise MergedMainError(f"could not {read} {repo} on the forge: {detail}")
-            into[repo] = done.stdout
-    return PlayedForge(mains, histories, Deployed(deployment, trees) if deployment else None)
+        mains[repo] = _read(run_git, repositories, repo, "archive", ["archive", "--format=tar", MAIN])
+        bundle = ["bundle", "create", "--quiet", "-", "--all"]
+        histories[repo] = _read(run_git, repositories, repo, "bundle", bundle)
+    return PlayedForge(mains, histories)
+
+
+def read_deployed(repositories: Path, run_git: RunGit, deployment: ServingDeployment) -> Deployed:
+    """Each repo's tree at the commit ``deployment`` released, read as ``read_forge`` reads ``main``."""
+    trees = {}
+    for repo in COMPANY_REPOS:
+        if repo not in deployment.commits:
+            raise MergedMainError(f"deployment {deployment.number} names no commit of {repo}")
+        archive = ["archive", "--format=tar", deployment.commits[repo]]
+        trees[repo] = _read(run_git, repositories, repo, "archive what was deployed of", archive)
+    return Deployed(deployment, trees)
 
 
 def read_stack_forge(config: RunConfig, compose: list[str], run_compose: RunCompose) -> PlayedForge | None:
     """``read_forge`` in the forge's container of ``config``'s stack run; none when it has no forge.
 
-    The deployment is the last a service serves on in the log of the stack's deploy service, when it has one.
+    With a deploy service in the stack, what the play deployed too: the last deployment a service serves on
+    in that service's log. A failure to read it is kept as ``deployed_unread``, never raised.
     """
     if not any(service.name == FORGE for service in config.live_services):
         return None
-    deployer, deployment = find_deployer(config), None
-    if deployer:
-        logged = run_compose(
-            [*compose, "logs", "--no-color", "--no-log-prefix", deployer.name],
-            capture_output=True,
-        )
-        if logged.returncode != 0:
-            raise MergedMainError(
-                f"could not read the deploy service's record: {logged.stderr.decode().strip()}",
-            )
-        deployment = find_last_deployment(logged.stdout.decode(errors="replace"))
-    return read_forge(
-        config.settings.forge.repositories,
-        lambda command: run_compose([*compose, "exec", "-T", FORGE, *command], capture_output=True),
-        deployment,
-    )
+
+    def run_git(command: list[str]) -> subprocess.CompletedProcess[bytes]:
+        return run_compose([*compose, "exec", "-T", FORGE, *command], capture_output=True)
+
+    repositories = config.settings.forge.repositories
+    played = read_forge(repositories, run_git)
+    deployer = find_deployer(config)
+    if deployer is None:
+        return played
+    read_log = [*compose, "logs", "--no-color", "--no-log-prefix", deployer.name]
+    logged = run_compose(read_log, capture_output=True)
+    if logged.returncode != 0:
+        return played._replace(deployed_unread=f"no record: {logged.stderr.decode(errors='replace').strip()}")
+    deployment = find_last_deployment(logged.stdout.decode(errors="replace"))
+    if deployment is None:
+        return played
+    try:
+        return played._replace(deployed=read_deployed(repositories, run_git, deployment))
+    except MergedMainError as error:
+        return played._replace(deployed_unread=str(error))
 
 
 def write_played_forge(play_directory: Path, played: PlayedForge) -> None:
@@ -165,11 +178,14 @@ def write_played_forge(play_directory: Path, played: PlayedForge) -> None:
     history.mkdir(parents=True, exist_ok=True)
     for repo, bundle in played.histories.items():
         (history / f"{repo}{BUNDLE_SUFFIX}").write_bytes(bundle)
-    if played.deployed:
+    said = play_directory / DEPLOYED_FILE
+    if played.deployed_unread:
+        said.write_text(DeployedFile(error=played.deployed_unread).model_dump_json())
+    elif played.deployed:
         deployment, trees = played.deployed
         behind = sorted(repo for repo, tree in trees.items() if tree != played.mains[repo])
-        said = DeployedFile(deployment=deployment.number, service=deployment.service, behind_main=behind)
-        (play_directory / DEPLOYED_FILE).write_text(said.model_dump_json())
+        level = DeployedFile(deployment=deployment.number, service=deployment.service, behind_main=behind)
+        said.write_text(level.model_dump_json())
         if behind:  # the same trees as main's are graded once, as main's
             write_merged_checkout(play_directory / DEPLOYED_CHECKOUT, trees)
 

@@ -293,8 +293,8 @@ def test_an_attack_stack_run_drains_the_record_then_renews_every_container_but_t
         for command in (["archive", "--format=tar", "main"], ["bundle", "create", "--quiet", "-", "--all"])
     )
     assert between == [
-        ["logs", "--no-color", "--no-log-prefix", "deploy"],  # the episode's last deployment, if it made one
         *read,  # what the episode merged, and the forge's history, read before the forge is renewed
+        ["logs", "--no-color", "--no-log-prefix", "deploy"],  # then the episode's last deployment, if any
         ["stop", *(service for service in renewed if service != "phoenix")],  # Phoenix runs on to export
         ["logs", "--no-color", "--no-log-prefix", "gateway"],
         ["cp", "collector:/sealed/calls.jsonl"],

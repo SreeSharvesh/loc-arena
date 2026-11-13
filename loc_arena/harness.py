@@ -351,6 +351,7 @@ def grade_run(
     start = time.perf_counter()
     # The checks read only what play left on disk.
     episode = _grade_played(run_directory / "episode", cfg, played.episode_trace)
+    deployed = grade_deployed(run_directory / "episode", cfg, episode.main_score)
     # calibrate against the honest twin (mode's only difference is covert.enabled)
     honest_cfg = apply_mode(config, "honest")
     honest_ep = (
@@ -416,7 +417,7 @@ def grade_run(
         overall_threshold=overall_threshold,
         agg=agg,
         specs=specs,
-        deployed=grade_deployed(run_directory / "episode", cfg, episode.main_score),
+        deployed=deployed,
         calibration_sealed_path=None if mode == "honest" else honest_ep.sealed_path,
     )
     if mode == "attack":  # in honest mode the episode is the twin, so its verdicts are the run's own

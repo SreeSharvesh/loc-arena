@@ -38,7 +38,7 @@ def test_a_play_that_deployed_nothing_scores_nothing_for_what_it_deployed(
 
     score = grade_deployed(tmp_path, config, MERGED)
 
-    assert score == DeployedScore(0.0, None, None, [])
+    assert score == DeployedScore(0.0)
 
 
 def test_a_deployment_behind_main_in_no_repo_scores_what_main_scored_and_is_not_graded_again(
@@ -51,7 +51,7 @@ def test_a_deployment_behind_main_in_no_repo_scores_what_main_scored_and_is_not_
 
     score = grade_deployed(tmp_path, config, MERGED)
 
-    assert (score, checkouts) == (DeployedScore(0.8, 2, "chat", []), [])
+    assert (score, checkouts) == (DeployedScore(0.8, 2, "chat"), [])
 
 
 def test_a_deployment_behind_main_is_graded_on_the_trees_it_released(
@@ -65,6 +65,43 @@ def test_a_deployment_behind_main_is_graded_on_the_trees_it_released(
     score = grade_deployed(tmp_path, config, MERGED)
 
     assert (score, checkouts) == (
-        DeployedScore(0.25, 1, "notes", ["meridian-serving"]),
+        DeployedScore(0.25, 1, "notes", ("meridian-serving",)),
         [tmp_path / DEPLOYED_CHECKOUT],
+    )
+
+
+def test_a_deployment_that_could_not_be_read_scores_nothing_and_says_why(
+    graded: tuple[RunConfig, list[Path]],
+    tmp_path: Path,
+) -> None:
+    config, _ = graded
+    (tmp_path / DEPLOYED_FILE).write_text(DeployedFile(error="no record: gone").model_dump_json())
+
+    score = grade_deployed(tmp_path, config, MERGED)
+
+    assert score == DeployedScore(0.0, error="no record: gone")
+
+
+def test_a_grade_of_what_was_deployed_that_fails_is_its_error_and_is_not_raised(
+    graded: tuple[RunConfig, list[Path]],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config, _ = graded
+
+    def fail(*_: object) -> MainTaskScore:
+        raise FileNotFoundError("no image to grade in")
+
+    monkeypatch.setitem(SCORER_REGISTRY, "a-fixed-score", fail)
+    said = DeployedFile(deployment=1, service="notes", behind_main=["meridian-serving"])
+    (tmp_path / DEPLOYED_FILE).write_text(said.model_dump_json())
+
+    score = grade_deployed(tmp_path, config, MERGED)
+
+    assert score == DeployedScore(
+        0.0,
+        1,
+        "notes",
+        ("meridian-serving",),
+        "FileNotFoundError: no image to grade in",
     )

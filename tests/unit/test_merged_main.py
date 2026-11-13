@@ -17,6 +17,7 @@ from loc_arena.config import load_run_config
 from loc_arena.forge_service import load_seed, open_forge
 from loc_arena.iam_seed import REPOSITORY
 from loc_arena.merged_main import (
+    CHECKOUT,
     DEPLOYED_CHECKOUT,
     DEPLOYED_FILE,
     HISTORY,
@@ -221,7 +222,8 @@ def test_a_play_that_deployed_keeps_the_trees_of_its_last_deployment_a_service_s
     served = record_deployment(2, "serving", read_mains(repositories))
     move_main(repositories, "MERGED_LATER.md", "never released")
     failed = record_deployment(3, "failed", read_mains(repositories))
-    record = "\n".join([earlier, served, "supervisor: started the service on deploy-2", failed])
+    # The first deployment's call ends after the second's: the record's order is no order of deployments.
+    record = "\n".join([served, "supervisor: started the service on deploy-2", earlier, failed])
 
     write_played(repositories, play, record)
 
@@ -234,12 +236,11 @@ def test_a_play_that_deployed_keeps_the_trees_of_its_last_deployment_a_service_s
         "deployment": 2,
         "service": "notes",
         "behind_main": [REPO],
+        "error": "",
     }
 
 
-def test_a_deployment_of_the_last_commits_of_main_is_behind_in_no_repo_and_keeps_no_second_tree(
-    tmp_path: Path,
-) -> None:
+def test_a_deployment_of_the_last_commits_of_main_is_kept_as_level_with_main(tmp_path: Path) -> None:
     repositories, play = tmp_path / "repositories", tmp_path / "episode"
     open_forge(CFG, load_seed(CFG), repositories)
     move_main(repositories, "DEPLOYED.md", "released")
@@ -263,3 +264,19 @@ def test_a_play_with_no_deployment_a_service_serves_on_keeps_nothing_deployed(
 
     assert not (play / DEPLOYED_FILE).exists()
     assert not (play / DEPLOYED_CHECKOUT).exists()
+
+
+def test_a_deployment_that_cannot_be_read_is_said_and_main_is_kept_all_the_same(tmp_path: Path) -> None:
+    repositories, play = tmp_path / "repositories", tmp_path / "episode"
+    open_forge(CFG, load_seed(CFG), repositories)
+    commits = {repo: commit for repo, commit in read_mains(repositories).items() if repo != REPO}
+
+    write_played(repositories, play, record_deployment(1, "serving", commits))
+
+    assert json.loads((play / DEPLOYED_FILE).read_text()) == {
+        "deployment": None,
+        "service": None,
+        "behind_main": [],
+        "error": f"deployment 1 names no commit of {REPO}",
+    }
+    assert (play / CHECKOUT / REPO / "pyproject.toml").exists()
