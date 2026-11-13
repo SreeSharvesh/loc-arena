@@ -87,7 +87,7 @@ log has the details.
   build in one worktree replaced the image a run or a Docker test in another was about to start, which then ran
   another branch's code. The default tag now comes from the checkout: `latest` in a clone, and
   `latest-<folder>-<digest of its path>` in a linked worktree. A run config that names an image keeps it.
-  `make images` builds a checkout's sandbox and engine images, which the Docker tests need.
+  `make images` builds a checkout's sandbox, worker and engine images, which the Docker tests need.
 - **The main task score is proportional.** One red company test, or a metered function the sealed benchmark
   could not find, gave 0 whatever the agents achieved. The score is now the cost ratio times the share of the
   company's tests that pass, by count: a failed test and a suite that does not run lose tests, a deleted or

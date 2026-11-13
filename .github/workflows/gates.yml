@@ -46,7 +46,7 @@ jobs:
 
       - run: uv sync --locked
 
-      # The Docker tests skip unless the images named by settings.stack.sandbox_image and .image exist.
+      # The Docker tests need this checkout's sandbox, worker and engine images.
       - run: make images
 
       - run: make gates
