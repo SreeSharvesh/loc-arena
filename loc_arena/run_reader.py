@@ -274,8 +274,10 @@ def read_run(run_directory: Path, brief: str, config: RunConfig) -> Path:
                 stale.unlink(missing_ok=True)
             container = f"{project}-{READER}"
             try:
-                reading = [*compose, "run", "--rm", "--no-deps", "--name", container, READER]
-                failed = run(reading, timeout=settings.reader.timeout_seconds).returncode
+                reading = [*compose, "run", "--rm", "--no-deps", "--no-TTY", "--name", container, READER]
+                # No input: pi reads its input to the end before it starts, and a shell's stays open.
+                seconds = settings.reader.timeout_seconds
+                failed = run(reading, timeout=seconds, stdin=subprocess.DEVNULL).returncode
             except subprocess.TimeoutExpired as error:
                 raise RuntimeError("the reader ran past reader.timeout_seconds") from error
             finally:  # the reader is gone before its calls are copied: none is made after the copy
