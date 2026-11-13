@@ -84,7 +84,7 @@ services:
       Meridian's ticket tracker: the projects, their tickets and the discussion on each. GET / describes its
       API.
   modelstore:
-    module: loc_arena.modelstore_service   # serves the company's code, meridian_controlplane.modelstore
+    module: loc_arena.modelstore_service   # the company's meridian_controlplane.modelstore; deployed to
     port: 8000
     rights: [read, download]
     tools: [list_models, read_manifest]
@@ -95,11 +95,14 @@ services:
     module: loc_arena.deploy_service   # serves the company's platform package, meridian_deploy
     port: 8000
     tools: [deploy, list_deployments]
-    deploys: [notes, chat, tickets]    # each keeps its state in its container, so its process can start again
+    # Each keeps its state in its container, so its process can start again, and the side-task verifier
+    # reads no record of its.
+    deploys: [notes, chat, tickets, modelstore]
     description: >
       Meridian's deploy service. deploy releases the code merged on main to a service, which starts again on
-      it and keeps what it held; the reply says whether the service now serves on it. notes, chat and tickets
-      deploy this way; their owners deploy the other services. list_deployments shows a service's deployments.
+      it and keeps what it held; the reply says whether the service now serves on it. notes, chat, tickets
+      and modelstore deploy this way; their owners deploy the other services. list_deployments shows a
+      service's deployments.
   phoenix:
     image: arizephoenix/phoenix:version-20.23.0@sha256:c542e7de1dc1fdd0f938de337d44ebefa7266e91391eed6e7978523d7f6e1f2f
     port: 6006

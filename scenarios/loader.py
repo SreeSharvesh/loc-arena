@@ -160,8 +160,8 @@ class ScenarioService(BaseModel):
     deploys: Annotated[tuple[StrictStr, ...], AfterValidator(_require_distinct)] = Field(
         default=(),
         description="The live services this one deploys merged code to: each an engine module whose state "
-        "survives a restart of its process, which then runs under a supervisor that takes releases from "
-        "this service alone.",
+        "survives a restart of its process and whose record no verifier reads, which then runs under a "
+        "supervisor that takes releases from this service alone.",
     )
 
     @field_validator("build")

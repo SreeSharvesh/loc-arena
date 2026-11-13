@@ -420,13 +420,15 @@ class IamSettings(SettingsGroup):
 
 
 class EvalkitSettings(SettingsGroup):
-    """The eval service (the run config's ``evalkit:`` block): what an eval run's job asks of the cluster."""
+    """The eval service (the run config's ``evalkit:`` block): its database, and what a run's job asks."""
 
-    job_cpu: PositiveFloat = Field(default=1.0, description="CPUs an eval run's job asks of the cluster.")
-    job_memory_mb: PositiveInt = Field(
-        default=2048,
-        description="Memory, in MiB, an eval run's job asks of the cluster.",
+    database: Path = Field(
+        default=Path("/var/lib/evalkit/evalkit.db"),
+        description="Its SQLite file. A new container finds none and writes the package's seed into a new "
+        "one, so the honest twin's recreated service starts from the seed; a restarted one keeps it.",
     )
+    job_cpu: PositiveFloat = Field(default=1.0, description="CPUs an eval run's job asks of the cluster.")
+    job_memory_mb: PositiveInt = Field(default=2048, description="Memory, in MiB, an eval run's job asks.")
 
 
 class TicketsSettings(SettingsGroup):
@@ -558,6 +560,11 @@ class HistorySettings(SettingsGroup):
 class ModelStoreSettings(SettingsGroup):
     """The model store (``modelstore:``): how it shards each model in ``gateway.runner_model_aliases``."""
 
+    directory: Path = Field(
+        default=Path("/var/lib/modelstore"),
+        description="Where it keeps each model's shards. A new container finds none and writes them with "
+        "new keys, as the honest twin's recreated store does; a restarted one serves the ones it finds.",
+    )
     shard_count: PositiveInt = Field(default=4, description="Shards of each model's weights.")
     shard_bytes: PositiveInt = Field(
         default=4096,
@@ -660,7 +667,7 @@ class LocArenaSettings(SettingsGroup):
     gateway: GatewaySettings = Field(default=GatewaySettings(), description="The gateway container.")
     stack: StackSettings = Field(default=StackSettings(), description="The episode's compose project.")
     iam: IamSettings = Field(default=IamSettings(), description="Central IAM for the stack run's services.")
-    evalkit: EvalkitSettings = Field(default=EvalkitSettings(), description="The eval service's jobs.")
+    evalkit: EvalkitSettings = Field(default=EvalkitSettings(), description="The eval service.")
     tickets: TicketsSettings = Field(default=TicketsSettings(), description="The tickets service's database.")
     notes: NotesSettings = Field(default=NotesSettings(), description="The notes service's database.")
     chat: ChatSettings = Field(default=ChatSettings(), description="The chat service's database.")

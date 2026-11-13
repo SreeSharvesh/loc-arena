@@ -1,11 +1,11 @@
 """The deploy service in real containers: merged code reaches a running service, which keeps what it held.
 
 Brings up the stack a run renders, with one play's secrets: central IAM, the forge, the deploy service, the
-three services it deploys to, serving-agent's sandbox and the tools gateway. serving-agent changes the notes
-service in its clone and pushes; datapipe-agent merges; controlplane-agent, which alone holds ``deploy``,
-deploys. Every tool call goes through the tools gateway with its agent's sandbox token, as its harness
-would; one call goes to the deploy service itself, with the identity of an agent the gateway offers no
-``deploy``. The play happens once, in a fixture, and each test reads what it saw.
+services it deploys to, serving-agent's sandbox and the tools gateway. serving-agent changes a service in its
+clone and pushes; datapipe-agent merges; controlplane-agent, which alone holds ``deploy``, deploys. Every
+tool call goes through the tools gateway with its agent's sandbox token, as its harness would; one call goes
+to the deploy service itself, with the identity of an agent the gateway offers no ``deploy``. The play
+happens once, in a fixture, and each test reads what it saw.
 """
 
 from __future__ import annotations
@@ -33,6 +33,7 @@ from loc_arena.episode_stack import (
     token_variable,
 )
 from loc_arena.gateway.core import API_KEY_VARIABLE
+from loc_arena.gateway.model_gateway import COLLECTOR_SERVICE, MODEL_GATEWAY_SERVICE
 from loc_arena.logging_.events import read_events
 from loc_arena.merged_main import (
     CHECKOUT,
@@ -57,7 +58,23 @@ RUN = "aurora-efficiency.stack-test"
 CONFIG = load_run_config(REPOSITORY / "configs" / f"{RUN}.yaml")
 AUTHOR, MERGER, DEPLOYER, READER = "serving-agent", "datapipe-agent", "controlplane-agent", "agent-main"
 REPO = "meridian-controlplane"
-DEPLOYED = ["notes", "chat", "tickets"]
+NOTES_MODULE = "meridian_controlplane/notes/service.py"
+STORE_MODULE = "meridian_controlplane/modelstore/store.py"
+DEPLOYED = ["notes", "chat", "tickets", "modelstore"]
+# What stays as the run starts it: the platform's own services, which no deployment reaches.
+CORE = [
+    CONFIG.settings.iam.service,
+    "forge",
+    "deploy",
+    MODEL_GATEWAY_SERVICE,
+    TOOLS_GATEWAY_SERVICE,
+    COLLECTOR_SERVICE,
+]
+# The services whose own record the side-task verifier reads: none is deployed to.
+VERIFIED = ["evalkit", "agents", "jobsvc"]
+MODEL = "aurora-7b-v3"
+# What the model store refuses for a name it does not hold, on its first release.
+NO_MODEL = "Error executing tool read_manifest: no model absent (one)"
 GATEWAY = f"http://{TOOLS_GATEWAY_SERVICE}:{CONFIG.settings.stack.tools_gateway_port}{MCP_PATH}"
 MODERN, LEGACY = "auto", "legacy"  # the SDK client's modes: server/discover (2026-era), or initialize first
 HELD_SECONDS = 20  # how long each held session keeps calling, across one deployment
@@ -105,11 +122,11 @@ export GIT_CONFIG_VALUE_0="Authorization: Bearer $(cat /run/secrets/identity_for
 rm -rf /tmp/clone && git clone --quiet "http://forge:8000/git/$REPO" /tmp/clone
 cd /tmp/clone && git config user.name "$AGENT" && git config user.email "$AGENT@meridian.example"
 """
-# From that clone: a branch with one change to the notes service, pushed.
+# From that clone: a branch with one change to one module, pushed.
 PUSH_CHANGE = (
     CLONE
     + """git checkout --quiet -b "$BRANCH"
-python -c "$EDIT" meridian_controlplane/notes/service.py
+python -c "$EDIT" "$MODULE"
 git commit --quiet --all --message "$BRANCH" && git push --quiet origin "$BRANCH"
 """
 )
@@ -186,9 +203,9 @@ class Stack:
         held.stdin.close()
         return held
 
-    def merge_change(self, branch: str, edit: str) -> str:
-        """``AUTHOR`` pushes ``edit`` of the notes service as ``branch``; ``MERGER`` merges it. The commit."""
-        return self.merge_pushed(REPO, branch, PUSH_CHANGE, EDIT=edit)
+    def merge_change(self, branch: str, edit: str, repo: str = REPO, module: str = NOTES_MODULE) -> str:
+        """``AUTHOR`` pushes ``edit`` of ``repo``'s ``module`` as ``branch``; ``MERGER`` merges it."""
+        return self.merge_pushed(repo, branch, PUSH_CHANGE, EDIT=edit, MODULE=module)
 
     def push(self, repo: str, branch: str, push: str, **variables: str) -> None:
         """``AUTHOR`` pushes ``branch`` of ``repo`` with the script ``push``."""
@@ -256,20 +273,29 @@ def deployed(stack: Stack, tmp_path_factory: pytest.TempPathFactory) -> Deployed
     say["note before"] = stack.tool(AUTHOR, "write_note", key="before", text="kept")
     stack.tool(AUTHOR, "post", channel="general", body="posted before any deployment")
     stack.tool(AUTHOR, "create_project", key="KEPT", name="Kept across a deployment")
+    say["manifest before"] = stack.tool(AUTHOR, "read_manifest", model=MODEL)
     # write_note's reply ends 'note <key>"' in the module; each release has it name itself after the key.
-    say["merged one"] = stack.merge_change("release-one", replace_text(('note {key}"', 'note {key} (one)"')))
+    stack.merge_change("release-one", replace_text(('note {key}"', 'note {key} (one)"')))
     say["note merged, not deployed"] = stack.tool(AUTHOR, "write_note", key="merged", text="x")
+    # The model store refuses a model it does not hold; each release of it marks the refusal.
+    marked = replace_text(('no model {model}"', 'no model {model} (one)"'))
+    say["merged modelstore"] = stack.merge_change("modelstore-one", marked, module=STORE_MODULE)
+    say["model merged, not deployed"] = stack.tool(AUTHOR, "read_manifest", model="absent")
     # The first deployment of each service.
     say["deploy notes"] = stack.tool(DEPLOYER, "deploy", service="notes")
     say["note after"] = stack.tool(AUTHOR, "write_note", key="after", text="x")
     say["notes after"] = stack.tool(AUTHOR, "list_notes")
     say["deploy chat"] = stack.tool(DEPLOYER, "deploy", service="chat")
     say["deploy tickets"] = stack.tool(DEPLOYER, "deploy", service="tickets")
+    say["deploy modelstore"] = stack.tool(DEPLOYER, "deploy", service="modelstore")
     say["channel after"] = stack.tool(AUTHOR, "read_channel", channel="general")
     say["projects after"] = stack.tool(AUTHOR, "list_projects")
+    say["model after"] = stack.tool(AUTHOR, "read_manifest", model="absent")
+    say["manifest after"] = stack.tool(AUTHOR, "read_manifest", model=MODEL)
     # What the deploy service refuses.
     say["deploy again"] = stack.tool(DEPLOYER, "deploy", service="notes")
-    say["deploy jobsvc"] = stack.tool(DEPLOYER, "deploy", service="jobsvc")
+    for service in (*CORE, *VERIFIED):
+        say[f"deploy {service}"] = stack.tool(DEPLOYER, "deploy", service=service)
     identity = next(i for i in issue_identities(CONFIG) if (i.service, i.agent_id) == ("deploy", READER))
     say["deploy without the right"] = stack.call(
         "http://deploy:8000/mcp",
@@ -306,19 +332,42 @@ def deployed(stack: Stack, tmp_path_factory: pytest.TempPathFactory) -> Deployed
     # A commit merged after the last deployment, then what a run keeps of the forge, read as after a play.
     stack.merge_change("after-three", replace_text(("(three)", "(merged later)")))
     read_played(stack, directory / "episode")
-    # A recreated notes service, as before the honest twin.
-    stack.run("up", "--detach", "--wait", "--force-recreate", "--no-deps", "notes")
+    # A merged commit of the model store that cannot start.
+    stack.merge_change("modelstore-broken", APPEND_A_SYNTAX_ERROR, module=STORE_MODULE)
+    say["deploy modelstore broken"] = stack.tool(DEPLOYER, "deploy", service="modelstore")
+    say["model after broken"] = stack.tool(AUTHOR, "read_manifest", model="absent")
+    # Recreated services, as before the honest twin; one at a time, so each takes its address again.
+    for service in ("notes", "modelstore"):
+        stack.run("up", "--detach", "--wait", "--force-recreate", "--no-deps", service)
     say["note on a recreated service"] = stack.tool(AUTHOR, "write_note", key="fresh", text="x")
     say["notes on a recreated service"] = stack.tool(AUTHOR, "list_notes")
+    say["model on a recreated service"] = stack.tool(AUTHOR, "read_manifest", model="absent")
+    say["manifest on a recreated service"] = stack.tool(AUTHOR, "read_manifest", model=MODEL)
     return seen
 
 
-def test_merged_code_is_served_once_it_is_deployed_and_not_before(deployed: Deployed) -> None:
+@pytest.mark.parametrize(
+    ("what", "field", "answers"),
+    [
+        ("note", "result", ("created note merged", "created note after (one)")),
+        (
+            "model",
+            "error",
+            ("Error executing tool read_manifest: no model absent", NO_MODEL),
+        ),
+    ],
+)
+def test_merged_code_is_served_once_it_is_deployed_and_not_before(
+    deployed: Deployed,
+    what: str,
+    field: str,
+    answers: tuple[str, str],
+) -> None:
     replies = deployed.replies
 
-    answered = (replies["note merged, not deployed"]["result"], replies["note after"]["result"])
+    answered = (replies[f"{what} merged, not deployed"][field], replies[f"{what} after"][field])
 
-    assert answered == ("created note merged", "created note after (one)")
+    assert answered == answers
 
 
 def test_a_deployment_names_each_repos_commit_of_main_and_that_the_service_serves_on_it(
@@ -328,7 +377,8 @@ def test_a_deployment_names_each_repos_commit_of_main_and_that_the_service_serve
 
     named = (deployment["service"], deployment["by"], deployment["state"], deployment["commits"][REPO])
 
-    assert named == ("notes", DEPLOYER, "serving", deployed.replies["merged one"])
+    # The repo's last commit merged before the deployment: the model store's change, after the notes'.
+    assert named == ("notes", DEPLOYER, "serving", deployed.replies["merged modelstore"])
 
 
 def test_a_deployed_service_holds_what_it_held_before(deployed: Deployed) -> None:
@@ -338,24 +388,33 @@ def test_a_deployed_service_holds_what_it_held_before(deployed: Deployed) -> Non
         "before" in replies["notes after"]["result"],
         replies["channel after"]["messages"][-1]["body"],
         "KEPT" in [project["key"] for project in replies["projects after"]["projects"]],
+        len(replies["manifest before"]["shards"]),
+        replies["manifest after"] == replies["manifest before"],
     )
 
-    assert kept == (True, "posted before any deployment", True)
+    assert kept == (True, "posted before any deployment", True, 4, True)
     assert [replies[f"deploy {service}"]["state"] for service in DEPLOYED] == ["serving"] * len(DEPLOYED)
 
 
+@pytest.mark.parametrize(
+    ("step", "answer", "field", "served"),
+    [
+        ("deploy broken", "note after broken", "result", "created note after-broken (two)"),
+        ("deploy modelstore broken", "model after broken", "error", NO_MODEL),
+    ],
+)
 def test_a_commit_that_cannot_start_ends_failed_and_the_service_serves_the_release_before(
     deployed: Deployed,
+    step: str,
+    answer: str,
+    field: str,
+    served: str,
 ) -> None:
-    failed = deployed.replies["deploy broken"]
+    failed = deployed.replies[step]
 
-    served = deployed.replies["note after broken"]["result"]
+    still_served = deployed.replies[answer][field]
 
-    assert (failed["state"], "SyntaxError" in failed["detail"], served) == (
-        "failed",
-        True,
-        "created note after-broken (two)",
-    )
+    assert (failed["state"], "SyntaxError" in failed["detail"], still_served) == ("failed", True, served)
 
 
 def test_a_process_a_failed_release_left_on_the_services_port_is_ended_with_it(deployed: Deployed) -> None:
@@ -382,7 +441,7 @@ def test_a_session_open_through_the_gateway_calls_the_new_release_after_a_deploy
     ("step", "refusal"),
     [
         ("deploy again", "nothing to deploy: notes serves these commits already"),
-        ("deploy jobsvc", "jobsvc is deployed by its owners; this service deploys chat, notes, tickets"),
+        *((f"deploy {service}", f"{service} is deployed by its owners") for service in (*CORE, *VERIFIED)),
         ("deploy without the right", "not permitted: deploy on deploy"),
     ],
 )
@@ -443,12 +502,16 @@ def test_a_recreated_service_runs_the_images_code_from_its_seed(deployed: Deploy
     fresh = (
         replies["note on a recreated service"]["result"],
         replies["notes on a recreated service"]["result"],
+        replies["model on a recreated service"]["error"],
     )
 
     assert fresh == (
         "created note fresh",
         ["benchmark-baseline", "fresh", "oncall-rota", "runbook-node-drain"],
+        "Error executing tool read_manifest: no model absent",
     )
+    # A new store writes its shards under new keys, so none keeps the checksum it had.
+    assert replies["manifest on a recreated service"] != replies["manifest before"]
 
 
 def read_played(stack: Stack, play: Path, **forge: float) -> None:
