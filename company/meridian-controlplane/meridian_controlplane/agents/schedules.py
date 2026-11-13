@@ -6,7 +6,12 @@ schedule created through the API gets an identity of its own, which the central 
 registered agent's, and the authority decides each firing under it, so a creator who can no longer run agents
 has the schedule's firings refused. A seeded schedule holds no identity, as no one presented a credential for
 it, and its firings are not decided. Deleting a schedule stops its firings and keeps it listed. Each firing,
-skipped and refused ones too, is a line of the audit record.
+skipped and refused ones too, is a line of the audit record. The schedules, and each created one's secret, are
+records in a database (``meridian_common.records``), which starts with the seeded schedules when it holds
+none, so a service that starts again on it fires the schedules the last one held. A schedule's executions
+are the executions that name it, read from their records and stored nowhere else: a firing is kept by its
+execution's record alone, so one whose process ended before the schedule's next firing was written is not
+fired again while it runs.
 """
 
 from __future__ import annotations
@@ -14,7 +19,7 @@ from __future__ import annotations
 import json
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
 from pathlib import Path
@@ -25,6 +30,7 @@ from croniter import CroniterBadDateError, croniter
 from fastapi import HTTPException
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, SecretStr, TypeAdapter, model_validator
 
+from meridian_common.records import Database
 from meridian_controlplane.agents.authority import AgentIdentity
 from meridian_controlplane.agents.executions import ExecutionRequest, Executions, ExecutionState
 
@@ -95,7 +101,7 @@ class Schedule(ScheduleRequest):
     created_at: datetime
     next_firing_at: datetime | None  # none once deleted
     deleted_at: datetime | None = None
-    executions: list[str] = Field(default_factory=list)  # oldest first
+    executions: list[str] = Field(default_factory=list)  # oldest first: the executions that name it
 
 
 def load_seeded_schedules(seed_file: Path = SEEDED_SCHEDULES_FILE) -> list[SeededSchedule]:
@@ -111,36 +117,67 @@ class Schedules:
         executions: Executions,
         authorize: Callable[[str, str], None],
         write_audit_line: Callable[[str], None],
+        database: Database | None = None,
+        seeded_schedules: Iterable[SeededSchedule] = (),
     ) -> None:
-        """Fire through ``executions``, each firing of a created schedule decided by ``authorize``."""
+        """Fire through ``executions``, each firing of a created schedule decided by ``authorize``.
+
+        The schedules are what ``database`` holds, and ``seeded_schedules`` if it holds none; they are in
+        memory without a database.
+        """
         self._executions = executions
         self._authorize = authorize
         self._write_audit_line = write_audit_line
-        self._schedules_by_id: dict[str, Schedule] = {}
-        self._secrets_by_id: dict[str, SecretStr] = {}  # each created schedule's, on the agents service
+        self._database = database or Database()
+        self._schedules_by_id = self._database.records(
+            "schedules",
+            Schedule.model_validate_json,
+            Schedule.model_dump_json,
+        )
+        # Each created schedule's secret on the agents service, in clear, which pydantic masks.
+        self._secrets_by_id = self._database.records(
+            "schedule_secrets",
+            TypeAdapter(SecretStr).validate_json,
+            lambda secret: json.dumps(secret.get_secret_value()),
+        )
         self._lock = threading.Lock()
+        self._firing = threading.Lock()
+        if not self._schedules_by_id:
+            with self._database.transaction():  # every seeded schedule, or a database that still holds none
+                for seeded in seeded_schedules:
+                    self._add(seeded.schedule, seeded.created_by, identity=None)
         threading.Thread(target=self._fire_when_due, daemon=True).start()
 
     def list_schedules(self) -> list[Schedule]:
-        """Every schedule, oldest first, deleted ones included."""
+        """Every schedule, oldest first, deleted ones included, each with the executions that name it."""
+        started: dict[str, list[str]] = {}
+        for execution in self._executions.list_executions():
+            if execution.schedule_id is not None:
+                started.setdefault(execution.schedule_id, []).append(execution.id)
         with self._lock:
-            return list(self._schedules_by_id.values())
+            return [
+                schedule.model_copy(update={"executions": started.get(schedule.id, [])})
+                for schedule in self._schedules_by_id.values()
+            ]
 
     def create(self, request: ScheduleRequest, created_by: str, identity: AgentIdentity | None) -> Schedule:
         """Keep ``request`` as ``created_by``'s schedule, its firings decided under ``identity`` if any."""
+        with self._lock, self._database.transaction():  # the schedule and its secret, together
+            return self._add(request, created_by, identity)
+
+    def _add(self, request: ScheduleRequest, created_by: str, identity: AgentIdentity | None) -> Schedule:
         now = datetime.now(UTC)
-        with self._lock:
-            schedule = Schedule(
-                **request.model_dump(),
-                id=f"schedule-{len(self._schedules_by_id) + 1}",
-                created_by=created_by,
-                principal=identity.principal if identity else None,
-                created_at=now,
-                next_firing_at=request.next_firing(now, now),
-            )
-            self._schedules_by_id[schedule.id] = schedule
-            if identity:
-                self._secrets_by_id[schedule.id] = identity.secrets["agents"]
+        schedule = Schedule(
+            **request.model_dump(),
+            id=f"schedule-{len(self._schedules_by_id) + 1}",
+            created_by=created_by,
+            principal=identity.principal if identity else None,
+            created_at=now,
+            next_firing_at=request.next_firing(now, now),
+        )
+        self._schedules_by_id[schedule.id] = schedule
+        if identity:
+            self._secrets_by_id[schedule.id] = identity.secrets["agents"]
         return schedule
 
     def delete(self, schedule_id: str) -> Schedule:
@@ -151,22 +188,37 @@ class Schedules:
                 raise HTTPException(HTTPStatus.NOT_FOUND, f"no schedule {schedule_id!r}")
             if schedule.deleted_at is not None:
                 raise HTTPException(HTTPStatus.CONFLICT, f"schedule {schedule_id!r} is deleted")
-            self._secrets_by_id.pop(schedule_id, None)
             schedule = schedule.model_copy(update={"next_firing_at": None, "deleted_at": datetime.now(UTC)})
-            self._schedules_by_id[schedule_id] = schedule
-        return schedule
+            with self._database.transaction():  # its end and its secret's, together
+                self._secrets_by_id.pop(schedule_id, None)
+                self._schedules_by_id[schedule_id] = schedule
+        return next(listed for listed in self.list_schedules() if listed.id == schedule_id)
 
     def fire_due(self, now: datetime) -> None:
         """Fire each schedule due at ``now``, or skip it while its last execution has not ended."""
+        with self._firing:  # one look at a time: a second one finds what the first moved on
+            self._fire_due(now)
+
+    def _fire_due(self, now: datetime) -> None:
         with self._lock:
-            due = [s for s in self._schedules_by_id.values() if s.next_firing_at and s.next_firing_at <= now]
-        for schedule in due:
-            last = schedule.executions[-1] if schedule.executions else None
-            if last is not None and self._executions.get_execution(last).state in UNFINISHED:
-                firing, execution_id, reason = "skipped", last, "its last execution has not ended"
+            schedules = list(self._schedules_by_id.values())
+        due = {s.id for s in schedules if s.next_firing_at and s.next_firing_at <= now}
+        # Its executions are read only when one is due: a look that finds none due reads no execution.
+        for schedule in [s for s in self.list_schedules() if s.id in due] if due else []:
+            last = self._executions.get_execution(schedule.executions[-1]) if schedule.executions else None
+            with self._lock:  # as it is now: deleted since the look, or fired by another look
+                due_at = self._schedules_by_id[schedule.id].next_firing_at
+                secret = self._secrets_by_id.get(schedule.id)
+            if due_at is None or due_at > now:
+                continue
+            if last is not None and last.state in UNFINISHED:
+                firing, execution_id, reason = "skipped", last.id, "its last execution has not ended"
+            elif last is not None and last.queued_at >= due_at:
+                # Started for this time by a process that ended before it moved the time on: fired once.
+                firing, execution_id, reason = "fired", last.id, None
             else:
                 try:
-                    if secret := self._secrets_by_id.get(schedule.id):
+                    if secret:
                         self._authorize(secret.get_secret_value(), "start_execution")
                     request = ExecutionRequest(agent=schedule.agent, input=schedule.input)
                     execution_id = self._executions.start(request, schedule.created_by, schedule.id).id
@@ -175,11 +227,8 @@ class Schedules:
                     firing, execution_id, reason = "refused", None, str(error.detail)
             with self._lock:
                 schedule = self._schedules_by_id[schedule.id]
-                fired = [execution_id] if firing == "fired" else []
                 due_next = schedule.next_firing(schedule.created_at, now) if schedule.next_firing_at else None
-                self._schedules_by_id[schedule.id] = schedule.model_copy(
-                    update={"executions": [*schedule.executions, *fired], "next_firing_at": due_next},
-                )
+                self._schedules_by_id[schedule.id] = schedule.model_copy(update={"next_firing_at": due_next})
             self._write_audit_line(
                 json.dumps(
                     {

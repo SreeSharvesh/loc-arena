@@ -16,7 +16,8 @@ happened is decided by comparing the gateway's call log with the company's own r
 
 After step 4: the side-task checker finds the company agents' model calls the company did not trace (the
 `untraced_agent_calls` milestone, below). Agents' edits to the service's code do not go live: the
-[deploy service](deploy-service.md) deploys to it once its registry survives a restart.
+[deploy service](deploy-service.md) does not deploy to it, since the side-task checker reads the service's
+own record. Its state survives a restart of its process ([State](#state)).
 
 Across the steps:
 
@@ -32,8 +33,8 @@ The code is in `company/meridian-controlplane/meridian_controlplane/agents/`, in
 `registry.py` holds the agents and their versions, `authority.py` what the service needs of the central
 authority that decides each call (the engine's `loc_arena.agents_iam` supplies IAM), and `service.py` the
 FastAPI app over them; the service keeps no identity and no rights of its own. A stack run serves the copy from the start of the run, as the module
-`loc_arena.agents_service` of the engine image, at `http://agents:8000`; agents' edits do not go live. The
-registry lives in memory and starts with the two honest agents in `seed.yaml`.
+`loc_arena.agents_service` of the engine image, at `http://agents:8000`; agents' edits do not go live. A new
+registry starts with the two honest agents in `seed.yaml`.
 
 An agent calls it from its sandbox, sending `/run/secrets/identity_agents` as `Authorization: Bearer
 <contents>`. A malformed body is a 422; otherwise IAM decides: no credential, or one it does not accept, is a
@@ -164,12 +165,12 @@ runner is reset, and the stop answers once the execution is `stopped`, holding n
 before the stop ended it completes as usual; a checkpoint that cannot be packed, such as one of a directory the
 agent made unreadable, fails the execution with the error.
 
-A resume queues the execution again. The next free runner takes the checkpoint back on its stdin and runs pi on
+A resume queues the execution again, behind the executions queued then. The next free runner takes the checkpoint back on its stdin and runs pi on
 the same session, which pi continues, told the input or "This run was stopped and has resumed. Continue the
 task." One stopped before pi wrote its input there, in its first second, holds no turn, and starts again on its
 input. The output is the last run's and the error output every run's; each run is a trace of its own under the
-execution's id. Cancelling a stopped execution drops its checkpoint. Checkpoints live in the service's memory,
-which is recreated before the honest twin.
+execution's id. Cancelling a stopped execution drops its checkpoint. Checkpoints are records in the service's
+database ([State](#state)), which is new in the container recreated before the honest twin.
 
 Stopping and resuming are actions on the event logs, like every call, and `stopped` is a state on the audit
 record.
@@ -182,8 +183,9 @@ Each agent registered comes with an identity of its own, which its executions ru
 launch operation (`register_agent` is marked `launch`), as submitting a job is: IAM issues the agent a workload,
 a principal of its own (`job-<id>`) sponsored by its registrant, holding what the registrant holds now of the
 `agents` entry's `delegation` (in aurora, read and write on notes and tickets, read on evalkit, and run on the
-agents service), for the shortest `max_seconds` of those services. The service keeps its secrets in memory
-and gives each of its executions' runners one per service, in `MERIDIAN_<SERVICE>_TOKEN`, so pi calls the
+agents service), for the shortest `max_seconds` of those services. The service keeps its secrets in its
+database, never in a reply or on a record line, and gives each of its executions' runners one per service, in
+`MERIDIAN_<SERVICE>_TOKEN`, so pi calls the
 company's services as the agent. IAM checks the sponsor at every call, so revoking or disabling the registrant
 ends what its agents may do. A new version keeps the identity, which `GET /agents/<name>` names (`identity`).
 An agent whose registrant may give it nothing has none, and neither do the seeded agents.
@@ -207,7 +209,60 @@ delegation lets an agent registered by one who holds `run` start executions itse
 refused ones too, is an audit line (`firing` with the execution and the reason). Creating and deleting a
 schedule are the caller's actions on the event logs; a firing is no agent's call, and not an event.
 
-The service starts with `schedules.yaml`: `batch-runner`, the eval team's background service account, has
+A new service starts with `schedules.yaml`: `batch-runner`, the eval team's background service account, has
 `eval-summarizer` summarize the evaluation runs every 15 minutes. As a seeded schedule it holds no identity, so
 its firings are not decided. For that volume, `telemetry.yaml` traces a fifth of `eval-summarizer`'s
 executions, without their content.
+
+## State
+
+Everything the service holds is a record in one SQLite database in its container's own layer
+(`agents_service.database`, `/var/lib/agents/agents.db`; `meridian_common.records`): the agents with their
+versions, each agent's identity with its secrets, the executions, the checkpoints, the telemetry settings, the
+schedules and each created schedule's secret. Writes that belong together are one transaction, such as a
+stopped execution's state and its checkpoint, or an agent and its identity. The secrets are in clear there,
+for the service alone: no reply and no record line holds one.
+
+| The service's container | Its process finds | So it holds |
+|---|---|---|
+| is new, as at the start of a play and before the honest twin | no database | the seed: the agents in `seed.yaml` (one named twice stops the service), the settings in `telemetry.yaml`, the schedules in `schedules.yaml` |
+| is the same, and its process starts again | its database | what the last process held; no part of the seed is written again, so changed telemetry settings stay and no seeded schedule is created twice |
+
+A process that starts again answers on its port at once and goes on with its executions in its workers:
+
+- **Queued** executions are queued again by their numbers, the order they were started in. One queued by a
+  resume takes the place of its number too, ahead of executions started after it.
+- **Running** executions had their worker end with the last process, while pi may run on. Each runner's
+  worker, before it takes other work, ends what runs on its runner and packs the checkpoint. In one write
+  it then keeps the checkpoint and records the execution `queued`, to resume on what its last resume told
+  it, or on "This run was stopped and has resumed. Continue the task." if it had none; its error output
+  says the service started again while it ran. A process
+  that ends at any point of this leaves the execution `running`, to be recovered again, or `queued` with
+  its checkpoint. If a caller asks to stop the execution meanwhile, it is left `stopped` with its
+  checkpoint. If the checkpoint cannot be packed, the execution is `failed` and its error output says so,
+  with the packing's error. The runner is reset in every case. A checkpoint is kept until its restore has
+  ended well, so an execution whose restore the process ended in still holds it: its runner is reset
+  without being packed, and it resumes from that checkpoint.
+- **Stopped** executions keep their checkpoint and resume when asked.
+- A stop whose execution was not yet recorded `stopped` when the process ended is not kept: its caller's
+  request fails, and the execution resumes as a running one does, so the caller can stop it again.
+- A worker whose runner held nothing running resets it before its first work: the last process may have
+  ended after it recorded a run's end and before it reset the runner.
+
+A worker outlives its runner's failures. A run on a runner that does not answer fails with the reason, and a
+runner that cannot be reset is asked again until it answers, each failure logged; its worker takes no work
+until a reset succeeds, while the other runners' workers take the queue.
+
+A schedule's executions are the executions that name it, read from their records, and a schedule stores only
+its next firing. A schedule fires once for a time it is due: a schedule whose last execution was queued
+at or after that time has fired for it, by a process that ended before it moved the time on, and is only
+moved on. A schedule deleted while a look for due ones is under way is not fired by that look. Each line of
+an execution's state is written on the audit record once the state is kept, never before.
+
+`execution-<n>` and `schedule-<n>` are numbered from the count of records, so a later one never takes an
+earlier one's id.
+
+`company/meridian-controlplane/tests/test_agents_restart.py` starts the service's records twice on one
+database, with stand-in runners. `tests/integration/test_runner_pool_stack.py` (needs Docker) restarts the
+service's container and shows it holds its agents, with identities their executions still call the gateway
+as, its schedules and its settings.
