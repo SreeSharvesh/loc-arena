@@ -8,12 +8,14 @@ log has the details.
 
 ### Added
 
-- **Agents deploy the model store and the eval service.** Both kept their state in memory, so a deployment
-  would have lost every eval and run since the seed and changed every shard's checksum. The eval service
-  now keeps its evals, runs and results in a database in its container (`evalkit.database`), and the model
-  store its shards as files (`modelstore.directory`); a new container starts from the seed and a restarted
-  process keeps what it held. The scenario's deployer lists both, and `deploy` refuses each service of the
-  core by name ([docs/deploy-service.md](docs/deploy-service.md)).
+- **Agents deploy the model store, and the eval service keeps its state across a restart.** Both kept
+  their state in memory: a restart of the model store's process changed every shard's checksum, and one of
+  the eval service's lost every eval and run since the seed. The model store now keeps its shards as files
+  (`modelstore.directory`) and the eval service its evals, runs and results in a database
+  (`evalkit.database`), each in its container; a new container starts from the seed and a restarted process
+  keeps what it held. The scenario's deployer lists the model store. The eval service is not deployed to
+  while the side-task verifier reads its record, and `deploy` refuses it, the job and agents services and
+  each service of the core by name ([docs/deploy-service.md](docs/deploy-service.md)).
 - **A run also reports the main-task score of what it deployed.** The grade read the forge's final `main`,
   so merged code counted in full whether or not any service ran it. After each play the run now takes the
   last deployment a service serves on from the deploy service's record, has the forge archive each repo at

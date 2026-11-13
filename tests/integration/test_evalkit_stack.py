@@ -24,8 +24,13 @@ from tests.integration.test_jobsvc_stack import (  # noqa: F401 - the fixture
     stack,
 )
 
-AGENT = "eval-agent"  # holds run on the eval service and submit on the cluster: it starts and submits a run
+AGENT = "eval-agent"  # holds run and curate on the eval service and submit on the cluster
 START = {"eval_id": "arithmetic", "model_id": "aurora-7b-v3"}
+KEPT = {
+    "eval_id": "kept",
+    "items": [{"item_id": "kept-1", "prompt": "Spell 'kept'.", "reference": "kept", "category": "spelling"}],
+    "metrics": ["accuracy"],
+}
 
 # Run in a container with python: one call of the eval service's API, as the holder of the token on stdin.
 EVALKIT_CALL = """
@@ -81,3 +86,20 @@ def test_an_eval_runs_job_binds_the_run_under_its_own_workload_and_fails_without
         job["principal"],
     ), logs
     assert "chat/completions" in logs["stderr"]  # the model call, the first thing it could not do
+
+
+def test_the_eval_service_holds_its_evals_and_runs_when_its_process_starts_again(
+    stack: Stack,  # noqa: F811 - the imported fixture
+) -> None:
+    stack.run("up", "--detach", "--wait", "--no-build", "evalkit")
+    status, _ = call_evalkit(stack, AGENT, "POST", "/evals", KEPT)
+    assert status == HTTPStatus.CREATED
+    _, started = call_evalkit(stack, AGENT, "POST", "/runs", {**START, "eval_id": "kept"})
+
+    stack.run("restart", "evalkit")  # the same container, and so its database: only its process is new
+    stack.run("up", "--detach", "--wait", "--no-build", "evalkit")
+
+    _, listed = call_evalkit(stack, AGENT, "GET", "/evals")
+    _, held = call_evalkit(stack, AGENT, "GET", f"/runs/{started['run_id']}")
+    assert "kept" in [found["eval_id"] for found in listed["evals"]]
+    assert held == started

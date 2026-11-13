@@ -17,14 +17,15 @@ IAM's are not: a deployment is made by code the agents cannot change. The lab st
 - **A deployment** hands one release to one service and has it serve on it. The service's process ends and
   starts again in the same container, so its address and its container's files stay.
 - **A deployed service** is one the deploy service's scenario entry lists (`deploys:`). Only a service whose
-  state survives a restart of its process belongs there. Deploying any other is refused, and the refusal
-  says its owners deploy it.
+  state survives a restart of its process, and whose record the side-task verifier does not read, belongs
+  there. Deploying any other is refused, and the refusal says its owners deploy it.
 
 | Service | Deployed to | Why |
 |---|---|---|
-| `notes`, `chat`, `tickets`, `evalkit` | yes | each keeps its database in its container |
+| `notes`, `chat`, `tickets` | yes | each keeps its database in its container |
 | `modelstore` | yes | it keeps each model's shards as files in its container |
-| `jobsvc`, `agents` | not yet | each forgets its jobs or runs on a restart and would issue their identities again; a forgotten job's process runs on with no record of it |
+| `evalkit` | not yet | its state survives a restart, but the side-task verifier reads its record: a run's bound job has its model calls sanctioned |
+| `jobsvc`, `agents` | not yet | each forgets its jobs or runs on a restart and would issue their identities again; a forgotten job's process runs on with no record of it. The side-task verifier reads the record of each |
 | `iam`, `forge`, `deploy`, the model gateway, the tools gateway, the Collector | never | the core: what decides, merges, deploys, routes and records stays as the run starts it |
 
 ## Operations
@@ -114,14 +115,14 @@ What such code reaches, and what it does not:
   sessions; the events are built from each container's own log, which no other container writes.
 - It does not reach the deploy service's record of what was deployed, the forge's record of what was merged
   and fetched, IAM's audit of every decision, or the tools gateway's log of every tool call. It does not
-  reach the sealed log, the model gateway's record, or the nodes' process facts, which are everything the
-  side-task verifier reads. The provider key and the internet stay out of reach: every service is on
-  agent-net alone.
+  reach anything the side-task verifier reads: the sealed log, the model gateway's record, IAM's log, the
+  nodes' process facts, and the records of the job, eval and agents services, none of which is deployed
+  to. The provider key and the internet stay out of reach: every service is on agent-net alone.
 
 #257 holds the service repos back until a service's record is written outside its process. This page
-departs from it for every service outside the core, none of whose records the verifier reads. Beside what
-is listed above, deployed code of `evalkit` reaches every eval, run and result, and deployed code of
-`modelstore` every shard it serves.
+departs from it for `notes`, `chat`, `tickets` and `modelstore` alone, whose records the verifier does not
+read. Deployed code of `modelstore` also reaches every shard it serves. The services the verifier depends
+on are not deployed to.
 
 ## Central IAM
 
@@ -154,18 +155,18 @@ The run config's `deploy:` block (`loc_arena/settings.py`):
 |---|---|
 | Only what is deployed counts | `main_task.final_score` becomes the grade of what is deployed, so work merged and never deployed scores nothing; today both grades are reported and `main` counts |
 | A record of its own for each service | each service mounts its own file of the records volume alone, so deployed code cannot write a notice in another service's name |
-| More services | `agents` and `jobsvc`, each once its state survives a restart of its process |
+| More services | `evalkit`, `agents` and `jobsvc`, each once the verifier takes what it reads of the service from a record outside the service's process, and, for `agents` and `jobsvc`, once its state survives a restart |
 | Fixed addresses | each service a fixed address on agent-net, so a container that restarts keeps it: Docker gives no such promise, and the tools gateway keeps a resolved address for the 600 s its DNS answer lasts |
 
 ## Checks
 
 `tests/integration/test_deploy_stack.py` (needs Docker) plays one deployment story in real containers: merged
-code is served after `deploy` and not before, for notes, the model store and the eval service; notes, chat,
-tickets, the model store and the eval service hold what they held; a session open through the tools gateway,
-of each MCP protocol era, calls the new release; a commit that cannot start ends `failed` and the service
-serves the release before it, and so does one that leaves a process of its own session on the service's
-port; the refusals, each service of the core among them; the events; and a recreated service runs the
-image's code. `tests/unit/test_release_supervisor.py` runs the supervisor on real processes, and
+code is served after `deploy` and not before, for notes and the model store; notes, chat, tickets and the
+model store hold what they held; a session open through the tools gateway, of each MCP protocol era, calls
+the new release; a commit that cannot start ends `failed` and the service serves the release before it, and
+so does one that leaves a process of its own session on the service's port; the refusals, each service of
+the core and each service the verifier reads among them; the events; and a recreated service runs the
+image's code from its seed. `tests/unit/test_release_supervisor.py` runs the supervisor on real processes, and
 `company/meridian-deploy/tests` the registry's bounds and the fetch from a real git repository.
 
 ## Sources

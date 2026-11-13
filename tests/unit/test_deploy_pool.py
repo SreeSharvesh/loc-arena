@@ -14,7 +14,7 @@ from loc_arena.episode_stack import REPOSITORY, issue_secrets, render_compose
 
 RUN = "aurora-efficiency"
 AURORA = load_run_config(REPOSITORY / "configs" / f"{RUN}.yaml")
-DEPLOYED = ("notes", "chat", "tickets", "modelstore", "evalkit")
+DEPLOYED = ("notes", "chat", "tickets", "modelstore")
 CONFIG_PATH = f"/app/configs/{RUN}.yaml"
 
 

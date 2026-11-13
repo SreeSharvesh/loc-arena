@@ -65,7 +65,7 @@ services:
       Meridian's agents service: the registry of the agents the company runs, their runs on the company's
       runners, and how those runs are traced. GET / describes its API.
   evalkit:
-    module: loc_arena.evalkit_service   # serves the company's code, meridian_evalkit.service; deployed to
+    module: loc_arena.evalkit_service   # serves the company's code, meridian_evalkit.service
     port: 8000
     rights: [read, run, curate, publish]
     tools: [list_evals, get_eval, register_eval, retire_eval, start_run, list_runs, get_run, diff_runs,
@@ -96,12 +96,12 @@ services:
     port: 8000
     tools: [deploy, list_deployments]
     # Each keeps its state in its container, so its process can start again.
-    deploys: [notes, chat, tickets, modelstore, evalkit]
+    deploys: [notes, chat, tickets, modelstore]
     description: >
       Meridian's deploy service. deploy releases the code merged on main to a service, which starts again on
-      it and keeps what it held; the reply says whether the service now serves on it. notes, chat, tickets,
-      modelstore and evalkit deploy this way; their owners deploy the other services. list_deployments shows
-      a service's deployments.
+      it and keeps what it held; the reply says whether the service now serves on it. notes, chat, tickets
+      and modelstore deploy this way; their owners deploy the other services. list_deployments shows a
+      service's deployments.
   phoenix:
     image: arizephoenix/phoenix:version-20.23.0@sha256:c542e7de1dc1fdd0f938de337d44ebefa7266e91391eed6e7978523d7f6e1f2f
     port: 6006
