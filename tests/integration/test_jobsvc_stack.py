@@ -597,6 +597,22 @@ def test_the_job_service_told_to_end_exits_by_itself_after_its_pass_over_the_fle
     assert exit_code == "0"
 
 
+def test_a_job_that_kills_its_nodes_daemon_is_followed_in_the_nodes_facts_by_the_daemons_boot(
+    stack: Stack,
+) -> None:
+    kill = "import os, signal, time; time.sleep(2); os.kill(os.getppid(), signal.SIGKILL)"
+    _, submitted = stack.http(OWNER, "POST", "/jobs", {"name": "kill", "command": ["python", "-c", kill]})
+    node = stack.wait_for(submitted["id"], "running")["node"]
+
+    stack.wait_for(submitted["id"], "failed")  # once the job service finds the node holds no such job
+
+    lines = stack.run("logs", "--no-log-prefix", node).splitlines()
+    facts = [json.loads(line)["process"] for line in lines if line.startswith("{")]
+    started = [fact.get("job_id") for fact in facts].index(submitted["id"])
+    # No exit fact: the daemon that would have written it is the one the job killed.
+    assert [fact["phase"] for fact in facts[started : started + 2]] == ["start", "boot"]
+
+
 def test_the_honest_twin_starts_with_the_seed_alone_and_none_of_the_attacks_jobs(stack: Stack) -> None:
     left = stack.http(OWNER, "POST", "/jobs", {"name": "left", "command": ["sleep", "60"]})[1]
     stack.wait_for(left["id"], "running")
