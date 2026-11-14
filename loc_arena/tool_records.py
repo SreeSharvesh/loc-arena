@@ -11,9 +11,10 @@ file on the records volume, which the episode reads during play (``loc_arena.not
 service, which the episode serves, writes it to ``records/<service>.jsonl`` in the play's directory.
 ``ToolRecord`` reads one back.
 
-A call whose work goes on whatever becomes of the call, as a deployment's hand-over does, also writes its line
-as that work starts (``record_started``), marked ``tool.call.started``, with what is known then as its result:
-a record read before the call returns, or after a call that never did, holds the work.
+A call that starts work which goes on after it returns, as a deployment does, has two more lines, which the
+work writes in the call's context: the call's line as the work starts (``record_started``), marked
+``tool.call.started``, and as it ends (``record_ended``), marked ``tool.call.ended``, each with what is known
+then as its result. The record holds the work whatever becomes of the call.
 """
 
 from __future__ import annotations
@@ -33,11 +34,12 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, JsonValue
 
 TOOL_CALL = "tools/call"
 SESSION_HEADER = "mcp-session-id"  # a 2025-era session's id; a 2026-era call has none
-STARTED = "tool.call.started"  # on the line a call writes as its work starts, before the line of its end
+STARTED, ENDED = "tool.call.started", "tool.call.ended"  # on the lines a call's work writes: see above
 Write = Callable[[str], None]
-# How the tool call being served writes its line with a result so far; none outside a recorded call.
-_write_started: ContextVar[Callable[[dict[str, JsonValue]], None] | None] = ContextVar(
-    "write_started",
+# How the work of the tool call being served writes the call's line, marked, with a result; none outside a
+# recorded call.
+_write_marked: ContextVar[Callable[[str, dict[str, JsonValue]], None] | None] = ContextVar(
+    "write_marked",
     default=None,
 )
 
@@ -55,7 +57,8 @@ class ToolRecord(BaseModel):
     status_description: str | None = Field(default=None, validation_alias="otel.status_description")
     agent: str = Field(validation_alias="gen_ai.agent.name")
     iam_decision: str | None = Field(default=None, validation_alias="iam.decision.id")
-    started: bool = Field(default=False, validation_alias=STARTED)  # the call's own line follows at its end
+    started: bool = Field(default=False, validation_alias=STARTED)  # a line of the call's work, as is
+    ended: bool = Field(default=False, validation_alias=ENDED)  # this: neither is the call's own line
 
 
 def tool_call_recorder(
@@ -88,8 +91,8 @@ def tool_call_recorder(
         def write_line(outcome: Mapping[str, JsonValue]) -> None:
             write(json.dumps({**line, **outcome, **(annotate() if annotate else {})}))
 
-        served = _write_started.set(
-            lambda known: write_line({"gen_ai.tool.call.result": known, STARTED: True}),
+        served = _write_marked.set(
+            lambda mark, known: write_line({"gen_ai.tool.call.result": known, mark: True}),
         )
         try:
             result = await call_next(ctx)
@@ -97,7 +100,7 @@ def tool_call_recorder(
             write_line({"error.type": str(error.error.code), "otel.status_description": error.error.message})
             raise
         finally:
-            _write_started.reset(served)  # the call has ended: nothing more is written in its name
+            _write_marked.reset(served)  # its work keeps the writer in the context it copied
         reply = result if isinstance(result, dict) else {}  # call_next returns the finished wire form
         text = " ".join(block["text"] for block in reply.get("content", []) if block.get("type") == "text")
         write_line(
@@ -111,13 +114,19 @@ def tool_call_recorder(
 
 
 def record_started(result: dict[str, JsonValue]) -> None:
-    """Write the line of the tool call being served with ``result`` so far: its work has started.
+    """Write the line of the call whose context this is, with ``result`` so far: its work has started.
 
-    For work that goes on whatever becomes of the call: the record holds it from here, and the call's own
-    line, written as it returns, says how it ended. Outside a recorded call, nothing is written.
+    For work that goes on whatever becomes of the call: the record holds it from here. Outside a recorded
+    call, nothing is written.
     """
-    if (write_started := _write_started.get()) is not None:
-        write_started(result)
+    if (write_marked := _write_marked.get()) is not None:
+        write_marked(STARTED, result)
+
+
+def record_ended(result: dict[str, JsonValue]) -> None:
+    """Write the line of the call whose context this is, with the ``result`` its work ended with."""
+    if (write_marked := _write_marked.get()) is not None:
+        write_marked(ENDED, result)
 
 
 def record_writer(directory: Path, service: str) -> Write:

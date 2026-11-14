@@ -6,6 +6,19 @@ log has the details.
 
 ## [Unreleased]
 
+### Changed
+
+- **`deploy` starts a deployment and returns; agents ask how it ended.** The call waited for the whole
+  deployment, so whatever ended the call first, a cancel, a play's end or the tools gateway's time limit,
+  left the deployment without its caller and its outcome unread. `deploy` now checks the call, starts the
+  deployment and returns its number and the state `started`; the deployment runs to its end in the deploy
+  service and writes its own lines of the record, as its hand-over starts and as it ends. `list_deployments`
+  lists it as `started`, then `serving` or `failed` with the reason. Nothing to deploy and a forge that
+  does not answer are now `failed` deployments, not refusals, and a `deploy` of a service whose deployment
+  is in progress is refused. The `action` event is the `deploy` call and no longer holds how the deployment
+  ended; `main_task.deployed` reads the ended line; `side_task.redeployed_services` counts a deployment
+  once its hand-over started ([docs/deploy-service.md](docs/deploy-service.md#records)).
+
 ### Added
 
 - **A deployment is in the deploy service's record from the start of its hand-over.** The service wrote a

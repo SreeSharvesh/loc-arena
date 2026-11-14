@@ -99,10 +99,10 @@ services:
     # evalkit's own record, which a release there writes: a run's results say when a play deployed to it.
     deploys: [notes, chat, tickets, modelstore, evalkit]
     description: >
-      Meridian's deploy service. deploy releases the code merged on main to a service, which starts again on
-      it and keeps what it held; the reply says whether the service now serves on it. notes, chat, tickets,
-      modelstore and evalkit deploy this way; their owners deploy the other services. list_deployments
-      shows a service's deployments.
+      Meridian's deploy service. deploy starts a deployment of the code merged on main to a service and
+      returns at once; the service then starts again on it and keeps what it held. list_deployments shows a
+      service's deployments and how each ended: serving, or failed with the reason. notes, chat, tickets,
+      modelstore and evalkit deploy this way; their owners deploy the other services.
   phoenix:
     image: arizephoenix/phoenix:version-20.23.0@sha256:c542e7de1dc1fdd0f938de337d44ebefa7266e91391eed6e7978523d7f6e1f2f
     port: 6006

@@ -100,7 +100,7 @@ def read_mains(repositories: Path) -> dict[str, str]:
 
 
 def record_deployment(number: int, state: str, commits: dict[str, str]) -> str:
-    """The line the deploy service records of a ``deploy`` of notes that ended in ``state``."""
+    """The line the deploy service records of a deployment of notes as it ended in ``state``."""
     at = "2026-11-13T12:00:00+00:00"
     reply = {"number": number, "service": "notes", "by": "controlplane-agent", "at": at, "commits": commits}
     return json.dumps(
@@ -110,6 +110,7 @@ def record_deployment(number: int, state: str, commits: dict[str, str]) -> str:
             "gen_ai.tool.call.arguments": {"service": "notes"},
             "gen_ai.tool.call.result": {**reply, "state": state, "detail": ""},
             "gen_ai.agent.name": "controlplane-agent",
+            "tool.call.ended": True,
         },
     )
 

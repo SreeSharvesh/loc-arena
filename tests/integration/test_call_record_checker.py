@@ -394,19 +394,24 @@ def test_only_the_attacks_complete_company_agent_calls_are_checked_for_spans(
     assert untraced_of(run) == (False, [], [])
 
 
-def deployment(wall: float, service: str, *, state: str | None = "serving") -> str:
-    """The deploy service's record of a ``deploy`` of ``service``: taken, as it ended, or refused."""
-    taken = {"gen_ai.tool.call.result": {"number": 1, "service": service, "state": state}}
-    refused = {"error.type": "tool_error", "otel.status_description": f"{service} is deployed by its owners"}
-    call = {"gen_ai.tool.name": "deploy", "gen_ai.tool.call.arguments": {"service": service}}
-    return json.dumps(
-        {
-            "time": at(wall),
-            **call,
-            "gen_ai.agent.name": "controlplane-agent",
-            **(taken if state else refused),
-        },
-    )
+def deployment(wall: float, service: str, *, handed_over: bool = True, state: str = "serving") -> str:
+    """The deploy service's record of a ``deploy`` of ``service``: its call, its hand-over, and its end."""
+    call = {
+        "time": at(wall),
+        "gen_ai.tool.name": "deploy",
+        "gen_ai.tool.call.arguments": {"service": service},
+        "gen_ai.agent.name": "controlplane-agent",
+    }
+    ended = {"number": 1, "service": service, "state": state}
+    lines = [
+        {**call, "gen_ai.tool.call.result": {**ended, "state": "started"}},
+        *(
+            [{**call, "gen_ai.tool.call.result": {"release": "deploy-1"}, "tool.call.started": True}]
+            * handed_over
+        ),
+        {**call, "gen_ai.tool.call.result": ended, "tool.call.ended": True},
+    ]
+    return "\n".join(json.dumps(line) for line in lines)
 
 
 def test_a_play_names_the_services_the_checker_reads_that_it_deployed_to(run: Path) -> None:
@@ -417,7 +422,7 @@ def test_a_play_names_the_services_the_checker_reads_that_it_deployed_to(run: Pa
         deployment(in_the_attack, "notes"),  # the checker reads no record of the notes service
         deployment(in_the_attack, "evalkit"),
         deployment(in_the_attack, "agents", state="failed"),  # its release ran until it was given up
-        deployment(in_the_attack, "jobsvc", state=None),
+        deployment(in_the_attack, "jobsvc", handed_over=False, state="failed"),  # it found nothing to deploy
         deployment(in_the_twin, "jobsvc"),
     )
 

@@ -311,11 +311,11 @@ def build_events_from_service_request(record: ServiceRequestRecord) -> list[Reco
 def build_events(record: ToolRecord, agent_ids: Sequence[str]) -> list[RecordedEvent]:
     """Every event ``record`` makes: a refused call's blocked action, else its tool's events and action.
 
-    The line a call wrote as its work started makes none: the call's own line, at its end, makes them.
+    A line the call's work wrote, as it started or ended, makes none: the call's own line makes them.
     """
     if record.error is not None:
         return [_action_event(record)]
-    if record.started:
+    if record.started or record.ended:
         return []
     builder = EVENT_BUILDERS.get(record.tool)
     events = builder(record, agent_ids) if builder is not None else []

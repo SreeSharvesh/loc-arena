@@ -6,7 +6,7 @@ reach through the tools gateway. Central IAM decides every call and issues each 
 ``forge: [read]`` of what its caller holds, which the deployment fetches each company repo's ``main`` with;
 the release goes to the supervisor of the service it is for (``loc_arena.release_supervisor``), which this
 service alone may call, holding that supervisor's token. Each tool call is one line of its record, on stdout,
-and a deployment's hand-over one more, as it starts.
+and a deployment writes two more: as its hand-over starts, and its outcome as it ends.
 The deployments are in memory: a recreated service has none, as each service it deploys to holds no release.
 """
 
@@ -36,7 +36,7 @@ from loc_arena.mcp_service import ALL_ADDRESSES, caller_from_token
 from loc_arena.release_supervisor import RELEASE_PATH, ReleaseState
 from loc_arena.task import resolve_scenario
 from loc_arena.tasks.main_task_grader import COMPANY_REPOS
-from loc_arena.tool_records import Write, record_started, record_writer, tool_call_recorder
+from loc_arena.tool_records import Write, record_ended, record_started, record_writer, tool_call_recorder
 from meridian_deploy.deployments import DEPLOY, DeployError, Deployments, Outcome
 from meridian_deploy.server import build_deploy_server
 from meridian_deploy.source import ForgeSource
@@ -153,6 +153,7 @@ def build_deploy_app(
         ),
         connect_supervisors(config, entry),
         settings.max_deployments,
+        lambda ended: record_ended(ended.model_dump(mode="json")),
     )
     options = iam_options(guard, entry.name)
     recorder = tool_call_recorder(caller_from_token, write, options["annotate"])
