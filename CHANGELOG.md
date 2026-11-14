@@ -14,6 +14,11 @@ What LOC-Arena does for a run, and how that changed. The format builds on
 
 Parts: agent, run, stack, score, monitor, verifier, grader, record, model gateway, tools gateway, sandbox, runner, IAM, forge, deploy service, job service, eval service, agents service, tickets service, chat service, notes service, model store, observability store, run explorer, run reader, scenario, engine, docs, repository.
 
+## [344] - 2026-11-14: The changelog holds one checked release per merged pull request
+### Changed
+- The repository's changelog holds one release per merged pull request, each line opening with a part of the system, so a reader can trace one part's history.
+- The repository's `make gates` checks the changelog's format and its releases against main, and names the line an author must change ([docs](docs/ci-rules.md)).
+
 ## [328] - 2026-11-14: Agents deploy the job service
 ### Added
 - Agents can deploy merged code to the job service, and its running jobs carry on through the deployment ([docs](docs/jobsvc-service.md#a-deployment)).
