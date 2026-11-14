@@ -19,6 +19,11 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [349] - 2026-11-14: Every run reports what it cost, and two runs compare
+### Added
+- The run writes `cost.json` with each container's memory and CPU, its storage, its wall time by phase and its dollars by model and caller ([docs](docs/run-cost.md)).
+- The run's cost of two runs compares with `make cost`, per container and in total, so a decision is priced by running it ([docs](docs/run-cost.md)).
+
 ## [350] - 2026-11-14: The reach test reports a failing sandbox's log
 ### Changed
 - The repository's stack reach test prints the end of every sandbox's log when a bash call fails, so the next sandbox error explains itself; the arena behaves as before.

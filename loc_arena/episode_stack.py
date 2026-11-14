@@ -589,7 +589,7 @@ def _issue_play_secrets(config: RunConfig, tokens: dict[str, str]) -> tuple[dict
     return issue_for_play(), issue_for_play()
 
 
-def run_in_stack(run: str, *, mode: str, seed: int | None, logs: Path) -> Path:
+def run_in_stack(run: str, *, mode: str, seed: int | None, logs: Path, instance_id: str) -> Path:
     """Play one episode of ``run`` (a config in ``configs/``) in its own compose project; grade it here.
 
     The episode container plays the episode and, after ``renew_services``, its honest twin (``play_phases``).
@@ -607,7 +607,6 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, logs: Path) -> Path:
     run = Path(run).name.removesuffix(".yaml")
     config = load_run_config(REPOSITORY / "configs" / f"{run}.yaml")
     settings = config.settings
-    instance_id = secrets.token_hex(3)
     project = f"{model_gateway.PROJECT_PREFIX}{instance_id}"
     episode_arguments = ["--mode", mode, "--instance", instance_id, "--play-only", "--next-phase"]
     compose_file = logs / "compose" / f"{project}.yaml"

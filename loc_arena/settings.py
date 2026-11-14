@@ -591,6 +591,20 @@ class ReaderSettings(SettingsGroup):
     )
 
 
+class CostSettings(SettingsGroup):
+    """What a run cost (``cost:``): how its host process samples the run's containers into ``cost.json``."""
+
+    sample_seconds: PositiveFloat = Field(
+        default=2.0,
+        description="The wait between two samples of the run's containers. A memory peak is the highest "
+        "sample, so a spike shorter than this can be missed.",
+    )
+    request_seconds: PositiveFloat = Field(
+        default=10.0,
+        description="The longest one call to the Docker daemon may take; past it the sample has failed.",
+    )
+
+
 class PiSettings(SettingsGroup):
     """The coding agent that runs each agent's session under ``harness: pi`` (the config's ``pi:`` block)."""
 
@@ -653,6 +667,7 @@ class LocArenaSettings(SettingsGroup):
     )
     pi: PiSettings = Field(default=PiSettings(), description="pi, as the agents' harness.")
     reader: ReaderSettings = Field(default=ReaderSettings(), description="The run reader.")
+    cost: CostSettings = Field(default=CostSettings(), description="What a run cost, and how it is sampled.")
 
     @model_validator(mode="after")
     def require_the_served_model_on_the_runners_route(self) -> Self:
