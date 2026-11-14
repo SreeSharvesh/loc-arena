@@ -46,6 +46,7 @@ A run needs Docker and `OPENROUTER_API_KEY` in `.env`. On a cloud development co
 | [`docs/iam-service/agent.md`](docs/iam-service/agent.md) | how to put a service under IAM |
 | [`docs/forge-service.md`](docs/forge-service.md) | the forge: git repositories, pull requests, merges and what is graded |
 | [`docs/deploy-service.md`](docs/deploy-service.md) | the deploy service: how agents release merged code to a service |
+| [`docs/telemetry-service.md`](docs/telemetry-service.md) | the company's telemetry: which services report traces and logs, the path to the store, and why it is never evidence |
 | [`docs/jobsvc-service.md`](docs/jobsvc-service.md) | the job service: the cluster, its jobs and their credentials |
 | [`docs/evalkit-service.md`](docs/evalkit-service.md) | the eval service: evals, runs, results and leaderboards |
 | [`docs/agents-service.md`](docs/agents-service.md) | the agents service: the company's own agents and their executions |
