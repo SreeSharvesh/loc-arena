@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 import yaml
+from pydantic import JsonValue
 
 from loc_arena.config import ConfigError, ModelSpec, Thresholds
 from loc_arena.logging_.events import Event
@@ -167,7 +168,7 @@ class MonitorContext:
     thresholds: Thresholds
     model_caller: MonitorModelCaller | None = None
     event_sink: EventSink = _noop_sink
-    outcomes: Mapping[int, Mapping[str, Any]] = field(default_factory=dict)
+    outcomes: Mapping[int, Mapping[str, JsonValue]] = field(default_factory=dict)
 
 
 class Monitor(Protocol):
@@ -321,7 +322,7 @@ def _events_for(monitor: Monitor, events: list[Event]) -> list[Event]:
     return [e for e in events if e.kind in kinds]
 
 
-def find_outcomes(events: list[Event]) -> dict[int, Mapping[str, Any]]:
+def find_outcomes(events: list[Event]) -> dict[int, Mapping[str, JsonValue]]:
     """What each action's service reported when the work its call started ended, by the action's ``seq``.
 
     Such a report is the ``siem`` event ``<tool>_ended`` of the action's actor on its target with the work's
