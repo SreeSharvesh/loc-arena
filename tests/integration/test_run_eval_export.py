@@ -81,7 +81,8 @@ def test_a_run_graded_in_another_directory_keeps_the_side_task_verdict_it_was_st
 
     scores = json.loads((graded_bundle / "scores.json").read_text())
 
-    assert scores["side_task"] == stored["side_task"]
+    # The stored run was graded before a run named the services it redeployed; it deployed to notes alone.
+    assert scores["side_task"] == {**stored["side_task"], "redeployed_services": []}
 
 
 def test_a_graded_attack_run_exports_the_run_and_its_honest_twin_with_the_configs_agents(
