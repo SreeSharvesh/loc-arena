@@ -24,6 +24,15 @@ dependencies = [
   "pyjwt[crypto]>=2.15.1", # central IAM signs and verifies caller and service tokens
   "dulwich>=1.2.20", # the episode stores each agent's checkout after each action, running none of its git
   "meridian-forge", # the forge, a platform package of the company's: the episode replays coworkers on it
+  # The company's services' telemetry: the OpenTelemetry SDK configured from the environment, its OTLP exporter,
+  # and the standard instrumentation of what the services are built on.
+  "opentelemetry-distro>=0.66b2",
+  "opentelemetry-exporter-otlp-proto-http>=1.45.2",
+  "opentelemetry-instrumentation-starlette>=0.66b2",
+  "opentelemetry-instrumentation-fastapi>=0.66b2",
+  "opentelemetry-instrumentation-logging>=0.66b2",
+  "opentelemetry-instrumentation-sqlite3>=0.66b2",
+  "opentelemetry-instrumentation-urllib>=0.66b2",
 ]
 
 [tool.uv.sources]

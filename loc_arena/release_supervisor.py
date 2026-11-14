@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import contextlib
 import hmac
+import logging
 import os
 import queue
 import shutil
@@ -53,6 +54,9 @@ RELEASE_PATH = "/release"  # POST: take a release; GET: the release the service 
 CURRENT = "current"  # in the releases directory: the link to the release the service runs
 LOOPBACK = "127.0.0.1"
 READ_BYTES = 4096  # of the service's stderr, at a time
+RESOURCE_VARIABLE = "OTEL_RESOURCE_ATTRIBUTES"  # set where the service's telemetry is collected
+IMAGE_VERSION = "image"  # the service.version of a service on the image's code, which no release names
+_STDERR = logging.getLogger("service.stderr")  # the service's stderr, as log records of its telemetry
 STDERR_HELD = "(its stderr is still open: its errors may be incomplete)"
 LOGGED_READS = 256  # reads of its stderr that wait to be logged; a read past them is kept, and not logged
 BODY_MARGIN_BYTES = 4096  # what a release's request holds beside its archives: its name and theirs
@@ -110,7 +114,7 @@ class SupervisedService:
         self._process: subprocess.Popen[bytes] | None = None
         self._errors = bytearray()  # the end of the running process's stderr
         self._reader = threading.Thread()  # of that stderr
-        self._to_log: queue.Queue[bytes] = queue.Queue(LOGGED_READS)
+        self._to_log: queue.Queue[tuple[bytes, dict[str, str]]] = queue.Queue(LOGGED_READS)
 
     def start(self) -> None:
         """Start the service on the release it ran last, and keep it running until ``stop``."""
@@ -186,6 +190,11 @@ class SupervisedService:
         repos = sorted(str(repo) for repo in release.iterdir() if repo.is_dir()) if release else []
         image = self._environment.get("PYTHONPATH", "")
         environment = {**self._environment, "PYTHONPATH": os.pathsep.join([*repos, image])}
+        named = {"service.version": _name(release) or IMAGE_VERSION}  # each signal names its release
+        named |= {"deployment.id": release.name} if release else {}
+        if resource := self._environment.get(RESOURCE_VARIABLE):
+            attributes = ",".join(f"{key}={value}" for key, value in named.items())
+            environment[RESOURCE_VARIABLE] = f"{resource},{attributes}"
         process = subprocess.Popen(  # noqa: S603 - the service's own module, named by the scenario
             self._command,
             env=environment,
@@ -193,7 +202,7 @@ class SupervisedService:
             start_new_session=True,
         )
         errors = bytearray()
-        read = (process.stderr, errors, self._settings.error_bytes, self._to_log)
+        read = (process.stderr, errors, self._settings.error_bytes, self._to_log, named)
         self._process, self._errors = process, errors
         self._reader = threading.Thread(target=_read_errors, args=read, daemon=True)
         self._reader.start()
@@ -240,8 +249,16 @@ class SupervisedService:
                     print(f"supervisor: the service did not start: {error}", flush=True)  # noqa: T201
 
 
-def _read_errors(stream: IO[bytes], kept: bytearray, kept_bytes: int, to_log: queue.Queue[bytes]) -> None:
+def _read_errors(
+    stream: IO[bytes],
+    kept: bytearray,
+    kept_bytes: int,
+    to_log: queue.Queue[tuple[bytes, dict[str, str]]],
+    named: dict[str, str],
+) -> None:
     """Keep the last ``kept_bytes`` of a process's stderr in ``kept``, and hand each read on ``to_log``.
+
+    Each read goes with ``named``, the release of the process that wrote it.
 
     Reading never waits for the logging: what a full queue cannot take is kept and not logged.
     """
@@ -249,14 +266,22 @@ def _read_errors(stream: IO[bytes], kept: bytearray, kept_bytes: int, to_log: qu
         kept += chunk
         del kept[:-kept_bytes]
         with contextlib.suppress(queue.Full):
-            to_log.put_nowait(chunk)
+            to_log.put_nowait((chunk, named))
 
 
-def _log_errors(to_log: queue.Queue[bytes]) -> None:
-    """Write what the service's processes wrote to stderr on this container's, as it comes."""
+def _log_errors(to_log: queue.Queue[tuple[bytes, dict[str, str]]]) -> None:
+    """Write what the service's processes wrote to stderr on this container's, as it comes.
+
+    Under OpenTelemetry's instrumentation each read is also a log record of the service's telemetry, naming
+    its release in the record's attributes: what a release that cannot start says is nowhere else in it.
+    """
     while True:
-        sys.stderr.write(to_log.get().decode(errors="replace"))
+        chunk, named = to_log.get()
+        text = chunk.decode(errors="replace")
+        sys.stderr.write(text)
         sys.stderr.flush()
+        if text.strip() and _STDERR.hasHandlers():
+            _STDERR.warning(text.rstrip(), extra={"log.iostream": "stderr", **named})
 
 
 def _name(release: Path | None) -> str | None:

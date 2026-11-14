@@ -33,7 +33,8 @@ def test_a_deployed_service_runs_under_its_supervisor_holding_its_own_token_alon
     tokens = [secret for secret in rendered["secrets"] if "release_token" in str(secret)]
 
     assert (rendered["command"], tokens) == (
-        ["python", "-m", "loc_arena.release_supervisor", CONFIG_PATH, service],
+        # Every deployed service of this scenario is collected too, so its supervisor runs instrumented.
+        ["opentelemetry-instrument", "python", "-m", "loc_arena.release_supervisor", CONFIG_PATH, service],
         [{"source": f"release_token_{service}", "target": "release_token"}],
     )
 
