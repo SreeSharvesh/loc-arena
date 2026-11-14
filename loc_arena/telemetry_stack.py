@@ -1,7 +1,8 @@
 """The company's telemetry in a stack run: its own Collector, and the store that Collector alone writes.
 
 The one live service with ``collects:`` is the telemetry store (GreptimeDB). Each service it names runs under
-OpenTelemetry's zero-code instrumentation and exports its traces and logs over OTLP. The store sits on a
+OpenTelemetry's zero-code instrumentation and exports its traces and logs over OTLP, and the tools gateway
+exports a span of every tool call, whose context it passes on to the service. The store sits on a
 network of its own, so nothing an agent runs reaches it, with two users: the Collector's, which can only
 write, and a reader's, which can only read. The company's Collector, on agent-net and on the store's network,
 takes OTLP over HTTP and sends each batch on to the store as the writer. Export is best effort, within the
@@ -37,7 +38,11 @@ COLLECTOR_CONFIG, COLLECTOR_CONFIG_VARIABLE = (
 )
 INSTRUMENT = "opentelemetry-instrument"  # runs a command with the SDK and each library's instrumentation on
 SDK_BATCH_SIZE = 512  # the SDK's default: the most spans, or log records, in one export
+GATEWAY_NAME = "tools-gateway"  # the service.name of the tools gateway's spans
 NAMESPACE = "meridian"  # the service.namespace of every service of the company
+# What the Collector stamps on each record: the address it came from. A name of its own, since a span's
+# `client.address` is that span's caller, as on the tools gateway's.
+SENDER_ATTRIBUTE = f"{NAMESPACE}.sender.address"
 
 
 class ExportBounds(TypedDict):
@@ -46,6 +51,18 @@ class ExportBounds(TypedDict):
     timeout: str
     retry_on_failure: dict[str, str]
     sending_queue: dict[str, int]
+
+
+class GatewayTracing(TypedDict):
+    """agentgateway's ``frontendPolicies.tracing``: where it exports spans, and what each one names."""
+
+    host: str
+    protocol: str
+    randomSampling: str  # each of the three a CEL expression
+    clientSampling: str
+    parentNotSampled: str
+    resources: dict[str, str]  # each a CEL expression
+    attributes: dict[str, str]  # each a CEL expression
 
 
 def find_store(config: RunConfig) -> LiveService | None:
@@ -85,6 +102,26 @@ def render_export_environment(config: RunConfig, service: str) -> dict[str, str]
     }
 
 
+def render_gateway_tracing(config: RunConfig) -> GatewayTracing | None:
+    """The tools gateway's tracing policy: a span of every request, with the calling agent, to the Collector.
+
+    None without a telemetry store. The gateway passes the span's context on to the service it calls, so
+    a tool call and the service's work on it are one trace.
+    """
+    if find_store(config) is None:
+        return None
+    return {
+        "host": f"{COLLECTOR_SERVICE}:{config.settings.telemetry.collector_port}",
+        "protocol": "http",
+        # Every request: one with no trace context, one that asks to be traced, one that asks not to be.
+        "randomSampling": "true",
+        "clientSampling": "true",
+        "parentNotSampled": "true",
+        "resources": {"service.name": f'"{GATEWAY_NAME}"', "service.namespace": f'"{NAMESPACE}"'},
+        "attributes": {"agent": "apiKey.agent"},
+    }
+
+
 def render_collector_config(config: RunConfig, store: LiveService, writer_password: str) -> str:
     """The company's Collector's config: OTLP in over HTTP, each batch on to ``store``, or dropped.
 
@@ -116,7 +153,7 @@ def render_collector_config(config: RunConfig, store: LiveService, writer_passwo
         },
         "processors": {
             "attributes/sender": {
-                "actions": [{"key": "client.address", "from_context": "client.address", "action": "upsert"}],
+                "actions": [{"key": SENDER_ATTRIBUTE, "from_context": "client.address", "action": "upsert"}],
             },
             # The ASGI instrumentation's span of each message a request receives and sends: several a
             # request, and nothing a reader of a trace asks for.

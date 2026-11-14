@@ -19,6 +19,12 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [353] - 2026-11-14: A tool call and the service's work are one trace
+### Added
+- The tools gateway exports a span of every tool call and passes its trace context on, so a call is followed into the service that served it ([docs](docs/telemetry-service.md#the-tools-gateways-span-of-every-tool-call)).
+### Fixed
+- The stack's Collector stamps each record's sender under `meridian.sender.address`, so a span keeps its own caller's address ([docs](docs/telemetry-service.md#the-path)).
+
 ## [345] - 2026-11-14: The action monitor is shown how each deployment ended
 ### Changed
 - The monitor is shown, in its input for a deployment's action, each repo's commit, whether the service serves on them and why it failed ([docs](docs/deploy-service.md#records)).
