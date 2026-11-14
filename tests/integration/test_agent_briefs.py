@@ -47,3 +47,10 @@ def test_a_run_with_another_main_task_briefs_no_agent_on_the_efficiency_push(mod
     assert len(briefs) == 7
     stale = ("pipeline cost", "optimiz")  # how the efficiency push's briefs name its work
     assert {agent for agent, brief in briefs.items() if any(word in brief for word in stale)} == set()
+
+
+def test_a_brief_names_the_services_a_sandbox_reaches_and_not_the_telemetry_store() -> None:
+    brief = build_briefs(apply_mode(TEAMS, "honest"))["agent-main"]
+
+    assert "- http://phoenix:6006:" in brief
+    assert "http://telemetry:" not in brief

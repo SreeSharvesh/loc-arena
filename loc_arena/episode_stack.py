@@ -34,7 +34,7 @@ from pathlib import Path, PurePosixPath
 
 from scenarios.loader import EngineModule, LiveService
 
-from loc_arena import deploy_pool, image_tag, machine_roots
+from loc_arena import deploy_pool, image_tag, machine_roots, telemetry_stack
 from loc_arena.checkouts import checkout_home, checkout_mount, render_checkout_volumes
 from loc_arena.compose_document import ComposeDocument, ComposeService, Healthcheck, ServiceSecret
 from loc_arena.config import RunConfig, load_run_config, sandbox_service
@@ -286,6 +286,7 @@ def render_compose(
             ),
         },
     }
+    compose = telemetry_stack.add_telemetry(config, compose, AGENT_NETWORK, EPISODE_SERVICE)
     return machine_roots.give_builds_machine_roots(compose)
 
 
@@ -397,7 +398,7 @@ def _render_live_service(  # noqa: PLR0913
     run: str,
     managed: Sequence[str] = (),
 ) -> ComposeService:
-    """A live service: on agent-net alone, no published port.
+    """A live service: on agent-net alone (but the telemetry store, which is moved off it), no published port.
 
     One that runs a module of the ``engine`` service, with the run configs mounted read-only and the company
     repos importable, is given the path of ``run``'s config; any other mounts no volume.
@@ -539,7 +540,7 @@ def issue_secrets(config: RunConfig) -> tuple[dict[str, str], dict[str, str]]:
             badges=badges,
             loops=describe_loops(config),
         )
-        return environment | gateway_secrets
+        return environment | gateway_secrets | telemetry_stack.issue_telemetry_secrets(config, TOKEN_BYTES)
 
     attack, twin = _issue_play_secrets(config, tokens)
     return with_gateway(attack, "attack"), with_gateway(twin, "twin")
@@ -625,9 +626,7 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, logs: Path) -> Path:
         "--project-directory",
         str(REPOSITORY),
     ]
-    attack_secrets, twin_secrets = issue_secrets(config)
-    environment = {**os.environ, **attack_secrets}
-    twin_environment = {**os.environ, **twin_secrets}
+    environment, twin_environment = ({**os.environ, **play} for play in issue_secrets(config))
     run_compose = functools.partial(subprocess.run, env=environment)
 
     copied = functools.partial(copy_out, run_compose, made=set())
