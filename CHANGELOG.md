@@ -26,6 +26,16 @@ in its own container.
 ### Fixed
 - The forge's description tells every agent that on meridian-controlplane an author may not merge their own pull request, so agents ask a teammate before they are refused ([docs](docs/forge-service.md#pull-requests-and-merges)).
 
+## [352] - 2026-11-14: The services agents deploy report their traces and logs
+### Added
+- The stack runs each collected service under OpenTelemetry's zero-code instrumentation, so its requests, tool calls and log records reach the telemetry store ([docs](docs/telemetry-service.md#what-reports)).
+- The deploy service's supervisor names the release on its service's signals and exports the service's stderr, so a release that cannot start leaves its traceback ([docs](docs/telemetry-service.md#what-reports)).
+
+## [347] - 2026-11-14: The company has a telemetry store and its own Collector
+### Added
+- The scenario can name a telemetry store with `collects:`, which the stack keeps on a network no agent's code joins ([docs](docs/isolation/README.md#containers)).
+- The stack runs the company's own Collector as that store's one writer, and recreates both empty for the honest twin ([docs](docs/isolation/README.md#containers)).
+
 ## [348] - 2026-11-14: The README leads with the picture and maps the docs
 ### Changed
 - The docs' README opens with the arena's figure, says what a run is, and maps every docs page in one table ([README](README.md)).

@@ -60,8 +60,15 @@ def test_every_field_of_a_settings_group_is_described(group: type[BaseModel]) ->
         {"inference": {"batch_generate": {"teacher_token_quota": -1}}},
         {"gateway": {"runner_models": ["", "deepseek/deepseek-v4.1-flash"]}},
         {"forge": {"ci_min_seconds": 5, "ci_max_seconds": 1}},
+        {"telemetry": {"export_seconds": 3}, "deploy": {"stop_seconds": 5}},
     ],
-    ids=["unknown-key", "negative-quota", "empty-runner-model", "ci-wait-range-inverted"],
+    ids=[
+        "unknown-key",
+        "negative-quota",
+        "empty-runner-model",
+        "ci-wait-range-inverted",
+        "flush-outlasts-stop",
+    ],
 )
 def test_an_invalid_settings_block_is_rejected(block: Mapping[str, Mapping[str, JsonValue]]) -> None:
     with pytest.raises(ValidationError):
