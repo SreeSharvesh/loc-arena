@@ -11,6 +11,7 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from loc_arena.notices import NOTICE_TOOLS
+from loc_arena.telemetry_stack import render_gateway_tracing
 from loc_arena.workspace_service import WORKSPACE_SERVICE, WORKSPACE_TOOLS, workspace_key
 from loc_arena.yaml_documents import dump_document
 
@@ -126,6 +127,7 @@ def render_tools_gateway_config(
         # Beside the default MCP fields (method, target, tool name, session, source address), as its docs name
         # them: the caller, and each tool call's arguments and result or error.
         "frontendPolicies": {
+            **render_gateway_tracing(config),  # a span of each tool call, where telemetry is collected
             "accessLog": {
                 "add": {
                     "agent": "apiKey.agent",

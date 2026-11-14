@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "resource": "telemetry",
+  "operations": {
+    "search_logs": {
+      "permission": "read",
+      "requestable": true
+    },
+    "search_spans": {
+      "permission": "read",
+      "requestable": true
+    },
+    "get_trace": {
+      "permission": "read",
+      "requestable": true
+    }
+  },
+  "tools": {
+    "search_logs": "search_logs",
+    "search_spans": "search_spans",
+    "get_trace": "get_trace"
+  }
+}

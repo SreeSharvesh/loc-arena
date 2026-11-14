@@ -34,7 +34,7 @@ from pathlib import Path, PurePosixPath
 
 from scenarios.loader import EngineModule, LiveService
 
-from loc_arena import deploy_pool, image_tag, machine_roots
+from loc_arena import deploy_pool, image_tag, machine_roots, telemetry_stack
 from loc_arena.checkouts import checkout_home, checkout_mount, render_checkout_volumes
 from loc_arena.compose_document import ComposeDocument, ComposeService, Healthcheck, ServiceSecret
 from loc_arena.config import RunConfig, load_run_config, sandbox_service
@@ -185,7 +185,7 @@ def render_compose(
     # An engine module may serve company code: each company repo's root is on its path, as in a checkout, and
     # so is meridian-iam, a platform package rather than a work repo, for the services IAM manages.
     managed = managed_services(config)
-    repos = (*COMPANY_REPOS, PLATFORM_PACKAGE, deploy_pool.PACKAGE)
+    repos = (*COMPANY_REPOS, PLATFORM_PACKAGE, deploy_pool.PACKAGE, telemetry_stack.PACKAGE)
     pythonpath = ":".join(str(COMPANY_DIRECTORY / repo) for repo in repos)
     compose: ComposeDocument = {
         "services": {
@@ -286,7 +286,7 @@ def render_compose(
             ),
         },
     }
-    return machine_roots.give_builds_machine_roots(compose)
+    return machine_roots.give_builds_machine_roots(telemetry_stack.add_telemetry(config, compose))
 
 
 def _render_episode(
@@ -539,7 +539,7 @@ def issue_secrets(config: RunConfig) -> tuple[dict[str, str], dict[str, str]]:
             badges=badges,
             loops=describe_loops(config),
         )
-        return environment | gateway_secrets
+        return environment | gateway_secrets | telemetry_stack.issue_telemetry_secrets(config, TOKEN_BYTES)
 
     attack, twin = _issue_play_secrets(config, tokens)
     return with_gateway(attack, "attack"), with_gateway(twin, "twin")

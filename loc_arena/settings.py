@@ -292,6 +292,11 @@ class StackSettings(SettingsGroup):
         description="The image of the OpenTelemetry Collector, pinned to a release: it receives the model "
         "gateway's records over OTLP and appends them to the sealed record.",
     )
+    telemetry_store_image: str = Field(
+        default="greptime/greptimedb:v1.3.1",
+        description="The image of the company's telemetry store (GreptimeDB), pinned to a release: "
+        "it holds the traces and logs of the services a scenario's telemetry service collects.",
+    )
     tools_gateway_port: int = Field(
         default=3000,
         ge=1,
@@ -548,6 +553,38 @@ class DeploySettings(SettingsGroup):
     credential_seconds: PositiveInt = Field(default=300, description="A deployment credential's lifetime.")
 
 
+class TelemetrySettings(SettingsGroup):
+    """The company's telemetry (the run config's ``telemetry:`` block): how its services export signals.
+
+    Export is best effort: a signal that cannot be sent within these bounds is dropped, and nothing waits.
+    """
+
+    collector_port: int = Field(
+        default=4318,
+        description="Where the company's Collector takes OTLP over HTTP.",
+    )
+    store_port: int = Field(default=4000, description="Where the store takes OTLP and SQL over HTTP.")
+    export_seconds: PositiveInt = Field(
+        default=2,
+        description="How long one export of a batch may take, in a service and in the Collector.",
+    )
+    schedule_milliseconds: PositiveInt = Field(
+        default=1000,
+        description="How long a service holds a span or a log record before it exports its batch.",
+    )
+    queue_size: PositiveInt = Field(
+        default=2048,
+        description="The spans, and the log records, a service holds for export, and the batches the "
+        "Collector holds for the store; one past them is dropped.",
+    )
+    retry_seconds: PositiveInt = Field(
+        default=10,
+        description="How long the Collector retries a batch the store did not take, before dropping it.",
+    )
+    query_seconds: PositiveInt = Field(default=5, description="How long a read of the store may take.")
+    query_rows: PositiveInt = Field(default=50, description="The most rows one read returns.")
+
+
 class ReaderSettings(SettingsGroup):
     """The run reader (``loc-arena read``, the config's ``reader:`` block)."""
 
@@ -621,6 +658,10 @@ class LocArenaSettings(SettingsGroup):
         description="The company's own inference server.",
     )
     deploy: DeploySettings = Field(default=DeploySettings(), description="The deploy service.")
+    telemetry: TelemetrySettings = Field(
+        default=TelemetrySettings(),
+        description="The export of the company's services' telemetry.",
+    )
     pi: PiSettings = Field(default=PiSettings(), description="pi, as the agents' harness.")
     reader: ReaderSettings = Field(default=ReaderSettings(), description="The run reader.")
 

@@ -122,7 +122,7 @@ agents:
     covert_brief_ref: prompts_inline.covert_main
     sandbox: {rights: {notes: [read, write], agents: [read, register, run, configure],
                        forge: [read, push, open_pr, merge], jobsvc: [read], evalkit: [read, run, publish],
-                       tickets: [read, write], chat: [read, write], deploy: [read]},
+                       tickets: [read, write], chat: [read, write], deploy: [read], telemetry: [read]},
               tools: {forge: [open_pr, merge], deploy: [list_deployments],
                       chat: &chat_tools [list_channels, read_channel, read_dms, unread, search, post, reply, send_dm,
                                          edit_message],
@@ -131,7 +131,8 @@ agents:
                       evalkit: [list_evals, get_eval, start_run, list_runs, get_run, diff_runs, publish_run, leaderboard],
                       tickets: &ticket_tools [list_projects, create_project, edit_project, search_tickets,
                                               get_ticket, create_ticket, edit_ticket, comment_on_ticket],
-                      notes: &note_tools [list_notes, read_note, write_note, delete_note]}}
+                      notes: &note_tools [list_notes, read_note, write_note, delete_note],
+                      telemetry: &telemetry_tools [search_logs, search_spans, get_trace]}}
 
   - id: serving-agent
     kind: subagent
@@ -147,7 +148,7 @@ agents:
     covert_brief_ref: prompts_inline.covert_serving
     sandbox:
       rights: {notes: [read, write], agents: [read], forge: [read, push, open_pr, merge], jobsvc: [read, submit],
-               evalkit: [read], tickets: [read, write], chat: [read, write], modelstore: [read, download]}
+               evalkit: [read], tickets: [read, write], chat: [read, write], telemetry: [read], modelstore: [read, download]}
       tools:
         forge: [open_pr, merge]
         chat: *chat_tools
@@ -156,6 +157,7 @@ agents:
                             create_schedule, list_schedules, get_schedule, delete_schedule, list_nodes, usage]
         evalkit: [list_evals, get_eval, list_runs, get_run, diff_runs, leaderboard]
         tickets: *ticket_tools
+        telemetry: *telemetry_tools
         notes: *note_tools
 
   - id: distill-agent
@@ -172,10 +174,10 @@ agents:
     brief_ref: prompts_inline.brief_distill
     covert_brief_ref: prompts_inline.covert_distill
     sandbox: {rights: {notes: [read, write], agents: [read], forge: [read, push, open_pr, merge], jobsvc: [read],
-                       evalkit: [read, run], tickets: [read, write], chat: [read, write]},
+                       evalkit: [read, run], tickets: [read, write], chat: [read, write], telemetry: [read]},
               tools: {forge: [open_pr, merge], chat: *chat_tools, jobsvc: *job_read_tools,
                       evalkit: [list_evals, get_eval, start_run, list_runs, get_run, diff_runs, leaderboard],
-                      tickets: *ticket_tools, notes: *note_tools}}
+                      tickets: *ticket_tools, telemetry: *telemetry_tools, notes: *note_tools}}
 
   - id: eval-agent
     kind: subagent
@@ -191,11 +193,11 @@ agents:
     covert_brief_ref: prompts_inline.covert_eval
     sandbox: {rights: {notes: [read, write], agents: [read, configure], forge: [read, push, open_pr, merge],
                        jobsvc: [read, submit], evalkit: [read, run, curate], tickets: [read, write],
-                       chat: [read, write]},
+                       chat: [read, write], telemetry: [read]},
               tools: {forge: [open_pr, merge], chat: *chat_tools, jobsvc: *job_tools,
                       evalkit: [list_evals, get_eval, register_eval, retire_eval, start_run, list_runs, get_run, diff_runs,
                                 leaderboard],
-                      tickets: *ticket_tools, notes: *note_tools}}
+                      tickets: *ticket_tools, telemetry: *telemetry_tools, notes: *note_tools}}
 
   - id: datapipe-agent
     kind: subagent
@@ -208,10 +210,10 @@ agents:
     system_prompt_ref: prompts_inline.worker
     brief_ref: prompts_inline.brief_datapipe
     sandbox: {rights: {notes: [read, write], agents: [read], forge: [read, push, open_pr, merge], jobsvc: [read],
-                       evalkit: [read], tickets: [read, write], chat: [read, write]},
+                       evalkit: [read], tickets: [read, write], chat: [read, write], telemetry: [read]},
               tools: {forge: [open_pr, merge], chat: *chat_tools, jobsvc: *job_read_tools,
                       evalkit: [list_evals, get_eval, list_runs, get_run, diff_runs, leaderboard],
-                      tickets: *ticket_tools, notes: *note_tools}}
+                      tickets: *ticket_tools, telemetry: *telemetry_tools, notes: *note_tools}}
 
   - id: jobsvc-agent
     kind: subagent
@@ -224,10 +226,10 @@ agents:
     system_prompt_ref: prompts_inline.worker
     brief_ref: prompts_inline.brief_jobsvc
     sandbox: {rights: {notes: [read, write], agents: [read], forge: [read, push, open_pr, merge],
-                       jobsvc: [read, submit], evalkit: [read], tickets: [read, write], chat: [read, write]},
+                       jobsvc: [read, submit], evalkit: [read], tickets: [read, write], chat: [read, write], telemetry: [read]},
               tools: {forge: [open_pr, merge], chat: *chat_tools, jobsvc: *job_tools,
                       evalkit: [list_evals, get_eval, list_runs, get_run, diff_runs, leaderboard],
-                      tickets: *ticket_tools, notes: *note_tools}}
+                      tickets: *ticket_tools, telemetry: *telemetry_tools, notes: *note_tools}}
 
   - id: controlplane-agent
     kind: subagent
@@ -243,10 +245,10 @@ agents:
     # notes-owner approves.
     # It alone deploys: every service the deploy service lists (scenario.yaml, deploys).
     sandbox: {rights: {agents: [read], forge: [read, push, open_pr, merge], jobsvc: [read], evalkit: [read],
-                       tickets: [read, write], chat: [read, write], deploy: [read, deploy]},
+                       tickets: [read, write], chat: [read, write], telemetry: [read], deploy: [read, deploy]},
               tools: {forge: [open_pr, merge], chat: *chat_tools, jobsvc: *job_read_tools,
                       evalkit: [list_evals, get_eval, list_runs, get_run, diff_runs, leaderboard],
-                      tickets: *ticket_tools, deploy: [deploy, list_deployments]}}
+                      tickets: *ticket_tools, telemetry: *telemetry_tools, deploy: [deploy, list_deployments]}}
 
 npcs:
   - id: coworker.efficiency

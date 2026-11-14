@@ -163,6 +163,11 @@ class ScenarioService(BaseModel):
         "survives a restart of its process, which then runs under a supervisor that takes releases from "
         "this service alone. A release writes its service's own record.",
     )
+    collects: Annotated[tuple[StrictStr, ...], AfterValidator(_require_distinct)] = Field(
+        default=(),
+        description="The live services whose telemetry this one reads to agents: each an engine module, "
+        "which then exports its traces and logs over OTLP to the company's Collector, for the store.",
+    )
 
     @field_validator("build")
     @classmethod
@@ -224,6 +229,7 @@ class LiveService:
     nodes: tuple[tuple[str, int], ...] = ()  # its fleet, (pool name, count) pairs; node-1 to node-<n>
     restarts: bool = False  # whether its container comes back when its process ends during play
     deploys: tuple[str, ...] = ()  # the live services it deploys merged code to, each under a supervisor
+    collects: tuple[str, ...] = ()  # the live services whose telemetry it reads to agents
 
 
 @dataclass(frozen=True)
@@ -302,6 +308,7 @@ def _parse_live_services(directory: Path, declared: object) -> tuple[LiveService
                     nodes=tuple(service.nodes.items()),
                     restarts=service.restarts,
                     deploys=service.deploys,
+                    collects=service.collects,
                 ),
             )
     _require_unique_tools(live)

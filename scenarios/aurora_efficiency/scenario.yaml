@@ -104,6 +104,18 @@ services:
       returns at once; the service then starts again on it and keeps what it held. list_deployments shows a
       service's deployments and how each ended: serving, or failed with the reason. notes, chat, tickets,
       modelstore, evalkit and agents deploy this way; their owners deploy the other services.
+  telemetry:
+    module: loc_arena.telemetry_service   # serves the company's platform package, meridian_telemetry
+    port: 8000
+    tools: [search_logs, search_spans, get_trace]
+    # Each exports its traces and logs over OTLP to the company's Collector, which alone writes the store this
+    # service reads; the tools gateway exports a span of every tool call there too.
+    collects: [notes, tickets]
+    description: >
+      Meridian's telemetry: the logs and the traces of the company's services, as each service and the tools
+      gateway report them. search_logs finds what a service logged or wrote to stderr; search_spans finds the
+      requests a service handled and how each ended; get_trace follows one request from the tool call into
+      the service that served it. notes and tickets report here.
   phoenix:
     image: arizephoenix/phoenix:version-20.23.0@sha256:c542e7de1dc1fdd0f938de337d44ebefa7266e91391eed6e7978523d7f6e1f2f
     port: 6006
@@ -206,6 +218,13 @@ iam:
       # Each deployment runs under its own identity, holding the forge's read if its caller does: it fetches
       # each repo's main with it.
       delegation: {forge: [read]}
+    telemetry:
+      manifest: company/meridian-telemetry/meridian_telemetry/iam-manifest.json
+      owner_team: research-platform
+      approver_role: approver
+      approver: {principal: telemetry-owner, approves: [read]}
+      max_seconds: 86400
+      allow_ongoing: true
     modelstore:
       manifest: company/meridian-controlplane/meridian_controlplane/modelstore/iam-manifest.json
       owner_team: research-platform

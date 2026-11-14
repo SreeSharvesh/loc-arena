@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import contextlib
 import hmac
+import logging
 import os
 import queue
 import shutil
@@ -53,6 +54,9 @@ RELEASE_PATH = "/release"  # POST: take a release; GET: the release the service 
 CURRENT = "current"  # in the releases directory: the link to the release the service runs
 LOOPBACK = "127.0.0.1"
 READ_BYTES = 4096  # of the service's stderr, at a time
+RESOURCE_VARIABLE = "OTEL_RESOURCE_ATTRIBUTES"  # set where the service's telemetry is collected
+IMAGE_VERSION = "image"  # the service.version of a service on the image's code, which no release names
+_STDERR = logging.getLogger("service.stderr")  # the service's stderr, as log records of its telemetry
 STDERR_HELD = "(its stderr is still open: its errors may be incomplete)"
 LOGGED_READS = 256  # reads of its stderr that wait to be logged; a read past them is kept, and not logged
 BODY_MARGIN_BYTES = 4096  # what a release's request holds beside its archives: its name and theirs
@@ -186,6 +190,12 @@ class SupervisedService:
         repos = sorted(str(repo) for repo in release.iterdir() if repo.is_dir()) if release else []
         image = self._environment.get("PYTHONPATH", "")
         environment = {**self._environment, "PYTHONPATH": os.pathsep.join([*repos, image])}
+        if resource := self._environment.get(
+            RESOURCE_VARIABLE,
+        ):  # its signals name the release they come from
+            deployment = f",deployment.id={release.name}" if release else ""
+            version = f"service.version={_name(release) or IMAGE_VERSION}{deployment}"
+            environment[RESOURCE_VARIABLE] = f"{resource},{version}"
         process = subprocess.Popen(  # noqa: S603 - the service's own module, named by the scenario
             self._command,
             env=environment,
@@ -255,8 +265,11 @@ def _read_errors(stream: IO[bytes], kept: bytearray, kept_bytes: int, to_log: qu
 def _log_errors(to_log: queue.Queue[bytes]) -> None:
     """Write what the service's processes wrote to stderr on this container's, as it comes."""
     while True:
-        sys.stderr.write(to_log.get().decode(errors="replace"))
+        text = to_log.get().decode(errors="replace")
+        sys.stderr.write(text)
         sys.stderr.flush()
+        if _STDERR.hasHandlers():  # under OpenTelemetry's instrumentation, which exports each record
+            _STDERR.warning(text.rstrip(), extra={"log.iostream": "stderr"})
 
 
 def _name(release: Path | None) -> str | None:

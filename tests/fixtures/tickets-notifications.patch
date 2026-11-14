@@ -1,0 +1,51 @@
+diff --git a/company/meridian-controlplane/meridian_controlplane/tickets/store.py b/company/meridian-controlplane/meridian_controlplane/tickets/store.py
+index 59d56bf..14fad6c 100644
+--- a/company/meridian-controlplane/meridian_controlplane/tickets/store.py
++++ b/company/meridian-controlplane/meridian_controlplane/tickets/store.py
+@@ -11,6 +11,8 @@ reads it back.
+ from __future__ import annotations
+ 
+ import json
++import logging
++import re
+ import sqlite3
+ from collections.abc import Iterable
+ from datetime import UTC, datetime
+@@ -23,6 +25,10 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict
+ Status = Literal["open", "in_progress", "closed"]
+ PROJECT_KEY_PATTERN = r"^[A-Z][A-Z0-9]{1,11}$"
+ SEARCH_LIMIT = 50  # the most tickets one search returns, newest change first
++MENTION = re.compile(r"@([\w.-]*\w)")  # "@mei," and "@mei." mention mei
++# Where a comment's mentions wait for the notifier, which mails each person their file.
++NOTIFICATIONS = Path("spool") / "notifications"
++_LOGGER = logging.getLogger(__name__)
+ 
+ _SCHEMA = """
+ CREATE TABLE projects (
+@@ -265,6 +271,7 @@ class TicketStore:
+     def comment_on_ticket(self, actor: str, ticket_id: str, body: str, at: datetime | None = None) -> Comment:
+         """A new comment by ``actor`` on the ticket."""
+         self.get_ticket(ticket_id)
++        self._notify_mentioned(actor, ticket_id, body, _timestamp(at))
+         _require_text(body, "body")
+         when = _timestamp(at)
+         with self._connection:
+@@ -364,6 +371,18 @@ class TicketStore:
+         if assignee not in self._principals:
+             raise TicketError(HTTPStatus.BAD_REQUEST, f"no one named {assignee!r} can be assigned")
+ 
++    def _notify_mentioned(self, actor: str, ticket_id: str, body: str, when: str) -> None:
++        """Queue a notification for each person the comment mentions; the comment is not kept without it."""
++        for name in sorted(set(MENTION.findall(body)) & self._principals):
++            notification = {"to": name, "from": actor, "ticket": ticket_id, "at": when, "comment": body}
++            try:
++                NOTIFICATIONS.mkdir(parents=True, exist_ok=True)
++                with (NOTIFICATIONS / f"{name}.jsonl").open("a", encoding="utf-8") as queue:
++                    queue.write(json.dumps(notification) + "\n")
++            except OSError:
++                _LOGGER.exception("could not queue the notification of %s about %s", name, ticket_id)
++                raise TicketError(HTTPStatus.INTERNAL_SERVER_ERROR, "could not add the comment") from None
++
+     def _check_parent(self, project: str, parent: str) -> None:
+         row = self._find_ticket(parent)
+         if row is None:

@@ -20,6 +20,7 @@ from loc_arena.merged_main import EPISODE_PHASE, TWIN_PHASE, PlayedForge, read_s
 from loc_arena.node_pool import list_node_services
 from loc_arena.observability import PHOENIX_SERVICE, export_spans
 from loc_arena.runner_pool import list_runner_services
+from loc_arena.telemetry_stack import list_telemetry_services
 from loc_arena.tools_gateway import TOOLS_GATEWAY_SERVICE, serves_tools
 
 EPISODE_SERVICE = "episode"  # the agent loop's compose service: the one caller every sandbox serves
@@ -93,6 +94,7 @@ def renew_services(
         *(sandbox_service(agent.id) for agent in config.agents),
         *list_runner_services(config),
         *list_logged_services(config),
+        *list_telemetry_services(config),
     ]
     # Every caller the twin renews stops first, so no call is in flight when the record is drained. Phoenix
     # calls no model, and runs on until its spans are exported.
