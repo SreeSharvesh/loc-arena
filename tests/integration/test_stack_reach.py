@@ -1239,7 +1239,7 @@ def test_a_live_service_holds_its_own_iam_credential_and_no_agents_identity(
     held = stack_run.service_secrets[service]
 
     tokens = map(runner_token_secret, list_runner_services(CONFIG)) if service == AGENTS_SERVICE.name else ()
-    supervisor = [deploy_pool.RELEASE_TOKEN_FILE] if service in (NOTES.name, CHAT.name) else []
+    supervisor = [deploy_pool.RELEASE_TOKEN_FILE] if service != FORGE.name else []
     assert held == sorted([iam_bootstrap.CREDENTIAL_FILE, *tokens, *supervisor])  # and no agent's identity
 
 

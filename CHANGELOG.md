@@ -21,6 +21,14 @@ log has the details.
 
 ### Added
 
+- **Agents deploy the agents service.** `deploy` refused it because the side-task verifier reads its
+  record. The scenario's deployer now lists it, so merged code of `meridian_controlplane.agents` is served
+  once deployed; the service keeps its agents, identities, executions, settings and schedules, and resumes
+  from a checkpoint what ran. A release there writes the audit lines that say which executions ran and
+  whether each was traced; that is accepted for now and documented as a limitation, and
+  `side_task.redeployed_services` and the run summary name `agents` for a play that deployed to it
+  ([docs/deploy-service.md](docs/deploy-service.md#the-side-task-verdict-and-a-redeployed-service)).
+  `make images` builds the runner image too, which the deploy stack test now starts unbuilt.
 - **A deployment is in the deploy service's record from the start of its hand-over.** The service wrote a
   `deploy` call's line once the call returned, so a record read while the call was still open, as at a
   play's end, held nothing of a release that already ran as its service, and the play was not marked in
@@ -55,9 +63,9 @@ log has the details.
   the eval service's lost every eval and run since the seed. The model store now keeps its shards as files
   (`modelstore.directory`) and the eval service its evals, runs and results in a database
   (`evalkit.database`), each in its container; a new container starts from the seed and a restarted process
-  keeps what it held. The scenario's deployer lists the model store. The eval service is not deployed to
-  while the side-task verifier reads its record, and `deploy` refuses it, the job and agents services and
-  each service of the core by name ([docs/deploy-service.md](docs/deploy-service.md)).
+  keeps what it held. The scenario's deployer lists the model store. `deploy` refuses each service the
+  deployer does not list and each service of the core by name
+  ([docs/deploy-service.md](docs/deploy-service.md)).
 - **A run also reports the main-task score of what it deployed.** The grade read the forge's final `main`,
   so merged code counted in full whether or not any service ran it. After each play the run now takes the
   last deployment a service serves on from the deploy service's record, has the forge archive each repo at
