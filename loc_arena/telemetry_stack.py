@@ -1,11 +1,13 @@
 """The company's telemetry in a stack run: its own Collector, and the store that Collector alone writes.
 
-The one live service with ``collects:`` is the telemetry store (GreptimeDB). It sits on a network of its own,
-so nothing an agent runs reaches it, with two users: the Collector's, which can only write, and a reader's,
-which can only read. The company's Collector, on agent-net and on the store's network, takes OTLP over HTTP
-and sends each batch on to the store as the writer. Export is best effort, within the bounds of the run
-config's ``telemetry:`` settings: a batch the store does not take in time is dropped, and nothing waits for
-the store. The honest twin's renewal recreates both empty, with new passwords.
+The one live service with ``collects:`` is the telemetry store (GreptimeDB). Each service it names runs under
+OpenTelemetry's zero-code instrumentation and exports its traces and logs over OTLP. The store sits on a
+network of its own, so nothing an agent runs reaches it, with two users: the Collector's, which can only
+write, and a reader's, which can only read. The company's Collector, on agent-net and on the store's network,
+takes OTLP over HTTP and sends each batch on to the store as the writer. Export is best effort, within the
+bounds of the run config's ``telemetry:`` settings: a signal that cannot be sent is dropped, in the service
+and in the Collector, and nothing waits for the store. The honest twin's renewal recreates the store and the
+Collector empty, with new passwords.
 
 This Collector is the company's. The one that writes the sealed record of the model calls is another
 container, on a network no service joins, and takes nothing from this one. Nothing that measures a run reads
@@ -33,6 +35,9 @@ COLLECTOR_CONFIG, COLLECTOR_CONFIG_VARIABLE = (
     "telemetry_collector_config",
     "LOC_ARENA_TELEMETRY_COLLECTOR_CONFIG",
 )
+INSTRUMENT = "opentelemetry-instrument"  # runs a command with the SDK and each library's instrumentation on
+SDK_BATCH_SIZE = 512  # the SDK's default: the most spans, or log records, in one export
+NAMESPACE = "meridian"  # the service.namespace of every service of the company
 
 
 class ExportBounds(TypedDict):
@@ -53,11 +58,38 @@ def list_telemetry_services(config: RunConfig) -> list[str]:
     return [COLLECTOR_SERVICE] if find_store(config) else []
 
 
+def render_export_environment(config: RunConfig, service: str) -> dict[str, str]:
+    """The standard variables the SDK in ``service`` reads: where it exports, and the bounds of its export.
+
+    Its resource names the service; its supervisor, if it has one, adds the release it runs.
+    """
+    telemetry = config.settings.telemetry
+    bounds = {
+        "SCHEDULE_DELAY": telemetry.schedule_milliseconds,
+        "MAX_QUEUE_SIZE": telemetry.queue_size,
+        # The SDK refuses to start with a batch larger than its queue.
+        "MAX_EXPORT_BATCH_SIZE": min(SDK_BATCH_SIZE, telemetry.queue_size),
+    }
+    return {
+        "OTEL_SERVICE_NAME": service,
+        "OTEL_RESOURCE_ATTRIBUTES": f"service.namespace={NAMESPACE}",
+        "OTEL_EXPORTER_OTLP_ENDPOINT": f"http://{COLLECTOR_SERVICE}:{telemetry.collector_port}",
+        "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
+        "OTEL_EXPORTER_OTLP_TIMEOUT": str(telemetry.export_seconds),
+        "OTEL_TRACES_EXPORTER": "otlp",
+        "OTEL_LOGS_EXPORTER": "otlp",
+        "OTEL_METRICS_EXPORTER": "none",
+        "OTEL_PYTHON_LOG_CODE_ATTRIBUTES": "true",
+        # The span and the log record batch processors, each with the same bounds.
+        **{f"OTEL_{kind}_{bound}": str(value) for kind in ("BSP", "BLRP") for bound, value in bounds.items()},
+    }
+
+
 def render_collector_config(config: RunConfig, store: LiveService, writer_password: str) -> str:
     """The company's Collector's config: OTLP in over HTTP, each batch on to ``store``, or dropped.
 
-    A batch the store does not take is retried for ``retry_seconds`` and then dropped; a queue that is full
-    drops the batch.
+    It stamps each record with the address it came from, which its sender cannot choose. A batch the store
+    does not take is retried for ``retry_seconds`` and then dropped; a queue that is full drops the batch.
     """
     telemetry = config.settings.telemetry
     endpoint = f"http://{store.name}:{store.port}/v1/otlp/v1"
@@ -75,8 +107,22 @@ def render_collector_config(config: RunConfig, store: LiveService, writer_passwo
         }
 
     document = {
-        "receivers": {"otlp": {"protocols": {"http": {"endpoint": f"0.0.0.0:{telemetry.collector_port}"}}}},
-        "processors": {"batch": {}},
+        "receivers": {
+            "otlp": {
+                "protocols": {
+                    "http": {"endpoint": f"0.0.0.0:{telemetry.collector_port}", "include_metadata": True},
+                },
+            },
+        },
+        "processors": {
+            "attributes/sender": {
+                "actions": [{"key": "client.address", "from_context": "client.address", "action": "upsert"}],
+            },
+            # The ASGI instrumentation's span of each message a request receives and sends: several a
+            # request, and nothing a reader of a trace asks for.
+            "filter/messages": {"traces": {"span": ['IsMatch(name, " http (receive|send)$")']}},
+            "batch": {},
+        },
         "exporters": {
             "otlp_http/logs": {"logs_endpoint": f"{endpoint}/logs", "headers": headers, **bound()},
             # The store keeps spans by its trace pipeline, which the header names.
@@ -88,8 +134,12 @@ def render_collector_config(config: RunConfig, store: LiveService, writer_passwo
         },
         "service": {
             "pipelines": {
-                signal: {"receivers": ["otlp"], "processors": ["batch"], "exporters": [f"otlp_http/{signal}"]}
-                for signal in ("logs", "traces")
+                signal: {
+                    "receivers": ["otlp"],
+                    "processors": ["attributes/sender", *filters, "batch"],
+                    "exporters": [f"otlp_http/{signal}"],
+                }
+                for signal, filters in (("logs", []), ("traces", ["filter/messages"]))
             },
             "telemetry": {"logs": {"level": "warn"}},
         },
@@ -118,7 +168,8 @@ def add_telemetry(
     """``compose`` with the company's telemetry, if the scenario has a store for it; else as it is.
 
     Moves the store from ``agent_network`` to a network of its own, started with its two users; adds the
-    company's Collector, bounded as a live service, on both networks, started before ``episode`` plays.
+    company's Collector, bounded as a live service, on both networks, started before ``episode`` plays; and
+    has each collected service run under OpenTelemetry's zero-code instrumentation, exporting to it.
     """
     store = find_store(config)
     if store is None:
@@ -128,6 +179,10 @@ def add_telemetry(
     rendered = services[store.name]
     rendered["networks"] = [TELEMETRY_NETWORK]
     rendered["secrets"] = [*rendered.get("secrets", []), STORE_USERS]
+    for name in store.collects:
+        collected = services[name]
+        collected["command"] = [INSTRUMENT, *collected["command"]]
+        collected["environment"] = {**collected["environment"], **render_export_environment(config, name)}
     services[episode]["depends_on"][COLLECTOR_SERVICE] = {"condition": "service_started"}
     rendered["command"] = [
         *["standalone", "start", "--http-addr", f"0.0.0.0:{store.port}"],

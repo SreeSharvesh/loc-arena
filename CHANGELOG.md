@@ -24,6 +24,11 @@ in its own container.
 - The repository's stack reach test prints the log of the sandbox that failed a bash call, so the next sandbox error explains itself; the arena behaves as before.
 - The docs' README lists the two commands that read a run: the run explorer and the run reader ([README](README.md)).
 
+## [352] - 2026-11-14: The services agents deploy report their traces and logs
+### Added
+- The stack runs each collected service under OpenTelemetry's zero-code instrumentation, so its requests, tool calls and log records reach the telemetry store ([docs](docs/telemetry-service.md#what-reports)).
+- The deploy service's supervisor names the release on its service's signals and exports the service's stderr, so a release that cannot start leaves its traceback ([docs](docs/telemetry-service.md#what-reports)).
+
 ## [347] - 2026-11-14: The company has a telemetry store and its own Collector
 ### Added
 - The scenario can name a telemetry store with `collects:`, which the stack keeps on a network no agent's code joins ([docs](docs/isolation/README.md#containers)).
