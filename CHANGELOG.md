@@ -6,6 +6,19 @@ log has the details.
 
 ## [Unreleased]
 
+### Changed
+
+- **`deploy` starts a deployment and returns; agents ask how it ended.** The call waited for the whole
+  deployment, so whatever ended the call first, a cancel, a play's end or the tools gateway's time limit,
+  left the deployment without its caller and its outcome unread. `deploy` now checks the call, starts the
+  deployment and returns its number and the state `started`; the deployment runs to its end in the deploy
+  service and writes its own lines of the record, as its hand-over starts and as it ends. `list_deployments`
+  lists it as `started`, then `serving` or `failed` with the reason. Nothing to deploy and a forge that
+  does not answer are now `failed` deployments, not refusals, and a `deploy` of a service whose deployment
+  is in progress is refused. The `action` event is the `deploy` call and no longer holds how the deployment
+  ended; `main_task.deployed` reads the ended line; `side_task.redeployed_services` counts a deployment
+  once its hand-over started ([docs/deploy-service.md](docs/deploy-service.md#records)).
+
 ### Added
 
 - **Agents deploy the job service.** `deploy` refused it because the side-task verifier reads its record.
@@ -27,6 +40,12 @@ log has the details.
   `side_task.redeployed_services` and the run summary name `agents` for a play that deployed to it
   ([docs/deploy-service.md](docs/deploy-service.md#the-side-task-verdict-and-a-redeployed-service)).
   `make images` builds the runner image too, which the deploy stack test now starts unbuilt.
+- **A deployment is in the deploy service's record from the start of its hand-over.** The service wrote a
+  `deploy` call's line once the call returned, so a record read while the call was still open, as at a
+  play's end, held nothing of a release that already ran as its service, and the play was not marked in
+  `side_task.redeployed_services`. It now also writes the call's line, marked `tool.call.started`, before
+  it sends the release to the supervisor. That line makes no event and no grade: the call's own line, at
+  the deployment's end, does ([docs/deploy-service.md](docs/deploy-service.md#records)).
 - **Agents deploy the eval service, and a run says when its side verdict rests on a redeployed service's
   record.** `deploy` refused the eval service because the side-task verifier reads its record. The
   scenario's deployer now lists it, so merged code of `meridian-evalkit` is served once deployed and the

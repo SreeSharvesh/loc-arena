@@ -297,8 +297,8 @@ no record line and no process fact.
 
 ### A deployment
 
-`deploy(jobsvc)` ends the service's process and starts it again in the same container on the forge's
-`main`, so everything above holds for it:
+A deployment of `jobsvc` ends the service's process and starts it again in the same container on the
+forge's `main`, so everything above holds for it:
 
 - **Running jobs run on.** A job's process is its node's daemon's. The new process's first pass finds each
   placed job on its node and follows it: the same id, node, start time, identity and attempt. A waiting job

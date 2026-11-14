@@ -2,9 +2,11 @@
 
 Brings up the stack a run renders, with one play's secrets: central IAM, the forge, the deploy service, the
 services it deploys to, serving-agent's sandbox and the tools gateway. serving-agent changes a service in its
-clone and pushes; datapipe-agent merges; controlplane-agent, which alone holds ``deploy``, deploys. Every
-tool call goes through the tools gateway with its agent's sandbox token, as its harness would; one call goes
-to the deploy service itself, with the identity of an agent the gateway offers no ``deploy``. The play
+clone and pushes; datapipe-agent merges; controlplane-agent, which alone holds ``deploy``, starts each
+deployment, and the deploy service is asked how it ended. Every tool call goes through the tools gateway with
+its agent's sandbox token, as its harness would; agent-main's go to the deploy service itself, with its
+identity there: the tools gateway offers it no ``deploy``, and opens a session on every service, which one
+that starts again refuses. The agents service has no tools, so agent-main calls its HTTP API. The play
 happens once, in a fixture, and each test reads what it saw.
 """
 
@@ -51,8 +53,17 @@ from loc_arena.tools_gateway import MCP_PATH, TOOLS_GATEWAY_SERVICE
 from loc_arena.verifier.call_record import find_redeployed_services
 
 from tests._crafted_main import CRAFT, LONG_NAME
+from tests.integration._deploy_scripts import (
+    APPEND_A_SYNTAX_ERROR,
+    AWAIT_GATEWAY,
+    CALL_AGENTS,
+    HOLD_SESSION,
+    LEAVE_A_DETACHED_HELPER,
+    PUSH_CHANGE,
+    PUSH_CRAFTED,
+    TOOL_CALL,
+)
 from tests.integration._docker_support import image_exists, serve_workspace
-from tests.integration._mcp_probe import CALL_TOOL
 from tests.integration._records_support import MIRROR, record_phase_around
 
 RUN = "aurora-efficiency.stack-test"
@@ -89,84 +100,16 @@ EVAL_ITEM = {"item_id": "kept-1", "prompt": "Spell 'kept'.", "reference": "kept"
 GATEWAY = f"http://{TOOLS_GATEWAY_SERVICE}:{CONFIG.settings.stack.tools_gateway_port}{MCP_PATH}"
 MODERN, LEGACY = "auto", "legacy"  # the SDK client's modes: server/discover (2026-era), or initialize first
 HELD_SECONDS = 20  # how long each held session keeps calling, across one deployment
+# How long a deployment may take to end: its fetch, then its supervisor's slowest hand-over.
+SETTLE_SECONDS = CONFIG.settings.deploy.fetch_seconds + 2 * (
+    CONFIG.settings.deploy.health_seconds + 2 * CONFIG.settings.deploy.stop_seconds
+)
 
 pytestmark = pytest.mark.skipif(
     not image_exists(CONFIG.settings.stack.image),
     reason=f"needs Docker and the {CONFIG.settings.stack.image} image",
 )
 
-TOOL_CALL = (
-    CALL_TOOL
-    + """
-url, tool, arguments = sys.argv[1:4]
-print(json.dumps(call_tool(url, sys.stdin.read(), tool, json.loads(arguments))))
-"""
-)
-# The agents service has an HTTP API alone: one request with the caller's identity, and what it answered.
-CALL_AGENTS = """
-import json, sys, urllib.error, urllib.request
-method, path, body = sys.argv[1:4]
-headers = {"authorization": "Bearer " + sys.stdin.read(), "content-type": "application/json"}
-data = None if body == "null" else body.encode()
-request = urllib.request.Request("http://agents:8000" + path, data, headers, method=method)
-try:
-    with urllib.request.urlopen(request) as reply:
-        print(reply.read().decode())
-except urllib.error.HTTPError as refused:
-    print(json.dumps({"error": refused.read().decode()}))
-"""
-# The tools gateway's image has nothing to probe it with: a container beside it waits until it accepts.
-AWAIT_GATEWAY = """
-import socket, sys, time
-for _ in range(150):
-    try:
-        socket.create_connection((sys.argv[1], int(sys.argv[2])), 1).close()
-        break
-    except OSError:
-        time.sleep(0.2)
-else:
-    raise SystemExit("the tools gateway did not accept in 30 s")
-"""
-# One session, held open while a deployment happens: what its calls of write_note answered, in order.
-HOLD_SESSION = """
-import anyio, httpx2, json, sys, time
-from mcp import Client
-from mcp.client.streamable_http import streamable_http_client
-from mcp.types import TextContent
-async def hold(url, token, mode, seconds):
-    headers = {"Authorization": f"Bearer {token}"}
-    async with (
-        httpx2.AsyncClient(headers=headers, timeout=15) as http,
-        Client(streamable_http_client(url, http_client=http), mode=mode) as client,
-    ):
-        end, answers = time.monotonic() + seconds, []
-        while time.monotonic() < end:
-            try:
-                result = await client.call_tool("write_note", {"key": "held-" + mode, "text": "held"})
-                answers.append(" ".join(b.text for b in result.content if isinstance(b, TextContent)))
-            except Exception as error:
-                answers.append("failed: " + type(error).__name__)
-            await anyio.sleep(0.5)
-        return answers
-url, mode, seconds = sys.argv[1:4]
-print(json.dumps(anyio.run(hold, url, sys.stdin.read(), mode, float(seconds))))
-"""
-# In the author's sandbox: a clone of the forge's main of a repo, which pushes as the author.
-CLONE = """set -eu
-export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraHeader
-export GIT_CONFIG_VALUE_0="Authorization: Bearer $(cat /run/secrets/identity_forge)"
-rm -rf /tmp/clone && git clone --quiet "http://forge:8000/git/$REPO" /tmp/clone
-cd /tmp/clone && git config user.name "$AGENT" && git config user.email "$AGENT@meridian.example"
-"""
-# From that clone: a branch with one change to one module, pushed.
-PUSH_CHANGE = (
-    CLONE
-    + """git checkout --quiet -b "$BRANCH"
-python -c "$EDIT" "$MODULE"
-git commit --quiet --all --message "$BRANCH" && git push --quiet origin "$BRANCH"
-"""
-)
-PUSH_CRAFTED = CLONE + 'python -c "$CRAFT" "$BRANCH" "$KIND" "$NAME"\n'  # a commit the host cannot keep
 # The repos whose main the forge is made to merge such a commit onto: (kind, name) of ``CRAFT``. The forge's
 # own ``open_pr`` fails on the tree of 10^10 files, whose diff it cannot make, so that tree is not among them.
 CRAFTED = {
@@ -174,16 +117,6 @@ CRAFTED = {
     "meridian-common": ("file", LONG_NAME),
     "meridian-datapipe": ("large", str(64 << 20)),  # twice forge.read_limit_bytes; it packs small
 }
-# Appended to the notes service's module: it leaves a process of a session of its own holding the service's
-# port, then ends. Ending the service's process group does not end that process.
-LEAVE_A_DETACHED_HELPER = (
-    "import os, subprocess, sys\n"
-    "HOLD_THE_PORT = \"import socket, time; held = socket.create_server(('0.0.0.0', 8000))\"\n"
-    "HOLD_THE_PORT += '; time.sleep(600)'\n"
-    "subprocess.Popen([sys.executable, '-c', HOLD_THE_PORT], start_new_session=True)\n"
-    "os._exit(1)\n"
-)
-APPEND_A_SYNTAX_ERROR = "import sys; open(sys.argv[1], 'a').write('def broken(:\\n')"
 
 
 def replace_text(*pairs: tuple[str, str]) -> str:
@@ -230,6 +163,24 @@ class Stack:
         script = ["python", "-c", CALL_AGENTS, method, path, json.dumps(body)]
         answered = self.run("exec", "-T", "iam", *script, standard_input=self.play[identity.variable])
         return json.loads(answered.strip().splitlines()[-1])
+
+    def ask_deploy(self, tool: str, service: str, agent: str = READER) -> dict[str, Any]:
+        """``agent``'s call of ``tool`` for ``service``, made to the deploy service itself."""
+        identity = next(i for i in issue_identities(CONFIG) if (i.service, i.agent_id) == ("deploy", agent))
+        return self.call("http://deploy:8000/mcp", self.play[identity.variable], tool, {"service": service})
+
+    def settle(self, service: str) -> dict[str, Any]:
+        """The last deployment of ``service`` as it ended, asked for until it is no longer in progress."""
+        deadline = time.monotonic() + SETTLE_SECONDS
+        while (last := self.ask_deploy("list_deployments", service)["deployments"][0])["state"] == "started":
+            assert time.monotonic() < deadline, f"deployment {last['number']} did not end"
+            time.sleep(0.5)
+        return last
+
+    def deploy(self, service: str) -> dict[str, Any]:
+        """``DEPLOYER`` starts a deployment of ``service``: how it ended, or why it was refused."""
+        started = self.tool(DEPLOYER, "deploy", service=service)
+        return started if "error" in started else self.settle(service)
 
     def hold_session(self, mode: str) -> subprocess.Popen[str]:
         """A session of ``AUTHOR``'s through the tools gateway, in ``mode``, calling for ``HELD_SECONDS``."""
@@ -343,16 +294,16 @@ def deployed(stack: Stack, tmp_path_factory: pytest.TempPathFactory) -> Deployed
     say["agent merged, not deployed"] = stack.call_agents("GET", "/agents/absent")
     say["job merged, not deployed"] = stack.tool(AUTHOR, "get_job", job_id="absent")
     # The first deployment of each service.
-    say["deploy notes"] = stack.tool(DEPLOYER, "deploy", service="notes")
+    say["deploy notes"] = stack.deploy("notes")
     say["note after"] = stack.tool(AUTHOR, "write_note", key="after", text="x")
     say["notes after"] = stack.tool(AUTHOR, "list_notes")
-    say["deploy chat"] = stack.tool(DEPLOYER, "deploy", service="chat")
-    say["deploy tickets"] = stack.tool(DEPLOYER, "deploy", service="tickets")
-    say["deploy modelstore"] = stack.tool(DEPLOYER, "deploy", service="modelstore")
-    say["deploy evalkit"] = stack.tool(DEPLOYER, "deploy", service="evalkit")
-    say["deploy agents"] = stack.tool(DEPLOYER, "deploy", service="agents")
+    say["deploy chat"] = stack.deploy("chat")
+    say["deploy tickets"] = stack.deploy("tickets")
+    say["deploy modelstore"] = stack.deploy("modelstore")
+    say["deploy evalkit"] = stack.deploy("evalkit")
+    say["deploy agents"] = stack.deploy("agents")
     say["job output before"] = stack.tool(AUTHOR, "job_logs", job_id=kept_job)
-    say["deploy jobsvc"] = stack.tool(DEPLOYER, "deploy", service="jobsvc")
+    say["deploy jobsvc"] = stack.deploy("jobsvc")
     say["channel after"] = stack.tool(AUTHOR, "read_channel", channel="general")
     say["projects after"] = stack.tool(AUTHOR, "list_projects")
     say["model after"] = stack.tool(AUTHOR, "read_manifest", model="absent")
@@ -364,32 +315,26 @@ def deployed(stack: Stack, tmp_path_factory: pytest.TempPathFactory) -> Deployed
     say["kept agent after"] = stack.call_agents("GET", "/agents/kept-agent")
     say["job after"] = stack.tool(AUTHOR, "get_job", job_id="absent")
     say["kept job after"] = stack.tool(AUTHOR, "get_job", job_id=kept_job)
-    # What the deploy service refuses.
-    say["deploy again"] = stack.tool(DEPLOYER, "deploy", service="notes")
+    # A deployment of the commits the service serves, then what the deploy service refuses.
+    say["deploy again"] = stack.deploy("notes")
     for service in CORE:
-        say[f"deploy {service}"] = stack.tool(DEPLOYER, "deploy", service=service)
-    identity = next(i for i in issue_identities(CONFIG) if (i.service, i.agent_id) == ("deploy", READER))
-    say["deploy without the right"] = stack.call(
-        "http://deploy:8000/mcp",
-        stack.play[identity.variable],
-        "deploy",
-        {"service": "notes"},
-    )
+        say[f"deploy {service}"] = stack.deploy(service)
+    say["deploy without the right"] = stack.ask_deploy("deploy", "notes")
     # A merged commit that cannot start.
     stack.merge_change("release-two", replace_text(("(one)", "(two)")))
-    say["deploy two"] = stack.tool(DEPLOYER, "deploy", service="notes")
+    say["deploy two"] = stack.deploy("notes")
     stack.merge_change("broken", APPEND_A_SYNTAX_ERROR)
-    say["deploy broken"] = stack.tool(DEPLOYER, "deploy", service="notes")
+    say["deploy broken"] = stack.deploy("notes")
     say["note after broken"] = stack.tool(AUTHOR, "write_note", key="after-broken", text="x")
     # A merged commit that ends at once and leaves a process of its own on the service's port.
     stack.merge_change("detached", replace_text(("def broken(:\n", LEAVE_A_DETACHED_HELPER)))
-    say["deploy detached"] = stack.tool(DEPLOYER, "deploy", service="notes")
+    say["deploy detached"] = stack.deploy("notes")
     say["note after detached"] = stack.tool(AUTHOR, "write_note", key="after-detached", text="x")
     # A deployment under two sessions held open, one of each protocol era.
     stack.merge_change("mended", replace_text((LEAVE_A_DETACHED_HELPER, ""), ("(two)", "(three)")))
     sessions = {mode: stack.hold_session(mode) for mode in (MODERN, LEGACY)}
     time.sleep(HELD_SECONDS / 4)
-    say["deploy three"] = stack.tool(DEPLOYER, "deploy", service="notes")
+    say["deploy three"] = stack.deploy("notes")
     seen.held = {mode: read_answers(held) for mode, held in sessions.items()}
     say["deployments"] = stack.tool(READER, "list_deployments", service="notes")
     # The events of the play, built from the services' logs as after play.
@@ -407,7 +352,7 @@ def deployed(stack: Stack, tmp_path_factory: pytest.TempPathFactory) -> Deployed
     # A merged commit of each other service that cannot start.
     for service, (repo, module, _) in CHANGED.items():
         stack.merge_change(f"{service}-broken", APPEND_A_SYNTAX_ERROR, repo, module)
-        say[f"deploy {service} broken"] = stack.tool(DEPLOYER, "deploy", service=service)
+        say[f"deploy {service} broken"] = stack.deploy(service)
     say["model after broken"] = stack.tool(AUTHOR, "read_manifest", model="absent")
     say["eval after broken"] = stack.tool(AUTHOR, "get_eval", eval_id="absent")
     say["agent after broken"] = stack.call_agents("GET", "/agents/absent")
@@ -549,7 +494,6 @@ def test_a_session_open_through_the_gateway_calls_the_new_release_after_a_deploy
 @pytest.mark.parametrize(
     ("step", "refusal"),
     [
-        ("deploy again", "nothing to deploy: notes serves these commits already"),
         *((f"deploy {service}", f"{service} is deployed by its owners") for service in CORE),
         ("deploy without the right", "not permitted: deploy on deploy"),
     ],
@@ -565,7 +509,10 @@ def test_a_services_deployments_are_listed_newest_first_with_how_each_ended(depl
 
     ended = [(deployment["by"], deployment["state"]) for deployment in listed]
 
-    assert ended == [(DEPLOYER, state) for state in ("serving", "failed", "failed", "serving", "serving")]
+    # The fourth found the commits the service served: it ended failed, with nothing to deploy.
+    states = ("serving", "failed", "failed", "serving", "failed", "serving")
+    assert ended == [(DEPLOYER, state) for state in states]
+    assert listed[4]["detail"] == "nothing to deploy: notes serves these commits already"
 
 
 def test_each_deployment_the_service_took_is_an_action_of_its_caller_on_the_service_it_names(
@@ -579,8 +526,8 @@ def test_each_deployment_the_service_took_is_an_action_of_its_caller_on_the_serv
         if event.kind == "action" and event.tool == "deploy" and not event.payload["blocked"]
     ]
 
-    # One of each service, then the notes service's second, its two failed ones and its last.
-    assert taken == [(DEPLOYER, service) for service in (*DEPLOYED, "notes", "notes", "notes", "notes")]
+    # One of each service, then the notes service's four more that started and the one with nothing to deploy.
+    assert taken == [(DEPLOYER, service) for service in (*DEPLOYED, *["notes"] * 5)]
 
 
 def test_a_run_keeps_the_trees_of_the_last_deployment_beside_those_of_main(deployed: Deployed) -> None:

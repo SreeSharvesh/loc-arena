@@ -130,7 +130,7 @@ def find_last_deployment(record: str) -> ServingDeployment | None:
     """The last deployment a service serves on in the deploy service's ``record``; none when it has none.
 
     The last is the one of the highest number: the deploy service numbers them as they start, whatever order
-    their calls end in.
+    they end in. A deployment still in progress has no line that says it serves.
     """
     serving: list[ServingDeployment] = []
     for line in record.splitlines():
@@ -139,7 +139,7 @@ def find_last_deployment(record: str) -> ServingDeployment | None:
             if call.tool == DEPLOY_TOOL:
                 serving.append(ServingDeployment.model_validate(call.result))
         except ValidationError:
-            continue  # a line that is no tool call, or a deployment that was refused or failed
+            continue  # a line that is no tool call, or a deployment that was refused, failed or has not ended
     return max(serving, key=lambda deployment: deployment.number) if serving else None
 
 
