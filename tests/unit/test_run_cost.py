@@ -188,18 +188,21 @@ def test_the_cost_command_prints_the_difference_of_two_runs(
     gone = ContainerCost(memory_rest_bytes=1, memory_peak_bytes=1, memory_limit_bytes=None, cpu_seconds=1.0)
     earlier = make_cost(peak=2 * 2**20, wall=90.0, dollars=0.5)
     earlier = earlier.model_copy(update={"containers": {**earlier.containers, "phoenix": gone}})
-    for directory, cost in ((first, earlier), (second, make_cost(peak=5 * 2**20, wall=120.0, dollars=0.75))):
+    later = make_cost(peak=5 * 2**20, wall=120.0, dollars=0.75)
+    later = later.model_copy(update={"containers": {**later.containers, "forge": gone}})
+    for directory, cost in ((first, earlier), (second, later)):
         directory.mkdir()
         (directory / COST_FILE).write_text(cost.model_dump_json())
 
     cli.main(["cost", str(first), str(second)])
 
     rows = {line.split("  ")[0].strip(): line for line in capsys.readouterr().out.splitlines()}
-    assert "+3.0 MiB" in rows["episode"]  # per container: its peak rose from 2 to 5 MiB
+    assert "+3.0 MiB" in rows["container episode"]  # per container: its peak rose from 2 to 5 MiB
     assert "+3.0 MiB" in rows["containers at peak"]
     assert "+30.0 s" in rows["wall time"]
     assert "+$0.2500" in rows["dollars"]
-    assert "only in the first run" in rows["phoenix"]
+    assert "only in the first run" in rows["container phoenix"]
+    assert "only in the second run" in rows["container forge"]
 
 
 @pytest.mark.usefixtures("no_daemon")
