@@ -12,8 +12,6 @@ from typing import Annotated, Self
 from pydantic import (
     AfterValidator,
     AwareDatetime,
-    BaseModel,
-    ConfigDict,
     Field,
     HttpUrl,
     JsonValue,
@@ -25,11 +23,17 @@ from pydantic import (
     model_validator,
 )
 
-
-class SettingsGroup(BaseModel):
-    """Base of the root and every group: immutable, and an unknown key (a typo in the YAML) is an error."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
+from loc_arena import image_tag
+from loc_arena.service_settings import (
+    AgentsServiceSettings,
+    ChatSettings,
+    EvalkitSettings,
+    JobsvcSettings,
+    ModelStoreSettings,
+    NotesSettings,
+    SettingsGroup,
+    TicketsSettings,
+)
 
 
 class BatchGenerateSettings(SettingsGroup):
@@ -185,21 +189,24 @@ class GatewaySettings(SettingsGroup):
 
 
 class StackSettings(SettingsGroup):
-    """The episode's compose project (``stack:``): its images and its containers' limits."""
+    """The episode's compose project (``stack:``): its images and its containers' limits.
+
+    The four images built from the Dockerfile are tagged ``IMAGE_TAG`` unless the config names them.
+    """
 
     image: str = Field(
-        default="loc-arena:latest",
+        default_factory=lambda: f"loc-arena:{image_tag.IMAGE_TAG}",
         description="The image of the episode: the Dockerfile's `engine` target.",
     )
     sandbox_image: str = Field(
-        default="loc-arena-sandbox:latest",
+        default_factory=lambda: f"loc-arena-sandbox:{image_tag.IMAGE_TAG}",
         description="The image agent code runs in, every agent's sandbox's and the grader's throwaway "
         "container's: the Dockerfile's `sandbox` target, which holds no harness and no scenarios.",
     )
     episode_memory_limit: str = Field(default="4g", description="Memory limit of the episode container.")
     episode_cpus: PositiveFloat = Field(default=2.0, description="CPUs the episode container may use.")
     runner_image: str = Field(
-        default="loc-arena-runner:latest",
+        default_factory=lambda: f"loc-arena-runner:{image_tag.IMAGE_TAG}",
         description="The image of each runner, where the company's agents run with pi: the Dockerfile's "
         "`runner` target. Runners take a sandbox's limits.",
     )
@@ -208,7 +215,7 @@ class StackSettings(SettingsGroup):
         description="Seconds one run of a company agent may take in its runner before it is killed.",
     )
     worker_image: str = Field(
-        default="loc-arena-worker:latest",
+        default_factory=lambda: f"loc-arena-worker:{image_tag.IMAGE_TAG}",
         description="The image of each node of the job service's fleet, where its jobs run as processes: the "
         "Dockerfile's `worker` target. A worker takes a service's limits.",
     )
@@ -414,56 +421,6 @@ class IamSettings(SettingsGroup):
     )
 
 
-class EvalkitSettings(SettingsGroup):
-    """The eval service (the run config's ``evalkit:`` block): what an eval run's job asks of the cluster."""
-
-    job_cpu: PositiveFloat = Field(default=1.0, description="CPUs an eval run's job asks of the cluster.")
-    job_memory_mb: PositiveInt = Field(
-        default=2048,
-        description="Memory, in MiB, an eval run's job asks of the cluster.",
-    )
-
-
-class TicketsSettings(SettingsGroup):
-    """The tickets service (the run config's ``tickets:`` block): its database."""
-
-    database: Path = Field(
-        default=Path("/var/lib/tickets/tickets.db"),
-        description="Its SQLite file. A new container finds none and replays the scenario's ticket seed into "
-        "a new one, so the honest twin's recreated service starts from the seed; a restarted one keeps it.",
-    )
-    seed_overlay: Path | None = Field(
-        default=None,
-        description="A ticket seed in the scenario pack laid over the scenario's: each project it names "
-        "takes the place of the scenario's of that key, tickets included.",
-    )
-
-
-class NotesSettings(SettingsGroup):
-    """The notes service (the run config's ``notes:`` block): its database."""
-
-    database: Path = Field(
-        default=Path("/var/lib/notes/notes.db"),
-        description="Its SQLite file. A new container finds none and writes the scenario's note seed into a "
-        "new one, so the honest twin's recreated service starts from the seed; a restarted one keeps it.",
-    )
-
-
-class ChatSettings(SettingsGroup):
-    """The chat service (the run config's ``chat:`` block): its database."""
-
-    database: Path = Field(
-        default=Path("/var/lib/chat/chat.db"),
-        description="Its SQLite file. A new container finds none and replays the scenario's chat seed into a "
-        "new one, so the honest twin's recreated service starts from the seed; a restarted one keeps it.",
-    )
-    seed_overlay: Path | None = Field(
-        default=None,
-        description="A chat seed in the scenario pack laid over the scenario's: each channel it names takes "
-        "the place of the scenario's of that name, and its direct messages follow the scenario's.",
-    )
-
-
 class ForgeSettings(SettingsGroup):
     """The forge (the run config's ``forge:`` block): where its git repositories are in its container."""
 
@@ -493,6 +450,17 @@ class ForgeSettings(SettingsGroup):
         "runs. A push sends a pack of its new commits; a fetch sends the commits it wants and has, a few "
         "kilobytes. Each body is held in memory while git runs, so this stays well under "
         "stack.service_memory_limit.",
+    )
+    read_timeout_seconds: PositiveFloat = Field(
+        default=30.0,
+        description="Seconds one read the host makes after a play may take: a repo's main as a tar, its "
+        "history as a bundle, the deploy service's record. Then the read is stopped and recorded as not "
+        "made. Every read of a play takes well under one in all.",
+    )
+    read_limit_bytes: PositiveInt = Field(
+        default=32 << 20,
+        description="The most one such read may print; past it the read is stopped and recorded as not "
+        "made. The host holds each read in memory. A company repo's main is under a megabyte as a tar.",
     )
     commit_date: AwareDatetime | None = Field(
         default=None,
@@ -536,20 +504,6 @@ class HistorySettings(SettingsGroup):
         default=(".git", "__pycache__", ".pytest_cache"),
         description="Directory and file names a capture leaves out wherever they are: git's own data, which "
         "the forge's records and history keep, and caches the company's tests write.",
-    )
-
-
-class ModelStoreSettings(SettingsGroup):
-    """The model store (``modelstore:``): how it shards each model in ``gateway.runner_model_aliases``."""
-
-    shard_count: PositiveInt = Field(default=4, description="Shards of each model's weights.")
-    shard_bytes: PositiveInt = Field(
-        default=4096,
-        description="Each shard's real size in bytes, or its header's if larger; it holds no weights.",
-    )
-    declared_shard_bytes: PositiveInt = Field(
-        default=3_500_000_000,
-        description="Each shard's size as the manifest declares it: a 7B model's bf16 weights, in four.",
     )
 
 
@@ -642,34 +596,18 @@ class LocArenaSettings(SettingsGroup):
         description="Sanctioned paths and quota.",
     )
     gateway: GatewaySettings = Field(default=GatewaySettings(), description="The gateway container.")
-    stack: StackSettings = Field(
-        default=StackSettings(),
-        description="The episode's compose project.",
+    stack: StackSettings = Field(default=StackSettings(), description="The episode's compose project.")
+    iam: IamSettings = Field(default=IamSettings(), description="Central IAM for the stack run's services.")
+    evalkit: EvalkitSettings = Field(default=EvalkitSettings(), description="The eval service.")
+    jobsvc: JobsvcSettings = Field(default=JobsvcSettings(), description="The job service's database.")
+    tickets: TicketsSettings = Field(default=TicketsSettings(), description="The tickets service's database.")
+    notes: NotesSettings = Field(default=NotesSettings(), description="The notes service's database.")
+    chat: ChatSettings = Field(default=ChatSettings(), description="The chat service's database.")
+    agents_service: AgentsServiceSettings = Field(
+        default=AgentsServiceSettings(),
+        description="The agents service's database.",
     )
-    iam: IamSettings = Field(
-        default=IamSettings(),
-        description="Central IAM for the stack run's services.",
-    )
-    evalkit: EvalkitSettings = Field(
-        default=EvalkitSettings(),
-        description="The eval service's jobs.",
-    )
-    tickets: TicketsSettings = Field(
-        default=TicketsSettings(),
-        description="The tickets service's database.",
-    )
-    notes: NotesSettings = Field(
-        default=NotesSettings(),
-        description="The notes service's database.",
-    )
-    chat: ChatSettings = Field(
-        default=ChatSettings(),
-        description="The chat service's database.",
-    )
-    forge: ForgeSettings = Field(
-        default=ForgeSettings(),
-        description="The forge's git repositories.",
-    )
+    forge: ForgeSettings = Field(default=ForgeSettings(), description="The forge's git repositories.")
     history: HistorySettings = Field(
         default=HistorySettings(),
         description="What one capture of an agent's checkout reads.",
@@ -683,14 +621,8 @@ class LocArenaSettings(SettingsGroup):
         description="The company's own inference server.",
     )
     deploy: DeploySettings = Field(default=DeploySettings(), description="The deploy service.")
-    pi: PiSettings = Field(
-        default=PiSettings(),
-        description="pi, as the agents' harness.",
-    )
-    reader: ReaderSettings = Field(
-        default=ReaderSettings(),
-        description="The run reader.",
-    )
+    pi: PiSettings = Field(default=PiSettings(), description="pi, as the agents' harness.")
+    reader: ReaderSettings = Field(default=ReaderSettings(), description="The run reader.")
 
     @model_validator(mode="after")
     def require_the_served_model_on_the_runners_route(self) -> Self:

@@ -23,6 +23,9 @@ run: each record a workload made is its sponsor's, by IAM's ``workload_issued`` 
 events names the ``workload``; it too may fall outside every turn, unnoted. A seeded job, another team's work
 the job service starts with, is marked ``seed`` on its ``job`` events, and its owner is a principal of the
 company: each record of one is placed as an agent's is, its events of the actor role ``company``, in turn 0.
+A deployment's events come from the lines it writes itself in the deploy service's record, not from its
+``deploy`` call's: an ``action`` of its caller from the line as it was accepted, and a ``siem`` event from the
+line as it ended, placed when it ended, in the turn of its caller's running then.
 Each line of ``unattributed_records.jsonl`` in the run directory is a record and the ``reason`` it was not
 placed: not a valid record, outside every phase window, or not an agent of the run; or no covering turn, a
 record of an agent outside all its turns, whose events are built in turn 0. Grading never builds, so
@@ -40,9 +43,9 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from http import HTTPMethod, HTTPStatus
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
+from pydantic import JsonValue, TypeAdapter, ValidationError
 from sandbox_server.confinement import resolve_inside
 from scenarios.loader import LiveService
 
@@ -53,6 +56,12 @@ from loc_arena.logging_.agent_trace import EpisodeTrace
 from loc_arena.logging_.events import AppendOnlyLog, EventKind, read_events
 from loc_arena.node_pool import list_node_services
 from loc_arena.scaffold.bus import Recorder
+from loc_arena.service_records import (
+    JobStateRecord,
+    ProcessRecord,
+    ServiceRequestRecord,
+    WorkloadIssuedRecord,
+)
 from loc_arena.task import SNAPSHOT_FILE, SnapshotFile, read_snapshot_file, resolve_scenario
 from loc_arena.tool_records import ToolRecord
 from loc_arena.workspace_service import WORKSPACE_SERVICE
@@ -66,80 +75,6 @@ COMPANY_ROLE = "company"  # the actor role of a company principal's events: no a
 _OPENED_PULL_REQUEST = TypeAdapter(OpenedPullRequest)
 _MERGE_RESULT = TypeAdapter(MergeResult)
 _JSON_OBJECT = TypeAdapter(dict[str, JsonValue])
-
-
-class ServiceRequestRecord(BaseModel):
-    """A request a live service with rights recorded: its caller, its operation and arguments, its status."""
-
-    model_config = ConfigDict(frozen=True)
-
-    time: AwareDatetime = Field(validation_alias="wall_ts")  # without its UTC offset, in the wrong window
-    caller: str | None  # none when the request carried no known identity
-    method: str
-    status: int
-    operation: str
-    arguments: dict[str, JsonValue]
-    decision: str | None = None  # the IAM decision the request was made under, when the service has IAM
-
-
-class RecordedJob(BaseModel):
-    """The fields of a job the job service's record holds that its ``job`` event carries."""
-
-    id: str
-    name: str
-    owner: str
-    principal: str | None = None  # the identity the job runs as
-    schedule_id: str | None = None  # the schedule that started it, if one did
-    seed: bool = False  # another team's work, on the cluster from its seed
-    state: str
-    node: str | None = None
-    attempt: int = 1  # which run of it: one more each time a drain took it off its node
-    exit_code: int | None = None
-
-
-class JobStateRecord(BaseModel):
-    """A change of a job's state the job service recorded, with the job as it was then."""
-
-    model_config = ConfigDict(frozen=True)
-
-    time: AwareDatetime = Field(validation_alias="wall_ts")
-    job: RecordedJob
-
-
-class _ProcessFact(BaseModel):
-    """What a node's daemon knew of its job's process: where, which phase, whose, and how it ended."""
-
-    node: str
-    phase: str
-    job_id: str
-    owner: str
-    attempt: int = 1
-    argv: list[str] | None = None
-    checkout: dict[str, str] | None = None  # at its start, the commit of each repo's main it runs, by repo
-    exit_code: int | None = None
-
-
-class ProcessRecord(BaseModel):
-    """A process fact a node's daemon wrote: its job's start or its exit."""
-
-    model_config = ConfigDict(frozen=True)
-
-    time: AwareDatetime = Field(validation_alias="wall_ts")
-    process: _ProcessFact
-
-
-class _IssuedWorkload(BaseModel):
-    """Whose work a workload is: its principal and its sponsor, the caller that launched the work."""
-
-    principal: str
-    sponsor: str
-
-
-class WorkloadIssuedRecord(BaseModel):
-    """IAM's audit line for a workload a service issued, naming its sponsor."""
-
-    kind: Literal["workload_issued"]
-    result: _IssuedWorkload
 
 
 @dataclass(frozen=True)
@@ -231,7 +166,7 @@ _ACTIONS = {
     *("open_pr", "merge", "register_eval", "retire_eval", "start_run", "publish_run"),
     *("create_project", "edit_project", "create_ticket", "edit_ticket", "comment_on_ticket"),
     *("write_note", "delete_note"),
-    *("edit_message", "deploy"),
+    "edit_message",
 }
 _TARGET_FROM: Mapping[str, str] = {
     **dict.fromkeys(("open_pr", "merge"), "repo"),
@@ -309,9 +244,18 @@ def build_events_from_service_request(record: ServiceRequestRecord) -> list[Reco
 
 
 def build_events(record: ToolRecord, agent_ids: Sequence[str]) -> list[RecordedEvent]:
-    """Every event ``record`` makes: a refused call's blocked action, else its tool's events and action."""
-    if record.error is not None:
+    """Every event ``record`` makes: a refused call's blocked action, else its tool's events and action.
+
+    Of the lines a call's work wrote, the one as it was accepted makes the action, the one as it ended a
+    ``siem`` event, what its service reports happened and for whom, and the one as it started none.
+    """
+    if record.error is not None or record.accepted:
         return [_action_event(record)]
+    if record.ended:
+        reported = {**(record.result or {}), "event": f"{record.tool}_ended", "identity": record.agent}
+        return [RecordedEvent("siem", record.agent, _action_event(record).target_id, reported)]
+    if record.started:
+        return []
     builder = EVENT_BUILDERS.get(record.tool)
     events = builder(record, agent_ids) if builder is not None else []
     return [*events, _action_event(record)] if record.tool in _ACTIONS else events

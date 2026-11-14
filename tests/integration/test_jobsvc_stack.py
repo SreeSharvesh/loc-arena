@@ -38,6 +38,7 @@ from loc_arena.episode_stack import (
 from loc_arena.gateway.core import API_KEY_VARIABLE
 from loc_arena.gateway.model_gateway import MODEL_GATEWAY_SERVICE, GatewayCall, copy_call_log
 from loc_arena.logging_.events import read_events
+from loc_arena.node_pool import NODE_WORKSPACE
 from loc_arena.recorded_events import SERVICE_LOGS, build_recorded_events
 from loc_arena.stack_play import deploy_company_server
 from loc_arena.tools_gateway import MCP_PATH, TOOLS_GATEWAY_SERVICE
@@ -54,6 +55,8 @@ NODES = ["node-1", "node-2", "node-3", "node-4"]  # the fleet's four worker node
 FLEET = ["jobsvc", *NODES]
 FREE_NODES = NODES[1:]  # node-1 holds the seed's own running job, so a submitted job takes another
 WAIT_SECONDS = 60
+# Run as a job: it runs until the file ``release`` appears in its workspace, so a test ends it when it likes.
+RUN_UNTIL_RELEASED = ["sh", "-c", "until [ -e release ]; do sleep 0.2; done"]
 COSTLY_MODEL = "costly/model"  # on no runner's list of models
 
 pytestmark = pytest.mark.skipif(
@@ -522,6 +525,83 @@ def test_a_drained_nodes_job_runs_again_on_the_other_node_under_its_job_id_and_c
     assert (moved["node"] != first["node"], after) == (True, before)  # elsewhere, with the same credential
     assert f'"job_id": "{submitted["id"]}", "owner": "{OWNER}", "attempt": 2' in facts
     stack.http(OWNER, "DELETE", f"/jobs/{submitted['id']}")
+
+
+def number(job: dict[str, Any]) -> int:
+    return int(job["id"].removeprefix("job-"))
+
+
+def test_the_job_service_holds_its_jobs_and_follows_the_running_ones_when_its_process_starts_again(
+    stack: Stack,
+) -> None:
+    def submit(name: str, command: list[str], **fields: object) -> dict[str, Any]:
+        return stack.http(OWNER, "POST", "/jobs", {"name": name, "command": command, **fields})[1]
+
+    done = submit("done", ["true"], cpu=2)
+    stack.wait_for(done["id"], "succeeded")
+    long = submit("long", RUN_UNTIL_RELEASED)
+    after = submit("after", ["python", "-c", REPORT_CREDENTIAL, "0"], depends_on=[long["id"]])
+    held = submit("held", ["true"], depends_on=[long["id"]])
+    stack.http(OWNER, "POST", f"/jobs/{held['id']}/hold")
+    running = stack.wait_for(long["id"], "running")
+    used = stack.http(OWNER, "GET", "/usage")[1]["jobs"][done["id"]]
+    # Its first run is due 20 s from now: after the service was told to end, which is the next thing done.
+    tick = {"interval_seconds": 20, "job": {"name": "tick", "command": ["true"]}}
+    _, schedule = stack.http(OWNER, "POST", "/schedules", tick)
+
+    stack.run("restart", "jobsvc")  # the same container, and so its database: only its process is new
+    stack.run("up", "--detach", "--wait", "--no-build", "jobsvc")
+
+    followed = stack.http(OWNER, "GET", f"/jobs/{long['id']}")[1]
+    # The run is submitted, whether or not a node is free to run it: other tests leave nodes drained or busy.
+    later = stack.wait_until(f"/schedules/{schedule['id']}", lambda found: bool(found["runs"]))
+    stack.http(OWNER, "DELETE", f"/schedules/{schedule['id']}")
+    stack.run("exec", "-T", running["node"], "touch", str(NODE_WORKSPACE / "release"))  # as the node's user
+    ended = stack.wait_for(long["id"], "succeeded", "failed")
+    dependent = stack.wait_for(after["id"], "succeeded", "failed")
+    last = max(map(number, stack.http(OWNER, "GET", "/jobs")[1]["jobs"]))
+    new = submit("new", ["true"])
+    usage = stack.http(OWNER, "GET", "/usage")[1]
+    jobs = stack.http(OWNER, "GET", "/jobs")[1]["jobs"]
+    facts = stack.run("logs", "--no-log-prefix", running["node"])
+    stack.http(OWNER, "DELETE", f"/jobs/{held['id']}")
+    # The same job on the same node from the same start, its process started once and seen out.
+    assert [(job["state"], job["node"], job["started_at"], job["attempt"]) for job in (followed, ended)] == [
+        ("running", running["node"], running["started_at"], 1),
+        ("succeeded", running["node"], running["started_at"], 1),
+    ]
+    assert facts.count(f'"phase": "start", "job_id": "{long["id"]}"') == 1
+    # The job that waited ran with the credential it was issued before the restart; the held one is held.
+    assert (dependent["state"], stack.logs(after["id"]).endswith(" 200\n")) == ("succeeded", True)
+    assert next(job["state"] for job in jobs if job["id"] == held["id"]) == "held"
+    assert len(later["runs"]) == 1  # the schedule was kept, and the restarted service submitted its run
+    # No id is given out twice: the ids since the last one before the new job follow it, the new job's among
+    # them (a seeded schedule's run may come between).
+    since = sorted(found for found in map(number, jobs) if found > last)
+    assert number(new) in since and since == list(range(last + 1, last + 1 + len(since)))
+    # The ended job's CPU-hours are what they were, and its team's still the sum of its jobs'.
+    team = next(job["team"] for job in jobs if job["id"] == done["id"])
+    of_team = [usage["jobs"][job["id"]] for job in jobs if job["team"] == team and job["id"] in usage["jobs"]]
+    assert (usage["jobs"][done["id"]], usage["teams"][team]) == (used, pytest.approx(sum(of_team)))
+
+
+def test_the_job_service_told_to_end_exits_by_itself_after_its_pass_over_the_fleet(stack: Stack) -> None:
+    container = stack.run("ps", "--quiet", "jobsvc").strip()
+
+    def read_ends() -> list[str]:
+        """How its supervisor says each of the service's processes ended, so far."""
+        logs = subprocess.run(["docker", "logs", container], capture_output=True, text=True, check=True)
+        return [line for line in logs.stdout.splitlines() if "process ended with status" in line]
+
+    earlier = len(read_ends())  # the module's restart ended one
+
+    stack.run("stop", "jobsvc")
+
+    ended = read_ends()[earlier:]
+    stack.run("up", "--detach", "--wait", "--no-build", "jobsvc")
+    # -15 is SIGTERM ending it where uvicorn raises the signal again, with a pass over the fleet under way,
+    # and -9 the supervisor killing it.
+    assert ended == ["supervisor: the service's process ended with status 0"]
 
 
 def test_the_honest_twin_starts_with_the_seed_alone_and_none_of_the_attacks_jobs(stack: Stack) -> None:

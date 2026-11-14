@@ -2,14 +2,16 @@
 
 An eval is a named set of text items and the metrics a run of it reports; the first metric is its headline,
 the score its leaderboard ranks by. A run is one eval of one model: who started it, the job its caller submits
-to the cluster, the job it is bound to once that job reports in, and its results, appended to the versioned
-``ResultsStore`` so a stored version never changes. The registry lives in memory and starts from a seed. A
-refused change raises ``EvalServiceError`` with the HTTP status that says why; who may ask is the service's
-concern.
+to the cluster, the job it is bound to once that job reports in, and its results, kept as a new version each
+time, so a stored version never changes. The registry keeps its evals, runs and results in a
+database (``meridian_common.records``), which it writes its seed into when it is new, so a registry that
+starts again on the same database holds what the last one held. A refused change raises ``EvalServiceError``
+with the HTTP status that says why; who may ask is the service's concern.
 """
 
 from __future__ import annotations
 
+import json
 from collections import Counter
 from collections.abc import Callable, Iterable
 from datetime import UTC, datetime
@@ -22,9 +24,15 @@ import yaml
 from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field, PositiveFloat, PositiveInt
 
 from meridian_common.jobclient import JobSpec
+from meridian_common.records import Database
 from meridian_evalkit.leaderboard import Leaderboard, LeaderboardEntry
 from meridian_evalkit.metrics import default_registry
-from meridian_evalkit.store import EvalRun, ResultsStore, diff_runs
+from meridian_evalkit.store import EvalRun, diff_runs
+
+
+def _load_results(text: str) -> EvalRun:
+    return EvalRun.from_payload(json.loads(text))
+
 
 SEED_FILE = Path(__file__).with_name("seed.yaml")
 EVAL_ID_PATTERN = r"^[a-z0-9][a-z0-9-]{1,62}$"
@@ -256,31 +264,37 @@ def load_seed(seed_file: Path = SEED_FILE) -> Seed:
 
 
 class EvalkitRegistry:
-    """The evals, runs, results and leaderboards, in memory. A refused change raises ``EvalServiceError``."""
+    """The evals, runs, results and leaderboards. A refused change raises ``EvalServiceError``."""
 
     def __init__(
         self,
         seed: Seed,
         *,
+        database: Database | None = None,
         url: str = "http://evalkit:8000",
         resources: JobResources | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
-        """Start from ``seed``: ``url`` is where a run's job reaches this service, ``clock`` its times."""
+        """Hold what ``database`` holds, and ``seed`` if it is new; one in memory without a database.
+
+        ``url`` is where a run's job reaches this service, ``clock`` its times.
+        """
         self._url = url
         self._resources = resources or JobResources()
         self._clock = clock
         self._metrics = default_registry()
         self._models = tuple(seed.models)
-        self._evals: dict[str, Eval] = {}
-        self._runs: dict[str, Run] = {}
-        self._store = ResultsStore()
-        self._boards: dict[str, Leaderboard] = {}
-        self._next_run_number = 1
-        for seeded_eval in seed.evals:
-            self._add_eval(Eval(**seeded_eval.model_dump()))
-        for seeded_run in seed.runs:
-            self._add_seeded_run(seeded_run)
+        self._database = database or Database()
+        self._evals = self._database.records("evals", Eval.model_validate_json, Eval.model_dump_json)
+        self._runs = self._database.records("runs", Run.model_validate_json, Run.model_dump_json)
+        # Each version of the results, by its number from 1: appended, never changed.
+        self._results = self._database.records("results", _load_results, EvalRun.to_json)
+        if not self._evals and not self._runs:
+            with self._database.transaction():  # the whole seed, or a database that is still new
+                for seeded_eval in seed.evals:
+                    self._add_eval(Eval(**seeded_eval.model_dump()))
+                for seeded_run in seed.runs:
+                    self._add_seeded_run(seeded_run)
 
     @property
     def models(self) -> tuple[str, ...]:
@@ -328,7 +342,8 @@ class EvalkitRegistry:
                 HTTPStatus.UNPROCESSABLE_ENTITY,
                 f"no model {start.model_id!r}: the models are {', '.join(self._models)}",
             )
-        run_id = f"run-{self._next_run_number:04d}"
+        numbers = [int(number) for run in self._runs if (number := run.removeprefix("run-")).isdigit()]
+        run_id = f"run-{max(numbers, default=0) + 1:04d}"
         run = Run(
             run_id=run_id,
             eval_id=start.eval_id,
@@ -338,7 +353,8 @@ class EvalkitRegistry:
             job=self._job_for(run_id, start.eval_id, start.model_id),
             created_at=self._clock(),
         )
-        return self._add_run(run)
+        self._runs[run_id] = run
+        return run
 
     def list_runs(self) -> list[Run]:
         """Every run, oldest first."""
@@ -378,7 +394,8 @@ class EvalkitRegistry:
                 HTTPStatus.CONFLICT,
                 f"run {run_id!r} is reported: version {run.results_version}",
             )
-        return self._record_results(run, results.metrics, results.item_ids, self._clock())
+        with self._database.transaction():  # the results and the run that names their version, together
+            return self._record_results(run, results.metrics, results.item_ids, self._clock())
 
     def diff_runs(self, left_id: str, right_id: str) -> Diff:
         """The metric deltas and the metrics and items added or removed from ``left_id`` to ``right_id``."""
@@ -401,14 +418,15 @@ class EvalkitRegistry:
         run = self.get_run(run_id)
         if run.published_at is not None:
             raise EvalServiceError(HTTPStatus.CONFLICT, f"run {run_id!r} is published")
-        return self._publish(run, self._results_of(run_id), self._clock())
+        self._results_of(run_id)  # a run that is not reported is refused
+        return self._publish(run, self._clock())
 
     def leaderboards(self, eval_id: str | None = None) -> list[Board]:
         """Each eval's leaderboard, or ``eval_id``'s alone; an eval with no published run has none."""
         if eval_id is not None:
             self.get_eval(eval_id)
         boards = []
-        for found_id, board in sorted(self._boards.items()):
+        for found_id, board in sorted(self._rank_published_runs().items()):
             if eval_id is not None and found_id != eval_id:
                 continue
             metric = self._evals[found_id].headline_metric
@@ -438,35 +456,26 @@ class EvalkitRegistry:
         self._evals[found.eval_id] = found
         return found
 
-    def _add_run(self, run: Run) -> Run:
-        self._runs[run.run_id] = run
-        number = run.run_id.removeprefix("run-")
-        if number.isdigit():
-            self._next_run_number = max(self._next_run_number, int(number) + 1)
-        return run
-
     def _add_seeded_run(self, seeded: SeededRun) -> None:
         """A seeded run is what its job reported, and is on the leaderboard if the seed says when."""
         found = self.get_eval(seeded.eval_id)
         if seeded.model_id not in self._models:
             raise ValueError(f"seeded run {seeded.run_id!r} names no seeded model: {seeded.model_id!r}")
-        run = self._add_run(
-            Run(
-                run_id=seeded.run_id,
-                eval_id=seeded.eval_id,
-                model_id=seeded.model_id,
-                owner=seeded.owner,
-                state=RunState.STARTED,
-                job=self._job_for(seeded.run_id, seeded.eval_id, seeded.model_id),
-                job_principal=seeded.job_principal,
-                created_at=seeded.created_at,
-                started_at=seeded.started_at,
-            ),
+        run = Run(
+            run_id=seeded.run_id,
+            eval_id=seeded.eval_id,
+            model_id=seeded.model_id,
+            owner=seeded.owner,
+            state=RunState.STARTED,
+            job=self._job_for(seeded.run_id, seeded.eval_id, seeded.model_id),
+            job_principal=seeded.job_principal,
+            created_at=seeded.created_at,
+            started_at=seeded.started_at,
         )
         item_ids = seeded.item_ids if seeded.item_ids is not None else [item.item_id for item in found.items]
         reported = self._record_results(run, seeded.metrics, item_ids, seeded.reported_at)
         if seeded.published_at is not None:
-            self._publish(reported, self._results_of(reported.run_id), seeded.published_at)
+            self._publish(reported, seeded.published_at)
 
     def _record_results(self, run: Run, metrics: dict[str, float], item_ids: list[str], at: datetime) -> Run:
         """Append ``metrics``, exactly the eval's, over ``item_ids``, the eval's items, as a new version."""
@@ -487,7 +496,8 @@ class EvalkitRegistry:
             metrics=dict(metrics),
             item_ids=tuple(item_ids),
         )
-        version = self._store.append(results)
+        version = len(self._results) + 1
+        self._results[str(version)] = results
         update = {
             "state": RunState.REPORTED,
             "metrics": dict(metrics),
@@ -497,25 +507,32 @@ class EvalkitRegistry:
         self._runs[run.run_id] = reported = run.model_copy(update=update)
         return reported
 
-    def _publish(self, run: Run, results: EvalRun, at: datetime) -> Run:
-        """Rank the run on its eval's board by its headline score, negated where a lower score is better."""
-        metric = self._evals[run.eval_id].headline_metric
-        score = results.metrics[metric]
-        entry = LeaderboardEntry(
-            run_id=run.run_id,
-            model=run.model_id,
-            score=score if self._metrics.get(metric).higher_is_better else -score,
-        )
-        self._boards.setdefault(run.eval_id, Leaderboard()).add(entry)
+    def _publish(self, run: Run, at: datetime) -> Run:
         self._runs[run.run_id] = published = run.model_copy(update={"published_at": at})
         return published
+
+    def _rank_published_runs(self) -> dict[str, Leaderboard]:
+        """Each eval's board: its published runs by headline score, negated where a lower score is better."""
+        boards: dict[str, Leaderboard] = {}
+        for run in self._runs.values():
+            if run.published_at is None:
+                continue
+            metric = self._evals[run.eval_id].headline_metric
+            score = self._results_of(run.run_id).metrics[metric]
+            entry = LeaderboardEntry(
+                run_id=run.run_id,
+                model=run.model_id,
+                score=score if self._metrics.get(metric).higher_is_better else -score,
+            )
+            boards.setdefault(run.eval_id, Leaderboard()).add(entry)
+        return boards
 
     def _results_of(self, run_id: str) -> EvalRun:
         """The stored results of a reported run."""
         run = self.get_run(run_id)
         if run.results_version is None:
             raise EvalServiceError(HTTPStatus.CONFLICT, f"run {run_id!r} is not reported")
-        return self._store.get(run.results_version)
+        return self._results[str(run.results_version)]
 
     def _job_for(self, run_id: str, eval_id: str, model_id: str) -> JobBody:
         """The job that runs ``run_id``: the runner, from the checkout, on the run's model."""

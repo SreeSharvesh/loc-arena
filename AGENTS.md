@@ -76,15 +76,15 @@ scenario.
 | `company/meridian-forge/`, `loc_arena/forge_service.py`, `loc_arena/npcs/`, `docs/forge-service.md` | the git forge: a platform package of the company's like `meridian-iam` (never in the agents' checkout) holding its pull requests, merges and git repositories over HTTP, seeded from the scenario's `forge.yaml`; the lab's start-up of it under IAM; the scripted coworkers and reviewer; its plan |
 | `loc_arena/own_sessions.py`, `loc_arena/workspace_service.py`, `loc_arena/session_events.py`, `loc_arena/gateway/loop_routes.py`, `docs/pi-harness.md` | each agent's whole session in its own pi process (`harness: pi`, the one harness), started together by the episode, which plays no turn; the workspace service, an agent's bash and file tools behind the tools gateway; a session's turns and `inference_call` events from the model gateway's call record; each loop's own route at the model gateway, with its turn budget and the config's request settings |
 | `loc_arena/tool_records.py`, `loc_arena/mcp_service.py` | every MCP service's record of the tool calls made to it; who calls a service, and how it is served |
-| `loc_arena/agents_service.py`, `company/meridian-controlplane/meridian_controlplane/agents/`, `docs/agents-service.md` | the agents service: Meridian's registry of its agents, their executions on the runners (stopped and resumed through checkpoints), each agent's identity and the schedules, company code a stack run serves under central IAM; its plan |
+| `loc_arena/agents_service.py`, `company/meridian-controlplane/meridian_controlplane/agents/`, `docs/agents-service.md` | the agents service: Meridian's registry of its agents, their executions on the runners (stopped and resumed through checkpoints), each agent's identity and the schedules, company code a stack run serves over one SQLite store under central IAM; its plan |
 | `loc_arena/tickets_service.py`, `company/meridian-controlplane/meridian_controlplane/tickets/`, `docs/tickets-service.md` | the tickets service: Meridian's ticket tracker, company code a stack run serves with MCP tools and an HTTP API over one SQLite store under central IAM, seeded from the scenario's `tickets.yaml` |
 | `loc_arena/chat_service.py`, `company/meridian-controlplane/meridian_controlplane/chat/`, `docs/chat-service.md` | the chat service: Meridian's chat, the one channel between agents, company code a stack run serves with MCP tools and an HTTP API over one SQLite store under central IAM, seeded from the scenario's `chat.yaml`; the `message` events monitors read are built from its records |
-| `loc_arena/modelstore_service.py`, `company/meridian-controlplane/meridian_controlplane/modelstore/`, `company/meridian-common/meridian_common/weights.py`, `docs/modelstore-service.md` | the model store: the weights of each model in `gateway.runner_model_aliases` as safetensors shards (no real weights) with a manifest of sizes and checksums, company code a stack run serves with MCP reads and an HTTP API under central IAM; the shard format an inference server reads |
+| `loc_arena/modelstore_service.py`, `company/meridian-controlplane/meridian_controlplane/modelstore/`, `company/meridian-common/meridian_common/weights.py`, `docs/modelstore-service.md` | the model store: the weights of each model in `gateway.runner_model_aliases` as safetensors shard files (no real weights) with a manifest of sizes and checksums, company code a stack run serves with MCP reads and an HTTP API under central IAM; the shard format an inference server reads |
 | `loc_arena/notes_service.py`, `company/meridian-controlplane/meridian_controlplane/notes/`, `docs/notes-service.md` | the notes service: the team's shared notes, company code a stack run serves with MCP tools and an HTTP API over one SQLite store under central IAM, seeded from the scenario's `notes.yaml` |
-| `loc_arena/deploy_service.py`, `company/meridian-deploy/`, `loc_arena/release_supervisor.py`, `loc_arena/deploy_pool.py`, `docs/deploy-service.md` | the deploy service: a platform package that releases the forge's `main` to the services its scenario entry lists (`deploys:`), each deployment a workload of its caller's; and the supervisor each of those services runs under, which takes a release from the deploy service alone and starts the service's process again on it |
+| `loc_arena/deploy_service.py`, `company/meridian-deploy/`, `loc_arena/release_supervisor.py`, `loc_arena/deploy_pool.py`, `loc_arena/deployed_score.py`, `docs/deploy-service.md` | the deploy service: a platform package that releases the forge's `main` to the services its scenario entry lists (`deploys:`), each deployment a workload of its caller's; and the supervisor each of those services runs under, which takes a release from the deploy service alone and starts the service's process again on it; `deployed_score.py` grades what a play deployed, beside what it merged |
 | `loc_arena/jobsvc_service.py`, `company/meridian-jobsvc/`, `docs/jobsvc-service.md` | the job service: Meridian's cluster, company code a stack run serves under IAM, running each job as a real process on a node of its fleet; its plan |
-| `loc_arena/evalkit_service.py`, `company/meridian-evalkit/meridian_evalkit/service/`, `company/meridian-evalkit/meridian_evalkit/run.py`, `docs/evalkit-service.md` | the eval service: Meridian's evals, the runs on them, their results and leaderboards, company code a stack run serves with MCP tools and an HTTP API under central IAM; and the runner, the job a run hands out, which scores the model under test through the inference API |
-| `loc_arena/recorded_events.py` | after play, before grading: the events monitors read, built from the services' records |
+| `loc_arena/evalkit_service.py`, `company/meridian-evalkit/meridian_evalkit/service/`, `company/meridian-evalkit/meridian_evalkit/run.py`, `docs/evalkit-service.md` | the eval service: Meridian's evals, the runs on them, their results and leaderboards, company code a stack run serves with MCP tools and an HTTP API over one SQLite store under central IAM; and the runner, the job a run hands out, which scores the model under test through the inference API |
+| `loc_arena/recorded_events.py`, `loc_arena/service_records.py` | after play, before grading: the events monitors read, built from the services' records; the lines a service records besides its tool calls, read back |
 | `loc_arena/logging_/` | the sealed and mirror event logs, the per-agent Inspect export, `transcript.html`, `report.html` |
 | `loc_arena/explorer/` | the run explorer behind `make explore` |
 | `loc_arena/run_reader.py`, `loc_arena/reader_briefs/` | the run reader behind `make read` |
@@ -116,6 +116,7 @@ scenario.
 ```sh
 make setup        # check uv (Python 3.12), sync dependencies, validate the configs
 make gates        # ruff, ruff format --check, ty, pytest: run before every push (CI runs it too)
+make images       # build this checkout's sandbox, runner, worker and engine images, which the Docker tests need
 make run MODE=attack           # live models in a stack: no key in the episode; the key in .env
 make run RUN=aurora-efficiency.fast   # the smoke run: the cheapest models, small call budgets, minutes and cents
                                       # in a cloud development container first: docs/isolation "On a cloud development container"
@@ -140,7 +141,8 @@ run is the end-to-end check of a change to the engine; its scores are not result
   instead of coining new terms. Define a term once if a reader might not know it.
 - **Names.** Functions are verbs, classes and modules are nouns. No shorthands (`environment`, not `env`).
 - **Config over code.** A tunable value never needs a code change: it lives in a group of the root settings
-  (`loc_arena/settings.py`, read from `configs/*.yaml`), with a description per field. Secrets are compose
+  (`loc_arena/settings.py`, and `loc_arena/service_settings.py` for the company's services, read from
+  `configs/*.yaml`), with a description per field. Secrets are compose
   secrets, read as `SecretStr`.
 - **Types.** Parse YAML, JSON and HTTP bodies into typed objects at the boundary. No `dict[str, Any]` in a
   signature where a named type belongs. HTTP statuses use `http.HTTPStatus`.
@@ -158,7 +160,9 @@ run is the end-to-end check of a change to the engine; its scores are not result
 - **Planted bugs.** The strict xfails in `company/*/tests/*backlog*.py` and `test_buried_bugs.py` are the
   company's open tickets for the agents under test. Do not fix them.
 - **Live tests** (`tests/integration/test_live_*.py`, `test_llm_monitor_live.py`) run only with `LOC_ARENA_LIVE=1`
-  and a key, and they spend money. Docker tests skip when the daemon is down.
+  and a key, and they spend money. Docker tests skip when the daemon is down or the checkout's images are
+  missing (`make images`). A linked git worktree builds images under its own tag, so it never starts another
+  checkout's code; remove them with the worktree ([how](docs/isolation/README.md#images)).
 - **Logging** under `loc_arena/logging_/` has its own rules in `docs/agent-log/agent.md`.
 - **Access requests** go through central IAM (`docs/iam-service/agent.md`).
 

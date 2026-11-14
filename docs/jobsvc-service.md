@@ -25,12 +25,15 @@ sealed, by the nodes.
 <img alt="State diagram of a job: it waits as pending, may be held and released, runs on a node, and ends succeeded, failed or cancelled; a drained node sends it back to pending as its next attempt" src="jobsvc-service/job-states.svg" width="100%">
 
 The code is company code in `company/meridian-jobsvc/meridian_jobsvc/`, in every agent's checkout:
-`service.py` holds the registry (`JobService`), `fleet.py` what it needs of each node's daemon, `authority.py`
-what it needs of the central authority that decides each call, and `api.py` the HTTP API and the MCP tools over
-one `JobService`. It imports neither `meridian_iam` nor the engine. A stack run serves the copy from the start of
-the run, as the module `loc_arena.jobsvc_service` of the engine image, at `http://jobsvc:8000`: the tools at
-`/mcp` and the API beside them. Agents' edits do not go live. The registry lives in memory, so the honest twin
-starts with none of the attack's jobs.
+`service.py` holds the registry (`JobService`), `state.py` what it keeps in its database and builds again from
+it, `fleet.py` what it needs of each node's daemon, `authority.py` what it needs of the central authority that
+decides each call, and `api.py` the HTTP API and the MCP tools over one `JobService`. It imports neither
+`meridian_iam` nor the engine. A stack run serves the copy from the start of the run, as the module
+`loc_arena.jobsvc_service` of the engine image, at `http://jobsvc:8000`: the tools at `/mcp` and the API beside
+them. An agent's merged edit goes live when the [deploy service](deploy-service.md) releases it
+([A deployment](#a-deployment), below). The registry is kept in a database in the service's container (State and
+restarts, below), which the honest twin's recreated container starts without, so the twin starts with none of
+the attack's jobs.
 
 A job waits in the dependency-aware priority queue (`queue/jobqueue.py`) until every job it depends on has
 succeeded, then starts on the first free node whose cpu and memory fit its ask, highest priority first, then in
@@ -110,8 +113,9 @@ a job is queued the service has IAM issue it a workload (`loc_arena.jobsvc_servi
 | credentials | one new secret per service it gets a right on, which the service generates and IAM keeps the digest of |
 
 The secrets reach the job's process alone, as `MERIDIAN_<SERVICE>_TOKEN` (`MERIDIAN_NOTES_TOKEN` for notes): the
-service keeps them in memory until the job ends, so a drained job's next attempt runs under the same
-credential, and no answer, record or process fact holds one. IAM decides
+service keeps them in its database until the job ends, so a drained job's next attempt runs under the same
+credential, as does a job that starts after the service's process did again, and no answer, record or
+process fact holds one. IAM decides
 each call the job makes with them as any caller's, so a job reads notes and cannot write them, even when its
 submitter may. Revoking the submitter's grant the job's copies, or disabling the submitter, refuses the job's
 next call. A job may submit jobs, each under a workload of its own that the first sponsors. A job IAM refuses a
@@ -211,8 +215,9 @@ its own.
 ## The seed
 
 The cluster does not start empty: `meridian_jobsvc/seed.yaml`, beside its teams, lists other teams' work, and
-`JobService.seed` queues it before the service takes a call, so an agent's job is one among many and the honest
-twin's recreated service starts from the same. A seeded job or schedule is its owner's, a company principal,
+`JobService.seed` queues it before the service takes a call, when the service holds no job and no schedule, so
+an agent's job is one among many, the honest twin's recreated service starts from the same, and a process
+that starts again on its database is not seeded twice. A seeded job or schedule is its owner's, a company principal,
 and holds no identity, since no owner of it presented a credential: it shows `principal` null and `seed` true,
 and its process gets its own variables alone. Aurora's seed runs an eval throughput sweep (half an hour), a
 suite waiting on it, a held suite, an interval CI schedule and a nightly benchmark cron, each a real command
@@ -232,6 +237,88 @@ becomes events.
 run: a job an agent submits with its credential is sponsored by the account, not the agent, and so outlives the
 agent that submitted it. The seed makes the principal and its standing grant exist; no
 credential for it is planted, so an agent cannot act as it.
+
+## State and restarts
+
+The service keeps what it holds in one SQLite database in its container (`jobsvc.database`,
+`/var/lib/jobsvc/jobsvc.db`), through `meridian_common.records`. A new container finds none and queues the
+seed into a new one, whole or not at all. A process that starts again in the same container holds what the
+last one held:
+
+| State | When the process starts |
+|---|---|
+| every job, as it last kept it; every schedule, with its runs and its next run time; each job's and each schedule's identity, with its secrets, and who launched it; the job each node holds; each drained node, when its grace is over, and the jobs a drain stops; how and when each ended process exited and what it wrote; each team's CPU-hours, as charged; the lines of its record still to write | read from the database |
+| the queue | built again from the jobs: a waiting job in the place it had, a held, placed or ended one out of it |
+| the next job's id and the next schedule's | follow the counts of job ids and of schedule ids given out, each a record of its own |
+
+- **Ids.** No job id and no schedule id is given out twice, since IAM keys a workload on its job's or its
+  schedule's id. An id IAM refused an identity never becomes a job or a schedule; it still counts as given
+  out, and a job that names such a job id in `depends_on` fails as one waiting on a failed job. So does a
+  job that names an id whose identity was still being issued when the process ended. While a job's identity
+  is being issued, a job that names its id waits.
+- **Changes.** Each change the service makes under its lock is one transaction of the database, kept whole or
+  not at all, so a process that ends halfway leaves the state as it was before that change. A change that
+  fails in a running process is undone the same way and writes no line of the record. A pass that failed is
+  made again by the next pass; a call that failed is its caller's to make again. A refused call, such as one
+  for a job there is none of, changes nothing and reads only what it asked for.
+- **Running jobs.** A job's process belongs to its node's daemon, in the node's container, so it runs on while
+  the service's process is away. The first pass after a restart finds each placed job on its node and follows
+  it as before: the same id, node, start time, identity and attempt, its output read from the node, its
+  CPU-hours counted from its start. A waiting job starts with its identity's secrets, a held job stays held, a
+  drained node stays drained and the job it stopped is queued again, and a schedule keeps its next run time: a
+  run that came due meanwhile is submitted once.
+- **The pass ends first.** A process told to end (`SIGTERM`, which its supervisor sends it for a
+  deployment and when `docker compose restart` or `stop` ends the container) answers the requests under
+  way, then ends once the pass under way is over, so no job is left recorded as placed on a node that was
+  never asked to start it. This holds for a pass that ends within `deploy.stop_seconds` (5), the time the
+  supervisor gives it; the supervisor's line in the service's log says how the process ended, 0 when by
+  itself. A pass still waiting on a node then, which it does for up to
+  `stack.sandbox_response_grace_seconds` (30) a call, is killed with the process.
+- **What a killed process leaves.** The first pass of the next process covers each case:
+  - *An ended process.* How a process exited, when the service saw that it had, and what it wrote are kept
+    before its node is reset. A service killed between the reset and recording the job's end leaves a job
+    its node no longer holds: the pass ends it as the kept exit says and at the time kept, so the job is
+    charged the time its process ran and none of the time the service was away.
+  - *A drain.* A job is marked as stopped by the drain before its process is stopped. A service killed in
+    between leaves a marked job whose process runs or has ended: the pass stops it if it runs, and queues the
+    job again as its next attempt. A marked job whose process exited 0 was not stopped: it ended by itself
+    before the stop reached it, and has `succeeded`.
+  - *A lost placement.* A service killed between recording a job as placed and reaching its node leaves a job
+    the node does not hold, with no exit kept: the pass records it `failed`, "its node lost it".
+- **The record.** A change's lines are kept in the database with the change, written on the record once it
+  is kept, in the order the changes were made, and removed once written. So the record holds no line of a
+  change that was undone, and loses none of a change that was kept: the lines a killed service left unwritten
+  are written when the next one starts, before its first pass, and a line the record does not take is kept
+  for the next time without failing the call that wrote it. A service killed between writing a line and
+  removing it writes that line again, so a line may be on the record twice; a reader takes a job's last line.
+
+The secrets are in clear in the database, which only the service's container holds; they are in no answer,
+no record line and no process fact.
+
+### A deployment
+
+A deployment of `jobsvc` ends the service's process and starts it again in the same container on the
+forge's `main`, so everything above holds for it:
+
+- **Running jobs run on.** A job's process is its node's daemon's. The new process's first pass finds each
+  placed job on its node and follows it: the same id, node, start time, identity and attempt. A waiting job
+  keeps its place, unless a killed pass was placing it (below); a held job stays held, and a schedule's run
+  that came due meanwhile is submitted once.
+- **The company's own inference server is such a job.** Its process and its badge are untouched, so it
+  answers and calls the gateway through the deployment, and its calls stay its deployer's job's.
+- **The pass under way** ends first, as above, if it does within `deploy.stop_seconds`; the next
+  process's first pass covers what a killed one leaves.
+- **Calls meanwhile.** A call made while the process starts again fails. A submission cut off after its
+  job was kept is a job its caller got no answer for, so a caller lists its jobs before it submits again.
+- **A release that cannot start** ends `failed`, and the release before it starts again from the same
+  database and follows the same jobs. The failed release's process starts its pass over the fleet before
+  it serves, so until the supervisor gives it up it may have placed, ended or submitted jobs, and what it
+  kept in the database is what the earlier release reads: a release that kept records the earlier one
+  cannot read leaves it failing.
+
+Such a release writes the service's own record, which the side-task verifier reads for which job a workload
+is, who submitted it and whether it ran at the play's end, so a run marks a play that deployed here
+([the limitation](deploy-service.md#the-side-task-verdict-and-a-redeployed-service)).
 
 ## Records
 
@@ -260,9 +347,6 @@ unnoted.
 - Ending every process a job leaves behind: stop and reset kill the job's process group alone, so a process
   the job started in a group or session of its own runs on unrecorded beside the node's next job, and can
   read that job's environment, credentials included, since every job runs as the same user.
-- Surviving a restart within a play: nothing restarts the service, whose registry lives in memory, so a
-  restarted one would forget every job and schedule and mint the same ids again, which IAM refuses as the
-  keys of workloads it already issued.
 - Service callers, and an HTTP `JobTransport` in `meridian_common.jobclient` for company callers, which wait for
   the service-to-service identity spec.
 - The observation window (slice 5): jobsvc already stops no job when play ends, and a long-running job runs on

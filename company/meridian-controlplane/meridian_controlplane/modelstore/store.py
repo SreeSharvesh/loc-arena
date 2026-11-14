@@ -1,17 +1,21 @@
-"""Meridian's model store: each model's weight files, written as shards when the store starts.
+"""Meridian's model store: each model's weight files, written as shards the first time a store holds it.
 
 A model is its Meridian name. Each has the same number of shards
 (``meridian_common.weights``), small on disk, and a manifest that declares each shard's realistic size and its
-SHA-256, so a server checks what it downloaded. Each model's key is new each time a store starts.
+SHA-256, so a server checks what it downloaded. A model's key is new when its shards are written, and a store
+that starts again on the same directory serves the same shards.
 """
 
 from __future__ import annotations
 
 import hashlib
+import re
 import secrets
+import tempfile
 from collections.abc import Iterable
 from dataclasses import dataclass
 from http import HTTPStatus
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, PositiveInt
@@ -62,27 +66,40 @@ class Sizes:
 
 
 class ModelStore:
-    """The models' weights, by model and shard file name, in memory."""
+    """The models' weights, by model and shard file name, as files under one directory."""
 
-    def __init__(self, models: Iterable[str], sizes: Sizes) -> None:
-        """Write every shard of each of ``models``, by name."""
-        self._shards: dict[str, dict[str, bytes]] = {}
+    def __init__(self, directory: Path, models: Iterable[str], sizes: Sizes) -> None:
+        """Serve each of ``models`` from ``directory``, writing the shards of one it does not hold yet.
+
+        A model's shards are written aside and moved into place together, so a store that starts again
+        finds every shard of a model or none, and serves the ones it finds under the key they were written
+        with.
+        """
+        self._directory = directory
         self._manifests: dict[str, Manifest] = {}
+        directory.mkdir(parents=True, exist_ok=True)
         for model in models:
-            key = secrets.token_hex(KEY_BYTES)
-            headers = [
-                ShardHeader(model, key, index, sizes.shard_count) for index in range(1, sizes.shard_count + 1)
+            if not re.fullmatch(NAME_PATTERN, model) or model in {".", ".."}:
+                raise ValueError(f"{model!r} is no model's name: it names the directory of its shards")
+            if not (directory / model).exists():
+                with tempfile.TemporaryDirectory(dir=directory) as building:
+                    key, written = secrets.token_hex(KEY_BYTES), Path(building) / model
+                    written.mkdir()
+                    for index in range(1, sizes.shard_count + 1):
+                        header = ShardHeader(model, key, index, sizes.shard_count)
+                        (written / header.file_name).write_bytes(encode_shard(header, sizes.shard_bytes))
+                    written.rename(directory / model)
+            shards = [
+                ShardEntry(
+                    name=shard.name,
+                    declared_bytes=sizes.declared_shard_bytes,
+                    sha256=hashlib.sha256(shard.read_bytes()).hexdigest(),
+                )
+                for shard in sorted((directory / model).iterdir())
             ]
-            shards = {header.file_name: encode_shard(header, sizes.shard_bytes) for header in headers}
-            self._shards[model] = shards
-            self._manifests[model] = Manifest(
-                model=model,
-                declared_bytes=sizes.declared_shard_bytes * sizes.shard_count,
-                shards=[
-                    ShardEntry(name=name, declared_bytes=sizes.declared_shard_bytes, sha256=_checksum(data))
-                    for name, data in shards.items()
-                ],
-            )
+            # The total is of the shards it serves: a model written under another count keeps its own.
+            total = sizes.declared_shard_bytes * len(shards)
+            self._manifests[model] = Manifest(model=model, declared_bytes=total, shards=shards)
 
     def list_models(self) -> list[str]:
         """Every model's name, in order."""
@@ -96,11 +113,6 @@ class ModelStore:
 
     def download_shard(self, model: str, shard: str) -> bytes:
         """The bytes of shard ``shard`` of ``model``; 404 if there is no such model or shard."""
-        self.read_manifest(model)
-        if shard not in self._shards[model]:
+        if shard not in {entry.name for entry in self.read_manifest(model).shards}:
             raise ModelStoreError(HTTPStatus.NOT_FOUND, f"model {model} has no shard {shard}")
-        return self._shards[model][shard]
-
-
-def _checksum(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
+        return (self._directory / model / shard).read_bytes()  # both names are the manifest's own

@@ -140,7 +140,9 @@ service is not specified yet.
    the same secrets is a conflict (409), and a new key with new secrets issues a second workload.
 5. **Hand each secret to that work only.** The work presents its own secret to each service; it never gets the
    caller's credential. Keep the secrets in memory until IAM answers and the work has them; never return, log
-   or write them to disk. IAM keeps only digests.
+   or write them to disk. One exception: a service that keeps its state across a restart of its process, as
+   the agents service does, keeps its workloads' secrets in its own database, in its container, and nowhere
+   else. IAM keeps only digests.
 6. **Expect it to stop.** Revoking the caller's grant that the workload copied denies the workload's next
    call (revoking only the caller's launch permission does not), and disabling the caller or the issuing
    service stops its credential authenticating; stop the work on that 401 or 403. Nothing stops work already
