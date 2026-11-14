@@ -21,6 +21,7 @@ from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
 from http import HTTPStatus
 from pathlib import Path
+from typing import NamedTuple
 
 import docker
 import psutil
@@ -86,6 +87,11 @@ class RunCost(_Frozen):
     sampler: SamplerReport
 
 
+class _Mount(BaseModel):
+    name: str | None = Field(default=None, alias="Name")  # a volume's; none for a bind mount
+    destination: str = Field(alias="Destination")
+
+
 class _Listed(BaseModel):
     """A container as the Docker daemon lists it."""
 
@@ -93,6 +99,15 @@ class _Listed(BaseModel):
     names: list[str] = Field(alias="Names")
     image: str = Field(alias="Image")
     labels: dict[str, str] | None = Field(default=None, alias="Labels")
+    mounts: list[_Mount] = Field(default=[], alias="Mounts")
+
+
+class _Info(BaseModel):
+    memory_total: int = Field(alias="MemTotal")  # the daemon's machine's memory
+
+
+class _Image(BaseModel):
+    size: int = Field(alias="Size")
 
 
 class _MemoryStats(BaseModel):
@@ -128,7 +143,27 @@ class _Volume(BaseModel):
     usage: _VolumeUsage | None = Field(default=None, alias="UsageData")
 
 
-_Reading = tuple["_Listed", str, "_MemoryStats", int]  # a container's listing, name, memory and CPU counter
+class _VolumeItems(BaseModel):
+    items: list[_Volume] = Field(default=[], alias="Items")
+
+
+class _DiskUsage(BaseModel):
+    """``GET /system/df``: the volumes under ``VolumeUsage`` since API 1.52, else under ``Volumes``."""
+
+    volume_usage: _VolumeItems | None = Field(default=None, alias="VolumeUsage")
+    volumes: list[_Volume] | None = Field(default=None, alias="Volumes")
+
+
+class _Reading(NamedTuple):
+    """One container as one sample read it."""
+
+    id: str
+    name: str  # its compose service, or the grading container's shared name
+    image: str
+    held: int  # memory in use, as `docker stats` shows it: usage less the inactive file cache
+    limit: int | None  # none: no limit below the daemon's machine's memory
+    cpu: int  # nanoseconds since it started
+    volumes: dict[str, str]  # each volume it mounts, as service:path; Compose labels no anonymous one
 
 
 @dataclass
@@ -164,6 +199,7 @@ class CostRecorder:
     _samples: int = 0
     _failed: int = 0
     _last_error: str | None = None
+    _mounted: dict[str, str] = field(default_factory=dict)  # a volume a container mounts: service:path
     _images: dict[str, int] = field(default_factory=dict)
     _volumes: dict[str, int] = field(default_factory=dict)
     _lock: threading.Lock = field(default_factory=threading.Lock)
@@ -183,7 +219,7 @@ class CostRecorder:
         while True:
             try:
                 client = client or self._connect()
-                self._sample(client, client.info()["MemTotal"])
+                self._sample(client, _Info.model_validate(client.info()).memory_total)
             except Exception as error:  # noqa: BLE001 - the profiler never fails or stops the run
                 self._fail(error)
             if self._stopped.wait(self.settings.sample_seconds):
@@ -195,8 +231,8 @@ class CostRecorder:
         """End the sampling; ``watch`` returns after the sample it is taking."""
         self._stopped.set()
 
-    def _read(self, client: docker.DockerClient, *, grading: bool) -> list[_Reading]:
-        """Each container of the run that runs now: its listing, its name, its memory and its CPU counter."""
+    def _read(self, client: docker.DockerClient, memory_total: int, *, grading: bool) -> list[_Reading]:
+        """Each container of the run that runs now, as this sample reads it."""
         read = []
         for listed in map(_Listed.model_validate, client.api.containers()):
             labels, name = listed.labels or {}, (listed.names or ["/"])[0].lstrip("/")
@@ -210,30 +246,44 @@ class CostRecorder:
                 stats = _Stats.model_validate(client.api.stats(listed.id, stream=False, one_shot=True))
             except NotFound:  # it was removed between the listing and this read
                 continue
-            if stats.memory_stats.usage is not None:
-                read.append((listed, name, stats.memory_stats, stats.cpu_stats.cpu_usage.total_usage))
+            memory = stats.memory_stats
+            if memory.usage is not None:  # by cgroup v1's name of the cache, else v2's
+                cache = memory.stats.get("total_inactive_file", memory.stats.get("inactive_file", 0))
+                limit = memory.limit if memory.limit and memory.limit < memory_total else None
+                cpu = stats.cpu_stats.cpu_usage.total_usage
+                volumes = {mount.name: f"{name}:{mount.destination}" for mount in listed.mounts if mount.name}
+                read.append(
+                    _Reading(listed.id, name, listed.image, memory.usage - cache, limit, cpu, volumes),
+                )
         return read
 
     def _sample(self, client: docker.DockerClient, memory_total: int) -> None:
         machine = psutil.virtual_memory()
-        read = self._read(client, grading=GRADING in self._open)
-        held_now = {}
+        read = self._read(client, memory_total, grading=GRADING in self._open)
+        held_now = {reading.id: reading.held for reading in read}
         with self._lock:
-            for listed, name, memory, cpu in read:
-                # As `docker stats` shows it: usage less the inactive file cache, by cgroup v1's name or v2's.
-                cache = memory.stats.get("total_inactive_file", memory.stats.get("inactive_file", 0))
-                held = held_now[listed.id] = (memory.usage or 0) - cache
-                seen = self._seen.setdefault(listed.id, _Seen(name, listed.image))
-                seen.cpu_before += seen.cpu if cpu < seen.cpu else 0
-                seen.cpu, seen.peak = cpu, max(seen.peak, held)
-                seen.limit = memory.limit if memory.limit and memory.limit < memory_total else None
-            if self._rested is None and PLAY in self._open and self.rest_at in {name for _, name, *_ in read}:
+            for reading in read:
+                seen = self._seen.setdefault(reading.id, _Seen(reading.name, reading.image))
+                seen.cpu_before += seen.cpu if reading.cpu < seen.cpu else 0
+                seen.cpu, seen.peak, seen.limit = reading.cpu, max(seen.peak, reading.held), reading.limit
+                self._mounted = reading.volumes | self._mounted
+            if (
+                self._rested is None
+                and PLAY in self._open
+                and self.rest_at in {reading.name for reading in read}
+            ):
                 self._rested, self._rest = self.clock(), sum(held_now.values())
                 for container_id, held in held_now.items():
                     self._seen[container_id].rest = held
             self._samples += 1
             self._peak = max(self._peak, sum(held_now.values()))
             self._host_peak = max(self._host_peak or 0, machine.total - machine.available)
+
+    @property
+    def samples(self) -> int:
+        """How many samples have been taken so far."""
+        with self._lock:
+            return self._samples
 
     def start_phase(self, phase: str) -> float:
         """Mark the start of ``phase``."""
@@ -246,24 +296,26 @@ class CostRecorder:
         self.marks[phase] = (started, self.clock())
         with self._lock:
             self._open.discard(phase)
-            images = {seen.image for seen in self._seen.values()}
+            images, mounted = {seen.image for seen in self._seen.values()}, dict(self._mounted)
         if phase == GRADING:
             try:
-                self._measure_storage(images)
+                self._measure_storage(images, mounted)
             except Exception as error:  # noqa: BLE001 - the profiler never fails or stops the run
                 self._fail(error)
 
-    def _measure_storage(self, images: set[str]) -> None:
+    def _measure_storage(self, images: set[str], mounted: Mapping[str, str]) -> None:
         client = self._connect()
         try:
             for image in images:
-                self._images[image] = client.api.inspect_image(image)["Size"]
-            usage = client.df()
-            listed = (usage.get("VolumeUsage") or {}).get("Items") or usage.get("Volumes") or []
-            for volume in map(_Volume.model_validate, listed):
+                self._images[image] = _Image.model_validate(client.api.inspect_image(image)).size
+            usage = _DiskUsage.model_validate(client.df())
+            listed = usage.volume_usage.items if usage.volume_usage else usage.volumes or []
+            for volume in listed:
                 size = volume.usage.size if volume.usage else -1
                 if (volume.labels or {}).get(PROJECT_LABEL) == self.project and size >= 0:
                     self._volumes[volume.name.removeprefix(f"{self.project}_")] = size
+                elif volume.name in mounted and size >= 0:
+                    self._volumes[mounted[volume.name]] = size
         finally:
             client.close()
 
