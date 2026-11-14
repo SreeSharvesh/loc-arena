@@ -11,7 +11,9 @@ a mapping in a later file merges into the same key of an earlier one, and any ot
 document is built from that source alone, so environment variables, dotenv files and secrets directories never
 change a run. A missing file is refused, and an `extends` cycle is refused. Examples: `aurora-efficiency.yaml`
 extends `env.default.yaml`; `aurora-efficiency.fast.yaml`, the smoke run (the cheapest models, small call
-budgets, scores that are not results), extends `aurora-efficiency.yaml`.
+budgets, scores that are not results), extends `aurora-efficiency.yaml`; `aurora-efficiency.deploy-check.yaml`
+extends the smoke run to check in live play that an agent told to deploy does, and what each deployment leaves
+in the events and `scores.json` (`make run RUN=aurora-efficiency.deploy-check`).
 
 ## Validating
 
