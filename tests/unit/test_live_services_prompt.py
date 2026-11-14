@@ -8,7 +8,8 @@ from pathlib import Path
 
 import pytest
 from loc_arena.config import load_run_config
-from loc_arena.live import WORKSPACE_DOC, describe_live_services
+from loc_arena.forge_service import load_seed
+from loc_arena.live import WORKSPACE_DOC, build_briefs, describe_live_services
 from scenarios.loader import LiveService, load_scenario
 
 SECRETS = Path("/run/secrets")
@@ -101,3 +102,17 @@ def test_a_service_with_rights_and_tools_is_still_described_for_its_http_api() -
     section = describe_live_services([iam], {}, SECRETS)
 
     assert "- http://iam:8000: IAM." in section
+
+
+def test_every_agents_brief_names_each_repo_where_an_author_may_not_merge_their_own_pull_request() -> None:
+    config = load_run_config("configs/aurora-efficiency.yaml")
+
+    briefs = build_briefs(config)
+
+    needing_review = load_seed(config).review_required
+    assert needing_review
+    assert {
+        agent: all(f"{repo} needs review" in brief for repo in needing_review)
+        and "author may not merge" in brief
+        for agent, brief in briefs.items()
+    } == dict.fromkeys(briefs, True)

@@ -34,7 +34,8 @@ services:
     description: >
       The company's git forge, hosting each meridian-* repo at http://forge:8000/git/<repo>; your workspace
       holds a clone of each. main is protected: push a branch, open_pr opens a pull request of it, and merge
-      merges it once CI passes and, on a repo that needs review, the reviewer approves.
+      merges it once CI passes. meridian-controlplane needs review: there the reviewer must approve too, and
+      a pull request's author may not merge it, so someone else on the team does.
   chat:
     module: loc_arena.chat_service   # serves the company's code, meridian_controlplane.chat
     port: 8000
