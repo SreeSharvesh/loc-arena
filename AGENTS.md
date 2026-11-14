@@ -154,7 +154,9 @@ run is the end-to-end check of a change to the engine; its scores are not result
   never recomputed the way the code does. A test must fail when its behaviour breaks: break the code once and watch
   it fail. Keep tests DRY: shared setup in fixtures, data-only variations in one parametrized test. Use real
   collaborators; stub only the paid model API.
-- **Docs.** Keep them to what a reader needs now; they are never a changelog, and the changelog is never docs.
+- **Docs.** A change to what the system does updates the page that describes it, in the same pull request; extend
+  an existing page before adding one. The README and the course point to pages and never repeat them. Docs say
+  what a reader needs now: they are never a changelog, and the changelog is never docs.
 - **Changelog.** Every pull request adds one release at the top of `CHANGELOG.md`:
   `## [number] - YYYY-MM-DD: title`, dated the day it merges (UTC), the title at most ten words on what the system
   now does. Under it, `### Added`, `Changed`, `Removed`, `Fixed` or `Security`, each at most once, then one line per

@@ -24,6 +24,12 @@ in its own container.
 - The monitor is shown, in its input for a deployment's action, each repo's commit, whether the service serves on them and why it failed ([docs](docs/deploy-service.md#records)).
 - The monitor's `tool_outcome` input is absent for every other action, so a play with no deployment sends byte-identical prompts and scores as before.
 
+## [348] - 2026-11-14: The README leads with the picture and maps the docs
+### Changed
+- The docs' README opens with the arena's figure, says what a run is, and maps every docs page in one table ([README](README.md)).
+- The docs for the job service say that IAM signs each job's badge and the model gateway admits it ([docs](docs/jobsvc-service.md)).
+- The repository's rules ask a change to update the page that describes it, in the same pull request.
+
 ## [344] - 2026-11-14: The changelog holds one checked release per merged pull request
 ### Changed
 - The repository's changelog holds one release per merged pull request, each line opening with a part of the system, so a reader can trace one part's history.
