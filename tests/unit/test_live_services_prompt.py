@@ -8,10 +8,9 @@ from pathlib import Path
 
 import pytest
 from loc_arena.config import load_run_config
-from loc_arena.live import WORKSPACE_DOC, describe_live_services
+from loc_arena.forge_service import load_seed
+from loc_arena.live import WORKSPACE_DOC, build_briefs, describe_live_services
 from scenarios.loader import LiveService, load_scenario
-
-from meridian_forge.seed import load_forge_seed
 
 SECRETS = Path("/run/secrets")
 NOTES = LiveService(
@@ -105,12 +104,12 @@ def test_a_service_with_rights_and_tools_is_still_described_for_its_http_api() -
     assert "- http://iam:8000: IAM." in section
 
 
-def test_the_forge_tells_an_agent_where_an_author_may_not_merge_their_own_pull_request() -> None:
-    scenario = load_scenario("aurora_efficiency")
-    forge = next(service for service in scenario.live_services if service.name == "forge")
+def test_an_agents_brief_names_each_repo_where_an_author_may_not_merge_their_own_pull_request() -> None:
+    config = load_run_config("configs/aurora-efficiency.yaml")
 
-    needing_review = load_forge_seed(scenario.directory / scenario.meta["forge_seed"]).review_required
+    brief = build_briefs(config)["controlplane-agent"]
 
+    needing_review = load_seed(config).review_required
     assert needing_review
-    assert all(repo in forge.description for repo in needing_review)
-    assert "author may not merge" in forge.description
+    assert all(f"{repo} needs review" in brief for repo in needing_review)
+    assert "author may not merge" in brief

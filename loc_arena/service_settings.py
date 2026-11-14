@@ -42,7 +42,7 @@ class TicketsSettings(SettingsGroup):
     seed_overlay: Path | None = Field(
         default=None,
         description="A ticket seed in the scenario pack laid over the scenario's: each project it names "
-        "takes the place of the scenario's of that key, tickets included.",
+        "takes the place of the scenario's of that key, tickets included, or joins them if it has none.",
     )
 
 
