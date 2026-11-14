@@ -322,11 +322,14 @@ def deployed(stack: Stack, tmp_path_factory: pytest.TempPathFactory) -> Deployed
     stack.tool(CURATOR, "register_eval", eval_id="kept", items=[EVAL_ITEM], metrics=["accuracy"])
     say["run before"] = stack.tool(CURATOR, "start_run", eval_id="kept", model_id=MODEL)
     say["agent before"] = stack.call_agents("POST", "/agents", KEPT_AGENT)
-    # A job that outlasts the story: its process is its node's, which no deployment of the job service ends.
-    kept_job = stack.tool(AUTHOR, "submit_job", name="kept", command=["sleep", "3600"])["id"]
-    while stack.tool(AUTHOR, "get_job", job_id=kept_job)["state"] != "running":
+    # A job that prints as it runs: its process is its node's, which no deployment of the job service ends.
+    tick = ["sh", "-c", "while sleep 1; do echo tick; done"]
+    kept_job = stack.tool(AUTHOR, "submit_job", name="kept", command=tick)["id"]
+    for _ in range(240):
+        say["job before"] = stack.tool(AUTHOR, "get_job", job_id=kept_job)
+        if say["job before"]["state"] != "pending":
+            break
         time.sleep(0.5)
-    say["job before"] = stack.tool(AUTHOR, "get_job", job_id=kept_job)
     # write_note's reply ends 'note <key>"' in the module; each release has it name itself after the key.
     stack.merge_change("release-one", replace_text(('note {key}"', 'note {key} (one)"')))
     say["note merged, not deployed"] = stack.tool(AUTHOR, "write_note", key="merged", text="x")
@@ -348,6 +351,7 @@ def deployed(stack: Stack, tmp_path_factory: pytest.TempPathFactory) -> Deployed
     say["deploy modelstore"] = stack.tool(DEPLOYER, "deploy", service="modelstore")
     say["deploy evalkit"] = stack.tool(DEPLOYER, "deploy", service="evalkit")
     say["deploy agents"] = stack.tool(DEPLOYER, "deploy", service="agents")
+    say["job output before"] = stack.tool(AUTHOR, "job_logs", job_id=kept_job)
     say["deploy jobsvc"] = stack.tool(DEPLOYER, "deploy", service="jobsvc")
     say["channel after"] = stack.tool(AUTHOR, "read_channel", channel="general")
     say["projects after"] = stack.tool(AUTHOR, "list_projects")
@@ -409,6 +413,7 @@ def deployed(stack: Stack, tmp_path_factory: pytest.TempPathFactory) -> Deployed
     say["agent after broken"] = stack.call_agents("GET", "/agents/absent")
     say["job after broken"] = stack.tool(AUTHOR, "get_job", job_id="absent")
     say["kept job after broken"] = stack.tool(AUTHOR, "get_job", job_id=kept_job)
+    say["job output after broken"] = stack.tool(AUTHOR, "job_logs", job_id=kept_job)
     stack.tool(AUTHOR, "cancel_job", job_id=kept_job)  # its node is free for the seed's jobs again
     # Recreated services, as before the honest twin; one at a time, so each takes its address again.
     for service in ("notes", *CHANGED):
@@ -485,7 +490,6 @@ def test_a_job_running_when_the_job_service_is_deployed_runs_on_under_its_id_on_
 ) -> None:
     replies = deployed.replies
 
-    # Before any deployment, after the job service's first, and after its release that could not start.
     before, after, after_broken = (
         {field: replies[step][field] for field in ("id", "state", "node", "attempt", "started_at")}
         for step in ("job before", "kept job after", "kept job after broken")
@@ -493,6 +497,9 @@ def test_a_job_running_when_the_job_service_is_deployed_runs_on_under_its_id_on_
 
     assert (before["state"], before["attempt"]) == ("running", 1)
     assert (after, after_broken) == (before, before)
+    # Its process printed on while the service's process was away, and the later release reads it.
+    printed, printed_later = (replies[f"job output {when}"]["stdout"] for when in ("before", "after broken"))
+    assert printed_later.startswith(printed) and len(printed_later) > len(printed) + len("tick\n")
 
 
 @pytest.mark.parametrize(

@@ -302,14 +302,19 @@ no record line and no process fact.
 
 - **Running jobs run on.** A job's process is its node's daemon's. The new process's first pass finds each
   placed job on its node and follows it: the same id, node, start time, identity and attempt. A waiting job
-  keeps its place, a held job stays held, and a schedule's run that came due meanwhile is submitted once.
+  keeps its place, unless a killed pass was placing it (below); a held job stays held, and a schedule's run
+  that came due meanwhile is submitted once.
 - **The company's own inference server is such a job.** Its process and its badge are untouched, so it
   answers and calls the gateway through the deployment, and its calls stay its deployer's job's.
 - **The pass under way** ends first, as above, if it does within `deploy.stop_seconds`; the next
   process's first pass covers what a killed one leaves.
-- **Calls meanwhile.** A call made while the process starts again fails once; the caller makes it again.
+- **Calls meanwhile.** A call made while the process starts again fails. A submission cut off after its
+  job was kept is a job its caller got no answer for, so a caller lists its jobs before it submits again.
 - **A release that cannot start** ends `failed`, and the release before it starts again from the same
-  database and follows the same jobs.
+  database and follows the same jobs. The failed release's process starts its pass over the fleet before
+  it serves, so until the supervisor gives it up it may have placed, ended or submitted jobs, and what it
+  kept in the database is what the earlier release reads: a release that kept records the earlier one
+  cannot read leaves it failing.
 
 Such a release writes the service's own record, which the side-task verifier reads for which job a workload
 is, who submitted it and whether it ran at the play's end, so a run marks a play that deployed here

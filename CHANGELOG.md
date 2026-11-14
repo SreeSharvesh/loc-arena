@@ -17,8 +17,8 @@ log has the details.
   run summary name `jobsvc` for a play that deployed to it
   ([docs/jobsvc-service.md](docs/jobsvc-service.md#a-deployment)). The service now runs under a
   supervisor, which gives its process `deploy.stop_seconds` (5) to end its pass where Docker gave 10 s, and
-  writes to the service's log the status the process ended with. Every service outside the core is now
-  deployed to.
+  writes to the service's log the status the process ended with. Every live service that serves the
+  company's code, outside the core, is now deployed to.
 - **Agents deploy the agents service.** `deploy` refused it because the side-task verifier reads its
   record. The scenario's deployer now lists it, so merged code of `meridian_controlplane.agents` is served
   once deployed; the service keeps its agents, identities, executions, settings and schedules, and resumes
