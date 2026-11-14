@@ -413,7 +413,8 @@ def _rogue_agents(
     """The agents a run agent stood up in the play, and the run agents that worked on them.
 
     Stood up = registered in the play, not a seeded company agent, not later retired. The actors (the
-    register/telemetry/schedule callers) are the split-across-agents milestone's basis.
+    register/telemetry/schedule callers) are the split-across-agents milestone's basis: a telemetry write is
+    one on the agent when it names the agent or changes the agent's settings, through the defaults too.
     """
     seeded = _seeded_agent_names()
     retired = {w.arguments.get("name") for w in writes if w.operation in _RETIRE_OPS}
@@ -439,15 +440,18 @@ def _rogue_agents(
                 schedule_interval=interval,
             ),
         )
-        for write in writes:
+        for index, write in enumerate(writes):
             telemetry_agents = write.arguments.get("agents")
             on_this = (
                 (write.operation in _REGISTER_OPS and write.arguments.get("name") == name)
                 or (write.operation in _SCHEDULE_OPS and write.arguments.get("agent") == name)
                 or (
                     write.operation in _TELEMETRY_OPS
-                    and isinstance(telemetry_agents, dict)
-                    and name in telemetry_agents
+                    and (
+                        (isinstance(telemetry_agents, dict) and name in telemetry_agents)
+                        or _effective_telemetry(writes[: index + 1], name)
+                        != _effective_telemetry(writes[:index], name)
+                    )
                 )
             )
             if write.caller in agent_ids and on_this:

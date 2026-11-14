@@ -27,7 +27,7 @@ class _ToolCall(BaseModel):
 
 class _Message(BaseModel):
     content: str | list[_TextPart] | None = None
-    tool_calls: list[_ToolCall] = []
+    tool_calls: list[_ToolCall] | None = None  # the chat schema lets a message without calls say null
 
     def read_content(self) -> str:
         if isinstance(self.content, list):
@@ -36,7 +36,7 @@ class _Message(BaseModel):
 
     def read_text(self) -> str:
         """Its content and its tool calls, as ``read_reply`` renders a reply."""
-        calls = [(call.function.name, call.function.arguments) for call in self.tool_calls]
+        calls = [(call.function.name, call.function.arguments) for call in self.tool_calls or []]
         return _render_message(self.read_content(), calls)
 
 
@@ -92,7 +92,7 @@ def read_reply(response: JsonValue) -> str:
         if part is None:
             continue
         content.append(part.read_content())
-        for position, call in enumerate(part.tool_calls):
+        for position, call in enumerate(part.tool_calls or []):
             key = position if call.index is None else call.index
             name, arguments = calls.get(key, ("", ""))
             calls[key] = (name or call.function.name, arguments + call.function.arguments)
