@@ -90,7 +90,13 @@ from loc_arena.workspace_service import WORKSPACE_TOOLS
 from pydantic import BaseModel, ConfigDict, Field
 from sandbox_server.wire import RESET_PATH, RUN_PATH, CommandRequest
 
-from tests.integration._docker_support import SERVE_WORKSPACE, image_exists
+from tests.integration._docker_support import (
+    SERVE_WORKSPACE,
+    image_exists,
+    read_logs,
+    read_mounts,
+    run_docker,
+)
 from tests.integration._probe_prelude import CONNECT_TIMEOUT_SECONDS, PRELUDE
 
 RUN = "aurora-efficiency.stack-test"
@@ -720,6 +726,7 @@ class StackRun:
     left_by_episode: dict[str, str]
     found_by_twin: dict[str, str]
     calls_after_twin: list[GatewayCall]
+    sandbox_logs: str  # the end of each sandbox's log after play, which the bash tests report when they fail
 
     def read_outcome(self, row: str) -> str:
         """The one token the probe of ``row`` printed, in the sandbox or the service container it ran in."""
@@ -841,30 +848,6 @@ def read_addressing(network: str) -> NetworkAddressing:
     return NetworkAddressing(addressing["Subnet"], addressing.get("Gateway"))
 
 
-def read_mounts(project: str) -> dict[str, list[str]]:
-    """The source and destination of every mount of each container of ``project``, by compose service."""
-    label = "com.docker.compose.project"
-    listed = run_docker("ps", "--all", "--quiet", "--filter", f"label={label}={project}").stdout.split()
-    layout = '{{index .Config.Labels "com.docker.compose.service"}} {{json .Mounts}}'
-    mounts: dict[str, list[str]] = {}
-    for line in run_docker("inspect", "--format", layout, *listed).stdout.splitlines():
-        service, _, inspected = line.partition(" ")
-        mounts.setdefault(service, []).extend(
-            path
-            for mount in json.loads(inspected)
-            for path in (mount.get("Source", ""), mount["Destination"])
-        )
-    return mounts
-
-
-def run_docker(*arguments: str, **options: Any) -> subprocess.CompletedProcess[str]:
-    """Run ``docker`` with ``arguments``; raise with its stderr when it fails."""
-    done = subprocess.run(["docker", *arguments], capture_output=True, text=True, check=False, **options)
-    if done.returncode:
-        raise RuntimeError(f"docker {shlex.join(arguments[:6])} exited {done.returncode}: {done.stderr}")
-    return done
-
-
 @pytest.fixture(scope="module")
 def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
     directory = tmp_path_factory.mktemp("stack")
@@ -978,6 +961,7 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
                 env=environment,
             )
             played_until = time.time()
+            sandbox_logs = read_logs(compose, environment, [*sandboxes])
             in_services = {
                 row: {"stdout": run_in(service, "sh", "-c", probes[row])}
                 for row, service in ROW_SERVICES.items()
@@ -1053,6 +1037,9 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
             CONFIG.settings,
             call_log_after_twin,
         )
+    except Exception as error:
+        error.add_note(read_logs(compose, environment, [*sandboxes]))
+        raise
     finally:
         down = ["docker", *compose, "down", "--volumes", "--remove-orphans"]
         subprocess.run(down, env=environment, capture_output=True, check=False)
@@ -1085,6 +1072,7 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
         left_by_episode=left_by_episode,
         found_by_twin=found_by_twin,
         calls_after_twin=[GatewayCall.model_validate_json(line) for line in after_twin],
+        sandbox_logs=sandbox_logs,
         **printed,
     )
 
@@ -1092,22 +1080,22 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
 def test_bash_in_a_stack_run_cannot_read_the_episodes_sealed_log(stack_run: StackRun) -> None:
     read = stack_run.bash[0]
 
-    missing = "No such file or directory" in read["stderr"]
-    assert (read["returncode"], read["stdout"], missing) == (1, "", True)
+    missing = "No such file or directory" in read.get("stderr", "")
+    assert (read.get("returncode"), read.get("stdout"), missing) == (1, "", True), stack_run.sandbox_logs
 
 
 def test_bash_in_a_stack_run_sees_its_agents_clone_of_every_repo(stack_run: StackRun) -> None:
     listed = stack_run.bash[1]
 
     expected = "".join(f"{repo}\n" for repo in CHECKOUT_REPOS)
-    assert listed == {"returncode": 0, "stdout": expected, "stderr": ""}
+    assert listed == {"returncode": 0, "stdout": expected, "stderr": ""}, stack_run.sandbox_logs
 
 
 def test_a_process_a_bash_command_leaves_running_ends_with_it(stack_run: StackRun) -> None:
     looked_for = stack_run.bash[2]
 
-    gone = "No such process" in looked_for["stderr"]
-    assert (looked_for["returncode"], gone) == (1, True)
+    gone = "No such process" in looked_for.get("stderr", "")
+    assert (looked_for.get("returncode"), gone) == (1, True), stack_run.sandbox_logs
 
 
 @pytest.mark.parametrize(("row", "allowed"), [(row, allowed) for row, (_, allowed) in ROWS.items()], ids=ROWS)

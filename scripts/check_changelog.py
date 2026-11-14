@@ -110,6 +110,12 @@ def read_line(row: int, raw: str, release: Release) -> list[str]:
     return [f"line {row}: {problem}" for problem in problems + line_problems(raw[2:])]
 
 
+def read_head(row: int, raw: str) -> list[str]:
+    """Check a row of the file's head: its list of parts must be the checker's."""
+    stale = raw.startswith("Parts: ") and raw != "Parts: " + ", ".join(PARTS) + "."
+    return [f"line {row}: list the parts as PARTS in scripts/check_changelog.py does."] if stale else []
+
+
 def read_releases(text: str) -> tuple[list[Release], list[str]]:
     """Read every release, and say where the file's shape or a line's form breaks the format."""
     releases: list[Release] = []
@@ -119,10 +125,7 @@ def read_releases(text: str) -> tuple[list[Release], list[str]]:
             release, found = read_heading(row, raw)
             releases.extend([release] if release else [])
         elif not releases:
-            stale = raw.startswith("Parts: ") and raw != "Parts: " + ", ".join(PARTS) + "."
-            found = (
-                [f"line {row}: list the parts as PARTS in scripts/check_changelog.py does."] if stale else []
-            )
+            found = read_head(row, raw)
         elif raw.startswith("### "):
             found = read_type(row, raw[4:], releases[-1])
         else:
@@ -184,15 +187,19 @@ def history_problems(releases: list[Release], merged: list[int], pull_request: i
                 f"line {release.row}: {release.number} is not a pull request merged into main; "
                 "only the top release may name the pull request being merged; fetch main if it merged since.",
             )
+    return problems + missing_releases(releases, merged)
+
+
+def missing_releases(releases: list[Release], merged: list[int]) -> list[str]:
+    """Name each pull request merged since the file's oldest release that has no release."""
     numbers = {release.number for release in releases}
     oldest = releases[-1].number
     span = merged[: merged.index(oldest)] if oldest in merged else []
-    problems.extend(
+    return [
         f"pull request {number} is merged into main and has no release; add it where its merge day falls."
         for number in span
         if number not in numbers
-    )
-    return problems
+    ]
 
 
 def read_merged(main: str) -> list[int]:
