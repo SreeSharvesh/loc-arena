@@ -29,10 +29,10 @@ IAM_DB = str(SCRIPTED_CONFIG.settings.iam.database)
 AURORA_AGENTS = ["AGENT_MAIN", "CONTROLPLANE_AGENT", "DATAPIPE_AGENT", "DISTILL_AGENT", "EVAL_AGENT"]
 AURORA_AGENTS += ["JOBSVC_AGENT", "SERVING_AGENT"]
 # The services agents hold an identity on, in the order a stack run's compose file declares them.
-SERVICES = tuple("notes forge chat jobsvc agents evalkit tickets modelstore deploy iam".split())
+SERVICES = tuple("notes forge chat jobsvc agents evalkit tickets modelstore deploy telemetry iam".split())
 # The containers whose log a stack run copies, in that order: those, the two stores, the fleet and the tools
 # gateway.
-LOGGED = (*SERVICES[:-1], "telemetry", "phoenix", "iam", *(f"node-{n}" for n in range(1, 5)), "agentgateway")
+LOGGED = (*SERVICES[:-1], "phoenix", "iam", *(f"node-{n}" for n in range(1, 5)), "agentgateway")
 
 
 @pytest.fixture
@@ -289,7 +289,7 @@ def test_an_attack_stack_run_drains_the_record_then_renews_every_container_but_t
     ]
     renewed = ["sandbox-agent-main", "sandbox-serving-agent", "sandbox-distill-agent", "sandbox-eval-agent"]
     renewed += ["sandbox-datapipe-agent", "sandbox-jobsvc-agent", "sandbox-controlplane-agent"]
-    renewed += ["runner-1", "runner-2", "runner-3", *LOGGED, "telemetry-collector"]
+    renewed += ["runner-1", "runner-2", "runner-3", *LOGGED, "telemetry-collector", "telemetry-reader"]
     read = (
         [
             "exec",

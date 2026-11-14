@@ -28,7 +28,8 @@ from loc_arena.config import RunConfig
 from loc_arena.yaml_documents import dump_document
 
 COLLECTOR_SERVICE = "telemetry-collector"  # the company's Collector: its compose service and host name
-TELEMETRY_NETWORK = "telemetry-net"  # the store and the Collector alone
+READER_SERVICE = "telemetry-reader"  # the store's own MCP server, which reads it to the tools gateway
+TELEMETRY_NETWORK = "telemetry-net"  # the store, the Collector, the store's reader and the tools gateway
 WRITER, READER = "collector", "reader"  # the store's users: one can only write, the other only read
 # Two compose secrets and the host variable of each: the store's users, the Collector's config.
 STORE_USERS, USERS_VARIABLE = "telemetry_store_users", "LOC_ARENA_TELEMETRY_STORE_USERS"
@@ -36,6 +37,9 @@ COLLECTOR_CONFIG, COLLECTOR_CONFIG_VARIABLE = (
     "telemetry_collector_config",
     "LOC_ARENA_TELEMETRY_COLLECTOR_CONFIG",
 )
+READER_PASSWORD, READER_PASSWORD_VARIABLE = "telemetry_reader", "LOC_ARENA_TELEMETRY_READER"
+# The reader's command: the store's own MCP server, given the reader's password from its mounted secret.
+READ_STORE = 'GREPTIMEDB_PASSWORD="$(cat "$1")" exec greptimedb-mcp-server'
 INSTRUMENT = "opentelemetry-instrument"  # runs a command with the SDK and each library's instrumentation on
 SDK_BATCH_SIZE = 512  # the SDK's default: the most spans, or log records, in one export
 GATEWAY_NAME = "tools-gateway"  # the service.name of the tools gateway's spans
@@ -71,8 +75,22 @@ def find_store(config: RunConfig) -> LiveService | None:
 
 
 def list_telemetry_services(config: RunConfig) -> list[str]:
-    """The company's Collector, which the honest twin's renewal recreates with its store; none without one."""
-    return [COLLECTOR_SERVICE] if find_store(config) else []
+    """What the honest twin's renewal recreates with the store: its Collector, and its reader if any."""
+    store = find_store(config)
+    return [] if store is None else [COLLECTOR_SERVICE, *([READER_SERVICE] if store.tools else [])]
+
+
+def find_reader(config: RunConfig) -> str | None:
+    """The store's own MCP server's compose service, which the tools gateway joins the store's network for."""
+    store = find_store(config)
+    return READER_SERVICE if store and store.tools else None
+
+
+def locate_reader(config: RunConfig, service: LiveService) -> str | None:
+    """Where the tools gateway finds ``service``'s tools if it is the telemetry store: its own MCP server."""
+    if not service.collects:
+        return None
+    return f"http://{READER_SERVICE}:{config.settings.telemetry.reader_port}/mcp"
 
 
 def render_export_environment(config: RunConfig, service: str) -> dict[str, str]:
@@ -192,6 +210,7 @@ def issue_telemetry_secrets(config: RunConfig, token_bytes: int) -> dict[str, st
     writer, reader = secrets.token_urlsafe(token_bytes), secrets.token_urlsafe(token_bytes)
     return {
         USERS_VARIABLE: f"{WRITER}:wo={writer}\n{READER}:ro={reader}\n",
+        READER_PASSWORD_VARIABLE: reader,
         COLLECTOR_CONFIG_VARIABLE: render_collector_config(config, store, writer),
     }
 
@@ -224,7 +243,10 @@ def add_telemetry(
     rendered["command"] = [
         *["standalone", "start", "--http-addr", f"0.0.0.0:{store.port}"],
         *["--user-provider", f"static_user_provider:file:{secrets_dir / STORE_USERS}"],
+        *["--mysql-addr", f"0.0.0.0:{config.settings.telemetry.sql_port}"],  # where its reader asks it
     ]
+    if store.tools:
+        _add_reader(config, compose, store)
     services[COLLECTOR_SERVICE] = {
         "image": stack.collector_image,
         "command": ["--config", str(secrets_dir / COLLECTOR_CONFIG)],
@@ -240,5 +262,51 @@ def add_telemetry(
         **compose["secrets"],
         STORE_USERS: {"environment": USERS_VARIABLE},
         COLLECTOR_CONFIG: {"environment": COLLECTOR_CONFIG_VARIABLE},
+        READER_PASSWORD: {"environment": READER_PASSWORD_VARIABLE},
     }
     return compose
+
+
+def _add_reader(config: RunConfig, compose: ComposeDocument, store: LiveService) -> None:
+    """Add the store's own MCP server to ``compose``; the tools gateway joins its network (``find_reader``).
+
+    The server holds no credential of an agent and checks none, so it is on the store's network alone: only
+    the tools gateway, which asks IAM before each call, reaches it. It reads as the store's read-only user,
+    which is what keeps a query from changing anything, and returns at most ``telemetry.result_bytes``.
+    """
+    stack, telemetry = config.settings.stack, config.settings.telemetry
+    services, port = compose["services"], telemetry.reader_port
+    engine = next(service for service in services.values() if "build" in service and "environment" in service)
+    services[READER_SERVICE] = {
+        "image": engine["image"],
+        "pull_policy": "never",  # the engine image, which another service builds
+        "command": ["sh", "-c", READ_STORE, "sh", str(config.settings.gateway.secrets_dir / READER_PASSWORD)],
+        "environment": {
+            "GREPTIMEDB_HOST": store.name,
+            "GREPTIMEDB_PORT": str(telemetry.sql_port),
+            "GREPTIMEDB_HTTP_PORT": str(store.port),
+            "GREPTIMEDB_USER": READER,
+            "GREPTIMEDB_TRANSPORT": "streamable-http",
+            "GREPTIMEDB_LISTEN_PORT": str(telemetry.reader_port),
+            "GREPTIMEDB_MAX_RESULT_BYTES": str(telemetry.result_bytes),
+        },
+        "secrets": [READER_PASSWORD],
+        "cap_drop": ["ALL"],
+        "mem_limit": stack.service_memory_limit,
+        "cpus": stack.service_cpus,
+        "pids_limit": stack.service_pids_limit,
+        "networks": [TELEMETRY_NETWORK],
+        "depends_on": {store.name: {"condition": "service_healthy"}},
+        "healthcheck": {
+            "test": [
+                "CMD",
+                "python",
+                "-c",
+                f"import socket; socket.create_connection(('localhost', {port}), 2)",
+            ],
+            "interval": f"{stack.gateway_health_interval_seconds}s",
+            "retries": stack.gateway_health_retries,
+            "start_period": f"{stack.gateway_health_start_seconds}s",
+            "start_interval": f"{stack.gateway_health_interval_seconds}s",
+        },
+    }

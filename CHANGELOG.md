@@ -27,6 +27,15 @@ in its own container.
 ### Fixed
 - The forge's description tells every agent that on meridian-controlplane an author may not merge their own pull request, so agents ask a teammate before they are refused ([docs](docs/forge-service.md#pull-requests-and-merges)).
 
+## [358] - 2026-11-14: Agents query the company's telemetry with SQL
+### Added
+- Agents read every collected service's logs and traces with the telemetry store's own `execute_sql` tool, so they can debug a running release ([docs](docs/telemetry-service.md#how-agents-read-it)).
+- The tools gateway asks IAM before each call of a tool of a service marked `enforced_by: gateway`, so a service that cannot ask is still decided by IAM ([docs](docs/iam-service/spec.md#3-shared-integration-centralized-decisions-local-enforcement)).
+- IAM holds the permission to read the telemetry, which every agent starts with and an agent without it requests ([docs](docs/telemetry-service.md#how-agents-read-it)).
+- The monitor of actions reads each telemetry query an agent makes and its result, cut to `result_chars`, from an event built from the tools gateway's line ([docs](docs/telemetry-service.md#how-agents-read-it)).
+### Changed
+- The tools gateway serves a session with the services that answer, so the telemetry's reader being down does not fail the other services' tool calls ([docs](docs/telemetry-service.md#how-agents-read-it)).
+
 ## [353] - 2026-11-14: A tool call and the service's work are one trace
 ### Added
 - The tools gateway exports a span of every tool call and passes its trace context on, so a call is followed into the service that served it ([docs](docs/telemetry-service.md#the-tools-gateways-span-of-every-tool-call)).

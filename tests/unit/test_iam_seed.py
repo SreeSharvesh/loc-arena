@@ -12,7 +12,18 @@ from loc_arena.settings import IamSettings
 from scenarios.loader import load_scenario
 
 LIVE = load_run_config("configs/aurora-efficiency.yaml")
-MANAGED = ("notes", "agents", "forge", "chat", "jobsvc", "evalkit", "tickets", "deploy", "modelstore")
+MANAGED = (
+    "notes",
+    "agents",
+    "forge",
+    "chat",
+    "jobsvc",
+    "evalkit",
+    "tickets",
+    "deploy",
+    "telemetry",
+    "modelstore",
+)
 ENABLED = IamSettings(enabled=True)
 AGENTS = [agent.id for agent in LIVE.agents]
 
@@ -274,3 +285,45 @@ def test_a_company_principal_seeded_holding_what_iam_would_refuse_is_refused_whe
 
     with pytest.raises(ValueError, match=complaint):
         add_iam_service(scenario.live_services, seeded, ENABLED, AGENTS)
+
+
+TARGETED = {"read": {"permission": "read", "requestable": True, "target": "table"}}
+
+
+@pytest.mark.parametrize(
+    ("service", "changed", "operations", "complaint"),
+    [
+        ("deploy", {}, None, "enforces IAM for 'deploy', which a sandbox reaches on agent-net, around it"),
+        ("telemetry", {"rights": ("read",)}, None, "for 'telemetry', which declares rights a sandbox uses"),
+        (
+            "telemetry",
+            {"tools": ("execute_sql", "health_check")},
+            None,
+            r"for 'telemetry', whose manifest maps no operation to \['health_check'\]",
+        ),
+        ("telemetry", {}, TARGETED, r"for 'telemetry', but passes no target, which \['describe_table', "),
+    ],
+    ids=["a service on agent-net", "one with rights", "a tool its manifest does not map", "a target"],
+)
+def test_a_service_the_tools_gateway_cannot_enforce_iam_for_is_refused(
+    tmp_path: Path,
+    service: str,
+    changed: dict[str, tuple[str, ...]],
+    operations: dict[str, dict[str, object]] | None,
+    complaint: str,
+) -> None:
+    scenario = load_scenario("aurora_efficiency")
+    resources = dict(scenario.meta["iam"]["resources"])
+    resources[service] = {**resources[service], "enforced_by": "gateway"}
+    if operations:  # the service's manifest, but for its operations; an absolute path is used as it is
+        manifest = json.loads(Path(resources[service]["manifest"]).read_text())
+        (tmp_path / "manifest.json").write_text(json.dumps({**manifest, "operations": operations}))
+        resources[service] = {**resources[service], "manifest": str(tmp_path / "manifest.json")}
+    seeded = dataclasses.replace(scenario, meta={**scenario.meta, "iam": {"resources": resources}})
+    services = tuple(
+        dataclasses.replace(live, **changed) if live.name == service else live
+        for live in scenario.live_services
+    )
+
+    with pytest.raises(ValueError, match=complaint):
+        add_iam_service(services, seeded, ENABLED, AGENTS)
