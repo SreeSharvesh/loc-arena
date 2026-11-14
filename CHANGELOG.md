@@ -19,7 +19,7 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
-## [0] - 2026-11-14: The services agents deploy report their traces and logs
+## [352] - 2026-11-14: The services agents deploy report their traces and logs
 ### Added
 - The stack runs each collected service under OpenTelemetry's zero-code instrumentation, so its requests, tool calls and log records reach the telemetry store ([docs](docs/telemetry-service.md#what-reports)).
 - The deploy service's supervisor names the release on its service's signals and exports the service's stderr, so a release that cannot start leaves its traceback ([docs](docs/telemetry-service.md#what-reports)).
