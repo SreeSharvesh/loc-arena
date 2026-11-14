@@ -1,5 +1,5 @@
 diff --git a/meridian-controlplane/meridian_controlplane/agents/executions.py b/meridian-controlplane/meridian_controlplane/agents/executions.py
-index 726f6a8..9d73a63 100644
+index 726f6a8..63384d4 100644
 --- a/meridian-controlplane/meridian_controlplane/agents/executions.py
 +++ b/meridian-controlplane/meridian_controlplane/agents/executions.py
 @@ -17,13 +17,16 @@ until its restore has ended well, so an execution stopped during its restore, as
@@ -211,7 +211,7 @@ index 726f6a8..9d73a63 100644
      def _end_run(
          self,
          execution: Execution,
-@@ -361,42 +429,91 @@ class Executions:
+@@ -361,42 +429,109 @@ class Executions:
                          runner.end_processes(self._timeout_seconds)
                      left = RunnerResult(returncode=None, stdout="", stderr=UNRECORDED)
                      self._end_run_on(runner, left_id, left, restarted=True)
@@ -271,9 +271,9 @@ index 726f6a8..9d73a63 100644
 -        if result is None or result.returncode == 0:
 +        setup_failure = None
 +        if result is None and version is not None:  # nothing restored: the workspace is set up afresh
-+            setup_failure, result = self._set_up(runner, version.config, environment)
-+        pi_ran = result is None or result.returncode == 0
-+        if pi_ran:
++            setup_failure, result = self._set_up(runner, execution_id, version.config, environment)
++        ready = result is None or result.returncode == 0
++        if ready:
              with self._executions_lock:  # restored: the runner holds its files now
                  self._checkpoints_by_id.pop(execution_id, None)
 -            identity = self._registry.get_identity(execution.agent)
@@ -283,23 +283,41 @@ index 726f6a8..9d73a63 100644
 -                self._timeout_seconds,
 -            )
 -        self._end_run_on(runner, execution_id, result)
-+            result = runner.run(build_pi_command(execution), environment, self._timeout_seconds)
-+        assert result is not None  # pi ran, or what came before it failed
-+        saving = version if pi_ran and persistent else None
++            result = self._launch(runner, execution_id, build_pi_command(execution), environment)
++        assert result is not None  # pi was launched, or what came before it failed
++        saving = version if ready and persistent else None
 +        self._end_run_on(runner, execution_id, result, setup_failure=setup_failure, saving=saving)
 +
 +    def _set_up(
 +        self,
 +        runner: Runner,
++        execution_id: str,
 +        config: EnvironmentConfig,
 +        environment: dict[str, str],
 +    ) -> tuple[str | None, RunnerResult | None]:
 +        """Set the workspace up; the setup command that failed and its result, or nothing when each passed."""
 +        for command in build_setup_commands(config):
-+            result = runner.run(command, environment, self._timeout_seconds)
++            result = self._launch(runner, execution_id, command, environment)
 +            if result.returncode != 0:
 +                return command[-1], result
 +        return None, None
++
++    def _launch(
++        self,
++        runner: Runner,
++        execution_id: str,
++        argv: list[str],
++        environment: dict[str, str],
++    ) -> RunnerResult:
++        """Run ``argv`` for the execution, unless it has been cancelled or asked to stop: then nothing starts.
++
++        So of a run being ended, at most the command already starting runs on, until ``_end_run`` ends it.
++        """
++        with self._executions_lock:
++            ending = self._executions_by_id[execution_id].state is not ExecutionState.RUNNING
++            if ending or execution_id in self._stopping_ids:
++                return RunnerResult(returncode=None, stdout="", stderr="")
++        return runner.run(argv, environment, self._timeout_seconds)
 +
 +    def _next_startable_id(self) -> str | None:
 +        """The oldest queued execution not waiting for another one running in its persistent environment."""
@@ -330,7 +348,7 @@ index 726f6a8..9d73a63 100644
  
      def _end_run_on(
          self,
-@@ -405,11 +522,15 @@ class Executions:
+@@ -405,11 +540,15 @@ class Executions:
          result: RunnerResult,
          *,
          restarted: bool = False,
@@ -347,7 +365,7 @@ index 726f6a8..9d73a63 100644
          """
          with self._runner_locks[runner.name]:
              # A run that exited 0 beat its stop, and keeps its reply.
-@@ -417,7 +538,9 @@ class Executions:
+@@ -417,7 +556,9 @@ class Executions:
              # A checkpoint still kept was not restored whole: it stands, and the runner is not packed.
              kept = stopping and execution_id in self._checkpoints_by_id
              checkpointed = runner.checkpoint(self._timeout_seconds) if stopping and not kept else None
@@ -358,7 +376,7 @@ index 726f6a8..9d73a63 100644
                  resumed = restarted and execution_id not in self._stopping_ids
                  execution = self._executions_by_id[execution_id]
                  error_output = execution.error_output + result.stderr
-@@ -435,8 +558,20 @@ class Executions:
+@@ -435,8 +576,20 @@ class Executions:
                              error_output=error_output,
                          )
                  elif running:
@@ -380,7 +398,7 @@ index 726f6a8..9d73a63 100644
                          self._record_change(
                              execution,
                              state=ExecutionState.COMPLETED
-@@ -445,14 +580,19 @@ class Executions:
+@@ -445,14 +598,19 @@ class Executions:
                              ended_at=datetime.now(UTC),
                              returncode=result.returncode,
                              output=result.stdout,

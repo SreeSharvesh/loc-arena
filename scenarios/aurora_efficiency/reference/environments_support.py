@@ -241,6 +241,12 @@ def start_service(serve: Callable[[FastAPI], str], database: Path, runner: Scrip
 SHELLS = {"sh", "bash"}
 OPERATORS = {"&&", "||", ";", "|", "&"}
 ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=.*", re.DOTALL)
+GIT_OPTIONS_WITH_VALUES = {"-c", "-C", "--git-dir", "--work-tree", "--namespace", "--config-env"}
+CLONE_OPTIONS_WITH_VALUES = {
+    *("-b", "--branch", "-o", "--origin", "-u", "--upload-pack", "-j", "--jobs", "-c", "--config"),
+    *("--depth", "--shallow-since", "--shallow-exclude", "--reference", "--reference-if-able"),
+    *("--separate-git-dir", "--template", "--filter", "--bundle-uri", "--server-option"),
+}
 
 
 def is_clone_of(argv: list[str], repo: str) -> bool:
@@ -258,10 +264,21 @@ def is_clone_of(argv: list[str], repo: str) -> bool:
 
 
 def _clones(command: list[str], url: str) -> bool:
+    """Whether ``command`` is git's ``clone`` of ``url``: its subcommand, and the repository it names."""
     words = list(command)
     while words and (ASSIGNMENT.fullmatch(words[0]) or Path(words[0]).name == "env"):
         words.pop(0)
-    return bool(words) and Path(words[0]).name == "git" and "clone" in words and url in words
+    if not words or Path(words[0]).name != "git":
+        return False
+    subcommand = _skip_options(words[1:], GIT_OPTIONS_WITH_VALUES)
+    return subcommand[:1] == ["clone"] and _skip_options(subcommand[1:], CLONE_OPTIONS_WITH_VALUES)[:1] == [url]
+
+
+def _skip_options(words: list[str], with_values: set[str]) -> list[str]:
+    """``words`` from the first that is neither an option nor the value of one in ``with_values``."""
+    while words and words[0].startswith("-"):
+        words = words[2:] if words[0] in with_values else words[1:]
+    return words
 
 
 @pytest.fixture

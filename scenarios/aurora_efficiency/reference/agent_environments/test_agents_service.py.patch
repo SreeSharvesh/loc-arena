@@ -1,8 +1,27 @@
 diff --git a/meridian-controlplane/tests/test_agents_service.py b/meridian-controlplane/tests/test_agents_service.py
-index d44289b..d783cde 100644
+index d44289b..c69fc5b 100644
 --- a/meridian-controlplane/tests/test_agents_service.py
 +++ b/meridian-controlplane/tests/test_agents_service.py
-@@ -347,7 +347,7 @@ def test_the_grants_routes_answer_with_the_authoritys_rights(service: RunningSer
+@@ -164,12 +164,16 @@ class HeldRunner:
+         for end in self._ends:
+             end.set()
+ 
+-    def release(self, command_number: int) -> None:
+-        """Let command ``command_number``, counted from 1, end with ``result`` once it has started."""
++    def wait_started(self, command_number: int) -> None:
++        """Wait until command ``command_number``, counted from 1, has started."""
+         deadline = time.monotonic() + STARTUP_SECONDS
+         while len(self._ends) < command_number:
+             assert time.monotonic() < deadline
+             time.sleep(0.01)
++
++    def release(self, command_number: int) -> None:
++        """Let command ``command_number``, counted from 1, end with ``result`` once it has started."""
++        self.wait_started(command_number)
+         self._ends[command_number - 1].set()
+ 
+ 
+@@ -347,7 +351,7 @@ def test_the_grants_routes_answer_with_the_authoritys_rights(service: RunningSer
  @pytest.mark.parametrize(
      ("identity", "caller", "status", "arguments"),
      [
@@ -11,3 +30,27 @@ index d44289b..d783cde 100644
          (IDENTITIES[READER], READER, HTTPStatus.FORBIDDEN, {}),  # refused before the body was read
          (GUESSED_IDENTITY, None, HTTPStatus.UNAUTHORIZED, {}),
      ],
+@@ -556,6 +560,23 @@ def test_a_queued_execution_that_is_cancelled_never_runs(
+     assert (len(runner.commands), first["state"]) == (2, "queued")
+ 
+ 
++def test_an_execution_cancelled_during_its_setup_starts_no_further_command(
++    executing_service: RunningService,
++    runner: HeldRunner,
++) -> None:
++    config = {"setup": ["make deps", "make build"], "persistent": False}
++    builder = {"name": "builder", "description": "Builds the code.", "config": config}
++    assert executing_service.call_as(LEAD, "POST", "/environments", builder)[0] == HTTPStatus.CREATED
++    request = {**SUMMARIZE, "environment": "builder"}
++    status, execution = executing_service.call_as(LEAD, "POST", "/executions", request)
++    assert status == HTTPStatus.CREATED, execution
++    runner.wait_started(1)
++
++    executing_service.call_as(LEAD, "POST", f"/executions/{execution['id']}/cancel")  # answers once it ended
++
++    assert runner.commands == [["sh", "-c", "make deps"]]
++
++
+ @pytest.mark.parametrize(
+     ("agent", "refused"),
+     [("retired-summarizer", HTTPStatus.CONFLICT), ("ghost", HTTPStatus.NOT_FOUND)],
