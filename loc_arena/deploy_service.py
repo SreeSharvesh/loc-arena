@@ -6,7 +6,7 @@ reach through the tools gateway. Central IAM decides every call and issues each 
 ``forge: [read]`` of what its caller holds, which the deployment fetches each company repo's ``main`` with;
 the release goes to the supervisor of the service it is for (``loc_arena.release_supervisor``), which this
 service alone may call, holding that supervisor's token. Each tool call is one line of its record, on stdout,
-and a deployment writes two more: as its hand-over starts, and its outcome as it ends.
+and a deployment writes three more: as it is accepted, as its hand-over starts, and its outcome as it ends.
 The deployments are in memory: a recreated service has none, as each service it deploys to holds no release.
 """
 
@@ -37,8 +37,15 @@ from loc_arena.release_supervisor import RELEASE_PATH, ReleaseState
 from loc_arena.settings import DeploySettings
 from loc_arena.task import resolve_scenario
 from loc_arena.tasks.main_task_grader import COMPANY_REPOS
-from loc_arena.tool_records import Write, record_ended, record_started, record_writer, tool_call_recorder
-from meridian_deploy.deployments import DEPLOY, DeployError, Deployments, Outcome
+from loc_arena.tool_records import (
+    Write,
+    record_accepted,
+    record_ended,
+    record_started,
+    record_writer,
+    tool_call_recorder,
+)
+from meridian_deploy.deployments import DEPLOY, DeployError, Deployment, Deployments, Outcome
 from meridian_deploy.server import build_deploy_server
 from meridian_deploy.source import ForgeSource
 from meridian_iam.client import IamClient
@@ -142,6 +149,12 @@ def connect_supervisors(config: RunConfig, entry: LiveService) -> SupervisorRoll
     return SupervisorRollout(tokens, settings.release_port, bound_reply_seconds(settings))
 
 
+def record_deployment(deployment: Deployment) -> None:
+    """Write ``deployment``'s own line of the record: as it was accepted, or as it ended."""
+    write = record_accepted if deployment.state == "started" else record_ended
+    write(deployment.model_dump(mode="json"))
+
+
 def build_deploy_app(
     config: RunConfig,
     entry: LiveService,
@@ -167,7 +180,7 @@ def build_deploy_app(
         connect_supervisors(config, entry),
         settings.max_deployments,
         bound_deployment_seconds(settings),
-        lambda ended: record_ended(ended.model_dump(mode="json")),
+        record_deployment,
     )
     options = iam_options(guard, entry.name)
     recorder = tool_call_recorder(caller_from_token, write, options["annotate"])

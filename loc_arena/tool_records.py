@@ -11,10 +11,11 @@ file on the records volume, which the episode reads during play (``loc_arena.not
 service, which the episode serves, writes it to ``records/<service>.jsonl`` in the play's directory.
 ``ToolRecord`` reads one back.
 
-A call that starts work which goes on after it returns, as a deployment does, has two more lines, which the
-work writes in the call's context: the call's line as the work starts (``record_started``), marked
-``tool.call.started``, and as it ends (``record_ended``), marked ``tool.call.ended``, each with what is known
-then as its result. The record holds the work whatever becomes of the call.
+A call that starts work which goes on after it returns, as a deployment does, has three more lines, which the
+work writes in the call's context: the call's line as the work is accepted (``record_accepted``), marked
+``tool.call.accepted``, as it starts (``record_started``), marked ``tool.call.started``, and as it ends
+(``record_ended``), marked ``tool.call.ended`` and dated then, each with what is known then as its result. The
+record holds the work whatever becomes of the call.
 """
 
 from __future__ import annotations
@@ -34,11 +35,12 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, JsonValue
 
 TOOL_CALL = "tools/call"
 SESSION_HEADER = "mcp-session-id"  # a 2025-era session's id; a 2026-era call has none
-STARTED, ENDED = "tool.call.started", "tool.call.ended"  # on the lines a call's work writes: see above
+# On the lines a call's work writes: see above.
+ACCEPTED, STARTED, ENDED = "tool.call.accepted", "tool.call.started", "tool.call.ended"
 Write = Callable[[str], None]
-# How the work of the tool call being served writes the call's line, marked, with a result; none outside a
-# recorded call.
-_write_marked: ContextVar[Callable[[str, dict[str, JsonValue]], None] | None] = ContextVar(
+# How the work of the tool call being served writes the call's line with a result and its marks; none
+# outside a recorded call.
+_write_marked: ContextVar[Callable[[dict[str, JsonValue], dict[str, JsonValue]], None] | None] = ContextVar(
     "write_marked",
     default=None,
 )
@@ -57,8 +59,9 @@ class ToolRecord(BaseModel):
     status_description: str | None = Field(default=None, validation_alias="otel.status_description")
     agent: str = Field(validation_alias="gen_ai.agent.name")
     iam_decision: str | None = Field(default=None, validation_alias="iam.decision.id")
-    started: bool = Field(default=False, validation_alias=STARTED)  # a line of the call's work, as is
-    ended: bool = Field(default=False, validation_alias=ENDED)  # this: neither is the call's own line
+    accepted: bool = Field(default=False, validation_alias=ACCEPTED)  # a line of the call's work, as are
+    started: bool = Field(default=False, validation_alias=STARTED)  # the next two: none is the call's own
+    ended: bool = Field(default=False, validation_alias=ENDED)  # this one's time is when the work ended
 
 
 def tool_call_recorder(
@@ -92,7 +95,7 @@ def tool_call_recorder(
             write(json.dumps({**line, **outcome, **(annotate() if annotate else {})}))
 
         served = _write_marked.set(
-            lambda mark, known: write_line({"gen_ai.tool.call.result": known, mark: True}),
+            lambda known, marks: write_line({"gen_ai.tool.call.result": known, **marks}),
         )
         try:
             result = await call_next(ctx)
@@ -113,20 +116,26 @@ def tool_call_recorder(
     return record
 
 
-def record_started(result: dict[str, JsonValue]) -> None:
-    """Write the line of the call whose context this is, with ``result`` so far: its work has started.
+def record_accepted(result: dict[str, JsonValue]) -> None:
+    """Write the line of the call whose context this is, with ``result``: the work it asked for is accepted.
 
     For work that goes on whatever becomes of the call: the record holds it from here. Outside a recorded
-    call, nothing is written.
+    call, nothing is written, by this or by the two below.
     """
     if (write_marked := _write_marked.get()) is not None:
-        write_marked(STARTED, result)
+        write_marked(result, {ACCEPTED: True})
+
+
+def record_started(result: dict[str, JsonValue]) -> None:
+    """Write the line of the call whose context this is, with ``result`` so far: its work has started."""
+    if (write_marked := _write_marked.get()) is not None:
+        write_marked(result, {STARTED: True})
 
 
 def record_ended(result: dict[str, JsonValue]) -> None:
-    """Write the line of the call whose context this is, with the ``result`` its work ended with."""
+    """Write the line of the call whose context this is, dated now, with the ``result`` its work ended in."""
     if (write_marked := _write_marked.get()) is not None:
-        write_marked(ENDED, result)
+        write_marked(result, {ENDED: True, "time": datetime.now(UTC).isoformat()})
 
 
 def record_writer(directory: Path, service: str) -> Write:
