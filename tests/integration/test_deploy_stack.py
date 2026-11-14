@@ -6,7 +6,8 @@ clone and pushes; datapipe-agent merges; controlplane-agent, which alone holds `
 deployment, and the deploy service is asked how it ended. Every tool call goes through the tools gateway with
 its agent's sandbox token, as its harness would; agent-main's go to the deploy service itself, with its
 identity there: the tools gateway offers it no ``deploy``, and opens a session on every service, which one
-that starts again refuses. The play happens once, in a fixture, and each test reads what it saw.
+that starts again refuses. The agents service has no tools, so agent-main calls its HTTP API. The play
+happens once, in a fixture, and each test reads what it saw.
 """
 
 from __future__ import annotations
@@ -115,7 +116,7 @@ headers = {"authorization": "Bearer " + sys.stdin.read(), "content-type": "appli
 data = None if body == "null" else body.encode()
 request = urllib.request.Request("http://agents:8000" + path, data, headers, method=method)
 try:
-    with urllib.request.urlopen(request) as reply:
+    with urllib.request.urlopen(request, timeout=30) as reply:
         print(reply.read().decode())
 except urllib.error.HTTPError as refused:
     print(json.dumps({"error": refused.read().decode()}))
@@ -130,7 +131,7 @@ for _ in range(150):
     except OSError:
         time.sleep(0.2)
 else:
-    raise SystemExit("the tools gateway did not accept in 30 s")
+    raise SystemExit("the tools gateway never accepted")
 """
 # One session, held open while a deployment happens: what its calls of write_note answered, in order.
 HOLD_SESSION = """

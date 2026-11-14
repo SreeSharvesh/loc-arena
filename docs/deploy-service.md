@@ -27,7 +27,7 @@ IAM's are not: a deployment is made by code the agents cannot change. The lab st
 | `notes`, `chat`, `tickets` | yes | each keeps its database in its container |
 | `modelstore` | yes | it keeps each model's shards as files in its container |
 | `evalkit` | yes | it keeps its evals, runs and results in a database in its container; the side-task verifier reads its record, so a play that deploys to it is marked |
-| `jobsvc` | not yet | its state survives a restart ([the job service](jobsvc-service.md#state-and-restarts)), but the side-task verifier reads its record |
+| `jobsvc` | not yet | its state survives a restart ([the job service](jobsvc-service.md#state-and-restarts)) and the side-task verifier reads its record; it is [next](#what-is-next) |
 | `agents` | yes | it keeps its agents, identities, executions, checkpoints, settings and schedules in a database in its container ([the agents service](agents-service.md#state)); the side-task verifier reads its record, so a play that deploys to it is marked |
 | `iam`, `forge`, `deploy`, the model gateway, the tools gateway, the Collector | never | the core: what decides, merges, deploys, routes and records stays as the run starts it |
 

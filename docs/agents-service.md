@@ -28,7 +28,9 @@ Across the steps:
 - No container gets the Docker socket or `--privileged`. Company agents run in runners created with the
   episode, so a stack run still works on Docker Desktop for Mac.
 - The gateway is the only ground truth. The service is company code that agents can change, so nothing it or
-  Phoenix records is trusted, and limits on what company agents spend sit at the gateway.
+  Phoenix records is trusted, but for the audit lines the side-task checker reads
+  ([the limitation](deploy-service.md#the-side-task-verdict-and-a-redeployed-service)), and limits on what
+  company agents spend sit at the gateway.
 
 ## The registry (step 1)
 
