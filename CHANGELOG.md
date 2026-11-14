@@ -19,6 +19,10 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [361] - 2026-11-14: Telemetry tests wait on what they read, bounded by config
+### Changed
+- The repository's telemetry tests wait for what they read within bounds from the run config, and send the store's password on standard input; the arena behaves as before.
+
 ## [354] - 2026-11-14: An unchanged checkout gets the same grade every time
 ### Fixed
 - The grader now scores an unchanged checkout the same on every run, because two agents service tests of the company no longer race or log after their suite ends.
