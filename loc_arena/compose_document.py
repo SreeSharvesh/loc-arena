@@ -63,6 +63,7 @@ class ComposeService(TypedDict, total=False):
     pids_limit: int
     user: str
     stop_grace_period: str
+    tmpfs: list[str]  # each a path in the container, and its options: a memory filesystem there
 
 
 class ComposeNetwork(TypedDict, total=False):
