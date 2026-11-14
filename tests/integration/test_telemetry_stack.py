@@ -24,14 +24,14 @@ from typing import Any
 import pytest
 import yaml
 from loc_arena.config import sandbox_service
-from loc_arena.episode_stack import REPOSITORY, issue_secrets, render_compose
+from loc_arena.episode_stack import REPOSITORY, issue_secrets, render_compose, token_variable
 from loc_arena.gateway.core import API_KEY_VARIABLE
-from loc_arena.telemetry_stack import COLLECTOR_SERVICE, USERS_VARIABLE
+from loc_arena.telemetry_stack import COLLECTOR_SERVICE, GATEWAY_NAME, USERS_VARIABLE
 from loc_arena.tools_gateway import TOOLS_GATEWAY_SERVICE
 
-from tests.integration._deploy_scripts import APPEND_A_SYNTAX_ERROR, AWAIT_GATEWAY
+from tests.integration._deploy_scripts import APPEND_A_SYNTAX_ERROR, AWAIT_GATEWAY, TOOL_CALL
 from tests.integration._docker_support import image_exists, serve_workspace
-from tests.integration.test_deploy_stack import AUTHOR, CONFIG, RUN, Stack, replace_text
+from tests.integration.test_deploy_stack import AUTHOR, CONFIG, GATEWAY, RUN, Stack, replace_text
 
 TICKETS_MODULE = "meridian_controlplane/tickets/store.py"
 # A release of the tickets service that serves, and refuses every comment for a reason only its log holds.
@@ -46,6 +46,19 @@ FAIL_COMMENTS = replace_text(
         '            logging.getLogger(__name__).exception("no queue for %s", ticket_id)\n'
         '            raise TicketError(HTTPStatus.INTERNAL_SERVER_ERROR, "could not add the comment")\n',
     ),
+)
+GATEWAY_COLUMNS = '"span_attributes.agent" AS agent, "span_attributes.gen_ai.tool.name" AS tool'
+# The gateway's own span of each request it served, which ends, and so arrives, after its spans of the call.
+SERVER_SPANS = (
+    f"SELECT {GATEWAY_COLUMNS} FROM opentelemetry_traces "
+    f"WHERE service_name = '{GATEWAY_NAME}' AND span_kind = 'SPAN_KIND_SERVER'"
+)
+UNSAMPLED_TRACE = "ab" * 16
+CALLED_LIST_NOTES = "\"span_attributes.gen_ai.tool.name\" = 'list_notes'"
+# One tool call that sends the trace context given as its fourth argument.
+CALL_UNSAMPLED = TOOL_CALL.replace(
+    '{"Authorization": f"Bearer {token}"}',
+    '{"Authorization": f"Bearer {token}", "traceparent": sys.argv[4]}',
 )
 REFUSAL = "Error executing tool comment_on_ticket: could not add the comment"
 LOGS = "SELECT body, severity_text, trace_id, log_attributes, resource_attributes FROM opentelemetry_logs"
@@ -123,6 +136,7 @@ class Seen:
 
     answers: dict[str, Any] = field(default_factory=dict)
     seconds: dict[str, float] = field(default_factory=dict)
+    secrets: dict[str, str] = field(default_factory=dict)  # each secret of the play, by its host variable
 
 
 @pytest.fixture(scope="module")
@@ -148,7 +162,7 @@ def seen(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Seen]:
             time.sleep(1)
         return rows
 
-    say = (saw := Seen()).answers
+    say = (saw := Seen(secrets={name: value for name, value in attack.items() if "\n" not in value})).answers
     try:
         stack.run("up", "--detach", "--wait", "--no-build", STORE.name, COLLECTOR_SERVICE, sandbox)
         stack.run("up", "--detach", "--wait", "--no-build", "deploy", "forge", "notes", "tickets")
@@ -171,6 +185,23 @@ def seen(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Seen]:
         # One tool call on the image's code: the service's own spans of it.
         stack.tool(AUTHOR, "write_note", key="followed", text="one request")
         say["note spans"] = select(f"{SPANS} WHERE service_name = 'notes' AND span_name LIKE '%write_note'")
+        # The gateway's own spans of the call arrive after the service's: read once it has exported.
+        say["gateway spans"] = select(f"{SERVER_SPANS} AND trace_id = '{say['note spans'][0]['trace_id']}'")
+        say["gateway span"] = select(SERVER_SPANS.replace(GATEWAY_COLUMNS, "*"))[0]
+        # A caller that asks not to be traced is traced: its own trace id, with the sampled flag unset.
+        unsampled = [
+            "python",
+            "-c",
+            CALL_UNSAMPLED,
+            GATEWAY,
+            "list_notes",
+            "{}",
+            f"00-{UNSAMPLED_TRACE}-{'1' * 16}-00",
+        ]
+        stack.run("exec", "-T", "iam", *unsampled, standard_input=stack.play[token_variable(AUTHOR)])
+        say["unsampled"] = select(
+            f"{SERVER_SPANS} AND trace_id = '{UNSAMPLED_TRACE}' AND {CALLED_LIST_NOTES}",
+        )
         say["message spans"] = read_rows(
             query(stack, "reader", passwords["reader"], f"{SPANS} WHERE span_name LIKE '% http send'"),
         )
@@ -283,3 +314,23 @@ def test_what_a_release_that_cannot_start_wrote_to_stderr_is_a_log_record_that_n
 def test_a_service_answers_a_tool_call_with_nothing_to_export_to(seen: Seen, stopped: str) -> None:
     assert "error" not in seen.answers[f"note without {stopped}"]
     assert seen.seconds[f"note without {stopped}"] < ANSWER_SECONDS
+
+
+def test_the_gateways_span_of_a_tool_call_names_the_agent_and_the_tool_in_the_services_trace(
+    seen: Seen,
+) -> None:
+    served = seen.answers["gateway spans"]
+
+    assert [(span["agent"], span["tool"]) for span in served] == [(AUTHOR, "write_note")]
+
+
+def test_the_gateways_span_holds_neither_the_calls_arguments_nor_a_credential(seen: Seen) -> None:
+    span = json.dumps(seen.answers["gateway span"])
+
+    assert AUTHOR in span  # the span is the one of the agent's call
+    assert "one request" not in span  # the text of the note the call wrote
+    assert not [name for name, secret in seen.secrets.items() if secret in span]
+
+
+def test_a_call_that_asks_not_to_be_traced_is_traced(seen: Seen) -> None:
+    assert seen.answers["unsampled"] == [{"agent": AUTHOR, "tool": "list_notes"}]

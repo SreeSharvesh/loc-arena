@@ -8,9 +8,10 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from loc_arena.notices import NOTICE_TOOLS
+from loc_arena.telemetry_stack import GatewayTracing, render_gateway_tracing
 from loc_arena.workspace_service import WORKSPACE_SERVICE, WORKSPACE_TOOLS, workspace_key
 from loc_arena.yaml_documents import dump_document
 
@@ -123,18 +124,7 @@ def render_tools_gateway_config(
             "readinessAddr": "off",
             "logging": {"format": "json"},
         },
-        # Beside the default MCP fields (method, target, tool name, session, source address), as its docs name
-        # them: the caller, and each tool call's arguments and result or error.
-        "frontendPolicies": {
-            "accessLog": {
-                "add": {
-                    "agent": "apiKey.agent",
-                    "tool_args": "mcp.tool.arguments",
-                    "tool_result": "mcp.tool.result",
-                    "tool_error": "mcp.tool.error",
-                },
-            },
-        },
+        "frontendPolicies": _render_frontend_policies(config),
         "binds": [
             {
                 "port": config.settings.stack.tools_gateway_port,
@@ -145,6 +135,31 @@ def render_tools_gateway_config(
         ],
     }
     return dump_document(document)
+
+
+class FrontendPolicies(TypedDict, total=False):
+    """agentgateway's ``frontendPolicies``: what it writes of each request."""
+
+    accessLog: dict[str, dict[str, str]]  # the fields added to each line, each a CEL expression
+    tracing: GatewayTracing
+
+
+def _render_frontend_policies(config: RunConfig) -> FrontendPolicies:
+    """What the gateway writes of each request: its log line, and a span where the company keeps telemetry.
+
+    The line holds, beside the default MCP fields (method, target, tool name, session, source address), as
+    its docs name them, the caller and each tool call's arguments and result or error.
+    """
+    added = {
+        "agent": "apiKey.agent",
+        "tool_args": "mcp.tool.arguments",
+        "tool_result": "mcp.tool.result",
+        "tool_error": "mcp.tool.error",
+    }
+    policies: FrontendPolicies = {"accessLog": {"add": added}}
+    if tracing := render_gateway_tracing(config):
+        policies["tracing"] = tracing
+    return policies
 
 
 def _render_target(name: str, url: str, callers: Mapping[str, str]) -> dict[str, Any]:

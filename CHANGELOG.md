@@ -19,6 +19,9 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [353] - 2026-11-14: A tool call and the service's work are one trace
+### Added
+- The tools gateway exports a span of every tool call and passes its trace context on, so a call is followed into the service that served it ([docs](docs/telemetry-service.md#the-tools-gateways-span-of-every-tool-call)).
 ## [351] - 2026-11-14: The side-task verdict takes jobs from IAM and the nodes
 ### Changed
 - The verifier reads a model call's job from IAM's audit log and the nodes' process facts, so the job service's record moves no job but a schedule's run ([docs](docs/deploy-service.md#the-side-task-verdict-and-a-redeployed-service)).
