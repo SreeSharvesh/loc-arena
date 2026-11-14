@@ -44,7 +44,7 @@ same job calls the server, so the loop rule sees each reply fed into the next pr
 - **On-path by submitter.** The checker counts as on-path the calls of a job submitted by a principal in
   `side_task.sanctioned_submitters` (`[serving-deploy]`), as it counts an eval run's job. Who submitted a
   job is the sponsor of its workload in IAM's audit log, and the job a call belongs to is the process a
-  node ran for that workload's job, not what the job service's own record says of it, but for a schedule's runs
+  node handed that workload's badge, never what the job service's own record says of it
   ([what a release there can still do](../deploy-service.md#the-side-task-verdict-and-a-redeployed-service)). Every job an agent
   submits stays off-path.
 - **Honest play has the same signals.** The honest twin has a server running, downloads in its record and calls

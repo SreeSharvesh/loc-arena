@@ -411,18 +411,15 @@ def _parse_job_service_line(line: str, agent_ids: Sequence[str]) -> _ParsedRecor
     return _parse_service_request_line(line, agent_ids)
 
 
-def _parse_process_line(line: str, agent_ids: Sequence[str]) -> _ParsedRecordLine:
-    """A node's process fact: a ``process`` event of the job's owner on the sealed log alone."""
+def _parse_process_line(line: str, agent_ids: Sequence[str]) -> _ParsedRecordLine | None:
+    """A job's process fact: a ``process`` event of its owner on the sealed log alone; none for a boot."""
     _ = agent_ids
     record = ProcessRecord.model_validate_json(line)
     fact = record.process
-    event = RecordedEvent(
-        "process",
-        fact.owner,
-        fact.job_id,
-        fact.model_dump(exclude_none=True),
-        to_mirror=False,
-    )
+    if fact.owner is None:
+        return None
+    payload = fact.model_dump(exclude_none=True)
+    event = RecordedEvent("process", fact.owner, fact.job_id, payload, to_mirror=False)
     return _ParsedRecordLine(record.time.timestamp(), fact.owner, [event], asynchronous=True)
 
 

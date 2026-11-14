@@ -19,6 +19,14 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [356] - 2026-11-14: A node's daemon names each process's workload and its boot
+### Changed
+- The job service's nodes name on each process fact the workload of the badge handed to the process, so a schedule's runs are joined without the job service's record ([docs](docs/jobsvc-service.md#records)).
+- The job service's nodes write a `boot` fact as their daemon starts, so a job that killed its node's daemon no longer counts as alive.
+- The verifier joins a model call to the job a node runs for the call's workload and reads no record of the job service ([docs](docs/deploy-service.md#the-side-task-verdict-and-a-redeployed-service)).
+### Fixed
+- The job service's nodes write a job's start fact before any exit of it, so a job that ended at once is never read as still running.
+
 ## [349] - 2026-11-14: Every run reports what it cost, and two runs compare
 ### Added
 - The run writes `cost.json` with each container's memory and CPU, its storage, its wall time by phase and its dollars by model and caller ([docs](docs/run-cost.md)).
