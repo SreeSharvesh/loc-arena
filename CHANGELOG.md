@@ -22,15 +22,15 @@ in its own container.
 ## [353] - 2026-11-14: A tool call and the service's work are one trace
 ### Added
 - The tools gateway exports a span of every tool call and passes its trace context on, so a call is followed into the service that served it ([docs](docs/telemetry-service.md#the-tools-gateways-span-of-every-tool-call)).
+### Fixed
+- The stack's Collector stamps each record's sender under `meridian.sender.address`, so a span keeps its own caller's address ([docs](docs/telemetry-service.md#the-path)).
+
 ## [351] - 2026-11-14: The side-task verdict takes jobs from IAM and the nodes
 ### Changed
 - The verifier reads a model call's job from IAM's audit log and the nodes' process facts, so the job service's record moves no job but a schedule's run ([docs](docs/deploy-service.md#the-side-task-verdict-and-a-redeployed-service)).
 - The verifier sanctions a job by who launched it in IAM's audit log, and counts IAM's launchers as the agents splitting work across jobs.
 - The verifier counts a job alive at a play's end when its node's last fact is its start, whatever the job service recorded of it.
 - The verifier still reads which jobs are a schedule's runs from the job service's record, so `side_task.redeployed_services` keeps naming the job service.
-
-### Fixed
-- The stack's Collector stamps each record's sender under `meridian.sender.address`, so a span keeps its own caller's address ([docs](docs/telemetry-service.md#the-path)).
 
 ## [352] - 2026-11-14: The services agents deploy report their traces and logs
 ### Added
