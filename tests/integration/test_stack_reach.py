@@ -46,7 +46,7 @@ from urllib.parse import urlsplit
 
 import pytest
 import yaml
-from loc_arena import deploy_pool, iam_bootstrap
+from loc_arena import deploy_pool, iam_bootstrap, telemetry_stack
 from loc_arena.checkouts import checkout_home
 from loc_arena.config import load_run_config, sandbox_service
 from loc_arena.episode_stack import (
@@ -880,6 +880,7 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
         **{runner_token_variable(name): secrets.token_urlsafe(32) for name in list_runner_services(CONFIG)},
         **{node_token_variable(name): secrets.token_urlsafe(32) for name in list_node_services(CONFIG)},
         **deploy_pool.issue_release_tokens(CONFIG, 32),
+        **telemetry_stack.issue_telemetry_secrets(CONFIG, 32),
         TOOLS_GATEWAY_CONFIG_VARIABLE: render_tools_gateway_config(STACK_CONFIG, tokens, issued, inbox_keys),
         **issue_gateway_secrets(CONFIG.settings, held, sandboxes, "attack", badges=True),  # IAM runs here
         iam_bootstrap.BOOTSTRAP_VARIABLE: iam_bootstrap.render_bootstrap(STACK_CONFIG),
@@ -903,10 +904,8 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
     }
     call_log = directory / "calls.jsonl"
     try:
-        services = [
-            *[GATEWAY_SERVICE, *sandboxes, NOTES.name, FORGE.name, CHAT.name, AGENTS_SERVICE.name],
-            TOOLS_GATEWAY_SERVICE,
-        ]
+        services = [GATEWAY_SERVICE, *sandboxes, NOTES.name, FORGE.name, CHAT.name, AGENTS_SERVICE.name]
+        services += [TOOLS_GATEWAY_SERVICE]
         # The gateway, the forge and the episode share the engine image: built once, before any container
         # starts from it, and never again, nor a running service recreated, since a build need not reproduce.
         run_docker(*compose, "build", env=environment)
@@ -1281,6 +1280,7 @@ def test_no_container_of_the_project_mounts_the_docker_socket(stack_run: StackRu
         for service in [
             GATEWAY_SERVICE,
             "collector",
+            *telemetry_stack.list_telemetry_services(CONFIG),
             EPISODE_SERVICE,
             TOOLS_GATEWAY_SERVICE,
             *(live.name for live in CONFIG.live_services),

@@ -36,6 +36,7 @@ def load_skills(root: Path, skills: str) -> object:
     [
         ("gateway: {image: x, port: 1}", "gateway", "taken by the stack"),
         ("collector: {image: x, port: 1}", "collector", "taken by the stack"),
+        ("telemetry-collector: {image: x, port: 1}", "telemetry-collector", "taken by the stack"),
         ("episode: {image: x, port: 1}", "episode", "taken by the stack"),
         ("agentgateway: {image: x, port: 1}", "agentgateway", "taken by the stack"),
         ("sandbox-agent-main: {image: x, port: 1}", "sandbox-agent-main", "taken by the stack"),
@@ -57,6 +58,7 @@ def load_skills(root: Path, skills: str) -> object:
         ("deploy: {module: a.module, port: 1, deploys: [notes, notes]}", "deploy", "names 'notes' twice"),
         ("notes: {image: x, port: 1}", "notes", "a ready image needs a healthcheck"),
         ("agents: {runners: 2}", "agents", "runners need a live service"),
+        ("store: {module: a.module, port: 1, collects: [notes]}", "store", "collects needs a ready image"),
         ("jobsvc: {nodes: {cpu: 2}}", "jobsvc", "nodes need a live service"),
         ("jobsvc: {module: a.module, port: 1, nodes: {cpu: 0}}", "jobsvc", "greater than or equal to 1"),
         (
@@ -68,6 +70,7 @@ def load_skills(root: Path, skills: str) -> object:
     ids=[
         "the gateway's name",
         "the Collector's name",
+        "the company's Collector's name",
         "the episode's name",
         "the tools gateway's name",
         "a sandbox's name",
@@ -89,6 +92,7 @@ def load_skills(root: Path, skills: str) -> object:
         "a deployed service named twice",
         "a ready image with no healthcheck",
         "runners with no live service",
+        "a telemetry store that is no ready image",
         "nodes with no live service",
         "a pool of no node",
         "a key no service may have",
@@ -147,23 +151,29 @@ def test_two_services_with_workers_are_refused_naming_both(root: Path, key: str,
         )
 
 
+# What names other services under each key: a deployer is a module, a telemetry store a ready image.
+NAMING = {"deploys": "module: b.module", "collects": "image: example/store:1, healthcheck: [CMD, ping]"}
+
+
+@pytest.mark.parametrize("key", ["deploys", "collects"])
 @pytest.mark.parametrize(
-    "deployed",
-    ["wiki", "board", "deploy", "tickets"],
+    "named",
+    ["wiki", "board", "release", "tickets"],
     ids=["a ready image", "no service of the pack", "itself", "a module with a command of its own"],
 )
-def test_a_service_deploys_only_to_other_live_services_run_as_plain_modules(
+def test_a_service_deploys_to_and_collects_only_other_live_services_run_as_plain_modules(
     root: Path,
-    deployed: str,
+    key: str,
+    named: str,
 ) -> None:
     services = (
         "  notes: {module: a.module, port: 1}\n"
         "  wiki: {image: example/wiki:1, port: 2, healthcheck: [CMD, wiki, ping]}\n"
         "  tickets: {module: c.module, port: 4, command: [python, -m, another.module]}\n"
-        f"  deploy: {{module: b.module, port: 3, deploys: [{deployed}]}}\n"
+        f"  release: {{{NAMING[key]}, port: 3, {key}: [{named}]}}\n"
     )
     refusal = (
-        rf"'deploy' deploys \['{deployed}'\], which must each be another live service run as a module, "
+        rf"'release' {key} \['{named}'\], which must each be another live service run as a module, "
         "with no command of its own"
     )
 
@@ -171,14 +181,15 @@ def test_a_service_deploys_only_to_other_live_services_run_as_plain_modules(
         load_services(root, services)
 
 
-def test_two_services_that_deploy_are_refused_naming_both(root: Path) -> None:
+@pytest.mark.parametrize(("key", "verb"), [("deploys", "deploy"), ("collects", "collect")])
+def test_two_services_that_deploy_or_collect_are_refused_naming_both(root: Path, key: str, verb: str) -> None:
     services = (
         "  notes: {module: a.module, port: 1}\n"
-        "  deploy: {module: b.module, port: 2, deploys: [notes]}\n"
-        "  release: {module: c.module, port: 3, deploys: [notes]}\n"
+        f"  deploy: {{{NAMING[key]}, port: 2, {key}: [notes]}}\n"
+        f"  release: {{{NAMING[key]}, port: 3, {key}: [notes]}}\n"
     )
 
-    with pytest.raises(ValueError, match=r"only one service may deploy, not \['deploy', 'release'\]"):
+    with pytest.raises(ValueError, match=rf"only one service may {verb}, not \['deploy', 'release'\]"):
         load_services(root, services)
 
 

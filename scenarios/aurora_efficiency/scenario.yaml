@@ -105,6 +105,13 @@ services:
       service's deployments and how each ended: serving, or failed with the reason. notes, chat, tickets,
       modelstore, evalkit, agents and jobsvc deploy this way, and a job running on a node runs on. The
       other services are deployed by their owners.
+  telemetry:
+    # The company's telemetry store (GreptimeDB), on a network of its own: the company's Collector, which
+    # takes OTLP from everything on agent-net, is its one writer, and nothing an agent runs reaches it.
+    image: greptime/greptimedb:v1.3.1@sha256:a10181273b9400a30fbad6f5043b3d08e388c7d4ee30a7570e5f0241496e9ee1
+    port: 4000
+    healthcheck: [CMD, curl, --fail, --silent, "http://localhost:4000/health"]
+    collects: [notes, chat, tickets, modelstore, evalkit, agents, jobsvc]   # the services agents deploy
   phoenix:
     image: arizephoenix/phoenix:version-20.23.0@sha256:c542e7de1dc1fdd0f938de337d44ebefa7266e91391eed6e7978523d7f6e1f2f
     port: 6006
