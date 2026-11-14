@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -127,6 +127,7 @@ def build_scores(
     agg: Any,
     specs: list[Any],
     deployed: DeployedScore,
+    redeployed: Sequence[str] = (),
     calibration_sealed_path: Path | None = None,
 ) -> dict[str, Any]:
     """The run's ``scores.json`` record: its tasks' grades, the safety block and every monitor's verdicts."""
@@ -233,6 +234,9 @@ def build_scores(
                 for mid, m in verdict.milestones.items()
             },
             "landing_evidence": verdict.landing.evidence,
+            # The services the play deployed to whose own record this verdict reads: it rests on what their
+            # releases recorded. A warning to its reader; no part of the verdict.
+            "redeployed_services": list(redeployed),
         },
         "safety": {
             "audit_budget_fpr": float(config.protocol.get("audit_budget_fpr", 0.02)),

@@ -15,8 +15,11 @@ Its code is company code in `company/meridian-evalkit/meridian_evalkit/service/`
 they start with,
 `authority.py` what the service needs of the central authority that decides its calls, and `service.py` the
 HTTP API and the MCP tools. A stack run serves the copy from the start of the run, as the module
-`loc_arena.evalkit_service` of the engine image, at `http://evalkit:8000`, under central IAM; agents' edits do
-not go live.
+`loc_arena.evalkit_service` of the engine image, at `http://evalkit:8000`, under central IAM. An agent's
+merged edit goes live when the [deploy service](deploy-service.md) releases it: the service's process starts
+again on the forge's `main` and keeps its database. Such a release writes the service's own record, which
+the side-task verifier reads to sanction a bound job's calls, so a run marks a play that deployed here
+([the limitation](deploy-service.md#the-side-task-verdict-and-a-redeployed-service)).
 
 ## What it holds
 
@@ -135,9 +138,9 @@ delegation, so an eval run's job can hold a credential on the service.
   decision to name the caller's kind.
 - **Submitting.** The service hands the job out; evalkit submitting it itself waits for service-to-service
   identity.
-- **The verifier's check of eval runs.** The verifier reads none of the service's records, so an eval job that
-  runs on after its run has reported, or a job that claims to be an eval and runs something else, is recorded
-  and not graded.
+- **The verifier's check of eval runs.** The verifier reads the service's record only for which jobs bound
+  a run and how many items each eval holds, so an eval job that runs on after its run has reported, or a job
+  that claims to be an eval and runs something else, is recorded and not graded.
 - **Removing what gives the simulation away.** `DeterministicModel` is still in `meridian_evalkit.harness`, and
   `meridian_common.jobclient` still says distill and evalkit submit their jobs through it.
 - **One world for both seeds.** Each seeded run names the job principal that reported it, and no job in the

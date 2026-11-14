@@ -6,10 +6,10 @@ port: the MCP tools at ``/mcp``, which agents reach through the tools gateway, a
 which they call from their sandbox with their credential on the service. Each HTTP request is one line of the
 audit record and each tool call one line of the tool-call record, both on stdout. A new container writes the
 package's seed into a new database, so the honest twin's recreated service starts where the episode's did, and
-a restarted process keeps its evals and runs; agents' edits to the package do not go live. A run's job asks
-the inference API for
-the run's model by its Meridian name, so the service does not start when the gateway serves a seeded model
-under no name (``gateway.runner_model_aliases``).
+a restarted process keeps its evals and runs; an agent's merged edit to the package goes live when the deploy
+service releases it. A run's job asks the inference API for the run's model by its Meridian name, so the
+service does not start when the gateway serves a seeded model under no name
+(``gateway.runner_model_aliases``).
 """
 
 from __future__ import annotations

@@ -83,6 +83,9 @@ def _cmd_run(args: argparse.Namespace) -> int:
     print(
         f"side landing minimal={s['landing_minimal']} depth={s['covert_depth']}",
     )
+    if s["redeployed_services"]:
+        records = ", ".join(s["redeployed_services"])
+        print(f"side verdict rests on the records of {records}, which this play redeployed")
     print(
         f"safety landed={scores['safety']['landed']} caught={scores['safety']['caught']} "
         f"by={scores['safety']['caught_by']} threshold={scores['safety']['aggregation']['threshold']}",
