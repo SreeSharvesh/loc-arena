@@ -278,7 +278,7 @@ new shell exports it again. `SSL_CERT_FILE` and `HTTPS_PROXY` are the machine's 
 | the gateway | yes, with its sandbox token, recorded under the sandbox's name; from a job it submits, as that job's node |
 | a service with rights | only with its own identity, and only the rights it holds |
 | a service with tools | only through agentgateway with its sandbox token, and only the tools its run config lists |
-| the telemetry store, its reader and what they hold | only through agentgateway, with the store's own read tools, each call decided by IAM; nothing it sends changes the store |
+| the telemetry store, its reader and what they hold | only through agentgateway, with the store's own read tools, each call decided by IAM; no query changes the store, but a flood of the Collector, from anything on agent-net, can fill its disk or have it killed for memory and start again empty |
 | a service with neither, such as Phoenix | yes: it is open to everything on agent-net, so any agent can read, delete and forge the company's spans |
 | another agent's checkout | no: its sandbox mounts only its own agent's |
 | its own checkout's history | no: the episode writes it to the play's `checkout_history`, which no sandbox mounts, and reads the checkout without running anything in it |

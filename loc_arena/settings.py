@@ -32,6 +32,7 @@ from loc_arena.service_settings import (
     ModelStoreSettings,
     NotesSettings,
     SettingsGroup,
+    TelemetrySettings,
     TicketsSettings,
 )
 
@@ -263,7 +264,10 @@ class StackSettings(SettingsGroup):
     sandbox_memory_limit: str = Field(default="2g", description="Memory limit of each agent's sandbox.")
     sandbox_cpus: PositiveFloat = Field(default=2.0, description="CPUs each agent's sandbox may use.")
     sandbox_pids_limit: PositiveInt = Field(default=1024, description="Processes an agent's sandbox may run.")
-    service_memory_limit: str = Field(default="512m", description="Memory limit of each live service.")
+    service_memory_limit: str = Field(
+        default="512m",
+        description="Memory limit of each live service; the telemetry store and its Collector set their own.",
+    )
     service_cpus: PositiveFloat = Field(default=1.0, description="CPUs each live service may use.")
     service_pids_limit: PositiveInt = Field(default=256, description="Processes each live service may run.")
     gateway_health_interval_seconds: PositiveInt = Field(
@@ -547,44 +551,6 @@ class DeploySettings(SettingsGroup):
     watch_seconds: PositiveFloat = Field(default=0.5, description="A supervisor's interval between checks.")
     error_bytes: PositiveInt = Field(default=4096, description="The end of a failed release's errors, kept.")
     credential_seconds: PositiveInt = Field(default=300, description="A deployment credential's lifetime.")
-
-
-class TelemetrySettings(SettingsGroup):
-    """The company's telemetry (the run config's ``telemetry:`` block): its Collector and its export bounds.
-
-    Export is best effort: a signal that cannot be sent within these bounds is dropped, and nothing waits.
-    """
-
-    collector_port: int = Field(default=4318, ge=1, le=65535, description="Where it takes OTLP over HTTP.")
-    export_seconds: PositiveInt = Field(
-        default=2,
-        description="How long one export of a batch may take, from a service and from the Collector. A "
-        "service's process flushes its spans and then its log records as it ends, so with the Collector down "
-        "it ends up to twice this later: less than deploy.stop_seconds, or it would be killed mid-flush.",
-    )
-    queue_size: PositiveInt = Field(
-        default=2048,
-        description="The batches it holds for the store, and the spans, and the log records, a service holds "
-        "for it; one past them is dropped.",
-    )
-    sql_port: int = Field(
-        default=4002,
-        ge=1,
-        le=65535,
-        description="Where the store takes SQL from its reader.",
-    )
-    reader_port: int = Field(
-        default=8080,
-        ge=1,
-        le=65535,
-        description="Where the store's MCP server listens.",
-    )
-    result_bytes: PositiveInt = Field(default=32768, description="The most one read returns to an agent.")
-    schedule_milliseconds: PositiveInt = Field(
-        default=1000,
-        description="How long a service holds a span or a log record before it exports its batch.",
-    )
-    retry_seconds: PositiveInt = Field(default=10, description="How long it retries a batch, then drops it.")
 
 
 class ReaderSettings(SettingsGroup):

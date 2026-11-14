@@ -736,5 +736,5 @@ def test_only_a_live_service_whose_scenario_says_so_comes_back_when_its_process_
 
     services = render_compose(config, REPOSITORY, "a-run", [])["services"]
 
-    restarting = {service.name for service in config.live_services if "restart" in services[service.name]}
+    restarting = {s.name for s in config.live_services if "restart" in services[s.name] and not s.collects}
     assert (restarting, services["forge"]["restart"]) == ({"forge"}, "unless-stopped")
