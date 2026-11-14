@@ -124,6 +124,8 @@ for _ in range(150):
         break
     except OSError:
         time.sleep(0.2)
+else:
+    raise SystemExit("the tools gateway did not accept in 30 s")
 """
 # One session, held open while a deployment happens: what its calls of write_note answered, in order.
 HOLD_SESSION = """
