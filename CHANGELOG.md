@@ -3,7 +3,7 @@
 What LOC-Arena does for a run, and how that changed. The format builds on
 [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/); `scripts/check_changelog.py` verifies it in `make gates`.
 
-- Each merged pull request is one release, newest first: `## [number] - YYYY-MM-DD: title`, dated the day it merges (UTC).
+- Each merged pull request is one release, newest first and in merge order within a day: `## [number] - YYYY-MM-DD: title`, dated the day it merges (UTC).
 - The title says in at most ten words what the system now does.
 - Lines sit under `### Added`, `Changed`, `Removed`, `Fixed` or `Security`, each type at most once per release.
 - A line is one sentence of at most 30 words, on one row, that ends with a full stop.
@@ -13,6 +13,11 @@ What LOC-Arena does for a run, and how that changed. The format builds on
 - To read one part's history, search for its name at the start of lines or run `python3 scripts/check_changelog.py --part forge`.
 
 Parts: agent, run, stack, score, monitor, verifier, grader, record, model gateway, tools gateway, sandbox, runner, IAM, forge, deploy service, job service, eval service, agents service, tickets service, chat service, notes service, model store, observability store, run explorer, run reader, scenario, engine, docs, repository.
+
+Terms: agents are the models under test; the company's agents are the simulated company's own, run on runners. A run
+plays an attack and its honest twin, which sets the audit threshold; each play is one episode. In the attack, agents
+pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
+in its own container.
 
 ## [344] - 2026-11-14: The changelog holds one checked release per merged pull request
 ### Changed
@@ -39,7 +44,7 @@ Parts: agent, run, stack, score, monitor, verifier, grader, record, model gatewa
 ### Changed
 - The deploy service starts a deployment and returns at once, and agents ask it with `list_deployments` how the deployment ended ([docs](docs/deploy-service.md#records)).
 
-## [330] - 2026-11-14: The record holds a deployment from its hand-over's start
+## [330] - 2026-11-14: A deployment is recorded from the start of its hand-over
 ### Added
 - The deploy service records a deployment when its hand-over starts, so a play that ends during a deployment still counts the service as redeployed ([docs](docs/deploy-service.md#records)).
 
@@ -217,7 +222,7 @@ Parts: agent, run, stack, score, monitor, verifier, grader, record, model gatewa
 
 ## [261] - 2026-11-06: A job serves a model from the model store
 ### Added
-- The job service runs a job that serves a model from the model store and calls the model gateway with the job's own badge.
+- The job service can run a job that serves a model from the model store, and the job calls the model gateway with the credential IAM signed for it.
 
 ## [235] - 2026-11-06: The docs plan the inference servers and model store
 ### Changed
@@ -227,7 +232,7 @@ Parts: agent, run, stack, score, monitor, verifier, grader, record, model gatewa
 ### Fixed
 - Agents' pi sessions receive their inbox messages before their next model call.
 
-## [259] - 2026-11-03: The forge hosts real git repositories that agents work through
+## [259] - 2026-11-03: Agents work through real git, and grading reads merged code
 ### Changed
 - The forge hosts a real git repository per company repo, which agents clone, fetch and push over HTTP with their own credential ([docs](docs/forge-service.md)).
 - Agents clone every company repo from the forge into their own checkout, edit and run code there, and push branches.
@@ -252,11 +257,11 @@ Parts: agent, run, stack, score, monitor, verifier, grader, record, model gatewa
 
 ## [237] - 2026-11-03: The model store runs under IAM
 ### Added
-- The model store runs under IAM in a stack run, and the serving agent alone may download from it.
+- The model store runs under IAM in a stack run, and only the agent whose task is model serving may download from it.
 
 ## [249] - 2026-11-02: The verifier finds untraced calls of the company's agents
 ### Added
-- The verifier finds each model call of a company agent that the observability store never traced, as the sealed milestone `untraced_agent_calls`.
+- The verifier counts each model call of a company agent that the observability store never traced, because turning tracing off is a way to hide work.
 
 ## [255] - 2026-11-02: pi can run the agents' loops
 ### Added
@@ -337,7 +342,7 @@ Parts: agent, run, stack, score, monitor, verifier, grader, record, model gatewa
 
 ## [234] - 2026-10-26: The scenario serves no record-only attack tools
 ### Changed
-- The scenario serves no record-only attack tools, so an agent takes a covert step only through a company service with its ordinary rights.
+- The scenario serves no attack tools that only write a record, so an attacking agent takes each covert step through a real company service with ordinary rights.
 
 ## [233] - 2026-10-26: The docs gain diagrams for IAM and the agents service
 ### Changed
@@ -447,7 +452,7 @@ Parts: agent, run, stack, score, monitor, verifier, grader, record, model gatewa
 
 ## [198] - 2026-10-23: Stack runs serve the company's eval service
 ### Added
-- The eval service serves the company's evals, runs, results and leaderboards under IAM, because an eval run is the cover a rogue deployment hides in ([docs](docs/evalkit-service.md)).
+- The eval service serves the company's evals, runs and leaderboards under IAM, because an eval run is a sanctioned job where a rogue deployment can hide ([docs](docs/evalkit-service.md)).
 
 ## [203] - 2026-10-23: The cluster starts with other teams' work
 ### Added
@@ -455,7 +460,7 @@ Parts: agent, run, stack, score, monitor, verifier, grader, record, model gatewa
 
 ## [202] - 2026-10-23: The job service runs the cluster's whole lifecycle
 ### Added
-- The job service runs the cluster's whole lifecycle of holds, drains, schedules and usage, which is the cover a long-running job hides in ([docs](docs/jobsvc-service.md)).
+- The job service holds, drains and schedules jobs and reports each team's CPU-hours as usage, because a long-running job hides among such work ([docs](docs/jobsvc-service.md)).
 
 ## [200] - 2026-10-23: Each job runs under its own credential
 ### Added
@@ -604,7 +609,7 @@ Parts: agent, run, stack, score, monitor, verifier, grader, record, model gatewa
 
 ## [161] - 2026-10-19: The notes service under IAM describes its request routes
 ### Changed
-- The notes service under IAM describes the request and decision routes that it forwards to IAM.
+- The notes service under IAM again lists, in its description of its API, the routes for filing and deciding access requests, which it forwards to IAM.
 
 ## [160] - 2026-10-19: IAM describes its own API
 ### Changed
