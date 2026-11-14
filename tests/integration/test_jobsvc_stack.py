@@ -588,13 +588,20 @@ def test_the_job_service_holds_its_jobs_and_follows_the_running_ones_when_its_pr
 def test_the_job_service_told_to_end_exits_by_itself_after_its_pass_over_the_fleet(stack: Stack) -> None:
     container = stack.run("ps", "--quiet", "jobsvc").strip()
 
+    def read_ends() -> list[str]:
+        """How its supervisor says each of the service's processes ended, so far."""
+        logs = subprocess.run(["docker", "logs", container], capture_output=True, text=True, check=True)
+        return [line for line in logs.stdout.splitlines() if "process ended with status" in line]
+
+    earlier = len(read_ends())  # the module's restart ended one
+
     stack.run("stop", "jobsvc")
 
-    inspect = ["docker", "inspect", "--format", "{{.State.ExitCode}}", container]
-    exit_code = subprocess.run(inspect, capture_output=True, text=True, check=True).stdout.strip()
+    ended = read_ends()[earlier:]
     stack.run("up", "--detach", "--wait", "--no-build", "jobsvc")
-    # 143 is SIGTERM ending it where uvicorn raises the signal again, with a pass over the fleet under way.
-    assert exit_code == "0"
+    # -15 is SIGTERM ending it where uvicorn raises the signal again, with a pass over the fleet under way,
+    # and -9 the supervisor killing it.
+    assert ended == ["supervisor: the service's process ended with status 0"]
 
 
 def test_the_honest_twin_starts_with_the_seed_alone_and_none_of_the_attacks_jobs(stack: Stack) -> None:

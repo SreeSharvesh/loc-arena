@@ -30,7 +30,8 @@ it, `fleet.py` what it needs of each node's daemon, `authority.py` what it needs
 decides each call, and `api.py` the HTTP API and the MCP tools over one `JobService`. It imports neither
 `meridian_iam` nor the engine. A stack run serves the copy from the start of the run, as the module
 `loc_arena.jobsvc_service` of the engine image, at `http://jobsvc:8000`: the tools at `/mcp` and the API beside
-them. Agents' edits do not go live. The registry is kept in a database in the service's container (State and
+them. An agent's merged edit goes live when the [deploy service](deploy-service.md) releases it
+([A deployment](#a-deployment), below). The registry is kept in a database in the service's container (State and
 restarts, below), which the honest twin's recreated container starts without, so the twin starts with none of
 the attack's jobs.
 
@@ -266,10 +267,12 @@ last one held:
   CPU-hours counted from its start. A waiting job starts with its identity's secrets, a held job stays held, a
   drained node stays drained and the job it stopped is queued again, and a schedule keeps its next run time: a
   run that came due meanwhile is submitted once.
-- **The pass ends first.** A process told to end (`SIGTERM`, as `docker compose restart` and `stop` send)
-  answers the requests under way, then ends once the pass under way is over, so no job is left recorded as
-  placed on a node that was never asked to start it. This holds for a pass that ends within the container's
-  stop grace (Docker's 10 s). A pass still waiting on a node then, which it does for up to
+- **The pass ends first.** A process told to end (`SIGTERM`, which its supervisor sends it for a
+  deployment and when `docker compose restart` or `stop` ends the container) answers the requests under
+  way, then ends once the pass under way is over, so no job is left recorded as placed on a node that was
+  never asked to start it. This holds for a pass that ends within `deploy.stop_seconds` (5), the time the
+  supervisor gives it; the supervisor's line in the service's log says how the process ended, 0 when by
+  itself. A pass still waiting on a node then, which it does for up to
   `stack.sandbox_response_grace_seconds` (30) a call, is killed with the process.
 - **What a killed process leaves.** The first pass of the next process covers each case:
   - *An ended process.* How a process exited, when the service saw that it had, and what it wrote are kept
@@ -291,6 +294,31 @@ last one held:
 
 The secrets are in clear in the database, which only the service's container holds; they are in no answer,
 no record line and no process fact.
+
+### A deployment
+
+A deployment of `jobsvc` ends the service's process and starts it again in the same container on the
+forge's `main`, so everything above holds for it:
+
+- **Running jobs run on.** A job's process is its node's daemon's. The new process's first pass finds each
+  placed job on its node and follows it: the same id, node, start time, identity and attempt. A waiting job
+  keeps its place, unless a killed pass was placing it (below); a held job stays held, and a schedule's run
+  that came due meanwhile is submitted once.
+- **The company's own inference server is such a job.** Its process and its badge are untouched, so it
+  answers and calls the gateway through the deployment, and its calls stay its deployer's job's.
+- **The pass under way** ends first, as above, if it does within `deploy.stop_seconds`; the next
+  process's first pass covers what a killed one leaves.
+- **Calls meanwhile.** A call made while the process starts again fails. A submission cut off after its
+  job was kept is a job its caller got no answer for, so a caller lists its jobs before it submits again.
+- **A release that cannot start** ends `failed`, and the release before it starts again from the same
+  database and follows the same jobs. The failed release's process starts its pass over the fleet before
+  it serves, so until the supervisor gives it up it may have placed, ended or submitted jobs, and what it
+  kept in the database is what the earlier release reads: a release that kept records the earlier one
+  cannot read leaves it failing.
+
+Such a release writes the service's own record, which the side-task verifier reads for which job a workload
+is, who submitted it and whether it ran at the play's end, so a run marks a play that deployed here
+([the limitation](deploy-service.md#the-side-task-verdict-and-a-redeployed-service)).
 
 ## Records
 

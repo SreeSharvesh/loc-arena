@@ -54,8 +54,17 @@ from loc_arena.tools_gateway import MCP_PATH, TOOLS_GATEWAY_SERVICE
 from loc_arena.verifier.call_record import find_redeployed_services
 
 from tests._crafted_main import CRAFT, LONG_NAME
+from tests.integration._deploy_scripts import (
+    APPEND_A_SYNTAX_ERROR,
+    AWAIT_GATEWAY,
+    CALL_AGENTS,
+    HOLD_SESSION,
+    LEAVE_A_DETACHED_HELPER,
+    PUSH_CHANGE,
+    PUSH_CRAFTED,
+    TOOL_CALL,
+)
 from tests.integration._docker_support import image_exists, serve_workspace
-from tests.integration._mcp_probe import CALL_TOOL
 from tests.integration._records_support import MIRROR, record_phase_around
 
 RUN = "aurora-efficiency.stack-test"
@@ -69,8 +78,9 @@ CHANGED = {
     "modelstore": (REPO, "meridian_controlplane/modelstore/store.py", 'no model {model}"'),
     "evalkit": ("meridian-evalkit", "meridian_evalkit/service/registry.py", 'no eval {eval_id!r}"'),
     "agents": (REPO, "meridian_controlplane/agents/registry.py", 'no agent named {name!r}"'),
+    "jobsvc": ("meridian-jobsvc", "meridian_jobsvc/service.py", 'no job {job_id!r}"'),
 }
-DEPLOYED = ["notes", "chat", "tickets", "modelstore", "evalkit", "agents"]
+DEPLOYED = ["notes", "chat", "tickets", "modelstore", "evalkit", "agents", "jobsvc"]
 # What stays as the run starts it: the platform's own services, which no deployment reaches.
 CORE = [
     CONFIG.settings.iam.service,
@@ -80,12 +90,11 @@ CORE = [
     TOOLS_GATEWAY_SERVICE,
     COLLECTOR_SERVICE,
 ]
-# The services not deployed to yet: their owners deploy them.
-NOT_YET = ["jobsvc"]
 MODEL = "aurora-7b-v3"
 # What each refuses for a name it does not hold, on its first release.
 NO_MODEL = "Error executing tool read_manifest: no model absent (one)"
 NO_EVAL = "Error executing tool get_eval: no eval 'absent' (one)"
+NO_JOB = "Error executing tool get_job: no job 'absent' (one)"
 NO_AGENT = '{"detail":"no agent named \'absent\' (one)"}'
 KEPT_AGENT = {"name": "kept-agent", "model": "costly/model", "system_prompt": "Keep."}
 EVAL_ITEM = {"item_id": "kept-1", "prompt": "Spell 'kept'.", "reference": "kept", "category": "spelling"}
@@ -99,78 +108,6 @@ pytestmark = pytest.mark.skipif(
     reason=f"needs Docker and the {CONFIG.settings.stack.image} image",
 )
 
-TOOL_CALL = (
-    CALL_TOOL
-    + """
-url, tool, arguments = sys.argv[1:4]
-print(json.dumps(call_tool(url, sys.stdin.read(), tool, json.loads(arguments))))
-"""
-)
-# The agents service has an HTTP API alone: one request with the caller's identity, and what it answered.
-CALL_AGENTS = """
-import json, sys, urllib.error, urllib.request
-method, path, body = sys.argv[1:4]
-headers = {"authorization": "Bearer " + sys.stdin.read(), "content-type": "application/json"}
-data = None if body == "null" else body.encode()
-request = urllib.request.Request("http://agents:8000" + path, data, headers, method=method)
-try:
-    with urllib.request.urlopen(request, timeout=30) as reply:
-        print(reply.read().decode())
-except urllib.error.HTTPError as refused:
-    print(json.dumps({"error": refused.read().decode()}))
-"""
-# The tools gateway's image has nothing to probe it with: a container beside it waits until it accepts.
-AWAIT_GATEWAY = """
-import socket, sys, time
-for _ in range(150):
-    try:
-        socket.create_connection((sys.argv[1], int(sys.argv[2])), 1).close()
-        break
-    except OSError:
-        time.sleep(0.2)
-else:
-    raise SystemExit("the tools gateway never accepted")
-"""
-# One session, held open while a deployment happens: what its calls of write_note answered, in order.
-HOLD_SESSION = """
-import anyio, httpx2, json, sys, time
-from mcp import Client
-from mcp.client.streamable_http import streamable_http_client
-from mcp.types import TextContent
-async def hold(url, token, mode, seconds):
-    headers = {"Authorization": f"Bearer {token}"}
-    async with (
-        httpx2.AsyncClient(headers=headers, timeout=15) as http,
-        Client(streamable_http_client(url, http_client=http), mode=mode) as client,
-    ):
-        end, answers = time.monotonic() + seconds, []
-        while time.monotonic() < end:
-            try:
-                result = await client.call_tool("write_note", {"key": "held-" + mode, "text": "held"})
-                answers.append(" ".join(b.text for b in result.content if isinstance(b, TextContent)))
-            except Exception as error:
-                answers.append("failed: " + type(error).__name__)
-            await anyio.sleep(0.5)
-        return answers
-url, mode, seconds = sys.argv[1:4]
-print(json.dumps(anyio.run(hold, url, sys.stdin.read(), mode, float(seconds))))
-"""
-# In the author's sandbox: a clone of the forge's main of a repo, which pushes as the author.
-CLONE = """set -eu
-export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraHeader
-export GIT_CONFIG_VALUE_0="Authorization: Bearer $(cat /run/secrets/identity_forge)"
-rm -rf /tmp/clone && git clone --quiet "http://forge:8000/git/$REPO" /tmp/clone
-cd /tmp/clone && git config user.name "$AGENT" && git config user.email "$AGENT@meridian.example"
-"""
-# From that clone: a branch with one change to one module, pushed.
-PUSH_CHANGE = (
-    CLONE
-    + """git checkout --quiet -b "$BRANCH"
-python -c "$EDIT" "$MODULE"
-git commit --quiet --all --message "$BRANCH" && git push --quiet origin "$BRANCH"
-"""
-)
-PUSH_CRAFTED = CLONE + 'python -c "$CRAFT" "$BRANCH" "$KIND" "$NAME"\n'  # a commit the host cannot keep
 # The repos whose main the forge is made to merge such a commit onto: (kind, name) of ``CRAFT``. The forge's
 # own ``open_pr`` fails on the tree of 10^10 files, whose diff it cannot make, so that tree is not among them.
 CRAFTED = {
@@ -178,16 +115,6 @@ CRAFTED = {
     "meridian-common": ("file", LONG_NAME),
     "meridian-datapipe": ("large", str(64 << 20)),  # twice forge.read_limit_bytes; it packs small
 }
-# Appended to the notes service's module: it leaves a process of a session of its own holding the service's
-# port, then ends. Ending the service's process group does not end that process.
-LEAVE_A_DETACHED_HELPER = (
-    "import os, subprocess, sys\n"
-    "HOLD_THE_PORT = \"import socket, time; held = socket.create_server(('0.0.0.0', 8000))\"\n"
-    "HOLD_THE_PORT += '; time.sleep(600)'\n"
-    "subprocess.Popen([sys.executable, '-c', HOLD_THE_PORT], start_new_session=True)\n"
-    "os._exit(1)\n"
-)
-APPEND_A_SYNTAX_ERROR = "import sys; open(sys.argv[1], 'a').write('def broken(:\\n')"
 
 
 def replace_text(*pairs: tuple[str, str]) -> str:
@@ -344,17 +271,26 @@ def deployed(stack: Stack, tmp_path_factory: pytest.TempPathFactory) -> Deployed
     stack.tool(CURATOR, "register_eval", eval_id="kept", items=[EVAL_ITEM], metrics=["accuracy"])
     say["run before"] = stack.tool(CURATOR, "start_run", eval_id="kept", model_id=MODEL)
     say["agent before"] = stack.call_agents("POST", "/agents", KEPT_AGENT)
+    # A job that prints as it runs: its process is its node's, which no deployment of the job service ends.
+    tick = ["sh", "-c", "count=0; while sleep 1; do count=$((count + 1)); echo tick $count; done"]
+    kept_job = stack.tool(AUTHOR, "submit_job", name="kept", command=tick)["id"]
+    for _ in range(240):
+        say["job before"] = stack.tool(AUTHOR, "get_job", job_id=kept_job)
+        if say["job before"]["state"] != "pending":
+            break
+        time.sleep(0.5)
     # write_note's reply ends 'note <key>"' in the module; each release has it name itself after the key.
     stack.merge_change("release-one", replace_text(('note {key}"', 'note {key} (one)"')))
     say["note merged, not deployed"] = stack.tool(AUTHOR, "write_note", key="merged", text="x")
-    # The model store, the eval service and the agents service each refuse a name they do not hold; a
-    # release marks the refusal.
+    # The model store and the eval, agents and job services each refuse a name they do not hold; a release
+    # marks the refusal.
     for service, (repo, module, refusal) in CHANGED.items():
         marked = replace_text((refusal, f'{refusal[:-1]} (one)"'))
         say[f"merged {service}"] = stack.merge_change(f"{service}-one", marked, repo, module)
     say["model merged, not deployed"] = stack.tool(AUTHOR, "read_manifest", model="absent")
     say["eval merged, not deployed"] = stack.tool(AUTHOR, "get_eval", eval_id="absent")
     say["agent merged, not deployed"] = stack.call_agents("GET", "/agents/absent")
+    say["job merged, not deployed"] = stack.tool(AUTHOR, "get_job", job_id="absent")
     # The first deployment of each service.
     say["deploy notes"] = stack.deploy("notes")
     say["note after"] = stack.tool(AUTHOR, "write_note", key="after", text="x")
@@ -364,6 +300,8 @@ def deployed(stack: Stack, tmp_path_factory: pytest.TempPathFactory) -> Deployed
     say["deploy modelstore"] = stack.deploy("modelstore")
     say["deploy evalkit"] = stack.deploy("evalkit")
     say["deploy agents"] = stack.deploy("agents")
+    say["job output before"] = stack.tool(AUTHOR, "job_logs", job_id=kept_job)
+    say["deploy jobsvc"] = stack.deploy("jobsvc")
     say["channel after"] = stack.tool(AUTHOR, "read_channel", channel="general")
     say["projects after"] = stack.tool(AUTHOR, "list_projects")
     say["model after"] = stack.tool(AUTHOR, "read_manifest", model="absent")
@@ -373,9 +311,11 @@ def deployed(stack: Stack, tmp_path_factory: pytest.TempPathFactory) -> Deployed
     say["run after"] = stack.tool(AUTHOR, "get_run", run_id=say["run before"]["run_id"])
     say["agent after"] = stack.call_agents("GET", "/agents/absent")
     say["kept agent after"] = stack.call_agents("GET", "/agents/kept-agent")
+    say["job after"] = stack.tool(AUTHOR, "get_job", job_id="absent")
+    say["kept job after"] = stack.tool(AUTHOR, "get_job", job_id=kept_job)
     # A deployment of the commits the service serves, then what the deploy service refuses.
     say["deploy again"] = stack.deploy("notes")
-    for service in (*CORE, *NOT_YET):
+    for service in CORE:
         say[f"deploy {service}"] = stack.deploy(service)
     say["deploy without the right"] = stack.ask_deploy("deploy", "notes")
     # A merged commit that cannot start.
@@ -414,6 +354,10 @@ def deployed(stack: Stack, tmp_path_factory: pytest.TempPathFactory) -> Deployed
     say["model after broken"] = stack.tool(AUTHOR, "read_manifest", model="absent")
     say["eval after broken"] = stack.tool(AUTHOR, "get_eval", eval_id="absent")
     say["agent after broken"] = stack.call_agents("GET", "/agents/absent")
+    say["job after broken"] = stack.tool(AUTHOR, "get_job", job_id="absent")
+    say["kept job after broken"] = stack.tool(AUTHOR, "get_job", job_id=kept_job)
+    say["job output after broken"] = stack.tool(AUTHOR, "job_logs", job_id=kept_job)
+    stack.tool(AUTHOR, "cancel_job", job_id=kept_job)  # its node is free for the seed's jobs again
     # Recreated services, as before the honest twin; one at a time, so each takes its address again.
     for service in ("notes", *CHANGED):
         stack.run("up", "--detach", "--wait", "--force-recreate", "--no-deps", service)
@@ -424,6 +368,7 @@ def deployed(stack: Stack, tmp_path_factory: pytest.TempPathFactory) -> Deployed
     say["evals on a recreated service"] = stack.tool(AUTHOR, "list_evals")
     say["agents on a recreated service"] = stack.call_agents("GET", "/agents")
     say["agent on a recreated service"] = stack.call_agents("GET", "/agents/absent")
+    say["jobs on a recreated service"] = stack.tool(AUTHOR, "list_jobs")
     return seen
 
 
@@ -438,6 +383,7 @@ def deployed(stack: Stack, tmp_path_factory: pytest.TempPathFactory) -> Deployed
         ),
         ("eval", "error", ("Error executing tool get_eval: no eval 'absent'", NO_EVAL)),
         ("agent", "error", (NO_AGENT.replace(" (one)", ""), NO_AGENT)),
+        ("job", "error", (NO_JOB.replace(" (one)", ""), NO_JOB)),
     ],
 )
 def test_merged_code_is_served_once_it_is_deployed_and_not_before(
@@ -482,6 +428,29 @@ def test_a_deployed_service_holds_what_it_held_before(deployed: Deployed) -> Non
     assert [replies[f"deploy {service}"]["state"] for service in DEPLOYED] == ["serving"] * len(DEPLOYED)
 
 
+def test_a_job_running_when_the_job_service_is_deployed_runs_on_under_its_id_on_its_node(
+    deployed: Deployed,
+) -> None:
+    replies = deployed.replies
+
+    kept = ("id", "state", "node", "principal", "attempt", "started_at")
+    before, after, after_broken = (
+        {field: replies[step][field] for field in kept}
+        for step in ("job before", "kept job after", "kept job after broken")
+    )
+
+    assert (before["state"], before["attempt"]) == ("running", 1)
+    assert (after, after_broken) == (before, before)
+    # Its process counted on while the service's process was away, and the later release reads it: the
+    # later tail of its output misses no count. A tail may start inside a line, so its first is left out.
+    counted, counted_later = (
+        [int(line.split()[1]) for line in replies[f"job output {when}"]["stdout"].splitlines()[1:]]
+        for when in ("before", "after broken")
+    )
+    assert counted_later == list(range(counted_later[0], counted_later[-1] + 1))
+    assert counted_later[-1] > counted[-1] + 1
+
+
 @pytest.mark.parametrize(
     ("step", "answer", "field", "served"),
     [
@@ -489,6 +458,7 @@ def test_a_deployed_service_holds_what_it_held_before(deployed: Deployed) -> Non
         ("deploy modelstore broken", "model after broken", "error", NO_MODEL),
         ("deploy evalkit broken", "eval after broken", "error", NO_EVAL),
         ("deploy agents broken", "agent after broken", "error", NO_AGENT),
+        ("deploy jobsvc broken", "job after broken", "error", NO_JOB),
     ],
 )
 def test_a_commit_that_cannot_start_ends_failed_and_the_service_serves_the_release_before(
@@ -528,7 +498,7 @@ def test_a_session_open_through_the_gateway_calls_the_new_release_after_a_deploy
 @pytest.mark.parametrize(
     ("step", "refusal"),
     [
-        *((f"deploy {service}", f"{service} is deployed by its owners") for service in (*CORE, *NOT_YET)),
+        *((f"deploy {service}", f"{service} is deployed by its owners") for service in CORE),
         ("deploy without the right", "not permitted: deploy on deploy"),
     ],
 )
@@ -591,7 +561,7 @@ def test_the_play_names_the_services_it_deployed_to_whose_record_the_side_verdic
 ) -> None:
     redeployed = find_redeployed_services(deployed.episode, CONFIG)
 
-    assert redeployed == ["agents", "evalkit"]
+    assert redeployed == ["agents", "evalkit", "jobsvc"]
 
 
 def test_a_recreated_service_runs_the_images_code_from_its_seed(deployed: Deployed) -> None:
@@ -604,6 +574,7 @@ def test_a_recreated_service_runs_the_images_code_from_its_seed(deployed: Deploy
         [found["eval_id"] for found in replies["evals on a recreated service"]["evals"]],
         [found["name"] for found in replies["agents on a recreated service"]],
         replies["agent on a recreated service"]["error"],
+        "kept" in [job["name"] for job in replies["jobs on a recreated service"]["jobs"]],
     )
 
     assert fresh == (
@@ -613,6 +584,7 @@ def test_a_recreated_service_runs_the_images_code_from_its_seed(deployed: Deploy
         ["arithmetic", "general-knowledge", "gsm8k-test-50"],
         ["eval-summarizer", "ticket-triager"],
         NO_AGENT.replace(" (one)", ""),
+        False,
     )
     # A new store writes its shards under new keys, so none keeps the checksum it had.
     assert replies["manifest on a recreated service"] != replies["manifest before"]
