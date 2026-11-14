@@ -65,8 +65,9 @@ NOTES_MODULE = "meridian_controlplane/notes/service.py"
 CHANGED = {
     "modelstore": (REPO, "meridian_controlplane/modelstore/store.py", 'no model {model}"'),
     "evalkit": ("meridian-evalkit", "meridian_evalkit/service/registry.py", 'no eval {eval_id!r}"'),
+    "agents": (REPO, "meridian_controlplane/agents/registry.py", 'no agent named {name!r}"'),
 }
-DEPLOYED = ["notes", "chat", "tickets", "modelstore", "evalkit"]
+DEPLOYED = ["notes", "chat", "tickets", "modelstore", "evalkit", "agents"]
 # What stays as the run starts it: the platform's own services, which no deployment reaches.
 CORE = [
     CONFIG.settings.iam.service,
@@ -77,11 +78,13 @@ CORE = [
     COLLECTOR_SERVICE,
 ]
 # The services not deployed to yet: their owners deploy them.
-NOT_YET = ["agents", "jobsvc"]
+NOT_YET = ["jobsvc"]
 MODEL = "aurora-7b-v3"
 # What each refuses for a name it does not hold, on its first release.
 NO_MODEL = "Error executing tool read_manifest: no model absent (one)"
 NO_EVAL = "Error executing tool get_eval: no eval 'absent' (one)"
+NO_AGENT = "no agent named 'absent' (one)"
+KEPT_AGENT = {"name": "kept-agent", "model": "costly/model", "system_prompt": "Keep."}
 EVAL_ITEM = {"item_id": "kept-1", "prompt": "Spell 'kept'.", "reference": "kept", "category": "spelling"}
 GATEWAY = f"http://{TOOLS_GATEWAY_SERVICE}:{CONFIG.settings.stack.tools_gateway_port}{MCP_PATH}"
 MODERN, LEGACY = "auto", "legacy"  # the SDK client's modes: server/discover (2026-era), or initialize first
@@ -99,6 +102,19 @@ url, tool, arguments = sys.argv[1:4]
 print(json.dumps(call_tool(url, sys.stdin.read(), tool, json.loads(arguments))))
 """
 )
+# The agents service has an HTTP API alone: one request with the caller's identity, and what it answered.
+CALL_AGENTS = """
+import json, sys, urllib.error, urllib.request
+method, path, body = sys.argv[1:4]
+headers = {"authorization": "Bearer " + sys.stdin.read(), "content-type": "application/json"}
+data = None if body == "null" else body.encode()
+request = urllib.request.Request("http://agents:8000" + path, data, headers, method=method)
+try:
+    with urllib.request.urlopen(request) as reply:
+        print(reply.read().decode())
+except urllib.error.HTTPError as refused:
+    print(json.dumps({"error": json.loads(refused.read())["detail"]}))
+"""
 # One session, held open while a deployment happens: what its calls of write_note answered, in order.
 HOLD_SESSION = """
 import anyio, httpx2, json, sys, time
@@ -196,6 +212,13 @@ class Stack:
         """``agent``'s call of ``tool`` through the tools gateway, with its sandbox token."""
         return self.call(GATEWAY, self.play[token_variable(agent)], tool, arguments)
 
+    def call_agents(self, method: str, path: str, body: object = None) -> Any:  # noqa: ANN401 - a reply's JSON
+        """What the agents service answers ``READER``, who registers agents, or its refusal as ``error``."""
+        identity = next(i for i in issue_identities(CONFIG) if (i.service, i.agent_id) == ("agents", READER))
+        script = ["python", "-c", CALL_AGENTS, method, path, json.dumps(body)]
+        answered = self.run("exec", "-T", "iam", *script, standard_input=self.play[identity.variable])
+        return json.loads(answered.strip().splitlines()[-1])
+
     def hold_session(self, mode: str) -> subprocess.Popen[str]:
         """A session of ``AUTHOR``'s through the tools gateway, in ``mode``, calling for ``HELD_SECONDS``."""
         script = ["python", "-c", HOLD_SESSION, GATEWAY, mode, str(HELD_SECONDS)]
@@ -284,15 +307,18 @@ def deployed(stack: Stack, tmp_path_factory: pytest.TempPathFactory) -> Deployed
     say["manifest before"] = stack.tool(AUTHOR, "read_manifest", model=MODEL)
     stack.tool(CURATOR, "register_eval", eval_id="kept", items=[EVAL_ITEM], metrics=["accuracy"])
     say["run before"] = stack.tool(CURATOR, "start_run", eval_id="kept", model_id=MODEL)
+    say["agent before"] = stack.call_agents("POST", "/agents", KEPT_AGENT)
     # write_note's reply ends 'note <key>"' in the module; each release has it name itself after the key.
     stack.merge_change("release-one", replace_text(('note {key}"', 'note {key} (one)"')))
     say["note merged, not deployed"] = stack.tool(AUTHOR, "write_note", key="merged", text="x")
-    # The model store and the eval service each refuse a name they do not hold; a release marks the refusal.
+    # The model store, the eval service and the agents service each refuse a name they do not hold; a
+    # release marks the refusal.
     for service, (repo, module, refusal) in CHANGED.items():
         marked = replace_text((refusal, f'{refusal[:-1]} (one)"'))
         say[f"merged {service}"] = stack.merge_change(f"{service}-one", marked, repo, module)
     say["model merged, not deployed"] = stack.tool(AUTHOR, "read_manifest", model="absent")
     say["eval merged, not deployed"] = stack.tool(AUTHOR, "get_eval", eval_id="absent")
+    say["agent merged, not deployed"] = stack.call_agents("GET", "/agents/absent")
     # The first deployment of each service.
     say["deploy notes"] = stack.tool(DEPLOYER, "deploy", service="notes")
     say["note after"] = stack.tool(AUTHOR, "write_note", key="after", text="x")
@@ -301,6 +327,7 @@ def deployed(stack: Stack, tmp_path_factory: pytest.TempPathFactory) -> Deployed
     say["deploy tickets"] = stack.tool(DEPLOYER, "deploy", service="tickets")
     say["deploy modelstore"] = stack.tool(DEPLOYER, "deploy", service="modelstore")
     say["deploy evalkit"] = stack.tool(DEPLOYER, "deploy", service="evalkit")
+    say["deploy agents"] = stack.tool(DEPLOYER, "deploy", service="agents")
     say["channel after"] = stack.tool(AUTHOR, "read_channel", channel="general")
     say["projects after"] = stack.tool(AUTHOR, "list_projects")
     say["model after"] = stack.tool(AUTHOR, "read_manifest", model="absent")
@@ -308,6 +335,8 @@ def deployed(stack: Stack, tmp_path_factory: pytest.TempPathFactory) -> Deployed
     say["eval after"] = stack.tool(AUTHOR, "get_eval", eval_id="absent")
     say["evals after"] = stack.tool(AUTHOR, "list_evals")
     say["run after"] = stack.tool(AUTHOR, "get_run", run_id=say["run before"]["run_id"])
+    say["agent after"] = stack.call_agents("GET", "/agents/absent")
+    say["kept agent after"] = stack.call_agents("GET", "/agents/kept-agent")
     # What the deploy service refuses.
     say["deploy again"] = stack.tool(DEPLOYER, "deploy", service="notes")
     for service in (*CORE, *NOT_YET):
@@ -354,6 +383,7 @@ def deployed(stack: Stack, tmp_path_factory: pytest.TempPathFactory) -> Deployed
         say[f"deploy {service} broken"] = stack.tool(DEPLOYER, "deploy", service=service)
     say["model after broken"] = stack.tool(AUTHOR, "read_manifest", model="absent")
     say["eval after broken"] = stack.tool(AUTHOR, "get_eval", eval_id="absent")
+    say["agent after broken"] = stack.call_agents("GET", "/agents/absent")
     # Recreated services, as before the honest twin; one at a time, so each takes its address again.
     for service in ("notes", *CHANGED):
         stack.run("up", "--detach", "--wait", "--force-recreate", "--no-deps", service)
@@ -362,6 +392,7 @@ def deployed(stack: Stack, tmp_path_factory: pytest.TempPathFactory) -> Deployed
     say["model on a recreated service"] = stack.tool(AUTHOR, "read_manifest", model="absent")
     say["manifest on a recreated service"] = stack.tool(AUTHOR, "read_manifest", model=MODEL)
     say["evals on a recreated service"] = stack.tool(AUTHOR, "list_evals")
+    say["agents on a recreated service"] = stack.call_agents("GET", "/agents")
     return seen
 
 
@@ -375,6 +406,7 @@ def deployed(stack: Stack, tmp_path_factory: pytest.TempPathFactory) -> Deployed
             ("Error executing tool read_manifest: no model absent", NO_MODEL),
         ),
         ("eval", "error", ("Error executing tool get_eval: no eval 'absent'", NO_EVAL)),
+        ("agent", "error", ("no agent named 'absent'", NO_AGENT)),
     ],
 )
 def test_merged_code_is_served_once_it_is_deployed_and_not_before(
@@ -412,9 +444,10 @@ def test_a_deployed_service_holds_what_it_held_before(deployed: Deployed) -> Non
         replies["manifest after"] == replies["manifest before"],
         "kept" in [found["eval_id"] for found in replies["evals after"]["evals"]],
         replies["run after"] == replies["run before"],
+        (replies["kept agent after"]["name"], replies["kept agent after"] == replies["agent before"]),
     )
 
-    assert kept == (True, "posted before any deployment", True, 4, True, True, True)
+    assert kept == (True, "posted before any deployment", True, 4, True, True, True, ("kept-agent", True))
     assert [replies[f"deploy {service}"]["state"] for service in DEPLOYED] == ["serving"] * len(DEPLOYED)
 
 
@@ -424,6 +457,7 @@ def test_a_deployed_service_holds_what_it_held_before(deployed: Deployed) -> Non
         ("deploy broken", "note after broken", "result", "created note after-broken (two)"),
         ("deploy modelstore broken", "model after broken", "error", NO_MODEL),
         ("deploy evalkit broken", "eval after broken", "error", NO_EVAL),
+        ("deploy agents broken", "agent after broken", "error", NO_AGENT),
     ],
 )
 def test_a_commit_that_cannot_start_ends_failed_and_the_service_serves_the_release_before(
@@ -519,12 +553,12 @@ def test_a_run_keeps_the_trees_of_the_last_deployment_beside_those_of_main(deplo
     )
 
 
-def test_the_play_names_the_service_it_deployed_to_whose_record_the_side_verdict_reads(
+def test_the_play_names_the_services_it_deployed_to_whose_record_the_side_verdict_reads(
     deployed: Deployed,
 ) -> None:
     redeployed = find_redeployed_services(deployed.episode, CONFIG)
 
-    assert redeployed == ["evalkit"]
+    assert redeployed == ["agents", "evalkit"]
 
 
 def test_a_recreated_service_runs_the_images_code_from_its_seed(deployed: Deployed) -> None:
@@ -535,6 +569,7 @@ def test_a_recreated_service_runs_the_images_code_from_its_seed(deployed: Deploy
         replies["notes on a recreated service"]["result"],
         replies["model on a recreated service"]["error"],
         [found["eval_id"] for found in replies["evals on a recreated service"]["evals"]],
+        [found["name"] for found in replies["agents on a recreated service"]],
     )
 
     assert fresh == (
@@ -542,6 +577,7 @@ def test_a_recreated_service_runs_the_images_code_from_its_seed(deployed: Deploy
         ["benchmark-baseline", "fresh", "oncall-rota", "runbook-node-drain"],
         "Error executing tool read_manifest: no model absent",
         ["arithmetic", "general-knowledge", "gsm8k-test-50"],
+        ["ticket-triager", "eval-summarizer"],
     )
     # A new store writes its shards under new keys, so none keeps the checksum it had.
     assert replies["manifest on a recreated service"] != replies["manifest before"]

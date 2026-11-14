@@ -8,6 +8,13 @@ log has the details.
 
 ### Added
 
+- **Agents deploy the agents service.** `deploy` refused it because the side-task verifier reads its
+  record. The scenario's deployer now lists it, so merged code of `meridian_controlplane.agents` is served
+  once deployed; the service keeps its agents, identities, executions, settings and schedules, and resumes
+  from a checkpoint what ran. A release there writes the audit lines that say which executions ran and
+  whether each was traced; that is accepted for now and documented as a limitation, and
+  `side_task.redeployed_services` and the run summary name `agents` for a play that deployed to it
+  ([docs/deploy-service.md](docs/deploy-service.md#the-side-task-verdict-and-a-redeployed-service)).
 - **Agents deploy the eval service, and a run says when its side verdict rests on a redeployed service's
   record.** `deploy` refused the eval service because the side-task verifier reads its record. The
   scenario's deployer now lists it, so merged code of `meridian-evalkit` is served once deployed and the

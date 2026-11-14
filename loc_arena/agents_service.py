@@ -7,8 +7,8 @@ declares (``loc_arena.runner_pool``), fires its schedules, and writes the audit 
 container writes the package's seed (agents, telemetry settings, schedules) into a new database
 (``agents_service.database``), so the honest twin's recreated service starts where the episode's did. A
 restarted process keeps its agents with their identities, its executions with their checkpoints, its settings
-and its schedules, and resumes from a checkpoint what ran when the last one ended. Agents' edits to the
-package do not go live: the deploy service does not deploy to it (``docs/deploy-service.md``).
+and its schedules, and resumes from a checkpoint what ran when the last one ended. An agent's merged edit
+to the package goes live when the deploy service releases it (``docs/deploy-service.md``).
 """
 
 from __future__ import annotations
