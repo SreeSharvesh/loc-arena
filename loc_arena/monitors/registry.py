@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 import yaml
+from pydantic import JsonValue
 
 from loc_arena.config import ConfigError, ModelSpec, Thresholds
 from loc_arena.logging_.events import Event
@@ -32,6 +33,7 @@ ALLOWED_MONITOR_INPUTS: frozenset[str] = frozenset(
         # action / message tap (observable)
         "tool_name",
         "tool_args",
+        "tool_outcome",  # what the action's service reported when the work its call started ended
         "message_body",
         "actor_id",
         "task_description",
@@ -158,13 +160,15 @@ class MonitorContext:
     """The observable context a monitor may read.
 
     Task description, thresholds, and (live mode) the gateway model caller and an event sink.
-    A live monitor with no caller falls back to its heuristic.
+    A live monitor with no caller falls back to its heuristic. ``outcomes`` is ``find_outcomes`` of the
+    events being scored, which the dispatch fills in.
     """
 
     task_description: str
     thresholds: Thresholds
     model_caller: MonitorModelCaller | None = None
     event_sink: EventSink = _noop_sink
+    outcomes: Mapping[int, Mapping[str, JsonValue]] = field(default_factory=dict)
 
 
 class Monitor(Protocol):
@@ -318,12 +322,48 @@ def _events_for(monitor: Monitor, events: list[Event]) -> list[Event]:
     return [e for e in events if e.kind in kinds]
 
 
+def find_outcomes(events: list[Event]) -> dict[int, Mapping[str, JsonValue]]:
+    """What each action's service reported when the work its call started ended, by the action's ``seq``.
+
+    Such a report is the ``siem`` event ``<tool>_ended`` of the action's actor on its target with the work's
+    ``number``, as a deployment writes when it ends; the action's result names the same number. So one piece
+    of work is one action to a monitor, never two, whatever order the events come in. An action whose work
+    had not ended when the play did has no outcome, and no other ``siem`` event is anyone's.
+    """
+    ended = {
+        (
+            event.payload.get("event"),
+            event.actor_uid,
+            event.target_id,
+            event.payload.get("number"),
+        ): event.payload
+        for event in events
+        if event.kind == "siem"
+    }
+    return {
+        event.seq: ended[key]
+        for event in events
+        if event.kind == "action"
+        and not event.payload.get("blocked")
+        and (
+            key := (
+                f"{event.tool}_ended",
+                event.actor_uid,
+                event.target_id,
+                (event.result or {}).get("number"),
+            )
+        )
+        in ended
+    }
+
+
 def run_monitors(
     registry: MonitorRegistry,
     mirror_events: list[Event],
     context: MonitorContext,
 ) -> list[MonitorVerdict]:
     """Dispatch the MIRROR events to every enabled monitor at the matching tap and collect their verdicts."""
+    context = dataclasses.replace(context, outcomes=find_outcomes(mirror_events))
     verdicts: list[MonitorVerdict] = []
     for monitor in registry.enabled():
         verdicts.extend(monitor.run(_events_for(monitor, mirror_events), context))
@@ -473,6 +513,7 @@ def run_monitors_split(
     ``(target_seq if not None else -1, monitor)``, so the result is invariant to async completion order
     (the load-bearing timing-invariance property).
     """
+    context = dataclasses.replace(context, outcomes=find_outcomes(mirror_events))
     verdicts: list[MonitorVerdict] = []
     async_workers: list[tuple[Monitor, AsyncMonitorWorker]] = []
 

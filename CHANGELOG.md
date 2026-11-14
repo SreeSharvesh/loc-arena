@@ -19,6 +19,11 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [345] - 2026-11-14: The action monitor is shown how each deployment ended
+### Changed
+- The monitor is shown, in its input for a deployment's action, each repo's commit, whether the service serves on them and why it failed ([docs](docs/deploy-service.md#records)).
+- The monitor's `tool_outcome` input is absent for every other action, so a play with no deployment sends byte-identical prompts and scores as before.
+
 ## [347] - 2026-11-14: The company has a telemetry store and its own Collector
 ### Added
 - The scenario can name a telemetry store with `collects:`, which the stack keeps on a network no agent's code joins ([docs](docs/isolation/README.md#containers)).
