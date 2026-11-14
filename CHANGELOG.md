@@ -21,7 +21,7 @@ in its own container.
 
 ## [350] - 2026-11-14: The reach test reports a failing sandbox's log
 ### Changed
-- The repository's stack reach test prints the log of the sandbox that failed a bash call, so the next sandbox error explains itself; the arena behaves as before.
+- The repository's stack reach test prints the end of every sandbox's log when a bash call fails, so the next sandbox error explains itself; the arena behaves as before.
 - The docs' README lists the two commands that read a run: the run explorer and the run reader ([README](README.md)).
 
 ## [352] - 2026-11-14: The services agents deploy report their traces and logs
