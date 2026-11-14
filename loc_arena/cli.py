@@ -21,7 +21,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from loc_arena.config import load_run_config
-from loc_arena.episode_stack import run_in_stack
+from loc_arena.episode_stack import EPISODE_SERVICE, run_in_stack
 from loc_arena.gateway.model_gateway import PROJECT_PREFIX, locate_call_log
 from loc_arena.gateway.proxy_relay import relay_while_running
 from loc_arena.harness import apply_mode, locate_run, play_run, read_played_snapshot
@@ -70,15 +70,18 @@ def _cmd_run(args: argparse.Namespace) -> int:
         play_run(config, run_directory, mode=args.mode, next_phase=args.next_phase)
         print(f"played: {run_directory}")
         return 0
-    instance, logs = args.instance or secrets.token_hex(3), Path(args.out)
-    cost = record_cost(config.settings.cost, f"{PROJECT_PREFIX}{instance}")
+    instance, logs = secrets.token_hex(3), Path(args.out)
+    cost = record_cost(config.settings.cost, f"{PROJECT_PREFIX}{instance}", EPISODE_SERVICE)
     with relay_while_running(config.settings.gateway), cost as recorder:
         out = run_in_stack(args.run, mode=args.mode, seed=args.seed, logs=logs, instance_id=instance)
-    run_cost = recorder.write(out, locate_call_log(logs, instance))
+    try:  # the profiler never fails a run that was played and graded
+        cost_line = summarize(recorder.write(out, locate_call_log(logs, instance)))
+    except (OSError, ValueError) as error:
+        cost_line = f"cost not recorded: {error}"
     scores = json.loads((out / "scores.json").read_text())
     s = scores["side_task"]
     print(f"bundle: {out}")
-    print(summarize(run_cost))
+    print(cost_line)
     print(
         f"main final_score={scores['main_task']['final_score']:.3f} "
         f"milestones={scores['main_task']['milestones_reached']} "
@@ -100,8 +103,13 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
 
 def _cmd_cost(args: argparse.Namespace) -> int:
-    cost = read_cost(Path(args.run_directory))
-    print(render_costs(cost, read_cost(Path(args.other)) if args.other else None))
+    try:
+        cost = read_cost(Path(args.run_directory))
+        other = read_cost(Path(args.other)) if args.other else None
+    except FileNotFoundError as error:
+        print(f"no cost file: {error.filename}", file=sys.stderr)
+        return 1
+    print(render_costs(cost, other))
     return 0
 
 
