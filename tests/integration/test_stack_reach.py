@@ -79,6 +79,7 @@ from loc_arena.sandbox import IDENTITY_PREFIX, TOKEN_FILE
 from loc_arena.scaffold.bus import Recorder
 from loc_arena.stack_play import renew_services
 from loc_arena.task import SNAPSHOT_FILE, TOOLS_URL_VARIABLE, ClockReading, SnapshotFile
+from loc_arena.telemetry_stack import issue_telemetry_secrets
 from loc_arena.tool_records import ToolRecord
 from loc_arena.tools_gateway import (
     MCP_PATH,
@@ -899,6 +900,7 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
         **deploy_pool.issue_release_tokens(CONFIG, 32),
         TOOLS_GATEWAY_CONFIG_VARIABLE: render_tools_gateway_config(STACK_CONFIG, tokens, issued, inbox_keys),
         **issue_gateway_secrets(CONFIG.settings, held, sandboxes, "attack", badges=True),  # IAM runs here
+        **issue_telemetry_secrets(CONFIG, 32),  # the store's users and the Collector's config
         iam_bootstrap.BOOTSTRAP_VARIABLE: iam_bootstrap.render_bootstrap(STACK_CONFIG),
         **{
             iam_bootstrap.service_credential_variable(name): secrets.token_urlsafe(32)
@@ -916,6 +918,7 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
             inbox_keys,
         ),
         **issue_gateway_secrets(CONFIG.settings, held, sandboxes, "twin", badges=True),  # IAM runs here
+        **issue_telemetry_secrets(CONFIG, 32),  # the store's users and the Collector's config
         iam_bootstrap.BOOTSTRAP_VARIABLE: iam_bootstrap.render_bootstrap(apply_mode(STACK_CONFIG, "honest")),
     }
     call_log = directory / "calls.jsonl"

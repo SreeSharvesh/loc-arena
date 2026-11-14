@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1220 560" width="1220" height="560" font-family="Helvetica, Arial, sans-serif" role="img" aria-labelledby="title desc">
+<title id="title">The company telemetry design, as a deployment view</title>
+<desc id="desc">An agent calls a tool through the tools gateway, which calls the company service with trace context. The service and the gateway export spans and logs over OTLP to the company Collector, which alone writes the telemetry store. The agent reads through the telemetry service, whose every read IAM decides, and which reads the store. The model gateway, the core Collector and the sealed record are unchanged and take nothing from it.</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#111827"/></marker></defs>
+<rect width="1220" height="560" fill="#ffffff"/>
+<rect x="20" y="20" width="790" height="390" rx="10" fill="#f9fafb" stroke="#9ca3af" stroke-dasharray="6 4" stroke-width="1.5"/><text x="32" y="40" font-size="13" font-weight="600" fill="#4b5563">agent-net: sandboxes and services</text>
+<rect x="840" y="20" width="360" height="390" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-dasharray="6 4" stroke-width="1.5"/><text x="852" y="40" font-size="13" font-weight="600" fill="#4b5563">telemetry-net: no agent code reaches it</text>
+<rect x="20" y="430" width="1180" height="110" rx="10" fill="#fff7ed" stroke="#ea580c" stroke-dasharray="6 4" stroke-width="1.5"/><text x="32" y="450" font-size="13" font-weight="600" fill="#4b5563">record-net, unchanged: what measures the run takes nothing from the telemetry above</text>
+<rect x="40" y="176" width="200" height="68" rx="6" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="140.0" y="200" text-anchor="middle" font-weight="600" font-size="14">Agent under test</text>
+<text x="140.0" y="218" text-anchor="middle" font-size="12" fill="#374151">pi session and sandbox</text>
+<rect x="300" y="176" width="200" height="68" rx="6" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="400.0" y="200" text-anchor="middle" font-weight="600" font-size="14">Tools gateway</text>
+<text x="400.0" y="218" text-anchor="middle" font-size="12" fill="#374151">agentgateway, in the core</text>
+<rect x="580" y="70" width="200" height="80" rx="6" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="680.0" y="94" text-anchor="middle" font-weight="600" font-size="14">Company service</text>
+<text x="680.0" y="112" text-anchor="middle" font-size="12" fill="#374151">notes, tickets, ...</text>
+<text x="680.0" y="127" text-anchor="middle" font-size="12" fill="#374151">OpenTelemetry SDK, zero-code</text>
+<rect x="580" y="196" width="200" height="56" rx="6" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="680.0" y="220" text-anchor="middle" font-weight="600" font-size="14">Central IAM</text>
+<text x="680.0" y="238" text-anchor="middle" font-size="12" fill="#374151">decides every call</text>
+<rect x="580" y="300" width="200" height="68" rx="6" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="680.0" y="324" text-anchor="middle" font-weight="600" font-size="14">Telemetry service</text>
+<text x="680.0" y="342" text-anchor="middle" font-size="12" fill="#374151">three read tools, no state</text>
+<rect x="40" y="300" width="200" height="68" rx="6" fill="#f3f4f6" stroke="#6b7280" stroke-width="1.5"/>
+<text x="140.0" y="324" text-anchor="middle" font-weight="600" font-size="14">Phoenix, unchanged</text>
+<text x="140.0" y="342" text-anchor="middle" font-size="12" fill="#374151">traces of the company's agents</text>
+<rect x="920" y="76" width="200" height="68" rx="6" fill="#dcfce7" stroke="#16a34a" stroke-width="1.5"/>
+<text x="1020.0" y="100" text-anchor="middle" font-weight="600" font-size="14">Company Collector</text>
+<text x="1020.0" y="118" text-anchor="middle" font-size="12" fill="#374151">on both networks</text>
+<rect x="920" y="300" width="200" height="68" rx="6" fill="#dcfce7" stroke="#16a34a" stroke-width="1.5"/>
+<text x="1020.0" y="324" text-anchor="middle" font-weight="600" font-size="14">Telemetry store</text>
+<text x="1020.0" y="342" text-anchor="middle" font-size="12" fill="#374151">GreptimeDB: logs and traces</text>
+<rect x="120" y="460" width="200" height="60" rx="6" fill="#ffedd5" stroke="#ea580c" stroke-width="1.5"/>
+<text x="220.0" y="484" text-anchor="middle" font-weight="600" font-size="14">Model gateway</text>
+<text x="220.0" y="502" text-anchor="middle" font-size="12" fill="#374151">agentgateway, holds the key</text>
+<rect x="580" y="460" width="200" height="60" rx="6" fill="#ffedd5" stroke="#ea580c" stroke-width="1.5"/>
+<text x="680.0" y="484" text-anchor="middle" font-weight="600" font-size="14">Core Collector</text>
+<text x="680.0" y="502" text-anchor="middle" font-size="12" fill="#374151">OpenTelemetry Collector</text>
+<rect x="920" y="460" width="200" height="60" rx="6" fill="#ffedd5" stroke="#ea580c" stroke-width="1.5"/>
+<text x="1020.0" y="484" text-anchor="middle" font-weight="600" font-size="14">Sealed record</text>
+<text x="1020.0" y="502" text-anchor="middle" font-size="12" fill="#374151">every model call</text>
+<path d="M 240 210 L 300 210" fill="none" stroke="#111827" stroke-width="1.5" marker-end="url(#arrow)"/><text x="270" y="202" text-anchor="middle" font-size="12" fill="#111827">1 tool call</text>
+<path d="M 500 196 L 540 196 L 540 110 L 580 110" fill="none" stroke="#111827" stroke-width="1.5" marker-end="url(#arrow)"/><text x="536" y="140" text-anchor="end" font-size="12" fill="#111827">2 call, with</text>
+<text x="536" y="155" text-anchor="end" font-size="12" fill="#111827">trace context</text>
+<path d="M 780 110 L 920 110" fill="none" stroke="#111827" stroke-width="1.5" marker-end="url(#arrow)"/><text x="850" y="96" text-anchor="middle" font-size="12" fill="#111827">3 spans, logs</text>
+<text x="850" y="128" text-anchor="middle" font-size="12" fill="#111827">OTLP</text>
+<path d="M 400 176 L 400 50 L 1020 50 L 1020 76" fill="none" stroke="#111827" stroke-width="1.5" marker-end="url(#arrow)"/><text x="690" y="44" text-anchor="middle" font-size="12" fill="#111827">3 a span of every tool call, OTLP</text>
+<path d="M 1020 144 L 1020 300" fill="none" stroke="#111827" stroke-width="1.5" marker-end="url(#arrow)"/><text x="1030" y="216" text-anchor="start" font-size="12" fill="#111827">4 writes</text>
+<text x="1030" y="231" text-anchor="start" font-size="12" fill="#111827">write-only user</text>
+<path d="M 500 224 L 540 224 L 540 334 L 580 334" fill="none" stroke="#111827" stroke-width="1.5" marker-end="url(#arrow)"/><text x="536" y="276" text-anchor="end" font-size="12" fill="#111827">5 search_logs,</text>
+<text x="536" y="291" text-anchor="end" font-size="12" fill="#111827">get_trace</text>
+<path d="M 780 334 L 920 334" fill="none" stroke="#111827" stroke-width="1.5" marker-end="url(#arrow)"/><text x="850" y="320" text-anchor="middle" font-size="12" fill="#111827">6 reads, SQL</text>
+<text x="850" y="352" text-anchor="middle" font-size="12" fill="#111827">read-only user</text>
+<path d="M 680 300 L 680 252" fill="none" stroke="#111827" stroke-width="1.5" marker-end="url(#arrow)" stroke-dasharray="5 4"/><text x="690" y="281" text-anchor="start" font-size="12" fill="#111827">IAM decides each read</text>
+<path d="M 320 490 L 580 490" fill="none" stroke="#111827" stroke-width="1.5" marker-end="url(#arrow)"/><text x="450" y="482" text-anchor="middle" font-size="12" fill="#111827">a record of each model call, OTLP</text>
+<path d="M 780 490 L 920 490" fill="none" stroke="#111827" stroke-width="1.5" marker-end="url(#arrow)"/><text x="850" y="482" text-anchor="middle" font-size="12" fill="#111827">appends</text>
+</svg>
