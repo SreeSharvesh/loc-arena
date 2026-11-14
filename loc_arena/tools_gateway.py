@@ -8,10 +8,24 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, Any, TypedDict
+from typing import TYPE_CHECKING, TypedDict
 
 from loc_arena.notices import NOTICE_TOOLS
-from loc_arena.telemetry_stack import GatewayTracing, render_gateway_tracing
+from loc_arena.telemetry_stack import (
+    TELEMETRY_NETWORK,
+    GatewayTracing,
+    find_reader,
+    locate_reader,
+    render_gateway_tracing,
+)
+from loc_arena.tool_authorization import (
+    DECISION_FIELDS,
+    list_enforced_services,
+    render_authorization_policies,
+)
+from loc_arena.tool_authorization import (
+    TOOLS_GATEWAY_SERVICE as TOOLS_GATEWAY_SERVICE,  # its compose service, by the name every module uses
+)
 from loc_arena.workspace_service import WORKSPACE_SERVICE, WORKSPACE_TOOLS, workspace_key
 from loc_arena.yaml_documents import dump_document
 
@@ -20,7 +34,6 @@ if TYPE_CHECKING:  # loc_arena.episode_stack imports this module
     from loc_arena.config import RunConfig
     from loc_arena.episode_stack import Identity
 
-TOOLS_GATEWAY_SERVICE = "agentgateway"  # its compose service and host name on agent-net
 TOOLS_GATEWAY_CONFIG_SECRET_NAME = "agentgateway_config"  # its config, generated per run: a compose secret
 TOOLS_GATEWAY_CONFIG_VARIABLE = "LOC_ARENA_AGENTGATEWAY_CONFIG"  # where compose reads that config from
 MCP_PATH = "/mcp"  # the MCP route of the tools gateway and of each service with tools
@@ -37,6 +50,8 @@ def render_tools_gateway(config: RunConfig, tool_services: Sequence[str], networ
     It starts once every service it puts on its route is healthy.
     """
     stack = config.settings.stack
+    reader = find_reader(config)  # the telemetry store's own MCP server, on the store's network alone
+    started = {reader: {"condition": "service_healthy"}} if reader else {}
     return {
         "image": stack.tools_gateway_image,
         "command": ["-f", str(config.settings.gateway.secrets_dir / TOOLS_GATEWAY_CONFIG_SECRET_NAME)],
@@ -45,8 +60,8 @@ def render_tools_gateway(config: RunConfig, tool_services: Sequence[str], networ
         "mem_limit": stack.service_memory_limit,
         "cpus": stack.service_cpus,
         "pids_limit": stack.service_pids_limit,
-        "networks": [network],
-        "depends_on": {service: {"condition": "service_healthy"} for service in tool_services},
+        "networks": [network, *([TELEMETRY_NETWORK] if reader else [])],
+        "depends_on": {**{service: {"condition": "service_healthy"} for service in tool_services}, **started},
     }
 
 
@@ -55,6 +70,7 @@ def render_tools_gateway_config(
     tokens: Mapping[str, str],
     identities: Mapping[Identity, str],
     inbox_keys: Mapping[str, str] | None = None,
+    credentials: Mapping[str, str] | None = None,
 ) -> str:
     """The tools gateway's config (agentgateway v1.6 schema) for agents with these sandbox ``tokens``.
 
@@ -62,42 +78,18 @@ def render_tools_gateway_config(
     line naming the agent, with a tool call's arguments and result or error. One CEL rule, generated from
     each agent's ``sandbox.tools``, allows an agent exactly those tools; a tool it may not call is left out of
     its tool list and refused before it reaches the service. Each service's target sets ``Authorization`` to
-    the caller's identity on that service. Tools are offered by their own names, never prefixed with their
+    the caller's identity on that service. Before a call of a tool of a service whose access the gateway
+    enforces, it asks IAM with that service's credential, from ``credentials``, and goes on only on an allow
+    (``loc_arena.tool_authorization``). Tools are offered by their own names, never prefixed with their
     service's. It listens on IPv4 alone; admin, stats and readiness listeners are off, so nothing on agent-net
     can read this config back.
     """
-    tools = {agent.id: dict(agent.sandbox.tools) for agent in config.agents}
-    # An agent's session runs nothing itself: its bash, file and subscription tools are a target.
-    from loc_arena.stack_play import EPISODE_SERVICE  # noqa: PLC0415 - stack_play imports this module
-
-    port = config.settings.stack.workspace_port
-    keys = {agent: workspace_key(token) for agent, token in tokens.items()}
-    workspace = [_render_target(WORKSPACE_SERVICE, f"http://{EPISODE_SERVICE}:{port}{MCP_PATH}", keys)]
     tools = {
-        agent: {**offered, WORKSPACE_SERVICE: [*WORKSPACE_TOOLS, *NOTICE_TOOLS]}
-        for agent, offered in tools.items()
+        # An agent's session runs nothing itself: its bash, file and subscription tools are a target.
+        agent.id: {**agent.sandbox.tools, WORKSPACE_SERVICE: [*WORKSPACE_TOOLS, *NOTICE_TOOLS]}
+        for agent in config.agents
     }
-    iam = config.settings.iam
-    callers = {
-        # IAM's one tool reads the caller's inbox, so the gateway sends the agent's inbox key, which opens
-        # nothing else, and never the agent's identity on IAM, which would let the gateway manage IAM for it.
-        service: dict(inbox_keys or {})
-        if iam.enabled and service.name == iam.service
-        else {
-            identity.agent_id: value
-            for identity, value in identities.items()
-            if identity.service == service.name
-        }
-        for service in config.live_services
-        if service.tools
-    }
-    targets = [
-        *(
-            _render_target(service.name, f"http://{service.name}:{service.port}{MCP_PATH}", caller)
-            for service, caller in callers.items()
-        ),
-        *workspace,
-    ]
+    targets = _render_targets(config, tokens, identities, inbox_keys or {})
     policies = {
         "apiKey": {
             "mode": "strict",
@@ -114,8 +106,10 @@ def render_tools_gateway_config(
         "mcpAuthorization": {
             "rules": [{"allow": f"mcp.tool.name in {json.dumps(tools)}[apiKey.agent][mcp.tool.target]"}],
         },
+        **render_authorization_policies(config, identities, credentials or {}),
     }
-    backend = {"targets": targets, "prefixMode": "never"}
+    # A target that does not answer loses its own tools alone: the others' calls go on.
+    backend = {"targets": targets, "prefixMode": "never", "failureMode": "failOpen"}
     document = {
         "config": {
             "enableIpv6": False,  # its default listener, [::], cannot bind where the kernel has no IPv6
@@ -137,11 +131,55 @@ def render_tools_gateway_config(
     return dump_document(document)
 
 
+class Target(TypedDict, total=False):
+    """One MCP target of the gateway's route: a service's tools, and what the gateway sets on a call to it."""
+
+    name: str
+    mcp: dict[str, str]
+    policies: dict[str, dict[str, dict[str, dict[str, str]]]]
+
+
 class FrontendPolicies(TypedDict, total=False):
     """agentgateway's ``frontendPolicies``: what it writes of each request."""
 
     accessLog: dict[str, dict[str, str]]  # the fields added to each line, each a CEL expression
     tracing: GatewayTracing
+
+
+def _render_targets(
+    config: RunConfig,
+    tokens: Mapping[str, str],
+    identities: Mapping[Identity, str],
+    inbox_keys: Mapping[str, str],
+) -> list[Target]:
+    """Each service with tools as a target of the route, then the workspace service, which the episode serves.
+
+    A target is sent the calling agent's own credential on it: its identity on a service, its inbox key on
+    IAM, its workspace key. A ready image is sent none: it runs no IAM integration to know a caller by, and
+    the gateway enforces IAM's decisions for it. The telemetry store's tools are its own MCP server's.
+    """
+    from loc_arena.stack_play import EPISODE_SERVICE  # noqa: PLC0415 - stack_play imports this module
+
+    iam = config.settings.iam
+    targets = []
+    for service in config.live_services:
+        if not service.tools:
+            continue
+        if iam.enabled and service.name == iam.service:
+            # IAM's one tool reads the caller's inbox, so the gateway sends the agent's inbox key, which opens
+            # nothing else, and never the agent's identity on IAM, which would let it manage IAM for it.
+            callers: Mapping[str, str] | None = inbox_keys
+        elif isinstance(service.source, str):
+            callers = None
+        else:
+            callers = {
+                key.agent_id: value for key, value in identities.items() if key.service == service.name
+            }
+        url = locate_reader(config, service) or f"http://{service.name}:{service.port}{MCP_PATH}"
+        targets.append(_render_target(service.name, url, callers))
+    workspace = f"http://{EPISODE_SERVICE}:{config.settings.stack.workspace_port}{MCP_PATH}"
+    keys = {agent: workspace_key(token) for agent, token in tokens.items()}
+    return [*targets, _render_target(WORKSPACE_SERVICE, workspace, keys)]
 
 
 def _render_frontend_policies(config: RunConfig) -> FrontendPolicies:
@@ -155,6 +193,7 @@ def _render_frontend_policies(config: RunConfig) -> FrontendPolicies:
         "tool_args": "mcp.tool.arguments",
         "tool_result": "mcp.tool.result",
         "tool_error": "mcp.tool.error",
+        **(DECISION_FIELDS if list_enforced_services(config) else {}),
     }
     policies: FrontendPolicies = {"accessLog": {"add": added}}
     if tracing := render_gateway_tracing(config):
@@ -162,8 +201,10 @@ def _render_frontend_policies(config: RunConfig) -> FrontendPolicies:
     return policies
 
 
-def _render_target(name: str, url: str, callers: Mapping[str, str]) -> dict[str, Any]:
-    """The target ``name`` at ``url``, sent the calling agent's own bearer credential from ``callers``."""
+def _render_target(name: str, url: str, callers: Mapping[str, str] | None) -> Target:
+    """The target ``name`` at ``url``, sent the calling agent's own credential from ``callers``, if any."""
+    if callers is None:
+        return {"name": name, "mcp": {"host": url}}
     authorization = f'"Bearer " + {json.dumps(dict(callers))}[apiKey.agent]'
     return {
         "name": name,

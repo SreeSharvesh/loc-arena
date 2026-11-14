@@ -9,7 +9,7 @@ from loc_arena.episode_stack import REPOSITORY, issue_secrets, render_compose
 
 RUN = "aurora-efficiency"
 CONFIG = load_run_config(REPOSITORY / "configs" / f"{RUN}.yaml")
-TELEMETRY_SECRETS = {"telemetry_store_users", "telemetry_collector_config"}
+TELEMETRY_SECRETS = {"telemetry_store_users", "telemetry_collector_config", "telemetry_reader"}
 
 
 def test_the_store_and_the_companys_collector_alone_join_its_network_and_hold_its_secrets() -> None:
@@ -23,10 +23,15 @@ def test_the_store_and_the_companys_collector_alone_join_its_network_and_hold_it
         for secret in service.get("secrets", [])
         if (secret if isinstance(secret, str) else secret["source"]) in TELEMETRY_SECRETS
     }
-    assert joined == {"telemetry": ["telemetry-net"], "telemetry-collector": ["agent-net", "telemetry-net"]}
-    assert [name for name, service in services.items() if "telemetry-net" in service["networks"]] == [*joined]
+    assert joined == {
+        "telemetry": ["telemetry-net"],
+        "telemetry-collector": ["agent-net", "telemetry-net"],
+        "telemetry-reader": ["telemetry-net"],  # the store's own MCP server, which checks no caller
+    }
+    on_its_network = {name for name, service in services.items() if "telemetry-net" in service["networks"]}
+    assert on_its_network == {*joined, "agentgateway"}  # the gateway asks IAM before it calls the reader
     assert compose["networks"]["telemetry-net"] == {"internal": True}
-    assert holders == {"telemetry", "telemetry-collector"}
+    assert holders == {"telemetry", "telemetry-collector", "telemetry-reader"}
     assert services["episode"]["depends_on"]["telemetry-collector"] == {"condition": "service_started"}
 
 

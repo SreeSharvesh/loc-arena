@@ -17,7 +17,7 @@ from __future__ import annotations
 import dataclasses
 from collections.abc import Collection, Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, StrictStr
 from scenarios.loader import EngineModule, LiveService, Scenario
@@ -73,6 +73,12 @@ class ResourceSeed(BaseModel):
         description="What the work the service launches may be given, by service: each piece of work gets "
         "its own identity holding those of these permissions its sponsor holds. Needs a manifest operation "
         "marked launch.",
+    )
+    enforced_by: Literal["service", "gateway"] = Field(
+        default="service",
+        description="Who lets a call through only on IAM's allow: the service itself, through the shared IAM "
+        "integration, or the tools gateway, for a service that cannot ask IAM, such as a ready image. The "
+        "gateway covers tools alone, so such a service has no rights a sandbox could use around it.",
     )
     holders: dict[CompanyPrincipal, tuple[StrictStr, ...]] = Field(
         default_factory=dict,
@@ -139,6 +145,17 @@ def find_seed_problem(  # noqa: C901 - predates the complexity gate
     reached = {service.name for service in live_services if service.tools or service.rights}
     if unmanaged := sorted(reached - set(seed.resources)):
         return f"agents reach services outside central IAM; give each an iam: resource: {unmanaged}"
+    return None
+
+
+def find_enforcement_problem(seed: IamSeed, live_services: tuple[LiveService, ...]) -> str | None:
+    """What keeps the tools gateway from enforcing IAM for a service a sound seed marks so, else ``None``."""
+    live = {service.name: service for service in live_services}
+    for name, resource in seed.resources.items():
+        head = _read_manifest_head(name, resource.manifest)
+        if resource.enforced_by == "gateway" and isinstance(head, ManifestHead):
+            if problem := _gateway_problem(live[name], head):
+                return problem
     return None
 
 
@@ -251,6 +268,27 @@ def _holders_problem(
     return None
 
 
+def _gateway_problem(service: LiveService, head: ManifestHead) -> str | None:
+    """What keeps the tools gateway from enforcing IAM's decisions for ``service``, else ``None``.
+
+    A place on agent-net, where a sandbox calls it around the gateway; a right a sandbox could use over HTTP;
+    a tool the manifest maps to no operation, which the gateway would let through unasked; or an operation
+    that names a target, which the gateway does not pass to IAM.
+    """
+    name = service.name
+    if not service.collects:  # the telemetry store alone is moved off agent-net, behind the gateway
+        return f"the tools gateway enforces IAM for {name!r}, which a sandbox reaches on agent-net, around it"
+    if service.rights:
+        return f"the tools gateway enforces IAM for {name!r}, which declares rights a sandbox uses around it"
+    if unmapped := sorted(set(service.tools) - set(head.tools)):
+        return f"the tools gateway enforces IAM for {name!r}, whose manifest maps no operation to {unmapped}"
+    if targeted := sorted(
+        tool for tool, operation in head.tools.items() if head.operations[operation].get("target")
+    ):
+        return f"the tools gateway enforces IAM for {name!r}, but passes no target, which {targeted} need"
+    return None
+
+
 def _service_principal(service: str) -> str:
     """The principal IAM names a managed service's own."""
     return f"{service}-service"
@@ -291,7 +329,10 @@ def add_iam_service(
     seed = load_seed(scenario)
     if seed is None:
         raise ValueError("iam.enabled needs the scenario pack to declare an iam: block")
-    if problem := find_seed_problem(seed, live_services, agents):
+    if problem := find_seed_problem(seed, live_services, agents) or find_enforcement_problem(
+        seed,
+        live_services,
+    ):
         raise ValueError(problem)
     if any(service.name == settings.service for service in live_services):
         raise ValueError(f"the scenario already runs a service named {settings.service!r}")

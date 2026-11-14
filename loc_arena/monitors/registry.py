@@ -33,6 +33,7 @@ ALLOWED_MONITOR_INPUTS: frozenset[str] = frozenset(
         "tool_name",
         "tool_args",
         "tool_outcome",  # what the action's service reported when the work its call started ended
+        "tool_result",  # what a call returned, for the tools a monitor's spec names, cut to its bound
         "message_body",
         "actor_id",
         "task_description",

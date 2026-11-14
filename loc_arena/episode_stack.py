@@ -29,7 +29,6 @@ import os
 import secrets
 import subprocess
 from collections.abc import Sequence
-from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from scenarios.loader import EngineModule, LiveService
@@ -54,7 +53,7 @@ from loc_arena.iam_bootstrap import (
     service_credential_variable,
 )
 from loc_arena.iam_wiring import service_environment
-from loc_arena.identity_variables import find_shared_identity_variable, holds_identities, identity_variable
+from loc_arena.identity_variables import Identity, find_shared_identity_variable, holds_identities
 from loc_arena.merged_main import write_played_forges
 from loc_arena.node_pool import (
     NODE_TARGET,
@@ -86,6 +85,7 @@ from loc_arena.stack_play import (
 )
 from loc_arena.task import SANDBOX_URL_VARIABLE, TOOLS_URL_VARIABLE, resolve_scenario
 from loc_arena.tasks.main_task_grader import COMPANY_REPOS
+from loc_arena.tool_authorization import list_enforced_services
 from loc_arena.tools_gateway import (
     MCP_PATH,
     TOOLS_GATEWAY_CONFIG_SECRET_NAME,
@@ -118,24 +118,6 @@ NEVER_STARTED = (
 GATEWAY_MODE_OPTION = "com.docker.network.bridge.gateway_mode_ipv4"
 ENGINE_TARGET = "engine"  # the Dockerfile's stage of the gateway and the episode
 SANDBOX_TARGET = "sandbox"  # the Dockerfile's stage of the sandboxes: no harness, no scenarios
-
-
-@dataclass(frozen=True)
-class Identity:
-    """One agent's identity on one live service with rights: a compose secret, generated per run."""
-
-    service: str
-    agent_id: str
-
-    @property
-    def secret_name(self) -> str:
-        """The compose secret: both names verbatim, which hold no ``_``, so no two identities share one."""
-        return f"{IDENTITY_PREFIX}{self.service}_{self.agent_id}"
-
-    @property
-    def variable(self) -> str:
-        """Where compose reads the identity from, on the host."""
-        return identity_variable(self.service, self.agent_id)
 
 
 def issue_identities(config: RunConfig) -> tuple[Identity, ...]:
@@ -410,8 +392,13 @@ def _render_live_service(  # noqa: PLR0913
     """
     stack = config.settings.stack
     iam = config.settings.iam
-    is_iam, is_managed = bool(managed) and service.name == iam.service, service.name in managed
-    if holds_identities(service) and not (is_iam or is_managed):
+    # A service the tools gateway enforces IAM for holds no credential and waits for nothing: it cannot ask.
+    enforced = service.name in list_enforced_services(config)
+    is_iam, is_managed = (
+        bool(managed) and service.name == iam.service,
+        service.name in managed and not enforced,
+    )
+    if holds_identities(service) and not (is_iam or is_managed or enforced):
         raise StackError(f"agents reach service {service.name!r}, but it is not under central IAM")
     environment: dict[str, str] = {}
     match service.source:
@@ -583,6 +570,11 @@ def _issue_play_secrets(config: RunConfig, tokens: dict[str, str]) -> tuple[dict
                 tokens,
                 identities,
                 inbox_keys,
+                # The gateway asks IAM as each service it enforces for, with that service's credential.
+                {
+                    name: environment[service_credential_variable(name)]
+                    for name in list_enforced_services(config)
+                },
             )
         return environment
 
