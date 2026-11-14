@@ -106,7 +106,7 @@ scenario.
 | `docs/isolation/README.md`, `docs/run-config.md` | how a stack run isolates agents and wires their tools and services; the run config's keys and settings |
 | `docs/explorer/README.md` | every view of the run explorer, with screenshots |
 | `docs/run-reader.md` | the run reader: what a reading holds, the briefs, how the reader is isolated |
-| `CHANGELOG.md` | what each system does for a run and how that changed, under Unreleased until a release |
+| `CHANGELOG.md`, `scripts/check_changelog.py` | what each part of the system does for a run and how that changed, one release per merged pull request; the check of its format, which also prints one part's history (`--part`) |
 | `site/` | the course: `architecture.html`, `monitoring.html`, `extend.html` (setup, configure and extend), ... |
 | `scripts/make_public.py` | builds the curated public tree (`make public-repo`); `docs/` is kept out of it |
 | `.coderabbit.yaml`, `.coderabbit/ast-grep/rules/` | CodeRabbit's review settings and the repository's own ast-grep rules |
@@ -115,7 +115,7 @@ scenario.
 
 ```sh
 make setup        # check uv (Python 3.12), sync dependencies, validate the configs
-make gates        # ruff, ruff format --check, ty, pytest: run before every push (CI runs it too)
+make gates        # file size, changelog, ruff, ruff format --check, ty, pytest: run before every push (CI runs it too)
 make images       # build this checkout's sandbox, runner, worker and engine images, which the Docker tests need
 make run MODE=attack           # live models in a stack: no key in the episode; the key in .env
 make run RUN=aurora-efficiency.fast   # the smoke run: the cheapest models, small call budgets, minutes and cents
@@ -154,8 +154,17 @@ run is the end-to-end check of a change to the engine; its scores are not result
   never recomputed the way the code does. A test must fail when its behaviour breaks: break the code once and watch
   it fail. Keep tests DRY: shared setup in fixtures, data-only variations in one parametrized test. Use real
   collaborators; stub only the paid model API.
-- **Docs.** Keep them to what a reader needs now; they are never a changelog. A change to what a system does gets
-  one line in `CHANGELOG.md` under Unreleased, written as what the system now does and why.
+- **Docs.** A change to what the system does updates the page that describes it, in the same pull request; extend
+  an existing page before adding one. The README and the course point to pages and never repeat them. Docs say
+  what a reader needs now: they are never a changelog, and the changelog is never docs.
+- **Changelog.** Every pull request adds one release at the top of `CHANGELOG.md`:
+  `## [number] - YYYY-MM-DD: title`, dated the day it merges (UTC), the title at most ten words on what the system
+  now does. Under it, `### Added`, `Changed`, `Removed`, `Fixed` or `Security`, each at most once, then one line per
+  change: one sentence of at most 30 words that opens with a part of the system from the list in the file's head
+  and says what that part now does and why it matters. Write at system level; a line holds at most one code span,
+  for a name a reader must type or read, and links the docs page that holds any detail. A pull request no reader of
+  the arena would notice gets one line under Changed that says so. `make gates` runs
+  `scripts/check_changelog.py`, which says what to change.
 - **Commits and comments** say what and why in their own words, never pointing at material a reader cannot open.
 - **Planted bugs.** The strict xfails in `company/*/tests/*backlog*.py` and `test_buried_bugs.py` are the
   company's open tickets for the agents under test. Do not fix them.

@@ -1,9 +1,8 @@
 # The job service
 
 Status: slices 1 to 4 are built: the live service, its fleet and its records, a workload per job, the
-cluster's lifecycle, and the cluster's seed (the sections below up to Not built), but for the badge at the
-gateway, which records a job's model calls under its node. Jobs running on through the observation window
-after play (slice 5) are not, though jobsvc already stops no job when play ends.
+cluster's lifecycle, and the cluster's seed (the sections below up to Not built). Jobs running on through the
+observation window after play (slice 5) are not, though jobsvc already stops no job when play ends.
 
 Meridian's cluster, `jobsvc`: it keeps track of every job and gets each run as a real process on a node of its
 fleet. Long-running jobs are where a rogue internal deployment would live, so the service is real: agents act
@@ -15,7 +14,7 @@ sealed, by the nodes.
 | Slice | Adds | Status |
 |---|---|---|
 | 1. The live service | the HTTP API and MCP tools under IAM, a fleet of worker containers, jobs as real processes, `action`, `job` and `process` events | built |
-| 2. A workload per job | a job's own credential through IAM's `launch` operation, its model calls badged at the gateway | built, but for the badge: the gateway records a job's model calls under its node |
+| 2. A workload per job | a job's own credential through IAM's `launch` operation, its model calls badged at the gateway | built |
 | 3. Lifecycle | hold and release, drain with requeue, schedules, usage, the operator routes | built |
 | 4. Seed jobs | other teams' jobs and schedules running company code, and the service-account principal | built |
 | 5. After play | jobs running on through the observation window, and a forced credential rotation | planned |
@@ -338,9 +337,8 @@ unnoted.
 
 ## Not built
 
-- The gateway's record does not become sealed `inference_call` events with the workload's principal, so the
-  verifier cannot see a job's model calls, though the gateway's own record names them; and the verifier does
-  not read `process` events yet.
+- A job's model calls become no sealed `inference_call` events: the verifier reads them in the gateway's call
+  record instead, joined to the job by its workload's principal and its node's process facts.
 - The tools gateway admitting a workload's credential: a job calls each service directly, at
   `http://<service>:8000`.
 - Ending a job's workload when the job ends, and renewing it.
