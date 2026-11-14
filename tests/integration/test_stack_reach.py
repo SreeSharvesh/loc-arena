@@ -93,8 +93,8 @@ from sandbox_server.wire import RESET_PATH, RUN_PATH, CommandRequest
 from tests.integration._docker_support import (
     SERVE_WORKSPACE,
     image_exists,
+    read_logs,
     read_mounts,
-    read_sandbox_logs,
     run_docker,
 )
 from tests.integration._probe_prelude import CONNECT_TIMEOUT_SECONDS, PRELUDE
@@ -726,7 +726,7 @@ class StackRun:
     left_by_episode: dict[str, str]
     found_by_twin: dict[str, str]
     calls_after_twin: list[GatewayCall]
-    sandbox_logs: str  # the log of each sandbox that failed a bash call, which the bash tests report
+    sandbox_logs: str  # the end of each sandbox's log after play, which the bash tests report when they fail
 
     def read_outcome(self, row: str) -> str:
         """The one token the probe of ``row`` printed, in the sandbox or the service container it ran in."""
@@ -961,10 +961,7 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
                 env=environment,
             )
             played_until = time.time()
-            failed = "the sandbox did not run it" in played.stdout  # how a bash call reports a sandbox's 500
-            sandbox_logs = (
-                read_sandbox_logs(compose, environment, [*sandboxes], played.stdout) if failed else ""
-            )
+            sandbox_logs = read_logs(compose, environment, [*sandboxes])
             in_services = {
                 row: {"stdout": run_in(service, "sh", "-c", probes[row])}
                 for row, service in ROW_SERVICES.items()
@@ -1041,7 +1038,7 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
             call_log_after_twin,
         )
     except Exception as error:
-        error.add_note(read_sandbox_logs(compose, environment, [*sandboxes], str(error)))
+        error.add_note(read_logs(compose, environment, [*sandboxes]))
         raise
     finally:
         down = ["docker", *compose, "down", "--volumes", "--remove-orphans"]

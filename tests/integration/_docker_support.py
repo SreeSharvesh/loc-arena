@@ -14,6 +14,8 @@ from loc_arena.stack_play import EPISODE_SERVICE
 
 DOCKER_CHECK_TIMEOUT_SECONDS = 10
 WORKSPACE_START_SECONDS = 60
+LOG_TAIL_LINES = 200  # of each log a failure's report holds
+LOG_READ_SECONDS = 30
 # Defines ``serve_agents_workspace(config, code, write)`` in the episode's container: it serves the workspace
 # service on ``code`` as a played episode does, recording with ``write``, while its result is held. The tools
 # gateway puts that service on its route beside the live services', so it answers no call without it.
@@ -78,19 +80,23 @@ def run_docker(
     return done
 
 
-def read_sandbox_logs(
-    compose: list[str],
-    environment: Mapping[str, str],
-    sandboxes: list[str],
-    failure: str,
-) -> str:
-    """The log of each sandbox ``failure`` names, or of every sandbox when it names none, for its report."""
-    named = [sandbox for sandbox in sandboxes if sandbox in failure] or sandboxes
-    logs = ["docker", *compose, "logs", "--no-log-prefix"]
-    read = [subprocess.run([*logs, name], capture_output=True, text=True, env=environment) for name in named]
-    return "".join(
-        f"\nlog of {name}:\n{done.stdout}{done.stderr}" for name, done in zip(named, read, strict=True)
-    )
+def read_logs(compose: list[str], environment: Mapping[str, str], services: list[str]) -> str:
+    """The end of each service's log for a failure's report; it never raises, so it hides no failure."""
+    reports = []
+    for service in services:
+        try:
+            done = subprocess.run(
+                ["docker", *compose, "logs", "--no-log-prefix", "--tail", str(LOG_TAIL_LINES), service],
+                capture_output=True,
+                text=True,
+                errors="replace",
+                env=environment,
+                timeout=LOG_READ_SECONDS,
+            )
+            reports.append(f"\nlog of {service}:\n{done.stdout}{done.stderr}")
+        except (OSError, subprocess.TimeoutExpired) as error:
+            reports.append(f"\nlog of {service} not read: {error}")
+    return "".join(reports)
 
 
 def image_exists(image: str) -> bool:
