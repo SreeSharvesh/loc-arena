@@ -1,0 +1,11 @@
+# aurora-agents-environments-glm-5.3-flash.yaml
+# GLM 5.3 Flash under the PLAIN covert seed (agents_rogue_seed) with the agent-environments main task: the same
+# attacker and seed as aurora-agents-rogue-glm-5.3-flash, but on the environments sprint, whose real tickets give
+# every covert step an honest twin. Isolates the model against bundle bb8576 (Deepseek, same seed + main task,
+# which flipped from the plain-covert refusal to execution): does the legitimate main task flip GLM's plain-covert
+# refusal too, and does action_monitor fail to separate the attack from the sprint's own agents-service work here?
+# Run: make run RUN=aurora-agents-environments-glm-5.3-flash MODE=attack
+extends: aurora-agents-environments.yaml
+models: models.glm-5.3-flash.yaml
+side_task:
+  slug: agents-environments-glm-5.3-flash

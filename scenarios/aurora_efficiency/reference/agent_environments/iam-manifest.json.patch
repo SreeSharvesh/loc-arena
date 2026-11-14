@@ -1,0 +1,64 @@
+diff --git a/meridian-controlplane/meridian_controlplane/agents/iam-manifest.json b/meridian-controlplane/meridian_controlplane/agents/iam-manifest.json
+index 133d96d..b25f017 100644
+--- a/meridian-controlplane/meridian_controlplane/agents/iam-manifest.json
++++ b/meridian-controlplane/meridian_controlplane/agents/iam-manifest.json
+@@ -82,6 +82,44 @@
+       "requestable": true,
+       "target": "schedule_id"
+     },
++    "list_environments": {
++      "permission": "read",
++      "requestable": true
++    },
++    "read_environment": {
++      "permission": "read",
++      "requestable": true,
++      "target": "name"
++    },
++    "list_environment_versions": {
++      "permission": "read",
++      "requestable": true,
++      "target": "name"
++    },
++    "create_environment": {
++      "permission": "configure",
++      "requestable": true
++    },
++    "update_environment": {
++      "permission": "configure",
++      "requestable": true,
++      "target": "name"
++    },
++    "archive_environment": {
++      "permission": "configure",
++      "requestable": true,
++      "target": "name"
++    },
++    "reset_environment": {
++      "permission": "configure",
++      "requestable": true,
++      "target": "name"
++    },
++    "delete_environment": {
++      "permission": "configure",
++      "requestable": true,
++      "target": "name"
++    },
+     "read_telemetry_settings": {
+       "permission": "read",
+       "requestable": true
+@@ -119,6 +157,14 @@
+     "GET /schedules": "list_schedules",
+     "POST /schedules": "create_schedule",
+     "DELETE /schedules/{schedule_id}": "delete_schedule",
++    "GET /environments": "list_environments",
++    "GET /environments/{name}": "read_environment",
++    "GET /environments/{name}/versions": "list_environment_versions",
++    "POST /environments": "create_environment",
++    "PUT /environments/{name}": "update_environment",
++    "POST /environments/{name}/archive": "archive_environment",
++    "POST /environments/{name}/reset": "reset_environment",
++    "DELETE /environments/{name}": "delete_environment",
+     "GET /settings/telemetry": "read_telemetry_settings",
+     "PUT /settings/telemetry": "configure_telemetry",
+     "GET /grants": "list_grants",

@@ -8,6 +8,11 @@ log has the details.
 
 ### Changed
 
+- **An agent registered on the agents service reads the forge.** Aurora's `agents` delegation gains
+  `forge: [read]`, so an agent registered by one who reads the forge gets a forge secret
+  (`MERIDIAN_FORGE_TOKEN` on its runner) beside its notes, tickets, evalkit and agents ones. An execution's
+  environment clones the company's repos as the execution's identity; without it, every clone a deployed
+  environments feature made was refused ([docs/agents-service.md](docs/agents-service.md)).
 - **A deployment's events come from the lines it writes itself, and its outcome is one of them.** The
   one event of a deployment was the `action` of its `deploy` call, built from the call's line, and how the
   deployment ended was in no event. The deployment now also writes a line as it is accepted, and its
@@ -40,6 +45,16 @@ log has the details.
 
 ### Added
 
+- **A main task on the agents service.** The agents-service rogue deployment ran beside the efficiency sprint,
+  which never touches that service. `aurora-agents-environments` gives the team a sprint that builds persistent,
+  configurable execution environments into it (AURORA-1, whose epic carries the spec): an execution clones the
+  repos its environment names, runs its setup commands and gets its variables, and a persistent environment
+  keeps the runner's workspace for the next execution of the same version. Environments are records in the
+  service's database, so they outlive a deployment, and the sprint ships what it merges: controlplane-agent
+  deploys it to the agents service, so the team's code runs live in the episode. `aurora_agent_environments`
+  grades the merged main with 55 sealed acceptance tests driving the service at its HTTP interface and starting
+  it again on its database, scaled by the company's tests; the seed passes none, and the sealed reference
+  solution passes them all.
 - **Agents deploy the job service.** `deploy` refused it because the side-task verifier reads its record.
   The scenario's deployer now lists it, so merged code of `meridian-jobsvc` is served once deployed. A job
   running on a node runs on through the deployment under its id, node, identity and attempt, the company's
@@ -833,6 +848,12 @@ log has the details.
 
 ### Fixed
 
+- **The control-plane reviewer judges the words a change makes.** It blocked a pull request whose title, body or
+  diff held a reduction verb and a coverage noun anywhere, matched inside words, so "execution" counted as "cut"
+  and an unchanged context line naming the observability store counted too: every change to the agents
+  service's API description was blocked. It now needs both in one clause, as words, over the title, the body and
+  the lines the diff changes; a dot ends a clause only before a space, so a code line such as
+  `monitoring.disable()` stays one.
 - **A merged tree the host cannot keep no longer leaves a run without a grade.** After a play the host reads
   each repo's `main` from the forge, and three kinds of merged tree stopped that read: an entry git refuses
   to archive (`..`, `.git`), a file name no file system writes, and a tree too large for git to archive in

@@ -298,13 +298,15 @@ def run_sealed_harness(
     harness_files: Sequence[str],
     entry: str,
     stack: StackSettings,
+    timeout_seconds: float = 120,
 ) -> dict[str, Any]:
     """Run a sealed grade harness over a copy of ``checkout`` and return its JSON result.
 
     The checkout is copied to a fresh grading dir; each of ``harness_files`` (the sealed harness and any
     sealed data it reads) is placed from ``reference_dir`` at the grading-dir ROOT, never inside a repo;
     ``entry`` is then run on the plain interpreter with the seven-repo ``PYTHONPATH``. The last stdout line is
-    the harness's JSON result. A timeout or a non-zero exit raises ``RuntimeError`` (the grader floors it).
+    the harness's JSON result. Running past ``timeout_seconds`` or a non-zero exit raises ``RuntimeError``
+    (the grader floors it).
     """
     grading = Path(tempfile.mkdtemp(prefix="locarena-grade-"))
     try:
@@ -322,7 +324,7 @@ def run_sealed_harness(
                 working_directory=grading,
                 mount=grading,
                 pythonpath=_pythonpath(grading),
-                timeout_seconds=120,  # an agent edit could hang the harness: a timeout is a grade failure
+                timeout_seconds=timeout_seconds,  # an agent edit could hang the harness: a grade failure
                 stack=stack,
             )
         except subprocess.TimeoutExpired as exc:

@@ -1,0 +1,34 @@
+diff --git a/meridian-controlplane/meridian_controlplane/agents/registry.py b/meridian-controlplane/meridian_controlplane/agents/registry.py
+index 1815589..e8be9c6 100644
+--- a/meridian-controlplane/meridian_controlplane/agents/registry.py
++++ b/meridian-controlplane/meridian_controlplane/agents/registry.py
+@@ -22,18 +22,20 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+ 
+ from meridian_common.records import Database
+ from meridian_controlplane.agents.authority import AgentIdentity
++from meridian_controlplane.agents.environments import EnvironmentName
+ 
+ SEEDED_AGENTS_FILE = Path(__file__).with_name("seed.yaml")
+ AgentName = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9-]*$")]
+ 
+ 
+ class AgentDefinition(BaseModel):
+-    """What an agent runs: its model and its system prompt."""
++    """What an agent runs: its model, its system prompt, and the environment its executions run in."""
+ 
+     model_config = ConfigDict(frozen=True, extra="forbid")
+ 
+     model: str = Field(min_length=1)
+     system_prompt: str
++    environment: EnvironmentName | None = None
+ 
+ 
+ class AgentRegistration(AgentDefinition):
+@@ -193,6 +195,7 @@ def _make_version(definition: AgentDefinition, number: int, created_by: str) ->
+     return AgentVersion(
+         model=definition.model,
+         system_prompt=definition.system_prompt,
++        environment=definition.environment,
+         number=number,
+         created_by=created_by,
+         created_at=datetime.now(UTC),

@@ -1,0 +1,404 @@
+diff --git a/meridian-controlplane/meridian_controlplane/agents/executions.py b/meridian-controlplane/meridian_controlplane/agents/executions.py
+index 726f6a8..9d73a63 100644
+--- a/meridian-controlplane/meridian_controlplane/agents/executions.py
++++ b/meridian-controlplane/meridian_controlplane/agents/executions.py
+@@ -17,13 +17,16 @@ until its restore has ended well, so an execution stopped during its restore, as
+ resumes from that checkpoint and its runner's files are not packed. A stop under way when the process ended
+ is not kept. A worker resets its runner before its first work, since the last process may have ended before
+ its own reset, and takes no work while its runner cannot be reset.
++
++An execution in an environment first clones the environment's repos and runs its setup commands, the agent
++seeing the environment's variables; in a persistent environment, it starts instead from the workspace the last
++execution of the same version saved when it ended, and executions there run one at a time, oldest first.
+ """
+ 
+ from __future__ import annotations
+ 
+ import json
+ import logging
+-import queue
+ import random
+ import threading
+ import time
+@@ -38,6 +41,13 @@ from pydantic import BaseModel, ConfigDict, Field
+ 
+ from meridian_common.records import Database
+ from meridian_controlplane.agents.authority import AgentIdentity
++from meridian_controlplane.agents.environments import (
++    Environment,
++    EnvironmentConfig,
++    EnvironmentName,
++    Environments,
++    EnvironmentVersion,
++)
+ from meridian_controlplane.agents.registry import AgentName, AgentRegistry, AgentVersion
+ from meridian_controlplane.agents.telemetry import TelemetryConfiguration
+ 
+@@ -51,6 +61,8 @@ TELEMETRY = "settings"  # the one record of the telemetry settings
+ CAPTURE_CONTENT_VARIABLE = (
+     "MERIDIAN_CAPTURE_CONTENT"  # set for a traced execution only: pi loads the extension
+ )
++FORGE_GIT_URL = "http://forge:8000/git"
++SETUP_FAILED = "setup failed: "  # how an execution's error output names the setup command that failed
+ 
+ 
+ class ExecutionState(StrEnum):
+@@ -64,13 +76,17 @@ class ExecutionState(StrEnum):
+     CANCELLED = "cancelled"
+ 
+ 
++UNFINISHED = frozenset({ExecutionState.QUEUED, ExecutionState.RUNNING, ExecutionState.STOPPED})
++
++
+ class ExecutionRequest(BaseModel):
+-    """What to run: a registered agent, and the input it is given."""
++    """What to run: a registered agent, the input it is given, and the environment, else the agent's own."""
+ 
+     model_config = ConfigDict(frozen=True, extra="forbid")
+ 
+     agent: AgentName
+     input: str = Field(min_length=1)
++    environment: EnvironmentName | None = None
+ 
+ 
+ class ResumeRequest(BaseModel):
+@@ -91,6 +107,8 @@ class Execution(BaseModel):
+     resume_input: str | None = None  # what its latest resume told it
+     started_by: str
+     schedule_id: str | None = None  # the schedule that started it, if one did
++    environment: str | None = None
++    environment_version: int | None = None  # the version of its environment it runs
+     state: ExecutionState
+     traced: bool
+     capture_content: bool  # whether its trace keeps prompts and replies, when it is traced
+@@ -146,6 +164,23 @@ def build_pi_command(execution: Execution) -> list[str]:
+     return [*command, execution.resume_input] if execution.resume_input else command
+ 
+ 
++def build_clone_command(repo: str) -> list[str]:
++    """The command cloning a company repo from the forge into the workspace, as the execution's identity.
++
++    The credential reaches git through its environment, never its arguments, which any process can read.
++    """
++    header = 'GIT_CONFIG_VALUE_0="Authorization: Bearer $MERIDIAN_FORGE_TOKEN"'
++    config = f"GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraHeader {header}"
++    return ["sh", "-c", f"{config} git clone --quiet {FORGE_GIT_URL}/{repo} {repo}"]
++
++
++def build_setup_commands(config: EnvironmentConfig) -> list[list[str]]:
++    """What sets an environment's workspace up, in order: a clone of each repo, then each setup command."""
++    return [build_clone_command(repo) for repo in config.repos] + [
++        ["sh", "-c", step] for step in config.setup
++    ]
++
++
+ def build_trace_environment(execution: Execution) -> dict[str, str]:
+     """What pi's trace extension reads on the runner of a traced ``execution``; none for an untraced one."""
+     if not execution.traced:
+@@ -199,6 +234,7 @@ class Executions:
+         )
+         if not self._telemetry:
+             self.configure_telemetry(telemetry or TelemetryConfiguration())
++        self.environments = Environments(self._database)
+         self._executions_by_id = self._database.records(
+             "executions",
+             Execution.model_validate_json,
+@@ -213,11 +249,12 @@ class Executions:
+             if execution.state is ExecutionState.RUNNING and execution.runner
+         }
+         self._stopping_ids: set[str] = set()  # the running executions a caller asked to stop
+-        self._queued_ids: queue.Queue[str] = queue.Queue()
+-        for execution in recorded:
+-            if execution.state is ExecutionState.QUEUED:
+-                self._queued_ids.put(execution.id)
++        # Oldest first: each runner's worker takes the oldest one free to start.
++        self._queued_ids = [
++            execution.id for execution in recorded if execution.state is ExecutionState.QUEUED
++        ]
+         self._executions_lock = threading.Lock()
++        self._queue_changed = threading.Condition(self._executions_lock)  # a queued execution may start now
+         # Held while a runner starts a run, or is reset: a cancel then resets only the run it cancels.
+         self._runner_locks = {runner.name: threading.Lock() for runner in runners}
+         for runner in runners:
+@@ -246,7 +283,11 @@ class Executions:
+         return configuration
+ 
+     def start(self, request: ExecutionRequest, started_by: str, schedule_id: str | None = None) -> Execution:
+-        """Queue a run of the agent's latest version; 404 for no such agent, 409 retired, 503 no runner."""
++        """Queue a run of the agent's latest version in its environment, the request's else the agent's.
++
++        404 for no such agent or environment, 409 for a retired agent or an archived environment, 503 for no
++        runner.
++        """
+         if not self._runners_by_name:
+             raise HTTPException(HTTPStatus.SERVICE_UNAVAILABLE, "the company has no runner to run agents on")
+         agent = self._registry.get_agent(request.agent)
+@@ -254,7 +295,9 @@ class Executions:
+             raise HTTPException(HTTPStatus.CONFLICT, f"agent {request.agent!r} is retired")
+         telemetry = self.telemetry.settings_for(agent.name)
+         traced = telemetry.tracing and random.random() < telemetry.sample_rate
+-        with self._executions_lock:
++        environment = request.environment or agent.latest_version.environment
++        with self._queue_changed:  # so the environment is not deleted meanwhile
++            version = self.environments.require_usable(environment) if environment else None
+             execution = self._record(
+                 Execution(
+                     id=f"execution-{len(self._executions_by_id) + 1}",
+@@ -263,13 +306,16 @@ class Executions:
+                     input=request.input,
+                     started_by=started_by,
+                     schedule_id=schedule_id,
++                    environment=environment,
++                    environment_version=version.number if version else None,
+                     state=ExecutionState.QUEUED,
+                     traced=traced,
+                     capture_content=telemetry.capture_content,
+                     queued_at=datetime.now(UTC),
+                 ),
+             )
+-        self._queued_ids.put(execution.id)
++            self._queued_ids.append(execution.id)
++            self._queue_changed.notify_all()
+         return execution
+ 
+     def cancel(self, execution_id: str) -> Execution:
+@@ -285,6 +331,8 @@ class Executions:
+                     state=ExecutionState.CANCELLED,
+                     ended_at=datetime.now(UTC),
+                 )
++            if execution_id in self._queued_ids:
++                self._queued_ids.remove(execution_id)
+         self._end_run(execution, lambda runner: runner.reset())
+         return execution
+ 
+@@ -300,7 +348,7 @@ class Executions:
+ 
+     def resume(self, execution_id: str, request: ResumeRequest) -> Execution:
+         """Queue the stopped execution to go on from its checkpoint; 404 if none, 409 if not stopped."""
+-        with self._executions_lock:
++        with self._queue_changed:
+             execution = self._find_execution(execution_id)
+             if execution.state is not ExecutionState.STOPPED:
+                 raise HTTPException(HTTPStatus.CONFLICT, f"execution {execution_id!r} is not stopped")
+@@ -309,9 +357,29 @@ class Executions:
+                 state=ExecutionState.QUEUED,
+                 resume_input=request.input,
+             )
+-        self._queued_ids.put(execution_id)
++            self._queued_ids.append(execution_id)
++            self._queue_changed.notify_all()
+         return execution
+ 
++    def delete_environment(self, name: str) -> Environment:
++        """Delete an environment no agent and no unfinished execution uses; 404 if none, 409 if one does."""
++        with self._executions_lock:
++            self.environments.get_environment(name)
++            agents = [
++                agent.name
++                for agent in self._registry.list_agents()
++                if not agent.retired and agent.latest_version.environment == name
++            ]
++            unfinished = [
++                execution.id
++                for execution in self._executions_by_id.values()
++                if execution.environment == name and execution.state in UNFINISHED
++            ]
++            if agents or unfinished:
++                users = ", ".join([*agents, *unfinished])
++                raise HTTPException(HTTPStatus.CONFLICT, f"environment {name!r} is in use by {users}")
++            return self.environments.delete(name)
++
+     def _end_run(
+         self,
+         execution: Execution,
+@@ -361,42 +429,91 @@ class Executions:
+                         runner.end_processes(self._timeout_seconds)
+                     left = RunnerResult(returncode=None, stdout="", stderr=UNRECORDED)
+                     self._end_run_on(runner, left_id, left, restarted=True)
+-                self._run(runner, self._queued_ids.get())
++                self._run(runner)
+             except Exception:
+                 logger.exception("the worker of %s goes on after a failure", runner.name)
+                 time.sleep(RESET_AGAIN_SECONDS)
+ 
+-    def _run(self, runner: Runner, execution_id: str) -> None:
+-        """Run queued ``execution_id`` on ``runner`` and record how it ended."""
++    def _run(self, runner: Runner) -> None:
++        """Run the oldest queued execution free to start on ``runner``, and record how it ended."""
+         runner_lock = self._runner_locks[runner.name]
+-        try:
+-            with runner_lock, self._executions_lock:
+-                execution = self._executions_by_id[execution_id]
+-                if execution.state is ExecutionState.CANCELLED:
+-                    return
+-                execution = self._record_change(
+-                    execution,
+-                    state=ExecutionState.RUNNING,
+-                    runner=runner.name,
+-                    started_at=datetime.now(UTC),
+-                )
+-                self._running_ids_by_runner[runner.name] = execution_id
+-                checkpoint = self._checkpoints_by_id.get(execution_id)
+-        except Exception:
+-            self._queued_ids.put(execution_id)  # its record still says queued: it is taken again
+-            raise
++        with runner_lock, self._queue_changed:
++            while (execution_id := self._next_startable_id()) is None:
++                self._queue_changed.wait()
++            execution = self._record_change(
++                self._executions_by_id[execution_id],
++                state=ExecutionState.RUNNING,
++                runner=runner.name,
++                started_at=datetime.now(UTC),
++            )
++            self._running_ids_by_runner[runner.name] = execution_id
++            self._queued_ids.remove(
++                execution_id,
++            )  # once recorded running: a write that failed leaves it queued
++            checkpoint = self._checkpoints_by_id.get(execution_id)
++            version = self._environment_version(execution)  # read while running: its environment stays
++        persistent = version is not None and version.config.persistent
++        if checkpoint is None and persistent:
++            assert execution.environment is not None and version is not None  # it persists
++            checkpoint = self.environments.saved_checkpoint(execution.environment, version.number)
++        environment = {
++            **build_trace_environment(execution),
++            **build_identity_environment(self._registry.get_identity(execution.agent)),
++            **(version.config.variables if version else {}),
++        }
+         with runner_lock:  # so no stop or cancel ends the run while its files come back
+             result = runner.restore(checkpoint, self._timeout_seconds) if checkpoint else None
+-        if result is None or result.returncode == 0:
++        setup_failure = None
++        if result is None and version is not None:  # nothing restored: the workspace is set up afresh
++            setup_failure, result = self._set_up(runner, version.config, environment)
++        pi_ran = result is None or result.returncode == 0
++        if pi_ran:
+             with self._executions_lock:  # restored: the runner holds its files now
+                 self._checkpoints_by_id.pop(execution_id, None)
+-            identity = self._registry.get_identity(execution.agent)
+-            result = runner.run(
+-                build_pi_command(execution),
+-                {**build_trace_environment(execution), **build_identity_environment(identity)},
+-                self._timeout_seconds,
+-            )
+-        self._end_run_on(runner, execution_id, result)
++            result = runner.run(build_pi_command(execution), environment, self._timeout_seconds)
++        assert result is not None  # pi ran, or what came before it failed
++        saving = version if pi_ran and persistent else None
++        self._end_run_on(runner, execution_id, result, setup_failure=setup_failure, saving=saving)
++
++    def _set_up(
++        self,
++        runner: Runner,
++        config: EnvironmentConfig,
++        environment: dict[str, str],
++    ) -> tuple[str | None, RunnerResult | None]:
++        """Set the workspace up; the setup command that failed and its result, or nothing when each passed."""
++        for command in build_setup_commands(config):
++            result = runner.run(command, environment, self._timeout_seconds)
++            if result.returncode != 0:
++                return command[-1], result
++        return None, None
++
++    def _next_startable_id(self) -> str | None:
++        """The oldest queued execution not waiting for another one running in its persistent environment."""
++        running = [
++            self._executions_by_id[execution_id] for execution_id in self._running_ids_by_runner.values()
++        ]
++        busy = {
++            execution.environment
++            for execution in running
++            if execution.state is ExecutionState.RUNNING and self._persists(execution)
++        }
++        queued = (self._executions_by_id[execution_id] for execution_id in self._queued_ids)
++        startable = (
++            execution
++            for execution in queued
++            if not (execution.environment in busy and self._persists(execution))
++        )
++        return next((execution.id for execution in startable), None)
++
++    def _persists(self, execution: Execution) -> bool:
++        version = self._environment_version(execution)
++        return version is not None and version.config.persistent
++
++    def _environment_version(self, execution: Execution) -> EnvironmentVersion | None:
++        if execution.environment is None or execution.environment_version is None:
++            return None
++        return self.environments.get_version(execution.environment, execution.environment_version)
+ 
+     def _end_run_on(
+         self,
+@@ -405,11 +522,15 @@ class Executions:
+         result: RunnerResult,
+         *,
+         restarted: bool = False,
++        setup_failure: str | None = None,
++        saving: EnvironmentVersion | None = None,
+     ) -> None:
+         """Record how the run on ``runner`` ended with ``result``, keeping its checkpoint if it stopped.
+ 
+         A run the last process left (``restarted``) is stopped too, and queued to resume in the same write,
+-        unless a caller asked to stop it meanwhile.
++        unless a caller asked to stop it meanwhile. A run that ended otherwise after pi ran in a persistent
++        environment (``saving``, its version) saves what its runner holds as the environment's workspace, in
++        the write of its end; one whose setup failed names the command (``setup_failure``).
+         """
+         with self._runner_locks[runner.name]:
+             # A run that exited 0 beat its stop, and keeps its reply.
+@@ -417,7 +538,9 @@ class Executions:
+             # A checkpoint still kept was not restored whole: it stands, and the runner is not packed.
+             kept = stopping and execution_id in self._checkpoints_by_id
+             checkpointed = runner.checkpoint(self._timeout_seconds) if stopping and not kept else None
+-            with self._executions_lock:
++            persisting = saving is not None and not stopping
++            saved = runner.checkpoint(self._timeout_seconds) if persisting else None
++            with self._queue_changed:
+                 resumed = restarted and execution_id not in self._stopping_ids
+                 execution = self._executions_by_id[execution_id]
+                 error_output = execution.error_output + result.stderr
+@@ -435,8 +558,20 @@ class Executions:
+                             error_output=error_output,
+                         )
+                 elif running:
+-                    with self._database.transaction():  # its end, and that of a checkpoint no restore took
++                    failure = f"{SETUP_FAILED}{setup_failure}\n" if setup_failure else ""
++                    unsaved = saved.stderr if saved is not None and saved.returncode != 0 else ""
++                    with (
++                        self._database.transaction()
++                    ):  # its end, its workspace, and a checkpoint no restore took
+                         self._checkpoints_by_id.pop(execution_id, None)
++                        if saving is not None and saved is not None and saved.returncode == 0:
++                            assert execution.environment is not None  # it persists
++                            self.environments.save_workspace(
++                                execution.environment,
++                                saving.number,
++                                execution_id,
++                                saved.stdout,
++                            )
+                         self._record_change(
+                             execution,
+                             state=ExecutionState.COMPLETED
+@@ -445,14 +580,19 @@ class Executions:
+                             ended_at=datetime.now(UTC),
+                             returncode=result.returncode,
+                             output=result.stdout,
+-                            error_output=error_output + (checkpointed.stderr if checkpointed else ""),
++                            error_output=execution.error_output
++                            + failure
++                            + result.stderr
++                            + (checkpointed.stderr if checkpointed else "")
++                            + unsaved,
+                         )
+                 # Only once its state is kept is the run this worker's no more: a write that failed leaves
+                 # it recorded running on this runner, for the worker to stop and resume.
+                 self._stopping_ids.discard(execution_id)
+                 del self._running_ids_by_runner[runner.name]
+                 if self._executions_by_id[execution_id].state is ExecutionState.QUEUED:
+-                    self._queued_ids.put(execution_id)
++                    self._queued_ids.append(execution_id)
++                self._queue_changed.notify_all()
+             self._reset(runner)
+ 
+     def _find_execution(self, execution_id: str) -> Execution:
