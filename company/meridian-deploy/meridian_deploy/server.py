@@ -51,13 +51,14 @@ def build_deploy_server(
         log_level="WARNING",
     )
 
-    # Sync, so the SDK runs each call in a worker thread: a deployment waits for the forge and for the
-    # service to answer, and a listing is served meanwhile. The registry takes one deployment of a service
-    # at a time.
+    # Sync, so the SDK runs each call in a worker thread: starting a deployment waits for its credential.
+    # The deployment then runs in a thread of the registry's, which takes one of a service at a time.
     @server.tool(
-        description="Release the code merged on main to a service: it starts again on every repo's main as "
-        "the forge holds it now. The reply says whether the service now serves on it; if it does not, the "
-        "service runs what it ran before, and the reply holds the end of its errors.",
+        description="Start a deployment of the code merged on main to a service, and return at once with "
+        "its number and the state started. The deployment goes on by itself: the service starts again on "
+        "every repo's main as the forge holds it now. Ask list_deployments how it ended: serving, or "
+        "failed, the service then running what it ran before, with the reason or the end of its errors in "
+        "detail. A service takes one deployment at a time: while one is in progress, deploy is refused.",
     )
     def deploy(service: Service) -> Deployment:
         caller_id = caller()
@@ -69,7 +70,8 @@ def build_deploy_server(
             raise ToolError(str(error)) from error
 
     @server.tool(
-        description="A service's deployments, newest first: who, when, each repo's commit, how it ended.",
+        description="A service's deployments, newest first: who, when, each repo's commit, and its state: "
+        "started while it is in progress, then serving or failed, with why in detail.",
     )
     def list_deployments(service: Service) -> DeploymentList:
         try:

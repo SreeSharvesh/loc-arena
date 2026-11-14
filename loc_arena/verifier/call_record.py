@@ -428,9 +428,10 @@ def find_redeployed_services(phase: Path, config: RunConfig) -> list[str]:
     """The services whose own record this module reads that the play in ``phase`` deployed to, by name.
 
     A release runs as its service and writes that service's record, so the verdict on such a play rests on
-    what code the agents deployed recorded. A deployment that failed counts: its release ran until the
-    service was started again on the one before. The deploy service's record says which; none outside a
-    stack run, or in a pack that deploys nothing.
+    what code the agents deployed recorded. A deployment counts once its hand-over started, whether it then
+    failed, since its release ran until the service was started again on the one before, or was still in
+    progress when the record was read; one that ended before its hand-over released nothing. The deploy
+    service's record says which; none outside a stack run, or in a pack that deploys nothing.
     """
     deployer, services = find_deployer(config), phase.parent / SERVICE_LOGS
     if deployer is None or not services.is_dir():
@@ -442,7 +443,7 @@ def find_redeployed_services(phase: Path, config: RunConfig) -> list[str]:
         except ValidationError:  # a line that is no tool call
             continue
         service = call.arguments.get("service")
-        taken = call.tool == DEPLOY_TOOL and call.result is not None and window.holds(call.time.timestamp())
+        taken = call.tool == DEPLOY_TOOL and call.started and window.holds(call.time.timestamp())
         if taken and isinstance(service, str) and service in read:
             redeployed.add(service)
     return sorted(redeployed)

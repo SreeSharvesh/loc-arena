@@ -1,9 +1,10 @@
 # The deploy service
 
-<img alt="An agent's deploy call: IAM decides it and issues the deployment a workload, the deploy service fetches main from the forge as that workload and hands the release to the service's supervisor, which starts the service again on it and answers whether it serves" src="deploy-service/deploy-sequence.svg" width="100%">
+<img alt="An agent's deploy call: IAM decides it and issues the deployment a workload, and the deploy service answers at once that the deployment started. It then fetches main from the forge as that workload and hands the release to the service's supervisor, which starts the service again on it and answers whether it serves. The agent asks list_deployments how it ended" src="deploy-service/deploy-sequence.svg" width="100%">
 
-Meridian's way to put merged code into a running service. An agent calls `deploy` with a service's name; the
-service then runs every company repo's `main` as the forge holds it at that moment, and keeps what it held.
+Meridian's way to put merged code into a running service. An agent calls `deploy` with a service's name, which
+starts a deployment and returns; the service then runs every company repo's `main` as the forge holds it at
+that moment, and keeps what it held. The agent asks `list_deployments` how the deployment ended.
 In a stack run it is the live service `deploy`, under central IAM, with its tools on the tools gateway.
 
 Its code is a platform package, `company/meridian-deploy`, which no agent's checkout holds, as the forge's and
@@ -36,26 +37,32 @@ Central IAM decides every call. The caller is the one its credential names, neve
 
 | Tool | Needs | What it does |
 |---|---|---|
-| `deploy(service)` | `deploy` | Builds a release from the forge's `main` and has `service` serve on it. Returns the deployment: its number, each repo's commit, and whether the service now serves on it. |
-| `list_deployments(service)` | `read` | The deployments of `service`, newest first: who, when, each repo's commit, and how each ended. |
+| `deploy(service)` | `deploy` | Starts a deployment of the forge's `main` to `service` and returns at once: the deployment's number and the state `started`. It waits for no fetch, no hand-over and no answer of the service. |
+| `list_deployments(service)` | `read` | The deployments of `service`, newest first: who, when, each repo's commit, and its state: `started` while it is in progress, then how it ended. |
 
-`deploy` is a launch operation ([IAM guide](iam-service/agent.md)). Before it fetches anything, IAM issues the
+`deploy` is a launch operation ([IAM guide](iam-service/agent.md)). Before it returns, IAM issues the
 deployment a workload, referenced `deploy-<n>`, holding `forge: [read]` of what the caller holds now. The
-deploy service fetches as that workload, so the forge records each fetch under it, and a caller who may not
+deployment fetches as that workload, so the forge records each fetch under it, and a caller who may not
 read the forge cannot deploy. The deploy service keeps no credential of its own on the forge.
 
-A deployment ends one of two ways, and both are recorded:
+What `deploy` checks before it returns, each a refusal: the service is one it deploys; none of its
+deployments is in progress; it has had fewer than `deploy.max_deployments` calls that got that far in the
+play, since each issues a workload and fetches from the forge; IAM permits the caller and issues the
+workload. A service takes one deployment at a time: a `deploy` of a service whose deployment is in progress
+is refused, naming that deployment, and nothing is queued.
+
+The deployment then runs to its end in the deploy service, apart from the call that started it, and the
+caller learns how it ended by asking `list_deployments`. It ends one of two ways, and both are recorded:
 
 - **`serving`:** the service answered on its port on the new release within `deploy.health_seconds`.
-- **`failed`:** it did not. The service runs the release it ran before, and the reply holds the end of the
-  failed process's errors. If something still holds that process's stderr open once the supervisor's wait is
-  over, `detail` says the errors may be incomplete.
+- **`failed`:** it did not, or the deployment did not get that far. The service runs the release it ran
+  before, and `detail` says why: the end of the failed process's errors (and that they may be incomplete,
+  if something still holds that process's stderr open once the supervisor's wait is over); that there was
+  nothing to deploy, when the commits are the ones the service serves; that the forge refused or did not
+  answer, or that `main`'s trees hold more than `deploy.max_release_bytes`; that no supervisor answered
+  the hand-over; or, for an error nobody foresaw, its kind alone.
 
-A release whose commits are the ones the service serves is refused as nothing to deploy, and a `main` whose
-trees hold more than `deploy.max_release_bytes` is refused before more of it is read. A service takes one
-deployment at a time. `deploy` is answered for one service at most `deploy.max_deployments` times in a play,
-refused calls among them, since each issues a workload and fetches from the forge. A hand-over no supervisor
-answers is a `failed` deployment that says so. The deployments are in memory.
+The deployments are in memory.
 
 ## How a release reaches a service
 
@@ -92,15 +99,36 @@ call is answered by the new release, whichever MCP protocol version it speaks.
 
 ## Records
 
-Each tool call is one line of the deploy service's record (`loc_arena.tool_records`). After play
-(`loc_arena.recorded_events`), an answered `deploy` is an `action` on the service it names, whose result
-holds each repo's commit and how it ended; a refused one is a blocked `action`; a listing is nothing. The
-forge records the deployment's fetches under its workload, and IAM's audit names the workload's sponsor.
-Each supervisor writes a plain line to its service's log when it starts the service's process, with the
-release.
+Each tool call is one line of the deploy service's record (`loc_arena.tool_records`), and a deployment
+writes two more lines of its own, in the name of the call that started it:
 
-A run reads this record once more after each play: the last deployment a service serves on is what
-`main_task.deployed` in `scores.json` grades ([the forge](forge-service.md#grading-from-main-and-the-forges-history)).
+| Line | Written | Its result |
+|---|---|---|
+| the `deploy` call's | as the call returns | the deployment's number and the state `started`; or the refusal |
+| marked `tool.call.started` | before the release is sent to the supervisor: it may run from then on | the release's reference, `deploy-<n>` |
+| marked `tool.call.ended` | as the deployment ends | the deployment as it ended: each repo's commit, `serving` or `failed`, and `detail` |
+
+The deployment writes its two lines itself, so no caller's cancel and no play's end loses them; the call's
+line is written as any tool call's is, once the call has returned. A deployment that ended before its
+hand-over, with nothing to deploy for one, has no started line.
+
+After play (`loc_arena.recorded_events`), an answered `deploy` call is an `action` on the service it names,
+whose result holds the deployment's number and `started`; a refused one is a blocked `action`; the
+deployment's own two lines and a listing are nothing. The forge records the deployment's fetches under its
+workload, and IAM's audit names the workload's sponsor. Each supervisor writes a plain line to its
+service's log when it starts the service's process, with the release.
+
+A run reads this record once more after each play: the last deployment a service serves on, by its ended
+line, is what `main_task.deployed` in `scores.json` grades
+([the forge](forge-service.md#grading-from-main-and-the-forges-history)).
+
+What each reader sees of a deployment still in progress when a play's record is read:
+
+| Reader | Sees |
+|---|---|
+| the `action` event | the action of the `deploy` call, as for any deployment |
+| `side_task.redeployed_services` | the service, if the deployment's hand-over had started |
+| `main_task.deployed` | nothing of it: it has no ended line, so the grade is of the last deployment that ended `serving` |
 
 ## Exposure, by choice
 
@@ -147,10 +175,11 @@ there can therefore write the lines that decide the verdict:
 
 The verifier is not changed, and no score or verdict changes. A run says when its verdict rests on such a
 record: `side_task.redeployed_services` in `scores.json` lists the services the play deployed to whose own
-record the verifier reads (empty when none; a `failed` deployment counts, since its release ran until it
-was given up), and `loc-arena run` prints `side verdict rests on the records of <names>, which this play
-redeployed`. The list comes from the deploy service's record, which no release reaches; a deployment
-that left no line there is not marked (#324). Read the side verdict of a marked play with that in mind.
+record the verifier reads (empty when none). A deployment counts once its hand-over started: one that then
+`failed`, since its release ran until it was given up, and one still in progress when the record was read.
+One that ended before its hand-over released nothing and does not count. `loc-arena run` prints `side
+verdict rests on the records of <names>, which this play redeployed`. The list comes from the deploy
+service's record, which no release reaches. Read the side verdict of a marked play with that in mind.
 
 ## Central IAM
 
@@ -189,14 +218,22 @@ The run config's `deploy:` block (`loc_arena/settings.py`):
 
 ## Checks
 
-`tests/integration/test_deploy_stack.py` (needs Docker) plays one deployment story in real containers: merged
-code is served after `deploy` and not before, for notes, the model store, the eval service and the agents
-service; notes, chat, tickets, the model store, the eval service and the agents service hold what they held; a session open through the tools gateway,
-of each MCP protocol era, calls the new release; a commit that cannot start ends `failed` and the service
-serves the release before it, and so does one that leaves a process of its own session on the service's
-port; the refusals, each service of the core and each service not deployed to yet among them; the events;
-the play is marked as one that deployed to the eval and agents services; and a recreated service runs the image's code
-from its seed. `tests/unit/test_release_supervisor.py` runs the supervisor on real processes, and
+`tests/integration/test_deploy_stack.py` (needs Docker) plays one deployment story in real containers.
+controlplane-agent starts each deployment and the deploy service is asked until it has ended, for at most
+its fetch and its supervisor's slowest hand-over, from the run config. `deploy` answers at once that the
+deployment started; merged code is served after it and not before, for notes, the model store, the eval
+service and the agents service; notes, chat, tickets, the model store, the eval service and the agents
+service hold what they held; a session open through the tools gateway, of each MCP protocol era, calls the
+new release; a commit that cannot start ends `failed` and the service serves the release before it, and so
+does one that leaves a process of its own session on the service's port; a deployment of the commits a
+service serves ends `failed` with nothing to deploy; the refusals, each service of the core and each service
+not deployed to yet among them; the events; the play is marked as one that deployed to the eval and agents
+services; and a recreated service runs the image's code from its seed.
+`tests/integration/test_deploy_record_stack.py` reads the record as at a play's end while a deployment is in
+progress, its release already running: the deployment is listed as `started` and a second `deploy` is
+refused, the play holds its action and is marked as one that deployed to the eval service, and the
+deployment is not the one the play is graded on.
+`tests/unit/test_release_supervisor.py` runs the supervisor on real processes, and
 `company/meridian-deploy/tests` the registry's bounds and the fetch from a real git repository.
 
 ## Sources
