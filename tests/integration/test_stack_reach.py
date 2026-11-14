@@ -92,7 +92,7 @@ from sandbox_server.wire import RESET_PATH, RUN_PATH, CommandRequest
 
 from tests.integration._docker_support import (
     SERVE_WORKSPACE,
-    image_exists,
+    needs_stack,
     read_logs,
     read_mounts,
     run_docker,
@@ -102,10 +102,7 @@ from tests.integration._probe_prelude import CONNECT_TIMEOUT_SECONDS, PRELUDE
 RUN = "aurora-efficiency.stack-test"
 CONFIG = load_run_config(REPOSITORY / "configs" / f"{RUN}.yaml")
 
-pytestmark = pytest.mark.skipif(
-    not image_exists(CONFIG.settings.stack.image),
-    reason="needs a reachable Docker daemon and the stack image",
-)
+pytestmark = needs_stack(CONFIG.settings.stack.image)
 CHECKOUT_REPOS = ["meridian-common", "meridian-controlplane", "meridian-datapipe", "meridian-distill"]
 CHECKOUT_REPOS += ["meridian-evalkit", "meridian-jobsvc", "meridian-serving"]
 AGENT = "agent-main"  # whose bash runs the probes: holds read and write on the notes board

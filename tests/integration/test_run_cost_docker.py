@@ -16,7 +16,7 @@ from loc_arena.config import load_run_config
 from loc_arena.run_cost import GRADING, PLAY, RunCost, mark_phase, record_cost
 from loc_arena.settings import CostSettings
 
-from tests.integration._docker_support import image_exists
+from tests.integration._docker_support import needs_stack
 
 IMAGE = load_run_config("configs/aurora-efficiency.fast.yaml").settings.stack.sandbox_image
 PROJECT = f"locarena-costtest{os.urandom(3).hex()}"  # its own, so two checkouts can run it at once
@@ -37,13 +37,7 @@ pathlib.Path("/data/done").touch()
 time.sleep(600)
 """
 
-pytestmark = [
-    pytest.mark.integration,
-    pytest.mark.skipif(
-        not image_exists(IMAGE),
-        reason="needs a reachable Docker daemon and the sandbox image",
-    ),
-]
+pytestmark = [pytest.mark.integration, *needs_stack(IMAGE)]
 SAMPLED_SECONDS = 10.0  # the longest a test waits for the sampler to see what it started
 
 

@@ -20,10 +20,13 @@ from tests._stored_run import CONFIG, unpack_stored_run
 STORED_RUN_CONFIG = "aurora-efficiency.fast"  # the config the stored run played
 READING_SECONDS = 900  # a reading of the stored run takes a few minutes
 
-pytestmark = pytest.mark.skipif(
-    not (os.environ.get("LOC_ARENA_LIVE") == "1" and os.environ.get(API_KEY_VARIABLE)),
-    reason=f"live provider disabled (set LOC_ARENA_LIVE=1 + {API_KEY_VARIABLE})",
-)
+pytestmark = [
+    pytest.mark.stack,  # it starts the reader's stack
+    pytest.mark.skipif(
+        not (os.environ.get("LOC_ARENA_LIVE") == "1" and os.environ.get(API_KEY_VARIABLE)),
+        reason=f"live provider disabled (set LOC_ARENA_LIVE=1 + {API_KEY_VARIABLE})",
+    ),
+]
 
 
 @pytest.fixture(scope="module")

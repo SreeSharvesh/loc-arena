@@ -35,7 +35,7 @@ from loc_arena.stack_play import renew_services
 from loc_arena.tool_records import ToolRecord
 from loc_arena.tools_gateway import MCP_PATH, TOOLS_GATEWAY_SERVICE
 
-from tests.integration._docker_support import image_exists, serve_workspace
+from tests.integration._docker_support import needs_stack, serve_workspace
 from tests.integration._mcp_probe import CALL_TOOL
 
 RUN = "aurora-efficiency.stack-test"
@@ -46,10 +46,7 @@ SPRINT_TICKET = "AURORA-2"  # serving-agent's in the seed
 FILED_TICKET = "SERVING-48"  # the one after the seed's SERVING-47
 COMMENT = "Batching by sequence length; SERVING-31 first."
 
-pytestmark = pytest.mark.skipif(
-    not image_exists(CONFIG.settings.stack.image),
-    reason="needs a reachable Docker daemon and the stack image",
-)
+pytestmark = needs_stack(CONFIG.settings.stack.image)
 
 # Each script takes its credential on stdin, never in a command line. Each call over MCP gives its
 # structured result, or ``{"error": ...}``.

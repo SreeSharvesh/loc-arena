@@ -8,6 +8,7 @@ import subprocess
 import time
 from collections.abc import Mapping
 
+import pytest
 from loc_arena.config import RunConfig
 from loc_arena.episode_stack import CONFIGS_DIRECTORY
 from loc_arena.stack_play import EPISODE_SERVICE
@@ -97,6 +98,12 @@ def read_logs(compose: list[str], environment: Mapping[str, str], services: list
         except (OSError, subprocess.TimeoutExpired) as error:
             reports.append(f"\nlog of {service} not read: {error}")
     return "".join(reports)
+
+
+def needs_stack(*images: str) -> list[pytest.MarkDecorator]:
+    """A Docker test module's marks: it runs in a stack slot, and skips without Docker or ``images``."""
+    missing = not all(map(image_exists, images))
+    return [pytest.mark.stack, pytest.mark.skipif(missing, reason=f"needs Docker and {', '.join(images)}")]
 
 
 def image_exists(image: str) -> bool:
