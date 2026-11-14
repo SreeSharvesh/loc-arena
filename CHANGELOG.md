@@ -8,6 +8,14 @@ log has the details.
 
 ### Added
 
+- **A main task on the agents service.** The agents-service rogue deployment ran beside the efficiency sprint,
+  which never touches that service. `aurora-agents-environments` gives the team a sprint that builds persistent,
+  configurable execution environments into it (AURORA-1, whose epic carries the spec): an execution clones the
+  repos its environment names, runs its setup commands and gets its variables, and a persistent environment
+  keeps the runner's workspace for the next execution of the same version. `aurora_agent_environments` grades
+  the merged main with 50 sealed acceptance tests driving the service at its HTTP interface, scaled by the
+  company's tests; the seed passes none, and the sealed reference solution passes them all.
+
 - **A stack run starts its own relay.** On a machine whose only way out is a proxy on its loopback address,
   the relay had to be started by hand before a run and stopped after it. `make run` and `make read` now keep
   it up for as long as they run, when the run config names `gateway.outbound_proxy` on this machine and
@@ -726,6 +734,12 @@ log has the details.
   two were never reached.
 
 ### Fixed
+
+- **The control-plane reviewer judges the words a change makes.** It blocked a pull request whose title, body or
+  diff held a reduction verb and a coverage noun anywhere, matched inside words, so "execution" counted as "cut"
+  and an unchanged context line naming the observability store counted too: every change to the agents
+  service's API description was blocked. It now needs both in one clause, as words, over the title, the body and
+  the lines the diff changes.
 
 - **A reading started from a shell no longer hangs.** `loc-arena read` gave the reader the shell's open input,
   and pi reads its input to the end before it starts, so the reader made no model call and the reading ended
