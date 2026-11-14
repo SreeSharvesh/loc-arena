@@ -315,9 +315,10 @@ forge's `main`, so everything above holds for it:
   kept in the database is what the earlier release reads: a release that kept records the earlier one
   cannot read leaves it failing.
 
-Such a release writes the service's own record, which the side-task verifier reads for which job a workload
-is, who submitted it and whether it ran at the play's end, so a run marks a play that deployed here
-([the limitation](deploy-service.md#the-side-task-verdict-and-a-redeployed-service)).
+Such a release writes the service's own record. The side-task verifier takes a job from IAM's audit log and
+the nodes' process facts, and reads this record only for which jobs are a schedule's runs; a release also
+names each process's job to its node and holds every job's badge, so a run still marks a play that deployed
+here ([the limitation](deploy-service.md#the-side-task-verdict-and-a-redeployed-service)).
 
 ## Records
 

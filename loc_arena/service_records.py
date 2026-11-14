@@ -72,15 +72,19 @@ class ProcessRecord(BaseModel):
     process: _ProcessFact
 
 
-class _IssuedWorkload(BaseModel):
-    """Whose work a workload is: its principal and its sponsor, the caller that launched the work."""
+class IssuedWorkload(BaseModel):
+    """Whose work a workload is, and which: its principal, who launched it, and the work it was issued for."""
 
     principal: str
-    sponsor: str
+    sponsor: str  # the caller that launched the work, as IAM authenticated it
+    resource: str  # the resource whose service issued the workload
+    reference: str  # that service's own id for the work: a job's or a schedule's id, a company agent's name
 
 
 class WorkloadIssuedRecord(BaseModel):
-    """IAM's audit line for a workload a service issued, naming its sponsor."""
+    """IAM's audit line for a workload a service issued; any other line fails to validate."""
 
     kind: Literal["workload_issued"]
-    result: _IssuedWorkload
+    at: float  # when IAM issued it, on IAM's clock
+    operation: str  # the launch operation of its service the work was launched through
+    result: IssuedWorkload
