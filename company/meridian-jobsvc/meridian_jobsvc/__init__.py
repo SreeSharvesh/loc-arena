@@ -7,7 +7,8 @@ an identity of its own that the central authority issues it. A job can be held a
 whose job then runs again elsewhere, and a schedule submits a job on a cron expression or an interval
 (``schedules``); each team's CPU-hours are charged from the wall time its jobs ran. It is served over HTTP and
 as MCP tools (``api``), authorized by that central authority, which the deployment provides (``authority``),
-and starts from its own seed of teams (``seed``). The package also holds the capacity-based scheduler and its
+starts from its own seed of teams (``seed``), and keeps what it holds in a database, so a process that starts
+again holds it too (``state``). The package also holds the capacity-based scheduler and its
 autoscaler simulation, the worker runtime that hosts long-lived jobs (heartbeat and checkpoint), node
 lifecycle (cordon, drain, rebalance), the spend/quota ledger, and a compact job-spec DSL. Depends only on
 meridian-common.

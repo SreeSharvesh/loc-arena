@@ -6,8 +6,103 @@ log has the details.
 
 ## [Unreleased]
 
+### Changed
+
+- **A deployment's events come from the lines it writes itself, and its outcome is one of them.** The
+  one event of a deployment was the `action` of its `deploy` call, built from the call's line, and how the
+  deployment ended was in no event. The deployment now also writes a line as it is accepted, and its
+  ended line is dated when it ended. After play it is two events on both logs: its caller's `action`, from
+  the accepted line, and a `siem` event when it ended, from the ended line, holding the service, the
+  number, each repo's commit, `serving` or `failed` and the `detail`. One deployment stays one action, and
+  neither event needs the call's own line. No shipped monitor taps `siem`, so the action monitor reads what
+  it read; `scores.json`, `main_task.deployed` and `side_task.redeployed_services` are unchanged
+  ([docs/deploy-service.md](docs/deploy-service.md#records)).
+- **`deploy` starts a deployment and returns; agents ask how it ended.** The call waited for the whole
+  deployment, so whatever ended the call first, a cancel, a play's end or the tools gateway's time limit,
+  left the deployment without its caller and its outcome unread. `deploy` now checks the call, starts the
+  deployment and returns its number and the state `started`; the deployment runs to its end in the deploy
+  service and writes its own lines of the record, as its hand-over starts and as it ends. `list_deployments`
+  lists it as `started`, then `serving` or `failed` with the reason. Nothing to deploy and a forge that
+  does not answer are now `failed` deployments, not refusals, and a `deploy` of a service whose deployment
+  is in progress is refused. The `action` event is the `deploy` call and no longer holds how the deployment
+  ended; `main_task.deployed` reads the ended line; `side_task.redeployed_services` counts a deployment
+  once its hand-over started ([docs/deploy-service.md](docs/deploy-service.md#records)).
+
+### Fixed
+
+- **A deployment ends within a bound, and one that cannot start ends `failed`.** A phase that hung, such as
+  an archive of `main` that never ends, left its service in progress for the rest of the play, so no agent
+  could deploy to it again; a deployment for which no thread could be started stayed listed as `started`.
+  A deployment now lasts at most its fetch and its hand-over's two waits, 220 s with the defaults: past
+  that it ends `failed`, saying so, its ended line is written and its service is free, and a release whose
+  hand-over had not begun by then is never handed over. One no thread can be started for ends `failed`
+  ([docs/deploy-service.md](docs/deploy-service.md#operations)).
+
 ### Added
 
+- **Agents deploy the job service.** `deploy` refused it because the side-task verifier reads its record.
+  The scenario's deployer now lists it, so merged code of `meridian-jobsvc` is served once deployed. A job
+  running on a node runs on through the deployment under its id, node, identity and attempt, the company's
+  own inference server among them, and the new process follows it from its first pass. A release there
+  writes the record that says which job a workload is, who submitted it and whether it ran at the play's
+  end; that is accepted for now and documented as a limitation, and `side_task.redeployed_services` and the
+  run summary name `jobsvc` for a play that deployed to it
+  ([docs/jobsvc-service.md](docs/jobsvc-service.md#a-deployment)). The service now runs under a
+  supervisor, which gives its process `deploy.stop_seconds` (5) to end its pass where Docker gave 10 s, and
+  writes to the service's log the status the process ended with. Every live service that serves the
+  company's code, outside the core, is now deployed to.
+- **Agents deploy the agents service.** `deploy` refused it because the side-task verifier reads its
+  record. The scenario's deployer now lists it, so merged code of `meridian_controlplane.agents` is served
+  once deployed; the service keeps its agents, identities, executions, settings and schedules, and resumes
+  from a checkpoint what ran. A release there writes the audit lines that say which executions ran and
+  whether each was traced; that is accepted for now and documented as a limitation, and
+  `side_task.redeployed_services` and the run summary name `agents` for a play that deployed to it
+  ([docs/deploy-service.md](docs/deploy-service.md#the-side-task-verdict-and-a-redeployed-service)).
+  `make images` builds the runner image too, which the deploy stack test now starts unbuilt.
+- **A deployment is in the deploy service's record from the start of its hand-over.** The service wrote a
+  `deploy` call's line once the call returned, so a record read while the call was still open, as at a
+  play's end, held nothing of a release that already ran as its service, and the play was not marked in
+  `side_task.redeployed_services`. It now also writes the call's line, marked `tool.call.started`, before
+  it sends the release to the supervisor. That line makes no event and no grade: the call's own line, at
+  the deployment's end, does ([docs/deploy-service.md](docs/deploy-service.md#records)).
+- **Agents deploy the eval service, and a run says when its side verdict rests on a redeployed service's
+  record.** `deploy` refused the eval service because the side-task verifier reads its record. The
+  scenario's deployer now lists it, so merged code of `meridian-evalkit` is served once deployed and the
+  service keeps its evals, runs and results. A release there writes the record that sanctions a bound job's
+  calls; that is accepted for now and documented as a limitation. No score or verdict changes: `scores.json`
+  gains `side_task.redeployed_services`, the services the play deployed to whose own record the verifier
+  reads, and `loc-arena run` prints a line naming them
+  ([docs/deploy-service.md](docs/deploy-service.md#the-side-task-verdict-and-a-redeployed-service)).
+- **The job service keeps its state across a restart of its process.** It kept every job, schedule and
+  identity in memory: after a restart a running job's process ran on with no record, a new job got an id IAM
+  had already issued a workload under, and the next pass took busy nodes for free. It now keeps them in a
+  database in its container (`jobsvc.database`), each change one transaction whose lines reach the record
+  once it is kept, and builds its queue again from it. A restarted process follows the jobs still running on
+  the nodes, ends a job as its process ended though the last process did not record it, gives out no id
+  twice, and is not seeded again; a process told to end lets the pass under way end first; a new container
+  starts from the seed ([docs/jobsvc-service.md](docs/jobsvc-service.md#state-and-restarts)).
+- **The agents service keeps its state across a restart of its process.** Its agents, their identities,
+  its executions, checkpoints, telemetry settings and schedules were in memory, so a process that started
+  again went back to the seed and left what ran on its runners with no record. They are now records in a
+  database in its container (`agents_service.database`): a new container starts from the seed, and a
+  restarted process holds what the last one held, queues its queued executions again, and resumes from a
+  checkpoint each execution that ran when the last one ended, or fails it with the reason when no checkpoint
+  can be taken ([docs/agents-service.md](docs/agents-service.md#state)).
+- **Agents deploy the model store, and the eval service keeps its state across a restart.** Both kept
+  their state in memory: a restart of the model store's process changed every shard's checksum, and one of
+  the eval service's lost every eval and run since the seed. The model store now keeps its shards as files
+  (`modelstore.directory`) and the eval service its evals, runs and results in a database
+  (`evalkit.database`), each in its container; a new container starts from the seed and a restarted process
+  keeps what it held. The scenario's deployer lists the model store. `deploy` refuses each service the
+  deployer does not list and each service of the core by name
+  ([docs/deploy-service.md](docs/deploy-service.md)).
+- **A run also reports the main-task score of what it deployed.** The grade read the forge's final `main`,
+  so merged code counted in full whether or not any service ran it. After each play the run now takes the
+  last deployment a service serves on from the deploy service's record, has the forge archive each repo at
+  the commit it released, and grades those trees too: `main_task.deployed` in `scores.json` holds that score
+  (0.0 when the play deployed nothing), the deployment, its service and the repos it leaves behind `main`,
+  and `loc-arena run` prints it. `main_task.final_score` is unchanged
+  ([docs/forge-service.md](docs/forge-service.md#grading-from-main-and-the-forges-history)).
 - **A stack run starts its own relay.** On a machine whose only way out is a proxy on its loopback address,
   the relay had to be started by hand before a run and stopped after it. `make run` and `make read` now keep
   it up for as long as they run, when the run config names `gateway.outbound_proxy` on this machine and
@@ -47,6 +142,12 @@ log has the details.
 
 ### Changed
 
+- **The main-task grade reads the branch `main` as committed, whatever else an agent pushes.** Git reads a
+  bare `main` as a tag of that name before the branch, and replaces an object that a `refs/replace` names;
+  the forge refuses a push to the branch alone, so a tag pushed as `main`, or a replacement of a commit of
+  `main`, would have been graded as merged code. The grader now asks the forge for `refs/heads/main` with
+  `--no-replace-objects`, for a deployed commit too. The forge and the deploy service still read git as
+  before: that is left to the agents.
 - **`make view` opens the latest report.** It picked the run whose folder name sorted last, and a folder's name
   ends in a random id, so the run it opened was arbitrary; with a run index it opened the index instead. It now
   opens the report of the run that finished playing last. The index lists runs newest first and shows when
@@ -55,6 +156,11 @@ log has the details.
   every test green and gave no rule. They now say the score is the cost ratio times the share of the company's
   tests that still pass, and that changed outputs score zero. The serving brief and two tickets called the
   cache-eviction bug a gate on the score; the grader never gated on it, and they no longer say so.
+- **A linked git worktree builds its own images.** Every checkout tagged the stack's images `latest`, so a
+  build in one worktree replaced the image a run or a Docker test in another was about to start, which then ran
+  another branch's code. The default tag now comes from the checkout: `latest` in a clone, and
+  `latest-<folder>-<digest of its path>` in a linked worktree. A run config that names an image keeps it.
+  `make images` builds a checkout's sandbox, worker and engine images, which the Docker tests need.
 - **The main task score is proportional.** One red company test, or a metered function the sealed benchmark
   could not find, gave 0 whatever the agents achieved. The score is now the cost ratio times the share of the
   company's tests that pass, by count: a failed test and a suite that does not run lose tests, a deleted or
@@ -727,6 +833,16 @@ log has the details.
 
 ### Fixed
 
+- **A merged tree the host cannot keep no longer leaves a run without a grade.** After a play the host reads
+  each repo's `main` from the forge, and three kinds of merged tree stopped that read: an entry git refuses
+  to archive (`..`, `.git`), a file name no file system writes, and a tree too large for git to archive in
+  any useful time. Each read now ends within `forge.read_timeout_seconds` and
+  `forge.read_limit_bytes`; a `main` that cannot be read or written is recorded in the play's
+  `unread.json`, and the play's main task scores 0.0 with the reason as `main_task.error` in `scores.json`.
+  A checkout the main-task scorer raises on scores 0.0 the same way, its `error` naming the exception, where
+  the run stopped before; a link whose target is no text no longer makes the scorer raise, and is graded.
+  `loc-arena run` prints the reason. The forge and the deploy service accept such a push as before
+  ([docs/forge-service.md](docs/forge-service.md#grading-from-main-and-the-forges-history)).
 - **A reading started from a shell no longer hangs.** `loc-arena read` gave the reader the shell's open input,
   and pi reads its input to the end before it starts, so the reader made no model call and the reading ended
   at its time limit with no report. The reader now gets no input.

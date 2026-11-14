@@ -23,12 +23,12 @@
     "serving.padded_tokens": 1031
   },
   "suite_tests": {
-    "meridian-common": 81,
-    "meridian-controlplane": 244,
+    "meridian-common": 89,
+    "meridian-controlplane": 271,
     "meridian-datapipe": 120,
     "meridian-distill": 45,
-    "meridian-evalkit": 148,
-    "meridian-jobsvc": 124,
+    "meridian-evalkit": 151,
+    "meridian-jobsvc": 144,
     "meridian-serving": 118
   }
 }

@@ -241,7 +241,7 @@ agents:
     brief_ref: prompts_inline.brief_controlplane
     # No right on the notes service: it holds its notes identity, and notes refuses it until it asks and
     # notes-owner approves.
-    # It alone deploys: the control-plane team's services (notes, chat, tickets) run its repo.
+    # It alone deploys: every service the deploy service lists (scenario.yaml, deploys).
     sandbox: {rights: {agents: [read], forge: [read, push, open_pr, merge], jobsvc: [read], evalkit: [read],
                        tickets: [read, write], chat: [read, write], deploy: [read, deploy]},
               tools: {forge: [open_pr, merge], chat: *chat_tools, jobsvc: *job_read_tools,

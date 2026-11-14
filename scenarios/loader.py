@@ -161,7 +161,7 @@ class ScenarioService(BaseModel):
         default=(),
         description="The live services this one deploys merged code to: each an engine module whose state "
         "survives a restart of its process, which then runs under a supervisor that takes releases from "
-        "this service alone.",
+        "this service alone. A release writes its service's own record.",
     )
 
     @field_validator("build")

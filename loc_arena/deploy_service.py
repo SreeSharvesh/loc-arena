@@ -5,7 +5,8 @@ A stack run starts it as the scenario's entry that ``deploys:`` services: ``pyth
 reach through the tools gateway. Central IAM decides every call and issues each deployment a workload holding
 ``forge: [read]`` of what its caller holds, which the deployment fetches each company repo's ``main`` with;
 the release goes to the supervisor of the service it is for (``loc_arena.release_supervisor``), which this
-service alone may call, holding that supervisor's token. Each tool call is one line of its record, on stdout.
+service alone may call, holding that supervisor's token. Each tool call is one line of its record, on stdout,
+and a deployment writes three more: as it is accepted, as its hand-over starts, and its outcome as it ends.
 The deployments are in memory: a recreated service has none, as each service it deploys to holds no release.
 """
 
@@ -33,17 +34,25 @@ from loc_arena.iam_seed import load_seed
 from loc_arena.iam_wiring import build_service_app, guard_from_environment, iam_options
 from loc_arena.mcp_service import ALL_ADDRESSES, caller_from_token
 from loc_arena.release_supervisor import RELEASE_PATH, ReleaseState
+from loc_arena.settings import DeploySettings
 from loc_arena.task import resolve_scenario
 from loc_arena.tasks.main_task_grader import COMPANY_REPOS
-from loc_arena.tool_records import Write, record_writer, tool_call_recorder
-from meridian_deploy.deployments import DEPLOY, DeployError, Deployments, Outcome
+from loc_arena.tool_records import (
+    Write,
+    record_accepted,
+    record_ended,
+    record_started,
+    record_writer,
+    tool_call_recorder,
+)
+from meridian_deploy.deployments import DEPLOY, DeployError, Deployment, Deployments, Outcome
 from meridian_deploy.server import build_deploy_server
 from meridian_deploy.source import ForgeSource
 from meridian_iam.client import IamClient
 from meridian_iam.contracts import IamError
 
 SECRET_BYTES = 32
-REPLY_MARGIN_SECONDS = 10.0  # past a supervisor's slowest hand-over, how long its reply is waited for
+REPLY_MARGIN_SECONDS = 10.0  # how much longer than its slowest hand-over a supervisor's reply is waited for
 
 
 @dataclass(frozen=True)
@@ -92,8 +101,10 @@ class SupervisorRollout:
         """Send ``release`` to ``service``'s supervisor, and wait for the release its service then runs.
 
         When its reply is lost or late, the supervisor is asked what its service runs, which it answers once
-        the hand-over has ended: a release it took is not then recorded as one it did not.
+        the hand-over has ended: a release it took is not then recorded as one it did not. The record holds
+        the hand-over before the supervisor is sent the release, which may run from then on.
         """
+        record_started({"release": release})
         url = f"http://{service}:{self.port}{RELEASE_PATH}"
         headers = {"Authorization": f"Bearer {self.tokens[service].get_secret_value()}"}
         packed = {repo: base64.b64encode(archive).decode() for repo, archive in archives.items()}
@@ -112,18 +123,36 @@ class SupervisorRollout:
         return Outcome(state.release, state.serving, state.detail)
 
 
-def connect_supervisors(config: RunConfig, entry: LiveService) -> SupervisorRollout:
-    """The supervisors of the services ``entry`` deploys to, each with its token from the secrets directory.
+def bound_reply_seconds(settings: DeploySettings) -> float:
+    """How long a supervisor's reply is waited for: its slowest hand-over, and a margin.
 
     A hand-over waits for a service to end and answer twice at most: on the release, then on the one before.
     """
+    return 2 * (settings.health_seconds + 2 * settings.stop_seconds) + REPLY_MARGIN_SECONDS
+
+
+def bound_deployment_seconds(settings: DeploySettings) -> float:
+    """How long a deployment may last: its fetch, then a hand-over sent and, its reply lost, asked after.
+
+    And the margin once more, so that a phase that reaches its own bound ends the deployment, saying which.
+    """
+    return settings.fetch_seconds + 2 * bound_reply_seconds(settings) + REPLY_MARGIN_SECONDS
+
+
+def connect_supervisors(config: RunConfig, entry: LiveService) -> SupervisorRollout:
+    """The supervisors of the services ``entry`` deploys to, each with its token of the secrets directory."""
     settings, secrets_dir = config.settings.deploy, config.settings.gateway.secrets_dir
     tokens = {
         name: SecretStr((secrets_dir / release_token_secret(name)).read_text().strip())
         for name in entry.deploys
     }
-    slowest = 2 * (settings.health_seconds + 2 * settings.stop_seconds)
-    return SupervisorRollout(tokens, settings.release_port, slowest + REPLY_MARGIN_SECONDS)
+    return SupervisorRollout(tokens, settings.release_port, bound_reply_seconds(settings))
+
+
+def record_deployment(deployment: Deployment) -> None:
+    """Write ``deployment``'s own line of the record: as it was accepted, or as it ended."""
+    write = record_accepted if deployment.state == "started" else record_ended
+    write(deployment.model_dump(mode="json"))
 
 
 def build_deploy_app(
@@ -150,6 +179,8 @@ def build_deploy_app(
         ),
         connect_supervisors(config, entry),
         settings.max_deployments,
+        bound_deployment_seconds(settings),
+        record_deployment,
     )
     options = iam_options(guard, entry.name)
     recorder = tool_call_recorder(caller_from_token, write, options["annotate"])

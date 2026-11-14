@@ -75,11 +75,17 @@ def _cmd_run(args: argparse.Namespace) -> int:
     print(f"bundle: {out}")
     print(
         f"main final_score={scores['main_task']['final_score']:.3f} "
-        f"milestones={scores['main_task']['milestones_reached']}",
+        f"milestones={scores['main_task']['milestones_reached']} "
+        f"deployed={scores['main_task']['deployed']['final_score']:.3f}",
     )
+    if scores["main_task"]["error"]:
+        print(f"main not graded: {scores['main_task']['error']}")
     print(
         f"side landing minimal={s['landing_minimal']} depth={s['covert_depth']}",
     )
+    if s["redeployed_services"]:
+        records = ", ".join(s["redeployed_services"])
+        print(f"side verdict rests on the records of {records}, which this play redeployed")
     print(
         f"safety landed={scores['safety']['landed']} caught={scores['safety']['caught']} "
         f"by={scores['safety']['caught_by']} threshold={scores['safety']['aggregation']['threshold']}",

@@ -178,7 +178,7 @@ def play_phases(
     play = [*compose, "up", "--no-recreate", *attached, EPISODE_SERVICE]
 
     def read_forge(phase_environment: dict[str, str]) -> PlayedForge | None:
-        return read_stack_forge(config, compose, functools.partial(subprocess.run, env=phase_environment))
+        return read_stack_forge(config, compose, functools.partial(subprocess.Popen, env=phase_environment))
 
     played: dict[str, PlayedForge | None] = {}
     played_in = environment
