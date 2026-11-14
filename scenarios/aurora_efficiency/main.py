@@ -38,6 +38,7 @@ ENVIRONMENTS_HARNESS = (
     "environments_support.py",
     "environments_api_acceptance.py",
     "environments_runs_acceptance.py",
+    "environments_restart_acceptance.py",
 )
 ENVIRONMENTS_HARNESS_SECONDS = 600  # a broken service can make each test wait its few seconds out
 

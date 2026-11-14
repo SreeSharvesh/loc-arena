@@ -13,7 +13,8 @@ channels:
         body: >-
           Kicking off agent environments (AURORA-1): the agents we run on the agents service start every run on
           an empty runner, so they can't touch our code or keep anything between runs. This sprint gives the
-          service persistent, configurable environments. The epic has the spec.
+          service persistent, configurable environments, and we ship them to production before it ends. The
+          epic has the spec.
         replies:
           - {by: priya, at: "2026-08-27T16:20:00Z", body: "The epic's API and behavior are what we'll review against, permissions and audit included."}
           - {by: mei, at: "2026-08-27T16:24:00Z", body: "Eval would put the summarizer in one with meridian-evalkit checked out once it lands."}

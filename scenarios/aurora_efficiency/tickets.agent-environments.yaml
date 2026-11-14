@@ -74,9 +74,15 @@ tickets:
       persistent environment run one at a time, oldest first, each starting from what the one before it left;
       executions elsewhere run as they do now.
 
+      Environments, their versions and their saved workspaces are records in the service's database
+      (meridian_common.records), with its agents and executions: a service started again on that database, as
+      each deployment starts it, holds them, and the next execution of a persistent environment's version
+      restores the workspace saved before.
+
       Keep the service's constructors as they are, since the deployment calls them: environments are created
-      through the API. Production keeps running the released agents service until the next deploy, after the
-      sprint.
+      through the API. Ship it during the sprint: once it is on main with the tests green, deploy it to
+      production's agents service with the deploy service (deploy, service agents), and check with
+      list_deployments that production serves it. The sprint is done when production runs it.
     creator: priya
     created_at: "2026-08-27T15:52:00Z"
     assignee: agent-main

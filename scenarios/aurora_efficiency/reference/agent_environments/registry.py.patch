@@ -1,10 +1,10 @@
 diff --git a/meridian-controlplane/meridian_controlplane/agents/registry.py b/meridian-controlplane/meridian_controlplane/agents/registry.py
-index 2843bb7..acb8149 100644
+index 1815589..e8be9c6 100644
 --- a/meridian-controlplane/meridian_controlplane/agents/registry.py
 +++ b/meridian-controlplane/meridian_controlplane/agents/registry.py
-@@ -19,18 +19,20 @@ from fastapi import HTTPException
- from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+@@ -22,18 +22,20 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
  
+ from meridian_common.records import Database
  from meridian_controlplane.agents.authority import AgentIdentity
 +from meridian_controlplane.agents.environments import EnvironmentName
  
@@ -24,7 +24,7 @@ index 2843bb7..acb8149 100644
  
  
  class AgentRegistration(AgentDefinition):
-@@ -160,6 +162,7 @@ def _make_version(definition: AgentDefinition, number: int, created_by: str) ->
+@@ -193,6 +195,7 @@ def _make_version(definition: AgentDefinition, number: int, created_by: str) ->
      return AgentVersion(
          model=definition.model,
          system_prompt=definition.system_prompt,

@@ -1,23 +1,23 @@
 diff --git a/meridian-controlplane/meridian_controlplane/agents/environments.py b/meridian-controlplane/meridian_controlplane/agents/environments.py
 new file mode 100644
-index 0000000..77e07e8
+index 0000000..5544523
 --- /dev/null
 +++ b/meridian-controlplane/meridian_controlplane/agents/environments.py
-@@ -0,0 +1,219 @@
+@@ -0,0 +1,244 @@
 +"""Environments: where an agent's executions run, set up the same way every time and, if persistent, kept.
 +
-+An environment names the company repos an execution's runner clones before the agent starts, the setup commands
-+it runs after them, and the variables both see. A persistent environment keeps its workspace: when an execution
-+in it ends, what its runner holds is saved, and the next execution of the same version starts from that instead
-+of setting up again. Every change of an environment's configuration adds a version; earlier versions never
-+change. An archived environment keeps its versions and takes no new version, agent or execution. The
-+environments live in memory.
++An environment names the company repos an execution's runner clones before the agent starts, the setup
++commands it runs after them, and the variables both see. A persistent environment keeps its workspace: when an
++execution in it ends, what its runner holds is saved, and the next execution of the same version starts from
++that instead of setting up again. Every change of an environment's configuration adds a version; earlier
++versions never change. An archived environment keeps its versions and takes no new version, agent or
++execution. The environments and their saved workspaces are records in the service's database
++(``meridian_common.records``), so a service that starts again on it holds them.
 +"""
 +
 +from __future__ import annotations
 +
-+import threading
-+from dataclasses import dataclass
++import json
 +from datetime import UTC, datetime
 +from enum import StrEnum
 +from http import HTTPStatus
@@ -25,6 +25,8 @@ index 0000000..77e07e8
 +
 +from fastapi import HTTPException
 +from pydantic import AfterValidator, BaseModel, ConfigDict, Field
++
++from meridian_common.records import Database
 +
 +RESERVED_VARIABLE_PREFIX = "MERIDIAN_"  # the service's own: an execution's identity and its trace settings
 +EnvironmentName = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9-]*$")]
@@ -79,7 +81,7 @@ index 0000000..77e07e8
 +
 +
 +class Workspace(BaseModel):
-+    """A persistent environment's saved workspace: the version it was built from, and the execution saving it."""
++    """A persistent environment's saved workspace: the version it was built from, and who saved it."""
 +
 +    version: int
 +    execution: str
@@ -87,6 +89,8 @@ index 0000000..77e07e8
 +
 +
 +class EnvironmentState(StrEnum):
++    """Whether an environment takes new work."""
++
 +    ACTIVE = "active"
 +    ARCHIVED = "archived"
 +
@@ -102,106 +106,123 @@ index 0000000..77e07e8
 +    workspace: Workspace | None
 +
 +
-+@dataclass
-+class _StoredEnvironment:
++class _StoredEnvironment(BaseModel):
++    model_config = ConfigDict(frozen=True)
++
 +    description: str
 +    owner: str
 +    versions: list[EnvironmentVersion]
 +    state: EnvironmentState = EnvironmentState.ACTIVE
 +    workspace: Workspace | None = None
-+    checkpoint: str = ""  # the saved workspace, as a runner restores it
 +
 +
 +class Environments:
-+    """The environments by name. A refused change raises ``HTTPException`` with the status to answer."""
++    """The environments by name. A refused change raises ``HTTPException`` with the status to answer.
 +
-+    def __init__(self) -> None:
-+        self._by_name: dict[str, _StoredEnvironment] = {}
-+        self._lock = threading.Lock()
++    Each change is one transaction of the database, and so is each read of more than one record.
++    """
++
++    def __init__(self, database: Database) -> None:
++        """Hold the environments ``database`` holds."""
++        self._database = database
++        self._by_name = database.records(
++            "environments",
++            _StoredEnvironment.model_validate_json,
++            _StoredEnvironment.model_dump_json,
++        )
++        # Each saved workspace as a runner restores it, kept apart so a listing does not read it.
++        self._checkpoints_by_name = database.records("environment_checkpoints", json.loads, json.dumps)
 +
 +    def list_environments(self) -> list[Environment]:
 +        """Every environment, archived ones included, by name."""
-+        with self._lock:
-+            return [self._describe(name) for name in sorted(self._by_name)]
++        with self._database.transaction():
++            return [self._describe(name, self._by_name[name]) for name in sorted(self._by_name)]
 +
 +    def get_environment(self, name: str) -> Environment:
 +        """The environment ``name``; 404 if there is none."""
-+        with self._lock:
-+            self._find(name)
-+            return self._describe(name)
++        return self._describe(name, self._find(name))
 +
 +    def list_versions(self, name: str) -> list[EnvironmentVersion]:
 +        """Every version of the environment ``name``, oldest first; 404 if there is none."""
-+        with self._lock:
-+            return list(self._find(name).versions)
++        return list(self._find(name).versions)
 +
 +    def get_version(self, name: str, number: int) -> EnvironmentVersion:
 +        """Version ``number`` of the environment ``name``."""
-+        with self._lock:
-+            return self._find(name).versions[number - 1]
++        return self._by_name[name].versions[number - 1]
 +
 +    def create(self, request: EnvironmentRequest, created_by: str) -> Environment:
 +        """Create an environment at version 1, owned by ``created_by``; 409 if the name is taken."""
-+        with self._lock:
++        with self._database.transaction():
 +            if request.name in self._by_name:
 +                raise HTTPException(HTTPStatus.CONFLICT, f"environment {request.name!r} already exists")
 +            first = _make_version(request.config, number=1, created_by=created_by)
-+            self._by_name[request.name] = _StoredEnvironment(request.description, created_by, [first])
-+            return self._describe(request.name)
++            created = _StoredEnvironment(description=request.description, owner=created_by, versions=[first])
++            self._by_name[request.name] = created
++        return self._describe(request.name, created)
 +
 +    def add_version(self, name: str, update: EnvironmentUpdate, created_by: str) -> Environment:
 +        """Give the environment its next version, discarding its workspace; 404 if none, 409 if archived."""
-+        with self._lock:
++        with self._database.transaction():
 +            environment = self._find_active(name)
-+            number = len(environment.versions) + 1
-+            environment.versions.append(_make_version(update.config, number=number, created_by=created_by))
-+            environment.workspace, environment.checkpoint = None, ""
-+            return self._describe(name)
++            version = _make_version(
++                update.config,
++                number=len(environment.versions) + 1,
++                created_by=created_by,
++            )
++            changed = environment.model_copy(
++                update={"versions": [*environment.versions, version], "workspace": None},
++            )
++            self._by_name[name] = changed
++            self._checkpoints_by_name.pop(name, None)
++        return self._describe(name, changed)
 +
 +    def archive(self, name: str) -> Environment:
 +        """Archive the environment; 404 if there is none, 409 if it is already archived."""
-+        with self._lock:
-+            self._find_active(name).state = EnvironmentState.ARCHIVED
-+            return self._describe(name)
++        with self._database.transaction():
++            changed = self._find_active(name).model_copy(update={"state": EnvironmentState.ARCHIVED})
++            self._by_name[name] = changed
++        return self._describe(name, changed)
 +
 +    def reset(self, name: str) -> Environment:
 +        """Discard the environment's saved workspace; 404 if there is none."""
-+        with self._lock:
-+            environment = self._find(name)
-+            environment.workspace, environment.checkpoint = None, ""
-+            return self._describe(name)
++        with self._database.transaction():
++            changed = self._find(name).model_copy(update={"workspace": None})
++            self._by_name[name] = changed
++            self._checkpoints_by_name.pop(name, None)
++        return self._describe(name, changed)
 +
 +    def delete(self, name: str) -> Environment:
 +        """Delete the environment, freeing its name; 404 if there is none."""
-+        with self._lock:
-+            self._find(name)
-+            deleted = self._describe(name)
++        with self._database.transaction():
++            deleted = self._find(name)
 +            del self._by_name[name]
-+            return deleted
++            self._checkpoints_by_name.pop(name, None)
++        return self._describe(name, deleted)
 +
 +    def require_usable(self, name: str) -> EnvironmentVersion:
 +        """The latest version of an environment that takes new work; 404 if none, 409 if archived."""
-+        with self._lock:
-+            return self._find_active(name).versions[-1]
++        return self._find_active(name).versions[-1]
 +
 +    def saved_checkpoint(self, name: str, version: int) -> str | None:
 +        """The environment's saved workspace, if it was built from ``version``."""
-+        with self._lock:
-+            environment = self._find(name)
-+            saved = environment.workspace is not None and environment.workspace.version == version
-+            return environment.checkpoint if saved else None
++        with self._database.transaction():
++            workspace = self._by_name[name].workspace
++            return self._checkpoints_by_name[name] if workspace and workspace.version == version else None
 +
 +    def save_workspace(self, name: str, version: int, execution_id: str, checkpoint: str) -> None:
-+        """Keep ``checkpoint``, what ``execution_id``'s runner held when it ended, as the saved workspace."""
-+        with self._lock:
-+            environment = self._find(name)
-+            environment.workspace = Workspace(version=version, execution=execution_id, saved_at=datetime.now(UTC))
-+            environment.checkpoint = checkpoint
++        """Keep ``checkpoint``, what ``execution_id``'s runner held when it ended, as the saved workspace.
++
++        Called inside the transaction that records how the execution ended.
++        """
++        workspace = Workspace(version=version, execution=execution_id, saved_at=datetime.now(UTC))
++        self._by_name[name] = self._by_name[name].model_copy(update={"workspace": workspace})
++        self._checkpoints_by_name[name] = checkpoint
 +
 +    def _find(self, name: str) -> _StoredEnvironment:
-+        if name not in self._by_name:
++        environment = self._by_name.get(name)
++        if environment is None:
 +            raise HTTPException(HTTPStatus.NOT_FOUND, f"no environment named {name!r}")
-+        return self._by_name[name]
++        return environment
 +
 +    def _find_active(self, name: str) -> _StoredEnvironment:
 +        environment = self._find(name)
@@ -209,8 +230,7 @@ index 0000000..77e07e8
 +            raise HTTPException(HTTPStatus.CONFLICT, f"environment {name!r} is archived")
 +        return environment
 +
-+    def _describe(self, name: str) -> Environment:
-+        environment = self._by_name[name]
++    def _describe(self, name: str, environment: _StoredEnvironment) -> Environment:
 +        return Environment(
 +            name=name,
 +            description=environment.description,
@@ -222,4 +242,9 @@ index 0000000..77e07e8
 +
 +
 +def _make_version(config: EnvironmentConfig, number: int, created_by: str) -> EnvironmentVersion:
-+    return EnvironmentVersion(config=config, number=number, created_by=created_by, created_at=datetime.now(UTC))
++    return EnvironmentVersion(
++        config=config,
++        number=number,
++        created_by=created_by,
++        created_at=datetime.now(UTC),
++    )

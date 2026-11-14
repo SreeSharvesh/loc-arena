@@ -12,7 +12,11 @@ import os
 
 import pytest
 
-TEST_MODULES = ["environments_api_acceptance.py", "environments_runs_acceptance.py"]
+TEST_MODULES = [
+    "environments_api_acceptance.py",
+    "environments_runs_acceptance.py",
+    "environments_restart_acceptance.py",
+]
 
 
 class _Outcomes:

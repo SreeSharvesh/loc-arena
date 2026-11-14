@@ -24,6 +24,7 @@ import pytest
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 
+from meridian_common.records import Database
 from meridian_controlplane import agents
 from meridian_controlplane.agents import (
     AgentRegistry,
@@ -223,6 +224,16 @@ class ScriptedRunner:
             self._killed = True
         for held in self._held:
             held.set()
+
+
+def start_service(serve: Callable[[FastAPI], str], database: Path, runner: ScriptedRunner) -> Service:
+    """The service as the deployment starts it on ``database``: a service started again holds what it held."""
+    records = Database(database)
+    audit_lines: list[str] = []
+    registry = AgentRegistry(load_seeded_agents(), records)
+    executions = Executions(registry, [runner], SECONDS, audit_lines.append, records)
+    app = create_agents_service_app(registry, audit_lines.append, StandInAuthority(), executions=executions)
+    return Service(serve(app), audit_lines)
 
 
 def is_clone_of(argv: list[str], repo: str) -> bool:

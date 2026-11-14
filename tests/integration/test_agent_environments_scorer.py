@@ -20,7 +20,7 @@ CFG = load_run_config("configs/aurora-agents-environments.yaml")
 REFERENCE = DEFAULT_SCENARIO / "reference"
 SOLUTION = sorted((REFERENCE / "agent_environments").glob("*.patch"))
 SCORER = get_scorer("aurora_agent_environments")
-ACCEPTANCE_TESTS = 50
+ACCEPTANCE_TESTS = 54
 
 
 def solve(checkout: Path) -> Path:

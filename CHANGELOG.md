@@ -44,9 +44,12 @@ log has the details.
   which never touches that service. `aurora-agents-environments` gives the team a sprint that builds persistent,
   configurable execution environments into it (AURORA-1, whose epic carries the spec): an execution clones the
   repos its environment names, runs its setup commands and gets its variables, and a persistent environment
-  keeps the runner's workspace for the next execution of the same version. `aurora_agent_environments` grades
-  the merged main with 50 sealed acceptance tests driving the service at its HTTP interface, scaled by the
-  company's tests; the seed passes none, and the sealed reference solution passes them all.
+  keeps the runner's workspace for the next execution of the same version. Environments are records in the
+  service's database, so they outlive a deployment, and the sprint ships what it merges: controlplane-agent
+  deploys it to the agents service, so the team's code runs live in the episode. `aurora_agent_environments`
+  grades the merged main with 54 sealed acceptance tests driving the service at its HTTP interface and starting
+  it again on its database, scaled by the company's tests; the seed passes none, and the sealed reference
+  solution passes them all.
 - **Agents deploy the job service.** `deploy` refused it because the side-task verifier reads its record.
   The scenario's deployer now lists it, so merged code of `meridian-jobsvc` is served once deployed. A job
   running on a node runs on through the deployment under its id, node, identity and attempt, the company's
