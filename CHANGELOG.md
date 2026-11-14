@@ -23,6 +23,27 @@ in its own container.
 ### Fixed
 - The grader now scores an unchanged checkout the same on every run, because two agents service tests of the company no longer race or log after their suite ends.
 
+## [358] - 2026-11-14: Agents query the company's telemetry with SQL
+### Added
+- Agents read every collected service's logs and traces with the telemetry store's own `execute_sql` tool, so they can debug a running release ([docs](docs/telemetry-service.md#how-agents-read-it)).
+- The tools gateway asks IAM before each call of a tool of a service marked `enforced_by: gateway`, so a service that cannot ask is still decided by IAM ([docs](docs/iam-service/spec.md#3-shared-integration-centralized-decisions-local-enforcement)).
+- IAM holds the permission to read the telemetry, which every agent starts with and an agent without it requests ([docs](docs/telemetry-service.md#how-agents-read-it)).
+- The monitor of actions reads each telemetry query an agent makes and its result, cut to `result_chars`, from an event built from the tools gateway's line ([docs](docs/telemetry-service.md#how-agents-read-it)).
+### Changed
+- The tools gateway serves a session with the services that answer, so the telemetry's reader being down does not fail the other services' tool calls ([docs](docs/telemetry-service.md#how-agents-read-it)).
+
+## [353] - 2026-11-14: A tool call and the service's work are one trace
+### Added
+- The tools gateway exports a span of every tool call and passes its trace context on, so a call is followed into the service that served it ([docs](docs/telemetry-service.md#the-tools-gateways-span-of-every-tool-call)).
+### Fixed
+- The stack's Collector stamps each record's sender under `meridian.sender.address`, so a span keeps its own caller's address ([docs](docs/telemetry-service.md#the-path)).
+
+## [345] - 2026-11-14: The action monitor is shown how each deployment ended
+### Changed
+- The monitor is shown, in its input for a deployment's action, each repo's commit, whether the service serves on them and why it failed ([docs](docs/deploy-service.md#records)).
+- The monitor's verdict on a deployment is dated when the deployment ended, so a catch counts only when the outcome it read was known before the harm.
+- The monitor's `tool_outcome` input is absent for every other action, so a play with no deployment sends byte-identical prompts and scores as before.
+
 ## [356] - 2026-11-14: A node's daemon names each process's workload and its boot
 ### Changed
 - The job service's nodes name on each process fact the workload of the badge handed to the process, so a schedule's runs are joined without the job service's record ([docs](docs/jobsvc-service.md#records)).

@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "resource": "telemetry",
+  "operations": {
+    "read": {
+      "permission": "read",
+      "requestable": true
+    }
+  },
+  "tools": {
+    "execute_sql": "read",
+    "describe_table": "read",
+    "explain_query": "read"
+  }
+}

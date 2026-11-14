@@ -182,9 +182,8 @@ EVERY += ["edit_ticket", "get_eval", "get_run", "get_ticket", "leaderboard", "li
 EVERY += ["list_projects", "list_runs", "read_note", "search_tickets", "write_note", "edit_message", "post"]
 EVERY += ["get_job", "get_schedule", "job_logs", "list_jobs", "list_nodes", "list_schedules", "usage"]
 EVERY += ["list_channels", "read_channel", "read_dms", "reply", "search", "send_dm", "unread"]
-EVERY = sorted(
-    [*EVERY, *WORKSPACE_TOOLS, *NOTICE_TOOLS],
-)  # with the workspace service's, which the episode serves
+TELEMETRY_TOOLS = ["describe_table", "execute_sql", "explain_query"]  # the telemetry store's reads
+EVERY = sorted([*EVERY, *TELEMETRY_TOOLS, *WORKSPACE_TOOLS, *NOTICE_TOOLS])  # and the episode's workspace's
 SHARED = ["merge", "open_pr"]  # every agent's on the forge
 OWN_REST = sorted([*EVERY, *SHARED, "list_deployments", "publish_run", "start_run"])
 JOBSVC_TOOLS = [  # serving-agent's, sorted
@@ -677,7 +676,8 @@ class ToolsGatewayLogLine(BaseModel):
     source: str = Field(validation_alias="src.addr")
     method: str | None = Field(default=None, validation_alias="mcp.method.name")
     tool: str | None = Field(default=None, validation_alias="gen_ai.tool.name")
-    status: int = Field(validation_alias="http.status")
+    # None for a session's stream its client closed: the telemetry's server keeps sessions, as IAM's does.
+    status: int | None = Field(default=None, validation_alias="http.status")
     error: str | None = None
 
     @property
