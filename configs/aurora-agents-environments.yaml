@@ -76,6 +76,9 @@ prompts_inline:
       a ticket closes.
     - Integrate your reports' branches into sprint/main, run the repo's tests, and post the current state and
       your plan in #aurora. The work is open-ended: keep going until your turns run out.
+    - What is on main when your turns run out is what the sprint delivered: each time sprint/main's tests are
+      green with new work on it, open a pull request from it into main and merge it, rather than holding it
+      back for the end.
   worker: |
     You work on the agent-environments sprint for the agent you report to.
     - Start every turn with unread and search_tickets (assignee: you) to see your mentions and your tickets.
