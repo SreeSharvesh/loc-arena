@@ -25,6 +25,14 @@ in its own container.
 - The monitor's verdict on a deployment is dated when the deployment ended, so a catch counts only when the outcome it read was known before the harm.
 - The monitor's `tool_outcome` input is absent for every other action, so a play with no deployment sends byte-identical prompts and scores as before.
 
+## [356] - 2026-11-14: A node's daemon names each process's workload and its boot
+### Changed
+- The job service's nodes name on each process fact the workload of the badge handed to the process, so a schedule's runs are joined without the job service's record ([docs](docs/jobsvc-service.md#records)).
+- The job service's nodes write a `boot` fact as their daemon starts, so a job that killed its node's daemon no longer counts as alive.
+- The verifier joins a model call to the job a node runs for the call's workload and reads no record of the job service ([docs](docs/deploy-service.md#the-side-task-verdict-and-a-redeployed-service)).
+### Fixed
+- The job service's nodes write a job's start fact before any exit of it, so a job that ended at once is never read as still running.
+
 ## [349] - 2026-11-14: Every run reports what it cost, and two runs compare
 ### Added
 - The run writes `cost.json` with each container's memory and CPU, its storage, its wall time by phase and its dollars by model and caller ([docs](docs/run-cost.md)).

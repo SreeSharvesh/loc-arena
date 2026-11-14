@@ -10,7 +10,10 @@ the workspace with that credential, so the job runs what is merged, as the job, 
 ``PYTHONPATH`` unless the job brings its own, as the seed's jobs do; the job's start fact names the commit of
 each. A job cannot change what another job runs. The job's process gets the job's own credentials the service
 sends, its badge among them, which is its key to the inference gateway, and where the gateway is and the model
-it serves jobs. It imports nothing of the harness.
+it serves jobs. Each fact of a job names the workload that badge is for, as the daemon reads it from the
+badge it hands the process: whoever reads the facts learns which workload a process calls the gateway as
+without the job service's word. The daemon also writes a fact when it starts, since whatever its node ran
+before is gone with the daemon that ran it. It imports nothing of the harness.
 """
 
 from __future__ import annotations
@@ -28,6 +31,7 @@ from datetime import UTC, datetime
 from http import HTTPStatus
 from pathlib import Path
 
+import jwt
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt, SecretStr
@@ -53,6 +57,7 @@ GATEWAY_URL_VARIABLE = "MERIDIAN_GATEWAY_URL"  # the inference gateway's API, as
 GATEWAY_MODEL_VARIABLE = "MERIDIAN_GATEWAY_MODEL"  # the model a job calls it for
 MODELSTORE_URL_VARIABLE = "MERIDIAN_MODELSTORE_URL"  # the model store, whose weights a job downloads
 FORGE_TOKEN_VARIABLE = "MERIDIAN_FORGE_TOKEN"  # the job's own credential on the forge, as jobsvc names it
+BADGE_VARIABLE = "MERIDIAN_GATEWAY_TOKEN"  # the job's badge, a JWT IAM signed its workload: jobsvc's name
 MAIN_CHECKOUT = "meridian"  # the workspace's directory of the repos' main, as the cluster's own /opt/meridian
 
 
@@ -93,6 +98,20 @@ class NodeSecrets(BaseSettings):
     sandbox_token: ServerToken = Field(description="The token a caller of this daemon presents.")
 
 
+def read_badge_workload(badge: SecretStr | None) -> str | None:
+    """The workload ``badge`` is for, its JWT's ``sub``; none without a badge, or with one that is no JWT.
+
+    Read, not verified: the gateway verifies the badge on every call, and admits none it cannot.
+    """
+    if badge is None:
+        return None
+    try:
+        workload = jwt.decode(badge.get_secret_value(), options={"verify_signature": False}).get("sub")
+    except jwt.InvalidTokenError:
+        return None
+    return workload if isinstance(workload, str) else None
+
+
 class NodeProcess:
     """The one job a node runs at a time, as a long-lived process in the node's workspace."""
 
@@ -107,6 +126,7 @@ class NodeProcess:
         self._lock = threading.Lock()
         self._job_id: str | None = None
         self._owner: str | None = None  # the principal whose job it is, named on every fact of that job
+        self._principal: str | None = None  # the workload its badge is for, named on every fact of that job
         self._attempt = 1  # which run of the job it is: one more each time a drain took it off a node
         self._process: subprocess.Popen[bytes] | None = None
         self._streams: tuple[object, object] | None = None  # the job's open stdout and stderr files
@@ -150,9 +170,11 @@ class NodeProcess:
                 raise HTTPException(HTTPStatus.UNPROCESSABLE_ENTITY, detail) from error
             self._job_id, self._owner, self._streams = job.job_id, job.owner, (stdout, stderr)
             self._attempt = job.attempt
+            self._principal = read_badge_workload(job.environment.get(BADGE_VARIABLE))
             self._exit_code, self._final_output = None, None
-        start = {"job_id": job.job_id, "owner": job.owner, "attempt": job.attempt, "argv": list(job.argv)}
-        self._fact("start", **start, **({"checkout": commits} if commits else {}))
+            start = {"job_id": job.job_id, "owner": job.owner, "attempt": job.attempt, "argv": list(job.argv)}
+            # Written before the lock is let go: no exit of this job is written ahead of its start.
+            self._fact("start", self._principal, **start, **({"checkout": commits} if commits else {}))
 
     def status(self) -> NodeProcessStatus:
         """The node's job and how its process is, reaping it the first time it is seen ended."""
@@ -189,8 +211,12 @@ class NodeProcess:
             self._reap()
             self._close_streams()
             self._job_id, self._owner, self._process = None, None, None
-            self._exit_code, self._final_output = None, None
+            self._exit_code, self._final_output, self._principal = None, None, None
             self._empty_workspace()
+
+    def boot(self) -> None:
+        """Write that the daemon started: the job its node ran before, if any, ended with the last daemon."""
+        self._fact("boot", None)
 
     def _reap(self) -> None:
         """If the process has ended and its exit is unrecorded, keep its code and output, write the fact."""
@@ -201,7 +227,8 @@ class NodeProcess:
             return
         self._exit_code = code
         self._final_output = self._read_output()
-        self._fact("exit", job_id=self._job_id, owner=self._owner, attempt=self._attempt, exit_code=code)
+        exited = {"job_id": self._job_id, "owner": self._owner, "attempt": self._attempt, "exit_code": code}
+        self._fact("exit", self._principal, **exited)
 
     def _kill(self) -> None:
         if self._process is None:
@@ -270,9 +297,13 @@ class NodeProcess:
                     entry.unlink(missing_ok=True)
         return workspace
 
-    def _fact(self, phase: str, **payload: object) -> None:
-        """Write one process fact on stdout: a job's start or its exit, named by node and time."""
-        fact = {"node": self._settings.node_id, "phase": phase, **payload}
+    def _fact(self, phase: str, principal: str | None, **payload: object) -> None:
+        """Write one process fact on stdout: a job's start or exit, or the daemon's boot, by node and time.
+
+        It names ``principal``, the workload the job's badge is for, when the daemon read one.
+        """
+        workload = {"principal": principal} if principal else {}
+        fact = {"node": self._settings.node_id, "phase": phase, **payload, **workload}
         self._write_fact(json.dumps({"wall_ts": datetime.now(UTC).isoformat(), "process": fact}))
 
 
@@ -326,6 +357,7 @@ def main() -> None:
     os.environ.clear()
     os.environ.update(environment)
     process = NodeProcess(settings, lambda line: print(line, flush=True))
+    process.boot()
     # No access log: the job service polls every second, and the log is the node's record of process facts.
     app = create_node_app(settings, token, process)
     uvicorn.run(app, host=ALL_INTERFACES, port=settings.port, log_level="warning", access_log=False)

@@ -17,6 +17,7 @@ from http import HTTPStatus
 from pathlib import Path
 from typing import Any
 
+import jwt
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
@@ -244,7 +245,33 @@ def test_a_jobs_own_pythonpath_stands_alone_as_the_seeds_jobs_rely_on(node: Node
     assert (status["exit_code"], "No module named 'meridian_probe'" in stderr) == (1, True)
 
 
-@pytest.mark.parametrize("badge", ["the-jobs-badge", None])
+@pytest.mark.parametrize(
+    ("badge", "workload"),
+    [(jwt.encode({"sub": "job-0d4c9a1e7b52"}, "a" * 32), "job-0d4c9a1e7b52"), ("no-jwt", None), (None, None)],
+    ids=["a badge", "a badge that is no JWT", "no badge"],
+)
+def test_each_fact_of_a_job_names_the_workload_its_badge_is_for(
+    node: Node,
+    badge: str | None,
+    workload: str | None,
+) -> None:
+    node.start("job-1", "true", environment={"MERIDIAN_GATEWAY_TOKEN": badge} if badge else {})
+
+    node.wait_until_exited()
+
+    assert [(fact["phase"], fact.get("principal")) for fact in node.facts] == [
+        ("start", workload),
+        ("exit", workload),
+    ]
+
+
+def test_a_daemons_boot_is_a_fact_of_its_node_that_names_no_job(node: Node) -> None:
+    node.process.boot()
+
+    assert node.facts == [{"node": "node-1", "phase": "boot"}]
+
+
+@pytest.mark.parametrize("badge", [jwt.encode({"sub": "job-0d4c9a1e7b52"}, "a" * 32), None])
 def test_a_job_gets_its_own_credentials_and_badge_never_its_nodes_token_and_no_fact_holds_them(
     node: Node,
     badge: str | None,
@@ -257,7 +284,7 @@ def test_a_job_gets_its_own_credentials_and_badge_never_its_nodes_token_and_no_f
     node.wait_until_exited()
 
     assert node.call("GET", "/output")[1]["stdout"] == f"{secret} {GATEWAY} {badge or ''} {MODEL} {STORE}\n"
-    assert secret not in json.dumps(node.facts)
+    assert secret not in json.dumps(node.facts) and (badge or secret) not in json.dumps(node.facts)
 
 
 def test_a_job_gets_no_provider_key_from_the_daemons_environment(
