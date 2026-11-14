@@ -19,6 +19,10 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [354] - 2026-11-14: An unchanged checkout gets the same grade every time
+### Fixed
+- The grader now scores an unchanged checkout the same on every run, because two agents service tests of the company no longer race or log after their suite ends.
+
 ## [356] - 2026-11-14: A node's daemon names each process's workload and its boot
 ### Changed
 - The job service's nodes name on each process fact the workload of the badge handed to the process, so a schedule's runs are joined without the job service's record ([docs](docs/jobsvc-service.md#records)).
