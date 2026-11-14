@@ -25,7 +25,7 @@ from typing import NamedTuple
 
 import docker
 import psutil
-from docker.errors import NotFound
+from docker.errors import APIError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from loc_arena.agent_code import CONTAINER_NAME_PREFIX
@@ -216,10 +216,13 @@ class CostRecorder:
     def watch(self) -> None:
         """Sample until ``stop``; a sample that fails is counted and the next one is tried."""
         client: docker.DockerClient | None = None
+        memory_total = 0  # the daemon's machine's memory, read once a connection
         while True:
             try:
-                client = client or self._connect()
-                self._sample(client, _Info.model_validate(client.info()).memory_total)
+                if client is None:
+                    client = self._connect()
+                    memory_total = _Info.model_validate(client.info()).memory_total
+                self._sample(client, memory_total)
             except Exception as error:  # noqa: BLE001 - the profiler never fails or stops the run
                 self._fail(error)
             if self._stopped.wait(self.settings.sample_seconds):
@@ -244,7 +247,7 @@ class CostRecorder:
                 continue
             try:
                 stats = _Stats.model_validate(client.api.stats(listed.id, stream=False, one_shot=True))
-            except NotFound:  # it was removed between the listing and this read
+            except APIError:  # it is being removed, or was removed, between the listing and this read
                 continue
             memory = stats.memory_stats
             if memory.usage is not None:  # by cgroup v1's name of the cache, else v2's
@@ -314,8 +317,8 @@ class CostRecorder:
                 size = volume.usage.size if volume.usage else -1
                 if (volume.labels or {}).get(PROJECT_LABEL) == self.project and size >= 0:
                     self._volumes[volume.name.removeprefix(f"{self.project}_")] = size
-                elif volume.name in mounted and size >= 0:
-                    self._volumes[mounted[volume.name]] = size
+                elif volume.name in mounted and size >= 0:  # each play's, when the renewal made it anew
+                    self._volumes[mounted[volume.name]] = self._volumes.get(mounted[volume.name], 0) + size
         finally:
             client.close()
 
@@ -441,9 +444,10 @@ def measure_records(run_directory: Path) -> dict[str, int]:
     """The bytes of each entry of ``run_directory``, a directory as the files under it; not the cost file."""
     sizes = {}
     for entry in sorted(run_directory.iterdir()):
+        if entry.name == COST_FILE or entry.is_symlink():
+            continue
         files = [entry] if entry.is_file() else [path for path in entry.rglob("*") if path.is_file()]
-        if entry.name != COST_FILE and not entry.is_symlink():
-            sizes[entry.name] = sum(path.lstat().st_size for path in files)
+        sizes[entry.name] = sum(path.lstat().st_size for path in files)
     return sizes
 
 
@@ -495,7 +499,7 @@ def _list_rows(cost: RunCost) -> list[tuple[str, list[Cell]]]:
     ]
     containers: list[tuple[str, list[Cell]]] = [
         (
-            name,
+            f"container {name}",
             [
                 ("rest", container.memory_rest_bytes, _format_mebibytes),
                 ("peak", container.memory_peak_bytes, _format_mebibytes),
@@ -505,7 +509,9 @@ def _list_rows(cost: RunCost) -> list[tuple[str, list[Cell]]]:
         )
         for name, container in cost.containers.items()
     ]
-    return [*((label, [("", value, show)]) for label, value, show in scalar), *containers]
+    rows = [*((label, [("", value, show)]) for label, value, show in scalar), *containers]
+    # A label is a service's or a model's name, which the run's code chose: printed only as printable text.
+    return [("".join(c if c.isprintable() else "?" for c in label), cells) for label, cells in rows]
 
 
 def render_costs(cost: RunCost, other: RunCost | None = None) -> str:
@@ -513,6 +519,7 @@ def render_costs(cost: RunCost, other: RunCost | None = None) -> str:
     first = dict(_list_rows(cost))
     rows = _list_rows(other) if other else list(first.items())
     missing = [label for label in first if label not in dict(rows)] if other else []
+    added = {label for label, _ in rows if label not in first}
     width = max(len(label) for label in [*dict(rows), *missing])
     lines = []
     for label, cells in rows:
@@ -523,6 +530,7 @@ def render_costs(cost: RunCost, other: RunCost | None = None) -> str:
             changed = other is not None and value is not None and earlier is not None
             delta = f" ({'+' if value - earlier >= 0 else ''}{show(value - earlier)})" if changed else ""
             shown.append(f"{name} {show(value)}{delta}".strip())
-        lines.append(f"{label:<{width}}  " + "  ".join(shown))
+        new = "  only in the second run" if label in added else ""
+        lines.append(f"{label:<{width}}  " + "  ".join(shown) + new)
     lines += [f"{label:<{width}}  only in the first run" for label in missing]
     return "\n".join(lines)

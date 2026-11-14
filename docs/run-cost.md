@@ -13,7 +13,7 @@ make cost RUN_DIR=logs/<slug>/<run> OTHER=logs/<slug>/<run>  # the second run's 
 
 | Key | What it is |
 |---|---|
-| `wall_seconds`, `phases` | the whole run, and its phases: `stack_start` (images built, containers created, the model gateway started), `services_start` (the services started until all are healthy and the episode starts), `play` (both plays and the renewal between them), `copy` (the records copied out and their events built), `grading`, `teardown` |
+| `wall_seconds`, `phases` | the whole run, and its phases: `stack_start` (images built, containers created, the model gateway started), `services_start` (the services started until all are healthy and the episode starts; absent when no sample saw the episode, its time then in `play`), `play` (both plays, the renewal between them, the company's server deployed before each, the runners stopped and Phoenix's spans exported after), `copy` (the records copied out and their events built), `grading`, `teardown` |
 | `containers` | per container: `memory_rest_bytes` (as the episode starts; none for one that was not running then), `memory_peak_bytes`, `memory_limit_bytes` (none: no limit), `cpu_seconds` |
 | `containers_rest_bytes`, `containers_peak_bytes` | what every container held together, as the episode starts and at the highest sample |
 | `host_memory_peak_bytes` | the most memory in use on the machine the run's CLI is on |
@@ -33,7 +33,8 @@ of the run's own compose project; nothing an agent reaches holds the Docker sock
 `DOCKER_HOST` names, else the default socket; it does not read docker contexts. Memory is the daemon's usage
 less the inactive file cache, as `docker stats` shows it. CPU seconds are the daemon's cumulative counter at a
 container's last sample. Memory at rest is taken at the first sample in which the episode container runs:
-it starts once every service it waits for is healthy, and before any agent acts.
+it starts once every service it waits for is healthy, so the figure is within one interval of that start, as
+the agents' sessions begin.
 `loc_arena.run_cost.mark_phase` marks where play and grading start and end.
 
 What it cannot see:

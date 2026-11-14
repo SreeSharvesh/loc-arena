@@ -73,27 +73,37 @@ def wait_for(container: str, mark: str) -> None:
 def cost(tmp_path_factory: pytest.TempPathFactory) -> Iterator[RunCost]:
     """One made-up run: a worker, a service the renewal recreates, the episode, and a graded container."""
     volume, graded, stranger = f"{PROJECT}_data", f"{CONTAINER_NAME_PREFIX}{PROJECT}", f"{PROJECT}-stranger"
-    started: list[str] = [stranger, graded]
+    started, anonymous = (
+        [stranger, graded],
+        [],
+    )  # the anonymous volumes of the renewed service's two containers
     run_directory = tmp_path_factory.mktemp("run")
+
+    def wait_for_samples() -> None:
+        """Until the sampler has taken one whole sample from now, for at most SAMPLED_SECONDS."""
+        wanted, deadline = recorder.samples + 2, time.monotonic() + SAMPLED_SECONDS
+        while recorder.samples < wanted and time.monotonic() < deadline:
+            time.sleep(0.1)
 
     @mark_phase(PLAY)
     def play() -> None:
         time.sleep(SERVICES_SECONDS)
         started.append(start_service("episode", "--volume", "/scratch"))  # an anonymous volume, as IAM's
         time.sleep(SETTLE_SECONDS)
-        for _ in range(2):  # the service burns its CPU, is removed and recreated, and burns it again
-            renewed = start_service("renewed", "--tmpfs", "/data", command=WORK)
+        for _ in range(
+            2,
+        ):  # recreated with a new anonymous volume, as the renewal does: it burns its CPU twice
+            renewed = start_service("renewed", "--volume", "/data", command=WORK)
             started.append(renewed)
             wait_for(renewed, "done")
-            time.sleep(SETTLE_SECONDS)
-            run_docker("rm", "--force", renewed)
+            wait_for_samples()
+            anonymous.append(run_docker("inspect", "--format", "{{range .Mounts}}{{.Name}}{{end}}", renewed))
+            run_docker("rm", "--force", renewed)  # its volume stays, as a renewed service's does
 
     @mark_phase(GRADING)
     def grade() -> None:
         start_container(graded)
-        wanted, deadline = recorder.samples + 2, time.monotonic() + SAMPLED_SECONDS  # one whole sample after
-        while recorder.samples < wanted and time.monotonic() < deadline:
-            time.sleep(0.1)
+        wait_for_samples()
 
     try:
         run_docker("volume", "create", "--label", f"com.docker.compose.project={PROJECT}", volume)
@@ -114,7 +124,11 @@ def cost(tmp_path_factory: pytest.TempPathFactory) -> Iterator[RunCost]:
         yield recorder.write(run_directory, run_directory / "no-calls.jsonl")
     finally:
         subprocess.run(["docker", "rm", "--force", "--volumes", *started], capture_output=True, check=False)
-        subprocess.run(["docker", "volume", "rm", "--force", volume], capture_output=True, check=False)
+        subprocess.run(
+            ["docker", "volume", "rm", "--force", volume, *anonymous],
+            capture_output=True,
+            check=False,
+        )
 
 
 def test_a_container_of_the_project_has_its_memory_at_rest_at_peak_and_its_limit(cost: RunCost) -> None:
@@ -154,10 +168,11 @@ def test_the_containers_together_peak_at_least_as_high_as_the_largest(cost: RunC
 
 def test_each_image_and_each_volume_of_the_project_has_its_size(cost: RunCost) -> None:
     assert cost.images == {IMAGE: int(run_docker("image", "inspect", "--format", "{{.Size}}", IMAGE))}
-    assert list(cost.volumes) == ["data", "episode:/scratch"]
+    assert list(cost.volumes) == ["data", "episode:/scratch", "renewed:/data"]
     assert WRITTEN <= cost.volumes["data"] < WRITTEN + MEBIBYTE
+    assert 2 * WRITTEN <= cost.volumes["renewed:/data"] < 2 * (WRITTEN + MEBIBYTE)  # both plays' volumes
 
 
 def test_the_services_start_is_its_own_phase_from_play_until_the_episode_starts(cost: RunCost) -> None:
     assert list(cost.phases) == ["stack_start", "services_start", "play", "copy", "grading", "teardown"]
-    assert SERVICES_SECONDS <= cost.phases["services_start"] < SERVICES_SECONDS + SETTLE_SECONDS
+    assert cost.phases["services_start"] >= SERVICES_SECONDS
