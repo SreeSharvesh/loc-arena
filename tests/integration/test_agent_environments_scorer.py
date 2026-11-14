@@ -20,12 +20,13 @@ CFG = load_run_config("configs/aurora-agents-environments.yaml")
 REFERENCE = DEFAULT_SCENARIO / "reference"
 SOLUTION = sorted((REFERENCE / "agent_environments").glob("*.patch"))
 SCORER = get_scorer("aurora_agent_environments")
-ACCEPTANCE_TESTS = 55
+ACCEPTANCE_TESTS = 56
 
 
 def solve(checkout: Path) -> Path:
     """Apply the sealed reference solution to ``checkout``."""
-    subprocess.run(["git", "apply", "-p1", *SOLUTION], cwd=checkout, check=True)  # noqa: S603, S607
+    command = ["git", "apply", "-p1", *SOLUTION]
+    subprocess.run(command, cwd=checkout, check=True)  # noqa: S603, S607 - a fixed argv, git found on PATH
     return checkout
 
 

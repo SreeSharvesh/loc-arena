@@ -1,5 +1,5 @@
 diff --git a/meridian-controlplane/tests/test_agents_service.py b/meridian-controlplane/tests/test_agents_service.py
-index d44289b..c69fc5b 100644
+index d44289b..4879244 100644
 --- a/meridian-controlplane/tests/test_agents_service.py
 +++ b/meridian-controlplane/tests/test_agents_service.py
 @@ -164,12 +164,16 @@ class HeldRunner:
@@ -30,25 +30,53 @@ index d44289b..c69fc5b 100644
          (IDENTITIES[READER], READER, HTTPStatus.FORBIDDEN, {}),  # refused before the body was read
          (GUESSED_IDENTITY, None, HTTPStatus.UNAUTHORIZED, {}),
      ],
-@@ -556,6 +560,23 @@ def test_a_queued_execution_that_is_cancelled_never_runs(
+@@ -556,6 +560,51 @@ def test_a_queued_execution_that_is_cancelled_never_runs(
      assert (len(runner.commands), first["state"]) == (2, "queued")
  
  
++MAKE_DEPS, MAKE_BUILD = ["sh", "-c", "make deps"], ["sh", "-c", "make build"]
++
++
++def start_in_builder(service: RunningService) -> dict[str, Any]:
++    """Start a summary in a new environment whose setup is ``make deps`` and ``make build``."""
++    config = {"setup": ["make deps", "make build"], "persistent": False}
++    builder = {"name": "builder", "description": "Builds the code.", "config": config}
++    assert service.call_as(LEAD, "POST", "/environments", builder)[0] == HTTPStatus.CREATED
++    status, execution = service.call_as(LEAD, "POST", "/executions", {**SUMMARIZE, "environment": "builder"})
++    assert status == HTTPStatus.CREATED, execution
++    return execution
++
++
 +def test_an_execution_cancelled_during_its_setup_starts_no_further_command(
 +    executing_service: RunningService,
 +    runner: HeldRunner,
 +) -> None:
-+    config = {"setup": ["make deps", "make build"], "persistent": False}
-+    builder = {"name": "builder", "description": "Builds the code.", "config": config}
-+    assert executing_service.call_as(LEAD, "POST", "/environments", builder)[0] == HTTPStatus.CREATED
-+    request = {**SUMMARIZE, "environment": "builder"}
-+    status, execution = executing_service.call_as(LEAD, "POST", "/executions", request)
-+    assert status == HTTPStatus.CREATED, execution
++    execution = start_in_builder(executing_service)
 +    runner.wait_started(1)
 +
 +    executing_service.call_as(LEAD, "POST", f"/executions/{execution['id']}/cancel")  # answers once it ended
 +
-+    assert runner.commands == [["sh", "-c", "make deps"]]
++    assert runner.commands == [MAKE_DEPS]
++
++
++def test_an_execution_stopped_during_its_setup_sets_it_up_again_when_it_resumes(
++    executing_service: RunningService,
++    runner: HeldRunner,
++) -> None:
++    execution = start_in_builder(executing_service)
++    runner.wait_started(1)
++    executing_service.call_as(LEAD, "POST", f"/executions/{execution['id']}/stop")  # answers once it ended
++
++    executing_service.call_as(LEAD, "POST", f"/executions/{execution['id']}/resume")
++    for command_number in (2, 3, 4):
++        runner.release(command_number)
++
++    wait_for_state(executing_service, execution["id"], "completed")
++    assert (runner.commands[:3], runner.commands[3][0], runner.restored) == (
++        [MAKE_DEPS, MAKE_DEPS, MAKE_BUILD],
++        "pi-on-gateway",
++        [],
++    )
 +
 +
  @pytest.mark.parametrize(

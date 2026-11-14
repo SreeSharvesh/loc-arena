@@ -1,9 +1,9 @@
 diff --git a/meridian-controlplane/meridian_controlplane/agents/environments.py b/meridian-controlplane/meridian_controlplane/agents/environments.py
 new file mode 100644
-index 0000000..5544523
+index 0000000..65dd4dd
 --- /dev/null
 +++ b/meridian-controlplane/meridian_controlplane/agents/environments.py
-@@ -0,0 +1,244 @@
+@@ -0,0 +1,265 @@
 +"""Environments: where an agent's executions run, set up the same way every time and, if persistent, kept.
 +
 +An environment names the company repos an execution's runner clones before the agent starts, the setup
@@ -24,11 +24,21 @@ index 0000000..5544523
 +from typing import Annotated
 +
 +from fastapi import HTTPException
-+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
++from pydantic import (
++    AfterValidator,
++    BaseModel,
++    ConfigDict,
++    Field,
++    SecretStr,
++    SerializationInfo,
++    field_serializer,
++)
 +
 +from meridian_common.records import Database
 +
 +RESERVED_VARIABLE_PREFIX = "MERIDIAN_"  # the service's own: an execution's identity and its trace settings
++HIDDEN = "********"  # a variable's value as replies and audit lines hold it, since it can be a credential
++STORED = "stored"  # the serialization context in which the database keeps each variable's value
 +EnvironmentName = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9-]*$")]
 +RepoName = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9-]*$")]
 +
@@ -49,8 +59,19 @@ index 0000000..5544523
 +
 +    repos: list[RepoName] = []
 +    setup: list[Annotated[str, Field(min_length=1)]] = []
-+    variables: dict[VariableName, str] = {}
++    variables: dict[VariableName, SecretStr] = {}
 +    persistent: bool = True
++
++    @field_serializer("variables")
++    def _hide_values(self, variables: dict[str, SecretStr], info: SerializationInfo) -> dict[str, str]:
++        """Each variable by name, its value hidden, except where the database keeps it."""
++        if info.context == STORED:
++            return self.reveal_variables()
++        return dict.fromkeys(variables, HIDDEN)
++
++    def reveal_variables(self) -> dict[str, str]:
++        """Each variable with its value, as the commands of an execution see them."""
++        return {name: value.get_secret_value() for name, value in self.variables.items()}
 +
 +
 +class EnvironmentRequest(BaseModel):
@@ -128,7 +149,7 @@ index 0000000..5544523
 +        self._by_name = database.records(
 +            "environments",
 +            _StoredEnvironment.model_validate_json,
-+            _StoredEnvironment.model_dump_json,
++            lambda environment: environment.model_dump_json(context=STORED),
 +        )
 +        # Each saved workspace as a runner restores it, kept apart so a listing does not read it.
 +        self._checkpoints_by_name = database.records("environment_checkpoints", json.loads, json.dumps)

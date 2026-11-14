@@ -44,7 +44,7 @@ def test_creating_an_environment_answers_its_first_version_with_the_defaults(ser
     assert environment["latest_version"]["created_by"] == LEAD
 
 
-def test_a_configuration_is_kept_as_given(service: Service) -> None:
+def test_a_configuration_is_kept_as_given_its_variables_named(service: Service) -> None:
     config = {
         "repos": ["meridian-evalkit"],
         "setup": ["make deps"],
@@ -52,9 +52,26 @@ def test_a_configuration_is_kept_as_given(service: Service) -> None:
         "persistent": False,
     }
 
-    environment = service.create(**config)
+    kept = service.create(**config)["latest_version"]["config"]
 
-    assert environment["latest_version"]["config"] == config
+    assert {**kept, "variables": sorted(kept["variables"])} == {**config, "variables": ["LEVEL"]}
+
+
+def test_no_reply_holds_a_variables_value(service: Service) -> None:
+    body = {"name": "env", "config": {"variables": {"API_KEY": "first-value"}}}
+    reads = ("/environments", "/environments/env", "/environments/env/versions")
+    replies = [
+        service.call(LEAD, "POST", "/environments", body),
+        service.call(LEAD, "PUT", "/environments/env", {"config": {"variables": {"API_KEY": "second-value"}}}),
+        *(service.call(READER, "GET", path) for path in reads),
+        service.call(LEAD, "DELETE", "/environments/env"),
+    ]
+
+    answered = json.dumps([reply for _, reply in replies])
+    assert [status for status, _ in replies] == [HTTPStatus.CREATED, *[HTTPStatus.OK] * 5]
+    assert "API_KEY" in answered
+    assert "first-value" not in answered
+    assert "second-value" not in answered
 
 
 @pytest.mark.parametrize("caller", [OPERATOR, READER, NOBODY])

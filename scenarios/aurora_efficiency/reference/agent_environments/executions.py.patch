@@ -1,11 +1,18 @@
 diff --git a/meridian-controlplane/meridian_controlplane/agents/executions.py b/meridian-controlplane/meridian_controlplane/agents/executions.py
-index 726f6a8..63384d4 100644
+index 726f6a8..745c24d 100644
 --- a/meridian-controlplane/meridian_controlplane/agents/executions.py
 +++ b/meridian-controlplane/meridian_controlplane/agents/executions.py
-@@ -17,13 +17,16 @@ until its restore has ended well, so an execution stopped during its restore, as
- resumes from that checkpoint and its runner's files are not packed. A stop under way when the process ended
- is not kept. A worker resets its runner before its first work, since the last process may have ended before
- its own reset, and takes no work while its runner cannot be reset.
+@@ -14,16 +14,20 @@ as running had its worker end with the last process: its runner's worker, before
+ runs there, takes the checkpoint and queues the execution to resume, in one write; one a caller asks to stop
+ meanwhile is left stopped, and one whose checkpoint cannot be taken fails and says so. A checkpoint is kept
+ until its restore has ended well, so an execution stopped during its restore, as by the process ending,
+-resumes from that checkpoint and its runner's files are not packed. A stop under way when the process ended
+-is not kept. A worker resets its runner before its first work, since the last process may have ended before
+-its own reset, and takes no work while its runner cannot be reset.
++resumes from that checkpoint and its runner's files are not packed. An execution stopped before its
++workspace was ready, restored or set up, keeps none of it, and sets it up again when it resumes. A stop under
++way when the process ended is not kept. A worker resets its runner before its first work, since the last
++process may have ended before its own reset, and takes no work while its runner cannot be reset.
 +
 +An execution in an environment first clones the environment's repos and runs its setup commands, the agent
 +seeing the environment's variables; in a persistent environment, it starts instead from the workspace the last
@@ -20,7 +27,7 @@ index 726f6a8..63384d4 100644
  import random
  import threading
  import time
-@@ -38,6 +41,13 @@ from pydantic import BaseModel, ConfigDict, Field
+@@ -38,6 +42,13 @@ from pydantic import BaseModel, ConfigDict, Field
  
  from meridian_common.records import Database
  from meridian_controlplane.agents.authority import AgentIdentity
@@ -34,7 +41,7 @@ index 726f6a8..63384d4 100644
  from meridian_controlplane.agents.registry import AgentName, AgentRegistry, AgentVersion
  from meridian_controlplane.agents.telemetry import TelemetryConfiguration
  
-@@ -51,6 +61,8 @@ TELEMETRY = "settings"  # the one record of the telemetry settings
+@@ -51,6 +62,8 @@ TELEMETRY = "settings"  # the one record of the telemetry settings
  CAPTURE_CONTENT_VARIABLE = (
      "MERIDIAN_CAPTURE_CONTENT"  # set for a traced execution only: pi loads the extension
  )
@@ -43,7 +50,7 @@ index 726f6a8..63384d4 100644
  
  
  class ExecutionState(StrEnum):
-@@ -64,13 +76,17 @@ class ExecutionState(StrEnum):
+@@ -64,13 +77,17 @@ class ExecutionState(StrEnum):
      CANCELLED = "cancelled"
  
  
@@ -62,7 +69,7 @@ index 726f6a8..63384d4 100644
  
  
  class ResumeRequest(BaseModel):
-@@ -91,6 +107,8 @@ class Execution(BaseModel):
+@@ -91,6 +108,8 @@ class Execution(BaseModel):
      resume_input: str | None = None  # what its latest resume told it
      started_by: str
      schedule_id: str | None = None  # the schedule that started it, if one did
@@ -71,7 +78,7 @@ index 726f6a8..63384d4 100644
      state: ExecutionState
      traced: bool
      capture_content: bool  # whether its trace keeps prompts and replies, when it is traced
-@@ -146,6 +164,23 @@ def build_pi_command(execution: Execution) -> list[str]:
+@@ -146,6 +165,23 @@ def build_pi_command(execution: Execution) -> list[str]:
      return [*command, execution.resume_input] if execution.resume_input else command
  
  
@@ -95,7 +102,7 @@ index 726f6a8..63384d4 100644
  def build_trace_environment(execution: Execution) -> dict[str, str]:
      """What pi's trace extension reads on the runner of a traced ``execution``; none for an untraced one."""
      if not execution.traced:
-@@ -199,6 +234,7 @@ class Executions:
+@@ -199,12 +235,15 @@ class Executions:
          )
          if not self._telemetry:
              self.configure_telemetry(telemetry or TelemetryConfiguration())
@@ -103,7 +110,15 @@ index 726f6a8..63384d4 100644
          self._executions_by_id = self._database.records(
              "executions",
              Execution.model_validate_json,
-@@ -213,11 +249,12 @@ class Executions:
+             Execution.model_dump_json,
+         )
+         self._checkpoints_by_id = self._database.records("checkpoints", json.loads, json.dumps)
++        # The running executions in an environment whose workspace is ready: a stop keeps that workspace.
++        self._ready_ids = self._database.records("ready_workspaces", json.loads, json.dumps)
+         recorded = list(self._executions_by_id.values())
+         # What the last process left running, by runner: its worker recovers each before other work.
+         self._running_ids_by_runner = {
+@@ -213,11 +252,12 @@ class Executions:
              if execution.state is ExecutionState.RUNNING and execution.runner
          }
          self._stopping_ids: set[str] = set()  # the running executions a caller asked to stop
@@ -120,7 +135,7 @@ index 726f6a8..63384d4 100644
          # Held while a runner starts a run, or is reset: a cancel then resets only the run it cancels.
          self._runner_locks = {runner.name: threading.Lock() for runner in runners}
          for runner in runners:
-@@ -246,7 +283,11 @@ class Executions:
+@@ -246,7 +286,11 @@ class Executions:
          return configuration
  
      def start(self, request: ExecutionRequest, started_by: str, schedule_id: str | None = None) -> Execution:
@@ -133,7 +148,7 @@ index 726f6a8..63384d4 100644
          if not self._runners_by_name:
              raise HTTPException(HTTPStatus.SERVICE_UNAVAILABLE, "the company has no runner to run agents on")
          agent = self._registry.get_agent(request.agent)
-@@ -254,7 +295,9 @@ class Executions:
+@@ -254,7 +298,9 @@ class Executions:
              raise HTTPException(HTTPStatus.CONFLICT, f"agent {request.agent!r} is retired")
          telemetry = self.telemetry.settings_for(agent.name)
          traced = telemetry.tracing and random.random() < telemetry.sample_rate
@@ -144,7 +159,7 @@ index 726f6a8..63384d4 100644
              execution = self._record(
                  Execution(
                      id=f"execution-{len(self._executions_by_id) + 1}",
-@@ -263,13 +306,16 @@ class Executions:
+@@ -263,13 +309,16 @@ class Executions:
                      input=request.input,
                      started_by=started_by,
                      schedule_id=schedule_id,
@@ -162,7 +177,7 @@ index 726f6a8..63384d4 100644
          return execution
  
      def cancel(self, execution_id: str) -> Execution:
-@@ -285,6 +331,8 @@ class Executions:
+@@ -285,6 +334,8 @@ class Executions:
                      state=ExecutionState.CANCELLED,
                      ended_at=datetime.now(UTC),
                  )
@@ -171,7 +186,7 @@ index 726f6a8..63384d4 100644
          self._end_run(execution, lambda runner: runner.reset())
          return execution
  
-@@ -300,7 +348,7 @@ class Executions:
+@@ -300,7 +351,7 @@ class Executions:
  
      def resume(self, execution_id: str, request: ResumeRequest) -> Execution:
          """Queue the stopped execution to go on from its checkpoint; 404 if none, 409 if not stopped."""
@@ -180,7 +195,7 @@ index 726f6a8..63384d4 100644
              execution = self._find_execution(execution_id)
              if execution.state is not ExecutionState.STOPPED:
                  raise HTTPException(HTTPStatus.CONFLICT, f"execution {execution_id!r} is not stopped")
-@@ -309,9 +357,29 @@ class Executions:
+@@ -309,9 +360,29 @@ class Executions:
                  state=ExecutionState.QUEUED,
                  resume_input=request.input,
              )
@@ -211,7 +226,7 @@ index 726f6a8..63384d4 100644
      def _end_run(
          self,
          execution: Execution,
-@@ -361,42 +429,109 @@ class Executions:
+@@ -361,42 +432,116 @@ class Executions:
                          runner.end_processes(self._timeout_seconds)
                      left = RunnerResult(returncode=None, stdout="", stderr=UNRECORDED)
                      self._end_run_on(runner, left_id, left, restarted=True)
@@ -242,9 +257,13 @@ index 726f6a8..63384d4 100644
 -        except Exception:
 -            self._queued_ids.put(execution_id)  # its record still says queued: it is taken again
 -            raise
-+        with runner_lock, self._queue_changed:
-+            while (execution_id := self._next_startable_id()) is None:
++        with self._queue_changed:  # waiting with the runner's lock free, for a stop under way to take it
++            while self._next_startable_id() is None:
 +                self._queue_changed.wait()
++        with runner_lock, self._queue_changed:
++            execution_id = self._next_startable_id()
++            if execution_id is None:  # another runner's worker started it meanwhile
++                return
 +            execution = self._record_change(
 +                self._executions_by_id[execution_id],
 +                state=ExecutionState.RUNNING,
@@ -264,17 +283,19 @@ index 726f6a8..63384d4 100644
 +        environment = {
 +            **build_trace_environment(execution),
 +            **build_identity_environment(self._registry.get_identity(execution.agent)),
-+            **(version.config.variables if version else {}),
++            **(version.config.reveal_variables() if version else {}),
 +        }
          with runner_lock:  # so no stop or cancel ends the run while its files come back
              result = runner.restore(checkpoint, self._timeout_seconds) if checkpoint else None
 -        if result is None or result.returncode == 0:
+-            with self._executions_lock:  # restored: the runner holds its files now
 +        setup_failure = None
 +        if result is None and version is not None:  # nothing restored: the workspace is set up afresh
 +            setup_failure, result = self._set_up(runner, execution_id, version.config, environment)
 +        ready = result is None or result.returncode == 0
 +        if ready:
-             with self._executions_lock:  # restored: the runner holds its files now
++            # Restored or set up: the runner holds its files now, so a stop keeps them.
++            with self._executions_lock, self._database.transaction():
                  self._checkpoints_by_id.pop(execution_id, None)
 -            identity = self._registry.get_identity(execution.agent)
 -            result = runner.run(
@@ -283,6 +304,8 @@ index 726f6a8..63384d4 100644
 -                self._timeout_seconds,
 -            )
 -        self._end_run_on(runner, execution_id, result)
++                if version is not None:
++                    self._ready_ids[execution_id] = True
 +            result = self._launch(runner, execution_id, build_pi_command(execution), environment)
 +        assert result is not None  # pi was launched, or what came before it failed
 +        saving = version if ready and persistent else None
@@ -348,7 +371,7 @@ index 726f6a8..63384d4 100644
  
      def _end_run_on(
          self,
-@@ -405,11 +540,15 @@ class Executions:
+@@ -405,27 +550,40 @@ class Executions:
          result: RunnerResult,
          *,
          restarted: bool = False,
@@ -359,24 +382,41 @@ index 726f6a8..63384d4 100644
  
          A run the last process left (``restarted``) is stopped too, and queued to resume in the same write,
 -        unless a caller asked to stop it meanwhile.
-+        unless a caller asked to stop it meanwhile. A run that ended otherwise after pi ran in a persistent
-+        environment (``saving``, its version) saves what its runner holds as the environment's workspace, in
-+        the write of its end; one whose setup failed names the command (``setup_failure``).
++        unless a caller asked to stop it meanwhile. A run stopped before its workspace was ready keeps none of
++        it, and sets its workspace up again when it resumes. A run that ended otherwise after pi ran in a
++        persistent environment (``saving``, its version) saves what its runner holds as the environment's
++        workspace, in the write of its end; one whose setup failed names the command (``setup_failure``).
          """
          with self._runner_locks[runner.name]:
              # A run that exited 0 beat its stop, and keeps its reply.
-@@ -417,7 +556,9 @@ class Executions:
+             stopping = (restarted or execution_id in self._stopping_ids) and result.returncode != 0
              # A checkpoint still kept was not restored whole: it stands, and the runner is not packed.
              kept = stopping and execution_id in self._checkpoints_by_id
-             checkpointed = runner.checkpoint(self._timeout_seconds) if stopping and not kept else None
+-            checkpointed = runner.checkpoint(self._timeout_seconds) if stopping and not kept else None
 -            with self._executions_lock:
++            with self._executions_lock:  # one in no environment has nothing to set up, and is always ready
++                in_environment = self._executions_by_id[execution_id].environment is not None
++            unready = stopping and not kept and in_environment and execution_id not in self._ready_ids
++            packing = stopping and not kept and not unready
++            checkpointed = runner.checkpoint(self._timeout_seconds) if packing else None
 +            persisting = saving is not None and not stopping
 +            saved = runner.checkpoint(self._timeout_seconds) if persisting else None
 +            with self._queue_changed:
                  resumed = restarted and execution_id not in self._stopping_ids
                  execution = self._executions_by_id[execution_id]
                  error_output = execution.error_output + result.stderr
-@@ -435,8 +576,20 @@ class Executions:
+                 running = execution.state is ExecutionState.RUNNING  # not cancelled while it ran
+-                if running and (kept or (checkpointed is not None and checkpointed.returncode == 0)):
++                packed = checkpointed is not None and checkpointed.returncode == 0
++                if running and (kept or unready or packed):
+                     with self._database.transaction():  # the checkpoint, and the state that says it is kept
+                         if checkpointed is not None:
+                             self._checkpoints_by_id[execution_id] = checkpointed.stdout
++                        self._ready_ids.pop(execution_id, None)
+                         self._record_change(
+                             execution,
+                             state=ExecutionState.QUEUED if resumed else ExecutionState.STOPPED,
+@@ -435,8 +593,21 @@ class Executions:
                              error_output=error_output,
                          )
                  elif running:
@@ -387,6 +427,7 @@ index 726f6a8..63384d4 100644
 +                        self._database.transaction()
 +                    ):  # its end, its workspace, and a checkpoint no restore took
                          self._checkpoints_by_id.pop(execution_id, None)
++                        self._ready_ids.pop(execution_id, None)
 +                        if saving is not None and saved is not None and saved.returncode == 0:
 +                            assert execution.environment is not None  # it persists
 +                            self.environments.save_workspace(
@@ -398,7 +439,7 @@ index 726f6a8..63384d4 100644
                          self._record_change(
                              execution,
                              state=ExecutionState.COMPLETED
-@@ -445,14 +598,19 @@ class Executions:
+@@ -445,14 +616,21 @@ class Executions:
                              ended_at=datetime.now(UTC),
                              returncode=result.returncode,
                              output=result.stdout,
@@ -409,6 +450,8 @@ index 726f6a8..63384d4 100644
 +                            + (checkpointed.stderr if checkpointed else "")
 +                            + unsaved,
                          )
++                else:  # cancelled while it ran, which wrote its end
++                    self._ready_ids.pop(execution_id, None)
                  # Only once its state is kept is the run this worker's no more: a write that failed leaves
                  # it recorded running on this runner, for the worker to stop and resume.
                  self._stopping_ids.discard(execution_id)
