@@ -333,7 +333,7 @@ reviews:
           one, or changes what a system does for a run (a guarantee, a security property, a fix a user would
           notice), anywhere outside tests/ and docs/, and the pull request's release at the top of CHANGELOG.md
           has no line for it. Also fail if a new line names classes, functions or files instead of the part of
-          the system and what it now does. Pass for refactors, tests and docs that change no behaviour and whose
+          the system and what it now does; one code span for a name a reader must type or read is allowed. Pass for refactors, tests and docs that change no behaviour and whose
           release says so in one line under Changed.
 
   finishing_touches:

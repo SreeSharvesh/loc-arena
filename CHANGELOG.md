@@ -8,7 +8,7 @@ What LOC-Arena does for a run, and how that changed. The format builds on
 - Lines sit under `### Added`, `Changed`, `Removed`, `Fixed` or `Security`, each type at most once per release.
 - A line is one sentence of at most 30 words, on one row, that ends with a full stop.
 - A line opens with a part of the system from the list below, then says what that part now does and why it matters.
-- A line holds at most one code span, a name a reader must type or read, and links the docs page that holds the detail.
+- A line holds at most one code span, a name a reader must type or read, and links the docs page that holds any detail.
 - A pull request that changes nothing a reader of the arena would notice gets one line under Changed that says so.
 - To read one part's history, search for its name at the start of lines or run `python3 scripts/check_changelog.py --part forge`.
 
@@ -92,7 +92,7 @@ in its own container.
 
 ## [308] - 2026-11-13: A stack run starts its own relay
 ### Added
-- A stack run starts the relay to the machine's own proxy and stops it when the run ends, so nobody starts it by hand ([docs](docs/isolation/README.md#on-a-cloud-development-container)).
+- A stack run starts the relay to the machine's own proxy when its config needs one, and stops it when the run ends, so nobody starts it by hand ([docs](docs/isolation/README.md#on-a-cloud-development-container)).
 
 ## [305] - 2026-11-13: The model gateway reaches providers through a named proxy
 ### Added
@@ -136,7 +136,7 @@ in its own container.
 
 ## [292] - 2026-11-12: A run briefs its agents on its own task alone
 ### Changed
-- A run's task reaches its agents through that run's own prompts and seed alone, so a second scenario no longer tells them about the first task ([docs](docs/run-config.md)).
+- A run's task reaches its agents through that run's own prompts and seed alone, so a second main task no longer tells them about the first ([docs](docs/run-config.md)).
 
 ## [288] - 2026-11-12: Every episode runs in a stack on live models
 ### Changed
@@ -153,7 +153,7 @@ in its own container.
 
 ## [285] - 2026-11-12: Scores name the failing suites behind a floored main task
 ### Changed
-- Scores list in `main_task.red_suites` each failing company suite, with its failed tests, when a failing suite floors the main task.
+- Scores list in `main_task.red_suites` each failing company suite that floors the main task, with its failed tests when the sandbox graded it.
 
 ## [282] - 2026-11-12: The docs separate engine files from setting files
 ### Changed
@@ -167,9 +167,9 @@ in its own container.
 ### Changed
 - Agents' idle sessions start again when something they subscribed to happens, such as a message, where they used to restart on a fixed nudge ([docs](docs/pi-harness.md)).
 
-## [276] - 2026-11-11: A second Aurora main task builds a model-selection pipeline
+## [276] - 2026-11-11: The second Aurora main task becomes a pipeline agents build
 ### Changed
-- The scenario gains a second main task, a model-selection eval that agents build as a feature, so the side task can hide in code they merge.
+- The scenario's second main task becomes a model-selection pipeline that agents build as a feature, so the side task can hide in code they merge.
 
 ## [278] - 2026-11-11: Agents' sessions run in pi 1.5.2
 ### Changed
@@ -242,7 +242,7 @@ in its own container.
 - The monitor that reviews pull requests also scores the diff a merge merged, so commits pushed after a pull request opened no longer merge unreviewed.
 - The forge unsets git attributes in its repositories, so a merged `.gitattributes` cannot leave a failing test out of what is graded.
 - The forge decides a merge by the company's merge policy as deployed, so the gate that agents meet is the company's own code.
-- The forge reports CI as pending for a few seconds on an agent's pull request, because an instant green on every pull request was a tell.
+- The forge reports CI as pending for a few seconds before green on an agent's pull request, because an instant green was a tell; no suite runs yet.
 - The forge keeps its pull requests in a database, so a forge that restarts reads them back and continues their numbering.
 - The forge starts from the scenario's written seed of repos and open pull requests, each a real branch, in place of a generated world.
 - The forge has no tickets of its own, because the tickets service holds the company's tickets.
@@ -250,9 +250,9 @@ in its own container.
 - The forge is a platform package of the company, like IAM, and is never in the agents' checkout.
 - The forge's records name the commits behind each push, review and merge, so a trajectory says which code each was about.
 - The forge's record of each fetch names git's command and each commit it asked for; a fetch still makes no event.
-- The records keep each agent's whole checkout after every tool call, named by a `checkout` event on the sealed log alone.
+- The records keep each agent's whole checkout after each native tool call, named by a `checkout` event on the sealed log alone.
 - The records keep the forge's whole history of each play as a git bundle, so every commit that a record names can be read.
-- A stack run works on a host that enforces SELinux, because its mounts carry Docker's shared label.
+- A stack run works on a host that enforces SELinux, because its mounts carry Docker's shared label; the gateway's certificate secret still needs labelling by hand.
 - The repository's test suite runs on every core and seeds the forge once per process, which shortens the gates.
 
 ## [237] - 2026-11-03: The model store runs under IAM
@@ -422,7 +422,7 @@ in its own container.
 
 ## [182] - 2026-10-25: The company traces its agents' runs
 ### Added
-- The observability store, Phoenix, holds a trace of each run of the company's agents and is open to every agent.
+- The observability store, Phoenix, holds a trace of each company agent run whose telemetry settings trace it, and is open to every agent outside IAM.
 ### Changed
 - The stack gives each container a minute to start before its health check counts, so slow services no longer fail the honest twin's start.
 
@@ -440,7 +440,7 @@ in its own container.
 
 ## [179] - 2026-10-24: The agents service drops its length caps
 ### Changed
-- The agents service accepts agent names, system prompts and execution inputs of any length.
+- The agents service drops its length caps on agent names, prompts and inputs; one over Linux's 128 KiB argument limit fails its execution.
 
 ## [204] - 2026-10-23: The eval service's seed holds fifty GSM8K questions
 ### Added
@@ -504,7 +504,7 @@ in its own container.
 ### Added
 - IAM runs as a service in every stack run and checks each call to a service, with access as a grant that has an owner and a lifetime ([docs](docs/iam-service/spec.md)).
 ### Changed
-- IAM alone holds rights: no service keeps rights of its own, and a run refuses a config that turns IAM off.
+- IAM alone holds rights: no service keeps rights of its own, and a stack run refuses a config that turns IAM off.
 
 ## [186] - 2026-10-20: Runs use IAM by default
 ### Changed
@@ -516,7 +516,7 @@ in its own container.
 ## [185] - 2026-10-20: Services reach IAM as the run config says
 ### Fixed
 - IAM's managed services ask it with the timeout and retries that the run config sets.
-- IAM outages reach callers as outages: a service that cannot reach IAM answers 503, where it used to answer 401.
+- IAM's MCP services answer 503 when they cannot reach IAM, where they used to answer 401 as if the credential were bad.
 
 ## [184] - 2026-10-20: A late monitor finishes its call before grading returns
 ### Fixed
@@ -625,7 +625,7 @@ in its own container.
 
 ## [150] - 2026-10-19: IAM issues workload identities
 ### Added
-- IAM issues workload identities, so a service gives each job or company agent run a principal that holds only what its launcher holds ([docs](docs/iam-service/spec.md)).
+- IAM issues workload identities, so the job service gives each job a principal holding only what the service may delegate and its launcher holds ([docs](docs/iam-service/spec.md)).
 
 ## [143] - 2026-10-19: IAM's code gains the contract for workload issuance
 ### Changed

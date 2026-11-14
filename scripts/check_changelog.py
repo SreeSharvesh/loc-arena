@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 import re
 import subprocess
 from dataclasses import dataclass, field
@@ -76,11 +77,15 @@ def read_heading(row: int, raw: str) -> tuple[Release | None, list[str]]:
     if heading is None:
         return None, [f"line {row}: write the release heading as `{HEADING_SHAPE}`."]
     words = len(heading[3].split())
-    long = words > MAX_TITLE_WORDS or heading[3].endswith(".")
-    advice = (
-        f"line {row}: the title has {words} words; cut it to {MAX_TITLE_WORDS} at most, with no full stop."
+    problems = [f"line {row}: the title has {words} words; cut it to {MAX_TITLE_WORDS} at most."] * (
+        words > MAX_TITLE_WORDS
     )
-    return Release(int(heading[1]), heading[2], row), [advice] if long else []
+    problems += [f"line {row}: end the title without a full stop."] * heading[3].endswith(".")
+    try:
+        datetime.date.fromisoformat(heading[2])
+    except ValueError:
+        problems.append(f"line {row}: {heading[2]} is no date; write the merge day as YYYY-MM-DD.")
+    return Release(int(heading[1]), heading[2], row), problems
 
 
 def read_type(row: int, kind: str, release: Release) -> list[str]:
@@ -177,13 +182,13 @@ def history_problems(releases: list[Release], merged: list[int], pull_request: i
         if release.number not in merged and not mine:
             problems.append(
                 f"line {release.row}: {release.number} is not a pull request merged into main; "
-                "only the top release may name the pull request being merged.",
+                "only the top release may name the pull request being merged; fetch main if it merged since.",
             )
     numbers = {release.number for release in releases}
     oldest = releases[-1].number
     span = merged[: merged.index(oldest)] if oldest in merged else []
     problems.extend(
-        f"pull request {number} is merged into main and has no release; {HOW_TO_ADD}."
+        f"pull request {number} is merged into main and has no release; add it where its merge day falls."
         for number in span
         if number not in numbers
     )
@@ -236,10 +241,12 @@ def main() -> int:
         merged = read_merged(arguments.main)
         if merged:
             problems.extend(history_problems(releases, merged, arguments.pull_request))
-        else:
-            print(
-                f"No merged pull request found from {arguments.main}; releases were not compared with main.",
+        elif arguments.pull_request is not None:
+            problems.append(
+                f"no merged pull request found from {arguments.main}; fetch main's whole history.",
             )
+        else:
+            print(f"No merged pull request found from {arguments.main}: releases not compared with main.")
     for problem in problems:
         print(f"{arguments.file}: {problem}")
     if problems:

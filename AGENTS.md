@@ -115,7 +115,7 @@ scenario.
 
 ```sh
 make setup        # check uv (Python 3.12), sync dependencies, validate the configs
-make gates        # ruff, ruff format --check, ty, pytest: run before every push (CI runs it too)
+make gates        # file size, changelog, ruff, ruff format --check, ty, pytest: run before every push (CI runs it too)
 make images       # build this checkout's sandbox, runner, worker and engine images, which the Docker tests need
 make run MODE=attack           # live models in a stack: no key in the episode; the key in .env
 make run RUN=aurora-efficiency.fast   # the smoke run: the cheapest models, small call budgets, minutes and cents
@@ -160,7 +160,7 @@ run is the end-to-end check of a change to the engine; its scores are not result
   now does. Under it, `### Added`, `Changed`, `Removed`, `Fixed` or `Security`, each at most once, then one line per
   change: one sentence of at most 30 words that opens with a part of the system from the list in the file's head
   and says what that part now does and why it matters. Write at system level; a line holds at most one code span,
-  for a name a reader must type or read, and links the docs page with the detail. A pull request no reader of
+  for a name a reader must type or read, and links the docs page that holds any detail. A pull request no reader of
   the arena would notice gets one line under Changed that says so. `make gates` runs
   `scripts/check_changelog.py`, which says what to change.
 - **Commits and comments** say what and why in their own words, never pointing at material a reader cannot open.

@@ -81,6 +81,12 @@ def test_check_passes_a_valid_file_whose_top_release_is_not_merged_yet(repositor
     [
         ("## [3] - 2026-01-02: The", "## 3 (2026-01-02) The", "line 7: write the release heading as"),
         (
+            "01-02: The forge keeps its pull requests",
+            "01-32: The forge keeps",
+            "line 7: 2026-01-32 is no date",
+        ),
+        ("hosts git\n### Added", "hosts git.\n### Added", "line 15: end the title without a full stop."),
+        (
             "[3] - 2026-01-02",
             "[3] - 2026-01-04",
             "line 3: release 4 (2026-01-03) is above the later release 3",
@@ -97,7 +103,11 @@ def test_check_passes_a_valid_file_whose_top_release_is_not_merged_yet(repositor
         ("- Monitors read", "- Now monitors read", "line 13: open the line with the part of the system"),
         ("log alone.", "log alone. They see no other.", "line 13: the line holds more than one sentence"),
         ("## [2] -", "## [9] -", "line 11: 9 is not a pull request merged into main"),
-        ("## [2] -", "## [9] -", "pull request 2 is merged into main and has no release; add a release"),
+        (
+            "## [2] -",
+            "## [9] -",
+            "pull request 2 is merged into main and has no release; add it where its merge day falls.",
+        ),
     ],
 )
 def test_check_fails_with_what_to_change(repository: Path, old: str, new: str, message: str) -> None:
@@ -114,6 +124,13 @@ def test_check_asks_the_pull_request_under_check_for_the_top_release(repository:
 
     assert result.returncode == 1
     assert "CHANGELOG.md: pull request 5 has no release; add a release for it at the top" in result.stdout
+
+
+def test_check_fails_a_pull_request_check_without_main_history(tmp_path: Path) -> None:
+    result = check(tmp_path, VALID, "--pull-request", "4")
+
+    assert result.returncode == 1
+    assert "no merged pull request found from main; fetch main's whole history." in result.stdout
 
 
 def test_part_prints_that_part_alone_newest_first(repository: Path) -> None:
