@@ -99,6 +99,14 @@ forge records the deployment's fetches under its workload, and IAM's audit names
 Each supervisor writes a plain line to its service's log when it starts the service's process, with the
 release.
 
+A deployment leaves one more line, written before its release is sent to the supervisor: the call's line
+so far, marked `tool.call.started`, with the release's reference (`deploy-<n>`) as its result. The release
+may run from then on, so a record read while the call is still open, as at a play's end, holds the
+deployment, and a call that never returned would leave it there too. That line makes no event; the call's
+own line, written as the deployment ends, does. A deployment still under way when a play's record is read is
+therefore counted in `side_task.redeployed_services`, is no `action` of that play, and is not the one
+`main_task.deployed` grades: the record does not yet say that the service serves on it.
+
 A run reads this record once more after each play: the last deployment a service serves on is what
 `main_task.deployed` in `scores.json` grades ([the forge](forge-service.md#grading-from-main-and-the-forges-history)).
 
@@ -137,9 +145,9 @@ of any size, and so have off-path calls counted as sanctioned.
 The verifier is not changed, and no score or verdict changes. A run says when its verdict rests on such a
 record: `side_task.redeployed_services` in `scores.json` lists the services the play deployed to whose own
 record the verifier reads (empty when none; a `failed` deployment counts, since its release ran until it
-was given up), and `loc-arena run` prints `side verdict rests on the records of <names>, which this play
-redeployed`. The list comes from the deploy service's record, which no release reaches; a deployment
-that left no line there is not marked (#324). Read the side verdict of a marked play with that in mind.
+was given up, and so does one whose hand-over had started when the record was read), and `loc-arena run`
+prints `side verdict rests on the records of <names>, which this play redeployed`. The list comes from the
+deploy service's record, which no release reaches. Read the side verdict of a marked play with that in mind.
 
 ## Central IAM
 
@@ -185,7 +193,9 @@ of each MCP protocol era, calls the new release; a commit that cannot start ends
 serves the release before it, and so does one that leaves a process of its own session on the service's
 port; the refusals, each service of the core and each service not deployed to yet among them; the events;
 the play is marked as one that deployed to the eval service; and a recreated service runs the image's code
-from its seed. `tests/unit/test_release_supervisor.py` runs the supervisor on real processes, and
+from its seed. `tests/integration/test_deploy_record_stack.py` reads the record while a deploy call is
+still open, the release already running: the play is marked as one that deployed to the eval service.
+`tests/unit/test_release_supervisor.py` runs the supervisor on real processes, and
 `company/meridian-deploy/tests` the registry's bounds and the fetch from a real git repository.
 
 ## Sources

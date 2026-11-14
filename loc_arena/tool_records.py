@@ -10,6 +10,10 @@ the MCP conventions fill with the error's message. A service in a container writ
 file on the records volume, which the episode reads during play (``loc_arena.notices``); the workspace
 service, which the episode serves, writes it to ``records/<service>.jsonl`` in the play's directory.
 ``ToolRecord`` reads one back.
+
+A call whose work goes on whatever becomes of the call, as a deployment's hand-over does, also writes its line
+as that work starts (``record_started``), marked ``tool.call.started``, with what is known then as its result:
+a record read before the call returns, or after a call that never did, holds the work.
 """
 
 from __future__ import annotations
@@ -18,6 +22,7 @@ import json
 import sys
 import threading
 from collections.abc import Callable, Mapping
+from contextvars import ContextVar
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -28,7 +33,13 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, JsonValue
 
 TOOL_CALL = "tools/call"
 SESSION_HEADER = "mcp-session-id"  # a 2025-era session's id; a 2026-era call has none
+STARTED = "tool.call.started"  # on the line a call writes as its work starts, before the line of its end
 Write = Callable[[str], None]
+# How the tool call being served writes its line with a result so far; none outside a recorded call.
+_write_started: ContextVar[Callable[[dict[str, JsonValue]], None] | None] = ContextVar(
+    "write_started",
+    default=None,
+)
 
 
 class ToolRecord(BaseModel):
@@ -44,6 +55,7 @@ class ToolRecord(BaseModel):
     status_description: str | None = Field(default=None, validation_alias="otel.status_description")
     agent: str = Field(validation_alias="gen_ai.agent.name")
     iam_decision: str | None = Field(default=None, validation_alias="iam.decision.id")
+    started: bool = Field(default=False, validation_alias=STARTED)  # the call's own line follows at its end
 
 
 def tool_call_recorder(
@@ -72,23 +84,40 @@ def tool_call_recorder(
             "gen_ai.tool.call.arguments": params.get("arguments", {}),
             "gen_ai.agent.name": agent(),
         }
+
+        def write_line(outcome: Mapping[str, JsonValue]) -> None:
+            write(json.dumps({**line, **outcome, **(annotate() if annotate else {})}))
+
+        served = _write_started.set(
+            lambda known: write_line({"gen_ai.tool.call.result": known, STARTED: True}),
+        )
         try:
             result = await call_next(ctx)
         except MCPError as error:
-            failure = {"error.type": str(error.error.code), "otel.status_description": error.error.message}
-            write(json.dumps({**line, **failure, **(annotate() if annotate else {})}))
+            write_line({"error.type": str(error.error.code), "otel.status_description": error.error.message})
             raise
+        finally:
+            _write_started.reset(served)  # the call has ended: nothing more is written in its name
         reply = result if isinstance(result, dict) else {}  # call_next returns the finished wire form
         text = " ".join(block["text"] for block in reply.get("content", []) if block.get("type") == "text")
-        outcome = (
+        write_line(
             {"error.type": "tool_error", "otel.status_description": text}
             if reply.get("isError")
-            else {"gen_ai.tool.call.result": reply.get("structuredContent")}
+            else {"gen_ai.tool.call.result": reply.get("structuredContent")},
         )
-        write(json.dumps({**line, **outcome, **(annotate() if annotate else {})}))
         return result
 
     return record
+
+
+def record_started(result: dict[str, JsonValue]) -> None:
+    """Write the line of the tool call being served with ``result`` so far: its work has started.
+
+    For work that goes on whatever becomes of the call: the record holds it from here, and the call's own
+    line, written as it returns, says how it ended. Outside a recorded call, nothing is written.
+    """
+    if (write_started := _write_started.get()) is not None:
+        write_started(result)
 
 
 def record_writer(directory: Path, service: str) -> Write:
