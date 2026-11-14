@@ -24,6 +24,11 @@ in its own container.
 - The monitor is shown, in its input for a deployment's action, each repo's commit, whether the service serves on them and why it failed ([docs](docs/deploy-service.md#records)).
 - The monitor's `tool_outcome` input is absent for every other action, so a play with no deployment sends byte-identical prompts and scores as before.
 
+## [347] - 2026-11-14: The company has a telemetry store and its own Collector
+### Added
+- The scenario can name a telemetry store with `collects:`, which the stack keeps on a network no agent's code joins ([docs](docs/isolation/README.md#containers)).
+- The stack runs the company's own Collector as that store's one writer, and recreates both empty for the honest twin ([docs](docs/isolation/README.md#containers)).
+
 ## [348] - 2026-11-14: The README leads with the picture and maps the docs
 ### Changed
 - The docs' README opens with the arena's figure, says what a run is, and maps every docs page in one table ([README](README.md)).
