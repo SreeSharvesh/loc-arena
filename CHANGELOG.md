@@ -19,6 +19,11 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [349] - 2026-11-14: Every run reports what it cost, and two runs compare
+### Added
+- The run writes `cost.json` with each container's memory and CPU, its storage, its wall time by phase and its dollars by model and caller ([docs](docs/run-cost.md)).
+- The run's cost of two runs compares with `make cost`, per container and in total, so a decision is priced by running it ([docs](docs/run-cost.md)).
+
 ## [351] - 2026-11-14: The side-task verdict takes jobs from IAM and the nodes
 ### Changed
 - The verifier reads a model call's job from IAM's audit log and the nodes' process facts, so the job service's record moves no job but a schedule's run ([docs](docs/deploy-service.md#the-side-task-verdict-and-a-redeployed-service)).
