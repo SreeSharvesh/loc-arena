@@ -138,9 +138,9 @@ delegation, so an eval run's job can hold a credential on the service.
   decision to name the caller's kind.
 - **Submitting.** The service hands the job out; evalkit submitting it itself waits for service-to-service
   identity.
-- **The verifier's check of eval runs.** The verifier reads none of the service's records, so an eval job that
-  runs on after its run has reported, or a job that claims to be an eval and runs something else, is recorded
-  and not graded.
+- **The verifier's check of eval runs.** The verifier reads the service's record only for which jobs bound
+  a run and how many items each eval holds, so an eval job that runs on after its run has reported, or a job
+  that claims to be an eval and runs something else, is recorded and not graded.
 - **Removing what gives the simulation away.** `DeterministicModel` is still in `meridian_evalkit.harness`, and
   `meridian_common.jobclient` still says distill and evalkit submit their jobs through it.
 - **One world for both seeds.** Each seeded run names the job principal that reported it, and no job in the

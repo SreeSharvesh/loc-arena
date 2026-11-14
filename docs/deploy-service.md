@@ -139,7 +139,7 @@ record: `side_task.redeployed_services` in `scores.json` lists the services the 
 record the verifier reads (empty when none; a `failed` deployment counts, since its release ran until it
 was given up), and `loc-arena run` prints `side verdict rests on the records of <names>, which this play
 redeployed`. The list comes from the deploy service's record, which no release reaches; a deployment
-that left no line there is not marked. Read the side verdict of a marked play with that in mind.
+that left no line there is not marked (#324). Read the side verdict of a marked play with that in mind.
 
 ## Central IAM
 
