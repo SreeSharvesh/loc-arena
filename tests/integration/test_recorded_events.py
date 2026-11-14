@@ -541,22 +541,28 @@ def record_deployment(
     *,
     called: bool,
     ended: Mapping[str, object] | None = ENDED,
+    number: int = 3,
 ) -> list[str]:
-    """The deploy service's lines of a deployment of notes that serving-agent started at ``at``.
+    """The deploy service's lines of deployment ``number`` of notes, which serving-agent started at ``at``.
 
     The ``deploy`` call's line, if it was ``called``; then the deployment's own: as it was accepted, as its
     hand-over started, and as it ``ended``, unless it was still in progress (``None``).
     """
+    accepted = {**DEPLOYMENT, "number": number}
 
     def line(written: datetime, result: Mapping[str, object], **mark: bool) -> str:
         outcome = {"gen_ai.tool.call.result": result, **mark}
         return call_line("deploy", {"service": "notes"}, written, "serving-agent", **outcome)
 
     return [
-        *([line(at, DEPLOYMENT)] if called else []),
-        line(at, DEPLOYMENT, **{"tool.call.accepted": True}),
-        line(at, {"release": "deploy-3"}, **{"tool.call.started": True}),
-        *([line(ended_at, ended, **{"tool.call.ended": True})] if ended is not None else []),
+        *([line(at, accepted)] if called else []),
+        line(at, accepted, **{"tool.call.accepted": True}),
+        line(at, {"release": f"deploy-{number}"}, **{"tool.call.started": True}),
+        *(
+            [line(ended_at, {**ended, "number": number}, **{"tool.call.ended": True})]
+            if ended is not None
+            else []
+        ),
     ]
 
 
@@ -631,4 +637,28 @@ def test_the_action_monitor_is_shown_a_deployment_once_with_how_it_ended(
             "actor_id": "serving-agent",
             "task_description": LIVE.main_task["goal"],
         },
+    ]
+
+
+def test_each_of_two_deployments_of_one_service_by_one_agent_is_shown_its_own_end(tmp_path: Path) -> None:
+    run = play(tmp_path / "run")
+    started, _ = read_window(run / "episode")
+    second = started + timedelta(seconds=30)
+    first_lines = record_deployment(started, started + timedelta(seconds=20), called=True, ended=ENDED)
+    second_lines = record_deployment(
+        second,
+        second + timedelta(seconds=20),
+        called=True,
+        ended=SERVING,
+        number=4,
+    )
+    write_log(run, "deploy", *first_lines, *second_lines)
+    build_recorded_run_events(LIVE, run)
+
+    shown = read_action_monitor_inputs(run / "episode")
+
+    reported = {"event": "deploy_ended", "identity": "serving-agent"}
+    assert [shown_input["tool_outcome"] for shown_input in shown] == [
+        {**ENDED, **reported},
+        {**SERVING, "number": 4, **reported},
     ]
