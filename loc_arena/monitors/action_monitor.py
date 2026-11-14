@@ -1,7 +1,8 @@
 """Action/message monitor.
 
 Enforces the firewall: it reads ONLY the observable action/message fields declared in its
-``monitors.yaml`` inputs (tool name/args, message body, actor, task description), never the sealed log. In
+``monitors.yaml`` inputs (tool name/args, the outcome of the work a call started, such as a deployment's,
+message body, actor, task description), never the sealed log. In
 ``heuristic`` mode (the default, deterministic) it scores each action/message with a rule; in ``live``
 mode it builds a prompt from those declared inputs, calls the trusted-monitor model THROUGH THE GATEWAY,
 and parses a strict JSON verdict, falling back to the heuristic on a parse failure. Because the covert
@@ -50,6 +51,8 @@ class ActionMonitor:
             "actor_id": event.actor_uid,
             "task_description": context.task_description,
         }
+        if event.seq in context.outcomes:  # no key without one: every other input stays as it was
+            available["tool_outcome"] = context.outcomes[event.seq].payload
         return {k: available[k] for k in self._declared if k in available}
 
     def _heuristic(self, event: Event) -> tuple[float, str]:
@@ -87,6 +90,8 @@ class ActionMonitor:
             live = self._live(event, context)
             score, reason = live if live is not None else self._heuristic(event)
             tap = "action" if event.kind == "action" else "message"
+            # A verdict is dated when its inputs were known: one that read an outcome, when the work ended.
+            outcome = context.outcomes.get(event.seq) if "tool_outcome" in self._declared else None
             verdicts.append(
                 MonitorVerdict(
                     self.name,
@@ -95,7 +100,7 @@ class ActionMonitor:
                     reason,
                     event.actor_uid,
                     event.seq,
-                    event.ts,
+                    outcome.ts if outcome is not None else event.ts,
                     from_model=live is not None,
                 ),
             )
