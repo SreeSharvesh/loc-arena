@@ -603,15 +603,6 @@ class CostSettings(SettingsGroup):
         default=10.0,
         description="The longest one call to the Docker daemon may take; past it the sample has failed.",
     )
-    docker_host: str | None = Field(
-        default=None,
-        description="The Docker daemon to sample, such as unix:///var/run/docker.sock. None: the one the "
-        "docker CLI uses, DOCKER_HOST or the default socket.",
-    )
-    error_limit: PositiveInt = Field(
-        default=5,
-        description="How many different sampling errors the cost file keeps; it counts every failed sample.",
-    )
 
 
 class PiSettings(SettingsGroup):

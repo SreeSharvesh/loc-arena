@@ -2,10 +2,12 @@
 
 ``record_cost`` is the engine's profiler. For as long as a run lasts, a thread of the run's host process
 samples the Docker daemon for the containers of the run's compose project (and, while the run is graded, the
-containers its agents' code is graded in), so nothing an agent reaches holds the Docker socket. ``timed``
-marks where play and grading start and end. ``CostRecorder.write`` then writes ``cost.json`` in the run
-directory: no score, event, monitor or verifier reads it. A sample that fails is counted and said in the file,
-and never stops the run. ``render_costs`` prints one run's cost, or the difference of two.
+containers its agents' code is graded in), so nothing an agent reaches holds the Docker socket. Memory at rest
+is each container's at the first sample in which the ``rest_at`` service runs, which starts once the services
+it waits for are healthy. ``mark_phase`` marks where play and grading start and end. ``CostRecorder.write``
+then writes ``cost.json`` in the run directory: no score, event, monitor or verifier reads it. A sample that
+fails is counted in the file and never fails or stops the run. ``render_costs`` prints one run's cost, or the
+difference of two.
 """
 
 from __future__ import annotations
@@ -22,7 +24,7 @@ from pathlib import Path
 
 import docker
 import psutil
-from docker.errors import DockerException
+from docker.errors import NotFound
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from loc_arena.agent_code import CONTAINER_NAME_PREFIX
@@ -31,11 +33,10 @@ from loc_arena.session_events import read_agent, read_usage
 from loc_arena.settings import CostSettings
 
 COST_FILE = "cost.json"
-PLAY, GRADING = "play", "grading"  # the two phases a run marks; the other three lie around them
+PLAY, GRADING = "play", "grading"  # the two phases a run marks; the others lie around and within them
 PROJECT_LABEL, SERVICE_LABEL = "com.docker.compose.project", "com.docker.compose.service"
 GRADING_CONTAINER = "agent-code"  # every container the agents' code is graded in, under one name
 NANOSECONDS = 1_000_000_000
-SAMPLE_ERRORS = (DockerException, OSError, ValueError, KeyError, TypeError)  # OSError: no daemon answered
 _active: list[CostRecorder] = []  # the recorder of the run this process plays, if it records one
 
 
@@ -46,10 +47,10 @@ class _Frozen(BaseModel):
 class ContainerCost(_Frozen):
     """One container of the run; a service the honest twin's renewal recreated is one container here."""
 
-    memory_rest_bytes: int | None  # at the last sample before play; none for one that started later
+    memory_rest_bytes: int | None  # once the services were healthy; none for one that was not running then
     memory_peak_bytes: int
     memory_limit_bytes: int | None  # none: it has no limit
-    cpu_seconds: float
+    cpu_seconds: float  # until its last sample
 
 
 class Dollars(_Frozen):
@@ -61,21 +62,21 @@ class Dollars(_Frozen):
 
 
 class SamplerReport(_Frozen):
-    """How the containers were sampled, and what went wrong."""
+    """How the containers were sampled, and the last thing that went wrong."""
 
     interval_seconds: float
     samples: int
     failed_samples: int
-    errors: list[str]
+    last_error: str | None
 
 
 class RunCost(_Frozen):
     """The cost file of one run."""
 
     wall_seconds: float
-    phases: dict[str, float]  # stack_start, play, copy, grading, teardown; empty for a run that marked none
+    phases: dict[str, float]  # see PHASES; empty for a run that marked no play and no grading
     containers: dict[str, ContainerCost]
-    containers_rest_bytes: int | None  # every container's memory at the last sample before play
+    containers_rest_bytes: int | None  # every container's memory once the services were healthy
     containers_peak_bytes: int  # the most every container held at one sample
     host_memory_peak_bytes: int | None  # the most memory in use on the machine the run's CLI is on
     images: dict[str, int]
@@ -127,13 +128,15 @@ class _Volume(BaseModel):
     usage: _VolumeUsage | None = Field(default=None, alias="UsageData")
 
 
+_Reading = tuple["_Listed", str, "_MemoryStats", int]  # a container's listing, name, memory and CPU counter
+
+
 @dataclass
 class _Seen:
     """One container, by its id, as the samples saw it."""
 
     name: str
     image: str
-    used: int = 0
     rest: int | None = None
     peak: int = 0
     limit: int | None = None
@@ -147,93 +150,95 @@ class CostRecorder:
 
     settings: CostSettings
     project: str
+    rest_at: str  # the compose service whose start marks the containers' memory at rest
     clock: Callable[[], float]
     started: float = 0.0
     ended: float = 0.0
     marks: dict[str, tuple[float, float]] = field(default_factory=dict)
     _seen: dict[str, _Seen] = field(default_factory=dict)
     _open: set[str] = field(default_factory=set)  # the phases under way
-    _latest: int = 0  # what every container held at the last sample
     _rest: int | None = None
+    _rested: float | None = None  # when memory at rest was taken
     _peak: int = 0
     _host_peak: int | None = None
     _samples: int = 0
     _failed: int = 0
-    _errors: list[str] = field(default_factory=list)
+    _last_error: str | None = None
     _images: dict[str, int] = field(default_factory=dict)
     _volumes: dict[str, int] = field(default_factory=dict)
     _lock: threading.Lock = field(default_factory=threading.Lock)
-    _stop: threading.Event = field(default_factory=threading.Event)
+    _stopped: threading.Event = field(default_factory=threading.Event)
 
     def _connect(self) -> docker.DockerClient:
-        timeout = self.settings.request_seconds
-        if self.settings.docker_host is None:
-            return docker.from_env(timeout=timeout)
-        return docker.DockerClient(base_url=self.settings.docker_host, timeout=timeout)
+        return docker.from_env(timeout=self.settings.request_seconds)
 
     def _fail(self, error: Exception) -> None:
-        self._failed += 1
-        daemon = self.settings.docker_host or "the docker CLI's daemon"
-        message = f"{daemon}: {type(error).__name__}: {error}"
-        if message not in self._errors and len(self._errors) < self.settings.error_limit:
-            self._errors.append(message)
+        with self._lock:
+            self._failed += 1
+            self._last_error = f"{type(error).__name__}: {error}"
 
-    def _watch(self) -> None:
-        """Sample until the run ends; a sample that fails is counted and the next one is tried."""
+    def watch(self) -> None:
+        """Sample until ``stop``; a sample that fails is counted and the next one is tried."""
         client: docker.DockerClient | None = None
         while True:
             try:
                 client = client or self._connect()
-                self._sample(client)
-            except SAMPLE_ERRORS as error:
-                with self._lock:
-                    self._fail(error)
-            if self._stop.wait(self.settings.sample_seconds):
+                self._sample(client, client.info()["MemTotal"])
+            except Exception as error:  # noqa: BLE001 - the profiler never fails or stops the run
+                self._fail(error)
+            if self._stopped.wait(self.settings.sample_seconds):
                 break
         if client is not None:
             client.close()
 
-    def _sample(self, client: docker.DockerClient) -> None:
-        memory = psutil.virtual_memory()
-        grading = GRADING in self._open
-        used = 0
-        for listed in client.api.containers():
-            container = _Listed.model_validate(listed)
-            labels = container.labels or {}
-            name = container.names[0].lstrip("/")
+    def stop(self) -> None:
+        """End the sampling; ``watch`` returns after the sample it is taking."""
+        self._stopped.set()
+
+    def _read(self, client: docker.DockerClient, *, grading: bool) -> list[_Reading]:
+        """Each container of the run that runs now: its listing, its name, its memory and its CPU counter."""
+        read = []
+        for listed in map(_Listed.model_validate, client.api.containers()):
+            labels, name = listed.labels or {}, (listed.names or ["/"])[0].lstrip("/")
             if labels.get(PROJECT_LABEL) == self.project:
                 name = labels.get(SERVICE_LABEL, name)
             elif grading and name.startswith(CONTAINER_NAME_PREFIX):
                 name = GRADING_CONTAINER
             else:
                 continue
-            stats = _Stats.model_validate(client.api.stats(container.id, stream=False, one_shot=True))
-            usage, cpu = stats.memory_stats, stats.cpu_stats.cpu_usage.total_usage
-            if usage.usage is None:
+            try:
+                stats = _Stats.model_validate(client.api.stats(listed.id, stream=False, one_shot=True))
+            except NotFound:  # it was removed between the listing and this read
                 continue
-            # As `docker stats` shows it: usage less the inactive file cache, by cgroup v2's name or v1's.
-            held = usage.usage - usage.stats.get("inactive_file", usage.stats.get("total_inactive_file", 0))
-            with self._lock:
-                seen = self._seen.setdefault(container.id, _Seen(name, container.image))
-                if cpu < seen.cpu:
-                    seen.cpu_before += seen.cpu
-                seen.used, seen.cpu, seen.peak = held, cpu, max(seen.peak, held)
-                seen.limit = usage.limit if usage.limit and usage.limit < memory.total else None
-            used += held
+            if stats.memory_stats.usage is not None:
+                read.append((listed, name, stats.memory_stats, stats.cpu_stats.cpu_usage.total_usage))
+        return read
+
+    def _sample(self, client: docker.DockerClient, memory_total: int) -> None:
+        machine = psutil.virtual_memory()
+        read = self._read(client, grading=GRADING in self._open)
+        held_now = {}
         with self._lock:
+            for listed, name, memory, cpu in read:
+                # As `docker stats` shows it: usage less the inactive file cache, by cgroup v1's name or v2's.
+                cache = memory.stats.get("total_inactive_file", memory.stats.get("inactive_file", 0))
+                held = held_now[listed.id] = (memory.usage or 0) - cache
+                seen = self._seen.setdefault(listed.id, _Seen(name, listed.image))
+                seen.cpu_before += seen.cpu if cpu < seen.cpu else 0
+                seen.cpu, seen.peak = cpu, max(seen.peak, held)
+                seen.limit = memory.limit if memory.limit and memory.limit < memory_total else None
+            if self._rested is None and PLAY in self._open and self.rest_at in {name for _, name, *_ in read}:
+                self._rested, self._rest = self.clock(), sum(held_now.values())
+                for container_id, held in held_now.items():
+                    self._seen[container_id].rest = held
             self._samples += 1
-            self._peak = max(self._peak, used)
-            self._host_peak = max(self._host_peak or 0, memory.total - memory.available)
-            self._latest = used
+            self._peak = max(self._peak, sum(held_now.values()))
+            self._host_peak = max(self._host_peak or 0, machine.total - machine.available)
 
     def start_phase(self, phase: str) -> float:
-        """Mark the start of ``phase``; as play starts, what each container holds is its memory at rest."""
+        """Mark the start of ``phase``."""
         with self._lock:
             self._open.add(phase)
-            if phase == PLAY and self._samples:
-                self._rest = self._latest
-                for seen in self._seen.values():
-                    seen.rest = seen.used
         return self.clock()
 
     def end_phase(self, phase: str, started: float) -> None:
@@ -241,17 +246,17 @@ class CostRecorder:
         self.marks[phase] = (started, self.clock())
         with self._lock:
             self._open.discard(phase)
+            images = {seen.image for seen in self._seen.values()}
         if phase == GRADING:
             try:
-                self._measure_storage()
-            except SAMPLE_ERRORS as error:
-                with self._lock:
-                    self._fail(error)
+                self._measure_storage(images)
+            except Exception as error:  # noqa: BLE001 - the profiler never fails or stops the run
+                self._fail(error)
 
-    def _measure_storage(self) -> None:
+    def _measure_storage(self, images: set[str]) -> None:
         client = self._connect()
         try:
-            for image in {seen.image for seen in self._seen.values()}:
+            for image in images:
                 self._images[image] = client.api.inspect_image(image)["Size"]
             usage = client.df()
             listed = (usage.get("VolumeUsage") or {}).get("Items") or usage.get("Volumes") or []
@@ -263,12 +268,16 @@ class CostRecorder:
             client.close()
 
     def _split_phases(self) -> dict[str, float]:
+        """Wall time by phase: the stack's start, its services' start within play when seen, and the rest."""
         if PLAY not in self.marks or GRADING not in self.marks:
             return {}
         (play_start, play_end), (grading_start, grading_end) = self.marks[PLAY], self.marks[GRADING]
+        rested = self._rested if self._rested is not None and play_start <= self._rested <= play_end else None
+        services = {} if rested is None else {"services_start": rested - play_start}
         return {
             "stack_start": play_start - self.started,
-            PLAY: play_end - play_start,
+            **services,
+            PLAY: play_end - (rested or play_start),
             "copy": grading_start - play_end,
             GRADING: grading_end - grading_start,
             "teardown": self.ended - grading_end,
@@ -279,8 +288,10 @@ class CostRecorder:
         containers: dict[str, ContainerCost] = {}
         for seen in self._seen.values():
             earlier = containers.get(seen.name)
+            kept = earlier.memory_rest_bytes if earlier else None
+            rest = seen.rest if kept is None else kept
             containers[seen.name] = ContainerCost(
-                memory_rest_bytes=seen.rest if earlier is None else earlier.memory_rest_bytes or seen.rest,
+                memory_rest_bytes=rest,
                 memory_peak_bytes=max(seen.peak, earlier.memory_peak_bytes if earlier else 0),
                 memory_limit_bytes=seen.limit,
                 cpu_seconds=(seen.cpu_before + seen.cpu) / NANOSECONDS
@@ -301,7 +312,7 @@ class CostRecorder:
                 interval_seconds=self.settings.sample_seconds,
                 samples=self._samples,
                 failed_samples=self._failed,
-                errors=self._errors,
+                last_error=self._last_error,
             ),
         )
         (run_directory / COST_FILE).write_text(cost.model_dump_json(indent=2) + "\n")
@@ -312,24 +323,25 @@ class CostRecorder:
 def record_cost(
     settings: CostSettings,
     project: str = "",
+    rest_at: str = "",
     clock: Callable[[], float] = time.monotonic,
 ) -> Iterator[CostRecorder]:
     """Record what the run inside costs: sample compose project ``project`` until the block ends."""
-    recorder = CostRecorder(settings, project, clock)
+    recorder = CostRecorder(settings, project, rest_at, clock)
     recorder.started = clock()
-    watcher = threading.Thread(target=recorder._watch, daemon=True)  # noqa: SLF001 - the recorder's own loop
+    watcher = threading.Thread(target=recorder.watch, daemon=True)
     _active.append(recorder)
     watcher.start()
     try:
         yield recorder
     finally:
         _active.remove(recorder)
-        recorder._stop.set()  # noqa: SLF001
+        recorder.stop()
         watcher.join()
         recorder.ended = clock()
 
 
-def timed[**P, R](phase: str) -> Callable[[Callable[P, R]], Callable[P, R]]:
+def mark_phase[**P, R](phase: str) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Mark ``phase`` around each call of the function, in the cost of the run being recorded, if one is."""
 
     def decorate(function: Callable[P, R]) -> Callable[P, R]:
@@ -366,14 +378,11 @@ def read_dollars(call_log: Path) -> Dollars:
         by_model[str(model)] += cost
         by_caller[read_agent(call) or call.sponsor or call.caller] += cost
 
-    def rounded(dollars: Mapping[str, float]) -> dict[str, float]:
+    def round_each(dollars: Mapping[str, float]) -> dict[str, float]:
         return {name: round(amount, 6) for name, amount in sorted(dollars.items())}
 
-    return Dollars(
-        total=round(sum(by_model.values()), 6),
-        by_model=rounded(by_model),
-        by_caller=rounded(by_caller),
-    )
+    total = round(sum(by_model.values()), 6)
+    return Dollars(total=total, by_model=round_each(by_model), by_caller=round_each(by_caller))
 
 
 def measure_records(run_directory: Path) -> dict[str, int]:
@@ -393,52 +402,53 @@ def read_cost(run_directory: Path) -> RunCost:
 
 def summarize(cost: RunCost) -> str:
     """One line of ``cost`` for the run's summary."""
-    phases = " ".join(f"{name}={seconds:.0f}s" for name, seconds in cost.phases.items())
+    phases = "".join(f" {name}={seconds:.0f}s" for name, seconds in cost.phases.items())
     return (
-        f"cost wall={cost.wall_seconds:.0f}s {phases} "
-        f"containers_peak={_mebibytes(cost.containers_peak_bytes)} "
-        f"host_peak={_mebibytes(cost.host_memory_peak_bytes)} dollars={_dollars(cost.dollars.total)}"
-    ).replace("  ", " ")
+        f"cost wall={cost.wall_seconds:.0f}s{phases} "
+        f"containers_peak={_format_mebibytes(cost.containers_peak_bytes)} "
+        f"host_peak={_format_mebibytes(cost.host_memory_peak_bytes)} "
+        f"dollars={_format_dollars(cost.dollars.total)}"
+    )
 
 
-def _mebibytes(value: float | None) -> str:
+def _format_mebibytes(value: float | None) -> str:
     return "-" if value is None else f"{value / 2**20:.1f} MiB"
 
 
-def _seconds(value: float | None) -> str:
+def _format_seconds(value: float | None) -> str:
     return "-" if value is None else f"{value:.1f} s"
 
 
-def _dollars(value: float | None) -> str:
+def _format_dollars(value: float | None) -> str:
     return "-" if value is None else f"${value:.4f}".replace("$-", "-$")
 
 
-Row = tuple[str, list[tuple[str, float | None, Callable[[float | None], str]]]]
+Cell = tuple[str, float | None, Callable[[float | None], str]]
 
 
-def _list_rows(cost: RunCost) -> list[Row]:
+def _list_rows(cost: RunCost) -> list[tuple[str, list[Cell]]]:
     """Every figure of ``cost`` as a labelled row of named cells, each with how it prints."""
-    scalar: list[tuple[str, float | None, Callable[[float | None], str]]] = [
-        ("wall time", cost.wall_seconds, _seconds),
-        *((f"  {phase}", seconds, _seconds) for phase, seconds in cost.phases.items()),
-        ("containers at rest", cost.containers_rest_bytes, _mebibytes),
-        ("containers at peak", cost.containers_peak_bytes, _mebibytes),
-        ("host at peak", cost.host_memory_peak_bytes, _mebibytes),
-        ("images", sum(cost.images.values()), _mebibytes),
-        ("volumes", sum(cost.volumes.values()), _mebibytes),
-        ("records", sum(cost.records.values()), _mebibytes),
-        ("dollars", cost.dollars.total, _dollars),
-        *((f"  model {model}", amount, _dollars) for model, amount in cost.dollars.by_model.items()),
-        *((f"  caller {caller}", amount, _dollars) for caller, amount in cost.dollars.by_caller.items()),
+    scalar: list[Cell] = [
+        ("wall time", cost.wall_seconds, _format_seconds),
+        *((f"  {phase}", seconds, _format_seconds) for phase, seconds in cost.phases.items()),
+        ("containers at rest", cost.containers_rest_bytes, _format_mebibytes),
+        ("containers at peak", cost.containers_peak_bytes, _format_mebibytes),
+        ("host at peak", cost.host_memory_peak_bytes, _format_mebibytes),
+        ("images", sum(cost.images.values()), _format_mebibytes),
+        ("volumes", sum(cost.volumes.values()), _format_mebibytes),
+        ("records", sum(cost.records.values()), _format_mebibytes),
+        ("dollars", cost.dollars.total, _format_dollars),
+        *((f"  model {model}", amount, _format_dollars) for model, amount in cost.dollars.by_model.items()),
+        *((f"  caller {name}", amount, _format_dollars) for name, amount in cost.dollars.by_caller.items()),
     ]
-    containers: list[Row] = [
+    containers: list[tuple[str, list[Cell]]] = [
         (
             name,
             [
-                ("rest", container.memory_rest_bytes, _mebibytes),
-                ("peak", container.memory_peak_bytes, _mebibytes),
-                ("limit", container.memory_limit_bytes, _mebibytes),
-                ("cpu", container.cpu_seconds, _seconds),
+                ("rest", container.memory_rest_bytes, _format_mebibytes),
+                ("peak", container.memory_peak_bytes, _format_mebibytes),
+                ("limit", container.memory_limit_bytes, _format_mebibytes),
+                ("cpu", container.cpu_seconds, _format_seconds),
             ],
         )
         for name, container in cost.containers.items()
@@ -450,8 +460,8 @@ def render_costs(cost: RunCost, other: RunCost | None = None) -> str:
     """What ``cost`` holds, a figure a row; with ``other``, its figures and how each differs from ``cost``."""
     first = dict(_list_rows(cost))
     rows = _list_rows(other) if other else list(first.items())
-    missing = [(label, cells) for label, cells in first.items() if label not in dict(rows)] if other else []
-    width = max(len(label) for label, _ in [*rows, *missing])
+    missing = [label for label in first if label not in dict(rows)] if other else []
+    width = max(len(label) for label in [*dict(rows), *missing])
     lines = []
     for label, cells in rows:
         before = {name: value for name, value, _ in first.get(label, [])}
@@ -462,5 +472,5 @@ def render_costs(cost: RunCost, other: RunCost | None = None) -> str:
             delta = f" ({'+' if value - earlier >= 0 else ''}{show(value - earlier)})" if changed else ""
             shown.append(f"{name} {show(value)}{delta}".strip())
         lines.append(f"{label:<{width}}  " + "  ".join(shown))
-    lines += [f"{label:<{width}}  only in the first run" for label, _ in missing]
+    lines += [f"{label:<{width}}  only in the first run" for label in missing]
     return "\n".join(lines)

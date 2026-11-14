@@ -19,7 +19,7 @@ from loc_arena.gateway.model_gateway import MODEL_GATEWAY_SERVICE, drain_record,
 from loc_arena.merged_main import EPISODE_PHASE, TWIN_PHASE, PlayedForge, read_stack_forge
 from loc_arena.node_pool import list_node_services
 from loc_arena.observability import PHOENIX_SERVICE, export_spans
-from loc_arena.run_cost import PLAY, timed
+from loc_arena.run_cost import PLAY, mark_phase
 from loc_arena.runner_pool import list_runner_services
 from loc_arena.telemetry_stack import list_telemetry_services
 from loc_arena.tools_gateway import TOOLS_GATEWAY_SERVICE, serves_tools
@@ -160,7 +160,7 @@ def deploy_company_server(
         raise StackError(f"{serving.deployer}'s server did not load: see compose's output")
 
 
-@timed(PLAY)
+@mark_phase(PLAY)
 def play_phases(
     config: RunConfig,
     compose: list[str],

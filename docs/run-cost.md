@@ -13,13 +13,13 @@ make cost RUN_DIR=logs/<slug>/<run> OTHER=logs/<slug>/<run>  # the second run's 
 
 | Key | What it is |
 |---|---|
-| `wall_seconds`, `phases` | the whole run, and its five phases: `stack_start` (images built, containers created and healthy), `play` (both plays and the renewal between them), `copy` (the records copied out and their events built), `grading`, `teardown` |
-| `containers` | per container: `memory_rest_bytes` (the last sample before play; none for one that started later), `memory_peak_bytes`, `memory_limit_bytes` (none: no limit), `cpu_seconds` |
-| `containers_rest_bytes`, `containers_peak_bytes` | what every container held together, before play and at the highest sample |
+| `wall_seconds`, `phases` | the whole run, and its phases: `stack_start` (images built, containers created, the model gateway started), `services_start` (the services started until all are healthy and the episode starts), `play` (both plays and the renewal between them), `copy` (the records copied out and their events built), `grading`, `teardown` |
+| `containers` | per container: `memory_rest_bytes` (as the episode starts; none for one that was not running then), `memory_peak_bytes`, `memory_limit_bytes` (none: no limit), `cpu_seconds` |
+| `containers_rest_bytes`, `containers_peak_bytes` | what every container held together, as the episode starts and at the highest sample |
 | `host_memory_peak_bytes` | the most memory in use on the machine the run's CLI is on |
 | `images`, `volumes`, `records` | the size of each image the run's containers use, of each volume of the project once grading ends, and of each entry of the run directory |
 | `dollars` | the total, `by_model` and `by_caller`, from the cost each answered call carries in the gateway's record |
-| `sampler` | its interval, how many samples it took, how many failed, and the errors |
+| `sampler` | its interval, how many samples it took, how many failed, and the last error |
 
 A container is named by its compose service, so a service the honest twin's renewal recreated is one
 container: its peak is the higher of the two and its CPU seconds are their sum. The containers the agents'
@@ -29,21 +29,27 @@ launched the workload that made it, else the gateway's name for it; the monitors
 ## How it is measured
 
 The run's host process samples the Docker daemon on a thread, every `cost.sample_seconds`, for the containers
-of the run's own compose project; nothing an agent reaches holds the Docker socket. Memory is the daemon's
-usage less the inactive file cache, as `docker stats` shows it. CPU seconds are the daemon's cumulative
-counter, so they are exact. `loc_arena.run_cost.timed` marks where play and grading start and end.
+of the run's own compose project; nothing an agent reaches holds the Docker socket. It reaches the daemon
+`DOCKER_HOST` names, else the default socket; it does not read docker contexts. Memory is the daemon's usage
+less the inactive file cache, as `docker stats` shows it. CPU seconds are the daemon's cumulative counter at a
+container's last sample. Memory at rest is taken at the first sample in which the episode container runs:
+it starts once every service it waits for is healthy, and before any agent acts.
+`loc_arena.run_cost.mark_phase` marks where play and grading start and end.
 
 What it cannot see:
 
 - **A spike shorter than the interval.** A peak is the highest sample. The Docker Engine API has no peak of
-  its own on cgroup v2.
+  its own on cgroup v2. For the same reason the end of `services_start` is known to within one interval, a
+  container's CPU after its last sample is not counted, and a graded container shorter than the interval
+  can be missed.
 - **A run that failed before grading** writes no file: it has no run directory.
 - **Two runs grading at once on one machine** each count the other's `agent-code` containers, which carry
   no project.
 - **Where containers run in a virtual machine** (macOS, Windows), `host_memory_peak_bytes` is the computer's,
   not the virtual machine's.
 
-A sample that fails is counted in `sampler.failed_samples`, with its error, and the run goes on.
+A sample that fails is counted in `sampler.failed_samples`, with the last error, and the run goes on; a
+cost file that cannot be written is said in the summary, and the run's records and scores stand.
 
 ## Settings (`cost:`)
 
@@ -51,8 +57,6 @@ A sample that fails is counted in `sampler.failed_samples`, with its error, and 
 |---|---|---|
 | `sample_seconds` | 2.0 | the wait between two samples |
 | `request_seconds` | 10.0 | the longest one call to the daemon may take |
-| `docker_host` | none | the daemon to sample; none is the docker CLI's: `DOCKER_HOST`, else the default socket |
-| `error_limit` | 5 | how many different sampling errors the file keeps |
 
 ## Sources
 
