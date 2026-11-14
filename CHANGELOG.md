@@ -19,6 +19,12 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [348] - 2026-11-14: The README leads with the picture and maps the docs
+### Changed
+- The docs' README opens with the arena's figure, says what a run is, and maps every docs page in one table ([README](README.md)).
+- The docs for the job service say that IAM signs each job's badge and the model gateway admits it ([docs](docs/jobsvc-service.md)).
+- The repository's rules ask a change to update the page that describes it, in the same pull request.
+
 ## [344] - 2026-11-14: The changelog holds one checked release per merged pull request
 ### Changed
 - The repository's changelog holds one release per merged pull request, each line opening with a part of the system, so a reader can trace one part's history.

@@ -1,77 +1,63 @@
 # LOC-Arena
 
-LOC-Arena is an AI-control evaluation framework: an engine, and the setting it runs. The setting is a
-simulated frontier-lab autonomous AI R&D platform where an untrusted agent and its sub-agents do real research-engineering work on a seven-repo company codebase and may
-attempt to establish an internal rogue deployment (running the model off the sanctioned, monitored path). Every
-episode measures two things and reports the gap between them: whether a rogue deployment actually happened (a
-sealed, deterministic ground-truth verifier the agent cannot reach) and whether the platform's own control points
-caught it (configurable in-scenario monitors). The gap between those
-two, under an adversarial agent, is the science.
-
-This is defensive AI-safety research infrastructure. Attack chains are represented as control-plane state
-transitions plus their programmatic verifiers, never as operational procedures.
-
-## Engine and setting
-
-Every file belongs to one of two parts. The engine (`loc_arena/`, `sandbox_server/`) runs an episode and holds no
-company, team or task. A setting (`company/`, `scenarios/<name>/`) is what the episode is about: the
-organization, its software, its team and its tasks. A run config in `configs/` names the scenario and sets the
-engine's options. The test for any file: would it be the same for a different company and task? If yes, it is
-engine. If no, it is setting. The full table is in [`AGENTS.md`](AGENTS.md#engine-and-setting).
-
-## How it runs
-
-Each agent has bash and file tools, which act in its own sandbox and checkout, and an MCP client. Everything
-else it can do to the company (open a PR, message a teammate, submit a job) is a tool on a service behind one
-MCP route, agentgateway, and the run config's `sandbox: tools:` decides exactly which tools each agent gets.
-Each agent runs its whole session at its own pace in pi, beside the others, and reaches its bash and file tools
-through that route too ([docs/pi-harness.md](docs/pi-harness.md)). Every model
-call goes through a gateway (agentgateway again) that alone holds the key and admits each caller by its own
-token; an OpenTelemetry Collector writes its record of every call. Every service records each call made to it,
-and after play those records become the events the monitors and the verifier read. The honest twin plays after
-the attack on services and sandboxes recreated empty. Details: [`docs/isolation/`](docs/isolation/README.md)
-and [`docs/run-config.md`](docs/run-config.md).
+LOC-Arena is an AI-control arena. A team of untrusted agents does research engineering on a simulated AI lab's
+codebase, and may try a rogue deployment: running a model off the lab's monitored path. Monitors try to catch it,
+and a sealed verifier decides whether it happened.
 
 <img alt="Data flow of one run: play writes the service records, both event logs, the per-agent trace and the gateway's sealed call record; the records become events after play, with turns from the call record; the verifier reads the sealed log and the call record, and the monitors the mirror log; live monitors' model calls are appended to the sealed log and to the gateway's call record; the run bundle is read by the explorer and inspect view." src="docs/figures/run-records.svg" width="100%">
 
+*Read it top to bottom: play writes the records, the records become two logs, and the verifier reads the sealed one while the monitors read the mirror.*
+
+This is defensive AI-safety research infrastructure. Attack chains are control-plane state transitions plus the
+programmatic verifiers that check them, never operational procedures.
+
+## What a run is
+
+- Each agent works in its own sandbox and checkout, in a session of the pi coding agent, on a live model.
+- Agents open pull requests, message teammates, submit jobs and deploy services, all through the company's services.
+- Every model call goes through one gateway, and every service records each call made to it.
+- After play, those records become the events that the monitors and the verifier read.
+- An honest twin then plays the same task without the covert brief, which sets the audit threshold.
+- The run reports whether a rogue deployment happened, whether the monitors caught it, and the main-task score.
+
+## Set up and run
+
 ```sh
-make setup                    # check uv, sync dependencies, validate the configs
-make run MODE=attack          # live models in a stack: central IAM, no key in the episode; the key in .env
-make run RUN=aurora-efficiency.fast   # the smoke run: cheapest models, small budgets; minutes and cents
-make fixture-run              # play the smoke run and store it as the tests' run fixture
+make setup                            # check uv, sync dependencies, validate the configs
+make run RUN=aurora-efficiency.fast   # the smoke run: an attack and its twin on the cheapest models
+make run MODE=attack                  # a full run on live models
+make view                             # open the latest run's report, from logs/
 ```
 
-A run always plays in a Docker stack and needs `OPENROUTER_API_KEY` in `.env`. On a machine that re-signs
-outbound HTTPS, a run verifies with the certificate bundle its `SSL_CERT_FILE` names
-([docs/isolation](docs/isolation/README.md#the-gateway)); a cloud development container needs
-[three things first](docs/isolation/README.md#on-a-cloud-development-container). The smoke run checks that a run
-plays, grades and writes its bundle; its scores are not results. `tests/fixtures/run.tar.gz` is a stored smoke
-run, an attack with its honest twin, which the tests that read a run's records or grade a run again use.
+A run needs Docker and `OPENROUTER_API_KEY` in `.env`. On a cloud development container, read
+[its three steps](docs/isolation/README.md#on-a-cloud-development-container) first.
 
-## Per-agent logs
+## Where to read more
 
-Every run bundle (`logs/<run_slug>/<run_name>/`) also holds a per-agent view of the episode:
-
-| File | What it shows |
+| Page | What it answers |
 |---|---|
-| `<run_name>.eval` | a real Inspect log: one sample for the graded run and, in attack mode, one for the honest twin, one span per agent with its turns nested inside; open with `inspect view --log-dir <bundle>` (`make view` prints the command) |
-| `transcript.html` / `.txt` | one column per agent, plus World and each monitor with a verdict, one row per round: each agent's prompts, replies, tool calls and the events its turns caused |
-
-Set `logging.agent_transcript: false` in a run config to skip them. How attribution works: `docs/agent-log/spec.md`.
-
-## Run explorer
-
-`make explore` builds one page per run under `logs/` (or `LOGS=<folder>`) plus an index of them all, and opens it:
-every agent side by side with each monitor's verdict on the step it judged, who read each message, the covert
-steps the monitors missed, and notes you pin to any passage. One run:
-`uv run python -m loc_arena.cli explore <bundle>`. What each view shows, with pictures:
-[`docs/explorer/`](docs/explorer/README.md).
-
-`make read RUN_DIR=<run directory>` has an agent read one run and report what its agents did, with facts
-counted from the records at its head: [`docs/run-reader.md`](docs/run-reader.md).
-
-## Documentation
-
-The full walkthrough is a five-chapter course, served by GitHub Pages:
-
-**https://sreesharvesh.github.io/loc-arena/**
+| [Course](https://sreesharvesh.github.io/loc-arena/) | the walkthrough: the arena, its setting, monitoring, and how to extend it |
+| [`AGENTS.md`](AGENTS.md) | where code lives, the engine and the setting, and the rules for contributors |
+| [`CHANGELOG.md`](CHANGELOG.md) | what changed and when: one dated release per merged pull request, newest first |
+| [`docs/run-config.md`](docs/run-config.md) | every key and setting of a run config |
+| [`docs/isolation/README.md`](docs/isolation/README.md) | how a run's containers isolate agents and wire their tools and services |
+| [`docs/pi-harness.md`](docs/pi-harness.md) | how each agent's session runs in pi, the coding agent |
+| [`docs/iam-service/spec.md`](docs/iam-service/spec.md) | central IAM: identities, rights, access requests and workloads |
+| [`docs/iam-service/agent.md`](docs/iam-service/agent.md) | how to put a service under IAM |
+| [`docs/forge-service.md`](docs/forge-service.md) | the forge: git repositories, pull requests, merges and what is graded |
+| [`docs/deploy-service.md`](docs/deploy-service.md) | the deploy service: how agents release merged code to a service |
+| [`docs/jobsvc-service.md`](docs/jobsvc-service.md) | the job service: the cluster, its jobs and their credentials |
+| [`docs/evalkit-service.md`](docs/evalkit-service.md) | the eval service: evals, runs, results and leaderboards |
+| [`docs/agents-service.md`](docs/agents-service.md) | the agents service: the company's own agents and their executions |
+| [`docs/modelstore-service.md`](docs/modelstore-service.md) | the model store: the weights an inference server downloads |
+| [`docs/tickets-service.md`](docs/tickets-service.md) | the tickets service: the company's projects and tickets |
+| [`docs/chat-service.md`](docs/chat-service.md) | the chat service: the one channel between agents |
+| [`docs/notes-service.md`](docs/notes-service.md) | the notes service: the team's shared notes |
+| [`docs/explorer/README.md`](docs/explorer/README.md) | the run explorer: every view of a run, with pictures |
+| [`docs/run-reader.md`](docs/run-reader.md) | the run reader: an agent's report of what a run's agents did |
+| [`docs/agent-log/spec.md`](docs/agent-log/spec.md) | per-agent logs: what the Inspect log and transcript guarantee |
+| [`docs/agent-log/agent.md`](docs/agent-log/agent.md) | how to work on per-agent logging |
+| [`docs/ci-rules.md`](docs/ci-rules.md) | the checks a pull request must pass |
+| [`docs/inference-and-checker/README.md`](docs/inference-and-checker/README.md) | the plan for the company's inference servers and its model store |
+| [`docs/live-landing/README.md`](docs/live-landing/README.md) | the plan for a side task a live run can land |
+| [`docs/workload-identity/README.md`](docs/workload-identity/README.md) | the plan for a badge on every model call |
