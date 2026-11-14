@@ -48,7 +48,9 @@ SCENARIOS_ROOT = Path(__file__).resolve().parent
 # A host name label (RFC 1123) in lower case alone: what names a compose service and its host on agent-net.
 DNS_LABEL: Final = re.compile(r"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?")
 # The stack's own services (loc_arena.episode_stack): a live service may not take their names.
-STACK_SERVICES: Final = frozenset({"gateway", "collector", "episode", "agentgateway", "telemetry-collector"})
+STACK_SERVICES: Final = frozenset(
+    {"gateway", "collector", "episode", "agentgateway", "telemetry-collector", "telemetry-reader"},
+)
 SANDBOX_PREFIX: Final = "sandbox-"
 RUNNER_PREFIX: Final = "runner-"  # runner-1 to runner-<n>: the runners of the one service with runners
 NODE_PREFIX: Final = "node-"  # node-1 to node-<n>: the fleet of the one service with nodes

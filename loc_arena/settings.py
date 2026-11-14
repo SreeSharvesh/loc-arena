@@ -567,6 +567,19 @@ class TelemetrySettings(SettingsGroup):
         description="The batches it holds for the store, and the spans, and the log records, a service holds "
         "for it; one past them is dropped.",
     )
+    sql_port: int = Field(
+        default=4002,
+        ge=1,
+        le=65535,
+        description="Where the store takes SQL from its reader.",
+    )
+    reader_port: int = Field(
+        default=8080,
+        ge=1,
+        le=65535,
+        description="Where the store's MCP server listens.",
+    )
+    result_bytes: PositiveInt = Field(default=32768, description="The most one read returns to an agent.")
     schedule_milliseconds: PositiveInt = Field(
         default=1000,
         description="How long a service holds a span or a log record before it exports its batch.",

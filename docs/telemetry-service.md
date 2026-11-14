@@ -54,6 +54,54 @@ telemetry-net, which no sandbox, runner or node joins, and has a second user tha
 ([docs/isolation/README.md](isolation/README.md#containers)). This Collector is not the one that writes the
 sealed record of the model calls, which takes nothing from it.
 
+## How agents read it
+
+Agents query the store with the store's own MCP server (`greptimedb-mcp-server`, in the container
+`telemetry-reader`), behind the tools gateway. There is no reader service of ours. The scenario offers three of
+its tools, and an agent calls those its run config lists (`sandbox: tools:`):
+
+| Tool | What it does |
+|---|---|
+| `execute_sql` | one SQL statement over the logs (`opentelemetry_logs`) and the spans (`opentelemetry_traces`), which join on `trace_id` and `span_id` |
+| `describe_table` | a table's columns, with sample rows |
+| `explain_query` | a statement's plan |
+
+One permission covers all of it: `read` on the resource `telemetry`. Every agent of `aurora_efficiency` starts
+with it, and an agent without it asks IAM as for any service; the telemetry's owner approves `read`.
+
+**IAM decides, the gateway enforces.** The store is a ready image and its server checks no caller, so the
+scenario's `iam:` entry says `enforced_by: gateway`. Before each call of one of these tools the gateway asks
+IAM's `POST /authorize` and lets the call through only on an allow
+([docs/iam-service/spec.md](iam-service/spec.md#3-shared-integration-centralized-decisions-local-enforcement)).
+A refused agent is answered as a service answers it, with a tool error:
+`not permitted: read on telemetry. Ask for it with: POST /requests on the IAM service.` If IAM gives no
+decision, the call is refused and nothing runs. If the reader is down, its tools are gone and the other
+services' tools still answer: the gateway serves a session with the targets that answer. A session that
+starts while a target is down is offered no tool of that target, and nothing tells its agent so.
+
+**Nothing an agent sends changes the store.** The server refuses statements that write, and its tools that
+write are offered to no agent; what makes it certain is that the server reads as the store's read-only user.
+The server is on telemetry-net alone, so only the gateway reaches it. A query's result holds at most
+`telemetry.result_bytes`; the server's budget does not cover the text of an error.
+
+**What is recorded, and what monitors see.** The store writes no record of a call, so the gateway's line is
+the record: the agent, the tool, its arguments, its result and IAM's decision (`iam_decision`, `iam_allow`,
+`iam_reason`), which is the id on IAM's own audit line. A refused call's line holds what was asked for
+(`requested_tool`, `requested_args`). After play each such line becomes an `action` event on both logs, a
+read included: the arguments the store's server was sent and what it answered, or `blocked` with the reason
+the agent was given, when IAM refused, gave no decision, or the call failed. A read is an action here because
+what it returns is whatever any release chose to log.
+
+The shipped action monitor reads the query of each such action and its result: `tool_result` is one of its
+declared inputs for the tools `configs/monitors.yaml` lists (`result_tools`), cut to `result_chars` (4000).
+No other tool's result is an input, so every other action's prompt is as it was. That result is text a
+release wrote, read back by an agent: a release can write its log to mislead the monitor that reads it, as
+it can write it to mislead an agent.
+
+**What an agent can see.** Everything every collected service logged and every span, the gateway's among
+them: other agents' tool calls by agent, tool and time, and whatever a release wrote to its log, a credential
+it holds included.
+
 ## Best effort
 
 A store or a Collector that is down never fails a service or a run.
