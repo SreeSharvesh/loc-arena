@@ -106,42 +106,56 @@ def read_unhealthy(compose: list[str], environment: Mapping[str, str]) -> str:
 
     It never raises, so it hides no failure.
     """
+    listing = ["docker", *compose, "ps", "--all", "--format", "json"]
     try:
         listed = subprocess.run(
-            ["docker", *compose, "ps", "--all", "--format", "json"],
+            listing,
             capture_output=True,
             text=True,
             env=environment,
             timeout=LOG_READ_SECONDS,
         )
-        if listed.returncode:
-            return f"\nthe unhealthy containers were not read: {listed.stderr.strip()}"
-        containers = [json.loads(line) for line in listed.stdout.splitlines()]
-        reports = []
-        for container in containers:
-            if container["State"] == "running" and container["Health"] in ("", "healthy"):
-                continue
-            inspected = subprocess.run(
-                ["docker", "inspect", "--format", "{{json .State}}", container["Name"]],
-                capture_output=True,
-                text=True,
-                timeout=LOG_READ_SECONDS,
-            )
-            state = json.loads(inspected.stdout)
-            health = state.get("Health") or {}
-            probes = "".join(
-                f"\n  probe {probe['Start']} to {probe['End']}: exit {probe['ExitCode']} "
-                f"{probe['Output'][:PROBE_OUTPUT_CHARACTERS]!r}"
-                for probe in health.get("Log", [])
-            )
-            reports.append(
-                f"\n{container['Service']}: {state['Status']}, started {state['StartedAt']}, "
-                f"health {health.get('Status', 'none')} after {health.get('FailingStreak', 0)} failed probes"
-                f"{probes}{read_logs(compose, environment, [container['Service']])}",
-            )
-    except (OSError, subprocess.TimeoutExpired, ValueError, KeyError) as error:
-        return f"\nthe unhealthy containers were not read: {error!r}"
-    return "".join(reports) or "\nevery container is running and healthy"
+        # One object per line, or one array: older Compose prints the second.
+        parsed = [json.loads(line) for line in listed.stdout.splitlines()]
+    except (OSError, subprocess.TimeoutExpired, ValueError) as error:
+        return f"\nthe containers were not listed: {error!r}"
+    if listed.returncode:
+        return f"\nthe containers were not listed: {listed.stderr.strip()}"
+    containers = [item for entry in parsed for item in (entry if isinstance(entry, list) else [entry])]
+    well = {("running", ""), ("running", "healthy")}
+    unhealthy = [entry for entry in containers if (entry.get("State"), entry.get("Health")) not in well]
+    reports = [_report_container(compose, environment, container) for container in unhealthy]
+    return "".join(reports) if containers else "\nno container was listed"
+
+
+def _report_container(
+    compose: list[str],
+    environment: Mapping[str, str],
+    container: dict[str, str],
+) -> str:
+    """One container's state, start, every health probe and the end of its log; or why it was not read."""
+    try:
+        inspected = subprocess.run(
+            ["docker", "inspect", "--format", "{{json .State}}", container["Name"]],
+            capture_output=True,
+            text=True,
+            timeout=LOG_READ_SECONDS,
+        )
+        state = json.loads(inspected.stdout)
+        health = state.get("Health") or {}
+        probes = "".join(
+            f"\n  probe {probe['Start']} to {probe['End']}: exit {probe['ExitCode']} "
+            f"{probe['Output'][:PROBE_OUTPUT_CHARACTERS]!r}"
+            for probe in health.get("Log", [])
+        )
+        report = (
+            f"\n{container['Service']}: {state['Status']}, started {state['StartedAt']}, "
+            f"health {health.get('Status', 'none')} after {health.get('FailingStreak', 0)} failed probes"
+            f"{probes}"
+        )
+    except (OSError, subprocess.TimeoutExpired, ValueError, KeyError, TypeError) as error:
+        report = f"\n{container.get('Name', container)} not read: {error!r}"
+    return report + read_logs(compose, environment, [container.get("Service", "")])
 
 
 def needs_stack(*images: str) -> list[pytest.MarkDecorator]:

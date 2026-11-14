@@ -23,7 +23,7 @@ from loc_arena.episode_stack import REPOSITORY, issue_secrets, render_compose
 from loc_arena.gateway.core import API_KEY_VARIABLE
 from loc_arena.telemetry_stack import COLLECTOR_SERVICE, STORE_DATA, find_store
 
-from tests.integration._docker_support import image_exists
+from tests.integration._docker_support import needs_stack
 from tests.integration.test_deploy_stack import AUTHOR, CONFIG, RUN, Stack
 from tests.integration.test_telemetry_stack import SEND_RECORD, query, read_passwords, read_rows
 
@@ -51,10 +51,10 @@ urllib.request.urlopen(request, timeout=10)
 """
 ARRIVAL_SECONDS = 20  # how long a record may take from the Collector to the store
 
-pytestmark = pytest.mark.skipif(
-    not image_exists(CONFIG.settings.stack.image) or STORE is None,
-    reason=f"needs Docker, the {CONFIG.settings.stack.image} image and a telemetry store",
-)
+pytestmark = [
+    *needs_stack(CONFIG.settings.stack.image),
+    pytest.mark.skipif(STORE is None, reason="needs a telemetry store"),
+]
 
 
 def bounded(**telemetry: object) -> RunConfig:

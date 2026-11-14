@@ -196,7 +196,7 @@ addopts = "-ra -p tests.stack_slots"
 # Test modules marked stack (Docker stacks) that run at once, however many workers. On CI's 4 cores two
 # stacks at once left Phoenix unhealthy after the honest twin's renewal; one passed 2,778 tests in 22 minutes.
 stack_slots = 1
-stack_slot_seconds = 1800  # how long a marked module waits for a slot before it fails
+stack_slot_seconds = 2400  # a module's wait for the slot, then it fails: under CI's 45-minute job timeout
 markers = [
   "integration: tests that need docker and/or network (skip-guarded)",
 ]
