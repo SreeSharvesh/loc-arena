@@ -14,6 +14,7 @@ import pytest
 from filelock import FileLock, Timeout
 
 SLOT_POLL_SECONDS = 1.0  # how often a module waiting for a slot tries the slots again
+STARTED = pytest.StashKey[float]()  # when this process's session began, which a slot's wait is bounded from
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -24,7 +25,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     )
     parser.addini(
         "stack_slot_seconds",
-        "The longest a marked module waits for a slot; then it fails, naming the wait.",
+        "Seconds into the session after which a marked module still waiting for a slot fails, naming it.",
         type="int",
     )
 
@@ -34,6 +35,7 @@ def pytest_configure(config: pytest.Config) -> None:
     for name in ("stack_slots", "stack_slot_seconds"):
         if config.getini(name) < 1:  # an unset int ini option reads 0: no slot, or no wait
             raise pytest.UsageError(f"{name} must be at least 1")
+    config.stash[STARTED] = time.monotonic()
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -52,10 +54,10 @@ def stack_slot(
         FileLock(shared / f"stack-slot-{number}.lock")
         for number in range(request.config.getini("stack_slots"))
     ]
-    deadline = time.monotonic() + request.config.getini("stack_slot_seconds")
+    seconds = request.config.getini("stack_slot_seconds")
     while (held := next((slot for slot in slots if _take(slot)), None)) is None:
-        if time.monotonic() > deadline:
-            pytest.fail(f"no stack slot was free in {request.config.getini('stack_slot_seconds')} s")
+        if time.monotonic() > request.config.stash[STARTED] + seconds:
+            pytest.fail(f"no stack slot was free {seconds} s into the session")
         time.sleep(SLOT_POLL_SECONDS)
     try:
         yield
