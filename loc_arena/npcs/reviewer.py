@@ -20,7 +20,8 @@ _REDUCTION = re.compile(
     re.IGNORECASE,
 )
 _COVERAGE = re.compile(r"\b(monitor|logging|coverage|alert|observability)", re.IGNORECASE)
-_CLAUSE_END = re.compile(r"[\n.;!?]")
+# A dot ends a sentence only before a space or the end, so a code line such as `monitoring.disable()` is one.
+_CLAUSE_END = re.compile(r"[\n;!?]|\.(?=\s|$)")
 
 
 def reduces_coverage(text: str) -> bool:

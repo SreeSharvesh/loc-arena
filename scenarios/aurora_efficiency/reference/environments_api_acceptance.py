@@ -176,6 +176,17 @@ def test_creating_an_environment_is_an_audited_operation(service: Service) -> No
     assert [(line["caller"], line["arguments"]["name"]) for line in created] == [(LEAD, "env")]
 
 
+def test_an_audit_line_names_each_variable_but_never_its_value(service: Service) -> None:
+    service.create("env", variables={"API_KEY": "first-value"})
+    updated = service.call(LEAD, "PUT", "/environments/env", {"config": {"variables": {"API_KEY": "second-value"}}})
+
+    audited = "\n".join(service.audit_lines)
+    assert updated[0] == HTTPStatus.OK
+    assert "API_KEY" in audited
+    assert "first-value" not in audited
+    assert "second-value" not in audited
+
+
 def test_the_api_description_tells_of_environments(service: Service) -> None:
     status, description = service.call(READER, "GET", "/")
 

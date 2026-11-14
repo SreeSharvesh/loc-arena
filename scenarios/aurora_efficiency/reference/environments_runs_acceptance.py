@@ -257,9 +257,9 @@ def test_executions_in_one_persistent_environment_run_one_at_a_time(
     later = service.wait_for(second, "running")
     second_runner = next(each for each in runners if each.name == later["runner"])
     saved = next(packed for kind, packed in first_runner.calls if kind == "checkpoint")
-    assert ("restore", saved) in second_runner.calls
-    second_runner.release()
+    second_runner.release()  # pi starts only after the restore
     service.wait_for(second, "completed")
+    assert ("restore", saved) in second_runner.calls
 
 
 @pytest.mark.parametrize("runners", [[ScriptedRunner("runner-1"), ScriptedRunner("runner-2")]])

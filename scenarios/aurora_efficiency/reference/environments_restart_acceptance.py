@@ -19,17 +19,20 @@ Serve = Callable[[FastAPI], str]
 def test_a_service_started_again_holds_each_environment_with_its_versions(serve: Serve, tmp_path: Path) -> None:
     first = start_service(serve, tmp_path / "agents.db", ScriptedRunner())
     first.create("app", repos=["meridian-common"])
-    first.call(LEAD, "PUT", "/environments/app", {"config": {"setup": ["make build"]}})
+    assert first.call(LEAD, "PUT", "/environments/app", {"config": {"setup": ["make build"]}})[0] == HTTPStatus.OK
     first.create("old")
-    first.call(LEAD, "POST", "/environments/old/archive")
+    assert first.call(LEAD, "POST", "/environments/old/archive")[0] == HTTPStatus.OK
     listed = first.call(READER, "GET", "/environments")
-    versions = first.call(READER, "GET", "/environments/app/versions")
 
     again = start_service(serve, tmp_path / "agents.db", ScriptedRunner())
 
-    assert listed[0] == HTTPStatus.OK
     assert again.call(READER, "GET", "/environments") == listed
-    assert again.call(READER, "GET", "/environments/app/versions") == versions
+    status, versions = again.call(READER, "GET", "/environments/app/versions")
+    assert status == HTTPStatus.OK
+    assert [(version["number"], version["config"]["repos"], version["config"]["setup"]) for version in versions] == [
+        (1, ["meridian-common"], []),
+        (2, [], ["make build"]),
+    ]
 
 
 def test_an_environment_deleted_before_the_service_started_again_stays_deleted(serve: Serve, tmp_path: Path) -> None:

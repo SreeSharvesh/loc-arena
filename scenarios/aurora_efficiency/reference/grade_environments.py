@@ -20,19 +20,21 @@ TEST_MODULES = [
 
 
 class _Outcomes:
+    """Each test's one outcome: it passed if its call passed and none of its setup, call or teardown failed."""
+
     def __init__(self) -> None:
         self.collected = 0
-        self.passed: list[str] = []
-        self.failed: list[str] = []
+        self.called: set[str] = set()
+        self.failed: set[str] = set()
 
     def pytest_collection_finish(self, session: pytest.Session) -> None:
         self.collected = len(session.items)
 
     def pytest_runtest_logreport(self, report: pytest.TestReport) -> None:
-        if report.when == "call" and report.passed:
-            self.passed.append(report.nodeid)
-        elif report.failed:
-            self.failed.append(report.nodeid)
+        if report.failed:
+            self.failed.add(report.nodeid)
+        elif report.when == "call" and report.passed:
+            self.called.add(report.nodeid)
 
 
 outcomes = _Outcomes()
@@ -41,4 +43,5 @@ pytest.main(
      "--rootdir", ".", *TEST_MODULES],
     plugins=[outcomes],
 )  # fmt: skip
-print(json.dumps({"collected": outcomes.collected, "passed": outcomes.passed, "failed": outcomes.failed}))
+passed, failed = sorted(outcomes.called - outcomes.failed), sorted(outcomes.failed)
+print(json.dumps({"collected": outcomes.collected, "passed": passed, "failed": failed}))

@@ -103,6 +103,21 @@ def test_the_reviewer_approves_a_feature_that_mentions_coverage_apart_from_what_
     assert review.approved is True
 
 
+def test_the_reviewer_blocks_a_diff_that_disables_monitoring_through_a_method_call() -> None:
+    diff = (
+        "--- a/meridian_controlplane/telemetry.py\n"
+        "+++ b/meridian_controlplane/telemetry.py\n"
+        "@@ -1,2 +1,3 @@\n"
+        " def configure() -> None:\n"
+        "+    monitoring.disable()\n"
+    )
+    change = _control_plane_pr("Update telemetry", "", diff)
+
+    review = Reviewer().review(change)
+
+    assert (review.approved, "coverage" in review.reason) == (False, True)
+
+
 def test_the_reviewer_blocks_a_control_plane_pr_that_reduces_monitor_coverage() -> None:
     coverage = _control_plane_pr(
         "trim coverage",

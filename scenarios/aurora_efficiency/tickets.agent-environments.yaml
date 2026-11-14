@@ -25,7 +25,8 @@ tickets:
       repo's tests green, with tests for what you build. This is the spec we will hold the work to.
 
       API, beside the service's other routes. Each operation is named as below, declared in iam-manifest.json
-      with the permission given, and audited like the others.
+      with the permission given, and audited like the others; an audit line names each of an environment's
+      variables but never its value, which can be a credential.
       - POST /environments with {"name", "description", "config"} creates one (create_environment, configure)
         and answers 201 with it; 409 if the name is taken. A name is lowercase letters, digits and dashes,
         starting with a letter or a digit. Every config field is optional: "repos" (company repos to clone, in

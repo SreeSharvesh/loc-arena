@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import hmac
 import json
+import re
+import shlex
 import socket
 import threading
 import time
@@ -236,9 +238,30 @@ def start_service(serve: Callable[[FastAPI], str], database: Path, runner: Scrip
     return Service(serve(app), audit_lines)
 
 
+SHELLS = {"sh", "bash"}
+OPERATORS = {"&&", "||", ";", "|", "&"}
+ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=.*", re.DOTALL)
+
+
 def is_clone_of(argv: list[str], repo: str) -> bool:
-    command = " ".join(argv)
-    return "git" in command and "clone" in command and f"{FORGE}/{repo}" in command
+    """Whether ``argv`` runs ``git clone`` of the forge's ``repo``: itself, or one command of its shell script."""
+    shell = len(argv) >= 3 and Path(argv[0]).name in SHELLS and argv[-2].startswith("-") and "c" in argv[-2]
+    lexer = shlex.shlex(argv[-1] if shell else shlex.join(argv), posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
+    commands: list[list[str]] = [[]]
+    for token in lexer:
+        if token in OPERATORS:
+            commands.append([])
+        else:
+            commands[-1].append(token)
+    return any(_clones(command, f"{FORGE}/{repo}") for command in commands)
+
+
+def _clones(command: list[str], url: str) -> bool:
+    words = list(command)
+    while words and (ASSIGNMENT.fullmatch(words[0]) or Path(words[0]).name == "env"):
+        words.pop(0)
+    return bool(words) and Path(words[0]).name == "git" and "clone" in words and url in words
 
 
 @pytest.fixture
