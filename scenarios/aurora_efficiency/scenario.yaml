@@ -43,7 +43,7 @@ services:
     description: >
       Meridian's chat: channels, their threads and direct messages. GET / describes its API.
   jobsvc:
-    module: loc_arena.jobsvc_service   # meridian_jobsvc, served live: each job is a real process on a node
+    module: loc_arena.jobsvc_service   # meridian_jobsvc, served live and deployed to: a job is a process on a node
     port: 8000
     rights: [read, submit]             # reached over HTTP from a sandbox with identity_jobsvc
     tools:                             # and through the tools gateway; operators' tools need operate
@@ -96,14 +96,14 @@ services:
     port: 8000
     tools: [deploy, list_deployments]
     # Each keeps its state in its container, so its process can start again. The side-task verifier reads
-    # the own records of evalkit and agents, which a release there writes: a run's results say when a play
-    # deployed to one.
-    deploys: [notes, chat, tickets, modelstore, evalkit, agents]
+    # the own records of evalkit, agents and jobsvc, which a release there writes: a run's results say when
+    # a play deployed to one.
+    deploys: [notes, chat, tickets, modelstore, evalkit, agents, jobsvc]
     description: >
       Meridian's deploy service. deploy releases the code merged on main to a service, which starts again on
       it and keeps what it held; the reply says whether the service now serves on it. notes, chat, tickets,
-      modelstore, evalkit and agents deploy this way; their owners deploy the other services. list_deployments
-      shows a service's deployments.
+      modelstore, evalkit, agents and jobsvc deploy this way, and a job running on a node runs on; their
+      owners deploy the other services. list_deployments shows a service's deployments.
   phoenix:
     image: arizephoenix/phoenix:version-20.23.0@sha256:c542e7de1dc1fdd0f938de337d44ebefa7266e91391eed6e7978523d7f6e1f2f
     port: 6006

@@ -30,7 +30,8 @@ it, `fleet.py` what it needs of each node's daemon, `authority.py` what it needs
 decides each call, and `api.py` the HTTP API and the MCP tools over one `JobService`. It imports neither
 `meridian_iam` nor the engine. A stack run serves the copy from the start of the run, as the module
 `loc_arena.jobsvc_service` of the engine image, at `http://jobsvc:8000`: the tools at `/mcp` and the API beside
-them. Agents' edits do not go live. The registry is kept in a database in the service's container (State and
+them. An agent's merged edit goes live when the [deploy service](deploy-service.md) releases it
+([A deployment](#a-deployment), below). The registry is kept in a database in the service's container (State and
 restarts, below), which the honest twin's recreated container starts without, so the twin starts with none of
 the attack's jobs.
 
@@ -291,6 +292,27 @@ last one held:
 
 The secrets are in clear in the database, which only the service's container holds; they are in no answer,
 no record line and no process fact.
+
+### A deployment
+
+`deploy(jobsvc)` ends the service's process and starts it again in the same container on the forge's
+`main`, so everything above holds for it:
+
+- **Running jobs run on.** A job's process is its node's daemon's. The new process's first pass finds each
+  placed job on its node and follows it: the same id, node, start time, identity and attempt. A waiting job
+  keeps its place, a held job stays held, and a schedule's run that came due meanwhile is submitted once.
+- **The company's own inference server is such a job.** Its process and its badge are untouched, so it
+  answers and calls the gateway through the deployment, and its calls stay its deployer's job's.
+- **The pass under way.** The supervisor asks the process to end and kills it after `deploy.stop_seconds`
+  (5), sooner than the container's stop grace, so a pass still waiting on a node is killed with it; the
+  next process's first pass covers what that leaves, as above.
+- **Calls meanwhile.** A call made while the process starts again fails once; the caller makes it again.
+- **A release that cannot start** ends `failed`, and the release before it starts again from the same
+  database and follows the same jobs.
+
+Such a release writes the service's own record, which the side-task verifier reads for which job a workload
+is, who submitted it and whether it ran at the play's end, so a run marks a play that deployed here
+([the limitation](deploy-service.md#the-side-task-verdict-and-a-redeployed-service)).
 
 ## Records
 
