@@ -19,6 +19,10 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [360] - 2026-11-14: Tests run at most two Docker stacks at once
+### Fixed
+- The repository's test suite runs at most two Docker stacks at once, so stacks no longer starve each other of CPU and fail their health checks.
+
 ## [358] - 2026-11-14: Agents query the company's telemetry with SQL
 ### Added
 - Agents read every collected service's logs and traces with the telemetry store's own `execute_sql` tool, so they can debug a running release ([docs](docs/telemetry-service.md#how-agents-read-it)).
