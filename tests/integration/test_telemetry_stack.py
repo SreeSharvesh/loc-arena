@@ -187,7 +187,9 @@ def seen(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Seen]:
         say["note spans"] = select(f"{SPANS} WHERE service_name = 'notes' AND span_name LIKE '%write_note'")
         # The gateway's own spans of the call arrive after the service's: read once it has exported.
         say["gateway spans"] = select(f"{SERVER_SPANS} AND trace_id = '{say['note spans'][0]['trace_id']}'")
-        say["gateway span"] = select(SERVER_SPANS.replace(GATEWAY_COLUMNS, "*"))[0]
+        # Every span the gateway wrote of that call, with every column the store keeps of each.
+        called = f"service_name = '{GATEWAY_NAME}' AND trace_id = '{say['note spans'][0]['trace_id']}'"
+        say["gateway rows"] = select(f"SELECT * FROM opentelemetry_traces WHERE {called}")
         # A caller that asks not to be traced is traced: its own trace id, with the sampled flag unset.
         unsampled = [
             "python",
@@ -199,6 +201,9 @@ def seen(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Seen]:
             f"00-{UNSAMPLED_TRACE}-{'1' * 16}-00",
         ]
         stack.run("exec", "-T", "iam", *unsampled, standard_input=stack.play[token_variable(AUTHOR)])
+        say["unsampled in notes"] = select(
+            f"{SPANS} WHERE trace_id = '{UNSAMPLED_TRACE}' AND service_name = 'notes'",
+        )
         say["unsampled"] = select(
             f"{SERVER_SPANS} AND trace_id = '{UNSAMPLED_TRACE}' AND {CALLED_LIST_NOTES}",
         )
@@ -293,7 +298,7 @@ def test_a_release_that_serves_and_then_fails_says_why_in_a_log_record_that_name
     assert (deployment["state"], seen.answers["refused comment"]["error"]) == ("serving", REFUSAL)
     assert error["body"] == f"no queue for {seen.answers['ticket']}"
     assert attributes["exception.type"] == "PermissionError"
-    assert attributes["client.address"]  # stamped by the Collector: where the record came from
+    assert attributes["meridian.sender.address"]  # stamped by the Collector: where the record came from
     assert "spool/notifications" in attributes["exception.stacktrace"]
     assert (resource["service.version"], resource["deployment.id"]) == (release, release)
     assert {span["version"] for span in seen.answers["refused spans"]} == {release}
@@ -324,13 +329,18 @@ def test_the_gateways_span_of_a_tool_call_names_the_agent_and_the_tool_in_the_se
     assert [(span["agent"], span["tool"]) for span in served] == [(AUTHOR, "write_note")]
 
 
-def test_the_gateways_span_holds_neither_the_calls_arguments_nor_a_credential(seen: Seen) -> None:
-    span = json.dumps(seen.answers["gateway span"])
+def test_the_gateways_spans_of_a_call_hold_neither_its_arguments_nor_a_credential(seen: Seen) -> None:
+    rows = seen.answers["gateway rows"]
+    spans = json.dumps(rows)
 
-    assert AUTHOR in span  # the span is the one of the agent's call
-    assert "one request" not in span  # the text of the note the call wrote
-    assert not [name for name, secret in seen.secrets.items() if secret in span]
+    assert {"SPAN_KIND_SERVER", "SPAN_KIND_CLIENT"} <= {
+        row["span_kind"] for row in rows
+    }  # its call onward too
+    assert "write_note" in spans  # the spans are those of the call
+    assert "one request" not in spans  # the text of the note the call wrote
+    assert not [name for name, secret in seen.secrets.items() if secret in spans]
 
 
 def test_a_call_that_asks_not_to_be_traced_is_traced(seen: Seen) -> None:
     assert seen.answers["unsampled"] == [{"agent": AUTHOR, "tool": "list_notes"}]
+    assert "tools/call list_notes" in {span["span_name"] for span in seen.answers["unsampled in notes"]}

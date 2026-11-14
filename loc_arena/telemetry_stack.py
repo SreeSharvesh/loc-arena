@@ -40,6 +40,9 @@ INSTRUMENT = "opentelemetry-instrument"  # runs a command with the SDK and each 
 SDK_BATCH_SIZE = 512  # the SDK's default: the most spans, or log records, in one export
 GATEWAY_NAME = "tools-gateway"  # the service.name of the tools gateway's spans
 NAMESPACE = "meridian"  # the service.namespace of every service of the company
+# What the Collector stamps on each record: the address it came from. A name of its own, since a span's
+# `client.address` is that span's caller, as on the tools gateway's.
+SENDER_ATTRIBUTE = f"{NAMESPACE}.sender.address"
 
 
 class ExportBounds(TypedDict):
@@ -150,7 +153,7 @@ def render_collector_config(config: RunConfig, store: LiveService, writer_passwo
         },
         "processors": {
             "attributes/sender": {
-                "actions": [{"key": "client.address", "from_context": "client.address", "action": "upsert"}],
+                "actions": [{"key": SENDER_ATTRIBUTE, "from_context": "client.address", "action": "upsert"}],
             },
             # The ASGI instrumentation's span of each message a request receives and sends: several a
             # request, and nothing a reader of a trace asks for.

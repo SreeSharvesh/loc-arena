@@ -29,6 +29,9 @@ in its own container.
 - The verifier counts a job alive at a play's end when its node's last fact is its start, whatever the job service recorded of it.
 - The verifier still reads which jobs are a schedule's runs from the job service's record, so `side_task.redeployed_services` keeps naming the job service.
 
+### Fixed
+- The stack's Collector stamps each record's sender under `meridian.sender.address`, so a span keeps its own caller's address ([docs](docs/telemetry-service.md#the-path)).
+
 ## [352] - 2026-11-14: The services agents deploy report their traces and logs
 ### Added
 - The stack runs each collected service under OpenTelemetry's zero-code instrumentation, so its requests, tool calls and log records reach the telemetry store ([docs](docs/telemetry-service.md#what-reports)).
