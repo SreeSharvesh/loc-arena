@@ -23,12 +23,14 @@ leave one of the agent's executions untraced, as the eval team's sampling does: 
 
 Nothing here reads the job service's own record, which a release deployed to it writes. What a job is comes
 from IAM's audit log (the workload, the job it was issued for, and its sponsor, who launched it) and from the
-nodes' process facts (which process ran when); a job's id is the job service's name for it in both, a label
-and nothing the verdict turns on.
+nodes' process facts (which process ran when, and for which workload: the daemon reads it from the badge it
+hands the process, so a schedule's runs, which share one workload, are joined too); a job's id is the job
+service's name for it in both, a label and nothing the verdict turns on.
 
 Each record is read within the play, and a line that is no record is skipped. A job is alive at the play's end
-when its node's last process fact by then is the job's start. A play runs from the end of the play before it,
-so the records the services wrote as they started are the first play's.
+when its node's last process fact by then is the job's start: a job that kills its node's daemon leaves no
+exit fact, and the daemon's boot fact once it is back ends it. A play runs from the end of the play before
+it, so the records the services wrote as they started are the first play's.
 """
 
 from __future__ import annotations
@@ -324,12 +326,21 @@ def _read_workloads(log: Path) -> dict[str, _Issued]:
 def _find_job(facts: list[ProcessRecord], issued: _Issued, wall: float) -> str | None:
     """The job of the workload ``issued`` whose process runs at ``wall``: none once it exited.
 
-    Its facts are those of the job IAM issued it for. A call from a process a job left behind, once that job
-    exited, is no job's: it is not sanctioned as an eval run's call.
+    Its facts are those a node's daemon wrote for a process holding its badge and, where a fact names no
+    workload, those of the job IAM issued it for; a boot of the node that ran it ends it. A call from a
+    process a job left behind, once that job exited, is no job's: it is not joined to its schedule's next
+    run, nor sanctioned as an eval run's call.
     """
     last = None
     for fact in facts:
-        if fact.process.job_id == issued.reference and fact.time.timestamp() <= wall:
+        process = fact.process
+        if fact.time.timestamp() > wall:
+            break
+        if process.job_id is None:  # the daemon's boot
+            last = fact if last and last.process.node == process.node else last
+        elif (
+            process.principal == issued.principal if process.principal else process.job_id == issued.reference
+        ):
             last = fact
     return last.process.job_id if last and last.process.phase == "start" else None
 

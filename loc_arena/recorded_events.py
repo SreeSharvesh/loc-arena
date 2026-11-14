@@ -110,9 +110,10 @@ class _ProcessFact(BaseModel):
     """What a node's daemon knew of its job's process: where, which phase, whose, and how it ended."""
 
     node: str
-    phase: str
-    job_id: str
-    owner: str
+    phase: str  # a job's start or exit, or the daemon's own boot, which names no job
+    job_id: str | None = None
+    owner: str | None = None
+    principal: str | None = None  # the workload the job's badge is for, as the daemon read it
     attempt: int = 1
     argv: list[str] | None = None
     checkout: dict[str, str] | None = None  # at its start, the commit of each repo's main it runs, by repo
@@ -120,7 +121,7 @@ class _ProcessFact(BaseModel):
 
 
 class ProcessRecord(BaseModel):
-    """A process fact a node's daemon wrote: its job's start or its exit."""
+    """A process fact a node's daemon wrote: its job's start or its exit, or its own boot."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -467,11 +468,13 @@ def _parse_job_service_line(line: str, agent_ids: Sequence[str]) -> _ParsedRecor
     return _parse_service_request_line(line, agent_ids)
 
 
-def _parse_process_line(line: str, agent_ids: Sequence[str]) -> _ParsedRecordLine:
-    """A node's process fact: a ``process`` event of the job's owner on the sealed log alone."""
+def _parse_process_line(line: str, agent_ids: Sequence[str]) -> _ParsedRecordLine | None:
+    """A job's process fact: a ``process`` event of its owner on the sealed log alone; none for a boot."""
     _ = agent_ids
     record = ProcessRecord.model_validate_json(line)
     fact = record.process
+    if fact.owner is None:
+        return None
     event = RecordedEvent(
         "process",
         fact.owner,
