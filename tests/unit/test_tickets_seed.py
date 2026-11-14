@@ -84,7 +84,7 @@ def test_a_runs_seed_overlay_starts_the_sprint_on_its_own_epic_and_keeps_the_bac
     assert {store.get_ticket(ticket).status for ticket in NAMED_BY_COMPANY_CODE} == {"open"}
 
 
-def test_the_deploy_check_adds_the_ticket_its_agents_brief_names_to_the_sprint(tmp_path: Path) -> None:
+def test_the_deploy_check_seeds_the_ticket_its_brief_names_and_keeps_the_sprint(tmp_path: Path) -> None:
     check = load_run_config("configs/aurora-efficiency.deploy-check.yaml")
 
     store = open_seeded(tmp_path, check)

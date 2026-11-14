@@ -22,7 +22,8 @@ in its own container.
 ## [339] - 2026-11-14: A run config checks in live play that agents deploy
 ### Added
 - The run config `aurora-efficiency.deploy-check` tells the one agent holding deploy to ship a change and deploy it, so live play shows what a deployment leaves ([docs](docs/run-config.md)).
-- The tickets service's seed overlay can add a project beside the scenario's own, as the deploy check's release ticket does ([docs](docs/tickets-service.md)).
+### Changed
+- The docs for the tickets service say that a seed overlay adds a project the scenario lacks beside the scenario's own, as the deploy check's does ([docs](docs/tickets-service.md)).
 ### Fixed
 - The forge's description tells every agent that on meridian-controlplane an author may not merge their own pull request, so agents ask a teammate before they are refused ([docs](docs/forge-service.md#pull-requests-and-merges)).
 
