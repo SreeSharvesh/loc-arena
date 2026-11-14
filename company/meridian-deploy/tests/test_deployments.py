@@ -1,8 +1,8 @@
 """The registry's own rules: ``deploy`` starts a deployment and returns, and the deployment ends by itself.
 
-A service takes one deployment at a time, and a bounded number. The forge and the supervisor are stand-ins
-of the registry's protocols; a real forge, IAM and supervisors are in the stack's test
-(``tests/integration/test_deploy_stack.py``).
+A service takes one deployment at a time, and a bounded number, each for a bounded time. The forge and the
+supervisor are stand-ins of the registry's protocols; a real forge, IAM and supervisors are in the stack's
+test (``tests/integration/test_deploy_stack.py``).
 """
 
 from __future__ import annotations
@@ -36,9 +36,13 @@ class FakeForge:
 
     stands: bool = False
     breaks: bool = False
+    hangs: bool = False  # each fetch waits until ``answers`` is set
+    answers: threading.Event = field(default_factory=threading.Event)
     fetched: int = 0
 
     def fetch(self, credential: SecretStr) -> dict[str, MainTree]:
+        if self.hangs:
+            self.answers.wait()
         if self.breaks:
             raise OSError(f"could not run git with {credential.get_secret_value()}")
         self.fetched += 0 if self.stands and self.fetched else 1
@@ -69,10 +73,11 @@ class Registry:
     supervisors: FakeSupervisors = field(default_factory=FakeSupervisors)
     credentials: FakeCredentials = field(default_factory=FakeCredentials)
     ended: Queue[Deployment] = field(default_factory=Queue)
+    seconds: float = WAIT_SECONDS  # how long a deployment may last
 
     def __post_init__(self) -> None:
         collaborators = (self.credentials, self.forge, self.supervisors)
-        self.deployments = Deployments(["notes"], *collaborators, max_deployments=2, record=self.ended.put)
+        self.deployments = Deployments(["notes"], *collaborators, 2, self.seconds, self.ended.put)
 
     def deploy_to_its_end(self) -> Deployment:
         """A deployment of notes an agent starts, as the registry recorded it once it had ended."""
@@ -174,3 +179,47 @@ def test_a_deployment_refused_its_credential_is_none_and_leaves_its_service_free
     ended = registry.deploy_to_its_end()
 
     assert (ended.state, registry.deployments.list_deployments("notes")) == ("serving", [ended])
+
+
+@pytest.fixture
+def hung() -> Iterator[Registry]:
+    """A registry whose forge answers no fetch until the test ends, and whose deployments last 0.2 s."""
+    registry = Registry(forge=FakeForge(hangs=True), seconds=0.2)
+    yield registry
+    registry.forge.answers.set()
+
+
+def test_a_deployment_that_outlasts_its_bound_ends_failed_saying_so_and_frees_its_service(
+    hung: Registry,
+) -> None:
+    hung.deployments.deploy("an-agent", "notes")
+
+    ended = hung.ended.get(timeout=WAIT_SECONDS)
+    after = hung.deployments.deploy("an-agent", "notes")
+
+    assert (ended.number, ended.state, ended.detail) == (1, "failed", "the deployment did not end in 0.2 s")
+    assert (after.number, after.state) == (2, "started")
+
+
+def test_a_release_fetched_after_its_deployment_was_given_up_is_not_handed_over(hung: Registry) -> None:
+    hung.deployments.deploy("an-agent", "notes")
+    hung.ended.get(timeout=WAIT_SECONDS)
+
+    hung.forge.answers.set()  # the fetch answers, late
+
+    assert not hung.supervisors.handed_over.wait(1)
+
+
+def test_a_deployment_no_thread_starts_for_ends_failed_saying_so_and_frees_its_service() -> None:
+    registry = Registry()
+    usual = threading.stack_size(1 << 48)  # a stack larger than the address space: no thread starts
+    try:
+        unstarted = registry.deployments.deploy("an-agent", "notes")
+    finally:
+        threading.stack_size(usual)
+
+    recorded = registry.ended.get(timeout=WAIT_SECONDS)
+    after = registry.deploy_to_its_end()
+
+    assert (unstarted.state, unstarted.detail) == ("failed", "the deployment could not be started")
+    assert (recorded, after.state) == (unstarted, "serving")

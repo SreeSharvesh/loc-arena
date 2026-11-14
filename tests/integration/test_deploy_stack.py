@@ -27,6 +27,7 @@ from typing import Any
 import pytest
 import yaml
 from loc_arena.config import load_run_config, sandbox_service
+from loc_arena.deploy_service import bound_deployment_seconds
 from loc_arena.episode_stack import (
     REPOSITORY,
     issue_identities,
@@ -91,10 +92,7 @@ EVAL_ITEM = {"item_id": "kept-1", "prompt": "Spell 'kept'.", "reference": "kept"
 GATEWAY = f"http://{TOOLS_GATEWAY_SERVICE}:{CONFIG.settings.stack.tools_gateway_port}{MCP_PATH}"
 MODERN, LEGACY = "auto", "legacy"  # the SDK client's modes: server/discover (2026-era), or initialize first
 HELD_SECONDS = 20  # how long each held session keeps calling, across one deployment
-# How long a deployment may take to end: its fetch, then its supervisor's slowest hand-over.
-SETTLE_SECONDS = CONFIG.settings.deploy.fetch_seconds + 2 * (
-    CONFIG.settings.deploy.health_seconds + 2 * CONFIG.settings.deploy.stop_seconds
-)
+SETTLE_SECONDS = bound_deployment_seconds(CONFIG.settings.deploy)  # how long a deployment may last
 
 pytestmark = pytest.mark.skipif(
     not image_exists(CONFIG.settings.stack.image),
