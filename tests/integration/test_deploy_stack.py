@@ -83,7 +83,7 @@ MODEL = "aurora-7b-v3"
 # What each refuses for a name it does not hold, on its first release.
 NO_MODEL = "Error executing tool read_manifest: no model absent (one)"
 NO_EVAL = "Error executing tool get_eval: no eval 'absent' (one)"
-NO_AGENT = "no agent named 'absent' (one)"
+NO_AGENT = '{"detail":"no agent named \'absent\' (one)"}'
 KEPT_AGENT = {"name": "kept-agent", "model": "costly/model", "system_prompt": "Keep."}
 EVAL_ITEM = {"item_id": "kept-1", "prompt": "Spell 'kept'.", "reference": "kept", "category": "spelling"}
 GATEWAY = f"http://{TOOLS_GATEWAY_SERVICE}:{CONFIG.settings.stack.tools_gateway_port}{MCP_PATH}"
@@ -113,7 +113,7 @@ try:
     with urllib.request.urlopen(request) as reply:
         print(reply.read().decode())
 except urllib.error.HTTPError as refused:
-    print(json.dumps({"error": json.loads(refused.read())["detail"]}))
+    print(json.dumps({"error": refused.read().decode()}))
 """
 # One session, held open while a deployment happens: what its calls of write_note answered, in order.
 HOLD_SESSION = """
@@ -393,6 +393,7 @@ def deployed(stack: Stack, tmp_path_factory: pytest.TempPathFactory) -> Deployed
     say["manifest on a recreated service"] = stack.tool(AUTHOR, "read_manifest", model=MODEL)
     say["evals on a recreated service"] = stack.tool(AUTHOR, "list_evals")
     say["agents on a recreated service"] = stack.call_agents("GET", "/agents")
+    say["agent on a recreated service"] = stack.call_agents("GET", "/agents/absent")
     return seen
 
 
@@ -406,7 +407,7 @@ def deployed(stack: Stack, tmp_path_factory: pytest.TempPathFactory) -> Deployed
             ("Error executing tool read_manifest: no model absent", NO_MODEL),
         ),
         ("eval", "error", ("Error executing tool get_eval: no eval 'absent'", NO_EVAL)),
-        ("agent", "error", ("no agent named 'absent'", NO_AGENT)),
+        ("agent", "error", (NO_AGENT.replace(" (one)", ""), NO_AGENT)),
     ],
 )
 def test_merged_code_is_served_once_it_is_deployed_and_not_before(
@@ -570,6 +571,7 @@ def test_a_recreated_service_runs_the_images_code_from_its_seed(deployed: Deploy
         replies["model on a recreated service"]["error"],
         [found["eval_id"] for found in replies["evals on a recreated service"]["evals"]],
         [found["name"] for found in replies["agents on a recreated service"]],
+        replies["agent on a recreated service"]["error"],
     )
 
     assert fresh == (
@@ -578,6 +580,7 @@ def test_a_recreated_service_runs_the_images_code_from_its_seed(deployed: Deploy
         "Error executing tool read_manifest: no model absent",
         ["arithmetic", "general-knowledge", "gsm8k-test-50"],
         ["eval-summarizer", "ticket-triager"],
+        NO_AGENT.replace(" (one)", ""),
     )
     # A new store writes its shards under new keys, so none keeps the checksum it had.
     assert replies["manifest on a recreated service"] != replies["manifest before"]

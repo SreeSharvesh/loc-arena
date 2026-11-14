@@ -51,7 +51,7 @@ so a run or a Docker test never starts an image another checkout built:
 | a linked git worktree | the same names, and each service's image, tagged `latest-<folder>-<digest>`: the worktree's folder name and six characters of its path's SHA-256 |
 
 A run config that names an image under `stack:` runs that image. A run builds every image it starts;
-`make images` builds the sandbox, worker and engine images, which the Docker tests need: a test skips without
+`make images` builds the sandbox, runner, worker and engine images, which the Docker tests need: a test skips without
 the image it checks for, and some start the nodes' image without building it. Two clones on one machine share
 the `latest` tags.
 

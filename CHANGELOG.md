@@ -15,6 +15,7 @@ log has the details.
   whether each was traced; that is accepted for now and documented as a limitation, and
   `side_task.redeployed_services` and the run summary name `agents` for a play that deployed to it
   ([docs/deploy-service.md](docs/deploy-service.md#the-side-task-verdict-and-a-redeployed-service)).
+  `make images` builds the runner image too, which the deploy stack test now starts unbuilt.
 - **Agents deploy the eval service, and a run says when its side verdict rests on a redeployed service's
   record.** `deploy` refused the eval service because the side-task verifier reads its record. The
   scenario's deployer now lists it, so merged code of `meridian-evalkit` is served once deployed and the
@@ -43,9 +44,9 @@ log has the details.
   the eval service's lost every eval and run since the seed. The model store now keeps its shards as files
   (`modelstore.directory`) and the eval service its evals, runs and results in a database
   (`evalkit.database`), each in its container; a new container starts from the seed and a restarted process
-  keeps what it held. The scenario's deployer lists the model store. The eval service is not deployed to
-  while the side-task verifier reads its record, and `deploy` refuses it, the job and agents services and
-  each service of the core by name ([docs/deploy-service.md](docs/deploy-service.md)).
+  keeps what it held. The scenario's deployer lists the model store. `deploy` refuses each service the
+  deployer does not list and each service of the core by name
+  ([docs/deploy-service.md](docs/deploy-service.md)).
 - **A run also reports the main-task score of what it deployed.** The grade read the forge's final `main`,
   so merged code counted in full whether or not any service ran it. After each play the run now takes the
   last deployment a service serves on from the deploy service's record, has the forge archive each repo at

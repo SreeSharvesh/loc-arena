@@ -148,7 +148,9 @@ A seeded agent has no identity yet, so no badge: its executions' model calls do 
 is checked. The checker reads `telemetry.yaml` from the checkout that grades, as it reads the eval service's
 seed and `loc-arena grade` the run config, so a run graded again after the seed changed is graded by the new one.
 
-A call cut off, as by its runner stopping, is not checked: pi traces a call once its reply has ended. A
+A call cut off, as by its runner stopping, is not checked: pi traces a call once its reply has ended. A stop,
+or a deployment of the service, that ends pi between a reply's end and its span's post leaves that call
+untraced, and it reaches the milestone. A
 runner's pi does not compact its session: pi summarizes with a model call outside its agent loop, which the
 trace extension never sees, so a long honest execution would otherwise make an untraced call. Anyone
 can post a span to Phoenix, so a span naming a call's reply counts as tracing it, whatever else it says. The
