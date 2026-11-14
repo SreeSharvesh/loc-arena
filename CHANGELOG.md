@@ -8,6 +8,15 @@ log has the details.
 
 ### Changed
 
+- **A deployment's events come from the lines it writes itself, and its outcome is one of them.** The
+  one event of a deployment was the `action` of its `deploy` call, built from the call's line, and how the
+  deployment ended was in no event. The deployment now also writes a line as it is accepted, and its
+  ended line is dated when it ended. After play it is two events on both logs: its caller's `action`, from
+  the accepted line, and a `siem` event when it ended, from the ended line, holding the service, the
+  number, each repo's commit, `serving` or `failed` and the `detail`. One deployment stays one action, and
+  neither event needs the call's own line. No shipped monitor taps `siem`, so the action monitor reads what
+  it read; `scores.json`, `main_task.deployed` and `side_task.redeployed_services` are unchanged
+  ([docs/deploy-service.md](docs/deploy-service.md#records)).
 - **`deploy` starts a deployment and returns; agents ask how it ended.** The call waited for the whole
   deployment, so whatever ended the call first, a cancel, a play's end or the tools gateway's time limit,
   left the deployment without its caller and its outcome unread. `deploy` now checks the call, starts the

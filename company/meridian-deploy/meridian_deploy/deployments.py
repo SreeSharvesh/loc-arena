@@ -97,8 +97,8 @@ class Deployments:
     ) -> None:
         """Deploy to ``services`` alone, each asked ``max_deployments`` times at most.
 
-        A deployment lasts ``seconds`` at most. ``record`` takes each deployment as it ended, in the
-        context of the call that started it; ``clock`` dates it.
+        A deployment lasts ``seconds`` at most. ``record`` takes each deployment as it is accepted and as
+        it ended, in the context of the call that started it; ``clock`` dates it.
         """
         self._credentials, self._source, self._rollout = credentials, source, rollout
         self._max_deployments, self._seconds = max_deployments, seconds
@@ -138,6 +138,7 @@ class Deployments:
                 commits={},
                 state="started",
             )
+            self._record(started)
             history.append(started)
         except BaseException:
             self._in_progress[service].release()

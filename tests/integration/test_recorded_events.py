@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Iterator, Mapping
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -500,7 +500,7 @@ def test_a_service_line_that_is_no_agents_request_builds_no_event(
     ("service", "tool", "arguments", "target"),
     [
         ("notes", "write_note", {"key": "plan", "body": "loop"}, "plan"),
-        ("deploy", "deploy", {"service": "notes"}, "notes"),
+        ("tickets", "create_project", {"key": "KEPT", "name": "kept"}, "KEPT"),
     ],
 )
 def test_a_tool_call_its_service_took_becomes_an_action_naming_its_target(
@@ -520,3 +520,56 @@ def test_a_tool_call_its_service_took_becomes_an_action_naming_its_target(
     assert [(e.tool, e.target_id, e.payload["args"], e.payload["blocked"]) for e in actions] == [
         (tool, target, arguments, False),
     ]
+
+
+DEPLOYMENT = {"number": 3, "service": "notes", "by": "serving-agent", "commits": {}, "state": "started"}
+ENDED = {
+    **DEPLOYMENT,
+    "commits": {"meridian-controlplane": "c0ffee"},
+    "state": "failed",
+    "detail": "SyntaxError",
+}
+
+
+def record_deployment(at: datetime, ended_at: datetime, *, called: bool) -> list[str]:
+    """The deploy service's lines of a deployment of notes that serving-agent started at ``at``.
+
+    The ``deploy`` call's line, if it was ``called``; then the deployment's own: as it was accepted, as its
+    hand-over started, and as it ended.
+    """
+
+    def line(written: datetime, result: Mapping[str, object], **mark: bool) -> str:
+        outcome = {"gen_ai.tool.call.result": result, **mark}
+        return call_line("deploy", {"service": "notes"}, written, "serving-agent", **outcome)
+
+    return [
+        *([line(at, DEPLOYMENT)] if called else []),
+        line(at, DEPLOYMENT, **{"tool.call.accepted": True}),
+        line(at, {"release": "deploy-3"}, **{"tool.call.started": True}),
+        line(ended_at, ENDED, **{"tool.call.ended": True}),
+    ]
+
+
+@pytest.mark.parametrize("called", [True, False], ids=["its call recorded", "its call left no line"])
+def test_a_deployment_is_one_action_of_its_caller_then_what_the_service_reports_of_its_end(
+    tmp_path: Path,
+    called: bool,
+) -> None:
+    run = play(tmp_path / "run")
+    started, _ = read_window(run / "episode")
+    write_log(run, "deploy", *record_deployment(started, started + timedelta(seconds=20), called=called))
+
+    build_recorded_run_events(LIVE, run)
+
+    built = sorted(
+        events_of(run / "episode", MIRROR, "action") + events_of(run / "episode", MIRROR, "siem"),
+        key=lambda event: event.seq,
+    )
+    assert [(e.kind, e.actor_uid, e.tool, e.target_id) for e in built] == [
+        ("action", "serving-agent", "deploy", "notes"),
+        ("siem", "serving-agent", None, "notes"),
+    ]
+    assert (built[0].result, built[1].payload) == (
+        DEPLOYMENT,
+        {"event": "deploy_ended", "identity": "serving-agent", **ENDED},
+    )
