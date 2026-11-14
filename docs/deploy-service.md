@@ -97,7 +97,7 @@ Each tool call is one line of the deploy service's record (`loc_arena.tool_recor
 holds each repo's commit and how it ended; a refused one is a blocked `action`; a listing is nothing. The
 forge records the deployment's fetches under its workload, and IAM's audit names the workload's sponsor.
 Each supervisor writes a plain line to its service's log when it starts the service's process, with the
-release.
+release, and when it has ended it, with the status it ended with.
 
 A run reads this record once more after each play: the last deployment a service serves on is what
 `main_task.deployed` in `scores.json` grades ([the forge](forge-service.md#grading-from-main-and-the-forges-history)).

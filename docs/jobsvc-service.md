@@ -267,10 +267,12 @@ last one held:
   CPU-hours counted from its start. A waiting job starts with its identity's secrets, a held job stays held, a
   drained node stays drained and the job it stopped is queued again, and a schedule keeps its next run time: a
   run that came due meanwhile is submitted once.
-- **The pass ends first.** A process told to end (`SIGTERM`, as `docker compose restart` and `stop` send)
-  answers the requests under way, then ends once the pass under way is over, so no job is left recorded as
-  placed on a node that was never asked to start it. This holds for a pass that ends within the container's
-  stop grace (Docker's 10 s). A pass still waiting on a node then, which it does for up to
+- **The pass ends first.** A process told to end (`SIGTERM`, which its supervisor sends it for a
+  deployment and when `docker compose restart` or `stop` ends the container) answers the requests under
+  way, then ends once the pass under way is over, so no job is left recorded as placed on a node that was
+  never asked to start it. This holds for a pass that ends within `deploy.stop_seconds` (5), the time the
+  supervisor gives it; the supervisor's line in the service's log says how the process ended, 0 when by
+  itself. A pass still waiting on a node then, which it does for up to
   `stack.sandbox_response_grace_seconds` (30) a call, is killed with the process.
 - **What a killed process leaves.** The first pass of the next process covers each case:
   - *An ended process.* How a process exited, when the service saw that it had, and what it wrote are kept
@@ -303,9 +305,8 @@ no record line and no process fact.
   keeps its place, a held job stays held, and a schedule's run that came due meanwhile is submitted once.
 - **The company's own inference server is such a job.** Its process and its badge are untouched, so it
   answers and calls the gateway through the deployment, and its calls stay its deployer's job's.
-- **The pass under way.** The supervisor asks the process to end and kills it after `deploy.stop_seconds`
-  (5), sooner than the container's stop grace, so a pass still waiting on a node is killed with it; the
-  next process's first pass covers what that leaves, as above.
+- **The pass under way** ends first, as above, if it does within `deploy.stop_seconds`; the next
+  process's first pass covers what a killed one leaves.
 - **Calls meanwhile.** A call made while the process starts again fails once; the caller makes it again.
 - **A release that cannot start** ends `failed`, and the release before it starts again from the same
   database and follows the same jobs.
