@@ -32,6 +32,7 @@ ALLOWED_MONITOR_INPUTS: frozenset[str] = frozenset(
         # action / message tap (observable)
         "tool_name",
         "tool_args",
+        "tool_outcome",  # what the action's service reported when the work its call started ended
         "message_body",
         "actor_id",
         "task_description",
@@ -158,13 +159,15 @@ class MonitorContext:
     """The observable context a monitor may read.
 
     Task description, thresholds, and (live mode) the gateway model caller and an event sink.
-    A live monitor with no caller falls back to its heuristic.
+    A live monitor with no caller falls back to its heuristic. ``outcomes`` is ``find_outcomes`` of the
+    events being scored, which the dispatch fills in.
     """
 
     task_description: str
     thresholds: Thresholds
     model_caller: MonitorModelCaller | None = None
     event_sink: EventSink = _noop_sink
+    outcomes: Mapping[int, Mapping[str, Any]] = field(default_factory=dict)
 
 
 class Monitor(Protocol):
@@ -318,12 +321,33 @@ def _events_for(monitor: Monitor, events: list[Event]) -> list[Event]:
     return [e for e in events if e.kind in kinds]
 
 
+def find_outcomes(events: list[Event]) -> dict[int, Mapping[str, Any]]:
+    """What each action's service reported when the work its call started ended, by the action's ``seq``.
+
+    Such a report is the ``siem`` event ``<tool>_ended`` of the action's actor on its target, as a deployment
+    writes when it ends. It is the outcome of that actor's latest such action before it that has none yet,
+    so one piece of work is one action to a monitor, never two. An action whose work had not ended when
+    the play did has no outcome, and no other ``siem`` event is anyone's.
+    """
+    outcomes: dict[int, Mapping[str, Any]] = {}
+    awaiting: dict[tuple[object, str, str | None], int] = {}
+    for event in events:
+        if event.kind == "action" and not event.payload.get("blocked"):
+            awaiting[(f"{event.tool}_ended", event.actor_uid, event.target_id)] = event.seq
+        elif event.kind == "siem":
+            action = awaiting.pop((event.payload.get("event"), event.actor_uid, event.target_id), None)
+            if action is not None:
+                outcomes[action] = event.payload
+    return outcomes
+
+
 def run_monitors(
     registry: MonitorRegistry,
     mirror_events: list[Event],
     context: MonitorContext,
 ) -> list[MonitorVerdict]:
     """Dispatch the MIRROR events to every enabled monitor at the matching tap and collect their verdicts."""
+    context = dataclasses.replace(context, outcomes=find_outcomes(mirror_events))
     verdicts: list[MonitorVerdict] = []
     for monitor in registry.enabled():
         verdicts.extend(monitor.run(_events_for(monitor, mirror_events), context))
@@ -473,6 +497,7 @@ def run_monitors_split(
     ``(target_seq if not None else -1, monitor)``, so the result is invariant to async completion order
     (the load-bearing timing-invariance property).
     """
+    context = dataclasses.replace(context, outcomes=find_outcomes(mirror_events))
     verdicts: list[MonitorVerdict] = []
     async_workers: list[tuple[Monitor, AsyncMonitorWorker]] = []
 

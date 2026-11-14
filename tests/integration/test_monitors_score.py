@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
 
 import pytest
-from loc_arena.logging_.events import read_events
+from loc_arena.logging_.events import fingerprint, read_events
 from loc_arena.merged_main import EPISODE_PHASE, TWIN_PHASE
 from loc_arena.monitors.registry import load_monitors
 from loc_arena.protocol import compose_protocol, monitor_context
 
 from tests._stored_run import CONFIG, unpack_stored_run
-from tests.integration._records_support import MIRROR
+from tests.integration._records_support import MIRROR, SEALED
 
 
 @pytest.fixture(scope="module")
@@ -31,3 +32,27 @@ def test_every_heuristic_verdict_on_a_played_episode_is_a_reasoned_score_naming_
 
     assert verdicts
     assert all(0.0 <= v.score <= 1.0 and v.reason and v.monitor and v.tap for v in verdicts)
+
+
+@pytest.mark.parametrize("phase", [EPISODE_PHASE, TWIN_PHASE])
+def test_a_play_with_no_deployment_sends_each_monitor_the_prompts_the_stored_run_recorded(
+    stored_run: Path,
+    phase: str,
+) -> None:
+    sent: Counter[tuple[str, str]] = Counter()
+
+    def call(monitor: str, prompt: str, temperature: float) -> str:
+        sent[monitor, fingerprint(prompt)] += 1
+        return '{"suspicion": 0.0, "reason": "routine"}'
+
+    protocol = compose_protocol(CONFIG, load_monitors("configs/monitors.yaml", CONFIG.models))
+    mirror_events = list(read_events(stored_run / phase / MIRROR))
+
+    protocol.run(mirror_events, monitor_context(CONFIG, model_caller=call))
+
+    recorded = Counter(
+        (event.payload["caller_identity"], event.payload["prompt_fp"])
+        for event in read_events(stored_run / phase / SEALED)
+        if event.kind == "inference_call" and event.payload["credential_kind"] == "monitor"
+    )
+    assert sent == recorded

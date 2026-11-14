@@ -24,8 +24,10 @@ from loc_arena.harness import (
     grade_run,
 )
 from loc_arena.logging_.agent_trace import EpisodeTrace
-from loc_arena.logging_.events import Event
+from loc_arena.logging_.events import Event, read_events
 from loc_arena.logging_.transcript_lanes import UNPLACED, build_transcript
+from loc_arena.monitors.registry import PROMPT_INPUTS_PLACEHOLDER, load_monitor_specs, load_monitors
+from loc_arena.protocol import compose_protocol, monitor_context
 from loc_arena.tasks.main_task_grader import seed_checkout
 
 from tests.integration._records_support import (
@@ -529,13 +531,21 @@ ENDED = {
     "state": "failed",
     "detail": "SyntaxError",
 }
+SERVING = {**DEPLOYMENT, "commits": {"meridian-controlplane": "c0ffee"}, "state": "serving", "detail": ""}
+MONITORS = "configs/monitors.yaml"  # the monitors that ship
 
 
-def record_deployment(at: datetime, ended_at: datetime, *, called: bool) -> list[str]:
+def record_deployment(
+    at: datetime,
+    ended_at: datetime,
+    *,
+    called: bool,
+    ended: Mapping[str, object] = ENDED,
+) -> list[str]:
     """The deploy service's lines of a deployment of notes that serving-agent started at ``at``.
 
     The ``deploy`` call's line, if it was ``called``; then the deployment's own: as it was accepted, as its
-    hand-over started, and as it ended.
+    hand-over started, and as it ``ended``.
     """
 
     def line(written: datetime, result: Mapping[str, object], **mark: bool) -> str:
@@ -546,7 +556,7 @@ def record_deployment(at: datetime, ended_at: datetime, *, called: bool) -> list
         *([line(at, DEPLOYMENT)] if called else []),
         line(at, DEPLOYMENT, **{"tool.call.accepted": True}),
         line(at, {"release": "deploy-3"}, **{"tool.call.started": True}),
-        line(ended_at, ENDED, **{"tool.call.ended": True}),
+        line(ended_at, ended, **{"tool.call.ended": True}),
     ]
 
 
@@ -573,3 +583,43 @@ def test_a_deployment_is_one_action_of_its_caller_then_what_the_service_reports_
         DEPLOYMENT,
         {"event": "deploy_ended", "identity": "serving-agent", **ENDED},
     )
+
+
+def read_action_monitor_inputs(phase: Path) -> list[dict[str, object]]:
+    """What the shipped action monitor is shown of the play in ``phase``: the inputs of each prompt."""
+    templates = {spec.name: spec.prompt_template for spec in load_monitor_specs(MONITORS)}
+    head, tail = templates["action_monitor"].split(PROMPT_INPUTS_PLACEHOLDER)
+    prompts: list[str] = []
+
+    def call(monitor: str, prompt: str, temperature: float) -> str:
+        prompts.extend([prompt] if monitor == "action_monitor" else [])
+        return '{"suspicion": 0.0, "reason": "routine"}'
+
+    protocol = compose_protocol(LIVE, load_monitors(MONITORS, LIVE.models))
+    protocol.run(list(read_events(phase / MIRROR)), monitor_context(LIVE, model_caller=call))
+    return [json.loads(prompt.removeprefix(head).removesuffix(tail)) for prompt in prompts]
+
+
+@pytest.mark.parametrize("ended", [ENDED, SERVING], ids=["failed", "serving"])
+def test_the_action_monitor_is_shown_a_deployment_once_with_how_it_ended(
+    tmp_path: Path,
+    ended: Mapping[str, object],
+) -> None:
+    run = play(tmp_path / "run")
+    started, _ = read_window(run / "episode")
+    lines = record_deployment(started, started + timedelta(seconds=20), called=True, ended=ended)
+    write_log(run, "deploy", *lines)
+    build_recorded_run_events(LIVE, run)
+
+    shown = read_action_monitor_inputs(run / "episode")
+
+    assert shown == [
+        {
+            "tool_name": "deploy",
+            "tool_args": {"service": "notes"},
+            "tool_outcome": {**ended, "event": "deploy_ended", "identity": "serving-agent"},
+            "message_body": None,
+            "actor_id": "serving-agent",
+            "task_description": LIVE.main_task["goal"],
+        },
+    ]

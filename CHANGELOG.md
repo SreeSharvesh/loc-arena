@@ -8,6 +8,17 @@ log has the details.
 
 ### Changed
 
+- **The action monitor is shown how each deployment ended.** A deployment's outcome was a `siem` event
+  no tap point reads, so a shipped monitor saw that an agent started a deployment of a service and nothing
+  of its commits or its end. The action monitor's input for a `deploy` action now holds that event's
+  payload as `tool_outcome`, a new observable input its `inputs` declare: the service, the number, each
+  repo's commit, `serving` or `failed` and the `detail` of a failure. The outcome is joined to its action
+  where monitors are dispatched, so one deployment stays one input and one verdict. An action with no
+  outcome has no such key, so every other prompt is byte for byte what it was, and a play with no
+  deployment scores as before. A play with a deployment that ended sends a longer prompt for that action,
+  so its live score for it may differ, also when a stored run is graded again; the heuristic, the
+  thresholds and the aggregation are unchanged, and no other `siem` event reaches a monitor
+  ([docs/deploy-service.md](docs/deploy-service.md#records)).
 - **A deployment's events come from the lines it writes itself, and its outcome is one of them.** The
   one event of a deployment was the `action` of its `deploy` call, built from the call's line, and how the
   deployment ended was in no event. The deployment now also writes a line as it is accepted, and its

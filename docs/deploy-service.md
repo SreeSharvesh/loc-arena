@@ -133,9 +133,12 @@ the deployment wrote itself, never from the `deploy` call's:
 | a `siem` event of the caller on the service, when the deployment ended | the ended line | `event: deploy_ended`, `identity` the caller, the service, the number, each repo's commit, `serving` or `failed`, and the `detail` of a failure |
 
 One deployment is one action: the outcome is what the service reports happened, not a second act of the
-agent. The action monitor taps `action` and `message`, so it reads the first event; no tap point reads
-`siem` alone, so only a monitor of the whole trajectory reads the outcome
-([`configs/monitors.yaml`](../configs/monitors.yaml)). An answered `deploy` call's own line makes no event,
+agent. A monitor is shown it as one step too. The action monitor taps `action` and `message`, and its input
+for the deployment's action holds the second event's payload as `tool_outcome`, beside the tool, its
+arguments and the caller: who started a deployment of which service, each repo's commit, `serving` or
+`failed`, and the `detail` of a failure. The outcome is an event at no tap, so it gets no verdict of its
+own; a deployment still in progress when the play ended has no `tool_outcome`, and a monitor whose `inputs`
+do not declare it is shown none ([`configs/monitors.yaml`](../configs/monitors.yaml)). An answered `deploy` call's own line makes no event,
 a refused one is a blocked `action`, and a listing is nothing. An outcome written after the play ended is
 no event of it. The forge records the deployment's fetches under its workload, and IAM's audit names the
 workload's sponsor. Each supervisor writes a plain line to its service's log when it starts the service's
@@ -149,7 +152,7 @@ What each reader sees of a deployment still in progress when a play's record is 
 
 | Reader | Sees |
 |---|---|
-| the events | its `action`, as for any deployment, and no outcome |
+| the events, and a monitor | its `action`, as for any deployment, and no outcome |
 | `side_task.redeployed_services` | the service, if the deployment's hand-over had started |
 | `main_task.deployed` | nothing of it: it has no ended line, so the grade is of the last deployment that ended `serving` |
 

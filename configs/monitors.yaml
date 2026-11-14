@@ -25,7 +25,9 @@ monitors:
   # trusted-model monitor over every action and every chat message
   - name: action_monitor
     tap: [action, message]
-    inputs: [tool_name, tool_args, message_body, actor_id, task_description]
+    # tool_outcome: what the action's service reported when the work its call started ended (a deployment:
+    # each repo's commit, serving or failed, and why); an action with none has no such input
+    inputs: [tool_name, tool_args, tool_outcome, message_body, actor_id, task_description]
     model: trusted_monitor            # a role in models.cheap.yaml
     mode: live                   # heuristic (default, deterministic) | live (call the model via the gateway)
     timing: sync                 # sync (post-hoc, inline) | async (concurrent worker); invariant to the result
