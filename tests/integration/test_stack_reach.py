@@ -90,11 +90,16 @@ from loc_arena.workspace_service import WORKSPACE_TOOLS
 from pydantic import BaseModel, ConfigDict, Field
 from sandbox_server.wire import RESET_PATH, RUN_PATH, CommandRequest
 
-from tests.integration._docker_support import SERVE_WORKSPACE, image_exists
+from tests.integration._docker_support import (
+    SERVE_WORKSPACE,
+    image_exists,
+    read_mounts,
+    read_sandbox_logs,
+    run_docker,
+)
 from tests.integration._probe_prelude import CONNECT_TIMEOUT_SECONDS, PRELUDE
 
 RUN = "aurora-efficiency.stack-test"
-SANDBOX_FAILED = "the sandbox did not run it"  # how a bash call reports a sandbox that failed it
 CONFIG = load_run_config(REPOSITORY / "configs" / f"{RUN}.yaml")
 
 pytestmark = pytest.mark.skipif(
@@ -843,30 +848,6 @@ def read_addressing(network: str) -> NetworkAddressing:
     return NetworkAddressing(addressing["Subnet"], addressing.get("Gateway"))
 
 
-def read_mounts(project: str) -> dict[str, list[str]]:
-    """The source and destination of every mount of each container of ``project``, by compose service."""
-    label = "com.docker.compose.project"
-    listed = run_docker("ps", "--all", "--quiet", "--filter", f"label={label}={project}").stdout.split()
-    layout = '{{index .Config.Labels "com.docker.compose.service"}} {{json .Mounts}}'
-    mounts: dict[str, list[str]] = {}
-    for line in run_docker("inspect", "--format", layout, *listed).stdout.splitlines():
-        service, _, inspected = line.partition(" ")
-        mounts.setdefault(service, []).extend(
-            path
-            for mount in json.loads(inspected)
-            for path in (mount.get("Source", ""), mount["Destination"])
-        )
-    return mounts
-
-
-def run_docker(*arguments: str, **options: Any) -> subprocess.CompletedProcess[str]:
-    """Run ``docker`` with ``arguments``; raise with its stderr when it fails."""
-    done = subprocess.run(["docker", *arguments], capture_output=True, text=True, check=False, **options)
-    if done.returncode:
-        raise RuntimeError(f"docker {shlex.join(arguments[:6])} exited {done.returncode}: {done.stderr}")
-    return done
-
-
 @pytest.fixture(scope="module")
 def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
     directory = tmp_path_factory.mktemp("stack")
@@ -921,18 +902,6 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
         iam_bootstrap.BOOTSTRAP_VARIABLE: iam_bootstrap.render_bootstrap(apply_mode(STACK_CONFIG, "honest")),
     }
     call_log = directory / "calls.jsonl"
-
-    def read_sandbox_logs(failure: str) -> str:
-        """The log of each sandbox ``failure`` names, or of every sandbox when it names none."""
-        named = [sandbox for sandbox in sandboxes if sandbox in failure] or list(sandboxes)
-        logs = ["docker", *compose, "logs", "--no-log-prefix"]
-        read = [
-            subprocess.run([*logs, name], capture_output=True, text=True, env=environment) for name in named
-        ]
-        return "".join(
-            f"\nlog of {name}:\n{done.stdout}{done.stderr}" for name, done in zip(named, read, strict=True)
-        )
-
     try:
         services = [
             *[GATEWAY_SERVICE, *sandboxes, NOTES.name, FORGE.name, CHAT.name, AGENTS_SERVICE.name],
@@ -993,7 +962,10 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
                 env=environment,
             )
             played_until = time.time()
-            sandbox_logs = read_sandbox_logs(played.stdout) if SANDBOX_FAILED in played.stdout else ""
+            failed = "the sandbox did not run it" in played.stdout  # how a bash call reports a sandbox's 500
+            sandbox_logs = (
+                read_sandbox_logs(compose, environment, [*sandboxes], played.stdout) if failed else ""
+            )
             in_services = {
                 row: {"stdout": run_in(service, "sh", "-c", probes[row])}
                 for row, service in ROW_SERVICES.items()
@@ -1070,7 +1042,7 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
             call_log_after_twin,
         )
     except Exception as error:
-        error.add_note(read_sandbox_logs(str(error)))
+        error.add_note(read_sandbox_logs(compose, environment, [*sandboxes], str(error)))
         raise
     finally:
         down = ["docker", *compose, "down", "--volumes", "--remove-orphans"]
