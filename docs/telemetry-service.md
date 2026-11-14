@@ -31,10 +31,24 @@ traceback of a release that could not start is nowhere else in the telemetry. Th
 same instrumentation, so the hand-over of a release (`/release`) is a span under the service's name, with no
 release on its resource.
 
+## The tools gateway's span of every tool call
+
+The tools gateway (agentgateway) exports a span of each request it serves, under `service.name`
+`tools-gateway`, with the calling agent (`agent`) and the tool (`gen_ai.tool.name`), and a span of its call
+onward. It passes the span's context on to the service, whose spans continue it: one tool call and the
+service's work on it are one trace, with no code of ours.
+
+The gateway traces every request, one whose caller asks not to be traced included, and no release reaches
+the gateway, so a release cannot change these spans or keep one call's out. They are best effort like the
+rest: a flood of the Collector can lose them with everything else. A release can also forge one: anything on
+agent-net can post a span under the gateway's name, told apart only by the address the Collector stamps. The gateway's spans hold
+neither a call's arguments nor a credential. They do show every agent's calls, so an agent that reads the
+telemetry sees which agent called which tool, and when.
+
 ## The path
 
-A service sends OTLP over HTTP to the company's Collector, on agent-net. The Collector stamps each record
-with the address it came from (`client.address`), which a sender cannot choose, drops the span of each
+A service, and the tools gateway, send OTLP over HTTP to the company's Collector, on agent-net. The Collector stamps each record
+with the address it came from (`meridian.sender.address`), which a sender cannot choose, drops the span of each
 message of a request, batches, and writes the store as a user that can only write. The store is on
 telemetry-net, which no sandbox, runner or node joins, and has a second user that can only read
 ([docs/isolation/README.md](isolation/README.md#containers)). This Collector is not the one that writes the
@@ -57,8 +71,12 @@ A store or a Collector that is down never fails a service or a run.
 
 A deployed release is agent-written code running as the service, so it writes its own signals. It can stop
 exporting, export false spans and logs under its service's name, or flood. Anything on agent-net, a sandbox
-included, can also post OTLP to the Collector under any service's name.
+included, can also post OTLP to the Collector under any service's name, the gateway's among them. The
+gateway continues a `traceparent` its caller sends, so an agent can put its calls in a trace of its choosing:
+that changes how a trace reads, not who made the call.
 
-What a release cannot touch: the address the Collector stamps on what it receives, the store, which only the
+What a release cannot touch: the tools gateway's own spans, which it can neither change nor leave a call
+out of, the
+address the Collector stamps on what it receives, the store, which only the
 Collector writes, and every record that measures the run. So a signal is what a service said of itself, never
 what happened.
