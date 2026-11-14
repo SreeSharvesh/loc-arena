@@ -1,5 +1,5 @@
 diff --git a/meridian-controlplane/meridian_controlplane/agents/service.py b/meridian-controlplane/meridian_controlplane/agents/service.py
-index 943704d..e01b645 100644
+index 943704d..3425f1d 100644
 --- a/meridian-controlplane/meridian_controlplane/agents/service.py
 +++ b/meridian-controlplane/meridian_controlplane/agents/service.py
 @@ -25,6 +25,12 @@ from meridian_controlplane.agents.authority import (
@@ -31,25 +31,30 @@ index 943704d..e01b645 100644
  """
  
  
-@@ -133,6 +146,8 @@ def create_agents_service_app(  # noqa: C901 - counts its nested functions, each
-         """Not async: the agent's identity is issued through the central authority."""
-         caller = audit_call(request, registration.model_dump())
-         token = token_of(request)
-+        if registration.environment:
-+            executions.environments.require_usable(registration.environment)
- 
+@@ -137,12 +150,19 @@ def create_agents_service_app(  # noqa: C901 - counts its nested functions, each
          def issue_identity() -> AgentIdentity | None:
              return issuer.issue(token, "register_agent", registration.name) if issuer else None
-@@ -142,6 +157,8 @@ def create_agents_service_app(  # noqa: C901 - counts its nested functions, each
+ 
+-        return registry.register(registration, caller, issue_identity)
++        return executions.naming_environment(
++            registration.environment,
++            lambda: registry.register(registration, caller, issue_identity),
++        )
+ 
      @app.put("/agents/{name}")
-     async def update_agent(request: Request, name: str, definition: AgentDefinition) -> AgentSummary:
+-    async def update_agent(request: Request, name: str, definition: AgentDefinition) -> AgentSummary:
++    def update_agent(request: Request, name: str, definition: AgentDefinition) -> AgentSummary:
++        """Not async: it may wait for a deletion of the environment it names."""
          caller = audit_call(request, {"name": name, **definition.model_dump()})
-+        if definition.environment:
-+            executions.environments.require_usable(definition.environment)
-         return registry.add_version(name, definition, created_by=caller)
+-        return registry.add_version(name, definition, created_by=caller)
++        return executions.naming_environment(
++            definition.environment,
++            lambda: registry.add_version(name, definition, created_by=caller),
++        )
  
      @app.delete("/agents/{name}")
-@@ -204,6 +221,46 @@ def create_agents_service_app(  # noqa: C901 - counts its nested functions, each
+     async def retire_agent(request: Request, name: str) -> AgentSummary:
+@@ -204,6 +224,46 @@ def create_agents_service_app(  # noqa: C901 - counts its nested functions, each
          audit_call(request, {"schedule_id": schedule_id})
          return schedules.delete(schedule_id)
  

@@ -1,5 +1,5 @@
 diff --git a/meridian-controlplane/meridian_controlplane/agents/executions.py b/meridian-controlplane/meridian_controlplane/agents/executions.py
-index 726f6a8..745c24d 100644
+index 726f6a8..35910c4 100644
 --- a/meridian-controlplane/meridian_controlplane/agents/executions.py
 +++ b/meridian-controlplane/meridian_controlplane/agents/executions.py
 @@ -14,16 +14,20 @@ as running had its worker end with the last process: its runner's worker, before
@@ -118,7 +118,7 @@ index 726f6a8..745c24d 100644
          recorded = list(self._executions_by_id.values())
          # What the last process left running, by runner: its worker recovers each before other work.
          self._running_ids_by_runner = {
-@@ -213,11 +252,12 @@ class Executions:
+@@ -213,13 +252,15 @@ class Executions:
              if execution.state is ExecutionState.RUNNING and execution.runner
          }
          self._stopping_ids: set[str] = set()  # the running executions a caller asked to stop
@@ -134,8 +134,11 @@ index 726f6a8..745c24d 100644
 +        self._queue_changed = threading.Condition(self._executions_lock)  # a queued execution may start now
          # Held while a runner starts a run, or is reset: a cancel then resets only the run it cancels.
          self._runner_locks = {runner.name: threading.Lock() for runner in runners}
++        self._naming = threading.Lock()  # held while a definition names an environment, or one is deleted
          for runner in runners:
-@@ -246,7 +286,11 @@ class Executions:
+             threading.Thread(target=self._run_queued_executions, args=(runner,), daemon=True).start()
+ 
+@@ -246,7 +287,11 @@ class Executions:
          return configuration
  
      def start(self, request: ExecutionRequest, started_by: str, schedule_id: str | None = None) -> Execution:
@@ -148,7 +151,7 @@ index 726f6a8..745c24d 100644
          if not self._runners_by_name:
              raise HTTPException(HTTPStatus.SERVICE_UNAVAILABLE, "the company has no runner to run agents on")
          agent = self._registry.get_agent(request.agent)
-@@ -254,7 +298,9 @@ class Executions:
+@@ -254,7 +299,9 @@ class Executions:
              raise HTTPException(HTTPStatus.CONFLICT, f"agent {request.agent!r} is retired")
          telemetry = self.telemetry.settings_for(agent.name)
          traced = telemetry.tracing and random.random() < telemetry.sample_rate
@@ -159,7 +162,7 @@ index 726f6a8..745c24d 100644
              execution = self._record(
                  Execution(
                      id=f"execution-{len(self._executions_by_id) + 1}",
-@@ -263,13 +309,16 @@ class Executions:
+@@ -263,13 +310,16 @@ class Executions:
                      input=request.input,
                      started_by=started_by,
                      schedule_id=schedule_id,
@@ -177,7 +180,7 @@ index 726f6a8..745c24d 100644
          return execution
  
      def cancel(self, execution_id: str) -> Execution:
-@@ -285,6 +334,8 @@ class Executions:
+@@ -285,6 +335,8 @@ class Executions:
                      state=ExecutionState.CANCELLED,
                      ended_at=datetime.now(UTC),
                  )
@@ -186,7 +189,7 @@ index 726f6a8..745c24d 100644
          self._end_run(execution, lambda runner: runner.reset())
          return execution
  
-@@ -300,7 +351,7 @@ class Executions:
+@@ -300,7 +352,7 @@ class Executions:
  
      def resume(self, execution_id: str, request: ResumeRequest) -> Execution:
          """Queue the stopped execution to go on from its checkpoint; 404 if none, 409 if not stopped."""
@@ -195,7 +198,7 @@ index 726f6a8..745c24d 100644
              execution = self._find_execution(execution_id)
              if execution.state is not ExecutionState.STOPPED:
                  raise HTTPException(HTTPStatus.CONFLICT, f"execution {execution_id!r} is not stopped")
-@@ -309,9 +360,29 @@ class Executions:
+@@ -309,9 +361,39 @@ class Executions:
                  state=ExecutionState.QUEUED,
                  resume_input=request.input,
              )
@@ -204,9 +207,19 @@ index 726f6a8..745c24d 100644
 +            self._queue_changed.notify_all()
          return execution
  
++    def naming_environment[T](self, name: str | None, write: Callable[[], T]) -> T:
++        """Write an agent's definition with ``write``, its environment ``name`` usable until it is written.
++
++        A deletion of the environment waits for the write, and then finds the agent naming it.
++        """
++        with self._naming:
++            if name is not None:
++                self.environments.require_usable(name)
++            return write()
++
 +    def delete_environment(self, name: str) -> Environment:
 +        """Delete an environment no agent and no unfinished execution uses; 404 if none, 409 if one does."""
-+        with self._executions_lock:
++        with self._naming, self._executions_lock:
 +            self.environments.get_environment(name)
 +            agents = [
 +                agent.name
@@ -226,7 +239,7 @@ index 726f6a8..745c24d 100644
      def _end_run(
          self,
          execution: Execution,
-@@ -361,42 +432,116 @@ class Executions:
+@@ -361,42 +443,116 @@ class Executions:
                          runner.end_processes(self._timeout_seconds)
                      left = RunnerResult(returncode=None, stdout="", stderr=UNRECORDED)
                      self._end_run_on(runner, left_id, left, restarted=True)
@@ -371,7 +384,7 @@ index 726f6a8..745c24d 100644
  
      def _end_run_on(
          self,
-@@ -405,27 +550,40 @@ class Executions:
+@@ -405,27 +561,40 @@ class Executions:
          result: RunnerResult,
          *,
          restarted: bool = False,
@@ -416,7 +429,7 @@ index 726f6a8..745c24d 100644
                          self._record_change(
                              execution,
                              state=ExecutionState.QUEUED if resumed else ExecutionState.STOPPED,
-@@ -435,8 +593,21 @@ class Executions:
+@@ -435,8 +604,21 @@ class Executions:
                              error_output=error_output,
                          )
                  elif running:
@@ -439,7 +452,7 @@ index 726f6a8..745c24d 100644
                          self._record_change(
                              execution,
                              state=ExecutionState.COMPLETED
-@@ -445,14 +616,21 @@ class Executions:
+@@ -445,14 +627,24 @@ class Executions:
                              ended_at=datetime.now(UTC),
                              returncode=result.returncode,
                              output=result.stdout,
@@ -456,9 +469,13 @@ index 726f6a8..745c24d 100644
                  # it recorded running on this runner, for the worker to stop and resume.
                  self._stopping_ids.discard(execution_id)
                  del self._running_ids_by_runner[runner.name]
-                 if self._executions_by_id[execution_id].state is ExecutionState.QUEUED:
+-                if self._executions_by_id[execution_id].state is ExecutionState.QUEUED:
 -                    self._queued_ids.put(execution_id)
-+                    self._queued_ids.append(execution_id)
++                recovered = self._executions_by_id[execution_id]
++                if recovered.state is ExecutionState.QUEUED:
++                    # Last, or first in a persistent environment, as what is queued there starts from its end.
++                    place = 0 if self._persists(recovered) else len(self._queued_ids)
++                    self._queued_ids.insert(place, execution_id)
 +                self._queue_changed.notify_all()
              self._reset(runner)
  

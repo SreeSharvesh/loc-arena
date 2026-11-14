@@ -1,5 +1,5 @@
 diff --git a/meridian-controlplane/tests/test_agents_service.py b/meridian-controlplane/tests/test_agents_service.py
-index d44289b..4879244 100644
+index d44289b..ab4be43 100644
 --- a/meridian-controlplane/tests/test_agents_service.py
 +++ b/meridian-controlplane/tests/test_agents_service.py
 @@ -164,12 +164,16 @@ class HeldRunner:
@@ -30,7 +30,7 @@ index d44289b..4879244 100644
          (IDENTITIES[READER], READER, HTTPStatus.FORBIDDEN, {}),  # refused before the body was read
          (GUESSED_IDENTITY, None, HTTPStatus.UNAUTHORIZED, {}),
      ],
-@@ -556,6 +560,51 @@ def test_a_queued_execution_that_is_cancelled_never_runs(
+@@ -556,6 +560,95 @@ def test_a_queued_execution_that_is_cancelled_never_runs(
      assert (len(runner.commands), first["state"]) == (2, "queued")
  
  
@@ -54,9 +54,9 @@ index d44289b..4879244 100644
 +    execution = start_in_builder(executing_service)
 +    runner.wait_started(1)
 +
-+    executing_service.call_as(LEAD, "POST", f"/executions/{execution['id']}/cancel")  # answers once it ended
++    status, cancelled = executing_service.call_as(LEAD, "POST", f"/executions/{execution['id']}/cancel")
 +
-+    assert runner.commands == [MAKE_DEPS]
++    assert (status, cancelled["state"], runner.commands) == (HTTPStatus.OK, "cancelled", [MAKE_DEPS])
 +
 +
 +def test_an_execution_stopped_during_its_setup_sets_it_up_again_when_it_resumes(
@@ -65,18 +65,62 @@ index d44289b..4879244 100644
 +) -> None:
 +    execution = start_in_builder(executing_service)
 +    runner.wait_started(1)
-+    executing_service.call_as(LEAD, "POST", f"/executions/{execution['id']}/stop")  # answers once it ended
++    status, stopped = executing_service.call_as(LEAD, "POST", f"/executions/{execution['id']}/stop")
 +
 +    executing_service.call_as(LEAD, "POST", f"/executions/{execution['id']}/resume")
 +    for command_number in (2, 3, 4):
 +        runner.release(command_number)
 +
 +    wait_for_state(executing_service, execution["id"], "completed")
++    assert (status, stopped["state"]) == (HTTPStatus.OK, "stopped")
 +    assert (runner.commands[:3], runner.commands[3][0], runner.restored) == (
 +        [MAKE_DEPS, MAKE_DEPS, MAKE_BUILD],
 +        "pi-on-gateway",
 +        [],
 +    )
++
++
++@dataclass
++class HeldIssuer:
++    """An issuer that holds each identity it issues until the test releases it."""
++
++    issuing: threading.Event = field(default_factory=threading.Event)
++    released: threading.Event = field(default_factory=threading.Event)
++
++    def issue(self, credential: str, operation: str, agent: str) -> None:
++        """Say an identity is being issued, and give none once released."""
++        self.issuing.set()
++        assert self.released.wait(STARTUP_SECONDS)
++
++
++def test_an_environment_is_not_deleted_between_the_check_and_the_registration_of_an_agent_naming_it(
++    authority: StandInAuthority,
++    serve: Callable[[FastAPI], str],
++) -> None:
++    registry, issuer = AgentRegistry(load_seeded_agents()), HeldIssuer()
++    executions = Executions(registry, [], RUN_TIMEOUT_SECONDS, lambda line: None)
++    app = create_agents_service_app(registry, lambda line: None, authority, executions, issuer)
++    service = RunningService(serve(app))
++    assert service.call_as(LEAD, "POST", "/environments", {"name": "env"})[0] == HTTPStatus.CREATED
++    replies: dict[str, int] = {}
++
++    def call(name: str, method: str, path: str, body: object = None) -> threading.Thread:
++        def answer() -> None:
++            replies[name] = service.call_as(LEAD, method, path, body)[0]
++
++        thread = threading.Thread(target=answer)
++        thread.start()
++        return thread
++
++    registering = call("register", "POST", "/agents", {**TRIAGER, "environment": "env"})
++    assert issuer.issuing.wait(STARTUP_SECONDS)
++    deleting = call("delete", "DELETE", "/environments/env")
++    deleting.join(0.5)  # a deletion that does not wait for the registration ends meanwhile
++    issuer.released.set()
++    registering.join(STARTUP_SECONDS)
++    deleting.join(STARTUP_SECONDS)
++
++    assert replies == {"register": HTTPStatus.CREATED, "delete": HTTPStatus.CONFLICT}
 +
 +
  @pytest.mark.parametrize(
