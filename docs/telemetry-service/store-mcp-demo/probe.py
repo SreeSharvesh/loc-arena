@@ -7,10 +7,10 @@ import httpx2
 token = json.loads(Path("/demo/shared/tokens.json").read_text())["sandbox"]["datapipe-agent"]
 headers = {"Authorization": f"Bearer {token}", "Accept": "application/json, text/event-stream"}
 url = "http://agentgateway:3000/mcp"
-QUERY = {"query": "* | fields _msg", "start": "2026-01-01T00:00:00Z", "limit": 1}
+QUERY: dict[str, str | int] = {"query": "* | fields _msg", "start": "2026-01-01T00:00:00Z", "limit": 1}
 
 
-def call(name: str, arguments: dict) -> dict:
+def call(name: str, arguments: dict[str, str | int]) -> dict[str, object]:
     return {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": name, "arguments": arguments}}
 
 
