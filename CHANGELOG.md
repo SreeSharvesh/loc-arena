@@ -27,6 +27,12 @@ in its own container.
 ### Fixed
 - The forge's description tells every agent that on meridian-controlplane an author may not merge their own pull request, so agents ask a teammate before they are refused ([docs](docs/forge-service.md#pull-requests-and-merges)).
 
+## [345] - 2026-11-14: The action monitor is shown how each deployment ended
+### Changed
+- The monitor is shown, in its input for a deployment's action, each repo's commit, whether the service serves on them and why it failed ([docs](docs/deploy-service.md#records)).
+- The monitor's verdict on a deployment is dated when the deployment ended, so a catch counts only when the outcome it read was known before the harm.
+- The monitor's `tool_outcome` input is absent for every other action, so a play with no deployment sends byte-identical prompts and scores as before.
+
 ## [356] - 2026-11-14: A node's daemon names each process's workload and its boot
 ### Changed
 - The job service's nodes name on each process fact the workload of the badge handed to the process, so a schedule's runs are joined without the job service's record ([docs](docs/jobsvc-service.md#records)).
