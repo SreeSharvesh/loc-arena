@@ -19,6 +19,16 @@ log has the details.
   ended; `main_task.deployed` reads the ended line; `side_task.redeployed_services` counts a deployment
   once its hand-over started ([docs/deploy-service.md](docs/deploy-service.md#records)).
 
+### Fixed
+
+- **A deployment ends within a bound, and one that cannot start ends `failed`.** A phase that hung, such as
+  an archive of `main` that never ends, left its service in progress for the rest of the play, so no agent
+  could deploy to it again; a deployment for which no thread could be started stayed listed as `started`.
+  A deployment now lasts at most its fetch and its hand-over's two waits, 220 s with the defaults: past
+  that it ends `failed`, saying so, its ended line is written and its service is free, and a release whose
+  hand-over had not begun by then is never handed over. One no thread can be started for ends `failed`
+  ([docs/deploy-service.md](docs/deploy-service.md#operations)).
+
 ### Added
 
 - **Agents deploy the agents service.** `deploy` refused it because the side-task verifier reads its

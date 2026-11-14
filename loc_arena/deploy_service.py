@@ -34,6 +34,7 @@ from loc_arena.iam_seed import load_seed
 from loc_arena.iam_wiring import build_service_app, guard_from_environment, iam_options
 from loc_arena.mcp_service import ALL_ADDRESSES, caller_from_token
 from loc_arena.release_supervisor import RELEASE_PATH, ReleaseState
+from loc_arena.settings import DeploySettings
 from loc_arena.task import resolve_scenario
 from loc_arena.tasks.main_task_grader import COMPANY_REPOS
 from loc_arena.tool_records import Write, record_ended, record_started, record_writer, tool_call_recorder
@@ -44,7 +45,7 @@ from meridian_iam.client import IamClient
 from meridian_iam.contracts import IamError
 
 SECRET_BYTES = 32
-REPLY_MARGIN_SECONDS = 10.0  # past a supervisor's slowest hand-over, how long its reply is waited for
+REPLY_MARGIN_SECONDS = 10.0  # how much longer than its slowest hand-over a supervisor's reply is waited for
 
 
 @dataclass(frozen=True)
@@ -115,18 +116,30 @@ class SupervisorRollout:
         return Outcome(state.release, state.serving, state.detail)
 
 
-def connect_supervisors(config: RunConfig, entry: LiveService) -> SupervisorRollout:
-    """The supervisors of the services ``entry`` deploys to, each with its token from the secrets directory.
+def bound_reply_seconds(settings: DeploySettings) -> float:
+    """How long a supervisor's reply is waited for: its slowest hand-over, and a margin.
 
     A hand-over waits for a service to end and answer twice at most: on the release, then on the one before.
     """
+    return 2 * (settings.health_seconds + 2 * settings.stop_seconds) + REPLY_MARGIN_SECONDS
+
+
+def bound_deployment_seconds(settings: DeploySettings) -> float:
+    """How long a deployment may last: its fetch, then a hand-over sent and, its reply lost, asked after.
+
+    And the margin once more, so that a phase that reaches its own bound ends the deployment, saying which.
+    """
+    return settings.fetch_seconds + 2 * bound_reply_seconds(settings) + REPLY_MARGIN_SECONDS
+
+
+def connect_supervisors(config: RunConfig, entry: LiveService) -> SupervisorRollout:
+    """The supervisors of the services ``entry`` deploys to, each with its token of the secrets directory."""
     settings, secrets_dir = config.settings.deploy, config.settings.gateway.secrets_dir
     tokens = {
         name: SecretStr((secrets_dir / release_token_secret(name)).read_text().strip())
         for name in entry.deploys
     }
-    slowest = 2 * (settings.health_seconds + 2 * settings.stop_seconds)
-    return SupervisorRollout(tokens, settings.release_port, slowest + REPLY_MARGIN_SECONDS)
+    return SupervisorRollout(tokens, settings.release_port, bound_reply_seconds(settings))
 
 
 def build_deploy_app(
@@ -153,6 +166,7 @@ def build_deploy_app(
         ),
         connect_supervisors(config, entry),
         settings.max_deployments,
+        bound_deployment_seconds(settings),
         lambda ended: record_ended(ended.model_dump(mode="json")),
     )
     options = iam_options(guard, entry.name)
