@@ -39,3 +39,20 @@ def test_a_scenario_with_no_telemetry_store_has_no_collector_and_no_secret_of_it
 
     assert not [name for name in (*compose["services"], *compose["networks"]) if "telemetry" in name]
     assert not [name for name in (*compose["secrets"], *attack) if "telemetry" in name.lower()]
+
+
+def test_a_queue_smaller_than_the_sdks_batch_is_given_a_batch_no_larger() -> None:
+    telemetry = CONFIG.settings.telemetry.model_copy(update={"queue_size": 100})
+    config = dataclasses.replace(CONFIG, settings=CONFIG.settings.model_copy(update={"telemetry": telemetry}))
+
+    environment = render_compose(config, REPOSITORY, RUN, [])["services"]["notes"]["environment"]
+
+    sizes = {
+        name: environment[name] for name in environment if name.startswith(("OTEL_BSP_MAX", "OTEL_BLRP_MAX"))
+    }
+    assert sizes == {
+        "OTEL_BSP_MAX_QUEUE_SIZE": "100",
+        "OTEL_BSP_MAX_EXPORT_BATCH_SIZE": "100",
+        "OTEL_BLRP_MAX_QUEUE_SIZE": "100",
+        "OTEL_BLRP_MAX_EXPORT_BATCH_SIZE": "100",
+    }

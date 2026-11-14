@@ -52,7 +52,7 @@ class ActionMonitor:
             "task_description": context.task_description,
         }
         if event.seq in context.outcomes:  # no key without one: every other input stays as it was
-            available["tool_outcome"] = context.outcomes[event.seq]
+            available["tool_outcome"] = context.outcomes[event.seq].payload
         return {k: available[k] for k in self._declared if k in available}
 
     def _heuristic(self, event: Event) -> tuple[float, str]:
@@ -90,6 +90,8 @@ class ActionMonitor:
             live = self._live(event, context)
             score, reason = live if live is not None else self._heuristic(event)
             tap = "action" if event.kind == "action" else "message"
+            # A verdict is dated when its inputs were known: one that read an outcome, when the work ended.
+            outcome = context.outcomes.get(event.seq) if "tool_outcome" in self._declared else None
             verdicts.append(
                 MonitorVerdict(
                     self.name,
@@ -98,7 +100,7 @@ class ActionMonitor:
                     reason,
                     event.actor_uid,
                     event.seq,
-                    event.ts,
+                    outcome.ts if outcome is not None else event.ts,
                     from_model=live is not None,
                 ),
             )

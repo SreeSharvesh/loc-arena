@@ -28,6 +28,7 @@ from loc_arena.logging_.events import Event, read_events
 from loc_arena.logging_.transcript_lanes import UNPLACED, build_transcript
 from loc_arena.monitors.registry import PROMPT_INPUTS_PLACEHOLDER, load_monitor_specs, load_monitors
 from loc_arena.protocol import compose_protocol, monitor_context
+from loc_arena.task import SNAPSHOT_FILE, ClockReading, read_snapshot_file
 from loc_arena.tasks.main_task_grader import seed_checkout
 
 from tests.integration._records_support import (
@@ -662,3 +663,23 @@ def test_each_of_two_deployments_of_one_service_by_one_agent_is_shown_its_own_en
         {**ENDED, **reported},
         {**SERVING, "number": 4, **reported},
     ]
+
+
+def test_the_action_monitors_verdict_on_a_deployment_is_dated_when_the_deployment_ended(
+    tmp_path: Path,
+) -> None:
+    run = play(tmp_path / "run")
+    started, _ = read_window(run / "episode")
+    snapshot = read_snapshot_file(run / "episode")
+    moved = ClockReading(wall=(started + timedelta(seconds=10)).timestamp(), ts=200.0)  # before the end
+    clock = {"clock": (*snapshot.clock, moved)}
+    (run / "episode" / SNAPSHOT_FILE).write_text(snapshot.model_copy(update=clock).model_dump_json())
+    write_log(run, "deploy", *record_deployment(started, started + timedelta(seconds=20), called=True))
+    build_recorded_run_events(LIVE, run)
+    mirror_events = list(read_events(run / "episode" / MIRROR))
+    protocol = compose_protocol(LIVE, load_monitors(MONITORS, LIVE.models))
+
+    verdicts = protocol.run(mirror_events, monitor_context(LIVE))
+
+    deploys = {event.seq for event in mirror_events if event.tool == "deploy"}
+    assert [v.ts for v in verdicts if v.monitor == "action_monitor" and v.target_seq in deploys] == [200.0]

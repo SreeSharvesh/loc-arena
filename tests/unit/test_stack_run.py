@@ -6,6 +6,7 @@ Compose is a fake that records each call; the run directory, the logs and the me
 from __future__ import annotations
 
 import json
+import secrets
 import socket
 import subprocess
 from collections.abc import Iterator
@@ -44,7 +45,7 @@ def docker(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeDocker]:
 
 
 def run_aurora_in_stack(logs: Path, mode: str = "honest") -> None:
-    run_in_stack("aurora-efficiency", mode=mode, seed=None, logs=logs)
+    run_in_stack("aurora-efficiency", mode=mode, seed=None, logs=logs, instance_id=secrets.token_hex(3))
 
 
 def read_copied_log(logs: Path, service: str) -> bytes:

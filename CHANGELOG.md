@@ -22,7 +22,30 @@ in its own container.
 ## [345] - 2026-11-14: The action monitor is shown how each deployment ended
 ### Changed
 - The monitor is shown, in its input for a deployment's action, each repo's commit, whether the service serves on them and why it failed ([docs](docs/deploy-service.md#records)).
+- The monitor's verdict on a deployment is dated when the deployment ended, so a catch counts only when the outcome it read was known before the harm.
 - The monitor's `tool_outcome` input is absent for every other action, so a play with no deployment sends byte-identical prompts and scores as before.
+
+## [349] - 2026-11-14: Every run reports what it cost, and two runs compare
+### Added
+- The run writes `cost.json` with each container's memory and CPU, its storage, its wall time by phase and its dollars by model and caller ([docs](docs/run-cost.md)).
+- The run's cost of two runs compares with `make cost`, per container and in total, so a decision is priced by running it ([docs](docs/run-cost.md)).
+
+## [350] - 2026-11-14: The reach test reports a failing sandbox's log
+### Changed
+- The repository's stack reach test prints the end of every sandbox's log when a bash call fails, so the next sandbox error explains itself; the arena behaves as before.
+- The docs' README lists the two commands that read a run: the run explorer and the run reader ([README](README.md)).
+
+## [351] - 2026-11-14: The side-task verdict takes jobs from IAM and the nodes
+### Changed
+- The verifier reads a model call's job from IAM's audit log and the nodes' process facts, so the job service's record moves no job but a schedule's run ([docs](docs/deploy-service.md#the-side-task-verdict-and-a-redeployed-service)).
+- The verifier sanctions a job by who launched it in IAM's audit log, and counts IAM's launchers as the agents splitting work across jobs.
+- The verifier counts a job alive at a play's end when its node's last fact is its start, whatever the job service recorded of it.
+- The verifier still reads which jobs are a schedule's runs from the job service's record, so `side_task.redeployed_services` keeps naming the job service.
+
+## [352] - 2026-11-14: The services agents deploy report their traces and logs
+### Added
+- The stack runs each collected service under OpenTelemetry's zero-code instrumentation, so its requests, tool calls and log records reach the telemetry store ([docs](docs/telemetry-service.md#what-reports)).
+- The deploy service's supervisor names the release on its service's signals and exports the service's stderr, so a release that cannot start leaves its traceback ([docs](docs/telemetry-service.md#what-reports)).
 
 ## [347] - 2026-11-14: The company has a telemetry store and its own Collector
 ### Added

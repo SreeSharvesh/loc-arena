@@ -2,14 +2,19 @@
 
 Brings up the stack a run renders, with one play's secrets. A sandbox sends one log record over OTLP to the
 company's Collector, as anything on agent-net can; the store's reader reads it back with SQL, in the store's
-own container, since nothing else reaches the store. The store is then stopped, and the Collector still takes
-a record. Last the store and the Collector are recreated with the honest twin's secrets, as its renewal does.
+own container, since nothing else reaches the store. serving-agent then writes a note through the tools
+gateway, and the notes service's spans of that call are in the store. A release of the tickets service is
+merged and deployed: it serves, and refuses a comment with an error that says nothing of why; the reason is
+in the log record the release wrote, which names the release. A release of the notes service that cannot
+start leaves what it wrote to stderr. The store and then the Collector are stopped, and the services still
+answer. Last the store and the Collector are recreated with the honest twin's secrets, as its renewal does.
 The play happens once, in a fixture, and each test reads what it saw.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import secrets
 import time
 from collections.abc import Iterator
@@ -22,9 +27,31 @@ from loc_arena.config import sandbox_service
 from loc_arena.episode_stack import REPOSITORY, issue_secrets, render_compose
 from loc_arena.gateway.core import API_KEY_VARIABLE
 from loc_arena.telemetry_stack import COLLECTOR_SERVICE, USERS_VARIABLE
+from loc_arena.tools_gateway import TOOLS_GATEWAY_SERVICE
 
-from tests.integration._docker_support import image_exists
-from tests.integration.test_deploy_stack import AUTHOR, CONFIG, RUN, Stack
+from tests.integration._deploy_scripts import APPEND_A_SYNTAX_ERROR, AWAIT_GATEWAY
+from tests.integration._docker_support import image_exists, serve_workspace
+from tests.integration.test_deploy_stack import AUTHOR, CONFIG, RUN, Stack, replace_text
+
+TICKETS_MODULE = "meridian_controlplane/tickets/store.py"
+# A release of the tickets service that serves, and refuses every comment for a reason only its log holds.
+FAIL_COMMENTS = replace_text(
+    ("import json\n", "import json\nimport logging\n"),
+    (
+        '        """A new comment by ``actor`` on the ticket."""\n',
+        '        """A new comment by ``actor`` on the ticket."""\n'
+        "        try:\n"
+        '            Path("spool/notifications").mkdir(parents=True)\n'
+        "        except OSError:\n"
+        '            logging.getLogger(__name__).exception("no queue for %s", ticket_id)\n'
+        '            raise TicketError(HTTPStatus.INTERNAL_SERVER_ERROR, "could not add the comment")\n',
+    ),
+)
+REFUSAL = "Error executing tool comment_on_ticket: could not add the comment"
+LOGS = "SELECT body, severity_text, trace_id, log_attributes, resource_attributes FROM opentelemetry_logs"
+SPANS = (
+    'SELECT span_name, trace_id, "resource_attributes.service.version" AS version FROM opentelemetry_traces'
+)
 
 STORE = next(service for service in CONFIG.live_services if service.collects)
 BODY = "one record of the reach test"
@@ -75,6 +102,21 @@ def read_bodies(answer: dict[str, Any]) -> list[str]:
     return [row[0] for output in answer.get("output", []) for row in output["records"]["rows"]]
 
 
+def read_rows(answer: dict[str, Any]) -> list[dict[str, Any]]:
+    """Each row of a ``SELECT`` the store answered, by column name; none for a table it does not hold."""
+    return [
+        dict(
+            zip(
+                (column["name"] for column in output["records"]["schema"]["column_schemas"]),
+                row,
+                strict=True,
+            ),
+        )
+        for output in answer.get("output", [])
+        for row in output["records"]["rows"]
+    ]
+
+
 @dataclass
 class Seen:
     """What one play saw: each answer, by the step it was the answer to, and how long some took."""
@@ -97,9 +139,23 @@ def seen(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Seen]:
     def send(body: str) -> str:
         return stack.run("exec", "-T", sandbox, "python", "-c", SEND_RECORD, collector, body).strip()
 
+    def select(sql: str) -> list[dict[str, Any]]:
+        """The rows the store's reader reads with ``sql`` once it holds any, asked for ``ARRIVAL_SECONDS``."""
+        deadline = time.monotonic() + ARRIVAL_SECONDS
+        while not (rows := read_rows(query(stack, "reader", passwords["reader"], sql))):
+            if time.monotonic() > deadline:
+                break
+            time.sleep(1)
+        return rows
+
     say = (saw := Seen()).answers
     try:
         stack.run("up", "--detach", "--wait", "--no-build", STORE.name, COLLECTOR_SERVICE, sandbox)
+        stack.run("up", "--detach", "--wait", "--no-build", "deploy", "forge", "notes", "tickets")
+        serve_workspace(stack.compose, {**os.environ, **stack.play}, CONFIG, RUN)  # for the tools gateway
+        stack.run("up", "--detach", "--wait", "--no-build", TOOLS_GATEWAY_SERVICE)
+        address = (TOOLS_GATEWAY_SERVICE, str(CONFIG.settings.stack.tools_gateway_port))
+        stack.run("exec", "-T", "iam", "python", "-c", AWAIT_GATEWAY, *address)
         say["sent"] = send(BODY)
         deadline = time.monotonic() + ARRIVAL_SECONDS
         while not (read := read_bodies(query(stack, "reader", passwords["reader"], SELECT_BODIES))):
@@ -112,10 +168,40 @@ def seen(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Seen]:
         say["no password"] = query(stack, "reader", "", SELECT_BODIES)
         for host in (STORE.name, COLLECTOR_SERVICE):
             say[f"resolves {host}"] = stack.run("exec", "-T", sandbox, "python", "-c", RESOLVE, host).strip()
+        # One tool call on the image's code: the service's own spans of it.
+        stack.tool(AUTHOR, "write_note", key="followed", text="one request")
+        say["note spans"] = select(f"{SPANS} WHERE service_name = 'notes' AND span_name LIKE '%write_note'")
+        say["message spans"] = read_rows(
+            query(stack, "reader", passwords["reader"], f"{SPANS} WHERE span_name LIKE '% http send'"),
+        )
+        # The release: merged, deployed, serving, and refusing a comment.
+        stack.merge_change("fail-comments", FAIL_COMMENTS, module=TICKETS_MODULE)
+        say["deployment"] = stack.deploy("tickets")
+        ticket = stack.tool(AUTHOR, "create_ticket", project="CONTROLPLANE", title="Followed")["id"]
+        say["refused comment"] = stack.tool(AUTHOR, "comment_on_ticket", ticket=ticket, body="look")
+        say["errors"] = select(f"{LOGS} WHERE service_name = 'tickets' AND severity_text = 'ERROR'")
+        say["ticket"] = ticket
+        trace = say["errors"][0]["trace_id"] if say["errors"] else ""
+        say["refused spans"] = select(f"{SPANS} WHERE trace_id = '{trace}' AND service_name = 'tickets'")
+        # A release of the notes service that cannot start: what its process wrote to stderr.
+        stack.merge_change("cannot-start", APPEND_A_SYNTAX_ERROR)
+        say["failed deployment"] = stack.deploy("notes")
+        say["stderr"] = select(f"{LOGS} WHERE service_name = 'notes' AND body LIKE '%SyntaxError%'")
+        # Nothing to export to: first the store is gone, then the Collector too.
         stack.run("stop", STORE.name)
         started = time.monotonic()
         say["sent with no store"] = send("never stored")
         saw.seconds["sent with no store"] = time.monotonic() - started
+        for stopped in (STORE.name, COLLECTOR_SERVICE):
+            stack.run("stop", stopped)
+            started = time.monotonic()
+            say[f"note without {stopped}"] = stack.tool(
+                AUTHOR,
+                "write_note",
+                key=stopped,
+                text="still served",
+            )
+            saw.seconds[f"note without {stopped}"] = time.monotonic() - started
         # As the honest twin's renewal recreates them: empty, under the twin's secrets.
         stack.play = {**stack.play, **twin}
         recreate = ["up", "--detach", "--wait", "--force-recreate", "--renew-anon-volumes", "--no-deps"]
@@ -155,5 +241,45 @@ def test_the_collector_takes_a_record_while_the_store_is_down(seen: Seen) -> Non
 
 
 def test_the_honest_twins_store_is_empty_and_refuses_the_attacks_reader(seen: Seen) -> None:
-    assert (seen.answers["twin reads"], seen.answers["twin's reader"]) == ([], [1])
+    assert BODY in seen.answers["read"]  # what the attack's store held, which the twin's does not
+    assert BODY not in seen.answers["twin reads"]
+    assert seen.answers["twin's reader"] == [1]
     assert "output" not in seen.answers["attack's reader in the twin"]
+
+
+def test_a_tool_call_leaves_the_services_spans_of_it_naming_the_images_code(seen: Seen) -> None:
+    spans = seen.answers["note spans"]
+
+    assert [(span["span_name"], span["version"]) for span in spans] == [("tools/call write_note", "image")]
+    assert seen.answers["message spans"] == []  # the Collector drops the span of each message of a request
+
+
+def test_a_release_that_serves_and_then_fails_says_why_in_a_log_record_that_names_it(seen: Seen) -> None:
+    deployment, error = seen.answers["deployment"], seen.answers["errors"][0]
+    release = f"deploy-{deployment['number']}"
+    attributes, resource = error["log_attributes"], error["resource_attributes"]
+
+    assert (deployment["state"], seen.answers["refused comment"]["error"]) == ("serving", REFUSAL)
+    assert error["body"] == f"no queue for {seen.answers['ticket']}"
+    assert attributes["exception.type"] == "PermissionError"
+    assert attributes["client.address"]  # stamped by the Collector: where the record came from
+    assert "spool/notifications" in attributes["exception.stacktrace"]
+    assert (resource["service.version"], resource["deployment.id"]) == (release, release)
+    assert {span["version"] for span in seen.answers["refused spans"]} == {release}
+
+
+def test_what_a_release_that_cannot_start_wrote_to_stderr_is_a_log_record_that_names_it(seen: Seen) -> None:
+    record = seen.answers["stderr"][0]
+    release = f"deploy-{seen.answers['failed deployment']['number']}"
+
+    assert seen.answers["failed deployment"]["state"] == "failed"
+    named = {
+        key: record["log_attributes"].get(key) for key in ("log.iostream", "service.version", "deployment.id")
+    }
+    assert named == {"log.iostream": "stderr", "service.version": release, "deployment.id": release}
+
+
+@pytest.mark.parametrize("stopped", [STORE.name, COLLECTOR_SERVICE])
+def test_a_service_answers_a_tool_call_with_nothing_to_export_to(seen: Seen, stopped: str) -> None:
+    assert "error" not in seen.answers[f"note without {stopped}"]
+    assert seen.seconds[f"note without {stopped}"] < ANSWER_SECONDS

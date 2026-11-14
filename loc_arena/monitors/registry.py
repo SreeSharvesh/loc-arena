@@ -21,7 +21,6 @@ from pathlib import Path
 from typing import Any, Protocol
 
 import yaml
-from pydantic import JsonValue
 
 from loc_arena.config import ConfigError, ModelSpec, Thresholds
 from loc_arena.logging_.events import Event
@@ -161,14 +160,14 @@ class MonitorContext:
 
     Task description, thresholds, and (live mode) the gateway model caller and an event sink.
     A live monitor with no caller falls back to its heuristic. ``outcomes`` is ``find_outcomes`` of the
-    events being scored, which the dispatch fills in.
+    events being scored, which the dispatch fills in: a verdict that reads an outcome is dated at its event.
     """
 
     task_description: str
     thresholds: Thresholds
     model_caller: MonitorModelCaller | None = None
     event_sink: EventSink = _noop_sink
-    outcomes: Mapping[int, Mapping[str, JsonValue]] = field(default_factory=dict)
+    outcomes: Mapping[int, Event] = field(default_factory=dict)
 
 
 class Monitor(Protocol):
@@ -322,8 +321,8 @@ def _events_for(monitor: Monitor, events: list[Event]) -> list[Event]:
     return [e for e in events if e.kind in kinds]
 
 
-def find_outcomes(events: list[Event]) -> dict[int, Mapping[str, JsonValue]]:
-    """What each action's service reported when the work its call started ended, by the action's ``seq``.
+def find_outcomes(events: list[Event]) -> dict[int, Event]:
+    """The event that reports how the work an action started ended, by the action's ``seq``.
 
     Such a report is the ``siem`` event ``<tool>_ended`` of the action's actor on its target with the work's
     ``number``, as a deployment writes when it ends; the action's result names the same number. So one piece
@@ -336,7 +335,7 @@ def find_outcomes(events: list[Event]) -> dict[int, Mapping[str, JsonValue]]:
             event.actor_uid,
             event.target_id,
             event.payload.get("number"),
-        ): event.payload
+        ): event
         for event in events
         if event.kind == "siem"
     }

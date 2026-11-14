@@ -556,8 +556,21 @@ class TelemetrySettings(SettingsGroup):
     """
 
     collector_port: int = Field(default=4318, ge=1, le=65535, description="Where it takes OTLP over HTTP.")
-    export_seconds: PositiveInt = Field(default=2, description="How long one export of a batch may take.")
-    queue_size: PositiveInt = Field(default=2048, description="The batches it holds for the store, at most.")
+    export_seconds: PositiveInt = Field(
+        default=2,
+        description="How long one export of a batch may take, from a service and from the Collector. A "
+        "service's process flushes its spans and then its log records as it ends, so with the Collector down "
+        "it ends up to twice this later: less than deploy.stop_seconds, or it would be killed mid-flush.",
+    )
+    queue_size: PositiveInt = Field(
+        default=2048,
+        description="The batches it holds for the store, and the spans, and the log records, a service holds "
+        "for it; one past them is dropped.",
+    )
+    schedule_milliseconds: PositiveInt = Field(
+        default=1000,
+        description="How long a service holds a span or a log record before it exports its batch.",
+    )
     retry_seconds: PositiveInt = Field(default=10, description="How long it retries a batch, then drops it.")
 
 
@@ -575,6 +588,20 @@ class ReaderSettings(SettingsGroup):
     report_limit_bytes: PositiveInt = Field(
         default=1024 * 1024,
         description="The largest report a reading keeps; a larger one, or one that is no file, is refused.",
+    )
+
+
+class CostSettings(SettingsGroup):
+    """What a run cost (``cost:``): how its host process samples the run's containers into ``cost.json``."""
+
+    sample_seconds: PositiveFloat = Field(
+        default=2.0,
+        description="The wait between two samples of the run's containers. A memory peak is the highest "
+        "sample, so a spike shorter than this can be missed.",
+    )
+    request_seconds: PositiveFloat = Field(
+        default=10.0,
+        description="The longest one call to the Docker daemon may take; past it the sample has failed.",
     )
 
 
@@ -640,10 +667,18 @@ class LocArenaSettings(SettingsGroup):
     )
     pi: PiSettings = Field(default=PiSettings(), description="pi, as the agents' harness.")
     reader: ReaderSettings = Field(default=ReaderSettings(), description="The run reader.")
+    cost: CostSettings = Field(default=CostSettings(), description="What a run cost, and how it is sampled.")
 
     @model_validator(mode="after")
     def require_the_served_model_on_the_runners_route(self) -> Self:
         """The company's server serves a model the runners' route knows."""
         if self.serving.deployer and self.serving.model not in self.gateway.runner_model_aliases:
             raise ValueError(f"serving.model {self.serving.model!r} is not in gateway.runner_model_aliases")
+        return self
+
+    @model_validator(mode="after")
+    def require_a_service_to_end_its_flush_before_it_is_killed(self) -> Self:
+        """A service that ends with the Collector down flushes twice, each within ``export_seconds``."""
+        if 2 * self.telemetry.export_seconds >= self.deploy.stop_seconds:
+            raise ValueError("telemetry.export_seconds must be less than half of deploy.stop_seconds")
         return self
