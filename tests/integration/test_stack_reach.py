@@ -95,6 +95,7 @@ from tests.integration._docker_support import (
     needs_stack,
     read_logs,
     read_mounts,
+    read_unhealthy,
     run_docker,
 )
 from tests.integration._probe_prelude import CONNECT_TIMEOUT_SECONDS, PRELUDE
@@ -1035,7 +1036,7 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
             call_log_after_twin,
         )
     except Exception as error:
-        error.add_note(read_logs(compose, environment, [*sandboxes]))
+        error.add_note(read_unhealthy(compose, environment) + read_logs(compose, environment, [*sandboxes]))
         raise
     finally:
         down = ["docker", *compose, "down", "--volumes", "--remove-orphans"]

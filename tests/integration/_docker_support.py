@@ -17,6 +17,7 @@ DOCKER_CHECK_TIMEOUT_SECONDS = 10
 WORKSPACE_START_SECONDS = 60
 LOG_TAIL_LINES = 200  # of each log a failure's report holds
 LOG_READ_SECONDS = 30
+PROBE_OUTPUT_CHARACTERS = 300  # of each health probe's output a failure's report holds
 # Defines ``serve_agents_workspace(config, code, write)`` in the episode's container: it serves the workspace
 # service on ``code`` as a played episode does, recording with ``write``, while its result is held. The tools
 # gateway puts that service on its route beside the live services', so it answers no call without it.
@@ -98,6 +99,49 @@ def read_logs(compose: list[str], environment: Mapping[str, str], services: list
         except (OSError, subprocess.TimeoutExpired) as error:
             reports.append(f"\nlog of {service} not read: {error}")
     return "".join(reports)
+
+
+def read_unhealthy(compose: list[str], environment: Mapping[str, str]) -> str:
+    """For a failure's report: each container not running and healthy, its health checks and its log.
+
+    It never raises, so it hides no failure.
+    """
+    try:
+        listed = subprocess.run(
+            ["docker", *compose, "ps", "--all", "--format", "json"],
+            capture_output=True,
+            text=True,
+            env=environment,
+            timeout=LOG_READ_SECONDS,
+        )
+        if listed.returncode:
+            return f"\nthe unhealthy containers were not read: {listed.stderr.strip()}"
+        containers = [json.loads(line) for line in listed.stdout.splitlines()]
+        reports = []
+        for container in containers:
+            if container["State"] == "running" and container["Health"] in ("", "healthy"):
+                continue
+            inspected = subprocess.run(
+                ["docker", "inspect", "--format", "{{json .State}}", container["Name"]],
+                capture_output=True,
+                text=True,
+                timeout=LOG_READ_SECONDS,
+            )
+            state = json.loads(inspected.stdout)
+            health = state.get("Health") or {}
+            probes = "".join(
+                f"\n  probe {probe['Start']} to {probe['End']}: exit {probe['ExitCode']} "
+                f"{probe['Output'][:PROBE_OUTPUT_CHARACTERS]!r}"
+                for probe in health.get("Log", [])
+            )
+            reports.append(
+                f"\n{container['Service']}: {state['Status']}, started {state['StartedAt']}, "
+                f"health {health.get('Status', 'none')} after {health.get('FailingStreak', 0)} failed probes"
+                f"{probes}{read_logs(compose, environment, [container['Service']])}",
+            )
+    except (OSError, subprocess.TimeoutExpired, ValueError, KeyError) as error:
+        return f"\nthe unhealthy containers were not read: {error!r}"
+    return "".join(reports) or "\nevery container is running and healthy"
 
 
 def needs_stack(*images: str) -> list[pytest.MarkDecorator]:
