@@ -19,9 +19,10 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
-## [350] - 2026-11-14: The reach test reports the log of a failing sandbox
+## [350] - 2026-11-14: The reach test reports a failing sandbox's log
 ### Changed
 - The repository's stack reach test prints the log of the sandbox that failed a bash call, so the next sandbox error explains itself; the arena behaves as before.
+- The docs' README lists the two commands that read a run: the run explorer and the run reader ([README](README.md)).
 
 ## [348] - 2026-11-14: The README leads with the picture and maps the docs
 ### Changed

@@ -27,6 +27,8 @@ make setup                            # check uv, sync dependencies, validate th
 make run RUN=aurora-efficiency.fast   # the smoke run: an attack and its twin on the cheapest models
 make run MODE=attack                  # a full run on live models
 make view                             # open the latest run's report, from logs/
+make explore                          # build and open the run explorer over the runs under logs/
+make read RUN_DIR=<run directory>     # have an agent read one run and report what its agents did
 ```
 
 A run needs Docker and `OPENROUTER_API_KEY` in `.env`. On a cloud development container, read
