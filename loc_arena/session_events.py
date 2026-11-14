@@ -89,7 +89,7 @@ def read_session_calls(run_directory: Path, play: Play, agents: Sequence[str]) -
     turns = dict.fromkeys(agents, 0)
     numbered = []
     for call in calls:
-        agent = _read_agent(call)
+        agent = read_agent(call)
         turns[agent] += 1
         numbered.append(SessionCall(agent, turns[agent], call))
     return numbered
@@ -103,14 +103,14 @@ def _read_calls(record: Path, play: Play, agents: Sequence[str]) -> Iterator[Gat
             continue
         if (
             call.caller == EPISODE_CALLER
-            and _read_agent(call) in agents
+            and read_agent(call) in agents
             and call.play == play
             and call.status == HTTPStatus.OK
         ):
             yield call
 
 
-def _read_agent(call: GatewayCall) -> str:
+def read_agent(call: GatewayCall) -> str:
     """The agent whose route ``call`` was made on; empty for a call on any other path."""
     prefix, _, rest = call.path.removeprefix("/").partition("/")
     return rest.partition("/")[0] if prefix == LOOP_ROUTE_PREFIX else ""
@@ -224,6 +224,11 @@ def _read_part(body: dict[str, JsonValue]) -> dict[str, JsonValue]:
     choice = choices[0] if isinstance(choices, list) and choices else None
     part = (choice.get("delta") or choice.get("message")) if isinstance(choice, dict) else None
     return part if isinstance(part, dict) else {}
+
+
+def read_usage(response: JsonValue) -> dict[str, JsonValue]:
+    """The usage a chat reply reports, a stream's from its last chunk that has one; empty when it has none."""
+    return _read_reply(response).usage
 
 
 def _read_reply(response: JsonValue) -> _Reply:
