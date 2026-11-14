@@ -1,0 +1,225 @@
+diff --git a/meridian-controlplane/meridian_controlplane/agents/environments.py b/meridian-controlplane/meridian_controlplane/agents/environments.py
+new file mode 100644
+index 0000000..77e07e8
+--- /dev/null
++++ b/meridian-controlplane/meridian_controlplane/agents/environments.py
+@@ -0,0 +1,219 @@
++"""Environments: where an agent's executions run, set up the same way every time and, if persistent, kept.
++
++An environment names the company repos an execution's runner clones before the agent starts, the setup commands
++it runs after them, and the variables both see. A persistent environment keeps its workspace: when an execution
++in it ends, what its runner holds is saved, and the next execution of the same version starts from that instead
++of setting up again. Every change of an environment's configuration adds a version; earlier versions never
++change. An archived environment keeps its versions and takes no new version, agent or execution. The
++environments live in memory.
++"""
++
++from __future__ import annotations
++
++import threading
++from dataclasses import dataclass
++from datetime import UTC, datetime
++from enum import StrEnum
++from http import HTTPStatus
++from typing import Annotated
++
++from fastapi import HTTPException
++from pydantic import AfterValidator, BaseModel, ConfigDict, Field
++
++RESERVED_VARIABLE_PREFIX = "MERIDIAN_"  # the service's own: an execution's identity and its trace settings
++EnvironmentName = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9-]*$")]
++RepoName = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9-]*$")]
++
++
++def _refuse_reserved(name: str) -> str:
++    if name.startswith(RESERVED_VARIABLE_PREFIX):
++        raise ValueError(f"{RESERVED_VARIABLE_PREFIX}* variables are the service's own")
++    return name
++
++
++VariableName = Annotated[str, Field(pattern=r"^[A-Z_][A-Z0-9_]*$"), AfterValidator(_refuse_reserved)]
++
++
++class EnvironmentConfig(BaseModel):
++    """What an execution starts with: repos cloned in order, setup commands run in order, and variables."""
++
++    model_config = ConfigDict(frozen=True, extra="forbid")
++
++    repos: list[RepoName] = []
++    setup: list[Annotated[str, Field(min_length=1)]] = []
++    variables: dict[VariableName, str] = {}
++    persistent: bool = True
++
++
++class EnvironmentRequest(BaseModel):
++    """A new environment: its name, what it is for, and its first configuration."""
++
++    model_config = ConfigDict(frozen=True, extra="forbid")
++
++    name: EnvironmentName
++    description: str = ""
++    config: EnvironmentConfig = EnvironmentConfig()
++
++
++class EnvironmentUpdate(BaseModel):
++    """An environment's next configuration."""
++
++    model_config = ConfigDict(frozen=True, extra="forbid")
++
++    config: EnvironmentConfig
++
++
++class EnvironmentVersion(BaseModel):
++    """One version of an environment's configuration, numbered from 1, and who made it when."""
++
++    number: int
++    config: EnvironmentConfig
++    created_by: str
++    created_at: datetime
++
++
++class Workspace(BaseModel):
++    """A persistent environment's saved workspace: the version it was built from, and the execution saving it."""
++
++    version: int
++    execution: str
++    saved_at: datetime
++
++
++class EnvironmentState(StrEnum):
++    ACTIVE = "active"
++    ARCHIVED = "archived"
++
++
++class Environment(BaseModel):
++    """An environment as the API returns it."""
++
++    name: str
++    description: str
++    owner: str
++    state: EnvironmentState
++    latest_version: EnvironmentVersion
++    workspace: Workspace | None
++
++
++@dataclass
++class _StoredEnvironment:
++    description: str
++    owner: str
++    versions: list[EnvironmentVersion]
++    state: EnvironmentState = EnvironmentState.ACTIVE
++    workspace: Workspace | None = None
++    checkpoint: str = ""  # the saved workspace, as a runner restores it
++
++
++class Environments:
++    """The environments by name. A refused change raises ``HTTPException`` with the status to answer."""
++
++    def __init__(self) -> None:
++        self._by_name: dict[str, _StoredEnvironment] = {}
++        self._lock = threading.Lock()
++
++    def list_environments(self) -> list[Environment]:
++        """Every environment, archived ones included, by name."""
++        with self._lock:
++            return [self._describe(name) for name in sorted(self._by_name)]
++
++    def get_environment(self, name: str) -> Environment:
++        """The environment ``name``; 404 if there is none."""
++        with self._lock:
++            self._find(name)
++            return self._describe(name)
++
++    def list_versions(self, name: str) -> list[EnvironmentVersion]:
++        """Every version of the environment ``name``, oldest first; 404 if there is none."""
++        with self._lock:
++            return list(self._find(name).versions)
++
++    def get_version(self, name: str, number: int) -> EnvironmentVersion:
++        """Version ``number`` of the environment ``name``."""
++        with self._lock:
++            return self._find(name).versions[number - 1]
++
++    def create(self, request: EnvironmentRequest, created_by: str) -> Environment:
++        """Create an environment at version 1, owned by ``created_by``; 409 if the name is taken."""
++        with self._lock:
++            if request.name in self._by_name:
++                raise HTTPException(HTTPStatus.CONFLICT, f"environment {request.name!r} already exists")
++            first = _make_version(request.config, number=1, created_by=created_by)
++            self._by_name[request.name] = _StoredEnvironment(request.description, created_by, [first])
++            return self._describe(request.name)
++
++    def add_version(self, name: str, update: EnvironmentUpdate, created_by: str) -> Environment:
++        """Give the environment its next version, discarding its workspace; 404 if none, 409 if archived."""
++        with self._lock:
++            environment = self._find_active(name)
++            number = len(environment.versions) + 1
++            environment.versions.append(_make_version(update.config, number=number, created_by=created_by))
++            environment.workspace, environment.checkpoint = None, ""
++            return self._describe(name)
++
++    def archive(self, name: str) -> Environment:
++        """Archive the environment; 404 if there is none, 409 if it is already archived."""
++        with self._lock:
++            self._find_active(name).state = EnvironmentState.ARCHIVED
++            return self._describe(name)
++
++    def reset(self, name: str) -> Environment:
++        """Discard the environment's saved workspace; 404 if there is none."""
++        with self._lock:
++            environment = self._find(name)
++            environment.workspace, environment.checkpoint = None, ""
++            return self._describe(name)
++
++    def delete(self, name: str) -> Environment:
++        """Delete the environment, freeing its name; 404 if there is none."""
++        with self._lock:
++            self._find(name)
++            deleted = self._describe(name)
++            del self._by_name[name]
++            return deleted
++
++    def require_usable(self, name: str) -> EnvironmentVersion:
++        """The latest version of an environment that takes new work; 404 if none, 409 if archived."""
++        with self._lock:
++            return self._find_active(name).versions[-1]
++
++    def saved_checkpoint(self, name: str, version: int) -> str | None:
++        """The environment's saved workspace, if it was built from ``version``."""
++        with self._lock:
++            environment = self._find(name)
++            saved = environment.workspace is not None and environment.workspace.version == version
++            return environment.checkpoint if saved else None
++
++    def save_workspace(self, name: str, version: int, execution_id: str, checkpoint: str) -> None:
++        """Keep ``checkpoint``, what ``execution_id``'s runner held when it ended, as the saved workspace."""
++        with self._lock:
++            environment = self._find(name)
++            environment.workspace = Workspace(version=version, execution=execution_id, saved_at=datetime.now(UTC))
++            environment.checkpoint = checkpoint
++
++    def _find(self, name: str) -> _StoredEnvironment:
++        if name not in self._by_name:
++            raise HTTPException(HTTPStatus.NOT_FOUND, f"no environment named {name!r}")
++        return self._by_name[name]
++
++    def _find_active(self, name: str) -> _StoredEnvironment:
++        environment = self._find(name)
++        if environment.state is EnvironmentState.ARCHIVED:
++            raise HTTPException(HTTPStatus.CONFLICT, f"environment {name!r} is archived")
++        return environment
++
++    def _describe(self, name: str) -> Environment:
++        environment = self._by_name[name]
++        return Environment(
++            name=name,
++            description=environment.description,
++            owner=environment.owner,
++            state=environment.state,
++            latest_version=environment.versions[-1],
++            workspace=environment.workspace,
++        )
++
++
++def _make_version(config: EnvironmentConfig, number: int, created_by: str) -> EnvironmentVersion:
++    return EnvironmentVersion(config=config, number=number, created_by=created_by, created_at=datetime.now(UTC))

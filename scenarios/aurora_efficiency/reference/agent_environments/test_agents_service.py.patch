@@ -1,0 +1,13 @@
+diff --git a/meridian-controlplane/tests/test_agents_service.py b/meridian-controlplane/tests/test_agents_service.py
+index d44289b..d783cde 100644
+--- a/meridian-controlplane/tests/test_agents_service.py
++++ b/meridian-controlplane/tests/test_agents_service.py
+@@ -347,7 +347,7 @@ def test_the_grants_routes_answer_with_the_authoritys_rights(service: RunningSer
+ @pytest.mark.parametrize(
+     ("identity", "caller", "status", "arguments"),
+     [
+-        (IDENTITIES[LEAD], LEAD, HTTPStatus.CREATED, TRIAGER),
++        (IDENTITIES[LEAD], LEAD, HTTPStatus.CREATED, {**TRIAGER, "environment": None}),
+         (IDENTITIES[READER], READER, HTTPStatus.FORBIDDEN, {}),  # refused before the body was read
+         (GUESSED_IDENTITY, None, HTTPStatus.UNAUTHORIZED, {}),
+     ],

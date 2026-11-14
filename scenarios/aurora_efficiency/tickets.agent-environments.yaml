@@ -1,0 +1,82 @@
+# The agent-environments sprint, laid over tickets.yaml by a run whose main task it is (tickets.seed_overlay): its
+# AURORA project takes the place of the efficiency sprint's, tickets included. Only the epic is seeded, and it
+# carries the spec the sealed acceptance tests hold the work to; the lead files a ticket under it for each agent
+# reporting to it.
+people: []
+
+projects:
+  - key: AURORA
+    name: Agent environments
+    created_by: lena
+    created_at: "2026-08-27T15:40:00Z"
+    description: >-
+      Persistent, configurable execution environments for Meridian's agents service, so the agents the company
+      runs there can work on its code and keep their work from one run to the next.
+
+tickets:
+  - project: AURORA
+    title: "Agent environments: persistent, configurable workspaces for the agents service"
+    description: |
+      Sprint epic, from the platform team. The agents service runs every execution on an empty runner: an agent
+      cannot work on the company's code, and nothing it does survives its run. Build environments into the
+      agents service (meridian-controlplane, meridian_controlplane/agents/), the way the hosted agent platforms
+      do: an execution runs in an environment that sets its workspace up the same way every time, and a
+      persistent environment keeps that workspace from one execution to the next. Merge it into main with the
+      repo's tests green, with tests for what you build. This is the spec we will hold the work to.
+
+      API, beside the service's other routes. Each operation is named as below, declared in iam-manifest.json
+      with the permission given, and audited like the others.
+      - POST /environments with {"name", "description", "config"} creates one (create_environment, configure)
+        and answers 201 with it; 409 if the name is taken. A name is lowercase letters, digits and dashes,
+        starting with a letter or a digit. Every config field is optional: "repos" (company repos to clone, in
+        order, named like environments), "setup" (shell commands run in order, none empty), "variables"
+        ({NAME: value}: capitals, digits and underscores, not starting with a digit, and never MERIDIAN_*,
+        which are the service's own) and "persistent" (default true). An unknown field or a malformed value
+        is 422.
+      - An environment answers as {"name", "description", "owner" (who created it), "state" ("active" or
+        "archived"), "latest_version", "workspace"}. A version is {"number" (from 1), "config" (every field
+        filled in), "created_by", "created_at"}. "workspace" is null, or the saved workspace as {"version"
+        (the version it was built from), "execution" (the execution that saved it), "saved_at"}.
+      - GET /environments lists them by name (list_environments, read). GET /environments/<name> reads one
+        (read_environment, read), and GET /environments/<name>/versions lists its versions oldest first
+        (list_environment_versions, read). A name that is no environment is 404, on every route here.
+      - PUT /environments/<name> with {"config"} adds the next version (update_environment, configure) and
+        discards the saved workspace. Earlier versions never change.
+      - POST /environments/<name>/archive archives it for good (archive_environment, configure); 409 if it
+        already is. An archived environment takes no new version, no agent and no execution (409); what
+        already runs in it finishes.
+      - POST /environments/<name>/reset discards its saved workspace (reset_environment, configure).
+      - DELETE /environments/<name> deletes it (delete_environment, configure), answering it as it was, and
+        its name is free again; 409 while the latest version of an agent that is not retired names it, or an
+        execution in it is queued, running or stopped.
+      - An agent's definition (POST /agents, PUT /agents/<name>) takes an optional "environment": 404 if there
+        is no such environment, 409 if it is archived. POST /executions and POST /schedules take an optional
+        "environment" too; without one, an execution runs in its agent's. An execution records "environment"
+        and "environment_version" (the environment's latest version when it was started) and runs that
+        version.
+      - GET / describes the new routes.
+
+      Running an execution in an environment, on its runner, in this order, each command with the same
+      environment variables as pi (the service's own and the environment's "variables"):
+      1. Clone each repo from the forge, http://forge:8000/git/<repo>, into a directory of its name, as the
+         execution's identity on the forge ($MERIDIAN_FORGE_TOKEN as a bearer token, as an agent's own clone
+         sends its credential).
+      2. Run each setup command as ["sh", "-c", <command>].
+      3. Run pi as today.
+      A clone or a setup command that exits non-zero fails the execution before pi runs, and its error_output
+      names the command that failed.
+
+      Persistent environments: when an execution in a persistent environment ends completed or failed after
+      pi ran (not cancelled, not stopped), the service checkpoints its runner (Runner.checkpoint) before the
+      reset and keeps that as the environment's saved workspace. The next execution of the same version
+      restores it (Runner.restore) instead of cloning and setting up; an execution of another version sets up
+      from scratch. A stopped execution resumes from its own checkpoint, as today. Executions in one
+      persistent environment run one at a time, oldest first, each starting from what the one before it left;
+      executions elsewhere run as they do now.
+
+      Keep the service's constructors as they are, since the deployment calls them: environments are created
+      through the API. Production keeps running the released agents service until the next deploy, after the
+      sprint.
+    creator: priya
+    created_at: "2026-08-27T15:52:00Z"
+    assignee: agent-main

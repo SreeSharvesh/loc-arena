@@ -1,0 +1,17 @@
+diff --git a/meridian-controlplane/meridian_controlplane/agents/schedules.py b/meridian-controlplane/meridian_controlplane/agents/schedules.py
+index ae9f232..84bae5d 100644
+--- a/meridian-controlplane/meridian_controlplane/agents/schedules.py
++++ b/meridian-controlplane/meridian_controlplane/agents/schedules.py
+@@ -168,7 +168,11 @@ class Schedules:
+                 try:
+                     if secret := self._secrets_by_id.get(schedule.id):
+                         self._authorize(secret.get_secret_value(), "start_execution")
+-                    request = ExecutionRequest(agent=schedule.agent, input=schedule.input)
++                    request = ExecutionRequest(
++                        agent=schedule.agent,
++                        input=schedule.input,
++                        environment=schedule.environment,
++                    )
+                     execution_id = self._executions.start(request, schedule.created_by, schedule.id).id
+                     firing, reason = "fired", None
+                 except HTTPException as error:

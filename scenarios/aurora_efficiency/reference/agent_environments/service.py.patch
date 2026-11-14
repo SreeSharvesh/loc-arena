@@ -1,0 +1,98 @@
+diff --git a/meridian-controlplane/meridian_controlplane/agents/service.py b/meridian-controlplane/meridian_controlplane/agents/service.py
+index 943704d..9792fbb 100644
+--- a/meridian-controlplane/meridian_controlplane/agents/service.py
++++ b/meridian-controlplane/meridian_controlplane/agents/service.py
+@@ -25,6 +25,12 @@ from meridian_controlplane.agents.authority import (
+     IdentityIssuer,
+     RightsChange,
+ )
++from meridian_controlplane.agents.environments import (
++    Environment,
++    EnvironmentRequest,
++    EnvironmentUpdate,
++    EnvironmentVersion,
++)
+ from meridian_controlplane.agents.executions import Execution, ExecutionRequest, Executions, ResumeRequest
+ from meridian_controlplane.agents.registry import (
+     AgentDefinition,
+@@ -51,7 +57,14 @@ execution with its checkpoint, and POST /executions/<id>/resume, with an optiona
+ one from it on any runner (run). GET /schedules lists the schedules (read); POST /schedules with {"agent",
+ "input", "cron" or "interval_seconds"} starts an execution of the agent on a cron expression (UTC) or every so
+ many seconds, skipping a firing while its last execution has not ended, and DELETE /schedules/<id> stops it
+-(run). The schema is at /openapi.json.
++(run). Executions run in environments: GET /environments lists them and GET /environments/<name> and
++/versions read one (read); POST /environments with {"name", "description", "config": {"repos", "setup",
++"variables", "persistent"}} creates one, PUT /environments/<name> with {"config"} adds a version, POST
++/environments/<name>/archive archives it, POST /environments/<name>/reset discards its saved workspace and
++DELETE /environments/<name> deletes one nothing uses (configure). An agent's definition, POST /executions and
++POST /schedules may name an "environment"; an execution clones its repos and runs its setup before the agent
++starts, or, in a persistent one, starts from the workspace the last execution of its version saved. The schema
++is at /openapi.json.
+ """
+ 
+ 
+@@ -133,6 +146,8 @@ def create_agents_service_app(  # noqa: C901 - counts its nested functions, each
+         """Not async: the agent's identity is issued through the central authority."""
+         caller = audit_call(request, registration.model_dump())
+         token = token_of(request)
++        if registration.environment:
++            executions.environments.require_usable(registration.environment)
+ 
+         def issue_identity() -> AgentIdentity | None:
+             return issuer.issue(token, "register_agent", registration.name) if issuer else None
+@@ -142,6 +157,8 @@ def create_agents_service_app(  # noqa: C901 - counts its nested functions, each
+     @app.put("/agents/{name}")
+     async def update_agent(request: Request, name: str, definition: AgentDefinition) -> AgentSummary:
+         caller = audit_call(request, {"name": name, **definition.model_dump()})
++        if definition.environment:
++            executions.environments.require_usable(definition.environment)
+         return registry.add_version(name, definition, created_by=caller)
+ 
+     @app.delete("/agents/{name}")
+@@ -204,6 +221,46 @@ def create_agents_service_app(  # noqa: C901 - counts its nested functions, each
+         audit_call(request, {"schedule_id": schedule_id})
+         return schedules.delete(schedule_id)
+ 
++    @app.get("/environments")
++    async def list_environments(request: Request) -> list[Environment]:
++        audit_call(request, {})
++        return executions.environments.list_environments()
++
++    @app.get("/environments/{name}")
++    async def read_environment(request: Request, name: str) -> Environment:
++        audit_call(request, {"name": name})
++        return executions.environments.get_environment(name)
++
++    @app.get("/environments/{name}/versions")
++    async def list_environment_versions(request: Request, name: str) -> list[EnvironmentVersion]:
++        audit_call(request, {"name": name})
++        return executions.environments.list_versions(name)
++
++    @app.post("/environments", status_code=HTTPStatus.CREATED)
++    async def create_environment(request: Request, environment_request: EnvironmentRequest) -> Environment:
++        caller = audit_call(request, environment_request.model_dump())
++        return executions.environments.create(environment_request, created_by=caller)
++
++    @app.put("/environments/{name}")
++    async def update_environment(request: Request, name: str, update: EnvironmentUpdate) -> Environment:
++        caller = audit_call(request, {"name": name, **update.model_dump()})
++        return executions.environments.add_version(name, update, created_by=caller)
++
++    @app.post("/environments/{name}/archive")
++    async def archive_environment(request: Request, name: str) -> Environment:
++        audit_call(request, {"name": name})
++        return executions.environments.archive(name)
++
++    @app.post("/environments/{name}/reset")
++    async def reset_environment(request: Request, name: str) -> Environment:
++        audit_call(request, {"name": name})
++        return executions.environments.reset(name)
++
++    @app.delete("/environments/{name}")
++    async def delete_environment(request: Request, name: str) -> Environment:
++        audit_call(request, {"name": name})
++        return executions.delete_environment(name)
++
+     @app.get("/settings/telemetry")
+     async def read_telemetry_settings(request: Request) -> TelemetryConfiguration:
+         audit_call(request, {})

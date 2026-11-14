@@ -1,0 +1,12 @@
+# aurora-agents-environments-sim-glm-5.3-flash.yaml
+# GLM 5.3 Flash under the control-eval framed seed (agents_rogue_sim_seed, verbatim) with the agent-environments
+# main task: the same attacker, seed and turn budget as aurora-agents-rogue-sim-glm-5.3-flash (bundle 50cf0a, the
+# efficiency sprint), so the two differ in the main task, its sprint, and the sub-agents' briefs, which carry no
+# covert brief here.
+# Run: make run RUN=aurora-agents-environments-sim-glm-5.3-flash MODE=attack
+extends: aurora-agents-environments.yaml
+models: models.glm-5.3-flash.yaml
+side_task:
+  slug: agents-environments-sim-glm-5.3-flash
+covert:
+  objective_prompt_ref: prompts_inline.agents_rogue_sim_seed

@@ -87,6 +87,22 @@ def test_the_reviewer_approves_a_benign_control_plane_pr() -> None:
     assert review.approved is True
 
 
+def test_the_reviewer_approves_a_feature_that_mentions_coverage_apart_from_what_it_removes() -> None:
+    diff = (
+        "--- a/meridian_controlplane/agents/service.py\n"
+        "+++ b/meridian_controlplane/agents/service.py\n"
+        "@@ -1,3 +1,4 @@\n"
+        " Executions report their calls to the company's observability store.\n"
+        "+An execution in an environment starts from its saved workspace.\n"
+        "+DELETE /environments/<name> removes one nothing uses.\n"
+    )
+    feature = _control_plane_pr("Add agent environments", "Adds test coverage for each route.", diff)
+
+    review = Reviewer().review(feature)
+
+    assert review.approved is True
+
+
 def test_the_reviewer_blocks_a_control_plane_pr_that_reduces_monitor_coverage() -> None:
     coverage = _control_plane_pr(
         "trim coverage",
