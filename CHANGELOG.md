@@ -19,6 +19,10 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [354] - 2026-11-14: An unchanged checkout gets the same grade every time
+### Fixed
+- The grader now scores an unchanged checkout the same on every run, because two agents service tests of the company no longer race or log after their suite ends.
+
 ## [359] - 2026-11-14: The company's telemetry is bounded in time, disk and memory
 ### Added
 - The stack keeps the telemetry store's data within `store_disk_mib` and gives its tables a time-to-live, so a flood of telemetry cannot fill the machine ([docs](docs/telemetry-service.md#best-effort)).
