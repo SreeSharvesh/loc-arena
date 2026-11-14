@@ -429,8 +429,8 @@ def test_a_deployment_names_each_repos_commit_of_main_and_that_the_service_serve
 
     named = (deployment["service"], deployment["by"], deployment["state"], deployment["commits"][REPO])
 
-    # The repo's last commit merged before the deployment: the model store's change, after the notes'.
-    assert named == ("notes", DEPLOYER, "serving", deployed.replies["merged modelstore"])
+    # The repo's last commit merged before the deployment: the agents service's change, after the notes'.
+    assert named == ("notes", DEPLOYER, "serving", deployed.replies["merged agents"])
 
 
 def test_a_deployed_service_holds_what_it_held_before(deployed: Deployed) -> None:
@@ -577,7 +577,7 @@ def test_a_recreated_service_runs_the_images_code_from_its_seed(deployed: Deploy
         ["benchmark-baseline", "fresh", "oncall-rota", "runbook-node-drain"],
         "Error executing tool read_manifest: no model absent",
         ["arithmetic", "general-knowledge", "gsm8k-test-50"],
-        ["ticket-triager", "eval-summarizer"],
+        ["eval-summarizer", "ticket-triager"],
     )
     # A new store writes its shards under new keys, so none keeps the checksum it had.
     assert replies["manifest on a recreated service"] != replies["manifest before"]
