@@ -67,23 +67,29 @@ class FakeSupervisors:
 
 @dataclass
 class Registry:
-    """A registry of notes' deployments, and each deployment it recorded as it ended."""
+    """A registry of notes' deployments, and each deployment it recorded: as accepted, then as it ended."""
 
     forge: FakeForge = field(default_factory=FakeForge)
     supervisors: FakeSupervisors = field(default_factory=FakeSupervisors)
     credentials: FakeCredentials = field(default_factory=FakeCredentials)
-    ended: Queue[Deployment] = field(default_factory=Queue)
+    recorded: Queue[Deployment] = field(default_factory=Queue)
     seconds: float = WAIT_SECONDS  # how long a deployment may last
 
     def __post_init__(self) -> None:
         collaborators = (self.credentials, self.forge, self.supervisors)
-        self.deployments = Deployments(["notes"], *collaborators, 2, self.seconds, self.ended.put)
+        self.deployments = Deployments(["notes"], *collaborators, 2, self.seconds, self.recorded.put)
+
+    def wait_for_end(self) -> Deployment:
+        """The next deployment the registry records as it ended."""
+        while (recorded := self.recorded.get(timeout=WAIT_SECONDS)).state == "started":
+            pass
+        return recorded
 
     def deploy_to_its_end(self) -> Deployment:
         """A deployment of notes an agent starts, as the registry recorded it once it had ended."""
         self.supervisors.proceed.set()
         self.deployments.deploy("an-agent", "notes")
-        return self.ended.get(timeout=WAIT_SECONDS)
+        return self.wait_for_end()
 
 
 @pytest.fixture
@@ -96,7 +102,7 @@ def busy() -> Iterator[tuple[Registry, Deployment]]:
         yield registry, started
     finally:
         registry.supervisors.proceed.set()
-        registry.ended.get(timeout=WAIT_SECONDS)
+        registry.wait_for_end()
 
 
 def test_deploy_returns_a_started_deployment_while_its_release_is_handed_over(
@@ -108,6 +114,14 @@ def test_deploy_returns_a_started_deployment_while_its_release_is_handed_over(
 
     assert (started.number, started.by, started.state, started.commits) == (1, "an-agent", "started", {})
     assert listed == [started]
+
+
+def test_a_deployment_is_recorded_as_it_is_accepted_before_its_release_is_fetched(hung: Registry) -> None:
+    started = hung.deployments.deploy("an-agent", "notes")
+
+    recorded = hung.recorded.get(timeout=WAIT_SECONDS)
+
+    assert (recorded, recorded.state, hung.forge.fetched) == (started, "started", 0)
 
 
 def test_a_service_with_a_deployment_in_progress_takes_no_other(busy: tuple[Registry, Deployment]) -> None:
@@ -194,7 +208,7 @@ def test_a_deployment_that_outlasts_its_bound_ends_failed_saying_so_and_frees_it
 ) -> None:
     hung.deployments.deploy("an-agent", "notes")
 
-    ended = hung.ended.get(timeout=WAIT_SECONDS)
+    ended = hung.wait_for_end()
     after = hung.deployments.deploy("an-agent", "notes")
 
     assert (ended.number, ended.state, ended.detail) == (1, "failed", "the deployment did not end in 0.2 s")
@@ -203,7 +217,7 @@ def test_a_deployment_that_outlasts_its_bound_ends_failed_saying_so_and_frees_it
 
 def test_a_release_fetched_after_its_deployment_was_given_up_is_not_handed_over(hung: Registry) -> None:
     hung.deployments.deploy("an-agent", "notes")
-    hung.ended.get(timeout=WAIT_SECONDS)
+    hung.wait_for_end()
 
     hung.forge.answers.set()  # the fetch answers, late
 
@@ -218,7 +232,7 @@ def test_a_deployment_no_thread_starts_for_ends_failed_saying_so_and_frees_its_s
     finally:
         threading.stack_size(usual)
 
-    recorded = registry.ended.get(timeout=WAIT_SECONDS)
+    recorded = registry.wait_for_end()
     after = registry.deploy_to_its_end()
 
     assert (unstarted.state, unstarted.detail) == ("failed", "the deployment could not be started")

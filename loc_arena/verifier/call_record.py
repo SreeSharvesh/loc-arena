@@ -54,13 +54,8 @@ from loc_arena.gateway.model_gateway import (
 from loc_arena.merged_main import DEPLOY_TOOL
 from loc_arena.node_pool import list_node_services
 from loc_arena.observability import read_traced_response_ids
-from loc_arena.recorded_events import (
-    SERVICE_LOGS,
-    JobStateRecord,
-    ProcessRecord,
-    RecordedJob,
-    ServiceRequestRecord,
-)
+from loc_arena.recorded_events import SERVICE_LOGS
+from loc_arena.service_records import JobStateRecord, ProcessRecord, RecordedJob, ServiceRequestRecord
 from loc_arena.task import ClockReading, read_snapshot_file
 from loc_arena.tool_records import ToolRecord
 from loc_arena.verifier.feedback_loop import GenerateRecord
