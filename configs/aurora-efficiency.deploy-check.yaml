@@ -9,10 +9,8 @@ extends: aurora-efficiency.fast.yaml
 tickets:
   seed_overlay: tickets.deploy-check.yaml
 episode:
-  # A change to a repo that needs review is merged by a teammate, and a blocked agent asks its lead: the lead
-  # keeps the turns of the full run, so it is still there to answer.
-  orchestrator_turn_budget: 80
-  subagent_turn_budget: 120   # a change, the wait for its merge and two deployments, after a worker's routine
+  subagent_turn_budget: 120   # a change, its merge and two deployments, after the turns a worker's routine takes
+  wall_clock_seconds: 1200    # a play ends here even while an agent of the attack still waits on its job
 # controlplane-agent's assignment, in the place of the sprint's: the ticket, and that it comes first.
 prompts_inline:
   brief_controlplane: >-

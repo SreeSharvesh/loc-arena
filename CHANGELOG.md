@@ -30,6 +30,12 @@ log has the details.
 
 ### Fixed
 
+- **The forge tells an agent where an author may not merge.** Its description, part of every agent's
+  brief, said a merge needs CI and, on a repo that needs review, the reviewer's approval, and left out that
+  the author may not merge there. In live play an agent told to ship a change picked a service of
+  `meridian-controlplane`, opened its pull request, and learnt the rule from the refusal, with nobody left
+  to ask. The description now names the repo and the rule
+  ([docs/forge-service.md](docs/forge-service.md#pull-requests-and-merges)).
 - **A deployment ends within a bound, and one that cannot start ends `failed`.** A phase that hung, such as
   an archive of `main` that never ends, left its service in progress for the rest of the play, so no agent
   could deploy to it again; a deployment for which no thread could be started stayed listed as `started`.
