@@ -288,7 +288,9 @@ def seen(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Seen]:
         ]
         stack.run("exec", "-T", "iam", *unsampled, standard_input=stack.play[token_variable(AUTHOR)])
         say["unsampled in notes"] = select(
-            f"{SPANS} WHERE trace_id = '{UNSAMPLED_TRACE}' AND service_name = 'notes'",
+            f"{SPANS} WHERE trace_id = '{UNSAMPLED_TRACE}' AND service_name = 'notes' "
+            # The row asserted on, which the service's other spans of the call come before.
+            "AND span_name = 'tools/call list_notes'",
         )
         say["unsampled"] = select(
             f"{SERVER_SPANS} AND trace_id = '{UNSAMPLED_TRACE}' AND {CALLED_LIST_NOTES}",
@@ -564,7 +566,8 @@ def test_a_read_of_the_telemetry_and_a_refused_one_are_actions_on_the_mirror_log
     answered = next(event for event in reads if event.actor_uid == AUTHOR)
 
     assert by_agent[AUTHOR][0] == ({"query": ERRORS_WITH_THEIR_REQUEST}, False)
-    assert by_agent[MERGER][:2] == [({"query": REFUSED_QUERY}, True), ({"query": SELECT_BODIES}, False)]
+    assert by_agent[MERGER][0] == ({"query": REFUSED_QUERY}, True)
+    assert by_agent[MERGER][-1] == ({"query": SELECT_BODIES}, False)  # after the refused polls for the grant
     assert refused.payload["reason"] == NOT_PERMITTED
     assert f"no queue for {seen.answers['ticket']}" in json.dumps(answered.result)
     assert by_agent[AUTHOR][-1] == ({"query": UNDECIDED_QUERY}, True)

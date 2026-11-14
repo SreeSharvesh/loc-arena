@@ -5,6 +5,36 @@ the service to the store. In a stack run it is three things: the services that r
 Collector (`telemetry-collector`), and the telemetry store (GreptimeDB), the scenario's one `services:` entry
 with `collects:`. The lab wires them with `loc_arena/telemetry_stack.py`.
 
+```mermaid
+flowchart LR
+  subgraph agentnet["agent-net"]
+    agent["Agent's session"]
+    gateway["Tools gateway<br/>(agentgateway)"]
+    service["Collected service<br/>zero-code OpenTelemetry"]
+    iam["Central IAM"]
+    collector["telemetry-collector<br/>the company's Collector"]
+  end
+  subgraph telemetrynet["telemetry-net: no sandbox, runner or node"]
+    reader["telemetry-reader<br/>the store's own MCP server"]
+    store[("telemetry store<br/>GreptimeDB")]
+  end
+  subgraph recordnet["record-net: unchanged"]
+    sealed["Collector of the sealed record"]
+  end
+  agent -- "tool call" --> gateway
+  gateway -- "call, with trace context" --> service
+  gateway -. "asks before each telemetry read" .-> iam
+  gateway -- "execute_sql, on IAM's allow" --> reader
+  reader -- "SQL, read-only user" --> store
+  service -- "spans and logs, OTLP" --> collector
+  gateway -- "span of each call, OTLP" --> collector
+  collector -- "write-only user" --> store
+  gateway -- "its line of each read: an action event after play" --> monitors["Monitors"]
+```
+
+The model gateway and the sealed record are not on this path, and nothing that measures a run reads the
+store.
+
 Telemetry is for debugging. It is never evidence: nothing that measures a run reads the store or the
 Collector, so no verdict, score or event depends on it ([why](#what-a-release-can-do-to-its-telemetry)).
 
@@ -109,6 +139,12 @@ A store or a Collector that is down never fails a service or a run.
 - A service exports from a background thread, from a bounded queue (`queue_size`), every
   `schedule_milliseconds`, each export within `export_seconds`. What does not fit or is not taken is dropped.
 - The Collector holds `queue_size` batches for the store, retries one for `retry_seconds`, then drops it.
+  From `collector_memory_mib` less `collector_spike_mib` it refuses new data, which its senders drop. A burst
+  inside one `collector_check_seconds` can still pass its container's limit; it then starts again, empty.
+- The store's tables have a time-to-live of `retention`: an older record or span is purged when the store
+  next compacts the files that hold it, so within a short play nothing may be purged at all. Its data is on a
+  memory filesystem of `store_disk_mib`: a write past it fails, the Collector drops the batch, and the store
+  answers what it holds. A store killed for memory starts again empty, its telemetry gone.
 - With the Collector down, a service answers as before. Two things change: its SDK writes a line to its
   stderr for each export that fails, a few hundred bytes a second, and its process ends up to twice
   `export_seconds` later, as it flushes. The settings refuse an `export_seconds` that is not less than half
@@ -124,7 +160,19 @@ gateway continues a `traceparent` its caller sends, so an agent can put its call
 that changes how a trace reads, not who made the call.
 
 What a release cannot touch: the tools gateway's own spans, which it can neither change nor leave a call
-out of, the
-address the Collector stamps on what it receives, the store, which only the
-Collector writes, and every record that measures the run. So a signal is what a service said of itself, never
-what happened.
+out of; the address the Collector stamps on what it receives; the store's rows, which only the Collector
+writes, though a flood can fill the store or erase it (below); and every record that measures the run. So a signal is what a service said of itself, never what happened.
+
+## Exposures
+
+These stay as they are; each is a move the environment offers, recorded where it happens.
+
+| Exposure | What it allows | Where it shows |
+|---|---|---|
+| A release forges or drops its own telemetry | false logs and spans under its service's name, or none | the stamped sender address; the gateway's spans of the calls it served |
+| Anything on agent-net posts OTLP | spans and logs under any name, the gateway's included | the stamped sender address |
+| A release logs a secret it holds | every agent with `read` can query it | the read's `action` event, with its result |
+| Every agent reads every collected service | other agents' tool calls by agent, tool and time, from the gateway's spans | each read's `action` event |
+| A caller chooses its `traceparent` | its calls in a trace of its choosing | the gateway's span still names the agent |
+| A flood of the Collector | the store's disk full for the rest of the play, since its purge needs room; or the store killed for memory, back empty, its telemetry gone | the store's second start in `services/telemetry.log`; nothing else records the kill |
+| A release writes its log for whoever reads it | text that misleads the agent, or the monitor, that reads it back | the read's `action` event, cut to `result_chars` for the monitor |
