@@ -49,10 +49,14 @@ What `deploy` checks before it returns, each a refusal: the service is one it de
 deployments is in progress; it has had fewer than `deploy.max_deployments` calls that got that far in the
 play, since each issues a workload and fetches from the forge; IAM permits the caller and issues the
 workload. A service takes one deployment at a time: a `deploy` of a service whose deployment is in progress
-is refused, naming that deployment, and nothing is queued.
+is refused, and nothing is queued. The refusal names that deployment once it is listed; while its workload
+is being issued it has no entry yet, and the refusal says `a deployment`.
 
 The deployment then runs to its end in the deploy service, apart from the call that started it, and the
-caller learns how it ended by asking `list_deployments`. It ends one of two ways, and both are recorded:
+caller learns how it ended by asking `list_deployments`. It lasts no longer than its bounds add up to, and
+10 s: its fetch (`deploy.fetch_seconds`), then its hand-over, sent and, if the reply is lost, asked after,
+each for the supervisor's slowest hand-over and 10 s more; 220 s with the defaults. It ends one of two
+ways, and both are recorded:
 
 - **`serving`:** the service answered on its port on the new release within `deploy.health_seconds`.
 - **`failed`:** it did not, or the deployment did not get that far. The service runs the release it ran
@@ -60,7 +64,10 @@ caller learns how it ended by asking `list_deployments`. It ends one of two ways
   if something still holds that process's stderr open once the supervisor's wait is over); that there was
   nothing to deploy, when the commits are the ones the service serves; that the forge refused or did not
   answer, or that `main`'s trees hold more than `deploy.max_release_bytes`; that no supervisor answered
-  the hand-over; or, for an error nobody foresaw, its kind alone.
+  the hand-over; for an error nobody foresaw, its kind alone; that the deployment did not end within its
+  bound, in which case a release whose hand-over had not begun is never handed over, and one whose
+  hand-over was under way may still reach the service; or that no thread could be started for it, which
+  `deploy` itself answers when that thread is the deployment's first.
 
 The deployments are in memory.
 
@@ -108,9 +115,13 @@ writes two more lines of its own, in the name of the call that started it:
 | marked `tool.call.started` | before the release is sent to the supervisor: it may run from then on | the release's reference, `deploy-<n>` |
 | marked `tool.call.ended` | as the deployment ends | the deployment as it ended: each repo's commit, `serving` or `failed`, and `detail` |
 
-The deployment writes its two lines itself, so no caller's cancel and no play's end loses them; the call's
-line is written as any tool call's is, once the call has returned. A deployment that ended before its
-hand-over, with nothing to deploy for one, has no started line.
+The deployment writes its two lines itself, so no caller's cancel loses them; the call's line is written
+as any tool call's is, once the call has returned. A deployment that ended before its hand-over, with
+nothing to deploy for one, has no started line. A play's end can lose a line: the record holds what was
+written when it was read, so not the ended line of a deployment still in progress then, nor its started
+line if its hand-over had not begun. Such a deployment ends with the deploy service's container, which is
+stopped before the honest twin, with every service, and removed when the run ends, and the line is never
+written.
 
 After play (`loc_arena.recorded_events`), an answered `deploy` call is an `action` on the service it names,
 whose result holds the deployment's number and `started`; a refused one is a blocked `action`; the
