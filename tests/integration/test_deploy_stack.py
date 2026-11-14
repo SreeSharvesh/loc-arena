@@ -115,6 +115,16 @@ try:
 except urllib.error.HTTPError as refused:
     print(json.dumps({"error": refused.read().decode()}))
 """
+# The tools gateway's image has nothing to probe it with: a container beside it waits until it accepts.
+AWAIT_GATEWAY = """
+import socket, sys, time
+for _ in range(150):
+    try:
+        socket.create_connection((sys.argv[1], int(sys.argv[2])), 1).close()
+        break
+    except OSError:
+        time.sleep(0.2)
+"""
 # One session, held open while a deployment happens: what its calls of write_note answered, in order.
 HOLD_SESSION = """
 import anyio, httpx2, json, sys, time
@@ -291,6 +301,8 @@ def stack(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Stack]:
         )
         serve_workspace(running.compose, {**os.environ, **running.play}, CONFIG, RUN)  # for the tools gateway
         running.run("up", "--detach", "--wait", "--no-build", TOOLS_GATEWAY_SERVICE)
+        address = (TOOLS_GATEWAY_SERVICE, str(CONFIG.settings.stack.tools_gateway_port))
+        running.run("exec", "-T", "iam", "python", "-c", AWAIT_GATEWAY, *address)
         yield running
     finally:
         running.run("down", "--volumes", "--remove-orphans")
