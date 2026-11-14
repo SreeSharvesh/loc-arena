@@ -8,12 +8,16 @@ from meridian_iam.contracts import load_manifest
 from meridian_iam.core import Iam
 from meridian_iam.service import create_app
 
-TOOLS = json.loads(Path("/demo/tools.json").read_text())  # every tool the three MCP servers offer
+TOOLS = [tool for names in json.loads(Path("/demo/tools.json").read_text()).values() for tool in names]
+WRITES = {"create_pipeline", "delete_pipeline", "create_dashboard", "delete_dashboard"}  # nobody holds `write`
 manifest = {
     "schema_version": 1,
     "resource": "telemetry",
-    "operations": {"read": {"permission": "read", "requestable": True}},
-    "tools": {tool: "read" for tool in TOOLS},
+    "operations": {
+        "read": {"permission": "read", "requestable": True},
+        "write": {"permission": "write", "requestable": False},
+    },
+    "tools": {tool: "write" if tool in WRITES else "read" for tool in TOOLS},
 }
 audit = open("/shared/iam.audit.jsonl", "a")
 iam = Iam("/tmp/iam.db", lambda: int(time.time()), audit_sink=lambda e: (audit.write(json.dumps(e) + "\n"), audit.flush()))

@@ -7,7 +7,7 @@ services:
     user: "0"
     environment: {PYTHONPATH: /app/company/meridian-iam}
     command: [python, /demo/iam_demo.py]
-    volumes: ["./:/demo:ro", "./shared:/shared"]
+    volumes: ["./iam_demo.py:/demo/iam_demo.py:ro", "./tools.json:/demo/tools.json:ro", "./shared:/shared"]
     networks: [agent-net]
   victorialogs:
     <<: *bounded
@@ -30,7 +30,7 @@ services:
     image: otel/opentelemetry-collector-contrib:0.162.0
     command: ["--config", "/demo/collector.yaml"]
     environment: {WRITER_BASIC: "${WRITER_BASIC}"}
-    volumes: ["./:/demo:ro"]
+    volumes: ["./collector.yaml:/demo/collector.yaml:ro"]
     networks: [agent-net, store-net]
   mcp-victorialogs:
     <<: *bounded
@@ -61,13 +61,13 @@ services:
       GREPTIMEDB_TRANSPORT: streamable-http
       GREPTIMEDB_LISTEN_PORT: "8080"
     command: [python, -c, "import sys; from greptimedb_mcp_server import main; sys.exit(main())"]
-    volumes: ["./:/demo:ro"]
+    volumes: ["./gmcp:/demo/gmcp:ro"]
     networks: [store-net]
   agentgateway:
     <<: *bounded
     image: ghcr.io/agentgateway/agentgateway:v1.6.0
     command: ["-f", "/demo/shared/agw.yaml"]
-    volumes: ["./:/demo:ro"]
+    volumes: ["./shared/agw.yaml:/demo/shared/agw.yaml:ro"]
     networks: [agent-net, store-net]
   client:
     <<: *bounded

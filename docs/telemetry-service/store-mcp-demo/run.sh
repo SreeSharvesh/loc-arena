@@ -3,6 +3,7 @@
 set -eu
 cd "$(dirname "$0")"
 compose="docker compose"
+$compose down -v >/dev/null 2>&1 || true  # a stack kept from an earlier run holds its passwords and tokens
 [ "${KEEP:-}" ] || trap '$compose down -v >/dev/null 2>&1' EXIT
 rm -rf shared && mkdir -p shared gmcp && chmod a+rwx shared  # each run's own tokens; IAM writes them as root
 export WRITER_PASSWORD="$(openssl rand -hex 16)" READER_PASSWORD="$(openssl rand -hex 16)"
@@ -19,7 +20,11 @@ until [ -s shared/tokens.json ]; do
 done
 uv run --project ../../.. python gen_gateway.py
 $compose up -d agentgateway
-sleep 5
+waited=0
+until $compose exec -T client python /demo/client.py controlplane-agent list 2>/dev/null | grep -q tools; do
+  [ "$waited" -lt 30 ] || { echo "the gateway did not answer in 30 s"; $compose logs agentgateway | tail -5; exit 1; }
+  sleep 1; waited=$((waited + 1))
+done
 $compose exec -T client python /demo/emit.py
 sleep 4
 echo "== controlplane-agent (holds read on telemetry) lists the tools: no tool that writes is offered"
@@ -33,6 +38,8 @@ agent controlplane-agent call delete_pipeline '{"name":"greptime_trace_v1","vers
 agent controlplane-agent call create_dashboard '{"name":"x","definition":"{}"}'
 agent controlplane-agent call execute_sql '{"query":"DROP TABLE opentelemetry_logs"}'
 agent controlplane-agent call execute_sql '{"query":"ADMIN flush_table(\"opentelemetry_logs\")"}'
+echo "== datapipe-agent (holds nothing) tries to reach a store past IAM"
+$compose exec -T client python /demo/probe.py
 echo "== datapipe-agent (holds nothing) is refused, asks IAM, is approved by the owner, and reads"
 agent datapipe-agent call query '{"query":"severity_text:ERROR | fields _msg","start":"2026-01-01T00:00:00Z"}'
 $compose exec -T client python /demo/ask.py
