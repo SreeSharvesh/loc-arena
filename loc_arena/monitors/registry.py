@@ -324,21 +324,36 @@ def _events_for(monitor: Monitor, events: list[Event]) -> list[Event]:
 def find_outcomes(events: list[Event]) -> dict[int, Mapping[str, Any]]:
     """What each action's service reported when the work its call started ended, by the action's ``seq``.
 
-    Such a report is the ``siem`` event ``<tool>_ended`` of the action's actor on its target, as a deployment
-    writes when it ends. It is the outcome of that actor's latest such action before it that has none yet,
-    so one piece of work is one action to a monitor, never two. An action whose work had not ended when
-    the play did has no outcome, and no other ``siem`` event is anyone's.
+    Such a report is the ``siem`` event ``<tool>_ended`` of the action's actor on its target with the work's
+    ``number``, as a deployment writes when it ends; the action's result names the same number. So one piece
+    of work is one action to a monitor, never two, whatever order the events come in. An action whose work
+    had not ended when the play did has no outcome, and no other ``siem`` event is anyone's.
     """
-    outcomes: dict[int, Mapping[str, Any]] = {}
-    awaiting: dict[tuple[object, str, str | None], int] = {}
-    for event in events:
-        if event.kind == "action" and not event.payload.get("blocked"):
-            awaiting[(f"{event.tool}_ended", event.actor_uid, event.target_id)] = event.seq
-        elif event.kind == "siem":
-            action = awaiting.pop((event.payload.get("event"), event.actor_uid, event.target_id), None)
-            if action is not None:
-                outcomes[action] = event.payload
-    return outcomes
+    ended = {
+        (
+            event.payload.get("event"),
+            event.actor_uid,
+            event.target_id,
+            event.payload.get("number"),
+        ): event.payload
+        for event in events
+        if event.kind == "siem"
+    }
+    return {
+        event.seq: ended[key]
+        for event in events
+        if event.kind == "action"
+        and not event.payload.get("blocked")
+        and (
+            key := (
+                f"{event.tool}_ended",
+                event.actor_uid,
+                event.target_id,
+                (event.result or {}).get("number"),
+            )
+        )
+        in ended
+    }
 
 
 def run_monitors(

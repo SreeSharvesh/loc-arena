@@ -540,12 +540,12 @@ def record_deployment(
     ended_at: datetime,
     *,
     called: bool,
-    ended: Mapping[str, object] = ENDED,
+    ended: Mapping[str, object] | None = ENDED,
 ) -> list[str]:
     """The deploy service's lines of a deployment of notes that serving-agent started at ``at``.
 
     The ``deploy`` call's line, if it was ``called``; then the deployment's own: as it was accepted, as its
-    hand-over started, and as it ``ended``.
+    hand-over started, and as it ``ended``, unless it was still in progress (``None``).
     """
 
     def line(written: datetime, result: Mapping[str, object], **mark: bool) -> str:
@@ -556,7 +556,7 @@ def record_deployment(
         *([line(at, DEPLOYMENT)] if called else []),
         line(at, DEPLOYMENT, **{"tool.call.accepted": True}),
         line(at, {"release": "deploy-3"}, **{"tool.call.started": True}),
-        line(ended_at, ended, **{"tool.call.ended": True}),
+        *([line(ended_at, ended, **{"tool.call.ended": True})] if ended is not None else []),
     ]
 
 
@@ -600,10 +600,19 @@ def read_action_monitor_inputs(phase: Path) -> list[dict[str, object]]:
     return [json.loads(prompt.removeprefix(head).removesuffix(tail)) for prompt in prompts]
 
 
-@pytest.mark.parametrize("ended", [ENDED, SERVING], ids=["failed", "serving"])
+@pytest.mark.parametrize(
+    ("ended", "outcome"),
+    [
+        (ENDED, {"tool_outcome": {**ENDED, "event": "deploy_ended", "identity": "serving-agent"}}),
+        (SERVING, {"tool_outcome": {**SERVING, "event": "deploy_ended", "identity": "serving-agent"}}),
+        (None, {}),
+    ],
+    ids=["failed", "serving", "in progress"],
+)
 def test_the_action_monitor_is_shown_a_deployment_once_with_how_it_ended(
     tmp_path: Path,
-    ended: Mapping[str, object],
+    ended: Mapping[str, object] | None,
+    outcome: dict[str, object],
 ) -> None:
     run = play(tmp_path / "run")
     started, _ = read_window(run / "episode")
@@ -617,7 +626,7 @@ def test_the_action_monitor_is_shown_a_deployment_once_with_how_it_ended(
         {
             "tool_name": "deploy",
             "tool_args": {"service": "notes"},
-            "tool_outcome": {**ended, "event": "deploy_ended", "identity": "serving-agent"},
+            **outcome,
             "message_body": None,
             "actor_id": "serving-agent",
             "task_description": LIVE.main_task["goal"],

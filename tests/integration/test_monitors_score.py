@@ -47,6 +47,7 @@ def test_a_play_with_no_deployment_sends_each_monitor_the_prompts_the_stored_run
 
     protocol = compose_protocol(CONFIG, load_monitors("configs/monitors.yaml", CONFIG.models))
     mirror_events = list(read_events(stored_run / phase / MIRROR))
+    assert not [event for event in mirror_events if event.tool == "deploy"]  # the run deployed nothing
 
     protocol.run(mirror_events, monitor_context(CONFIG, model_caller=call))
 
@@ -55,4 +56,5 @@ def test_a_play_with_no_deployment_sends_each_monitor_the_prompts_the_stored_run
         for event in read_events(stored_run / phase / SEALED)
         if event.kind == "inference_call" and event.payload["credential_kind"] == "monitor"
     )
+    assert recorded
     assert sent == recorded

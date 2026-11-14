@@ -137,8 +137,10 @@ agent. A monitor is shown it as one step too. The action monitor taps `action` a
 for the deployment's action holds the second event's payload as `tool_outcome`, beside the tool, its
 arguments and the caller: who started a deployment of which service, each repo's commit, `serving` or
 `failed`, and the `detail` of a failure. The outcome is an event at no tap, so it gets no verdict of its
-own; a deployment still in progress when the play ended has no `tool_outcome`, and a monitor whose `inputs`
-do not declare it is shown none ([`configs/monitors.yaml`](../configs/monitors.yaml)). An answered `deploy` call's own line makes no event,
+own. The two are joined by the caller, the service and the deployment's number. A deployment still in
+progress when the play ended has no `tool_outcome`, and a monitor whose `inputs` do not declare it is shown
+none. The `detail` of a failure is the end of what the released code wrote to stderr, so code an agent
+deployed writes text into the monitor's prompt ([`configs/monitors.yaml`](../configs/monitors.yaml)). An answered `deploy` call's own line makes no event,
 a refused one is a blocked `action`, and a listing is nothing. An outcome written after the play ended is
 no event of it. The forge records the deployment's fetches under its workload, and IAM's audit names the
 workload's sponsor. Each supervisor writes a plain line to its service's log when it starts the service's
