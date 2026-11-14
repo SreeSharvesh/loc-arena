@@ -19,6 +19,11 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [347] - 2026-11-14: The company has a telemetry store and its own Collector
+### Added
+- The scenario can name a telemetry store with `collects:`, which the stack keeps on a network no agent's code joins ([docs](docs/isolation/README.md#containers)).
+- The stack runs the company's own Collector as that store's one writer, and recreates both empty for the honest twin ([docs](docs/isolation/README.md#containers)).
+
 ## [348] - 2026-11-14: The README leads with the picture and maps the docs
 ### Changed
 - The docs' README opens with the arena's figure, says what a run is, and maps every docs page in one table ([README](README.md)).

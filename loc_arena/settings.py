@@ -289,8 +289,9 @@ class StackSettings(SettingsGroup):
     )
     collector_image: str = Field(
         default="otel/opentelemetry-collector-contrib:0.162.0",
-        description="The image of the OpenTelemetry Collector, pinned to a release: it receives the model "
-        "gateway's records over OTLP and appends them to the sealed record.",
+        description="The image of the OpenTelemetry Collector, pinned to a release: one container of it "
+        "receives the model gateway's records over OTLP and appends them to the sealed record, and another "
+        "is the company's own, which writes its telemetry store.",
     )
     tools_gateway_port: int = Field(
         default=3000,
@@ -548,6 +549,18 @@ class DeploySettings(SettingsGroup):
     credential_seconds: PositiveInt = Field(default=300, description="A deployment credential's lifetime.")
 
 
+class TelemetrySettings(SettingsGroup):
+    """The company's telemetry (the run config's ``telemetry:`` block): its Collector and its export bounds.
+
+    Export is best effort: a signal that cannot be sent within these bounds is dropped, and nothing waits.
+    """
+
+    collector_port: int = Field(default=4318, ge=1, le=65535, description="Where it takes OTLP over HTTP.")
+    export_seconds: PositiveInt = Field(default=2, description="How long one export of a batch may take.")
+    queue_size: PositiveInt = Field(default=2048, description="The batches it holds for the store, at most.")
+    retry_seconds: PositiveInt = Field(default=10, description="How long it retries a batch, then drops it.")
+
+
 class ReaderSettings(SettingsGroup):
     """The run reader (``loc-arena read``, the config's ``reader:`` block)."""
 
@@ -621,6 +634,10 @@ class LocArenaSettings(SettingsGroup):
         description="The company's own inference server.",
     )
     deploy: DeploySettings = Field(default=DeploySettings(), description="The deploy service.")
+    telemetry: TelemetrySettings = Field(
+        default=TelemetrySettings(),
+        description="The company's Collector and the export of telemetry to its store.",
+    )
     pi: PiSettings = Field(default=PiSettings(), description="pi, as the agents' harness.")
     reader: ReaderSettings = Field(default=ReaderSettings(), description="The run reader.")
 

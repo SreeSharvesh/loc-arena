@@ -48,7 +48,7 @@ SCENARIOS_ROOT = Path(__file__).resolve().parent
 # A host name label (RFC 1123) in lower case alone: what names a compose service and its host on agent-net.
 DNS_LABEL: Final = re.compile(r"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?")
 # The stack's own services (loc_arena.episode_stack): a live service may not take their names.
-STACK_SERVICES: Final = frozenset({"gateway", "collector", "episode", "agentgateway"})
+STACK_SERVICES: Final = frozenset({"gateway", "collector", "episode", "agentgateway", "telemetry-collector"})
 SANDBOX_PREFIX: Final = "sandbox-"
 RUNNER_PREFIX: Final = "runner-"  # runner-1 to runner-<n>: the runners of the one service with runners
 NODE_PREFIX: Final = "node-"  # node-1 to node-<n>: the fleet of the one service with nodes
@@ -163,6 +163,12 @@ class ScenarioService(BaseModel):
         "survives a restart of its process, which then runs under a supervisor that takes releases from "
         "this service alone. A release writes its service's own record.",
     )
+    collects: Annotated[tuple[StrictStr, ...], AfterValidator(_require_distinct)] = Field(
+        default=(),
+        description="The live services whose telemetry this one, the company's telemetry store, is to hold: "
+        "each an engine module. The store is a ready image the stack starts itself, on a network of its own, "
+        "written by the company's Collector alone, which takes OTLP from everything on agent-net.",
+    )
 
     @field_validator("build")
     @classmethod
@@ -200,6 +206,15 @@ class ScenarioService(BaseModel):
             raise ValueError("deploys needs a live service (build, image or module) to deploy from")
         return self
 
+    @model_validator(mode="after")
+    def _require_a_store_the_stack_starts(self) -> Self:
+        """Refuse ``collects`` on anything but a ready image with no command and no rights of its own."""
+        if self.collects and (self.image is None or self.command or self.rights):
+            raise ValueError(
+                "collects needs a ready image with no command and no rights: the stack starts it",
+            )
+        return self
+
 
 @dataclass(frozen=True)
 class EngineModule:
@@ -224,6 +239,7 @@ class LiveService:
     nodes: tuple[tuple[str, int], ...] = ()  # its fleet, (pool name, count) pairs; node-1 to node-<n>
     restarts: bool = False  # whether its container comes back when its process ends during play
     deploys: tuple[str, ...] = ()  # the live services it deploys merged code to, each under a supervisor
+    collects: tuple[str, ...] = ()  # the live services whose telemetry it holds: it is the telemetry store
 
 
 @dataclass(frozen=True)
@@ -302,6 +318,7 @@ def _parse_live_services(directory: Path, declared: object) -> tuple[LiveService
                     nodes=tuple(service.nodes.items()),
                     restarts=service.restarts,
                     deploys=service.deploys,
+                    collects=service.collects,
                 ),
             )
     _require_unique_tools(live)
@@ -309,26 +326,30 @@ def _parse_live_services(directory: Path, declared: object) -> tuple[LiveService
         raise ValueError(f"scenario {directory.name}: only one service may have runners, not {pools}")
     if len(fleets := [service.name for service in live if service.nodes]) > 1:
         raise ValueError(f"scenario {directory.name}: only one service may have nodes, not {fleets}")
-    _require_deployable_services(directory.name, live)
+    _require_module_services(directory.name, live, "deploys", "deploy")
+    _require_module_services(directory.name, live, "collects", "collect")
     return tuple(live)
 
 
-def _require_deployable_services(scenario: str, live: list[LiveService]) -> None:
-    """Refuse a second service that deploys, and a deployed service that is no engine module of the pack."""
-    if len(deployers := [service for service in live if service.deploys]) > 1:
-        names = [service.name for service in deployers]
-        raise ValueError(f"scenario {scenario}: only one service may deploy, not {names}")
-    # A deployed service runs under its supervisor, which starts its module: a command of its own would
-    # take the supervisor's place.
+def _require_module_services(scenario: str, live: list[LiveService], key: str, verb: str) -> None:
+    """Refuse a second service with ``key``, and one it names there that is no engine module of the pack.
+
+    ``key`` is ``deploys`` or ``collects``: the stack starts such a service's module itself (a deployed one
+    under its supervisor), so a command of its own would take that place.
+    """
+    if len(named := [service for service in live if getattr(service, key)]) > 1:
+        names = [service.name for service in named]
+        raise ValueError(f"scenario {scenario}: only one service may {verb}, not {names}")
     modules = {
         service.name
         for service in live
         if isinstance(service.source, EngineModule) and service.command is None
     }
-    for deployer in deployers:
-        if wrong := sorted({*deployer.deploys} - modules | {deployer.name} & {*deployer.deploys}):
+    for service in named:
+        listed = {*getattr(service, key)}
+        if wrong := sorted(listed - modules | {service.name} & listed):
             raise ValueError(
-                f"scenario {scenario}: {deployer.name!r} deploys {wrong}, which must each be another live "
+                f"scenario {scenario}: {service.name!r} {key} {wrong}, which must each be another live "
                 "service run as a module, with no command of its own",
             )
 
