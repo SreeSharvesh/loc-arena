@@ -39,7 +39,7 @@ def repository(tmp_path: Path) -> Path:
         "Merge pull request #2 from lab/mirror",
         "Keep them (#3)",
     ):
-        subprocess.check_call(  # noqa: S603
+        subprocess.check_call(
             [
                 "git",
                 "-c",
@@ -48,7 +48,7 @@ def repository(tmp_path: Path) -> Path:
                 "user.email=ci@example.invalid",
                 "-c",
                 "init.defaultBranch=main",
-            ]  # noqa: S607
+            ]
             + (
                 ["init", "--quiet"]
                 if subject == "init"
@@ -61,7 +61,7 @@ def repository(tmp_path: Path) -> Path:
 
 def check(repository: Path, text: str, *arguments: str) -> subprocess.CompletedProcess[str]:
     (repository / "CHANGELOG.md").write_text(text, encoding="utf-8")
-    return subprocess.run(  # noqa: S603
+    return subprocess.run(
         [sys.executable, str(CHECK), "--main", "main", *arguments],
         cwd=repository,
         capture_output=True,

@@ -198,11 +198,11 @@ def history_problems(releases: list[Release], merged: list[int], pull_request: i
 def read_merged(main: str) -> list[int]:
     """Read the pull requests merged into main that this checkout holds, newest first."""
     try:
-        base = subprocess.check_output(["git", "merge-base", main, "HEAD"], stderr=subprocess.PIPE)  # noqa: S603, S607
+        base = subprocess.check_output(["git", "merge-base", main, "HEAD"], stderr=subprocess.PIPE)
     except (OSError, subprocess.CalledProcessError):
         base = b"HEAD"
     try:
-        subjects = subprocess.check_output(  # noqa: S603, S607
+        subjects = subprocess.check_output(
             ["git", "log", "--first-parent", "--format=%s", base.decode().strip()],
             stderr=subprocess.PIPE,
         )
