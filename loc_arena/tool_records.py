@@ -88,12 +88,16 @@ def tool_call_recorder(
         def write_line(outcome: Mapping[str, JsonValue]) -> None:
             write(json.dumps({**line, **outcome, **(annotate() if annotate else {})}))
 
-        _write_started.set(lambda known: write_line({"gen_ai.tool.call.result": known, STARTED: True}))
+        served = _write_started.set(
+            lambda known: write_line({"gen_ai.tool.call.result": known, STARTED: True}),
+        )
         try:
             result = await call_next(ctx)
         except MCPError as error:
             write_line({"error.type": str(error.error.code), "otel.status_description": error.error.message})
             raise
+        finally:
+            _write_started.reset(served)  # the call has ended: nothing more is written in its name
         reply = result if isinstance(result, dict) else {}  # call_next returns the finished wire form
         text = " ".join(block["text"] for block in reply.get("content", []) if block.get("type") == "text")
         write_line(
