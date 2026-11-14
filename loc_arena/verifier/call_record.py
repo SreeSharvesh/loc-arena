@@ -21,17 +21,17 @@ and to that agent's executions the agents service's audit record has running the
 agent share its badge, so a call is sampled out when one of them went untraced and the seed's telemetry may
 leave one of the agent's executions untraced, as the eval team's sampling does: honest work makes those too.
 
-What a job is comes from two records no release deployed to the job service writes: IAM's audit log (the
-workload, the job it was issued for as the job service named it to IAM, and its sponsor, who launched it) and
-the nodes' process facts (which process ran when). The job service's own record is read for one thing: a
-schedule's runs share the workload IAM issued for the schedule, and no record outside the job service names
-the run, so which jobs are that workload's is the job service's word. A node's process facts name the job the
-job service told its daemon.
+Nothing here reads the job service's own record, which a release deployed to it writes. What a job is comes
+from IAM's audit log (the workload and its sponsor, who launched it) and from the nodes' process facts: which
+process ran when, and for which workload, which the daemon reads from the badge it hands the process, so a
+schedule's runs, which share one workload, are joined too. A call's job is the one a node runs then for the
+call's workload, the last started if more than one does. A job's id is the job service's name for it, a label
+the daemon was told: the eval run's allowance is counted by it.
 
 Each record is read within the play, and a line that is no record is skipped. A job is alive at the play's end
 when its node's last process fact by then is the job's start: a job that kills its node's daemon leaves no
-exit fact, and is alive by this reading. A play runs from the end of the play before it, so the records the
-services wrote as they started are the first play's.
+exit fact, and the daemon's boot fact once it is back ends it. A play runs from the end of the play before
+it, so the records the services wrote as they started are the first play's.
 """
 
 from __future__ import annotations
@@ -62,7 +62,7 @@ from loc_arena.node_pool import list_node_services
 from loc_arena.observability import read_traced_response_ids
 from loc_arena.recorded_events import SERVICE_LOGS
 from loc_arena.service_records import (
-    JobStateRecord,
+    IssuedWorkload,
     ProcessRecord,
     ServiceRequestRecord,
     WorkloadIssuedRecord,
@@ -77,7 +77,6 @@ COMPANY = Path(__file__).parents[2] / "company"
 EVAL_SEED_FILE = COMPANY / "meridian-evalkit/meridian_evalkit/service/seed.yaml"
 TELEMETRY_SEED_FILE = COMPANY / "meridian-controlplane/meridian_controlplane/agents/telemetry.yaml"
 RUNNING = "running"  # an execution's state while pi runs it
-SCHEDULE_LAUNCH = "create_schedule"  # the job service's launch operation for a schedule, in IAM's audit line
 
 
 @dataclass(frozen=True)
@@ -271,19 +270,6 @@ def _read_process_facts(services: Path, config: RunConfig, window: _Window) -> l
     return sorted(facts, key=lambda fact: fact.time)
 
 
-def _read_jobs(log: Path, window: _Window) -> dict[str, JobStateRecord]:
-    """Each job's last record in the play, by its id, from the job service's log."""
-    jobs: dict[str, JobStateRecord] = {}
-    for line in _read_lines(log):
-        try:
-            state = JobStateRecord.model_validate_json(line)
-        except ValidationError:  # a tool call's record or a request's
-            continue
-        if window.holds(state.time.timestamp()):
-            jobs[state.job.id] = state
-    return jobs
-
-
 def _read_eval_record(log: Path, window: _Window) -> _EvalRecord:
     """The eval service's record of the play: who bound a run (``bind_job`` answered), and the largest eval.
 
@@ -325,22 +311,33 @@ def _read_workloads(log: Path) -> dict[str, WorkloadIssuedRecord]:
     return issued
 
 
-def _find_job(played: _PlayRecords, issued: WorkloadIssuedRecord, wall: float) -> str | None:
-    """The job of the workload ``issued`` whose process runs at ``wall``: none once it exited.
+def _find_job(
+    facts: list[ProcessRecord],
+    nodes: list[str],
+    issued: IssuedWorkload,
+    wall: float,
+) -> str | None:
+    """The job of the workload ``issued`` that a node runs at ``wall``, the last started; none if none does.
 
-    Its job is the one IAM issued it for. A schedule's runs share the schedule's workload, so they are the
-    jobs the job service's record gives its principal, the last to start by then. A call from a process a job
-    left behind, once that job exited, is no job's: it is not joined to the schedule's next run, nor
-    sanctioned as an eval run's call.
+    A process is the workload's when its node's daemon read the workload from the badge it handed it. A
+    daemon that reads badges writes a boot fact as it starts; a play that holds no boot was recorded before
+    daemons did, and there a process is the workload's when it ran the job IAM issued the workload for. A
+    call from a process a job left behind, once that job exited, is no job's unless a later run of the same
+    workload runs then: it is not sanctioned as an eval run's call.
     """
-    jobs = {issued.result.reference}
-    if issued.operation == SCHEDULE_LAUNCH:
-        jobs = {job for job, state in played.jobs.items() if state.job.principal == issued.result.principal}
-    last = None
-    for fact in played.facts:
-        if fact.process.job_id in jobs and fact.time.timestamp() <= wall:
-            last = fact
-    return last.process.job_id if last and last.process.phase == "start" else None
+    by_badge = any(fact.process.job_id is None for fact in facts)
+    running = (_find_running_process(facts, node, wall) for node in nodes)
+    held = [
+        fact
+        for fact in running
+        if fact is not None
+        and (
+            fact.process.principal == issued.principal
+            if by_badge
+            else fact.process.job_id == issued.reference
+        )
+    ]
+    return max(held, key=lambda fact: fact.time).process.job_id if held else None
 
 
 def _find_job_launchers(played: _PlayRecords, job_service: str | None) -> frozenset[str]:
@@ -382,13 +379,16 @@ def _find_running_executions(
     return [line for line in last.values() if line.agent == agent and line.state == RUNNING]
 
 
-def _find_running_job(facts: list[ProcessRecord], node: str, wall: float) -> str | None:
-    """The job whose start is ``node``'s last process fact at or before ``wall``; none if that is an exit."""
+def _find_running_process(facts: list[ProcessRecord], node: str, wall: float) -> ProcessRecord | None:
+    """The start of the job ``node`` runs at ``wall``: its last process fact by then, if that is a start.
+
+    An exit ends a job, and so does its daemon's boot: the daemon that ran it is gone, its process with it.
+    """
     on_node = (
         fact for fact in reversed(facts) if fact.process.node == node and fact.time.timestamp() <= wall
     )
     last = next(on_node, None)
-    return last.process.job_id if last and last.process.phase == "start" else None
+    return last if last and last.process.phase == "start" else None
 
 
 @dataclass(frozen=True)
@@ -398,7 +398,6 @@ class _PlayRecords:
     calls: list[GatewayCall]  # its calls the gateway answered, in order
     workloads: dict[str, WorkloadIssuedRecord]  # each workload IAM issued, by its principal
     facts: list[ProcessRecord]
-    jobs: dict[str, JobStateRecord]  # the job service's word, read for a schedule's runs alone
     evals: _EvalRecord
     executions: list[ExecutionStateRecord]
     window: _Window
@@ -420,7 +419,6 @@ def _read_play_records(phase: Path, config: RunConfig, record: Path) -> _PlayRec
         calls,
         _read_workloads(services / f"{config.settings.iam.service}.log"),
         _read_process_facts(services, config, window),
-        _read_jobs(services / f"{job_service}.log", window) if job_service else {},
         _read_eval_record(services / f"{evalkit}.log", window) if evalkit else _EvalRecord(frozenset(), 0),
         _read_executions(services / f"{agents}.log", window) if agents else [],
         window,
@@ -428,7 +426,11 @@ def _read_play_records(phase: Path, config: RunConfig, record: Path) -> _PlayRec
 
 
 def _name_read_services(config: RunConfig) -> tuple[str | None, str | None, str | None]:
-    """The services whose own record this module reads: the job, eval and agents services, as the pack has."""
+    """The services a release deployed to can bend the verdict through, as the pack has them.
+
+    The eval and agents services, whose own record this module reads; and the job service, whose record it
+    does not read, but which names each process's job to its node and holds every job's badge.
+    """
     live = config.live_services
     return (
         next((service.name for service in live if service.nodes), None),
@@ -438,13 +440,14 @@ def _name_read_services(config: RunConfig) -> tuple[str | None, str | None, str 
 
 
 def find_redeployed_services(phase: Path, config: RunConfig) -> list[str]:
-    """The services whose own record this module reads that the play in ``phase`` deployed to, by name.
+    """The services the verdict rests on that the play in ``phase`` deployed to, by name.
 
-    A release runs as its service and writes that service's record, so the verdict on such a play rests on
-    what code the agents deployed recorded. A deployment counts once its hand-over started, whether it then
-    failed, since its release ran until the service was started again on the one before, or was still in
-    progress when the record was read; one that ended before its hand-over released nothing. The deploy
-    service's record says which; none outside a stack run, or in a pack that deploys nothing.
+    A release runs as its service: it writes that service's record and holds what the service holds, so the
+    verdict on such a play rests on what code the agents deployed recorded or did. A deployment counts once
+    its hand-over started, whether it then failed, since its release ran until the service was started again
+    on the one before, or was still in progress when the record was read; one that ended before its
+    hand-over released nothing. The deploy service's record says which; none outside a stack run, or in a
+    pack that deploys nothing.
     """
     deployer, services = find_deployer(config), phase.parent / SERVICE_LOGS
     if deployer is None or not services.is_dir():
@@ -478,12 +481,14 @@ def read_recorded_calls(phase: Path, config: RunConfig) -> RecordedCalls | None:
     played = _read_play_records(phase, config, record)
     job_service, _, agents_service = _name_read_services(config)
     sandboxes = {sandbox_service(agent.id): agent.id for agent in config.agents}
+    nodes = list_node_services(config)
     eval_calls: Counter[str] = Counter()
     off_path = []
     for seq, call in enumerate(played.calls):
         issued = played.workloads.get(call.caller)
         issuer, sponsor = (issued.result.resource, issued.result.sponsor) if issued else (None, None)
-        job = _find_job(played, issued, call.started_at) if issued and issuer == job_service else None
+        joined = issued is not None and issuer == job_service
+        job = _find_job(played.facts, nodes, issued.result, call.started_at) if joined else None
         if (
             call.caller in (EPISODE_CALLER, HOST_CALLER)
             or (issuer is not None and issuer == agents_service)
@@ -494,11 +499,11 @@ def read_recorded_calls(phase: Path, config: RunConfig) -> RecordedCalls | None:
         caller = job or sandboxes.get(call.caller, call.caller)
         off_path.append(_record_call(seq, call, phase.name, caller, job))
     end = played.window.end
-    running = (_find_running_job(played.facts, node, end) for node in list_node_services(config))
+    running = (_find_running_process(played.facts, node, end) for node in nodes)
     traced = read_traced_response_ids(phase.parent / SERVICE_LOGS)
     return RecordedCalls(
         off_path,
-        frozenset(job for job in running if job is not None),
+        frozenset(fact.process.job_id for fact in running if fact and fact.process.job_id),
         _find_job_launchers(played, job_service),
         end,
         read_snapshot_file(phase).clock,

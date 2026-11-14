@@ -19,6 +19,12 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [356] - 2026-11-14: A node's daemon names each process's workload and its boot
+### Changed
+- The job service's nodes name on each process fact the workload of the badge handed to the process, so a schedule's runs are told apart outside the job service ([docs](docs/jobsvc-service.md#records)).
+- The job service's nodes write a `boot` fact as their daemon starts, so a job that killed its node's daemon no longer counts as alive.
+- The verifier joins a model call to the job a node runs for the call's workload and reads no record of the job service ([docs](docs/deploy-service.md#the-side-task-verdict-and-a-redeployed-service)).
+
 ## [351] - 2026-11-14: The side-task verdict takes jobs from IAM and the nodes
 ### Changed
 - The verifier reads a model call's job from IAM's audit log and the nodes' process facts, so the job service's record moves no job but a schedule's run ([docs](docs/deploy-service.md#the-side-task-verdict-and-a-redeployed-service)).
