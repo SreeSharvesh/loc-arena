@@ -7,9 +7,9 @@ Each service that keeps state has its database, or its directory, in its own con
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 
-from pydantic import BaseModel, ConfigDict, Field, PositiveFloat, PositiveInt
+from pydantic import BaseModel, ConfigDict, Field, PositiveFloat, PositiveInt, model_validator
 
 
 class SettingsGroup(BaseModel):
@@ -92,3 +92,82 @@ class ModelStoreSettings(SettingsGroup):
         default=3_500_000_000,
         description="Each shard's size as the manifest declares it: a 7B model's bf16 weights, in four.",
     )
+
+
+class TelemetrySettings(SettingsGroup):
+    """The company's telemetry (the run config's ``telemetry:`` block): its Collector and its export bounds.
+
+    Export is best effort: a signal that cannot be sent within these bounds is dropped, and nothing waits.
+    """
+
+    collector_port: int = Field(default=4318, ge=1, le=65535, description="Where it takes OTLP over HTTP.")
+    export_seconds: PositiveInt = Field(
+        default=2,
+        description="How long one export of a batch may take, from a service and from the Collector. A "
+        "service's process flushes its spans and then its log records as it ends, so with the Collector down "
+        "it ends up to twice this later: less than deploy.stop_seconds, or it would be killed mid-flush.",
+    )
+    queue_size: PositiveInt = Field(
+        default=2048,
+        description="The batches it holds for the store, and the spans, and the log records, a service holds "
+        "for it; one past them is dropped.",
+    )
+    sql_port: int = Field(
+        default=4002,
+        ge=1,
+        le=65535,
+        description="Where the store takes SQL from its reader.",
+    )
+    reader_port: int = Field(
+        default=8080,
+        ge=1,
+        le=65535,
+        description="Where the store's MCP server listens.",
+    )
+    result_bytes: PositiveInt = Field(default=32768, description="The most one read returns to an agent.")
+    schedule_milliseconds: PositiveInt = Field(
+        default=1000,
+        description="How long a service holds a span or a log record before it exports its batch.",
+    )
+    retry_seconds: PositiveInt = Field(default=10, description="How long it retries a batch, then drops it.")
+    collector_memory_mib: PositiveInt = Field(
+        default=400,
+        description="The Collector's hard memory limit: from it less collector_spike_mib it refuses data, "
+        "which its senders drop. Its Go runtime collects from there too.",
+    )
+    collector_spike_mib: PositiveInt = Field(
+        default=80,
+        description="How far below collector_memory_mib the Collector starts to refuse data; less than it.",
+    )
+    collector_overhead_mib: PositiveInt = Field(
+        default=64,
+        description="What the Collector's container holds beside collector_memory_mib: its limit is the sum.",
+    )
+    collector_check_seconds: PositiveInt = Field(
+        default=1,
+        description="How often the Collector measures its memory against its limits.",
+    )
+    retention: str = Field(
+        default="24h",
+        pattern=r"^[1-9][0-9]*[smhd]$",
+        description="The time-to-live of the store's tables: a record or a span older is purged when the "
+        "store next compacts the files that hold it.",
+    )
+    store_disk_mib: PositiveInt = Field(
+        default=256,
+        description="The most the store keeps on disk, in a memory filesystem of that size; a write past it "
+        "fails, and the Collector drops the batch.",
+    )
+    store_memory_mib: PositiveInt = Field(
+        default=768,
+        description="The store's memory limit, its disk included; more than store_disk_mib.",
+    )
+
+    @model_validator(mode="after")
+    def require_room_under_each_bound(self) -> Self:
+        """A refusal threshold below the Collector's limit, and room for the store beside its disk."""
+        if self.collector_spike_mib >= self.collector_memory_mib:
+            raise ValueError("telemetry.collector_spike_mib must be less than collector_memory_mib")
+        if self.store_disk_mib >= self.store_memory_mib:
+            raise ValueError("telemetry.store_disk_mib must be less than store_memory_mib")
+        return self

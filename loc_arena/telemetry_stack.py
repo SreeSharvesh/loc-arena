@@ -40,6 +40,7 @@ COLLECTOR_CONFIG, COLLECTOR_CONFIG_VARIABLE = (
 READER_PASSWORD, READER_PASSWORD_VARIABLE = "telemetry_reader", "LOC_ARENA_TELEMETRY_READER"
 # The reader's command: the store's own MCP server, given the reader's password from its mounted secret.
 READ_STORE = 'GREPTIMEDB_PASSWORD="$(cat "$1")" exec greptimedb-mcp-server'
+STORE_DATA = "/var/lib/greptimedb"  # where the store keeps its data: a memory filesystem of bounded size
 INSTRUMENT = "opentelemetry-instrument"  # runs a command with the SDK and each library's instrumentation on
 SDK_BATCH_SIZE = 512  # the SDK's default: the most spans, or log records, in one export
 GATEWAY_NAME = "tools-gateway"  # the service.name of the tools gateway's spans
@@ -149,7 +150,8 @@ def render_collector_config(config: RunConfig, store: LiveService, writer_passwo
     telemetry = config.settings.telemetry
     endpoint = f"http://{store.name}:{store.port}/v1/otlp/v1"
     basic = base64.b64encode(f"{WRITER}:{writer_password}".encode()).decode()
-    headers = {"Authorization": f"Basic {basic}"}
+    # Each table the store creates for OTLP keeps a row for ``retention``.
+    headers = {"Authorization": f"Basic {basic}", "x-greptime-hints": f"ttl={telemetry.retention}"}
 
     def bound() -> ExportBounds:  # a mapping of its own for each exporter: the document repeats none
         seconds = (
@@ -170,6 +172,12 @@ def render_collector_config(config: RunConfig, store: LiveService, writer_passwo
             },
         },
         "processors": {
+            # First in each pipeline: past its bound the Collector refuses data, so it is never killed for it.
+            "memory_limiter": {
+                "check_interval": f"{telemetry.collector_check_seconds}s",
+                "limit_mib": telemetry.collector_memory_mib,
+                "spike_limit_mib": telemetry.collector_spike_mib,
+            },
             "attributes/sender": {
                 "actions": [{"key": SENDER_ATTRIBUTE, "from_context": "client.address", "action": "upsert"}],
             },
@@ -191,7 +199,7 @@ def render_collector_config(config: RunConfig, store: LiveService, writer_passwo
             "pipelines": {
                 signal: {
                     "receivers": ["otlp"],
-                    "processors": ["attributes/sender", *filters, "batch"],
+                    "processors": ["memory_limiter", "attributes/sender", *filters, "batch"],
                     "exporters": [f"otlp_http/{signal}"],
                 }
                 for signal, filters in (("logs", []), ("traces", ["filter/messages"]))
@@ -224,8 +232,9 @@ def add_telemetry(
     """``compose`` with the company's telemetry, if the scenario has a store for it; else as it is.
 
     Moves the store from ``agent_network`` to a network of its own, started with its two users; adds the
-    company's Collector, bounded as a live service, on both networks, started before ``episode`` plays; and
-    has each collected service run under OpenTelemetry's zero-code instrumentation, exporting to it.
+    company's Collector, with memory bounds of its own, on both networks, started before ``episode``
+    plays; and has each collected service run under OpenTelemetry's zero-code instrumentation, exporting
+    to it.
     """
     store = find_store(config)
     if store is None:
@@ -244,18 +253,28 @@ def add_telemetry(
         *["standalone", "start", "--http-addr", f"0.0.0.0:{store.port}"],
         *["--user-provider", f"static_user_provider:file:{secrets_dir / STORE_USERS}"],
         *["--mysql-addr", f"0.0.0.0:{config.settings.telemetry.sql_port}"],  # where its reader asks it
+        *["--data-home", STORE_DATA],
     ]
+    telemetry = config.settings.telemetry
+    rendered["tmpfs"] = [f"{STORE_DATA}:size={telemetry.store_disk_mib}m"]  # its disk, bounded
+    rendered["mem_limit"] = f"{telemetry.store_memory_mib}m"  # the disk is in its memory: room beside it
+    # Back after an OOM kill, empty: its disk was memory. Its Collector drops what it sends meanwhile.
+    rendered["restart"] = "unless-stopped"
     if store.tools:
         _add_reader(config, compose, store)
     services[COLLECTOR_SERVICE] = {
         "image": stack.collector_image,
         "command": ["--config", str(secrets_dir / COLLECTOR_CONFIG)],
         "secrets": [COLLECTOR_CONFIG],
+        # Its Go runtime collects from where its memory limiter starts to refuse data.
+        "environment": {"GOMEMLIMIT": f"{telemetry.collector_memory_mib - telemetry.collector_spike_mib}MiB"},
         "cap_drop": ["ALL"],
-        "mem_limit": stack.service_memory_limit,
+        # Its own limit: its memory limiter's, and what the Collector holds beside its data.
+        "mem_limit": f"{telemetry.collector_memory_mib + telemetry.collector_overhead_mib}m",
         "cpus": stack.service_cpus,
         "pids_limit": stack.service_pids_limit,
         "networks": [agent_network, TELEMETRY_NETWORK],
+        "restart": "unless-stopped",
     }
     compose["networks"][TELEMETRY_NETWORK] = {"internal": True}
     compose["secrets"] = {

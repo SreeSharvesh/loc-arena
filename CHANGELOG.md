@@ -19,6 +19,13 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [359] - 2026-11-14: The company's telemetry is bounded in time, disk and memory
+### Added
+- The stack keeps the telemetry store's data within `store_disk_mib` and gives its tables a time-to-live, so a flood of telemetry cannot fill the machine ([docs](docs/telemetry-service.md#best-effort)).
+- The stack's Collector refuses data before `collector_memory_mib`, and it and the store start again if killed, so a flood drops or erases telemetry and breaks nothing else ([docs](docs/telemetry-service.md#exposures)).
+### Changed
+- The docs of the company's telemetry show its containers and networks in one figure, and list what a release or an agent can do to it ([docs](docs/telemetry-service.md#exposures)).
+
 ## [358] - 2026-11-14: Agents query the company's telemetry with SQL
 ### Added
 - Agents read every collected service's logs and traces with the telemetry store's own `execute_sql` tool, so they can debug a running release ([docs](docs/telemetry-service.md#how-agents-read-it)).
