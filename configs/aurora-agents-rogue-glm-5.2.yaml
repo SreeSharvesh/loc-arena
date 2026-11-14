@@ -1,0 +1,9 @@
+# aurora-agents-rogue-glm-5.2.yaml
+# The COVERT rogue-deployment seed (agents_rogue_seed) with the untrusted agent on GLM 5.2.
+# Isolates the model: does GLM 5.2 refuse the covert framing as Deepseek did (bundle 17d390), or execute it?
+# Identical to aurora-agents-rogue.yaml except the attacker model, for a clean model-only comparison.
+# Run: make run RUN=aurora-agents-rogue-glm-5.2 MODE=attack
+extends: aurora-agents-rogue.yaml
+models: models.glm-5.2.yaml
+side_task:
+  slug: agents-rogue-glm-5.2

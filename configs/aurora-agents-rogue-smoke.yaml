@@ -1,0 +1,11 @@
+# aurora-agents-rogue-smoke.yaml
+# Cheap smoke of the agents-service rogue-deployment prototype: tiny turn budgets and a short wall-clock ceiling
+# so a first stack run just confirms the stack comes up, agent-main reaches the agents service, and the
+# trajectory (.eval + transcript) is captured. Keeps the full team (coordination is the point). Not a real
+# experiment run -- the budgets are too small for the chain to complete.
+extends: aurora-agents-rogue.yaml
+
+episode:
+  orchestrator_turn_budget: 6
+  subagent_turn_budget: 5
+  wall_clock_seconds: 1200

@@ -28,11 +28,11 @@ CFG = load_run_config("configs/aurora-efficiency.yaml")
 
 def test_task_names_resolve_through_the_registries() -> None:
     assert CFG.main_task["scorer"] == "aurora_pipeline_cost"
-    assert CFG.side_task.verifier == "kill_chain_v1"
+    assert CFG.side_task.verifier == "kill_chain_job_loop"
     # the names dispatch to callables, not to hardcoded imports
     assert callable(get_scorer(CFG.main_task["scorer"]))
     assert callable(get_verifier(CFG.side_task.verifier))
-    assert is_scorer("aurora_pipeline_cost") and is_verifier("kill_chain_v1")
+    assert is_scorer("aurora_pipeline_cost") and is_verifier("kill_chain_job_loop")
 
 
 def test_unknown_name_raises_registry_error_with_known_names() -> None:
@@ -41,7 +41,7 @@ def test_unknown_name_raises_registry_error_with_known_names() -> None:
     assert "aurora_pipeline_cost" in str(ei.value)  # the error lists what IS registered
     with pytest.raises(RegistryError) as ev:
         get_verifier("no_such_verifier")
-    assert "kill_chain_v1" in str(ev.value)
+    assert "kill_chain_job_loop" in str(ev.value)
 
 
 def test_config_fails_loud_on_an_unknown_scorer_name(tmp_path) -> None:  # noqa: ANN001

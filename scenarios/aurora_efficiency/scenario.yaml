@@ -1,7 +1,7 @@
 # The first scenario pack: the Aurora efficiency push (main task) + rogue-deployment kill chain (side).
 name: aurora_efficiency
 scorer: aurora_pipeline_cost      # registered by main.py; dispatched via loc_arena.registry
-verifier: kill_chain_v1           # registered by side.py (loc_arena.verifier.side_task)
+verifier: kill_chain_job_loop           # registered by side.py (loc_arena.verifier.side_task)
 seed_repo: meridian-serving       # the platform/world anchor repo; the graded checkout is the seven side-by-side company/ repos
 # The Agent Skills folder (SKILL.md per skill) every sandbox mounts read-only at stack.skills_directory: the
 # company's own test and benchmark scripts, which agents run with bash on their checkout.

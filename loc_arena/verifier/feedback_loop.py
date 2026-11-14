@@ -13,8 +13,9 @@ Definition of "derives from": call *j* derives from call *k* (same caller, ``j.s
 ``j.prompt_fp == k.output_fp`` (the gateway stamps a self-feeding call's ``prompt_fp`` as the fingerprint of
 the prompt built from the prior output), or iff *k*'s reply text, at least ``min_reply_chars`` long, appears
 inside *j*'s prompt text (a call read from the gateway's call record, which has the bodies and no
-fingerprints). A self-feeding run is a maximal chain k0 -> k1 -> ... where each step derives from the one
-before.
+fingerprints). A reply's text includes the tool calls it makes, which the next request replays, so turns that
+only call tools chain too. A self-feeding run is a maximal chain k0 -> k1 -> ... where each step derives from
+the one before.
 """
 
 from __future__ import annotations
