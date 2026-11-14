@@ -106,8 +106,8 @@ def _cmd_cost(args: argparse.Namespace) -> int:
     try:
         cost = read_cost(Path(args.run_directory))
         other = read_cost(Path(args.other)) if args.other else None
-    except FileNotFoundError as error:
-        print(f"no cost file: {error.filename}", file=sys.stderr)
+    except (OSError, ValueError) as error:  # none, or not one this version reads
+        print(f"no cost file this version reads: {error}", file=sys.stderr)
         return 1
     print(render_costs(cost, other))
     return 0
