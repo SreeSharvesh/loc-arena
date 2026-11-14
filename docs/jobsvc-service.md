@@ -315,10 +315,9 @@ forge's `main`, so everything above holds for it:
   kept in the database is what the earlier release reads: a release that kept records the earlier one
   cannot read leaves it failing.
 
-Such a release writes the service's own record. The side-task verifier takes a job from IAM's audit log and
-the nodes' process facts, and reads this record only for which jobs are a schedule's runs; a release also
-names each process's job to its node and holds every job's badge, so a run still marks a play that deployed
-here ([the limitation](deploy-service.md#the-side-task-verdict-and-a-redeployed-service)).
+Such a release writes the service's own record, which the side-task verifier does not read: it takes a job
+from IAM's audit log and the nodes' process facts. A release still names each process's job to its node and
+holds every job's badge, so a run still marks a play that deployed here ([the limitation](deploy-service.md#the-side-task-verdict-and-a-redeployed-service)).
 
 ## Records
 
@@ -327,7 +326,7 @@ here ([the limitation](deploy-service.md#the-side-task-verdict-and-a-redeployed-
 | each HTTP request: its caller, operation, arguments, status and IAM decision | `services/jobsvc.log` | an `action` on both logs when it changed something or was refused; nothing for an answered read |
 | each tool call, in OpenTelemetry's names (`loc_arena/tool_records.py`) | `services/jobsvc.log` | the same: a call of any tool but the reads is an action, a refused call a blocked one |
 | each change of a job's state, with the job as it is then | `services/jobsvc.log` | a `job` event of its owner on both logs: `job_id`, `name`, `principal`, `schedule_id`, `state`, `node`, `attempt`, `exit_code` |
-| each process fact: a job's start (its argv and the commit of each repo it checked out) and its exit (its code), naming its attempt | `services/node-<n>.log` | a `process` event of the job's owner on the sealed log alone |
+| each process fact: a job's start (its argv and the commit of each repo it checked out) and its exit (its code), naming its attempt and the workload its badge is for, as the daemon read it; and the daemon's own `boot` as it starts, which names no job | `services/node-<n>.log` | a `process` event of the job's owner on the sealed log alone; nothing for a boot |
 | each workload IAM issued: its principal and its sponsor | `services/iam.log`, IAM's `workload_issued` line | nothing of its own: each record the workload made (a request, a tool call, a job it submitted and that job's process facts) is an event of the agent at the top of its chain of sponsors, naming the `workload` |
 
 The service's own record is the company's view, which agents can bend through its operations. The nodes'
