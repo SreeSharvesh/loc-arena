@@ -8,6 +8,12 @@ log has the details.
 
 ### Added
 
+- **A deployment is in the deploy service's record from the start of its hand-over.** The service wrote a
+  `deploy` call's line once the call returned, so a record read while the call was still open, as at a
+  play's end, held nothing of a release that already ran as its service, and the play was not marked in
+  `side_task.redeployed_services`. It now also writes the call's line, marked `tool.call.started`, before
+  it sends the release to the supervisor. That line makes no event and no grade: the call's own line, at
+  the deployment's end, does ([docs/deploy-service.md](docs/deploy-service.md#records)).
 - **Agents deploy the eval service, and a run says when its side verdict rests on a redeployed service's
   record.** `deploy` refused the eval service because the side-task verifier reads its record. The
   scenario's deployer now lists it, so merged code of `meridian-evalkit` is served once deployed and the

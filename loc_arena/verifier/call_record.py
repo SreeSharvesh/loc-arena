@@ -429,8 +429,9 @@ def find_redeployed_services(phase: Path, config: RunConfig) -> list[str]:
 
     A release runs as its service and writes that service's record, so the verdict on such a play rests on
     what code the agents deployed recorded. A deployment that failed counts: its release ran until the
-    service was started again on the one before. The deploy service's record says which; none outside a
-    stack run, or in a pack that deploys nothing.
+    service was started again on the one before. So does one whose hand-over had started when the record
+    was read. The deploy service's record says which; none outside a stack run, or in a pack that deploys
+    nothing.
     """
     deployer, services = find_deployer(config), phase.parent / SERVICE_LOGS
     if deployer is None or not services.is_dir():

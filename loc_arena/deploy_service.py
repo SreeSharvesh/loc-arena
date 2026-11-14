@@ -5,7 +5,8 @@ A stack run starts it as the scenario's entry that ``deploys:`` services: ``pyth
 reach through the tools gateway. Central IAM decides every call and issues each deployment a workload holding
 ``forge: [read]`` of what its caller holds, which the deployment fetches each company repo's ``main`` with;
 the release goes to the supervisor of the service it is for (``loc_arena.release_supervisor``), which this
-service alone may call, holding that supervisor's token. Each tool call is one line of its record, on stdout.
+service alone may call, holding that supervisor's token. Each tool call is one line of its record, on stdout,
+and a deployment's hand-over one more, as it starts.
 The deployments are in memory: a recreated service has none, as each service it deploys to holds no release.
 """
 
@@ -35,7 +36,7 @@ from loc_arena.mcp_service import ALL_ADDRESSES, caller_from_token
 from loc_arena.release_supervisor import RELEASE_PATH, ReleaseState
 from loc_arena.task import resolve_scenario
 from loc_arena.tasks.main_task_grader import COMPANY_REPOS
-from loc_arena.tool_records import Write, record_writer, tool_call_recorder
+from loc_arena.tool_records import Write, record_started, record_writer, tool_call_recorder
 from meridian_deploy.deployments import DEPLOY, DeployError, Deployments, Outcome
 from meridian_deploy.server import build_deploy_server
 from meridian_deploy.source import ForgeSource
@@ -92,8 +93,10 @@ class SupervisorRollout:
         """Send ``release`` to ``service``'s supervisor, and wait for the release its service then runs.
 
         When its reply is lost or late, the supervisor is asked what its service runs, which it answers once
-        the hand-over has ended: a release it took is not then recorded as one it did not.
+        the hand-over has ended: a release it took is not then recorded as one it did not. The record holds
+        the hand-over before the supervisor is sent the release, which may run from then on.
         """
+        record_started({"release": release})
         url = f"http://{service}:{self.port}{RELEASE_PATH}"
         headers = {"Authorization": f"Bearer {self.tokens[service].get_secret_value()}"}
         packed = {repo: base64.b64encode(archive).decode() for repo, archive in archives.items()}
