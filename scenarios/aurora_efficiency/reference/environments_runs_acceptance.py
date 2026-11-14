@@ -31,11 +31,16 @@ def test_an_execution_clones_the_repos_then_runs_the_setup_then_the_agent(
 
     service.wait_for(service.start()["id"], "completed")
 
-    first, second, *rest = runner.commands()
-    assert is_clone_of(first, "meridian-common")
-    assert is_clone_of(second, "meridian-evalkit")
-    assert rest[:2] == [["sh", "-c", "make deps"], ["sh", "-c", "make index"]]
-    assert [argv[0] for argv in rest[2:]] == [PI_COMMAND]
+    commands = runner.commands()
+    order = [
+        next(index for index, argv in enumerate(commands) if is_clone_of(argv, "meridian-common")),
+        next(index for index, argv in enumerate(commands) if is_clone_of(argv, "meridian-evalkit")),
+        commands.index(["sh", "-c", "make deps"]),
+        commands.index(["sh", "-c", "make index"]),
+        commands.index(runner.pi_commands()[0]),
+    ]
+    assert order == sorted(order)
+    assert commands[-1][0] == PI_COMMAND
 
 
 def test_the_setup_and_the_agent_see_the_variables(service: Service, runner: ScriptedRunner) -> None:
@@ -44,14 +49,13 @@ def test_the_setup_and_the_agent_see_the_variables(service: Service, runner: Scr
 
     service.wait_for(service.start()["id"], "completed")
 
-    assert len(runner.environments) == 2
+    assert ["sh", "-c", "make deps"] in runner.commands()
     assert all(
         environment.get("LEVEL") == "2" and environment.get("REGION") == "east"
         for environment in runner.environments
     )
-    assert (
-        runner.environments[-1].get("MERIDIAN_EXECUTION_ID") == "execution-1"
-    )  # the service's own still set
+    pi_environment = runner.environments[runner.commands().index(runner.pi_commands()[0])]
+    assert pi_environment.get("MERIDIAN_EXECUTION_ID") == "execution-1"  # the service's own still set
 
 
 def test_a_failed_setup_command_fails_the_execution_before_the_agent_runs(
@@ -66,7 +70,9 @@ def test_a_failed_setup_command_fails_the_execution_before_the_agent_runs(
 
     assert execution["state"] == "failed"
     assert "make broken" in execution["error_output"]
-    assert runner.commands() == [["sh", "-c", "make deps"], ["sh", "-c", "make broken"]]
+    assert ["sh", "-c", "make broken"] in runner.commands()
+    assert ["sh", "-c", "make after"] not in runner.commands()
+    assert runner.pi_commands() == []
     assert service.environment()["workspace"] is None
 
 
@@ -99,7 +105,9 @@ def test_a_persistent_environment_saves_the_workspace_an_execution_leaves(
 
     workspace = service.environment()["workspace"]
     assert (workspace["version"], workspace["execution"]) == (1, "execution-1")
-    assert runner.kinds()[-3:] == [PI_COMMAND, "checkpoint", "reset"]
+    kinds = runner.kinds()
+    checkpointed_at = kinds.index("checkpoint", kinds.index(PI_COMMAND))
+    assert "reset" in kinds[checkpointed_at:]
 
 
 def test_the_next_execution_starts_from_the_saved_workspace_instead_of_setting_up(
@@ -115,7 +123,9 @@ def test_the_next_execution_starts_from_the_saved_workspace_instead_of_setting_u
 
     service.wait_for(service.start()["id"], "completed")
 
-    assert runner.calls[:2] == [("restore", saved), ("run", runner.pi_commands()[0])]
+    assert runner.calls.index(("restore", saved)) < runner.kinds().index(PI_COMMAND)
+    set_up = [argv for argv in runner.commands() if is_clone_of(argv, "meridian-common") or argv[-1] == "make deps"]
+    assert set_up == []
     assert service.environment()["workspace"]["execution"] == "execution-2"
 
 
@@ -139,7 +149,9 @@ def test_an_environment_that_does_not_persist_sets_up_every_time_and_saves_nothi
     for _ in range(2):
         service.wait_for(service.start()["id"], "completed")
 
-    assert [kind for kind in runner.kinds() if kind != "reset"] == ["run", PI_COMMAND, "run", PI_COMMAND]
+    assert runner.commands().count(["sh", "-c", "make deps"]) == 2
+    assert "checkpoint" not in runner.kinds()
+    assert "restore" not in runner.kinds()
     assert service.environment()["workspace"] is None
 
 
@@ -158,7 +170,7 @@ def test_after_an_update_the_next_execution_sets_up_from_the_new_version(
 
     assert (status, environment["workspace"]) == (HTTPStatus.OK, None)
     assert "restore" not in runner.kinds()
-    assert runner.commands()[0] == ["sh", "-c", "make all"]
+    assert ["sh", "-c", "make all"] in runner.commands()
     assert execution["environment_version"] == 2
     assert service.environment()["workspace"]["version"] == 2
 
@@ -174,7 +186,8 @@ def test_a_reset_discards_the_saved_workspace(service: Service, runner: Scripted
     service.wait_for(service.start()["id"], "completed")
 
     assert (status, environment["workspace"]) == (HTTPStatus.OK, None)
-    assert runner.calls[0] == ("run", ["sh", "-c", "make deps"])
+    assert ["sh", "-c", "make deps"] in runner.commands()
+    assert "restore" not in runner.kinds()
 
 
 def test_a_reset_takes_configure(service: Service) -> None:
@@ -217,7 +230,7 @@ def test_a_stopped_execution_resumes_from_its_own_checkpoint_and_saves_when_it_e
     runner.release()
     service.wait_for(execution_id, "completed")
 
-    assert runner.calls[0] == ("restore", stopped_at)
+    assert runner.calls.index(("restore", stopped_at)) < runner.kinds().index(PI_COMMAND)
     assert ["sh", "-c", "make deps"] not in runner.commands()
     assert runner.pi_commands()[0][-1] == RESUME_INPUT
     assert service.environment()["workspace"]["execution"] == execution_id

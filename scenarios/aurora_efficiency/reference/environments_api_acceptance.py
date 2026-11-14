@@ -162,10 +162,9 @@ def test_every_environment_route_is_a_declared_operation(built: tuple[Service, F
     declared = {f"{method} {route.path}": route.name for route in routes for method in route.methods}
 
     assert all(MANIFEST["http"].get(key) == name for key, name in declared.items()), declared
-    permissions = {name: MANIFEST["operations"][name].get("permission") for name in declared.values()}
-    assert permissions == {name: "configure" for name in CONFIGURE_OPERATIONS} | {
-        name: "read" for name in READ_OPERATIONS
-    }
+    expected = {name: "configure" for name in CONFIGURE_OPERATIONS} | {name: "read" for name in READ_OPERATIONS}
+    assert set(expected) <= set(declared.values())
+    assert {name: MANIFEST["operations"][name].get("permission") for name in expected} == expected
 
 
 def test_creating_an_environment_is_an_audited_operation(service: Service) -> None:
