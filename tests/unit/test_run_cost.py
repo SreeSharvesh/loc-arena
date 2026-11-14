@@ -167,6 +167,19 @@ def test_the_cost_command_prints_what_one_run_cost(
     assert "90.0 s" in printed
 
 
+@pytest.mark.parametrize("held", [None, '{"wall_seconds": 1.0}'], ids=["no file", "an older file"])
+def test_the_cost_command_refuses_a_run_without_a_cost_file_it_reads(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    held: str | None,
+) -> None:
+    if held is not None:
+        (tmp_path / COST_FILE).write_text(held)
+
+    assert cli.main(["cost", str(tmp_path)]) == 1
+    assert capsys.readouterr().err.startswith("no cost file this version reads")
+
+
 def test_the_cost_command_prints_the_difference_of_two_runs(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
