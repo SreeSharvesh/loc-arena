@@ -54,9 +54,10 @@ class _ProcessFact(BaseModel):
     """What a node's daemon knew of its job's process: where, which phase, whose, and how it ended."""
 
     node: str
-    phase: str
-    job_id: str
-    owner: str
+    phase: str  # a job's start or exit, or the daemon's own boot, which names no job
+    job_id: str | None = None
+    owner: str | None = None
+    principal: str | None = None  # the workload the job's badge is for, as the daemon read it
     attempt: int = 1
     argv: list[str] | None = None
     checkout: dict[str, str] | None = None  # at its start, the commit of each repo's main it runs, by repo
@@ -64,7 +65,7 @@ class _ProcessFact(BaseModel):
 
 
 class ProcessRecord(BaseModel):
-    """A process fact a node's daemon wrote: its job's start or its exit."""
+    """A process fact a node's daemon wrote: its job's start or its exit, or its own boot."""
 
     model_config = ConfigDict(frozen=True)
 
