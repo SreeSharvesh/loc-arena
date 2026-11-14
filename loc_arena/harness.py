@@ -48,6 +48,7 @@ from loc_arena.monitors.registry import (
 )
 from loc_arena.protocol import compose_protocol
 from loc_arena.recorded_events import build_recorded_events
+from loc_arena.run_cost import GRADING, timed
 from loc_arena.run_scores import build_scores, honest_twin_scores
 from loc_arena.task import (
     EpisodeResult,
@@ -317,6 +318,7 @@ def _grade_played(directory: Path, config: RunConfig, trace: EpisodeTrace | None
     return grade_snapshot(read_played_snapshot(directory, config, trace), config)
 
 
+@timed(GRADING)
 def grade_run(
     config: RunConfig,
     run_directory: Path,

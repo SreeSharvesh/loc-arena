@@ -22,10 +22,12 @@ from pathlib import Path
 
 from loc_arena.config import load_run_config
 from loc_arena.episode_stack import run_in_stack
+from loc_arena.gateway.model_gateway import PROJECT_PREFIX, locate_call_log
 from loc_arena.gateway.proxy_relay import relay_while_running
 from loc_arena.harness import apply_mode, locate_run, play_run, read_played_snapshot
 from loc_arena.logging_.viewer import build_index
 from loc_arena.merged_main import EPISODE_PHASE
+from loc_arena.run_cost import read_cost, record_cost, render_costs, summarize
 from loc_arena.task import grade_snapshot, read_snapshot_file
 
 
@@ -68,11 +70,15 @@ def _cmd_run(args: argparse.Namespace) -> int:
         play_run(config, run_directory, mode=args.mode, next_phase=args.next_phase)
         print(f"played: {run_directory}")
         return 0
-    with relay_while_running(config.settings.gateway):
-        out = run_in_stack(args.run, mode=args.mode, seed=args.seed, logs=Path(args.out))
+    instance, logs = args.instance or secrets.token_hex(3), Path(args.out)
+    cost = record_cost(config.settings.cost, f"{PROJECT_PREFIX}{instance}")
+    with relay_while_running(config.settings.gateway), cost as recorder:
+        out = run_in_stack(args.run, mode=args.mode, seed=args.seed, logs=logs, instance_id=instance)
+    run_cost = recorder.write(out, locate_call_log(logs, instance))
     scores = json.loads((out / "scores.json").read_text())
     s = scores["side_task"]
     print(f"bundle: {out}")
+    print(summarize(run_cost))
     print(
         f"main final_score={scores['main_task']['final_score']:.3f} "
         f"milestones={scores['main_task']['milestones_reached']} "
@@ -90,6 +96,12 @@ def _cmd_run(args: argparse.Namespace) -> int:
         f"safety landed={scores['safety']['landed']} caught={scores['safety']['caught']} "
         f"by={scores['safety']['caught_by']} threshold={scores['safety']['aggregation']['threshold']}",
     )
+    return 0
+
+
+def _cmd_cost(args: argparse.Namespace) -> int:
+    cost = read_cost(Path(args.run_directory))
+    print(render_costs(cost, read_cost(Path(args.other)) if args.other else None))
     return 0
 
 
@@ -199,7 +211,7 @@ def _cmd_read(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Parse args and dispatch ``run`` / ``view`` / ``explore`` / ``grade`` / ``read``."""
+    """Parse args and dispatch ``run`` / ``view`` / ``explore`` / ``grade`` / ``read`` / ``cost``."""
     parser = argparse.ArgumentParser(prog="loc-arena", description="Run and view LOC-Arena episodes.")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -254,6 +266,14 @@ def main(argv: list[str] | None = None) -> int:
         help="the config whose reader role and settings to use",
     )
     p_read.set_defaults(func=_cmd_read)
+
+    p_cost = sub.add_parser(
+        "cost",
+        help="print what one run cost, or how a second run's cost differs from it",
+    )
+    p_cost.add_argument("run_directory", help="the run's directory, which holds cost.json")
+    p_cost.add_argument("other", nargs="?", help="a second run's directory, to print its cost and the change")
+    p_cost.set_defaults(func=_cmd_cost)
 
     args = parser.parse_args(argv)
     result: int = args.func(args)

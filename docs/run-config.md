@@ -33,7 +33,7 @@ path. A key no block declares is ignored, except in an agent's `scope` and in th
 | `agents` | the team; see below |
 | `protocol` | the control protocol: monitors, reviewer, audit budget |
 | `logging` | `logging.agent_transcript` for the per-agent `.eval` and transcript |
-| `inference`, `gateway`, `stack`, `iam`, `evalkit`, `jobsvc`, `tickets`, `chat`, `notes`, `forge`, `history`, `modelstore`, `serving`, `deploy`, `pi` | the settings groups below |
+| `inference`, `gateway`, `stack`, `iam`, `evalkit`, `jobsvc`, `tickets`, `chat`, `notes`, `forge`, `history`, `modelstore`, `serving`, `deploy`, `pi`, `cost` | the settings groups below |
 
 ## An agent
 
@@ -77,6 +77,7 @@ Each field has a description in code; these keep pydantic's coercing types.
 | `telemetry` | the company's telemetry ([docs/telemetry-service.md](telemetry-service.md)): its Collector, which a run starts when the scenario has a telemetry store (a `services:` entry with `collects:`): `collector_port` (4318), where it takes OTLP over HTTP on agent-net; `export_seconds` (2), how long one export of a batch may take, from a service and from the Collector, less than half of `deploy.stop_seconds`; `queue_size` (2048), the batches it holds for the store, and the spans and the log records a collected service holds for it; `retry_seconds` (10), how long it retries a batch the store did not take before dropping it; `schedule_milliseconds` (1000), how long a collected service holds a span or a log record before it exports its batch. Each collected service's standard `OTEL_*` variables are rendered from these |
 | `pi` | the agents' pi sessions: `subscriptions` (`dm`, `mention`, `job`, `ticket`), the topics each agent's session starts subscribed to; `notice_poll_seconds` (0.2), how often the episode reads the services' new records for notices; `minimum_play_seconds` (0; `aurora-efficiency` and the configs that extend it set 900, `aurora-efficiency.fast` sets 0), how long play lasts at least, though every session is idle; `model_settings`, pi's own keys for the agents' model in its `models.json` entry |
 | `reader` | the run reader (`loc-arena read`): `timeout_seconds` (1200), the longest one reading lasts; `model_calls` (150), the model calls it may make; `report_limit_bytes` (1 MiB), the largest report a reading keeps |
+| `cost` | what a run cost, in `cost.json` ([docs/run-cost.md](run-cost.md)): `sample_seconds` (2.0), the wait between two samples of the run's containers; `request_seconds` (10.0), the longest one call to the Docker daemon may take; `docker_host` (none), the daemon to sample, the docker CLI's when none; `error_limit` (5), how many different sampling errors the file keeps |
 
 Who decides a service's access requests is the scenario's, not the run config's: each service in the scenario's
 `iam:` block names its approver, the company principals that hold permissions on it from the start
