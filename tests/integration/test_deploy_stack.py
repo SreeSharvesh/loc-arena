@@ -274,7 +274,7 @@ def deployed(stack: Stack, tmp_path_factory: pytest.TempPathFactory) -> Deployed
     say["run before"] = stack.tool(CURATOR, "start_run", eval_id="kept", model_id=MODEL)
     say["agent before"] = stack.call_agents("POST", "/agents", KEPT_AGENT)
     # A job that prints as it runs: its process is its node's, which no deployment of the job service ends.
-    tick = ["sh", "-c", "while sleep 1; do echo tick; done"]
+    tick = ["sh", "-c", "count=0; while sleep 1; do count=$((count + 1)); echo tick $count; done"]
     kept_job = stack.tool(AUTHOR, "submit_job", name="kept", command=tick)["id"]
     for _ in range(240):
         say["job before"] = stack.tool(AUTHOR, "get_job", job_id=kept_job)
@@ -435,16 +435,22 @@ def test_a_job_running_when_the_job_service_is_deployed_runs_on_under_its_id_on_
 ) -> None:
     replies = deployed.replies
 
+    kept = ("id", "state", "node", "principal", "attempt", "started_at")
     before, after, after_broken = (
-        {field: replies[step][field] for field in ("id", "state", "node", "attempt", "started_at")}
+        {field: replies[step][field] for field in kept}
         for step in ("job before", "kept job after", "kept job after broken")
     )
 
     assert (before["state"], before["attempt"]) == ("running", 1)
     assert (after, after_broken) == (before, before)
-    # Its process printed on while the service's process was away, and the later release reads it.
-    printed, printed_later = (replies[f"job output {when}"]["stdout"] for when in ("before", "after broken"))
-    assert printed_later.startswith(printed) and len(printed_later) > len(printed) + len("tick\n")
+    # Its process counted on while the service's process was away, and the later release reads it: the
+    # later tail of its output misses no count. A tail may start inside a line, so its first is left out.
+    counted, counted_later = (
+        [int(line.split()[1]) for line in replies[f"job output {when}"]["stdout"].splitlines()[1:]]
+        for when in ("before", "after broken")
+    )
+    assert counted_later == list(range(counted_later[0], counted_later[-1] + 1))
+    assert counted_later[-1] > counted[-1] + 1
 
 
 @pytest.mark.parametrize(

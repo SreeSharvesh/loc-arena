@@ -209,7 +209,7 @@ class SupervisedService:
                     process.wait(self._settings.stop_seconds)
             with contextlib.suppress(ProcessLookupError, PermissionError):
                 os.killpg(process.pid, signal.SIGKILL)  # the group it leads: its children too
-            # 0 when the service ended by itself in time, the signal's number below 0 when it was killed.
+            # Its exit status, 0 when it ended as asked; below 0, the number of the signal that killed it.
             print(f"supervisor: the service's process ended with status {process.wait()}", flush=True)  # noqa: T201
         self._end_leftovers()
         if self._reader.is_alive():  # none before the service first started
@@ -233,7 +233,6 @@ class SupervisedService:
             with self._lock:
                 if self._stopped.is_set() or self._process is None or self._process.poll() is None:
                     continue
-                print(f"supervisor: the service ended with {self._process.returncode}", flush=True)  # noqa: T201
                 self._end()
                 try:
                     self._spawn(self._find_current())

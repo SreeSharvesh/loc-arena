@@ -1,6 +1,7 @@
 """What the deploy story runs inside its containers: ``python -c`` and ``bash -c`` scripts, and two edits.
 
-Each takes what it needs as arguments or environment, and a credential on its standard input.
+Each takes what it needs as arguments or environment; one that calls a service reads its caller's
+credential on its standard input.
 """
 
 from tests.integration._mcp_probe import CALL_TOOL
