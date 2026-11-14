@@ -8,6 +8,11 @@ log has the details.
 
 ### Changed
 
+- **An agent registered on the agents service reads the forge.** Aurora's `agents` delegation gains
+  `forge: [read]`, so an agent registered by one who reads the forge gets a forge secret
+  (`MERIDIAN_FORGE_TOKEN` on its runner) beside its notes, tickets, evalkit and agents ones. An execution's
+  environment clones the company's repos as the execution's identity; without it, every clone a deployed
+  environments feature made was refused ([docs/agents-service.md](docs/agents-service.md)).
 - **A deployment's events come from the lines it writes itself, and its outcome is one of them.** The
   one event of a deployment was the `action` of its `deploy` call, built from the call's line, and how the
   deployment ended was in no event. The deployment now also writes a line as it is accepted, and its
