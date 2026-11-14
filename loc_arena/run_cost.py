@@ -311,7 +311,11 @@ class CostRecorder:
         try:
             for image in images:
                 self._images[image] = _Image.model_validate(client.api.inspect_image(image)).size
-            usage = _DiskUsage.model_validate(client.df())
+            # The volumes alone: the whole of /system/df sizes every image and build cache on the machine too.
+            api = client.api
+            reply = api.get(f"{api.base_url}/v{api.api_version}/system/df", params={"type": "volume"})
+            reply.raise_for_status()
+            usage = _DiskUsage.model_validate(reply.json())
             listed = usage.volume_usage.items if usage.volume_usage else usage.volumes or []
             for volume in listed:
                 size = volume.usage.size if volume.usage else -1
