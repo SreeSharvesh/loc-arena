@@ -37,10 +37,14 @@ pathlib.Path("/data/done").touch()
 time.sleep(600)
 """
 
-pytestmark = pytest.mark.skipif(
-    not image_exists(IMAGE),
-    reason="needs a reachable Docker daemon and the sandbox image",
-)
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(
+        not image_exists(IMAGE),
+        reason="needs a reachable Docker daemon and the sandbox image",
+    ),
+]
+SAMPLED_SECONDS = 10.0  # the longest a test waits for the sampler to see what it started
 
 
 def run_docker(*arguments: str) -> str:
@@ -75,7 +79,7 @@ def cost(tmp_path_factory: pytest.TempPathFactory) -> Iterator[RunCost]:
     @mark_phase(PLAY)
     def play() -> None:
         time.sleep(SERVICES_SECONDS)
-        started.append(start_service("episode"))
+        started.append(start_service("episode", "--volume", "/scratch"))  # an anonymous volume, as IAM's
         time.sleep(SETTLE_SECONDS)
         for _ in range(2):  # the service burns its CPU, is removed and recreated, and burns it again
             renewed = start_service("renewed", "--tmpfs", "/data", command=WORK)
@@ -87,7 +91,9 @@ def cost(tmp_path_factory: pytest.TempPathFactory) -> Iterator[RunCost]:
     @mark_phase(GRADING)
     def grade() -> None:
         start_container(graded)
-        time.sleep(SETTLE_SECONDS)
+        wanted, deadline = recorder.samples + 2, time.monotonic() + SAMPLED_SECONDS  # one whole sample after
+        while recorder.samples < wanted and time.monotonic() < deadline:
+            time.sleep(0.1)
 
     try:
         run_docker("volume", "create", "--label", f"com.docker.compose.project={PROJECT}", volume)
@@ -107,7 +113,7 @@ def cost(tmp_path_factory: pytest.TempPathFactory) -> Iterator[RunCost]:
             grade()
         yield recorder.write(run_directory, run_directory / "no-calls.jsonl")
     finally:
-        subprocess.run(["docker", "rm", "--force", *started], capture_output=True, check=False)
+        subprocess.run(["docker", "rm", "--force", "--volumes", *started], capture_output=True, check=False)
         subprocess.run(["docker", "volume", "rm", "--force", volume], capture_output=True, check=False)
 
 
@@ -148,7 +154,7 @@ def test_the_containers_together_peak_at_least_as_high_as_the_largest(cost: RunC
 
 def test_each_image_and_each_volume_of_the_project_has_its_size(cost: RunCost) -> None:
     assert cost.images == {IMAGE: int(run_docker("image", "inspect", "--format", "{{.Size}}", IMAGE))}
-    assert list(cost.volumes) == ["data"]
+    assert list(cost.volumes) == ["data", "episode:/scratch"]
     assert WRITTEN <= cost.volumes["data"] < WRITTEN + MEBIBYTE
 
 

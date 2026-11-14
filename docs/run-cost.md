@@ -1,6 +1,6 @@
 # What a run cost
 
-Every stack run writes `cost.json` in its run directory, beside `scores.json`, and prints one line of it in
+Every `make run` writes `cost.json` in its run directory, beside `scores.json`, and prints one line of it in
 its summary. It is the engine's profiler: what a decision costs is found by running it and comparing two
 runs. No score, event, monitor or verifier reads the file, and `scores.json` keeps its keys.
 
@@ -17,7 +17,7 @@ make cost RUN_DIR=logs/<slug>/<run> OTHER=logs/<slug>/<run>  # the second run's 
 | `containers` | per container: `memory_rest_bytes` (as the episode starts; none for one that was not running then), `memory_peak_bytes`, `memory_limit_bytes` (none: no limit), `cpu_seconds` |
 | `containers_rest_bytes`, `containers_peak_bytes` | what every container held together, as the episode starts and at the highest sample |
 | `host_memory_peak_bytes` | the most memory in use on the machine the run's CLI is on |
-| `images`, `volumes`, `records` | the size of each image the run's containers use, of each volume of the project once grading ends, and of each entry of the run directory |
+| `images`, `volumes`, `records` | the size of each image the run's containers use, of each volume of the project once grading ends (an anonymous one as `service:path`), and of each entry of the run directory |
 | `dollars` | the total, `by_model` and `by_caller`, from the cost each answered call carries in the gateway's record |
 | `sampler` | its interval, how many samples it took, how many failed, and the last error |
 

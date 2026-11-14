@@ -47,7 +47,7 @@ read:
 	@uv run python -m loc_arena.cli read "$(RUN_DIR)" --brief "$(BRIEF)" --run "$(RUN)"
 
 cost:
-	@uv run python -m loc_arena.cli cost "$(RUN_DIR)" $(OTHER)
+	@uv run python -m loc_arena.cli cost "$(RUN_DIR)" $(if $(strip $(OTHER)),"$(OTHER)")
 
 fixture-run:
 	@uv run python scripts/record_run_fixture.py
