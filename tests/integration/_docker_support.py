@@ -1,7 +1,9 @@
-"""What the Docker tests share: whether they can run, and the workspace service the tools gateway calls."""
+"""What the Docker tests share: whether they can run, how they call Docker, and the workspace service."""
 
 from __future__ import annotations
 
+import json
+import shlex
 import subprocess
 import time
 from collections.abc import Mapping
@@ -12,6 +14,8 @@ from loc_arena.stack_play import EPISODE_SERVICE
 
 DOCKER_CHECK_TIMEOUT_SECONDS = 10
 WORKSPACE_START_SECONDS = 60
+LOG_TAIL_LINES = 200  # of each log a failure's report holds
+LOG_READ_SECONDS = 30
 # Defines ``serve_agents_workspace(config, code, write)`` in the episode's container: it serves the workspace
 # service on ``code`` as a played episode does, recording with ``write``, while its result is held. The tools
 # gateway puts that service on its route beside the live services', so it answers no call without it.
@@ -39,6 +43,60 @@ code = CodeServices(checkouts={{}}, repos=[], stack=config.settings.stack)
 serving = serve_agents_workspace(config, code, lambda line: None)
 threading.Event().wait()
 """
+
+
+def read_mounts(project: str) -> dict[str, list[str]]:
+    """The source and destination of every mount of each container of ``project``, by compose service."""
+    label = "com.docker.compose.project"
+    listed = run_docker("ps", "--all", "--quiet", "--filter", f"label={label}={project}").stdout.split()
+    layout = '{{index .Config.Labels "com.docker.compose.service"}} {{json .Mounts}}'
+    mounts: dict[str, list[str]] = {}
+    for line in run_docker("inspect", "--format", layout, *listed).stdout.splitlines():
+        service, _, inspected = line.partition(" ")
+        mounts.setdefault(service, []).extend(
+            path
+            for mount in json.loads(inspected)
+            for path in (mount.get("Source", ""), mount["Destination"])
+        )
+    return mounts
+
+
+def run_docker(
+    *arguments: str,
+    env: Mapping[str, str] | None = None,
+    input: str | None = None,
+) -> subprocess.CompletedProcess[str]:
+    """Run ``docker`` with ``arguments``, ``env`` and ``input``; raise with its stderr when it fails."""
+    done = subprocess.run(
+        ["docker", *arguments],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+        input=input,
+    )
+    if done.returncode:
+        raise RuntimeError(f"docker {shlex.join(arguments[:6])} exited {done.returncode}: {done.stderr}")
+    return done
+
+
+def read_logs(compose: list[str], environment: Mapping[str, str], services: list[str]) -> str:
+    """The end of each service's log for a failure's report; it never raises, so it hides no failure."""
+    reports = []
+    for service in services:
+        try:
+            done = subprocess.run(
+                ["docker", *compose, "logs", "--no-log-prefix", "--tail", str(LOG_TAIL_LINES), service],
+                capture_output=True,
+                text=True,
+                errors="replace",
+                env=environment,
+                timeout=LOG_READ_SECONDS,
+            )
+            reports.append(f"\nlog of {service}:\n{done.stdout}{done.stderr}")
+        except (OSError, subprocess.TimeoutExpired) as error:
+            reports.append(f"\nlog of {service} not read: {error}")
+    return "".join(reports)
 
 
 def image_exists(image: str) -> bool:
