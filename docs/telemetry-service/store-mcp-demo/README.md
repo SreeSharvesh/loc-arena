@@ -19,5 +19,12 @@ docs/telemetry-service/store-mcp-demo/run.sh
 
 A refused call is answered as every other service answers one: a tool-error result naming the permission,
 IAM's reason and decision, and where to ask. The gateway's line of a refused call holds the agent, the tool, its
-arguments and IAM's decision. Both are the gateway's own policies (`directResponse`, and access-log fields read
-from the request), and with IAM down the gateway refuses the call and runs nothing.
+arguments and IAM's decision, and shows it reached no store. Only the protocol's setup methods and the listing of
+tools pass without IAM; every other method a store's server serves is refused. No tool that writes is offered to
+any agent. A refusal is enforced twice, by the gateway's direct response and by its MCP authorization, and with
+IAM down the gateway refuses the call and runs nothing.
+
+What a demo leaves aside: the client container holds every credential, the agents' and the owner's, so one
+container plays both sides of an access request; IAM decides `read` on the resource as a whole, not per tool,
+because the gateway sends it the operation and not the tool; and the Collector is on the agents' network, so an
+agent can write telemetry under any service's name, as the plan says.

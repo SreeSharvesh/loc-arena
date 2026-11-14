@@ -1,4 +1,5 @@
 """Central IAM, real, for the demo: one resource `telemetry` whose tools all need `read`; serves the IAM API."""
+import os
 import hashlib, json, secrets, sys, time
 from pathlib import Path
 
@@ -7,7 +8,7 @@ from meridian_iam.contracts import load_manifest
 from meridian_iam.core import Iam
 from meridian_iam.service import create_app
 
-TOOLS = json.loads(Path("/demo/tools.json").read_text())  # every tool the two MCP servers offer
+TOOLS = json.loads(Path("/demo/tools.json").read_text())  # every tool the three MCP servers offer
 manifest = {
     "schema_version": 1,
     "resource": "telemetry",
@@ -32,5 +33,6 @@ out = {
     "sandbox": sandbox,
     "sandbox_sha256": {a: hashlib.sha256(t.encode()).hexdigest() for a, t in sandbox.items()},
 }
-Path("/shared/tokens.json").write_text(json.dumps(out))
+Path("/shared/tokens.json.new").write_text(json.dumps(out))
+os.replace("/shared/tokens.json.new", "/shared/tokens.json")  # whole, or not there
 uvicorn.run(create_app(iam), host="0.0.0.0", port=8000, log_level="warning")

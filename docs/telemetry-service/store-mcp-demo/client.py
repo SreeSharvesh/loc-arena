@@ -23,7 +23,7 @@ async def main(agent, action, *rest):
 
 try:
     asyncio.run(main(*sys.argv[1:]))
-except BaseException as error:  # the gateway's refusal reaches the client as an HTTP error
+except BaseException as error:  # a call the gateway refuses outright reaches the client as an error
     def leaves(e):
         return [l for sub in e.exceptions for l in leaves(sub)] if isinstance(e, BaseExceptionGroup) else [e]
     print("FAILED:", "; ".join(f"{type(e).__name__}: {e}" for e in leaves(error))[:600])
