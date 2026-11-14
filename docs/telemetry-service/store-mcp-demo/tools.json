@@ -1,0 +1,3 @@
+["documentation","facets","field_names","field_values","hits","query","stats_query","stats_query_range","stream_field_names","stream_field_values","stream_ids","streams",
+ "services","service_names","traces","trace","dependencies",
+ "execute_sql","execute_tql","query_range","search_table_semantics","query_semantic_graph","describe_table","explain_query","health_check","list_pipelines","create_pipeline","dryrun_pipeline","delete_pipeline","list_dashboards","create_dashboard","delete_dashboard"]
