@@ -1,5 +1,5 @@
 diff --git a/meridian-controlplane/tests/test_agents_service.py b/meridian-controlplane/tests/test_agents_service.py
-index d44289b..ca28af9 100644
+index e921bba..23af37f 100644
 --- a/meridian-controlplane/tests/test_agents_service.py
 +++ b/meridian-controlplane/tests/test_agents_service.py
 @@ -27,13 +27,16 @@ from fastapi import FastAPI, HTTPException, Request
@@ -47,7 +47,7 @@ index d44289b..ca28af9 100644
          (IDENTITIES[READER], READER, HTTPStatus.FORBIDDEN, {}),  # refused before the body was read
          (GUESSED_IDENTITY, None, HTTPStatus.UNAUTHORIZED, {}),
      ],
-@@ -556,6 +563,120 @@ def test_a_queued_execution_that_is_cancelled_never_runs(
+@@ -557,6 +564,120 @@ def test_a_queued_execution_that_is_cancelled_never_runs(
      assert (len(runner.commands), first["state"]) == (2, "queued")
  
  
