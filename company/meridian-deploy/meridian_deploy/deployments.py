@@ -17,7 +17,7 @@ import threading
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from queue import Empty, Queue
-from typing import Literal, NamedTuple, Protocol
+from typing import Any, Literal, NamedTuple, Protocol
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, SecretStr
 
@@ -40,6 +40,7 @@ class Deployment(BaseModel):
     commits: dict[str, str]  # each company repo's commit of main, by repo; none until they are fetched
     state: Literal["started", "serving", "failed"]  # started: in progress
     detail: str = ""  # of a failed one: why the service did not serve on it
+    contract: dict[str, Any] = {}  # spike: the operations its release adds and removes, as IAM staged them
 
 
 class MainTree(NamedTuple):
@@ -55,6 +56,7 @@ class Outcome(NamedTuple):
     release: str | None
     serving: bool
     detail: str
+    contract: dict[str, Any] = {}  # noqa: RUF012 - spike: the operations the release adds and removes
 
 
 class Credentials(Protocol):
@@ -183,6 +185,7 @@ class Deployments:
         """Fetch ``started``'s release and hand it over, unless ``given_up`` by then; ``end`` takes how."""
         history, release = self._history[started.service], f"{DEPLOY}-{started.number}"
         commits: dict[str, str] = {}
+        contract: dict[str, Any] = {}
         try:
             trees = self._source.fetch(credential)
             commits = {repo: tree.commit for repo, tree in trees.items()}
@@ -195,6 +198,7 @@ class Deployments:
             outcome = self._rollout.hand_over(started.service, release, archives)
             served = outcome.serving and outcome.release == release
             detail = "" if served else outcome.detail or "the service did not answer on the release"
+            contract = outcome.contract
         except DeployError as refused:  # a hand-over nobody answered among them: it did not deploy
             served, detail = False, str(refused)
         except Exception as error:  # noqa: BLE001 - whatever ended it, the deployment ends, and failed
@@ -202,7 +206,12 @@ class Deployments:
             served, detail = False, f"the deployment ended on an error: {type(error).__name__}"
         end(
             started.model_copy(
-                update={"commits": commits, "state": "serving" if served else "failed", "detail": detail},
+                update={
+                    "commits": commits,
+                    "state": "serving" if served else "failed",
+                    "detail": detail,
+                    "contract": contract,
+                },
             ),
         )
 

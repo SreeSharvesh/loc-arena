@@ -13,9 +13,12 @@ The deployments are in memory: a recreated service has none, as each service it 
 from __future__ import annotations
 
 import base64
+import io
+import json
 import os
 import secrets
 import sys
+import tarfile
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -30,6 +33,7 @@ from starlette.applications import Starlette
 from loc_arena.config import RunConfig, load_run_config
 from loc_arena.deploy_pool import release_token_secret
 from loc_arena.forge_service import SERVICE as FORGE
+from loc_arena.iam_bootstrap import manifest_path
 from loc_arena.iam_seed import load_seed
 from loc_arena.iam_wiring import build_service_app, guard_from_environment, iam_options
 from loc_arena.mcp_service import ALL_ADDRESSES, caller_from_token
@@ -96,6 +100,8 @@ class SupervisorRollout:
     tokens: Mapping[str, SecretStr]  # each deployed service's supervisor's token
     port: int
     timeout_seconds: float
+    iam: IamClient  # spike: the deploy service's own client, which stages each release's contract
+    manifests: Mapping[str, str]  # spike: each deployed service's manifest, as a repo and a path inside it
 
     def hand_over(self, service: str, release: str, archives: Mapping[str, bytes]) -> Outcome:
         """Send ``release`` to ``service``'s supervisor, and wait for the release its service then runs.
@@ -104,7 +110,8 @@ class SupervisorRollout:
         the hand-over has ended: a release it took is not then recorded as one it did not. The record holds
         the hand-over before the supervisor is sent the release, which may run from then on.
         """
-        record_started({"release": release})
+        contract = self._stage(service, release, archives)
+        record_started({"release": release, "contract": contract})
         url = f"http://{service}:{self.port}{RELEASE_PATH}"
         headers = {"Authorization": f"Bearer {self.tokens[service].get_secret_value()}"}
         packed = {repo: base64.b64encode(archive).decode() for repo, archive in archives.items()}
@@ -120,7 +127,28 @@ class SupervisorRollout:
         except httpx2.HTTPError as error:
             raise DeployError(f"{service}'s supervisor did not answer: {type(error).__name__}") from error
         state = ReleaseState.model_validate_json(response.content)
-        return Outcome(state.release, state.serving, state.detail)
+        served = state.serving and state.release == release
+        self.iam.end_contract(service, release, "activate" if served else "discard")
+        return Outcome(state.release, state.serving, state.detail, contract)
+
+    def _stage(self, service: str, release: str, archives: Mapping[str, bytes]) -> dict[str, Any]:
+        """Stage with IAM the manifest ``release`` carries for ``service``: what it adds and removes.
+
+        IAM's refusal is the deployment's, before anything is handed over.
+        """
+        repo, inner = self.manifests[service].split("/", 1)
+        try:
+            with tarfile.open(fileobj=io.BytesIO(archives[repo])) as tree:
+                member = tree.extractfile(inner)
+                manifest = json.loads(member.read()) if member else None
+        except (KeyError, tarfile.TarError, ValueError):
+            manifest = None
+        if manifest is None:
+            raise DeployError(f"the release carries no readable manifest of {service} at {repo}/{inner}")
+        try:
+            return self.iam.stage_contract(manifest, release)
+        except IamError as error:
+            raise DeployError(f"IAM refused the release's manifest: {error}") from error
 
 
 def bound_reply_seconds(settings: DeploySettings) -> float:
@@ -139,14 +167,15 @@ def bound_deployment_seconds(settings: DeploySettings) -> float:
     return settings.fetch_seconds + 2 * bound_reply_seconds(settings) + REPLY_MARGIN_SECONDS
 
 
-def connect_supervisors(config: RunConfig, entry: LiveService) -> SupervisorRollout:
+def connect_supervisors(config: RunConfig, entry: LiveService, iam: IamClient) -> SupervisorRollout:
     """The supervisors of the services ``entry`` deploys to, each with its token of the secrets directory."""
     settings, secrets_dir = config.settings.deploy, config.settings.gateway.secrets_dir
     tokens = {
         name: SecretStr((secrets_dir / release_token_secret(name)).read_text().strip())
         for name in entry.deploys
     }
-    return SupervisorRollout(tokens, settings.release_port, bound_reply_seconds(settings))
+    manifests = {name: manifest_path(config, name).removeprefix("company/") for name in entry.deploys}
+    return SupervisorRollout(tokens, settings.release_port, bound_reply_seconds(settings), iam, manifests)
 
 
 def record_deployment(deployment: Deployment) -> None:
@@ -177,7 +206,7 @@ def build_deploy_app(
             settings.fetch_seconds,
             settings.max_release_bytes,
         ),
-        connect_supervisors(config, entry),
+        connect_supervisors(config, entry, guard.client),
         settings.max_deployments,
         bound_deployment_seconds(settings),
         record_deployment,

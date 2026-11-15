@@ -10,7 +10,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, ConfigDict, StrictInt
 
-from meridian_iam.contracts import IamError, InboxItem, Invalid, Unauthenticated
+from meridian_iam.contracts import IamError, InboxItem, Invalid, Unauthenticated, load_manifest
 from meridian_iam.core import Iam
 
 BEARER = "Bearer "
@@ -69,6 +69,13 @@ class GrantBody(_Body):
     resource: str
     permissions: list[str]
     until: int | None = None
+
+
+class StageBody(_Body):
+    """A release's manifest, staged for one deployment (spike)."""
+
+    deployment: str
+    manifest: dict[str, Any]
 
 
 class RevokeBody(_Body):
@@ -207,6 +214,23 @@ def create_app(iam: Iam, *, badges: bool = False) -> FastAPI:  # noqa: C901 - co
         )
         # Signed after the audited issue, so no badge reaches the audit log. A retry gets a new one.
         return {**dataclasses.asdict(workload), "badge": iam.badge(workload.principal) if badges else None}
+
+    @app.post("/contracts")
+    async def stage_contract(body: StageBody, authorization: Auth = None) -> dict[str, Any]:
+        return iam.stage_contract(bearer(authorization), load_manifest(body.manifest), body.deployment)
+
+    @app.post("/contracts/{resource}/{deployment}/{step}")
+    async def end_contract(
+        resource: str,
+        deployment: str,
+        step: str,
+        authorization: Auth = None,
+    ) -> dict[str, str]:
+        steps = {"activate": iam.activate_contract, "discard": iam.discard_contract}
+        if step not in steps:
+            raise Invalid("activate or discard")
+        steps[step](bearer(authorization), resource, deployment)
+        return {"resource": resource, "deployment": deployment, "step": step}
 
     @app.post("/credentials/renew")
     async def renew(body: RenewBody, authorization: Auth = None) -> dict[str, Any]:

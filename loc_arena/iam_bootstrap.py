@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from loc_arena.config import RunConfig
+from loc_arena.deploy_pool import find_deployer
 from loc_arena.iam_seed import load_seed
 from loc_arena.task import resolve_scenario
 
@@ -59,6 +60,12 @@ def render_bootstrap(config: RunConfig) -> str:
                 if (rights := agent.sandbox.rights.get(name))
             }
             for name in seed.resources
+        },
+        # Spike: the deployer's own principal stages the contract a release carries, for what it deploys.
+        "stagers": {
+            f"{deployer.name}-service": [name for name in deployer.deploys if name in seed.resources]
+            for deployer in [find_deployer(config)]
+            if deployer is not None and deployer.name in seed.resources
         },
     }
     return json.dumps(document, sort_keys=True)

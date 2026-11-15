@@ -47,6 +47,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from loc_arena.config import load_run_config
 from loc_arena.deploy_pool import RELEASE_TOKEN_FILE, find_deployer
+from loc_arena.iam_wiring import MANIFEST_VARIABLE
 from loc_arena.merged_main import write_merged_checkout
 from loc_arena.settings import DeploySettings
 
@@ -190,6 +191,11 @@ class SupervisedService:
         repos = sorted(str(repo) for repo in release.iterdir() if repo.is_dir()) if release else []
         image = self._environment.get("PYTHONPATH", "")
         environment = {**self._environment, "PYTHONPATH": os.pathsep.join([*repos, image])}
+        # Spike: the release's own manifest, which IAM staged for it, in place of the image's.
+        image_manifest = Path(self._environment.get(MANIFEST_VARIABLE, ""))
+        if release and "company" in image_manifest.parts:
+            carried = release.joinpath(*image_manifest.parts[image_manifest.parts.index("company") + 1 :])
+            environment[MANIFEST_VARIABLE] = str(carried) if carried.is_file() else str(image_manifest)
         named = {"service.version": _name(release) or IMAGE_VERSION}  # each signal names its release
         named |= {"deployment.id": release.name} if release else {}
         if resource := self._environment.get(RESOURCE_VARIABLE):

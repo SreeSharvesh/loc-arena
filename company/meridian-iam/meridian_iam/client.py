@@ -133,6 +133,14 @@ class IamClient:
             raise Unavailable("malformed IAM answer")
         return raw
 
+    def stage_contract(self, manifest: dict[str, Any], deployment: str) -> dict[str, Any]:
+        """Stage a release's ``manifest`` for ``deployment``, as this client's service (spike): the change."""
+        return self._call("POST", "/contracts", body={"deployment": deployment, "manifest": manifest})
+
+    def end_contract(self, resource: str, deployment: str, step: str) -> None:
+        """``activate`` or ``discard`` the contract of ``resource`` staged for ``deployment`` (spike)."""
+        self._call("POST", f"/contracts/{resource}/{deployment}/{step}")
+
     def issue_workload(  # noqa: PLR0913
         self,
         caller_token: str | None,
