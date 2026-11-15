@@ -17,7 +17,13 @@ import pytest
 import uvicorn
 from loc_arena.config import load_run_config
 from loc_arena.iam_bootstrap import manifest_path
-from loc_arena.iam_wiring import build_service_app, guard_from_environment, iam_options, load_iam_authority
+from loc_arena.iam_wiring import (
+    MANIFEST_VARIABLE,
+    build_service_app,
+    guard_from_environment,
+    iam_options,
+    load_iam_authority,
+)
 from loc_arena.mcp_service import build_app, caller_from_token
 from loc_arena.tool_records import ToolRecord, tool_call_recorder
 from mcp import Client
@@ -310,6 +316,38 @@ def test_a_service_starts_only_if_its_tools_are_exactly_the_manifests(world: Wor
     extra = {**declared, "tools": {**declared["tools"], "purge": "post"}}
     with pytest.raises(ManifestError, match="declared but unregistered tool purge"):  # a binding with no tool
         start(extra)
+
+
+@pytest.mark.parametrize(
+    ("side", "served", "difference"),
+    [
+        ("http", "GET /channels", "undeclared route GET /channels"),
+        ("tools", "unread", "undeclared tool unread"),
+    ],
+)
+def test_what_the_manifest_lacks_is_refused_naming_that_manifest_and_that_a_release_cannot_add_it(
+    world: World,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    side: str,
+    served: str,
+    difference: str,
+) -> None:
+    server, store, _ = chat_server(world)
+    declared = read_chat_manifest()
+    lacking = {**declared, side: {k: v for k, v in declared[side].items() if k != served}}
+    environment = environment_for(tmp_path, world, "chat", lacking)
+    monkeypatch.setenv(MANIFEST_VARIABLE, environment[MANIFEST_VARIABLE])  # as a service's own environment
+    guard = guard_from_environment(environment)
+
+    with pytest.raises(ManifestError) as refused:
+        build_service_app(guard, server, SERVICE, create_chat_api(store, print, load_iam_authority(guard)))
+
+    assert str(refused.value) == (
+        f"{difference}. It was checked against the image's manifest, "
+        f"{environment[MANIFEST_VARIABLE]}, which IAM registered as its play began. "
+        "A release cannot add an operation: its own iam-manifest.json is not read."
+    )
 
 
 def test_a_service_asks_iam_as_often_and_as_long_as_its_environment_says(
