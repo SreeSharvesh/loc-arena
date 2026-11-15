@@ -86,8 +86,9 @@ gateway instead (`enforced_by: gateway` in the scenario's `iam:` entry, `loc_are
 Before each call of one of its tools the gateway sends IAM the request a guard sends, as the principal IAM
 binds to that service and with the calling agent's identity, goes on only on an allow, and answers a refusal
 with a guard's words. IAM's answer to `POST /authorize` carries its verdict in headers too (`X-Iam-Allow`,
-`X-Iam-Decision`, `X-Iam-Reason`), which the gateway reads, so it holds back no response it relays. IAM decides and the gateway keeps no rights. Such a service is off agent-net, where a
-sandbox would call it around the gateway (today the telemetry store alone is), has tools alone, no rights,
+`X-Iam-Decision`, `X-Iam-Reason`), which the gateway reads, so it holds back no response it relays. IAM
+decides and the gateway keeps no rights. Such a service is off agent-net, where a sandbox would call it
+around the gateway (today the telemetry store alone is), has tools alone, no rights,
 and no operation with a target, which the gateway does not pass; a config that marks any other service does
 not load. It writes no record, so the events of its calls are built from the gateway's lines.
 
@@ -106,7 +107,9 @@ For every protected call:
 
 Invalid/absent credentials return 401. Insufficient rights return 403 with safe permission-request guidance.
 An unavailable or malformed IAM response returns a service-unavailable error and executes no protected action;
-it must not pretend the caller merely lacks a grant. Unknown operations fail closed.
+it must not pretend the caller merely lacks a grant. Unknown operations fail closed. An operation the service
+declares that IAM has not registered is refused with that reason ("IAM has not activated <operation> on
+<resource>"), naming no permission, since no grant would allow it.
 
 The first implementation performs an online decision per protected call: no allow cache, token-embedded grant
 snapshot or local grant fallback. Use configured transport timeouts and bounded retries for safe read-only

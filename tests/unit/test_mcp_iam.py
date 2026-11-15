@@ -28,6 +28,7 @@ from loc_arena.mcp_service import build_app, caller_from_token
 from loc_arena.tool_records import ToolRecord, tool_call_recorder
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
+from mcp.server import MCPServer
 from mcp.types import CallToolResult, TextContent
 from starlette.applications import Starlette
 
@@ -204,6 +205,30 @@ def test_a_call_without_the_grant_is_refused_recorded_and_changes_nothing(world:
     assert store.read_dms("agent-main") == []
     record = json.loads(lines[0])
     assert (record["gen_ai.agent.name"], record["error.type"]) == ("serving-agent", "tool_error")
+
+
+def test_a_tool_the_service_declares_and_iam_has_not_activated_is_refused_saying_so(world: World) -> None:
+    declared = read_chat_manifest()
+    manifest = {
+        **declared,
+        "operations": {**declared["operations"], "export": {"permission": "read"}},
+        "tools": {**declared["tools"], "export": "export"},
+    }
+    guard = Guard(load_manifest(manifest), world.guard().client)
+    server = MCPServer(
+        SERVICE,
+        middleware=list(iam_options(guard, SERVICE)["extra_middleware"]),
+        log_level="WARNING",
+    )
+
+    @server.tool()
+    async def export() -> str:
+        return "every message"
+
+    result = anyio.run(call, server, SERVICE, world.tokens["serving-agent"], "export", {})
+
+    assert result.is_error
+    assert text(result) == "not permitted: IAM has not activated export on chat."
 
 
 def test_request_approve_retry_and_the_caller_is_the_credentials_principal(world: World) -> None:

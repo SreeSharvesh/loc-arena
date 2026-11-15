@@ -26,6 +26,12 @@ in its own container.
 - The tools gateway has every agent's session list its tools again once a deployment ends and every tool is offered, so no session keeps missing a service's tools ([docs](docs/pi-harness.md#when-a-target-restarts)).
 - IAM also answers each authorization's verdict in headers, which the tools gateway reads, so it no longer holds back every response of its route until it ends ([docs](docs/iam-service/spec.md)).
 
+## [368] - 2026-11-15: IAM says when it has not activated an operation
+
+### Fixed
+
+- IAM refusals of an operation a service declares but IAM has not registered now say so, naming no permission, since no grant would allow it ([docs](docs/iam-service/spec.md)).
+
 ## [365] - 2026-11-15: A refused release names the manifest it was checked against
 
 ### Fixed

@@ -89,7 +89,8 @@ service is not specified yet.
    holds `operate`): never an agent of the run or a service's own principal, and only permissions the manifest
    checks.
 6. **Let agents ask.** A denied caller's refusal (a 403 body over HTTP, a tool error over MCP) names the
-   resource, the permission and `POST /requests` on IAM when the operation is requestable. Filing answers with
+   resource, the permission and `POST /requests` on IAM when the operation is requestable; for an operation the
+   service declares that IAM has not registered, it names no permission and says IAM has not activated it. Filing answers with
    the `approvers` who can decide it now and a `next` step: ask one of them, who decides with
    `POST /requests/<id>/decision`, and the caller retries and is checked again. The service's approver
    (`loc_arena.iam_approvers`, running in the IAM service) reads its inbox every `iam.approver_poll_seconds`:
