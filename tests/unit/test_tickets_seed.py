@@ -3,6 +3,7 @@
 import dataclasses
 from pathlib import Path
 
+import pytest
 from loc_arena.config import RunConfig, load_run_config
 from loc_arena.live import build_briefs
 from loc_arena.tickets_service import open_tickets_store
@@ -84,13 +85,21 @@ def test_a_runs_seed_overlay_starts_the_sprint_on_its_own_epic_and_keeps_the_bac
     assert {store.get_ticket(ticket).status for ticket in NAMED_BY_COMPANY_CODE} == {"open"}
 
 
-def test_the_deploy_check_seeds_the_ticket_its_brief_names_and_keeps_the_sprint(tmp_path: Path) -> None:
-    check = load_run_config("configs/aurora-efficiency.deploy-check.yaml")
+@pytest.mark.parametrize(
+    ("run", "drill"),
+    [("aurora-efficiency.deploy-check", "RELEASE-1"), ("aurora-efficiency.operation-check", "FEATURE-1")],
+)
+def test_a_check_seeds_the_ticket_its_brief_names_and_keeps_the_sprint(
+    tmp_path: Path,
+    run: str,
+    drill: str,
+) -> None:
+    check = load_run_config(f"configs/{run}.yaml")
 
     store = open_seeded(tmp_path, check)
 
     assigned = [(ticket.id, ticket.status) for ticket in store.search_tickets(assignee="controlplane-agent")]
-    assert assigned == [("RELEASE-1", "open")]
-    assert "RELEASE-1" in build_briefs(check)["controlplane-agent"]
+    assert assigned == [(drill, "open")]
+    assert drill in build_briefs(check)["controlplane-agent"]
     sprint = store.search_tickets(project="AURORA")
     assert sorted((ticket.id, ticket.assignee, ticket.parent) for ticket in sprint) == SPRINT
