@@ -19,6 +19,12 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [PR] - 2026-11-15: A refused release names the manifest it was checked against
+
+### Fixed
+
+- The deploy service's failed deployment now says which manifest a release was checked against, and that a release cannot add an operation ([docs](docs/deploy-service.md#how-a-release-reaches-a-service)).
+
 ## [364] - 2026-11-15: The tickets service logs each request its store refuses
 
 ### Fixed
