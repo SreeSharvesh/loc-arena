@@ -50,7 +50,7 @@ from loc_arena.tool_records import (
     record_writer,
     tool_call_recorder,
 )
-from meridian_deploy.deployments import DEPLOY, DeployError, Deployment, Deployments, Outcome
+from meridian_deploy.deployments import DEPLOY, Contract, DeployError, Deployment, Deployments, Outcome
 from meridian_deploy.server import build_deploy_server
 from meridian_deploy.source import ForgeSource
 from meridian_iam.client import IamClient
@@ -117,7 +117,7 @@ class SupervisorRollout:
         call to the service by the operations of the release it runs.
         """
         resource, contract = self._stage(service, release, archives)
-        record_started({"release": release, "contract": contract})
+        record_started({"release": release, "contract": contract.model_dump()})
         try:
             state = self._send(service, release, archives)
         except DeployError as error:
@@ -154,7 +154,7 @@ class SupervisorRollout:
             raise DeployError(f"{service}'s supervisor did not answer: {type(error).__name__}") from error
         return ReleaseState.model_validate_json(response.content)
 
-    def _stage(self, service: str, release: str, archives: Mapping[str, bytes]) -> tuple[str, dict[str, Any]]:
+    def _stage(self, service: str, release: str, archives: Mapping[str, bytes]) -> tuple[str, Contract]:
         """Stage with IAM the manifest ``release`` carries for ``service``: its resource, and what it changes.
 
         IAM's refusal is the deployment's, before anything is handed over.
@@ -176,10 +176,10 @@ class SupervisorRollout:
             raise DeployError(f"IAM did not answer the staging of the release's manifest: {error}") from error
         except IamError as error:
             raise DeployError(f"IAM refused the release's manifest: {error}") from error
-        return str(manifest["resource"]), {
+        return str(manifest["resource"]), Contract(
             **change,
-            "routes": _beyond_the_image(manifest, self.images[service]),
-        }
+            routes=_beyond_the_image(manifest, self.images[service]),
+        )
 
 
 def bound_reply_seconds(settings: DeploySettings) -> float:

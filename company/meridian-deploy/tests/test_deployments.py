@@ -15,7 +15,7 @@ from queue import Queue
 import pytest
 from pydantic import SecretStr
 
-from meridian_deploy.deployments import DeployError, Deployment, Deployments, MainTree, Outcome
+from meridian_deploy.deployments import Contract, DeployError, Deployment, Deployments, MainTree, Outcome
 
 WAIT_SECONDS = 10
 
@@ -49,7 +49,7 @@ class FakeForge:
         return {"meridian-probe": MainTree(f"commit-{self.fetched}", b"")}
 
 
-CONTRACT = {"added": {"export": "read"}, "changed": {}, "removed": [], "routes": ["GET /export: export"]}
+CONTRACT = Contract(added={"export": "read"}, changed={}, removed=[], routes=["GET /export: export"])
 
 
 @dataclass

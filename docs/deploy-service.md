@@ -164,7 +164,7 @@ writes three more lines of its own, in the name of the call that started it:
 | the `deploy` call's | as the call returns | the deployment's number and the state `started`; or the refusal |
 | marked `tool.call.accepted` | as the deployment is accepted, in the call's own thread, before `deploy` returns and before anything is fetched | the deployment, `started` |
 | marked `tool.call.started` | before the release is sent to the supervisor: it may run from then on | the release's reference, `deploy-<n>`, and its `contract`: the operations IAM staged as added, changed and removed, each added or changed one with its permission, and each route and tool the release binds otherwise than the image's, with its operation |
-| marked `tool.call.ended`, and dated then | as the deployment ends | the deployment as it ended: each repo's commit, `serving` or `failed`, `detail`, and the `contract` |
+| marked `tool.call.ended`, and dated then | as the deployment ends | the deployment as it ended: each repo's commit, `serving` or `failed`, `detail`, and the `contract`, null when IAM staged none |
 
 The deployment writes its three lines itself, so no caller's cancel loses them; the call's line is written
 as any tool call's is, once the call has returned. A deployment that ended before its hand-over, with

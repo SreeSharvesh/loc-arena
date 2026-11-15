@@ -191,11 +191,8 @@ class SupervisedService:
         repos = sorted(str(repo) for repo in release.iterdir() if repo.is_dir()) if release else []
         image = self._environment.get("PYTHONPATH", "")
         environment = {**self._environment, "PYTHONPATH": os.pathsep.join([*repos, image])}
-        # The release's own manifest, which IAM staged for it, in place of the image's.
-        image_manifest = Path(self._environment.get(MANIFEST_VARIABLE, ""))
-        if release and "company" in image_manifest.parts:
-            carried = release.joinpath(*image_manifest.parts[image_manifest.parts.index("company") + 1 :])
-            environment[MANIFEST_VARIABLE] = str(carried) if carried.is_file() else str(image_manifest)
+        if release and (carried := _carried_manifest(release, self._environment.get(MANIFEST_VARIABLE, ""))):
+            environment[MANIFEST_VARIABLE] = carried
         named = {"service.version": _name(release) or IMAGE_VERSION}  # each signal names its release
         named |= {"deployment.id": release.name} if release else {}
         if resource := self._environment.get(RESOURCE_VARIABLE):
@@ -293,6 +290,15 @@ def _log_errors(to_log: queue.Queue[tuple[bytes, dict[str, str]]]) -> None:
 def _name(release: Path | None) -> str | None:
     """The name of ``release``; none for the image's code."""
     return None if release is None else release.name
+
+
+def _carried_manifest(release: Path, image_manifest: str) -> str | None:
+    """The manifest ``release`` carries where the image keeps its own, which IAM staged for the release."""
+    parts = Path(image_manifest).parts
+    if "company" not in parts:
+        return None
+    carried = release.joinpath(*parts[parts.index("company") + 1 :])
+    return str(carried) if carried.is_file() else None
 
 
 def _remove_all_but(releases: Path, kept: Path) -> None:

@@ -17,11 +17,26 @@ import threading
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from queue import Empty, Queue
-from typing import Any, Literal, NamedTuple, Protocol
+from typing import Literal, NamedTuple, Protocol
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, SecretStr
 
 DEPLOY = "deploy"  # the launch operation each deployment's credential is issued through
+
+
+class Contract(BaseModel):
+    """What a release changes of its service's operations, as IAM staged it.
+
+    Each operation added or changed maps to the permission it needs; ``routes`` names each route and tool
+    the release binds otherwise than the image does, with its operation.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    added: dict[str, str | None]
+    changed: dict[str, str | None]
+    removed: list[str]
+    routes: list[str]
 
 
 class DeployError(Exception):
@@ -30,10 +45,10 @@ class DeployError(Exception):
     ``contract`` is what IAM staged for its release before it failed, if anything: its release may serve.
     """
 
-    def __init__(self, reason: str, contract: dict[str, Any] | None = None) -> None:
+    def __init__(self, reason: str, contract: Contract | None = None) -> None:
         """Refuse for ``reason``, after IAM staged ``contract`` if it did."""
         super().__init__(reason)
-        self.contract = contract or {}
+        self.contract = contract
 
 
 class Deployment(BaseModel):
@@ -48,7 +63,7 @@ class Deployment(BaseModel):
     commits: dict[str, str]  # each company repo's commit of main, by repo; none until they are fetched
     state: Literal["started", "serving", "failed"]  # started: in progress
     detail: str = ""  # of a failed one: why the service did not serve on it
-    contract: dict[str, Any] = {}  # the operations its release adds and removes, as IAM staged them
+    contract: Contract | None = None  # what its release changes, as IAM staged it; none if IAM staged none
 
 
 class MainTree(NamedTuple):
@@ -61,13 +76,13 @@ class MainTree(NamedTuple):
 class Outcome(NamedTuple):
     """What a hand-over ended in: the release its service runs, whether it serves, and what it changed.
 
-    ``contract`` is the operations the release added and removed, as IAM staged them; none if none.
+    ``contract`` is what the release changes, as IAM staged it.
     """
 
     release: str | None
     serving: bool
     detail: str
-    contract: dict[str, Any]
+    contract: Contract
 
 
 class Credentials(Protocol):
@@ -196,7 +211,7 @@ class Deployments:
         """Fetch ``started``'s release and hand it over, unless ``given_up`` by then; ``end`` takes how."""
         history, release = self._history[started.service], f"{DEPLOY}-{started.number}"
         commits: dict[str, str] = {}
-        contract: dict[str, Any] = {}
+        contract: Contract | None = None
         try:
             trees = self._source.fetch(credential)
             commits = {repo: tree.commit for repo, tree in trees.items()}
