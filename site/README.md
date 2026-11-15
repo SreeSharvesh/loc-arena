@@ -15,5 +15,5 @@ Plus `style.css` (shared, light and dark readable, phone friendly) and inline SV
 
 ## How it is served
 
-Plain static HTML, no build step. Point GitHub Pages at this folder: in the repository settings, choose the branch
-and the site folder, and Pages serves these files as-is.
+Plain static HTML, no build step. GitHub Pages serves a branch from its root or its `docs` folder, so publish this
+folder with a GitHub Actions workflow, or make it the root of the published branch.
