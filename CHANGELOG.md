@@ -19,6 +19,13 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [369] - 2026-11-15: Sessions get a restarted service's tools back
+### Added
+- The run writes `tools_lacked.jsonl` after play, each tool an agent's session was not offered with the agent and the time, and warns when it holds any ([docs](docs/pi-harness.md#when-a-target-restarts)).
+### Fixed
+- The tools gateway has every agent's session list its tools again once a deployment ends and every tool is offered, so no session keeps missing a service's tools ([docs](docs/pi-harness.md#when-a-target-restarts)).
+- IAM also answers each authorization's verdict in headers, which the tools gateway reads, so it no longer holds back every response of its route until it ends ([docs](docs/iam-service/spec.md)).
+
 ## [365] - 2026-11-15: A refused release names the manifest it was checked against
 
 ### Fixed
