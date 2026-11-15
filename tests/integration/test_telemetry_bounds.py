@@ -25,11 +25,18 @@ from loc_arena.telemetry_stack import COLLECTOR_SERVICE, STORE_DATA, find_store
 
 from tests.integration._docker_support import image_exists
 from tests.integration.test_deploy_stack import AUTHOR, CONFIG, RUN, Stack
-from tests.integration.test_telemetry_stack import SEND_RECORD, query, read_passwords, read_rows
+from tests.integration.test_telemetry_stack import (
+    SEND_RECORD,
+    query,
+    read_passwords,
+    read_rows,
+    wait_for,
+)
 
 STORE = find_store(CONFIG)
 DISK_MIB = 16  # small enough to fill in seconds
 RECORD_BYTES = 1 << 20  # each record's body
+REFUSED = "log file allocation failed: fallocate"  # what the store logs of a write its full disk refused
 SENT = 40  # records sent at the full store: more than its disk holds
 # The shared sender, with a body ``x<n>`` of ``n`` random hexadecimal digits made in the sandbox, which no
 # compression shrinks.
@@ -49,7 +56,6 @@ body = {"resourceSpans": [{"resource": resource, "scopeSpans": [{"spans": [span]
 request = urllib.request.Request(sys.argv[1], json.dumps(body).encode(), {"content-type": "application/json"})
 urllib.request.urlopen(request, timeout=10)
 """
-ARRIVAL_SECONDS = 20  # how long a record may take from the Collector to the store
 
 pytestmark = pytest.mark.skipif(
     not image_exists(CONFIG.settings.stack.image) or STORE is None,
@@ -104,6 +110,11 @@ def send_span(stack: Stack) -> None:
     stack.run("exec", "-T", sandbox_service(AUTHOR), "python", "-c", SEND_SPAN, collector)
 
 
+def has_output(answer: dict[str, Any]) -> bool:
+    """Whether the store answered a statement with a result, not an error."""
+    return "output" in answer
+
+
 def ask(stack: Stack, sql: str) -> dict[str, Any]:
     """What the store answers its reader for ``sql``."""
     return query(stack, "reader", read_passwords(stack.play)["reader"], sql)
@@ -114,22 +125,22 @@ def test_the_store_keeps_records_for_the_retention_and_on_a_full_disk_the_collec
     stack: Stack,
 ) -> None:
     assert STORE is not None
+    store = STORE.name
     first = send(stack, "the first record")
-    deadline = time.monotonic() + ARRIVAL_SECONDS
-    while "output" not in ask(stack, "SHOW CREATE TABLE opentelemetry_logs"):
-        assert time.monotonic() < deadline, "the first record did not reach the store"
-        time.sleep(1)
-    created = json.dumps(ask(stack, "SHOW CREATE TABLE opentelemetry_logs"))
+    created = json.dumps(
+        wait_for(lambda: ask(stack, "SHOW CREATE TABLE opentelemetry_logs"), has_output),
+    )
     send_span(stack)
-    deadline = time.monotonic() + ARRIVAL_SECONDS
-    while "output" not in ask(stack, "SHOW CREATE TABLE opentelemetry_traces"):
-        assert time.monotonic() < deadline, "the span did not reach the store"
-        time.sleep(1)
-    traced = json.dumps(ask(stack, "SHOW CREATE TABLE opentelemetry_traces"))
+    traced = json.dumps(
+        wait_for(lambda: ask(stack, "SHOW CREATE TABLE opentelemetry_traces"), has_output),
+    )
     answers = [send(stack, f"x{RECORD_BYTES}") for _ in range(SENT)]
-    time.sleep(ARRIVAL_SECONDS)  # every batch the Collector took has been sent, or dropped
+    # The store has refused a write for want of disk: what follows reads a full store.
+    logged = wait_for(
+        lambda: stack.run("logs", "--no-color", store),
+        lambda text: REFUSED in text,
+    )
     size, used = stack.run("exec", "-T", STORE.name, "df", "--output=size,used", STORE_DATA).split()[-2:]
-    logged = stack.run("logs", "--no-color", STORE.name)
 
     assert first == "200"
     assert "ttl = '2h'" in created
@@ -137,7 +148,7 @@ def test_the_store_keeps_records_for_the_retention_and_on_a_full_disk_the_collec
     assert set(answers) == {"200"}  # the Collector answers whatever the store took
     assert int(size) <= DISK_MIB * 1024  # the store's disk, in KiB
     assert int(used) >= int(size) * 9 // 10  # filled
-    assert "log file allocation failed: fallocate" in logged  # the store refused writes for want of disk
+    assert REFUSED in logged
     kept = read_rows(ask(stack, "SELECT count(*) AS kept FROM opentelemetry_logs"))[0]["kept"]
     assert 1 <= kept < 1 + SENT  # the store answers, and kept what its disk held
 
