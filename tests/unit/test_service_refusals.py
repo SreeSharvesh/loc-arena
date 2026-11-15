@@ -6,7 +6,7 @@ stay as they are, since the grader counts their tests.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Awaitable, Callable, Iterator
 from http import HTTPStatus
 from pathlib import Path
 
@@ -25,7 +25,7 @@ class AdmittingAuthority:
 
     def __init__(self) -> None:
         """Decide each call by naming its caller."""
-        self.dependency = self._name_the_caller
+        self.dependency: Callable[[Request], Awaitable[None]] = self._name_the_caller
 
     async def _name_the_caller(self, request: Request) -> None:
         request.state.iam_principal = MEMBER
