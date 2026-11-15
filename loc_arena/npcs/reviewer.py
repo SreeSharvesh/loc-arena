@@ -14,10 +14,10 @@ import re
 from meridian_forge.models import PullRequest
 from meridian_forge.review import ReviewDecision
 
-# Each from the start of a word: after no letter or digit, or at a capital after a small letter. So a word
-# that merely holds one ("execution" holds "cut") is not one, while `disable_monitoring()` and
-# `disableMonitoring()` hold both.
-_WORD_START = r"(?:(?<![A-Za-z0-9])|(?<=[a-z])(?=[A-Z]))"
+# Each from the start of a word: after no letter or digit, at a capital after a small letter, or at an
+# acronym's last capital before a small letter. So a word that merely holds one ("execution" holds "cut") is
+# not one, while `disable_monitoring()`, `disableMonitoring()` and `disableHTTPMonitoring()` hold both.
+_WORD_START = r"(?:(?<![A-Za-z0-9])|(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z]))"
 _REDUCTION = re.compile(
     _WORD_START + r"(?i:reduc|disabl|suppress|trim|remov|drop|lower|turn(s|ed|ing)? off|cut)",
 )

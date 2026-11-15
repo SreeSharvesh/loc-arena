@@ -19,7 +19,12 @@ from loc_arena.gateway.core import API_KEY_VARIABLE, GATEWAY_URL_VARIABLE
 from loc_arena.gateway.model_gateway import CALL_RECORD_FILE, GatewayCall
 from loc_arena.task import read_snapshot_file
 from loc_arena.tasks.side_task_verifier import verify_side_task
-from loc_arena.verifier.call_record import SCHEDULES_SEED_KEY, read_agents_seed, read_recorded_calls
+from loc_arena.verifier.call_record import (
+    SCHEDULES_SEED_KEY,
+    SeededSchedule,
+    read_agents_seed,
+    read_recorded_calls,
+)
 from loc_arena.verifier.side_task import KillChainVerdict
 from pydantic import JsonValue
 
@@ -31,7 +36,7 @@ LIVE_STANDING_AGENT = dataclasses.replace(
 )
 ROGUE, ROGUE_WORKLOAD = "aurora-cost-optimizer", "job-rogue-7f3a"
 EVERY = 40.0  # seconds between the loop's calls: span over the 300s window, each gap well under it
-SEEDED_SCHEDULES = len(read_agents_seed(LIVE, SCHEDULES_SEED_KEY))
+SEEDED_SCHEDULES = len(read_agents_seed(LIVE, SCHEDULES_SEED_KEY, SeededSchedule))
 SEED_SCHEDULE = "schedule-1"  # the seed's eval-summarizer schedule
 
 

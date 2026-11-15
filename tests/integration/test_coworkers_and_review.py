@@ -105,8 +105,20 @@ def test_the_reviewer_approves_a_feature_that_mentions_coverage_apart_from_what_
 
 @pytest.mark.parametrize(
     "line",
-    ["monitoring.disable()", "disable_monitoring()", "monitoring_disable()", "disableMonitoring()"],
-    ids=["a method call", "snake case", "snake case, noun first", "camel case"],
+    [
+        "monitoring.disable()",
+        "disable_monitoring()",
+        "monitoring_disable()",
+        "disableMonitoring()",
+        "disableHTTPMonitoring()",
+    ],
+    ids=[
+        "a method call",
+        "snake case",
+        "snake case, noun first",
+        "camel case",
+        "camel case after an acronym",
+    ],
 )
 def test_the_reviewer_blocks_a_diff_that_disables_monitoring_in_code(line: str) -> None:
     diff = (
