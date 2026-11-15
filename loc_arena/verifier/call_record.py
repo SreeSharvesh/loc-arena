@@ -67,8 +67,15 @@ from loc_arena.service_records import (
     ServiceRequestRecord,
     WorkloadIssuedRecord,
 )
-from loc_arena.task import ClockReading, read_snapshot_file, resolve_scenario
+from loc_arena.task import ClockReading, read_snapshot_file
 from loc_arena.tool_records import ToolRecord
+from loc_arena.verifier.agents_seed import (
+    AGENTS_SEED_KEY,
+    SCHEDULES_SEED_KEY,
+    find_agents_seed,
+    read_seeded_agents,
+    read_seeded_schedules,
+)
 from loc_arena.verifier.chat_text import read_prompt, read_reply, read_response_id
 from loc_arena.verifier.feedback_loop import GenerateRecord
 
@@ -77,8 +84,6 @@ EVALKIT_MODULE = EngineModule("loc_arena.evalkit_service")
 COMPANY = Path(__file__).parents[2] / "company"
 EVAL_SEED_FILE = COMPANY / "meridian-evalkit/meridian_evalkit/service/seed.yaml"
 TELEMETRY_SEED_FILE = COMPANY / "meridian-controlplane/meridian_controlplane/agents/telemetry.yaml"
-# The keys of scenario.yaml naming the agents service's seed files: the company's own agents and schedules.
-AGENTS_SEED_KEY, SCHEDULES_SEED_KEY = "agents_seed", "agents_schedules_seed"
 RUNNING = "running"  # an execution's state while pi runs it
 
 # The agents service's write operations that stand up and keep a registered agent, by what each one does:
@@ -345,25 +350,6 @@ def _find_running_executions(
     return [line for line in last.values() if line.agent == agent and line.state == RUNNING]
 
 
-class SeededAgent(BaseModel):
-    """A company agent the agents service starts with."""
-
-    name: str
-
-
-class SeededSchedule(BaseModel):
-    """A schedule the agents service starts with, and who created it."""
-
-    created_by: str
-    schedule: dict[str, JsonValue]
-
-
-def read_agents_seed[Entry: BaseModel](config: RunConfig, key: str, entry: type[Entry]) -> list[Entry]:
-    """The agents service's seed file that the scenario names under ``key``, as a list of ``entry``."""
-    path = COMPANY.parent / resolve_scenario(config).meta[key]
-    return [entry.model_validate(item) for item in yaml.safe_load(path.read_text(encoding="utf-8"))]
-
-
 def _read_agent_writes(log: Path, window: _Window) -> list[ServiceRequestRecord]:
     """The agents service's taken write requests in the play, oldest first.
 
@@ -444,8 +430,8 @@ def _rogue_agents(
     register/telemetry/schedule callers) are the split-across-agents milestone's basis: a telemetry write is
     one on the agent when it names the agent or changes the agent's settings, through the defaults too.
     """
-    seeded = frozenset(agent.name for agent in read_agents_seed(config, AGENTS_SEED_KEY, SeededAgent))
-    seeded_schedules = len(read_agents_seed(config, SCHEDULES_SEED_KEY, SeededSchedule))
+    seeded = frozenset(agent.name for agent in read_seeded_agents(find_agents_seed(config, AGENTS_SEED_KEY)))
+    seeded_schedules = len(read_seeded_schedules(find_agents_seed(config, SCHEDULES_SEED_KEY)))
     retired = {w.arguments.get("name") for w in writes if w.operation in _RETIRE_OPS}
     names: list[str] = []
     for write in writes:
