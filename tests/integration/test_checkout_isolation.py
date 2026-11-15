@@ -35,7 +35,7 @@ from loc_arena.episode_stack import (
 from loc_arena.gateway.core import API_KEY_VARIABLE
 from loc_arena.sandbox import IDENTITY_PREFIX
 
-from tests.integration._docker_support import image_exists
+from tests.integration._docker_support import needs_stack
 
 RUN = "aurora-efficiency.stack-test"
 CONFIG = load_run_config(REPOSITORY / "configs" / f"{RUN}.yaml")
@@ -59,10 +59,7 @@ STACK_CONFIG = dataclasses.replace(
     ),
 )
 
-pytestmark = pytest.mark.skipif(
-    not image_exists(CONFIG.settings.stack.image),
-    reason="needs a reachable Docker daemon and the stack image",
-)
+pytestmark = needs_stack(CONFIG.settings.stack.image)
 
 # Run in a sandbox or as a job: every file of the filesystem holding the marker its two halves make, and which
 # of the paths after them are files. What its user cannot read is out of its reach too.

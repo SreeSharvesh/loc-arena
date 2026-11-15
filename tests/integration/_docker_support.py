@@ -8,6 +8,7 @@ import subprocess
 import time
 from collections.abc import Mapping
 
+import pytest
 from loc_arena.config import RunConfig
 from loc_arena.episode_stack import CONFIGS_DIRECTORY
 from loc_arena.stack_play import EPISODE_SERVICE
@@ -16,6 +17,7 @@ DOCKER_CHECK_TIMEOUT_SECONDS = 10
 WORKSPACE_START_SECONDS = 60
 LOG_TAIL_LINES = 200  # of each log a failure's report holds
 LOG_READ_SECONDS = 30
+PROBE_OUTPUT_CHARACTERS = 300  # of each health probe's output a failure's report holds
 # Defines ``serve_agents_workspace(config, code, write)`` in the episode's container: it serves the workspace
 # service on ``code`` as a played episode does, recording with ``write``, while its result is held. The tools
 # gateway puts that service on its route beside the live services', so it answers no call without it.
@@ -97,6 +99,69 @@ def read_logs(compose: list[str], environment: Mapping[str, str], services: list
         except (OSError, subprocess.TimeoutExpired) as error:
             reports.append(f"\nlog of {service} not read: {error}")
     return "".join(reports)
+
+
+def read_unhealthy(compose: list[str], environment: Mapping[str, str]) -> str:
+    """For a failure's report: each container not running and healthy, its health checks and its log.
+
+    It never raises, so it hides no failure.
+    """
+    listing = ["docker", *compose, "ps", "--all", "--format", "json"]
+    try:
+        listed = subprocess.run(
+            listing,
+            capture_output=True,
+            text=True,
+            env=environment,
+            timeout=LOG_READ_SECONDS,
+        )
+        # One object per line, or one array: older Compose prints the second.
+        parsed = [json.loads(line) for line in listed.stdout.splitlines()]
+    except (OSError, subprocess.TimeoutExpired, ValueError) as error:
+        return f"\nthe containers were not listed: {error!r}"
+    if listed.returncode:
+        return f"\nthe containers were not listed: {listed.stderr.strip()}"
+    containers = [item for entry in parsed for item in (entry if isinstance(entry, list) else [entry])]
+    well = {("running", ""), ("running", "healthy")}
+    unhealthy = [entry for entry in containers if (entry.get("State"), entry.get("Health")) not in well]
+    reports = [_report_container(compose, environment, container) for container in unhealthy]
+    return "".join(reports) if containers else "\nno container was listed"
+
+
+def _report_container(
+    compose: list[str],
+    environment: Mapping[str, str],
+    container: dict[str, str],
+) -> str:
+    """One container's state, start, every health probe and the end of its log; or why it was not read."""
+    try:
+        inspected = subprocess.run(
+            ["docker", "inspect", "--format", "{{json .State}}", container["Name"]],
+            capture_output=True,
+            text=True,
+            timeout=LOG_READ_SECONDS,
+        )
+        state = json.loads(inspected.stdout)
+        health = state.get("Health") or {}
+        probes = "".join(
+            f"\n  probe {probe['Start']} to {probe['End']}: exit {probe['ExitCode']} "
+            f"{probe['Output'][:PROBE_OUTPUT_CHARACTERS]!r}"
+            for probe in health.get("Log", [])
+        )
+        report = (
+            f"\n{container['Service']}: {state['Status']}, started {state['StartedAt']}, "
+            f"health {health.get('Status', 'none')} after {health.get('FailingStreak', 0)} failed probes"
+            f"{probes}"
+        )
+    except (OSError, subprocess.TimeoutExpired, ValueError, KeyError, TypeError) as error:
+        report = f"\n{container.get('Name', container)} not read: {error!r}"
+    return report + read_logs(compose, environment, [container.get("Service", "")])
+
+
+def needs_stack(*images: str) -> list[pytest.MarkDecorator]:
+    """A Docker test module's marks: it runs in a stack slot, and skips without Docker or ``images``."""
+    missing = not all(map(image_exists, images))
+    return [pytest.mark.stack, pytest.mark.skipif(missing, reason=f"needs Docker and {', '.join(images)}")]
 
 
 def image_exists(image: str) -> bool:

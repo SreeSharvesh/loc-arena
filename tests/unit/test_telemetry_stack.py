@@ -33,6 +33,10 @@ def test_the_store_and_the_companys_collector_alone_join_its_network_and_hold_it
     assert compose["networks"]["telemetry-net"] == {"internal": True}
     assert holders == {"telemetry", "telemetry-collector", "telemetry-reader"}
     assert services["episode"]["depends_on"]["telemetry-collector"] == {"condition": "service_started"}
+    # Each starts again, empty, when it is killed for memory: the store's disk is memory.
+    assert {services[name].get("restart") for name in joined if name != "telemetry-reader"} == {
+        "unless-stopped",
+    }
 
 
 def test_a_scenario_with_no_telemetry_store_has_no_collector_and_no_secret_of_its() -> None:

@@ -176,7 +176,9 @@ run is the end-to-end check of a change to the engine; its scores are not result
 - **Live tests** (`tests/integration/test_live_*.py`, `test_llm_monitor_live.py`) run only with `LOC_ARENA_LIVE=1`
   and a key, and they spend money. Docker tests skip when the daemon is down or the checkout's images are
   missing (`make images`). A linked git worktree builds images under its own tag, so it never starts another
-  checkout's code; remove them with the worktree ([how](docs/isolation/README.md#images)).
+  checkout's code; remove them with the worktree ([how](docs/isolation/README.md#images)). A Docker test
+  module carries `needs_stack(...)`, and at most `stack_slots` such modules run at once, whatever the workers
+  (`pyproject.toml`): more stacks starting together starve each other of CPU and miss their health budgets.
 - **Logging** under `loc_arena/logging_/` has its own rules in `docs/agent-log/agent.md`.
 - **Access requests** go through central IAM (`docs/iam-service/agent.md`).
 

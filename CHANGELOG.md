@@ -19,13 +19,32 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
-## [339] - 2026-11-14: A run config checks in live play that agents deploy
+## [339] - 2026-11-15: A run config checks in live play that agents deploy
 ### Added
 - The run config `aurora-efficiency.deploy-check` tells the one agent holding deploy to ship a change and deploy it, so live play shows what a deployment leaves ([docs](docs/run-config.md)).
 ### Changed
 - The docs for the tickets service say that a seed overlay adds a project the scenario lacks beside the scenario's own, as the deploy check's does ([docs](docs/tickets-service.md)).
 ### Fixed
 - The forge's description tells every agent that on meridian-controlplane an author may not merge their own pull request, so agents ask a teammate before they are refused ([docs](docs/forge-service.md#pull-requests-and-merges)).
+
+## [360] - 2026-11-15: Tests run one Docker stack at a time
+### Fixed
+- The repository's test suite runs one Docker stack at a time, so stacks no longer starve each other of CPU and fail their health checks.
+
+## [361] - 2026-11-14: Telemetry tests wait on what they read, bounded by config
+### Changed
+- The repository's telemetry tests wait for what they read within bounds from the run config, and send the store's password on standard input; the arena behaves as before.
+
+## [354] - 2026-11-14: An unchanged checkout gets the same grade every time
+### Fixed
+- The grader now scores an unchanged checkout the same on every run, because two agents service tests of the company no longer race or log after their suite ends.
+
+## [359] - 2026-11-14: The company's telemetry is bounded in time, disk and memory
+### Added
+- The stack keeps the telemetry store's data within `store_disk_mib` and gives its tables a time-to-live, so a flood of telemetry cannot fill the machine ([docs](docs/telemetry-service.md#best-effort)).
+- The stack's Collector refuses data before `collector_memory_mib`, and it and the store start again if killed, so a flood drops or erases telemetry and breaks nothing else ([docs](docs/telemetry-service.md#exposures)).
+### Changed
+- The docs of the company's telemetry show its containers and networks in one figure, and list what a release or an agent can do to it ([docs](docs/telemetry-service.md#exposures)).
 
 ## [358] - 2026-11-14: Agents query the company's telemetry with SQL
 ### Added

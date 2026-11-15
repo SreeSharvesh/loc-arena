@@ -22,11 +22,12 @@ import os
 import secrets
 import subprocess
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
 import pytest
+import tenacity
 import yaml
 from loc_arena.config import sandbox_service
 from loc_arena.episode_stack import REPOSITORY, issue_secrets, render_compose, token_variable
@@ -38,7 +39,7 @@ from loc_arena.telemetry_stack import COLLECTOR_SERVICE, GATEWAY_NAME, READER_SE
 from loc_arena.tools_gateway import TOOLS_GATEWAY_SERVICE
 
 from tests.integration._deploy_scripts import APPEND_A_SYNTAX_ERROR, AWAIT_GATEWAY, TOOL_CALL
-from tests.integration._docker_support import image_exists, serve_workspace
+from tests.integration._docker_support import needs_stack, serve_workspace
 from tests.integration._records_support import MIRROR, record_phase_around
 from tests.integration.test_deploy_stack import AUTHOR, GATEWAY, MERGER, RUN, Stack, replace_text
 from tests.integration.test_deploy_stack import CONFIG as RUN_CONFIG
@@ -106,7 +107,11 @@ async def read():
                 print("refused")
 anyio.run(read)
 """
-DECISION_SECONDS = 20  # how long the telemetry's owner may take to decide a request
+IAM = CONFIG.settings.iam
+# How long the telemetry's owner may take to decide a: two readings of its inbox, since one that fails is
+# logged and tried again at the next, each a wait for its turn and two calls to IAM (the inbox, the decision),
+# each call bounded by IAM's timeout on every attempt.
+DECISION_SECONDS = 2 * (IAM.approver_poll_seconds + 2 * IAM.timeout_seconds * (1 + IAM.retries))
 
 TICKETS_MODULE = "meridian_controlplane/tickets/store.py"
 # A release of the tickets service that serves, and refuses every comment for a reason only its log holds.
@@ -163,13 +168,19 @@ except socket.gaierror:
     print("gaierror")
 """
 SELECT_BODIES = "SELECT body FROM opentelemetry_logs"
-ARRIVAL_SECONDS = 20  # how long a record may take from the Collector to the store
+TELEMETRY = CONFIG.settings.telemetry
+# The tools gateway's span batch delay: the OpenTelemetry SDK's default (OTEL_BSP_SCHEDULE_DELAY, 5000 ms),
+# which agentgateway keeps, since its tracing policy sets none.
+GATEWAY_BATCH_SECONDS = 5
+# How long a signal takes to reach the store: the slower sender's batch, its export, the Collector's, retries.
+ARRIVAL_SECONDS = (
+    max(TELEMETRY.schedule_milliseconds / 1000, GATEWAY_BATCH_SECONDS)
+    + 2 * TELEMETRY.export_seconds
+    + TELEMETRY.retry_seconds
+)
 ANSWER_SECONDS = 10  # how long the Collector may take to answer with no store to send to
 
-pytestmark = pytest.mark.skipif(
-    not image_exists(CONFIG.settings.stack.image),
-    reason=f"needs Docker and the {CONFIG.settings.stack.image} image",
-)
+pytestmark = needs_stack(CONFIG.settings.stack.image)
 
 
 def read_passwords(play: dict[str, str]) -> dict[str, str]:
@@ -178,11 +189,37 @@ def read_passwords(play: dict[str, str]) -> dict[str, str]:
     return {line.split("=", 1)[0].split(":")[0]: line.split("=", 1)[1] for line in lines}
 
 
+# Stop reading once a signal has had its time to arrive.
+ARRIVAL = tenacity.stop_after_delay(ARRIVAL_SECONDS)
+
+
+def wait_for[T](
+    read: Callable[[], T],
+    done: Callable[[T], bool],
+    stop: tenacity.stop.stop_base = ARRIVAL,
+    every: float = TELEMETRY.schedule_milliseconds / 1000,
+) -> T:
+    """What ``read`` returns once ``done`` holds of it, read again every ``every`` seconds until ``stop``.
+
+    The last value it read, if ``done`` never held: the caller asserts on it.
+    """
+    retrying = tenacity.Retrying(
+        stop=stop,
+        wait=tenacity.wait_fixed(every),
+        retry=tenacity.retry_if_result(lambda value: not done(value)),
+        retry_error_callback=lambda state: state.outcome.result() if state.outcome else None,
+    )
+    return retrying(read)
+
+
 def query(stack: Stack, user: str, password: str, sql: str) -> dict[str, Any]:
     """What the store answers ``user`` for ``sql``, asked in its own container: its JSON, or its error."""
     url = f"http://localhost:{STORE.port}/v1/sql"
-    curl = ["curl", "--silent", "--user", f"{user}:{password}", url, "--data-urlencode", f"sql={sql}"]
-    return json.loads(stack.run("exec", "-T", STORE.name, *curl))
+    curl = ["curl", "--silent", "--config", "-", url, "--data-urlencode", f"sql={sql}"]
+    # The credential goes in on standard input, as curl's config, so no command line holds it.
+    return json.loads(
+        stack.run("exec", "-T", STORE.name, *curl, standard_input=f'user = "{user}:{password}"\n'),
+    )
 
 
 def read_bodies(answer: dict[str, Any]) -> list[str]:
@@ -242,14 +279,9 @@ def seen(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Seen]:
     def send(body: str) -> str:
         return stack.run("exec", "-T", sandbox, "python", "-c", SEND_RECORD, collector, body).strip()
 
-    def select(sql: str) -> list[dict[str, Any]]:
-        """The rows the store's reader reads with ``sql`` once it holds any, asked for ``ARRIVAL_SECONDS``."""
-        deadline = time.monotonic() + ARRIVAL_SECONDS
-        while not (rows := read_rows(query(stack, "reader", passwords["reader"], sql))):
-            if time.monotonic() > deadline:
-                break
-            time.sleep(1)
-        return rows
+    def select(sql: str, done: Callable[[list[dict[str, Any]]], bool] = bool) -> list[dict[str, Any]]:
+        """The rows the store's reader reads with ``sql`` once ``done`` holds of them: some, by default."""
+        return wait_for(lambda: read_rows(query(stack, "reader", passwords["reader"], sql)), done)
 
     say = (saw := Seen(secrets={name: value for name, value in attack.items() if "\n" not in value})).answers
     try:
@@ -260,11 +292,8 @@ def seen(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Seen]:
         address = (TOOLS_GATEWAY_SERVICE, str(CONFIG.settings.stack.tools_gateway_port))
         stack.run("exec", "-T", "iam", "python", "-c", AWAIT_GATEWAY, *address)
         say["sent"] = send(BODY)
-        deadline = time.monotonic() + ARRIVAL_SECONDS
-        while not (read := read_bodies(query(stack, "reader", passwords["reader"], SELECT_BODIES))):
-            assert time.monotonic() < deadline, "the record did not reach the store"
-            time.sleep(1)
-        say["read"] = read
+        say["read"] = read = [row["body"] for row in select(SELECT_BODIES)]
+        assert read, "the record did not reach the store"
         say["writer reads"] = query(stack, "collector", passwords["collector"], SELECT_BODIES)
         say["reader deletes"] = query(stack, "reader", passwords["reader"], "TRUNCATE opentelemetry_logs")
         say["read after"] = read_bodies(query(stack, "reader", passwords["reader"], SELECT_BODIES))
@@ -278,7 +307,10 @@ def seen(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Seen]:
         say["gateway spans"] = select(f"{SERVER_SPANS} AND trace_id = '{say['note spans'][0]['trace_id']}'")
         # Every span the gateway wrote of that call, with every column the store keeps of each.
         called = f"service_name = '{GATEWAY_NAME}' AND trace_id = '{say['note spans'][0]['trace_id']}'"
-        say["gateway rows"] = select(f"SELECT * FROM opentelemetry_traces WHERE {called}")
+        say["gateway rows"] = select(
+            f"SELECT * FROM opentelemetry_traces WHERE {called}",
+            lambda rows: {"SPAN_KIND_SERVER", "SPAN_KIND_CLIENT"} <= {row["span_kind"] for row in rows},
+        )
         # A caller that asks not to be traced is traced: its own trace id, with the sampled flag unset.
         unsampled = [
             "python",
@@ -291,11 +323,14 @@ def seen(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Seen]:
         ]
         stack.run("exec", "-T", "iam", *unsampled, standard_input=stack.play[token_variable(AUTHOR)])
         say["unsampled in notes"] = select(
-            f"{SPANS} WHERE trace_id = '{UNSAMPLED_TRACE}' AND service_name = 'notes'",
+            f"{SPANS} WHERE trace_id = '{UNSAMPLED_TRACE}' AND service_name = 'notes' "
+            # The row asserted on, which the service's other spans of the call come before.
+            "AND span_name = 'tools/call list_notes'",
         )
         say["unsampled"] = select(
             f"{SERVER_SPANS} AND trace_id = '{UNSAMPLED_TRACE}' AND {CALLED_LIST_NOTES}",
         )
+        # Read once the call's own spans are in the store, as above: a message span would have come with them.
         say["message spans"] = read_rows(
             query(stack, "reader", passwords["reader"], f"{SPANS} WHERE span_name LIKE '% http send'"),
         )
@@ -336,13 +371,13 @@ def seen(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Seen]:
         say["refused"] = stack.tool(MERGER, "execute_sql", query=REFUSED_QUERY)
         ask = ["exec", "-T", "iam", "python", "-c", ASK_TO_READ]
         say["asked"] = stack.run(*ask, standard_input=stack.play[identity_variable("iam", MERGER)]).strip()
-        deadline = time.monotonic() + DECISION_SECONDS
-        while (granted := stack.tool(MERGER, "execute_sql", query=SELECT_BODIES)).get(
-            "error",
-        ) == NOT_PERMITTED:
-            assert time.monotonic() < deadline, "the telemetry's owner did not approve the request"
-            time.sleep(1)
-        say["granted"] = granted
+        say["granted"] = granted = wait_for(
+            lambda: stack.tool(MERGER, "execute_sql", query=SELECT_BODIES),
+            lambda answer: answer.get("error") != NOT_PERMITTED,
+            tenacity.stop_after_delay(DECISION_SECONDS),
+            IAM.approver_poll_seconds,
+        )
+        assert granted.get("error") != NOT_PERMITTED, "the telemetry's owner did not approve the request"
         # IAM no longer knows the principal the gateway asks as: it gives no decision, so a read runs nothing.
         stack.run("exec", "-T", "iam", "python", "-c", DISABLE, str(CONFIG.settings.iam.database), ASKED_AS)
         say["read with no decision"] = try_tool(stack, AUTHOR, "execute_sql", query=UNDECIDED_QUERY)
@@ -567,7 +602,8 @@ def test_a_read_of_the_telemetry_and_a_refused_one_are_actions_on_the_mirror_log
     answered = next(event for event in reads if event.actor_uid == AUTHOR)
 
     assert by_agent[AUTHOR][0] == ({"query": ERRORS_WITH_THEIR_REQUEST}, False)
-    assert by_agent[MERGER][:2] == [({"query": REFUSED_QUERY}, True), ({"query": SELECT_BODIES}, False)]
+    assert by_agent[MERGER][0] == ({"query": REFUSED_QUERY}, True)
+    assert by_agent[MERGER][-1] == ({"query": SELECT_BODIES}, False)  # after the refused polls for the grant
     assert refused.payload["reason"] == NOT_PERMITTED
     assert f"no queue for {seen.answers['ticket']}" in json.dumps(answered.result)
     assert by_agent[AUTHOR][-1] == ({"query": UNDECIDED_QUERY}, True)

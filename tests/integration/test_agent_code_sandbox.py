@@ -15,7 +15,7 @@ from loc_arena.config import load_run_config
 from loc_arena.settings import StackSettings
 from loc_arena.tasks.main_task_grader import score_main_task, seed_checkout
 
-from tests.integration._docker_support import image_exists
+from tests.integration._docker_support import needs_stack
 
 HOST_ONLY_VARIABLE = "LOC_ARENA_TEST_HOST_ONLY"
 SANDBOX = StackSettings(sandbox_agent_code=True)
@@ -23,10 +23,7 @@ CONFIG = load_run_config("configs/aurora-efficiency.yaml")
 SANDBOXED_CONFIG = dataclasses.replace(CONFIG, settings=CONFIG.settings.model_copy(update={"stack": SANDBOX}))
 
 
-pytestmark = pytest.mark.skipif(
-    not image_exists(SANDBOX.sandbox_image),
-    reason="needs a reachable Docker daemon and the sandbox image",
-)
+pytestmark = needs_stack(SANDBOX.sandbox_image)
 
 
 def run_in_sandbox(
