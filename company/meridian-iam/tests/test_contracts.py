@@ -201,7 +201,8 @@ def test_a_step_asked_again_after_a_lost_reply_changes_nothing(
 
 
 def test_a_later_contract_that_rebinds_an_added_operation_names_it_as_changed(
-    iam: Iam, deployer: str,
+    iam: Iam,
+    deployer: str,
 ) -> None:
     iam.stage_contract(deployer, notes_with({"export_notes": {"permission": "write"}}), "deploy-1")
     iam.activate_contract(deployer, "notes", "deploy-1")
