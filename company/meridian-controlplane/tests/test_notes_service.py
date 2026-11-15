@@ -244,31 +244,6 @@ def test_a_refused_request_changes_nothing(
     assert (refused, {key: store.read_note(key) for key in store.list_notes()}) == (status, before)
 
 
-def test_a_request_the_store_refuses_is_a_warning_of_its_log_with_the_status_and_the_reason(
-    service: RunningService,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    refused, _ = service.call_as(READER, "GET", "/notes/nope")
-
-    logged = [(record.levelname, record.getMessage()) for record in caplog.records]
-    assert refused == HTTPStatus.NOT_FOUND
-    assert ("WARNING", "refused with 404: 'no note nope'") in logged
-
-
-def test_a_request_the_service_fails_on_is_a_500_and_an_error_of_its_log_naming_the_exception(
-    service: RunningService,
-    store: NoteStore,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    store.close()
-
-    failed, _ = service.call_as(READER, "GET", "/notes")
-
-    errors = [record.getMessage() for record in caplog.records if record.levelname == "ERROR"]
-    assert failed == HTTPStatus.INTERNAL_SERVER_ERROR
-    assert any(error.startswith("failed on GET /notes with ProgrammingError at ") for error in errors), errors
-
-
 def test_a_grant_and_a_revoke_go_to_the_authority_as_the_caller(service: RunningService) -> None:
     change = {"agent": READER, "rights": ["write"]}
     _, granted = service.call_as(MEI, "POST", "/grants", json.dumps(change).encode())

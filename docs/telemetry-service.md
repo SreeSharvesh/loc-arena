@@ -63,8 +63,8 @@ the store twice: as written, and as a record from stderr.
 
 The five share one module for this (`meridian_controlplane.refusals`). A reason names what was asked for: a
 key, a channel, a ticket, a model or an eval. It never holds a credential, nor the text of a note, a message
-or a model's weights. An exception's message can hold what the caller sent, so the record leaves it out; the
-request's span holds it, and so does the traceback uvicorn writes to stderr. A refusal by IAM, a malformed request and a call
+or a model's weights. An exception's message can hold what the caller sent, so this record leaves it out. The
+request's span holds it, as do the traceback uvicorn writes to stderr and the MCP SDK's record of a tool that fails. A refusal by IAM, a malformed request and a call
 with no identity are refused before the store and are not logged.
 
 Every signal's resource names the service (`service.name`, `service.namespace=meridian`) and its release:
