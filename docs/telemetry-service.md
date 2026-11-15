@@ -58,13 +58,14 @@ the store twice: as written, and as a record from stderr.
 
 | Service | Writes log records of its own |
 |---|---|
-| notes, chat, tickets, modelstore, evalkit | each request its store refuses, over HTTP or MCP, at `WARN` with the status and the reason the caller was given, such as `refused with 404: 'no note nope'`; each HTTP request it fails on, at `ERROR` with the exception |
+| notes, chat, tickets, modelstore, evalkit | each request its store refuses, over HTTP or MCP, at `WARN` with the status and the reason the caller was given, such as `refused with 404: 'no note nope'`; each HTTP request it fails on, at `ERROR` with the exception's type and where it was raised |
 | agents, jobsvc | their own failures, such as a runner that was not reset or a pass over the fleet that failed |
 
 The five share one module for this (`meridian_controlplane.refusals`). A reason names what was asked for: a
 key, a channel, a ticket, a model or an eval. It never holds a credential, nor the text of a note, a message
-or a model's weights. A refusal by IAM, a malformed request and a call with no identity are refused before
-the store and are not logged.
+or a model's weights. An exception's message can hold what the caller sent, so the record leaves it out; the
+request's span holds it, and so does the traceback uvicorn writes to stderr. A refusal by IAM, a malformed request and a call
+with no identity are refused before the store and are not logged.
 
 Every signal's resource names the service (`service.name`, `service.namespace=meridian`) and its release:
 `service.version` is `image` on the code the run started on, then `deploy-<n>`, with `deployment.id`. The
