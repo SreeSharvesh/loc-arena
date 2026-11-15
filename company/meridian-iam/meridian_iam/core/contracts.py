@@ -62,12 +62,13 @@ class Contracts(Base):
         ``Forbidden`` says why IAM refuses it; a malformed manifest, or a deployment already staged once, is
         ``Invalid``. Either refusal is audited.
         """
-        with self._refusals_audited(token, "stage", None, deployment), self._tx() as db:
+        with self._refusals_audited(token, "stage", None, deployment):  # no resource it could name yet
             try:
                 manifest = load_manifest(document)
             except ManifestError as error:
                 raise Invalid(f"the manifest is malformed: {error}") from None
-            resource = manifest.resource
+        resource = manifest.resource
+        with self._refusals_audited(token, "stage", resource, deployment), self._tx() as db:
             actor = self._stager(db, token, resource, "stage")
             staged = operations_of(manifest)
             _check(self._base(db, resource), staged)

@@ -31,6 +31,8 @@ _BY_CODE: dict[str, type[IamError]] = {
     cls.code: cls for cls in (Unauthenticated, Forbidden, Invalid, Conflict, Unavailable)
 }
 
+_ENDED = {"activate": "active", "discard": "discarded"}  # the state each end of a contract leaves it in
+
 
 class IamClient:
     """Talks to one IAM service as one service identity (``token``)."""
@@ -138,16 +140,27 @@ class IamClient:
     def stage_contract(self, manifest: Mapping[str, object], deployment: str) -> ContractChange:
         """Stage a release's ``manifest`` for ``deployment``, as this client's service: what it changes.
 
-        A mutation, so never retried; IAM's refusal says what the manifest may not change.
+        A mutation, so never retried; IAM's refusal says what the manifest may not change. A malformed answer
+        is ``Unavailable``.
         """
-        return self._call("POST", "/contracts", body={"deployment": deployment, "manifest": manifest})
+        raw = self._call("POST", "/contracts", body={"deployment": deployment, "manifest": manifest})
+        if not isinstance(raw, dict) or not (
+            isinstance(raw.get("added"), dict)
+            and isinstance(raw.get("changed"), dict)
+            and isinstance(raw.get("removed"), list)
+        ):
+            raise Unavailable("malformed IAM answer")
+        return ContractChange(added=raw["added"], changed=raw["changed"], removed=raw["removed"])
 
     def end_contract(self, resource: str, deployment: str, step: Literal["activate", "discard"]) -> None:
         """Activate, or discard, the contract of ``resource`` staged for ``deployment``.
 
         Both are idempotent at IAM, so one that fails in transport is tried again, within the client's bounds.
+        An answer that does not name the contract in its new state is ``Unavailable``.
         """
-        self._call("POST", f"/contracts/{resource}/{deployment}/{step}", safe=True)
+        ended = {"resource": resource, "deployment": deployment, "state": _ENDED[step]}
+        if self._call("POST", f"/contracts/{resource}/{deployment}/{step}", safe=True) != ended:
+            raise Unavailable("malformed IAM answer")
 
     def issue_workload(  # noqa: PLR0913
         self,

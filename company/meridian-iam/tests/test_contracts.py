@@ -133,17 +133,18 @@ def test_an_operation_a_release_dropped_comes_back_as_the_image_had_it(iam: Iam,
 
 
 @pytest.mark.parametrize(
-    ("step", "reason"),
+    ("step", "resource", "reason"),
     [
-        ("stage", "dump is public"),
-        ("stage malformed", "the manifest is malformed"),
-        ("activate", "no contract of notes is staged for deploy-1"),
+        ("stage", "notes", "dump is public"),
+        ("stage malformed", None, "the manifest is malformed"),  # it names no resource IAM could read
+        ("activate", "notes", "no contract of notes is staged for deploy-1"),
     ],
 )
-def test_a_refused_step_is_an_audit_line_naming_who_asked_and_why(
+def test_a_refused_step_is_an_audit_line_naming_who_asked_on_what_and_why(
     iam: Iam,
     deployer: str,
     step: str,
+    resource: str | None,
     reason: str,
 ) -> None:
     refuse = {
@@ -156,8 +157,8 @@ def test_a_refused_step_is_an_audit_line_naming_who_asked_and_why(
         refuse()
 
     refused = [line for line in iam.audit_log() if line["kind"] == "contract_refused"]
-    assert [(line["actor"], line["step"], line["deployment"]) for line in refused] == [
-        ("deployer", step.split()[0], "deploy-1"),
+    assert [(line["actor"], line["step"], line["resource"], line["deployment"]) for line in refused] == [
+        ("deployer", step.split()[0], resource, "deploy-1"),
     ]
     assert reason in refused[0]["reason"]
 
