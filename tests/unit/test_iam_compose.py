@@ -79,6 +79,8 @@ def test_a_managed_service_holds_no_agent_identity_only_its_iam_credential_and_i
         assert service["depends_on"] == {
             "iam": {"condition": "service_healthy"},
             **{worker: {"condition": "service_healthy"} for worker in held},
+            # A deployed service is collected: it starts once the company's Collector has.
+            **({"telemetry-collector": {"condition": "service_started"}} if name in deployed else {}),
         }
         environment = service["environment"]
         assert environment["LOC_ARENA_IAM_URL"] == "http://iam:8000"

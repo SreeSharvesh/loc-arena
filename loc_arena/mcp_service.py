@@ -19,7 +19,7 @@ ALL_ADDRESSES = "0.0.0.0"  # noqa: S104 - agent-net is its only network
 # record to stderr, which a deployed service's supervisor exports again. Under OpenTelemetry the SDK keeps its
 # own handler on the root, so each record reaches the store once; without it, Python writes each warning to
 # stderr.
-LOGGING = {**uvicorn.config.LOGGING_CONFIG, "root": {"handlers": [], "level": "WARNING"}}
+LOGGING = {**uvicorn.config.LOGGING_CONFIG, "root": {"handlers": []}}  # the level stays the MCP server's
 
 
 def caller_from_token() -> str | None:
