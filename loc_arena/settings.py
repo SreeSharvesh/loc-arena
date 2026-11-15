@@ -348,6 +348,11 @@ class StackSettings(SettingsGroup):
         default=300.0,
         description="Seconds one MCP tool call through agentgateway may take before it is an error result.",
     )
+    tools_offer_seconds: PositiveFloat = Field(
+        default=60.0,
+        description="Seconds a play waits, before its sessions start, for the tools gateway to offer each "
+        "agent every tool its sandbox lists; play does not start while one is missing after them.",
+    )
     checkouts_directory: Path = Field(
         default=Path("/checkouts"),
         description="Where each agent's checkout volume is mounted, at <directory>/<agent id>, in the "

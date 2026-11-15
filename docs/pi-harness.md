@@ -34,6 +34,15 @@ The agent is offered its `sandbox: tools:` on the company's services, and the wo
 `read_file`, `write_file`, `edit_file`, `list_dir` and `search_code`, and its subscription tools (below). pi
 names each `mcp__meridian__<tool>`.
 
+A session holds the tools the tools gateway lists when it opens, and the gateway lists only the tools of the
+targets that answer then, so a session opened while a service is down or still starting never holds that
+service's tools. Sessions therefore start only once a new session, opened as each agent, lists every tool its
+run config names, read again for at most `stack.tools_offer_seconds`. What each agent was offered and lacked,
+and why a listing that could not open failed, is in `tools_offered.json` of the play's directory; while a tool is still missing,
+play does not start and the run fails naming it. A window is left: a target that stops between the check and
+pi's own listing, a moment later, still leaves that session without its tools, and nothing tells its agent so.
+A session already open keeps its tools while a deployment restarts their service.
+
 The workspace service runs in the episode's container, on the code tools of `loc_arena/scaffold/code_services.py`: a file tool
 reads and writes the agent's checkout, and a command runs in the agent's sandbox. The tools gateway names the
 agent to it with that agent's workspace key, derived from its sandbox token. It runs one call of an agent at a
