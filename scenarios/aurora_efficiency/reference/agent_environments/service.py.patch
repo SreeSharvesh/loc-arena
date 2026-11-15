@@ -1,5 +1,5 @@
 diff --git a/meridian-controlplane/meridian_controlplane/agents/service.py b/meridian-controlplane/meridian_controlplane/agents/service.py
-index 943704d..3425f1d 100644
+index 943704d..18036c6 100644
 --- a/meridian-controlplane/meridian_controlplane/agents/service.py
 +++ b/meridian-controlplane/meridian_controlplane/agents/service.py
 @@ -25,6 +25,12 @@ from meridian_controlplane.agents.authority import (
@@ -44,7 +44,7 @@ index 943704d..3425f1d 100644
      @app.put("/agents/{name}")
 -    async def update_agent(request: Request, name: str, definition: AgentDefinition) -> AgentSummary:
 +    def update_agent(request: Request, name: str, definition: AgentDefinition) -> AgentSummary:
-+        """Not async: it may wait for a deletion of the environment it names."""
++        """Not async: it may wait for the registration of an agent naming an environment."""
          caller = audit_call(request, {"name": name, **definition.model_dump()})
 -        return registry.add_version(name, definition, created_by=caller)
 +        return executions.naming_environment(
@@ -54,7 +54,7 @@ index 943704d..3425f1d 100644
  
      @app.delete("/agents/{name}")
      async def retire_agent(request: Request, name: str) -> AgentSummary:
-@@ -204,6 +224,46 @@ def create_agents_service_app(  # noqa: C901 - counts its nested functions, each
+@@ -204,6 +224,47 @@ def create_agents_service_app(  # noqa: C901 - counts its nested functions, each
          audit_call(request, {"schedule_id": schedule_id})
          return schedules.delete(schedule_id)
  
@@ -94,7 +94,8 @@ index 943704d..3425f1d 100644
 +        return executions.environments.reset(name)
 +
 +    @app.delete("/environments/{name}")
-+    async def delete_environment(request: Request, name: str) -> Environment:
++    def delete_environment(request: Request, name: str) -> Environment:
++        """Not async: it may wait for the registration of an agent naming an environment."""
 +        audit_call(request, {"name": name})
 +        return executions.delete_environment(name)
 +

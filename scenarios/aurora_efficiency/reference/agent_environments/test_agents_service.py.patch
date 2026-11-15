@@ -1,8 +1,25 @@
 diff --git a/meridian-controlplane/tests/test_agents_service.py b/meridian-controlplane/tests/test_agents_service.py
-index d44289b..ab4be43 100644
+index d44289b..ca28af9 100644
 --- a/meridian-controlplane/tests/test_agents_service.py
 +++ b/meridian-controlplane/tests/test_agents_service.py
-@@ -164,12 +164,16 @@ class HeldRunner:
+@@ -27,13 +27,16 @@ from fastapi import FastAPI, HTTPException, Request
+ 
+ from meridian_controlplane import agents
+ from meridian_controlplane.agents import (
++    AgentDefinition,
+     AgentRegistry,
++    AgentVersion,
+     Executions,
+     RightsChange,
+     RunnerResult,
+     create_agents_service_app,
+     load_seeded_agents,
+ )
++from meridian_controlplane.agents import registry as agent_registry
+ from meridian_controlplane.agents.executions import RESUME_INPUT
+ 
+ LEAD, READER, NOBODY = "lead", "reader", "nobody"
+@@ -164,12 +167,16 @@ class HeldRunner:
          for end in self._ends:
              end.set()
  
@@ -21,7 +38,7 @@ index d44289b..ab4be43 100644
          self._ends[command_number - 1].set()
  
  
-@@ -347,7 +351,7 @@ def test_the_grants_routes_answer_with_the_authoritys_rights(service: RunningSer
+@@ -347,7 +354,7 @@ def test_the_grants_routes_answer_with_the_authoritys_rights(service: RunningSer
  @pytest.mark.parametrize(
      ("identity", "caller", "status", "arguments"),
      [
@@ -30,7 +47,7 @@ index d44289b..ab4be43 100644
          (IDENTITIES[READER], READER, HTTPStatus.FORBIDDEN, {}),  # refused before the body was read
          (GUESSED_IDENTITY, None, HTTPStatus.UNAUTHORIZED, {}),
      ],
-@@ -556,6 +560,95 @@ def test_a_queued_execution_that_is_cancelled_never_runs(
+@@ -556,6 +563,120 @@ def test_a_queued_execution_that_is_cancelled_never_runs(
      assert (len(runner.commands), first["state"]) == (2, "queued")
  
  
@@ -93,7 +110,7 @@ index d44289b..ab4be43 100644
 +        assert self.released.wait(STARTUP_SECONDS)
 +
 +
-+def test_an_environment_is_not_deleted_between_the_check_and_the_registration_of_an_agent_naming_it(
++def test_a_deletion_waits_for_an_agent_naming_its_environment_to_be_registered_and_holds_up_no_other_call(
 +    authority: StandInAuthority,
 +    serve: Callable[[FastAPI], str],
 +) -> None:
@@ -116,11 +133,36 @@ index d44289b..ab4be43 100644
 +    assert issuer.issuing.wait(STARTUP_SECONDS)
 +    deleting = call("delete", "DELETE", "/environments/env")
 +    deleting.join(0.5)  # a deletion that does not wait for the registration ends meanwhile
++    read = service.call_as(LEAD, "GET", "/environments/env")[0]  # answered while the deletion waits
 +    issuer.released.set()
 +    registering.join(STARTUP_SECONDS)
 +    deleting.join(STARTUP_SECONDS)
 +
-+    assert replies == {"register": HTTPStatus.CREATED, "delete": HTTPStatus.CONFLICT}
++    assert (replies, read) == ({"register": HTTPStatus.CREATED, "delete": HTTPStatus.CONFLICT}, HTTPStatus.OK)
++
++
++def test_an_agent_retired_while_a_version_is_added_stays_retired_with_that_version(
++    monkeypatch: pytest.MonkeyPatch,
++) -> None:
++    registry = AgentRegistry(load_seeded_agents())
++    retiring = threading.Thread(target=registry.retire, args=["ticket-triager"])
++    make_version = agent_registry._make_version
++
++    def make_version_beside_a_retirement(
++        definition: AgentDefinition,
++        number: int,
++        created_by: str,
++    ) -> AgentVersion:
++        retiring.start()
++        retiring.join(0.5)  # a retirement that does not wait for the version ends meanwhile
++        return make_version(definition, number, created_by)
++
++    monkeypatch.setattr(agent_registry, "_make_version", make_version_beside_a_retirement)
++    registry.add_version("ticket-triager", AgentDefinition(**TRIAGER_UPDATE), created_by=LEAD)
++    retiring.join(STARTUP_SECONDS)
++
++    agent = registry.get_agent("ticket-triager")
++    assert (agent.retired, agent.latest_version.number) == (True, 2)
 +
 +
  @pytest.mark.parametrize(
