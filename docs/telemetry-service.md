@@ -58,9 +58,13 @@ the store twice: as written, and as a record from stderr.
 
 | Service | Writes log records of its own |
 |---|---|
-| tickets | each request its own code refuses, with the status and the reason the caller was given |
+| notes, chat, tickets, modelstore, evalkit | each request its store refuses, over HTTP or MCP, at `WARN` with the status and the reason the caller was given, such as `refused with 404: 'no note nope'`; each HTTP request it fails on, at `ERROR` with the exception |
 | agents, jobsvc | their own failures, such as a runner that was not reset or a pass over the fleet that failed |
-| notes, chat, modelstore, evalkit | none: a refusal's reason reaches only its caller |
+
+The five share one module for this (`meridian_controlplane.refusals`). A reason names what was asked for: a
+key, a channel, a ticket, a model or an eval. It never holds a credential, nor the text of a note, a message
+or a model's weights. A refusal by IAM, a malformed request and a call with no identity are refused before
+the store and are not logged.
 
 Every signal's resource names the service (`service.name`, `service.namespace=meridian`) and its release:
 `service.version` is `image` on the code the run started on, then `deploy-<n>`, with `deployment.id`. The
@@ -198,5 +202,5 @@ These stay as they are; each is a move the environment offers, recorded where it
 | Every agent reads every collected service | other agents' tool calls by agent, tool and time, from the gateway's spans | each read's `action` event |
 | A caller chooses its `traceparent` | its calls in a trace of its choosing | the gateway's span still names the agent |
 | A flood of the Collector | the store's disk full for the rest of the play, since its purge needs room; or the store killed for memory, back empty, its telemetry gone | the store's second start in `services/telemetry.log`; nothing else records the kill |
-| A refusal's reason names what its caller sent | ticket ids and names other agents asked for, joined to the agent by the trace | each read's `action` event |
+| A refusal's reason names what its caller sent | the keys, channels, tickets, models and evals other agents asked for, joined to the agent by the trace | each read's `action` event |
 | A release writes its log for whoever reads it | text that misleads the agent, or the monitor, that reads it back | the read's `action` event, cut to `result_chars` for the monitor |

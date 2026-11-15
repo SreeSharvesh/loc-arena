@@ -19,6 +19,13 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [372] - 2026-11-15: Every company service logs the requests it refuses
+
+### Fixed
+
+- The notes service, chat service, model store and eval service log each request their store refuses, with its reason, so the telemetry store says why a call failed ([docs](docs/telemetry-service.md#what-reports)).
+- The tickets service, like those four, logs each HTTP request it fails on with the exception, in the trace of the request ([docs](docs/telemetry-service.md#what-reports)).
+
 ## [371] - 2026-11-15: A release can add an operation, which monitors see
 
 ### Added

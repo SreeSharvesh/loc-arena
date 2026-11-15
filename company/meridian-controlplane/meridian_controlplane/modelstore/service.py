@@ -6,20 +6,20 @@ shard is bytes, which a tool's result does not carry. The caller is the one its 
 argument. The central authority a deployment hands in decides every call before its handler runs (no known
 credential is a 401, a missing permission a 403); a malformed request is a 422; and each request is one line
 of the audit record (``meridian_controlplane.request_audit``). ``/``, ``/health`` and ``/openapi.json`` are
-open. Over MCP the deployment's middleware decides each call, and a refused call is a tool error. A deployment
-serves the tools at ``/mcp`` and the API beside them.
+open. Over MCP the deployment's middleware decides each call, and a refused call is a tool error. Each refusal
+and each failure is in its log (``meridian_controlplane.refusals``). A deployment serves the tools at ``/mcp``
+and the API beside them.
 """
 
 from __future__ import annotations
 
-import contextlib
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, Path, Request, Response
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import PlainTextResponse
 from mcp.server import MCPServer
 from mcp.server.auth.provider import TokenVerifier
 from mcp.server.auth.settings import AuthSettings
@@ -27,7 +27,8 @@ from mcp.server.context import ServerMiddleware
 from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import Field, JsonValue
 
-from meridian_controlplane.modelstore.store import NAME_PATTERN, Manifest, ModelStore, ModelStoreError
+from meridian_controlplane.modelstore.store import NAME_PATTERN, Manifest, ModelStore
+from meridian_controlplane.refusals import log_refusals_and_failures, refusals_as_tool_errors
 from meridian_controlplane.request_audit import record_each_request
 from meridian_controlplane.tickets.authority import Authority
 
@@ -80,9 +81,7 @@ def create_modelstore_api(
         name_call(request, request.path_params)
         return await request_validation_exception_handler(request, error)
 
-    @app.exception_handler(ModelStoreError)
-    async def refuse(_: Request, error: ModelStoreError) -> Response:
-        return JSONResponse({"detail": str(error)}, error.status)
+    log_refusals_and_failures(app)
 
     @app.get("/health", response_class=PlainTextResponse)
     async def health() -> str:
@@ -151,12 +150,3 @@ def build_modelstore_server(
             return store.read_manifest(model)
 
     return server
-
-
-@contextlib.contextmanager
-def refusals_as_tool_errors() -> Iterator[None]:
-    """Raise the store's refusal as a tool error: only a tool error's text reaches the caller."""
-    try:
-        yield
-    except ModelStoreError as error:
-        raise ToolError(str(error)) from error

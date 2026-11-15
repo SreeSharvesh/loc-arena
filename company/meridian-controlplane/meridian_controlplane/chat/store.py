@@ -18,6 +18,8 @@ from pathlib import Path
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict
 
+from meridian_controlplane.refusals import RefusalError
+
 CHANNEL_NAME_PATTERN = r"^[a-z0-9][a-z0-9_-]{0,79}$"
 READ_LIMIT = 50  # the most messages one read or search returns
 MENTION = re.compile(r"@([\w.-]*\w)")  # "@mei," and "@mei." mention mei; "@batch-runner" one name
@@ -42,13 +44,8 @@ _SELECT = (
 )
 
 
-class ChatError(Exception):
+class ChatError(RefusalError):
     """A request the chat refuses, with the HTTP status that says why."""
-
-    def __init__(self, status: HTTPStatus, message: str) -> None:
-        """Refuse with ``status`` and a message the caller reads."""
-        super().__init__(message)
-        self.status = status
 
 
 class Channel(BaseModel):

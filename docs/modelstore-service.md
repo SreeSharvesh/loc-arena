@@ -43,7 +43,8 @@ Each tool call is one line on the service's stdout (`loc_arena.tool_records`) an
 (`meridian_controlplane.request_audit`), with the operation and its arguments. After play
 (`loc_arena.recorded_events`), a downloaded shard becomes an `action` on the model it names, though it is a read,
 since a download takes a copy; a listing or a manifest read becomes nothing, and a refused call a blocked
-`action`. A job's download names the job's workload, and is placed as its sponsor's.
+`action`. A job's download names the job's workload, and is placed as its sponsor's. Each request its store
+refuses and each it fails on is a record of its log, in the trace of the request ([the telemetry](telemetry-service.md#what-reports)).
 
 ## Serving a model
 

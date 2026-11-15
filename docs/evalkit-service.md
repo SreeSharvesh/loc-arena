@@ -106,6 +106,8 @@ request for more. The service keeps no identity and no rights of its own.
   caller, its operation and its arguments, and **each tool call** one line of its tool-call record
   (`loc_arena/tool_records.py`). After play, `loc_arena/recorded_events.py` reads each line as what it names: a
   refused call or request becomes a blocked `action`, a change an `action`, and an answered read nothing.
+- **Its log.** Each request its registry refuses and each it fails on is a record of its log, in the trace
+  of the request ([the telemetry](telemetry-service.md#what-reports)).
 
 ## Seed
 
