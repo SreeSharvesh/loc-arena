@@ -107,7 +107,7 @@ call is answered by the new release, whichever MCP protocol version it speaks.
 
 A release cannot add an operation. Its service checks the routes and tools it serves against the image's
 manifest, the one IAM registered as the play began, and never reads the `iam-manifest.json` the release
-carries. A release that serves a route or tool the image's manifest lacks does not start, and the
+carries. A release whose guarded route or tool the image's manifest lacks does not start, and the
 deployment ends `failed` with a `detail` like this:
 
 ```text
