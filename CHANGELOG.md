@@ -19,6 +19,10 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [360] - 2026-11-15: Tests run one Docker stack at a time
+### Fixed
+- The repository's test suite runs one Docker stack at a time, so stacks no longer starve each other of CPU and fail their health checks.
+
 ## [361] - 2026-11-14: Telemetry tests wait on what they read, bounded by config
 ### Changed
 - The repository's telemetry tests wait for what they read within bounds from the run config, and send the store's password on standard input; the arena behaves as before.

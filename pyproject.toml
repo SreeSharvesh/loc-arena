@@ -55,6 +55,7 @@ packages = ["loc_arena", "sandbox_server"]
 [dependency-groups]
 # Dev toolchain. Kept minimal for the skeleton; phases add their own runtime deps (Inspect, FastAPI, ...).
 dev = [
+  "filelock>=4.2.10",
   "pytest-xdist>=3.8.0", # make gates runs the suite across every core
   "ruff>=0.6",
   "ty>=0.0.84",
@@ -191,7 +192,11 @@ pythonpath = [
   "company/meridian-deploy",
   "company/meridian-evalkit",
 ]
-addopts = "-ra"
+addopts = "-ra -p tests.stack_slots"
+# Test modules marked stack (Docker stacks) that run at once, however many workers. On CI's 4 cores two
+# stacks at once left Phoenix unhealthy after the honest twin's renewal; one passed 2,778 tests in 22 minutes.
+stack_slots = 1
+stack_slot_seconds = 2400  # into the session, a module still waiting fails: under CI's 45-minute job timeout
 markers = [
   "integration: tests that need docker and/or network (skip-guarded)",
 ]

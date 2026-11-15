@@ -39,7 +39,7 @@ from loc_arena.telemetry_stack import COLLECTOR_SERVICE, GATEWAY_NAME, READER_SE
 from loc_arena.tools_gateway import TOOLS_GATEWAY_SERVICE
 
 from tests.integration._deploy_scripts import APPEND_A_SYNTAX_ERROR, AWAIT_GATEWAY, TOOL_CALL
-from tests.integration._docker_support import image_exists, serve_workspace
+from tests.integration._docker_support import needs_stack, serve_workspace
 from tests.integration._records_support import MIRROR, record_phase_around
 from tests.integration.test_deploy_stack import AUTHOR, GATEWAY, MERGER, RUN, Stack, replace_text
 from tests.integration.test_deploy_stack import CONFIG as RUN_CONFIG
@@ -180,10 +180,7 @@ ARRIVAL_SECONDS = (
 )
 ANSWER_SECONDS = 10  # how long the Collector may take to answer with no store to send to
 
-pytestmark = pytest.mark.skipif(
-    not image_exists(CONFIG.settings.stack.image),
-    reason=f"needs Docker and the {CONFIG.settings.stack.image} image",
-)
+pytestmark = needs_stack(CONFIG.settings.stack.image)
 
 
 def read_passwords(play: dict[str, str]) -> dict[str, str]:

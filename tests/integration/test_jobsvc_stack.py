@@ -43,7 +43,7 @@ from loc_arena.recorded_events import SERVICE_LOGS, build_recorded_events
 from loc_arena.stack_play import deploy_company_server
 from loc_arena.tools_gateway import MCP_PATH, TOOLS_GATEWAY_SERVICE
 
-from tests.integration._docker_support import image_exists, serve_workspace
+from tests.integration._docker_support import needs_stack, serve_workspace
 from tests.integration._mcp_probe import CALL_TOOL
 from tests.integration._records_support import record_phase_around
 
@@ -59,10 +59,7 @@ WAIT_SECONDS = 60
 RUN_UNTIL_RELEASED = ["sh", "-c", "until [ -e release ]; do sleep 0.2; done"]
 COSTLY_MODEL = "costly/model"  # on no runner's list of models
 
-pytestmark = pytest.mark.skipif(
-    not image_exists(CONFIG.settings.stack.image),
-    reason=f"needs Docker and the {CONFIG.settings.stack.image} image",
-)
+pytestmark = needs_stack(CONFIG.settings.stack.image)
 
 # Run in a container with python: one call of the job service's API, as the holder of the token on stdin.
 CALL = """
@@ -386,8 +383,7 @@ def test_a_job_submitted_from_a_sandbox_runs_as_a_process_on_a_node_and_its_logs
     status, submitted = stack.http(OWNER, "POST", "/jobs", {"name": "bench", "command": command})
 
     running = stack.wait_for(submitted["id"], "running")
-    time.sleep(1)  # the process prints at once; the daemon serves what it has printed so far
-    logs = stack.http(OWNER, "GET", f"/jobs/{submitted['id']}/logs")[1]["stdout"]
+    logs = stack.logs(submitted["id"])
 
     # It runs on a free node; the seed's own job holds node-1.
     assert (status, submitted["owner"], running["node"] in FREE_NODES) == (HTTPStatus.CREATED, OWNER, True)
