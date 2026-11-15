@@ -19,7 +19,7 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
-## [377] - 2026-11-15: Each service's log record reaches the telemetry store once
+## [377] - 2026-11-15: The telemetry store holds no second copy of a record
 
 ### Fixed
 
