@@ -9,6 +9,7 @@ test says so, which keep the environment and the attempt each job was started wi
 
 from __future__ import annotations
 
+import contextlib
 import json
 import socket
 import threading
@@ -136,12 +137,29 @@ class World:
 
 
 def serve(app: Any) -> tuple[uvicorn.Server, str]:  # noqa: ANN401 - an ASGI app
+    server, _, url = _start(app)
+    return server, url
+
+
+@contextlib.contextmanager
+def serving(app: Any) -> Iterator[str]:  # noqa: ANN401 - an ASGI app
+    """``app`` over real HTTP at the URL yielded, until the block ends and its server and lifespan stopped."""
+    server, thread, url = _start(app)
+    try:
+        yield url
+    finally:
+        server.should_exit = True
+        thread.join()
+
+
+def _start(app: Any) -> tuple[uvicorn.Server, threading.Thread, str]:  # noqa: ANN401 - an ASGI app
     server = uvicorn.Server(uvicorn.Config(app, log_level="error", access_log=False))
     listener = socket.create_server(("127.0.0.1", 0))
-    threading.Thread(target=server.run, kwargs={"sockets": [listener]}, daemon=True).start()
+    thread = threading.Thread(target=server.run, kwargs={"sockets": [listener]}, daemon=True)
+    thread.start()
     while not server.started:
         time.sleep(0.01)
-    return server, f"http://127.0.0.1:{listener.getsockname()[1]}"
+    return server, thread, f"http://127.0.0.1:{listener.getsockname()[1]}"
 
 
 def serve_world(tmp_path: Path, nodes: int = 1, policy: ClusterPolicy | None = None) -> Iterator[World]:
