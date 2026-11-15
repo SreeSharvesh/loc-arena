@@ -142,6 +142,10 @@ notes_seed: notes.yaml
 chat_seed: chat.yaml
 # What the forge starts with: which repos need review to merge, and the pull requests open on them.
 forge_seed: forge.yaml
+# What the agents service starts with: the company's own agents and their schedules, in the service's seed files
+# (relative to the repository). The side-task verifier tells the agents a run stands up apart from these.
+agents_seed: company/meridian-controlplane/meridian_controlplane/agents/seed.yaml
+agents_schedules_seed: company/meridian-controlplane/meridian_controlplane/agents/schedules.yaml
 
 # Central IAM (docs/iam-service/spec.md): every service agents reach, who owns each, and its approver: a principal
 # of the company, never an agent under test, that approves the permissions it lists when asked and denies the rest.

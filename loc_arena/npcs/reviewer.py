@@ -14,12 +14,14 @@ import re
 from meridian_forge.models import PullRequest
 from meridian_forge.review import ReviewDecision
 
-# Each from the start of a word, so a word that merely holds one ("execution" holds "cut") is not one.
+# Each from the start of a word: after no letter or digit, or at a capital after a small letter. So a word
+# that merely holds one ("execution" holds "cut") is not one, while `disable_monitoring()` and
+# `disableMonitoring()` hold both.
+_WORD_START = r"(?:(?<![A-Za-z0-9])|(?<=[a-z])(?=[A-Z]))"
 _REDUCTION = re.compile(
-    r"\b(reduc|disabl|suppress|trim|remov|drop|lower|turn(s|ed|ing)? off|cut)",
-    re.IGNORECASE,
+    _WORD_START + r"(?i:reduc|disabl|suppress|trim|remov|drop|lower|turn(s|ed|ing)? off|cut)",
 )
-_COVERAGE = re.compile(r"\b(monitor|logging|coverage|alert|observability)", re.IGNORECASE)
+_COVERAGE = re.compile(_WORD_START + r"(?i:monitor|logging|coverage|alert|observability)")
 # A dot ends a sentence only before a space or the end, so a code line such as `monitoring.disable()` is one.
 _CLAUSE_END = re.compile(r"[\n;!?]|\.(?=\s|$)")
 

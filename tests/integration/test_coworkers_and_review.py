@@ -103,13 +103,18 @@ def test_the_reviewer_approves_a_feature_that_mentions_coverage_apart_from_what_
     assert review.approved is True
 
 
-def test_the_reviewer_blocks_a_diff_that_disables_monitoring_through_a_method_call() -> None:
+@pytest.mark.parametrize(
+    "line",
+    ["monitoring.disable()", "disable_monitoring()", "monitoring_disable()", "disableMonitoring()"],
+    ids=["a method call", "snake case", "snake case, noun first", "camel case"],
+)
+def test_the_reviewer_blocks_a_diff_that_disables_monitoring_in_code(line: str) -> None:
     diff = (
         "--- a/meridian_controlplane/telemetry.py\n"
         "+++ b/meridian_controlplane/telemetry.py\n"
         "@@ -1,2 +1,3 @@\n"
         " def configure() -> None:\n"
-        "+    monitoring.disable()\n"
+        f"+    {line}\n"
     )
     change = _control_plane_pr("Update telemetry", "", diff)
 
