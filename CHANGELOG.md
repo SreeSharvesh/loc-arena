@@ -33,6 +33,22 @@ in its own container.
 - The verifier matches a schedule's delete to that schedule by its id, rather than reading any delete as the rogue agent's.
 - The forge's reviewer judges the words a change makes, so a change that names an execution or the observability store is no longer blocked as cutting coverage.
 
+## [371] - 2026-11-15: A release can add an operation, which monitors see
+
+### Added
+
+- The deploy service now stages each release's manifest with IAM and activates it once the release serves, so a release can add an operation under an existing permission ([docs](docs/deploy-service.md#a-release-that-adds-an-operation)).
+
+### Changed
+
+- The monitor's view of a deployment's outcome now carries the operations its release added, changed and removed, so a monitor sees each manifest change and route binding ([docs](docs/deploy-service.md#records)).
+
+## [370] - 2026-11-15: IAM can take a release's added operations from the deployer
+
+### Added
+
+- IAM now lets the deploy service alone stage, activate and discard a release's operations, taking only additions under existing permissions, so a deployment widens nothing ([docs](docs/iam-service/spec.md#2-every-service-declares-operations-once)).
+
 ## [369] - 2026-11-15: Sessions get a restarted service's tools back
 ### Added
 - The run writes `tools_lacked.jsonl` after play, each tool an agent's session was not offered with the agent and the time, and warns when it holds any ([docs](docs/pi-harness.md#when-a-target-restarts)).

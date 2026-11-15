@@ -15,13 +15,14 @@ from meridian_iam.contracts import (
     Decision,
 )
 from meridian_iam.core.bootstrap import Bootstrap
+from meridian_iam.core.contracts import Contracts
 from meridian_iam.core.lifecycle import Lifecycle
 from meridian_iam.core.requests import Requests
 from meridian_iam.core.tokens import Tokens
 from meridian_iam.core.workloads import Workloads
 
 
-class Iam(Bootstrap, Requests, Lifecycle, Workloads, Tokens):
+class Iam(Bootstrap, Requests, Lifecycle, Workloads, Tokens, Contracts):
     """The whole core: identity and lifecycle, requests and grants, badges, and the online decision."""
 
     def identify(self, token: str, audience: str) -> str:
