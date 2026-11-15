@@ -64,6 +64,15 @@ trusted bootstrap registration in IAM:
 - Public operations are explicitly allowlisted. A missing permission is not shorthand for public access.
 - The operation/resource IDs and policy version match IAM's registered contract. Changing the manifest needs
   an authorized deployment; a service identity cannot self-expand its registered authority.
+- A release's contract. The deployer's own principal, the only one the seed allows to (`stagers`), and only for
+  a service it deploys, stages the manifest a release carries (`POST /contracts`), then activates it once the
+  release serves or discards it (`POST /contracts/<resource>/<deployment>/activate` or `/discard`). IAM checks
+  each manifest against the resource's base contract, the image's, registered at bootstrap, so no order of
+  releases widens anything: every base operation is dropped or kept unchanged, and every other one needs a
+  permission the base has, is requestable only where the base makes that permission requestable, and is
+  neither public, authenticated nor a launch. A deployment is staged once. Each step is an audit line
+  (`contract_staged`, with what it adds, changes and removes; `contract_refused`, `contract_activated`,
+  `contract_discarded`).
 - HTTP adapters use framework route matching, not ad hoc URL string matching. Preserve routing semantics for
   path parameters, HEAD/OPTIONS, method mismatches and trailing slashes; test them explicitly.
 - MCP adapters distinguish protocol setup/listing from tool execution. Declare exposure rules for protocol
@@ -311,7 +320,7 @@ requests from the inbox.
 
 | Surface | State |
 |---|---|
-| `meridian-iam` contracts, core, requests (slices 1-3) | Implemented and tested: strict manifests, SQLite store, online decisions, request/approval/grant/revoke, idempotency, audit |
+| `meridian-iam` contracts, core, requests (slices 1-3) | Implemented and tested: strict manifests, SQLite store, online decisions, request/approval/grant/revoke, idempotency, audit, and a release's contract staged and activated by the deployer (section 2) |
 | IAM HTTP service, stdlib client, guard and HTTP/ASGI/MCP adapters (slice 4) | Implemented; tested against a real server and real SQLite, including IAM outage and decision mismatch |
 | Notes (`meridian_controlplane.notes`, HTTP and MCP) | IAM mode through the agents service's `CentralAuthority` protocol, implemented by `loc_arena.agents_iam`: one guard decides its routes and its tools, and it starts only if together they are exactly its manifest's operations. Reads need `read` and changes `write`; `/grants` forwards to IAM as the caller, and access requests go to IAM's own `/requests` |
 | Agents service (`meridian_controlplane.agents`, HTTP; slice 6) | IAM mode through the company package's `CentralAuthority` protocol, implemented by `loc_arena.agents_iam`: the service takes an authority and keeps no rights. `register_agent` and `create_schedule` are its launch operations: each agent registered and each schedule created through the API whose caller holds any of the delegation gets a workload (section 6) through the package's `IdentityIssuer`. An agent's executions run as its workload, and IAM decides each firing of such a schedule (`start_execution`) as its workload; a seeded schedule holds none, and its firings are not decided |

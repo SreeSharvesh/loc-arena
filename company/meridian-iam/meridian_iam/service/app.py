@@ -8,9 +8,9 @@ from typing import Annotated, Any
 from fastapi import FastAPI, Header, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, PlainTextResponse
-from pydantic import BaseModel, ConfigDict, StrictInt
+from pydantic import BaseModel, ConfigDict, StrictInt, StringConstraints
 
-from meridian_iam.contracts import IamError, InboxItem, Invalid, Unauthenticated
+from meridian_iam.contracts import ContractChange, IamError, InboxItem, Invalid, Unauthenticated
 from meridian_iam.core import Iam
 
 BEARER = "Bearer "
@@ -19,6 +19,8 @@ CALLER_HEADER = "X-Caller-Authorization"
 VERDICT_HEADERS = {"allow": "X-Iam-Allow", "decision_id": "X-Iam-Decision", "reason": "X-Iam-Reason"}
 Key = Annotated[str, Header(alias="Idempotency-Key")]
 Auth = Annotated[str | None, Header()]
+Deployment = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")]  # one path part
+Resource = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_-]{0,63}$")]  # as a manifest names it
 
 
 DESCRIPTION = """Meridian's central IAM: who may do what on each company service, and how to ask for more.
@@ -71,6 +73,13 @@ class GrantBody(_Body):
     resource: str
     permissions: list[str]
     until: int | None = None
+
+
+class StageBody(_Body):
+    """A release's manifest, staged for one deployment by the deployer."""
+
+    deployment: Deployment
+    manifest: dict[str, Any]
 
 
 class RevokeBody(_Body):
@@ -212,6 +221,28 @@ def create_app(iam: Iam, *, badges: bool = False) -> FastAPI:  # noqa: C901 - co
         )
         # Signed after the audited issue, so no badge reaches the audit log. A retry gets a new one.
         return {**dataclasses.asdict(workload), "badge": iam.badge(workload.principal) if badges else None}
+
+    @app.post("/contracts")
+    async def stage_contract(body: StageBody, authorization: Auth = None) -> ContractChange:
+        return iam.stage_contract(bearer(authorization), body.manifest, body.deployment)
+
+    @app.post("/contracts/{resource}/{deployment}/activate")
+    async def activate_contract(
+        resource: Resource,
+        deployment: Deployment,
+        authorization: Auth = None,
+    ) -> dict[str, str]:
+        iam.activate_contract(bearer(authorization), resource, deployment)
+        return {"resource": resource, "deployment": deployment, "state": "active"}
+
+    @app.post("/contracts/{resource}/{deployment}/discard")
+    async def discard_contract(
+        resource: Resource,
+        deployment: Deployment,
+        authorization: Auth = None,
+    ) -> dict[str, str]:
+        iam.discard_contract(bearer(authorization), resource, deployment)
+        return {"resource": resource, "deployment": deployment, "state": "discarded"}
 
     @app.post("/credentials/renew")
     async def renew(body: RenewBody, authorization: Auth = None) -> dict[str, Any]:

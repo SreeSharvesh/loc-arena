@@ -140,6 +140,27 @@ WORKLOAD: dict[str, Any] = {
 
 
 @pytest.mark.parametrize(
+    ("call", "broken"),
+    [
+        ("stage", None),
+        ("stage", {"added": {}, "changed": {}}),
+        ("activate", None),
+        ("discard", {"resource": "notes", "deployment": "deploy-1", "state": "active"}),
+    ],
+)
+def test_a_malformed_contract_answer_is_unavailable(fake_with, call: str, broken: object) -> None:  # noqa: ANN001
+    client = IamClient(fake_with(lambda: (200, broken)).url, "t", retries=0)
+    ask = {
+        "stage": lambda: client.stage_contract({"resource": "notes"}, "deploy-1"),
+        "activate": lambda: client.end_contract("notes", "deploy-1", "activate"),
+        "discard": lambda: client.end_contract("notes", "deploy-1", "discard"),
+    }[call]
+
+    with pytest.raises(Unavailable):
+        ask()
+
+
+@pytest.mark.parametrize(
     "broken",
     [
         {k: v for k, v in WORKLOAD.items() if k != "sponsor"},

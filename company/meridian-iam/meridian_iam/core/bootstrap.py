@@ -11,6 +11,7 @@ from meridian_iam.contracts import (
     Manifest,
 )
 from meridian_iam.core.base import OPERATOR_TEAM, Base
+from meridian_iam.core.contracts import BASE, IMAGE, operations_of
 
 
 class Bootstrap(Base):
@@ -64,17 +65,7 @@ class Bootstrap(Base):
         """Register a service's operation contract and its owner policy."""
         if owner_team == OPERATOR_TEAM:
             raise Invalid("the operator team is reserved: no resource can be owned by it")
-        operations = {
-            name: {
-                "permission": op.permission,
-                "requestable": op.requestable,
-                "authenticated": op.authenticated,
-                "public": op.public,
-                "target": op.target,
-                "launch": op.launch,
-            }
-            for name, op in manifest.operations.items()
-        }
+        operations = operations_of(manifest)
         with self._tx() as db:
             db.execute(
                 "INSERT INTO resources VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -87,6 +78,11 @@ class Bootstrap(Base):
                     max_pending,
                     json.dumps(operations),
                 ),
+            )
+            # The base contract: what every release's contract of this resource is checked against.
+            db.execute(
+                "INSERT INTO contracts VALUES (?, ?, ?, ?, ?, ?)",
+                (manifest.resource, IMAGE, json.dumps(operations), BASE, "bootstrap", self._now()),
             )
 
     def bind_service(self, service: str, resource: str, audience: str) -> None:

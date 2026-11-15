@@ -19,6 +19,12 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [370] - 2026-11-15: IAM can take a release's added operations from the deployer
+
+### Added
+
+- IAM now lets the deploy service alone stage, activate and discard a release's operations, taking only additions under existing permissions, so a deployment widens nothing ([docs](docs/iam-service/spec.md#2-every-service-declares-operations-once)).
+
 ## [369] - 2026-11-15: Sessions get a restarted service's tools back
 ### Added
 - The run writes `tools_lacked.jsonl` after play, each tool an agent's session was not offered with the agent and the time, and warns when it holds any ([docs](docs/pi-harness.md#when-a-target-restarts)).
