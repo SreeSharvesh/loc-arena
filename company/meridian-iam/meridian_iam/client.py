@@ -12,7 +12,7 @@ import json
 import secrets
 import urllib.error
 import urllib.request
-from typing import Any
+from typing import Any, Literal
 
 from meridian_iam.contracts import (
     Conflict,
@@ -132,6 +132,20 @@ class IamClient:
         ):
             raise Unavailable("malformed IAM answer")
         return raw
+
+    def stage_contract(self, manifest: dict[str, Any], deployment: str) -> dict[str, Any]:
+        """Stage a release's ``manifest`` for ``deployment``, as this client's service: what it changes.
+
+        A mutation, so never retried; IAM's refusal says what the manifest may not change.
+        """
+        return self._call("POST", "/contracts", body={"deployment": deployment, "manifest": manifest})
+
+    def end_contract(self, resource: str, deployment: str, step: Literal["activate", "discard"]) -> None:
+        """Activate, or discard, the contract of ``resource`` staged for ``deployment``.
+
+        Both are idempotent at IAM, so one that fails in transport is tried again, within the client's bounds.
+        """
+        self._call("POST", f"/contracts/{resource}/{deployment}/{step}", safe=True)
 
     def issue_workload(  # noqa: PLR0913
         self,

@@ -51,14 +51,33 @@ def test_a_version_1_store_is_upgraded_in_place(tmp_path: Path) -> None:
     old.execute("INSERT INTO meta VALUES ('kept', 'yes')")
     old.execute("DROP TABLE workloads")
     old.execute("DROP TABLE delegations")
+    old.execute("DROP TABLE contracts")
+    old.execute("DROP TABLE stagers")
     old.execute("PRAGMA user_version = 1")  # what a store from before workloads looks like
     old.close()
 
     upgraded = connect(path)
 
     tables = {row[0] for row in upgraded.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
-    assert {"workloads", "delegations"} <= tables
+    assert {"workloads", "delegations", "stagers", "contracts"} <= tables
     assert upgraded.execute("SELECT value FROM meta WHERE key = 'kept'").fetchone()[0] == "yes"
+
+
+def test_an_upgraded_store_keeps_each_resources_operations_as_its_base_contract(tmp_path: Path) -> None:
+    path = tmp_path / "old.db"
+    old = connect(path)
+    old.execute(
+        "INSERT INTO resources VALUES ('notes', 'research', 'lead', 3600, 0, 20, '{\"read_note\": {}}')",
+    )
+    for table in ("contracts", "stagers", "workloads", "delegations"):
+        old.execute(f"DROP TABLE {table}")
+    old.execute("PRAGMA user_version = 1")
+    old.close()
+
+    upgraded = connect(path)
+
+    base = upgraded.execute("SELECT deployment, operations FROM contracts WHERE state = 'base'").fetchall()
+    assert [tuple(row) for row in base] == [("image", '{"read_note": {}}')]
 
 
 def test_two_openers_of_an_old_store_upgrade_it_once(tmp_path: Path) -> None:
@@ -66,6 +85,8 @@ def test_two_openers_of_an_old_store_upgrade_it_once(tmp_path: Path) -> None:
     old = connect(path)
     old.execute("DROP TABLE workloads")
     old.execute("DROP TABLE delegations")
+    old.execute("DROP TABLE contracts")
+    old.execute("DROP TABLE stagers")
     old.execute("PRAGMA user_version = 1")
     old.close()
     first = sqlite3.connect(path, isolation_level=None)
@@ -74,9 +95,10 @@ def test_two_openers_of_an_old_store_upgrade_it_once(tmp_path: Path) -> None:
     second = threading.Thread(target=lambda: opened.append(connect(path, timeout=5)))
     second.start()
     time.sleep(0.3)  # the second opener has read version 1 and waits for the lock
-    for statement in _MIGRATIONS[1].split(";"):
-        if statement.strip():
-            first.execute(statement)
+    for script in _MIGRATIONS[1:]:
+        for statement in script.split(";"):
+            if statement.strip():
+                first.execute(statement)
     first.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
     first.execute("COMMIT")
 
@@ -91,6 +113,8 @@ def test_a_failed_upgrade_leaves_the_store_as_it_was_and_unlocked(tmp_path: Path
     old = connect(path)
     old.execute("DROP TABLE workloads")
     old.execute("DROP TABLE delegations")
+    old.execute("DROP TABLE contracts")
+    old.execute("DROP TABLE stagers")
     old.execute("CREATE TABLE workloads (squatter TEXT)")  # the upgrade's second table cannot be created
     old.execute("PRAGMA user_version = 1")
     old.close()
