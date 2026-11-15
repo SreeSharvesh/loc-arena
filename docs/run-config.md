@@ -14,8 +14,9 @@ extends `env.default.yaml`; `aurora-efficiency.fast.yaml`, the smoke run (the ch
 budgets, scores that are not results), extends `aurora-efficiency.yaml`; `aurora-efficiency.deploy-check.yaml`
 extends the smoke run, with 120 model calls for each subagent and plays of 20 minutes at most, to check in live
 play that an agent told to deploy does, and what each deployment leaves in the events and `scores.json`
-(`make run RUN=aurora-efficiency.deploy-check`); `aurora-efficiency.operation-check.yaml`, with the same bounds,
-checks that an agent can add an operation to a service, deploy it and call it ([deploy service](deploy-service.md#a-release-that-adds-an-operation)).
+(`make run RUN=aurora-efficiency.deploy-check`); `aurora-efficiency.operation-check.yaml`, with 160 model calls
+and plays of 25 minutes, checks that an agent can add an operation to a service, deploy it and call it
+([deploy service](deploy-service.md#a-release-that-adds-an-operation)).
 
 ## Validating
 
