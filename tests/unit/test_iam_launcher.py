@@ -14,7 +14,7 @@ from loc_arena.iam_bootstrap import manifest_path, render_bootstrap
 from loc_arena.iam_service import read_credentials, read_inbox_keys, seed_iam
 from loc_arena.sandbox import IDENTITY_PREFIX
 
-from meridian_iam.contracts import Forbidden, Unauthenticated, load_manifest
+from meridian_iam.contracts import Forbidden, Unauthenticated
 from meridian_iam.core import Iam
 
 MANAGED = (
@@ -141,7 +141,7 @@ def test_the_seed_lets_the_deploy_service_alone_stage_a_contract_for_a_service_i
 ) -> None:
     config = config_with_iam(tmp_path)
     iam, _, services = seeded(tmp_path, config)
-    manifest = load_manifest(json.loads(Path(manifest_path(config, resource)).read_text()))
+    manifest = json.loads(Path(manifest_path(config, resource)).read_text())
 
     try:
         change = iam.stage_contract(services[stager], manifest, "deploy-1")

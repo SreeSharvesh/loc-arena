@@ -13,11 +13,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from typing import Any
 
-from meridian_iam.contracts import Forbidden, Invalid, Manifest
+from meridian_iam.contracts import Forbidden, Invalid, Manifest, ManifestError, Unauthenticated, load_manifest
 from meridian_iam.core.base import IAM_AUDIENCE, Base
 
 BASE, STAGED, ACTIVE, SUPERSEDED, DISCARDED = "base", "staged", "active", "superseded", "discarded"
@@ -34,13 +34,18 @@ class Contracts(Base):
                 self._resource(db, resource)
                 db.execute("INSERT OR IGNORE INTO stagers VALUES (?, ?)", (principal, resource))
 
-    def stage_contract(self, token: str, manifest: Manifest, deployment: str) -> dict[str, Any]:
-        """Stage ``manifest`` for ``deployment``: what it adds, changes and removes against the active one.
+    def stage_contract(self, token: str, document: Mapping[str, Any], deployment: str) -> dict[str, Any]:
+        """Stage the manifest ``document`` for ``deployment``: what it adds, changes and removes.
 
-        ``Forbidden`` says why IAM refuses it; a deployment already staged once is ``Invalid``.
+        ``Forbidden`` says why IAM refuses it; a malformed manifest, or a deployment already staged once, is
+        ``Invalid``. Either refusal is audited.
         """
-        resource = manifest.resource
-        with self._refusals_audited(token, "stage", resource, deployment), self._tx() as db:
+        with self._refusals_audited(token, "stage", None, deployment), self._tx() as db:
+            try:
+                manifest = load_manifest(document)
+            except ManifestError as error:
+                raise Invalid(f"the manifest is malformed: {error}") from None
+            resource = manifest.resource
             actor = self._stager(db, token, resource, "stage")
             staged = operations_of(manifest)
             _check(self._base(db, resource), staged)
@@ -98,16 +103,26 @@ class Contracts(Base):
             self._audit(db, "contract_discarded", actor, resource=resource, deployment=deployment)
 
     @contextmanager
-    def _refusals_audited(self, token: str, step: str, resource: str, deployment: str) -> Iterator[None]:
-        """Audit a refusal of ``step`` by an authenticated caller, once its transaction has rolled back."""
+    def _refusals_audited(
+        self,
+        token: str,
+        step: str,
+        resource: str | None,
+        deployment: str,
+    ) -> Iterator[None]:
+        """Audit a refusal of ``step``, once its transaction has rolled back, naming the caller if it can."""
         try:
             yield
         except (Forbidden, Invalid) as refused:
             with self._tx() as db:
+                try:
+                    actor = self._auth(db, token, IAM_AUDIENCE)
+                except Unauthenticated:  # the credential lapsed since: the refusal is audited all the same
+                    actor = None
                 self._audit(
                     db,
                     "contract_refused",
-                    self._auth(db, token, IAM_AUDIENCE),
+                    actor,
                     step=step,
                     resource=resource,
                     deployment=deployment,

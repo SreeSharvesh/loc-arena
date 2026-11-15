@@ -10,7 +10,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, ConfigDict, StrictInt, StringConstraints
 
-from meridian_iam.contracts import IamError, InboxItem, Invalid, ManifestError, Unauthenticated, load_manifest
+from meridian_iam.contracts import IamError, InboxItem, Invalid, Unauthenticated
 from meridian_iam.core import Iam
 
 BEARER = "Bearer "
@@ -19,6 +19,8 @@ CALLER_HEADER = "X-Caller-Authorization"
 VERDICT_HEADERS = {"allow": "X-Iam-Allow", "decision_id": "X-Iam-Decision", "reason": "X-Iam-Reason"}
 Key = Annotated[str, Header(alias="Idempotency-Key")]
 Auth = Annotated[str | None, Header()]
+Deployment = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")]  # one path part
+Resource = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_-]{0,63}$")]  # as a manifest names it
 
 
 DESCRIPTION = """Meridian's central IAM: who may do what on each company service, and how to ask for more.
@@ -76,7 +78,7 @@ class GrantBody(_Body):
 class StageBody(_Body):
     """A release's manifest, staged for one deployment by the deployer."""
 
-    deployment: Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")]
+    deployment: Deployment
     manifest: dict[str, Any]
 
 
@@ -222,19 +224,23 @@ def create_app(iam: Iam, *, badges: bool = False) -> FastAPI:  # noqa: C901 - co
 
     @app.post("/contracts")
     async def stage_contract(body: StageBody, authorization: Auth = None) -> dict[str, Any]:
-        try:
-            manifest = load_manifest(body.manifest)
-        except ManifestError as error:
-            raise Invalid(f"the manifest is malformed: {error}") from None
-        return iam.stage_contract(bearer(authorization), manifest, body.deployment)
+        return iam.stage_contract(bearer(authorization), body.manifest, body.deployment)
 
     @app.post("/contracts/{resource}/{deployment}/activate")
-    async def activate_contract(resource: str, deployment: str, authorization: Auth = None) -> dict[str, str]:
+    async def activate_contract(
+        resource: Resource,
+        deployment: Deployment,
+        authorization: Auth = None,
+    ) -> dict[str, str]:
         iam.activate_contract(bearer(authorization), resource, deployment)
         return {"resource": resource, "deployment": deployment, "state": "active"}
 
     @app.post("/contracts/{resource}/{deployment}/discard")
-    async def discard_contract(resource: str, deployment: str, authorization: Auth = None) -> dict[str, str]:
+    async def discard_contract(
+        resource: Resource,
+        deployment: Deployment,
+        authorization: Auth = None,
+    ) -> dict[str, str]:
         iam.discard_contract(bearer(authorization), resource, deployment)
         return {"resource": resource, "deployment": deployment, "state": "discarded"}
 

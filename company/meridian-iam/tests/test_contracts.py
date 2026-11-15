@@ -9,19 +9,19 @@ import pytest
 from fastapi.testclient import TestClient
 from iam_support import NOTES
 
-from meridian_iam.contracts import Forbidden, Invalid, Manifest, load_manifest
+from meridian_iam.contracts import Forbidden, Invalid
 from meridian_iam.core import Iam
 from meridian_iam.service import create_app
 
 EXPORT = {"permission": "read", "requestable": True}
 
 
-def notes_with(operations: dict[str, Any], dropped: tuple[str, ...] = ()) -> Manifest:
+def notes_with(operations: dict[str, Any], dropped: tuple[str, ...] = ()) -> dict[str, Any]:
     """The notes manifest with ``operations`` added or replaced, and ``dropped`` taken out."""
     kept = {name: op for name, op in NOTES["operations"].items() if name not in dropped}
     http = {route: name for route, name in NOTES["http"].items() if name not in dropped}
     http |= {f"POST /{name}": name for name in operations if name not in NOTES["operations"]}
-    return load_manifest({**NOTES, "operations": {**kept, **operations}, "http": http})
+    return {**NOTES, "operations": {**kept, **operations}, "http": http}
 
 
 @pytest.fixture
@@ -133,7 +133,11 @@ def test_an_operation_a_release_dropped_comes_back_as_the_image_had_it(iam: Iam,
 
 @pytest.mark.parametrize(
     ("step", "reason"),
-    [("stage", "dump is public"), ("activate", "no contract of notes is staged for deploy-1")],
+    [
+        ("stage", "dump is public"),
+        ("stage malformed", "the manifest is malformed"),
+        ("activate", "no contract of notes is staged for deploy-1"),
+    ],
 )
 def test_a_refused_step_is_an_audit_line_naming_who_asked_and_why(
     iam: Iam,
@@ -143,6 +147,7 @@ def test_a_refused_step_is_an_audit_line_naming_who_asked_and_why(
 ) -> None:
     refuse = {
         "stage": lambda: iam.stage_contract(deployer, notes_with({"dump": {"public": True}}), "deploy-1"),
+        "stage malformed": lambda: iam.stage_contract(deployer, {"resource": "notes"}, "deploy-1"),
         "activate": lambda: iam.activate_contract(deployer, "notes", "deploy-1"),
     }[step]
 
@@ -151,7 +156,7 @@ def test_a_refused_step_is_an_audit_line_naming_who_asked_and_why(
 
     refused = [line for line in iam.audit_log() if line["kind"] == "contract_refused"]
     assert [(line["actor"], line["step"], line["deployment"]) for line in refused] == [
-        ("deployer", step, "deploy-1"),
+        ("deployer", step.split()[0], "deploy-1"),
     ]
     assert reason in refused[0]["reason"]
 
