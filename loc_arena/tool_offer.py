@@ -3,8 +3,8 @@
 The gateway serves a session with the targets that answer when it opens (``failureMode: failOpen``), so a
 session opened while a target is down or not yet serving holds none of that target's tools, for good, and its
 agent is not told. A play therefore starts only once a session opened as each agent lists every tool that
-agent's ``sandbox: tools:`` names, beside the workspace service's. What each agent was offered, and what it
-lacked, is written to the play's directory either way.
+agent's ``sandbox: tools:`` names, beside the workspace service's. What each agent was offered, what it
+lacked and why a listing failed are written to the play's directory either way; a play refused fails its run.
 """
 
 from __future__ import annotations
@@ -48,8 +48,14 @@ def await_offered_tools(config: RunConfig, url: str, tokens: Mapping[str, str], 
         if agent.id in tokens
     }
 
+    errors: dict[str, str] = {}
+
     def list_missing() -> dict[str, list[str]]:
-        return {agent: sorted(tools - _list_tools(url, tokens[agent])) for agent, tools in named.items()}
+        missing = {}
+        for agent, tools in named.items():
+            listed, errors[agent] = _list_tools(url, tokens[agent])
+            missing[agent] = sorted(tools - listed)
+        return missing
 
     missing = tenacity.Retrying(
         stop=tenacity.stop_after_delay(stack.tools_offer_seconds),
@@ -57,23 +63,34 @@ def await_offered_tools(config: RunConfig, url: str, tokens: Mapping[str, str], 
         retry=tenacity.retry_if_result(lambda missing: any(missing.values())),
         retry_error_callback=lambda state: state.outcome.result() if state.outcome else None,
     )(list_missing)
-    offered = {agent: {"named": sorted(tools), "missing": missing[agent]} for agent, tools in named.items()}
+    offered = {
+        agent: {"named": sorted(tools), "missing": missing[agent], "error": errors[agent]}
+        for agent, tools in named.items()
+    }
     (directory / OFFERED_TOOLS_FILE).write_text(json.dumps(offered, indent=2))
     if lacking := {agent: tools for agent, tools in missing.items() if tools}:
         raise MissingToolsError(f"the tools gateway did not offer these tools in time: {lacking}")
 
 
-def _list_tools(url: str, token: str) -> set[str]:
-    """The names of the tools a new session at ``url`` with ``token`` lists; none if it cannot open one."""
+def _list_tools(url: str, token: str) -> tuple[set[str], str]:
+    """The names of the tools a new session at ``url`` with ``token`` lists, every page; and why it could not.
+
+    A session that cannot open lists nothing, and the error says why, by its type and message alone.
+    """
 
     async def list_tools() -> set[str]:
         async with (
             httpx2.AsyncClient(headers={"Authorization": f"Bearer {token}"}) as http,
             Client(streamable_http_client(url, http_client=http)) as client,
         ):
-            return {tool.name for tool in (await client.list_tools()).tools}
+            names, cursor = set(), None
+            while True:
+                page = await client.list_tools(cursor=cursor)
+                names |= {tool.name for tool in page.tools}
+                if not (cursor := page.next_cursor):
+                    return names
 
     try:
-        return anyio.run(list_tools)
-    except Exception:  # noqa: BLE001 - a gateway not yet serving lists nothing, and is asked again
-        return set()
+        return anyio.run(list_tools), ""
+    except Exception as error:  # noqa: BLE001 - a gateway not yet serving lists nothing, and is asked again
+        return set(), f"{type(error).__name__}: {error}"

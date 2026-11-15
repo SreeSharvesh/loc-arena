@@ -263,7 +263,7 @@ def read_rows(answer: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def offer(stack: Stack) -> dict[str, Any]:
-    """What the check a play starts behind saw at the tools gateway, for each agent of the run; its refusal."""
+    """What the check a play starts behind saw at the gateway for each agent of the run, and any refusal."""
     tokens = json.dumps({agent.id: stack.play[token_variable(agent.id)] for agent in RUN_CONFIG.agents})
     script = ["python", "-c", OFFER, f"{CONFIGS_DIRECTORY}/{RUN}.yaml", GATEWAY]
     return json.loads(stack.run("exec", "-T", "iam", *script, standard_input=tokens).strip().splitlines()[-1])

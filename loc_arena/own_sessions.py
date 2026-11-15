@@ -373,7 +373,10 @@ def play_own_sessions(
     noticed = append_to(directory / NOTICES_FILE)
     with serve_workspace(workspace, EPISODE_SERVICE, config.settings.stack.workspace_port):
         await_offered_tools(
-            config, os.environ[TOOLS_URL_VARIABLE], tokens, directory,
+            config,
+            os.environ[TOOLS_URL_VARIABLE],
+            tokens,
+            directory,
         )  # or play does not start
         ended = play_sessions(config, briefs, directory / LOOPS_DIRECTORY, seconds, notices, noticed)
         turns.end()  # a command still running ends before the checkouts are captured
