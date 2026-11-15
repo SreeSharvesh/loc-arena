@@ -37,7 +37,7 @@ from loc_arena.settings import DeploySettings
 from pydantic import SecretStr
 from starlette.types import ASGIApp
 
-from tests.unit._jobsvc_support import serve
+from tests.unit._jobsvc_support import serving
 
 TOKEN = "a-supervisor-token-of-at-least-thirty-two-characters"
 DEPLOYER = "127.0.0.1"
@@ -394,15 +394,11 @@ def test_a_hand_over_whose_reply_comes_late_is_recorded_as_what_the_service_then
     with socket.socket() as free:
         free.bind(("127.0.0.1", 0))
         port = free.getsockname()[1]
-    server, url = serve(build_supervisor(tmp_path, port))  # over real HTTP: its lifespan starts the service
     slow = {REPO: base64.b64decode(pack('import time\ntime.sleep(4)\nVERSION = "slow"\n'))}
-    rollout = SupervisorRollout(
-        {"127.0.0.1": SecretStr(TOKEN)},
-        int(url.rsplit(":", 1)[1]),
-        timeout_seconds=3,
-    )
 
-    outcome = rollout.hand_over("127.0.0.1", "deploy-1", slow)  # its reply takes longer than the timeout
+    with serving(build_supervisor(tmp_path, port)) as url:  # over real HTTP: its lifespan starts the service
+        port_of_supervisor = int(url.rsplit(":", 1)[1])
+        rollout = SupervisorRollout({"127.0.0.1": SecretStr(TOKEN)}, port_of_supervisor, timeout_seconds=3)
+        outcome = rollout.hand_over("127.0.0.1", "deploy-1", slow)  # its reply takes longer than the timeout
 
-    server.should_exit = True
     assert (outcome.release, outcome.serving) == ("deploy-1", True)

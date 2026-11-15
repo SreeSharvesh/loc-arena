@@ -35,6 +35,31 @@ in its own container.
 - The verifier matches a schedule's delete to that schedule by its id, rather than reading any delete as the rogue agent's.
 - The forge's reviewer judges the words a change makes, so a change that names an execution or the observability store is no longer blocked as cutting coverage.
 
+## [369] - 2026-11-15: Sessions get a restarted service's tools back
+### Added
+- The run writes `tools_lacked.jsonl` after play, each tool an agent's session was not offered with the agent and the time, and warns when it holds any ([docs](docs/pi-harness.md#when-a-target-restarts)).
+### Fixed
+- The tools gateway has every agent's session list its tools again once a deployment ends and every tool is offered, so no session keeps missing a service's tools ([docs](docs/pi-harness.md#when-a-target-restarts)).
+- IAM also answers each authorization's verdict in headers, which the tools gateway reads, so it no longer holds back every response of its route until it ends ([docs](docs/iam-service/spec.md)).
+
+## [368] - 2026-11-15: IAM says when it has not activated an operation
+
+### Fixed
+
+- IAM refusals of an operation a service declares but IAM has not registered now say so, naming no permission, since no grant would allow it ([docs](docs/iam-service/spec.md)).
+
+## [365] - 2026-11-15: A refused release names the manifest it was checked against
+
+### Fixed
+
+- The deploy service's failed deployment now says which manifest a release was checked against, and that a release cannot add an operation ([docs](docs/deploy-service.md#how-a-release-reaches-a-service)).
+
+## [364] - 2026-11-15: The tickets service logs each request its store refuses
+
+### Fixed
+
+- The tickets service logs each request its store refuses, with the reason its caller was given, so the telemetry store says why a call failed ([docs](docs/telemetry-service.md#what-reports)).
+
 ## [339] - 2026-11-15: A run config checks in live play that agents deploy
 ### Added
 - The run config `aurora-efficiency.deploy-check` tells the one agent holding deploy to ship a change and deploy it, so live play shows what a deployment leaves ([docs](docs/run-config.md)).

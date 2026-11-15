@@ -17,11 +17,18 @@ import pytest
 import uvicorn
 from loc_arena.config import load_run_config
 from loc_arena.iam_bootstrap import manifest_path
-from loc_arena.iam_wiring import build_service_app, guard_from_environment, iam_options, load_iam_authority
+from loc_arena.iam_wiring import (
+    MANIFEST_VARIABLE,
+    build_service_app,
+    guard_from_environment,
+    iam_options,
+    load_iam_authority,
+)
 from loc_arena.mcp_service import build_app, caller_from_token
 from loc_arena.tool_records import ToolRecord, tool_call_recorder
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
+from mcp.server import MCPServer
 from mcp.types import CallToolResult, TextContent
 from starlette.applications import Starlette
 
@@ -200,6 +207,30 @@ def test_a_call_without_the_grant_is_refused_recorded_and_changes_nothing(world:
     assert (record["gen_ai.agent.name"], record["error.type"]) == ("serving-agent", "tool_error")
 
 
+def test_a_tool_the_service_declares_and_iam_has_not_activated_is_refused_saying_so(world: World) -> None:
+    declared = read_chat_manifest()
+    manifest = {
+        **declared,
+        "operations": {**declared["operations"], "export": {"permission": "read"}},
+        "tools": {**declared["tools"], "export": "export"},
+    }
+    guard = Guard(load_manifest(manifest), world.guard().client)
+    server = MCPServer(
+        SERVICE,
+        middleware=list(iam_options(guard, SERVICE)["extra_middleware"]),
+        log_level="WARNING",
+    )
+
+    @server.tool()
+    async def export() -> str:
+        return "every message"
+
+    result = anyio.run(call, server, SERVICE, world.tokens["serving-agent"], "export", {})
+
+    assert result.is_error
+    assert text(result) == "not permitted: IAM has not activated export on chat."
+
+
 def test_request_approve_retry_and_the_caller_is_the_credentials_principal(world: World) -> None:
     server, store, _ = chat_server(world)
     asked = world.iam.submit_request(
@@ -310,6 +341,38 @@ def test_a_service_starts_only_if_its_tools_are_exactly_the_manifests(world: Wor
     extra = {**declared, "tools": {**declared["tools"], "purge": "post"}}
     with pytest.raises(ManifestError, match="declared but unregistered tool purge"):  # a binding with no tool
         start(extra)
+
+
+@pytest.mark.parametrize(
+    ("side", "served", "difference"),
+    [
+        ("http", "GET /channels", "undeclared route GET /channels"),
+        ("tools", "unread", "undeclared tool unread"),
+    ],
+)
+def test_what_the_manifest_lacks_is_refused_naming_that_manifest_and_that_a_release_cannot_add_it(
+    world: World,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    side: str,
+    served: str,
+    difference: str,
+) -> None:
+    server, store, _ = chat_server(world)
+    declared = read_chat_manifest()
+    lacking = {**declared, side: {k: v for k, v in declared[side].items() if k != served}}
+    environment = environment_for(tmp_path, world, "chat", lacking)
+    monkeypatch.setenv(MANIFEST_VARIABLE, environment[MANIFEST_VARIABLE])  # as a service's own environment
+    guard = guard_from_environment(environment)
+
+    with pytest.raises(ManifestError) as refused:
+        build_service_app(guard, server, SERVICE, create_chat_api(store, print, load_iam_authority(guard)))
+
+    assert str(refused.value) == (
+        f"{difference}. It was checked against the image's manifest, "
+        f"{environment[MANIFEST_VARIABLE]}, which IAM registered as its play began. "
+        "A release cannot add an operation: its own iam-manifest.json is not read."
+    )
 
 
 def test_a_service_asks_iam_as_often_and_as_long_as_its_environment_says(

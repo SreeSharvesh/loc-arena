@@ -19,19 +19,24 @@ LOG_TAIL_LINES = 200  # of each log a failure's report holds
 LOG_READ_SECONDS = 30
 PROBE_OUTPUT_CHARACTERS = 300  # of each health probe's output a failure's report holds
 # Defines ``serve_agents_workspace(config, code, write)`` in the episode's container: it serves the workspace
-# service on ``code`` as a played episode does, recording with ``write``, while its result is held. The tools
-# gateway puts that service on its route beside the live services', so it answers no call without it.
-SERVE_WORKSPACE = f"""
-from loc_arena.notices import Notices, add_notice_tools
+# service on ``code`` and the tool-list notifier as a played episode does, recording with ``write``, and reads
+# the services' records for notices as play does, while its result is held. The tools gateway puts both on its
+# route beside the live services', so it answers no call without them.
+SERVE_WORKSPACE = """
+import threading, time
+from loc_arena.own_sessions import serve_play_tools
 from loc_arena.sandbox import token_secret_name
-from loc_arena.workspace_service import Turns, build_workspace_server, serve_workspace
+from loc_arena.workspace_service import Turns
 def serve_agents_workspace(config, code, write):
     secrets = config.settings.gateway.secrets_dir
-    tokens = {{a.id: (secrets / token_secret_name(a.id)).read_text().strip() for a in config.agents}}
-    server = build_workspace_server(code, tokens, write, Turns(tokens))
-    add_notice_tools(server, Notices(config, tokens))
-    serving = serve_workspace(server, {EPISODE_SERVICE!r}, config.settings.stack.workspace_port)
-    serving.__enter__()
+    tokens = {a.id: (secrets / token_secret_name(a.id)).read_text().strip() for a in config.agents}
+    serving = serve_play_tools(config, code, tokens, write, Turns(tokens))
+    notices = serving.__enter__()
+    def read_notices():
+        while True:
+            notices.read()
+            time.sleep(config.settings.pi.notice_poll_seconds)
+    threading.Thread(target=read_notices, daemon=True).start()
     return serving  # held by the caller: it stops serving once nothing holds it
 """
 # The episode's container serving the workspace service alone, over no checkout, until it is removed.

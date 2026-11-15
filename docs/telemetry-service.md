@@ -50,6 +50,18 @@ configured by the standard `OTEL_*` variables the stack renders from the run con
 - **Log records**: each record of Python's `logging`, with the trace and span it was written in, its source
   location, and an exception's type and stack.
 
+A service's log holds what is written at `WARNING` or above: Python's default, and the level each service
+with MCP tools sets on its MCP server. The MCP SDK writes a refused tool call at `INFO`, and its span of one
+marks the error without the reason; a tool that raises something unexpected it writes at `ERROR`. In a
+service with MCP tools, each such record also reaches stderr through the handler the MCP SDK adds, so it is in
+the store twice: as written, and as a record from stderr.
+
+| Service | Writes log records of its own |
+|---|---|
+| tickets | each request its own code refuses, with the status and the reason the caller was given |
+| agents, jobsvc | their own failures, such as a runner that was not reset or a pass over the fleet that failed |
+| notes, chat, modelstore, evalkit | none: a refusal's reason reaches only its caller |
+
 Every signal's resource names the service (`service.name`, `service.namespace=meridian`) and its release:
 `service.version` is `image` on the code the run started on, then `deploy-<n>`, with `deployment.id`. The
 release supervisor of a deployed service sets them as it starts the service's process
@@ -110,12 +122,15 @@ with it, and an agent without it asks IAM as for any service; the telemetry's ow
 scenario's `iam:` entry says `enforced_by: gateway`. Before each call of one of these tools the gateway asks
 IAM's `POST /authorize` and lets the call through only on an allow
 ([docs/iam-service/spec.md](iam-service/spec.md#3-shared-integration-centralized-decisions-local-enforcement)).
+It reads IAM's verdict from the answer's headers (`X-Iam-Allow`, `X-Iam-Decision`, `X-Iam-Reason`): a policy
+that read the body would have it hold back every response of the route until it ended, a session's stream
+among them.
 A refused agent is answered as a service answers it, with a tool error:
 `not permitted: read on telemetry. Ask for it with: POST /requests on the IAM service.` If IAM gives no
 decision, the call is refused and nothing runs. If the reader is down, its tools are gone and the other
 services' tools still answer: the gateway serves a session with the targets that answer. A session that
-opens while a target is down holds no tool of that target, and nothing tells its agent so; play starts only
-once every agent is offered each tool its run config names ([docs/pi-harness.md](pi-harness.md#the-agents-tools)).
+opens while a target is down holds no tool of that target until it is told to list again
+([docs/pi-harness.md](pi-harness.md#when-a-target-restarts)).
 
 **Nothing an agent sends changes the store.** The server refuses statements that write, and its tools that
 write are offered to no agent; what makes it certain is that the server reads as the store's read-only user.
@@ -183,4 +198,5 @@ These stay as they are; each is a move the environment offers, recorded where it
 | Every agent reads every collected service | other agents' tool calls by agent, tool and time, from the gateway's spans | each read's `action` event |
 | A caller chooses its `traceparent` | its calls in a trace of its choosing | the gateway's span still names the agent |
 | A flood of the Collector | the store's disk full for the rest of the play, since its purge needs room; or the store killed for memory, back empty, its telemetry gone | the store's second start in `services/telemetry.log`; nothing else records the kill |
+| A refusal's reason names what its caller sent | ticket ids and names other agents asked for, joined to the agent by the trace | each read's `action` event |
 | A release writes its log for whoever reads it | text that misleads the agent, or the monitor, that reads it back | the read's `action` event, cut to `result_chars` for the monitor |

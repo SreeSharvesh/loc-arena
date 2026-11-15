@@ -4,7 +4,7 @@ Each agent's whole session runs in [pi](https://github.com/earendil-works/pi), t
 own agents run in on the runners. The episode starts every agent's loop at once and plays no turn. `pi` is the
 default and the only value of the run config's `harness` key.
 
-`loc_arena/own_sessions.py` · `loc_arena/notices.py` · `loc_arena/workspace_service.py` · `loc_arena/session_events.py` · `loc_arena/gateway/loop_routes.py`
+`loc_arena/own_sessions.py` · `loc_arena/notices.py` · `loc_arena/workspace_service.py` · `loc_arena/tool_offer.py` · `loc_arena/tool_list_notifier.py` · `loc_arena/session_events.py` · `loc_arena/gateway/loop_routes.py`
 
 ## What a loop is
 
@@ -34,14 +34,27 @@ The agent is offered its `sandbox: tools:` on the company's services, and the wo
 `read_file`, `write_file`, `edit_file`, `list_dir` and `search_code`, and its subscription tools (below). pi
 names each `mcp__meridian__<tool>`.
 
-A session holds the tools the tools gateway lists when it opens, and the gateway lists only the tools of the
-targets that answer then, so a session opened while a service is down or still starting never holds that
-service's tools. Sessions therefore start only once a new session, opened as each agent, lists every tool its
-run config names, read again for at most `stack.tools_offer_seconds`. What each agent was offered and lacked,
-and why a listing that could not open failed, is in `tools_offered.json` of the play's directory; while a tool is still missing,
-play does not start and the run fails naming it. A window is left: a target that stops between the check and
-pi's own listing, a moment later, still leaves that session without its tools, and nothing tells its agent so.
-A session already open keeps its tools while a deployment restarts their service.
+### When a target restarts
+
+<img alt="UML sequence diagram. pi opens a session while the notes service restarts, and the tools gateway lists it no notes tools. The deployment ends; the episode reads that in the deploy service's record and lists through the gateway as each agent until every tool named is offered. Then the tool-list notifier sends tools/list_changed through the gateway, and pi lists again and is offered every tool." src="figures/tool-list-notice.svg" width="100%">
+
+The gateway lists a session the tools of the targets that answer, and pi keeps a session's list until it is told
+the list changed. So sessions start only once a new session, opened as each agent, lists every tool its run
+config names, read again for at most `stack.tools_offer_seconds`; `tools_offered.json` in the play's directory
+holds what each agent was offered and lacked, and while a tool is still missing the run fails naming it.
+
+During play a deployment restarts its service. When the deploy service's record shows a deployment ended, the
+same check runs again, and once it passes, the tool-list notifier sends `notifications/tools/list_changed` on
+every session's stream, and pi lists again. A session that opened while the service was down gets its tools
+back; no session lists while a named tool is missing, so an open session never loses one. A target that is
+still missing after `stack.tools_offer_seconds` gets no notice until the next deployment ends. Two windows
+are left, and both show in `tools_lacked.jsonl`: a deployment that ended on its time bound may still restart
+its service after the check, and a second deployment may stop its service between the check and pi's listing.
+
+The notifier is a target of the gateway with no tools, served in the episode's container beside the workspace
+service. It admits only the gateway, by a key no agent holds, and writes no record. The gateway's log names
+the tools of each listing (`tools_listed`). After play the run writes `tools_lacked.jsonl`, one line per tool
+a session's listing lacked, with the agent, the session and the time, and warns when it has any.
 
 The workspace service runs in the episode's container, on the code tools of `loc_arena/scaffold/code_services.py`: a file tool
 reads and writes the agent's checkout, and a command runs in the agent's sandbox. The tools gateway names the

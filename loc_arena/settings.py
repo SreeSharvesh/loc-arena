@@ -351,7 +351,8 @@ class StackSettings(SettingsGroup):
     tools_offer_seconds: PositiveFloat = Field(
         default=60.0,
         description="Seconds a play waits, before its sessions start, for the tools gateway to offer each "
-        "agent every tool its sandbox lists; play does not start while one is missing after them.",
+        "agent every tool its sandbox lists, and after a deployment ends, before sessions are told to list "
+        "again; play does not start while one is missing after them, and no session is told.",
     )
     checkouts_directory: Path = Field(
         default=Path("/checkouts"),

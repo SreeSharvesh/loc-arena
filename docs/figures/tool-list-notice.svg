@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="944" height="696" viewBox="0 0 944 696" role="img" aria-label="UML sequence diagram of a session that opened while the notes service restarted. pi lists its tools through the tools gateway, which lists the targets that answer, so the session holds none of notes' tools. The deployment ends, and the episode reads it in the deploy service's record, then lists through the gateway as each agent until every tool named is offered. Then the tool-list notifier sends notifications/tools/list_changed through the gateway to the session, which lists again and is offered every tool, notes' too.">
+<style>
+  svg { --ink:#1f2328; --muted:#59636e; --rule:#8c959f; --panel:#f6f8fa;
+        --accent:#2f4bd6; --accent-bg:#e9edfd;
+        --sealed:#0d9488; --sealed-bg:#d9f2ef; --observe:#b3730a; --observe-bg:#f8ecd5; --attack:#d63f4a; --attack-bg:#fbe3e4; }
+  @media (prefers-color-scheme: dark) {
+    svg { --ink:#e6edf3; --muted:#9198a1; --rule:#6e7681; --panel:#161b22;
+          --accent:#8098ff; --accent-bg:#1b2340;
+          --sealed:#3ad6c4; --sealed-bg:#12312e; --observe:#e0a94a; --observe-bg:#33280f; --attack:#f47b82; --attack-bg:#3a1c20; }
+  }
+  text { font-family:-apple-system,"Segoe UI",system-ui,sans-serif; }
+  .box { fill:var(--panel); stroke:var(--rule); stroke-width:1; }
+  .focus { fill:var(--accent-bg); stroke:var(--accent); stroke-width:1.5; }
+  .ext { fill:none; stroke:var(--rule); stroke-width:1.25; stroke-dasharray:5 4; }
+  .region { fill:none; stroke:var(--rule); stroke-width:1; }
+  .sealed { fill:var(--sealed-bg); stroke:var(--sealed); stroke-width:1.5; }
+  .observe { fill:var(--observe-bg); stroke:var(--observe); stroke-width:1.5; }
+  .attack { fill:var(--attack-bg); stroke:var(--attack); stroke-width:1.5; }
+  .t { fill:var(--ink); font-size:13px; font-weight:600; }
+  .s { fill:var(--muted); font-size:11px; }
+  .m { fill:var(--muted); font-size:11px; font-family:ui-monospace,"SF Mono",Menlo,monospace; }
+  .bold { stroke:var(--ink); stroke-width:2.5; fill:none; }
+  .thin { stroke:var(--rule); stroke-width:1.25; fill:none; }
+  .dash { stroke:var(--rule); stroke-width:1.25; fill:none; stroke-dasharray:4 3; }
+  .life { stroke:var(--rule); stroke-width:1; fill:none; stroke-dasharray:3 4; }
+  .head-ink { fill:var(--ink); } .head-rule { fill:var(--rule); } .dot { fill:var(--ink); }
+</style>
+<defs>
+  <marker id="tl-hi" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-ink" d="M0,0 L10,5 L0,10 z"/></marker>
+  <marker id="tl-hr" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-rule" d="M0,0 L10,5 L0,10 z"/></marker>
+</defs>
+<g class="node"><rect class="box" x="16" y="24" width="112" height="48" rx="6"/><text class="t" x="72" y="40" text-anchor="middle" dominant-baseline="central">pi session</text><text class="s" x="72" y="57" text-anchor="middle" dominant-baseline="central">an agent's</text></g>
+<g class="node"><rect class="box" x="168" y="24" width="128" height="48" rx="6"/><text class="t" x="232" y="40" text-anchor="middle" dominant-baseline="central">Tools gateway</text><text class="m" x="232" y="57" text-anchor="middle" dominant-baseline="central">agentgateway</text></g>
+<g class="node"><rect class="box" x="336" y="24" width="112" height="48" rx="6"/><text class="t" x="392" y="40" text-anchor="middle" dominant-baseline="central">Notes service</text><text class="s" x="392" y="57" text-anchor="middle" dominant-baseline="central">deployed</text></g>
+<g class="node"><rect class="focus" x="480" y="24" width="144" height="48" rx="6"/><text class="t" x="552" y="40" text-anchor="middle" dominant-baseline="central">Tool-list notifier</text><text class="s" x="552" y="57" text-anchor="middle" dominant-baseline="central">no tools</text></g>
+<g class="node"><rect class="box" x="656" y="24" width="112" height="48" rx="6"/><text class="t" x="712" y="40" text-anchor="middle" dominant-baseline="central">Episode</text><text class="s" x="712" y="57" text-anchor="middle" dominant-baseline="central">reads records</text></g>
+<g class="node"><rect class="box" x="808" y="24" width="128" height="48" rx="6"/><text class="t" x="872" y="40" text-anchor="middle" dominant-baseline="central">Deploy service</text><text class="s" x="872" y="57" text-anchor="middle" dominant-baseline="central">its record</text></g>
+<path class="life" d="M72 72 V672"/>
+<path class="life" d="M232 72 V672"/>
+<path class="life" d="M392 72 V672"/>
+<path class="life" d="M552 72 V672"/>
+<path class="life" d="M712 72 V672"/>
+<path class="life" d="M872 72 V672"/>
+<path class="thin" d="M72 120 H231" marker-end="url(#tl-hr)"/>
+<text class="m" x="152" y="105" text-anchor="middle" dominant-baseline="central">1 tools/list</text>
+<text class="s" x="152" y="90" text-anchor="middle" dominant-baseline="central">a new session</text>
+<path class="thin" d="M232 168 H391" marker-end="url(#tl-hr)"/>
+<text class="m" x="312" y="153" text-anchor="middle" dominant-baseline="central">2 tools/list</text>
+<path class="dash" d="M392 216 H233" marker-end="url(#tl-hr)"/>
+<text class="s" x="312" y="201" text-anchor="middle" dominant-baseline="central">refused: restarting</text>
+<path class="dash" d="M232 264 H73" marker-end="url(#tl-hr)"/>
+<text class="s" x="152" y="249" text-anchor="middle" dominant-baseline="central">no notes tools</text>
+<path class="thin" d="M872 312 H713" marker-end="url(#tl-hr)"/>
+<text class="s" x="792" y="297" text-anchor="middle" dominant-baseline="central">read from its record</text>
+<text class="s" x="792" y="282" text-anchor="middle" dominant-baseline="central">3 deployment ended</text>
+<path class="thin" d="M712 360 H233" marker-end="url(#tl-hr)"/>
+<text class="m" x="632" y="345" text-anchor="middle" dominant-baseline="central">4 tools/list</text>
+<text class="s" x="632" y="330" text-anchor="middle" dominant-baseline="central">as each agent</text>
+<path class="dash" d="M232 408 H711" marker-end="url(#tl-hr)"/>
+<text class="s" x="632" y="393" text-anchor="middle" dominant-baseline="central">every tool named</text>
+<path class="thin" d="M712 456 H553" marker-end="url(#tl-hr)"/>
+<text class="s" x="632" y="441" text-anchor="middle" dominant-baseline="central">5 notify</text>
+<path class="bold" d="M552 504 H233" marker-end="url(#tl-hi)"/>
+<text class="m" x="472" y="489" text-anchor="middle" dominant-baseline="central">6 tools/list_changed</text>
+<path class="bold" d="M232 552 H73" marker-end="url(#tl-hi)"/>
+<text class="m" x="152" y="537" text-anchor="middle" dominant-baseline="central">list_changed</text>
+<path class="bold" d="M72 600 H231" marker-end="url(#tl-hi)"/>
+<text class="m" x="152" y="585" text-anchor="middle" dominant-baseline="central">7 tools/list</text>
+<path class="dash" d="M232 648 H73" marker-end="url(#tl-hr)"/>
+<text class="s" x="152" y="633" text-anchor="middle" dominant-baseline="central">every tool, notes' too</text>
+</svg>

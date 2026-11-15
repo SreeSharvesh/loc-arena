@@ -711,9 +711,7 @@ def test_the_tools_gateway_listens_on_its_port_alone_on_ipv4_with_no_admin_stats
     )
 
 
-def test_the_tools_gateway_logs_each_request_as_json_naming_the_agent_and_a_tool_calls_arguments_and_outcome(
-    tools_gateway_config: dict[str, Any],
-) -> None:
+def test_tools_gateway_logs_json_naming_caller_outcome_listing(tools_gateway_config: dict[str, Any]) -> None:
     logged = (tools_gateway_config["config"]["logging"], tools_gateway_config["frontendPolicies"])
 
     assert logged == (
@@ -725,6 +723,7 @@ def test_the_tools_gateway_logs_each_request_as_json_naming_the_agent_and_a_tool
                     "tool_args": "mcp.tool.arguments",
                     "tool_result": "mcp.tool.result",
                     "tool_error": "mcp.tool.error",
+                    "tools_listed": "mcp.toolsList.tools.map(tool, tool.name)",
                 },
             },
         },

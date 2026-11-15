@@ -18,6 +18,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from pydantic import SecretStr
 
+from loc_arena.iam_wiring import naming_the_manifest
 from meridian_controlplane.agents import AgentIdentity, RightsChange
 from meridian_iam.client import IamClient
 from meridian_iam.contracts import IamError
@@ -37,7 +38,8 @@ class IamAuthority:
 
     def verify_routes(self, app: FastAPI) -> None:
         """Startup coverage: every route is a declared operation and every operation a route."""
-        verify_app(self._guard, app)
+        with naming_the_manifest():
+            verify_app(self._guard, app)
 
     def authorize(self, token: str, operation: str) -> None:
         """Have IAM decide ``operation`` as ``token``'s holder; a refusal is raised as an HTTP one is."""
