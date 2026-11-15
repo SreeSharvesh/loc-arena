@@ -30,6 +30,10 @@ in its own container.
 
 - The notes service, chat service, tickets service, model store and eval service answer an HTTP request they fail on with JSON, as they answer every other error ([docs](docs/telemetry-service.md#what-reports)).
 
+## [372] - 2026-11-15: The checkout isolation test names a failed sandbox call
+### Changed
+- The repository's checkout isolation test prints a failed bash call's whole reply and every sandbox's log, so the next sandbox error explains itself; the arena behaves as before.
+
 ## [371] - 2026-11-15: A release can add an operation, which monitors see
 
 ### Added
