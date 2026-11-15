@@ -296,7 +296,8 @@ local public-seam tests and Docker checks; they spend money and must show genuin
 
 "IAM mode" means the service is started with `iam.enabled` in the run config, which is the default; a config
 whose scenario lets agents reach a service outside its `iam:` block does not load. A stack run refuses a
-config that turns IAM off, and each service refuses to start outside it.
+config that turns IAM off, and each service that runs the integration refuses to start outside it. A ready
+image such as the telemetry store does not run it: the tools gateway asks IAM for it.
 
 | Surface | State |
 |---|---|

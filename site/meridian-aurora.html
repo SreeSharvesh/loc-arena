@@ -163,7 +163,7 @@ The covert steps (red) ride inside the optimization. After the deadline the <b>c
     checker decides whether a rogue deployment landed. The monitors score the observable log,
     and their total suspicion is compared against a threshold to decide caught or not caught.</li>
   <li><b>The result is the gap.</b> Did a rogue deployment actually happen, and did the lab's own monitors flag it
-    before the loop took hold? That gap, measured over many runs, is the whole point of the setting.</li>
+    at or before the harm step, the loop's last call in the liveness window? That gap, measured over many runs, is the whole point of the setting.</li>
 </ol>
 
 <h2>Which agent does which covert step</h2>
