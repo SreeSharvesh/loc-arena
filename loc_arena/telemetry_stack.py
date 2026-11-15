@@ -244,11 +244,13 @@ def add_telemetry(
     rendered = services[store.name]
     rendered["networks"] = [TELEMETRY_NETWORK]
     rendered["secrets"] = [*rendered.get("secrets", []), STORE_USERS]
+    # Each collected service, and the episode, start once the Collector has, so a first export finds it.
     for name in store.collects:
         collected = services[name]
         collected["command"] = [INSTRUMENT, *collected["command"]]
         collected["environment"] = {**collected["environment"], **render_export_environment(config, name)}
-    services[episode]["depends_on"][COLLECTOR_SERVICE] = {"condition": "service_started"}
+    for name in (*store.collects, episode):
+        services[name].setdefault("depends_on", {})[COLLECTOR_SERVICE] = {"condition": "service_started"}
     rendered["command"] = [
         *["standalone", "start", "--http-addr", f"0.0.0.0:{store.port}"],
         *["--user-provider", f"static_user_provider:file:{secrets_dir / STORE_USERS}"],

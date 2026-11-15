@@ -17,11 +17,9 @@ from __future__ import annotations
 import os
 import sys
 
-import uvicorn
-
 from loc_arena.config import load_run_config
 from loc_arena.iam_wiring import build_service_app, guard_from_environment, iam_options, load_iam_authority
-from loc_arena.mcp_service import ALL_ADDRESSES, caller_from_token
+from loc_arena.mcp_service import caller_from_token, serve
 from loc_arena.tool_records import record_writer, tool_call_recorder
 from meridian_common.records import Database
 from meridian_evalkit.service import (
@@ -59,13 +57,7 @@ def main(arguments: list[str]) -> None:
         options["verifier"],
         [recorder, *options["extra_middleware"]],
     )
-    uvicorn.run(
-        build_service_app(guard, server, entry.name, api),
-        host=ALL_ADDRESSES,
-        port=entry.port,
-        log_level="warning",
-        access_log=False,
-    )
+    serve(build_service_app(guard, server, entry.name, api), entry.port)
 
 
 if __name__ == "__main__":

@@ -7,12 +7,19 @@ an argument.
 
 from __future__ import annotations
 
+import uvicorn
 from mcp.server import MCPServer
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
+from starlette.types import ASGIApp
 
 ALL_ADDRESSES = "0.0.0.0"  # noqa: S104 - agent-net is its only network
+# uvicorn's own logging, and a root logger with no handler. An MCP server gives the root one that writes each
+# record to stderr, which a deployed service's supervisor exports again. Under OpenTelemetry the SDK keeps its
+# own handler on the root, so each record reaches the store once; without it, Python writes each warning to
+# stderr.
+LOGGING = {**uvicorn.config.LOGGING_CONFIG, "root": {"handlers": [], "level": "WARNING"}}
 
 
 def caller_from_token() -> str | None:
@@ -30,3 +37,8 @@ def build_app(server: MCPServer, service: str) -> Starlette:
     """
     security = TransportSecuritySettings(allowed_hosts=[service, f"{service}:*"])
     return server.streamable_http_app(stateless_http=True, transport_security=security)
+
+
+def serve(app: ASGIApp, port: int) -> None:
+    """Serve ``app`` on ``port`` of every address with ``LOGGING``: warnings and above, and no access log."""
+    uvicorn.run(app, host=ALL_ADDRESSES, port=port, log_level="warning", access_log=False, log_config=LOGGING)

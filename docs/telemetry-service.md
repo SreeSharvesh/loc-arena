@@ -52,9 +52,10 @@ configured by the standard `OTEL_*` variables the stack renders from the run con
 
 A service's log holds what is written at `WARNING` or above: Python's default, and the level each service
 with MCP tools sets on its MCP server. The MCP SDK writes a refused tool call at `INFO`, and its span of one
-marks the error without the reason; a tool that raises something unexpected it writes at `ERROR`. In a
-service with MCP tools, each such record also reaches stderr through the handler the MCP SDK adds, so it is in
-the store twice: as written, and as a record from stderr.
+marks the error without the reason; a tool that raises something unexpected it writes at `ERROR`. Each
+record is in the store once. The MCP SDK gives the root logger a handler that copies every record to stderr,
+which the supervisor exports again; each service's launcher logs with a root that has no handler of its own
+(`loc_arena.mcp_service`), so a record leaves only through OpenTelemetry's.
 
 | Service | Writes log records of its own |
 |---|---|
@@ -99,7 +100,8 @@ with the address it came from (`meridian.sender.address`), which a sender cannot
 message of a request, batches, and writes the store as a user that can only write. The store is on
 telemetry-net, which no sandbox, runner or node joins, and has a second user that can only read
 ([docs/isolation/README.md](isolation/README.md#containers)). This Collector is not the one that writes the
-sealed record of the model calls, which takes nothing from it.
+sealed record of the model calls, which takes nothing from it. Each collected service, and the episode, starts
+once the Collector has, so a service's first export finds it.
 
 ## How agents read it
 
@@ -173,8 +175,8 @@ A store or a Collector that is down never fails a service or a run.
   next compacts the files that hold it, so within a short play nothing may be purged at all. Its data is on a
   memory filesystem of `store_disk_mib`: a write past it fails, the Collector drops the batch, and the store
   answers what it holds. A store killed for memory starts again empty, its telemetry gone.
-- With the Collector down, a service answers as before. Two things change: its SDK writes a line to its
-  stderr for each export that fails, a few hundred bytes a second, and its process ends up to twice
+- With the Collector down, a service answers as before. Two things change: its SDK logs each export that
+  fails as a record of its log, not a line of its stderr, and its process ends up to twice
   `export_seconds` later, as it flushes. The settings refuse an `export_seconds` that is not less than half
   of `deploy.stop_seconds`.
 - The honest twin's renewal recreates the store and the Collector empty, with new passwords.
