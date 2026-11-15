@@ -43,7 +43,7 @@ from loc_arena.recorded_events import SERVICE_LOGS, build_recorded_events
 from loc_arena.stack_play import deploy_company_server
 from loc_arena.tools_gateway import MCP_PATH, TOOLS_GATEWAY_SERVICE
 
-from tests.integration._docker_support import image_exists, serve_workspace
+from tests.integration._docker_support import needs_stack, serve_workspace
 from tests.integration._mcp_probe import CALL_TOOL
 from tests.integration._records_support import record_phase_around
 
@@ -59,10 +59,7 @@ WAIT_SECONDS = 60
 RUN_UNTIL_RELEASED = ["sh", "-c", "until [ -e release ]; do sleep 0.2; done"]
 COSTLY_MODEL = "costly/model"  # on no runner's list of models
 
-pytestmark = pytest.mark.skipif(
-    not image_exists(CONFIG.settings.stack.image),
-    reason=f"needs Docker and the {CONFIG.settings.stack.image} image",
-)
+pytestmark = needs_stack(CONFIG.settings.stack.image)
 
 # Run in a container with python: one call of the job service's API, as the holder of the token on stdin.
 CALL = """
@@ -386,8 +383,7 @@ def test_a_job_submitted_from_a_sandbox_runs_as_a_process_on_a_node_and_its_logs
     status, submitted = stack.http(OWNER, "POST", "/jobs", {"name": "bench", "command": command})
 
     running = stack.wait_for(submitted["id"], "running")
-    time.sleep(1)  # the process prints at once; the daemon serves what it has printed so far
-    logs = stack.http(OWNER, "GET", f"/jobs/{submitted['id']}/logs")[1]["stdout"]
+    logs = stack.logs(submitted["id"])
 
     # It runs on a free node; the seed's own job holds node-1.
     assert (status, submitted["owner"], running["node"] in FREE_NODES) == (HTTPStatus.CREATED, OWNER, True)
@@ -602,6 +598,22 @@ def test_the_job_service_told_to_end_exits_by_itself_after_its_pass_over_the_fle
     # -15 is SIGTERM ending it where uvicorn raises the signal again, with a pass over the fleet under way,
     # and -9 the supervisor killing it.
     assert ended == ["supervisor: the service's process ended with status 0"]
+
+
+def test_a_job_that_kills_its_nodes_daemon_is_followed_in_the_nodes_facts_by_the_daemons_boot(
+    stack: Stack,
+) -> None:
+    kill = "import os, signal, time; time.sleep(2); os.kill(os.getppid(), signal.SIGKILL)"
+    _, submitted = stack.http(OWNER, "POST", "/jobs", {"name": "kill", "command": ["python", "-c", kill]})
+    node = stack.wait_for(submitted["id"], "running")["node"]
+
+    stack.wait_for(submitted["id"], "failed")  # once the job service finds the node holds no such job
+
+    lines = stack.run("logs", "--no-log-prefix", node).splitlines()
+    facts = [json.loads(line)["process"] for line in lines if line.startswith("{")]
+    started = [fact.get("job_id") for fact in facts].index(submitted["id"])
+    # No exit fact: the daemon that would have written it is the one the job killed.
+    assert [fact["phase"] for fact in facts[started : started + 2]] == ["start", "boot"]
 
 
 def test_the_honest_twin_starts_with_the_seed_alone_and_none_of_the_attacks_jobs(stack: Stack) -> None:

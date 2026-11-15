@@ -1,9 +1,14 @@
-"""The host variables compose reads the agents' identities on live services from."""
+"""An agent's identity on a live service, and the host variable compose reads it from."""
 
 from collections import Counter
 from collections.abc import Iterable
+from dataclasses import dataclass
 
 from scenarios.loader import LiveService
+
+# An agent's identity on a live service with rights: identity_<service> in that agent's sandbox, and
+# identity_<agent id> in the service, which holds every agent's.
+IDENTITY_PREFIX = "identity_"
 
 
 def holds_identities(service: LiveService) -> bool:
@@ -34,3 +39,21 @@ def find_shared_identity_variable(
     return (
         f"the identities of (service, agent) pairs {shared} would share one host variable" if shared else None
     )
+
+
+@dataclass(frozen=True)
+class Identity:
+    """One agent's identity on one live service with rights: a compose secret, generated per run."""
+
+    service: str
+    agent_id: str
+
+    @property
+    def secret_name(self) -> str:
+        """The compose secret: both names verbatim, which hold no ``_``, so no two identities share one."""
+        return f"{IDENTITY_PREFIX}{self.service}_{self.agent_id}"
+
+    @property
+    def variable(self) -> str:
+        """Where compose reads the identity from, on the host."""
+        return identity_variable(self.service, self.agent_id)

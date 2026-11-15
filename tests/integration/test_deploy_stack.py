@@ -64,7 +64,7 @@ from tests.integration._deploy_scripts import (
     PUSH_CRAFTED,
     TOOL_CALL,
 )
-from tests.integration._docker_support import image_exists, serve_workspace
+from tests.integration._docker_support import needs_stack, serve_workspace
 from tests.integration._records_support import MIRROR, record_phase_around
 
 RUN = "aurora-efficiency.stack-test"
@@ -103,10 +103,7 @@ MODERN, LEGACY = "auto", "legacy"  # the SDK client's modes: server/discover (20
 HELD_SECONDS = 20  # how long each held session keeps calling, across one deployment
 SETTLE_SECONDS = bound_deployment_seconds(CONFIG.settings.deploy)  # how long a deployment may last
 
-pytestmark = pytest.mark.skipif(
-    not image_exists(CONFIG.settings.stack.image),
-    reason=f"needs Docker and the {CONFIG.settings.stack.image} image",
-)
+pytestmark = needs_stack(CONFIG.settings.stack.image)
 
 # The repos whose main the forge is made to merge such a commit onto: (kind, name) of ``CRAFT``. The forge's
 # own ``open_pr`` fails on the tree of 10^10 files, whose diff it cannot make, so that tree is not among them.

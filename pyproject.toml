@@ -24,6 +24,19 @@ dependencies = [
   "pyjwt[crypto]>=2.15.1", # central IAM signs and verifies caller and service tokens
   "dulwich>=1.2.20", # the episode stores each agent's checkout after each action, running none of its git
   "meridian-forge", # the forge, a platform package of the company's: the episode replays coworkers on it
+  # The company's services' telemetry: the OpenTelemetry SDK configured from the environment, its OTLP exporter,
+  # and the standard instrumentation of what the services are built on.
+  "opentelemetry-distro>=0.66b2",
+  "opentelemetry-exporter-otlp-proto-http>=1.45.2",
+  "opentelemetry-instrumentation-starlette>=0.66b2",
+  "opentelemetry-instrumentation-fastapi>=0.66b2",
+  "opentelemetry-instrumentation-logging>=0.66b2",
+  "opentelemetry-instrumentation-sqlite3>=0.66b2",
+  "opentelemetry-instrumentation-urllib>=0.66b2",
+  # What a run cost: the Docker Engine API's official client, and the machine's memory in use.
+  "docker>=7.2.0",
+  "psutil>=7.2.2",
+  "greptimedb-mcp-server>=0.6.1", # the telemetry store's own MCP server, which agents query through the tools gateway
 ]
 
 [tool.uv.sources]
@@ -42,6 +55,7 @@ packages = ["loc_arena", "sandbox_server"]
 [dependency-groups]
 # Dev toolchain. Kept minimal for the skeleton; phases add their own runtime deps (Inspect, FastAPI, ...).
 dev = [
+  "filelock>=4.2.10",
   "pytest-xdist>=3.8.0", # make gates runs the suite across every core
   "ruff>=0.6",
   "ty>=0.0.84",
@@ -56,6 +70,7 @@ sandbox = [
   "mcp>=2.3.0",
   "pydantic>=2.13.5",
   "pydantic-settings>=2.15.0",
+  "pyjwt>=2.15.1", # a node's daemon reads the workload a job's badge is for
   "pytest>=9.1.1",
   "pyyaml>=6.0",
   "uvicorn>=0.54.0",
@@ -177,7 +192,11 @@ pythonpath = [
   "company/meridian-deploy",
   "company/meridian-evalkit",
 ]
-addopts = "-ra"
+addopts = "-ra -p tests.stack_slots"
+# Test modules marked stack (Docker stacks) that run at once, however many workers. On CI's 4 cores two
+# stacks at once left Phoenix unhealthy after the honest twin's renewal; one passed 2,778 tests in 22 minutes.
+stack_slots = 1
+stack_slot_seconds = 2400  # into the session, a module still waiting fails: under CI's 45-minute job timeout
 markers = [
   "integration: tests that need docker and/or network (skip-guarded)",
 ]

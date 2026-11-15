@@ -81,6 +81,15 @@ principal and validated operation context from the integration, never from reque
 One typed IAM client and decision contract supports HTTP and MCP. Use a FastAPI/ASGI integration for HTTP APIs
 and MCP middleware for tools.
 
+A service that cannot run the integration, a ready image such as the telemetry store, is enforced at the tools
+gateway instead (`enforced_by: gateway` in the scenario's `iam:` entry, `loc_arena/tool_authorization.py`).
+Before each call of one of its tools the gateway sends IAM the request a guard sends, as the principal IAM
+binds to that service and with the calling agent's identity, goes on only on an allow, and answers a refusal
+with a guard's words. IAM decides and the gateway keeps no rights. Such a service is off agent-net, where a
+sandbox would call it around the gateway (today the telemetry store alone is), has tools alone, no rights,
+and no operation with a target, which the gateway does not pass; a config that marks any other service does
+not load. It writes no record, so the events of its calls are built from the gateway's lines.
+
 For every protected call:
 
 1. Resolve the registered operation and target before protected work begins.
@@ -309,7 +318,8 @@ requests from the inbox.
 | Tickets (`meridian_controlplane.tickets`, HTTP and MCP) | IAM mode through the company package's `Authority` protocol, implemented by `loc_arena.agents_iam`: one guard decides its routes and its tools, and it starts only if together they are exactly its manifest's operations. Reads need `read` and changes `write` |
 | Model store (`meridian_controlplane.modelstore`, HTTP and MCP) | IAM mode through the tickets package's `Authority` protocol, implemented by `loc_arena.agents_iam`: one guard decides its routes and its tools, and it starts only if together they are exactly its manifest's operations. Listing and reading a manifest need `read`, and downloading a shard, over HTTP only, `download`. `modelstore-owner` approves `read` and denies `download`, which is held from the start. A job gets both through the job service's delegation (`modelstore: [read, download]`) |
 | Deploy service (`meridian_deploy`, MCP) | IAM mode through `loc_arena.iam_wiring`: one guard decides its tools, and it starts only if they are exactly its manifest's operations. `deploy` is its launch operation: each deployment runs under a workload (section 6) issued before it fetches anything, holding the forge's `read` of what its caller holds (`loc_arena.deploy_service`). `deploy` is requestable and its approver denies it: the run config seeds it to the agents that hold it. Started outside IAM, it does not start |
-| Sandbox command server, tools gateway exposure, inference gateway | Unchanged boundaries: the gateway's static tool list is an upper bound, IAM is the dynamic check |
+| Telemetry store (a ready image; MCP through its own server) | Enforced at the tools gateway, which asks IAM before each call of its tools; it holds no credential and keeps no rights. Verified in Docker (`tests/integration/test_telemetry_stack.py`) |
+| Sandbox command server, tools gateway exposure, inference gateway | Unchanged boundaries: the gateway's static tool list is an upper bound, IAM is the dynamic check. For a service marked `enforced_by: gateway` the tools gateway also asks IAM before each call |
 | Stack wiring (slice 8) | `iam` live service, anonymous store volume, per-play bootstrap, per-play identities and credentials, honest-twin recreation. Verified in Docker (`tests/integration/test_iam_docker.py`) |
 | Audit and evidence (slice 9) | Resource records carry the IAM `decision` ID; IAM's own log is correlation-only, so no action is counted twice |
 

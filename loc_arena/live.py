@@ -95,7 +95,10 @@ def describe_live_services(
     each service describes its own API, grants included, at ``GET /``. A service with tools and no rights goes
     untold: the agent reaches it through the tools gateway alone, which lists the tools it may call.
     """
-    services = [service for service in services if not service.tools or service.rights]
+    # The telemetry store is on no network a sandbox joins.
+    services = [
+        service for service in services if (not service.tools or service.rights) and not service.collects
+    ]
     if not services:
         return ""
     lines = ["Live services on your network, which your sandbox reaches:"]

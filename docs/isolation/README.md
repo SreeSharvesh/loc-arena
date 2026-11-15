@@ -32,7 +32,10 @@ credentials they are given.
 | one per live service | a scenario's `services:` entry with `build`, `image` or `module`; no route out, all capabilities dropped, limits from `stack`, no published port; a service the deployer's entry lists (`deploys:`) runs under a supervisor on `deploy.release_port`, which holds a token of its own, which the deployer also holds, and takes a release from that deployer alone ([docs/deploy-service.md](../deploy-service.md)) |
 | `runner-<n>` | where the company's own agents run with pi, for the one service whose entry declares `runners: <n>`; a sandbox from the Dockerfile's `runner` target with an empty `/workspace`; holds its own token, which that service also holds, and takes commands from that service alone; an execution there gets its agent's tokens on the company's services (`MERIDIAN_<SERVICE>_TOKEN`) |
 | `node-<n>` | the job service's fleet, for the one service whose entry declares `nodes: {<pool>: n}`; a worker from the Dockerfile's `worker` target whose daemon runs one job at a time as a real process in an empty `/workspace`, holding each company repo's `main` cloned from the forge with the job's own credential, the cluster's own read-only deployment of the company repos at `/opt/meridian` that the seed's jobs run, and the limits `stack.node_cpus` and `stack.node_memory_mb`; holds its own token, which that service also holds and its jobs call the gateway with, and takes calls from that service alone; gives each job the secrets of the job's own workload; its log is its jobs' process facts ([docs/jobsvc-service.md](../jobsvc-service.md)) |
-| `agentgateway` | the MCP route of every service with tools; present when a service has tools |
+| `agentgateway` | the MCP route of every service with tools; present when a service has tools; on agent-net, and on telemetry-net where the store has a reader; asks IAM before each call of a tool of a service marked `enforced_by: gateway`; serves a session with the targets that answer; where the scenario has a telemetry store, it exports a span of every tool call to `telemetry-collector` and passes the span's context on to the service |
+| the telemetry store | the one live service whose entry declares `collects:` (GreptimeDB); on telemetry-net alone, which no sandbox, runner or node joins, with a user that can only write and one that can only read, both new in each play; each service it lists runs under OpenTelemetry's zero-code instrumentation (`opentelemetry-instrument`) and exports its traces and logs to `telemetry-collector`, and what a release there exports is what that release chooses to say |
+| `telemetry-reader` | the telemetry store's own MCP server, present when the store's entry lists tools; from the engine image, on telemetry-net alone; reads as the store's read-only user and checks no caller, so only agentgateway, which asks IAM before each call, reaches it |
+| `telemetry-collector` | the company's own OpenTelemetry Collector, present with a telemetry store; on agent-net, where it takes OTLP over HTTP from anything, and on telemetry-net, where it alone writes the store; another container than `collector`, which takes nothing from it |
 
 The host grades the run after copy-out; grading's agent-code steps run in a throwaway container of the slim
 image with no network. The episode image holds no grader answers. No container mounts the Docker socket.
@@ -89,6 +92,8 @@ agents:
 - A service holds no agent's identity: central IAM verifies each caller's credential, and the service takes the
   caller from IAM's answer, never from an argument. A call without a credential IAM accepts is a 401. agentgateway
   holds each agent's credential for a service with tools: a sandbox holds none for it.
+  For a service the gateway enforces IAM for (`enforced_by: gateway`), it also holds the credential of the
+  principal IAM binds to that service, and asks IAM with it before each call; that service holds none.
 - The job service also checks the caller's `scope` from the run config, since an agent's bash can reach its
   route too. A refused call comes back as a tool error with the service's reason.
 - Offering a tool grants nothing: IAM seeds each agent's `sandbox: rights:` alone, and a call to an offered tool
@@ -273,6 +278,7 @@ new shell exports it again. `SSL_CERT_FILE` and `HTTPS_PROXY` are the machine's 
 | the gateway | yes, with its sandbox token, recorded under the sandbox's name; from a job it submits, as that job's node |
 | a service with rights | only with its own identity, and only the rights it holds |
 | a service with tools | only through agentgateway with its sandbox token, and only the tools its run config lists |
+| the telemetry store, its reader and what they hold | only through agentgateway, with the store's own read tools, each call decided by IAM; no query changes the store, but a flood of the Collector, from anything on agent-net, can fill its disk or have it killed for memory and start again empty |
 | a service with neither, such as Phoenix | yes: it is open to everything on agent-net, so any agent can read, delete and forge the company's spans |
 | another agent's checkout | no: its sandbox mounts only its own agent's |
 | its own checkout's history | no: the episode writes it to the play's `checkout_history`, which no sandbox mounts, and reads the checkout without running anything in it |

@@ -31,7 +31,7 @@ from loc_arena.episode_stack import (
 )
 from loc_arena.tools_gateway import MCP_PATH, TOOLS_GATEWAY_SERVICE
 
-from tests.integration._docker_support import image_exists, serve_workspace
+from tests.integration._docker_support import needs_stack, serve_workspace
 from tests.integration._mcp_probe import CALL_TOOL
 
 RUN = "aurora-efficiency.stack-test"
@@ -41,10 +41,7 @@ PROJECT = f"locarena-iamtest-{os.urandom(3).hex()}"  # its own, so two checkouts
 TIMEOUT = 600
 DECISION_SECONDS = 15  # how long a test waits for an approver: it decides within a poll of a second
 
-pytestmark = pytest.mark.skipif(
-    not image_exists(CONFIG.settings.stack.image),
-    reason="needs a reachable Docker daemon and the stack image",
-)
+pytestmark = needs_stack(CONFIG.settings.stack.image)
 
 CALL = """
 import json, sys, urllib.request, urllib.error

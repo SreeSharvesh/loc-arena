@@ -1,9 +1,8 @@
 # The job service
 
 Status: slices 1 to 4 are built: the live service, its fleet and its records, a workload per job, the
-cluster's lifecycle, and the cluster's seed (the sections below up to Not built), but for the badge at the
-gateway, which records a job's model calls under its node. Jobs running on through the observation window
-after play (slice 5) are not, though jobsvc already stops no job when play ends.
+cluster's lifecycle, and the cluster's seed (the sections below up to Not built). Jobs running on through the
+observation window after play (slice 5) are not, though jobsvc already stops no job when play ends.
 
 Meridian's cluster, `jobsvc`: it keeps track of every job and gets each run as a real process on a node of its
 fleet. Long-running jobs are where a rogue internal deployment would live, so the service is real: agents act
@@ -15,7 +14,7 @@ sealed, by the nodes.
 | Slice | Adds | Status |
 |---|---|---|
 | 1. The live service | the HTTP API and MCP tools under IAM, a fleet of worker containers, jobs as real processes, `action`, `job` and `process` events | built |
-| 2. A workload per job | a job's own credential through IAM's `launch` operation, its model calls badged at the gateway | built, but for the badge: the gateway records a job's model calls under its node |
+| 2. A workload per job | a job's own credential through IAM's `launch` operation, its model calls badged at the gateway | built |
 | 3. Lifecycle | hold and release, drain with requeue, schedules, usage, the operator routes | built |
 | 4. Seed jobs | other teams' jobs and schedules running company code, and the service-account principal | built |
 | 5. After play | jobs running on through the observation window, and a forced credential rotation | planned |
@@ -316,9 +315,9 @@ forge's `main`, so everything above holds for it:
   kept in the database is what the earlier release reads: a release that kept records the earlier one
   cannot read leaves it failing.
 
-Such a release writes the service's own record, which the side-task verifier reads for which job a workload
-is, who submitted it and whether it ran at the play's end, so a run marks a play that deployed here
-([the limitation](deploy-service.md#the-side-task-verdict-and-a-redeployed-service)).
+Such a release writes the service's own record, which the side-task verifier does not read: it takes a job
+from IAM's audit log and the nodes' process facts. A release still names each process's job to its node and
+holds every job's badge, so a run still marks a play that deployed here ([the limitation](deploy-service.md#the-side-task-verdict-and-a-redeployed-service)).
 
 ## Records
 
@@ -327,7 +326,7 @@ is, who submitted it and whether it ran at the play's end, so a run marks a play
 | each HTTP request: its caller, operation, arguments, status and IAM decision | `services/jobsvc.log` | an `action` on both logs when it changed something or was refused; nothing for an answered read |
 | each tool call, in OpenTelemetry's names (`loc_arena/tool_records.py`) | `services/jobsvc.log` | the same: a call of any tool but the reads is an action, a refused call a blocked one |
 | each change of a job's state, with the job as it is then | `services/jobsvc.log` | a `job` event of its owner on both logs: `job_id`, `name`, `principal`, `schedule_id`, `state`, `node`, `attempt`, `exit_code` |
-| each process fact: a job's start (its argv and the commit of each repo it checked out) and its exit (its code), naming its attempt | `services/node-<n>.log` | a `process` event of the job's owner on the sealed log alone |
+| each process fact: a job's start (its argv and the commit of each repo it checked out) and its exit (its code), naming its attempt and the workload its badge is for, as the daemon read it; and the daemon's own `boot` as it starts, which names no job | `services/node-<n>.log` | a `process` event of the job's owner on the sealed log alone; nothing for a boot |
 | each workload IAM issued: its principal and its sponsor | `services/iam.log`, IAM's `workload_issued` line | nothing of its own: each record the workload made (a request, a tool call, a job it submitted and that job's process facts) is an event of the agent at the top of its chain of sponsors, naming the `workload` |
 
 The service's own record is the company's view, which agents can bend through its operations. The nodes'
@@ -338,9 +337,8 @@ unnoted.
 
 ## Not built
 
-- The gateway's record does not become sealed `inference_call` events with the workload's principal, so the
-  verifier cannot see a job's model calls, though the gateway's own record names them; and the verifier does
-  not read `process` events yet.
+- A job's model calls become no sealed `inference_call` events: the verifier reads them in the gateway's call
+  record instead, joined to the job by its workload's principal and its node's process facts.
 - The tools gateway admitting a workload's credential: a job calls each service directly, at
   `http://<service>:8000`.
 - Ending a job's workload when the job ends, and renewing it.

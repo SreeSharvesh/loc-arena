@@ -32,6 +32,7 @@ from loc_arena.service_settings import (
     ModelStoreSettings,
     NotesSettings,
     SettingsGroup,
+    TelemetrySettings,
     TicketsSettings,
 )
 
@@ -263,7 +264,10 @@ class StackSettings(SettingsGroup):
     sandbox_memory_limit: str = Field(default="2g", description="Memory limit of each agent's sandbox.")
     sandbox_cpus: PositiveFloat = Field(default=2.0, description="CPUs each agent's sandbox may use.")
     sandbox_pids_limit: PositiveInt = Field(default=1024, description="Processes an agent's sandbox may run.")
-    service_memory_limit: str = Field(default="512m", description="Memory limit of each live service.")
+    service_memory_limit: str = Field(
+        default="512m",
+        description="Memory limit of each live service; the telemetry store and its Collector set their own.",
+    )
     service_cpus: PositiveFloat = Field(default=1.0, description="CPUs each live service may use.")
     service_pids_limit: PositiveInt = Field(default=256, description="Processes each live service may run.")
     gateway_health_interval_seconds: PositiveInt = Field(
@@ -289,8 +293,9 @@ class StackSettings(SettingsGroup):
     )
     collector_image: str = Field(
         default="otel/opentelemetry-collector-contrib:0.162.0",
-        description="The image of the OpenTelemetry Collector, pinned to a release: it receives the model "
-        "gateway's records over OTLP and appends them to the sealed record.",
+        description="The image of the OpenTelemetry Collector, pinned to a release: one container of it "
+        "receives the model gateway's records over OTLP and appends them to the sealed record, and another "
+        "is the company's own, which writes its telemetry store.",
     )
     tools_gateway_port: int = Field(
         default=3000,
@@ -565,6 +570,20 @@ class ReaderSettings(SettingsGroup):
     )
 
 
+class CostSettings(SettingsGroup):
+    """What a run cost (``cost:``): how its host process samples the run's containers into ``cost.json``."""
+
+    sample_seconds: PositiveFloat = Field(
+        default=2.0,
+        description="The wait between two samples of the run's containers. A memory peak is the highest "
+        "sample, so a spike shorter than this can be missed.",
+    )
+    request_seconds: PositiveFloat = Field(
+        default=10.0,
+        description="The longest one call to the Docker daemon may take; past it the sample has failed.",
+    )
+
+
 class PiSettings(SettingsGroup):
     """The coding agent that runs each agent's session under ``harness: pi`` (the config's ``pi:`` block)."""
 
@@ -621,12 +640,24 @@ class LocArenaSettings(SettingsGroup):
         description="The company's own inference server.",
     )
     deploy: DeploySettings = Field(default=DeploySettings(), description="The deploy service.")
+    telemetry: TelemetrySettings = Field(
+        default=TelemetrySettings(),
+        description="The company's Collector and the export of telemetry to its store.",
+    )
     pi: PiSettings = Field(default=PiSettings(), description="pi, as the agents' harness.")
     reader: ReaderSettings = Field(default=ReaderSettings(), description="The run reader.")
+    cost: CostSettings = Field(default=CostSettings(), description="What a run cost, and how it is sampled.")
 
     @model_validator(mode="after")
     def require_the_served_model_on_the_runners_route(self) -> Self:
         """The company's server serves a model the runners' route knows."""
         if self.serving.deployer and self.serving.model not in self.gateway.runner_model_aliases:
             raise ValueError(f"serving.model {self.serving.model!r} is not in gateway.runner_model_aliases")
+        return self
+
+    @model_validator(mode="after")
+    def require_a_service_to_end_its_flush_before_it_is_killed(self) -> Self:
+        """A service that ends with the Collector down flushes twice, each within ``export_seconds``."""
+        if 2 * self.telemetry.export_seconds >= self.deploy.stop_seconds:
+            raise ValueError("telemetry.export_seconds must be less than half of deploy.stop_seconds")
         return self

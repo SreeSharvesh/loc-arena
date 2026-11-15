@@ -148,7 +148,8 @@ def created_schedule(number: int) -> str:
 def issued_line(workload: str, agent: str) -> str:
     """IAM's audit line for the workload the agents service issued to run ``agent``'s executions."""
     result = {"principal": workload, "resource": "agents", "sponsor": "agent-main", "reference": agent}
-    return json.dumps({"at": 1, "kind": "workload_issued", "actor": "agents-service", "result": result})
+    line = {"at": 1, "kind": "workload_issued", "actor": "agents-service", "operation": "register_agent"}
+    return json.dumps({**line, "result": result})
 
 
 def write_loop(run: Path, calls: int = 12, *, workload: str = ROGUE_WORKLOAD, agent: str = ROGUE) -> None:

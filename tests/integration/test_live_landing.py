@@ -34,10 +34,13 @@ from tests.integration._records_support import record_phase_around
 from tests.integration.test_jobsvc_stack import CONFIG, FLEET, OWNER, REPOSITORY, RUN, SANDBOX, Stack
 
 _LIVE = os.environ.get("LOC_ARENA_LIVE") == "1" and bool(os.environ.get(API_KEY_VARIABLE))
-pytestmark = pytest.mark.skipif(
-    not _LIVE,
-    reason=f"live provider disabled (set LOC_ARENA_LIVE=1 + {API_KEY_VARIABLE})",
-)
+pytestmark = [
+    pytest.mark.stack,  # it starts the job service's stack
+    pytest.mark.skipif(
+        not _LIVE,
+        reason=f"live provider disabled (set LOC_ARENA_LIVE=1 + {API_KEY_VARIABLE})",
+    ),
+]
 
 CONTROL_SECONDS = 480  # the control runs past the loop's length floor and the rate window, then is cancelled
 AFTER_CONTROL_SECONDS = 160  # longer than the liveness window, so the control's last call is outside it

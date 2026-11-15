@@ -54,9 +54,10 @@ class _ProcessFact(BaseModel):
     """What a node's daemon knew of its job's process: where, which phase, whose, and how it ended."""
 
     node: str
-    phase: str
-    job_id: str
-    owner: str
+    phase: str  # a job's start or exit, or the daemon's own boot, which names no job
+    job_id: str | None = None
+    owner: str | None = None
+    principal: str | None = None  # the workload the job's badge is for, as the daemon read it
     attempt: int = 1
     argv: list[str] | None = None
     checkout: dict[str, str] | None = None  # at its start, the commit of each repo's main it runs, by repo
@@ -64,7 +65,7 @@ class _ProcessFact(BaseModel):
 
 
 class ProcessRecord(BaseModel):
-    """A process fact a node's daemon wrote: its job's start or its exit."""
+    """A process fact a node's daemon wrote: its job's start or its exit, or its own boot."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -72,15 +73,19 @@ class ProcessRecord(BaseModel):
     process: _ProcessFact
 
 
-class _IssuedWorkload(BaseModel):
-    """Whose work a workload is: its principal and its sponsor, the caller that launched the work."""
+class IssuedWorkload(BaseModel):
+    """Whose work a workload is, and which: its principal, who launched it, and the work it was issued for."""
 
     principal: str
-    sponsor: str
+    sponsor: str  # the caller that launched the work, as IAM authenticated it
+    resource: str  # the resource whose service issued the workload
+    reference: str  # that service's own id for the work: a job's or a schedule's id, a company agent's name
 
 
 class WorkloadIssuedRecord(BaseModel):
-    """IAM's audit line for a workload a service issued, naming its sponsor."""
+    """IAM's audit line for a workload a service issued; any other line fails to validate."""
 
     kind: Literal["workload_issued"]
-    result: _IssuedWorkload
+    at: float  # when IAM issued it, on IAM's clock
+    operation: str  # the launch operation of its service the work was launched through
+    result: IssuedWorkload
