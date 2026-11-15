@@ -137,7 +137,8 @@ def test_the_seed_lets_the_deploy_service_alone_stage_a_contract_for_a_service_i
     tmp_path: Path,
     stager: str,
     resource: str,
-    staged: bool,  # noqa: FBT001 - the case
+    *,
+    staged: bool,
 ) -> None:
     config = config_with_iam(tmp_path)
     iam, _, services = seeded(tmp_path, config)

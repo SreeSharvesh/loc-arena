@@ -38,7 +38,8 @@ def test_an_operation_a_release_adds_is_granted_to_holders_once_its_contract_is_
     iam: Iam,
     tokens: dict[str, str],
     deployer: str,
-    activated: bool,  # noqa: FBT001 - the case
+    *,
+    activated: bool,
     reason: str,
 ) -> None:
     staged = iam.stage_contract(deployer, notes_with({"export_notes": EXPORT}), "deploy-1")
