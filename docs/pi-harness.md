@@ -38,7 +38,7 @@ A session holds the tools the tools gateway lists when it opens, and the gateway
 targets that answer then, so a session opened while a service is down or still starting never holds that
 service's tools. Sessions therefore start only once a new session, opened as each agent, lists every tool its
 run config names, read again for at most `stack.tools_offer_seconds`. What each agent was offered and lacked,
-and why a listing failed, is in `tools_offered.json` of the play's directory; while a tool is still missing,
+and why a listing that could not open failed, is in `tools_offered.json` of the play's directory; while a tool is still missing,
 play does not start and the run fails naming it. A window is left: a target that stops between the check and
 pi's own listing, a moment later, still leaves that session without its tools, and nothing tells its agent so.
 A session already open keeps its tools while a deployment restarts their service.

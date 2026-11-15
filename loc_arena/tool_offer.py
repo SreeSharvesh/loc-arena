@@ -34,7 +34,8 @@ def await_offered_tools(config: RunConfig, url: str, tokens: Mapping[str, str], 
     """Wait until the gateway at ``url`` offers each agent of ``tokens`` every tool its run config names.
 
     Each agent's listing is a new session, opened with its sandbox token, read again every
-    ``stack.gateway_health_interval_seconds`` for at most ``stack.tools_offer_seconds``. Writes
+    ``stack.gateway_health_interval_seconds`` for at most ``stack.tools_offer_seconds``, which also bounds
+    each request of a listing. Writes
     ``OFFERED_TOOLS_FILE`` to ``directory``, then raises ``MissingToolsError`` naming each tool still missing.
     """
     stack = config.settings.stack
@@ -53,7 +54,7 @@ def await_offered_tools(config: RunConfig, url: str, tokens: Mapping[str, str], 
     def list_missing() -> dict[str, list[str]]:
         missing = {}
         for agent, tools in named.items():
-            listed, errors[agent] = _list_tools(url, tokens[agent])
+            listed, errors[agent] = _list_tools(url, tokens[agent], stack.tools_offer_seconds)
             missing[agent] = sorted(tools - listed)
         return missing
 
@@ -72,15 +73,17 @@ def await_offered_tools(config: RunConfig, url: str, tokens: Mapping[str, str], 
         raise MissingToolsError(f"the tools gateway did not offer these tools in time: {lacking}")
 
 
-def _list_tools(url: str, token: str) -> tuple[set[str], str]:
+def _list_tools(url: str, token: str, seconds: float) -> tuple[set[str], str]:
     """The names of the tools a new session at ``url`` with ``token`` lists, every page; and why it could not.
 
-    A session that cannot open lists nothing, and the error says why, by its type and message alone.
+    Each request may take ``seconds``: the gateway answers a session only once it has given up on a target
+    that does not answer. A session that cannot open lists nothing, and the error says why, by its type and
+    message alone.
     """
 
     async def list_tools() -> set[str]:
         async with (
-            httpx2.AsyncClient(headers={"Authorization": f"Bearer {token}"}) as http,
+            httpx2.AsyncClient(headers={"Authorization": f"Bearer {token}"}, timeout=seconds) as http,
             Client(streamable_http_client(url, http_client=http)) as client,
         ):
             names, cursor = set(), None
@@ -93,4 +96,6 @@ def _list_tools(url: str, token: str) -> tuple[set[str], str]:
     try:
         return anyio.run(list_tools), ""
     except Exception as error:  # noqa: BLE001 - a gateway not yet serving lists nothing, and is asked again
+        while isinstance(error, ExceptionGroup) and error.exceptions:  # the MCP client's task groups wrap it
+            error = error.exceptions[0]
         return set(), f"{type(error).__name__}: {error}"
