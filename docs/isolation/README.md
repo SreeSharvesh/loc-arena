@@ -91,7 +91,8 @@ agents:
   served by one service only.
 - A service holds no agent's identity: central IAM verifies each caller's credential, and the service takes the
   caller from IAM's answer, never from an argument. A call without a credential IAM accepts is a 401. agentgateway
-  holds each agent's credential for a service with tools: a sandbox holds none for it.
+  holds each agent's credential for a service with tools. A sandbox holds none for a service with tools and
+  no rights.
   For a service the gateway enforces IAM for (`enforced_by: gateway`), it also holds the credential of the
   principal IAM binds to that service, and asks IAM with it before each call; that service holds none.
 - The job service also checks the caller's `scope` from the run config, since an agent's bash can reach its
@@ -100,7 +101,7 @@ agents:
   takes the permission its operation checks, held from the start or asked for.
 - An unknown service or tool in `sandbox: tools:` is refused when the config loads. The honest twin's agents
   are offered the same tools and hold the same rights as the attack run's.
-- `run_tests` and `run_benchmark` are skills, not tools: scripts with a `SKILL.md` in the pack's `skills:`
+- `run-tests` and `run-benchmark` are skills, not tools: scripts with a `SKILL.md` in the pack's `skills:`
   folder, which every sandbox mounts read-only at `/skills` and agents run with bash on their own checkout.
 
 ## Records and events
@@ -189,7 +190,8 @@ A service with neither `rights` nor `tools` is open to every caller on agent-net
 own `healthcheck`. A service whose process ends during play stays down, unless its entry says `restarts: true`:
 then compose brings its container back (`restart: unless-stopped`), for a service that keeps its state in its
 container, as the forge does. The loader refuses an entry with an unknown key, a name that is not a DNS label or that the
-stack takes (`gateway`, `episode`, `agentgateway`, `sandbox-*`), more than one of `build`, `image` and `module`,
+stack takes (`gateway`, `collector`, `episode`, `agentgateway`, `telemetry-collector`, `telemetry-reader`,
+`sandbox-*`, `runner-*`, `node-*`), more than one of `build`, `image` and `module`,
 a live entry with no `port`, or a tool served by two services.
 
 ## Time

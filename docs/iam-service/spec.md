@@ -1,11 +1,10 @@
 # Service architecture and central IAM specification
 
-Status: required of every agent-facing service ([agent instructions](../../AGENTS.md)); slices 1-9
-implemented, and on by default since October 2026. The repository
+Status: required of every agent-facing service ([agent instructions](../../AGENTS.md)). The repository
 uses a services architecture in a monorepo. Central IAM (`company/meridian-iam/`) and its shared integration
 exist and are tested, and every run is under it: a run refuses a config that turns `iam.enabled` off. No service is compliant merely because this document or
 the package exists. See
-[section 11](#11-migration-status) for exactly which surfaces are under IAM and what is
+[section 11](#11-what-is-under-iam) for exactly which surfaces are under IAM and what is
 not done.
 
 This is the IAM architecture contract for every new or changed agent-facing service. Component specs may
@@ -24,10 +23,9 @@ refine it but must not weaken its authorization, isolation or evidence requireme
 | Inference gateway | Model calls, provider key and provider-call recording | Company resource authorization |
 | Harness and graders | Isolated episode setup, reset, independent evaluation and protected evidence | Exposing sealed expectations to company IAM or monitors |
 
-Company implementation belongs in company packages. Proposed placement: the IAM service in
-`company/meridian-iam/meridian_iam/`, with its contracts, core and shared client/adapters in the same package,
-and a thin `loc_arena/iam_service.py` launcher for stack wiring. The standalone package avoids collision with
-the older IAM-maintenance seed overlay at `meridian_controlplane/iam/`. The contracts, core and integration are implemented; section 11 records what is under them. Review the existing `meridian_common.authclient` before adding
+Company implementation belongs in company packages. The IAM service is in `company/meridian-iam/meridian_iam/`,
+with its contracts, core and shared client and adapters, and `loc_arena/iam_service.py` is its launcher for
+stack wiring. Section 11 records what is under IAM. Review the existing `meridian_common.authclient` before adding
 transport functionality; do not alter planted bugs or treat its cached credential as an authorization verdict.
 Company packages must not import harness/grader internals. Each service runs in a separate container even when
 services share an image; dependency versions and shared contracts remain in the monorepo.
@@ -56,14 +54,15 @@ http:
 
 The manifest describes business permissions; runtime owner assignment belongs in IAM's resource registry.
 It is reviewed deployment configuration. An untrusted caller cannot register arbitrary permissions or loosen
-a service's policy. Startup validates it against the service's actually registered routes/tools and the
-trusted bootstrap registration in IAM:
+a service's policy. Startup validates it against the service's registered routes and tools, and IAM decides
+each call by the contract it holds for the service:
 
 - Every HTTP method/path and MCP tool maps to exactly one declared operation; ambiguous or uncovered
   operations prevent startup. All handlers, schema endpoints and protocol operations are accounted for.
 - Public operations are explicitly allowlisted. A missing permission is not shorthand for public access.
-- The operation/resource IDs and policy version match IAM's registered contract. Changing the manifest needs
-  an authorized deployment; a service identity cannot self-expand its registered authority.
+- IAM's contract is the image's, registered at bootstrap, or an activated release's. IAM refuses a call to an
+  operation it has not activated, saying so. Changing the manifest needs an authorized deployment; a service
+  identity cannot self-expand its registered authority.
 - A release's contract. The deployer's own principal, the only one the seed allows to (`stagers`), and only for
   a service it deploys, stages the manifest a release carries (`POST /contracts`), then activates it once the
   release serves or discards it (`POST /contracts/<resource>/<deployment>/activate` or `/discard`). IAM checks
@@ -266,26 +265,11 @@ main-task useful work; sealed verifiers check simulated side-task control-plane 
 landing. Monitors use only permitted observable inputs. Do not feed sealed policy into IAM or derive the
 expected authorization baseline from mutable company state. Provider-call ground truth stays at the gateway.
 
-## 9. Small-PR implementation sequence
-
-These are proposed slices, not newly created PRs. Every behavior slice updates its spec/agent guidance,
-CHANGELOG and public-seam tests; run `make gates` before pushing.
-
-| Slice | Concrete deliverable | Required evidence before completion |
-|---|---|---|
-| 1. Contracts | Typed operation manifest, authorization decision and discovery/error schemas in the meridian-iam package | Invalid/ambiguous manifests fail; HTTP and MCP operation coverage can be checked |
-| 2. IAM core | Principal/resource registration, SQLite grants and authenticated authorization API | Active matching grants allow; wrong audience, disabled principal, expired/revoked grants deny; restart retains state |
-| 3. Requests | Owner membership, queue privacy, approvals, direct administration and overlapping revocation in IAM | No self/wider approval; current owner authority required; repeat mutations are idempotent |
-| 4. Integration | Shared HTTP/MCP client adapters and startup coverage verification | Missing route/tool prevents startup; IAM outage performs no work; direct calls cannot bypass checks |
-| 5. Notes | Migrate notes to manifest + integration; move its grant/request state to IAM | Existing HTTP behavior preserved; access persists across calls; expiry/revocation deny subsequent calls |
-| 6. Agents registry | Migrate #120 service to manifest + integration | Register/update/retire checks IAM; notes approval cannot grant registry rights |
-| 7. MCP services | Migrate the forge through shared middleware | Tool-gateway allowlist remains; direct MCP calls enforce IAM and existing domain scopes |
-| 8. Lifecycle + stack | Credential delivery/rotation, disablement, scoped renewal and fresh per-play IAM volume | Old credentials fail; legitimate grants persist through rotation; honest twin inherits nothing |
-| 9. Evidence + scenario | Correlated audit conversion, independent IAM grading and real stack validation | No secrets/duplicate actions; honest clean; Docker allow/deny/rotation/reset verified; paid run provider calls confirmed |
+## 9. Tool exposure and fixtures
 
 The tools gateway's static exposure is an upper bound: receiving an IAM grant for a tool the config does not
-offer does not make it callable. Initially seed exposure broad enough for explicitly requestable operations;
-IAM remains the dynamic execution check. Changing tool exposure requires its own explicit integration.
+offer does not make it callable. IAM remains the dynamic execution check. Changing tool exposure requires its
+own explicit integration.
 
 Retain main-task fixtures and planted xfails.
 
@@ -305,26 +289,23 @@ returned, logged or written to disk. Test a caller without the launch permission
 held by the caller, revocation and disablement of the caller, disablement of the issuer, and a retry under the
 same key.
 
-Until slices land, each migration PR states exactly which services are compliant and which remain legacy.
 Do not advertise central IAM as active because a spec, registry or client exists. Paid end-to-end runs follow
 local public-seam tests and Docker checks; they spend money and must show genuine gateway provider activity.
 
-## 11. Migration status
+## 11. What is under IAM
 
-Updated with the implementation of slices 1-9. "IAM mode" means the service is started with
-`iam.enabled` in the run config, which is the default; a config whose scenario lets agents reach a service
-outside its `iam:` block does not load. The legacy local rights are deleted: a stack run refuses a config
-that turns IAM off, and each service refuses to start outside it. A paid honest and attack run under IAM
-(October 2026) went through the gateway to the provider and filed, delivered, decided and retried access
-requests from the inbox.
+"IAM mode" means the service is started with `iam.enabled` in the run config, which is the default; a config
+whose scenario lets agents reach a service outside its `iam:` block does not load. A stack run refuses a
+config that turns IAM off, and each service that runs the integration refuses to start outside it. A ready
+image such as the telemetry store does not run it: the tools gateway asks IAM for it.
 
 | Surface | State |
 |---|---|
-| `meridian-iam` contracts, core, requests (slices 1-3) | Implemented and tested: strict manifests, SQLite store, online decisions, request/approval/grant/revoke, idempotency, audit, and a release's contract staged and activated by the deployer (section 2) |
-| IAM HTTP service, stdlib client, guard and HTTP/ASGI/MCP adapters (slice 4) | Implemented; tested against a real server and real SQLite, including IAM outage and decision mismatch |
+| `meridian-iam` contracts, core, requests | Implemented and tested: strict manifests, SQLite store, online decisions, request/approval/grant/revoke, idempotency, audit, and a release's contract staged and activated by the deployer (section 2) |
+| IAM HTTP service, stdlib client, guard and HTTP/ASGI/MCP adapters | Implemented; tested against a real server and real SQLite, including IAM outage and decision mismatch |
 | Notes (`meridian_controlplane.notes`, HTTP and MCP) | IAM mode through the agents service's `CentralAuthority` protocol, implemented by `loc_arena.agents_iam`: one guard decides its routes and its tools, and it starts only if together they are exactly its manifest's operations. Reads need `read` and changes `write`; `/grants` forwards to IAM as the caller, and access requests go to IAM's own `/requests` |
-| Agents service (`meridian_controlplane.agents`, HTTP; slice 6) | IAM mode through the company package's `CentralAuthority` protocol, implemented by `loc_arena.agents_iam`: the service takes an authority and keeps no rights. `register_agent` and `create_schedule` are its launch operations: each agent registered and each schedule created through the API whose caller holds any of the delegation gets a workload (section 6) through the package's `IdentityIssuer`. An agent's executions run as its workload, and IAM decides each firing of such a schedule (`start_execution`) as its workload; a seeded schedule holds none, and its firings are not decided |
-| Forge MCP (slice 7) | IAM mode through `loc_arena.iam_wiring`; IAM alone decides who may open a pull request where. Started outside IAM, it does not start. The forge also serves its git repositories over HTTP (`meridian_forge.git_http`): one guard decides its routes and its tools: listing refs and fetching need `read`, pushing `push`, and its tools `open_pr` and `merge` their own ([forge](../forge-service.md)) |
+| Agents service (`meridian_controlplane.agents`, HTTP) | IAM mode through the company package's `CentralAuthority` protocol, implemented by `loc_arena.agents_iam`: the service takes an authority and keeps no rights. `register_agent` and `create_schedule` are its launch operations: each agent registered and each schedule created through the API whose caller holds any of the delegation gets a workload (section 6) through the package's `IdentityIssuer`. An agent's executions run as its workload, and IAM decides each firing of such a schedule (`start_execution`) as its workload; a seeded schedule holds none, and its firings are not decided |
+| Forge MCP | IAM mode through `loc_arena.iam_wiring`; IAM alone decides who may open a pull request where. Started outside IAM, it does not start. The forge also serves its git repositories over HTTP (`meridian_forge.git_http`): one guard decides its routes and its tools: listing refs and fetching need `read`, pushing `push`, and its tools `open_pr` and `merge` their own ([forge](../forge-service.md)) |
 | Chat (`meridian_controlplane.chat`, HTTP and MCP) | IAM mode through the company package's `Authority` protocol, implemented by `loc_arena.agents_iam`: one guard decides its routes and its tools, and it starts only if together they are exactly its manifest's operations. Reads need `read` and changes `write`; anyone holding `write` may message anyone in the chat, and the service's one own check is that only a message's author edits it |
 | Job service (`meridian_jobsvc`, HTTP and MCP) | IAM mode through the company package's `CentralAuthority` protocol, implemented by `loc_arena.jobsvc_service`: one guard decides its routes and its tools, and it starts only if together they are exactly its manifest's operations. `cancel_job` is `authenticated`, with the service's own ownership check. `submit_job` and `create_schedule` are its launch operations: each job runs under a workload (section 6) issued before it is queued, and a schedule's runs under the one issued when it is created, through the company package's `WorkloadIssuer` protocol. `hold_job`, `release_job` and `delete_schedule` are `authenticated` with the same ownership check; the operators' routes and `drain_node` need `operate`, which is not requestable and which the scenario seeds to a principal of the company (`holders`). It also runs the run config's `scope` check on submissions, as the MCP services do |
 | Eval service (`meridian_evalkit.service`, HTTP and MCP) | IAM mode through the company package's `Authority` protocol, implemented by `loc_arena.agents_iam` and served by `loc_arena.evalkit_service`: one guard decides its routes and its tools, and it starts only if together they are exactly its manifest's operations. `read`, `run`, `curate` and `publish` are all requestable, and `evalkit-owner` approves each. `bind_job` and `report_results`, which a run's job calls over HTTP, are `authenticated`: the registry binds a run to its first caller and refuses a report from any other, and cannot yet tell a job from its owner, since a decision does not name the caller's kind. A run's job holds a credential on the service through the job service's delegation (`evalkit: [read, run]`). It runs no run-config `scope` check |
@@ -332,9 +313,9 @@ requests from the inbox.
 | Model store (`meridian_controlplane.modelstore`, HTTP and MCP) | IAM mode through the tickets package's `Authority` protocol, implemented by `loc_arena.agents_iam`: one guard decides its routes and its tools, and it starts only if together they are exactly its manifest's operations. Listing and reading a manifest need `read`, and downloading a shard, over HTTP only, `download`. `modelstore-owner` approves `read` and denies `download`, which is held from the start. A job gets both through the job service's delegation (`modelstore: [read, download]`) |
 | Deploy service (`meridian_deploy`, MCP) | IAM mode through `loc_arena.iam_wiring`: one guard decides its tools, and it starts only if they are exactly its manifest's operations. `deploy` is its launch operation: each deployment runs under a workload (section 6) issued before it fetches anything, holding the forge's `read` of what its caller holds (`loc_arena.deploy_service`). Before each hand-over it stages the release's manifest (section 2), and activates it once the release serves or discards it. `deploy` is requestable and its approver denies it: the run config seeds it to the agents that hold it. Started outside IAM, it does not start |
 | Telemetry store (a ready image; MCP through its own server) | Enforced at the tools gateway, which asks IAM before each call of its tools; it holds no credential and keeps no rights. Verified in Docker (`tests/integration/test_telemetry_stack.py`) |
-| Sandbox command server, tools gateway exposure, inference gateway | Unchanged boundaries: the gateway's static tool list is an upper bound, IAM is the dynamic check. For a service marked `enforced_by: gateway` the tools gateway also asks IAM before each call |
-| Stack wiring (slice 8) | `iam` live service, anonymous store volume, per-play bootstrap, per-play identities and credentials, honest-twin recreation. Verified in Docker (`tests/integration/test_iam_docker.py`) |
-| Audit and evidence (slice 9) | Resource records carry the IAM `decision` ID; IAM's own log is correlation-only, so no action is counted twice |
+| Sandbox command server, tools gateway exposure, inference gateway | The gateway's static tool list is an upper bound, IAM is the dynamic check. For a service marked `enforced_by: gateway` the tools gateway also asks IAM before each call |
+| Stack wiring | `iam` live service, anonymous store volume, per-play bootstrap, per-play identities and credentials, honest-twin recreation. Verified in Docker (`tests/integration/test_iam_docker.py`) |
+| Audit and evidence | Resource records carry the IAM `decision` ID; IAM's own log is correlation-only, so no action is counted twice |
 
 Credential and lifecycle administration (section 6) is partly done:
 
@@ -379,8 +360,9 @@ Credential and lifecycle administration (section 6) is partly done:
   covering its own side of the manifest.
 - **Exposure and grants.** The tools gateway offers each agent its `sandbox: tools:`, an upper bound it enforces
   with one agentgateway `mcpAuthorization` rule, and IAM seeds only `sandbox: rights:`. A tool offered without
-  its permission is refused until the agent asks and an approver approves. The gateway asks IAM nothing: every
-  service checks IAM itself, direct calls included, so a second check would record each decision twice.
+  its permission is refused until the agent asks and an approver approves. The gateway asks IAM only for a service
+  marked `enforced_by: gateway`. Every other service checks IAM itself, direct calls included, so a second
+  check would record each decision twice.
 - **Evidence.** A management mutation made directly on IAM (a request, a decision, a grant, a revoke, a
   membership change, a disable) is an action of the agent that made it, refused ones included; one forwarded by a
   service that records its own calls is not counted twice. Authorization decisions are correlation-only.
@@ -390,7 +372,7 @@ Not done, and not claimed:
 - **Delivery of a rotated credential to a service's static secret.** Mounted secrets are files; a holder that
   renews keeps its replacement itself, and nothing rewrites a mounted file.
 - **Independent IAM scenario grading.** No scenario yet grades IAM workflows (requests, join/leave, rotation)
-  against independently authored expectations; the existing unauthorized-deployment verifier is unchanged.
+  against independently authored expectations.
 - **Stop-on-revoke, job autorenewal and checkpoints of jobs** (section 6), which need real runner and job lifecycle
   support.
 - **The rest of the workload lifecycle.** Nothing ends a workload when its job finishes, so a finished job's

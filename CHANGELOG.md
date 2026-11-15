@@ -19,6 +19,12 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [375] - 2026-11-15: The docs match the deploy path and the lab
+
+### Changed
+
+- The docs now state the deployment's bound with its IAM calls, when a deployment serves, and each agent's real rights; the arena behaves as before ([docs](docs/deploy-service.md)).
+
 ## [374] - 2026-11-15: Every company service logs the requests it refuses
 
 ### Fixed

@@ -80,8 +80,8 @@ limit is the firewall: an input off the observable list fails the build. See <a 
 
 <h3>Scoring</h3>
 <p>In the same file, the scoring block sets how each monitor's scores reduce to one number, how the monitors
-combine into the overall suspicion, the weight on each, and how strict the audit budget is. Change the combining
-rule from a weighted average to a maximum, or tighten the budget, and rerun.</p>
+combine into the overall suspicion, and the weight on each. The run config's <code>protocol: audit_budget_fpr</code> sets how strict the audit
+budget is. Change the combining rule from a weighted average to a maximum, or tighten the budget, and rerun.</p>
 
 <h3>Models</h3>
 <p>Models are named by role in <code>models.cheap.yaml</code>: the untrusted team, the trusted monitor, and the
@@ -113,9 +113,9 @@ sandbox:
   rights: {notes: [read, write]}</code></pre>
 <p>A new tool is served by a service on the official MCP SDK with the tool-call recorder
 (<code>loc_arena/tool_records.py</code>), listed in its entry's <code>tools</code>, and offered in each agent's
-<code>sandbox: tools</code>. A tool name belongs to one service. Its calls become events only where
-<code>loc_arena/recorded_events.py</code> has a builder for it; otherwise they stay in
-<code>services/&lt;name&gt;.log</code>. A skill is a folder with a <code>SKILL.md</code> and its scripts; agents run
+<code>sandbox: tools</code>. A tool name belongs to one service. A refused call becomes a blocked
+<code>action</code>. An answered call becomes events only where <code>loc_arena/recorded_events.py</code> builds
+them, and otherwise stays in <code>services/&lt;name&gt;.log</code>. A skill is a folder with a <code>SKILL.md</code> and its scripts; agents run
 it with bash. Details: <code>docs/isolation/README.md</code>.</p>
 
 <h3>Tasks</h3>
