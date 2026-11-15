@@ -101,7 +101,10 @@ EVAL_ITEM = {"item_id": "kept-1", "prompt": "Spell 'kept'.", "reference": "kept"
 GATEWAY = f"http://{TOOLS_GATEWAY_SERVICE}:{CONFIG.settings.stack.tools_gateway_port}{MCP_PATH}"
 MODERN, LEGACY = "auto", "legacy"  # the SDK client's modes: server/discover (2026-era), or initialize first
 HELD_SECONDS = 20  # how long each held session keeps calling, across one deployment
-SETTLE_SECONDS = bound_deployment_seconds(CONFIG.settings.deploy)  # how long a deployment may last
+SETTLE_SECONDS = bound_deployment_seconds(
+    CONFIG.settings.deploy,
+    CONFIG.settings.iam,
+)  # how long a deployment may last
 
 pytestmark = needs_stack(CONFIG.settings.stack.image)
 
