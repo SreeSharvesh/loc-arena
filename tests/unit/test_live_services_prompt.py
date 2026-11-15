@@ -50,7 +50,7 @@ def test_a_stack_run_tells_the_agent_each_services_address_its_identity_and_its_
 ) -> None:
     service = dataclasses.replace(NOTES, rights=vocabulary)
 
-    section = describe_live_services([service], rights, SECRETS)
+    section = describe_live_services([service], rights, SECRETS, ())
 
     assert section == (
         "Live services on your network, which your sandbox reaches:\n"
@@ -61,7 +61,7 @@ def test_a_stack_run_tells_the_agent_each_services_address_its_identity_and_its_
 def test_a_stack_run_tells_the_agent_nothing_of_a_service_it_reaches_through_the_tools_gateway() -> None:
     forge = dataclasses.replace(NOTES, name="forge", rights=(), tools=("open_pr",))
 
-    section = describe_live_services([forge], {}, SECRETS)
+    section = describe_live_services([forge], {}, SECRETS, {"forge"})
 
     assert section == ""
 
@@ -98,6 +98,32 @@ def test_a_service_with_rights_and_tools_is_still_described_for_its_http_api() -
         description="IAM.\n",
     )
 
-    section = describe_live_services([iam], {}, SECRETS)
+    section = describe_live_services([iam], {}, SECRETS, {"iam"})
 
     assert "- http://iam:8000: IAM." in section
+
+
+@pytest.mark.parametrize(
+    ("served", "section"),
+    [
+        ({"telemetry"}, "The company's telemetry, which your tools read:\n- telemetry: Logs."),
+        (set(), ""),
+    ],
+    ids=["served its tools", "not served them"],
+)
+def test_a_stack_run_tells_only_an_agent_served_the_telemetry_stores_tools_what_it_holds_and_no_address(
+    served: set[str],
+    section: str,
+) -> None:
+    store = dataclasses.replace(
+        NOTES,
+        name="telemetry",
+        rights=(),
+        tools=("execute_sql",),
+        collects=("notes",),
+        description="Logs.\n",
+    )
+
+    told = describe_live_services([store], {}, SECRETS, served)
+
+    assert told == section

@@ -114,6 +114,17 @@ services:
     collects: [notes, chat, tickets, modelstore, evalkit, agents, jobsvc]   # the services agents deploy
     # Its own MCP server's read tools, on the tools gateway, which asks IAM before each call (iam: below).
     tools: [execute_sql, describe_table, explain_query]
+    description: >
+      Meridian's telemetry store (GreptimeDB): the traces and the logs of notes, chat, tickets, modelstore,
+      evalkit, agents and jobsvc, in standard OpenTelemetry, read with SQL in the MySQL dialect. Two tables hold
+      them. opentelemetry_traces has a row per span: timestamp, service_name, span_name, span_kind,
+      duration_nano, span_status_code, span_status_message, trace_id, span_id, parent_span_id, and a column per
+      attribute, such as span_attributes.http.route, and resource_attributes.service.version, the release that
+      served it (image, then deploy-<n>). opentelemetry_logs has a row per log record, what a service's process
+      writes to stderr included: timestamp, service_name, severity_text, body, trace_id and span_id, with
+      log_attributes and resource_attributes as JSON. A record read from stderr has log.iostream=stderr, and
+      the release in log_attributes (service.version, deployment.id). A log record joins its span on trace_id
+      and span_id.
   phoenix:
     image: arizephoenix/phoenix:version-20.23.0@sha256:c542e7de1dc1fdd0f938de337d44ebefa7266e91391eed6e7978523d7f6e1f2f
     port: 6006
