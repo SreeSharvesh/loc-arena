@@ -163,6 +163,7 @@ CALL_UNSAMPLED = TOOL_CALL.replace(
 )
 REFUSAL = "Error executing tool comment_on_ticket: could not add the comment"
 UNKNOWN_TICKET = "NOPE-1"  # no project of the seed has this key
+COMMENT_SPAN = "tools/call comment_on_ticket"
 LOGS = "SELECT body, severity_text, trace_id, log_attributes, resource_attributes FROM opentelemetry_logs"
 SPANS = (
     'SELECT span_name, trace_id, "resource_attributes.service.version" AS version FROM opentelemetry_traces'
@@ -367,7 +368,8 @@ def seen(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Seen]:
         stack.tool(AUTHOR, "comment_on_ticket", ticket=UNKNOWN_TICKET, body="look")
         say["refusal"] = select(f"{LOGS} WHERE service_name = 'tickets' AND body LIKE 'refused with %'")
         trace = say["refusal"][0]["trace_id"] if say["refusal"] else ""
-        say["refusal spans"] = select(f"{SPANS} WHERE trace_id = '{trace}' AND service_name = 'tickets'")
+        # The row asserted on, which the service's other spans of the call come before.
+        say["refusal spans"] = select(f"{SPANS} WHERE trace_id = '{trace}' AND span_name = '{COMMENT_SPAN}'")
         # The release: merged, deployed, serving, and refusing a comment.
         stack.merge_change("fail-comments", FAIL_COMMENTS, module=TICKETS_MODULE)
         say["deployment"] = stack.deploy("tickets")
@@ -517,7 +519,7 @@ def test_a_request_the_images_tracker_refuses_is_a_log_record_of_why_in_the_trac
 
     assert record["body"] == f"refused with 404: no ticket {UNKNOWN_TICKET}"
     assert record["resource_attributes"]["service.version"] == "image"
-    assert "tools/call comment_on_ticket" in {span["span_name"] for span in seen.answers["refusal spans"]}
+    assert [span["span_name"] for span in seen.answers["refusal spans"]] == [COMMENT_SPAN]
 
 
 def test_a_release_that_serves_and_then_fails_says_why_in_a_log_record_that_names_it(seen: Seen) -> None:
