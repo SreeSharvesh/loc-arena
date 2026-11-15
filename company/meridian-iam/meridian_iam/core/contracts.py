@@ -15,13 +15,35 @@ import json
 import sqlite3
 from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager
-from typing import Any
+from typing import Any, TypedDict
 
-from meridian_iam.contracts import Forbidden, Invalid, Manifest, ManifestError, Unauthenticated, load_manifest
+from meridian_iam.contracts import (
+    ContractChange,
+    Forbidden,
+    Invalid,
+    Manifest,
+    ManifestError,
+    Unauthenticated,
+    load_manifest,
+)
 from meridian_iam.core.base import IAM_AUDIENCE, Base
 
 BASE, STAGED, ACTIVE, SUPERSEDED, DISCARDED = "base", "staged", "active", "superseded", "discarded"
 IMAGE = "image"  # the deployment name of a resource's base contract
+
+
+class StoredOperation(TypedDict):
+    """An operation as IAM keeps it, in the resources table and in each contract."""
+
+    permission: str | None
+    requestable: bool
+    authenticated: bool
+    public: bool
+    target: str | None
+    launch: bool
+
+
+Operations = dict[str, StoredOperation]
 
 
 class Contracts(Base):
@@ -34,7 +56,7 @@ class Contracts(Base):
                 self._resource(db, resource)
                 db.execute("INSERT OR IGNORE INTO stagers VALUES (?, ?)", (principal, resource))
 
-    def stage_contract(self, token: str, document: Mapping[str, Any], deployment: str) -> dict[str, Any]:
+    def stage_contract(self, token: str, document: Mapping[str, Any], deployment: str) -> ContractChange:
         """Stage the manifest ``document`` for ``deployment``: what it adds, changes and removes.
 
         ``Forbidden`` says why IAM refuses it; a malformed manifest, or a deployment already staged once, is
@@ -49,8 +71,8 @@ class Contracts(Base):
             actor = self._stager(db, token, resource, "stage")
             staged = operations_of(manifest)
             _check(self._base(db, resource), staged)
-            active = json.loads(self._resource(db, resource)["operations"])
-            change = {
+            active: Operations = json.loads(self._resource(db, resource)["operations"])
+            change: ContractChange = {
                 "added": {
                     name: op["permission"] for name, op in sorted(staged.items()) if name not in active
                 },
@@ -137,7 +159,7 @@ class Contracts(Base):
             raise Forbidden(f"{actor} may not {step} a contract for {resource}: its owners deploy it")
         return actor
 
-    def _base(self, db: sqlite3.Connection, resource: str) -> dict[str, dict[str, Any]]:
+    def _base(self, db: sqlite3.Connection, resource: str) -> Operations:
         """The resource's base contract, registered at bootstrap or by the store's upgrade."""
         row = db.execute(
             "SELECT operations FROM contracts WHERE resource = ? AND state = ?",
@@ -172,7 +194,7 @@ class Contracts(Base):
         )
 
 
-def operations_of(manifest: Manifest) -> dict[str, dict[str, Any]]:
+def operations_of(manifest: Manifest) -> Operations:
     """The operations of ``manifest`` as IAM keeps them, in the resources table and in each contract."""
     return {
         name: {
@@ -187,22 +209,30 @@ def operations_of(manifest: Manifest) -> dict[str, dict[str, Any]]:
     }
 
 
-def _check(base: dict[str, dict[str, Any]], staged: dict[str, dict[str, Any]]) -> None:
+def _check(base: Operations, staged: Operations) -> None:
     """``Forbidden``, saying why, if ``staged`` changes a base operation or adds one that widens anything."""
-    permissions = sorted({op["permission"] for op in base.values() if op["permission"]})
-    requestable = {op["permission"] for op in base.values() if op["permission"] and op["requestable"]}
     problems = [
         f"{name} changes" for name in sorted(base.keys() & staged.keys()) if base[name] != staged[name]
     ]
-    for name, op in sorted(staged.items()):
-        if name in base:
-            continue
-        if op["public"] or op["authenticated"] or op["launch"]:
-            problems.append(f"{name} is public, authenticated or a launch: a release adds none of those")
-        elif op["permission"] not in permissions:
-            problems.append(f"{name} needs {op['permission']}; the resource's are {', '.join(permissions)}")
-        elif op["requestable"] and op["permission"] not in requestable:
-            problems.append(f"{name} makes {op['permission']} requestable, which it is not")
+    problems += [
+        problem
+        for name, op in sorted(staged.items())
+        if name not in base and (problem := _widening(base, name, op))
+    ]
     if problems:
         refusal = "a release's contract may only add operations under existing permissions: "
         raise Forbidden(refusal + "; ".join(problems))
+
+
+def _widening(base: Operations, name: str, op: StoredOperation) -> str | None:
+    """Why the new operation ``name`` widens what ``base`` lets IAM decide, if it does."""
+    permissions = sorted({held["permission"] for held in base.values() if held["permission"]})
+    if op["public"] or op["authenticated"] or op["launch"]:
+        return f"{name} is public, authenticated or a launch: a release adds none of those"
+    if op["permission"] not in permissions:
+        return f"{name} needs {op['permission']}; the resource's are {', '.join(permissions)}"
+    if op["requestable"] and not any(
+        held["permission"] == op["permission"] and held["requestable"] for held in base.values()
+    ):
+        return f"{name} makes {op['permission']} requestable, which it is not"
+    return None

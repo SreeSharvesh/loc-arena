@@ -10,7 +10,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, ConfigDict, StrictInt, StringConstraints
 
-from meridian_iam.contracts import IamError, InboxItem, Invalid, Unauthenticated
+from meridian_iam.contracts import ContractChange, IamError, InboxItem, Invalid, Unauthenticated
 from meridian_iam.core import Iam
 
 BEARER = "Bearer "
@@ -223,7 +223,7 @@ def create_app(iam: Iam, *, badges: bool = False) -> FastAPI:  # noqa: C901 - co
         return {**dataclasses.asdict(workload), "badge": iam.badge(workload.principal) if badges else None}
 
     @app.post("/contracts")
-    async def stage_contract(body: StageBody, authorization: Auth = None) -> dict[str, Any]:
+    async def stage_contract(body: StageBody, authorization: Auth = None) -> ContractChange:
         return iam.stage_contract(bearer(authorization), body.manifest, body.deployment)
 
     @app.post("/contracts/{resource}/{deployment}/activate")

@@ -12,10 +12,12 @@ import json
 import secrets
 import urllib.error
 import urllib.request
+from collections.abc import Mapping
 from typing import Any, Literal
 
 from meridian_iam.contracts import (
     Conflict,
+    ContractChange,
     Decision,
     Forbidden,
     IamError,
@@ -133,7 +135,7 @@ class IamClient:
             raise Unavailable("malformed IAM answer")
         return raw
 
-    def stage_contract(self, manifest: dict[str, Any], deployment: str) -> dict[str, Any]:
+    def stage_contract(self, manifest: Mapping[str, object], deployment: str) -> ContractChange:
         """Stage a release's ``manifest`` for ``deployment``, as this client's service: what it changes.
 
         A mutation, so never retried; IAM's refusal says what the manifest may not change.
