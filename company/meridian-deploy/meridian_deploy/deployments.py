@@ -24,8 +24,31 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, SecretStr
 DEPLOY = "deploy"  # the launch operation each deployment's credential is issued through
 
 
+class Contract(BaseModel):
+    """What a release changes of its service's operations, as IAM staged it.
+
+    Each operation added or changed maps to the permission it needs; ``routes`` names each route and tool
+    the release binds otherwise than the image does, with its operation.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    added: dict[str, str | None]
+    changed: dict[str, str | None]
+    removed: list[str]
+    routes: list[str]
+
+
 class DeployError(Exception):
-    """A deployment the service refuses, with the reason its caller reads."""
+    """A deployment the service refuses, with the reason its caller reads.
+
+    ``contract`` is what IAM staged for its release before it failed, if anything: its release may serve.
+    """
+
+    def __init__(self, reason: str, contract: Contract | None = None) -> None:
+        """Refuse for ``reason``, after IAM staged ``contract`` if it did."""
+        super().__init__(reason)
+        self.contract = contract
 
 
 class Deployment(BaseModel):
@@ -40,6 +63,7 @@ class Deployment(BaseModel):
     commits: dict[str, str]  # each company repo's commit of main, by repo; none until they are fetched
     state: Literal["started", "serving", "failed"]  # started: in progress
     detail: str = ""  # of a failed one: why the service did not serve on it
+    contract: Contract | None = None  # what its release changes, as IAM staged it; none if IAM staged none
 
 
 class MainTree(NamedTuple):
@@ -50,11 +74,15 @@ class MainTree(NamedTuple):
 
 
 class Outcome(NamedTuple):
-    """What a supervisor answered a hand-over: the release its service runs, and whether it serves."""
+    """What a hand-over ended in: the release its service runs, whether it serves, and what it changed.
+
+    ``contract`` is what the release changes, as IAM staged it.
+    """
 
     release: str | None
     serving: bool
     detail: str
+    contract: Contract
 
 
 class Credentials(Protocol):
@@ -183,6 +211,7 @@ class Deployments:
         """Fetch ``started``'s release and hand it over, unless ``given_up`` by then; ``end`` takes how."""
         history, release = self._history[started.service], f"{DEPLOY}-{started.number}"
         commits: dict[str, str] = {}
+        contract: Contract | None = None
         try:
             trees = self._source.fetch(credential)
             commits = {repo: tree.commit for repo, tree in trees.items()}
@@ -195,14 +224,20 @@ class Deployments:
             outcome = self._rollout.hand_over(started.service, release, archives)
             served = outcome.serving and outcome.release == release
             detail = "" if served else outcome.detail or "the service did not answer on the release"
+            contract = outcome.contract
         except DeployError as refused:  # a hand-over nobody answered among them: it did not deploy
-            served, detail = False, str(refused)
+            served, detail, contract = False, str(refused), refused.contract
         except Exception as error:  # noqa: BLE001 - whatever ended it, the deployment ends, and failed
             # Its kind alone: its text may hold what a reader of the deployments may not read.
             served, detail = False, f"the deployment ended on an error: {type(error).__name__}"
         end(
             started.model_copy(
-                update={"commits": commits, "state": "serving" if served else "failed", "detail": detail},
+                update={
+                    "commits": commits,
+                    "state": "serving" if served else "failed",
+                    "detail": detail,
+                    "contract": contract,
+                },
             ),
         )
 

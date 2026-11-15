@@ -32,8 +32,8 @@ TIMEOUT_VARIABLE = "LOC_ARENA_IAM_TIMEOUT_SECONDS"
 RETRIES_VARIABLE = "LOC_ARENA_IAM_RETRIES"
 # What a service that does not serve exactly its manifest says as it refuses to start, after what differs.
 NOT_THE_MANIFEST = (
-    "It was checked against the image's manifest, {manifest}, which IAM registered as its play began. "
-    "A release cannot add an operation: its own iam-manifest.json is not read."
+    "It was checked against {manifest}, the manifest the service started with: its release's own, else the "
+    "image's. A release declares there each operation it serves."
 )
 
 
@@ -105,7 +105,7 @@ def build_service_app(
 def naming_the_manifest() -> Iterator[None]:
     """A refusal to start for an operation the manifest lacks, naming that manifest, from the environment.
 
-    That is the image's: a deployed release's service starts with it too, and its failed deployment's
+    A deployed release's service starts with the manifest the release carries, and its failed deployment's
     ``detail``, the end of its stderr, ends with this refusal.
     """
     contracts = importlib.import_module("meridian_iam.contracts")

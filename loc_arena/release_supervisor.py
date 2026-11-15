@@ -47,6 +47,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from loc_arena.config import load_run_config
 from loc_arena.deploy_pool import RELEASE_TOKEN_FILE, find_deployer
+from loc_arena.iam_wiring import MANIFEST_VARIABLE
 from loc_arena.merged_main import write_merged_checkout
 from loc_arena.settings import DeploySettings
 
@@ -190,6 +191,8 @@ class SupervisedService:
         repos = sorted(str(repo) for repo in release.iterdir() if repo.is_dir()) if release else []
         image = self._environment.get("PYTHONPATH", "")
         environment = {**self._environment, "PYTHONPATH": os.pathsep.join([*repos, image])}
+        if release and (carried := _carried_manifest(release, self._environment.get(MANIFEST_VARIABLE, ""))):
+            environment[MANIFEST_VARIABLE] = carried
         named = {"service.version": _name(release) or IMAGE_VERSION}  # each signal names its release
         named |= {"deployment.id": release.name} if release else {}
         if resource := self._environment.get(RESOURCE_VARIABLE):
@@ -287,6 +290,15 @@ def _log_errors(to_log: queue.Queue[tuple[bytes, dict[str, str]]]) -> None:
 def _name(release: Path | None) -> str | None:
     """The name of ``release``; none for the image's code."""
     return None if release is None else release.name
+
+
+def _carried_manifest(release: Path, image_manifest: str) -> str | None:
+    """The manifest ``release`` carries where the image keeps its own, which IAM staged for the release."""
+    parts = Path(image_manifest).parts
+    if "company" not in parts:
+        return None
+    carried = release.joinpath(*parts[parts.index("company") + 1 :])
+    return str(carried) if carried.is_file() else None
 
 
 def _remove_all_but(releases: Path, kept: Path) -> None:

@@ -23,6 +23,16 @@ in its own container.
 ### Changed
 - The repository's checkout isolation test prints a failed bash call's whole reply and every sandbox's log, so the next sandbox error explains itself; the arena behaves as before.
 
+## [371] - 2026-11-15: A release can add an operation, which monitors see
+
+### Added
+
+- The deploy service now stages each release's manifest with IAM and activates it once the release serves, so a release can add an operation under an existing permission ([docs](docs/deploy-service.md#a-release-that-adds-an-operation)).
+
+### Changed
+
+- The monitor's view of a deployment's outcome now carries the operations its release added, changed and removed, so a monitor sees each manifest change and route binding ([docs](docs/deploy-service.md#records)).
+
 ## [370] - 2026-11-15: IAM can take a release's added operations from the deployer
 
 ### Added
