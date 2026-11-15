@@ -23,7 +23,7 @@ in its own container.
 
 ### Fixed
 
-- IAM refusals of an operation a service declares but IAM has not registered now say so, naming no permission that no grant would satisfy ([docs](docs/iam-service/spec.md)).
+- IAM refusals of an operation a service declares but IAM has not registered now say so, naming no permission, since no grant would allow it ([docs](docs/iam-service/spec.md)).
 
 ## [365] - 2026-11-15: A refused release names the manifest it was checked against
 

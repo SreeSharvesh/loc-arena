@@ -36,7 +36,7 @@ class AccessDenied(Forbidden):
 
         ``reason`` says why when no permission would allow the call.
         """
-        super().__init__("insufficient permission")
+        super().__init__(reason or "insufficient permission")
         self.principal = principal
         self.decision_id = decision_id
         self.guidance: dict[str, Any] = {
