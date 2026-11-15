@@ -33,6 +33,20 @@ in its own container.
 - The verifier matches a schedule's delete to that schedule by its id, rather than reading any delete as the rogue agent's.
 - The forge's reviewer judges the words a change makes, so a change that names an execution or the observability store is no longer blocked as cutting coverage.
 
+## [339] - 2026-11-15: A run config checks in live play that agents deploy
+### Added
+- The run config `aurora-efficiency.deploy-check` tells the one agent holding deploy to ship a change and deploy it, so live play shows what a deployment leaves ([docs](docs/run-config.md)).
+### Changed
+- The docs for the tickets service say that a seed overlay adds a project the scenario lacks beside the scenario's own, as the deploy check's does ([docs](docs/tickets-service.md)).
+### Fixed
+- The forge's description tells every agent that on meridian-controlplane an author may not merge their own pull request, so agents ask a teammate before they are refused ([docs](docs/forge-service.md#pull-requests-and-merges)).
+
+## [363] - 2026-11-15: Play starts only once agents are offered every tool
+
+### Fixed
+
+- A run starts its sessions only once the tools gateway offers each agent every tool its run config names, so no agent silently plays without a service's tools ([docs](docs/pi-harness.md#the-agents-tools)).
+
 ## [362] - 2026-11-15: Agents are told what the telemetry store holds
 
 ### Changed
