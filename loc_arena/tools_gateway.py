@@ -26,6 +26,7 @@ from loc_arena.tool_authorization import (
 from loc_arena.tool_authorization import (
     TOOLS_GATEWAY_SERVICE as TOOLS_GATEWAY_SERVICE,  # its compose service, by the name every module uses
 )
+from loc_arena.tool_list_notifier import TOOL_LIST_NOTIFIER
 from loc_arena.workspace_service import WORKSPACE_SERVICE, WORKSPACE_TOOLS, workspace_key
 from loc_arena.yaml_documents import dump_document
 
@@ -71,6 +72,7 @@ def render_tools_gateway_config(
     identities: Mapping[Identity, str],
     inbox_keys: Mapping[str, str] | None = None,
     credentials: Mapping[str, str] | None = None,
+    notifier_key: str | None = None,
 ) -> str:
     """The tools gateway's config (agentgateway v1.6 schema) for agents with these sandbox ``tokens``.
 
@@ -80,16 +82,17 @@ def render_tools_gateway_config(
     its tool list and refused before it reaches the service. Each service's target sets ``Authorization`` to
     the caller's identity on that service. Before a call of a tool of a service whose access the gateway
     enforces, it asks IAM with that service's credential, from ``credentials``, and goes on only on an allow
-    (``loc_arena.tool_authorization``). Tools are offered by their own names, never prefixed with their
-    service's. It listens on IPv4 alone; admin, stats and readiness listeners are off, so nothing on agent-net
-    can read this config back.
+    (``loc_arena.tool_authorization``). With ``notifier_key`` the tool-list notifier, a target with no tools,
+    is called with that key (``loc_arena.tool_list_notifier``). Tools are offered by their own names, never
+    prefixed with their service's. It listens on IPv4 alone; admin, stats and readiness listeners are off, so
+    nothing on agent-net can read this config back.
     """
     tools = {
         # An agent's session runs nothing itself: its bash, file and subscription tools are a target.
         agent.id: {**agent.sandbox.tools, WORKSPACE_SERVICE: [*WORKSPACE_TOOLS, *NOTICE_TOOLS]}
         for agent in config.agents
     }
-    targets = _render_targets(config, tokens, identities, inbox_keys or {})
+    targets = _render_targets(config, tokens, identities, inbox_keys or {}, notifier_key)
     policies = {
         "apiKey": {
             "mode": "strict",
@@ -151,8 +154,9 @@ def _render_targets(
     tokens: Mapping[str, str],
     identities: Mapping[Identity, str],
     inbox_keys: Mapping[str, str],
+    notifier_key: str | None,
 ) -> list[Target]:
-    """Each service with tools as a target of the route, then the workspace service, which the episode serves.
+    """Each service with tools as a target of the route, then the episode's: the workspace, and the notifier.
 
     A target is sent the calling agent's own credential on it: its identity on a service, its inbox key on
     IAM, its workspace key. A ready image is sent none: it runs no IAM integration to know a caller by, and
@@ -179,20 +183,26 @@ def _render_targets(
         targets.append(_render_target(service.name, url, callers))
     workspace = f"http://{EPISODE_SERVICE}:{config.settings.stack.workspace_port}{MCP_PATH}"
     keys = {agent: workspace_key(token) for agent, token in tokens.items()}
-    return [*targets, _render_target(WORKSPACE_SERVICE, workspace, keys)]
+    targets.append(_render_target(WORKSPACE_SERVICE, workspace, keys))
+    if notifier_key is not None:  # the same key for every agent's session, and no agent holds it
+        notifier = workspace.removesuffix(MCP_PATH) + f"/{TOOL_LIST_NOTIFIER}{MCP_PATH}"
+        targets.append(_render_target(TOOL_LIST_NOTIFIER, notifier, dict.fromkeys(tokens, notifier_key)))
+    return targets
 
 
 def _render_frontend_policies(config: RunConfig) -> FrontendPolicies:
     """What the gateway writes of each request: its log line, and a span where the company keeps telemetry.
 
     The line holds, beside the default MCP fields (method, target, tool name, session, source address), as
-    its docs name them, the caller and each tool call's arguments and result or error.
+    its docs name them, the caller, each tool call's arguments and result or error, and the names of the tools
+    each listing offered.
     """
     added = {
         "agent": "apiKey.agent",
         "tool_args": "mcp.tool.arguments",
         "tool_result": "mcp.tool.result",
         "tool_error": "mcp.tool.error",
+        "tools_listed": "mcp.toolsList.tools.map(tool, tool.name)",  # what each tools/list offered
         **(DECISION_FIELDS if list_enforced_services(config) else {}),
     }
     policies: FrontendPolicies = {"accessLog": {"add": added}}

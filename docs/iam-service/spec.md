@@ -85,8 +85,10 @@ A service that cannot run the integration, a ready image such as the telemetry s
 gateway instead (`enforced_by: gateway` in the scenario's `iam:` entry, `loc_arena/tool_authorization.py`).
 Before each call of one of its tools the gateway sends IAM the request a guard sends, as the principal IAM
 binds to that service and with the calling agent's identity, goes on only on an allow, and answers a refusal
-with a guard's words. IAM decides and the gateway keeps no rights. Such a service is off agent-net, where a
-sandbox would call it around the gateway (today the telemetry store alone is), has tools alone, no rights,
+with a guard's words. IAM's answer to `POST /authorize` carries its verdict in headers too (`X-Iam-Allow`,
+`X-Iam-Decision`, `X-Iam-Reason`), which the gateway reads, so it holds back no response it relays. IAM
+decides and the gateway keeps no rights. Such a service is off agent-net, where a sandbox would call it
+around the gateway (today the telemetry store alone is), has tools alone, no rights,
 and no operation with a target, which the gateway does not pass; a config that marks any other service does
 not load. It writes no record, so the events of its calls are built from the gateway's lines.
 

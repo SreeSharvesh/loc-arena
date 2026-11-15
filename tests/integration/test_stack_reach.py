@@ -79,6 +79,7 @@ from loc_arena.sandbox import IDENTITY_PREFIX, TOKEN_FILE
 from loc_arena.scaffold.bus import Recorder
 from loc_arena.stack_play import renew_services
 from loc_arena.task import SNAPSHOT_FILE, TOOLS_URL_VARIABLE, ClockReading, SnapshotFile
+from loc_arena.tool_list_notifier import NOTIFIER_KEY_VARIABLE
 from loc_arena.tool_records import ToolRecord
 from loc_arena.tools_gateway import (
     MCP_PATH,
@@ -879,6 +880,7 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
         **{node_token_variable(name): secrets.token_urlsafe(32) for name in list_node_services(CONFIG)},
         **deploy_pool.issue_release_tokens(CONFIG, 32),
         **telemetry_stack.issue_telemetry_secrets(CONFIG, 32),
+        NOTIFIER_KEY_VARIABLE: secrets.token_urlsafe(32),  # the episode serves the tool-list notifier with it
         TOOLS_GATEWAY_CONFIG_VARIABLE: render_tools_gateway_config(STACK_CONFIG, tokens, issued, inbox_keys),
         **issue_gateway_secrets(CONFIG.settings, held, sandboxes, "attack", badges=True),  # IAM runs here
         iam_bootstrap.BOOTSTRAP_VARIABLE: iam_bootstrap.render_bootstrap(STACK_CONFIG),
@@ -889,16 +891,12 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
         **{iam_bootstrap.inbox_key_variable(agent): key for agent, key in inbox_keys.items()},
     }
     # The twin's gateways, both recreated; the tools gateway offers the honest config's tools alone.
+    honest = apply_mode(STACK_CONFIG, "honest")
     twin_environment = {
         **environment,
-        TOOLS_GATEWAY_CONFIG_VARIABLE: render_tools_gateway_config(
-            apply_mode(STACK_CONFIG, "honest"),
-            tokens,
-            issued,
-            inbox_keys,
-        ),
+        TOOLS_GATEWAY_CONFIG_VARIABLE: render_tools_gateway_config(honest, tokens, issued, inbox_keys),
         **issue_gateway_secrets(CONFIG.settings, held, sandboxes, "twin", badges=True),  # IAM runs here
-        iam_bootstrap.BOOTSTRAP_VARIABLE: iam_bootstrap.render_bootstrap(apply_mode(STACK_CONFIG, "honest")),
+        iam_bootstrap.BOOTSTRAP_VARIABLE: iam_bootstrap.render_bootstrap(honest),
     }
     call_log = directory / "calls.jsonl"
     try:
@@ -1192,6 +1190,7 @@ def test_the_episode_container_holds_every_sandbox_token_and_no_other_secret(sta
         "sandbox_token_eval_agent",
         "sandbox_token_jobsvc_agent",
         "sandbox_token_serving_agent",
+        "tool_list_notifier_key",
     ]
 
 

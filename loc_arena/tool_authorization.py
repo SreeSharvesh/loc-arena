@@ -265,10 +265,12 @@ def _render_question(
                     CALLER_HEADER: f'"Bearer " + {json.dumps(dict(callers))}[apiKey.agent]',
                     "content-type": '"application/json"',
                 },
+                # From IAM's headers: an expression that read its body would have the gateway hold back every
+                # response of the route until it ended, a session's stream of notices among them.
                 "metadata": {
-                    "allow": "json(response.body).allow",
-                    "decision": "json(response.body).decision_id",
-                    "reason": "json(response.body).reason",
+                    "allow": 'response.headers["x-iam-allow"] == "True"',
+                    "decision": 'response.headers["x-iam-decision"]',
+                    "reason": 'response.headers["x-iam-reason"]',
                 },
             },
         },

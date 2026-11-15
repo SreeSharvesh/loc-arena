@@ -5,7 +5,7 @@ from __future__ import annotations
 import dataclasses
 from typing import Annotated, Any
 
-from fastapi import FastAPI, Header, Request
+from fastapi import FastAPI, Header, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, ConfigDict, StrictInt
@@ -15,6 +15,8 @@ from meridian_iam.core import Iam
 
 BEARER = "Bearer "
 CALLER_HEADER = "X-Caller-Authorization"
+# An authorization's verdict beside its body: a gateway reads it here, so it holds back nothing it relays.
+VERDICT_HEADERS = {"allow": "X-Iam-Allow", "decision_id": "X-Iam-Decision", "reason": "X-Iam-Reason"}
 Key = Annotated[str, Header(alias="Idempotency-Key")]
 Auth = Annotated[str | None, Header()]
 
@@ -171,13 +173,16 @@ def create_app(iam: Iam, *, badges: bool = False) -> FastAPI:  # noqa: C901 - co
     @app.post("/authorize")
     async def authorize(
         body: AuthorizeBody,
+        response: Response,
         authorization: Auth = None,
         caller: Annotated[str | None, Header(alias=CALLER_HEADER)] = None,
     ) -> dict[str, Any]:
         caller_token = bearer(caller) if caller else None
-        return dataclasses.asdict(
+        decision = dataclasses.asdict(
             iam.authorize(bearer(authorization), caller_token, body.operation, body.target),
         )
+        response.headers.update({header: str(decision[key]) for key, header in VERDICT_HEADERS.items()})
+        return decision
 
     @app.get("/workloads/delegable")
     async def delegable(

@@ -19,13 +19,15 @@ the services' records hold nothing new, or at the episode's wall-clock ceiling.
 
 from __future__ import annotations
 
+import contextlib
+import functools
 import json
 import logging
 import os
 import shlex
 import subprocess
 import threading
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -43,7 +45,8 @@ from loc_arena.sandbox import token_secret_name
 from loc_arena.scaffold.code_services import CodeServices
 from loc_arena.stack_play import EPISODE_SERVICE
 from loc_arena.task import TOOLS_URL_VARIABLE
-from loc_arena.tool_offer import await_offered_tools
+from loc_arena.tool_list_notifier import NOTIFIER_KEY_SECRET_NAME, TOOL_LIST_NOTIFIER, ToolListNotifier
+from loc_arena.tool_offer import await_offered_tools, notify_once_offered
 from loc_arena.tool_records import Write, append_to
 from loc_arena.workspace_service import WORKSPACE_SERVICE, Turns, build_workspace_server, serve_workspace
 
@@ -347,6 +350,41 @@ def record_session_ends(directory: Path, ended: Mapping[str, SessionEnd]) -> Non
             _LOGGER.warning("%s's session failed with exit code %s: %s", agent, end.exit_code, end.stderr)
 
 
+@contextlib.contextmanager
+def serve_play_tools(
+    config: RunConfig,
+    code: CodeServices,
+    tokens: Mapping[str, str],
+    records: Write,
+    turns: Turns,
+) -> Iterator[Notices]:
+    """Serve the episode's targets of the tools gateway for the holders of ``tokens``; yield their notices.
+
+    The workspace service serves ``code``'s tools and each agent's subscriptions, recorded with ``records``,
+    each call in its agent's turn of ``turns``; the tool-list notifier is served beside it. Once a read of
+    the notices finds a deployment ended, and the gateway offers each agent every tool its run config names
+    again, the notifier tells every session to list its tools again.
+    """
+    secrets_dir, stack = config.settings.gateway.secrets_dir, config.settings.stack
+    workspace = build_workspace_server(code, tokens, records, turns)
+    notifier = ToolListNotifier((secrets_dir / NOTIFIER_KEY_SECRET_NAME).read_text().strip(), EPISODE_SERVICE)
+    notify = functools.partial(notifier.notify, stack.tools_offer_seconds)
+    arguments = (config, os.environ[TOOLS_URL_VARIABLE], tokens, notify)
+
+    def notify_once_offered_again() -> None:  # in a thread of its own: its wait holds up no notice
+        threading.Thread(target=notify_once_offered, args=arguments, daemon=True).start()
+
+    notices = Notices(config, tokens, notify_once_offered_again)
+    add_notice_tools(workspace, notices)
+    with serve_workspace(
+        workspace,
+        EPISODE_SERVICE,
+        stack.workspace_port,
+        {TOOL_LIST_NOTIFIER: notifier.app},
+    ):
+        yield notices
+
+
 def play_own_sessions(
     config: RunConfig,
     code: CodeServices,
@@ -366,12 +404,9 @@ def play_own_sessions(
     tokens = {agent: (secrets_dir / token_secret_name(agent)).read_text().strip() for agent in briefs}
     records = append_to(directory / RECORDS_DIRECTORY / f"{WORKSPACE_SERVICE}.jsonl")
     turns = Turns(briefs)
-    workspace = build_workspace_server(code, tokens, records, turns)
-    notices = Notices(config, briefs)
-    add_notice_tools(workspace, notices)
     briefs = {agent: brief_loop(config, agent, brief) for agent, brief in briefs.items()}
     noticed = append_to(directory / NOTICES_FILE)
-    with serve_workspace(workspace, EPISODE_SERVICE, config.settings.stack.workspace_port):
+    with serve_play_tools(config, code, tokens, records, turns) as notices:
         await_offered_tools(
             config,
             os.environ[TOOLS_URL_VARIABLE],

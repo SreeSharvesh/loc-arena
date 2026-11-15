@@ -274,6 +274,7 @@ new shell exports it again. `SSL_CERT_FILE` and `HTTPS_PROXY` are the machine's 
 | the OpenRouter key and the key of `gateway.agents_upstream`, the internet, DNS, the host's files and `.env` | no |
 | the sealed call log or the Collector, the grader's reference answers, the episode's logs | no |
 | an agent's session (it listens on no port) | no |
+| the tool-list notifier in the episode's container | no: it admits the tools gateway's key alone |
 | another agent's sandbox or credentials | no |
 | the gateway | yes, with its sandbox token, recorded under the sandbox's name; from a job it submits, as that job's node |
 | a service with rights | only with its own identity, and only the rights it holds |
