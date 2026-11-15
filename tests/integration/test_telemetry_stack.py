@@ -30,7 +30,13 @@ import pytest
 import tenacity
 import yaml
 from loc_arena.config import sandbox_service
-from loc_arena.episode_stack import REPOSITORY, issue_secrets, render_compose, token_variable
+from loc_arena.episode_stack import (
+    CONFIGS_DIRECTORY,
+    REPOSITORY,
+    issue_secrets,
+    render_compose,
+    token_variable,
+)
 from loc_arena.gateway.core import API_KEY_VARIABLE
 from loc_arena.identity_variables import identity_variable
 from loc_arena.logging_.events import Event, read_events
@@ -82,6 +88,20 @@ Iam(sys.argv[1], lambda: int(time.time())).disable_principal(sys.argv[2])
 """
 REFUSED_QUERY = "SELECT 6 * 7"  # sent once, by the agent IAM refuses: the reader must never see it
 UNDECIDED_QUERY = "SELECT 41 + 1"  # sent once, when IAM gives no decision: the reader must never see it
+# In IAM's container, given each agent's sandbox token on stdin: the check a play starts behind, and its view.
+OFFER = """
+import json, sys, tempfile
+from pathlib import Path
+from loc_arena.config import load_run_config
+from loc_arena.tool_offer import OFFERED_TOOLS_FILE, MissingToolsError, await_offered_tools
+directory = Path(tempfile.mkdtemp())
+try:
+    await_offered_tools(load_run_config(sys.argv[1]), sys.argv[2], json.load(sys.stdin), directory)
+    refused = ""
+except MissingToolsError as error:
+    refused = str(error)
+print(json.dumps({"refused": refused, "offered": json.loads((directory / OFFERED_TOOLS_FILE).read_text())}))
+"""
 ASKED_AS = "telemetry-service"  # the principal IAM binds to the telemetry, which the gateway asks as
 # In IAM's container, as the agent whose sandbox token is on stdin: what the gateway lists of the store's
 # server's resources and prompts, and whether it reads a table as a resource or gets a prompt.
@@ -242,6 +262,13 @@ def read_rows(answer: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
+def offer(stack: Stack) -> dict[str, Any]:
+    """What the check a play starts behind saw at the tools gateway, for each agent of the run; its refusal."""
+    tokens = json.dumps({agent.id: stack.play[token_variable(agent.id)] for agent in RUN_CONFIG.agents})
+    script = ["python", "-c", OFFER, f"{CONFIGS_DIRECTORY}/{RUN}.yaml", GATEWAY]
+    return json.loads(stack.run("exec", "-T", "iam", *script, standard_input=tokens).strip().splitlines()[-1])
+
+
 def try_tool(stack: Stack, agent: str, tool: str, **arguments: str) -> str:
     """What ``agent``'s call of ``tool`` through the tools gateway printed: nothing if the call failed."""
     script = ["python", "-c", TOOL_CALL, GATEWAY, tool, json.dumps(arguments)]
@@ -346,6 +373,9 @@ def seen(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Seen]:
         # A release of the notes service that cannot start: what its process wrote to stderr.
         stack.merge_change("cannot-start", APPEND_A_SYNTAX_ERROR)
         say["failed deployment"] = stack.deploy("notes")
+        # The release before it is started again, and serves once the gateway offers its tools: what a play
+        # waits for before its sessions open, since a session opened before then never holds them.
+        say["offered after the failed deployment"] = offer(stack)
         say["stderr"] = select(f"{LOGS} WHERE service_name = 'notes' AND body LIKE '%SyntaxError%'")
         # An agent that holds the right reads, with the store's query language; its writes are refused.
         say["query"] = stack.tool(AUTHOR, "execute_sql", query=ERRORS_WITH_THEIR_REQUEST)
@@ -387,6 +417,12 @@ def seen(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Seen]:
         stack.run("stop", READER_SERVICE)
         say["note with no reader"] = stack.tool(AUTHOR, "list_notes")
         stack.run("start", READER_SERVICE)
+        # With a target down, play does not start: the check names each of its tools it was not offered.
+        stack.run("stop", "notes")
+        say["offered without notes"] = offer(stack)
+        stack.run("start", "notes")
+        say["offered with notes again"] = offer(stack)
+
         lines = stack.run("logs", "--no-color", "--no-log-prefix", TOOLS_GATEWAY_SERVICE, "iam").splitlines()
         say["lines"] = [json.loads(line) for line in lines if line.startswith("{")]
         # The events of the play, built from the gateway's log as after play.
@@ -607,3 +643,26 @@ def test_a_read_of_the_telemetry_and_a_refused_one_are_actions_on_the_mirror_log
     assert refused.payload["reason"] == NOT_PERMITTED
     assert f"no queue for {seen.answers['ticket']}" in json.dumps(answered.result)
     assert by_agent[AUTHOR][-1] == ({"query": UNDECIDED_QUERY}, True)
+
+
+def test_play_does_not_start_while_the_tools_gateway_offers_an_agent_no_tool_of_a_target_that_is_down(
+    seen: Seen,
+) -> None:
+    refused = seen.answers["offered without notes"]
+
+    assert "list_notes" in refused["refused"]
+    assert {"list_notes", "write_note"} <= set(refused["offered"][AUTHOR]["missing"])
+    assert "bash" not in refused["offered"][AUTHOR]["missing"]
+
+
+@pytest.mark.parametrize("step", ["offered after the failed deployment", "offered with notes again"])
+def test_once_every_target_serves_the_tools_gateway_offers_each_agent_every_tool_it_names(
+    seen: Seen,
+    step: str,
+) -> None:
+    offered = seen.answers[step]
+
+    assert offered["refused"] == ""
+    assert {agent: tools["missing"] for agent, tools in offered["offered"].items()} == {
+        agent.id: [] for agent in RUN_CONFIG.agents
+    }

@@ -43,6 +43,7 @@ from loc_arena.sandbox import token_secret_name
 from loc_arena.scaffold.code_services import CodeServices
 from loc_arena.stack_play import EPISODE_SERVICE
 from loc_arena.task import TOOLS_URL_VARIABLE
+from loc_arena.tool_offer import await_offered_tools
 from loc_arena.tool_records import Write, append_to
 from loc_arena.workspace_service import WORKSPACE_SERVICE, Turns, build_workspace_server, serve_workspace
 
@@ -357,7 +358,8 @@ def play_own_sessions(
 
     The service serves ``code``'s tools and each agent's subscriptions on the workspace port, and records each
     call in ``directory``, the play's, which also gets each loop's home, each notice and how each session
-    ended. ``briefs`` holds each agent's brief;
+    ended. Sessions start once the tools gateway offers each agent every tool its run config names
+    (``loc_arena.tool_offer``). ``briefs`` holds each agent's brief;
     the attack's target agent gets the covert objective before its own (``brief_loop``).
     """
     secrets_dir = config.settings.gateway.secrets_dir
@@ -370,6 +372,9 @@ def play_own_sessions(
     briefs = {agent: brief_loop(config, agent, brief) for agent, brief in briefs.items()}
     noticed = append_to(directory / NOTICES_FILE)
     with serve_workspace(workspace, EPISODE_SERVICE, config.settings.stack.workspace_port):
+        await_offered_tools(
+            config, os.environ[TOOLS_URL_VARIABLE], tokens, directory,
+        )  # or play does not start
         ended = play_sessions(config, briefs, directory / LOOPS_DIRECTORY, seconds, notices, noticed)
         turns.end()  # a command still running ends before the checkouts are captured
     record_session_ends(directory, ended)
