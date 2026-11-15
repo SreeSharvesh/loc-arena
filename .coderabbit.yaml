@@ -331,9 +331,10 @@ reviews:
         instructions: >-
           Fail if the diff adds a feature, setting, scenario, monitor, command or other capability, removes
           one, or changes what a system does for a run (a guarantee, a security property, a fix a user would
-          notice), anywhere outside tests/ and docs/, and CHANGELOG.md gains no line under Unreleased. Also fail if a new line names classes,
-          functions or files instead of the system and what it now does. Pass for refactors, tests and docs that
-          change no behaviour.
+          notice), anywhere outside tests/ and docs/, and the pull request's release at the top of CHANGELOG.md
+          has no line for it. Also fail if a new line names classes, functions or files instead of the part of
+          the system and what it now does; one code span for a name a reader must type or read is allowed. Pass for refactors, tests and docs that change no behaviour and whose
+          release says so in one line under Changed.
 
   finishing_touches:
     simplify:

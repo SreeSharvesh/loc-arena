@@ -46,7 +46,7 @@ from urllib.parse import urlsplit
 
 import pytest
 import yaml
-from loc_arena import deploy_pool, iam_bootstrap
+from loc_arena import deploy_pool, iam_bootstrap, telemetry_stack
 from loc_arena.checkouts import checkout_home
 from loc_arena.config import load_run_config, sandbox_service
 from loc_arena.episode_stack import (
@@ -90,16 +90,20 @@ from loc_arena.workspace_service import WORKSPACE_TOOLS
 from pydantic import BaseModel, ConfigDict, Field
 from sandbox_server.wire import RESET_PATH, RUN_PATH, CommandRequest
 
-from tests.integration._docker_support import SERVE_WORKSPACE, image_exists
+from tests.integration._docker_support import (
+    SERVE_WORKSPACE,
+    needs_stack,
+    read_logs,
+    read_mounts,
+    read_unhealthy,
+    run_docker,
+)
 from tests.integration._probe_prelude import CONNECT_TIMEOUT_SECONDS, PRELUDE
 
 RUN = "aurora-efficiency.stack-test"
 CONFIG = load_run_config(REPOSITORY / "configs" / f"{RUN}.yaml")
 
-pytestmark = pytest.mark.skipif(
-    not image_exists(CONFIG.settings.stack.image),
-    reason="needs a reachable Docker daemon and the stack image",
-)
+pytestmark = needs_stack(CONFIG.settings.stack.image)
 CHECKOUT_REPOS = ["meridian-common", "meridian-controlplane", "meridian-datapipe", "meridian-distill"]
 CHECKOUT_REPOS += ["meridian-evalkit", "meridian-jobsvc", "meridian-serving"]
 AGENT = "agent-main"  # whose bash runs the probes: holds read and write on the notes board
@@ -176,9 +180,8 @@ EVERY += ["edit_ticket", "get_eval", "get_run", "get_ticket", "leaderboard", "li
 EVERY += ["list_projects", "list_runs", "read_note", "search_tickets", "write_note", "edit_message", "post"]
 EVERY += ["get_job", "get_schedule", "job_logs", "list_jobs", "list_nodes", "list_schedules", "usage"]
 EVERY += ["list_channels", "read_channel", "read_dms", "reply", "search", "send_dm", "unread"]
-EVERY = sorted(
-    [*EVERY, *WORKSPACE_TOOLS, *NOTICE_TOOLS],
-)  # with the workspace service's, which the episode serves
+TELEMETRY_TOOLS = ["describe_table", "execute_sql", "explain_query"]  # the telemetry store's reads
+EVERY = sorted([*EVERY, *TELEMETRY_TOOLS, *WORKSPACE_TOOLS, *NOTICE_TOOLS])  # and the episode's workspace's
 SHARED = ["merge", "open_pr"]  # every agent's on the forge
 OWN_REST = sorted([*EVERY, *SHARED, "list_deployments", "publish_run", "start_run"])
 JOBSVC_TOOLS = [  # serving-agent's, sorted
@@ -671,7 +674,8 @@ class ToolsGatewayLogLine(BaseModel):
     source: str = Field(validation_alias="src.addr")
     method: str | None = Field(default=None, validation_alias="mcp.method.name")
     tool: str | None = Field(default=None, validation_alias="gen_ai.tool.name")
-    status: int = Field(validation_alias="http.status")
+    # None for a session's stream its client closed: the telemetry's server keeps sessions, as IAM's does.
+    status: int | None = Field(default=None, validation_alias="http.status")
     error: str | None = None
 
     @property
@@ -720,6 +724,7 @@ class StackRun:
     left_by_episode: dict[str, str]
     found_by_twin: dict[str, str]
     calls_after_twin: list[GatewayCall]
+    sandbox_logs: str  # the end of each sandbox's log after play, which the bash tests report when they fail
 
     def read_outcome(self, row: str) -> str:
         """The one token the probe of ``row`` printed, in the sandbox or the service container it ran in."""
@@ -841,30 +846,6 @@ def read_addressing(network: str) -> NetworkAddressing:
     return NetworkAddressing(addressing["Subnet"], addressing.get("Gateway"))
 
 
-def read_mounts(project: str) -> dict[str, list[str]]:
-    """The source and destination of every mount of each container of ``project``, by compose service."""
-    label = "com.docker.compose.project"
-    listed = run_docker("ps", "--all", "--quiet", "--filter", f"label={label}={project}").stdout.split()
-    layout = '{{index .Config.Labels "com.docker.compose.service"}} {{json .Mounts}}'
-    mounts: dict[str, list[str]] = {}
-    for line in run_docker("inspect", "--format", layout, *listed).stdout.splitlines():
-        service, _, inspected = line.partition(" ")
-        mounts.setdefault(service, []).extend(
-            path
-            for mount in json.loads(inspected)
-            for path in (mount.get("Source", ""), mount["Destination"])
-        )
-    return mounts
-
-
-def run_docker(*arguments: str, **options: Any) -> subprocess.CompletedProcess[str]:
-    """Run ``docker`` with ``arguments``; raise with its stderr when it fails."""
-    done = subprocess.run(["docker", *arguments], capture_output=True, text=True, check=False, **options)
-    if done.returncode:
-        raise RuntimeError(f"docker {shlex.join(arguments[:6])} exited {done.returncode}: {done.stderr}")
-    return done
-
-
 @pytest.fixture(scope="module")
 def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
     directory = tmp_path_factory.mktemp("stack")
@@ -897,6 +878,7 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
         **{runner_token_variable(name): secrets.token_urlsafe(32) for name in list_runner_services(CONFIG)},
         **{node_token_variable(name): secrets.token_urlsafe(32) for name in list_node_services(CONFIG)},
         **deploy_pool.issue_release_tokens(CONFIG, 32),
+        **telemetry_stack.issue_telemetry_secrets(CONFIG, 32),
         TOOLS_GATEWAY_CONFIG_VARIABLE: render_tools_gateway_config(STACK_CONFIG, tokens, issued, inbox_keys),
         **issue_gateway_secrets(CONFIG.settings, held, sandboxes, "attack", badges=True),  # IAM runs here
         iam_bootstrap.BOOTSTRAP_VARIABLE: iam_bootstrap.render_bootstrap(STACK_CONFIG),
@@ -920,10 +902,8 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
     }
     call_log = directory / "calls.jsonl"
     try:
-        services = [
-            *[GATEWAY_SERVICE, *sandboxes, NOTES.name, FORGE.name, CHAT.name, AGENTS_SERVICE.name],
-            TOOLS_GATEWAY_SERVICE,
-        ]
+        services = [GATEWAY_SERVICE, *sandboxes, NOTES.name, FORGE.name, CHAT.name, AGENTS_SERVICE.name]
+        services += [TOOLS_GATEWAY_SERVICE]
         # The gateway, the forge and the episode share the engine image: built once, before any container
         # starts from it, and never again, nor a running service recreated, since a build need not reproduce.
         run_docker(*compose, "build", env=environment)
@@ -979,6 +959,7 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
                 env=environment,
             )
             played_until = time.time()
+            sandbox_logs = read_logs(compose, environment, [*sandboxes])
             in_services = {
                 row: {"stdout": run_in(service, "sh", "-c", probes[row])}
                 for row, service in ROW_SERVICES.items()
@@ -1054,6 +1035,9 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
             CONFIG.settings,
             call_log_after_twin,
         )
+    except Exception as error:
+        error.add_note(read_unhealthy(compose, environment) + read_logs(compose, environment, [*sandboxes]))
+        raise
     finally:
         down = ["docker", *compose, "down", "--volumes", "--remove-orphans"]
         subprocess.run(down, env=environment, capture_output=True, check=False)
@@ -1086,6 +1070,7 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
         left_by_episode=left_by_episode,
         found_by_twin=found_by_twin,
         calls_after_twin=[GatewayCall.model_validate_json(line) for line in after_twin],
+        sandbox_logs=sandbox_logs,
         **printed,
     )
 
@@ -1093,22 +1078,22 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
 def test_bash_in_a_stack_run_cannot_read_the_episodes_sealed_log(stack_run: StackRun) -> None:
     read = stack_run.bash[0]
 
-    missing = "No such file or directory" in read["stderr"]
-    assert (read["returncode"], read["stdout"], missing) == (1, "", True)
+    missing = "No such file or directory" in read.get("stderr", "")
+    assert (read.get("returncode"), read.get("stdout"), missing) == (1, "", True), stack_run.sandbox_logs
 
 
 def test_bash_in_a_stack_run_sees_its_agents_clone_of_every_repo(stack_run: StackRun) -> None:
     listed = stack_run.bash[1]
 
     expected = "".join(f"{repo}\n" for repo in CHECKOUT_REPOS)
-    assert listed == {"returncode": 0, "stdout": expected, "stderr": ""}
+    assert listed == {"returncode": 0, "stdout": expected, "stderr": ""}, stack_run.sandbox_logs
 
 
 def test_a_process_a_bash_command_leaves_running_ends_with_it(stack_run: StackRun) -> None:
     looked_for = stack_run.bash[2]
 
-    gone = "No such process" in looked_for["stderr"]
-    assert (looked_for["returncode"], gone) == (1, True)
+    gone = "No such process" in looked_for.get("stderr", "")
+    assert (looked_for.get("returncode"), gone) == (1, True), stack_run.sandbox_logs
 
 
 @pytest.mark.parametrize(("row", "allowed"), [(row, allowed) for row, (_, allowed) in ROWS.items()], ids=ROWS)
@@ -1290,6 +1275,7 @@ def test_no_container_of_the_project_mounts_the_docker_socket(stack_run: StackRu
         for service in [
             GATEWAY_SERVICE,
             "collector",
+            *telemetry_stack.list_telemetry_services(CONFIG),
             EPISODE_SERVICE,
             TOOLS_GATEWAY_SERVICE,
             *(live.name for live in CONFIG.live_services),

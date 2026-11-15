@@ -28,7 +28,7 @@ from loc_arena.gateway.core import API_KEY_VARIABLE
 from loc_arena.gateway.model_gateway import PROJECT_PREFIX, GatewayCall, copy_call_log
 from loc_arena.runner_pool import RUNNER_WORKSPACE, list_runner_services, runner_token_variable
 
-from tests.integration._docker_support import image_exists
+from tests.integration._docker_support import needs_stack
 
 RUN = "aurora-efficiency.stack-test"
 OWNER = "agents"
@@ -37,10 +37,7 @@ COSTLY_MODEL = "costly/model"  # on no runner's list of models
 
 
 CONFIG = load_run_config(REPOSITORY / "configs" / f"{RUN}.yaml")  # its agents service has three runners
-pytestmark = pytest.mark.skipif(
-    not image_exists(CONFIG.settings.stack.image),
-    reason=f"needs Docker and the {CONFIG.settings.stack.image} image",
-)
+pytestmark = needs_stack(CONFIG.settings.stack.image)
 # Run in a container with python: calls a runner's command server as the caller holding ``token``.
 CALL_RUNNER = """
 import json, sys, urllib.error, urllib.request

@@ -63,6 +63,12 @@ from loc_arena.service_records import (
     WorkloadIssuedRecord,
 )
 from loc_arena.task import SNAPSHOT_FILE, SnapshotFile, read_snapshot_file, resolve_scenario
+from loc_arena.tool_authorization import (
+    TOOLS_GATEWAY_SERVICE,
+    describe_enforced_tools,
+    list_enforced_services,
+    read_enforced_call,
+)
 from loc_arena.tool_records import ToolRecord
 from loc_arena.workspace_service import WORKSPACE_SERVICE
 from meridian_forge.server import MergeResult, OpenedPullRequest
@@ -305,6 +311,19 @@ def _parse_tool_call_line(line: str, agent_ids: Sequence[str]) -> _ParsedRecordL
     return _ParsedRecordLine(record.time.timestamp(), record.agent, build_events(record, agent_ids))
 
 
+def _enforced_call_parser(refusals: Mapping[str, str], services: Sequence[str]) -> RecordLineParser:
+    """A call of a tool the gateway enforces IAM for, from the gateway's line: an ``action``, a read too."""
+
+    def parse(line: str, agent_ids: Sequence[str]) -> _ParsedRecordLine | None:
+        _ = agent_ids
+        record = read_enforced_call(line, refusals, services)
+        if record is None:
+            return None
+        return _ParsedRecordLine(record.time.timestamp(), record.agent, [_action_event(record)])
+
+    return parse
+
+
 def _parse_workspace_line(line: str, agent_ids: Sequence[str]) -> _ParsedRecordLine:
     """A call of the workspace service's: an agent's bash or file tool, each an ``action``."""
     _ = agent_ids
@@ -411,18 +430,15 @@ def _parse_job_service_line(line: str, agent_ids: Sequence[str]) -> _ParsedRecor
     return _parse_service_request_line(line, agent_ids)
 
 
-def _parse_process_line(line: str, agent_ids: Sequence[str]) -> _ParsedRecordLine:
-    """A node's process fact: a ``process`` event of the job's owner on the sealed log alone."""
+def _parse_process_line(line: str, agent_ids: Sequence[str]) -> _ParsedRecordLine | None:
+    """A job's process fact: a ``process`` event of its owner on the sealed log alone; none for a boot."""
     _ = agent_ids
     record = ProcessRecord.model_validate_json(line)
     fact = record.process
-    event = RecordedEvent(
-        "process",
-        fact.owner,
-        fact.job_id,
-        fact.model_dump(exclude_none=True),
-        to_mirror=False,
-    )
+    if fact.owner is None:
+        return None
+    payload = fact.model_dump(exclude_none=True)
+    event = RecordedEvent("process", fact.owner, fact.job_id, payload, to_mirror=False)
     return _ParsedRecordLine(record.time.timestamp(), fact.owner, [event], asynchronous=True)
 
 
@@ -474,15 +490,7 @@ def build_recorded_events(
     ]
     roles |= dict.fromkeys(_read_company_principals(run_directory, config, phases) - set(roles), COMPANY_ROLE)
     sponsors = _read_sponsors(run_directory, config, phases)
-    record_line_parsers: list[tuple[str, RecordLineParser]] = [
-        *(
-            (service.name, _attribute_workloads(record_line_parser(service, config), sponsors))
-            for service in config.live_services
-            if service.tools or service.rights
-        ),
-        *((node, _attribute_workloads(_parse_process_line, sponsors)) for node in list_node_services(config)),
-        (WORKSPACE_SERVICE, _parse_workspace_line),
-    ]
+    record_line_parsers = _list_record_line_parsers(config, sponsors)
     unattributed: list[str] = []
     built: dict[Path, list[_Placed]] = {phase.directory: [] for phase in phases}
     for phase in phases:
@@ -504,6 +512,27 @@ def build_recorded_events(
     if unattributed:
         _LOGGER.warning("%d service records were not placed: see %s", len(unattributed), UNATTRIBUTED_FILE)
         (run_directory / UNATTRIBUTED_FILE).write_text("".join(f"{note}\n" for note in unattributed))
+
+
+def _list_record_line_parsers(
+    config: RunConfig,
+    sponsors: Mapping[str, str],
+) -> list[tuple[str, RecordLineParser]]:
+    """Each log of the run's that holds records, by its service, with how a line of it becomes events."""
+    return [
+        *(
+            (service.name, _attribute_workloads(record_line_parser(service, config), sponsors))
+            for service in config.live_services
+            if (service.tools or service.rights) and service.name not in list_enforced_services(config)
+        ),
+        # A service the tools gateway enforces IAM for writes no record: the gateway's line is each call's.
+        (
+            TOOLS_GATEWAY_SERVICE,
+            _enforced_call_parser(describe_enforced_tools(config), list_enforced_services(config)),
+        ),
+        *((node, _attribute_workloads(_parse_process_line, sponsors)) for node in list_node_services(config)),
+        (WORKSPACE_SERVICE, _parse_workspace_line),
+    ]
 
 
 def record_line_parser(service: LiveService, config: RunConfig) -> RecordLineParser:

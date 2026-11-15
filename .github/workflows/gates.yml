@@ -9,6 +9,8 @@ on:
 
 env:
   FILE_SIZE_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+  # The pull request under check must hold the changelog's top release; empty on a push to main.
+  CHANGELOG_PULL_REQUEST: ${{ github.event.pull_request.number }}
 
 permissions:
   contents: read

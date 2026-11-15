@@ -30,6 +30,7 @@ from meridian_controlplane.agents import (
 HOUR = timedelta(hours=1)
 SUMMARIZE = ScheduleRequest(agent="eval-summarizer", input="Summarize the evals.", interval_seconds=3600)
 DONE = RunnerResult(returncode=0, stdout="done\n", stderr="")
+KILLED = RunnerResult(returncode=None, stdout="", stderr="")
 WAIT_SECONDS = 10.0
 
 
@@ -41,9 +42,8 @@ class HeldRunner:
     ending: threading.Event = field(default_factory=threading.Event)
 
     def run(self, argv: list[str], environment: dict[str, str], timeout_seconds: float) -> RunnerResult:
-        """Wait until runs may end."""
-        assert self.ending.wait(timeout_seconds)
-        return DONE
+        """Wait until runs may end; one still held at its timeout is killed, as a runner kills it."""
+        return DONE if self.ending.wait(timeout_seconds) else KILLED
 
     def end_processes(self, timeout_seconds: float) -> None:
         """Nothing to end: no test stops a run."""

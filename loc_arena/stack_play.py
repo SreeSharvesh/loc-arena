@@ -19,7 +19,9 @@ from loc_arena.gateway.model_gateway import MODEL_GATEWAY_SERVICE, drain_record,
 from loc_arena.merged_main import EPISODE_PHASE, TWIN_PHASE, PlayedForge, read_stack_forge
 from loc_arena.node_pool import list_node_services
 from loc_arena.observability import PHOENIX_SERVICE, export_spans
+from loc_arena.run_cost import PLAY, mark_phase
 from loc_arena.runner_pool import list_runner_services
+from loc_arena.telemetry_stack import list_telemetry_services
 from loc_arena.tools_gateway import TOOLS_GATEWAY_SERVICE, serves_tools
 
 EPISODE_SERVICE = "episode"  # the agent loop's compose service: the one caller every sandbox serves
@@ -79,12 +81,13 @@ def renew_services(
 ) -> None:
     """Before the honest twin: every container agent code could leave state in, recreated empty.
 
-    Those are each sandbox, each runner, each live service and the tools gateway. The model gateway is
-    recreated too, so it admits the twin's runners and counts their calls afresh, once its record is drained;
-    the Collector, and the record, run on. The episode stays. Each logged service's log so far is first added
-    to its file in ``service_logs``, every copy or none, since a recreated container starts a new log, then
-    Phoenix's spans, once no runner can add one. The recreate uses ``twin_environment``, whose identities and
-    credentials are the twin's own.
+    Those are each sandbox, each runner, each live service, the tools gateway and the company's Collector,
+    which starts again with the new store's writer. The model gateway is recreated too, so it admits the
+    twin's runners and counts their calls afresh, once its record is drained; that record and its Collector
+    run on. The episode stays. Each logged service's log so far is first added to its file in
+    ``service_logs``, every copy or none, since a recreated container starts a new log, then Phoenix's spans,
+    once no runner can add one. The recreate uses ``twin_environment``, whose identities and credentials are
+    the twin's own.
     Raises ``StackError`` when a log cannot be copied or the record does not drain, so nothing is recreated,
     or when a renewed container does not come back.
     """
@@ -93,6 +96,7 @@ def renew_services(
         *(sandbox_service(agent.id) for agent in config.agents),
         *list_runner_services(config),
         *list_logged_services(config),
+        *list_telemetry_services(config),
     ]
     # Every caller the twin renews stops first, so no call is in flight when the record is drained. Phoenix
     # calls no model, and runs on until its spans are exported.
@@ -156,6 +160,7 @@ def deploy_company_server(
         raise StackError(f"{serving.deployer}'s server did not load: see compose's output")
 
 
+@mark_phase(PLAY)
 def play_phases(
     config: RunConfig,
     compose: list[str],
