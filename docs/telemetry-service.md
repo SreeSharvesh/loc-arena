@@ -52,8 +52,8 @@ configured by the standard `OTEL_*` variables the stack renders from the run con
 
 A service's log holds what is written at `WARNING` or above: Python's default, and the level each service
 with MCP tools sets on its MCP server. The MCP SDK writes a refused tool call at `INFO`, and its span of one
-marks the error without the reason; a tool that raises something unexpected it writes at `ERROR`. Each
-record is in the store once. The MCP SDK gives the root logger a handler that copies every record to stderr,
+marks the error without the reason; a tool that raises something unexpected it writes at `ERROR`. No
+record is stored twice. The MCP SDK gives the root logger a handler that copies every record to stderr,
 which the supervisor exports again; each service's launcher logs with a root that has no handler of its own
 (`loc_arena.mcp_service`), so a record leaves only through OpenTelemetry's.
 
@@ -101,7 +101,8 @@ message of a request, batches, and writes the store as a user that can only writ
 telemetry-net, which no sandbox, runner or node joins, and has a second user that can only read
 ([docs/isolation/README.md](isolation/README.md#containers)). This Collector is not the one that writes the
 sealed record of the model calls, which takes nothing from it. Each collected service, and the episode, starts
-once the Collector has, so a service's first export finds it.
+once the Collector's container has. Its image holds no binary a healthcheck could run, so a first export can
+still find the port closed; the SDK logs that and tries again.
 
 ## How agents read it
 
