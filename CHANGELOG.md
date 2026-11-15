@@ -26,6 +26,10 @@ in its own container.
 - The notes service, chat service, model store and eval service log each request their store refuses, with its reason, so the telemetry store says why a call failed ([docs](docs/telemetry-service.md#what-reports)).
 - The tickets service, like those four, logs each HTTP request it fails on with the exception, in the trace of the request ([docs](docs/telemetry-service.md#what-reports)).
 
+### Changed
+
+- The notes service, chat service, tickets service, model store and eval service answer an HTTP request they fail on with JSON, as they answer every other error ([docs](docs/telemetry-service.md#what-reports)).
+
 ## [371] - 2026-11-15: A release can add an operation, which monitors see
 
 ### Added
