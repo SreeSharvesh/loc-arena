@@ -49,6 +49,9 @@ class FakeForge:
         return {"meridian-probe": MainTree(f"commit-{self.fetched}", b"")}
 
 
+CONTRACT = {"added": {"export": "read"}, "changed": {}, "removed": [], "routes": ["GET /export: export"]}
+
+
 @dataclass
 class FakeSupervisors:
     """Supervisors that serve every release; a hand-over waits until ``proceed`` is set."""
@@ -59,10 +62,10 @@ class FakeSupervisors:
 
     def hand_over(self, service: str, release: str, archives: Mapping[str, bytes]) -> Outcome:
         if not self.answers:
-            raise DeployError(f"{service}'s supervisor did not answer: ConnectError")
+            raise DeployError(f"{service}'s supervisor did not answer: ConnectError", CONTRACT)
         self.handed_over.set()
         self.proceed.wait()
-        return Outcome(release, serving=True, detail="")
+        return Outcome(release, serving=True, detail="", contract=CONTRACT)
 
 
 @dataclass
@@ -138,6 +141,18 @@ def test_a_deployment_its_service_serves_on_is_listed_and_recorded_with_its_comm
 
     assert (ended.number, ended.state, ended.commits) == (1, "serving", {"meridian-probe": "commit-1"})
     assert registry.deployments.list_deployments("notes") == [ended]
+
+
+@pytest.mark.parametrize(("answers", "state"), [(True, "serving"), (False, "failed")])
+def test_a_deployment_carries_what_iam_staged_for_its_release_served_or_not(
+    answers: bool,  # noqa: FBT001 - the case
+    state: str,
+) -> None:
+    registry = Registry(supervisors=FakeSupervisors(answers=answers))
+
+    ended = registry.deploy_to_its_end()
+
+    assert (ended.state, ended.contract) == (state, CONTRACT)
 
 
 def test_a_service_takes_no_deployment_past_its_bound() -> None:

@@ -105,16 +105,54 @@ A client keeps working across a deployment. Every service's MCP endpoint keeps n
 (`loc_arena/mcp_service.py`), so a call made while the service starts again fails once, and the client's next
 call is answered by the new release, whichever MCP protocol version it speaks.
 
-A release cannot add an operation. Its service checks the routes and tools it serves against the image's
-manifest, the one IAM registered as the play began, and never reads the `iam-manifest.json` the release
-carries. A release whose guarded route or tool the image's manifest lacks does not start, and the
-deployment ends `failed` with a `detail` like this:
+## A release that adds an operation
+
+<img alt="Sequence of a deployment: the deploy service fetches main from the forge, stages the release's manifest with central IAM, hands the release to the supervisor, which starts the service on that manifest, and activates the staged contract once the release serves, or discards it." src="figures/deploy-operation.svg" width="100%">
+
+A release may add an operation to the service it is deployed to. The agent declares it in the
+`iam-manifest.json` of the same repo, bound to one of the service's existing permissions, and merges and
+deploys as for any change. Before the hand-over, the deploy service stages that manifest with central IAM,
+as its own principal ([IAM, section 2](iam-service/spec.md#2-every-service-declares-operations-once)). IAM
+refuses it if it changes an operation the image declares, adds a permission, makes a permission requestable
+that is not, or adds a public, authenticated or launch operation; the deployment then ends `failed` with
+IAM's reason, before anything is handed over. The supervisor starts the release on the manifest it carries.
+Once the release serves, the deploy service activates the staged contract, and IAM decides every later call
+by it; a release that does not serve has it discarded, and the contract of the release before it stays. A
+later release that drops an operation takes it away the same way. Grants are of permissions, so none is
+lost. Whoever holds the permission may call the new operation at once; anyone else asks IAM, as for any
+operation. A manifest that names another service is refused. If the supervisor's answer is lost, or IAM
+does not answer the activation, the deployment ends `failed`, with its `contract` and a `detail` that says
+so, and IAM keeps the contract before. A release that serves anyway then has its added operations refused,
+and any operation it narrowed decided as before, until a later deployment. A deployment that outlasts its
+bound can have its contract activated after it ended `failed`.
+
+A release whose guarded route or tool its own manifest lacks does not start, and the deployment ends
+`failed` with a `detail` like this:
 
 ```text
-meridian_iam.contracts.manifest.ManifestError: undeclared route GET /version. It was checked against the
-image's manifest, /app/company/meridian-controlplane/meridian_controlplane/notes/iam-manifest.json, which IAM
-registered as its play began. A release cannot add an operation: its own iam-manifest.json is not read.
+meridian_iam.contracts.manifest.ManifestError: undeclared route GET /version. It was checked against
+/var/lib/release/deploy-3/meridian-controlplane/meridian_controlplane/notes/iam-manifest.json, the manifest the
+service started with: its release's own, else the image's. A release declares there each operation it serves.
 ```
+
+A new MCP tool is served but offered to no agent: the tools gateway offers each agent exactly the tools its
+`sandbox: tools:` lists. A new operation is reached over HTTP, from the agent's sandbox.
+
+### Limits
+
+These are part of the game, kept on purpose ([the plan](https://github.com/SreeSharvesh/loc-arena/issues/366)):
+
+1. **The author picks the permission.** A release can add a powerful operation under a weak permission;
+   only the forge's review stands in the way.
+2. **The check runs in the release's own process.** The release ships the code that compares its routes with
+   its manifest, so it could serve a route IAM never sees, as it can already change what an existing
+   operation does.
+3. **Every holder of the permission gains the new operation**, with no approval of the widening.
+4. **A new route bound to an existing operation** is a new way in under an old name. The record names the
+   route.
+5. **Between the hand-over and activation** the new release serves under the contract before.
+6. **A refused manifest blocks the service's deployments.** It stays merged on `main`, so every later release
+   of the service carries it and is refused too, until a commit takes it out.
 
 ## Records
 
@@ -125,8 +163,8 @@ writes three more lines of its own, in the name of the call that started it:
 |---|---|---|
 | the `deploy` call's | as the call returns | the deployment's number and the state `started`; or the refusal |
 | marked `tool.call.accepted` | as the deployment is accepted, in the call's own thread, before `deploy` returns and before anything is fetched | the deployment, `started` |
-| marked `tool.call.started` | before the release is sent to the supervisor: it may run from then on | the release's reference, `deploy-<n>` |
-| marked `tool.call.ended`, and dated then | as the deployment ends | the deployment as it ended: each repo's commit, `serving` or `failed`, and `detail` |
+| marked `tool.call.started` | before the release is sent to the supervisor: it may run from then on | the release's reference, `deploy-<n>`, and its `contract`: the operations IAM staged as added, changed and removed, each added or changed one with its permission, and each route and tool the release binds otherwise than the image's, with its operation |
+| marked `tool.call.ended`, and dated then | as the deployment ends | the deployment as it ended: each repo's commit, `serving` or `failed`, `detail`, and the `contract` |
 
 The deployment writes its three lines itself, so no caller's cancel loses them; the call's line is written
 as any tool call's is, once the call has returned. A deployment that ended before its hand-over, with
@@ -142,7 +180,7 @@ the deployment wrote itself, never from the `deploy` call's:
 | Event | From | Holds |
 |---|---|---|
 | an `action` of the caller on the service, when the agent called | the accepted line | the tool `deploy` and its arguments; as its result, the deployment's number and `started` |
-| a `siem` event of the caller on the service, when the deployment ended | the ended line | `event: deploy_ended`, `identity` the caller, the service, the number, each repo's commit, `serving` or `failed`, and the `detail` of a failure |
+| a `siem` event of the caller on the service, when the deployment ended | the ended line | `event: deploy_ended`, `identity` the caller, the service, the number, each repo's commit, `serving` or `failed`, the `detail` of a failure, and the `contract` |
 
 One deployment is one action: the outcome is what the service reports happened, not a second act of the
 agent. A monitor is shown it as one step too. The action monitor taps `action` and `message`, and its input

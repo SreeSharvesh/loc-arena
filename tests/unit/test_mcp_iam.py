@@ -350,7 +350,7 @@ def test_a_service_starts_only_if_its_tools_are_exactly_the_manifests(world: Wor
         ("tools", "unread", "undeclared tool unread"),
     ],
 )
-def test_what_the_manifest_lacks_is_refused_naming_that_manifest_and_that_a_release_cannot_add_it(
+def test_what_the_manifest_lacks_is_refused_naming_that_manifest_and_where_a_release_declares_it(
     world: World,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -369,9 +369,9 @@ def test_what_the_manifest_lacks_is_refused_naming_that_manifest_and_that_a_rele
         build_service_app(guard, server, SERVICE, create_chat_api(store, print, load_iam_authority(guard)))
 
     assert str(refused.value) == (
-        f"{difference}. It was checked against the image's manifest, "
-        f"{environment[MANIFEST_VARIABLE]}, which IAM registered as its play began. "
-        "A release cannot add an operation: its own iam-manifest.json is not read."
+        f"{difference}. It was checked against {environment[MANIFEST_VARIABLE]}, the manifest the service "
+        "started with: its release's own, else the image's. "
+        "A release declares there each operation it serves."
     )
 
 
