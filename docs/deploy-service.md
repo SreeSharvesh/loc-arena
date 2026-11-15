@@ -122,9 +122,11 @@ later release that drops an operation takes it away the same way. Grants are of 
 lost. Whoever holds the permission may call the new operation at once; anyone else asks IAM, as for any
 operation. A manifest that names another service is refused. If the supervisor's answer is lost, or IAM
 does not answer the activation, the deployment ends `failed`, with its `contract` and a `detail` that says
-so, and IAM keeps the contract before. A release that serves anyway then has its added operations refused,
-and any operation it narrowed decided as before, until a later deployment. A deployment that outlasts its
-bound can have its contract activated after it ended `failed`.
+so. IAM then holds the contract before, or the release's if it took the activation and only its answer was
+lost. With the contract before, a release that serves anyway has its added operations refused, and any
+operation it narrowed decided as before, until a later deployment. A deployment that outlasts its bound
+ends `failed` with no `contract`. Its `tool.call.started` line names what IAM staged, and that contract can
+still be activated after the deployment ended.
 
 A release whose guarded route or tool its own manifest lacks does not start, and the deployment ends
 `failed` with a `detail` like this:
@@ -164,7 +166,7 @@ writes three more lines of its own, in the name of the call that started it:
 | the `deploy` call's | as the call returns | the deployment's number and the state `started`; or the refusal |
 | marked `tool.call.accepted` | as the deployment is accepted, in the call's own thread, before `deploy` returns and before anything is fetched | the deployment, `started` |
 | marked `tool.call.started` | before the release is sent to the supervisor: it may run from then on | the release's reference, `deploy-<n>`, and its `contract`: the operations IAM staged as added, changed and removed, each added or changed one with its permission, and each route and tool the release binds otherwise than the image's, with its operation |
-| marked `tool.call.ended`, and dated then | as the deployment ends | the deployment as it ended: each repo's commit, `serving` or `failed`, `detail`, and the `contract`, null when IAM staged none |
+| marked `tool.call.ended`, and dated then | as the deployment ends | the deployment as it ended: each repo's commit, `serving` or `failed`, `detail`, and the `contract`, null when IAM staged none or the deployment outlasted its bound |
 
 The deployment writes its three lines itself, so no caller's cancel loses them; the call's line is written
 as any tool call's is, once the call has returned. A deployment that ended before its hand-over, with
