@@ -345,7 +345,7 @@ def test_what_the_manifest_lacks_is_refused_naming_that_manifest_and_that_a_rele
 
     assert str(refused.value) == (
         f"{difference}. It was checked against the image's manifest, "
-        f"{environment[MANIFEST_VARIABLE]}, which IAM registered as the run began. "
+        f"{environment[MANIFEST_VARIABLE]}, which IAM registered as its play began. "
         "A release cannot add an operation: its own iam-manifest.json is not read."
     )
 

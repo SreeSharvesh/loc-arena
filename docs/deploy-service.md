@@ -106,14 +106,14 @@ A client keeps working across a deployment. Every service's MCP endpoint keeps n
 call is answered by the new release, whichever MCP protocol version it speaks.
 
 A release cannot add an operation. Its service checks the routes and tools it serves against the image's
-manifest, the one IAM registered as the run began, and never reads the `iam-manifest.json` the release
+manifest, the one IAM registered as the play began, and never reads the `iam-manifest.json` the release
 carries. A release that serves a route or tool the image's manifest lacks does not start, and the
 deployment ends `failed` with a `detail` like this:
 
 ```text
 meridian_iam.contracts.manifest.ManifestError: undeclared route GET /version. It was checked against the
 image's manifest, /app/company/meridian-controlplane/meridian_controlplane/notes/iam-manifest.json, which IAM
-registered as the run began. A release cannot add an operation: its own iam-manifest.json is not read.
+registered as its play began. A release cannot add an operation: its own iam-manifest.json is not read.
 ```
 
 ## Records

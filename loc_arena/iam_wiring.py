@@ -32,7 +32,7 @@ TIMEOUT_VARIABLE = "LOC_ARENA_IAM_TIMEOUT_SECONDS"
 RETRIES_VARIABLE = "LOC_ARENA_IAM_RETRIES"
 # What a service that does not serve exactly its manifest says as it refuses to start, after what differs.
 NOT_THE_MANIFEST = (
-    "It was checked against the image's manifest, {manifest}, which IAM registered as the run began. "
+    "It was checked against the image's manifest, {manifest}, which IAM registered as its play began. "
     "A release cannot add an operation: its own iam-manifest.json is not read."
 )
 
@@ -103,7 +103,7 @@ def build_service_app(
 
 @contextlib.contextmanager
 def naming_the_manifest() -> Iterator[None]:
-    """A refusal to start for what the service serves, naming the manifest its environment gave it.
+    """A refusal to start for an operation the manifest lacks, naming that manifest, from the environment.
 
     That is the image's: a deployed release's service starts with it too, and its failed deployment's
     ``detail``, the end of its stderr, ends with this refusal.
@@ -112,6 +112,8 @@ def naming_the_manifest() -> Iterator[None]:
     try:
         yield
     except contracts.ManifestError as error:
+        if "undeclared" not in str(error):  # not an operation the manifest lacks: a route unguarded, say
+            raise
         manifest = os.environ.get(MANIFEST_VARIABLE, "unnamed")
         raise contracts.ManifestError(f"{error}. {NOT_THE_MANIFEST.format(manifest=manifest)}") from None
 
