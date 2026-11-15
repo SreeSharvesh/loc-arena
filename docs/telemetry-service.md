@@ -50,6 +50,15 @@ configured by the standard `OTEL_*` variables the stack renders from the run con
 - **Log records**: each record of Python's `logging`, with the trace and span it was written in, its source
   location, and an exception's type and stack.
 
+A service's log holds only what its code writes at `WARNING` or above, the level each sets on its MCP server.
+The MCP SDK writes a refused tool call at `INFO`, and its span of one marks the error without the reason.
+
+| Service | Writes log records of its own |
+|---|---|
+| tickets | each request it refuses, with the status and the reason the caller was given |
+| agents, jobsvc | their own failures, such as a runner that was not reset or a pass over the fleet that failed |
+| notes, chat, modelstore, evalkit | none: a refusal's reason reaches only its caller |
+
 Every signal's resource names the service (`service.name`, `service.namespace=meridian`) and its release:
 `service.version` is `image` on the code the run started on, then `deploy-<n>`, with `deployment.id`. The
 release supervisor of a deployed service sets them as it starts the service's process

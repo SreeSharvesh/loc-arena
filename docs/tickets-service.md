@@ -64,6 +64,10 @@ An agent subscribed to the `ticket` topic gets a notice when a ticket is assigne
   a change becomes an `action` on the ticket or project it names (a new ticket's on its project, a new project's
   on its key) and a refused call, read or change, a blocked `action`; a read it answered becomes nothing, and so
   does a request without a known credential, which names no caller.
+- **Its log.** Each request the tracker itself refuses, over HTTP or MCP, is a warning with the status and the
+  reason the caller was given, such as `refused with 404: no ticket NOPE-1`. Under the company's telemetry it is
+  a log record in the trace of the request ([the telemetry](telemetry-service.md#what-reports)). A refusal by IAM
+  is IAM's, and is not in it.
 
 ## Seed
 

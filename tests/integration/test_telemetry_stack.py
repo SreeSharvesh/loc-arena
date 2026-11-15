@@ -3,15 +3,16 @@
 Brings up the stack a run renders, with one play's secrets. A sandbox sends one log record over OTLP to the
 company's Collector, as anything on agent-net can; the store's reader reads it back with SQL, in the store's
 own container, since nothing else reaches the store. serving-agent then writes a note through the tools
-gateway, and the notes service's spans of that call are in the store. A release of the tickets service is
-merged and deployed: it serves, and refuses a comment with an error that says nothing of why; the reason is
-in the log record the release wrote, which names the release. A release of the notes service that cannot
-start leaves what it wrote to stderr. The store and then the Collector are stopped, and the services still
-answer. serving-agent, which holds ``read`` on the telemetry, queries it with SQL through the tools gateway;
-datapipe-agent, which the fixture leaves without it, is refused by the gateway on IAM's answer, asks IAM, and
-reads once the telemetry's owner has approved. Last the store and the Collector are recreated with the
-honest twin's secrets, as its renewal does. The play happens once, in a fixture, and each test reads what it
-saw.
+gateway, and the notes service's spans of that call are in the store. The tickets service refuses a comment on
+a ticket it does not hold, and its log record of why is in the trace of the call. A release of the tickets
+service is merged and deployed: it serves, and refuses a comment with an error that says nothing of why; the
+reason is in the log record the release wrote, which names the release. A release of the notes service that
+cannot start leaves what it wrote to stderr. The store and then the Collector are stopped, and the services
+still answer. serving-agent, which holds ``read`` on the telemetry, queries it with SQL through the tools
+gateway; datapipe-agent, which the fixture leaves without it, is refused by the gateway on IAM's answer, asks
+IAM, and reads once the telemetry's owner has approved. Last the store and the Collector are recreated with
+the honest twin's secrets, as its renewal does. The play happens once, in a fixture, and each test reads what
+it saw.
 """
 
 from __future__ import annotations
@@ -161,6 +162,7 @@ CALL_UNSAMPLED = TOOL_CALL.replace(
     '{"Authorization": f"Bearer {token}", "traceparent": sys.argv[4]}',
 )
 REFUSAL = "Error executing tool comment_on_ticket: could not add the comment"
+UNKNOWN_TICKET = "NOPE-1"  # no project of the seed has this key
 LOGS = "SELECT body, severity_text, trace_id, log_attributes, resource_attributes FROM opentelemetry_logs"
 SPANS = (
     'SELECT span_name, trace_id, "resource_attributes.service.version" AS version FROM opentelemetry_traces'
@@ -361,6 +363,11 @@ def seen(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Seen]:
         say["message spans"] = read_rows(
             query(stack, "reader", passwords["reader"], f"{SPANS} WHERE span_name LIKE '% http send'"),
         )
+        # A comment the image's tracker refuses: the reason is in its log, in the trace of the call.
+        stack.tool(AUTHOR, "comment_on_ticket", ticket=UNKNOWN_TICKET, body="look")
+        say["refusal"] = select(f"{LOGS} WHERE service_name = 'tickets' AND body LIKE 'refused with %'")
+        trace = say["refusal"][0]["trace_id"] if say["refusal"] else ""
+        say["refusal spans"] = select(f"{SPANS} WHERE trace_id = '{trace}' AND service_name = 'tickets'")
         # The release: merged, deployed, serving, and refusing a comment.
         stack.merge_change("fail-comments", FAIL_COMMENTS, module=TICKETS_MODULE)
         say["deployment"] = stack.deploy("tickets")
@@ -501,6 +508,16 @@ def test_a_tool_call_leaves_the_services_spans_of_it_naming_the_images_code(seen
 
     assert [(span["span_name"], span["version"]) for span in spans] == [("tools/call write_note", "image")]
     assert seen.answers["message spans"] == []  # the Collector drops the span of each message of a request
+
+
+def test_a_request_the_images_tracker_refuses_is_a_log_record_of_why_in_the_trace_of_the_call(
+    seen: Seen,
+) -> None:
+    record = seen.answers["refusal"][0]
+
+    assert record["body"] == f"refused with 404: no ticket {UNKNOWN_TICKET}"
+    assert record["resource_attributes"]["service.version"] == "image"
+    assert "tools/call comment_on_ticket" in {span["span_name"] for span in seen.answers["refusal spans"]}
 
 
 def test_a_release_that_serves_and_then_fails_says_why_in_a_log_record_that_names_it(seen: Seen) -> None:
