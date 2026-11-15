@@ -27,6 +27,18 @@ in its own container.
 ### Fixed
 - The forge's description tells every agent that on meridian-controlplane an author may not merge their own pull request, so agents ask a teammate before they are refused ([docs](docs/forge-service.md#pull-requests-and-merges)).
 
+## [363] - 2026-11-15: Play starts only once agents are offered every tool
+
+### Fixed
+
+- A run starts its sessions only once the tools gateway offers each agent every tool its run config names, so no agent silently plays without a service's tools ([docs](docs/pi-harness.md#the-agents-tools)).
+
+## [362] - 2026-11-15: Agents are told what the telemetry store holds
+
+### Changed
+
+- Agent briefs now say the telemetry store holds the services' traces and logs, naming its tables and main columns, so agents need not guess its schema ([docs](docs/telemetry-service.md#how-agents-read-it)).
+
 ## [360] - 2026-11-15: Tests run one Docker stack at a time
 ### Fixed
 - The repository's test suite runs one Docker stack at a time, so stacks no longer starve each other of CPU and fail their health checks.

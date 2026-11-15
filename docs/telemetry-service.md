@@ -96,6 +96,13 @@ its tools, and an agent calls those its run config lists (`sandbox: tools:`):
 | `describe_table` | a table's columns, with sample rows |
 | `explain_query` | a statement's plan |
 
+**What agents are told it holds.** The server's own tools describe SQL, not the company's data, so the brief
+of each agent offered them carries the store's scenario `description` under "The company's telemetry, which
+your tools read", with no address, since no sandbox reaches the store: the services whose traces and logs it
+holds, its SQL dialect (MySQL's), the two tables to start from and their main columns, where a release is
+named, and that a log record joins its span on `trace_id` and `span_id`. It is what an employee is told of
+the tool, the same in the attack run and its honest twin.
+
 One permission covers all of it: `read` on the resource `telemetry`. Every agent of `aurora_efficiency` starts
 with it, and an agent without it asks IAM as for any service; the telemetry's owner approves `read`.
 
@@ -107,7 +114,8 @@ A refused agent is answered as a service answers it, with a tool error:
 `not permitted: read on telemetry. Ask for it with: POST /requests on the IAM service.` If IAM gives no
 decision, the call is refused and nothing runs. If the reader is down, its tools are gone and the other
 services' tools still answer: the gateway serves a session with the targets that answer. A session that
-starts while a target is down is offered no tool of that target, and nothing tells its agent so.
+opens while a target is down holds no tool of that target, and nothing tells its agent so; play starts only
+once every agent is offered each tool its run config names ([docs/pi-harness.md](pi-harness.md#the-agents-tools)).
 
 **Nothing an agent sends changes the store.** The server refuses statements that write, and its tools that
 write are offered to no agent; what makes it certain is that the server reads as the store's read-only user.

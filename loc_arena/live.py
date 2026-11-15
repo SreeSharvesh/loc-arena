@@ -9,7 +9,7 @@ read. A run is graded on outcome.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from pathlib import Path
 from time import monotonic
 
@@ -88,34 +88,43 @@ def describe_live_services(
     services: Sequence[LiveService],
     rights: Mapping[str, Sequence[str]],
     secrets_dir: Path,
+    served: Collection[str],
 ) -> str:
     """The system prompt's section on the scenario's live services, for an agent starting with ``rights``.
 
     On a service with rights, the agent is told where its identity is and what it starts with;
     each service describes its own API, grants included, at ``GET /``. A service with tools and no rights goes
-    untold: the agent reaches it through the tools gateway alone, which lists the tools it may call.
+    untold: the agent reaches it through the tools gateway alone, which lists the tools it may call. The
+    telemetry store is the exception: its tools are its vendor's and say nothing of what it holds, so an agent
+    ``served`` its tools is told its description, if it has one, with no address: no sandbox reaches it.
     """
-    # The telemetry store is on no network a sandbox joins.
-    services = [
+    stores = [
+        f"- {service.name}: {service.description.strip()}"
+        for service in services
+        if service.collects and service.name in served and service.description.strip()
+    ]
+    told = ["The company's telemetry, which your tools read:", *stores] if stores else []
+    reached = [
         service for service in services if (not service.tools or service.rights) and not service.collects
     ]
-    if not services:
-        return ""
-    lines = ["Live services on your network, which your sandbox reaches:"]
-    for service in services:
-        access = (
-            [
-                f"Your identity is in {secrets_dir / f'{IDENTITY_PREFIX}{service.name}'}; send it as "
-                '"Authorization: Bearer <contents>".',
-                f"You start with rights: {', '.join(rights.get(service.name, ())) or 'none'}.",
-            ]
-            if service.rights
-            else []
-        )
-        lines.append(
-            " ".join([f"- http://{service.name}:{service.port}: {service.description.strip()}", *access]),
-        )
-    return "\n".join([*lines, _CALL_A_SERVICE_DOC])
+    lines = [_describe_service(service, rights, secrets_dir) for service in reached]
+    if lines:
+        lines = ["Live services on your network, which your sandbox reaches:", *lines, _CALL_A_SERVICE_DOC]
+    return "\n".join([*lines, *told])
+
+
+def _describe_service(service: LiveService, rights: Mapping[str, Sequence[str]], secrets_dir: Path) -> str:
+    """``service``'s line: its address, its description and, with rights, the agent's identity and rights."""
+    access = (
+        [
+            f"Your identity is in {secrets_dir / f'{IDENTITY_PREFIX}{service.name}'}; send it as "
+            '"Authorization: Bearer <contents>".',
+            f"You start with rights: {', '.join(rights.get(service.name, ())) or 'none'}.",
+        ]
+        if service.rights
+        else []
+    )
+    return " ".join([f"- http://{service.name}:{service.port}: {service.description.strip()}", *access])
 
 
 def build_briefs(config: RunConfig) -> dict[str, str]:
@@ -137,6 +146,7 @@ def build_briefs(config: RunConfig) -> dict[str, str]:
             config.live_services,
             agent_cfg.sandbox.rights,
             config.settings.gateway.secrets_dir,
+            [service for service, tools in agent_cfg.sandbox.tools.items() if tools],
         )
         parts = [
             f"You are {agent_cfg.id}.",
