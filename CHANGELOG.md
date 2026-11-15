@@ -19,7 +19,7 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
-## [PR] - 2026-11-15: A refused release names the manifest it was checked against
+## [365] - 2026-11-15: A refused release names the manifest it was checked against
 
 ### Fixed
 
