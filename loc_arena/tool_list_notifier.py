@@ -54,6 +54,5 @@ class ToolListNotifier:
         for session, (connection, loop) in list(self._sessions.items()):
             try:
                 asyncio.run_coroutine_threadsafe(connection.send_tool_list_changed(), loop).result(seconds)
-            except Exception as error:  # noqa: BLE001 - a session that ended takes no notice; the rest do
+            except Exception as error:  # noqa: BLE001 - one session that takes no notice leaves the rest theirs
                 _LOGGER.warning("session %s took no tool-list notice: %s", session, error)
-                self._sessions.pop(session, None)

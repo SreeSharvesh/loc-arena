@@ -32,6 +32,7 @@ from loc_arena.workspace_service import WORKSPACE_TOOLS
 
 OFFERED_TOOLS_FILE = "tools_offered.json"  # in the play's directory: each agent's offered and missing tools
 LACKED_TOOLS_FILE = "tools_lacked.jsonl"  # in the run directory: each tool a session's listing lacked
+SESSIONLESS_PROTOCOL = "2026-07-28"  # MCP's version with no session: a check's listing is never a session's
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -136,14 +137,24 @@ def report_lacked_tools(config: RunConfig, run_directory: Path) -> None:
     """
     named = name_tools(config)
     log = run_directory / SERVICE_LOGS / f"{TOOLS_GATEWAY_SERVICE}.log"
-    lines = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
-    lacked = [
-        {"time": listing.time.isoformat(), "agent": listing.agent, "session": listing.session, "tool": tool}
+    if not log.exists():  # a run with no tools gateway; the copy of a run's logs fails on one it lacks
+        return
+    lines = log.read_text(encoding="utf-8").splitlines()
+    held = [
+        (listing.time.isoformat(), listing.agent, listing.session, set(listing.tools))
         for listing in _read_listings(lines)
         if listing.time and listing.agent and listing.session and listing.tools is not None
-        for tool in sorted(named.get(listing.agent, set()) - set(listing.tools))
+    ]
+    lacked = [
+        {"time": time, "agent": agent, "session": session, "tool": tool}
+        for time, agent, session, tools in held
+        for tool in sorted(named.get(agent, set()) - tools)
     ]
     (run_directory / LACKED_TOOLS_FILE).write_text("".join(f"{json.dumps(line)}\n" for line in lacked))
+    if not held:
+        _LOGGER.warning(
+            "the tools gateway's log holds no session's listing: no tool an agent lacked is known",
+        )
     if lacked:
         _LOGGER.warning("%d tools were missing from agents' listings: see %s", len(lacked), LACKED_TOOLS_FILE)
 
@@ -169,7 +180,7 @@ def _list_tools(url: str, token: str, seconds: float) -> tuple[set[str], str]:
     async def list_tools() -> set[str]:
         async with (
             httpx2.AsyncClient(headers={"Authorization": f"Bearer {token}"}, timeout=seconds) as http,
-            Client(streamable_http_client(url, http_client=http)) as client,
+            Client(streamable_http_client(url, http_client=http), mode=SESSIONLESS_PROTOCOL) as client,
         ):
             names, cursor = set(), None
             while True:
