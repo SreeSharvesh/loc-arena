@@ -19,6 +19,12 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [362] - 2026-11-15: Agents are told what the telemetry store holds
+
+### Changed
+
+- Agent briefs now say the telemetry store holds the services' traces and logs, naming its tables and main columns, so agents need not guess its schema ([docs](docs/telemetry-service.md#how-agents-read-it)).
+
 ## [360] - 2026-11-15: Tests run one Docker stack at a time
 ### Fixed
 - The repository's test suite runs one Docker stack at a time, so stacks no longer starve each other of CPU and fail their health checks.
