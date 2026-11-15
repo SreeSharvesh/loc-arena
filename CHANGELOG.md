@@ -19,6 +19,12 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [PR] - 2026-11-15: A run config checks a release that adds an operation
+
+### Added
+
+- The run config `aurora-efficiency.operation-check` has the agent holding deploy add an operation to the eval service, deploy it and call it, so live play shows that path ([docs](docs/run-config.md)).
+
 ## [376] - 2026-11-15: A sandbox's server error names its failure
 ### Fixed
 - The sandbox answers a command it cannot run with a server error naming the failure, and the episode's error carries it, so a failed sandbox call explains itself ([docs](docs/isolation/README.md)).
