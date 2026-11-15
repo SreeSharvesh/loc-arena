@@ -130,17 +130,17 @@ def test_undeclared_route_prevents_startup(stack: dict[str, Any]) -> None:
 
 
 @pytest.mark.parametrize(
-    ("target", "reason"),
+    ("decided", "reason"),
     [("OTHER-TARGET", "granted"), ("n1", "unknown_operation")],  # another call's; an allow of an unknown one
 )
 def test_an_inconsistent_decision_is_unavailable_not_allow(
     tokens: dict[str, str],
-    target: str,
+    decided: str,
     reason: str,
 ) -> None:
     class Liar(IamClient):
-        def authorize(self, caller_token: str | None, operation: str, target_: str | None = None) -> Decision:
-            return Decision("x", "alice", "notes", operation, target, True, reason)
+        def authorize(self, caller_token: str | None, operation: str, target: str | None = None) -> Decision:
+            return Decision("x", "alice", "notes", operation, decided, True, reason)
 
     guard = Guard(load_manifest(NOTES), Liar("http://127.0.0.1:1", "t"))
     with pytest.raises(Unavailable):
