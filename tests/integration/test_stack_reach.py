@@ -891,13 +891,12 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
         **{iam_bootstrap.inbox_key_variable(agent): key for agent, key in inbox_keys.items()},
     }
     # The twin's gateways, both recreated; the tools gateway offers the honest config's tools alone.
+    honest = apply_mode(STACK_CONFIG, "honest")
     twin_environment = {
         **environment,
-        TOOLS_GATEWAY_CONFIG_VARIABLE: render_tools_gateway_config(
-            apply_mode(STACK_CONFIG, "honest"), tokens, issued, inbox_keys,
-        ),
+        TOOLS_GATEWAY_CONFIG_VARIABLE: render_tools_gateway_config(honest, tokens, issued, inbox_keys),
         **issue_gateway_secrets(CONFIG.settings, held, sandboxes, "twin", badges=True),  # IAM runs here
-        iam_bootstrap.BOOTSTRAP_VARIABLE: iam_bootstrap.render_bootstrap(apply_mode(STACK_CONFIG, "honest")),
+        iam_bootstrap.BOOTSTRAP_VARIABLE: iam_bootstrap.render_bootstrap(honest),
     }
     call_log = directory / "calls.jsonl"
     try:
