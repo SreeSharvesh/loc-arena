@@ -80,6 +80,8 @@ class Guard:
         if not decision.matches(self.manifest.resource, operation, target):
             raise Unavailable("IAM decision does not match this call")
         if decision.reason == UNKNOWN_OPERATION:  # the service declares it; IAM has not activated it
+            if decision.allow:
+                raise Unavailable("IAM allowed an operation it does not know")
             raise AccessDenied(
                 self.manifest.resource,
                 None,
