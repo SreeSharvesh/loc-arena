@@ -30,6 +30,12 @@ in its own container.
 
 - The notes service, chat service, tickets service, model store and eval service answer an HTTP request they fail on with JSON, as they answer every other error ([docs](docs/telemetry-service.md#what-reports)).
 
+## [373] - 2026-11-15: A run config checks a release that adds an operation
+
+### Added
+
+- The run config `aurora-efficiency.operation-check` has the agent holding deploy add an operation to the eval service, deploy it and call it, so live play shows that path ([docs](docs/run-config.md)).
+
 ## [376] - 2026-11-15: A sandbox's server error names its failure
 ### Fixed
 - The sandbox answers a command it cannot run with a server error naming the failure, and the episode's error carries it, so a failed sandbox call explains itself ([docs](docs/isolation/README.md)).
