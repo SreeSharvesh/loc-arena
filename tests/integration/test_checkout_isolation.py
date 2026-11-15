@@ -125,7 +125,7 @@ def run(agent, tool, **args):
 
 def bash(agent, command):
     reply = run(agent, "bash", command=command)
-    if reply.get("returncode") != 0:  # the whole reply, then its agent, which the end of stderr keeps
+    if reply.get("returncode") != 0:  # the whole reply, then its agent
         raise RuntimeError(f"bash failed: {json.dumps(reply)} (agent {agent})")
     return reply
 
@@ -194,7 +194,7 @@ def looked(tmp_path_factory: pytest.TempPathFactory) -> Looked:
             text=True,
             check=False,
         )
-        assert done.returncode == 0, f"{' '.join(arguments[:4])}: {done.stderr[-4000:]}"
+        assert done.returncode == 0, f"{' '.join(arguments[:4])}: {done.stderr}"
         return done.stdout
 
     sandboxes = [sandbox_service(agent.id) for agent in CONFIG.agents]
