@@ -8,9 +8,11 @@ imports are made when a service starts, never at module load. A service started 
 
 from __future__ import annotations
 
+import contextlib
 import importlib
 import json
-from collections.abc import Mapping
+import os
+from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +30,11 @@ MANIFEST_VARIABLE = "LOC_ARENA_IAM_MANIFEST"
 CREDENTIAL_VARIABLE = "LOC_ARENA_IAM_CREDENTIAL"
 TIMEOUT_VARIABLE = "LOC_ARENA_IAM_TIMEOUT_SECONDS"
 RETRIES_VARIABLE = "LOC_ARENA_IAM_RETRIES"
+# What a service that does not serve exactly its manifest says as it refuses to start, after what differs.
+NOT_THE_MANIFEST = (
+    "It was checked against the image's manifest, {manifest}, which IAM registered as its play began. "
+    "A release cannot add an operation: its own iam-manifest.json is not read."
+)
 
 
 def service_environment(settings: IamSettings, manifest: str, credential: str) -> dict[str, str]:
@@ -83,14 +90,32 @@ def build_service_app(
     verify a caller.
     """
     tools = {tool.name for tool in anyio.run(server.list_tools)}
-    if api is None:
-        guard.verify_routes(set(), tools)
-    else:
-        importlib.import_module("meridian_iam.integration.asgi").verify_app(guard, api, tools)
+    with naming_the_manifest():
+        if api is None:
+            guard.verify_routes(set(), tools)
+        else:
+            importlib.import_module("meridian_iam.integration.asgi").verify_app(guard, api, tools)
     app = importlib.import_module("meridian_iam.integration.mcp").answer_outages(build_app(server, service))
     if api is not None:
         app.router.routes.append(Mount("/", app=api))  # after /mcp, so the HTTP API serves the rest
     return app
+
+
+@contextlib.contextmanager
+def naming_the_manifest() -> Iterator[None]:
+    """A refusal to start for an operation the manifest lacks, naming that manifest, from the environment.
+
+    That is the image's: a deployed release's service starts with it too, and its failed deployment's
+    ``detail``, the end of its stderr, ends with this refusal.
+    """
+    contracts = importlib.import_module("meridian_iam.contracts")
+    try:
+        yield
+    except contracts.ManifestError as error:
+        if "undeclared" not in str(error):  # not an operation the manifest lacks: a route unguarded, say
+            raise
+        manifest = os.environ.get(MANIFEST_VARIABLE, "unnamed")
+        raise contracts.ManifestError(f"{error}. {NOT_THE_MANIFEST.format(manifest=manifest)}") from None
 
 
 def http_dependency(guard: Any) -> Any:  # noqa: ANN401 - a meridian_iam Guard, and FastAPI's Depends
