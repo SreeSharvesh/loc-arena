@@ -71,7 +71,13 @@ class SandboxClient:
             )
             response.raise_for_status()
         except httpx2.HTTPError as error:
-            raise SandboxError(f"the sandbox did not run it: {type(error).__name__}: {error}") from error
+            # What the server answered, so a refusal or a failure says why
+            answered = (
+                f"; it answered {error.response.text}" if isinstance(error, httpx2.HTTPStatusError) else ""
+            )
+            raise SandboxError(
+                f"the sandbox did not run it: {type(error).__name__}: {error}{answered}",
+            ) from error
         return response
 
 
