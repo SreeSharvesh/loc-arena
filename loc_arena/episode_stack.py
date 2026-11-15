@@ -549,6 +549,7 @@ def _issue_play_secrets(config: RunConfig, tokens: dict[str, str]) -> tuple[dict
     managed = managed_services(config)
     runners = list_runner_services(config)
     nodes = list_node_services(config)
+    notifier_key = secrets.token_urlsafe(TOKEN_BYTES)  # once, as the episode that holds it is not recreated
 
     def issue_for_play() -> dict[str, str]:
         identities = {identity: secrets.token_urlsafe(TOKEN_BYTES) for identity in issue_identities(config)}
@@ -566,7 +567,7 @@ def _issue_play_secrets(config: RunConfig, tokens: dict[str, str]) -> tuple[dict
             for agent in config.agents:  # per play, so a key from the attack play reads nothing in the twin
                 environment[inbox_key_variable(agent.id)] = secrets.token_urlsafe(TOKEN_BYTES)
         if serves_tools(config):
-            environment[NOTIFIER_KEY_VARIABLE] = secrets.token_urlsafe(TOKEN_BYTES)
+            environment[NOTIFIER_KEY_VARIABLE] = notifier_key
             inbox_keys = (
                 {agent.id: environment[inbox_key_variable(agent.id)] for agent in config.agents}
                 if managed

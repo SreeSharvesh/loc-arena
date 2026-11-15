@@ -11,9 +11,10 @@ that lacked a named tool is written to the run directory.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
 
 import anyio
@@ -21,7 +22,7 @@ import httpx2
 import tenacity
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError
 
 from loc_arena.config import RunConfig
 from loc_arena.notices import NOTICE_TOOLS
@@ -117,14 +118,14 @@ def _wait_until_offered(
 
 
 class _Listing(BaseModel):
-    """The gateway's line of a ``tools/list`` in a session: who listed, when, and the tools it was offered."""
+    """The gateway's line of a request: who made it, when, its session, and the tools a listing offered."""
 
     model_config = ConfigDict(extra="ignore")
 
-    time: AwareDatetime
-    agent: str
-    session: str = Field(validation_alias="mcp.session.id")
-    tools: list[str] = Field(validation_alias="tools_listed")
+    time: AwareDatetime | None = None
+    agent: str | None = None
+    session: str | None = Field(default=None, validation_alias="mcp.session.id")
+    tools: list[str] | None = Field(default=None, validation_alias="tools_listed")
 
 
 def report_lacked_tools(config: RunConfig, run_directory: Path) -> None:
@@ -136,19 +137,25 @@ def report_lacked_tools(config: RunConfig, run_directory: Path) -> None:
     named = name_tools(config)
     log = run_directory / SERVICE_LOGS / f"{TOOLS_GATEWAY_SERVICE}.log"
     lines = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
-    listings = [
-        _Listing.model_validate_json(line)
-        for line in lines
-        if '"tools_listed"' in line and '"mcp.session.id"' in line
-    ]
     lacked = [
         {"time": listing.time.isoformat(), "agent": listing.agent, "session": listing.session, "tool": tool}
-        for listing in listings
+        for listing in _read_listings(lines)
+        if listing.time and listing.agent and listing.session and listing.tools is not None
         for tool in sorted(named.get(listing.agent, set()) - set(listing.tools))
     ]
     (run_directory / LACKED_TOOLS_FILE).write_text("".join(f"{json.dumps(line)}\n" for line in lacked))
     if lacked:
         _LOGGER.warning("%d tools were missing from agents' listings: see %s", len(lacked), LACKED_TOOLS_FILE)
+
+
+def _read_listings(lines: list[str]) -> Iterator[_Listing]:
+    """Each of ``lines`` read by its own fields alone, as the tool arguments it records may name any key.
+
+    A line that is no JSON object is skipped: a long tool call's line is split, and no listing's is that long.
+    """
+    for line in lines:
+        with contextlib.suppress(ValidationError):
+            yield _Listing.model_validate_json(line)
 
 
 def _list_tools(url: str, token: str, seconds: float) -> tuple[set[str], str]:

@@ -47,7 +47,9 @@ During play a deployment restarts its service. When the deploy service's record 
 same check runs again, and once it passes, the tool-list notifier sends `notifications/tools/list_changed` on
 every session's stream, and pi lists again. A session that opened while the service was down gets its tools
 back; no session lists while a named tool is missing, so an open session never loses one. A target that is
-still missing after `stack.tools_offer_seconds` gets no notice until the next deployment ends.
+still missing after `stack.tools_offer_seconds` gets no notice until the next deployment ends. Two windows
+are left, and both show in `tools_lacked.jsonl`: a deployment that ended on its time bound may still restart
+its service after the check, and a second deployment may stop its service between the check and pi's listing.
 
 The notifier is a target of the gateway with no tools, served in the episode's container beside the workspace
 service. It admits only the gateway, by a key no agent holds, and writes no record. The gateway's log names
