@@ -16,6 +16,7 @@ from meridian_iam.contracts import (
 )
 
 BEARER = "Bearer "
+UNKNOWN_OPERATION = "unknown_operation"  # IAM's reason when no registered operation has the name
 
 
 class AccessDenied(Forbidden):
@@ -29,8 +30,12 @@ class AccessDenied(Forbidden):
         requestable: bool,
         principal: str | None = None,
         decision_id: str | None = None,
+        reason: str | None = None,
     ) -> None:
-        """Build the safe guidance a denied caller sees; ``principal`` is for the audit line only."""
+        """Build the safe guidance a denied caller sees; ``principal`` is for the audit line only.
+
+        ``reason`` says why when no permission would allow the call.
+        """
         super().__init__("insufficient permission")
         self.principal = principal
         self.decision_id = decision_id
@@ -39,7 +44,15 @@ class AccessDenied(Forbidden):
             "resource": resource,
             "permission": permission,
             "request_with": "POST /requests on the IAM service" if requestable else None,
-        }
+        } | ({"reason": reason} if reason else {})
+
+    def describe(self) -> str:
+        """The refusal in one line, as a tool's caller reads it."""
+        guidance = self.guidance
+        if "reason" in guidance:
+            return f"{guidance['reason']}."
+        where = f" Ask for it with: {guidance['request_with']}." if guidance["request_with"] else ""
+        return f"{guidance['permission']} on {guidance['resource']}.{where}"
 
 
 class Guard:
@@ -66,6 +79,15 @@ class Guard:
         decision = self.client.authorize(caller_token, operation, target)
         if not decision.matches(self.manifest.resource, operation, target):
             raise Unavailable("IAM decision does not match this call")
+        if decision.reason == UNKNOWN_OPERATION:  # the service declares it; IAM has not activated it
+            raise AccessDenied(
+                self.manifest.resource,
+                None,
+                requestable=False,
+                principal=decision.principal,
+                decision_id=decision.decision_id,
+                reason=f"IAM has not activated {operation} on {self.manifest.resource}",
+            )
         if not decision.allow:
             raise AccessDenied(
                 self.manifest.resource,

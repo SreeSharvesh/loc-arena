@@ -105,7 +105,9 @@ For every protected call:
 
 Invalid/absent credentials return 401. Insufficient rights return 403 with safe permission-request guidance.
 An unavailable or malformed IAM response returns a service-unavailable error and executes no protected action;
-it must not pretend the caller merely lacks a grant. Unknown operations fail closed.
+it must not pretend the caller merely lacks a grant. Unknown operations fail closed. An operation the service
+declares that IAM has not registered is refused with that reason ("IAM has not activated <operation> on
+<resource>"), naming no permission, since no grant would allow it.
 
 The first implementation performs an online decision per protected call: no allow cache, token-embedded grant
 snapshot or local grant fallback. Use configured transport timeouts and bounded retries for safe read-only

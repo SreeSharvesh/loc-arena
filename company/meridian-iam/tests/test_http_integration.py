@@ -253,6 +253,34 @@ def test_a_declared_head_is_authorized_under_its_own_permission(
     )  # alice may read, not "manage"
 
 
+def test_an_operation_the_service_declares_and_iam_has_not_activated_is_refused_saying_so(
+    stack: dict[str, Any],
+    tokens: dict[str, str],
+) -> None:
+    app, guard = build(
+        stack,
+        declared({"export_notes": {"permission": "read"}}, {"GET /export": "export_notes"}),
+    )
+    serve_notes_routes(app)
+
+    @app.get("/export")
+    async def export_notes() -> str:
+        return "every note"
+
+    verify_app(guard, app)
+
+    refused = TestClient(app).get("/export", headers=bearer(tokens["alice"]))  # alice may read
+
+    assert refused.status_code == HTTPStatus.FORBIDDEN
+    assert refused.json()["detail"] == {
+        "error": "forbidden",
+        "resource": "notes",
+        "permission": None,
+        "request_with": None,
+        "reason": "IAM has not activated export_notes on notes",
+    }
+
+
 def test_an_app_that_does_not_carry_the_guards_dependency_does_not_start_even_if_its_routes_match(
     stack: dict[str, Any],
 ) -> None:
