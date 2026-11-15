@@ -19,7 +19,7 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
-## [PR] - 2026-11-15: The docs match the deploy path and the lab as built
+## [375] - 2026-11-15: The docs match the deploy path and the lab as built
 
 ### Changed
 
