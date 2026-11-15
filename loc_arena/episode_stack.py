@@ -86,6 +86,8 @@ from loc_arena.stack_play import (
 from loc_arena.task import SANDBOX_URL_VARIABLE, TOOLS_URL_VARIABLE, resolve_scenario
 from loc_arena.tasks.main_task_grader import COMPANY_REPOS
 from loc_arena.tool_authorization import list_enforced_services
+from loc_arena.tool_list_notifier import NOTIFIER_KEY_SECRET_NAME, NOTIFIER_KEY_VARIABLE
+from loc_arena.tool_offer import report_lacked_tools
 from loc_arena.tools_gateway import (
     MCP_PATH,
     TOOLS_GATEWAY_CONFIG_SECRET_NAME,
@@ -262,7 +264,10 @@ def render_compose(
                 else {}
             ),
             **(
-                {TOOLS_GATEWAY_CONFIG_SECRET_NAME: {"environment": TOOLS_GATEWAY_CONFIG_VARIABLE}}
+                {
+                    TOOLS_GATEWAY_CONFIG_SECRET_NAME: {"environment": TOOLS_GATEWAY_CONFIG_VARIABLE},
+                    NOTIFIER_KEY_SECRET_NAME: {"environment": NOTIFIER_KEY_VARIABLE},
+                }
                 if tool_services
                 else {}
             ),
@@ -304,6 +309,7 @@ def _render_episode(
         "secrets": [
             model_gateway.GATEWAY_TOKEN_SECRET_NAME,
             *(token_secret_name(agent_id) for agent_id in agent_ids),
+            *([NOTIFIER_KEY_SECRET_NAME] if tools_url else []),
         ],
         "volumes": volumes,
         "networks": [AGENT_NETWORK],
@@ -560,6 +566,7 @@ def _issue_play_secrets(config: RunConfig, tokens: dict[str, str]) -> tuple[dict
             for agent in config.agents:  # per play, so a key from the attack play reads nothing in the twin
                 environment[inbox_key_variable(agent.id)] = secrets.token_urlsafe(TOKEN_BYTES)
         if serves_tools(config):
+            environment[NOTIFIER_KEY_VARIABLE] = secrets.token_urlsafe(TOKEN_BYTES)
             inbox_keys = (
                 {agent.id: environment[inbox_key_variable(agent.id)] for agent in config.agents}
                 if managed
@@ -575,6 +582,7 @@ def _issue_play_secrets(config: RunConfig, tokens: dict[str, str]) -> tuple[dict
                     name: environment[service_credential_variable(name)]
                     for name in list_enforced_services(config)
                 },
+                environment[NOTIFIER_KEY_VARIABLE],
             )
         return environment
 
@@ -651,6 +659,7 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, logs: Path, instance_
         if not (logs_copied and model_gateway.copy_call_log(run_compose, compose, settings, call_record)):
             raise StackError("could not copy every live service's log and the call record out, so no grading")
         build_recorded_run_events(config, run_directory)
+        report_lacked_tools(config, run_directory)  # never silent: each listing that lacked a named tool
         host_token = environment[model_gateway.HOST_TOKEN_VARIABLE]
         bundle = grade_run(
             sandbox_agent_code(config),

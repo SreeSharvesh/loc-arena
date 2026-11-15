@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import re
 import threading
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from typing import Annotated
 
@@ -87,12 +87,20 @@ def _check_topic(topic: str) -> str:
 class Notices:
     """Each agent's subscriptions, and the notices the services' new records make for them."""
 
-    def __init__(self, config: RunConfig, agents: Iterable[str]) -> None:
+    def __init__(
+        self,
+        config: RunConfig,
+        agents: Iterable[str],
+        deployment_ended: Callable[[], None] = lambda: None,
+    ) -> None:
         """Each of ``agents`` starts subscribed to ``pi.subscriptions``; records so far make no notice.
+
+        A read that finds a deployment ended calls ``deployment_ended``: its service has started again.
 
         Raises ``ValueError`` when one of ``pi.subscriptions`` is no topic.
         """
         self._lock = threading.Lock()
+        self._deployment_ended = deployment_ended
         starting = [_check_topic(topic) for topic in config.settings.pi.subscriptions]
         self._topics = {agent: set(starting) for agent in agents}
         directory = config.settings.stack.records_directory
@@ -122,7 +130,10 @@ class Notices:
 
     def read(self) -> list[Notice]:
         """The notices of every record line written since the last read, in each service's order."""
-        return [notice for event in self._read_events() for notice in self._notify(event)]
+        events = list(self._read_events())
+        if any(event.kind == "siem" and event.payload.get("event") == "deploy_ended" for event in events):
+            self._deployment_ended()
+        return [notice for event in events for notice in self._notify(event)]
 
     def _read_events(self) -> Iterator[RecordedEvent]:
         for path, parse in self._parsers.items():
