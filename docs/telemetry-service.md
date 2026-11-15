@@ -52,9 +52,9 @@ configured by the standard `OTEL_*` variables the stack renders from the run con
 
 A service's log holds what is written at `WARNING` or above: Python's default, and the level each service
 with MCP tools sets on its MCP server. The MCP SDK writes a refused tool call at `INFO`, and its span of one
-marks the error without the reason; a tool that raises something unexpected it writes at `ERROR`. Each such
-record also reaches the service's stderr, so it is in the store twice: once in its trace, once as a record
-from stderr.
+marks the error without the reason; a tool that raises something unexpected it writes at `ERROR`. In a
+service with MCP tools, each such record also reaches stderr through the handler the MCP SDK adds, so it is in
+the store twice: as written, and as a record from stderr.
 
 | Service | Writes log records of its own |
 |---|---|

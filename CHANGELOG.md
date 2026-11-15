@@ -19,11 +19,11 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
-## [PR] - 2026-11-15: The tickets service logs each request it refuses
+## [PR] - 2026-11-15: The tickets service logs each request its store refuses
 
 ### Fixed
 
-- The tickets service logs each request it refuses, with the reason its caller was given, so the telemetry store says why a call failed ([docs](docs/telemetry-service.md#what-reports)).
+- The tickets service logs each request its store refuses, with the reason its caller was given, so the telemetry store says why a call failed ([docs](docs/telemetry-service.md#what-reports)).
 
 ## [339] - 2026-11-15: A run config checks in live play that agents deploy
 ### Added

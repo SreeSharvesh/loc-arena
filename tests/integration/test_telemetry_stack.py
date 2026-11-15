@@ -369,7 +369,10 @@ def seen(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Seen]:
         say["refusal"] = select(f"{LOGS} WHERE service_name = 'tickets' AND body LIKE 'refused with %'")
         trace = say["refusal"][0]["trace_id"] if say["refusal"] else ""
         # The row asserted on, which the service's other spans of the call come before.
-        say["refusal spans"] = select(f"{SPANS} WHERE trace_id = '{trace}' AND span_name = '{COMMENT_SPAN}'")
+        say["refusal spans"] = select(
+            f"{SPANS} WHERE trace_id = '{trace}' AND service_name = 'tickets' "
+            f"AND span_name = '{COMMENT_SPAN}'",
+        )
         # The release: merged, deployed, serving, and refusing a comment.
         stack.merge_change("fail-comments", FAIL_COMMENTS, module=TICKETS_MODULE)
         say["deployment"] = stack.deploy("tickets")
@@ -517,7 +520,7 @@ def test_a_request_the_images_tracker_refuses_is_a_log_record_of_why_in_the_trac
 ) -> None:
     record = seen.answers["refusal"][0]
 
-    assert record["body"] == f"refused with 404: no ticket {UNKNOWN_TICKET}"
+    assert record["body"] == f"refused with 404: 'no ticket {UNKNOWN_TICKET}'"
     assert record["resource_attributes"]["service.version"] == "image"
     assert [span["span_name"] for span in seen.answers["refusal spans"]] == [COMMENT_SPAN]
 

@@ -378,4 +378,4 @@ def refusals_as_tool_errors() -> Iterator[None]:
 
 def _log_refusal(error: TicketError) -> None:
     """Log a request the tracker refuses: what its caller is told is in the service's own log too."""
-    _LOGGER.warning("refused with %d: %s", error.status, error)
+    _LOGGER.warning("refused with %d: %r", error.status, str(error))  # %r: one line, whatever the caller sent

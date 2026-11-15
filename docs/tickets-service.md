@@ -65,7 +65,7 @@ An agent subscribed to the `ticket` topic gets a notice when a ticket is assigne
   on its key) and a refused call, read or change, a blocked `action`; a read it answered becomes nothing, and so
   does a request without a known credential, which names no caller.
 - **Its log.** Each request its store refuses, over HTTP or MCP, is a warning with the status and the reason
-  the caller was given, such as `refused with 404: no ticket NOPE-1`. Under the company's telemetry it is a log
+  the caller was given, such as `refused with 404: 'no ticket NOPE-1'`. Under the company's telemetry it is a log
   record in the trace of the request ([the telemetry](telemetry-service.md#what-reports)). A refusal by IAM, a
   malformed request and a call with no identity are refused before the store and are not in it.
 
