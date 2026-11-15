@@ -125,8 +125,8 @@ def run(agent, tool, **args):
 
 def bash(agent, command):
     reply = run(agent, "bash", command=command)
-    if "stdout" not in reply:  # the whole reply, so a failure says what the sandbox answered
-        raise RuntimeError(f"{agent}'s bash answered no output: {json.dumps(reply)}")
+    if reply.get("returncode") != 0:  # the whole reply, then its agent, which the end of stderr keeps
+        raise RuntimeError(f"bash failed: {json.dumps(reply)} (agent {agent})")
     return reply
 
 def look(agent):
