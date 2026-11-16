@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from re import Pattern
+from typing import Annotated
 
 from pydantic import Field, PositiveFloat, PositiveInt, StrictBool, StrictStr
 
@@ -30,6 +31,11 @@ class PublishSettings(SettingsGroup):
         default=True,
         description="The archive leaves out each play's checkout, the graded trees of main with the caches "
         "their grading wrote, when its forge_history rebuilds it byte for byte (rebuild_checkout).",
+    )
+    xz_preset: Annotated[int, Field(ge=0, le=9)] = Field(
+        default=9,
+        description="The xz preset of the archive, in its extreme form. Each model call repeats its "
+        "conversation, which the large window of preset 9 finds.",
     )
     part_bytes: PositiveInt = Field(
         default=95_000_000,

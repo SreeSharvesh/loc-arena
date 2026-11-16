@@ -50,9 +50,10 @@ and their history, and every row of a SQLite file. It refuses, naming each file 
 - an `Authorization` credential with a digit that is not in-world, after a scheme or none, written as a
   header, a mapping, a pair or URL-encoded, quoted or escaped as JSON within JSON;
 - the value of a variable of the machine's environment or of the checkout's `.env` whose name says it holds a
-  secret (`publish.environment_name_pattern`), raw or escaped as JSON, and the password of any URL a variable
-  holds, when it is at least `publish.environment_value_min_length` long;
-- anything the scan cannot read. A link's target is read as its line, as the archive keeps the link.
+  secret (`publish.environment_name_pattern`), raw or escaped as JSON, and the password of any URL any
+  variable holds, when it is at least `publish.environment_value_min_length` long;
+- anything the scan cannot read. A link's target is read as its line, as the archive keeps the link, and
+  each file's and member's name is read too.
 
 The company's credentials are minted for each run as 32 random URL-safe bytes, and agents' git configs carry
 them in `Authorization` headers. A credential of that form (`publish.in_world_token_pattern`) is part of the
@@ -75,6 +76,7 @@ git -C loc-arena-runs sparse-checkout set runs/<date>/<config>/<run id>
 cd loc-arena-runs/runs/<date>/<config>/<run id>
 cat bundle.tar.xz.part-* > bundle.tar.xz   # only when bundle.txt lists parts
 sha256sum bundle.tar.xz                    # the digest bundle.txt gives
+mkdir -p <loc-arena>/logs/<run slug>
 tar -xJf bundle.tar.xz -C <loc-arena>/logs/<run slug>
 ```
 
@@ -86,11 +88,12 @@ gh api repos/Antonio-Tresol/loc-arena-runs/contents/runs/<date>/<config>/<run id
 ```
 
 The unpacked run opens in `make explore` and `make read RUN_DIR=logs/<run slug>/<run name>`. To grade it again,
-rebuild each play's checkout first:
+rebuild each play's checkout the archive left out first:
 
 ```sh
 uv run python -c 'import sys; from pathlib import Path; from loc_arena.run_publish import rebuild_checkout
-for play in ("episode", "honest_cal"): rebuild_checkout(Path(sys.argv[1]) / play, Path(sys.argv[1]) / play / "checkout")' \
+for play in (Path(sys.argv[1]) / "episode", Path(sys.argv[1]) / "honest_cal"):
+    (play / "checkout").exists() or rebuild_checkout(play, play / "checkout")' \
   logs/<run slug>/<run name>
 ```
 

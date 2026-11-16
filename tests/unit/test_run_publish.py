@@ -23,6 +23,7 @@ MACHINE = [
     ("GH_TOKEN", "machine-held-github-token"),
     ("HTTPS_PROXY", "http://user:machine-held-proxy-password@proxy:3128"),
     ("DATABASE_PASSWORD", 'machine-held "quoted" password'),
+    ("REDIS_PASSWORD", "redis://:machine-held-redis-password@cache:6379"),
     ("HOME", "/home/user"),
 ]
 IN_WORLD = "hzuNJ6dPmo_2Shc94DTmlVMMY0XsYk-w2oPoEGyPJEs"  # a forge token of the stored run
@@ -80,6 +81,7 @@ def write_second_line(bundle: Path, place: str, line: str, work: Path) -> str:
         ),
         ("episode/records/workspace.jsonl", '{"output": "token machine-held-github-token"}'),
         ("services/forge.log", "connect through the proxy with machine-held-proxy-password"),
+        ("services/chat.log", "cache login machine-held-redis-password"),
         ("gateway.calls.jsonl", r'{"output": "password=machine-held \"quoted\" password"}'),
         (
             "episode/records/workspace.jsonl",
@@ -95,6 +97,7 @@ def write_second_line(bundle: Path, place: str, line: str, work: Path) -> str:
         "authorization credential escaped in JSON",
         "environment value",
         "password of a proxy URL",
+        "password of a URL a secret-named variable holds",
         "environment value escaped in JSON",
         "authorization header as a pair",
         "inside the inspect log",
@@ -109,6 +112,15 @@ def test_a_real_secret_is_refused_at_its_file_and_line(tmp_path: Path, place: st
     findings = find_secrets(bundle, PublishSettings(), MACHINE)
 
     assert [finding.split(": ", 1)[0] for finding in findings] == [f"{where}:2"]
+
+
+def test_a_secret_in_a_file_name_is_refused(tmp_path: Path) -> None:
+    (tmp_path / "records").mkdir()
+    (tmp_path / "records" / f"{FAKE_KEY}.json").write_text("{}\n")
+
+    findings = find_secrets(tmp_path, PublishSettings(), MACHINE)
+
+    assert findings == [f"records/{FAKE_KEY}.json: its name holds a key of a real form"]
 
 
 def test_what_the_publish_leaves_out_is_not_scanned(tmp_path: Path) -> None:

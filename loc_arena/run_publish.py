@@ -52,7 +52,6 @@ LABEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")  # a config name or a run id: 
 MACHINE_SUFFIX = ".local"  # a machine's own config, configs/*.local.yaml, which git ignores
 ARCHIVE = "bundle.tar.xz"
 CACHES = frozenset({"__pycache__", ".pytest_cache"})  # what grading writes in a checkout: no trace
-XZ_PRESET = 9 | lzma.PRESET_EXTREME  # each model call repeats its conversation: xz's large window finds it
 
 
 class PublishError(RuntimeError):
@@ -128,10 +127,11 @@ def find_rebuilt_checkouts(bundle: Path) -> tuple[str, ...]:
     return tuple(rebuilt)
 
 
-def _list_files(root: Path) -> dict[str, tuple[bytes, int]]:
-    """Each file and link under ``root`` but the caches: its content or target, and its execute bit."""
+def _list_files(root: Path) -> dict[str, tuple[bool, bytes, int]]:
+    """Each file and link under ``root`` but the caches: whether a link, content or target, execute bit."""
     return {
         path.relative_to(root).as_posix(): (
+            path.is_symlink(),
             os.readlink(path).encode() if path.is_symlink() else path.read_bytes(),
             path.lstat().st_mode & 0o100,
         )
@@ -154,10 +154,14 @@ def find_secrets(
     target is read as its line, as the archive keeps the link. Anything the scan cannot read is refused, and
     what the publish leaves out (``left_out``, paths in ``bundle``) is not read.
     """
-    secrets = (
-        value if settings.environment_name_pattern.search(name) else urlsplit(value).password
+    secrets = [
+        found
         for name, value in environment
-    )
+        for found in (
+            value if settings.environment_name_pattern.search(name) else None,
+            urlsplit(value).password,
+        )
+    ]
     long = {value for value in secrets if value and len(value) >= settings.environment_value_min_length}
     values = long | {json.dumps(value)[1:-1] for value in long}  # as a JSON record holds it too
     findings: list[str] = []
@@ -170,6 +174,8 @@ def find_secrets(
                 [(name, [path.readlink().as_posix()])] if path.is_symlink() else _read_lines(path, name)
             )
             for where, lines in readings:
+                if what := _find_secret(where, settings, values):  # a name is published too
+                    findings.append(f"{where}: its name holds {what}")
                 findings += [
                     f"{where}:{number}: {what}"
                     for number, line in enumerate(lines, 1)
@@ -276,7 +282,8 @@ def publish_run(
         target.mkdir(parents=True)
         for source in (path for pattern in settings.readable_files for path in sorted(bundle.glob(pattern))):
             files = sorted(source.rglob("*")) if source.is_dir() and not source.is_symlink() else [source]
-            for file in (file for file in files if file.lstat().st_size <= settings.part_bytes):
+            kept = (file for file in files if not _is_left_out(file.relative_to(bundle).as_posix(), left_out))
+            for file in (file for file in kept if file.lstat().st_size <= settings.part_bytes):
                 _refuse_if_changed(file.lstat().st_mtime, scanned_at, file)
                 (target / file.relative_to(bundle)).parent.mkdir(parents=True, exist_ok=True)
                 if not file.is_dir() or file.is_symlink():
@@ -309,14 +316,18 @@ def _write_archive(
         _refuse_if_changed(member.mtime, scanned_at, member.name)
         return member
 
-    with lzma.open(archive, "wb", preset=XZ_PRESET) as packed, tarfile.open(fileobj=packed, mode="w") as tar:
+    with (
+        lzma.open(archive, "wb", preset=settings.xz_preset | lzma.PRESET_EXTREME) as packed,
+        tarfile.open(fileobj=packed, mode="w") as tar,
+    ):
         tar.add(bundle, arcname=bundle.name, filter=keep)
     size, digest = archive.stat().st_size, hashlib.file_digest(archive.open("rb"), "sha256").hexdigest()
     lines = [f"archive: {ARCHIVE}, {size} bytes, sha256 {digest}"]
     if size > settings.part_bytes:
         with archive.open("rb") as whole:
             count = math.ceil(size / settings.part_bytes)
-            parts = [target / f"{ARCHIVE}.part-{index:02}" for index in range(count)]
+            width = max(2, len(str(count - 1)))  # so the parts sort in their order
+            parts = [target / f"{ARCHIVE}.part-{index:0{width}}" for index in range(count)]
             for part in parts:
                 part.write_bytes(whole.read(settings.part_bytes))
         archive.unlink()
