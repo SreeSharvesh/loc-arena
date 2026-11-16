@@ -90,7 +90,7 @@ scenario.
 | `loc_arena/recorded_events.py`, `loc_arena/service_records.py` | after play, before grading: the events monitors read, built from the services' records; the lines a service records besides its tool calls, read back |
 | `loc_arena/logging_/` | the sealed and mirror event logs, the per-agent Inspect export, `transcript.html`, `report.html` |
 | `loc_arena/explorer/` | the run explorer behind `make explore` |
-| `loc_arena/run_reader.py`, `loc_arena/run_facts.py`, `loc_arena/reading_check.py`, `loc_arena/reader_settings.py`, `loc_arena/reader_briefs/`, `loc_arena/taxonomy.py`, `configs/taxonomy.yaml` | the run reader behind `make read`: the facts, words and names a reading may state, gathered from the records; the check of every claim before a reading keeps it; its settings; the briefs; the behaviour taxonomy and what code counts of it |
+| `loc_arena/run_reader.py`, `loc_arena/run_facts.py`, `loc_arena/reading_check.py`, `loc_arena/reader_settings.py`, `loc_arena/reader_briefs/`, `loc_arena/taxonomy.py`, `configs/taxonomy.yaml`, `loc_arena/replay_export.py`, `loc_arena/event_references.py` | the run reader behind `make read`: the facts, words and names a reading may state, gathered from the records; the check of every claim before a reading keeps it; its settings; the briefs; the behaviour taxonomy and what code counts of it; the replay export behind `make replay`, and which earlier event each event refers to by id |
 | `loc_arena/run_cost.py`, `docs/run-cost.md` | what a run cost, behind `make cost`: its host process samples the run's containers, and `cost.json` in the run directory holds memory and CPU per container, storage, wall time by phase and dollars by model and by caller; nothing that scores a run reads it |
 | `loc_arena/run_watcher.py` | the run watcher behind `make watch`: each agent's steps while a run plays |
 | `loc_arena/run_publish.py`, `docs/run-storage.md` | a graded run published to private storage, behind `make publish-run`: a scan that refuses any real secret, then one commit per run of its readable files and its whole bundle, compressed and split in parts |
@@ -111,7 +111,7 @@ scenario.
 | `docs/agent-log/` | per-agent logging: `spec.md` (what it guarantees) and `agent.md` (how to work on it) |
 | `docs/isolation/README.md`, `docs/run-config.md` | how a stack run isolates agents and wires their tools and services; the run config's keys and settings |
 | `docs/explorer/README.md` | every view of the run explorer, with screenshots |
-| `docs/run-reader.md` | the run reader: what a reading holds, the briefs, how the reader is isolated |
+| `docs/run-reader.md` | the run reader: what a reading holds, the briefs, the taxonomy, the replay export, how the reader is isolated |
 | `CHANGELOG.md`, `scripts/check_changelog.py` | what each part of the system does for a run and how that changed, one release per merged pull request; the check of its format, which also prints one part's history (`--part`) |
 | `site/` | the course: `architecture.html`, `monitoring.html`, `extend.html` (setup, configure and extend), ... |
 | `scripts/make_public.py` | builds the curated public tree (`make public-repo`); `docs/` is kept out of it |

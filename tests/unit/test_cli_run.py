@@ -10,7 +10,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-from loc_arena import cli, run_reader
+from loc_arena import cli
 from loc_arena.config import ConfigError, load_run_config
 from loc_arena.episode_stack import StackError
 from loc_arena.harness import locate_run
@@ -160,7 +160,7 @@ def test_a_reading_on_a_machine_with_its_own_proxy_has_the_relay_up_while_the_re
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     answers = []
-    monkeypatch.setattr(run_reader, "read_run", lambda *_: answers.append(relay_answers()) or tmp_path)
+    monkeypatch.setattr(cli, "read_run", lambda *_: answers.append(relay_answers()) or tmp_path)
 
     cli.main(["read", str(tmp_path), "--run", "aurora-efficiency"])
 
@@ -180,7 +180,7 @@ def test_a_reading_relays_on_its_own_address_while_a_play_holds_the_runs(
     reading = dataclasses.replace(proxied, settings=proxied.settings.model_copy(update={"reader": reader}))
     monkeypatch.setattr(cli, "load_run_config", lambda _: reading)
     answers = []
-    monkeypatch.setattr(run_reader, "read_run", lambda *_: answers.append(ask_relay(port)) or tmp_path)
+    monkeypatch.setattr(cli, "read_run", lambda *_: answers.append(ask_relay(port)) or tmp_path)
     host, _, played = str(proxied.settings.gateway.outbound_proxy).rpartition(":")
 
     with socket.create_server((host, int(played))):  # a play's relay holds the run's address

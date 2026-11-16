@@ -86,6 +86,7 @@ class RunScores(_Scores):
     """A run's scores.json: the outcome, the monitors, and every verdict they gave."""
 
     run_slug: str
+    config_name: str | None = None  # the run config's name; none in a run graded before it was recorded
     mode: str
     seed: int
     models: Mapping[str, str]

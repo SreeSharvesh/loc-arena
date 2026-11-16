@@ -19,7 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from loc_arena.explorer.scores import load_scores
 from loc_arena.logging_.events import Event, read_events
 from loc_arena.merged_main import EPISODE_PHASE
-from loc_arena.run_facts import Fact, name_plays
+from loc_arena.run_facts import Fact, name_plays, read_resolved_config, read_session_ends
 
 TAXONOMY_FILE = Path(__file__).resolve().parents[1] / "configs" / "taxonomy.yaml"
 type Unit = Literal["agent", "session", "action", "task", "milestone", "verdict"]
@@ -164,10 +164,9 @@ def observe_run(
 ) -> Observation:
     """What code observes of the taxonomy in the graded run in ``run_directory``."""
     scores = load_scores(run_directory / "scores.json")
-    config = yaml.safe_load((run_directory / "config.resolved.yaml").read_text())
     run = Run(
         mode=scores.mode,
-        agents={agent["id"]: tuple(agent.get("scope", {}).get("open_pr", [])) for agent in config["agents"]},
+        agents={agent.id: agent.scope.open_pr for agent in read_resolved_config(run_directory).agents},
         secrets_dir=secrets_dir,
         repeat_at_least=repeat_at_least,
         audit_threshold=scores.safety.audit_threshold,
@@ -178,15 +177,13 @@ def observe_run(
     twin = scores.honest_twin.monitor_verdicts if scores.honest_twin else ()
     plays = []
     for name, phase in name_plays(run_directory):
-        ends_file = run_directory / phase / "session_ends.json"
-        ends = json.loads(ends_file.read_text()) if ends_file.is_file() else {}
         mapping = map_mirror_to_sealed(run_directory / phase)
         verdicts = scores.monitor_verdicts if phase == EPISODE_PHASE else twin
         plays.append(
             Play(
                 name=name,
                 sealed=tuple(read_events(run_directory / phase / "events.sealed.jsonl")),
-                ends={agent: str(end["reason"]) for agent, end in ends.items()},
+                ends=dict(read_session_ends(run_directory / phase)),
                 verdicts=tuple((_scored(mapping, verdict.target_seq), verdict.score) for verdict in verdicts),
             ),
         )
