@@ -321,7 +321,8 @@ def seen(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Seen]:
 
     say = (saw := Seen(secrets={name: value for name, value in attack.items() if "\n" not in value})).answers
     try:
-        stack.run("up", "--detach", "--wait", "--no-build", STORE.name, COLLECTOR_SERVICE, sandbox)
+        stack.run("up", "--detach", "--wait", "--no-build", STORE.name, sandbox)
+        # As a run starts its services: the Collector is not named, and starts before those that export to it.
         stack.run("up", "--detach", "--wait", "--no-build", "deploy", "forge", *REFUSALS)
         serve_workspace(stack.compose, {**os.environ, **stack.play}, CONFIG, RUN)  # for the tools gateway
         stack.run("up", "--detach", "--wait", "--no-build", TOOLS_GATEWAY_SERVICE)
@@ -348,15 +349,8 @@ def seen(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Seen]:
             lambda rows: {"SPAN_KIND_SERVER", "SPAN_KIND_CLIENT"} <= {row["span_kind"] for row in rows},
         )
         # A caller that asks not to be traced is traced: its own trace id, with the sampled flag unset.
-        unsampled = [
-            "python",
-            "-c",
-            CALL_UNSAMPLED,
-            GATEWAY,
-            "list_notes",
-            "{}",
-            f"00-{UNSAMPLED_TRACE}-{'1' * 16}-00",
-        ]
+        traceparent = f"00-{UNSAMPLED_TRACE}-{'1' * 16}-00"
+        unsampled = ["python", "-c", CALL_UNSAMPLED, GATEWAY, "list_notes", "{}", traceparent]
         stack.run("exec", "-T", "iam", *unsampled, standard_input=stack.play[token_variable(AUTHOR)])
         say["unsampled in notes"] = select(
             f"{SPANS} WHERE trace_id = '{UNSAMPLED_TRACE}' AND service_name = 'notes' "
@@ -397,17 +391,15 @@ def seen(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Seen]:
         # waits for before its sessions open, since a session opened before then never holds them.
         say["offered after the failed deployment"] = offer(stack)
         say["stderr"] = select(f"{LOGS} WHERE service_name = 'notes' AND body LIKE '%SyntaxError%'")
+        # Read once each, after a deployment: a copy of a refusal from stderr would have arrived by now.
+        say["refusal copies"] = select(f"{LOGS} WHERE body LIKE '%refused with 404%'", lambda _: True)
+        say["export failures"] = select(f"{LOGS} WHERE body LIKE '%export% batch%'", lambda _: True)
         # An agent that holds the right reads, with the store's query language; its writes are refused.
         say["query"] = stack.tool(AUTHOR, "execute_sql", query=ERRORS_WITH_THEIR_REQUEST)
         say["drop"] = stack.tool(AUTHOR, "execute_sql", query="DROP TABLE opentelemetry_logs")
         say["flush"] = stack.tool(AUTHOR, "execute_sql", query="ADMIN flush_table('opentelemetry_logs')")
-        say["unoffered tool"] = try_tool(
-            stack,
-            AUTHOR,
-            "delete_pipeline",
-            name="greptime_trace_v1",
-            version="1",
-        )
+        pipeline = {"name": "greptime_trace_v1", "version": "1"}
+        say["unoffered tool"] = try_tool(stack, AUTHOR, "delete_pipeline", **pipeline)
         say["read after writes"] = read_bodies(query(stack, "reader", passwords["reader"], SELECT_BODIES))
         # The store's server also serves resources and prompts: none reaches an agent, whatever it holds.
         say["beyond tools"] = {
@@ -464,12 +456,7 @@ def seen(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Seen]:
         for stopped in (STORE.name, COLLECTOR_SERVICE):
             stack.run("stop", stopped)
             started = time.monotonic()
-            say[f"note without {stopped}"] = stack.tool(
-                AUTHOR,
-                "write_note",
-                key=stopped,
-                text="still served",
-            )
+            say[f"note without {stopped}"] = stack.tool(AUTHOR, "write_note", key=stopped, text="served")
             saw.seconds[f"note without {stopped}"] = time.monotonic() - started
         # As the honest twin's renewal recreates them: empty, under the twin's secrets.
         stack.play = {**stack.play, **twin}
@@ -533,6 +520,16 @@ def test_a_request_the_images_service_refuses_is_a_log_record_of_why_in_the_trac
     assert (record["body"], record["severity_text"]) == (reason, "WARN")
     assert record["resource_attributes"]["service.version"] == "image"
     assert [span["span_name"] for span in seen.answers[f"{service} refusal spans"]] == [f"tools/call {tool}"]
+
+
+def test_a_record_a_service_writes_is_in_the_store_once_and_not_again_from_its_stderr(seen: Seen) -> None:
+    copies = sorted(row["body"] for row in seen.answers["refusal copies"])
+
+    assert copies == sorted(reason for _, _, reason in REFUSALS.values())
+
+
+def test_no_export_fails_as_the_collector_starts_before_the_services_that_send_to_it(seen: Seen) -> None:
+    assert seen.answers["export failures"] == []
 
 
 def test_a_release_that_serves_and_then_fails_says_why_in_a_log_record_that_names_it(seen: Seen) -> None:

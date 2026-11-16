@@ -19,6 +19,13 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [377] - 2026-11-15: The telemetry store holds no second copy of a record
+
+### Fixed
+
+- The engine serves each company service with no stderr copy of its log, so the telemetry store holds no second copy of a service's record ([docs](docs/telemetry-service.md#what-reports)).
+- The stack starts the company's Collector before each service that exports to it, so a service's first export no longer meets a Collector that has not started ([docs](docs/telemetry-service.md#the-path)).
+
 ## [375] - 2026-11-15: The docs match the deploy path and the lab
 
 ### Changed

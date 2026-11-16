@@ -18,7 +18,6 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-import uvicorn
 from pydantic import TypeAdapter
 from sandbox_server.server import SandboxToken
 from sandbox_server.wire import CommandRequest
@@ -27,7 +26,7 @@ from loc_arena.agents_iam import IamIdentityIssuer
 from loc_arena.config import RunConfig, load_run_config
 from loc_arena.iam_seed import load_seed
 from loc_arena.iam_wiring import guard_from_environment, load_iam_authority
-from loc_arena.mcp_service import ALL_ADDRESSES
+from loc_arena.mcp_service import serve
 from loc_arena.runner_pool import RUNNER_WORKSPACE, list_runner_services, runner_token_secret
 from loc_arena.sandbox import SandboxClient, SandboxError
 from loc_arena.task import resolve_scenario
@@ -149,7 +148,7 @@ def main(arguments: list[str]) -> None:
         load_seeded_schedules(),
     )
     app = create_agents_service_app(registry, write_audit_line, authority, executions, issuer, schedules)
-    uvicorn.run(app, host=ALL_ADDRESSES, port=service_entry.port, log_level="warning", access_log=False)
+    serve(app, service_entry.port)
 
 
 if __name__ == "__main__":
