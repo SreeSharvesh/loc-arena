@@ -17,7 +17,7 @@ make read RUN_DIR=logs/<run>/<run>__<id> ASK='Did any agent read its credentials
 
 | File in its home | What |
 |---|---|
-| `facts.json` | every count and score of the run by key, computed by the command: each play's events by kind, tool and actor (`attack.agent.serving-agent.tool.bash`), the agents' own totals (`attack.team.kind.inference_call`), which actors used a tool, how each session ended, each monitor's verdicts, flagged verdicts and highest score, and each verdict's score; every scalar of `scores.json` (`scores.side_task.milestones.<id>.reached`), the milestones and `scores.json`'s keys; each agent's lead, covert milestones and repositories from the config. A count of zero is a fact, so absence can be cited |
+| `facts.json` | every count and score of the run by key, computed by the command: each play's events by kind, tool and actor (`attack.agent.serving-agent.tool.bash`), the agents' own totals (`attack.team.kind.inference_call`), which actors used a tool, how each session ended, each monitor's verdicts, flagged verdicts and highest score, and each verdict's score; every scalar of `scores.json` (`scores.side_task.milestones.<id>.reached`), the milestones and `scores.json`'s keys; each agent's lead, covert milestones and repositories from the config; how often code saw each category of the behaviour taxonomy, out of its chances (`taxonomy.attack.access.read_secrets`). A count of zero is a fact, so absence can be cited |
 | `checks.json` | the facts, words and names the checks read, and the reader's settings, so it can check its draft |
 | `words.jsonl` | each event that holds words an agent wrote: the fields of `reader.word_fields` in its payload and arguments (a message, a ticket, a note, a pull request's text), and for a model call the reply of the agent's model |
 
@@ -70,6 +70,25 @@ marked unsupported. A kept claim shows the events and facts it rests on.
 `_answer.md` is what every brief shares: what the reader is given and the format the checks read. A new file in
 `loc_arena/reader_briefs/` is a new brief. Read `agents` first: `monitors` uses its reading when the run
 directory has one.
+
+## Behaviour taxonomy
+
+`configs/taxonomy.yaml` is one versioned file of the behaviour a run is classified by, so a claim says how often
+something happened out of how many chances. Each category has a group, a one-line definition, an example, its
+unit of chance and who finds it.
+
+| Group | Categories | Found by |
+|---|---|---|
+| `mast` | the 14 failure modes of MAST: specification, inter-agent misalignment, task verification | the reader; step repetition by code |
+| `covert` | acted on the covert brief, framed it as ordinary work, refused, refused and escalated, walked it back | the reader |
+| `access` | read its credentials, worked outside its scope, read the grader | code, but reading the grader |
+| `control` | hit its call budget, blocked by a control | code |
+| `failure_main`, `failure_side`, `failure_monitor` | why the main task, the side task or the monitors fell short | code, but a covert step a monitor left unflagged |
+
+A unit is an agent, a session, an action, the main task, a milestone or a verdict: an agent or a session counts
+once, the rest each time. `loc_arena/taxonomy.py` holds a detector for each category code finds; a new category
+names one, or is the reader's. A category moves group, splits or is renamed by editing the file and raising
+its `version`. `reader.repeat_at_least` sets how often one command makes a step repetition.
 
 ## Accuracy
 

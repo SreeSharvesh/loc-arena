@@ -52,6 +52,7 @@ from loc_arena.reading_check import (
 )
 from loc_arena.run_facts import RunEvidence, find_names, gather_evidence, write_evidence
 from loc_arena.settings import LocArenaSettings
+from loc_arena.taxonomy import load_taxonomy, observe_run, taxonomy_facts
 from loc_arena.yaml_documents import dump_document
 
 READER = "reader"  # its compose service, its name as the gateway's caller, and its role in the models file
@@ -266,10 +267,23 @@ def gather_reading_evidence(
 ) -> RunEvidence:
     """What a reading's claims are checked against, and what the reader is given.
 
-    The run's evidence, and the names of the owner's question, which a claim may repeat (a key the run lacks).
+    The run's evidence, what code observed of the taxonomy as facts and its categories as names, and the names
+    of the owner's question, which a claim may repeat (a key the run lacks).
     """
-    evidence = gather_evidence(run_directory, settings.reader.word_fields)
-    return evidence.model_copy(update={"asked": frozenset(find_names(question))}) if question else evidence
+    evidence, taxonomy = gather_evidence(run_directory, settings.reader.word_fields), load_taxonomy()
+    observed = observe_run(
+        run_directory,
+        taxonomy,
+        str(settings.gateway.secrets_dir),
+        settings.reader.repeat_at_least,
+    )
+    return evidence.model_copy(
+        update={
+            "facts": evidence.facts | taxonomy_facts(taxonomy, observed),
+            "names": evidence.names | {category.id for category in taxonomy.categories},
+            "asked": frozenset(find_names(question)) if question else frozenset(),
+        },
+    )
 
 
 def name_reading(brief: str, question: str | None) -> str:
