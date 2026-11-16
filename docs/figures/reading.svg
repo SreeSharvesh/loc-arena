@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="776" height="272" viewBox="0 0 776 272" role="img" aria-label="Data flow of a reading: the command gathers the run's facts, its events' words and its names from the run directory and gives the facts and the words to the isolated reader, which also reads the records read-only and writes its claims with their cites to answer.json; code checks every claim against the gathered evidence and writes only the claims that pass to readings/&lt;name&gt;.md, which the owner or an agent reads.">
+<style>
+  svg { --ink:#1f2328; --muted:#59636e; --rule:#8c959f; --panel:#f6f8fa;
+        --accent:#2f4bd6; --accent-bg:#e9edfd;
+        --sealed:#0d9488; --sealed-bg:#d9f2ef; --observe:#b3730a; --observe-bg:#f8ecd5; --attack:#d63f4a; --attack-bg:#fbe3e4; }
+  @media (prefers-color-scheme: dark) {
+    svg { --ink:#e6edf3; --muted:#9198a1; --rule:#6e7681; --panel:#161b22;
+          --accent:#8098ff; --accent-bg:#1b2340;
+          --sealed:#3ad6c4; --sealed-bg:#12312e; --observe:#e0a94a; --observe-bg:#33280f; --attack:#f47b82; --attack-bg:#3a1c20; }
+  }
+  text { font-family:-apple-system,"Segoe UI",system-ui,sans-serif; }
+  .box { fill:var(--panel); stroke:var(--rule); stroke-width:1; }
+  .focus { fill:var(--accent-bg); stroke:var(--accent); stroke-width:1.5; }
+  .ext { fill:none; stroke:var(--rule); stroke-width:1.25; stroke-dasharray:5 4; }
+  .region { fill:none; stroke:var(--rule); stroke-width:1; }
+  .sealed { fill:var(--sealed-bg); stroke:var(--sealed); stroke-width:1.5; }
+  .observe { fill:var(--observe-bg); stroke:var(--observe); stroke-width:1.5; }
+  .attack { fill:var(--attack-bg); stroke:var(--attack); stroke-width:1.5; }
+  .t { fill:var(--ink); font-size:13px; font-weight:600; }
+  .s { fill:var(--muted); font-size:11px; }
+  .m { fill:var(--muted); font-size:11px; font-family:ui-monospace,"SF Mono",Menlo,monospace; }
+  .bold { stroke:var(--ink); stroke-width:2.5; fill:none; }
+  .thin { stroke:var(--rule); stroke-width:1.25; fill:none; }
+  .dash { stroke:var(--rule); stroke-width:1.25; fill:none; stroke-dasharray:4 3; }
+  .life { stroke:var(--rule); stroke-width:1; fill:none; stroke-dasharray:3 4; }
+  .head-ink { fill:var(--ink); } .head-rule { fill:var(--rule); } .dot { fill:var(--ink); }
+</style>
+<defs>
+  <marker id="hi" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-ink" d="M0,0 L10,5 L0,10 z"/></marker>
+  <marker id="hr" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-rule" d="M0,0 L10,5 L0,10 z"/></marker>
+</defs>
+<g class="node"><path class="box" d="M24 64 V128 A76.0 6 0 0 0 176 128 V64 A76.0 6 0 0 0 24 64 Z"/><path class="box" style="fill:none" d="M24 64 A76.0 6 0 0 0 176 64"/><text class="t" x="100.0" y="86" text-anchor="middle" dominant-baseline="central">Run directory</text><text class="m" x="100.0" y="103" text-anchor="middle" dominant-baseline="central">logs/…/&lt;run&gt;/</text><text class="s" x="100.0" y="119" text-anchor="middle" dominant-baseline="central">records, read-only</text></g>
+<g class="node"><rect class="box" x="216" y="64" width="152" height="64" rx="14"/><text class="t" x="292.0" y="82" text-anchor="middle" dominant-baseline="central">Gather the evidence</text><text class="m" x="292.0" y="99" text-anchor="middle" dominant-baseline="central">gather_evidence</text><text class="s" x="292.0" y="115" text-anchor="middle" dominant-baseline="central">facts, words, names</text></g>
+<g class="node"><path class="box" d="M408 64 V128 A76.0 6 0 0 0 560 128 V64 A76.0 6 0 0 0 408 64 Z"/><path class="box" style="fill:none" d="M408 64 A76.0 6 0 0 0 560 64"/><text class="t" x="484.0" y="86" text-anchor="middle" dominant-baseline="central">Given to the reader</text><text class="m" x="484.0" y="103" text-anchor="middle" dominant-baseline="central">facts.json</text><text class="m" x="484.0" y="119" text-anchor="middle" dominant-baseline="central">words.jsonl</text></g>
+<g class="node"><rect class="box" x="600" y="64" width="152" height="64" rx="14"/><text class="t" x="676.0" y="82" text-anchor="middle" dominant-baseline="central">The reader</text><text class="m" x="676.0" y="99" text-anchor="middle" dominant-baseline="central">pi, isolated</text><text class="s" x="676.0" y="115" text-anchor="middle" dominant-baseline="central">writes claims and cites</text></g>
+<g class="node"><path class="box" d="M600 192 V256 A76.0 6 0 0 0 752 256 V192 A76.0 6 0 0 0 600 192 Z"/><path class="box" style="fill:none" d="M600 192 A76.0 6 0 0 0 752 192"/><text class="t" x="676.0" y="214" text-anchor="middle" dominant-baseline="central">Its answer</text><text class="m" x="676.0" y="231" text-anchor="middle" dominant-baseline="central">answer.json</text><text class="s" x="676.0" y="247" text-anchor="middle" dominant-baseline="central">as the reader wrote it</text></g>
+<g class="node"><rect class="focus" x="408" y="192" width="152" height="64" rx="14"/><text class="t" x="484.0" y="210" text-anchor="middle" dominant-baseline="central">Check every claim</text><text class="m" x="484.0" y="227" text-anchor="middle" dominant-baseline="central">check_answer</text><text class="s" x="484.0" y="243" text-anchor="middle" dominant-baseline="central">drops what fails</text></g>
+<g class="node"><path class="box" d="M216 192 V256 A76.0 6 0 0 0 368 256 V192 A76.0 6 0 0 0 216 192 Z"/><path class="box" style="fill:none" d="M216 192 A76.0 6 0 0 0 368 192"/><text class="t" x="292.0" y="214" text-anchor="middle" dominant-baseline="central">The reading</text><text class="m" x="292.0" y="231" text-anchor="middle" dominant-baseline="central">readings/&lt;name&gt;.md</text><text class="s" x="292.0" y="247" text-anchor="middle" dominant-baseline="central">checked claims only</text></g>
+<g class="node"><rect class="ext" x="24" y="192" width="152" height="64" rx="6"/><text class="t" x="100.0" y="216" text-anchor="middle" dominant-baseline="central">Owner or agent</text><text class="s" x="100.0" y="234" text-anchor="middle" dominant-baseline="central">reads the reading</text></g>
+<path class="bold" d="M176 96 H215" marker-end="url(#hi)"/>
+<path class="bold" d="M368 96 H407" marker-end="url(#hi)"/>
+<path class="bold" d="M560 96 H599" marker-end="url(#hi)"/>
+<path class="bold" d="M676 128 V191" marker-end="url(#hi)"/>
+<path class="bold" d="M600 224 H561" marker-end="url(#hi)"/>
+<path class="bold" d="M408 224 H369" marker-end="url(#hi)"/>
+<path class="bold" d="M216 224 H177" marker-end="url(#hi)"/>
+<path class="thin" d="M484 134 V191" marker-end="url(#hr)"/>
+<text class="s" x="492" y="163.0" text-anchor="start" dominant-baseline="central">checked against</text>
+<path class="dash" d="M100 63 V28 H676 V63" marker-end="url(#hr)"/>
+<text class="s" x="388" y="16" text-anchor="middle" dominant-baseline="central">reads the records too, read-only</text>
+</svg>

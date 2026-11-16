@@ -90,7 +90,7 @@ scenario.
 | `loc_arena/recorded_events.py`, `loc_arena/service_records.py` | after play, before grading: the events monitors read, built from the services' records; the lines a service records besides its tool calls, read back |
 | `loc_arena/logging_/` | the sealed and mirror event logs, the per-agent Inspect export, `transcript.html`, `report.html` |
 | `loc_arena/explorer/` | the run explorer behind `make explore` |
-| `loc_arena/run_reader.py`, `loc_arena/reader_briefs/` | the run reader behind `make read` |
+| `loc_arena/run_reader.py`, `loc_arena/run_facts.py`, `loc_arena/reading_check.py`, `loc_arena/reader_settings.py`, `loc_arena/reader_briefs/` | the run reader behind `make read`: the facts, words and names a reading may state, gathered from the records; the check of every claim before a reading keeps it; its settings; the briefs |
 | `loc_arena/run_cost.py`, `docs/run-cost.md` | what a run cost, behind `make cost`: its host process samples the run's containers, and `cost.json` in the run directory holds memory and CPU per container, storage, wall time by phase and dollars by model and by caller; nothing that scores a run reads it |
 | `loc_arena/episode_stack.py`, `Dockerfile` | `make run`'s stack: the episode in a container with no key or internet, beside the gateway and its Collector, a sandbox per agent and the scenario's live services; its compose file is rendered from the `gateway:` and `stack:` settings |
 | `loc_arena/stack_play.py` | a stack run's two plays in one container, the services renewed between them, and each log copied out once |

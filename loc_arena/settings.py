@@ -24,6 +24,7 @@ from pydantic import (
 )
 
 from loc_arena import image_tag
+from loc_arena.reader_settings import ReaderSettings
 from loc_arena.service_settings import (
     AgentsServiceSettings,
     ChatSettings,
@@ -557,30 +558,6 @@ class DeploySettings(SettingsGroup):
     watch_seconds: PositiveFloat = Field(default=0.5, description="A supervisor's interval between checks.")
     error_bytes: PositiveInt = Field(default=4096, description="The end of a failed release's errors, kept.")
     credential_seconds: PositiveInt = Field(default=300, description="A deployment credential's lifetime.")
-
-
-class ReaderSettings(SettingsGroup):
-    """The run reader (``loc-arena read``, the config's ``reader:`` block)."""
-
-    timeout_seconds: PositiveFloat = Field(
-        default=1200.0,
-        description="The longest one reading lasts; the reader is stopped there and has written no report.",
-    )
-    model_calls: PositiveInt = Field(
-        default=150,
-        description="Model calls the reader may make in one reading; the gateway refuses each one after.",
-    )
-    report_limit_bytes: PositiveInt = Field(
-        default=1024 * 1024,
-        description="The largest report a reading keeps; a larger one, or one that is no file, is refused.",
-    )
-    outbound_proxy: str | None = Field(
-        default=None,
-        pattern=r"^[^\s:/]+:\d+$",
-        description="The host:port a reading's gateway tunnels through, and where its relay listens, in "
-        "place of gateway.outbound_proxy: an address apart from a play's lets a reading run while a play "
-        "does. Unset: gateway.outbound_proxy.",
-    )
 
 
 class CostSettings(SettingsGroup):
