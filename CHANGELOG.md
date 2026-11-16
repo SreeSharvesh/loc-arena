@@ -19,6 +19,12 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [383] - 2026-11-16: A reading runs while a play holds the relay
+
+### Fixed
+
+- The run reader relays through its own `reader.outbound_proxy` address, so a reading starts while a play on the same machine holds the run's relay ([docs](docs/run-reader.md#how-the-reader-is-isolated)).
+
 ## [377] - 2026-11-15: The telemetry store holds no second copy of a record
 
 ### Fixed

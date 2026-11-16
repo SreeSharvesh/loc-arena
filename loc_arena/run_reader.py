@@ -57,9 +57,15 @@ _ROUTE = f"{LOOP_ROUTE_PREFIX}/{READER}"  # the reader's own route at the gatewa
 _KICKOFF = "Read the run as your brief says, write the report file, then print it."
 
 
-def _settle(config: RunConfig) -> LocArenaSettings:
-    """A reading's settings: the run config's with one upstream, the one the reader calls."""
+def settle_reading(config: RunConfig) -> LocArenaSettings:
+    """A reading's settings: the run config's with one upstream, the one the reader calls, and its own relay.
+
+    Its gateway tunnels through ``reader.outbound_proxy`` where that is set, so a reading's relay listens
+    beside the relay of a play that runs on the same machine.
+    """
     gateway = config.settings.gateway.model_copy(update={"agents_upstream": None})
+    if (proxy := config.settings.reader.outbound_proxy) is not None:
+        gateway = gateway.model_copy(update={"outbound_proxy": proxy})
     return config.settings.model_copy(update={"gateway": gateway})
 
 
@@ -71,7 +77,7 @@ def issue_reader_secrets(config: RunConfig) -> dict[str, str]:
     route goes to ``gateway.upstream``, whatever upstream a run gave its agents' loops, and refuses a call
     that names another model or a list of fallback models.
     """
-    role, settings = config.models[READER], _settle(config)
+    role, settings = config.models[READER], settle_reading(config)
     overrides: dict[str, JsonValue] = {
         "model": role.model,
         "temperature": role.temperature,
@@ -133,7 +139,7 @@ def render_reader_compose(
     command: list[str],
 ) -> ComposeDocument:
     """The compose file of a reading: the gateway, the Collector, and the reader that runs ``command``."""
-    settings = _settle(config)
+    settings = settle_reading(config)
     stack = settings.stack
     reader: ComposeService = {
         "image": stack.image,
@@ -249,7 +255,7 @@ def read_run(run_directory: Path, brief: str, config: RunConfig) -> Path:
     if not (run_directory / "scores.json").is_file():
         raise ValueError(f"{run_directory} holds no scores.json: it is no graded run's directory")
     facts = summarize_run(run_directory)  # before any model call: a run it cannot count is not read
-    settings = _settle(config)
+    settings = settle_reading(config)
     readings = run_directory / READINGS
     report, calls = readings / f"{brief}.md", readings / f"{brief}.calls.jsonl"
     with tempfile.TemporaryDirectory(prefix="locarena-reading-") as scratch:

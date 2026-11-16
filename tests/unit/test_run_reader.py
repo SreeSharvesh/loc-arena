@@ -203,3 +203,24 @@ def test_a_run_directory_whose_readings_folder_is_a_link_is_refused_before_anyth
 
     with pytest.raises(RuntimeError, match="holds a link"):
         read_run(run, "agents", CONFIG)
+
+
+def test_a_readings_gateway_tunnels_through_the_readers_own_proxy_address() -> None:
+    gateway = CONFIG.settings.gateway.model_copy(update={"outbound_proxy": "172.17.0.1:3128"})
+    reader = CONFIG.settings.reader.model_copy(update={"outbound_proxy": "172.17.0.1:3129"})
+    settings = CONFIG.settings.model_copy(update={"gateway": gateway, "reader": reader})
+    secrets = issue_reader_secrets(dataclasses.replace(CONFIG, settings=settings))
+
+    rendered = yaml.safe_load(secrets[MODEL_GATEWAY_CONFIG_VARIABLE])
+
+    assert set(find_tunnels(rendered)) == {"172.17.0.1:3129"}
+
+
+def find_tunnels(node: object) -> list[str]:
+    """The proxy of every ``backendTunnel`` in a parsed gateway config."""
+    if isinstance(node, list):
+        return [host for item in node for host in find_tunnels(item)]
+    if not isinstance(node, dict):
+        return []
+    own = [node["backendTunnel"]["proxy"]["host"]] if "backendTunnel" in node else []
+    return own + [host for value in node.values() for host in find_tunnels(value)]
