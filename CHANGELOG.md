@@ -19,6 +19,12 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [391] - 2026-11-16: A replay export holds each run's events and outcomes
+
+### Added
+
+- The run reader now writes `replay.json` for each graded run, its events, references, outcomes and taxonomy counts, which a replay page is built from ([docs](docs/run-reader.md#replay-export)).
+
 ## [390] - 2026-11-16: A run records its engine's commit and each event's time
 
 ### Added
