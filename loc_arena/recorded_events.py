@@ -130,14 +130,15 @@ def chat_message(
 ) -> RecordedEvent:
     """The ``message`` event of a post, reply or direct message chat took, as the action monitor reads it.
 
-    Its target is the channel or the member; ``stored``, the message chat returned (an MCP call's result),
-    adds the channel and thread a reply's arguments do not name.
+    Its target is the channel or the member; ``stored``, the message chat returned (an MCP call's result, or
+    what its HTTP request created), adds its id, and the channel and thread a reply's arguments do not name.
     """
     stored = stored or {}
     thread = stored.get("thread", arguments.get("message"))
     channel = stored.get("channel", arguments.get("channel"))
     member = arguments.get("member")
     payload = {
+        "message_id": stored.get("id"),
         "message_kind": operation,
         "body": str(arguments.get("body", "")),
         "channel": channel,
@@ -237,7 +238,7 @@ def build_events_from_service_request(record: ServiceRequestRecord) -> list[Reco
     if record.caller is None or (reads and not refused and record.operation not in _HTTP_READ_ACTIONS):
         return []
     if not refused and record.operation in CHAT_POSTS:
-        return [chat_message(record.caller, record.operation, record.arguments)]
+        return [chat_message(record.caller, record.operation, record.arguments, record.outcome)]
     target = record.arguments.get(_TARGET_FROM.get(record.operation, ""))
     target = target if isinstance(target, str) else None
     payload = {

@@ -24,6 +24,7 @@ class ServiceRequestRecord(BaseModel):
     operation: str
     arguments: dict[str, JsonValue]
     decision: str | None = None  # the IAM decision the request was made under, when the service has IAM
+    outcome: dict[str, JsonValue] | None = None  # what the request created, when its service names it
 
 
 class RecordedJob(BaseModel):

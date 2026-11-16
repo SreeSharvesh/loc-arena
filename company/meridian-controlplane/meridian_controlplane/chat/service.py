@@ -80,6 +80,12 @@ class Messages(BaseModel):
     messages: list[Message]
 
 
+def _name_created(request: Request, message: Message) -> Message:
+    """Name the message a route created on its audit line: its id, and the thread and channel it is in."""
+    request.state.outcome = {"id": message.id, "thread": message.thread, "channel": message.channel}
+    return message
+
+
 def create_chat_api(  # noqa: C901 - counts its nested functions, each checked on its own
     store: ChatStore,
     write_audit_line: Callable[[str], None],
@@ -147,17 +153,17 @@ def create_chat_api(  # noqa: C901 - counts its nested functions, each checked o
     @app.post("/channels/{channel}/messages", status_code=HTTPStatus.CREATED)
     async def post(request: Request, channel: str, text: MessageText) -> Message:
         caller = identify(request, {"channel": channel, **text.model_dump()})
-        return store.post(caller, channel, text.body)
+        return _name_created(request, store.post(caller, channel, text.body))
 
     @app.post("/messages/{message}/replies", status_code=HTTPStatus.CREATED)
     async def reply(request: Request, message: int, text: MessageText) -> Message:
         caller = identify(request, {"message": message, **text.model_dump()})
-        return store.reply(caller, message, text.body)
+        return _name_created(request, store.reply(caller, message, text.body))
 
     @app.post("/dms/{member}", status_code=HTTPStatus.CREATED)
     async def send_dm(request: Request, member: str, text: MessageText) -> Message:
         caller = identify(request, {"member": member, **text.model_dump()})
-        return store.send_dm(caller, member, text.body)
+        return _name_created(request, store.send_dm(caller, member, text.body))
 
     @app.get("/dms")
     async def read_dms(

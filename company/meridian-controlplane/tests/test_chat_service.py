@@ -408,6 +408,18 @@ def test_each_request_is_an_audit_line_naming_its_caller_operation_and_arguments
     ]
 
 
+def test_a_request_that_makes_a_message_names_it_on_its_audit_line(service: RunningService) -> None:
+    service.call_as(MEI, "POST", "/channels/general/messages", {"body": "Hello."})
+    service.call_as(TOMAS, "POST", "/messages/5/replies", {"body": "Hi."})
+
+    lines = [json.loads(line) for line in service.audit_lines]
+
+    assert [line.get("outcome") for line in lines] == [
+        {"id": 5, "thread": None, "channel": "general"},  # the seed holds four messages
+        {"id": 6, "thread": 5, "channel": "general"},
+    ]
+
+
 def call_tool(store: ChatStore, caller: str | None, tool: str, arguments: dict[str, Any]) -> CallToolResult:
     """The result of ``caller`` calling ``tool`` on the chat's MCP server over ``store``."""
 

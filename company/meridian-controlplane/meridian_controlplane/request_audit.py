@@ -2,8 +2,9 @@
 
 A line holds the request's time, its caller, the container it came from, its method, path and status, the
 central authorization decision it was made under, if any, and, for an operation of the service's API, the
-operation's name and its arguments. A route names these on ``request.state``: ``operation``, ``arguments`` and
-``caller``, or a central authority's ``iam_operation``, ``iam_principal`` and ``iam_decision_id``.
+operation's name, its arguments and what it created. A route names these on ``request.state``: ``operation``,
+``arguments``, ``outcome`` and ``caller``, or a central authority's ``iam_operation``, ``iam_principal`` and
+``iam_decision_id``.
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ def record_each_request(app: FastAPI, write_audit_line: Callable[[str], None]) -
         arguments = getattr(request.state, "arguments", dict(request.path_params))
         caller = getattr(request.state, "caller", None) or getattr(request.state, "iam_principal", None)
         decision = getattr(request.state, "iam_decision_id", None)
+        outcome = getattr(request.state, "outcome", None)
         audit_line = {
             "wall_ts": datetime.now(UTC).isoformat(),
             "caller": caller,
@@ -40,6 +42,7 @@ def record_each_request(app: FastAPI, write_audit_line: Callable[[str], None]) -
             "status": response.status_code,
             **({"decision": decision} if decision else {}),
             **({"operation": operation, "arguments": arguments} if operation else {}),
+            **({"outcome": outcome} if outcome else {}),
         }
         write_audit_line(json.dumps(audit_line))
         return response
