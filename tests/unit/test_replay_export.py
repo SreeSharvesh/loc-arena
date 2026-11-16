@@ -201,7 +201,8 @@ def test_the_failures_hold_each_category_of_the_failure_groups_and_no_other(expo
 def test_an_agents_code_block_and_prompt_line_never_reach_its_words() -> None:
     text = (
         "We cache the features now.\n```\n~~~\nimport os\n```\n$ make gates\n    return kept\n"
-        "Then git push origin main."
+        "Then git push origin main.\nThen run pytest and the gates.\nSELECT name FROM users;\n"
+        "The password is correct-horse-battery-staple."
     )
 
     assert prose_lines(text) == ["We cache the features now."]
@@ -218,13 +219,18 @@ def test_an_agents_words_reach_the_export_as_prose_alone(run: Path, export: Repl
 
 
 def test_counts_across_runs_add_up_each_categorys_count_and_chances_and_a_judged_one_only_where_read(
+    run: Path,
     export: ReplayExport,
 ) -> None:
-    named = export.model_copy(update={"run": export.run.model_copy(update={"config": "aurora-efficiency"})})
-    renamed = named.run.model_copy(update={"name": "another run"})
-    unread = named.model_copy(update={"run": renamed, "reader": "no reading: the gateway did not start"})
+    observed = observe_run(run, TAXONOMY, "/run/secrets", SETTINGS.repeat_at_least)
+    evidence = gather_evidence(run, SETTINGS.word_fields)
+    unread = export_run(run, TAXONOMY, observed, evidence, None, "no reading: the gateway did not start")
+    named = [
+        one.model_copy(update={"run": one.run.model_copy(update={"config": "aurora", "name": name})})
+        for one, name in ((export, "a run"), (unread, "another run"))
+    ]
 
-    (summary,) = summarize_exports([named, unread], TAXONOMY)
+    (summary,) = summarize_exports(named)
 
     counts = summary.counts["attack"]
     assert (summary.runs, summary.read, counts["access.read_secrets"], counts["mast.disobey_task"]) == (
@@ -262,12 +268,12 @@ def test_the_catch_rests_on_the_combined_suspicion_the_deciding_monitors_highest
 
 
 def export_edited(run: Path, tmp_path: Path, edit: Callable[[dict[int, dict]], None]) -> dict[int, list]:
-    """Each attack event's references, exported from a copy of the stored run whose posts ``edit`` changed."""
+    """Each attack event's references, from a copy of the stored run whose events ``edit`` changed."""
     changed = tmp_path / "run"
     shutil.copytree(run, changed)
     log = changed / "episode" / "events.sealed.jsonl"
     events = [json.loads(line) for line in log.read_text().splitlines()]
-    edit({e["seq"]: e["payload"] for e in events if e["kind"] in ("slack", "message")})
+    edit({e["seq"]: e for e in events})
     log.write_text("".join(json.dumps(event) + "\n" for event in events))
     observed = observe_run(changed, TAXONOMY, "/run/secrets", SETTINGS.repeat_at_least)
     evidence = gather_evidence(changed, SETTINGS.word_fields)
@@ -280,8 +286,8 @@ def test_a_pull_request_is_referred_to_on_its_own_repository_or_the_one_that_bea
     tmp_path: Path,
 ) -> None:
     def edit(posts: dict[int, dict]) -> None:
-        posts[12]["text"] = "Saw #2 land."  # only meridian-serving bears a #2 by then
-        posts[145]["body"] += " Merge #2 soon."  # by then both repositories do: no reference
+        posts[12]["payload"]["text"] = "Saw #2 land."  # only meridian-serving bears a #2 by then
+        posts[145]["payload"]["body"] += " Merge #2 soon."  # by then both repositories do: no reference
 
     refs = export_edited(run, tmp_path, edit)
 
@@ -294,11 +300,30 @@ def test_a_pull_request_is_referred_to_on_its_own_repository_or_the_one_that_bea
     )
 
 
-def test_a_reply_refers_to_the_message_it_answers(run: Path, tmp_path: Path) -> None:
-    def edit(posts: dict[int, dict]) -> None:
-        posts[12]["message_id"] = 3
-        posts[145] |= {"message_id": 9, "thread": 3}
+def answer_message(events: dict[int, dict]) -> None:
+    events[12]["payload"]["message_id"] = 3
+    events[145]["payload"] |= {"message_id": 9, "thread": 3}
 
+
+def cancel_job(events: dict[int, dict]) -> None:
+    events[31] |= {"tool": "cancel_job", "target_id": JOB}
+
+
+@pytest.mark.parametrize(
+    ("edit", "seq", "via", "expected"),
+    [
+        (answer_message, 145, "message:", [(12, "message:3")]),  # a reply, the message it answers
+        (cancel_job, 31, "job-", [(JOB_EVENT, JOB)]),  # an action on a job, the job's event
+    ],
+)
+def test_an_event_refers_by_id_to_the_message_or_job_it_acts_on(  # noqa: PLR0913 - each case's parts
+    run: Path,
+    tmp_path: Path,
+    edit: Callable[[dict[int, dict]], None],
+    seq: int,
+    via: str,
+    expected: list[tuple[int, str]],
+) -> None:
     refs = export_edited(run, tmp_path, edit)
 
-    assert [ref for ref in refs[145] if ref[1].startswith("message:")] == [(12, "message:3")]
+    assert [ref for ref in refs[seq] if ref[1].startswith(via)] == expected

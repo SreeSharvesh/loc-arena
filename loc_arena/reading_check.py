@@ -35,6 +35,10 @@ _COMMAND = re.compile(
     r"(?<![\w+/.-])(git|pip|pipx|npm|npx|pnpm|yarn|uv|uvx|apt|apt-get|brew|curl|wget|ssh|scp|nc|sudo|chmod|chown|kubectl|"
     r"docker|rm|mv|cp|eval|exec)\s+\S",
 )
+_SAID_CODE = re.compile(  # in an agent's words beside a command: a runner, a query, a credential's value
+    r"(?<![\w/.-])(?:pytest|python3?|ls)\s+\S|\b(?:SELECT\s.+\sFROM|INSERT\s+INTO|DELETE\s+FROM|UPDATE\s+\w+\s+SET)\b"
+    r"|(?i:\b(?:password|passphrase|passcode|token|secret|api[ _-]?key)s?\s*(?:is|was|:|=)\s*\S)",
+)
 _IDENTIFIER = re.compile(
     r"[A-Za-z_][\w./:+-]*",
 )  # a name starts with a letter and holds no @: no number, no address
@@ -279,7 +283,7 @@ def prose_lines(text: str) -> list[str]:
             core,
         )
         plain = re.sub(r"(?<!\w)[*_]{1,2}|[*_]{1,2}(?!\w)|[\"“”‘’]", "", named)
-        if core and _is_prose(plain) and not _COMMAND.search(core):
+        if core and _is_prose(plain) and not _COMMAND.search(core) and not _SAID_CODE.search(core):
             kept.append(core)
     return kept
 

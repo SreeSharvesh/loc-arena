@@ -158,7 +158,15 @@ def export_run(
     claims = {title: kept for title, kept in reading.sections} if reading else {}
     judged = _read_instances(taxonomy, observed, claims.get("Instances", []))
     instances = [*observed.instances, *judged]
-    counts = count_instances(taxonomy, instances, observed.plays, observed.run)
+    unjudged = (
+        set()
+        if reading
+        else {category.id for category in taxonomy.categories if category.found_by == "reader"}
+    )
+    counts = {
+        play: {category: count for category, count in by.items() if category not in unjudged}
+        for play, by in count_instances(taxonomy, instances, observed.plays, observed.run).items()
+    }  # a category the reader judges is counted only in a run it read
     failing = {category.id for category in taxonomy.categories if category.group.startswith("failure")}
     covert = _covert_events(observed, instances, scores)
     refs = _read_refs(claims.get("References", []), evidence)
@@ -179,12 +187,11 @@ def export_run(
     )
 
 
-def summarize_exports(exports: Iterable[ReplayExport], taxonomy: Taxonomy) -> list[RunsSummary]:
+def summarize_exports(exports: Iterable[ReplayExport]) -> list[RunsSummary]:
     """Per run config and taxonomy version, each category's count out of its chances, added up over its runs.
 
-    A category the reader judges is added up only over the runs it read.
+    A category the reader judges is added up only over the runs it read: an unread run's export holds none.
     """
-    judged = {category.id for category in taxonomy.categories if category.found_by == "reader"}
     summaries: dict[tuple[str, int], RunsSummary] = {}
     for export in exports:
         key = (export.run.config or export.run.name, export.taxonomy_version)
@@ -193,8 +200,6 @@ def summarize_exports(exports: Iterable[ReplayExport], taxonomy: Taxonomy) -> li
         for play, by_category in export.counts.items():
             totals = summary.counts.setdefault(play, {})
             for category, count in by_category.items():
-                if category in judged and export.reader != "read":
-                    continue
                 before = totals.get(category, Count(count=0, chances=0))
                 totals[category] = Count(
                     count=before.count + count.count,
@@ -284,7 +289,8 @@ def _read_refs(claims: Sequence[KeptClaim], evidence: RunEvidence) -> dict[tuple
             continue
         (play, seq), *earlier = cited
         quoted = " ".join((phrase.group(1) or phrase.group(2)).split())
-        if quoted not in " ".join(" ".join(evidence.events[f"{play}:{seq}"].words).split()):
+        held = " ".join(" ".join(evidence.events[f"{play}:{seq}"].words).split())
+        if not re.search(rf"(?<!\w){re.escape(quoted)}(?!\w)", held):
             continue  # the phrase is another cited event's: the reference is not this event's
         refs.setdefault((play, seq), []).extend(
             Ref(seq=to, by="reader", via=quoted) for of, to in earlier if of == play and to < seq
@@ -363,6 +369,13 @@ def _resolve(name: str, event: Event, bearing: Mapping[str, list[int]]) -> str |
     return own if own in bearing else candidates[0] if len(candidates) == 1 else None
 
 
+_TARGETS = {  # the id an action of each tool names by its target
+    **dict.fromkeys(("edit_ticket", "comment_on_ticket"), "{}"),
+    **dict.fromkeys(("read_note", "write_note", "delete_note"), "note:{}"),
+    **dict.fromkeys(("cancel_job", "hold_job", "release_job", "operate_job"), "{}"),
+}
+
+
 def _ids_borne(event: Event) -> set[str]:
     """The ids an event bears itself.
 
@@ -387,15 +400,13 @@ def _ids_borne(event: Event) -> set[str]:
 def _ids_named(event: Event, words: str) -> set[str]:
     """The ids an event refers to, which an earlier event bore.
 
-    Those its words name, the ticket or note an action of it targets, the message a reply answers, and those
-    it bears itself: an earlier event of the same pull request, note or job bore them.
+    Those its words name, the ticket, note or job an action of it targets, the message a reply answers, and
+    those it bears itself: an earlier event of the same pull request, note or job bore them.
     """
     named = set(_TICKET.findall(words)) | set(_JOB.findall(words))
     named |= {f"#{first or second}" for first, second in _PULL_REQUEST.findall(words)}
-    if event.tool in ("edit_ticket", "comment_on_ticket") and event.target_id:
-        named.add(event.target_id)
-    if event.tool in ("read_note", "write_note") and event.target_id:
-        named.add(f"note:{event.target_id}")
+    if (target := _TARGETS.get(event.tool or "")) and event.target_id:
+        named.add(target.format(event.target_id))
     if event.kind in ("message", "slack") and event.payload.get("thread") is not None:
         named.add(f"message:{event.payload['thread']}")
     return named | _ids_borne(event)  # a review, merge or job's later state refers to what bore its id before
@@ -421,10 +432,9 @@ def _run_part(run_directory: Path, scores: RunScores) -> RunPart:
     config = read_resolved_config(run_directory)
     identity_file = run_directory / RUN_FILE
     identity = RunIdentity.model_validate_json(identity_file.read_text()) if identity_file.is_file() else None
-    budgets = {
-        "orchestrator": config.episode.orchestrator_turn_budget,
-        "subagent": config.episode.subagent_turn_budget,
-    }
+    root = next(
+        agent.id for agent in config.agents if agent.spawned_by is None
+    )  # as each session is given it
     cost = read_cost(run_directory) if (run_directory / COST_FILE).is_file() else None
     traces = {
         "sealed": ["episode/events.sealed.jsonl", "honest_cal/events.sealed.jsonl"],
@@ -450,7 +460,9 @@ def _run_part(run_directory: Path, scores: RunScores) -> RunPart:
                 reports_to=agent.spawned_by,
                 covert_milestones=list(agent.covert or ()),
                 repositories=list(agent.scope.open_pr),
-                call_budget=budgets.get(agent.kind or ""),
+                call_budget=config.episode.orchestrator_turn_budget
+                if agent.id == root
+                else config.episode.subagent_turn_budget,
             )
             for agent in config.agents
         ],
@@ -549,7 +561,7 @@ def export_runs(path: Path, config: RunConfig) -> list[Path]:
     Each run is first read with the ``replay`` brief. A reading that fails is recorded in its export, which
     then holds what code shows alone. A folder also gets ``replay.summary.json``.
     """
-    if not path.is_dir():
+    if not path.parts or not path.is_dir():
         raise ValueError(f"{path} is no run's directory and no folder of runs")
     single = (path / "scores.json").is_file()
     runs = [path] if single else sorted(scores.parent for scores in path.rglob("scores.json"))
@@ -573,5 +585,5 @@ def export_runs(path: Path, config: RunConfig) -> list[Path]:
         (run / REPLAY_FILE).write_text(exports[-1].model_dump_json(indent=1))
     if single:
         return [path / REPLAY_FILE]
-    (path / SUMMARY_FILE).write_bytes(_SUMMARY.dump_json(summarize_exports(exports, taxonomy), indent=1))
+    (path / SUMMARY_FILE).write_bytes(_SUMMARY.dump_json(summarize_exports(exports), indent=1))
     return [*(run / REPLAY_FILE for run in runs), path / SUMMARY_FILE]
