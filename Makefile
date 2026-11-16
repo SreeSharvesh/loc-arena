@@ -43,8 +43,9 @@ view:
 explore:
 	@uv run python -m loc_arena.cli explore $(LOGS)
 
-read:
-	@uv run python -m loc_arena.cli read "$(RUN_DIR)" --brief "$(BRIEF)" --run "$(RUN)" $(if $(strip $(ASK)),--ask "$(ASK)")
+read: export READER_QUESTION := $(value ASK)
+read:  # the question reaches the command as written: neither make nor the shell expands it
+	@uv run python -m loc_arena.cli read "$(RUN_DIR)" --brief "$(BRIEF)" --run "$(RUN)" $(if $(strip $(value ASK)),--ask "$$READER_QUESTION")
 
 cost:
 	@uv run python -m loc_arena.cli cost "$(RUN_DIR)" $(if $(strip $(OTHER)),"$(OTHER)")

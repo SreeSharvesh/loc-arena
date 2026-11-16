@@ -26,6 +26,7 @@ from loc_arena.session_events import read_reply_text, read_session_calls
 type Fact = str | int | float | bool | list[str]
 MIRROR = "mirror"  # a mirror event's id is `<play>-mirror:<seq>`; a sealed event's is `<play>:<seq>`
 _TOKEN = re.compile(r"[\w./@#:+-]+")
+_ONE_NAME = re.compile(r"[A-Za-z_][\w./:+-]{0,63}")  # a fact's string: one name, never free text
 _CODE_ARGUMENTS = frozenset({"command", "content", "old_string", "new_string", "code", "script", "patch"})
 
 
@@ -179,16 +180,25 @@ def _describe(cite: str, event: Event, word_fields: Sequence[str], replies: Mapp
 
 
 def _flatten(prefix: str, value: JsonValue, into: dict[str, Fact]) -> None:
-    """Each scalar of ``value`` under its dotted key; each list by its length, and a list of scalars whole."""
+    """Each scalar of ``value`` under its dotted key; each list by its length, and a list of scalars whole.
+
+    A string is a fact only when it is one name: free text, such as an error a grade recorded, would be shown
+    unchecked wherever a claim filled it in, so it is none.
+    """
     if isinstance(value, dict):
         for key, inner in value.items():
             _flatten(f"{prefix}.{key}", inner, into)
     elif isinstance(value, list):
-        if all(not isinstance(item, dict | list) for item in value):
+        if all(not isinstance(item, dict | list) and _is_factual(item) for item in value):
             into[prefix] = [str(item) for item in value]
         into[f"{prefix}.count"] = len(value)
-    else:
+    elif _is_factual(value):
         into[prefix] = "none" if value is None else value
+
+
+def _is_factual(value: JsonValue) -> bool:
+    """Whether a scalar may stand as a fact: a number, a truth value, nothing, or one name."""
+    return not isinstance(value, str) or bool(_ONE_NAME.fullmatch(value))
 
 
 def _name_keys(value: JsonValue) -> Iterator[str]:

