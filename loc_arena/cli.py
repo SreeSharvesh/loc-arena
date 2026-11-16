@@ -269,16 +269,24 @@ def _cmd_replay(args: argparse.Namespace) -> int:
     try:
         config = load_run_config(_config_path(args.run))
         with relay_while_running(settle_reading(config).gateway):
-            written = export_runs(Path(args.path), config)
+            written, failed = export_runs(Path(args.path), config)
     except (ValueError, RuntimeError) as error:
         print(f"replay: {error}", file=sys.stderr)
         return 1
     print(*(f"replay: {path}" for path in written), sep="\n")
-    return 0
+    print(*(f"replay: {run} not exported: {why}" for run, why in failed.items()), sep="\n", file=sys.stderr)
+    return 1 if failed else 0
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Parse args and dispatch the command they name, one of the subparsers below."""
+    """Parse args and dispatch the command they name, one of the parser's subcommands."""
+    args = build_parser().parse_args(argv)
+    result: int = args.func(args)
+    return result
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """The command line: each subcommand with its arguments and the function that runs it."""
     parser = argparse.ArgumentParser(prog="loc-arena", description="Run and view LOC-Arena episodes.")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -324,6 +332,12 @@ def main(argv: list[str] | None = None) -> int:
     p_grade.add_argument("--run", default="aurora-efficiency")
     p_grade.set_defaults(func=_cmd_grade)
 
+    _add_readers(sub)
+    return parser
+
+
+def _add_readers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """The commands that read a played run: its reading, replay export, cost, publication and steps."""
     p_read = sub.add_parser("read", help="have the reader agent read one graded run and report what it did")
     p_read.add_argument("run_directory", help="the run's directory, which holds scores.json")
     p_read.add_argument("--brief", default="agents", help="what to report on: agents, or monitors")
@@ -372,10 +386,6 @@ def main(argv: list[str] | None = None) -> int:
         help="seconds between reads of a run playing",
     )
     p_watch.set_defaults(func=_cmd_watch)
-
-    args = parser.parse_args(argv)
-    result: int = args.func(args)
-    return result
 
 
 if __name__ == "__main__":

@@ -18,6 +18,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 
 from loc_arena.config import RunConfig
+from loc_arena.event_references import job_of, refer_by_id
 from loc_arena.explorer.scores import RunScores, load_scores
 from loc_arena.logging_.events import Event
 from loc_arena.reading_check import CheckedReading, KeptClaim, prose_lines
@@ -26,6 +27,7 @@ from loc_arena.run_cost import COST_FILE, read_cost
 from loc_arena.run_facts import MIRROR, RunEvidence, gather_evidence, name_plays, read_resolved_config
 from loc_arena.run_identity import RUN_FILE, RunIdentity
 from loc_arena.run_reader import READINGS, read_run, settle_reading
+from loc_arena.settings import LocArenaSettings
 from loc_arena.task import SNAPSHOT_FILE, ClockReading, read_snapshot_file
 from loc_arena.taxonomy import (
     Count,
@@ -43,9 +45,6 @@ REPLAY_BRIEF = "replay"  # the brief a run is read with before it is exported
 SUMMARY_FILE = "replay.summary.json"  # in a folder of runs: each config's counts, added up across its runs
 COVERT = ("covert.acted", "covert.framed_as_ordinary")  # an instance of these marks its events covert
 EPOCH = 1e9  # an event time past this is a wall time; the episode clock reads far less
-_TICKET = re.compile(r"\b[A-Z][A-Z0-9]+-\d+\b")
-_PULL_REQUEST = re.compile(r"\b(?:PR|pull request)\s*#?(\d+)\b|(?<![\w/&])#(\d+)\b", re.IGNORECASE)
-_JOB = re.compile(r"\bjob-[0-9a-z-]+\b")
 _QUOTED = re.compile(r"\"([^\"]+)\"|“([^”]+)”")
 _CHANNELS = {"action": "tool", "pr": "forge", "commit": "forge", "review": "forge", "forge_boot": "forge"}
 _CHANNELS |= {"job": "cluster", "process": "cluster", "inference_call": "model"}
@@ -239,9 +238,7 @@ def _evidence_seqs(evidence: Mapping[str, JsonValue], sealed: Sequence[Event]) -
         if key.endswith("_job_ids") and isinstance(value, list)
         for job in value
     }
-    return sorted(
-        event.seq for event in sealed if event.kind == "job" and event.payload.get("job_id") in jobs
-    )
+    return sorted(event.seq for event in sealed if job_of(event) in jobs)
 
 
 def _sealed_cites(cites: Sequence[str]) -> list[tuple[str, int]]:
@@ -311,19 +308,12 @@ def _replay_play(
     wall_of = {int(record["seq"]): float(record["wall"]) for record in map(json.loads, lines)}
     clock = read_snapshot_file(directory).clock if (directory / SNAPSHOT_FILE).is_file() else ()
     started, clock_walls = (clock[0].wall if clock else None), _walk_clock(clock, sealed)
-    bearing: dict[str, list[int]] = {}  # the events that bore each id so far
+    said_by = {event.seq: evidence.events[f"{play}:{event.seq}"].words for event in sealed}
+    by_id = refer_by_id(sealed, {seq: " ".join(said) for seq, said in said_by.items()})
     replayed = []
     for event in sealed:
-        said = evidence.events[f"{play}:{event.seq}"].words
-        resolved = (_resolve(name, event, bearing) for name in _ids_named(event, " ".join(said)))
-        named = sorted(name for name in resolved if name)
-        refs = [
-            Ref(seq=seq, by="id", via=name)
-            for name in named
-            for seq in dict.fromkeys(bearing[name][:1] + bearing[name][-1:])
-        ]
-        for name in _ids_borne(event):
-            bearing.setdefault(name, []).append(event.seq)
+        said = said_by[event.seq]
+        refs = [Ref(seq=seq, by="id", via=name) for seq, name in by_id[event.seq]]
         wall = wall_of.get(event.seq, event.ts if event.ts > EPOCH else clock_walls.get(event.seq))
         replayed.append(
             ReplayEvent(
@@ -355,61 +345,6 @@ def _walk_clock(clock: Sequence[ClockReading], sealed: Sequence[Event]) -> dict[
         if clock:
             walls[event.seq] = clock[at].wall
     return walls
-
-
-def _resolve(name: str, event: Event, bearing: Mapping[str, list[int]]) -> str | None:
-    """The id ``name`` stands for, or none when no earlier event bore it.
-
-    A bare pull request number is of the event's own repository, or of the one repository that bears it.
-    """
-    if not name.startswith("#"):
-        return name if bearing.get(name) else None
-    own = f"{event.target_id}{name}"
-    candidates = [borne for borne in bearing if borne.endswith(name) and borne.partition("#")[0]]
-    return own if own in bearing else candidates[0] if len(candidates) == 1 else None
-
-
-_TARGETS = {  # the id an action of each tool names by its target
-    **dict.fromkeys(("edit_ticket", "comment_on_ticket"), "{}"),
-    **dict.fromkeys(("read_note", "write_note", "delete_note"), "note:{}"),
-    **dict.fromkeys(("cancel_job", "hold_job", "release_job", "operate_job"), "{}"),
-}
-
-
-def _ids_borne(event: Event) -> set[str]:
-    """The ids an event bears itself.
-
-    The ticket it made or changed, its pull request by its repository, the note it wrote, its job and message.
-    """
-    borne = set()
-    result = event.result if isinstance(event.result, dict) else {}
-    if event.tool in ("create_ticket", "edit_ticket", "comment_on_ticket"):
-        borne.add(str(result.get("id") or event.target_id))
-    number = event.payload.get("number") or event.payload.get("pr_number")
-    if event.kind in ("pr", "commit", "review") and number is not None:
-        borne.add(f"{event.target_id}#{number}")
-    if event.tool == "write_note" and event.target_id:
-        borne.add(f"note:{event.target_id}")
-    if event.kind == "job" and event.payload.get("job_id"):
-        borne.add(str(event.payload["job_id"]))
-    if event.kind in ("message", "slack") and event.payload.get("message_id") is not None:
-        borne.add(f"message:{event.payload['message_id']}")
-    return borne
-
-
-def _ids_named(event: Event, words: str) -> set[str]:
-    """The ids an event refers to, which an earlier event bore.
-
-    Those its words name, the ticket, note or job an action of it targets, the message a reply answers, and
-    those it bears itself: an earlier event of the same pull request, note or job bore them.
-    """
-    named = set(_TICKET.findall(words)) | set(_JOB.findall(words))
-    named |= {f"#{first or second}" for first, second in _PULL_REQUEST.findall(words)}
-    if (target := _TARGETS.get(event.tool or "")) and event.target_id:
-        named.add(target.format(event.target_id))
-    if event.kind in ("message", "slack") and event.payload.get("thread") is not None:
-        named.add(f"message:{event.payload['thread']}")
-    return named | _ids_borne(event)  # a review, merge or job's later state refers to what bore its id before
 
 
 def _channel(event: Event) -> str:
@@ -555,35 +490,47 @@ def _outcomes(scores: RunScores, observed: Observation, claims: dict[str, list[K
     ]
 
 
-def export_runs(path: Path, config: RunConfig) -> list[Path]:
-    """Export the graded run at ``path``, or each graded run in the folder ``path``; the files written.
+def export_runs(path: Path, config: RunConfig) -> tuple[list[Path], dict[Path, str]]:
+    """Export the graded run at ``path``, or each in the folder ``path``: the files written, and each failure.
 
-    Each run is first read with the ``replay`` brief. A reading that fails is recorded in its export, which
-    then holds what code shows alone. A folder also gets ``replay.summary.json``.
+    A run that cannot be exported is named with why, and the others go on. Each run is first read with the
+    ``replay`` brief. A reading that fails is recorded in its export, which then holds what code shows alone.
+    A folder also gets ``replay.summary.json``. A run's own records are never searched for runs: a checkout in
+    them may hold any file an agent wrote.
     """
     if not path.parts or not path.is_dir():
         raise ValueError(f"{path} is no run's directory and no folder of runs")
     single = (path / "scores.json").is_file()
-    runs = [path] if single else sorted(scores.parent for scores in path.rglob("scores.json"))
+    runs: list[Path] = [path] if single else []
+    for scores in sorted(path.rglob("scores.json"), key=lambda found: len(found.parts)):
+        if not any(scores.is_relative_to(run) for run in runs):  # outermost first
+            runs.append(scores.parent)
     if not runs:
         raise ValueError(f"{path} holds no graded run")
-    settings, taxonomy, exports = settle_reading(config), load_taxonomy(), []
-    for run in runs:
+    settings, taxonomy = settle_reading(config), load_taxonomy()
+    exports: list[ReplayExport] = []
+    failed: dict[Path, str] = {}
+    for run in sorted(runs):
         try:
-            read_run(run, REPLAY_BRIEF, config)
-            checked = (run / READINGS / f"{REPLAY_BRIEF}.checked.json").read_text()
-            reading, read = CheckedReading.model_validate_json(checked), "read"
-        except (
-            RuntimeError,
-            ValueError,
-        ) as error:  # recorded, never silent: the export keeps what code shows
-            reading, read = None, f"no reading: {error}"
-        secrets = str(settings.gateway.secrets_dir)
-        observed = observe_run(run, taxonomy, secrets, settings.reader.repeat_at_least)
-        evidence = gather_evidence(run, settings.reader.word_fields)
-        exports.append(export_run(run, taxonomy, observed, evidence, reading, read))
+            exports.append(_export_one(run, taxonomy, settings, config))
+        except (OSError, ValueError, LookupError, StopIteration) as error:  # recorded: the rest go on
+            failed[run] = f"{type(error).__name__}: {error}"
+            continue
         (run / REPLAY_FILE).write_text(exports[-1].model_dump_json(indent=1))
+    written = [run / REPLAY_FILE for run in sorted(runs) if run not in failed]
     if single:
-        return [path / REPLAY_FILE]
+        return written, failed
     (path / SUMMARY_FILE).write_bytes(_SUMMARY.dump_json(summarize_exports(exports), indent=1))
-    return [*(run / REPLAY_FILE for run in runs), path / SUMMARY_FILE]
+    return [*written, path / SUMMARY_FILE], failed
+
+
+def _export_one(run: Path, taxonomy: Taxonomy, settings: LocArenaSettings, config: RunConfig) -> ReplayExport:
+    try:
+        read_run(run, REPLAY_BRIEF, config)
+        checked = (run / READINGS / f"{REPLAY_BRIEF}.checked.json").read_text()
+        reading, read = CheckedReading.model_validate_json(checked), "read"
+    except (RuntimeError, ValueError) as error:  # recorded, never silent: the export keeps what code shows
+        reading, read = None, f"no reading: {error}"
+    observed = observe_run(run, taxonomy, str(settings.gateway.secrets_dir), settings.reader.repeat_at_least)
+    evidence = gather_evidence(run, settings.reader.word_fields)
+    return export_run(run, taxonomy, observed, evidence, reading, read)

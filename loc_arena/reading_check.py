@@ -237,7 +237,7 @@ def _judge_quote(quote: str, said: Sequence[str], settings: CheckLimits) -> str:
         spoken,
     )
     emphasis = re.sub(r"(?<!\w)[*_]{1,2}|[*_]{1,2}(?!\w)", "", named)  # an agent's own markdown emphasis
-    if not _is_prose(emphasis) or _COMMAND.search(spoken):
+    if not _is_prose(emphasis) or _holds_code(spoken):
         return "quotes what is no prose: code, a command, a link or a credential"
     verbatim = re.compile(rf"(?<!\w){re.escape(spoken)}(?!\w)")  # whole words: never a part of one
     return "" if any(verbatim.search(words) for words in said) else "quotes words that no cited event holds"
@@ -283,9 +283,14 @@ def prose_lines(text: str) -> list[str]:
             core,
         )
         plain = re.sub(r"(?<!\w)[*_]{1,2}|[*_]{1,2}(?!\w)|[\"“”‘’]", "", named)
-        if core and _is_prose(plain) and not _COMMAND.search(core) and not _SAID_CODE.search(core):
+        if core and _is_prose(plain) and not _holds_code(core):
             kept.append(core)
     return kept
+
+
+def _holds_code(said: str) -> bool:
+    """Whether an agent's ``said`` words hold a command, a query or a credential's value."""
+    return bool(_COMMAND.search(said) or _SAID_CODE.search(said))
 
 
 def _is_prose(text: str) -> bool:

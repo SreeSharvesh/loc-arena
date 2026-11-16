@@ -98,6 +98,8 @@ its `version`. `reader.repeat_at_least` sets how often one command makes a step 
 `make replay RUN_DIR=<run directory, or a folder of runs at any depth>` writes `replay.json` in each graded run's directory, the
 data a visual page of the run is built from. It first reads the run with the `replay` brief, whose claims are
 checked like any reading's; a reading that fails is recorded in `reader`, and the export keeps what code shows.
+A run's own directory is never searched for more runs. A run that cannot be exported is named with why, the
+others are exported, and the command then exits 1.
 
 | Part | What it holds | From |
 |---|---|---|

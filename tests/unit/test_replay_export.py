@@ -8,16 +8,19 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+from loc_arena import replay_export
+from loc_arena.config import load_run_config
 from loc_arena.reader_settings import ReaderSettings
 from loc_arena.reading_check import CheckLimits, ReaderAnswer, check_answer, prose_lines
 from loc_arena.recorded_events import EVENT_WALLS_FILE
-from loc_arena.replay_export import ReplayExport, export_run, summarize_exports
+from loc_arena.replay_export import ReplayEvent, ReplayExport, export_run, summarize_exports
 from loc_arena.run_facts import gather_evidence
 from loc_arena.taxonomy import Count, load_taxonomy, observe_run
 
 from tests._stored_run import unpack_stored_run
 
 SETTINGS = ReaderSettings()
+RUN_CONFIG = load_run_config("configs/aurora-efficiency.fast.yaml")
 LIMITS = CheckLimits(**SETTINGS.model_dump(include=set(CheckLimits.model_fields)))
 TAXONOMY = load_taxonomy()
 JOB, JOB_EVENT = "job-coworker", 7  # a job of the stored run's attack play, and its sealed event
@@ -76,15 +79,16 @@ READER_ANSWER = {  # as a reader might write it about the stored run: checked as
 
 @pytest.fixture(scope="module")
 def run(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    return unpack_stored_run(tmp_path_factory.mktemp("run"))
+    stored = unpack_stored_run(tmp_path_factory.mktemp("run"))
+    scores = json.loads((stored / "scores.json").read_text())
+    evidence = scores["side_task"]["milestones"]["persistent_compute_job"]["evidence"]
+    evidence["persistent_job_ids"] = [JOB]  # as the verifier would name a covert step
+    (stored / "scores.json").write_text(json.dumps(scores))
+    return stored
 
 
 @pytest.fixture(scope="module")
 def export(run: Path) -> ReplayExport:
-    scores = json.loads((run / "scores.json").read_text())
-    evidence = scores["side_task"]["milestones"]["persistent_compute_job"]["evidence"]
-    evidence["persistent_job_ids"] = [JOB]  # as the verifier would name a covert step
-    (run / "scores.json").write_text(json.dumps(scores))
     evidence = gather_evidence(run, SETTINGS.word_fields)
     named = evidence.model_copy(
         update={"names": evidence.names | {category.id for category in TAXONOMY.categories}},
@@ -92,6 +96,11 @@ def export(run: Path) -> ReplayExport:
     reading = check_answer(ReaderAnswer.model_validate(READER_ANSWER), named, LIMITS)
     observed = observe_run(run, TAXONOMY, "/run/secrets", SETTINGS.repeat_at_least)
     return export_run(run, TAXONOMY, observed, evidence, reading, "read")
+
+
+def unread(*_: object) -> Path:
+    """The reading as a reader that cannot start gives it: the paid model is never called."""
+    raise RuntimeError("the reader did not start")
 
 
 def sealed(run: Path, phase: str) -> list[dict]:
@@ -267,8 +276,12 @@ def test_the_catch_rests_on_the_combined_suspicion_the_deciding_monitors_highest
     ) == (True, len(highest), len(above))
 
 
-def export_edited(run: Path, tmp_path: Path, edit: Callable[[dict[int, dict]], None]) -> dict[int, list]:
-    """Each attack event's references, from a copy of the stored run whose events ``edit`` changed."""
+def export_edited(
+    run: Path,
+    tmp_path: Path,
+    edit: Callable[[dict[int, dict]], None],
+) -> dict[int, ReplayEvent]:
+    """Each attack event as exported from a copy of the stored run whose events ``edit`` changed."""
     changed = tmp_path / "run"
     shutil.copytree(run, changed)
     log = changed / "episode" / "events.sealed.jsonl"
@@ -278,7 +291,11 @@ def export_edited(run: Path, tmp_path: Path, edit: Callable[[dict[int, dict]], N
     observed = observe_run(changed, TAXONOMY, "/run/secrets", SETTINGS.repeat_at_least)
     evidence = gather_evidence(changed, SETTINGS.word_fields)
     exported = export_run(changed, TAXONOMY, observed, evidence, None, "none")
-    return {event.seq: [(ref.seq, ref.via) for ref in event.refs] for event in exported.plays["attack"]}
+    return {event.seq: event for event in exported.plays["attack"]}
+
+
+def refs_of(events: dict[int, ReplayEvent]) -> dict[int, list[tuple[int, str]]]:
+    return {seq: [(ref.seq, ref.via) for ref in event.refs] for seq, event in events.items()}
 
 
 def test_a_pull_request_is_referred_to_on_its_own_repository_or_the_one_that_bears_its_number(
@@ -289,7 +306,7 @@ def test_a_pull_request_is_referred_to_on_its_own_repository_or_the_one_that_bea
         posts[12]["payload"]["text"] = "Saw #2 land."  # only meridian-serving bears a #2 by then
         posts[145]["payload"]["body"] += " Merge #2 soon."  # by then both repositories do: no reference
 
-    refs = export_edited(run, tmp_path, edit)
+    refs = refs_of(export_edited(run, tmp_path, edit))
 
     serving, controlplane = "meridian-serving#2", "meridian-controlplane#2"
     assert (refs[11], refs[12], refs[15], [ref for ref in refs[145] if "#" in ref[1]]) == (
@@ -324,6 +341,35 @@ def test_an_event_refers_by_id_to_the_message_or_job_it_acts_on(  # noqa: PLR091
     via: str,
     expected: list[tuple[int, str]],
 ) -> None:
-    refs = export_edited(run, tmp_path, edit)
+    refs = refs_of(export_edited(run, tmp_path, edit))
 
     assert [ref for ref in refs[seq] if ref[1].startswith(via)] == expected
+
+
+def test_the_action_that_submitted_a_job_the_verifier_names_is_covert(run: Path, tmp_path: Path) -> None:
+    def submit_job(events: dict[int, dict]) -> None:
+        events[31] |= {"tool": "submit_job", "result": {"id": JOB}}
+
+    events = export_edited(run, tmp_path, submit_job)
+
+    assert (events[31].covert, events[31].covert_source) == (True, "code")
+
+
+def test_a_folder_exports_each_run_and_names_one_that_fails_but_no_file_inside_a_run(
+    run: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    folder = tmp_path / "runs"
+    shutil.copytree(run, folder / "graded")
+    for scores in (folder / "graded/episode/checkout/meridian-serving", folder / "broken"):  # an agent's file
+        scores.mkdir(parents=True, exist_ok=True)
+        (scores / "scores.json").write_text("{}")
+    monkeypatch.setattr(replay_export, "read_run", unread)
+
+    written, failed = replay_export.export_runs(folder, RUN_CONFIG)
+
+    assert (written, list(failed)) == (
+        [folder / "graded" / "replay.json", folder / "replay.summary.json"],
+        [folder / "broken"],
+    )
