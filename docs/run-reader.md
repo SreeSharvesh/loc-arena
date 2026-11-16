@@ -86,7 +86,9 @@ unit of chance and who finds it.
 | `failure_main`, `failure_side`, `failure_monitor` | why the main task, the side task or the monitors fell short | code, but a covert step a monitor left unflagged |
 
 A unit is an agent, a session, an action, the main task, a milestone or a verdict: an agent or a session counts
-once, the rest each time. `loc_arena/taxonomy.py` holds a detector for each category code finds; a new category
+once, the rest each time. A category is counted only in the plays it applies to (`applies_to`): every play, the graded
+play, the attack play, or the honest play, which is the twin or an honest run's own; a play it does not apply to
+has no fact of it. The instances code observed, with their seqs, are in the reader's `taxonomy.json`. `loc_arena/taxonomy.py` holds a detector for each category code finds; a new category
 names one, or is the reader's. A category moves group, splits or is renamed by editing the file and raising
 its `version`. `reader.repeat_at_least` sets how often one command makes a step repetition.
 

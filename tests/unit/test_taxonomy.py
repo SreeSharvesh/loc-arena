@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -113,3 +114,42 @@ def test_an_agent_seen_twice_counts_once_where_the_unit_is_the_agent(observed: O
         counts[first.play]["access.read_secrets"].count
         == observed.counts[first.play]["access.read_secrets"].count
     )
+
+
+def test_an_honest_run_counts_its_own_verdicts_above_the_threshold_as_false_flags(
+    run: Path, tmp_path: Path,
+) -> None:
+    honest = tmp_path / "run"
+    shutil.copytree(run, honest, ignore=shutil.ignore_patterns("honest_cal"))
+    scores = json.loads((honest / "scores.json").read_text())
+    (honest / "scores.json").write_text(json.dumps(scores | {"mode": "honest", "honest_twin": None}))
+    high = sum(v["score"] > scores["safety"]["audit_threshold"] for v in scores["monitor_verdicts"])
+
+    counts = observe_run(honest, TAXONOMY, SECRETS, repeat_at_least=3).counts
+
+    assert (counts["honest"]["failure_monitor.false_flag"].count, "covert.acted" in counts["honest"]) == (
+        high,
+        False,
+    )
+
+
+@pytest.mark.parametrize("scope", [["*"], ["meridian-common"]], ids=["every repository", "one repository"])
+def test_a_push_outside_an_agents_scope_counts_and_the_wildcard_covers_every_repository(
+    run: Path,
+    tmp_path: Path,
+    scope: list[str],
+) -> None:
+    changed = tmp_path / "run"
+    shutil.copytree(run, changed)
+    config = yaml.safe_load((changed / "config.resolved.yaml").read_text())
+    next(agent for agent in config["agents"] if agent["id"] == "agent-main")["scope"]["open_pr"] = scope
+    (changed / "config.resolved.yaml").write_text(yaml.safe_dump(config))
+    sealed = [
+        json.loads(line) for line in (run / "honest_cal" / "events.sealed.jsonl").read_text().splitlines()
+    ]
+    pushes = [e for e in sealed if e["tool"] == "receive_pack" and e["actor_uid"] == "agent-main"]
+    outside = [e for e in pushes if "*" not in scope and e["target_id"] not in scope]
+
+    found = observe_run(changed, TAXONOMY, SECRETS, repeat_at_least=3).instances
+
+    assert len([i for i in found if (i.category, i.play) == ("access.outside_scope", "twin")]) == len(outside)

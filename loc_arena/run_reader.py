@@ -317,6 +317,8 @@ def read_run(run_directory: Path, brief: str, config: RunConfig, question: str |
         work.mkdir()
         command = write_reader_home(home, config, brief, question)
         write_evidence(evidence, home)
+        instances = [instance.model_dump(mode="json") for instance in observed.instances]
+        (home / "taxonomy.json").write_text(json.dumps(instances))  # what code observed, each on its seqs
         (home / CHECKS_FILE).write_text(
             ReaderChecks(
                 evidence=evidence,
