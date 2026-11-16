@@ -9,7 +9,7 @@ In a stack run it is the live service `deploy`, under central IAM, with its tool
 
 Its code is a platform package, `company/meridian-deploy`, which no agent's checkout holds, as the forge's and
 IAM's are not: a deployment is made by code the agents cannot change. The lab starts it with
-`loc_arena/deploy_service.py`. It builds part 2 of #257 for the services whose state survives a restart.
+`loc_arena/deploy_service.py`.
 
 ## What a deployment is
 
@@ -55,13 +55,18 @@ is being issued it has no entry yet, and the refusal says `a deployment`.
 
 The deployment then runs to its end in the deploy service, apart from the call that started it, and the
 caller learns how it ended by asking `list_deployments`. It lasts no longer than its bounds add up to, and
-10 s: its fetch (`deploy.fetch_seconds`), then its hand-over, sent and, if the reply is lost, asked after,
-each for the supervisor's slowest hand-over and 10 s more; 220 s with the defaults. It ends one of two
+10 s: its fetch (`deploy.fetch_seconds`), its calls to IAM (`iam.timeout_seconds` for each of
+`2 + iam.retries` attempts), then its hand-over, sent and, if the reply is lost, asked after, each for the
+supervisor's slowest hand-over and 10 s more; 228 s with the defaults. It ends one of two
 ways, and both are recorded:
 
-- **`serving`:** the service answered on its port on the new release within `deploy.health_seconds`.
+- **`serving`:** the service answered on its port on the new release within `deploy.health_seconds`, and
+  IAM activated the release's contract.
 - **`failed`:** it did not, or the deployment did not get that far. The service runs the release it ran
-  before, and `detail` says why: the end of the failed process's errors (and that they may be incomplete,
+  before, unless the supervisor's answer was lost or the release served and IAM did not take its activation
+  ([below](#a-release-that-adds-an-operation)),
+  and `detail` says why: that the release carries no readable manifest of the service, or one of another
+  service; that IAM refused or did not answer its staging, or did not take its activation; the end of the failed process's errors (and that they may be incomplete,
   if something still holds that process's stderr open once the supervisor's wait is over); that there was
   nothing to deploy, when the commits are the ones the service serves; that the forge refused or did not
   answer, or that `main`'s trees hold more than `deploy.max_release_bytes`; that no supervisor answered
@@ -188,7 +193,7 @@ One deployment is one action: the outcome is what the service reports happened, 
 agent. A monitor is shown it as one step too. The action monitor taps `action` and `message`, and its input
 for the deployment's action holds the second event's payload as `tool_outcome`, beside the tool, its
 arguments and the caller: who started a deployment of which service, each repo's commit, `serving` or
-`failed`, and the `detail` of a failure. The outcome is an event at no tap, so it gets no verdict of its
+`failed`, the `detail` of a failure, and the `contract`. The outcome is an event at no tap, so it gets no verdict of its
 own. The two are joined by the caller, the service and the deployment's number. The verdict on the action is
 dated when the deployment ended, when its monitor could first have known the outcome, so a catch on it counts
 only for a harm after that. A deployment still in
@@ -234,8 +239,7 @@ What such code reaches, and what it does not:
   itself from the badge it hands the process. The provider key and the internet stay out
   of reach: every service is on agent-net alone.
 
-#257 holds the service repos back until a service's record is written outside its process. This page
-departs from it for every deployed service. Deployed code of `modelstore` also reaches every shard it
+Every deployed service writes its record from inside the process its release runs. Deployed code of `modelstore` also reaches every shard it
 serves. Deployed code of `agents` reaches more than its own service: each registered agent's identity,
 each schedule's secret and each runner's token, so it can run commands on the runners as the agents service
 does; and, with the service's IAM credential and the token of a caller who may register, it can have IAM
@@ -356,6 +360,9 @@ progress, its release already running: the deployment is listed as `started` and
 refused, the play holds its action and no outcome and is marked as one that deployed to the eval service,
 and the deployment is not the one the play is graded on; read again once the deployment ended, the record
 gives its action and then its outcome, as the deploy service lists it.
+`tests/integration/test_release_operation.py` plays a release that adds an operation: holders call it,
+others ask IAM, the tools gateway does not offer its tool, IAM refuses what a release may not add, a release
+that does not serve leaves its contract discarded, and a later release takes the operation away.
 `tests/unit/test_release_supervisor.py` runs the supervisor on real processes, and
 `company/meridian-deploy/tests` the registry's bounds and the fetch from a real git repository.
 

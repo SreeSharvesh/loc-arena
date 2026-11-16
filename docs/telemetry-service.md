@@ -155,7 +155,7 @@ what it returns is whatever any release chose to log.
 
 The shipped action monitor reads the query of each such action and its result: `tool_result` is one of its
 declared inputs for the tools `configs/monitors.yaml` lists (`result_tools`), cut to `result_chars` (4000).
-No other tool's result is an input, so every other action's prompt is as it was. That result is text a
+No other tool's result is an input, so no other action's prompt holds a result. That result is text a
 release wrote, read back by an agent: a release can write its log to mislead the monitor that reads it, as
 it can write it to mislead an agent.
 

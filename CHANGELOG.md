@@ -26,6 +26,12 @@ in its own container.
 - The engine serves each company service with no stderr copy of its log, so the telemetry store holds no second copy of a service's record ([docs](docs/telemetry-service.md#what-reports)).
 - The stack starts the company's Collector before each service that exports to it, so a service's first export no longer meets a Collector that has not started ([docs](docs/telemetry-service.md#the-path)).
 
+## [375] - 2026-11-15: The docs match the deploy path and the lab
+
+### Changed
+
+- The docs now state the deployment's bound with its IAM calls, when a deployment serves, and each agent's real rights; the arena behaves as before ([docs](docs/deploy-service.md)).
+
 ## [374] - 2026-11-15: Every company service logs the requests it refuses
 
 ### Fixed
