@@ -42,8 +42,15 @@ from loc_arena.logging_.events import read_events
 from loc_arena.merged_main import EPISODE_PHASE, TWIN_PHASE
 from loc_arena.monitors.registry import MonitorVerdict
 from loc_arena.own_sessions import PI_ENVIRONMENT, PI_SETTINGS
-from loc_arena.reading_check import check_answer, parse_answer, render_reading
-from loc_arena.run_facts import find_names, gather_evidence, write_evidence
+from loc_arena.reading_check import (
+    CHECKS_FILE,
+    CheckLimits,
+    ReaderChecks,
+    check_answer,
+    parse_answer,
+    render_reading,
+)
+from loc_arena.run_facts import RunEvidence, find_names, gather_evidence, write_evidence
 from loc_arena.settings import LocArenaSettings
 from loc_arena.yaml_documents import dump_document
 
@@ -252,6 +259,19 @@ def read_report(written: Path, limit_bytes: int) -> str:
         os.close(opened)
 
 
+def gather_reading_evidence(
+    run_directory: Path,
+    settings: LocArenaSettings,
+    question: str | None,
+) -> RunEvidence:
+    """What a reading's claims are checked against, and what the reader is given.
+
+    The run's evidence, and the names of the owner's question, which a claim may repeat (a key the run lacks).
+    """
+    evidence = gather_evidence(run_directory, settings.reader.word_fields)
+    return evidence.model_copy(update={"asked": frozenset(find_names(question))}) if question else evidence
+
+
 def name_reading(brief: str, question: str | None) -> str:
     """A reading's name in the run's readings: its brief's, or ``ask-`` and its question's hash."""
     return f"{ASK}-{hashlib.sha256(question.encode()).hexdigest()[:8]}" if question else brief
@@ -272,10 +292,8 @@ def read_run(run_directory: Path, brief: str, config: RunConfig, question: str |
         raise ValueError(f"{run_directory} holds no scores.json: it is no graded run's directory")
     settings = settle_reading(config)
     # Before any model call: a run it cannot count is not read.
-    facts, evidence = (
-        summarize_run(run_directory),
-        gather_evidence(run_directory, settings.reader.word_fields),
-    )
+    facts, evidence = summarize_run(run_directory), gather_reading_evidence(run_directory, settings, question)
+    limits = CheckLimits(**settings.reader.model_dump(include=set(CheckLimits.model_fields)))
     readings, name = run_directory / READINGS, name_reading(brief, question)
     report, calls, kept = (
         readings / f"{name}{suffix}" for suffix in (".md", ".calls.jsonl", ".unchecked.json")
@@ -285,6 +303,12 @@ def read_run(run_directory: Path, brief: str, config: RunConfig, question: str |
         work.mkdir()
         command = write_reader_home(home, config, brief, question)
         write_evidence(evidence, home)
+        (home / CHECKS_FILE).write_text(
+            ReaderChecks(
+                evidence=evidence,
+                settings=CheckLimits(**settings.reader.model_dump(include=set(CheckLimits.model_fields))),
+            ).model_dump_json(),
+        )
         compose_file = Path(scratch, "compose.yaml")
         document = render_reader_compose(config, run_directory, home, work, command)
         compose_file.write_text(dump_document(document))
@@ -327,8 +351,6 @@ def read_run(run_directory: Path, brief: str, config: RunConfig, question: str |
         written = read_report(work / _ANSWER, settings.reader.report_limit_bytes)
     kept.write_text(written)
     answer = parse_answer(written)
-    if question:  # the owner's own words: a claim may name what the question names, a key that is not there
-        evidence = evidence.model_copy(update={"asked": frozenset(find_names(question))})
-    checked = check_answer(answer, evidence, settings.reader)
+    checked = check_answer(answer, evidence, limits)
     report.write_text(render_reading(checked, None if question else facts))
     return report

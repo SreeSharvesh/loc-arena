@@ -34,8 +34,8 @@ roles:
       effort: none
 
   # The run reader (loc-arena read): reads a finished run's records and reports what its agents did.
-  reader:
-    model: z-ai/glm-5.3
+  reader:  # chosen by the test set's accuracy and cost per answer (docs/run-reader.md#accuracy)
+    model: anthropic/claude-haiku-5.5
     temperature: 0.0
     max_tokens: 32768   # room for its reasoning and its whole answer in one reply
 
