@@ -1,9 +1,9 @@
 """Publish a graded run to the private storage repository, so its records outlive the machine that played it.
 
 One commit per run, under ``runs/<date>/<config>/<run id>/``: the run's readable files, the whole bundle as
-``bundle.tar.xz`` (in numbered parts when it is larger than ``publish.part_bytes``), and ``bundle.txt``, which
-gives its size, its SHA-256 and how to join and unpack it. The archive leaves out each play's checkout that
-``rebuild_checkout`` makes again byte for byte from the play's forge history. Nothing is published until
+``bundle.tar.xz`` (in parts ``.part-00`` on when larger than ``publish.part_bytes``), and ``bundle.txt``,
+which gives its size, its SHA-256 and how to join and unpack it. The archive leaves out each play's checkout
+that ``rebuild_checkout`` makes again byte for byte from the play's forge history. Nothing is published until
 ``find_secrets`` finds nothing real in what is published, and a run already filed is not written again.
 """
 
@@ -316,13 +316,14 @@ def _write_archive(
     if size > settings.part_bytes:
         with archive.open("rb") as whole:
             count = math.ceil(size / settings.part_bytes)
-            parts = [target / f"{ARCHIVE}.{index:03}" for index in range(count)]
+            parts = [target / f"{ARCHIVE}.part-{index:02}" for index in range(count)]
             for part in parts:
                 part.write_bytes(whole.read(settings.part_bytes))
         archive.unlink()
         names = " ".join(part.name for part in parts)
-        lines.append(f"parts: {names}; join: cat {ARCHIVE}.[0-9]* > {ARCHIVE}")
-    lines.append(f"unpack: tar -xJf {ARCHIVE}, into logs/<run slug>/ of a loc-arena checkout")
+        lines.append(f"parts: {names}; join: cat {ARCHIVE}.part-* > {ARCHIVE} && sha256sum {ARCHIVE}")
+    slug = json.loads((bundle / "scores.json").read_text()).get("run_slug", "<run slug>")
+    lines.append(f"unpack: mkdir -p <loc-arena>/logs/{slug} && tar -xJf {ARCHIVE} -C <loc-arena>/logs/{slug}")
     rebuilt = ", ".join(left_out) or "nothing"
     lines.append(f"left out, rebuilt byte for byte by loc_arena.run_publish.rebuild_checkout: {rebuilt}")
     return "".join(f"{line}\n" for line in lines)

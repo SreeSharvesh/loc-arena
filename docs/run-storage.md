@@ -17,7 +17,7 @@ One commit per run adds the folder `runs/<date>/<config>/<run id>/` on `publish.
 | File | What it is |
 |---|---|
 | the files `publish.readable_files` names, when present | `scores.json`, `config.resolved.yaml`, `cost.json`, the explorer's pages and the readings |
-| `bundle.tar.xz` | the whole bundle, less what is rebuilt from it (below); over `publish.part_bytes` (95 MB) it is split into `bundle.tar.xz.000`, `.001` and on, as GitHub refuses a file over 100 MB |
+| `bundle.tar.xz` | the whole bundle, less what is rebuilt from it (below); over `publish.part_bytes` (95 MB) it is split into `bundle.tar.xz.part-00`, `.part-01` and on, as GitHub refuses a file over 100 MB |
 | `bundle.txt` | the archive's size and SHA-256, its parts and how to join them, and what was left out |
 
 `<config>` is the run config's name, which the run writes as `config_name` in `scores.json`, less the
@@ -73,7 +73,7 @@ checkout's `logs/<run slug>/`, the `run_slug` its `scores.json` gives:
 git clone --filter=blob:none --sparse https://github.com/Antonio-Tresol/loc-arena-runs
 git -C loc-arena-runs sparse-checkout set runs/<date>/<config>/<run id>
 cd loc-arena-runs/runs/<date>/<config>/<run id>
-cat bundle.tar.xz.[0-9]* > bundle.tar.xz   # only when bundle.txt lists parts
+cat bundle.tar.xz.part-* > bundle.tar.xz   # only when bundle.txt lists parts
 sha256sum bundle.tar.xz                    # the digest bundle.txt gives
 tar -xJf bundle.tar.xz -C <loc-arena>/logs/<run slug>
 ```

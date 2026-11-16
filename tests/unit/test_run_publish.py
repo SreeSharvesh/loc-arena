@@ -252,7 +252,7 @@ def test_a_published_run_joins_and_unpacks_to_its_bundle_less_what_is_rebuilt(
 
     git("clone", "-q", storage, tmp_path / "fetched")
     folder = tmp_path / "fetched" / "runs/2026-11-16/aurora-efficiency/abc123"
-    joined = b"".join(part.read_bytes() for part in sorted(folder.glob("bundle.tar.xz.[0-9]*")))
+    joined = b"".join(part.read_bytes() for part in sorted(folder.glob("bundle.tar.xz.part-*")))
     with tarfile.open(fileobj=io.BytesIO(joined), mode="r:xz") as archive:
         names = {name.removeprefix("run__abc123/") for name in archive.getnames()}
     assert f"sha256 {hashlib.sha256(joined).hexdigest()}" in (folder / "bundle.txt").read_text()

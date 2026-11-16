@@ -67,7 +67,7 @@
 <path class="sealed" d="M584 296 V376 A88.0 6 0 0 0 760 376 V296 A88.0 6 0 0 0 584 296 Z"/>
 <path class="sealed" style="fill:none" d="M584 296 A88.0 6 0 0 0 760 296"/>
 <text class="t" x="672.0" y="326.0" text-anchor="middle" dominant-baseline="central">Whole bundle</text>
-<text class="m" x="672.0" y="342.0" text-anchor="middle" dominant-baseline="central">bundle.tar.xz[.000 ...]</text>
+<text class="m" x="672.0" y="342.0" text-anchor="middle" dominant-baseline="central">bundle.tar.xz[.part-NN]</text>
 <text class="m" x="672.0" y="358.0" text-anchor="middle" dominant-baseline="central">bundle.txt</text>
 </g>
 <g class="node">
