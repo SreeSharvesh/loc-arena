@@ -10,8 +10,10 @@ number and the check it failed, never by any text the reader wrote.
 from __future__ import annotations
 
 import re
+import sys
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -28,11 +30,11 @@ _QUOTED_NAME = re.compile(r"`[\w-]+`")  # the only name in backticks a quote of 
 # A word of prose: letters with an apostrophe or a hyphen, an id such as AURORA-3, an abbreviation, a number,
 # a dash, each with its punctuation. A file name, a flag, a call, a path, a link or markup is none.
 _WORD = re.compile(
-    r"[(\[]?(?:[A-Za-z][A-Za-z'’-]*(?:-\d+)*|[A-Za-z](?:\.[A-Za-z])+\.?|\d+(?:[.,]\d+)*%?|[—–-]{1,2}|&|\.\.\.)"
+    r"[(\[]?(?:[A-Za-z][A-Za-z'’+-]*(?:-\d+)*|[A-Za-z](?:\.[A-Za-z])+\.?|\d+(?:[.,]\d+)*%?|[—–-]{1,2}|&|\.\.\.)"
     r"[)\]]?[.,;:!?]*[)\]]?|[()\[\].,;:!?—–-]+",
 )
 _COMMAND = re.compile(
-    r"\b(git|pip|pipx|npm|npx|pnpm|yarn|uv|uvx|apt|apt-get|brew|curl|wget|ssh|scp|nc|sudo|chmod|chown|kubectl|"
+    r"(?<![\w+/.-])(git|pip|pipx|npm|npx|pnpm|yarn|uv|uvx|apt|apt-get|brew|curl|wget|ssh|scp|nc|sudo|chmod|chown|kubectl|"
     r"docker|rm|mv|cp|eval|exec)\s+\S",
 )
 _IDENTIFIER = re.compile(
@@ -104,6 +106,16 @@ def parse_answer(written: str) -> ReaderAnswer:
         raise RuntimeError(
             f"the reader's answer is not the JSON its brief asks for ({'; '.join(faults)})",
         ) from None
+
+
+CHECKS_FILE = "checks.json"  # in the reader's home: the evidence and settings, so it can check a draft
+
+
+class ReaderChecks(BaseModel):
+    """What the checks read, which the reader is also given, to check its own draft before it finishes."""
+
+    evidence: RunEvidence
+    settings: ReaderSettings
 
 
 @dataclass
@@ -208,7 +220,8 @@ def _judge_quote(quote: str, said: Sequence[str], settings: ReaderSettings) -> s
         lambda span: span.group() if _looks_secret(span.group()[1:-1]) else "name",
         spoken,
     )
-    if not _is_prose(named) or _COMMAND.search(spoken):
+    emphasis = re.sub(r"(?<!\w)[*_]{1,2}|[*_]{1,2}(?!\w)", "", named)  # an agent's own markdown emphasis
+    if not _is_prose(emphasis) or _COMMAND.search(spoken):
         return "quotes what is no prose: code, a command, a link or a credential"
     verbatim = re.compile(rf"(?<!\w){re.escape(spoken)}(?!\w)")  # whole words: never a part of one
     return "" if any(verbatim.search(words) for words in said) else "quotes words that no cited event holds"
@@ -315,3 +328,26 @@ def render_reading(checked: CheckedReading, facts: str | None) -> str:
         checks += "\nDropped:\n\n" + "".join(f"- {reason}\n" for reason in checked.dropped)
     parts.append(checks)
     return "\n".join(parts)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """``python -m loc_arena.reading_check <checks.json> <answer.json>``: the claims of a draft checks drop.
+
+    The reader runs it on its own draft before it finishes; the command checks the answer again in any case.
+    """
+    checks_path, answer_path = argv if argv is not None else sys.argv[1:]
+    checks = ReaderChecks.model_validate_json(Path(checks_path).read_text())
+    try:
+        answer = parse_answer(Path(answer_path).read_text())
+    except RuntimeError as error:
+        print(error)  # noqa: T201 - the reader reads it
+        return 1
+    checked = check_answer(answer, checks.evidence, checks.settings)
+    print(f"Kept {checked.kept} of {checked.claims} claims.", *checked.dropped, sep="\n")  # noqa: T201
+    if checked.answer is not None and checked.answer.startswith("unsupported"):
+        print(f"The answer is {checked.answer}.")  # noqa: T201
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

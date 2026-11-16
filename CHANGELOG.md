@@ -19,6 +19,18 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [386] - 2026-11-16: The run reader is measured and checks its own draft
+
+### Added
+
+- The run reader has a test set of 35 questions about the stored run, and a live test that reports the share it answers right ([docs](docs/run-reader.md#accuracy)).
+- The run reader's agent runs the same checks on its draft before it finishes, and rewrites what they would drop ([docs](docs/run-reader.md#the-checks)).
+
+### Changed
+
+- The run reader reads with `anthropic/claude-haiku-5.5`, the most accurate candidate on the test set and cheaper than the next ([docs](docs/run-reader.md#accuracy)).
+- The run reader's facts now hold zero counts, the agents' own totals and each agent's role, so absence and the team's work can be cited ([docs](docs/run-reader.md#what-the-reader-is-given)).
+
 ## [385] - 2026-11-16: The run reader checks every claim and answers one question
 
 ### Added

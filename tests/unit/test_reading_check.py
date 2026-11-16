@@ -7,8 +7,18 @@ import shutil
 from pathlib import Path
 
 import pytest
+import yaml
 from loc_arena.reader_settings import ReaderSettings
-from loc_arena.reading_check import Claim, ReaderAnswer, Section, check_answer, parse_answer, render_reading
+from loc_arena.reading_check import (
+    Claim,
+    ReaderAnswer,
+    ReaderChecks,
+    Section,
+    check_answer,
+    main,
+    parse_answer,
+    render_reading,
+)
 from loc_arena.run_facts import RunEvidence, gather_evidence
 
 from tests._stored_run import unpack_stored_run
@@ -40,16 +50,21 @@ def test_a_runs_facts_count_what_its_records_hold(run: Path, evidence: RunEviden
     sealed = [json.loads(line) for line in (run / "episode" / "events.sealed.jsonl").read_text().splitlines()]
     bash = sum(event["tool"] == "bash" and event["actor_uid"] == "serving-agent" for event in sealed)
     milestones = json.loads((run / "scores.json").read_text())["side_task"]["milestones"]
+    team = {agent["id"] for agent in yaml.safe_load((run / "config.resolved.yaml").read_text())["agents"]}
+    team_calls = sum(event["kind"] == "inference_call" and event["actor_uid"] in team for event in sealed)
 
+    keys = ("attack.agent.serving-agent.tool.bash", "side_task.milestone_count", "scores.key_count")
     counted = {
         key: evidence.facts[key]
-        for key in ("attack.agent.serving-agent.tool.bash", "side_task.milestone_count", "scores.key_count")
+        for key in (*keys, "attack.tool.receive_pack", "attack.team.kind.inference_call")
     }
 
     assert counted == {
         "attack.agent.serving-agent.tool.bash": bash,
         "side_task.milestone_count": len(milestones),
         "scores.key_count": 14,  # the stored run's scores.json, counted by hand
+        "attack.tool.receive_pack": 0,  # the twin pushed, the attack did not: a zero is a fact too
+        "attack.team.kind.inference_call": team_calls,  # the agents' model calls, the monitors' apart
     }
 
 
@@ -340,6 +355,7 @@ def test_a_name_that_is_a_link_an_address_a_number_or_a_credential_is_dropped_th
         "agent-main made {attack.agent.agent-main.tool.create_ticket} create_ticket calls.",
         "The session of `agent-main` ended on `budget`.",
         "It is the one milestone measured across the run.",
+        'It opened with "**AURORA-1 kickoff — efficiency push on the Aurora inference+eval pipeline**".',
     ],
 )
 def test_honest_prose_and_names_written_bare_are_kept(evidence: RunEvidence, text: str) -> None:
@@ -401,3 +417,21 @@ def test_a_claim_filling_a_fact_shaped_like_a_link_or_a_credential_is_dropped(
     reading = read(evidence, Claim(text="The main task's error is {scores.main_task.error}."))
 
     assert "claim 1: fills a fact that looks like a link or a credential" in reading
+
+
+def test_the_reader_can_check_its_own_draft_and_learn_which_claims_the_checks_drop(
+    evidence: RunEvidence,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    (tmp_path / "checks.json").write_text(
+        ReaderChecks(evidence=evidence, settings=SETTINGS).model_dump_json(),
+    )
+    draft = ReaderAnswer(
+        sections=[Section(title="Seen", claims=[Claim(text="It made 2 tickets.", cites=[TICKET])])],
+    )
+    (tmp_path / "answer.json").write_text(draft.model_dump_json())
+
+    main([str(tmp_path / "checks.json"), str(tmp_path / "answer.json")])
+
+    assert capsys.readouterr().out == "Kept 0 of 1 claims.\nclaim 1: states a number that is no fact\n"

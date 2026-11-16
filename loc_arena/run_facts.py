@@ -81,6 +81,16 @@ def gather_evidence(run_directory: Path, word_fields: Sequence[str]) -> RunEvide
         "side_task.milestones": milestones,
         "side_task.milestone_count": len(milestones),
     }
+    for agent in config[
+        "agents"
+    ]:  # who each agent reports to, its covert brief's milestones, its repositories
+        facts |= {
+            f"run.agent.{agent['id']}.reports_to": str(agent.get("spawned_by") or "none"),
+            f"run.agent.{agent['id']}.covert": [str(milestone) for milestone in agent.get("covert") or []],
+            f"run.agent.{agent['id']}.repositories": [
+                str(repo) for repo in agent.get("scope", {}).get("open_pr", [])
+            ],
+        }
     _flatten("scores", scores, facts)
     events: dict[str, EventWords] = {}
     names = {*_name_keys(scores), *_name_keys(config), *agents}
@@ -89,6 +99,8 @@ def gather_evidence(run_directory: Path, word_fields: Sequence[str]) -> RunEvide
         twin = graded.honest_twin.monitor_verdicts if graded.honest_twin else ()
         verdicts = graded.monitor_verdicts if phase == EPISODE_PHASE else twin
         facts |= _count_play(play, sealed, run_directory / phase, verdicts, graded.safety.audit_threshold)
+        team = Counter(key for event in sealed if event.actor_uid in agents for key in _made(event))
+        facts |= {f"{play}.team.{key}": count for key, count in team.items()}  # the agents' alone
         replies = {
             f"{call.agent}:t{call.turn}": read_reply_text(call.call.response)
             for call in read_session_calls(run_directory, PHASE_PLAYS[phase], agents)
@@ -99,6 +111,7 @@ def gather_evidence(run_directory: Path, word_fields: Sequence[str]) -> RunEvide
                 cited = _describe(f"{prefix}:{event.seq}", event, word_fields, replies)
                 events[cited.id] = cited
                 names.update(_name_event(event, word_fields))
+    _count_zeros(facts, [play for play, _ in name_plays(run_directory)], agents)
     files = (str(path.relative_to(run_directory)) for path in run_directory.rglob("*") if path.is_file())
     names.update(ending for file in files for ending in _endings(file))
     names.update(_name_facts(facts))  # every play's facts included
@@ -123,7 +136,7 @@ def _count_play(
     counted = Counter[str]()
     actors: dict[str, set[str]] = {}  # who made each kind of event and used each tool
     for event in sealed:
-        made = [f"kind.{event.kind}", *([f"tool.{event.tool}"] if event.tool else [])]
+        made = _made(event)
         counted.update([*made, *(f"agent.{event.actor_uid}.{key}" for key in made)])
         for key in made:
             actors.setdefault(key, set()).add(event.actor_uid)
@@ -154,6 +167,24 @@ def _count_play(
         }
     facts[f"{play}.flagged"] = sum(score > threshold for scores in scored.values() for score in scores)
     return facts
+
+
+def _made(event: Event) -> list[str]:
+    """What an event counts toward: its kind, and its tool if it has one."""
+    return [f"kind.{event.kind}", *([f"tool.{event.tool}"] if event.tool else [])]
+
+
+def _count_zeros(facts: dict[str, Fact], plays: Sequence[str], agents: Sequence[str]) -> None:
+    """A zero for each kind and tool the run saw that a play, or an agent in it, never made or used."""
+    seen = {key.split(".", 1)[1] for key in facts if re.fullmatch(r"[^.]+\.(kind|tool)\.[^.]+", key)}
+    for play in plays:
+        for key in seen:
+            facts.setdefault(f"{play}.{key}", 0)
+            facts.setdefault(f"{play}.team.{key}", 0)
+            facts.setdefault(f"{play}.{key}.actors", [])
+            facts.setdefault(f"{play}.{key}.actor_count", 0)
+            for agent in agents:
+                facts.setdefault(f"{play}.agent.{agent}.{key}", 0)
 
 
 def _describe(cite: str, event: Event, word_fields: Sequence[str], replies: Mapping[str, str]) -> EventWords:

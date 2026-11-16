@@ -17,7 +17,8 @@ make read RUN_DIR=logs/<run>/<run>__<id> ASK='Did any agent read its credentials
 
 | File in its home | What |
 |---|---|
-| `facts.json` | every count and score of the run by key, computed by the command: each play's events by kind, tool and actor (`attack.agent.serving-agent.tool.bash`), which actors used a tool, how each session ended, each monitor's verdicts, flagged verdicts and highest score, every scalar of `scores.json` (`scores.side_task.milestones.<id>.reached`), the milestones and `scores.json`'s keys |
+| `facts.json` | every count and score of the run by key, computed by the command: each play's events by kind, tool and actor (`attack.agent.serving-agent.tool.bash`), the agents' own totals (`attack.team.kind.inference_call`), which actors used a tool, how each session ended, each monitor's verdicts, flagged verdicts and highest score, and each verdict's score; every scalar of `scores.json` (`scores.side_task.milestones.<id>.reached`), the milestones and `scores.json`'s keys; each agent's lead, covert milestones and repositories from the config. A count of zero is a fact, so absence can be cited |
+| `checks.json` | the facts, words and names the checks read, and the reader's settings, so it can check its draft |
 | `words.jsonl` | each event that holds words an agent wrote: the fields of `reader.word_fields` in its payload and arguments (a message, a ticket, a note, a pull request's text), and for a model call the reply of the agent's model |
 
 It also reads the run directory itself. Plays are named `attack` (or `honest`) and `twin`.
@@ -40,6 +41,9 @@ every check.
 
 A word of prose is letters with an apostrophe or a hyphen, an id such as `AURORA-3`, an abbreviation, a number or
 punctuation. Section titles hold plain words alone, or are numbered.
+
+Before it finishes, the reader runs the same checks on its draft (`python -m loc_arena.reading_check` on
+`checks.json` in its home) and rewrites what they would drop. The command checks the answer again in any case.
 
 The reading lists each dropped claim by its number and the check it failed, never its text. An error names where
 the reader's JSON fails, never what it holds. An answer that fails a check, or that no kept claim supports, is
@@ -66,6 +70,17 @@ marked unsupported. A kept claim shows the events and facts it rests on.
 `_answer.md` is what every brief shares: what the reader is given and the format the checks read. A new file in
 `loc_arena/reader_briefs/` is a new brief. Read `agents` first: `monitors` uses its reading when the run
 directory has one.
+
+## Accuracy
+
+`tests/integration/test_live_reader_accuracy.py` asks the reader each of the 35 questions in
+`tests/_reader_questions.py` about the stored run, one reading each, and grades each answer against a value
+computed from the run's raw records apart from the reader's facts. The reader's model answers at least 34; a
+reading that fails counts as a wrong answer. It spends model calls, so it runs only live:
+
+```bash
+LOC_ARENA_LIVE=1 uv run pytest -s tests/integration/test_live_reader_accuracy.py
+```
 
 ## How the reader is isolated
 
