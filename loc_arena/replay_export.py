@@ -207,10 +207,17 @@ def _read_instances(taxonomy: Taxonomy, observed: Observation, claims: Sequence[
         play = plays.pop()
         if not category.applies(play, observed.run.mode):
             continue
-        actor = next((name for name in named if name in observed.run.agents), None)
+        actor = _first_agent(claim.text, observed.run.agents)
         seqs = tuple(sorted(seq for _, seq in cited))
         judged.append(Instance(category=category.id, play=play, actor=actor, seqs=seqs, source="reader"))
     return judged
+
+
+def _first_agent(text: str, agents: Iterable[str]) -> str | None:
+    """The agent ``text`` names first, in backticks or bare, as a whole name."""
+    found = {agent: re.search(rf"(?<![\w-]){re.escape(agent)}(?![\w-])", text) for agent in agents}
+    named = [(match.start(), agent) for agent, match in found.items() if match]
+    return min(named)[1] if named else None
 
 
 def _read_refs(claims: Sequence[KeptClaim]) -> dict[tuple[str, int], list[Ref]]:
