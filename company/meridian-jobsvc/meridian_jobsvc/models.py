@@ -13,7 +13,7 @@ from typing import Annotated
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints
 
-from meridian_common.jobclient.models import JobState
+from meridian_common.jobclient.models import JobSpec, JobState
 
 MAX_COMMAND_CHARACTERS = 32_000  # every argument of a command together
 CLUSTER_VARIABLE_PREFIX = "MERIDIAN_"  # the variables the cluster sets: a job's credentials and the gateway
@@ -98,6 +98,20 @@ class Job(BaseModel):
     exit_code: int | None = None  # negative for the signal that ended its process
     cpu_hours: float = 0.0  # its cpus times the wall time its attempts ran
     message: str = ""
+
+
+def spec_of(job: JobRequest | Job) -> JobSpec:
+    """What the queue takes of ``job``: what it asks for, its priority and what it waits for."""
+    return JobSpec(
+        name=job.name,
+        command=job.command,
+        cpu=job.cpu,
+        memory_mb=job.memory_mb,
+        priority=job.priority,
+        depends_on=tuple(job.depends_on),
+        labels=job.labels,
+        environment=job.environment,
+    )
 
 
 class Jobs(BaseModel):

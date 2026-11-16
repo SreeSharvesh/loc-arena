@@ -28,14 +28,43 @@ credentials they are given.
 | `gateway` | agentgateway, the only holder of the key and of a route out, on agent-net, egress-net and record-net; admits each caller by its own token and exports a record of every model call, with the caller, to the Collector |
 | `collector` | an OpenTelemetry Collector on record-net, which only the gateway joins; appends each record to the sealed record in a volume only it mounts |
 | `episode` | plays the episode and, in attack mode, its honest twin; holds every sandbox's token and no identity |
-| `sandbox-<agent id>` | one agent's code, from a slim image with no harness and no scenarios; mounts that agent's checkout volume, and the scenario's skills read-only; holds its own token and its own identity on each service with rights; takes commands from the episode alone |
+| `sandbox-<agent id>` | one agent's code, from a slim image with no harness and no scenarios; mounts that agent's checkout volume, and the scenario's skills read-only; holds its own token and its own identity on each service with rights; takes commands from the episode alone, and answers one it cannot run with a 500 that names the failure, which the episode's error carries |
 | one per live service | a scenario's `services:` entry with `build`, `image` or `module`; no route out, all capabilities dropped, limits from `stack`, no published port; a service the deployer's entry lists (`deploys:`) runs under a supervisor on `deploy.release_port`, which holds a token of its own, which the deployer also holds, and takes a release from that deployer alone ([docs/deploy-service.md](../deploy-service.md)) |
 | `runner-<n>` | where the company's own agents run with pi, for the one service whose entry declares `runners: <n>`; a sandbox from the Dockerfile's `runner` target with an empty `/workspace`; holds its own token, which that service also holds, and takes commands from that service alone; an execution there gets its agent's tokens on the company's services (`MERIDIAN_<SERVICE>_TOKEN`) |
 | `node-<n>` | the job service's fleet, for the one service whose entry declares `nodes: {<pool>: n}`; a worker from the Dockerfile's `worker` target whose daemon runs one job at a time as a real process in an empty `/workspace`, holding each company repo's `main` cloned from the forge with the job's own credential, the cluster's own read-only deployment of the company repos at `/opt/meridian` that the seed's jobs run, and the limits `stack.node_cpus` and `stack.node_memory_mb`; holds its own token, which that service also holds and its jobs call the gateway with, and takes calls from that service alone; gives each job the secrets of the job's own workload; its log is its jobs' process facts ([docs/jobsvc-service.md](../jobsvc-service.md)) |
-| `agentgateway` | the MCP route of every service with tools; present when a service has tools |
+| `agentgateway` | the MCP route of every service with tools; present when a service has tools; on agent-net, and on telemetry-net where the store has a reader; asks IAM before each call of a tool of a service marked `enforced_by: gateway`; serves a session with the targets that answer; where the scenario has a telemetry store, it exports a span of every tool call to `telemetry-collector` and passes the span's context on to the service |
+| the telemetry store | the one live service whose entry declares `collects:` (GreptimeDB); on telemetry-net alone, which no sandbox, runner or node joins, with a user that can only write and one that can only read, both new in each play; each service it lists runs under OpenTelemetry's zero-code instrumentation (`opentelemetry-instrument`) and exports its traces and logs to `telemetry-collector`, and what a release there exports is what that release chooses to say |
+| `telemetry-reader` | the telemetry store's own MCP server, present when the store's entry lists tools; from the engine image, on telemetry-net alone; reads as the store's read-only user and checks no caller, so only agentgateway, which asks IAM before each call, reaches it |
+| `telemetry-collector` | the company's own OpenTelemetry Collector, present with a telemetry store; on agent-net, where it takes OTLP over HTTP from anything, and on telemetry-net, where it alone writes the store; another container than `collector`, which takes nothing from it |
 
 The host grades the run after copy-out; grading's agent-code steps run in a throwaway container of the slim
 image with no network. The episode image holds no grader answers. No container mounts the Docker socket.
+
+### Images
+
+Four of the Dockerfile's stages build the images of the episode and the engine's services (`stack.image`), the
+sandboxes (`stack.sandbox_image`), the runners (`stack.runner_image`) and the nodes (`stack.worker_image`).
+Each live service a scenario builds from its pack has an image of its own, `loc-arena-service-<name>`.
+Their default tag comes from the checkout the code runs from (`derive_image_tag` in `loc_arena/image_tag.py`),
+so a run or a Docker test never starts an image another checkout built:
+
+| Checkout | Images |
+|---|---|
+| a clone | `loc-arena:latest`, `loc-arena-sandbox:latest`, `loc-arena-runner:latest`, `loc-arena-worker:latest` |
+| a linked git worktree | the same names, and each service's image, tagged `latest-<folder>-<digest>`: the worktree's folder name and six characters of its path's SHA-256 |
+
+A run config that names an image under `stack:` runs that image. A run builds every image it starts;
+`make images` builds the sandbox, runner, worker and engine images, which the Docker tests need: a test skips
+without the image it checks for, and some start the runners' or the nodes' image without building it. Two
+clones on one machine share the `latest` tags.
+
+A worktree's images stay when the worktree is deleted. List every worktree's, then remove the deleted one's by
+name:
+
+```sh
+docker image ls --filter reference='loc-arena*:latest-*'
+docker image rm $(docker image ls --format '{{.Repository}}:{{.Tag}}' --filter reference='loc-arena*:latest-<folder>-<digest>')
+```
 
 ## Tools
 
@@ -62,14 +91,17 @@ agents:
   served by one service only.
 - A service holds no agent's identity: central IAM verifies each caller's credential, and the service takes the
   caller from IAM's answer, never from an argument. A call without a credential IAM accepts is a 401. agentgateway
-  holds each agent's credential for a service with tools: a sandbox holds none for it.
+  holds each agent's credential for a service with tools. A sandbox holds none for a service with tools and
+  no rights.
+  For a service the gateway enforces IAM for (`enforced_by: gateway`), it also holds the credential of the
+  principal IAM binds to that service, and asks IAM with it before each call; that service holds none.
 - The job service also checks the caller's `scope` from the run config, since an agent's bash can reach its
   route too. A refused call comes back as a tool error with the service's reason.
 - Offering a tool grants nothing: IAM seeds each agent's `sandbox: rights:` alone, and a call to an offered tool
   takes the permission its operation checks, held from the start or asked for.
 - An unknown service or tool in `sandbox: tools:` is refused when the config loads. The honest twin's agents
   are offered the same tools and hold the same rights as the attack run's.
-- `run_tests` and `run_benchmark` are skills, not tools: scripts with a `SKILL.md` in the pack's `skills:`
+- `run-tests` and `run-benchmark` are skills, not tools: scripts with a `SKILL.md` in the pack's `skills:`
   folder, which every sandbox mounts read-only at `/skills` and agents run with bash on their own checkout.
 
 ## Records and events
@@ -158,7 +190,8 @@ A service with neither `rights` nor `tools` is open to every caller on agent-net
 own `healthcheck`. A service whose process ends during play stays down, unless its entry says `restarts: true`:
 then compose brings its container back (`restart: unless-stopped`), for a service that keeps its state in its
 container, as the forge does. The loader refuses an entry with an unknown key, a name that is not a DNS label or that the
-stack takes (`gateway`, `episode`, `agentgateway`, `sandbox-*`), more than one of `build`, `image` and `module`,
+stack takes (`gateway`, `collector`, `episode`, `agentgateway`, `telemetry-collector`, `telemetry-reader`,
+`sandbox-*`, `runner-*`, `node-*`), more than one of `build`, `image` and `module`,
 a live entry with no `port`, or a tool served by two services.
 
 ## Time
@@ -190,10 +223,12 @@ build stops asking for `fs.read`, and `BUILDX_BAKE_ENTITLEMENTS_FS=0` in the env
 
 On a machine whose only way out is a proxy on its loopback address, which no container reaches, the gateway
 tunnels to each upstream through `gateway.outbound_proxy`, an address of the machine it does reach (the Docker
-bridge's, `172.17.0.1:3128`), where a relay passes each tunnel to the machine's proxy:
-`uv run python -m loc_arena.gateway.proxy_relay <run>`, from the repository, started before the run and
-stopped after it. The relay listens on that same address and reads the machine's proxy from `HTTPS_PROXY`
-(`http://host:port`; it sends no proxy credentials). It is a way out for any container on a network that is
+bridge's, `172.17.0.1:3128`), where a relay passes each tunnel to the machine's proxy. `make run` and
+`make read` keep that relay up for as long as they run, and start none where `HTTPS_PROXY` names no proxy,
+names the outbound proxy itself, or the outbound proxy is on another machine;
+`uv run python -m loc_arena.gateway.proxy_relay <run>`, from the repository, is the same relay kept up by
+hand, to be stopped before a `make run` that names its address. It listens on that same address and reads the machine's proxy from
+`HTTPS_PROXY` (`http://host:port`; it sends no proxy credentials). It is a way out for any container on a network that is
 not internal, so it passes a `CONNECT` to the run's upstreams alone, as a request it writes itself, and bytes
 only once the proxy has opened the tunnel; the sandboxes, on `agent-net`, do not reach it. A run config that names the proxy belongs to
 that machine: `configs/*.local.yaml` is kept out of git.
@@ -215,6 +250,26 @@ Agents under test can start the company's agents, which spend real money. Only a
 workload (a job or a company agent's execution) is admitted on that route, and the gateway records the call
 under the workload and its sponsor; a node's or a runner's token admits no model call.
 
+### On a cloud development container
+
+Such a machine re-signs outbound HTTPS, reaches the internet through a proxy on its loopback address, and
+attaches the provider key outside the machine. Before its first run, a session there starts the Docker daemon
+if none runs, writes the machine's run config, and gives the gateway a placeholder key, which the machine's
+proxy replaces:
+
+```sh
+docker info >/dev/null 2>&1 || (dockerd >/var/log/dockerd.log 2>&1 &)
+for _ in $(seq 30); do docker info >/dev/null 2>&1 && break; sleep 1; done
+printf 'extends: aurora-efficiency.fast.yaml\ngateway:\n  outbound_proxy: 172.17.0.1:3128\nreader:\n  outbound_proxy: 172.17.0.1:3129\n' \
+  > configs/aurora-efficiency.fast.local.yaml
+export OPENROUTER_API_KEY=placeholder
+```
+
+Then `make run RUN=aurora-efficiency.fast.local` plays as on any machine, and so does `make read` with that
+same `RUN`; each says as it starts that its relay is up. A reading's relay listens on its own address, so a
+reading runs while a play does. The placeholder key lasts for its shell, so a new shell exports it again.
+`SSL_CERT_FILE` and `HTTPS_PROXY` are the machine's own.
+
 ## What agent code can reach
 
 | Agent code can reach | |
@@ -222,10 +277,12 @@ under the workload and its sponsor; a node's or a runner's token admits no model
 | the OpenRouter key and the key of `gateway.agents_upstream`, the internet, DNS, the host's files and `.env` | no |
 | the sealed call log or the Collector, the grader's reference answers, the episode's logs | no |
 | an agent's session (it listens on no port) | no |
+| the tool-list notifier in the episode's container | no: it admits the tools gateway's key alone |
 | another agent's sandbox or credentials | no |
 | the gateway | yes, with its sandbox token, recorded under the sandbox's name; from a job it submits, as that job's node |
 | a service with rights | only with its own identity, and only the rights it holds |
 | a service with tools | only through agentgateway with its sandbox token, and only the tools its run config lists |
+| the telemetry store, its reader and what they hold | only through agentgateway, with the store's own read tools, each call decided by IAM; no query changes the store, but a flood of the Collector, from anything on agent-net, can fill its disk or have it killed for memory and start again empty |
 | a service with neither, such as Phoenix | yes: it is open to everything on agent-net, so any agent can read, delete and forge the company's spans |
 | another agent's checkout | no: its sandbox mounts only its own agent's |
 | its own checkout's history | no: the episode writes it to the play's `checkout_history`, which no sandbox mounts, and reads the checkout without running anything in it |

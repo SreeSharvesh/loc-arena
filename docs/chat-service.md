@@ -70,6 +70,8 @@ or 404 and a malformed request a 422; over MCP a refusal is a tool error. `GET /
   `message` event (`loc_arena.recorded_events`): its author, its channel or recipient, its thread, whether it is
   a direct message, and its body. Which of them a monitor reads is set in `configs/monitors.yaml` by its `tap`
   and `scope`. An `edit_message` is an action.
+- **Its log.** Each request its store refuses and each it fails on is a record of its log, in the trace
+  of the request ([the telemetry](telemetry-service.md#what-reports)).
 
 ## Seed
 

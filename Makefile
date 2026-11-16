@@ -11,7 +11,7 @@ BRIEF ?= agents
 LOGS ?= logs
 FILE_SIZE_BASE ?= origin/main
 
-.PHONY: run view explore read watch help gates setup public-repo fixture-run
+.PHONY: run view explore read watch cost help gates images setup public-repo fixture-run
 
 help:
 	@echo "make setup                                # check toolchain, sync deps, validate config"
@@ -20,10 +20,12 @@ help:
 	@echo "make run RUN=aurora-efficiency.fast               # the smoke run: cheapest models, small budgets"
 	@echo "make view RUN=aurora-efficiency                       # open the latest report.html + inspect view"
 	@echo "make explore [LOGS=logs]                  # build the run explorer over every run in LOGS and open it"
-	@echo "make read RUN_DIR=<run directory> [BRIEF=agents|monitors]  # an agent reads one run and reports"
+	@echo "make read RUN_DIR=<run directory> [BRIEF=agents|monitors] [ASK='question']  # an agent reads one run: a checked report, or a cited answer"
 	@echo "make watch [RUN_DIR=<run directory>]      # each agent's steps of the run playing, or of a finished run"
+	@echo "make cost RUN_DIR=<run directory> [OTHER=<run directory>]  # what a run cost, or how a second run's cost differs"
 	@echo "make fixture-run                          # play the smoke run and store it as the tests' run fixture"
-	@echo "make gates                                # ruff + ruff format + ty + pytest"
+	@echo "make gates                                # file size, changelog, ruff + ruff format + ty + pytest"
+	@echo "make images                               # build this checkout's sandbox, runner, worker and engine images, which the Docker tests need"
 	@echo "  (a run needs Docker Engine 28 or later)"
 
 setup:
@@ -42,11 +44,16 @@ view:
 explore:
 	@uv run python -m loc_arena.cli explore $(LOGS)
 
-read:
-	@uv run python -m loc_arena.cli read "$(RUN_DIR)" --brief "$(BRIEF)" --run "$(RUN)"
+unexport ASK  # exporting a command-line variable expands it, and with it any make function a question holds
+read: export READER_QUESTION := $(value ASK)
+read:  # the question reaches the command as written: neither make nor the shell expands it
+	@uv run python -m loc_arena.cli read "$(RUN_DIR)" --brief "$(BRIEF)" --run "$(RUN)" $(if $(strip $(value ASK)),--ask "$$READER_QUESTION")
 
 watch:
 	@uv run python -m loc_arena.cli watch $(RUN_DIR)
+
+cost:
+	@uv run python -m loc_arena.cli cost "$(RUN_DIR)" $(if $(strip $(OTHER)),"$(OTHER)")
 
 fixture-run:
 	@uv run python scripts/record_run_fixture.py
@@ -54,6 +61,16 @@ fixture-run:
 public-repo:
 	@uv run python scripts/make_public.py
 
+# The sandbox, runner, worker and engine images under this checkout's own names (the stack settings' defaults):
+# a Docker test skips without the one it checks for, and some start the runners' or the nodes' without building
+# it. A run builds its own.
+STACK_IMAGES = $(shell uv run python -c "from loc_arena.settings import StackSettings as S; s = S(); print(s.sandbox_image, s.runner_image, s.worker_image, s.image)")
+
+images:
+	@set -- $(STACK_IMAGES); for target in sandbox runner worker engine; do \
+		docker build $${SSL_CERT_FILE:+--secret "id=ca_bundle,src=$$SSL_CERT_FILE"} --target $$target -t $$1 . || exit 1; shift; done
+
 gates:
 	@python3 scripts/check_file_size.py --base "$(FILE_SIZE_BASE)"
+	@python3 scripts/check_changelog.py $(if $(CHANGELOG_PULL_REQUEST),--pull-request $(CHANGELOG_PULL_REQUEST))
 	@uv run ruff check . && uv run ruff format --check . && uv run ty check && uv run pytest -q -n auto --dist loadscope

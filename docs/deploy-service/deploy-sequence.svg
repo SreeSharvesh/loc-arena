@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="864" height="600" viewBox="0 0 864 600" role="img" aria-label="UML sequence diagram of a deployment. An agent calls deploy for the notes service. The deploy service has IAM issue the deployment a workload that may read the forge, fetches each repo's main from the forge as that workload, and hands the release to the supervisor in the service's container. The supervisor starts the service's process again on the release, and once it answers on its port tells the deploy service it serves, which returns the deployment to the agent.">
+<svg xmlns="http://www.w3.org/2000/svg" width="864" height="696" viewBox="0 0 864 696" role="img" aria-label="UML sequence diagram of a deployment. An agent calls deploy for the notes service. The deploy service has IAM issue the deployment a workload that may read the forge, and answers the agent at once that the deployment started. It then fetches each repo's main from the forge as that workload and hands the release to the service's supervisor, which starts the service's process on it; the service answers on its port and the supervisor says it serves. The agent asks list_deployments and reads that the deployment ended serving.">
 <style>
   svg { --ink:#1f2328; --muted:#59636e; --rule:#8c959f; --panel:#f6f8fa;
         --accent:#2f4bd6; --accent-bg:#e9edfd;
@@ -35,31 +35,35 @@
 <g class="node"><rect class="box" x="456" y="24" width="112" height="48" rx="6"/><text class="t" x="512" y="40" text-anchor="middle" dominant-baseline="central">Forge</text><text class="m" x="512" y="57" text-anchor="middle" dominant-baseline="central">main</text></g>
 <g class="node"><rect class="box" x="592" y="24" width="128" height="48" rx="6"/><text class="t" x="656" y="40" text-anchor="middle" dominant-baseline="central">Supervisor</text><text class="s" x="656" y="57" text-anchor="middle" dominant-baseline="central">service's container</text></g>
 <g class="node"><rect class="box" x="744" y="24" width="96" height="48" rx="6"/><text class="t" x="792" y="40" text-anchor="middle" dominant-baseline="central">Service</text><text class="s" x="792" y="57" text-anchor="middle" dominant-baseline="central">its process</text></g>
-<path class="life" d="M72 72 V576"/>
-<path class="life" d="M224 72 V576"/>
-<path class="life" d="M376 72 V576"/>
-<path class="life" d="M512 72 V576"/>
-<path class="life" d="M656 72 V576"/>
-<path class="life" d="M792 72 V576"/>
+<path class="life" d="M72 72 V672"/>
+<path class="life" d="M224 72 V672"/>
+<path class="life" d="M376 72 V672"/>
+<path class="life" d="M512 72 V672"/>
+<path class="life" d="M656 72 V672"/>
+<path class="life" d="M792 72 V672"/>
 <path class="thin" d="M72 120 H223" marker-end="url(#ds-hr)"/>
 <text class="m" x="148" y="105" text-anchor="middle" dominant-baseline="central">1 deploy(notes)</text>
 <path class="thin" d="M224 168 H375" marker-end="url(#ds-hr)"/>
 <text class="s" x="300" y="153" text-anchor="middle" dominant-baseline="central">2 issue a workload</text>
 <path class="dash" d="M376 216 H225" marker-end="url(#ds-hr)"/>
 <text class="m" x="300" y="201" text-anchor="middle" dominant-baseline="central">forge: read</text>
-<path class="thin" d="M224 264 H511" marker-end="url(#ds-hr)"/>
-<text class="s" x="300" y="234" text-anchor="middle" dominant-baseline="central">3 fetch main</text>
-<text class="s" x="300" y="249" text-anchor="middle" dominant-baseline="central">as the workload</text>
-<path class="dash" d="M512 312 H225" marker-end="url(#ds-hr)"/>
-<text class="s" x="300" y="297" text-anchor="middle" dominant-baseline="central">each repo's tree</text>
-<path class="bold" d="M224 360 H655" marker-end="url(#ds-hi)"/>
-<text class="s" x="300" y="345" text-anchor="middle" dominant-baseline="central">4 the release</text>
-<path class="bold" d="M656 408 H791" marker-end="url(#ds-hi)"/>
-<text class="s" x="724" y="393" text-anchor="middle" dominant-baseline="central">5 start on it</text>
-<path class="dash" d="M792 456 H657" marker-end="url(#ds-hr)"/>
-<text class="s" x="724" y="441" text-anchor="middle" dominant-baseline="central">answers on its port</text>
-<path class="dash" d="M656 504 H225" marker-end="url(#ds-hr)"/>
-<text class="s" x="300" y="489" text-anchor="middle" dominant-baseline="central">6 serving</text>
-<path class="dash" d="M224 552 H73" marker-end="url(#ds-hr)"/>
-<text class="s" x="148" y="537" text-anchor="middle" dominant-baseline="central">the deployment</text>
+<path class="dash" d="M224 264 H73" marker-end="url(#ds-hr)"/>
+<text class="s" x="148" y="249" text-anchor="middle" dominant-baseline="central">3 started</text>
+<path class="thin" d="M224 312 H511" marker-end="url(#ds-hr)"/>
+<text class="s" x="300" y="282" text-anchor="middle" dominant-baseline="central">4 fetch main</text>
+<text class="s" x="300" y="297" text-anchor="middle" dominant-baseline="central">as the workload</text>
+<path class="dash" d="M512 360 H225" marker-end="url(#ds-hr)"/>
+<text class="s" x="300" y="345" text-anchor="middle" dominant-baseline="central">each repo's tree</text>
+<path class="bold" d="M224 408 H655" marker-end="url(#ds-hi)"/>
+<text class="s" x="300" y="393" text-anchor="middle" dominant-baseline="central">5 the release</text>
+<path class="bold" d="M656 456 H791" marker-end="url(#ds-hi)"/>
+<text class="s" x="724" y="441" text-anchor="middle" dominant-baseline="central">6 start on it</text>
+<path class="dash" d="M792 504 H657" marker-end="url(#ds-hr)"/>
+<text class="s" x="724" y="489" text-anchor="middle" dominant-baseline="central">answers on its port</text>
+<path class="dash" d="M656 552 H225" marker-end="url(#ds-hr)"/>
+<text class="s" x="300" y="537" text-anchor="middle" dominant-baseline="central">7 serving</text>
+<path class="thin" d="M72 600 H223" marker-end="url(#ds-hr)"/>
+<text class="m" x="148" y="585" text-anchor="middle" dominant-baseline="central">8 list_deployments</text>
+<path class="dash" d="M224 648 H73" marker-end="url(#ds-hr)"/>
+<text class="s" x="148" y="633" text-anchor="middle" dominant-baseline="central">serving</text>
 </svg>

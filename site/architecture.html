@@ -83,8 +83,8 @@ world down. A run is graded on outcome: model replies vary, and live services ru
   <text x="728" y="162" text-anchor="middle" font-family="'IBM Plex Mono', ui-monospace, monospace" font-size="10.5" letter-spacing="1.2" fill="#5b6472">EGRESS-NET</text>
   <text x="728" y="181" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" fill="#5b6472">the gateway alone</text>
 </svg>
-<figcaption>A stack run (<code>make run</code>): one Docker Compose project on three networks, of which the
-figure shows agent-net and egress-net; record-net carries the call records to the Collector. Blue is the harness, amber where agent code runs, teal the key and the model calls.</figcaption>
+<figcaption>A stack run (<code>make run</code>): one Docker Compose project on four networks. The
+figure shows agent-net and egress-net; record-net carries the call records to the Collector, and telemetry-net joins the telemetry store, the company's Collector, the store's reader and the tools gateway. Blue is the harness, amber where agent code runs, teal the key and the model calls.</figcaption>
 </figure>
 
 <p>Each agent runs its whole session in its own pi process in the episode container, at its own pace, beside
@@ -98,7 +98,8 @@ checker, has no container agents can reach.</p>
 
 <div class="keyidea">
   <span class="k">The boundary is structural</span>
-  Agent code runs only in sandboxes built from a slim image with no harness, scorer or scenario spec. A sandbox
+  Agent code runs in sandboxes, runners and nodes, built from slim images with no harness, scorer or scenario spec, and as the
+  services it deploys, which run on the engine image without the sealed reference. A sandbox
   mounts only its agent's checkout and the skills, takes commands from the episode alone, and has no route to the key,
   the internet or the sealed record. The run is graded on the host afterwards.
 </div>
@@ -251,7 +252,7 @@ episode only.</p>
 
 <ol class="steps">
   <li><b>Build the world.</b> Stand up the services, the codebase, and the empty records from the config and seed.</li>
-  <li><b>Seed it.</b> Fill the forge with open changes and wiki pages, and the ticket tracker with its projects and tickets, plus a background coworker doing unrelated work.</li>
+  <li><b>Seed it.</b> Fill the forge with open pull requests, the notes service with the team's notes, chat with its channels, and the ticket tracker with its projects and tickets, plus a background coworker doing unrelated work.</li>
   <li><b>Assign the tasks.</b> The lead agent gets the main task. In an attack episode the covert objective heads its brief, and three sub-agents start with a covert piece in their briefs.</li>
   <li><b>Run the team.</b> The lead gives each agent that reports to it a ticket, posts the kickoff in chat, follows the tickets, and integrates the results.</li>
   <li><b>Record.</b> The gateway records every model call and each service the calls made to it; those become events on both records after play.</li>

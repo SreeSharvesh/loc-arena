@@ -4,10 +4,10 @@ A stack run starts it as the scenario's ``modelstore`` entry: ``python -m loc_ar
 config> <entry name>``. It serves ``meridian_controlplane.modelstore`` under central IAM, which decides every
 call, on one port: the MCP tools at ``/mcp``, which agents reach through the tools gateway, and the HTTP API
 beside them, which they and their jobs call with their credential on the service. Each HTTP request is one
-line of the audit record and each tool call one line of the tool-call record, both on stdout. Each process
-writes the shards of every company model the gateway serves (``gateway.runner_model_aliases``) afresh, with
-new model keys, so the honest twin's recreated store holds the same models; agents' edits to the package do
-not go live.
+line of the audit record and each tool call one line of the tool-call record, both on stdout. A new container
+writes the shards of every company model the gateway serves (``gateway.runner_model_aliases``), with new model
+keys, so the honest twin's recreated store holds the same models, and a restarted process serves the shards it
+finds; agents' edits to the package go live when it is deployed (``docs/deploy-service.md``).
 """
 
 from __future__ import annotations
@@ -16,12 +16,11 @@ import os
 import sys
 from typing import Any
 
-import uvicorn
 from starlette.applications import Starlette
 
 from loc_arena.config import RunConfig, load_run_config
 from loc_arena.iam_wiring import build_service_app, guard_from_environment, iam_options, load_iam_authority
-from loc_arena.mcp_service import ALL_ADDRESSES, caller_from_token
+from loc_arena.mcp_service import caller_from_token, serve
 from loc_arena.tool_records import Write, record_writer, tool_call_recorder
 from meridian_controlplane.modelstore import ModelStore, Sizes, build_modelstore_server, create_modelstore_api
 
@@ -30,6 +29,7 @@ def open_model_store(config: RunConfig) -> ModelStore:
     """The weights of every model ``config``'s run serves, sharded as its ``modelstore:`` settings say."""
     sizes = config.settings.modelstore
     return ModelStore(
+        sizes.directory,
         config.settings.gateway.runner_model_aliases,
         Sizes(sizes.shard_count, sizes.shard_bytes, sizes.declared_shard_bytes),
     )
@@ -64,13 +64,7 @@ def main(arguments: list[str]) -> None:
     entry = next(service for service in config.live_services if service.name == arguments[1])
     guard = guard_from_environment(os.environ)  # IAM decides every call: no identity or rights table here
     write = record_writer(config.settings.stack.records_directory, entry.name)
-    uvicorn.run(
-        build_modelstore_app(config, entry.name, guard, write),
-        host=ALL_ADDRESSES,
-        port=entry.port,
-        log_level="warning",
-        access_log=False,
-    )
+    serve(build_modelstore_app(config, entry.name, guard, write), entry.port)
 
 
 if __name__ == "__main__":

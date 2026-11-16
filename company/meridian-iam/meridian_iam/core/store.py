@@ -55,7 +55,17 @@ CREATE TABLE workloads (
   operation TEXT NOT NULL, reference TEXT NOT NULL, purpose TEXT NOT NULL, issued_at INTEGER NOT NULL,
   expires_at INTEGER NOT NULL, grant_horizon INTEGER NOT NULL);
 """
-_MIGRATIONS = (_V1, _V2)
+# Version 3: who may stage a release's contract for which resource (the deployer), and each contract staged.
+_V3 = """
+CREATE TABLE stagers (
+  principal TEXT NOT NULL REFERENCES principals(id), resource TEXT NOT NULL REFERENCES resources(id),
+  PRIMARY KEY (principal, resource));
+CREATE TABLE contracts (
+  resource TEXT NOT NULL REFERENCES resources(id), deployment TEXT NOT NULL, operations TEXT NOT NULL,
+  state TEXT NOT NULL, staged_by TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (resource, deployment));
+INSERT INTO contracts SELECT id, 'image', operations, 'base', 'bootstrap', 0 FROM resources;
+"""
+_MIGRATIONS = (_V1, _V2, _V3)
 SCHEMA_VERSION = len(_MIGRATIONS)
 
 

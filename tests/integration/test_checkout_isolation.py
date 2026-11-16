@@ -35,7 +35,7 @@ from loc_arena.episode_stack import (
 from loc_arena.gateway.core import API_KEY_VARIABLE
 from loc_arena.sandbox import IDENTITY_PREFIX
 
-from tests.integration._docker_support import image_exists
+from tests.integration._docker_support import needs_stack, read_logs
 
 RUN = "aurora-efficiency.stack-test"
 CONFIG = load_run_config(REPOSITORY / "configs" / f"{RUN}.yaml")
@@ -59,10 +59,7 @@ STACK_CONFIG = dataclasses.replace(
     ),
 )
 
-pytestmark = pytest.mark.skipif(
-    not image_exists(CONFIG.settings.stack.image),
-    reason="needs a reachable Docker daemon and the stack image",
-)
+pytestmark = needs_stack(CONFIG.settings.stack.image)
 
 # Run in a sandbox or as a job: every file of the filesystem holding the marker its two halves make, and which
 # of the paths after them are files. What its user cannot read is out of its reach too.
@@ -126,9 +123,14 @@ halves = [marker[: len(marker) // 2], marker[len(marker) // 2 :]]
 def run(agent, tool, **args):
     return services.run(tool, {**args, "actor_uid": agent})
 
+def bash(agent, command):
+    reply = run(agent, "bash", command=command)
+    if reply.get("returncode") != 0:  # the whole reply, then its agent
+        raise RuntimeError(f"bash failed: {json.dumps(reply)} (agent {agent})")
+    return reply
+
 def look(agent):
-    command = shlex.join(["python", "-c", given["look"], *halves])
-    return json.loads(run(agent, "bash", command=command)["stdout"])
+    return json.loads(bash(agent, shlex.join(["python", "-c", given["look"], *halves]))["stdout"])
 
 def search(agent):
     return sorted({match["file"] for match in run(agent, "search_code", pattern=marker)["matches"]})
@@ -138,11 +140,11 @@ def read(agent, path):
     return found["content"] if "content" in found else found["error"].rsplit(": ", 1)[0]
 
 run(editor, "write_file", path=written, content=f"NOTE = {marker!r}\n")
-run(editor, "bash", command=f"echo '# {marker}' >> {edited}")
+bash(editor, f"echo '# {marker}' >> {edited}")
 editors_file = checkouts[editor].directory / written
 job = json.dumps(["python", "-c", given["look"], *halves, f"meridian/{edited}"])
 submit = shlex.join(["python", "-c", given["submit"], given["jobsvc"], given["identity"], job])
-submitted = run(given["submitter"], "bash", command=submit)
+submitted = bash(given["submitter"], submit)
 
 def paths_to_editors_file(agent):
     return [written, str(editors_file), os.path.relpath(editors_file, checkouts[agent].directory)]
@@ -192,7 +194,7 @@ def looked(tmp_path_factory: pytest.TempPathFactory) -> Looked:
             text=True,
             check=False,
         )
-        assert done.returncode == 0, f"{' '.join(arguments[:4])}: {done.stderr[-4000:]}"
+        assert done.returncode == 0, f"{' '.join(arguments[:4])}: {done.stderr}"
         return done.stdout
 
     sandboxes = [sandbox_service(agent.id) for agent in CONFIG.agents]
@@ -216,6 +218,9 @@ def looked(tmp_path_factory: pytest.TempPathFactory) -> Looked:
             *("run", "--no-deps", "--rm", "--use-aliases", "-T", EPISODE_SERVICE, "python", "-c", IN_EPISODE),
             standard_input=json.dumps(given),
         )
+    except Exception as error:
+        error.add_note(read_logs(compose[1:], environment, sandboxes))  # the sandbox that answered among them
+        raise
     finally:
         down = [*compose, "down", "--volumes", "--remove-orphans"]
         subprocess.run(down, env=environment, capture_output=True, check=False)

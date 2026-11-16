@@ -148,6 +148,8 @@ def _seed(  # noqa: C901 - predates the complexity gate
         iam.add_baseline_grant(holder, name, permissions)
     for operator in document.get("operators", []):
         iam.add_member(operator, OPERATOR_TEAM, OPERATOR_ROLE)
+    for stager, staged in document.get("stagers", {}).items():
+        iam.allow_staging(stager, staged)
     managed = set(document["resources"])
     for (service, agent), token in identities.items():
         if agent in agents and (service == iam_name or service in managed):

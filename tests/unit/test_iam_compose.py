@@ -66,7 +66,8 @@ def test_a_managed_service_holds_no_agent_identity_only_its_iam_credential_and_i
         "agents": ["runner-1", "runner-2", "runner-3"],
         "jobsvc": ["node-1", "node-2", "node-3", "node-4"],
     }
-    deployed = ("notes", "chat", "tickets")  # each also holds the token of the supervisor it runs under
+    # Each also holds the token of the supervisor it runs under.
+    deployed = ("notes", "chat", "tickets", "modelstore", "evalkit", "agents", "jobsvc")
     for name in MANAGED:
         service = services[name]
         held = workers.get(name, [])
@@ -78,6 +79,8 @@ def test_a_managed_service_holds_no_agent_identity_only_its_iam_credential_and_i
         assert service["depends_on"] == {
             "iam": {"condition": "service_healthy"},
             **{worker: {"condition": "service_healthy"} for worker in held},
+            # A deployed service is collected: it starts once the company's Collector has.
+            **({"telemetry-collector": {"condition": "service_started"}} if name in deployed else {}),
         }
         environment = service["environment"]
         assert environment["LOC_ARENA_IAM_URL"] == "http://iam:8000"

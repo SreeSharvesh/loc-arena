@@ -16,10 +16,18 @@ one JSON line of the service's record, holding the job as it is then.
 Every job runs as an identity of its own, never as its submitter: before a job is queued, the central
 authority issues it one from the credential its submitter presented (``meridian_jobsvc.authority``), and a
 schedule's runs share the one it was issued when it was created. A job's process gets each of its secrets in
-an environment variable (``credential_variable``). The service keeps them until the job ends, so a drained
-job's next attempt runs as the same identity; no record or answer holds one. The cluster's seed
-(``meridian_jobsvc.seed``), other teams' jobs and schedules, is the service's before any call: each its
-owner's, holding no identity, since no owner of it presented a credential, and so marked seed.
+an environment variable (``authority.credential_variable``). The service keeps them in its database until the
+job ends, so a drained job's next attempt runs as the same identity; no record or answer holds one. The
+cluster's seed (``meridian_jobsvc.seed``), other teams' jobs and schedules, is the service's before any call:
+each its owner's, holding no identity, since no owner of it presented a credential, and so marked seed.
+
+The service keeps what it holds in one database (``meridian_jobsvc.state``), and each change it makes under
+its lock is one transaction of it: kept whole, and then on the record, or not at all. A service whose process
+starts again on the same database holds every job, schedule, identity, drain and output the last one held,
+gives out no id again, and follows each running job on its node as before, since a job's process is its
+node's daemon's. How a process exited is kept before its node is reset, and that a drain stops a job before
+its process is stopped, so a service that ends in between loses neither. A job recorded as placed whose node
+holds no such job, with no exit kept of it, has failed: the service ended before it reached the node.
 
 Each attempt's CPU-hours, its cpus times its wall time from its start to the pass that saw it end, are charged
 to the job's team in the ledger (``meridian_jobsvc.accountant``). A job's team is its submitter's in the
@@ -30,7 +38,6 @@ turn.
 from __future__ import annotations
 
 import contextlib
-import itertools
 import json
 import logging
 import threading
@@ -41,7 +48,7 @@ from datetime import UTC, datetime, timedelta
 from pydantic import BaseModel, ConfigDict, NonNegativeFloat, PositiveFloat, PositiveInt, SecretStr
 
 from meridian_common.jobclient.models import JobSpec, JobState
-from meridian_jobsvc.accountant.ledger import Ledger
+from meridian_common.records import Database
 from meridian_jobsvc.authority import JobIdentity, WorkloadIssuer
 from meridian_jobsvc.errors import (
     DependencyError,
@@ -55,9 +62,9 @@ from meridian_jobsvc.errors import (
 )
 from meridian_jobsvc.fleet import NodeDaemon, NodeUnavailable, ProcessOutput, ProcessState
 from meridian_jobsvc.models import ClusterNode, Job, JobLogs, JobRequest, NodeState, Usage
-from meridian_jobsvc.queue.jobqueue import JobQueue
 from meridian_jobsvc.schedules import Schedule, ScheduleRequest
 from meridian_jobsvc.seed import ClusterSeed
+from meridian_jobsvc.state import ClusterState, KeptExit
 from meridian_jobsvc.types import Node
 
 LAUNCH_JOB = "submit_job"  # the operations the authority issues identities through: a job's,
@@ -100,6 +107,7 @@ class JobService:
         *,
         admit_submitter: Callable[[str], None] | None = None,
         clock: Callable[[], datetime] | None = None,
+        database: Database | None = None,
     ) -> None:
         """Run jobs on the nodes of ``daemons``, first free one first, each as an identity from ``issuer``.
 
@@ -107,29 +115,24 @@ class JobService:
         a team of its own. ``admit_submitter`` is the deployment's own say on who submits, beside the
         authority's: it raises ``SubmissionRefused`` for one it refuses, and is asked of the principal a job
         works for, never of a job. Each change of a job's state is written with ``write_record``, at
-        ``clock``'s time.
+        ``clock``'s time. The service holds what ``database`` holds, and keeps what it holds there; without
+        one it keeps it in memory.
         """
         self._daemons = {daemon.node.node_id: daemon for daemon in daemons}
-        self._write_record = write_record
         self._issuer = issuer
         self._policy = policy or ClusterPolicy()
         self._teams = dict(teams or {})
         self._admit_submitter = admit_submitter or _admit_anyone
         self._clock = clock or _utc_now
-        self._queue = JobQueue()
-        self._ledger = Ledger()  # each team's CPU-hours, of its jobs' ended attempts
-        self._jobs: dict[str, Job] = {}
-        self._identities: dict[str, JobIdentity] = {}  # each job's, until it ends
-        self._sponsors: dict[str, str] = {}  # each job's and schedule's own identity, and who launched it
-        self._schedules: dict[str, Schedule] = {}
-        self._schedule_numbers = itertools.count(1)  # never repeats an id, as the authority keys on it
-        self._schedule_identities: dict[str, JobIdentity] = {}  # each schedule's, until it is deleted
-        self._placed: dict[str, str] = {}  # the id of the job on each node that holds one
-        self._drains: dict[str, datetime] = {}  # each drained node, and when its job's grace is over
-        self._evicted: set[str] = set()  # the jobs whose process the service stopped for a drain
-        self._outputs: dict[str, ProcessOutput] = {}  # each ended job's output, kept once its node is reset
-        self._lock = threading.Lock()  # never held while a node's daemon or the authority is called
+        # What a restart keeps, with its queue, its ledger and its lock, which is never held while a node's
+        # daemon or the authority is called.
+        self._state = state = ClusterState(database, write_record)
+        self._jobs, self._schedules, self._sponsors = state.jobs, state.schedules, state.sponsors
+        self._identities, self._schedule_identities = state.identities, state.schedule_identities
+        self._placed, self._drains, self._evicted = state.placed, state.drains, state.evicted
+        self._exits, self._outputs = state.exits, state.outputs
         self._changed = threading.Event()  # a job was submitted, released or cancelled: a pass comes at once
+        self._stopped = threading.Event()  # ``stop`` was called: ``run`` ends after the pass under way
 
     def submit(self, request: JobRequest, owner: str, credential: str | None) -> Job:
         """Queue ``request`` as ``owner``'s job: it starts once its dependencies succeed and a node is free.
@@ -141,16 +144,16 @@ class JobService:
         ``CredentialRefused`` or ``CredentialUnavailable`` when it could not be issued its identity; a refused
         job is not queued.
         """
-        with self._lock:
-            job_id = self._queue.submit(self._admit(request, owner))  # no pass places it until it is issued
+        with self._state.locked():
+            self._admit(request, owner)
+            job_id = self._state.reserve()  # no job yet: no pass places it until it is issued
         try:
             identity = self._issuer.issue(credential, LAUNCH_JOB, job_id, request.name)
         except Exception:
-            with self._lock:
-                self._queue.dispatch(job_id)
-                self._queue.notify_failed(job_id)
+            with self._state.locked():
+                self._state.refuse(job_id)
             raise
-        with self._lock:
+        with self._state.locked():
             job = self._add(job_id, request, owner, identity)
         self._changed.set()
         return job
@@ -159,27 +162,30 @@ class JobService:
         """Queue ``seed``'s jobs, held where it says, and keep its schedules: each its owner's, no identity.
 
         Call it before the service takes a call, so the seeded jobs are ``job-1`` onwards in the seed's order.
+        A service that holds a job or a schedule keeps what it holds: it started again on its database.
         """
-        with self._lock:
+        with self._state.locked():
+            if self._jobs or self._schedules:
+                return
             for seeded in seed.jobs:
-                job = self._add(self._queue.submit(_spec(seeded.job)), seeded.job, seeded.owner, None)
+                self._require_dependencies(seeded.job)
+                job = self._add(self._state.reserve(), seeded.job, seeded.owner, None)
                 if seeded.held:
-                    self._queue.dispatch(job.id)
+                    self._state.queue.dispatch(job.id)
                     self._record(job, state=JobState.HELD)
             for seeded in seed.schedules:
-                schedule_id = f"schedule-{next(self._schedule_numbers)}"
-                self._keep_schedule(schedule_id, seeded.schedule, seeded.owner, None)
+                self._keep_schedule(self._state.reserve_schedule(), seeded.schedule, seeded.owner, None)
         self._changed.set()
 
     def list_jobs(self) -> list[Job]:
         """Every job, oldest first."""
-        with self._lock:
+        with self._state.locked():
             now = self._clock()
             return [_reported(job, now) for job in self._jobs.values()]
 
     def get_job(self, job_id: str) -> Job:
         """The job ``job_id``; raises ``JobNotFound`` if there is none."""
-        with self._lock:
+        with self._state.locked():
             return _reported(self._find(job_id), self._clock())
 
     def logs(self, job_id: str) -> JobLogs:
@@ -187,12 +193,12 @@ class JobService:
 
         Raises ``NodeUnavailable`` when the node of a running job does not answer.
         """
-        with self._lock:
+        with self._state.locked():
             job = self._find(job_id)
             output = self._outputs.get(job_id)
         if output is None and job.node is not None and job.state in _PLACED:
             live = self._daemons[job.node].output()
-            with self._lock:  # the job may have ended meanwhile, and its node taken the next one
+            with self._state.locked():  # the job may have ended meanwhile, and its node taken the next one
                 output = self._outputs.get(job_id, live if live.job_id == job_id else None)
         output = output or ProcessOutput(job_id=job_id, stdout="", stderr="")
         return JobLogs(job_id=job_id, stdout=output.stdout, stderr=output.stderr)
@@ -204,12 +210,12 @@ class JobService:
         checked. Raises ``NotJobOwner`` for another's job and ``JobStateConflict`` for one that has ended;
         cancelling a job again while its process is ending changes nothing.
         """
-        with self._lock:
+        with self._state.locked():
             job = self._owned(job_id, owned_by)
             if job.state in (JobState.PENDING, JobState.HELD):
                 if job.state is JobState.PENDING:
-                    self._queue.dispatch(job_id)
-                self._queue.notify_failed(job_id)
+                    self._state.queue.dispatch(job_id)
+                self._state.queue.notify_failed(job_id)
                 self._identities.pop(job_id, None)
                 job = self._record(job, state=JobState.CANCELLED, ended_at=self._clock())
             elif job.state is JobState.RUNNING:
@@ -225,10 +231,10 @@ class JobService:
 
         ``owned_by`` as for ``cancel``. Raises ``JobStateConflict`` for a job that has started or ended.
         """
-        with self._lock:
+        with self._state.locked():
             job = self._owned(job_id, owned_by)
             if job.state is JobState.PENDING:
-                self._queue.dispatch(job_id)
+                self._state.queue.dispatch(job_id)
                 job = self._record(job, state=JobState.HELD)
             elif job.state is not JobState.HELD:
                 raise JobStateConflict(
@@ -242,10 +248,10 @@ class JobService:
 
         ``owned_by`` as for ``cancel``. Raises ``JobStateConflict`` for a job that has started or ended.
         """
-        with self._lock:
+        with self._state.locked():
             job = self._owned(job_id, owned_by)
             if job.state is JobState.HELD:
-                self._queue.requeue(job_id)
+                self._state.queue.requeue(job_id)
                 job = self._record(job, state=JobState.PENDING)
             elif job.state is not JobState.PENDING:
                 raise JobStateConflict(
@@ -261,27 +267,21 @@ class JobService:
         The authority issues the schedule its identity now, from ``credential``, with the schedule's id as
         reference. Raises what ``submit`` raises for the job; a refused schedule is not kept.
         """
-        with self._lock:
+        with self._state.locked():
             self._admit(request.job, owner)
-            for dependency in request.job.depends_on:
-                if dependency not in self._queue:
-                    raise DependencyError(
-                        f"unknown dependency {dependency!r} for job {request.job.name!r}",
-                        path=dependency,
-                    )
-            schedule_id = f"schedule-{next(self._schedule_numbers)}"
+            schedule_id = self._state.reserve_schedule()  # never given again, as the authority keys on it
         identity = self._issuer.issue(credential, LAUNCH_SCHEDULE, schedule_id, request.job.name)
-        with self._lock:
+        with self._state.locked():
             return self._keep_schedule(schedule_id, request, owner, identity)
 
     def list_schedules(self) -> list[Schedule]:
         """Every schedule, oldest first, deleted ones included."""
-        with self._lock:
+        with self._state.locked():
             return list(self._schedules.values())
 
     def get_schedule(self, schedule_id: str) -> Schedule:
         """The schedule ``schedule_id``, with its runs; raises ``ScheduleNotFound`` if there is none."""
-        with self._lock:
+        with self._state.locked():
             return self._find_schedule(schedule_id)
 
     def delete_schedule(self, schedule_id: str, owned_by: str | None) -> Schedule:
@@ -289,7 +289,7 @@ class JobService:
 
         ``owned_by`` as for ``cancel``: raises ``NotJobOwner`` for another's schedule.
         """
-        with self._lock:
+        with self._state.locked():
             schedule = self._find_schedule(schedule_id)
             if owned_by is not None and schedule.owner != owned_by:
                 raise NotJobOwner(
@@ -304,7 +304,7 @@ class JobService:
 
     def list_nodes(self) -> list[ClusterNode]:
         """Every node of the fleet: what a job on it gets, whether it takes one, and its job."""
-        with self._lock:
+        with self._state.locked():
             return [self._describe(node_id) for node_id in self._daemons]
 
     def drain(self, node_id: str) -> ClusterNode:
@@ -314,7 +314,7 @@ class JobService:
         process ends within the grace ends as it would have. Draining a drained node changes nothing. Raises
         ``NodeNotFound`` for a node the cluster does not have.
         """
-        with self._lock:
+        with self._state.locked():
             if node_id not in self._daemons:
                 raise NodeNotFound(f"no node {node_id!r}", path=node_id)
             grace = timedelta(seconds=self._policy.drain_grace_seconds)
@@ -325,7 +325,7 @@ class JobService:
 
     def usage(self) -> Usage:
         """The CPU-hours each team's jobs and each job have used, a running job's to now."""
-        with self._lock:
+        with self._state.locked():
             now = self._clock()
             jobs = {job.id: _reported(job, now).cpu_hours for job in self._jobs.values()}
             return Usage(teams=self._team_usage(now), jobs=jobs)
@@ -338,12 +338,12 @@ class JobService:
         until the next pass.
         """
         for node_id, daemon in self._daemons.items():
-            with self._lock:
+            with self._state.locked():
                 job = self._jobs.get(self._placed.get(node_id, ""))
             if job is not None:
                 with contextlib.suppress(NodeUnavailable):
                     self._follow(daemon, job)
-        with self._lock:
+        with self._state.locked():
             self._submit_due_runs(self._clock())
         for daemon, job, environment in self._place_ready_jobs():
             try:
@@ -351,52 +351,72 @@ class JobService:
             except NodeUnavailable as error:
                 with contextlib.suppress(NodeUnavailable):
                     daemon.reset()  # in case it started the job but the answer was lost
-                with self._lock:
-                    self._end(job.id, JobState.FAILED, None, f"its node did not start it: {error}")
+                with self._state.locked():
+                    self._end(job.id, None, f"its node did not start it: {error}", self._clock())
 
     def run(self, poll_seconds: float) -> None:
-        """Reconcile forever: every ``poll_seconds``, and at once after a job is submitted or cancelled."""
+        """Reconcile until ``stop``: every ``poll_seconds``, and at once after a submit, release or cancel."""
         while True:
             self._changed.clear()
+            if self._stopped.is_set():  # looked at once the event is clear, so no ``stop`` goes unseen
+                return
             try:
                 self.reconcile()
             except Exception:  # one pass that fails must not stop the cluster: the next one tries again
                 logging.getLogger(__name__).exception("a pass over the fleet failed")
             self._changed.wait(poll_seconds)
 
+    def stop(self) -> None:
+        """End ``run`` once the pass under way is over, so no job is left half placed."""
+        self._stopped.set()
+        self._changed.set()
+
     def _follow(self, daemon: NodeDaemon, job: Job) -> None:
         """Stop a cancelled job's process, or a drained node's job's once its grace is over.
 
-        Once the process is gone, requeue the job the drain stopped, or keep its output and end it.
+        Once the process has ended, keep how it exited and what it wrote, then reset its node, then requeue
+        the job the drain stopped or end it as its process ended. A job whose node holds no such job ends
+        as the exit kept of it says, and has failed when none was: its process is gone, and nobody saw how.
         """
         status = daemon.status()
         if status.job_id == job.id and status.state is ProcessState.RUNNING:
-            if job.state is JobState.CANCELLING:
+            if job.state is JobState.CANCELLING or self._evicts(job):
                 daemon.stop()
-            elif self._grace_is_over(job):
-                daemon.stop()
-                with self._lock:
-                    self._evicted.add(job.id)
             return
-        lost = status.job_id != job.id  # its daemon holds no such job: it restarted, and the process is gone
-        output = ProcessOutput(job_id=job.id, stdout="", stderr="") if lost else daemon.output()
+        if status.job_id == job.id:
+            output = daemon.output()
+            with (
+                self._state.locked()
+            ):  # before the node forgets it, so no restart loses how and when it ended
+                self._exits.setdefault(job.id, KeptExit(exit_code=status.exit_code, seen_at=self._clock()))
+                self._outputs[job.id] = output
         daemon.reset()
-        with self._lock:
+        with self._state.locked():
             job = self._jobs[job.id]  # as it is now: it may have been cancelled meanwhile
-            if job.id in self._evicted and job.state is JobState.RUNNING:
-                self._requeue(job)
-                return
-            self._outputs[job.id] = output
-            if lost:
-                self._end(job.id, JobState.FAILED, None, "its node lost it")
+            kept = self._exits.pop(job.id, None)
+            now = self._clock() if kept is None else kept.seen_at
+            stopped = job.id in self._evicted and job.state is JobState.RUNNING
+            if stopped and (kept is None or kept.exit_code != 0):  # one that exited 0 by itself has succeeded
+                self._outputs.pop(job.id, None)
+                self._requeue(job, now)
+            elif kept is None:
+                self._outputs[job.id] = ProcessOutput(job_id=job.id, stdout="", stderr="")
+                self._end(job.id, None, "its node lost it", now)
             else:
-                state = JobState.SUCCEEDED if status.exit_code == 0 else JobState.FAILED
-                self._end(job.id, state, status.exit_code, "")
+                self._end(job.id, kept.exit_code, "", now)
 
-    def _grace_is_over(self, job: Job) -> bool:
-        with self._lock:
+    def _evicts(self, job: Job) -> bool:
+        """Whether the grace of ``job``'s drained node is over: if so, mark the job as one the drain stops.
+
+        It is marked before its process is stopped, so a process the stop ended is queued again, never
+        failed as killed, whatever happens to the service in between.
+        """
+        with self._state.locked():
             ends = self._drains.get(job.node or "")
-            return ends is not None and self._clock() >= ends
+            if ends is None or self._clock() < ends:
+                return False
+            self._evicted[job.id] = True
+            return True
 
     def _submit_due_runs(self, now: datetime) -> None:
         """Queue a run of each schedule that is due and whose last run has ended; lock held.
@@ -408,7 +428,7 @@ class JobService:
                 continue
             runs = schedule.runs
             if not runs or self._jobs[runs[-1]].state not in _UNFINISHED:
-                job_id = self._queue.submit(_spec(schedule.job))
+                job_id = self._state.reserve()
                 self._add(
                     job_id,
                     schedule.job,
@@ -424,16 +444,13 @@ class JobService:
         """Fail the jobs waiting on one that failed; place each ready job on the first free node it fits.
 
         A job starts only while its team is within the cluster's caps, and never on a drained node. Each
-        placed job comes with what its process gets: its own variables and its identity's secrets. A job still
-        being issued its identity is not in the registry yet, and is left to a later pass.
+        placed job comes with what its process gets: its own variables and its identity's secrets.
         """
-        with self._lock:
+        with self._state.locked():
             now = self._clock()
-            for blocked in self._queue.blocked():
-                if blocked.job_id not in self._jobs:
-                    continue
-                self._queue.dispatch(blocked.job_id)
-                self._queue.notify_failed(blocked.job_id)
+            for blocked in self._state.queue.blocked():
+                self._state.queue.dispatch(blocked.job_id)
+                self._state.queue.notify_failed(blocked.job_id)
                 self._identities.pop(blocked.job_id, None)
                 self._record(
                     self._jobs[blocked.job_id],
@@ -449,27 +466,27 @@ class JobService:
             running = Counter(self._jobs[job_id].team for job_id in self._placed.values())
             used = self._team_usage(now)
             placed = []
-            for ready in self._queue.ready():
-                job = self._jobs.get(ready.job_id)
-                if job is None or not self._policy.admits(job.team, running, used):
+            for ready in self._state.queue.ready():
+                job = self._jobs[ready.job_id]
+                if not self._policy.admits(job.team, running, used):
                     continue
                 node_id = next((node for node in free if _fits(ready.spec, self._daemons[node].node)), None)
                 if node_id is None:
                     continue
                 free.remove(node_id)
                 running[job.team] += 1
-                self._queue.dispatch(ready.job_id)
+                self._state.queue.dispatch(ready.job_id)
                 self._placed[node_id] = ready.job_id
                 job = self._record(job, state=JobState.RUNNING, node=node_id, started_at=now, message="")
                 placed.append((self._daemons[node_id], job, self._process_environment(job)))
         return placed
 
-    def _requeue(self, job: Job) -> None:
-        """Queue a job whose drained node stopped it again, as its next attempt; lock held."""
-        self._evicted.discard(job.id)
+    def _requeue(self, job: Job, now: datetime) -> None:
+        """Queue a job whose drained node stopped it at ``now`` again, as its next attempt; lock held."""
+        self._evicted.pop(job.id, None)
         self._placed.pop(job.node or "", None)
-        cpu_hours = self._charge(job, self._clock())
-        self._queue.requeue(job.id)
+        cpu_hours = self._charge(job, now)
+        self._state.queue.requeue(job.id)
         self._record(
             job,
             state=JobState.PENDING,
@@ -480,36 +497,29 @@ class JobService:
             message="its node was drained: it runs again elsewhere",
         )
 
-    def _end(self, job_id: str, state: JobState, exit_code: int | None, message: str) -> None:
-        """Record that a placed job ended in ``state``, release the jobs waiting on it, and free its node.
+    def _end(self, job_id: str, exit_code: int | None, message: str, now: datetime) -> None:
+        """Record that a placed job ended at ``now``, release the jobs waiting on it, and free its node.
 
-        A job being cancelled ends ``cancelled``, however its process ended. Lock held.
+        It has succeeded if its process exited 0, and failed otherwise; a job being cancelled ends
+        ``cancelled``, however its process ended. Lock held.
         """
         job = self._jobs[job_id]
+        state = JobState.SUCCEEDED if exit_code == 0 else JobState.FAILED
         state = JobState.CANCELLED if job.state is JobState.CANCELLING else state
         if state is JobState.SUCCEEDED:
-            self._queue.notify_succeeded(job_id)
+            self._state.queue.notify_succeeded(job_id)
         else:
-            self._queue.notify_failed(job_id)
+            self._state.queue.notify_failed(job_id)
         if job.node is not None:
             self._placed.pop(job.node, None)
         self._identities.pop(job_id, None)
-        self._evicted.discard(job_id)
-        now = self._clock()
-        cpu_hours = self._charge(job, now)
-        self._record(
-            job,
-            state=state,
-            ended_at=now,
-            exit_code=exit_code,
-            cpu_hours=cpu_hours,
-            message=message,
-        )
+        self._evicted.pop(job_id, None)
+        hours = self._charge(job, now)
+        self._record(job, state=state, ended_at=now, exit_code=exit_code, cpu_hours=hours, message=message)
 
-    def _admit(self, request: JobRequest, submitter: str) -> JobSpec:
-        """``request`` as the queue takes it, once the cluster and the deployment admit it; lock held."""
-        spec = _spec(request)
-        if not any(_fits(spec, daemon.node) for daemon in self._daemons.values()):
+    def _admit(self, request: JobRequest, submitter: str) -> None:
+        """Raise unless the cluster and the deployment admit ``request`` from ``submitter``; lock held."""
+        if not any(_fits(request, daemon.node) for daemon in self._daemons.values()):
             raise SchedulingError(
                 f"job {request.name!r} asks for {request.cpu:g} cpus and {request.memory_mb} MB, more than "
                 "any node of the cluster has",
@@ -522,7 +532,16 @@ class JobService:
                 path=request.name,
             )
         self._admit_submitter(self._sponsor_of(submitter))
-        return spec
+        self._require_dependencies(request)
+
+    def _require_dependencies(self, request: JobRequest) -> None:
+        """Raise ``DependencyError`` unless every job ``request`` waits on is a known id; lock held."""
+        for dependency in request.depends_on:
+            if not self._state.knows(dependency):
+                raise DependencyError(
+                    f"unknown dependency {dependency!r} for job {request.name!r}",
+                    path=dependency,
+                )
 
     def _add(
         self,
@@ -532,10 +551,11 @@ class JobService:
         identity: JobIdentity | None,
         schedule_id: str | None = None,
     ) -> Job:
-        """Register queued ``job_id`` as ``owner``'s, running as ``identity``, and record it; lock held.
+        """Queue ``request`` under the reserved ``job_id`` as ``owner``'s, running as ``identity``; lock held.
 
         A job with no identity is seeded.
         """
+        self._state.admit(job_id, request)
         if identity is not None:
             self._identities[job_id] = identity
             self._sponsors.setdefault(identity.principal, owner)
@@ -590,12 +610,12 @@ class JobService:
     def _charge(self, job: Job, now: datetime) -> float:
         """Charge a placed job's current attempt to its team; returns its CPU-hours with it. Lock held."""
         hours = _running_hours(job, now)
-        self._ledger.charge(job.team, compute=hours)
+        self._state.charge(job.team, hours)
         return job.cpu_hours + hours
 
     def _team_usage(self, now: datetime) -> dict[str, float]:
         """Each team's CPU-hours: its jobs' ended attempts, and their running ones to ``now``. Lock held."""
-        used = {team: spend.compute for team, spend in self._ledger.report().items()}
+        used = {team: spend.compute for team, spend in self._state.ledger.report().items()}
         for job_id in self._placed.values():
             job = self._jobs[job_id]
             used[job.team] = used.get(job.team, 0.0) + _running_hours(job, now)
@@ -605,7 +625,7 @@ class JobService:
         """What ``job``'s process gets: its own variables, and its identity's secrets, if any. Lock held."""
         own = {name: SecretStr(value) for name, value in job.environment.items()}
         identity = self._identities.get(job.id)
-        return own if identity is None else own | job_environment(identity)
+        return own if identity is None else own | identity.environment()
 
     def _describe(self, node_id: str) -> ClusterNode:
         node = self._daemons[node_id].node
@@ -639,44 +659,17 @@ class JobService:
         return self._schedules[schedule_id]
 
     def _record(self, job: Job, **changes: object) -> Job:
-        """Keep ``job`` with ``changes``, and write it on the record; called with the lock held."""
+        """Keep ``job`` with ``changes``, on the record too once the section is kept; lock held."""
         job = job.model_copy(update=changes)
         self._jobs[job.id] = job
         line = {"wall_ts": self._clock().isoformat(), "job": job.model_dump(mode="json")}
-        self._write_record(json.dumps(line))
+        self._state.record(json.dumps(line))
         return job
 
 
-def credential_variable(service: str) -> str:
-    """The environment variable holding a job's secret on ``service``: ``MERIDIAN_NOTES_TOKEN`` for notes."""
-    return f"MERIDIAN_{service.upper().replace('-', '_')}_TOKEN"
-
-
-GATEWAY_TOKEN_VARIABLE = "MERIDIAN_GATEWAY_TOKEN"  # the job's key to the model gateway: its badge
-
-
-def job_environment(identity: JobIdentity) -> dict[str, SecretStr]:
-    """What a job's process gets of its identity: each secret in its service's variable, and its badge."""
-    environment = {credential_variable(service): secret for service, secret in identity.secrets.items()}
-    return environment if identity.badge is None else {**environment, GATEWAY_TOKEN_VARIABLE: identity.badge}
-
-
-def _spec(request: JobRequest) -> JobSpec:
-    return JobSpec(
-        name=request.name,
-        command=request.command,
-        cpu=request.cpu,
-        memory_mb=request.memory_mb,
-        priority=request.priority,
-        depends_on=tuple(request.depends_on),
-        labels=request.labels,
-        environment=request.environment,
-    )
-
-
-def _fits(spec: JobSpec, node: Node) -> bool:
-    """Whether ``node`` has the cpus and memory ``spec`` asks for."""
-    return spec.cpu <= node.cpu_capacity and spec.memory_mb <= node.memory_mb
+def _fits(job: JobSpec | JobRequest, node: Node) -> bool:
+    """Whether ``node`` has the cpus and memory ``job`` asks for."""
+    return job.cpu <= node.cpu_capacity and job.memory_mb <= node.memory_mb
 
 
 def _running_hours(job: Job, now: datetime) -> float:

@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="520" viewBox="0 0 800 520" role="img" aria-label="Sequence of a deployment: the deploy service fetches main from the forge, stages the release's manifest with central IAM, hands the release to the supervisor, which starts the service on that manifest, and activates the staged contract once the release serves, or discards it">
+<style>
+  svg { --ink:#1f2328; --muted:#59636e; --rule:#8c959f; --panel:#f6f8fa;
+        --accent:#2f4bd6; --accent-bg:#e9edfd; }
+  @media (prefers-color-scheme: dark) {
+    svg { --ink:#e6edf3; --muted:#9198a1; --rule:#6e7681; --panel:#161b22;
+          --accent:#8098ff; --accent-bg:#1b2340; }
+  }
+  text { font-family:-apple-system,"Segoe UI",system-ui,sans-serif; }
+  .box { fill:var(--panel); stroke:var(--rule); stroke-width:1; }
+  .focus { fill:var(--accent-bg); stroke:var(--accent); stroke-width:1.5; }
+  .t { fill:var(--ink); font-size:13px; font-weight:600; }
+  .s { fill:var(--muted); font-size:11px; }
+  .m { fill:var(--muted); font-size:11px; font-family:ui-monospace,"SF Mono",Menlo,monospace; }
+  .bold { stroke:var(--ink); stroke-width:2.5; fill:none; }
+  .thin { stroke:var(--rule); stroke-width:1.25; fill:none; }
+  .dash { stroke:var(--rule); stroke-width:1.25; fill:none; stroke-dasharray:4 3; }
+  .life { stroke:var(--rule); stroke-width:1; fill:none; stroke-dasharray:3 4; }
+  .head-ink { fill:var(--ink); } .head-rule { fill:var(--rule); }
+</style>
+<defs>
+  <marker id="do-hi" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-ink" d="M0,0 L10,5 L0,10 z"/></marker>
+  <marker id="do-hr" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-rule" d="M0,0 L10,5 L0,10 z"/></marker>
+</defs>
+
+<!-- lifelines: forge 96, deploy service 304, IAM 512, supervisor and service 704 -->
+<path class="life" d="M96 64 V504"/>
+<path class="life" d="M304 64 V504"/>
+<path class="life" d="M512 64 V438 M512 486 V504"/>
+<path class="life" d="M704 64 V282 M704 330 V504"/>
+
+<g class="node"><rect class="box" x="16" y="16" width="160" height="48" rx="6"/>
+  <text class="t" x="96" y="35" text-anchor="middle" dominant-baseline="central">Forge</text>
+  <text class="s" x="96" y="53" text-anchor="middle" dominant-baseline="central">main of each repo</text></g>
+<g class="node"><rect class="focus" x="224" y="16" width="160" height="48" rx="6"/>
+  <text class="t" x="304" y="35" text-anchor="middle" dominant-baseline="central">Deploy service</text>
+  <text class="m" x="304" y="53" text-anchor="middle" dominant-baseline="central">SupervisorRollout</text></g>
+<g class="node"><rect class="box" x="432" y="16" width="160" height="48" rx="6"/>
+  <text class="t" x="512" y="35" text-anchor="middle" dominant-baseline="central">Central IAM</text>
+  <text class="m" x="512" y="53" text-anchor="middle" dominant-baseline="central">/contracts</text></g>
+<g class="node"><rect class="box" x="624" y="16" width="160" height="48" rx="6"/>
+  <text class="t" x="704" y="35" text-anchor="middle" dominant-baseline="central">Supervisor</text>
+  <text class="s" x="704" y="53" text-anchor="middle" dominant-baseline="central">and the service</text></g>
+
+<!-- 1 fetch -->
+<text class="s" x="200" y="92" text-anchor="middle">1 fetch main, as the deployment</text>
+<path class="thin" d="M304 104 H97" marker-end="url(#do-hr)"/>
+
+<!-- 2-3 stage -->
+<text class="s" x="408" y="140" text-anchor="middle">2 stage the release's manifest</text>
+<path class="bold" d="M304 152 H510" marker-end="url(#do-hi)"/>
+<text class="s" x="408" y="188" text-anchor="middle">3 what it changes, or refused:</text>
+<text class="s" x="408" y="202" text-anchor="middle">the deployment fails here</text>
+<path class="dash" d="M512 214 H305" marker-end="url(#do-hr)"/>
+
+<!-- 4-6 hand over -->
+<text class="s" x="608" y="250" text-anchor="middle">4 hand over the release</text>
+<path class="thin" d="M304 262 H703" marker-end="url(#do-hr)"/>
+<g class="node"><rect class="box" x="600" y="282" width="184" height="48" rx="6"/>
+  <text class="s" x="692" y="301" text-anchor="middle" dominant-baseline="central">5 starts on the manifest</text>
+  <text class="s" x="692" y="317" text-anchor="middle" dominant-baseline="central">the release carries</text></g>
+<text class="s" x="608" y="358" text-anchor="middle">6 serving, or failed</text>
+<path class="dash" d="M704 370 H305" marker-end="url(#do-hr)"/>
+
+<!-- 7 activate or discard -->
+<text class="s" x="408" y="406" text-anchor="middle">7 activate, or discard</text>
+<path class="bold" d="M304 418 H510" marker-end="url(#do-hi)"/>
+<g class="node"><rect class="focus" x="424" y="438" width="176" height="48" rx="6"/>
+  <text class="s" x="512" y="457" text-anchor="middle" dominant-baseline="central">decides each later call</text>
+  <text class="s" x="512" y="473" text-anchor="middle" dominant-baseline="central">by the active contract</text></g>
+</svg>

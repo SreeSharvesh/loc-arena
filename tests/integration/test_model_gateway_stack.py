@@ -41,7 +41,7 @@ from loc_arena.gateway.model_gateway import (
 from loc_arena.settings import GatewaySettings, LocArenaSettings
 from pydantic import HttpUrl
 
-from tests.integration._docker_support import image_exists
+from tests.integration._docker_support import needs_stack
 
 KEY = "sk-or-the-test-key"
 SANDBOX_TOKEN = "the-sandbox-token"
@@ -79,10 +79,7 @@ SETTINGS = CONFIGURED.model_copy(
     update={"gateway": CONFIGURED.gateway.model_copy(update={"upstream": HttpUrl("http://mock:9000")})},
 )
 IMAGES = (SETTINGS.stack.image, SETTINGS.stack.tools_gateway_image, SETTINGS.stack.collector_image)
-pytestmark = pytest.mark.skipif(
-    not all(map(image_exists, IMAGES)),
-    reason="needs Docker and the stack's images",
-)
+pytestmark = needs_stack(*IMAGES)
 
 
 @dataclass(frozen=True)

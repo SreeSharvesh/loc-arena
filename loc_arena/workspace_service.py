@@ -17,7 +17,7 @@ import contextlib
 import hashlib
 import hmac
 import threading
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import AsyncIterator, Iterable, Iterator, Mapping
 from typing import Annotated, cast
 
 import uvicorn
@@ -25,6 +25,8 @@ from mcp.server import MCPServer
 from mcp.server.auth.provider import AccessToken, TokenVerifier
 from mcp.server.auth.settings import AuthSettings
 from pydantic import Field, JsonValue
+from starlette.applications import Starlette
+from starlette.routing import Mount
 
 from loc_arena.mcp_service import ALL_ADDRESSES, build_app, caller_from_token
 from loc_arena.scaffold.code_services import CodeServices
@@ -41,13 +43,15 @@ def workspace_key(sandbox_token: str) -> str:
     return hashlib.sha256(f"{WORKSPACE_SERVICE}:{sandbox_token}".encode()).hexdigest()
 
 
-class _KeyVerifier(TokenVerifier):
-    """Admits the holder of an agent's workspace key as that agent."""
+class KeyVerifier(TokenVerifier):
+    """Admits the holder of each key as the caller it names."""
 
     def __init__(self, agents: Mapping[str, str]) -> None:
-        self._agents = dict(agents)  # each agent, by its workspace key
+        """A verifier that admits each key of ``agents`` as the caller it maps to."""
+        self._agents = dict(agents)  # each caller, by its key
 
     async def verify_token(self, token: str) -> AccessToken | None:
+        """The caller ``token`` names, or none for a key it does not hold."""
         for key, agent in self._agents.items():
             if hmac.compare_digest(key.encode(), token.encode()):
                 return AccessToken(token=token, client_id=agent, scopes=[])
@@ -89,7 +93,7 @@ def build_workspace_server(
     agents = {workspace_key(token): agent for agent, token in sandbox_tokens.items()}
     server = MCPServer(
         WORKSPACE_SERVICE,
-        token_verifier=_KeyVerifier(agents),
+        token_verifier=KeyVerifier(agents),
         auth=AuthSettings(issuer_url=f"http://{WORKSPACE_SERVICE}", resource_server_url=None),
         middleware=[tool_call_recorder(caller_from_token, write)],
         log_level="WARNING",
@@ -148,14 +152,30 @@ def build_workspace_server(
 
 
 @contextlib.contextmanager
-def serve_workspace(server: MCPServer, host: str, port: int) -> Iterator[None]:
+def serve_workspace(
+    server: MCPServer,
+    host: str,
+    port: int,
+    mounted: Mapping[str, Starlette] | None = None,
+) -> Iterator[None]:
     """Serve ``server`` at ``/mcp`` on ``port`` to requests addressed to ``host``, until the block ends.
 
-    Raises ``RuntimeError`` when it cannot start, so no session plays without its tools. At the end, a call
-    still open is given ``_STOP_SECONDS`` to finish.
+    Each app of ``mounted`` is served on the same port under its own path. Raises ``RuntimeError`` when it
+    cannot start, so no session plays without its tools. At the end, a call still open is given
+    ``_STOP_SECONDS`` to finish.
     """
+    apps = {**(mounted or {}), "": build_app(server, host)}
+
+    @contextlib.asynccontextmanager
+    async def lifespan(_: Starlette) -> AsyncIterator[None]:  # a mounted app's own lifespan runs only here
+        async with contextlib.AsyncExitStack() as running:
+            for app in apps.values():
+                await running.enter_async_context(app.router.lifespan_context(app))
+            yield
+
+    routes = [Mount(f"/{path}" if path else "", app=app) for path, app in apps.items()]
     config = uvicorn.Config(
-        build_app(server, host),
+        Starlette(routes=routes, lifespan=lifespan),
         host=ALL_ADDRESSES,
         port=port,
         log_level="warning",

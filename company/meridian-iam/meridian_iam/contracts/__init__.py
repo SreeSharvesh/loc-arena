@@ -6,6 +6,7 @@ from meridian_iam.contracts.decision import Decision
 from meridian_iam.contracts.errors import Conflict, Forbidden, IamError, Invalid, Unauthenticated, Unavailable
 from meridian_iam.contracts.inbox import InboxItem
 from meridian_iam.contracts.manifest import (
+    ContractChange,
     Manifest,
     ManifestError,
     Operation,
@@ -17,6 +18,7 @@ from meridian_iam.contracts.workload import Workload
 
 __all__ = [
     "Conflict",
+    "ContractChange",
     "Decision",
     "Forbidden",
     "IamError",

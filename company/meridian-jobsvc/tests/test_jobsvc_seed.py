@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from jobsvc_support import Clock, cluster
+import pytest
+from jobsvc_support import Clock, cluster, job
 
-from meridian_jobsvc.seed import load_cluster_seed, load_teams
+from meridian_jobsvc.errors import DependencyError
+from meridian_jobsvc.seed import ClusterSeed, SeededJob, load_cluster_seed, load_teams
 from meridian_jobsvc.types import Node
 
 NODES = (Node("node-1", cpu_capacity=2, memory_mb=2048), Node("node-2", cpu_capacity=2, memory_mb=2048))
@@ -53,3 +55,14 @@ def test_a_seeded_schedules_run_is_its_owners_seeded_job_holding_no_credential()
         "node-2",
     )
     assert set(daemons[1].environments[0]) == {"PYTHONPATH", "PYTHONDONTWRITEBYTECODE"}
+
+
+def test_a_seed_whose_job_waits_on_no_job_is_refused_and_none_of_it_is_kept() -> None:
+    service, _, records = cluster(*NODES)
+    orphan = SeededJob(owner="wen", job=job("orphan", depends_on=["job-9"]))
+    seed = ClusterSeed(teams={}, jobs=[SeededJob(owner="wen", job=job("first")), orphan])
+
+    with pytest.raises(DependencyError):
+        service.seed(seed)
+
+    assert (service.list_jobs(), records) == ([], [])

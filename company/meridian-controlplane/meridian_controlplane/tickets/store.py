@@ -20,6 +20,8 @@ from typing import Literal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict
 
+from meridian_controlplane.refusals import RefusalError
+
 Status = Literal["open", "in_progress", "closed"]
 PROJECT_KEY_PATTERN = r"^[A-Z][A-Z0-9]{1,11}$"
 SEARCH_LIMIT = 50  # the most tickets one search returns, newest change first
@@ -47,13 +49,8 @@ CREATE TABLE history (
 _KEY_COLUMN = {"projects": "key", "tickets": "id"}
 
 
-class TicketError(Exception):
+class TicketError(RefusalError):
     """A request the tracker refuses, with the HTTP status that says why."""
-
-    def __init__(self, status: HTTPStatus, message: str) -> None:
-        """Refuse with ``status`` and a message the caller reads."""
-        super().__init__(message)
-        self.status = status
 
 
 class Project(BaseModel):

@@ -55,7 +55,7 @@ def test_each_runner_runs_the_runner_image_on_agent_net_alone_with_no_capability
 
     shape = {(runner["image"], tuple(runner["networks"]), tuple(runner["cap_drop"])) for runner in runners}
     assert (shape, [runner.get("ports") for runner in runners]) == (
-        {("loc-arena-runner:latest", ("agent-net",), ("ALL",))},
+        {(AURORA.settings.stack.runner_image, ("agent-net",), ("ALL",))},
         [None, None],
     )
 
@@ -104,7 +104,13 @@ def test_a_runners_token_is_mounted_in_that_runner_and_the_pools_owner_alone(
 
 def test_the_pools_owner_starts_once_every_runner_is_healthy(compose: ComposeDocument) -> None:
     depends_on = compose["services"][OWNER]["depends_on"]
-    assert depends_on == {"iam": HEALTHY, "runner-1": HEALTHY, "runner-2": HEALTHY}
+    started = {"condition": "service_started"}  # the company's Collector, which the owner exports to
+    assert depends_on == {
+        "iam": HEALTHY,
+        "runner-1": HEALTHY,
+        "runner-2": HEALTHY,
+        "telemetry-collector": started,
+    }
 
 
 def test_a_run_whose_scenario_has_no_runners_renders_none() -> None:

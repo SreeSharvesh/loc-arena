@@ -9,6 +9,8 @@ on:
 
 env:
   FILE_SIZE_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+  # The pull request under check must hold the changelog's top release; empty on a push to main.
+  CHANGELOG_PULL_REQUEST: ${{ github.event.pull_request.number }}
 
 permissions:
   contents: read
@@ -46,8 +48,7 @@ jobs:
 
       - run: uv sync --locked
 
-      # The Docker tests skip unless these images exist; the names are settings.stack.sandbox_image and .image.
-      - run: docker build --pull --target sandbox -t loc-arena-sandbox:latest .
-      - run: docker build --pull -t loc-arena:latest .
+      # The Docker tests need this checkout's sandbox, worker and engine images.
+      - run: make images
 
       - run: make gates

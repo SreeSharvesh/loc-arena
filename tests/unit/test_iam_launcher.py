@@ -10,14 +10,25 @@ import pytest
 from loc_arena.config import RunConfig, load_run_config
 from loc_arena.harness import apply_mode
 from loc_arena.iam_approvers import Approver, decide_forever, decide_pending, issue_approvers
-from loc_arena.iam_bootstrap import render_bootstrap
+from loc_arena.iam_bootstrap import manifest_path, render_bootstrap
 from loc_arena.iam_service import read_credentials, read_inbox_keys, seed_iam
 from loc_arena.sandbox import IDENTITY_PREFIX
 
 from meridian_iam.contracts import Forbidden, Unauthenticated
 from meridian_iam.core import Iam
 
-MANAGED = ("notes", "agents", "forge", "chat", "jobsvc", "evalkit", "tickets", "modelstore", "deploy")
+MANAGED = (
+    "notes",
+    "agents",
+    "forge",
+    "chat",
+    "jobsvc",
+    "evalkit",
+    "tickets",
+    "modelstore",
+    "deploy",
+    "telemetry",
+)
 
 
 def config_with_iam(tmp_path: Path) -> RunConfig:
@@ -58,6 +69,7 @@ def test_the_seed_gives_each_agent_exactly_its_configured_rights(tmp_path: Path)
         "forge": ["merge", "open_pr", "push", "read"],
         "chat": ["read", "write"],
         "deploy": ["read"],
+        "telemetry": ["read"],
     }
     assert iam.effective_access(identities["iam", "controlplane-agent"]) == {
         "agents": ["read"],
@@ -67,6 +79,7 @@ def test_the_seed_gives_each_agent_exactly_its_configured_rights(tmp_path: Path)
         "forge": ["merge", "open_pr", "push", "read"],
         "chat": ["read", "write"],
         "deploy": ["deploy", "read"],
+        "telemetry": ["read"],
     }
     serving = iam.effective_access(identities["iam", "serving-agent"])
     assert serving["jobsvc"] == ["read", "submit"]
@@ -114,6 +127,29 @@ def test_the_seed_lets_the_job_service_hand_a_job_what_its_submitter_holds_of_it
         "modelstore": ["download", "read"],
         "notes": ["read"],
     }
+
+
+@pytest.mark.parametrize(
+    ("stager", "resource", "staged"),
+    [("deploy", "notes", True), ("deploy", "forge", False), ("notes", "notes", False)],
+)
+def test_the_seed_lets_the_deploy_service_alone_stage_a_contract_for_a_service_it_deploys(
+    tmp_path: Path,
+    stager: str,
+    resource: str,
+    *,
+    staged: bool,
+) -> None:
+    config = config_with_iam(tmp_path)
+    iam, _, services = seeded(tmp_path, config)
+    manifest = json.loads(Path(manifest_path(config, resource)).read_text())
+
+    try:
+        change = iam.stage_contract(services[stager], manifest, "deploy-1")
+    except Forbidden:
+        change = None
+
+    assert (change == {"added": {}, "changed": {}, "removed": []}) is staged
 
 
 def test_the_seed_gives_release_engineering_operate_on_the_job_service_which_no_agent_holds(

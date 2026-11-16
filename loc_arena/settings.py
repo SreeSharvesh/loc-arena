@@ -12,8 +12,6 @@ from typing import Annotated, Self
 from pydantic import (
     AfterValidator,
     AwareDatetime,
-    BaseModel,
-    ConfigDict,
     Field,
     HttpUrl,
     JsonValue,
@@ -25,11 +23,19 @@ from pydantic import (
     model_validator,
 )
 
-
-class SettingsGroup(BaseModel):
-    """Base of the root and every group: immutable, and an unknown key (a typo in the YAML) is an error."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
+from loc_arena import image_tag
+from loc_arena.reader_settings import ReaderSettings
+from loc_arena.service_settings import (
+    AgentsServiceSettings,
+    ChatSettings,
+    EvalkitSettings,
+    JobsvcSettings,
+    ModelStoreSettings,
+    NotesSettings,
+    SettingsGroup,
+    TelemetrySettings,
+    TicketsSettings,
+)
 
 
 class BatchGenerateSettings(SettingsGroup):
@@ -185,21 +191,24 @@ class GatewaySettings(SettingsGroup):
 
 
 class StackSettings(SettingsGroup):
-    """The episode's compose project (``stack:``): its images and its containers' limits."""
+    """The episode's compose project (``stack:``): its images and its containers' limits.
+
+    The four images built from the Dockerfile are tagged ``IMAGE_TAG`` unless the config names them.
+    """
 
     image: str = Field(
-        default="loc-arena:latest",
+        default_factory=lambda: f"loc-arena:{image_tag.IMAGE_TAG}",
         description="The image of the episode: the Dockerfile's `engine` target.",
     )
     sandbox_image: str = Field(
-        default="loc-arena-sandbox:latest",
+        default_factory=lambda: f"loc-arena-sandbox:{image_tag.IMAGE_TAG}",
         description="The image agent code runs in, every agent's sandbox's and the grader's throwaway "
         "container's: the Dockerfile's `sandbox` target, which holds no harness and no scenarios.",
     )
     episode_memory_limit: str = Field(default="4g", description="Memory limit of the episode container.")
     episode_cpus: PositiveFloat = Field(default=2.0, description="CPUs the episode container may use.")
     runner_image: str = Field(
-        default="loc-arena-runner:latest",
+        default_factory=lambda: f"loc-arena-runner:{image_tag.IMAGE_TAG}",
         description="The image of each runner, where the company's agents run with pi: the Dockerfile's "
         "`runner` target. Runners take a sandbox's limits.",
     )
@@ -208,7 +217,7 @@ class StackSettings(SettingsGroup):
         description="Seconds one run of a company agent may take in its runner before it is killed.",
     )
     worker_image: str = Field(
-        default="loc-arena-worker:latest",
+        default_factory=lambda: f"loc-arena-worker:{image_tag.IMAGE_TAG}",
         description="The image of each node of the job service's fleet, where its jobs run as processes: the "
         "Dockerfile's `worker` target. A worker takes a service's limits.",
     )
@@ -256,7 +265,10 @@ class StackSettings(SettingsGroup):
     sandbox_memory_limit: str = Field(default="2g", description="Memory limit of each agent's sandbox.")
     sandbox_cpus: PositiveFloat = Field(default=2.0, description="CPUs each agent's sandbox may use.")
     sandbox_pids_limit: PositiveInt = Field(default=1024, description="Processes an agent's sandbox may run.")
-    service_memory_limit: str = Field(default="512m", description="Memory limit of each live service.")
+    service_memory_limit: str = Field(
+        default="512m",
+        description="Memory limit of each live service; the telemetry store and its Collector set their own.",
+    )
     service_cpus: PositiveFloat = Field(default=1.0, description="CPUs each live service may use.")
     service_pids_limit: PositiveInt = Field(default=256, description="Processes each live service may run.")
     gateway_health_interval_seconds: PositiveInt = Field(
@@ -282,8 +294,9 @@ class StackSettings(SettingsGroup):
     )
     collector_image: str = Field(
         default="otel/opentelemetry-collector-contrib:0.162.0",
-        description="The image of the OpenTelemetry Collector, pinned to a release: it receives the model "
-        "gateway's records over OTLP and appends them to the sealed record.",
+        description="The image of the OpenTelemetry Collector, pinned to a release: one container of it "
+        "receives the model gateway's records over OTLP and appends them to the sealed record, and another "
+        "is the company's own, which writes its telemetry store.",
     )
     tools_gateway_port: int = Field(
         default=3000,
@@ -335,6 +348,12 @@ class StackSettings(SettingsGroup):
     tools_timeout_seconds: PositiveFloat = Field(
         default=300.0,
         description="Seconds one MCP tool call through agentgateway may take before it is an error result.",
+    )
+    tools_offer_seconds: PositiveFloat = Field(
+        default=60.0,
+        description="Seconds a play waits, before its sessions start, for the tools gateway to offer each "
+        "agent every tool its sandbox lists, and after a deployment ends, before sessions are told to list "
+        "again; play does not start while one is missing after them, and no session is told.",
     )
     checkouts_directory: Path = Field(
         default=Path("/checkouts"),
@@ -414,56 +433,6 @@ class IamSettings(SettingsGroup):
     )
 
 
-class EvalkitSettings(SettingsGroup):
-    """The eval service (the run config's ``evalkit:`` block): what an eval run's job asks of the cluster."""
-
-    job_cpu: PositiveFloat = Field(default=1.0, description="CPUs an eval run's job asks of the cluster.")
-    job_memory_mb: PositiveInt = Field(
-        default=2048,
-        description="Memory, in MiB, an eval run's job asks of the cluster.",
-    )
-
-
-class TicketsSettings(SettingsGroup):
-    """The tickets service (the run config's ``tickets:`` block): its database."""
-
-    database: Path = Field(
-        default=Path("/var/lib/tickets/tickets.db"),
-        description="Its SQLite file. A new container finds none and replays the scenario's ticket seed into "
-        "a new one, so the honest twin's recreated service starts from the seed; a restarted one keeps it.",
-    )
-    seed_overlay: Path | None = Field(
-        default=None,
-        description="A ticket seed in the scenario pack laid over the scenario's: each project it names "
-        "takes the place of the scenario's of that key, tickets included.",
-    )
-
-
-class NotesSettings(SettingsGroup):
-    """The notes service (the run config's ``notes:`` block): its database."""
-
-    database: Path = Field(
-        default=Path("/var/lib/notes/notes.db"),
-        description="Its SQLite file. A new container finds none and writes the scenario's note seed into a "
-        "new one, so the honest twin's recreated service starts from the seed; a restarted one keeps it.",
-    )
-
-
-class ChatSettings(SettingsGroup):
-    """The chat service (the run config's ``chat:`` block): its database."""
-
-    database: Path = Field(
-        default=Path("/var/lib/chat/chat.db"),
-        description="Its SQLite file. A new container finds none and replays the scenario's chat seed into a "
-        "new one, so the honest twin's recreated service starts from the seed; a restarted one keeps it.",
-    )
-    seed_overlay: Path | None = Field(
-        default=None,
-        description="A chat seed in the scenario pack laid over the scenario's: each channel it names takes "
-        "the place of the scenario's of that name, and its direct messages follow the scenario's.",
-    )
-
-
 class ForgeSettings(SettingsGroup):
     """The forge (the run config's ``forge:`` block): where its git repositories are in its container."""
 
@@ -493,6 +462,17 @@ class ForgeSettings(SettingsGroup):
         "runs. A push sends a pack of its new commits; a fetch sends the commits it wants and has, a few "
         "kilobytes. Each body is held in memory while git runs, so this stays well under "
         "stack.service_memory_limit.",
+    )
+    read_timeout_seconds: PositiveFloat = Field(
+        default=30.0,
+        description="Seconds one read the host makes after a play may take: a repo's main as a tar, its "
+        "history as a bundle, the deploy service's record. Then the read is stopped and recorded as not "
+        "made. Every read of a play takes well under one in all.",
+    )
+    read_limit_bytes: PositiveInt = Field(
+        default=32 << 20,
+        description="The most one such read may print; past it the read is stopped and recorded as not "
+        "made. The host holds each read in memory. A company repo's main is under a megabyte as a tar.",
     )
     commit_date: AwareDatetime | None = Field(
         default=None,
@@ -539,20 +519,6 @@ class HistorySettings(SettingsGroup):
     )
 
 
-class ModelStoreSettings(SettingsGroup):
-    """The model store (``modelstore:``): how it shards each model in ``gateway.runner_model_aliases``."""
-
-    shard_count: PositiveInt = Field(default=4, description="Shards of each model's weights.")
-    shard_bytes: PositiveInt = Field(
-        default=4096,
-        description="Each shard's real size in bytes, or its header's if larger; it holds no weights.",
-    )
-    declared_shard_bytes: PositiveInt = Field(
-        default=3_500_000_000,
-        description="Each shard's size as the manifest declares it: a 7B model's bf16 weights, in four.",
-    )
-
-
 class ServingSettings(SettingsGroup):
     """The company's own inference server (``serving:``), which a stack run deploys before each play."""
 
@@ -594,20 +560,17 @@ class DeploySettings(SettingsGroup):
     credential_seconds: PositiveInt = Field(default=300, description="A deployment credential's lifetime.")
 
 
-class ReaderSettings(SettingsGroup):
-    """The run reader (``loc-arena read``, the config's ``reader:`` block)."""
+class CostSettings(SettingsGroup):
+    """What a run cost (``cost:``): how its host process samples the run's containers into ``cost.json``."""
 
-    timeout_seconds: PositiveFloat = Field(
-        default=1200.0,
-        description="The longest one reading lasts; the reader is stopped there and has written no report.",
+    sample_seconds: PositiveFloat = Field(
+        default=2.0,
+        description="The wait between two samples of the run's containers. A memory peak is the highest "
+        "sample, so a spike shorter than this can be missed.",
     )
-    model_calls: PositiveInt = Field(
-        default=150,
-        description="Model calls the reader may make in one reading; the gateway refuses each one after.",
-    )
-    report_limit_bytes: PositiveInt = Field(
-        default=1024 * 1024,
-        description="The largest report a reading keeps; a larger one, or one that is no file, is refused.",
+    request_seconds: PositiveFloat = Field(
+        default=10.0,
+        description="The longest one call to the Docker daemon may take; past it the sample has failed.",
     )
 
 
@@ -642,34 +605,18 @@ class LocArenaSettings(SettingsGroup):
         description="Sanctioned paths and quota.",
     )
     gateway: GatewaySettings = Field(default=GatewaySettings(), description="The gateway container.")
-    stack: StackSettings = Field(
-        default=StackSettings(),
-        description="The episode's compose project.",
+    stack: StackSettings = Field(default=StackSettings(), description="The episode's compose project.")
+    iam: IamSettings = Field(default=IamSettings(), description="Central IAM for the stack run's services.")
+    evalkit: EvalkitSettings = Field(default=EvalkitSettings(), description="The eval service.")
+    jobsvc: JobsvcSettings = Field(default=JobsvcSettings(), description="The job service's database.")
+    tickets: TicketsSettings = Field(default=TicketsSettings(), description="The tickets service's database.")
+    notes: NotesSettings = Field(default=NotesSettings(), description="The notes service's database.")
+    chat: ChatSettings = Field(default=ChatSettings(), description="The chat service's database.")
+    agents_service: AgentsServiceSettings = Field(
+        default=AgentsServiceSettings(),
+        description="The agents service's database.",
     )
-    iam: IamSettings = Field(
-        default=IamSettings(),
-        description="Central IAM for the stack run's services.",
-    )
-    evalkit: EvalkitSettings = Field(
-        default=EvalkitSettings(),
-        description="The eval service's jobs.",
-    )
-    tickets: TicketsSettings = Field(
-        default=TicketsSettings(),
-        description="The tickets service's database.",
-    )
-    notes: NotesSettings = Field(
-        default=NotesSettings(),
-        description="The notes service's database.",
-    )
-    chat: ChatSettings = Field(
-        default=ChatSettings(),
-        description="The chat service's database.",
-    )
-    forge: ForgeSettings = Field(
-        default=ForgeSettings(),
-        description="The forge's git repositories.",
-    )
+    forge: ForgeSettings = Field(default=ForgeSettings(), description="The forge's git repositories.")
     history: HistorySettings = Field(
         default=HistorySettings(),
         description="What one capture of an agent's checkout reads.",
@@ -683,18 +630,24 @@ class LocArenaSettings(SettingsGroup):
         description="The company's own inference server.",
     )
     deploy: DeploySettings = Field(default=DeploySettings(), description="The deploy service.")
-    pi: PiSettings = Field(
-        default=PiSettings(),
-        description="pi, as the agents' harness.",
+    telemetry: TelemetrySettings = Field(
+        default=TelemetrySettings(),
+        description="The company's Collector and the export of telemetry to its store.",
     )
-    reader: ReaderSettings = Field(
-        default=ReaderSettings(),
-        description="The run reader.",
-    )
+    pi: PiSettings = Field(default=PiSettings(), description="pi, as the agents' harness.")
+    reader: ReaderSettings = Field(default=ReaderSettings(), description="The run reader.")
+    cost: CostSettings = Field(default=CostSettings(), description="What a run cost, and how it is sampled.")
 
     @model_validator(mode="after")
     def require_the_served_model_on_the_runners_route(self) -> Self:
         """The company's server serves a model the runners' route knows."""
         if self.serving.deployer and self.serving.model not in self.gateway.runner_model_aliases:
             raise ValueError(f"serving.model {self.serving.model!r} is not in gateway.runner_model_aliases")
+        return self
+
+    @model_validator(mode="after")
+    def require_a_service_to_end_its_flush_before_it_is_killed(self) -> Self:
+        """A service that ends with the Collector down flushes twice, each within ``export_seconds``."""
+        if 2 * self.telemetry.export_seconds >= self.deploy.stop_seconds:
+            raise ValueError("telemetry.export_seconds must be less than half of deploy.stop_seconds")
         return self

@@ -16,12 +16,19 @@ from mcp.server.auth.provider import TokenVerifier
 from mcp.server.context import ServerMiddleware
 from pydantic import BaseModel, ConfigDict, SecretStr
 
+GATEWAY_TOKEN_VARIABLE = "MERIDIAN_GATEWAY_TOKEN"  # the job's key to the model gateway: its badge
+
+
+def credential_variable(service: str) -> str:
+    """The environment variable holding a job's secret on ``service``: ``MERIDIAN_NOTES_TOKEN`` for notes."""
+    return f"MERIDIAN_{service.upper().replace('-', '_')}_TOKEN"
+
 
 class JobIdentity(BaseModel):
     """What a job runs as: its own principal, and its secret on each service it may call, by service.
 
-    Never its submitter's credential. The service keeps the secrets only until the job's process has them, and
-    never returns them or writes them on its record.
+    Never its submitter's credential. The service keeps the secrets in its own database until the job ends,
+    hands them to the job's process alone, and never returns them or writes them on its record.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -29,6 +36,11 @@ class JobIdentity(BaseModel):
     principal: str
     secrets: dict[str, SecretStr]
     badge: SecretStr | None = None  # what it calls the model gateway with, when IAM signs badges
+
+    def environment(self) -> dict[str, SecretStr]:
+        """What a job's process gets of it: each secret in its service's variable, and its badge."""
+        environment = {credential_variable(service): secret for service, secret in self.secrets.items()}
+        return environment if self.badge is None else {**environment, GATEWAY_TOKEN_VARIABLE: self.badge}
 
 
 class WorkloadIssuer(Protocol):

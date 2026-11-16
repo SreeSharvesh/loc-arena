@@ -6,11 +6,23 @@ naming the execution, its agent, its runner and whether it is traced. An executi
 settings trace runs pi with its trace extension, which reports each model and tool call to the company's
 observability store. A running execution can be stopped, keeping its checkpoint (what its runner held), and
 resumed later on any runner.
+
+The executions, the checkpoints and the telemetry settings are records in a database
+(``meridian_common.records``), so a service that starts again on it holds them. Its queued executions are
+queued again by their numbers, the order they were started in, whenever each was last queued. One recorded
+as running had its worker end with the last process: its runner's worker, before any other work, ends what
+runs there, takes the checkpoint and queues the execution to resume, in one write; one a caller asks to stop
+meanwhile is left stopped, and one whose checkpoint cannot be taken fails and says so. A checkpoint is kept
+until its restore has ended well, so an execution stopped during its restore, as by the process ending,
+resumes from that checkpoint and its runner's files are not packed. A stop under way when the process ended
+is not kept. A worker resets its runner before its first work, since the last process may have ended before
+its own reset, and takes no work while its runner cannot be reset.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import queue
 import random
 import threading
@@ -24,13 +36,18 @@ from typing import Protocol
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
+from meridian_common.records import Database
 from meridian_controlplane.agents.authority import AgentIdentity
 from meridian_controlplane.agents.registry import AgentName, AgentRegistry, AgentVersion
 from meridian_controlplane.agents.telemetry import TelemetryConfiguration
 
+logger = logging.getLogger(__name__)
 PI_COMMAND = "pi-on-gateway"  # on every runner: pi, run once on a model through the company's gateway
-RESET_AGAIN_SECONDS = 0.2  # how long a cancel or a stop waits for a run to end before it ends it again
+# How long a cancel or a stop waits for a run to end before it ends it again, and a worker for its runner.
+RESET_AGAIN_SECONDS = 0.2
 RESUME_INPUT = "This run was stopped and has resumed. Continue the task."
+UNRECORDED = "the service did not record how this run ended\n"  # of a run the service stopped to resume
+TELEMETRY = "settings"  # the one record of the telemetry settings
 CAPTURE_CONTENT_VARIABLE = (
     "MERIDIAN_CAPTURE_CONTENT"  # set for a traced execution only: pi loads the extension
 )
@@ -163,21 +180,46 @@ class Executions:
         runners: Sequence[Runner],
         timeout_seconds: float,
         write_audit_line: Callable[[str], None],
+        database: Database | None = None,
+        telemetry: TelemetryConfiguration | None = None,
     ) -> None:
-        """Start a worker for each of ``runners``."""
+        """Hold what ``database`` holds, in memory without one, and start a worker for each of ``runners``.
+
+        A new database starts with ``telemetry`` as its settings.
+        """
         self._registry = registry
         self._runners_by_name = {runner.name: runner for runner in runners}
         self._timeout_seconds = timeout_seconds
         self._write_audit_line = write_audit_line
-        self._telemetry = TelemetryConfiguration()
-        self._executions_by_id: dict[str, Execution] = {}
-        self._checkpoints_by_id: dict[str, str] = {}
-        self._stopping_ids: set[str] = set()
+        self._database = database or Database()
+        self._telemetry = self._database.records(
+            "telemetry",
+            TelemetryConfiguration.model_validate_json,
+            TelemetryConfiguration.model_dump_json,
+        )
+        if not self._telemetry:
+            self.configure_telemetry(telemetry or TelemetryConfiguration())
+        self._executions_by_id = self._database.records(
+            "executions",
+            Execution.model_validate_json,
+            Execution.model_dump_json,
+        )
+        self._checkpoints_by_id = self._database.records("checkpoints", json.loads, json.dumps)
+        recorded = list(self._executions_by_id.values())
+        # What the last process left running, by runner: its worker recovers each before other work.
+        self._running_ids_by_runner = {
+            execution.runner: execution.id
+            for execution in recorded
+            if execution.state is ExecutionState.RUNNING and execution.runner
+        }
+        self._stopping_ids: set[str] = set()  # the running executions a caller asked to stop
         self._queued_ids: queue.Queue[str] = queue.Queue()
+        for execution in recorded:
+            if execution.state is ExecutionState.QUEUED:
+                self._queued_ids.put(execution.id)
         self._executions_lock = threading.Lock()
         # Held while a runner starts a run, or is reset: a cancel then resets only the run it cancels.
         self._runner_locks = {runner.name: threading.Lock() for runner in runners}
-        self._running_ids_by_runner: dict[str, str] = {}
         for runner in runners:
             threading.Thread(target=self._run_queued_executions, args=(runner,), daemon=True).start()
 
@@ -194,13 +236,13 @@ class Executions:
     @property
     def telemetry(self) -> TelemetryConfiguration:
         """How executions are traced from now on."""
-        return self._telemetry
+        return self._telemetry[TELEMETRY]
 
     def configure_telemetry(self, configuration: TelemetryConfiguration) -> TelemetryConfiguration:
         """Trace the executions started from now on as ``configuration`` says; 404 for an unknown agent."""
         for agent in configuration.agents:
             self._registry.get_agent(agent)
-        self._telemetry = configuration
+        self._telemetry[TELEMETRY] = configuration
         return configuration
 
     def start(self, request: ExecutionRequest, started_by: str, schedule_id: str | None = None) -> Execution:
@@ -210,7 +252,7 @@ class Executions:
         agent = self._registry.get_agent(request.agent)
         if agent.retired:
             raise HTTPException(HTTPStatus.CONFLICT, f"agent {request.agent!r} is retired")
-        telemetry = self._telemetry.settings_for(agent.name)
+        telemetry = self.telemetry.settings_for(agent.name)
         traced = telemetry.tracing and random.random() < telemetry.sample_rate
         with self._executions_lock:
             execution = self._record(
@@ -236,12 +278,13 @@ class Executions:
             execution = self._find_execution(execution_id)
             if execution.state not in {ExecutionState.QUEUED, ExecutionState.RUNNING, ExecutionState.STOPPED}:
                 raise HTTPException(HTTPStatus.CONFLICT, f"execution {execution_id!r} has ended")
-            self._checkpoints_by_id.pop(execution_id, None)
-            execution = self._record_change(
-                execution,
-                state=ExecutionState.CANCELLED,
-                ended_at=datetime.now(UTC),
-            )
+            with self._database.transaction():  # its end and its checkpoint's, together
+                self._checkpoints_by_id.pop(execution_id, None)
+                execution = self._record_change(
+                    execution,
+                    state=ExecutionState.CANCELLED,
+                    ended_at=datetime.now(UTC),
+                )
         self._end_run(execution, lambda runner: runner.reset())
         return execution
 
@@ -252,7 +295,7 @@ class Executions:
             if execution.state is not ExecutionState.RUNNING:
                 raise HTTPException(HTTPStatus.CONFLICT, f"execution {execution_id!r} is not running")
             self._stopping_ids.add(execution_id)
-        self._end_run(execution, lambda runner: runner.end_processes(self._timeout_seconds))
+        self._end_run(execution, lambda runner: runner.end_processes(self._timeout_seconds), stopping=True)
         return self.get_execution(execution_id)
 
     def resume(self, execution_id: str, request: ResumeRequest) -> Execution:
@@ -269,24 +312,68 @@ class Executions:
         self._queued_ids.put(execution_id)
         return execution
 
-    def _end_run(self, execution: Execution, end: Callable[[Runner], None]) -> None:
-        """End the execution's run with ``end`` until its worker has seen it end, since it may start after."""
-        while (
-            execution.runner is not None and self._running_ids_by_runner.get(execution.runner) == execution.id
-        ):
-            with self._runner_locks[execution.runner]:
-                if self._running_ids_by_runner.get(execution.runner) == execution.id:
-                    end(self._runners_by_name[execution.runner])
+    def _end_run(
+        self,
+        execution: Execution,
+        end: Callable[[Runner], None],
+        *,
+        stopping: bool = False,
+    ) -> None:
+        """End the execution's run with ``end`` until its worker has seen it end, since it may start after.
+
+        A stop ends the run it was asked of alone: never a later run of the execution, once it has resumed.
+        """
+        name = execution.runner
+        if name is None:
+            return
+
+        def is_running() -> bool:
+            asked = not stopping or execution.id in self._stopping_ids
+            return asked and self._running_ids_by_runner.get(name) == execution.id
+
+        while is_running():
+            with self._runner_locks[name]:
+                if is_running():
+                    end(self._runners_by_name[name])
             time.sleep(RESET_AGAIN_SECONDS)
 
-    def _run_queued_executions(self, runner: Runner) -> None:
-        runner_lock = self._runner_locks[runner.name]
+    def _reset(self, runner: Runner) -> None:
+        """Reset ``runner``, again until it answers: its worker takes no work on one it could not empty."""
         while True:
-            execution_id = self._queued_ids.get()
+            try:
+                return runner.reset()
+            except Exception as error:  # noqa: BLE001 - whatever its client raises: the worker outlives it
+                logger.warning("runner %s was not reset, trying again: %s", runner.name, error)
+                time.sleep(RESET_AGAIN_SECONDS)
+
+    def _run_queued_executions(self, runner: Runner) -> None:
+        """Run the queued executions on ``runner`` in turn, whatever a write or its client raises."""
+        runner_lock = self._runner_locks[runner.name]
+        if runner.name not in self._running_ids_by_runner:
+            with runner_lock:
+                self._reset(runner)  # the last process may have ended before its own reset
+        while True:
+            try:
+                # A run recorded running that no worker follows, left by the last process or by a write
+                # that failed: stopped as a stop does, and resumed.
+                if left_id := self._running_ids_by_runner.get(runner.name):
+                    with runner_lock:
+                        runner.end_processes(self._timeout_seconds)
+                    left = RunnerResult(returncode=None, stdout="", stderr=UNRECORDED)
+                    self._end_run_on(runner, left_id, left, restarted=True)
+                self._run(runner, self._queued_ids.get())
+            except Exception:
+                logger.exception("the worker of %s goes on after a failure", runner.name)
+                time.sleep(RESET_AGAIN_SECONDS)
+
+    def _run(self, runner: Runner, execution_id: str) -> None:
+        """Run queued ``execution_id`` on ``runner`` and record how it ended."""
+        runner_lock = self._runner_locks[runner.name]
+        try:
             with runner_lock, self._executions_lock:
                 execution = self._executions_by_id[execution_id]
                 if execution.state is ExecutionState.CANCELLED:
-                    continue
+                    return
                 execution = self._record_change(
                     execution,
                     state=ExecutionState.RUNNING,
@@ -294,35 +381,62 @@ class Executions:
                     started_at=datetime.now(UTC),
                 )
                 self._running_ids_by_runner[runner.name] = execution_id
-                checkpoint = self._checkpoints_by_id.pop(execution_id, None)
-            with runner_lock:  # so no stop or cancel ends the run while its files come back
-                result = runner.restore(checkpoint, self._timeout_seconds) if checkpoint else None
-            if result is None or result.returncode == 0:
-                identity = self._registry.get_identity(execution.agent)
-                result = runner.run(
-                    build_pi_command(execution),
-                    {**build_trace_environment(execution), **build_identity_environment(identity)},
-                    self._timeout_seconds,
-                )
-            with runner_lock:
-                # A run that exited 0 beat its stop, and keeps its reply.
-                stopping = execution_id in self._stopping_ids and result.returncode != 0
-                checkpointed = runner.checkpoint(self._timeout_seconds) if stopping else None
-                with self._executions_lock:
-                    self._stopping_ids.discard(execution_id)
-                    del self._running_ids_by_runner[runner.name]
-                    execution = self._executions_by_id[execution_id]
-                    error_output = execution.error_output + result.stderr
-                    running = execution.state is ExecutionState.RUNNING  # not cancelled while it ran
-                    if running and checkpointed is not None and checkpointed.returncode == 0:
-                        self._checkpoints_by_id[execution_id] = checkpointed.stdout
+                checkpoint = self._checkpoints_by_id.get(execution_id)
+        except Exception:
+            self._queued_ids.put(execution_id)  # its record still says queued: it is taken again
+            raise
+        with runner_lock:  # so no stop or cancel ends the run while its files come back
+            result = runner.restore(checkpoint, self._timeout_seconds) if checkpoint else None
+        if result is None or result.returncode == 0:
+            with self._executions_lock:  # restored: the runner holds its files now
+                self._checkpoints_by_id.pop(execution_id, None)
+            identity = self._registry.get_identity(execution.agent)
+            result = runner.run(
+                build_pi_command(execution),
+                {**build_trace_environment(execution), **build_identity_environment(identity)},
+                self._timeout_seconds,
+            )
+        self._end_run_on(runner, execution_id, result)
+
+    def _end_run_on(
+        self,
+        runner: Runner,
+        execution_id: str,
+        result: RunnerResult,
+        *,
+        restarted: bool = False,
+    ) -> None:
+        """Record how the run on ``runner`` ended with ``result``, keeping its checkpoint if it stopped.
+
+        A run the last process left (``restarted``) is stopped too, and queued to resume in the same write,
+        unless a caller asked to stop it meanwhile.
+        """
+        with self._runner_locks[runner.name]:
+            # A run that exited 0 beat its stop, and keeps its reply.
+            stopping = (restarted or execution_id in self._stopping_ids) and result.returncode != 0
+            # A checkpoint still kept was not restored whole: it stands, and the runner is not packed.
+            kept = stopping and execution_id in self._checkpoints_by_id
+            checkpointed = runner.checkpoint(self._timeout_seconds) if stopping and not kept else None
+            with self._executions_lock:
+                resumed = restarted and execution_id not in self._stopping_ids
+                execution = self._executions_by_id[execution_id]
+                error_output = execution.error_output + result.stderr
+                running = execution.state is ExecutionState.RUNNING  # not cancelled while it ran
+                if running and (kept or (checkpointed is not None and checkpointed.returncode == 0)):
+                    with self._database.transaction():  # the checkpoint, and the state that says it is kept
+                        if checkpointed is not None:
+                            self._checkpoints_by_id[execution_id] = checkpointed.stdout
                         self._record_change(
                             execution,
-                            state=ExecutionState.STOPPED,
+                            state=ExecutionState.QUEUED if resumed else ExecutionState.STOPPED,
+                            # What it was last told stands: a resume the last process never gave pi.
+                            resume_input=execution.resume_input or (RESUME_INPUT if resumed else None),
                             runner=None,
                             error_output=error_output,
                         )
-                    elif running:
+                elif running:
+                    with self._database.transaction():  # its end, and that of a checkpoint no restore took
+                        self._checkpoints_by_id.pop(execution_id, None)
                         self._record_change(
                             execution,
                             state=ExecutionState.COMPLETED
@@ -333,12 +447,19 @@ class Executions:
                             output=result.stdout,
                             error_output=error_output + (checkpointed.stderr if checkpointed else ""),
                         )
-                runner.reset()
+                # Only once its state is kept is the run this worker's no more: a write that failed leaves
+                # it recorded running on this runner, for the worker to stop and resume.
+                self._stopping_ids.discard(execution_id)
+                del self._running_ids_by_runner[runner.name]
+                if self._executions_by_id[execution_id].state is ExecutionState.QUEUED:
+                    self._queued_ids.put(execution_id)
+            self._reset(runner)
 
     def _find_execution(self, execution_id: str) -> Execution:
-        if execution_id not in self._executions_by_id:
+        execution = self._executions_by_id.get(execution_id)
+        if execution is None:
             raise HTTPException(HTTPStatus.NOT_FOUND, f"no execution {execution_id!r}")
-        return self._executions_by_id[execution_id]
+        return execution
 
     def _record_change(self, execution: Execution, **changes: object) -> Execution:
         return self._record(execution.model_copy(update=changes))
@@ -346,17 +467,16 @@ class Executions:
     def _record(self, execution: Execution) -> Execution:
         """Keep ``execution`` as it is now, and write its state on the audit record."""
         self._executions_by_id[execution.id] = execution
-        self._write_audit_line(
-            json.dumps(
-                {
-                    "wall_ts": datetime.now(UTC).isoformat(),
-                    "execution": execution.id,
-                    "state": execution.state,
-                    "agent": execution.agent,
-                    "version": execution.version.number,
-                    "runner": execution.runner,
-                    "traced": execution.traced,
-                },
-            ),
+        line = json.dumps(
+            {
+                "wall_ts": datetime.now(UTC).isoformat(),
+                "execution": execution.id,
+                "state": execution.state,
+                "agent": execution.agent,
+                "version": execution.version.number,
+                "runner": execution.runner,
+                "traced": execution.traced,
+            },
         )
+        self._database.after_commit(lambda: self._write_audit_line(line))  # no line of a state not kept
         return execution

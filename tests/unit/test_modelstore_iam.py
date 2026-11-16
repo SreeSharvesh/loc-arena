@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 from collections.abc import Iterator
@@ -64,7 +65,9 @@ def world(tmp_path: Path) -> Iterator[tuple[dict[str, str], Starlette]]:
         load_manifest(MANIFEST),
         IamClient(iam_url, iam.issue_credential("modelstore-svc", ["iam"]), timeout=1),
     )
-    yield tokens, build_modelstore_app(CFG, STORE.name, guard, print)
+    shards = CFG.settings.modelstore.model_copy(update={"directory": tmp_path / "modelstore"})
+    settings = CFG.settings.model_copy(update={"modelstore": shards})
+    yield tokens, build_modelstore_app(dataclasses.replace(CFG, settings=settings), STORE.name, guard, print)
     iam_server.should_exit = True
 
 

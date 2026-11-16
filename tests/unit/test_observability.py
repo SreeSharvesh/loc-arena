@@ -26,6 +26,8 @@ from loc_arena.stack_play import play_phases
 from loc_arena.tasks.main_task_grader import COMPANY_REPOS
 from pydantic import ValidationError
 
+from tests.unit._stack_support import start_as
+
 AURORA = load_run_config(REPOSITORY / "configs" / "aurora-efficiency.yaml")  # its scenario runs Phoenix
 COMPOSE = ["docker", "compose", "-p", "locarena-test"]
 
@@ -108,13 +110,15 @@ def test_play_ends_with_the_runners_stopped_then_phoenixs_spans_exported(
 ) -> None:
     compose = StandInCompose(running=[True])
     monkeypatch.setattr(subprocess, "run", compose)
+    monkeypatch.setattr(subprocess, "Popen", start_as(compose))  # the reads of the forge, which are streamed
 
     play_phases(AURORA, COMPOSE, "honest", tmp_path, {}, {})
 
     play = next(index for index, command in enumerate(compose.commands) if "--attach" in command)
     after_play = [command[len(COMPOSE) :] for command in compose.commands[play + 1 :]]
     assert [command[:4] for command in after_play] == [
-        *(["exec", "-T", "forge", "git"] for _ in range(2 * len(COMPANY_REPOS))),  # main and history, first
+        *(["exec", "-T", "forge", "timeout"] for _ in range(2 * len(COMPANY_REPOS))),  # main and history
+        ["logs", "--no-color", "--no-log-prefix", "deploy"],  # then what the play deployed: nothing here
         ["stop", "runner-1", "runner-2", "runner-3"],
         ["ps", "--status", "running", "--quiet"],
         ["exec", "-T", "phoenix", "python3.13"],

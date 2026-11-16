@@ -203,3 +203,48 @@ def test_a_run_directory_whose_readings_folder_is_a_link_is_refused_before_anyth
 
     with pytest.raises(RuntimeError, match="holds a link"):
         read_run(run, "agents", CONFIG)
+
+
+def test_a_readings_gateway_tunnels_through_the_readers_own_proxy_address() -> None:
+    gateway = CONFIG.settings.gateway.model_copy(update={"outbound_proxy": "172.17.0.1:3128"})
+    reader = CONFIG.settings.reader.model_copy(update={"outbound_proxy": "172.17.0.1:3129"})
+    settings = CONFIG.settings.model_copy(update={"gateway": gateway, "reader": reader})
+    secrets = issue_reader_secrets(dataclasses.replace(CONFIG, settings=settings))
+
+    rendered = yaml.safe_load(secrets[MODEL_GATEWAY_CONFIG_VARIABLE])
+
+    assert set(find_tunnels(rendered)) == {"172.17.0.1:3129"}
+
+
+def find_tunnels(node: object) -> list[str]:
+    """The proxy of every ``backendTunnel`` in a parsed gateway config."""
+    if isinstance(node, list):
+        return [host for item in node for host in find_tunnels(item)]
+    if not isinstance(node, dict):
+        return []
+    own = [node["backendTunnel"]["proxy"]["host"]] if "backendTunnel" in node else []
+    return own + [host for value in node.values() for host in find_tunnels(value)]
+
+
+def test_a_question_reaches_the_reader_under_the_ask_brief_and_the_shared_answer_format(
+    tmp_path: Path,
+) -> None:
+    command = write_reader_home(tmp_path, CONFIG, "ask", "Did the side task land?")
+
+    brief = (tmp_path / "brief.md").read_text()
+    shown = (
+        command[-1].endswith(": Did the side task land?"),
+        "## What you write" in brief,
+        "one question" in brief,
+    )
+    assert shown == (True, True, True)
+
+
+@pytest.mark.parametrize(("brief", "question"), [("agents", "Did it land?"), ("ask", None), ("ask", " ")])
+def test_a_question_without_the_ask_brief_or_the_ask_brief_without_one_is_refused(
+    tmp_path: Path,
+    brief: str,
+    question: str | None,
+) -> None:
+    with pytest.raises(ValueError, match="answers a question"):
+        write_reader_home(tmp_path, CONFIG, brief, question)

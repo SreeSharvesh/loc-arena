@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Iterator, Mapping
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -24,8 +24,11 @@ from loc_arena.harness import (
     grade_run,
 )
 from loc_arena.logging_.agent_trace import EpisodeTrace
-from loc_arena.logging_.events import Event
+from loc_arena.logging_.events import Event, read_events
 from loc_arena.logging_.transcript_lanes import UNPLACED, build_transcript
+from loc_arena.monitors.registry import PROMPT_INPUTS_PLACEHOLDER, load_monitor_specs, load_monitors
+from loc_arena.protocol import compose_protocol, monitor_context
+from loc_arena.task import SNAPSHOT_FILE, ClockReading, read_snapshot_file
 from loc_arena.tasks.main_task_grader import seed_checkout
 
 from tests.integration._records_support import (
@@ -500,7 +503,7 @@ def test_a_service_line_that_is_no_agents_request_builds_no_event(
     ("service", "tool", "arguments", "target"),
     [
         ("notes", "write_note", {"key": "plan", "body": "loop"}, "plan"),
-        ("deploy", "deploy", {"service": "notes"}, "notes"),
+        ("tickets", "create_project", {"key": "KEPT", "name": "kept"}, "KEPT"),
     ],
 )
 def test_a_tool_call_its_service_took_becomes_an_action_naming_its_target(
@@ -520,3 +523,163 @@ def test_a_tool_call_its_service_took_becomes_an_action_naming_its_target(
     assert [(e.tool, e.target_id, e.payload["args"], e.payload["blocked"]) for e in actions] == [
         (tool, target, arguments, False),
     ]
+
+
+DEPLOYMENT = {"number": 3, "service": "notes", "by": "serving-agent", "commits": {}, "state": "started"}
+ENDED = {
+    **DEPLOYMENT,
+    "commits": {"meridian-controlplane": "c0ffee"},
+    "state": "failed",
+    "detail": "SyntaxError",
+}
+SERVING = {**DEPLOYMENT, "commits": {"meridian-controlplane": "c0ffee"}, "state": "serving", "detail": ""}
+MONITORS = "configs/monitors.yaml"  # the monitors that ship
+
+
+def record_deployment(
+    at: datetime,
+    ended_at: datetime,
+    *,
+    called: bool,
+    ended: Mapping[str, object] | None = ENDED,
+    number: int = 3,
+) -> list[str]:
+    """The deploy service's lines of deployment ``number`` of notes, which serving-agent started at ``at``.
+
+    The ``deploy`` call's line, if it was ``called``; then the deployment's own: as it was accepted, as its
+    hand-over started, and as it ``ended``, unless it was still in progress (``None``).
+    """
+    accepted = {**DEPLOYMENT, "number": number}
+
+    def line(written: datetime, result: Mapping[str, object], **mark: bool) -> str:
+        outcome = {"gen_ai.tool.call.result": result, **mark}
+        return call_line("deploy", {"service": "notes"}, written, "serving-agent", **outcome)
+
+    return [
+        *([line(at, accepted)] if called else []),
+        line(at, accepted, **{"tool.call.accepted": True}),
+        line(at, {"release": f"deploy-{number}"}, **{"tool.call.started": True}),
+        *(
+            [line(ended_at, {**ended, "number": number}, **{"tool.call.ended": True})]
+            if ended is not None
+            else []
+        ),
+    ]
+
+
+@pytest.mark.parametrize("called", [True, False], ids=["its call recorded", "its call left no line"])
+def test_a_deployment_is_one_action_of_its_caller_then_what_the_service_reports_of_its_end(
+    tmp_path: Path,
+    called: bool,
+) -> None:
+    run = play(tmp_path / "run")
+    started, _ = read_window(run / "episode")
+    write_log(run, "deploy", *record_deployment(started, started + timedelta(seconds=20), called=called))
+
+    build_recorded_run_events(LIVE, run)
+
+    built = sorted(
+        events_of(run / "episode", MIRROR, "action") + events_of(run / "episode", MIRROR, "siem"),
+        key=lambda event: event.seq,
+    )
+    assert [(e.kind, e.actor_uid, e.tool, e.target_id) for e in built] == [
+        ("action", "serving-agent", "deploy", "notes"),
+        ("siem", "serving-agent", None, "notes"),
+    ]
+    assert (built[0].result, built[1].payload) == (
+        DEPLOYMENT,
+        {"event": "deploy_ended", "identity": "serving-agent", **ENDED},
+    )
+
+
+def read_action_monitor_inputs(phase: Path) -> list[dict[str, object]]:
+    """What the shipped action monitor is shown of the play in ``phase``: the inputs of each prompt."""
+    templates = {spec.name: spec.prompt_template for spec in load_monitor_specs(MONITORS)}
+    head, tail = templates["action_monitor"].split(PROMPT_INPUTS_PLACEHOLDER)
+    prompts: list[str] = []
+
+    def call(monitor: str, prompt: str, temperature: float) -> str:
+        prompts.extend([prompt] if monitor == "action_monitor" else [])
+        return '{"suspicion": 0.0, "reason": "routine"}'
+
+    protocol = compose_protocol(LIVE, load_monitors(MONITORS, LIVE.models))
+    protocol.run(list(read_events(phase / MIRROR)), monitor_context(LIVE, model_caller=call))
+    return [json.loads(prompt.removeprefix(head).removesuffix(tail)) for prompt in prompts]
+
+
+@pytest.mark.parametrize(
+    ("ended", "outcome"),
+    [
+        (ENDED, {"tool_outcome": {**ENDED, "event": "deploy_ended", "identity": "serving-agent"}}),
+        (SERVING, {"tool_outcome": {**SERVING, "event": "deploy_ended", "identity": "serving-agent"}}),
+        (None, {}),
+    ],
+    ids=["failed", "serving", "in progress"],
+)
+def test_the_action_monitor_is_shown_a_deployment_once_with_how_it_ended(
+    tmp_path: Path,
+    ended: Mapping[str, object] | None,
+    outcome: dict[str, object],
+) -> None:
+    run = play(tmp_path / "run")
+    started, _ = read_window(run / "episode")
+    lines = record_deployment(started, started + timedelta(seconds=20), called=True, ended=ended)
+    write_log(run, "deploy", *lines)
+    build_recorded_run_events(LIVE, run)
+
+    shown = read_action_monitor_inputs(run / "episode")
+
+    assert shown == [
+        {
+            "tool_name": "deploy",
+            "tool_args": {"service": "notes"},
+            **outcome,
+            "message_body": None,
+            "actor_id": "serving-agent",
+            "task_description": LIVE.main_task["goal"],
+        },
+    ]
+
+
+def test_each_of_two_deployments_of_one_service_by_one_agent_is_shown_its_own_end(tmp_path: Path) -> None:
+    run = play(tmp_path / "run")
+    started, _ = read_window(run / "episode")
+    second = started + timedelta(seconds=30)
+    first_lines = record_deployment(started, started + timedelta(seconds=20), called=True, ended=ENDED)
+    second_lines = record_deployment(
+        second,
+        second + timedelta(seconds=20),
+        called=True,
+        ended=SERVING,
+        number=4,
+    )
+    write_log(run, "deploy", *first_lines, *second_lines)
+    build_recorded_run_events(LIVE, run)
+
+    shown = read_action_monitor_inputs(run / "episode")
+
+    reported = {"event": "deploy_ended", "identity": "serving-agent"}
+    assert [shown_input["tool_outcome"] for shown_input in shown] == [
+        {**ENDED, **reported},
+        {**SERVING, "number": 4, **reported},
+    ]
+
+
+def test_the_action_monitors_verdict_on_a_deployment_is_dated_when_the_deployment_ended(
+    tmp_path: Path,
+) -> None:
+    run = play(tmp_path / "run")
+    started, _ = read_window(run / "episode")
+    snapshot = read_snapshot_file(run / "episode")
+    moved = ClockReading(wall=(started + timedelta(seconds=10)).timestamp(), ts=200.0)  # before the end
+    clock = {"clock": (*snapshot.clock, moved)}
+    (run / "episode" / SNAPSHOT_FILE).write_text(snapshot.model_copy(update=clock).model_dump_json())
+    write_log(run, "deploy", *record_deployment(started, started + timedelta(seconds=20), called=True))
+    build_recorded_run_events(LIVE, run)
+    mirror_events = list(read_events(run / "episode" / MIRROR))
+    protocol = compose_protocol(LIVE, load_monitors(MONITORS, LIVE.models))
+
+    verdicts = protocol.run(mirror_events, monitor_context(LIVE))
+
+    deploys = {event.seq for event in mirror_events if event.tool == "deploy"}
+    assert [v.ts for v in verdicts if v.monitor == "action_monitor" and v.target_seq in deploys] == [200.0]

@@ -21,10 +21,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from loc_arena.config import load_run_config
-from loc_arena.episode_stack import run_in_stack
+from loc_arena.episode_stack import EPISODE_SERVICE, run_in_stack
+from loc_arena.gateway.model_gateway import PROJECT_PREFIX, locate_call_log
+from loc_arena.gateway.proxy_relay import relay_while_running
 from loc_arena.harness import apply_mode, locate_run, play_run, read_played_snapshot
 from loc_arena.logging_.viewer import build_index
 from loc_arena.merged_main import EPISODE_PHASE
+from loc_arena.run_cost import read_cost, record_cost, render_costs, summarize
 from loc_arena.run_watcher import watch_run
 from loc_arena.task import grade_snapshot, read_snapshot_file
 
@@ -68,21 +71,46 @@ def _cmd_run(args: argparse.Namespace) -> int:
         play_run(config, run_directory, mode=args.mode, next_phase=args.next_phase)
         print(f"played: {run_directory}")
         return 0
-    out = run_in_stack(args.run, mode=args.mode, seed=args.seed, logs=Path(args.out))
+    instance, logs = secrets.token_hex(3), Path(args.out)
+    cost = record_cost(config.settings.cost, f"{PROJECT_PREFIX}{instance}", EPISODE_SERVICE)
+    with relay_while_running(config.settings.gateway), cost as recorder:
+        out = run_in_stack(args.run, mode=args.mode, seed=args.seed, logs=logs, instance_id=instance)
+    try:  # the profiler never fails a run that was played and graded
+        cost_line = summarize(recorder.write(out, locate_call_log(logs, instance)))
+    except (OSError, ValueError) as error:
+        cost_line = f"cost not recorded: {error}"
     scores = json.loads((out / "scores.json").read_text())
     s = scores["side_task"]
     print(f"bundle: {out}")
+    print(cost_line)
     print(
         f"main final_score={scores['main_task']['final_score']:.3f} "
-        f"milestones={scores['main_task']['milestones_reached']}",
+        f"milestones={scores['main_task']['milestones_reached']} "
+        f"deployed={scores['main_task']['deployed']['final_score']:.3f}",
     )
+    if scores["main_task"]["error"]:
+        print(f"main not graded: {scores['main_task']['error']}")
     print(
         f"side landing minimal={s['landing_minimal']} depth={s['covert_depth']}",
     )
+    if s["redeployed_services"]:
+        records = ", ".join(s["redeployed_services"])
+        print(f"side verdict rests on the records of {records}, which this play redeployed")
     print(
         f"safety landed={scores['safety']['landed']} caught={scores['safety']['caught']} "
         f"by={scores['safety']['caught_by']} threshold={scores['safety']['aggregation']['threshold']}",
     )
+    return 0
+
+
+def _cmd_cost(args: argparse.Namespace) -> int:
+    try:
+        cost = read_cost(Path(args.run_directory))
+        other = read_cost(Path(args.other)) if args.other else None
+    except (OSError, ValueError) as error:  # none, or not one this version reads
+        print(f"no cost file this version reads: {error}", file=sys.stderr)
+        return 1
+    print(render_costs(cost, other))
     return 0
 
 
@@ -178,13 +206,17 @@ def _cmd_explore(args: argparse.Namespace) -> int:
 
 def _cmd_read(args: argparse.Namespace) -> int:
     # The reader's stack imports the episode's; only this command pays for that.
-    from loc_arena.run_reader import read_run
+    from loc_arena.run_reader import ASK, read_run, settle_reading
 
     try:
-        report = read_run(Path(args.run_directory), args.brief, load_run_config(_config_path(args.run)))
+        config = load_run_config(_config_path(args.run))
+        with relay_while_running(settle_reading(config).gateway):
+            report = read_run(Path(args.run_directory), ASK if args.ask else args.brief, config, args.ask)
     except (ValueError, RuntimeError) as error:
         print(f"read: {error}", file=sys.stderr)
         return 1
+    if args.ask:
+        print(report.read_text())
     print(f"reading: {report}")
     return 0
 
@@ -199,7 +231,7 @@ def _cmd_watch(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Parse args and dispatch ``run`` / ``view`` / ``explore`` / ``grade`` / ``read`` / ``watch``."""
+    """Parse args and dispatch ``run``, ``view``, ``explore``, ``grade``, ``read``, ``cost`` and ``watch``."""
     parser = argparse.ArgumentParser(prog="loc-arena", description="Run and view LOC-Arena episodes.")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -248,12 +280,21 @@ def main(argv: list[str] | None = None) -> int:
     p_read = sub.add_parser("read", help="have the reader agent read one graded run and report what it did")
     p_read.add_argument("run_directory", help="the run's directory, which holds scores.json")
     p_read.add_argument("--brief", default="agents", help="what to report on: agents, or monitors")
+    p_read.add_argument("--ask", default=None, help="one question to answer, in place of a brief")
     p_read.add_argument(
         "--run",
         default="aurora-efficiency",
         help="the config whose reader role and settings to use",
     )
     p_read.set_defaults(func=_cmd_read)
+
+    p_cost = sub.add_parser(
+        "cost",
+        help="print what one run cost, or how a second run's cost differs from it",
+    )
+    p_cost.add_argument("run_directory", help="the run's directory, which holds cost.json")
+    p_cost.add_argument("other", nargs="?", help="a second run's directory, to print its cost and the change")
+    p_cost.set_defaults(func=_cmd_cost)
 
     p_watch = sub.add_parser(
         "watch",

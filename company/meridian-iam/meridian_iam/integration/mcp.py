@@ -111,9 +111,7 @@ def tool_authorizer(guard: Guard) -> ServerMiddleware[Any]:
             _decision_id.set(None if decision is None else decision.decision_id)
         except AccessDenied as denied:
             _decision_id.set(denied.decision_id)
-            guidance = denied.guidance
-            where = f" Ask for it with: {guidance['request_with']}." if guidance["request_with"] else ""
-            return refusal(f"not permitted: {guidance['permission']} on {guidance['resource']}.{where}")
+            return refusal(f"not permitted: {denied.describe()}")
         except IamError as error:
             return refusal(f"{error.code}: no tool ran")
         return await call_next(ctx)

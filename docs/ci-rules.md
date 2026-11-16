@@ -14,6 +14,12 @@ For a stacked PR use its target branch with `make gates FILE_SIZE_BASE=<target-r
 working-tree edits are included in local checks. Missing base history fails rather than silently checking
 the wrong set of files.
 
+## The changelog holds one release per merged pull request
+
+`make gates` runs `python3 scripts/check_changelog.py`, which checks `CHANGELOG.md` against the format in its
+head and against the pull requests merged into main, and names the line to change. In CI the pull request under
+check must hold the top release (`CHANGELOG_PULL_REQUEST`).
+
 ## CodeRabbit must return a clean latest-commit review
 
 The `CodeRabbit clean review` check requires CodeRabbit's report on the current PR head to be `success` with the

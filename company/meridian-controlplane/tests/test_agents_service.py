@@ -140,8 +140,8 @@ class HeldRunner:
         self._ends.append(end)
         self.commands.append(argv)
         self.environments.append(environment)
-        assert end.wait(timeout_seconds)
-        return KILLED if number in self._killed else self.result
+        ended = end.wait(timeout_seconds)  # still held at its timeout: killed, as a runner kills it
+        return self.result if ended and number not in self._killed else KILLED
 
     def end_processes(self, timeout_seconds: float) -> None:
         """End what runs as a kill does: the commands held exit on the signal."""
@@ -551,8 +551,9 @@ def test_a_queued_execution_that_is_cancelled_never_runs(
 
     runner.release(1)
     third = start_summary(executing_service)
+    runner.release(2)
 
-    wait_for_state(executing_service, third["id"], "running")
+    wait_for_state(executing_service, third["id"], "completed")
     assert (len(runner.commands), first["state"]) == (2, "queued")
 
 

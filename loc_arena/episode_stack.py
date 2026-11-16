@@ -29,12 +29,11 @@ import os
 import secrets
 import subprocess
 from collections.abc import Sequence
-from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from scenarios.loader import EngineModule, LiveService
 
-from loc_arena import deploy_pool, machine_roots
+from loc_arena import deploy_pool, image_tag, machine_roots, telemetry_stack
 from loc_arena.checkouts import checkout_home, checkout_mount, render_checkout_volumes
 from loc_arena.compose_document import ComposeDocument, ComposeService, Healthcheck, ServiceSecret
 from loc_arena.config import RunConfig, load_run_config, sandbox_service
@@ -54,7 +53,7 @@ from loc_arena.iam_bootstrap import (
     service_credential_variable,
 )
 from loc_arena.iam_wiring import service_environment
-from loc_arena.identity_variables import find_shared_identity_variable, holds_identities, identity_variable
+from loc_arena.identity_variables import Identity, find_shared_identity_variable, holds_identities
 from loc_arena.merged_main import write_played_forges
 from loc_arena.node_pool import (
     NODE_TARGET,
@@ -86,6 +85,9 @@ from loc_arena.stack_play import (
 )
 from loc_arena.task import SANDBOX_URL_VARIABLE, TOOLS_URL_VARIABLE, resolve_scenario
 from loc_arena.tasks.main_task_grader import COMPANY_REPOS
+from loc_arena.tool_authorization import list_enforced_services
+from loc_arena.tool_list_notifier import NOTIFIER_KEY_SECRET_NAME, NOTIFIER_KEY_VARIABLE
+from loc_arena.tool_offer import report_lacked_tools
 from loc_arena.tools_gateway import (
     MCP_PATH,
     TOOLS_GATEWAY_CONFIG_SECRET_NAME,
@@ -118,24 +120,6 @@ NEVER_STARTED = (
 GATEWAY_MODE_OPTION = "com.docker.network.bridge.gateway_mode_ipv4"
 ENGINE_TARGET = "engine"  # the Dockerfile's stage of the gateway and the episode
 SANDBOX_TARGET = "sandbox"  # the Dockerfile's stage of the sandboxes: no harness, no scenarios
-
-
-@dataclass(frozen=True)
-class Identity:
-    """One agent's identity on one live service with rights: a compose secret, generated per run."""
-
-    service: str
-    agent_id: str
-
-    @property
-    def secret_name(self) -> str:
-        """The compose secret: both names verbatim, which hold no ``_``, so no two identities share one."""
-        return f"{IDENTITY_PREFIX}{self.service}_{self.agent_id}"
-
-    @property
-    def variable(self) -> str:
-        """Where compose reads the identity from, on the host."""
-        return identity_variable(self.service, self.agent_id)
 
 
 def issue_identities(config: RunConfig) -> tuple[Identity, ...]:
@@ -280,12 +264,16 @@ def render_compose(
                 else {}
             ),
             **(
-                {TOOLS_GATEWAY_CONFIG_SECRET_NAME: {"environment": TOOLS_GATEWAY_CONFIG_VARIABLE}}
+                {
+                    TOOLS_GATEWAY_CONFIG_SECRET_NAME: {"environment": TOOLS_GATEWAY_CONFIG_VARIABLE},
+                    NOTIFIER_KEY_SECRET_NAME: {"environment": NOTIFIER_KEY_VARIABLE},
+                }
                 if tool_services
                 else {}
             ),
         },
     }
+    compose = telemetry_stack.add_telemetry(config, compose, AGENT_NETWORK, EPISODE_SERVICE)
     return machine_roots.give_builds_machine_roots(compose)
 
 
@@ -321,6 +309,7 @@ def _render_episode(
         "secrets": [
             model_gateway.GATEWAY_TOKEN_SECRET_NAME,
             *(token_secret_name(agent_id) for agent_id in agent_ids),
+            *([NOTIFIER_KEY_SECRET_NAME] if tools_url else []),
         ],
         "volumes": volumes,
         "networks": [AGENT_NETWORK],
@@ -397,7 +386,7 @@ def _render_live_service(  # noqa: PLR0913
     run: str,
     managed: Sequence[str] = (),
 ) -> ComposeService:
-    """A live service: on agent-net alone, no published port.
+    """A live service: on agent-net alone (but the telemetry store, which is moved off it), no published port.
 
     One that runs a module of the ``engine`` service, with the run configs mounted read-only and the company
     repos importable, is given the path of ``run``'s config; any other mounts no volume.
@@ -409,15 +398,20 @@ def _render_live_service(  # noqa: PLR0913
     """
     stack = config.settings.stack
     iam = config.settings.iam
-    is_iam, is_managed = bool(managed) and service.name == iam.service, service.name in managed
-    if holds_identities(service) and not (is_iam or is_managed):
+    # A service the tools gateway enforces IAM for holds no credential and waits for nothing: it cannot ask.
+    enforced = service.name in list_enforced_services(config)
+    is_iam, is_managed = (
+        bool(managed) and service.name == iam.service,
+        service.name in managed and not enforced,
+    )
+    if holds_identities(service) and not (is_iam or is_managed or enforced):
         raise StackError(f"agents reach service {service.name!r}, but it is not under central IAM")
     environment: dict[str, str] = {}
     match service.source:
         case Path():
             source: ComposeService = {
                 "build": {"context": str(service.source)},
-                "image": f"loc-arena-service-{service.name}:latest",
+                "image": f"loc-arena-service-{service.name}:{image_tag.IMAGE_TAG}",
             }
             manifest_in_container = None
             if is_managed:
@@ -539,7 +533,7 @@ def issue_secrets(config: RunConfig) -> tuple[dict[str, str], dict[str, str]]:
             badges=badges,
             loops=describe_loops(config),
         )
-        return environment | gateway_secrets
+        return environment | gateway_secrets | telemetry_stack.issue_telemetry_secrets(config, TOKEN_BYTES)
 
     attack, twin = _issue_play_secrets(config, tokens)
     return with_gateway(attack, "attack"), with_gateway(twin, "twin")
@@ -555,6 +549,7 @@ def _issue_play_secrets(config: RunConfig, tokens: dict[str, str]) -> tuple[dict
     managed = managed_services(config)
     runners = list_runner_services(config)
     nodes = list_node_services(config)
+    notifier_key = secrets.token_urlsafe(TOKEN_BYTES)  # once, as the episode that holds it is not recreated
 
     def issue_for_play() -> dict[str, str]:
         identities = {identity: secrets.token_urlsafe(TOKEN_BYTES) for identity in issue_identities(config)}
@@ -572,6 +567,7 @@ def _issue_play_secrets(config: RunConfig, tokens: dict[str, str]) -> tuple[dict
             for agent in config.agents:  # per play, so a key from the attack play reads nothing in the twin
                 environment[inbox_key_variable(agent.id)] = secrets.token_urlsafe(TOKEN_BYTES)
         if serves_tools(config):
+            environment[NOTIFIER_KEY_VARIABLE] = notifier_key
             inbox_keys = (
                 {agent.id: environment[inbox_key_variable(agent.id)] for agent in config.agents}
                 if managed
@@ -582,13 +578,19 @@ def _issue_play_secrets(config: RunConfig, tokens: dict[str, str]) -> tuple[dict
                 tokens,
                 identities,
                 inbox_keys,
+                # The gateway asks IAM as each service it enforces for, with that service's credential.
+                {
+                    name: environment[service_credential_variable(name)]
+                    for name in list_enforced_services(config)
+                },
+                environment[NOTIFIER_KEY_VARIABLE],
             )
         return environment
 
     return issue_for_play(), issue_for_play()
 
 
-def run_in_stack(run: str, *, mode: str, seed: int | None, logs: Path) -> Path:
+def run_in_stack(run: str, *, mode: str, seed: int | None, logs: Path, instance_id: str) -> Path:
     """Play one episode of ``run`` (a config in ``configs/``) in its own compose project; grade it here.
 
     The episode container plays the episode and, after ``renew_services``, its honest twin (``play_phases``).
@@ -606,7 +608,6 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, logs: Path) -> Path:
     run = Path(run).name.removesuffix(".yaml")
     config = load_run_config(REPOSITORY / "configs" / f"{run}.yaml")
     settings = config.settings
-    instance_id = secrets.token_hex(3)
     project = f"{model_gateway.PROJECT_PREFIX}{instance_id}"
     episode_arguments = ["--mode", mode, "--instance", instance_id, "--play-only", "--next-phase"]
     compose_file = logs / "compose" / f"{project}.yaml"
@@ -625,9 +626,7 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, logs: Path) -> Path:
         "--project-directory",
         str(REPOSITORY),
     ]
-    attack_secrets, twin_secrets = issue_secrets(config)
-    environment = {**os.environ, **attack_secrets}
-    twin_environment = {**os.environ, **twin_secrets}
+    environment, twin_environment = ({**os.environ, **play} for play in issue_secrets(config))
     run_compose = functools.partial(subprocess.run, env=environment)
 
     copied = functools.partial(copy_out, run_compose, made=set())
@@ -661,6 +660,7 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, logs: Path) -> Path:
         if not (logs_copied and model_gateway.copy_call_log(run_compose, compose, settings, call_record)):
             raise StackError("could not copy every live service's log and the call record out, so no grading")
         build_recorded_run_events(config, run_directory)
+        report_lacked_tools(config, run_directory)  # never silent: each listing that lacked a named tool
         host_token = environment[model_gateway.HOST_TOKEN_VARIABLE]
         bundle = grade_run(
             sandbox_agent_code(config),

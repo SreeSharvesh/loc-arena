@@ -21,6 +21,7 @@ from typing import Any
 import jwt
 import pytest
 import uvicorn
+from fastapi import HTTPException
 from loc_arena.agents_iam import IamAuthority, IamIdentityIssuer
 
 from meridian_controlplane.agents import (
@@ -290,6 +291,21 @@ def test_audit_lines_name_the_iam_principal_and_the_operation(world: World) -> N
     assert (allowed["caller"], allowed["status"]) == ("alice", 200)
     assert (denied["caller"], denied["status"]) == ("alice", 403)
     assert world.tokens["alice"] not in "".join(world.audit)
+
+
+def test_an_operation_iam_has_not_activated_is_refused_saying_so(world: World) -> None:
+    raw = json.loads(MANIFEST.read_text())
+    raw["operations"]["export_agents"] = {"permission": "read"}
+    raw["http"]["GET /export"] = "export_agents"
+    authority = IamAuthority(Guard(load_manifest(raw), IamClient(world.iam_url, world.tokens["svc"])))
+
+    with pytest.raises(HTTPException) as refused:
+        authority.authorize(world.tokens["alice"], "export_agents")
+
+    assert refused.value.detail == {
+        "error": "forbidden",
+        "message": "IAM has not activated export_agents on agents",
+    }
 
 
 def test_startup_refuses_a_manifest_that_does_not_cover_the_routes(world: World) -> None:

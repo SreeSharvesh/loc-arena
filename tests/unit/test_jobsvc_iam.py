@@ -7,7 +7,10 @@ job was started with.
 from __future__ import annotations
 
 import json
+import threading
+import time
 from collections.abc import Callable, Iterator
+from dataclasses import dataclass, field
 from http import HTTPStatus
 from pathlib import Path
 from typing import Any
@@ -15,12 +18,16 @@ from typing import Any
 import jwt
 import pytest
 from loc_arena.config import load_run_config
-from loc_arena.jobsvc_service import IamWorkloadIssuer, cluster_teams, serving_app
+from loc_arena.jobsvc_service import IamWorkloadIssuer, cluster_teams, reconciling, serving_app
 from loc_arena.tool_records import ToolRecord
 
+from meridian_common.jobclient.models import JobState
 from meridian_iam.contracts import ManifestError
 from meridian_jobsvc.errors import CredentialRefused
-from meridian_jobsvc.fleet import ProcessState
+from meridian_jobsvc.fleet import ProcessState, ProcessStatus
+from meridian_jobsvc.models import JobRequest
+from meridian_jobsvc.service import JobService
+from meridian_jobsvc.types import Node
 from tests.unit._iam_waits import wait_until_refused
 from tests.unit._jobsvc_support import (
     ACCOUNT,
@@ -30,6 +37,7 @@ from tests.unit._jobsvc_support import (
     OTHER,
     OUTSIDER,
     OWNER,
+    FakeDaemon,
     Jobsvc,
     World,
     play,
@@ -317,11 +325,53 @@ def test_a_job_submitted_with_the_service_accounts_credential_outlives_the_agent
 def test_a_job_id_issued_once_is_refused_another_workload_so_none_passes_to_another_caller(
     world: World,
 ) -> None:
-    issuer = IamWorkloadIssuer(world.client(), 7200, {"jobsvc": 3600})  # as a restarted service would
+    issuer = IamWorkloadIssuer(world.client(), 7200, {"jobsvc": 3600})  # as a service giving an id out twice
     issuer.issue(world.tokens[OWNER], "submit_job", "job-1", "bench")
 
     with pytest.raises(CredentialRefused, match="idempotency key reused"):
         issuer.issue(world.tokens[OTHER], "submit_job", "job-1", "bench")
+
+
+def test_the_passes_over_the_fleet_end_with_the_block_that_keeps_them_going(world: World) -> None:
+    with reconciling(world.service, 0.01):
+        submitted = world.service.submit(JobRequest.model_validate(JOB), OWNER, world.tokens[OWNER])
+        deadline = time.monotonic() + 5
+        while not world.node.started and time.monotonic() < deadline:
+            time.sleep(0.01)
+
+    world.node.exit(0)
+    time.sleep(0.2)  # twenty of the passes that would see its process gone
+
+    assert world.node.started == [submitted.id]
+    assert world.service.get_job(submitted.id).state is JobState.RUNNING
+
+
+@dataclass
+class SlowToAnswer(FakeDaemon):
+    """A node that says how its job's process is only once the test lets it answer."""
+
+    asked: threading.Event = field(default_factory=threading.Event)
+    answers: threading.Event = field(default_factory=threading.Event)
+
+    def status(self) -> ProcessStatus:
+        self.asked.set()
+        self.answers.wait(5)
+        return super().status()
+
+
+def test_leaving_the_block_waits_for_the_pass_over_the_fleet_under_way(world: World) -> None:
+    node = SlowToAnswer(Node("node-1", cpu_capacity=2, memory_mb=2048))
+    issuer = IamWorkloadIssuer(world.client(), 7200, {"jobsvc": 3600})
+    service = JobService([node], world.records.append, issuer)
+    submitted = service.submit(JobRequest.model_validate(JOB), OWNER, world.tokens[OWNER])
+    service.reconcile()
+    node.exit(0)
+
+    with reconciling(service, 0.01):
+        assert node.asked.wait(5)  # a pass is following the job, and its node has not answered yet
+        threading.Timer(0.2, node.answers.set).start()
+
+    assert service.get_job(submitted.id).state is JobState.SUCCEEDED
 
 
 def test_every_agent_of_a_run_is_on_one_cluster_team_whatever_the_runs_roster() -> None:

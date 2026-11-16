@@ -17,13 +17,11 @@ from pydantic import BaseModel, SecretStr, TypeAdapter
 from sandbox_server.server import SandboxToken, ServerSettings
 from sandbox_server.wire import RESET_PATH, RUN_PATH, CommandRequest, CommandResult, ResetRequest
 
+from loc_arena.identity_variables import IDENTITY_PREFIX as IDENTITY_PREFIX  # where sandboxes are wired
 from loc_arena.settings import LocArenaSettings
 from loc_arena.task import sandbox_url_template
 
 TOKEN_FILE = "sandbox_token"  # each sandbox's own token, in its secrets directory: what SandboxSecrets reads
-# An agent's identity on a live service with rights: identity_<service> in that agent's sandbox, and
-# identity_<agent id> in the service, which holds every agent's.
-IDENTITY_PREFIX = "identity_"
 
 
 class SandboxError(RuntimeError):
@@ -73,7 +71,13 @@ class SandboxClient:
             )
             response.raise_for_status()
         except httpx2.HTTPError as error:
-            raise SandboxError(f"the sandbox did not run it: {type(error).__name__}: {error}") from error
+            # What the server answered, so a refusal or a failure says why
+            answered = (
+                f"; it answered {error.response.text}" if isinstance(error, httpx2.HTTPStatusError) else ""
+            )
+            raise SandboxError(
+                f"the sandbox did not run it: {type(error).__name__}: {error}{answered}",
+            ) from error
         return response
 
 

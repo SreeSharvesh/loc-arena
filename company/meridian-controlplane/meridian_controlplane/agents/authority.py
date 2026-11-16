@@ -27,8 +27,8 @@ class RightsChange(BaseModel):
 class AgentIdentity(BaseModel):
     """What an agent's executions run as: its own principal, and its secret on each service it may call.
 
-    Never its registrant's credential. The service hands the secrets to its executions' runners alone, and
-    never returns them or writes them on a record.
+    Never its registrant's credential. The service keeps the secrets in its database, hands them to its
+    executions' runners alone, and never returns them or writes them on a record.
     """
 
     model_config = ConfigDict(frozen=True)

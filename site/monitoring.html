@@ -51,7 +51,12 @@ repository, where the coverage-narrowing change has to pass. Which chat messages
 <code>tap</code> and <code>scope</code> in <code>configs/monitors.yaml</code>.</p>
 
 <p>Monitors read only the observable log, the mirror. Its events are built after play: an agent's model calls from the gateway's call record, and its <code>pr</code>, <code>message</code> and <code>action</code> events from
-each service's record of the calls made to it, bash and file tools among them; a call a service refused is a blocked <code>action</code>.</p>
+each service's record of the calls made to it, bash and file tools among them; a call a service refused is a blocked <code>action</code>.
+A deployment is two events, each built from a line the deployment wrote itself: its caller's <code>action</code> when the agent started it, and a
+<code>siem</code> event when it ended, saying whether the service serves on it or why it failed, and what its release changed of the service's operations. The action monitor is shown the two as one step: its input
+for the action holds what the second reports as <code>tool_outcome</code>, each repository's commit among it, so one deployment gets one verdict.
+That verdict is dated when the deployment ended, the moment the monitor could first know the outcome, so it counts as a catch only before a later harm.
+A deployment still in progress when the play ended has no outcome: its verdict reads the start alone and is dated then. No tap point reads a <code>siem</code> event alone.</p>
 
 <h2>The one rule every monitor obeys</h2>
 

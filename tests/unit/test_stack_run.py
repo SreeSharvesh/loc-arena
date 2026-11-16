@@ -6,6 +6,7 @@ Compose is a fake that records each call; the run directory, the logs and the me
 from __future__ import annotations
 
 import json
+import secrets
 import socket
 import subprocess
 from collections.abc import Iterator
@@ -21,16 +22,17 @@ from loc_arena.stack_play import DEPLOY, renew_services
 from loc_arena.tasks.main_task_grader import COMPANY_REPOS
 
 from tests.unit._reasoning_support import read_shown_reasoning, write_bundle, write_call_log
-from tests.unit._stack_support import COMPOSE_PREFIX_LENGTH, NOTES_LOG, FakeDocker
+from tests.unit._stack_support import COMPOSE_PREFIX_LENGTH, NOTES_LOG, FakeDocker, start_as
 
 SCRIPTED_CONFIG = load_run_config("configs/aurora-efficiency.yaml")
 IAM_DB = str(SCRIPTED_CONFIG.settings.iam.database)
 AURORA_AGENTS = ["AGENT_MAIN", "CONTROLPLANE_AGENT", "DATAPIPE_AGENT", "DISTILL_AGENT", "EVAL_AGENT"]
 AURORA_AGENTS += ["JOBSVC_AGENT", "SERVING_AGENT"]
 # The services agents hold an identity on, in the order a stack run's compose file declares them.
-SERVICES = tuple("notes forge chat jobsvc agents evalkit tickets modelstore deploy iam".split())
-# The containers whose log a stack run copies, in that order: those, Phoenix, the fleet and the tools gateway.
-LOGGED = (*SERVICES[:-1], "phoenix", "iam", "node-1", "node-2", "node-3", "node-4", "agentgateway")
+SERVICES = tuple("notes forge chat jobsvc agents evalkit tickets modelstore deploy telemetry iam".split())
+# The containers whose log a stack run copies, in that order: those, the two stores, the fleet and the tools
+# gateway.
+LOGGED = (*SERVICES[:-1], "phoenix", "iam", *(f"node-{n}" for n in range(1, 5)), "agentgateway")
 
 
 @pytest.fixture
@@ -38,11 +40,12 @@ def docker(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeDocker]:
     with socket.create_server(("127.0.0.1", 0)) as gateway:
         fake = FakeDocker(published=f"127.0.0.1:{gateway.getsockname()[1]}")
         monkeypatch.setattr(subprocess, "run", fake)
+        monkeypatch.setattr(subprocess, "Popen", start_as(fake))  # the reads of the forge, which are streamed
         yield fake
 
 
 def run_aurora_in_stack(logs: Path, mode: str = "honest") -> None:
-    run_in_stack("aurora-efficiency", mode=mode, seed=None, logs=logs)
+    run_in_stack("aurora-efficiency", mode=mode, seed=None, logs=logs, instance_id=secrets.token_hex(3))
 
 
 def read_copied_log(logs: Path, service: str) -> bytes:
@@ -286,14 +289,28 @@ def test_an_attack_stack_run_drains_the_record_then_renews_every_container_but_t
     ]
     renewed = ["sandbox-agent-main", "sandbox-serving-agent", "sandbox-distill-agent", "sandbox-eval-agent"]
     renewed += ["sandbox-datapipe-agent", "sandbox-jobsvc-agent", "sandbox-controlplane-agent"]
-    renewed += ["runner-1", "runner-2", "runner-3", *LOGGED]
+    renewed += ["runner-1", "runner-2", "runner-3", *LOGGED, "telemetry-collector", "telemetry-reader"]
     read = (
-        ["exec", "-T", "forge", "git", "--git-dir", f"/var/lib/forge/{repo}.git", *command]
+        [
+            "exec",
+            "-T",
+            "forge",
+            *("timeout", "--signal=KILL", "30.0"),  # forge.read_timeout_seconds, kept in the container too
+            "git",
+            "--no-replace-objects",
+            "--git-dir",
+            f"/var/lib/forge/{repo}.git",
+            *command,
+        ]
         for repo in COMPANY_REPOS
-        for command in (["archive", "--format=tar", "main"], ["bundle", "create", "--quiet", "-", "--all"])
+        for command in (
+            ["archive", "--format=tar", "refs/heads/main"],
+            ["bundle", "create", "--quiet", "-", "--all"],
+        )
     )
     assert between == [
         *read,  # what the episode merged, and the forge's history, read before the forge is renewed
+        ["logs", "--no-color", "--no-log-prefix", "deploy"],  # then the episode's last deployment, if any
         ["stop", *(service for service in renewed if service != "phoenix")],  # Phoenix runs on to export
         ["logs", "--no-color", "--no-log-prefix", "gateway"],
         ["cp", "collector:/sealed/calls.jsonl"],

@@ -6,7 +6,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any
+from typing import Any, TypedDict
 
 _OP = re.compile(r"[a-z][a-z0-9_]{0,63}")
 _PERMISSION = re.compile(r"[a-z][a-z0-9_]{0,31}")
@@ -40,6 +40,17 @@ class Manifest:
     operations: Mapping[str, Operation]
     http: Mapping[str, str]
     tools: Mapping[str, str]
+
+
+class ContractChange(TypedDict):
+    """What a staged contract changes against the active one.
+
+    Each operation added or changed maps to the permission it needs; each one removed is listed.
+    """
+
+    added: dict[str, str | None]
+    changed: dict[str, str | None]
+    removed: list[str]
 
 
 def _mapping(raw: Any, where: str) -> Mapping[str, Any]:  # noqa: ANN401 - untrusted input

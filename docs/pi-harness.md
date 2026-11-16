@@ -4,7 +4,7 @@ Each agent's whole session runs in [pi](https://github.com/earendil-works/pi), t
 own agents run in on the runners. The episode starts every agent's loop at once and plays no turn. `pi` is the
 default and the only value of the run config's `harness` key.
 
-`loc_arena/own_sessions.py` · `loc_arena/notices.py` · `loc_arena/workspace_service.py` · `loc_arena/session_events.py` · `loc_arena/gateway/loop_routes.py`
+`loc_arena/own_sessions.py` · `loc_arena/notices.py` · `loc_arena/workspace_service.py` · `loc_arena/tool_offer.py` · `loc_arena/tool_list_notifier.py` · `loc_arena/session_events.py` · `loc_arena/gateway/loop_routes.py`
 
 ## What a loop is
 
@@ -33,6 +33,28 @@ other agents' loops, briefs and keys.
 The agent is offered its `sandbox: tools:` on the company's services, and the workspace service's tools: `bash`,
 `read_file`, `write_file`, `edit_file`, `list_dir` and `search_code`, and its subscription tools (below). pi
 names each `mcp__meridian__<tool>`.
+
+### When a target restarts
+
+<img alt="UML sequence diagram. pi opens a session while the notes service restarts, and the tools gateway lists it no notes tools. The deployment ends; the episode reads that in the deploy service's record and lists through the gateway as each agent until every tool named is offered. Then the tool-list notifier sends tools/list_changed through the gateway, and pi lists again and is offered every tool." src="figures/tool-list-notice.svg" width="100%">
+
+The gateway lists a session the tools of the targets that answer, and pi keeps a session's list until it is told
+the list changed. So sessions start only once a new session, opened as each agent, lists every tool its run
+config names, read again for at most `stack.tools_offer_seconds`; `tools_offered.json` in the play's directory
+holds what each agent was offered and lacked, and while a tool is still missing the run fails naming it.
+
+During play a deployment restarts its service. When the deploy service's record shows a deployment ended, the
+same check runs again, and once it passes, the tool-list notifier sends `notifications/tools/list_changed` on
+every session's stream, and pi lists again. A session that opened while the service was down gets its tools
+back; no session lists while a named tool is missing, so an open session never loses one. A target that is
+still missing after `stack.tools_offer_seconds` gets no notice until the next deployment ends. Two windows
+are left, and both show in `tools_lacked.jsonl`: a deployment that ended on its time bound may still restart
+its service after the check, and a second deployment may stop its service between the check and pi's listing.
+
+The notifier is a target of the gateway with no tools, served in the episode's container beside the workspace
+service. It admits only the gateway, by a key no agent holds, and writes no record. The gateway's log names
+the tools of each listing (`tools_listed`). After play the run writes `tools_lacked.jsonl`, one line per tool
+a session's listing lacked, with the agent, the session and the time, and warns when it has any.
 
 The workspace service runs in the episode's container, on the code tools of `loc_arena/scaffold/code_services.py`: a file tool
 reads and writes the agent's checkout, and a command runs in the agent's sandbox. The tools gateway names the
@@ -83,6 +105,24 @@ When no session could start, play ends at once. `aurora-efficiency.fast` sets th
 | `budget` | the gateway refused a model call past the agent's turn budget (`episode.orchestrator_turn_budget` for the lead, `episode.subagent_turn_budget` for the others): its route admits that many requests in a play. A request the provider failed, pi's retry of it and a call pi makes to summarize a long session each count as one. The session takes no later notice |
 | `ceiling` | the loop was still working when `episode.wall_clock_seconds` passed |
 | `failed` | the loop's last run failed otherwise, past pi's own retries, or pi exited. A loop whose run failed is idle: a notice starts it again. It counts in the run's `failed_model_calls` |
+
+## Watching the sessions while a run plays
+
+A run writes its transcript and report only once both plays are graded. pi writes each session to
+`loops/<agent id>/.pi/session.jsonl` as it goes, and `make watch` follows those files in the episode container
+while the run plays, printing one line per step: the time, the play, the agent, and what it thought (`THINK`),
+said (`SAY`), called (`CALL`) or got back (`RESULT`). A run whose agents never take up their tasks shows in the
+first minutes and can be stopped there.
+
+```sh
+make watch                             # the run playing, through both plays
+make watch RUN_DIR=<run directory>     # a finished run's sessions, once
+uv run python -m loc_arena.cli watch --agent agent-main --width 2000   # one agent, longer lines
+```
+
+It only reads, with `docker exec` in the episode container, where no agent's code runs. What it prints is the
+experimenter's view, as the sealed log is: never give it to an agent or a monitor. A model that returns no
+reasoning for a call leaves no `THINK` line for it (`loc_arena/run_watcher.py`).
 
 ## Events
 

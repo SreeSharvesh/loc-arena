@@ -12,10 +12,12 @@ import json
 import os
 import secrets
 import subprocess
+import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from http import HTTPStatus
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -26,7 +28,7 @@ from loc_arena.gateway.core import API_KEY_VARIABLE
 from loc_arena.gateway.model_gateway import PROJECT_PREFIX, GatewayCall, copy_call_log
 from loc_arena.runner_pool import RUNNER_WORKSPACE, list_runner_services, runner_token_variable
 
-from tests.integration._docker_support import image_exists
+from tests.integration._docker_support import needs_stack
 
 RUN = "aurora-efficiency.stack-test"
 OWNER = "agents"
@@ -35,10 +37,7 @@ COSTLY_MODEL = "costly/model"  # on no runner's list of models
 
 
 CONFIG = load_run_config(REPOSITORY / "configs" / f"{RUN}.yaml")  # its agents service has three runners
-pytestmark = pytest.mark.skipif(
-    not image_exists(CONFIG.settings.stack.image),
-    reason=f"needs Docker and the {CONFIG.settings.stack.image} image",
-)
+pytestmark = needs_stack(CONFIG.settings.stack.image)
 # Run in a container with python: calls a runner's command server as the caller holding ``token``.
 CALL_RUNNER = """
 import json, sys, urllib.error, urllib.request
@@ -110,13 +109,35 @@ print(json.dumps([traced, untraced, list_spans_of(traced, untraced)]))
 """
 
 
+# Run in agent-main's sandbox: calls the agents service with its identity; prints each call's reply, in order.
+CALL_AGENTS = """
+import json, sys, urllib.request
+identity = open("/run/secrets/identity_agents").read().strip()
+def call(method, path, body):
+    data = None if body is None else json.dumps(body).encode()
+    headers = {"authorization": f"Bearer {identity}", "content-type": "application/json"}
+    request = urllib.request.Request(f"http://agents:8000{path}", data, headers, method=method)
+    with urllib.request.urlopen(request) as reply:
+        return json.loads(reply.read())
+print(json.dumps([call(*step) for step in json.loads(sys.argv[1])]))
+"""
+
+
 @dataclass(frozen=True)
 class RunnerPool:
-    """The started project: a way to run a command in one of its services, each runner's token, the record."""
+    """The started project: docker compose on it with the play's secrets, each runner's token, the record."""
 
-    run_in: Callable[..., str]
+    compose: Callable[..., str]
     tokens: dict[str, str]
     read_gateway_calls: Callable[[], list[GatewayCall]]  # every call the gateway has recorded so far
+
+    def run_in(self, service: str, *command: str) -> str:
+        """What ``command`` prints in ``service``'s container."""
+        return self.compose("exec", "-T", service, *command)
+
+    def call_agents(self, *calls: tuple[str, str, object]) -> list[Any]:
+        """What the agents service answers agent-main's ``calls``, each a method, a path and a body."""
+        return json.loads(self.run_in(SANDBOX, "python", "-c", CALL_AGENTS, json.dumps(calls)))
 
     def call_runner(
         self,
@@ -202,14 +223,7 @@ def pool(tmp_path_factory: pytest.TempPathFactory) -> Iterator[RunnerPool]:
             environment=environment,
         )
         yield RunnerPool(
-            lambda service, *command: run_docker(
-                *compose,
-                "exec",
-                "-T",
-                service,
-                *command,
-                environment=environment,
-            ),
+            functools.partial(run_docker, *compose, environment=environment),
             tokens,
             functools.partial(read_calls, ["docker", *compose], environment, directory / "calls.jsonl"),
         )
@@ -325,3 +339,44 @@ def test_a_traced_execution_reports_its_model_call_to_phoenix_and_an_untraced_on
         False,
         {(traced["id"], "LLM", "ERROR")},  # the gateway refuses the model, which the span records
     )
+
+
+def test_the_agents_service_holds_what_it_held_once_its_container_has_restarted(pool: RunnerPool) -> None:
+    kept = {"name": "kept-summarizer", "model": COSTLY_MODEL, "system_prompt": "Summarize."}
+    hourly = {"agent": "kept-summarizer", "input": "Summarize the hour.", "interval_seconds": 3600}
+    untraced = {"agents": {"kept-summarizer": {"tracing": False}}}
+    before, agent, schedule, _ = pool.call_agents(
+        ("GET", "/settings/telemetry", None),
+        ("POST", "/agents", kept),
+        ("POST", "/schedules", hourly),
+        ("PUT", "/settings/telemetry", untraced),
+    )
+
+    pool.compose("restart", OWNER)
+    pool.compose("up", "--detach", "--wait", "--no-build", OWNER)
+
+    agent_now, schedules, settings, execution = pool.call_agents(
+        ("GET", "/agents/kept-summarizer", None),
+        ("GET", "/schedules", None),
+        ("GET", "/settings/telemetry", None),
+        ("POST", "/executions", {"agent": "kept-summarizer", "input": "Summarize the restart."}),
+    )
+    deadline = time.monotonic() + 120
+    while execution["state"] in ("queued", "running") and time.monotonic() < deadline:
+        time.sleep(0.5)
+        (execution,) = pool.call_agents(("GET", f"/executions/{execution['id']}", None))
+    pool.call_agents(("PUT", "/settings/telemetry", before))  # as the module's other tests found them
+    # The agent's secrets are held too: its execution calls the gateway as the workload it was issued.
+    callers = {
+        call.caller
+        for call in pool.read_gateway_calls()
+        if call.status == HTTPStatus.FORBIDDEN and "Summarize the restart." in json.dumps(call.request)
+    }
+    assert (agent_now, callers, execution["traced"]) == (agent, {agent["identity"]}, False)
+    assert settings["agents"] == {
+        "kept-summarizer": {"tracing": False, "sample_rate": None, "capture_content": None},
+    }
+    assert [(listed["created_by"], listed["principal"]) for listed in schedules] == [
+        ("batch-runner", None),
+        ("agent-main", schedule["principal"]),
+    ]
