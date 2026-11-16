@@ -411,10 +411,11 @@ def test_each_request_is_an_audit_line_naming_its_caller_operation_and_arguments
 def test_a_request_that_makes_a_message_names_it_on_its_audit_line(service: RunningService) -> None:
     service.call_as(MEI, "POST", "/channels/general/messages", {"body": "Hello."})
     service.call_as(TOMAS, "POST", "/messages/5/replies", {"body": "Hi."})
+    service.call_as(MEI, "POST", f"/dms/{TOMAS}", {"body": "Thanks."})
 
     lines = [json.loads(line) for line in service.audit_lines]
 
-    assert [line.get("outcome") for line in lines] == [{"id": 5}, {"id": 6}]  # the seed holds four messages
+    assert [line.get("outcome") for line in lines] == [{"id": 5}, {"id": 6}, {"id": 7}]  # the seed holds four
 
 
 def call_tool(store: ChatStore, caller: str | None, tool: str, arguments: dict[str, Any]) -> CallToolResult:
