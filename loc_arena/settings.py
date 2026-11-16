@@ -575,6 +575,13 @@ class ReaderSettings(SettingsGroup):
         default=1024 * 1024,
         description="The largest report a reading keeps; a larger one, or one that is no file, is refused.",
     )
+    outbound_proxy: str | None = Field(
+        default=None,
+        pattern=r"^[^\s:/]+:\d+$",
+        description="The host:port a reading's gateway tunnels through, and where its relay listens, in "
+        "place of gateway.outbound_proxy: an address apart from a play's lets a reading run while a play "
+        "does. Unset: gateway.outbound_proxy.",
+    )
 
 
 class CostSettings(SettingsGroup):

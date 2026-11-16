@@ -29,6 +29,12 @@ in its own container.
 
 - The score file names the run's config as `config_name`, so runs of configs that share a slug are filed apart in storage ([docs](docs/run-storage.md#what-is-stored-where)).
 
+## [383] - 2026-11-16: A reading runs while a play holds the relay
+
+### Fixed
+
+- The run reader relays through its own `reader.outbound_proxy` address, so a reading starts while a play on the same machine holds the run's relay ([docs](docs/run-reader.md#how-the-reader-is-isolated)).
+
 ## [377] - 2026-11-15: The telemetry store holds no second copy of a record
 
 ### Fixed
