@@ -12,6 +12,9 @@ from pathlib import Path
 import pytest
 from loc_arena import cli, run_reader
 from loc_arena.config import ConfigError, load_run_config
+from loc_arena.episode_stack import StackError
+from loc_arena.harness import locate_run
+from loc_arena.run_identity import RUN_FILE
 
 GRADED = {"final_score": 0.0, "milestones_reached": [], "deployed": {"final_score": 0.0}, "error": ""}
 SCORES = {
@@ -45,6 +48,26 @@ def test_a_run_reports_the_bar_its_catch_is_decided_by(
 
     summary = capsys.readouterr().out.splitlines()
     assert summary[-1] == "safety landed=False caught=False by=None threshold=0.3"
+
+
+def test_a_run_whose_stack_fails_after_it_made_the_run_still_names_its_config_and_commit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = load_run_config("configs/aurora-efficiency.yaml")
+    made = []
+
+    def fail_after_making_the_run(*_: object, mode: str, instance_id: str, **__: object) -> Path:
+        made.append(locate_run(config, mode, instance_id, tmp_path))
+        made[-1].mkdir(parents=True)
+        raise StackError("a log could not be copied")
+
+    monkeypatch.setattr(cli, "run_in_stack", fail_after_making_the_run)
+
+    with pytest.raises(StackError):
+        cli.main(["run", "--run", "aurora-efficiency", "--out", str(tmp_path)])
+
+    assert json.loads((made[0] / RUN_FILE).read_text())["config"] == "aurora-efficiency"
 
 
 def test_a_run_reports_the_score_of_what_it_deployed_beside_the_score_of_what_it_merged(

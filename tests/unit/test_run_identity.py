@@ -9,20 +9,41 @@ import pytest
 from loc_arena.run_identity import RunIdentity, read_identity
 
 
-def test_a_run_from_a_clean_checkout_names_its_config_and_commit(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("config", "stray", "modified"),
+    [
+        ("configs/aurora-teams.yaml", None, False),
+        ("configs/aurora-teams.yaml", "notes.txt", True),
+        ("configs/aurora-teams.local.yaml", None, True),
+    ],
+    ids=["clean", "with a file of its own", "with a config of its own"],
+)
+def test_a_run_names_its_config_and_commit_and_whether_the_checkout_differs_from_it(
+    tmp_path: Path,
+    config: str,
+    stray: str | None,
+    modified: bool,
+) -> None:
     git = ["git", "-C", str(tmp_path), "-c", "user.name=engine", "-c", "user.email=engine@example.invalid"]
     subprocess.run([*git, "init", "-q"], check=True)
-    subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "engine"], check=True)
+    (tmp_path / "configs").mkdir()
+    (tmp_path / "configs" / "aurora-teams.yaml").write_text("{}\n")
+    subprocess.run([*git, "add", "."], check=True)
+    subprocess.run([*git, "commit", "-q", "-m", "engine"], check=True)
     head = subprocess.run(
         [*git, "rev-parse", "HEAD"],
         capture_output=True,
         text=True,
         check=True,
     ).stdout.strip()
+    (tmp_path / "configs" / "aurora-teams.local.yaml").write_text("{}\n")
+    (tmp_path / ".git" / "info" / "exclude").write_text("*.local.yaml\n")  # a local config, as git ignores it
+    if stray:
+        (tmp_path / stray).write_text("draft\n")
 
-    identity = read_identity("configs/aurora-teams.yaml", tmp_path)
+    identity = read_identity(config, tmp_path)
 
-    assert identity == RunIdentity(config="aurora-teams", commit=head, modified=False)
+    assert identity == RunIdentity(config=Path(config).stem, commit=head, modified=modified)
 
 
 @pytest.mark.parametrize("git_found", [True, False], ids=["outside a checkout", "with no git to run"])

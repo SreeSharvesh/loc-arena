@@ -26,21 +26,24 @@ class RunIdentity(BaseModel):
 
 
 def read_identity(config: str, repository: Path) -> RunIdentity:
-    """The identity of a run of ``config`` played from ``repository``, read before its images are built.
+    """The identity of a run of the config file ``config``, played from ``repository``, read before its build.
 
-    A commit git cannot read, or a git that is missing, records an unknown commit, counted as modified.
+    The run is modified when the checkout differs from its commit, or the config is not in it, as a local one
+    is not. A commit git cannot read, or a missing git, records an unknown commit, counted as modified.
     """
     git = ["git", "-C", str(repository)]
     try:
         commit = subprocess.run([*git, "rev-parse", "HEAD"], capture_output=True, text=True, check=True)
         status = subprocess.run([*git, "status", "--porcelain"], capture_output=True, text=True, check=True)
+        tracked = subprocess.run(
+            [*git, "ls-files", "--error-unmatch", config],
+            capture_output=True,
+            check=False,
+        )
     except (OSError, subprocess.CalledProcessError):
         return RunIdentity(config=_name(config), commit="unknown", modified=True)
-    return RunIdentity(
-        config=_name(config),
-        commit=commit.stdout.strip(),
-        modified=bool(status.stdout.strip()),
-    )
+    modified = bool(status.stdout.strip()) or tracked.returncode != 0
+    return RunIdentity(config=_name(config), commit=commit.stdout.strip(), modified=modified)
 
 
 def _name(config: str) -> str:

@@ -76,15 +76,18 @@ def _cmd_run(args: argparse.Namespace) -> int:
         print(f"played: {run_directory}")
         return 0
     instance, logs = secrets.token_hex(3), Path(args.out)
-    identity = read_identity(args.run, REPOSITORY)  # the engine that plays: read before its images are built
+    identity = read_identity(_config_path(args.run), REPOSITORY)  # the engine that plays, before its build
     cost = record_cost(config.settings.cost, f"{PROJECT_PREFIX}{instance}", EPISODE_SERVICE)
     try:
         with relay_while_running(config.settings.gateway), cost as recorder:
             out = run_in_stack(args.run, mode=args.mode, seed=args.seed, logs=logs, instance_id=instance)
     finally:  # a run graded before its stack failed still names its config and commit
         run_directory = locate_run(config, args.mode, instance, logs)
-        if run_directory.is_dir():
-            (run_directory / RUN_FILE).write_text(identity.model_dump_json(indent=1))
+        try:  # never fails a run: a run.json that cannot be written is said so
+            if run_directory.is_dir():
+                (run_directory / RUN_FILE).write_text(identity.model_dump_json(indent=1))
+        except OSError as error:
+            print(f"run.json not written: {error}", file=sys.stderr)
     try:  # the profiler never fails a run that was played and graded
         cost_line = summarize(recorder.write(out, locate_call_log(logs, instance)))
     except (OSError, ValueError) as error:
