@@ -21,7 +21,7 @@ from loc_arena.config import RunConfig
 from loc_arena.event_references import job_of, refer_by_id
 from loc_arena.explorer.scores import RunScores, load_scores
 from loc_arena.logging_.events import Event
-from loc_arena.reading_check import CheckedReading, KeptClaim, prose_lines
+from loc_arena.reading_check import QUOTE, CheckedReading, KeptClaim, prose_lines
 from loc_arena.recorded_events import EVENT_WALLS_FILE
 from loc_arena.run_cost import COST_FILE, read_cost
 from loc_arena.run_facts import MIRROR, RunEvidence, gather_evidence, name_plays, read_resolved_config
@@ -45,7 +45,6 @@ REPLAY_BRIEF = "replay"  # the brief a run is read with before it is exported
 SUMMARY_FILE = "replay.summary.json"  # in a folder of runs: each config's counts, added up across its runs
 COVERT = ("covert.acted", "covert.framed_as_ordinary")  # an instance of these marks its events covert
 EPOCH = 1e9  # an event time past this is a wall time; the episode clock reads far less
-_QUOTED = re.compile(r"\"([^\"]+)\"|“([^”]+)”")
 _CHANNELS = {"action": "tool", "pr": "forge", "commit": "forge", "review": "forge", "forge_boot": "forge"}
 _CHANNELS |= {"job": "cluster", "process": "cluster", "inference_call": "model"}
 
@@ -281,11 +280,11 @@ def _read_refs(claims: Sequence[KeptClaim], evidence: RunEvidence) -> dict[tuple
     """The reader's checked references: the first cited event holds the quoted phrase, the rest precede it."""
     refs: dict[tuple[str, int], list[Ref]] = {}
     for claim in claims:
-        cited, phrase = _sealed_cites(claim.cites), _QUOTED.search(claim.text)
+        cited, phrase = _sealed_cites(claim.cites), QUOTE.search(claim.text)
         if len(cited) < 2 or phrase is None:  # noqa: PLR2004 - the event, and what it refers to
             continue
         (play, seq), *earlier = cited
-        quoted = " ".join((phrase.group(1) or phrase.group(2)).split())
+        quoted = " ".join("".join(filter(None, phrase.groups())).split())
         held = " ".join(" ".join(evidence.events[f"{play}:{seq}"].words).split())
         if not re.search(rf"(?<!\w){re.escape(quoted)}(?!\w)", held):
             continue  # the phrase is another cited event's: the reference is not this event's
@@ -498,7 +497,7 @@ def export_runs(path: Path, config: RunConfig) -> tuple[list[Path], dict[Path, s
     A folder also gets ``replay.summary.json``. A run's own records are never searched for runs: a checkout in
     them may hold any file an agent wrote.
     """
-    if not path.parts or not path.is_dir():
+    if not path.is_dir():
         raise ValueError(f"{path} is no run's directory and no folder of runs")
     single = (path / "scores.json").is_file()
     runs: list[Path] = [path] if single else []
@@ -512,11 +511,12 @@ def export_runs(path: Path, config: RunConfig) -> tuple[list[Path], dict[Path, s
     failed: dict[Path, str] = {}
     for run in sorted(runs):
         try:
-            exports.append(_export_one(run, taxonomy, settings, config))
+            exported = _export_one(run, taxonomy, settings, config)
+            (run / REPLAY_FILE).write_text(exported.model_dump_json(indent=1))
         except (OSError, ValueError, LookupError, StopIteration) as error:  # recorded: the rest go on
             failed[run] = f"{type(error).__name__}: {error}"
             continue
-        (run / REPLAY_FILE).write_text(exports[-1].model_dump_json(indent=1))
+        exports.append(exported)
     written = [run / REPLAY_FILE for run in sorted(runs) if run not in failed]
     if single:
         return written, failed

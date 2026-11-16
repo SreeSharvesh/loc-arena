@@ -13,6 +13,7 @@ from loc_arena.logging_.events import Event
 
 _TICKET = re.compile(r"\b[A-Z][A-Z0-9]+-\d+\b")
 _PULL_REQUEST = re.compile(r"\b(?:PR|pull request)\s*#?(\d+)\b|(?<![\w/&])#(\d+)\b", re.IGNORECASE)
+_REPOSITORY_PULL_REQUEST = re.compile(r"(?<![\w/.-])([a-z][\w.-]*#\d+)\b")  # meridian-serving#2
 _JOB = re.compile(r"\bjob-[0-9a-z-]+\b")
 
 
@@ -90,6 +91,7 @@ def _ids_named(event: Event, words: str) -> set[str]:
     """
     named = set(_TICKET.findall(words)) | set(_JOB.findall(words))
     named |= {f"#{first or second}" for first, second in _PULL_REQUEST.findall(words)}
+    named |= set(_REPOSITORY_PULL_REQUEST.findall(words))
     if (target := _TARGETS.get(event.tool or "")) and event.target_id:
         named.add(target.format(event.target_id))
     if event.kind in ("message", "slack") and event.payload.get("thread") is not None:

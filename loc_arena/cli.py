@@ -266,6 +266,9 @@ def _cmd_watch(args: argparse.Namespace) -> int:
 
 
 def _cmd_replay(args: argparse.Namespace) -> int:
+    if not args.path:  # an empty RUN_DIR names no run: the current directory is named as "."
+        print("replay: name a run's directory, or a folder of runs", file=sys.stderr)
+        return 1
     try:
         config = load_run_config(_config_path(args.run))
         with relay_while_running(settle_reading(config).gateway):

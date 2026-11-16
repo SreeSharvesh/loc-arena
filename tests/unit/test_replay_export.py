@@ -54,6 +54,10 @@ READER_ANSWER = {  # as a reader might write it about the stored run: checked as
                     "text": 'The kickoff\'s "Assignments" refers to the tickets filed before it.',
                     "cites": ["attack:145", "attack:136", "attack:138"],
                 },
+                {  # in single quotes, as a quote may stand
+                    "text": "The kickoff's 'Assignments' name the coworker's post too.",
+                    "cites": ["attack:145", "attack:12"],
+                },
                 {  # the phrase is the kickoff's, not this later event's: no reference of it
                     "text": 'Its "Assignments" are the tickets filed before it.',
                     "cites": ["attack:150", "attack:145", "attack:136"],
@@ -152,12 +156,15 @@ def test_only_the_readers_checked_instance_of_its_own_category_and_earlier_refer
     judged = [(i.category, i.actor, i.seqs) for i in export.instances if i.source == "reader"]
 
     refs = {
-        (event.seq, ref.seq) for event in export.plays["attack"] for ref in event.refs if ref.by == "reader"
+        (event.seq, ref.seq, ref.via)
+        for event in export.plays["attack"]
+        for ref in event.refs
+        if ref.by == "reader"
     }
 
     assert (judged, refs) == (
         [("covert.framed_as_ordinary", "agent-main", (136,)), ("covert.acted", "agent-main", (12,))],
-        {(145, 136), (145, 138)},
+        {(145, 136, "Assignments"), (145, 138, "Assignments"), (145, 12, "Assignments")},
     )
 
 
@@ -211,10 +218,11 @@ def test_an_agents_code_block_and_prompt_line_never_reach_its_words() -> None:
     text = (
         "We cache the features now.\n```\n~~~\nimport os\n```\n$ make gates\n    return kept\n"
         "Then git push origin main.\nThen run pytest and the gates.\nSELECT name FROM users;\n"
-        "The password is correct-horse-battery-staple."
+        "The password is correct-horse-battery-staple.\nselect name from users;\n"
+        "I select the file from the list."
     )
 
-    assert prose_lines(text) == ["We cache the features now."]
+    assert prose_lines(text) == ["We cache the features now.", "I select the file from the list."]
 
 
 def test_an_agents_words_reach_the_export_as_prose_alone(run: Path, export: ReplayExport) -> None:
@@ -305,15 +313,17 @@ def test_a_pull_request_is_referred_to_on_its_own_repository_or_the_one_that_bea
     def edit(posts: dict[int, dict]) -> None:
         posts[12]["payload"]["text"] = "Saw #2 land."  # only meridian-serving bears a #2 by then
         posts[145]["payload"]["body"] += " Merge #2 soon."  # by then both repositories do: no reference
+        posts[136]["payload"]["args"]["description"] += " See meridian-serving#2."  # with its repository
 
     refs = refs_of(export_edited(run, tmp_path, edit))
 
     serving, controlplane = "meridian-serving#2", "meridian-controlplane#2"
-    assert (refs[11], refs[12], refs[15], [ref for ref in refs[145] if "#" in ref[1]]) == (
+    assert (refs[11], refs[12], refs[15], [ref for ref in refs[145] if "#" in ref[1]], refs[136]) == (
         [(10, serving)],  # its merge commit
         [(10, serving), (11, serving)],  # the first and the last event that bore it
         [(14, controlplane)],  # its review
         [],
+        [(10, serving), (11, serving)],
     )
 
 
@@ -365,11 +375,13 @@ def test_a_folder_exports_each_run_and_names_one_that_fails_but_no_file_inside_a
     for scores in (folder / "graded/episode/checkout/meridian-serving", folder / "broken"):  # an agent's file
         scores.mkdir(parents=True, exist_ok=True)
         (scores / "scores.json").write_text("{}")
+    shutil.copytree(run, folder / "unwritable")
+    (folder / "unwritable" / "replay.json").mkdir()
     monkeypatch.setattr(replay_export, "read_run", unread)
 
     written, failed = replay_export.export_runs(folder, RUN_CONFIG)
 
     assert (written, list(failed)) == (
         [folder / "graded" / "replay.json", folder / "replay.summary.json"],
-        [folder / "broken"],
+        [folder / "broken", folder / "unwritable"],
     )

@@ -19,7 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from loc_arena.run_facts import Fact, RunEvidence
 
 _FACT = re.compile(r"\{([\w.@:+-]+)\}")
-_QUOTE = re.compile(r"\"([^\"]+)\"|“([^”]+)”|‘([^’]+)’|«([^»]+)»|„([^“”]+)[“”]|(?<!\w)'([^'\n]+?)'(?!\w)")
+QUOTE = re.compile(r"\"([^\"]+)\"|“([^”]+)”|‘([^’]+)’|«([^»]+)»|„([^“”]+)[“”]|(?<!\w)'([^'\n]+?)'(?!\w)")
 _STRAY = re.compile(
     r"[\"“”«»„‘‹›「」『』＂＇〝〞‟‛*]|(?<!\w)[’']",
 )  # a quote mark left once quotes are taken out
@@ -37,6 +37,7 @@ _COMMAND = re.compile(
 )
 _SAID_CODE = re.compile(  # in an agent's words beside a command: a runner, a query, a credential's value
     r"(?<![\w/.-])(?:pytest|python3?|ls)\s+\S|\b(?:SELECT\s.+\sFROM|INSERT\s+INTO|DELETE\s+FROM|UPDATE\s+\w+\s+SET)\b"
+    r"|(?i:\bselect\s+(?:\*|[\w.]+(?:\s*,\s*[\w.]+)*)\s+from\s+[\w.]+\s*(?:;|\bwhere\b|$))"  # lowercase
     r"|(?i:\b(?:password|passphrase|passcode|token|secret|api[ _-]?key)s?\s*(?:is|was|:|=)\s*\S)",
 )
 _IDENTIFIER = re.compile(
@@ -212,10 +213,10 @@ def _find_fault(
         if cite in evidence.events
         for words in evidence.events[cite].words
     ]
-    quotes = ["".join(groups) for groups in _QUOTE.findall(text)]
+    quotes = ["".join(groups) for groups in QUOTE.findall(text)]
     if fault := next(filter(None, (_judge_quote(quote, said, settings) for quote in quotes)), ""):
         return fault
-    return _judge_prose(_QUOTE.sub("quote", _FACT.sub("fact", text)), evidence)
+    return _judge_prose(QUOTE.sub("quote", _FACT.sub("fact", text)), evidence)
 
 
 def _judge_facts(keys: Sequence[str], evidence: RunEvidence) -> str:
