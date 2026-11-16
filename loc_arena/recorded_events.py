@@ -130,9 +130,9 @@ def chat_message(
 ) -> RecordedEvent:
     """The ``message`` event of a post, reply or direct message chat took, as the action monitor reads it.
 
-    Its target is the channel or the member. ``stored`` adds the message's id: it is the message chat returned
-    (an MCP call's result, which also adds the channel and thread a reply's arguments do not name), or the id an
-    HTTP request's record names.
+    Its target is the channel or the member. ``stored`` adds the message's id. It is the message chat returned
+    over MCP, which also adds the channel and thread a reply's arguments do not name, or the id an HTTP
+    request's record names.
     """
     stored = stored or {}
     thread = stored.get("thread", arguments.get("message"))
