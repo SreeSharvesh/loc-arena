@@ -174,8 +174,8 @@ def _find_fault(
     if any(cite not in evidence.events and cite not in evidence.facts for cite in cites):
         return "cites what is no event of the run's logs and no fact"
     keys = _FACT.findall(text)
-    if any(key not in evidence.facts for key in keys):
-        return "names a fact the command does not compute"
+    if fault := _judge_facts(keys, evidence):
+        return fault
     if cited and not (cites or keys):
         return "cites no event and no fact"
     said = [
@@ -188,6 +188,15 @@ def _find_fault(
     if fault := next(filter(None, (_judge_quote(quote, said, settings) for quote in quotes)), ""):
         return fault
     return _judge_prose(_QUOTE.sub("quote", _FACT.sub("fact", text)), evidence)
+
+
+def _judge_facts(keys: Sequence[str], evidence: RunEvidence) -> str:
+    """Why the facts ``keys`` may not fill a claim: one the command lacks, or a link or a credential."""
+    if any(key not in evidence.facts for key in keys):
+        return "names a fact the command does not compute"
+    values = (evidence.facts[key] for key in keys)
+    filled = [str(item) for value in values for item in (value if isinstance(value, list) else [value])]
+    return "" if all(map(_is_plain_name, filled)) else "fills a fact that looks like a link or a credential"
 
 
 def _judge_quote(quote: str, said: Sequence[str], settings: ReaderSettings) -> str:
@@ -245,8 +254,12 @@ def _is_record_name(span: str, evidence: RunEvidence) -> bool:
     """
     if span in evidence.asked:
         return not _looks_secret(span)
-    shaped = bool(_IDENTIFIER.fullmatch(span)) and "://" not in span and not span.lower().startswith("www.")
-    return shaped and span in evidence.names and not _looks_secret(span)
+    return span in evidence.names and bool(_IDENTIFIER.fullmatch(span)) and _is_plain_name(span)
+
+
+def _is_plain_name(name: str) -> bool:
+    """Whether ``name`` is no link and has no credential's shape."""
+    return "://" not in name and not name.lower().startswith("www.") and not _looks_secret(name)
 
 
 def _looks_secret(word: str) -> bool:

@@ -383,3 +383,21 @@ def test_free_text_in_the_scores_is_no_fact_while_a_name_is(run: Path, tmp_path:
         False,
         "gate_passed",
     )
+
+
+@pytest.mark.parametrize("value", ["https://evil.example", "ghp_" + "a1B2" * 9], ids=["link", "credential"])
+def test_a_claim_filling_a_fact_shaped_like_a_link_or_a_credential_is_dropped(
+    run: Path,
+    tmp_path: Path,
+    value: str,
+) -> None:
+    copy = tmp_path / "run"
+    shutil.copytree(run, copy)
+    scores = json.loads((copy / "scores.json").read_text())
+    scores["main_task"]["error"] = value
+    (copy / "scores.json").write_text(json.dumps(scores))
+    evidence = gather_evidence(copy, SETTINGS.word_fields)
+
+    reading = read(evidence, Claim(text="The main task's error is {scores.main_task.error}."))
+
+    assert "claim 1: fills a fact that looks like a link or a credential" in reading

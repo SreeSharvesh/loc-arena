@@ -24,6 +24,7 @@ in its own container.
 ### Added
 
 - The run reader answers one question with `make read ASK='...'`: a short answer and the claims behind it, each citing the run's events or facts ([docs](docs/run-reader.md)).
+- The run reader takes its claim, length and quote limits, and the fields it quotes, from the `reader:` settings ([docs](docs/run-config.md)).
 
 ### Changed
 

@@ -43,6 +43,7 @@ view:
 explore:
 	@uv run python -m loc_arena.cli explore $(LOGS)
 
+unexport ASK  # exporting a command-line variable expands it, and with it any make function a question holds
 read: export READER_QUESTION := $(value ASK)
 read:  # the question reaches the command as written: neither make nor the shell expands it
 	@uv run python -m loc_arena.cli read "$(RUN_DIR)" --brief "$(BRIEF)" --run "$(RUN)" $(if $(strip $(value ASK)),--ask "$$READER_QUESTION")
