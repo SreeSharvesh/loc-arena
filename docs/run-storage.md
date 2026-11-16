@@ -20,18 +20,21 @@ repository that the run config's `publish.repository` names; `env.default.yaml` 
 
 `<config>` is the run config's name, which the run writes as `config_name` in `scores.json`, so configs that
 share a slug, such as `aurora-teams` and `aurora-efficiency`, are filed apart. `<date>` is the day the run
-finished, in UTC, and `<run id>` is the end of its name. A bundle without `config_name` is refused.
+finished, in UTC, from the episode's own record, and `<run id>` is the end of its name. A bundle without
+`config_name`, or without that record, is refused.
 
 ## The scan
 
-Nothing is written until a scan of every line of every file, the members of a zip such as the Inspect log
-included, finds no real secret. It refuses, naming each file and line:
+Nothing is written until a scan of every line of every file finds no real secret. It reads the members of a
+zip, such as the Inspect log, and every object of a git store or a git bundle, such as the forge's
+repositories and their history. It refuses, naming each file and line:
 
 - a key of a form in `publish.key_patterns`: the provider's, and GitHub's tokens;
-- an `Authorization` credential that is not in-world;
+- an `Authorization` credential that is not in-world, quoted or escaped as JSON within JSON;
 - the value of a variable of the machine's environment or of the checkout's `.env` whose name says it holds a
-  secret (`publish.environment_name_pattern`), when it is at least `publish.environment_value_min_length` long;
-- a link, whose target the scan does not read.
+  secret (`publish.environment_name_pattern`), and the password of any URL a variable holds, when it is at
+  least `publish.environment_value_min_length` long;
+- a link, or anything the scan cannot read.
 
 The company's credentials are minted for each run as 32 random URL-safe bytes, and agents' git configs carry
 them in `Authorization` headers. A credential of that form (`publish.in_world_token_pattern`) is part of the
@@ -40,9 +43,9 @@ run and stays. It is still refused when it equals a value of the machine's envir
 ## Nothing is replaced
 
 The commit and the release are each written only when absent, so a second publish of a run writes nothing,
-says the run is already published and prints the link. A publish that stopped between the two writes the part
-that is missing. A release stays a draft until its asset is uploaded, so a published release always holds its
-bundle. Each git or `gh` command ends within `publish.command_seconds`.
+says the run is already published and prints the link. A publish that stopped part way writes what is
+missing. A release stays a draft until its asset is uploaded, so a published release always holds its bundle;
+the next publish finishes a draft it finds. Each git or `gh` command ends within `publish.command_seconds`.
 
 ## Fetch a run back
 

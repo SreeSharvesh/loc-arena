@@ -119,10 +119,10 @@ def _cmd_cost(args: argparse.Namespace) -> int:
 def _cmd_publish(args: argparse.Namespace) -> int:
     bundle = Path(args.run_directory)
     try:
-        label = read_label(bundle, _read_finished(bundle))
+        label = read_label(bundle, read_snapshot_file(bundle / EPISODE_PHASE).finished_at)
         settings = load_settings(_config_path(label.config)).publish
-        environment = {**dotenv_values(REPOSITORY / ".env"), **os.environ}
-        if findings := find_secrets(bundle, settings, {k: v for k, v in environment.items() if v}):
+        sources = [*dotenv_values(REPOSITORY / ".env").items(), *os.environ.items()]
+        if findings := find_secrets(bundle, settings, [(name, value) for name, value in sources if value]):
             print("nothing published: the bundle holds what looks like a real secret", file=sys.stderr)
             print("\n".join(findings), file=sys.stderr)
             return 1

@@ -11,23 +11,28 @@ from __future__ import annotations
 
 import io
 import json
+import math
 import re
 import shutil
 import subprocess
 import tarfile
 import tempfile
 import zipfile
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from re import Pattern
+from urllib.parse import urlsplit
 
 import zipfile_zstd  # noqa: F401 - reads the zstd members of Inspect's .eval zips, as inspect_ai itself does
+from dulwich.bundle import read_bundle
+from dulwich.object_store import BaseObjectStore, DiskObjectStore, MemoryObjectStore
 from pydantic import Field, PositiveFloat, PositiveInt, StrictStr
 
 from loc_arena.service_settings import SettingsGroup
 
+GIT_BUNDLE = re.compile(rb"# v[23] git bundle\n")  # the first line of a git bundle
 LABEL = re.compile(r"[a-z0-9][a-z0-9._-]*")  # a config name or a run id: one path segment, no traversal
 
 
@@ -56,19 +61,23 @@ class PublishSettings(SettingsGroup):
     )
     authorization_pattern: Pattern[str] = Field(
         default=re.compile(
-            r"(?i)authorization[\"']?\s*[:=]\s*[\"']?(?:bearer|basic|token)\s+([A-Za-z0-9._~+/=-]{16,})",
+            r"(?i)authorization\\*[\"']?\s*[:=]\s*\[?\s*\\*[\"']?(?:bearer|basic|token)\s+([A-Za-z0-9._~+/=-]{16,})",
         ),
-        description="An Authorization header with a credential, its first group; refused unless in-world.",
+        description="An Authorization header with a credential, its first group, quoted, or escaped as JSON "
+        "within JSON; refused unless in-world.",
     )
     in_world_token_pattern: Pattern[str] = Field(
         default=re.compile(r"(?:mi_)?[A-Za-z0-9_-]{43}"),
         description="The form of the company's credentials, each minted for one run as 32 URL-safe random "
-        "bytes, which an Authorization header may carry and the run keeps; matched against the whole of one.",
+        "bytes, which an Authorization header may carry and the run keeps; matched against the whole of one, "
+        "less a full stop that ends a sentence.",
     )
     environment_name_pattern: Pattern[str] = Field(
-        default=re.compile(r"(?i)key|token|secret|password|credential|auth"),
-        description="A variable of the machine's environment or `.env` whose name matches holds a secret; "
-        "its value anywhere in the bundle is refused.",
+        default=re.compile(
+            r"(?i)(?:^|_)(?:key|token|secret|password|passwd|credentials?|auth)$|(?:^|_)(?:secret|password)_",
+        ),
+        description="A variable of the machine's environment or `.env` whose name matches holds a secret: "
+        "its value anywhere in the bundle is refused, as is the password of any URL a variable holds.",
     )
     environment_value_min_length: PositiveInt = Field(
         default=16,
@@ -108,8 +117,10 @@ class Label:
         return f"runs/{self.date}/{self.config}/{self.run_id}"
 
 
-def read_label(bundle: Path, finished_at: float) -> Label:
-    """The label of the graded run in ``bundle``, which finished at ``finished_at``, from its scores."""
+def read_label(bundle: Path, finished_at: float | None) -> Label:
+    """The label of the graded run in ``bundle``, which finished at ``finished_at`` by its own record."""
+    if finished_at is None or not math.isfinite(finished_at):
+        raise PublishError(f"{bundle} records no time its play finished, so it has no date to be filed under")
     scores = json.loads((bundle / "scores.json").read_text())
     config, run_id = scores.get("config_name"), str(scores.get("run_name", "")).rsplit("__", 1)[-1]
     if not isinstance(config, str):
@@ -120,52 +131,77 @@ def read_label(bundle: Path, finished_at: float) -> Label:
     return Label(datetime.fromtimestamp(finished_at, UTC).date().isoformat(), config, run_id)
 
 
-def find_secrets(bundle: Path, settings: PublishSettings, environment: Mapping[str, str]) -> list[str]:
-    """Each line of ``bundle`` that holds a real secret, as ``file:line: what``; a zip's members are read too.
+def find_secrets(
+    bundle: Path,
+    settings: PublishSettings,
+    environment: Iterable[tuple[str, str]],
+) -> list[str]:
+    """Each line of ``bundle`` that holds a real secret, as ``where:line: what``.
 
-    ``environment`` is the machine's variables; the values of those with secret names are searched for. A link
-    is refused, as the scan would not read what the publish copies.
+    Every file is read as text; a zip's members, and every object of a git store or a git bundle, are read
+    too, as ``file!member``. ``environment`` holds the machine's variables, as name and value, from every
+    source: the values of those with secret names, and the password of each URL, are searched for. A link, or
+    anything the scan cannot read, is refused: the scan would not have read what the publish copies.
     """
-    values = {
-        value
-        for name, value in environment.items()
-        if settings.environment_name_pattern.search(name)
-        and len(value) >= settings.environment_value_min_length
-    }
+    secrets = (
+        value if settings.environment_name_pattern.search(name) else urlsplit(value).password
+        for name, value in environment
+    )
+    values = {value for value in secrets if value and len(value) >= settings.environment_value_min_length}
     findings: list[str] = []
     for path in sorted(bundle.rglob("*")):
         name = path.relative_to(bundle).as_posix()
         if path.is_symlink():
             findings.append(f"{name}: a link")
             continue
-        for where, lines in _read_lines(path, name):
-            for number, line in enumerate(lines, 1):
-                if what := _find_secret(line, settings, values):
-                    findings.append(f"{where}:{number}: {what}")
+        try:
+            for where, lines in _read_lines(path, name):
+                findings += [
+                    f"{where}:{number}: {what}"
+                    for number, line in enumerate(lines, 1)
+                    if (what := _find_secret(line, settings, values))
+                ]
+        except Exception as error:  # noqa: BLE001 - what the scan cannot read is refused, whatever the reason
+            findings.append(f"{name}: unreadable ({type(error).__name__}: {error})")
     return findings
 
 
-def _read_lines(path: Path, name: str) -> Iterator[tuple[str, Iterator[str]]]:
+def _read_lines(path: Path, name: str) -> Iterator[tuple[str, Iterable[str]]]:
+    """The lines of ``path``: a file's own, and those of each member or object it holds."""
+    if path.is_dir() and (path / "HEAD").is_file() and (path / "objects").is_dir():
+        yield from _store_lines(name, DiskObjectStore(str(path / "objects")))
     if not path.is_file():
         return
-    if not zipfile.is_zipfile(path):
-        with path.open(encoding="utf-8", errors="replace") as file:
-            yield name, iter(file)
-        return
-    with zipfile.ZipFile(path) as archive:
-        for member in (member for member in archive.infolist() if not member.is_dir()):
-            with archive.open(member) as raw:
-                yield (
-                    f"{name}!{member.filename}",
-                    iter(io.TextIOWrapper(raw, encoding="utf-8", errors="replace")),
-                )
+    with path.open(encoding="utf-8", errors="replace") as file:
+        yield name, file
+    with path.open("rb") as file:
+        if GIT_BUNDLE.fullmatch(file.readline(64)):
+            file.seek(0)
+            read_bundle(file).store_objects(store := MemoryObjectStore())
+            yield from _store_lines(name, store)
+    if zipfile.is_zipfile(path):
+        with zipfile.ZipFile(path) as archive:
+            for member in (member for member in archive.infolist() if not member.is_dir()):
+                with archive.open(member) as raw:
+                    yield (
+                        f"{name}!{member.filename}",
+                        io.TextIOWrapper(raw, encoding="utf-8", errors="replace"),
+                    )
+
+
+def _store_lines(name: str, store: BaseObjectStore) -> Iterator[tuple[str, list[str]]]:
+    for sha in store:
+        yield (
+            f"{name}!{sha.decode()}",
+            store[sha].as_raw_string().decode("utf-8", errors="replace").splitlines(),
+        )
 
 
 def _find_secret(line: str, settings: PublishSettings, values: set[str]) -> str | None:
     if any(pattern.search(line) for pattern in settings.key_patterns):
         return "a key of a real form"
     for header in settings.authorization_pattern.finditer(line):
-        if not settings.in_world_token_pattern.fullmatch(header[1]):
+        if not settings.in_world_token_pattern.fullmatch(header[1].removesuffix(".")):
             return "an Authorization credential that is not in-world"
     if any(value in line for value in values):
         return "the value of a secret variable of this machine's environment"
@@ -181,7 +217,11 @@ class Published:
 
 
 def publish_run(bundle: Path, label: Label, settings: PublishSettings) -> Published:
-    """Commit ``bundle``'s readable files and release the whole bundle, each only when it is absent."""
+    """Commit ``bundle``'s readable files and release the whole bundle, each only when it is absent.
+
+    A release stays a draft until its asset is uploaded, so a published release always holds its bundle; a
+    publish that stopped before then finishes the draft it left.
+    """
     if settings.repository is None:
         raise PublishError("the config sets no publish.repository")
     link = label.release_link(settings.repository)
@@ -190,16 +230,31 @@ def publish_run(bundle: Path, label: Label, settings: PublishSettings) -> Publis
         options = ("--depth=1", "--sparse", "--filter=blob:none", "--branch", settings.branch)
         _run(settings, "git", "clone", *options, f"https://github.com/{settings.repository}.git", clone)
         committed = bool(_run(settings, "git", "-C", clone, "ls-tree", "HEAD", label.directory))
-        released = _find_release(settings, label.tag)
-        if committed and released:
+        release = _find_release(settings, label.tag, archive.name)
+        if committed and release and not release.draft:
             return Published(link, already=True)
         if not committed:
             _commit(bundle, label, clone, settings)
-        if not released:
-            with tarfile.open(archive, "w:gz") as tar:
-                tar.add(bundle, arcname=bundle.name)
+        if release is None or release.draft:
             commit = _run(settings, "git", "-C", clone, "rev-parse", "HEAD").strip()
-            _release(label, commit, archive, settings)
+            release = release or _draft(settings, label, commit)
+            if not release.uploaded:
+                with tarfile.open(archive, "w:gz") as tar:
+                    tar.add(bundle, arcname=bundle.name)
+                upload = f"https://uploads.github.com/{release.path}/assets?name={archive.name}"
+                _run(
+                    settings,
+                    "gh",
+                    "api",
+                    "-X",
+                    "POST",
+                    upload,
+                    "-H",
+                    "Content-Type: application/gzip",
+                    "--input",
+                    archive,
+                )
+            _run(settings, "gh", "api", "-X", "PATCH", release.path, "-F", "draft=false")
     return Published(link, already=False)
 
 
@@ -216,44 +271,41 @@ def _commit(bundle: Path, label: Label, clone: Path, settings: PublishSettings) 
     _run(settings, "git", "-C", clone, "push", "-q", "origin", f"HEAD:{settings.branch}")
 
 
-def _find_release(settings: PublishSettings, tag: str) -> bool:
-    try:
-        _run(settings, "gh", "api", f"repos/{settings.repository}/releases/tags/{tag}", "--silent")
-    except PublishError as error:
-        if "HTTP 404" in str(error):
-            return False
-        raise
-    return True
+@dataclass(frozen=True)
+class _Release:
+    path: str  # its REST resource
+    draft: bool
+    uploaded: bool  # it holds the bundle's asset, whole
 
 
-def _release(label: Label, commit: str, archive: Path, settings: PublishSettings) -> None:
-    """A draft until its asset is uploaded, so a published release always holds its bundle."""
+def _find_release(settings: PublishSettings, tag: str, asset: str) -> _Release | None:
+    """The release tagged ``tag``, a draft too: GitHub lists a draft, though it finds none by its tag."""
+    releases = f"repos/{settings.repository}/releases"
+    uploaded = f'any(.assets[]; .name == "{asset}" and .state == "uploaded")'
+    query = f'.[] | select(.tag_name == "{tag}") | [.id, .draft, {uploaded}] | @tsv'
+    found = _run(settings, "gh", "api", "--paginate", f"{releases}?per_page=100", "--jq", query).split()
+    return _Release(f"{releases}/{found[0]}", found[1] == "true", found[2] == "true") if found else None
+
+
+def _draft(settings: PublishSettings, label: Label, commit: str) -> _Release:
     releases = f"repos/{settings.repository}/releases"
     body = f"The whole bundle of run {label.tag}; its readable files are in {label.directory}."
     fields = [f"tag_name={label.tag}", f"target_commitish={commit}", f"name={label.tag}", f"body={body}"]
-    draft = (
-        "-X",
-        "POST",
-        releases,
-        *(part for field in fields for part in ("-f", field)),
-        "-F",
-        "draft=true",
-    )
-    release = f"{releases}/{_run(settings, 'gh', 'api', *draft, '--jq', '.id').strip()}"
-    upload = f"https://uploads.github.com/{release}/assets?name={archive.name}"
-    _run(
+    arguments = [part for field in fields for part in ("-f", field)]
+    created = _run(
         settings,
         "gh",
         "api",
         "-X",
         "POST",
-        upload,
-        "-H",
-        "Content-Type: application/gzip",
-        "--input",
-        archive,
+        releases,
+        *arguments,
+        "-F",
+        "draft=true",
+        "--jq",
+        ".id",
     )
-    _run(settings, "gh", "api", "-X", "PATCH", release, "-F", "draft=false")
+    return _Release(f"{releases}/{created.strip()}", draft=True, uploaded=False)
 
 
 def _run(settings: PublishSettings, *command: str | Path) -> str:
