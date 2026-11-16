@@ -6,7 +6,7 @@ import json
 import shlex
 import subprocess
 import time
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 
 import pytest
 from loc_arena.config import RunConfig
@@ -39,14 +39,20 @@ def serve_agents_workspace(config, code, write):
     threading.Thread(target=read_notices, daemon=True).start()
     return serving  # held by the caller: it stops serving once nothing holds it
 """
-# The episode's container serving the workspace service alone, over no checkout, until it is removed.
+# The episode's container serving the workspace service alone, until it is removed. Each agent named after the
+# config gets a checkout, its home, whose commands run in its sandbox; the others get none.
 _SERVE_WORKSPACE_ALONE = f"""
 import sys, threading
+from loc_arena.checkouts import Checkout, checkout_home
 from loc_arena.config import load_run_config
+from loc_arena.sandbox import connect_sandboxes
 from loc_arena.scaffold.code_services import CodeServices
 {SERVE_WORKSPACE}
 config = load_run_config(sys.argv[1])
-code = CodeServices(checkouts={{}}, repos=[], stack=config.settings.stack)
+stack = config.settings.stack
+sandboxes = connect_sandboxes(config.settings, sys.argv[2:]) or {{}}
+checkouts = {{agent: Checkout(checkout_home(stack, agent), sandbox) for agent, sandbox in sandboxes.items()}}
+code = CodeServices(checkouts=checkouts, repos=[], stack=stack)
 serving = serve_agents_workspace(config, code, lambda line: None)
 threading.Event().wait()
 """
@@ -183,12 +189,19 @@ def image_exists(image: str) -> bool:
     return inspected.returncode == 0
 
 
-def serve_workspace(compose: list[str], environment: Mapping[str, str], config: RunConfig, run: str) -> None:
+def serve_workspace(
+    compose: list[str],
+    environment: Mapping[str, str],
+    config: RunConfig,
+    run: str,
+    agents: Sequence[str] = (),
+) -> None:
     """Start the episode's container of the project ``compose`` names, serving the workspace service alone.
 
-    Returns once it listens; ``docker compose down`` removes it with the project.
+    Each of ``agents``, whose sandbox runs, gets a checkout where its commands run there. Returns once it
+    listens; ``docker compose down`` removes it with the project.
     """
-    script = ["python", "-c", _SERVE_WORKSPACE_ALONE, f"{CONFIGS_DIRECTORY}/{run}.yaml"]
+    script = ["python", "-c", _SERVE_WORKSPACE_ALONE, f"{CONFIGS_DIRECTORY}/{run}.yaml", *agents]
     started = subprocess.run(
         [*compose, "run", "--detach", "--no-deps", "--use-aliases", "-T", EPISODE_SERVICE, *script],
         env=dict(environment),
