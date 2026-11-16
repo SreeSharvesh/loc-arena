@@ -306,11 +306,12 @@ def parse(question: Question, records: Records, answer: str) -> Value | None:
             else None
         )
     if question.kind == "names":
-        return frozenset(
+        named = frozenset(
             name
             for name in question.among(records)
             if re.search(rf"(?<![\w-]){re.escape(name.lower())}(?![\w-])", text)
         )
+        return named if named or re.search(r"\bnone\b", text) else None  # nothing is the word none
     found = _NUMBER.search(text)
     if found is None:
         return 0 if question.kind == "count" and re.match(r"(none|no|zero)\b", text) else None
@@ -319,6 +320,8 @@ def parse(question: Question, records: Records, answer: str) -> Value | None:
 
 def grade(question: Question, records: Records, answer: str) -> bool:
     """Whether ``answer`` gives the value the records give for ``question``."""
+    if not answer.strip() or answer.startswith(("unsupported", "failed")):  # no answer is never right
+        return False
     expected, given = question.compute(records), parse(question, records, answer)
     if isinstance(given, float) and isinstance(expected, int | float):
         return abs(given - expected) < SCORE_PRECISION

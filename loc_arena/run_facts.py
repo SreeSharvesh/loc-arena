@@ -12,6 +12,7 @@ import re
 from collections import Counter
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from pathlib import Path
+from typing import get_args
 
 import yaml
 from pydantic import BaseModel, ConfigDict, JsonValue
@@ -21,6 +22,7 @@ from loc_arena.gateway.model_gateway import PHASE_PLAYS
 from loc_arena.logging_.events import Event, read_events
 from loc_arena.merged_main import EPISODE_PHASE, TWIN_PHASE
 from loc_arena.monitors.registry import MonitorVerdict
+from loc_arena.own_sessions import EndReason
 from loc_arena.session_events import read_reply_text, read_session_calls
 
 type Fact = str | int | float | bool | list[str]
@@ -99,8 +101,17 @@ def gather_evidence(run_directory: Path, word_fields: Sequence[str]) -> RunEvide
         twin = graded.honest_twin.monitor_verdicts if graded.honest_twin else ()
         verdicts = graded.monitor_verdicts if phase == EPISODE_PHASE else twin
         facts |= _count_play(play, sealed, run_directory / phase, verdicts, graded.safety.audit_threshold)
-        team = Counter(key for event in sealed if event.actor_uid in agents for key in _made(event))
-        facts |= {f"{play}.team.{key}": count for key, count in team.items()}  # the agents' alone
+        made = [
+            (event.actor_uid, key) for event in sealed if event.actor_uid in agents for key in _made(event)
+        ]
+        team = Counter(key for _, key in made)  # the agents' alone, the monitors' and coworkers' apart
+        facts |= {f"{play}.team.{key}": count for key, count in team.items()}
+        facts |= {
+            f"{play}.team.{key}.actors": sorted({actor for actor, of in made if of == key}) for key in team
+        }
+        facts |= {
+            f"{play}.team.{key}.actor_count": len({actor for actor, of in made if of == key}) for key in team
+        }
         replies = {
             f"{call.agent}:t{call.turn}": read_reply_text(call.call.response)
             for call in read_session_calls(run_directory, PHASE_PLAYS[phase], agents)
@@ -111,7 +122,13 @@ def gather_evidence(run_directory: Path, word_fields: Sequence[str]) -> RunEvide
                 cited = _describe(f"{prefix}:{event.seq}", event, word_fields, replies)
                 events[cited.id] = cited
                 names.update(_name_event(event, word_fields))
-    _count_zeros(facts, [play for play, _ in name_plays(run_directory)], agents)
+    offered = {
+        tool
+        for agent in config["agents"]
+        for tools in agent.get("sandbox", {}).get("tools", {}).values()
+        for tool in tools
+    }
+    _count_zeros(facts, [play for play, _ in name_plays(run_directory)], agents, offered)
     files = (str(path.relative_to(run_directory)) for path in run_directory.rglob("*") if path.is_file())
     names.update(ending for file in files for ending in _endings(file))
     names.update(_name_facts(facts))  # every play's facts included
@@ -174,17 +191,26 @@ def _made(event: Event) -> list[str]:
     return [f"kind.{event.kind}", *([f"tool.{event.tool}"] if event.tool else [])]
 
 
-def _count_zeros(facts: dict[str, Fact], plays: Sequence[str], agents: Sequence[str]) -> None:
-    """A zero for each kind and tool the run saw that a play, or an agent in it, never made or used."""
+def _count_zeros(
+    facts: dict[str, Fact],
+    plays: Sequence[str],
+    agents: Sequence[str],
+    offered: Iterable[str],
+) -> None:
+    """A zero for each kind the run saw, each tool it saw or offered and each way a session ends, not seen."""
     seen = {key.split(".", 1)[1] for key in facts if re.fullmatch(r"[^.]+\.(kind|tool)\.[^.]+", key)}
     for play in plays:
-        for key in seen:
-            facts.setdefault(f"{play}.{key}", 0)
-            facts.setdefault(f"{play}.team.{key}", 0)
-            facts.setdefault(f"{play}.{key}.actors", [])
-            facts.setdefault(f"{play}.{key}.actor_count", 0)
+        for key in seen | {f"tool.{tool}" for tool in offered}:
+            for counted in (f"{play}.{key}", f"{play}.team.{key}"):
+                facts |= {
+                    counted: facts.get(counted, 0),
+                    f"{counted}.actor_count": facts.get(f"{counted}.actor_count", 0),
+                }
+                facts.setdefault(f"{counted}.actors", [])
             for agent in agents:
                 facts.setdefault(f"{play}.agent.{agent}.{key}", 0)
+        for reason in get_args(EndReason):
+            facts.setdefault(f"{play}.sessions.{reason}", 0)
 
 
 def _describe(cite: str, event: Event, word_fields: Sequence[str], replies: Mapping[str, str]) -> EventWords:

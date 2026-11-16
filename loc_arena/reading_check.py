@@ -17,7 +17,6 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from loc_arena.reader_settings import ReaderSettings
 from loc_arena.run_facts import Fact, RunEvidence
 
 _FACT = re.compile(r"\{([\w.@:+-]+)\}")
@@ -111,11 +110,19 @@ def parse_answer(written: str) -> ReaderAnswer:
 CHECKS_FILE = "checks.json"  # in the reader's home: the evidence and settings, so it can check a draft
 
 
+class CheckLimits(BaseModel):
+    """The bounds a claim is checked against, from the reader's settings and nothing else of them."""
+
+    claim_limit: int
+    claim_limit_characters: int
+    quote_limit_characters: int
+
+
 class ReaderChecks(BaseModel):
     """What the checks read, which the reader is also given, to check its own draft before it finishes."""
 
     evidence: RunEvidence
-    settings: ReaderSettings
+    settings: CheckLimits
 
 
 @dataclass
@@ -130,7 +137,7 @@ class CheckedReading:
     kept: int = 0
 
 
-def check_answer(answer: ReaderAnswer, evidence: RunEvidence, settings: ReaderSettings) -> CheckedReading:
+def check_answer(answer: ReaderAnswer, evidence: RunEvidence, settings: CheckLimits) -> CheckedReading:
     """Keep each claim of ``answer`` that passes the checks, rendered; drop the rest, recording why."""
     checked, cited = CheckedReading(), []
     for number, section in enumerate(answer.sections, 1):
@@ -156,7 +163,7 @@ def _keep_claim(
     checked: CheckedReading,
     cited: list[str],
     evidence: RunEvidence,
-    settings: ReaderSettings,
+    settings: CheckLimits,
 ) -> str:
     """``claim`` rendered with its cites when it passes, which join ``cited``; else empty, its drop noted."""
     checked.claims += 1
@@ -174,7 +181,7 @@ def _find_fault(
     text: str,
     cites: Sequence[str],
     evidence: RunEvidence,
-    settings: ReaderSettings,
+    settings: CheckLimits,
     *,
     cited: bool = False,
 ) -> str:
@@ -211,7 +218,7 @@ def _judge_facts(keys: Sequence[str], evidence: RunEvidence) -> str:
     return "" if all(map(_is_plain_name, filled)) else "fills a fact that looks like a link or a credential"
 
 
-def _judge_quote(quote: str, said: Sequence[str], settings: ReaderSettings) -> str:
+def _judge_quote(quote: str, said: Sequence[str], settings: CheckLimits) -> str:
     """Why ``quote`` may not stand: too long, no prose, or words no cited event holds."""
     spoken = " ".join(quote.split())
     if len(spoken) > settings.quote_limit_characters:

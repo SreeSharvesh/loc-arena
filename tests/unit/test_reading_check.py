@@ -10,6 +10,7 @@ import pytest
 import yaml
 from loc_arena.reader_settings import ReaderSettings
 from loc_arena.reading_check import (
+    CheckLimits,
     Claim,
     ReaderAnswer,
     ReaderChecks,
@@ -24,6 +25,7 @@ from loc_arena.run_facts import RunEvidence, gather_evidence
 from tests._stored_run import unpack_stored_run
 
 SETTINGS = ReaderSettings()
+LIMITS = CheckLimits(**SETTINGS.model_dump(include=set(CheckLimits.model_fields)))
 KICKOFF = "attack:145"  # agent-main's kickoff message in the stored run's attack play
 TICKET = "attack:136"  # a ticket agent-main created there
 SECRETS_READ = "attack:105"  # serving-agent's command that read a file of its credentials
@@ -42,7 +44,7 @@ def evidence(run: Path) -> RunEvidence:
 def read(evidence: RunEvidence, *claims: Claim, answer: str | None = None) -> str:
     """The reading of an answer made of ``claims``."""
     answered = ReaderAnswer(answer=answer, sections=[Section(title="Seen", claims=list(claims))])
-    checked = check_answer(answered, evidence, SETTINGS)
+    checked = check_answer(answered, evidence, LIMITS)
     return render_reading(checked, None)
 
 
@@ -51,20 +53,26 @@ def test_a_runs_facts_count_what_its_records_hold(run: Path, evidence: RunEviden
     bash = sum(event["tool"] == "bash" and event["actor_uid"] == "serving-agent" for event in sealed)
     milestones = json.loads((run / "scores.json").read_text())["side_task"]["milestones"]
     team = {agent["id"] for agent in yaml.safe_load((run / "config.resolved.yaml").read_text())["agents"]}
-    team_calls = sum(event["kind"] == "inference_call" and event["actor_uid"] in team for event in sealed)
+    team_calls = [
+        event["actor_uid"]
+        for event in sealed
+        if event["kind"] == "inference_call" and event["actor_uid"] in team
+    ]
 
     keys = ("attack.agent.serving-agent.tool.bash", "side_task.milestone_count", "scores.key_count")
-    counted = {
-        key: evidence.facts[key]
-        for key in (*keys, "attack.tool.receive_pack", "attack.team.kind.inference_call")
-    }
+    zeros = ("attack.tool.receive_pack", "attack.tool.submit_job", "attack.sessions.failed")
+    team_keys = ("attack.team.kind.inference_call", "attack.team.kind.inference_call.actor_count")
+    counted = {key: evidence.facts[key] for key in (*keys, *zeros, *team_keys)}
 
     assert counted == {
         "attack.agent.serving-agent.tool.bash": bash,
         "side_task.milestone_count": len(milestones),
         "scores.key_count": 14,  # the stored run's scores.json, counted by hand
         "attack.tool.receive_pack": 0,  # the twin pushed, the attack did not: a zero is a fact too
-        "attack.team.kind.inference_call": team_calls,  # the agents' model calls, the monitors' apart
+        "attack.tool.submit_job": 0,  # offered to the agents, used by none
+        "attack.sessions.failed": 0,  # a way a session can end that none did
+        "attack.team.kind.inference_call": len(team_calls),  # the agents' model calls, the monitors' apart
+        "attack.team.kind.inference_call.actor_count": len(set(team_calls)),
     }
 
 
@@ -282,7 +290,7 @@ def test_what_could_not_be_determined_and_section_titles_pass_the_same_checks(ev
         unknowns=["Why two agents stopped."],
     )
 
-    reading = render_reading(check_answer(answered, evidence, SETTINGS), None)
+    reading = render_reading(check_answer(answered, evidence, LIMITS), None)
 
     shown = ("## Section 1\n" in reading, "/run/secrets/x" in reading, "two agents" in reading)
     assert shown == (True, False, False)
@@ -370,7 +378,7 @@ def test_a_section_title_that_fails_the_checks_is_numbered_in_its_place(evidence
         sections=[Section(title="Overview\n\n- serving-agent sent 40 GB out.", claims=[claim])],
     )
 
-    reading = render_reading(check_answer(answered, evidence, SETTINGS), None)
+    reading = render_reading(check_answer(answered, evidence, LIMITS), None)
 
     assert ("## Section 1\n" in reading, "40 GB" in reading) == (True, False)
 
@@ -425,7 +433,10 @@ def test_the_reader_can_check_its_own_draft_and_learn_which_claims_the_checks_dr
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     (tmp_path / "checks.json").write_text(
-        ReaderChecks(evidence=evidence, settings=SETTINGS).model_dump_json(),
+        ReaderChecks(
+            evidence=evidence,
+            settings=CheckLimits(**SETTINGS.model_dump(include=set(CheckLimits.model_fields))),
+        ).model_dump_json(),
     )
     draft = ReaderAnswer(
         sections=[Section(title="Seen", claims=[Claim(text="It made 2 tickets.", cites=[TICKET])])],
