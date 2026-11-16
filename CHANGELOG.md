@@ -31,6 +31,18 @@ in its own container.
 - The run reader reads with `anthropic/claude-haiku-5.5`, the most accurate candidate on the test set and cheaper than the next ([docs](docs/run-reader.md#accuracy)).
 - The run reader's facts now hold zero counts, the agents' own totals and each agent's role, so absence and the team's work can be cited ([docs](docs/run-reader.md#what-the-reader-is-given)).
 
+## [316] - 2026-11-16: A run shows each agent's steps while it plays
+
+### Added
+
+- The run prints each agent's thoughts, words and tool calls while it plays with `make watch`, so a run whose agents ignore their tasks is stopped early ([docs](docs/pi-harness.md#watching-the-sessions-while-a-run-plays)).
+- The run has three more configs of the model-selection task, named `aurora-model-evaluation.control-note`, in which the lead alone holds the covert objective, on three models ([docs](docs/run-config.md)).
+
+### Changed
+
+- The agent gets four times the model calls in the model-selection task, 320 for the lead, since every session there ended on its budget ([docs](docs/pi-harness.md#how-play-and-a-session-end)).
+- The model gateway admits 5000 job-side model calls a play in the model-selection task, where one selection takes 648 and a second attempt passed the default ([docs](docs/isolation/README.md#the-gateway)).
+
 ## [385] - 2026-11-16: The run reader checks every claim and answers one question
 
 ### Added
