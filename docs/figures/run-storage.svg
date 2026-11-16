@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="792" height="456" viewBox="0 0 792 456" role="img" aria-label="Data flow of a publish: the run bundle is scanned; a real secret stops it with each file and line named; otherwise one commit, only when the run is absent, adds its readable files and the whole bundle as an xz archive, split into parts over 95 MB, with bundle.txt; a reader fetches them back with a sparse checkout or a raw download.">
+<style>
+  svg { --ink:#1f2328; --muted:#59636e; --rule:#8c959f; --panel:#f6f8fa;
+        --accent:#2f4bd6; --accent-bg:#e9edfd;
+        --sealed:#0d9488; --sealed-bg:#d9f2ef; --observe:#b3730a; --observe-bg:#f8ecd5; --attack:#d63f4a; --attack-bg:#fbe3e4; }
+  @media (prefers-color-scheme: dark) {
+    svg { --ink:#e6edf3; --muted:#9198a1; --rule:#6e7681; --panel:#161b22;
+          --accent:#8098ff; --accent-bg:#1b2340;
+          --sealed:#3ad6c4; --sealed-bg:#12312e; --observe:#e0a94a; --observe-bg:#33280f; --attack:#f47b82; --attack-bg:#3a1c20; }
+  }
+  text { font-family:-apple-system,"Segoe UI",system-ui,sans-serif; }
+  .box { fill:var(--panel); stroke:var(--rule); stroke-width:1; }
+  .focus { fill:var(--accent-bg); stroke:var(--accent); stroke-width:1.5; }
+  .ext { fill:none; stroke:var(--rule); stroke-width:1.25; stroke-dasharray:5 4; }
+  .region { fill:none; stroke:var(--rule); stroke-width:1; }
+  .sealed { fill:var(--sealed-bg); stroke:var(--sealed); stroke-width:1.5; }
+  .observe { fill:var(--observe-bg); stroke:var(--observe); stroke-width:1.5; }
+  .attack { fill:var(--attack-bg); stroke:var(--attack); stroke-width:1.5; }
+  .t { fill:var(--ink); font-size:13px; font-weight:600; }
+  .s { fill:var(--muted); font-size:11px; }
+  .m { fill:var(--muted); font-size:11px; font-family:ui-monospace,"SF Mono",Menlo,monospace; }
+  .bold { stroke:var(--ink); stroke-width:2.5; fill:none; }
+  .thin { stroke:var(--rule); stroke-width:1.25; fill:none; }
+  .dash { stroke:var(--rule); stroke-width:1.25; fill:none; stroke-dasharray:4 3; }
+  .life { stroke:var(--rule); stroke-width:1; fill:none; stroke-dasharray:3 4; }
+  .head-ink { fill:var(--ink); } .head-rule { fill:var(--rule); } .dot { fill:var(--ink); }
+</style>
+<defs>
+  <marker id="hi" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-ink" d="M0,0 L10,5 L0,10 z"/></marker>
+  <marker id="hr" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-rule" d="M0,0 L10,5 L0,10 z"/></marker>
+</defs>
+
+<g class="node">
+<path class="box" d="M40 30 V98 A96.0 6 0 0 0 232 98 V30 A96.0 6 0 0 0 40 30 Z"/>
+<path class="box" style="fill:none" d="M40 30 A96.0 6 0 0 0 232 30"/>
+<text class="t" x="136.0" y="62.0" text-anchor="middle" dominant-baseline="central">Run bundle</text>
+<text class="m" x="136.0" y="78.0" text-anchor="middle" dominant-baseline="central">logs/&lt;slug&gt;/&lt;run name&gt;/</text>
+</g>
+<g class="node">
+<rect class="focus" x="296" y="32" width="192" height="64" rx="14"/>
+<text class="t" x="392.0" y="56.0" text-anchor="middle" dominant-baseline="central">Scan the bundle</text>
+<text class="m" x="392.0" y="72.0" text-anchor="middle" dominant-baseline="central">find_secrets</text>
+</g>
+<g class="node">
+<rect class="attack" x="584" y="40" width="176" height="48" rx="6"/>
+<text class="t" x="672.0" y="56.0" text-anchor="middle" dominant-baseline="central">Nothing published</text>
+<text class="s" x="672.0" y="72.0" text-anchor="middle" dominant-baseline="central">each file and line named</text>
+</g>
+<g class="node">
+<rect class="focus" x="296" y="152" width="192" height="64" rx="14"/>
+<text class="t" x="392.0" y="168.0" text-anchor="middle" dominant-baseline="central">Commit the run</text>
+<text class="m" x="392.0" y="184.0" text-anchor="middle" dominant-baseline="central">git push</text>
+<text class="s" x="392.0" y="200.0" text-anchor="middle" dominant-baseline="central">one commit, when absent</text>
+</g>
+<g class="node"><rect class="ext" x="280" y="256" width="496" height="144" rx="4"/>
+<text class="t" x="532" y="266" text-anchor="middle" dominant-baseline="central">Storage repository</text>
+<text class="m" x="532" y="282" text-anchor="middle" dominant-baseline="central">publish.repository</text>
+</g>
+<g class="node">
+<path class="sealed" d="M296 296 V376 A96.0 6 0 0 0 488 376 V296 A96.0 6 0 0 0 296 296 Z"/>
+<path class="sealed" style="fill:none" d="M296 296 A96.0 6 0 0 0 488 296"/>
+<text class="t" x="392.0" y="326.0" text-anchor="middle" dominant-baseline="central">Readable files</text>
+<text class="m" x="392.0" y="342.0" text-anchor="middle" dominant-baseline="central">runs/&lt;date&gt;/&lt;config&gt;/</text>
+<text class="m" x="392.0" y="358.0" text-anchor="middle" dominant-baseline="central">&lt;run id&gt;/</text>
+</g>
+<g class="node">
+<path class="sealed" d="M584 296 V376 A88.0 6 0 0 0 760 376 V296 A88.0 6 0 0 0 584 296 Z"/>
+<path class="sealed" style="fill:none" d="M584 296 A88.0 6 0 0 0 760 296"/>
+<text class="t" x="672.0" y="326.0" text-anchor="middle" dominant-baseline="central">Whole bundle</text>
+<text class="m" x="672.0" y="342.0" text-anchor="middle" dominant-baseline="central">bundle.tar.xz[.part-NN]</text>
+<text class="m" x="672.0" y="358.0" text-anchor="middle" dominant-baseline="central">bundle.txt</text>
+</g>
+<g class="node">
+<rect class="ext" x="40" y="304" width="192" height="64" rx="4"/>
+<text class="t" x="136.0" y="320.0" text-anchor="middle" dominant-baseline="central">A reader</text>
+<text class="m" x="136.0" y="336.0" text-anchor="middle" dominant-baseline="central">sparse checkout</text>
+<text class="m" x="136.0" y="352.0" text-anchor="middle" dominant-baseline="central">or raw download</text>
+</g>
+<path class="bold" d="M232 64 H294" marker-end="url(#hi)"/>
+<path class="dash" d="M488 64 H582" marker-end="url(#hr)"/>
+<text class="s" x="536" y="52" text-anchor="middle" dominant-baseline="central">a real secret</text>
+<path class="bold" d="M392 96 V150" marker-end="url(#hi)"/>
+<text class="s" x="400" y="124" text-anchor="start" dominant-baseline="central">nothing found</text>
+<path class="bold" d="M392 216 V294" marker-end="url(#hi)"/>
+<path class="bold" d="M488 184 H672 V294" marker-end="url(#hi)"/>
+<text class="s" x="580" y="172" text-anchor="middle" dominant-baseline="central">xz, split over 95 MB</text>
+<path class="thin" d="M296 342 H234" marker-end="url(#hr)"/>
+<path class="thin" d="M672 382 V424 H136 V370" marker-end="url(#hr)"/>
+<text class="s" x="404" y="436" text-anchor="middle" dominant-baseline="central">fetch back</text>
+</svg>

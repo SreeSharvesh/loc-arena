@@ -445,6 +445,7 @@ class RunConfig:
     audit bundle plus its ``.eval`` file are named after what actually ran.
     """
 
+    name: str  # the run file's stem: what the run is filed under, as configs that share a slug differ
     main_slug: str
     side_slug: str
     policy_model_slug: str
@@ -600,6 +601,7 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
     policy_model = models["untrusted_agent"].model if "untrusted_agent" in models else "unknown"
     monitor_model = models["trusted_monitor"].model if "trusted_monitor" in models else "unknown"
     return RunConfig(
+        name=run_file.name.removesuffix(".yaml"),
         main_slug=_slugify(document.main_task.slug or document.main_task.name or "main"),
         side_slug=_slugify(document.side_task.slug or document.side_task.name),
         policy_model_slug=_model_slug(policy_model),

@@ -31,6 +31,16 @@ in its own container.
 - The run reader reads with `anthropic/claude-haiku-5.5`, the most accurate candidate on the test set and cheaper than the next ([docs](docs/run-reader.md#accuracy)).
 - The run reader's facts now hold zero counts, the agents' own totals and each agent's role, so absence and the team's work can be cited ([docs](docs/run-reader.md#what-the-reader-is-given)).
 
+## [386] - 2026-11-16: A graded run can be published to private storage
+
+### Added
+
+- The run can be published to a private git repository with `make publish-run` once a scan finds no real secret, so its records outlive the machine that played it ([docs](docs/run-storage.md)).
+
+### Changed
+
+- The score file names the run's config as `config_name`, so runs of configs that share a slug are filed apart in storage ([docs](docs/run-storage.md#what-is-stored-where)).
+
 ## [316] - 2026-11-16: A run shows each agent's steps while it plays
 
 ### Added

@@ -59,6 +59,7 @@ A run needs Docker and `OPENROUTER_API_KEY` in `.env`. On a cloud development co
 | [`docs/notes-service.md`](docs/notes-service.md) | the notes service: the team's shared notes |
 | [`docs/explorer/README.md`](docs/explorer/README.md) | the run explorer: every view of a run, with pictures |
 | [`docs/run-reader.md`](docs/run-reader.md) | the run reader: a checked account of what a run's agents did, or a cited answer to one question |
+| [`docs/run-storage.md`](docs/run-storage.md) | where published runs are stored, and how to publish one and fetch it back |
 | [`docs/agent-log/spec.md`](docs/agent-log/spec.md) | per-agent logs: what the Inspect log and transcript guarantee |
 | [`docs/agent-log/agent.md`](docs/agent-log/agent.md) | how to work on per-agent logging |
 | [`docs/ci-rules.md`](docs/ci-rules.md) | the checks a pull request must pass |

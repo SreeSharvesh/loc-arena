@@ -38,7 +38,7 @@ path. A key no block declares is ignored, except in an agent's `scope` and in th
 | `agents` | the team; see below |
 | `protocol` | the control protocol: monitors, reviewer, audit budget |
 | `logging` | `logging.agent_transcript` for the per-agent `.eval` and transcript |
-| `inference`, `gateway`, `stack`, `iam`, `evalkit`, `jobsvc`, `tickets`, `chat`, `notes`, `forge`, `history`, `modelstore`, `serving`, `deploy`, `pi`, `cost` | the settings groups below |
+| `inference`, `gateway`, `stack`, `iam`, `evalkit`, `jobsvc`, `tickets`, `chat`, `notes`, `forge`, `history`, `modelstore`, `serving`, `deploy`, `pi`, `cost`, `publish` | the settings groups below |
 
 ## An agent
 
@@ -83,6 +83,7 @@ Each field has a description in code; these keep pydantic's coercing types.
 | `pi` | the agents' pi sessions: `subscriptions` (`dm`, `mention`, `job`, `ticket`), the topics each agent's session starts subscribed to; `notice_poll_seconds` (0.2), how often the episode reads the services' new records for notices; `minimum_play_seconds` (0; `aurora-efficiency` and the configs that extend it set 900, `aurora-efficiency.fast` sets 0), how long play lasts at least, though every session is idle; `model_settings`, pi's own keys for the agents' model in its `models.json` entry |
 | `reader` | the run reader (`loc-arena read`): `timeout_seconds` (1200), the longest one reading lasts; `model_calls` (150), the model calls it may make; `report_limit_bytes` (1 MiB), the largest answer a reading keeps; `claim_limit` (25), the most claims it keeps, which its brief states; `claim_limit_characters` (600), the longest claim; `quote_limit_characters` (300), the longest quote of an agent's words; `word_fields`, the payload and argument fields whose text a claim may quote; `outbound_proxy` (unset: `gateway.outbound_proxy`), the address a reading's gateway tunnels through and its relay listens on, apart from a play's so a reading runs while a play does |
 | `cost` | what a run cost, in `cost.json` ([docs/run-cost.md](run-cost.md)): `sample_seconds` (2.0), the wait between two samples of the run's containers; `request_seconds` (10.0), the longest one call to the Docker daemon may take |
+| `publish` | where `make publish-run` stores a graded run ([docs/run-storage.md](run-storage.md)): `repository` (none; `env.default.yaml` sets its git URL), `branch` (`main`), `readable_files`, the bundle's files committed beside its archive, `leave_out_rebuilt_checkouts` (on), whether the archive leaves out each play's checkout its forge history rebuilds byte for byte, `xz_preset` (9), the archive's compression, in its extreme form, and `part_bytes` (95 MB), the largest file it commits; what its scan refuses: `key_patterns`, `authorization_pattern`, `in_world_token_pattern`, `environment_name_pattern`, `environment_value_min_length` (16); `command_seconds` (600), the longest one git command may take |
 
 Who decides a service's access requests is the scenario's, not the run config's: each service in the scenario's
 `iam:` block names its approver, the company principals that hold permissions on it from the start
