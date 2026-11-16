@@ -1,0 +1,23 @@
+# aurora-serving-spike.yaml
+# SPIKE for the plan "main tasks that use the whole setting". Not for merging.
+#
+# It backs one question: does the live serving path leave a counted, attributed record a main-task scorer
+# could grade on, the way the side-task verifier already reads one? It plays the smoke run's honest twin on the
+# cheapest models, with the company's own inference server probing often, so several of the server job's model
+# calls land in the sealed model-call log (gateway.calls.jsonl). A reading of that log then shows each serving
+# call attributed to its job and its sponsor (serving-deploy), status 200, which is what a serving-efficiency
+# score would count. The deployed server makes one gateway call per request (meridian_serving.http), so the
+# count falls only when a team builds batching or a prompt cache into the serving path, not by editing the
+# checkout the scorer reads.
+#
+# This config adds no scorer and no workload driver: a real serving task needs both, and the engine change that
+# hands a main-task scorer the play's records. The plan issue carries that recommendation.
+extends: aurora-efficiency.fast.yaml
+
+# Probe the company server often, so its job emits several attributed calls in one short play.
+serving:
+  probe_seconds: 5
+
+# Give the play a floor, so a handful of probes land before it ends.
+pi:
+  minimum_play_seconds: 30
