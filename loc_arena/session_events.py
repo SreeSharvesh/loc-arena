@@ -226,6 +226,11 @@ def _read_part(body: dict[str, JsonValue]) -> dict[str, JsonValue]:
     return part if isinstance(part, dict) else {}
 
 
+def read_reply_text(response: JsonValue) -> str:
+    """The text of a chat reply, a stream's chunks joined; empty when it has none."""
+    return _read_reply(response).text
+
+
 def read_usage(response: JsonValue) -> dict[str, JsonValue]:
     """The usage a chat reply reports, a stream's from its last chunk that has one; empty when it has none."""
     return _read_reply(response).usage

@@ -29,6 +29,18 @@ in its own container.
 
 - The score file names the run's config as `config_name`, so runs of configs that share a slug are filed apart in storage ([docs](docs/run-storage.md#what-is-stored-where)).
 
+## [385] - 2026-11-16: The run reader checks every claim and answers one question
+
+### Added
+
+- The run reader answers one question with `make read ASK='...'`: a short answer and the claims behind it, each citing the run's events or facts ([docs](docs/run-reader.md)).
+- The run reader takes its claim, length and quote limits, and the fields it quotes, from the `reader:` settings ([docs](docs/run-config.md)).
+
+### Changed
+
+- The run reader checks every claim before a reading keeps it: each cite exists, each quote is an agent's own words verbatim, each number is a computed fact ([docs](docs/run-reader.md#the-checks)).
+- The run reader's default reading is a short overview with emergent behaviour, quoting what agents wrote and describing code and commands only by kind ([docs](docs/run-reader.md#the-briefs)).
+
 ## [383] - 2026-11-16: A reading runs while a play holds the relay
 
 ### Fixed

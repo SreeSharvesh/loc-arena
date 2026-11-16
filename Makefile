@@ -20,7 +20,7 @@ help:
 	@echo "make run RUN=aurora-efficiency.fast               # the smoke run: cheapest models, small budgets"
 	@echo "make view RUN=aurora-efficiency                       # open the latest report.html + inspect view"
 	@echo "make explore [LOGS=logs]                  # build the run explorer over every run in LOGS and open it"
-	@echo "make read RUN_DIR=<run directory> [BRIEF=agents|monitors]  # an agent reads one run and reports"
+	@echo "make read RUN_DIR=<run directory> [BRIEF=agents|monitors] [ASK='question']  # an agent reads one run: a checked report, or a cited answer"
 	@echo "make cost RUN_DIR=<run directory> [OTHER=<run directory>]  # what a run cost, or how a second run's cost differs"
 	@echo "make publish-run RUN_DIR=<run directory>  # scan a graded run for real secrets, then publish it to private storage"
 	@echo "make fixture-run                          # play the smoke run and store it as the tests' run fixture"
@@ -44,8 +44,10 @@ view:
 explore:
 	@uv run python -m loc_arena.cli explore $(LOGS)
 
-read:
-	@uv run python -m loc_arena.cli read "$(RUN_DIR)" --brief "$(BRIEF)" --run "$(RUN)"
+unexport ASK  # exporting a command-line variable expands it, and with it any make function a question holds
+read: export READER_QUESTION := $(value ASK)
+read:  # the question reaches the command as written: neither make nor the shell expands it
+	@uv run python -m loc_arena.cli read "$(RUN_DIR)" --brief "$(BRIEF)" --run "$(RUN)" $(if $(strip $(value ASK)),--ask "$$READER_QUESTION")
 
 cost:
 	@uv run python -m loc_arena.cli cost "$(RUN_DIR)" $(if $(strip $(OTHER)),"$(OTHER)")
