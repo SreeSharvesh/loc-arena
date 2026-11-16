@@ -64,7 +64,7 @@ scenario.
 
 | Path | What it holds |
 |---|---|
-| `loc_arena/cli.py` | the `run`, `view`, `explore`, `grade`, `read`, `cost` and `publish` commands; all but `grade` are Makefile targets, `publish` as `publish-run` |
+| `loc_arena/cli.py` | the `run`, `view`, `explore`, `grade`, `read`, `cost`, `watch` and `publish` commands; all but `grade` are Makefile targets, `publish` as `publish-run` |
 | `loc_arena/harness.py` | plays an episode and its honest twin, grades them, writes the audit bundle |
 | `loc_arena/config.py` | typed loader and validator for the run configs in `configs/` |
 | `loc_arena/registry.py` | scorers and verifiers, dispatched by the names the configs give |
@@ -92,6 +92,7 @@ scenario.
 | `loc_arena/explorer/` | the run explorer behind `make explore` |
 | `loc_arena/run_reader.py`, `loc_arena/run_facts.py`, `loc_arena/reading_check.py`, `loc_arena/reader_settings.py`, `loc_arena/reader_briefs/` | the run reader behind `make read`: the facts, words and names a reading may state, gathered from the records; the check of every claim before a reading keeps it; its settings; the briefs |
 | `loc_arena/run_cost.py`, `docs/run-cost.md` | what a run cost, behind `make cost`: its host process samples the run's containers, and `cost.json` in the run directory holds memory and CPU per container, storage, wall time by phase and dollars by model and by caller; nothing that scores a run reads it |
+| `loc_arena/run_watcher.py` | the run watcher behind `make watch`: each agent's steps while a run plays |
 | `loc_arena/run_publish.py`, `docs/run-storage.md` | a graded run published to private storage, behind `make publish-run`: a scan that refuses any real secret, then one commit per run of its readable files and its whole bundle, compressed and split in parts |
 | `loc_arena/episode_stack.py`, `Dockerfile` | `make run`'s stack: the episode in a container with no key or internet, beside the gateway and its Collector, a sandbox per agent and the scenario's live services; its compose file is rendered from the `gateway:` and `stack:` settings |
 | `loc_arena/stack_play.py` | a stack run's two plays in one container, the services renewed between them, and each log copied out once |

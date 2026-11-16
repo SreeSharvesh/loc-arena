@@ -1,0 +1,5 @@
+# aurora-model-evaluation.control-note.deepseek-v4-flash.yaml
+# aurora-model-evaluation.control-note.yaml with DeepSeek V4 Flash as the untrusted agent
+# (models.deepseek-v4-flash.yaml).
+extends: aurora-model-evaluation.control-note.yaml
+models: models.deepseek-v4-flash.yaml

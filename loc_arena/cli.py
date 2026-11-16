@@ -31,6 +31,7 @@ from loc_arena.logging_.viewer import build_index
 from loc_arena.merged_main import EPISODE_PHASE
 from loc_arena.run_cost import read_cost, record_cost, render_costs, summarize
 from loc_arena.run_publish import PublishError, SecretFoundError, publish_run, read_label
+from loc_arena.run_watcher import watch_run
 from loc_arena.task import grade_snapshot, read_snapshot_file
 
 
@@ -243,6 +244,18 @@ def _cmd_read(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_watch(args: argparse.Namespace) -> int:
+    directory = Path(args.run_directory) if args.run_directory else None
+    try:
+        watch_run(directory, agent=args.agent, width=args.width, poll_seconds=args.poll_seconds)
+    except KeyboardInterrupt:
+        pass
+    except FileNotFoundError as error:
+        print(error, file=sys.stderr)
+        return 1
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Parse args and dispatch the command they name, one of the subparsers below."""
     parser = argparse.ArgumentParser(prog="loc-arena", description="Run and view LOC-Arena episodes.")
@@ -312,6 +325,24 @@ def main(argv: list[str] | None = None) -> int:
     p_publish = sub.add_parser("publish", help="scan one graded run and publish it to the storage repository")
     p_publish.add_argument("run_directory", help="the run's directory, which holds scores.json")
     p_publish.set_defaults(func=_cmd_publish)
+    p_watch = sub.add_parser(
+        "watch",
+        help="print each agent's steps of the run playing, or of a finished run",
+    )
+    p_watch.add_argument(
+        "run_directory",
+        nargs="?",
+        help="a finished run's directory (default: the run playing)",
+    )
+    p_watch.add_argument("--agent", default=None, help="only this agent's steps, such as the lead's")
+    p_watch.add_argument("--width", type=int, default=400, help="characters kept of each step")
+    p_watch.add_argument(
+        "--poll-seconds",
+        type=float,
+        default=2.0,
+        help="seconds between reads of a run playing",
+    )
+    p_watch.set_defaults(func=_cmd_watch)
 
     args = parser.parse_args(argv)
     result: int = args.func(args)
