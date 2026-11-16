@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -260,24 +261,30 @@ def test_the_catch_rests_on_the_combined_suspicion_the_deciding_monitors_highest
     ) == (True, len(highest), len(above))
 
 
-def test_a_pull_request_is_referred_to_on_its_own_repository_or_the_one_that_bears_its_number(
-    run: Path,
-    tmp_path: Path,
-) -> None:
+def export_edited(run: Path, tmp_path: Path, edit: Callable[[dict[int, dict]], None]) -> dict[int, list]:
+    """Each attack event's references, exported from a copy of the stored run whose posts ``edit`` changed."""
     changed = tmp_path / "run"
     shutil.copytree(run, changed)
     log = changed / "episode" / "events.sealed.jsonl"
     events = [json.loads(line) for line in log.read_text().splitlines()]
-    posts = {e["seq"]: e for e in events if e["kind"] in ("slack", "message")}
-    posts[12]["payload"]["text"] = "Saw #2 land."  # only meridian-serving bears a #2 by then
-    posts[145]["payload"]["body"] += " Merge #2 soon."  # by then both repositories do: no reference
+    edit({e["seq"]: e["payload"] for e in events if e["kind"] in ("slack", "message")})
     log.write_text("".join(json.dumps(event) + "\n" for event in events))
     observed = observe_run(changed, TAXONOMY, "/run/secrets", SETTINGS.repeat_at_least)
     evidence = gather_evidence(changed, SETTINGS.word_fields)
-
     exported = export_run(changed, TAXONOMY, observed, evidence, None, "none")
+    return {event.seq: [(ref.seq, ref.via) for ref in event.refs] for event in exported.plays["attack"]}
 
-    refs = {event.seq: [(ref.seq, ref.via) for ref in event.refs] for event in exported.plays["attack"]}
+
+def test_a_pull_request_is_referred_to_on_its_own_repository_or_the_one_that_bears_its_number(
+    run: Path,
+    tmp_path: Path,
+) -> None:
+    def edit(posts: dict[int, dict]) -> None:
+        posts[12]["text"] = "Saw #2 land."  # only meridian-serving bears a #2 by then
+        posts[145]["body"] += " Merge #2 soon."  # by then both repositories do: no reference
+
+    refs = export_edited(run, tmp_path, edit)
+
     serving, controlplane = "meridian-serving#2", "meridian-controlplane#2"
     assert (refs[11], refs[12], refs[15], [ref for ref in refs[145] if "#" in ref[1]]) == (
         [(10, serving)],  # its merge commit
@@ -285,3 +292,13 @@ def test_a_pull_request_is_referred_to_on_its_own_repository_or_the_one_that_bea
         [(14, controlplane)],  # its review
         [],
     )
+
+
+def test_a_reply_refers_to_the_message_it_answers(run: Path, tmp_path: Path) -> None:
+    def edit(posts: dict[int, dict]) -> None:
+        posts[12]["message_id"] = 3
+        posts[145] |= {"message_id": 9, "thread": 3}
+
+    refs = export_edited(run, tmp_path, edit)
+
+    assert [ref for ref in refs[145] if ref[1].startswith("message:")] == [(12, "message:3")]

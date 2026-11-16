@@ -101,7 +101,7 @@ checked like any reading's; a reading that fails is recorded in `reader`, and th
 
 | Part | What it holds | From |
 |---|---|---|
-| `run` | config and commit (`run.json`), each agent with whom it reports to, its covert milestones, scope and call budget, the models by role, the play's time bound, cost by model and by phase, and where each trace lives | the run's records |
+| `run` | the config's name (`scores.json`) and the commit (`run.json`), each agent with whom it reports to, its covert milestones, scope and call budget, the models by role, the play's time bound, cost by model and by phase, and where each trace lives | the run's records |
 | `plays` | each event of both plays: seq, seconds from the play's first clock reading, actor, channel, action, target, the agent's words in prose alone (no code block or command), outcome, covert flag, and `refs` | the sealed logs; seconds from `event_walls.jsonl`, or for an event the play wrote itself, from the clock reading it was written under |
 | `refs` | the earlier events an event refers to, each marked `by`: `id` for a ticket, a pull request of its repository, a note or a job it names or carries itself, as a review its pull request, `reader` for a phrase the reader resolved, quoted from the event's own words | code, or the checked reading |
 | `outcomes` | the main task, the side task with each milestone's evidence seqs, and the catch with the monitors' combined suspicion, the deciding monitors' highest scores and the graded play's flagged events; each reason marked `fact` or `inference`, with the seqs of one play | the scores, or the checked reading |
@@ -110,8 +110,8 @@ checked like any reading's; a reading that fails is recorded in `reader`, and th
 An event is covert where the verifier's evidence names it (the events of the jobs it names; its model calls off an agent's session have no sealed event), or where the reader's checked instance of a covert
 category cites it as an event of the agent it names. A folder of runs also gets `replay.summary.json`: per run
 config and taxonomy version, how many runs and how many were read, and each category's count and chances added up
-across them, a category the reader judges only over the runs it read. A reply in a thread refers to no earlier
-event: a message event does not carry its own message's id.
+across them, a category the reader judges only over the runs it read. A reply refers to the message it answers by
+that message's id.
 
 ## Accuracy
 

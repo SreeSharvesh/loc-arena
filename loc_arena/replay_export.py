@@ -15,7 +15,6 @@ from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Literal
 
-import yaml
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 
 from loc_arena.config import RunConfig
@@ -23,7 +22,8 @@ from loc_arena.explorer.scores import RunScores, load_scores
 from loc_arena.logging_.events import Event
 from loc_arena.reading_check import CheckedReading, KeptClaim, prose_lines
 from loc_arena.recorded_events import EVENT_WALLS_FILE
-from loc_arena.run_facts import MIRROR, RunEvidence, gather_evidence, name_plays
+from loc_arena.run_cost import COST_FILE, read_cost
+from loc_arena.run_facts import MIRROR, RunEvidence, gather_evidence, name_plays, read_resolved_config
 from loc_arena.run_identity import RUN_FILE, RunIdentity
 from loc_arena.run_reader import READINGS, read_run, settle_reading
 from loc_arena.task import SNAPSHOT_FILE, ClockReading, read_snapshot_file
@@ -366,7 +366,7 @@ def _resolve(name: str, event: Event, bearing: Mapping[str, list[int]]) -> str |
 def _ids_borne(event: Event) -> set[str]:
     """The ids an event bears itself.
 
-    The ticket it made or changed, its pull request by its repository, the note it wrote, its job.
+    The ticket it made or changed, its pull request by its repository, the note it wrote, its job and message.
     """
     borne = set()
     result = event.result if isinstance(event.result, dict) else {}
@@ -379,14 +379,16 @@ def _ids_borne(event: Event) -> set[str]:
         borne.add(f"note:{event.target_id}")
     if event.kind == "job" and event.payload.get("job_id"):
         borne.add(str(event.payload["job_id"]))
+    if event.kind in ("message", "slack") and event.payload.get("message_id") is not None:
+        borne.add(f"message:{event.payload['message_id']}")
     return borne
 
 
 def _ids_named(event: Event, words: str) -> set[str]:
     """The ids an event refers to, which an earlier event bore.
 
-    Those its words name, the ticket or note an action of it targets, and those it bears itself: an earlier
-    event of the same pull request, note or job bore them.
+    Those its words name, the ticket or note an action of it targets, the message a reply answers, and those
+    it bears itself: an earlier event of the same pull request, note or job bore them.
     """
     named = set(_TICKET.findall(words)) | set(_JOB.findall(words))
     named |= {f"#{first or second}" for first, second in _PULL_REQUEST.findall(words)}
@@ -394,6 +396,8 @@ def _ids_named(event: Event, words: str) -> set[str]:
         named.add(event.target_id)
     if event.tool in ("read_note", "write_note") and event.target_id:
         named.add(f"note:{event.target_id}")
+    if event.kind in ("message", "slack") and event.payload.get("thread") is not None:
+        named.add(f"message:{event.payload['thread']}")
     return named | _ids_borne(event)  # a review, merge or job's later state refers to what bore its id before
 
 
@@ -414,16 +418,14 @@ def _outcome(event: Event) -> Literal["ok", "blocked", "failed"] | None:
 
 
 def _run_part(run_directory: Path, scores: RunScores) -> RunPart:
-    config = yaml.safe_load((run_directory / "config.resolved.yaml").read_text())
+    config = read_resolved_config(run_directory)
     identity_file = run_directory / RUN_FILE
     identity = RunIdentity.model_validate_json(identity_file.read_text()) if identity_file.is_file() else None
-    episode = config.get("episode", {})
     budgets = {
-        "orchestrator": episode.get("orchestrator_turn_budget"),
-        "subagent": episode.get("subagent_turn_budget"),
+        "orchestrator": config.episode.orchestrator_turn_budget,
+        "subagent": config.episode.subagent_turn_budget,
     }
-    cost_file = run_directory / "cost.json"
-    cost = json.loads(cost_file.read_text()) if cost_file.is_file() else {}
+    cost = read_cost(run_directory) if (run_directory / COST_FILE).is_file() else None
     traces = {
         "sealed": ["episode/events.sealed.jsonl", "honest_cal/events.sealed.jsonl"],
         "mirror": ["episode/events.mirror.jsonl", "honest_cal/events.mirror.jsonl"],
@@ -438,25 +440,25 @@ def _run_part(run_directory: Path, scores: RunScores) -> RunPart:
     }
     return RunPart(
         name=run_directory.name,
-        config=identity.config if identity else None,
+        config=scores.config_name,
         commit=identity.commit if identity else None,
         modified=identity.modified if identity else None,
         mode=scores.mode,
         agents=[
             Agent(
-                id=agent["id"],
-                reports_to=agent.get("spawned_by"),
-                covert_milestones=[str(milestone) for milestone in agent.get("covert") or []],
-                repositories=[str(repo) for repo in agent.get("scope", {}).get("open_pr", [])],
-                call_budget=budgets.get(agent.get("kind", "")),
+                id=agent.id,
+                reports_to=agent.spawned_by,
+                covert_milestones=list(agent.covert or ()),
+                repositories=list(agent.scope.open_pr),
+                call_budget=budgets.get(agent.kind or ""),
             )
-            for agent in config["agents"]
+            for agent in config.agents
         ],
         models=dict(scores.models),
-        play_bound_seconds=episode.get("wall_clock_seconds"),
+        play_bound_seconds=config.episode.wall_clock_seconds,
         cost={
-            "dollars_by_model": dict(cost.get("dollars", {}).get("by_model", {})),
-            "seconds_by_phase": dict(cost.get("phases", {})),
+            "dollars_by_model": cost.dollars.by_model if cost else {},
+            "seconds_by_phase": cost.phases if cost else {},
         },
         traces={
             name: [path for path in paths if (run_directory / path).exists()]
