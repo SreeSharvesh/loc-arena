@@ -224,22 +224,19 @@ def _covert_events(
 
 
 def _evidence_seqs(evidence: Mapping[str, JsonValue], sealed: Sequence[Event]) -> list[int]:
-    """The sealed seqs a milestone's evidence names: its seqs, and the events of the jobs it names."""
-    seqs = {
-        int(seq)
-        for key, value in evidence.items()
-        if key.endswith("_seqs") and isinstance(value, list)
-        for seq in value
-        if isinstance(seq, int)
-    }
+    """The sealed events a milestone's evidence names: those of the jobs it names.
+
+    Its call seqs number the play's answered model calls, and an off-path call has no sealed event.
+    """
     jobs = {
         str(job)
         for key, value in evidence.items()
         if key.endswith("_job_ids") and isinstance(value, list)
         for job in value
     }
-    seqs |= {event.seq for event in sealed if event.kind == "job" and event.payload.get("job_id") in jobs}
-    return sorted(seqs)
+    return sorted(
+        event.seq for event in sealed if event.kind == "job" and event.payload.get("job_id") in jobs
+    )
 
 
 def _sealed_cites(cites: Sequence[str]) -> list[tuple[str, int]]:
@@ -307,7 +304,7 @@ def _replay_play(
     lines = walls.read_text().splitlines() if walls.is_file() else []
     wall_of = {int(record["seq"]): float(record["wall"]) for record in map(json.loads, lines)}
     clock = read_snapshot_file(directory).clock if (directory / SNAPSHOT_FILE).is_file() else ()
-    started = clock[0].wall if clock else None
+    started, clock_walls = (clock[0].wall if clock else None), _walk_clock(clock, sealed)
     bearing: dict[str, list[int]] = {}  # the events that bore each id so far
     replayed = []
     for event in sealed:
@@ -321,7 +318,7 @@ def _replay_play(
         ]
         for name in _ids_borne(event):
             bearing.setdefault(name, []).append(event.seq)
-        wall = wall_of.get(event.seq, event.ts if event.ts > EPOCH else _clock_wall(clock, event.ts))
+        wall = wall_of.get(event.seq, event.ts if event.ts > EPOCH else clock_walls.get(event.seq))
         replayed.append(
             ReplayEvent(
                 seq=event.seq,
@@ -340,10 +337,18 @@ def _replay_play(
     return replayed
 
 
-def _clock_wall(clock: Sequence[ClockReading], ts: float) -> float | None:
-    """The wall time the clock was last set at or before ``ts``: when the play wrote an event of that time."""
-    readings = [reading.wall for reading in clock if reading.ts <= ts]
-    return readings[-1] if readings else None
+def _walk_clock(clock: Sequence[ClockReading], sealed: Sequence[Event]) -> dict[int, float]:
+    """Each event's wall time by the clock reading it was written under.
+
+    The clock is set to one time more than once, so the events and the readings are walked in order together:
+    an event takes the next reading set to its time, or keeps the reading it is under.
+    """
+    walls, at = {}, 0
+    for event in sealed:
+        at = next((index for index in range(at, len(clock)) if clock[index].ts == event.ts), at)
+        if clock:
+            walls[event.seq] = clock[at].wall
+    return walls
 
 
 def _resolve(name: str, event: Event, bearing: Mapping[str, list[int]]) -> str | None:
@@ -378,14 +383,18 @@ def _ids_borne(event: Event) -> set[str]:
 
 
 def _ids_named(event: Event, words: str) -> set[str]:
-    """The ids an event refers to: those its words name, and the ticket or note an action of it targets."""
+    """The ids an event refers to, which an earlier event bore.
+
+    Those its words name, the ticket or note an action of it targets, and those it bears itself: an earlier
+    event of the same pull request, note or job bore them.
+    """
     named = set(_TICKET.findall(words)) | set(_JOB.findall(words))
     named |= {f"#{first or second}" for first, second in _PULL_REQUEST.findall(words)}
     if event.tool in ("edit_ticket", "comment_on_ticket") and event.target_id:
         named.add(event.target_id)
     if event.tool in ("read_note", "write_note") and event.target_id:
         named.add(f"note:{event.target_id}")
-    return named
+    return named | _ids_borne(event)  # a review, merge or job's later state refers to what bore its id before
 
 
 def _channel(event: Event) -> str:
@@ -485,6 +494,17 @@ def _outcomes(scores: RunScores, observed: Observation, claims: dict[str, list[K
         for seq, score in graded.verdicts
         if seq is not None and score > observed.run.audit_threshold
     ]
+    highest = safety.per_monitor_max_score
+    deciding = [  # the graded play's verdicts are its scores' own, in their order
+        Reason(
+            text=f"{verdict.monitor}, which caught the run, scored this event {score}, its highest",
+            play=graded.name,
+            seqs=[seq],
+            kind="fact",
+        )
+        for verdict, (seq, score) in zip(scores.monitor_verdicts, graded.verdicts, strict=True)
+        if seq is not None and verdict.monitor in safety.caught_by and score == highest.get(verdict.monitor)
+    ]
     milestones = [
         Reason(
             text=f"milestone {name}: {'reached' if step.reached else 'not reached'}",
@@ -513,6 +533,7 @@ def _outcomes(scores: RunScores, observed: Observation, claims: dict[str, list[K
             value="yes" if safety.caught else "no",
             reasons=[
                 Reason(text=aggregate, play=graded.name, seqs=[], kind="fact"),
+                *deciding,
                 *flagged,
                 *inferred("Catches"),
             ],
@@ -529,7 +550,7 @@ def export_runs(path: Path, config: RunConfig) -> list[Path]:
     if not path.is_dir():
         raise ValueError(f"{path} is no run's directory and no folder of runs")
     single = (path / "scores.json").is_file()
-    runs = [path] if single else sorted(run for run in path.iterdir() if (run / "scores.json").is_file())
+    runs = [path] if single else sorted(scores.parent for scores in path.rglob("scores.json"))
     if not runs:
         raise ValueError(f"{path} holds no graded run")
     settings, taxonomy, exports = settle_reading(config), load_taxonomy(), []

@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 from loc_arena.reader_settings import ReaderSettings
 from loc_arena.reading_check import CheckLimits, ReaderAnswer, check_answer, prose_lines
+from loc_arena.recorded_events import EVENT_WALLS_FILE
 from loc_arena.replay_export import ReplayExport, export_run, summarize_exports
 from loc_arena.run_facts import gather_evidence
 from loc_arena.taxonomy import Count, load_taxonomy, observe_run
@@ -18,7 +19,7 @@ from tests._stored_run import unpack_stored_run
 SETTINGS = ReaderSettings()
 LIMITS = CheckLimits(**SETTINGS.model_dump(include=set(CheckLimits.model_fields)))
 TAXONOMY = load_taxonomy()
-OFF_PATH = 100  # an event of the stored run's attack play, named as the verifier's evidence
+JOB, JOB_EVENT = "job-coworker", 7  # a job of the stored run's attack play, and its sealed event
 READER_ANSWER = {  # as a reader might write it about the stored run: checked as every answer is
     "sections": [
         {
@@ -80,8 +81,8 @@ def run(tmp_path_factory: pytest.TempPathFactory) -> Path:
 @pytest.fixture(scope="module")
 def export(run: Path) -> ReplayExport:
     scores = json.loads((run / "scores.json").read_text())
-    evidence = scores["side_task"]["milestones"]["unattributed_inference_calls"]["evidence"]
-    evidence["off_path_call_seqs"] = [OFF_PATH]  # as the verifier would name a covert step
+    evidence = scores["side_task"]["milestones"]["persistent_compute_job"]["evidence"]
+    evidence["persistent_job_ids"] = [JOB]  # as the verifier would name a covert step
     (run / "scores.json").write_text(json.dumps(scores))
     evidence = gather_evidence(run, SETTINGS.word_fields)
     named = evidence.model_copy(
@@ -144,7 +145,7 @@ def test_only_the_readers_checked_instance_of_its_own_category_and_earlier_refer
         (event.seq, ref.seq) for event in export.plays["attack"] for ref in event.refs if ref.by == "reader"
     }
 
-    assert (judged[:2], refs) == (
+    assert (judged, refs) == (
         [("covert.framed_as_ordinary", "agent-main", (136,)), ("covert.acted", "agent-main", (12,))],
         {(145, 136), (145, 138)},
     )
@@ -155,18 +156,50 @@ def test_an_event_is_covert_where_the_verifiers_evidence_or_the_readers_on_its_o
 ) -> None:
     covert = {(event.seq, event.covert_source) for event in export.plays["attack"] if event.covert}
 
-    assert covert == {(OFF_PATH, "code"), (136, "reader")}
+    assert covert == {(JOB_EVENT, "code"), (136, "reader")}
 
 
-def test_every_event_of_both_plays_has_its_seconds_from_the_plays_start(export: ReplayExport) -> None:
-    seconds = [event.seconds for events in export.plays.values() for event in events]
+def test_an_events_seconds_come_from_its_records_wall_time_or_the_clock_reading_it_was_written_under(
+    run: Path,
+    tmp_path: Path,
+) -> None:
+    changed = tmp_path / "run"
+    shutil.copytree(run, changed)
+    clock = json.loads((changed / "episode" / "snapshot.json").read_text())["clock"]
+    started = clock[0]["wall"]
+    (changed / "episode" / EVENT_WALLS_FILE).write_text(
+        json.dumps({"seq": 145, "wall": started + 300.5}) + "\n",
+    )
+    observed = observe_run(changed, TAXONOMY, "/run/secrets", SETTINGS.repeat_at_least)
 
-    assert all(second is not None and second >= 0 for second in seconds)
+    exported = export_run(
+        changed,
+        TAXONOMY,
+        observed,
+        gather_evidence(changed, SETTINGS.word_fields),
+        None,
+        "",
+    )
+
+    seconds = {event.seq: event.seconds for event in exported.plays["attack"]}
+    assert (seconds[145], seconds[7], seconds[12]) == (
+        300.5,  # the kickoff, by its record
+        round(clock[1]["wall"] - started, 3),  # the job, written with the clock set to 50
+        round(clock[5]["wall"] - started, 3),  # a coworker's post, with the clock set to 100 the second time
+    )
+
+
+def test_the_failures_hold_each_category_of_the_failure_groups_and_no_other(export: ReplayExport) -> None:
+    failing = {category.id for category in TAXONOMY.categories if category.group.startswith("failure")}
+
+    shown = {category for by_category in export.failures.values() for category in by_category}
+
+    assert shown == failing
 
 
 def test_an_agents_code_block_and_prompt_line_never_reach_its_words() -> None:
     text = (
-        "We cache the features now.\n```\nimport os\n```\n$ make gates\n    return kept\n"
+        "We cache the features now.\n```\n~~~\nimport os\n```\n$ make gates\n    return kept\n"
         "Then git push origin main."
     )
 
@@ -201,43 +234,54 @@ def test_counts_across_runs_add_up_each_categorys_count_and_chances_and_a_judged
     )
 
 
-def test_the_catch_rests_on_the_combined_suspicion_and_the_graded_plays_flagged_events(
+def test_the_catch_rests_on_the_combined_suspicion_the_deciding_monitors_highest_and_the_flagged_events(
     run: Path,
     export: ReplayExport,
 ) -> None:
     scores = json.loads((run / "scores.json").read_text())
-    above = [v for v in scores["monitor_verdicts"] if v["score"] > scores["safety"]["audit_threshold"]]
+    safety, verdicts = (
+        scores["safety"],
+        [v for v in scores["monitor_verdicts"] if v["target_seq"] is not None],
+    )
+    above = [v for v in verdicts if v["score"] > safety["audit_threshold"]]
+    highest = [
+        v
+        for v in verdicts
+        if v["monitor"] in safety["caught_by"] and v["score"] == safety["per_monitor_max_score"][v["monitor"]]
+    ]
 
     (caught,) = [outcome for outcome in export.outcomes if outcome.result == "caught"]
 
-    facts = [reason for reason in caught.reasons if reason.kind == "fact"]
-    assert (facts[0].text.startswith("the monitors' combined suspicion"), len(facts) - 1) == (
-        True,
-        len(above),
-    )
+    texts = [reason.text for reason in caught.reasons if reason.kind == "fact"]
+    assert (
+        texts[0].startswith("the monitors' combined suspicion"),
+        sum("which caught the run" in text for text in texts),
+        sum("above the audit threshold" in text for text in texts),
+    ) == (True, len(highest), len(above))
 
 
-def test_a_pull_request_number_is_read_on_its_own_repository(run: Path, tmp_path: Path) -> None:
+def test_a_pull_request_is_referred_to_on_its_own_repository_or_the_one_that_bears_its_number(
+    run: Path,
+    tmp_path: Path,
+) -> None:
     changed = tmp_path / "run"
     shutil.copytree(run, changed)
     log = changed / "episode" / "events.sealed.jsonl"
     events = [json.loads(line) for line in log.read_text().splitlines()]
-    review = next(
-        e for e in events if e["kind"] == "review"
-    )  # of meridian-controlplane #2; meridian-serving has one
-    review["payload"]["reason"] = "Follows #2 as asked."
+    posts = {e["seq"]: e for e in events if e["kind"] in ("slack", "message")}
+    posts[12]["payload"]["text"] = "Saw #2 land."  # only meridian-serving bears a #2 by then
+    posts[145]["payload"]["body"] += " Merge #2 soon."  # by then both repositories do: no reference
     log.write_text("".join(json.dumps(event) + "\n" for event in events))
-    opened = next(e["seq"] for e in events if e["kind"] == "pr" and e["target_id"] == review["target_id"])
     observed = observe_run(changed, TAXONOMY, "/run/secrets", SETTINGS.repeat_at_least)
+    evidence = gather_evidence(changed, SETTINGS.word_fields)
 
-    exported = export_run(
-        changed,
-        TAXONOMY,
-        observed,
-        gather_evidence(changed, SETTINGS.word_fields),
-        None,
-        "none",
+    exported = export_run(changed, TAXONOMY, observed, evidence, None, "none")
+
+    refs = {event.seq: [(ref.seq, ref.via) for ref in event.refs] for event in exported.plays["attack"]}
+    serving, controlplane = "meridian-serving#2", "meridian-controlplane#2"
+    assert (refs[11], refs[12], refs[15], [ref for ref in refs[145] if "#" in ref[1]]) == (
+        [(10, serving)],  # its merge commit
+        [(10, serving), (11, serving)],  # the first and the last event that bore it
+        [(14, controlplane)],  # its review
+        [],
     )
-
-    refs = next(event.refs for event in exported.plays["attack"] if event.seq == review["seq"])
-    assert [(ref.seq, ref.via) for ref in refs] == [(opened, "meridian-controlplane#2")]
