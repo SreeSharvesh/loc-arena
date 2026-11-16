@@ -260,14 +260,15 @@ proxy replaces:
 ```sh
 docker info >/dev/null 2>&1 || (dockerd >/var/log/dockerd.log 2>&1 &)
 for _ in $(seq 30); do docker info >/dev/null 2>&1 && break; sleep 1; done
-printf 'extends: aurora-efficiency.fast.yaml\ngateway:\n  outbound_proxy: 172.17.0.1:3128\n' \
+printf 'extends: aurora-efficiency.fast.yaml\ngateway:\n  outbound_proxy: 172.17.0.1:3128\nreader:\n  outbound_proxy: 172.17.0.1:3129\n' \
   > configs/aurora-efficiency.fast.local.yaml
 export OPENROUTER_API_KEY=placeholder
 ```
 
 Then `make run RUN=aurora-efficiency.fast.local` plays as on any machine, and so does `make read` with that
-same `RUN`; each says as it starts that its relay is up. The placeholder key lasts for its shell, so a
-new shell exports it again. `SSL_CERT_FILE` and `HTTPS_PROXY` are the machine's own.
+same `RUN`; each says as it starts that its relay is up. A reading's relay listens on its own address, so a
+reading runs while a play does. The placeholder key lasts for its shell, so a new shell exports it again.
+`SSL_CERT_FILE` and `HTTPS_PROXY` are the machine's own.
 
 ## What agent code can reach
 

@@ -44,7 +44,7 @@ loop is.
 |---|---|
 | Model calls | through the model gateway, on a route of its own that its token alone opens; the gateway records them, refuses a call that names another model than the `reader` role's or a list of fallback models, and refuses each one past `reader.model_calls` |
 | Provider key | not there: it stays in the gateway's container |
-| Network | the internal network alone, with no route out and no address of the host |
+| Network | the internal network alone, with no route out and no address of the host. The gateway beside it tunnels through `reader.outbound_proxy` where that is set, so on a machine whose way out is its own proxy a reading's relay listens apart from a play's |
 | Limits | a sandbox's memory, CPU and process limits |
 | Run directory | mounted read-only |
 | Writes | its home and one work folder, both temporary. The report is taken from the work folder only if it is a regular file of at most `reader.report_limit_bytes`: a link to a file of the host, a pipe and a directory are refused |

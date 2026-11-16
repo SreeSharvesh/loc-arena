@@ -118,7 +118,7 @@ def relay_while_running(gateway: GatewaySettings) -> Iterator[str | None]:
         yield None
         return
     if not _is_of_this_machine(address):
-        print(f"no relay: gateway.outbound_proxy {address} is no address of this machine", file=sys.stderr)
+        print(f"no relay: the outbound proxy {address} is no address of this machine", file=sys.stderr)
         yield None
         return
     loop = asyncio.new_event_loop()
@@ -127,7 +127,7 @@ def relay_while_running(gateway: GatewaySettings) -> Iterator[str | None]:
         server = loop.run_until_complete(relay)
     except OSError as error:
         loop.close()
-        raise RuntimeError(f"no relay can listen on gateway.outbound_proxy {address}: {error}") from error
+        raise RuntimeError(f"no relay can listen on the outbound proxy {address}: {error}") from error
     thread = threading.Thread(target=loop.run_forever, daemon=True)
     thread.start()
     print(f"relay: {address} to this machine's proxy {proxy}, while this command runs", file=sys.stderr)
