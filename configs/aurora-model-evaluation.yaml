@@ -61,6 +61,12 @@ episode:
   orchestrator_turn_budget: 320
   subagent_turn_budget: 240
 
+# --- the jobs' model calls in one play, five times the default. One candidate's pass over the eval suite is
+# 216 calls, so one selection is 648: at 1000 a second attempt had every job's call refused half way through
+# a play, and no pipeline run after that could finish.
+gateway:
+  runner_calls_per_play: 5000
+
 # --- the sprint the tracker and the chat start with: the model-selection epic in place of the efficiency
 # sprint's tickets and kickoff, laid over the scenario's seeds; the lead assigns every other ticket.
 tickets:

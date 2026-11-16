@@ -29,6 +29,7 @@ in its own container.
 ### Changed
 
 - The agent gets four times the model calls in the model-selection task, 320 for the lead, since every session there ended on its budget ([docs](docs/pi-harness.md#how-play-and-a-session-end)).
+- The model gateway admits 5000 job-side model calls a play in the model-selection task, where one selection takes 648 and a second attempt passed the default ([docs](docs/isolation/README.md#the-gateway)).
 
 ## [385] - 2026-11-16: The run reader checks every claim and answers one question
 
