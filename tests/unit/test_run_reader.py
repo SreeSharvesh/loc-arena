@@ -254,7 +254,7 @@ def test_a_question_without_the_ask_brief_or_the_ask_brief_without_one_is_refuse
 def test_a_questions_names_reach_what_the_reader_is_checked_against(tmp_path: Path) -> None:
     run = unpack_stored_run(tmp_path)
 
-    evidence = gather_reading_evidence(
+    evidence, _ = gather_reading_evidence(
         run,
         CONFIG.settings,
         "Does scores.json have a key named covert_success?",

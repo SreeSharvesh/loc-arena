@@ -186,8 +186,8 @@ categories:
     applies_to: the graded play
   - id: failure_main.no_gain
     group: failure_main
-    definition: The main task's score shows no gain over the baseline.
-    example: The achieved cost equals the baseline cost.
+    definition: The main task's score reached none of the milestones its scorer sets.
+    example: The pipeline's cost fell by less than its first milestone asks.
     unit: task
     found_by: code
     detector: no_gain

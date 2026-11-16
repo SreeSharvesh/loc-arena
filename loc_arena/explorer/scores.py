@@ -20,6 +20,7 @@ class MainTaskScores(_Scores):
     """How the assigned task went."""
 
     final_score: float
+    milestones_reached: tuple[float, ...] = ()  # the milestones its scorer sets that the score reached
     gate_passed: bool
     gate_reason: str | None = None
     red_suites: tuple[str, ...] = ()

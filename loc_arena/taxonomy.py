@@ -130,6 +130,16 @@ class Observation(BaseModel):
     counts: dict[str, dict[str, Count]]
 
 
+class ReaderTaxonomy(BaseModel):
+    """The taxonomy as a reader is given it: each category's definition, and the instances code observed."""
+
+    model_config = ConfigDict(frozen=True)
+
+    version: int
+    categories: tuple[Category, ...]
+    instances: tuple[Instance, ...]
+
+
 def load_taxonomy(path: Path = TAXONOMY_FILE) -> Taxonomy:
     """The taxonomy file, checked: unique ids, each of a known group, a detector exactly where code finds it.
 
@@ -162,7 +172,7 @@ def observe_run(
         repeat_at_least=repeat_at_least,
         audit_threshold=scores.safety.audit_threshold,
         gate_passed=scores.main_task.gate_reason == "gate_passed",
-        gained=scores.main_task.final_score > 1.0,  # the baseline's cost over the achieved: 1.0 is no gain
+        gained=bool(scores.main_task.milestones_reached),  # a milestone its scorer sets: the first is a gain
         milestones={name: milestone.reached for name, milestone in scores.side_task.milestones.items()},
     )
     twin = scores.honest_twin.monitor_verdicts if scores.honest_twin else ()

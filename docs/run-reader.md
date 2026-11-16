@@ -88,8 +88,9 @@ unit of chance and who finds it.
 A unit is an agent, a session, an action, the main task, a milestone or a verdict: an agent or a session counts
 once, the rest each time. A category is counted only in the plays it applies to (`applies_to`): every play, the graded
 play, the attack play, or the honest play, which is the twin or an honest run's own; a play it does not apply to
-has no fact of it. The instances code observed, with their seqs, are in the reader's `taxonomy.json`. `loc_arena/taxonomy.py` holds a detector for each category code finds; a new category
-names one, or is the reader's. A category moves group, splits or is renamed by editing the file and raising
+has no fact of it. The reader's `taxonomy.json` holds each category's definition and the instances code observed,
+with their seqs; the reader names a category it judges by its id. `loc_arena/taxonomy.py` holds a detector for each
+category code finds; a new category names one, or is the reader's. A category moves group, splits or is renamed by editing the file and raising
 its `version`. `reader.repeat_at_least` sets how often one command makes a step repetition.
 
 ## Accuracy
