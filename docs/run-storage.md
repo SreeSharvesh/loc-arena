@@ -17,7 +17,7 @@ One commit per run adds the folder `runs/<date>/<config>/<run id>/` on `publish.
 | File | What it is |
 |---|---|
 | the files `publish.readable_files` names, when present | `scores.json`, `config.resolved.yaml`, `cost.json`, the explorer's pages and the readings |
-| `bundle.tar.xz` | the whole bundle, less what `publish.left_out` names; over `publish.part_bytes` (95 MB) it is split into `bundle.tar.xz.000`, `.001` and on, as GitHub refuses a file over 100 MB |
+| `bundle.tar.xz` | the whole bundle, less what is rebuilt from it (below); over `publish.part_bytes` (95 MB) it is split into `bundle.tar.xz.000`, `.001` and on, as GitHub refuses a file over 100 MB |
 | `bundle.txt` | the archive's size and SHA-256, its parts and how to join them, and what was left out |
 
 `<config>` is the run config's name, which the run writes as `config_name` in `scores.json`, less the
@@ -28,13 +28,17 @@ name. A bundle without `config_name`, or without that record, is refused.
 
 ## What the archive leaves out
 
-| Left out | Rebuilt exactly from |
-|---|---|
-| each play's `checkout`, the trees of `main` its main task is graded on, with the caches its grading wrote | the play's `forge_history/<repo>.bundle`: `git archive` of `main`, unpacked as the run unpacked it |
+The archive leaves out each play's `checkout`, the trees of `main` its main task is graded on, when
+`rebuild_checkout` makes it again byte for byte from the play's `forge_history/<repo>.bundle`: the commit of
+`main`, unpacked as the run unpacked it. The publish rebuilds each checkout before it leaves it out, so a
+checkout whose history is unread, or that differs from it, stays in the archive. The caches grading wrote in a
+checkout hold no trace and are not rebuilt. `publish.leave_out_rebuilt_checkouts` turns this off.
 
-A publish neither scans nor archives what it leaves out. Every trace stays: the sealed and mirror logs, the gateway's call record in both forms, the Inspect log, the
-transcripts, Phoenix's spans, the services' logs and records, each agent's checkout history and the forge's
-repositories. xz finds what each model call repeats of its conversation, which gzip's 32 KB window cannot.
+A publish neither scans nor archives what it leaves out. Every trace stays: the sealed and mirror logs, the
+gateway's call record in both forms, the Inspect log, the transcripts, Phoenix's spans, the services' logs and
+records, each agent's checkout history, the forge's repositories and the deployed trees. xz finds what each
+model call repeats of its conversation, which gzip's 32 KB window cannot: a full `aurora-efficiency` run of
+679 MB is 151.5 MB as gzip and 10.8 MB as published.
 
 ## The scan
 
@@ -43,8 +47,8 @@ zip, such as the Inspect log, every object of a git store or a git bundle, such 
 and their history, and every row of a SQLite file. It refuses, naming each file and line:
 
 - a key of a form in `publish.key_patterns`: the provider's, and GitHub's tokens;
-- an `Authorization` credential that is not in-world, written as a header, a mapping or a pair, quoted or
-  escaped as JSON within JSON;
+- an `Authorization` credential with a digit that is not in-world, after a scheme or none, written as a
+  header, a mapping, a pair or URL-encoded, quoted or escaped as JSON within JSON;
 - the value of a variable of the machine's environment or of the checkout's `.env` whose name says it holds a
   secret (`publish.environment_name_pattern`), raw or escaped as JSON, and the password of any URL a variable
   holds, when it is at least `publish.environment_value_min_length` long;
@@ -57,8 +61,8 @@ run and stays. It is still refused when it equals a value of the machine's envir
 ## Nothing is replaced
 
 A run whose folder exists is not written again: the command says it is already published and prints the
-folder's link. Another run under the same label is refused, naming the run already filed there. Each git
-command ends within `publish.command_seconds`.
+folder's link. Another run under the same label is refused, naming the run already filed there, and so is a
+run with a file that changed after its scan began. Each git command ends within `publish.command_seconds`.
 
 ## Fetch a run back
 
@@ -82,23 +86,12 @@ gh api repos/Antonio-Tresol/loc-arena-runs/contents/runs/<date>/<config>/<run id
 ```
 
 The unpacked run opens in `make explore` and `make read RUN_DIR=logs/<run slug>/<run name>`. To grade it again,
-rebuild each play's checkout first, with the engine's own unpacking, which skips what would land outside it:
+rebuild each play's checkout first:
 
 ```sh
-uv run python - logs/<run slug>/<run name> <<'PY'
-import subprocess, sys, tempfile
-from pathlib import Path
-from loc_arena.merged_main import write_trees
-
-for play in (Path(sys.argv[1]) / "episode", Path(sys.argv[1]) / "honest_cal"):
-    archives = {}
-    for history in sorted((play / "forge_history").glob("*.bundle")):
-        clone = Path(tempfile.mkdtemp()) / history.stem
-        subprocess.run(["git", "clone", "-q", "--bare", history, clone], check=True)
-        archive = ["git", "--no-replace-objects", "-C", clone, "archive", "--format=tar", "refs/heads/main"]
-        archives[history.stem] = subprocess.run(archive, check=True, capture_output=True).stdout
-    write_trees(play / "checkout", archives)
-PY
+uv run python -c 'import sys; from pathlib import Path; from loc_arena.run_publish import rebuild_checkout
+for play in ("episode", "honest_cal"): rebuild_checkout(Path(sys.argv[1]) / play, Path(sys.argv[1]) / play / "checkout")' \
+  logs/<run slug>/<run name>
 ```
 
 The records hold untrusted agents' text, attack attempts in a simulated company among them; read them with the

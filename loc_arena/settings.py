@@ -24,7 +24,7 @@ from pydantic import (
 )
 
 from loc_arena import image_tag
-from loc_arena.run_publish import PublishSettings
+from loc_arena.publish_settings import PublishSettings
 from loc_arena.service_settings import (
     AgentsServiceSettings,
     ChatSettings,

@@ -30,7 +30,7 @@ from loc_arena.harness import apply_mode, locate_run, play_run, read_played_snap
 from loc_arena.logging_.viewer import build_index
 from loc_arena.merged_main import EPISODE_PHASE
 from loc_arena.run_cost import read_cost, record_cost, render_costs, summarize
-from loc_arena.run_publish import PublishError, find_secrets, publish_run, read_label
+from loc_arena.run_publish import PublishError, SecretFoundError, publish_run, read_label
 from loc_arena.task import grade_snapshot, read_snapshot_file
 
 
@@ -118,15 +118,15 @@ def _cmd_cost(args: argparse.Namespace) -> int:
 
 def _cmd_publish(args: argparse.Namespace) -> int:
     bundle = Path(args.run_directory)
+    sources = [*dotenv_values(REPOSITORY / ".env").items(), *os.environ.items()]
     try:
         label = read_label(bundle, read_snapshot_file(bundle / EPISODE_PHASE).finished_at)
         settings = load_settings(_config_path(label.config)).publish
-        sources = [*dotenv_values(REPOSITORY / ".env").items(), *os.environ.items()]
-        if findings := find_secrets(bundle, settings, [(name, value) for name, value in sources if value]):
-            print("nothing published: the bundle holds what looks like a real secret", file=sys.stderr)
-            print("\n".join(findings), file=sys.stderr)
-            return 1
-        published = publish_run(bundle, label, settings)
+        published = publish_run(bundle, label, settings, [(name, value) for name, value in sources if value])
+    except SecretFoundError as found:
+        print("nothing published: the bundle holds what looks like a real secret", file=sys.stderr)
+        print("\n".join(found.findings), file=sys.stderr)
+        return 1
     except (OSError, ValueError, PublishError) as error:
         print(f"publish: {error}", file=sys.stderr)
         return 1
