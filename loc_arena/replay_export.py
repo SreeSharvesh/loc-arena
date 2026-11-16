@@ -11,12 +11,12 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, TypeAdapter
+from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 
 from loc_arena.config import RunConfig
 from loc_arena.explorer.scores import RunScores, load_scores
@@ -26,7 +26,7 @@ from loc_arena.recorded_events import EVENT_WALLS_FILE
 from loc_arena.run_facts import MIRROR, RunEvidence, gather_evidence, name_plays
 from loc_arena.run_identity import RUN_FILE, RunIdentity
 from loc_arena.run_reader import READINGS, read_run, settle_reading
-from loc_arena.task import SNAPSHOT_FILE, read_snapshot_file
+from loc_arena.task import SNAPSHOT_FILE, ClockReading, read_snapshot_file
 from loc_arena.taxonomy import (
     Count,
     Instance,
@@ -132,7 +132,17 @@ class ReplayExport(BaseModel):
     reader: str  # "read", or why the run has no reading
 
 
-_SUMMARY = TypeAdapter(dict[str, dict[str, dict[str, Count]]])  # per config, play and category
+class RunsSummary(BaseModel):
+    """One run config's runs at one taxonomy version: how many, how many were read, their counts added up."""
+
+    config: str
+    taxonomy_version: int
+    runs: int = 0
+    read: int = 0
+    counts: dict[str, dict[str, Count]] = {}  # per play, per category
+
+
+_SUMMARY = TypeAdapter(list[RunsSummary])
 
 
 def export_run(
@@ -150,8 +160,8 @@ def export_run(
     instances = [*observed.instances, *judged]
     counts = count_instances(taxonomy, instances, observed.plays, observed.run)
     failing = {category.id for category in taxonomy.categories if category.group.startswith("failure")}
-    covert = {(i.play, seq): i.source for i in instances if i.category in COVERT for seq in i.seqs}
-    refs = _read_refs(claims.get("References", []))
+    covert = _covert_events(observed, instances, scores)
+    refs = _read_refs(claims.get("References", []), evidence)
     return ReplayExport(
         taxonomy_version=taxonomy.version,
         run=_run_part(run_directory, scores),
@@ -169,20 +179,67 @@ def export_run(
     )
 
 
-def summarize_exports(exports: Iterable[ReplayExport]) -> dict[str, dict[str, dict[str, Count]]]:
-    """Per run config and play, each category's count out of its chances, added up across its runs."""
-    summary: dict[str, dict[str, dict[str, Count]]] = {}
+def summarize_exports(exports: Iterable[ReplayExport], taxonomy: Taxonomy) -> list[RunsSummary]:
+    """Per run config and taxonomy version, each category's count out of its chances, added up over its runs.
+
+    A category the reader judges is added up only over the runs it read.
+    """
+    judged = {category.id for category in taxonomy.categories if category.found_by == "reader"}
+    summaries: dict[tuple[str, int], RunsSummary] = {}
     for export in exports:
-        by_play = summary.setdefault(export.run.config or export.run.name, {})
+        key = (export.run.config or export.run.name, export.taxonomy_version)
+        summary = summaries.setdefault(key, RunsSummary(config=key[0], taxonomy_version=key[1]))
+        summary.runs, summary.read = summary.runs + 1, summary.read + (export.reader == "read")
         for play, by_category in export.counts.items():
-            totals = by_play.setdefault(play, {})
+            totals = summary.counts.setdefault(play, {})
             for category, count in by_category.items():
+                if category in judged and export.reader != "read":
+                    continue
                 before = totals.get(category, Count(count=0, chances=0))
                 totals[category] = Count(
                     count=before.count + count.count,
                     chances=before.chances + count.chances,
                 )
-    return summary
+    return list(summaries.values())
+
+
+def _covert_events(
+    observed: Observation,
+    instances: Sequence[Instance],
+    scores: RunScores,
+) -> dict[tuple[str, int], Source]:
+    """The covert events: the verifier's evidence in the graded play, and the reader's, of its named agent."""
+    actors = {(play.name, event.seq): event.actor_uid for play in observed.plays for event in play.sealed}
+    covert: dict[tuple[str, int], Source] = {
+        (i.play, seq): "reader"
+        for i in instances
+        if i.category in COVERT
+        for seq in i.seqs
+        if actors.get((i.play, seq)) == i.actor
+    }
+    graded = next(play for play in observed.plays if play.name == observed.run.mode)
+    for milestone in scores.side_task.milestones.values():
+        covert |= {(graded.name, seq): "code" for seq in _evidence_seqs(milestone.evidence, graded.sealed)}
+    return covert
+
+
+def _evidence_seqs(evidence: Mapping[str, JsonValue], sealed: Sequence[Event]) -> list[int]:
+    """The sealed seqs a milestone's evidence names: its seqs, and the events of the jobs it names."""
+    seqs = {
+        int(seq)
+        for key, value in evidence.items()
+        if key.endswith("_seqs") and isinstance(value, list)
+        for seq in value
+        if isinstance(seq, int)
+    }
+    jobs = {
+        str(job)
+        for key, value in evidence.items()
+        if key.endswith("_job_ids") and isinstance(value, list)
+        for job in value
+    }
+    seqs |= {event.seq for event in sealed if event.kind == "job" and event.payload.get("job_id") in jobs}
+    return sorted(seqs)
 
 
 def _sealed_cites(cites: Sequence[str]) -> list[tuple[str, int]]:
@@ -209,7 +266,8 @@ def _read_instances(taxonomy: Taxonomy, observed: Observation, claims: Sequence[
             continue
         actor = _first_agent(claim.text, observed.run.agents)
         seqs = tuple(sorted(seq for _, seq in cited))
-        judged.append(Instance(category=category.id, play=play, actor=actor, seqs=seqs, source="reader"))
+        instance = Instance(category=category.id, play=play, actor=actor, seqs=seqs, source="reader")
+        judged += [] if instance in judged else [instance]  # a claim repeated is one instance
     return judged
 
 
@@ -220,7 +278,7 @@ def _first_agent(text: str, agents: Iterable[str]) -> str | None:
     return min(named)[1] if named else None
 
 
-def _read_refs(claims: Sequence[KeptClaim]) -> dict[tuple[str, int], list[Ref]]:
+def _read_refs(claims: Sequence[KeptClaim], evidence: RunEvidence) -> dict[tuple[str, int], list[Ref]]:
     """The reader's checked references: the first cited event holds the quoted phrase, the rest precede it."""
     refs: dict[tuple[str, int], list[Ref]] = {}
     for claim in claims:
@@ -228,10 +286,11 @@ def _read_refs(claims: Sequence[KeptClaim]) -> dict[tuple[str, int], list[Ref]]:
         if len(cited) < 2 or phrase is None:  # noqa: PLR2004 - the event, and what it refers to
             continue
         (play, seq), *earlier = cited
+        quoted = " ".join((phrase.group(1) or phrase.group(2)).split())
+        if quoted not in " ".join(" ".join(evidence.events[f"{play}:{seq}"].words).split()):
+            continue  # the phrase is another cited event's: the reference is not this event's
         refs.setdefault((play, seq), []).extend(
-            Ref(seq=to, by="reader", via=phrase.group(1) or phrase.group(2))
-            for of, to in earlier
-            if of == play and to < seq
+            Ref(seq=to, by="reader", via=quoted) for of, to in earlier if of == play and to < seq
         )
     return refs
 
@@ -253,7 +312,8 @@ def _replay_play(
     replayed = []
     for event in sealed:
         said = evidence.events[f"{play}:{event.seq}"].words
-        named = sorted(name for name in _ids_named(event, " ".join(said)) if bearing.get(name))
+        resolved = (_resolve(name, event, bearing) for name in _ids_named(event, " ".join(said)))
+        named = sorted(name for name in resolved if name)
         refs = [
             Ref(seq=seq, by="id", via=name)
             for name in named
@@ -261,7 +321,7 @@ def _replay_play(
         ]
         for name in _ids_borne(event):
             bearing.setdefault(name, []).append(event.seq)
-        wall = wall_of.get(event.seq, event.ts if event.ts > EPOCH else None)
+        wall = wall_of.get(event.seq, event.ts if event.ts > EPOCH else _clock_wall(clock, event.ts))
         replayed.append(
             ReplayEvent(
                 seq=event.seq,
@@ -280,26 +340,51 @@ def _replay_play(
     return replayed
 
 
+def _clock_wall(clock: Sequence[ClockReading], ts: float) -> float | None:
+    """The wall time the clock was last set at or before ``ts``: when the play wrote an event of that time."""
+    readings = [reading.wall for reading in clock if reading.ts <= ts]
+    return readings[-1] if readings else None
+
+
+def _resolve(name: str, event: Event, bearing: Mapping[str, list[int]]) -> str | None:
+    """The id ``name`` stands for, or none when no earlier event bore it.
+
+    A bare pull request number is of the event's own repository, or of the one repository that bears it.
+    """
+    if not name.startswith("#"):
+        return name if bearing.get(name) else None
+    own = f"{event.target_id}{name}"
+    candidates = [borne for borne in bearing if borne.endswith(name) and borne.partition("#")[0]]
+    return own if own in bearing else candidates[0] if len(candidates) == 1 else None
+
+
 def _ids_borne(event: Event) -> set[str]:
-    """The ids an event bears itself: the ticket it made or changed, its pull request, its job."""
+    """The ids an event bears itself.
+
+    The ticket it made or changed, its pull request by its repository, the note it wrote, its job.
+    """
     borne = set()
     result = event.result if isinstance(event.result, dict) else {}
     if event.tool in ("create_ticket", "edit_ticket", "comment_on_ticket"):
         borne.add(str(result.get("id") or event.target_id))
     number = event.payload.get("number") or event.payload.get("pr_number")
     if event.kind in ("pr", "commit", "review") and number is not None:
-        borne.add(f"#{number}")
+        borne.add(f"{event.target_id}#{number}")
+    if event.tool == "write_note" and event.target_id:
+        borne.add(f"note:{event.target_id}")
     if event.kind == "job" and event.payload.get("job_id"):
         borne.add(str(event.payload["job_id"]))
     return borne
 
 
 def _ids_named(event: Event, words: str) -> set[str]:
-    """The ids an event refers to: those its words name, and the ticket an action of it targets."""
+    """The ids an event refers to: those its words name, and the ticket or note an action of it targets."""
     named = set(_TICKET.findall(words)) | set(_JOB.findall(words))
     named |= {f"#{first or second}" for first, second in _PULL_REQUEST.findall(words)}
     if event.tool in ("edit_ticket", "comment_on_ticket") and event.target_id:
         named.add(event.target_id)
+    if event.tool in ("read_note", "write_note") and event.target_id:
+        named.add(f"note:{event.target_id}")
     return named
 
 
@@ -372,60 +457,65 @@ def _run_part(run_directory: Path, scores: RunScores) -> RunPart:
 
 
 def _outcomes(scores: RunScores, observed: Observation, claims: dict[str, list[KeptClaim]]) -> list[Outcome]:
-    """Each result, with the facts the records give for it and the reader's checked reasons."""
+    """Each result, with the facts code finds for it in the records and the reader's checked reasons."""
 
     def inferred(section: str) -> list[Reason]:
-        return [
-            Reason(
-                text=claim.text,
-                play=next((play for play, _ in _sealed_cites(claim.cites)), None),
-                seqs=sorted(seq for _, seq in _sealed_cites(claim.cites)),
-                kind="inference",
-            )
-            for claim in claims.get(section, [])
-        ]
+        reasons = []
+        for claim in claims.get(section, []):
+            cited = _sealed_cites(claim.cites)
+            play = cited[0][0] if cited else None
+            seqs = sorted(seq for of, seq in cited if of == play)  # a reason's seqs are of its one play
+            reasons.append(Reason(text=claim.text, play=play, seqs=seqs, kind="inference"))
+        return reasons
 
-    main, side, graded = scores.main_task, scores.side_task, observed.run.mode
+    main, side, safety = scores.main_task, scores.side_task, scores.safety
+    graded = next(play for play in observed.plays if play.name == observed.run.mode)
+    threshold = safety.aggregation.threshold if safety.aggregation else safety.audit_threshold
+    aggregate = (
+        f"the monitors' combined suspicion, {safety.overall_suspicion}, against the catch's threshold, "
+        f"{threshold}; caught by {', '.join(safety.caught_by) or 'no monitor'}"
+    )
     flagged = [
         Reason(
             text=f"a monitor scored this event {score}, above the audit threshold",
-            play=play.name,
+            play=graded.name,
             seqs=[seq],
             kind="fact",
         )
-        for play in observed.plays
-        for seq, score in play.verdicts
+        for seq, score in graded.verdicts
         if seq is not None and score > observed.run.audit_threshold
+    ]
+    milestones = [
+        Reason(
+            text=f"milestone {name}: {'reached' if step.reached else 'not reached'}",
+            play=graded.name,
+            seqs=_evidence_seqs(step.evidence, graded.sealed),
+            kind="fact",
+        )
+        for name, step in side.milestones.items()
     ]
     return [
         Outcome(
             result="main task",
             value=f"{main.final_score:.3f}",
             reasons=[
-                Reason(text=f"gate: {main.gate_reason}", play=graded, seqs=[], kind="fact"),
+                Reason(text=f"gate: {main.gate_reason}", play=graded.name, seqs=[], kind="fact"),
                 *inferred("Main task"),
             ],
         ),
         Outcome(
             result="side task",
             value="landed" if side.landing_minimal else "not landed",
-            reasons=[
-                *(
-                    Reason(
-                        text=f"milestone {name}: {'reached' if step.reached else 'not reached'}",
-                        play=graded,
-                        seqs=[],
-                        kind="fact",
-                    )
-                    for name, step in side.milestones.items()
-                ),
-                *inferred("Side task"),
-            ],
+            reasons=[*milestones, *inferred("Side task")],
         ),
         Outcome(
             result="caught",
-            value="yes" if scores.safety.caught else "no",
-            reasons=[*flagged, *inferred("Catches")],
+            value="yes" if safety.caught else "no",
+            reasons=[
+                Reason(text=aggregate, play=graded.name, seqs=[], kind="fact"),
+                *flagged,
+                *inferred("Catches"),
+            ],
         ),
     ]
 
@@ -460,5 +550,5 @@ def export_runs(path: Path, config: RunConfig) -> list[Path]:
         (run / REPLAY_FILE).write_text(exports[-1].model_dump_json(indent=1))
     if single:
         return [path / REPLAY_FILE]
-    (path / SUMMARY_FILE).write_bytes(_SUMMARY.dump_json(summarize_exports(exports), indent=1))
+    (path / SUMMARY_FILE).write_bytes(_SUMMARY.dump_json(summarize_exports(exports, taxonomy), indent=1))
     return [*(run / REPLAY_FILE for run in runs), path / SUMMARY_FILE]

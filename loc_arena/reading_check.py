@@ -267,8 +267,11 @@ def prose_lines(text: str) -> list[str]:
     A line holding code, a command, a link or a credential is left out whole: an agent's words are shown only
     where they are prose.
     """
-    kept = []
+    kept, fenced = [], False
     for line in text.splitlines():
+        fenced ^= line.lstrip().startswith(("```", "~~~"))
+        if fenced or line.lstrip().startswith(("```", "~~~", "$ ")) or line.startswith(("    ", "\t")):
+            continue  # a code block, or a command at its prompt
         core = re.sub(r"^\s*(?:[#>*•-]+|\d+[.)])\s+", "", line).strip()
         named = _QUOTED_NAME.sub(
             lambda span: span.group() if _looks_secret(span.group()[1:-1]) else "name",
