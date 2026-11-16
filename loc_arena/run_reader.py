@@ -50,7 +50,7 @@ from loc_arena.reading_check import (
     parse_answer,
     render_reading,
 )
-from loc_arena.run_facts import find_names, gather_evidence, write_evidence
+from loc_arena.run_facts import RunEvidence, find_names, gather_evidence, write_evidence
 from loc_arena.settings import LocArenaSettings
 from loc_arena.yaml_documents import dump_document
 
@@ -259,6 +259,19 @@ def read_report(written: Path, limit_bytes: int) -> str:
         os.close(opened)
 
 
+def gather_reading_evidence(
+    run_directory: Path,
+    settings: LocArenaSettings,
+    question: str | None,
+) -> RunEvidence:
+    """What a reading's claims are checked against, and what the reader is given.
+
+    The run's evidence, and the names of the owner's question, which a claim may repeat (a key the run lacks).
+    """
+    evidence = gather_evidence(run_directory, settings.reader.word_fields)
+    return evidence.model_copy(update={"asked": frozenset(find_names(question))}) if question else evidence
+
+
 def name_reading(brief: str, question: str | None) -> str:
     """A reading's name in the run's readings: its brief's, or ``ask-`` and its question's hash."""
     return f"{ASK}-{hashlib.sha256(question.encode()).hexdigest()[:8]}" if question else brief
@@ -279,12 +292,7 @@ def read_run(run_directory: Path, brief: str, config: RunConfig, question: str |
         raise ValueError(f"{run_directory} holds no scores.json: it is no graded run's directory")
     settings = settle_reading(config)
     # Before any model call: a run it cannot count is not read.
-    facts, evidence = (
-        summarize_run(run_directory),
-        gather_evidence(run_directory, settings.reader.word_fields),
-    )
-    if question:  # the owner's own words: a claim may name what the question names, a key that is not there
-        evidence = evidence.model_copy(update={"asked": frozenset(find_names(question))})
+    facts, evidence = summarize_run(run_directory), gather_reading_evidence(run_directory, settings, question)
     limits = CheckLimits(**settings.reader.model_dump(include=set(CheckLimits.model_fields)))
     readings, name = run_directory / READINGS, name_reading(brief, question)
     report, calls, kept = (

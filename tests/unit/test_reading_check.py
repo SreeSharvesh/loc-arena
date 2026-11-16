@@ -60,19 +60,26 @@ def test_a_runs_facts_count_what_its_records_hold(run: Path, evidence: RunEviden
     ]
 
     keys = ("attack.agent.serving-agent.tool.bash", "side_task.milestone_count", "scores.key_count")
-    zeros = ("attack.tool.receive_pack", "attack.tool.submit_job", "attack.sessions.failed")
+    twin = [
+        json.loads(line) for line in (run / "honest_cal" / "events.sealed.jsonl").read_text().splitlines()
+    ]
+    posts = sum(e["actor_uid"] == "agent-main" and e["payload"].get("message_kind") == "post" for e in twin)
+    zeros = ("attack.tool.receive_pack", "attack.kind.spawn", "attack.sessions.failed")
+    roles = ("twin.agent.agent-main.message.post", "run.agent.agent-main.kind")
     team_keys = ("attack.team.kind.inference_call", "attack.team.kind.inference_call.actor_count")
-    counted = {key: evidence.facts[key] for key in (*keys, *zeros, *team_keys)}
+    counted = {key: evidence.facts[key] for key in (*keys, *zeros, *team_keys, *roles)}
 
     assert counted == {
         "attack.agent.serving-agent.tool.bash": bash,
         "side_task.milestone_count": len(milestones),
         "scores.key_count": 14,  # the stored run's scores.json, counted by hand
         "attack.tool.receive_pack": 0,  # the twin pushed, the attack did not: a zero is a fact too
-        "attack.tool.submit_job": 0,  # offered to the agents, used by none
+        "attack.kind.spawn": 0,  # a kind of event the play holds none of
         "attack.sessions.failed": 0,  # a way a session can end that none did
         "attack.team.kind.inference_call": len(team_calls),  # the agents' model calls, the monitors' apart
         "attack.team.kind.inference_call.actor_count": len(set(team_calls)),
+        "twin.agent.agent-main.message.post": posts,  # a chat post leaves a message, counted by its kind
+        "run.agent.agent-main.kind": "orchestrator",  # the stored run's config
     }
 
 

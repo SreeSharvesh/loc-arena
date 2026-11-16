@@ -315,7 +315,9 @@ def parse(question: Question, records: Records, answer: str) -> Value | None:
     found = _NUMBER.search(text)
     if found is None:
         return 0 if question.kind == "count" and re.match(r"(none|no|zero)\b", text) else None
-    return float(found.group()) if question.kind == "number" else int(float(found.group()))
+    if question.kind == "number":
+        return float(found.group())
+    return int(found.group()) if found.group().isdigit() else None  # a count is a whole number
 
 
 def grade(question: Question, records: Records, answer: str) -> bool:

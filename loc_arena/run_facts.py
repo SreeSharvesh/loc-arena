@@ -19,7 +19,7 @@ from pydantic import BaseModel, ConfigDict, JsonValue
 
 from loc_arena.explorer.scores import load_scores
 from loc_arena.gateway.model_gateway import PHASE_PLAYS
-from loc_arena.logging_.events import Event, read_events
+from loc_arena.logging_.events import Event, EventKind, read_events
 from loc_arena.merged_main import EPISODE_PHASE, TWIN_PHASE
 from loc_arena.monitors.registry import MonitorVerdict
 from loc_arena.own_sessions import EndReason
@@ -87,6 +87,7 @@ def gather_evidence(run_directory: Path, word_fields: Sequence[str]) -> RunEvide
         "agents"
     ]:  # who each agent reports to, its covert brief's milestones, its repositories
         facts |= {
+            f"run.agent.{agent['id']}.kind": str(agent.get("kind") or "none"),  # orchestrator or subagent
             f"run.agent.{agent['id']}.reports_to": str(agent.get("spawned_by") or "none"),
             f"run.agent.{agent['id']}.covert": [str(milestone) for milestone in agent.get("covert") or []],
             f"run.agent.{agent['id']}.repositories": [
@@ -122,13 +123,7 @@ def gather_evidence(run_directory: Path, word_fields: Sequence[str]) -> RunEvide
                 cited = _describe(f"{prefix}:{event.seq}", event, word_fields, replies)
                 events[cited.id] = cited
                 names.update(_name_event(event, word_fields))
-    offered = {
-        tool
-        for agent in config["agents"]
-        for tools in agent.get("sandbox", {}).get("tools", {}).values()
-        for tool in tools
-    }
-    _count_zeros(facts, [play for play, _ in name_plays(run_directory)], agents, offered)
+    _count_zeros(facts, [play for play, _ in name_plays(run_directory)], agents)
     files = (str(path.relative_to(run_directory)) for path in run_directory.rglob("*") if path.is_file())
     names.update(ending for file in files for ending in _endings(file))
     names.update(_name_facts(facts))  # every play's facts included
@@ -187,20 +182,24 @@ def _count_play(
 
 
 def _made(event: Event) -> list[str]:
-    """What an event counts toward: its kind, and its tool if it has one."""
-    return [f"kind.{event.kind}", *([f"tool.{event.tool}"] if event.tool else [])]
+    """What an event counts toward: its kind, its tool if any, and a message's kind (a post, a reply)."""
+    said = event.payload.get("message_kind") if event.kind == "message" else None
+    return [
+        f"kind.{event.kind}",
+        *([f"tool.{event.tool}"] if event.tool else []),
+        *([f"message.{said}"] if said else []),
+    ]
 
 
-def _count_zeros(
-    facts: dict[str, Fact],
-    plays: Sequence[str],
-    agents: Sequence[str],
-    offered: Iterable[str],
-) -> None:
-    """A zero for each kind the run saw, each tool it saw or offered and each way a session ends, not seen."""
-    seen = {key.split(".", 1)[1] for key in facts if re.fullmatch(r"[^.]+\.(kind|tool)\.[^.]+", key)}
+def _count_zeros(facts: dict[str, Fact], plays: Sequence[str], agents: Sequence[str]) -> None:
+    """A zero for each kind of event, and each tool and kind of message a play's records show, not seen.
+
+    A tool no play's records show has no zero: many tools leave no event of their name (a read leaves none, a
+    chat post leaves a message), so its zero would be no fact.
+    """
+    seen = {key.split(".", 1)[1] for key in facts if re.fullmatch(r"[^.]+\.(kind|tool|message)\.[^.]+", key)}
     for play in plays:
-        for key in seen | {f"tool.{tool}" for tool in offered}:
+        for key in seen | {f"kind.{kind}" for kind in get_args(EventKind)}:
             for counted in (f"{play}.{key}", f"{play}.team.{key}"):
                 facts |= {
                     counted: facts.get(counted, 0),
