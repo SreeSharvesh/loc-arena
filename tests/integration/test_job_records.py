@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 from loc_arena.harness import build_recorded_run_events
+from loc_arena.recorded_events import EVENT_WALLS_FILE
 
 from meridian_common.jobclient.models import JobState
 from meridian_jobsvc.models import Job
@@ -240,6 +241,18 @@ def test_a_nodes_process_facts_are_process_events_of_the_jobs_owner_on_the_seale
         {"node": "node-1", "phase": "exit", "job_id": "job-1", "owner": OWNER, "attempt": 1, "exit_code": -9},
     ]
     assert events_of(run / "episode", MIRROR, "process") == []
+
+
+def test_a_process_fact_on_the_sealed_log_alone_keeps_its_records_wall_time(run: Path) -> None:
+    started, _ = read_window(run / "episode")
+    at = started + timedelta(seconds=3)
+    write_log(run, "node-1", fact_line(at, "start", argv=["python", "bench.py"]))
+
+    build_recorded_run_events(LIVE, run)
+
+    (process,) = events_of(run / "episode", SEALED, "process", OWNER)
+    walls = [json.loads(line) for line in (run / "episode" / EVENT_WALLS_FILE).read_text().splitlines()]
+    assert {"seq": process.seq, "wall": at.timestamp()} in walls
 
 
 def test_a_jobs_own_calls_are_events_of_the_agent_it_works_for_naming_the_workload_on_both_logs(

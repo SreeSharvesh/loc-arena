@@ -19,6 +19,13 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [390] - 2026-11-16: A run records its engine's commit and each event's time
+
+### Added
+
+- The record of a run now holds `run.json`, the engine's commit it played on and whether its checkout differed, so the run can be played again ([docs](docs/isolation/README.md)).
+- The record of each play now holds each built event's wall time from its service record, as the episode clock does not move during play ([docs](docs/isolation/README.md)).
+
 ## [389] - 2026-11-16: Readings count behaviour by a versioned taxonomy
 
 ### Added
