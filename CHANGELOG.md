@@ -23,7 +23,7 @@ in its own container.
 
 ### Added
 
-- The run can be published to private storage with `make publish-run` once a scan finds no real secret, so its records outlive the machine that played it ([docs](docs/run-storage.md)).
+- The run can be published to a private git repository with `make publish-run` once a scan finds no real secret, so its records outlive the machine that played it ([docs](docs/run-storage.md)).
 
 ### Changed
 

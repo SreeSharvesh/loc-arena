@@ -132,7 +132,7 @@ def _cmd_publish(args: argparse.Namespace) -> int:
         return 1
     if published.already:
         print("already published; nothing was written")
-    print(f"release: {published.link}")
+    print(f"published: {published.link}")
     return 0
 
 

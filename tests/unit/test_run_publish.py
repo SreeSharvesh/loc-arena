@@ -1,11 +1,18 @@
 """What `make publish-run` refuses before it publishes: a real secret in the bundle, never an in-world one."""
 
+import contextlib
+import hashlib
+import io
+import json
+import os
+import sqlite3
 import subprocess
+import tarfile
 import zipfile
 from pathlib import Path
 
 import pytest
-from loc_arena.run_publish import PublishSettings, find_secrets
+from loc_arena.run_publish import Label, PublishError, PublishSettings, find_secrets, publish_run
 
 from tests._stored_run import unpack_stored_run
 
@@ -13,6 +20,7 @@ FAKE_KEY = "sk-or-v1-" + "0123456789abcdef" * 4  # the provider key's form
 MACHINE = [
     ("GH_TOKEN", "machine-held-github-token"),
     ("HTTPS_PROXY", "http://user:machine-held-proxy-password@proxy:3128"),
+    ("DATABASE_PASSWORD", 'machine-held "quoted" password'),
     ("HOME", "/home/user"),
 ]
 IN_WORLD = "hzuNJ6dPmo_2Shc94DTmlVMMY0XsYk-w2oPoEGyPJEs"  # a forge token of the stored run
@@ -70,6 +78,11 @@ def write_second_line(bundle: Path, place: str, line: str, work: Path) -> str:
         ),
         ("episode/records/workspace.jsonl", '{"output": "token machine-held-github-token"}'),
         ("services/forge.log", "connect through the proxy with machine-held-proxy-password"),
+        ("gateway.calls.jsonl", r'{"output": "password=machine-held \"quoted\" password"}'),
+        (
+            "episode/records/workspace.jsonl",
+            "headers=[(b'authorization', b'Bearer eyJhbGciOiJIUzI1NiJ9.e30')]",
+        ),
         ("run.eval!samples/1_epoch_1.json", f'{{"output": "export OPENROUTER_API_KEY={FAKE_KEY}"}}'),
         ("episode/forge/meridian-serving.git!git", f"OPENROUTER_API_KEY={FAKE_KEY}"),
         ("episode/forge_history/meridian-serving.bundle!git", f"OPENROUTER_API_KEY={FAKE_KEY}"),
@@ -80,6 +93,8 @@ def write_second_line(bundle: Path, place: str, line: str, work: Path) -> str:
         "authorization credential escaped in JSON",
         "environment value",
         "password of a proxy URL",
+        "environment value escaped in JSON",
+        "authorization header as a pair",
         "inside the inspect log",
         "inside a git store",
         "inside a git bundle",
@@ -94,6 +109,17 @@ def test_a_real_secret_is_refused_at_its_file_and_line(tmp_path: Path, place: st
     assert [finding.split(": ", 1)[0] for finding in findings] == [f"{where}:2"]
 
 
+def test_a_secret_in_a_sqlite_row_is_found_in_its_dump(tmp_path: Path) -> None:
+    with contextlib.closing(sqlite3.connect(tmp_path / "forge.db")) as database:
+        database.execute("CREATE TABLE notes (body TEXT)")
+        database.execute("INSERT INTO notes VALUES (?)", (f"key {FAKE_KEY}",))
+        database.commit()
+
+    findings = find_secrets(tmp_path, PublishSettings(), MACHINE)
+
+    assert "forge.db!rows:3: a key of a real form" in findings  # after BEGIN and CREATE TABLE
+
+
 def test_the_stored_run_with_its_in_world_tokens_passes(tmp_path: Path) -> None:
     """Its agents' git configs carry their forge tokens in Authorization headers, which the company minted."""
     run_directory = unpack_stored_run(tmp_path)
@@ -102,3 +128,88 @@ def test_the_stored_run_with_its_in_world_tokens_passes(tmp_path: Path) -> None:
     findings = find_secrets(run_directory, PublishSettings(), [("OPENROUTER_API_KEY", FAKE_KEY), *MACHINE])
 
     assert findings == []
+
+
+LABEL = Label("2026-11-16", "aurora-efficiency", "abc123")
+
+
+def git(*arguments: str | Path) -> str:
+    done = subprocess.run(["git", *map(str, arguments)], check=True, capture_output=True, text=True)
+    return done.stdout
+
+
+@pytest.fixture
+def storage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
+    """A storage repository with one commit, as a file URL; commits are made as one author."""
+    for variable in ("GIT_AUTHOR_NAME", "GIT_COMMITTER_NAME"):
+        monkeypatch.setenv(variable, "publisher")
+    for variable in ("GIT_AUTHOR_EMAIL", "GIT_COMMITTER_EMAIL"):
+        monkeypatch.setenv(variable, "publisher@example.com")
+    seed = tmp_path / "seed"
+    git("init", "-q", "-b", "main", seed)
+    (seed / "README.md").write_text("runs\n")
+    git("-C", seed, "add", ".")
+    git("-C", seed, "commit", "-qm", "start")
+    git("clone", "-q", "--bare", seed, tmp_path / "storage.git")
+    return (tmp_path / "storage.git").as_uri()
+
+
+@pytest.fixture
+def run_bundle(tmp_path: Path) -> Path:
+    """A graded run's bundle: records, a forge history, and a graded checkout with grading's caches."""
+    bundle = tmp_path / "logs" / "slug" / "run__abc123"
+    files = {
+        "scores.json": json.dumps({"run_name": "run__abc123"}),
+        "events.sealed.jsonl": os.urandom(3000).hex(),  # random, so the archive is split into parts
+        "episode/forge_history/meridian-common.bundle": "history\n",
+        "episode/checkout/meridian-common/main.py": "print('main')\n",
+        "episode/records/__pycache__/main.cpython-312.pyc": "cache\n",
+    }
+    for name, text in files.items():
+        (bundle / name).parent.mkdir(parents=True, exist_ok=True)
+        (bundle / name).write_text(text)
+    return bundle
+
+
+def test_a_published_run_joins_and_unpacks_to_its_bundle_less_what_is_left_out(
+    tmp_path: Path,
+    storage: str,
+    run_bundle: Path,
+) -> None:
+    publish_run(run_bundle, LABEL, PublishSettings(repository=storage, part_bytes=1024))
+
+    git("clone", "-q", storage, tmp_path / "fetched")
+    folder = tmp_path / "fetched" / LABEL.directory
+    joined = b"".join(part.read_bytes() for part in sorted(folder.glob("bundle.tar.xz.[0-9]*")))
+    with tarfile.open(fileobj=io.BytesIO(joined), mode="r:xz") as archive:
+        names = set(archive.getnames())
+    assert f"sha256 {hashlib.sha256(joined).hexdigest()}" in (folder / "bundle.txt").read_text()
+    assert names == {
+        "run__abc123",
+        "run__abc123/scores.json",
+        "run__abc123/events.sealed.jsonl",
+        "run__abc123/episode",
+        "run__abc123/episode/forge_history",
+        "run__abc123/episode/forge_history/meridian-common.bundle",
+        "run__abc123/episode/records",
+    }
+
+
+def test_a_second_publish_of_a_run_writes_nothing(storage: str, run_bundle: Path) -> None:
+    settings = PublishSettings(repository=storage)
+    publish_run(run_bundle, LABEL, settings)
+    commits = git("--git-dir", storage.removeprefix("file://"), "rev-list", "--count", "main")
+
+    published = publish_run(run_bundle, LABEL, settings)
+
+    assert published.already
+    assert git("--git-dir", storage.removeprefix("file://"), "rev-list", "--count", "main") == commits
+
+
+def test_another_run_under_the_same_label_is_refused(storage: str, run_bundle: Path) -> None:
+    settings = PublishSettings(repository=storage)
+    publish_run(run_bundle, LABEL, settings)
+    (run_bundle / "scores.json").write_text(json.dumps({"run_name": "other__abc123"}))
+
+    with pytest.raises(PublishError, match="holds another run, run__abc123"):
+        publish_run(run_bundle, LABEL, settings)
