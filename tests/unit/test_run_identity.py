@@ -2,25 +2,38 @@
 
 from __future__ import annotations
 
-import json
 import subprocess
 from pathlib import Path
 
-from loc_arena.episode_stack import REPOSITORY
-from loc_arena.run_identity import RUN_FILE, record_identity
+import pytest
+from loc_arena.run_identity import RunIdentity, read_identity
 
 
-def test_a_run_records_its_config_by_name_and_the_checkouts_commit(tmp_path: Path) -> None:
-    head = subprocess.run(["git", "-C", str(REPOSITORY), "rev-parse", "HEAD"], capture_output=True, text=True)
+def test_a_run_from_a_clean_checkout_names_its_config_and_commit(tmp_path: Path) -> None:
+    git = ["git", "-C", str(tmp_path), "-c", "user.name=engine", "-c", "user.email=engine@example.invalid"]
+    subprocess.run([*git, "init", "-q"], check=True)
+    subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "engine"], check=True)
+    head = subprocess.run(
+        [*git, "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
 
-    record_identity(tmp_path, "configs/aurora-teams.yaml", REPOSITORY)
+    identity = read_identity("configs/aurora-teams.yaml", tmp_path)
 
-    recorded = json.loads((tmp_path / RUN_FILE).read_text())
-    assert (recorded["config"], recorded["commit"]) == ("aurora-teams", head.stdout.strip())
+    assert identity == RunIdentity(config="aurora-teams", commit=head, modified=False)
 
 
-def test_a_run_outside_a_checkout_records_an_unknown_commit_as_modified(tmp_path: Path) -> None:
-    record_identity(tmp_path, "aurora-efficiency", tmp_path)
+@pytest.mark.parametrize("git_found", [True, False], ids=["outside a checkout", "with no git to run"])
+def test_a_run_whose_commit_git_cannot_read_records_it_unknown_and_modified(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    git_found: bool,
+) -> None:
+    if not git_found:
+        monkeypatch.setenv("PATH", str(tmp_path))
 
-    recorded = json.loads((tmp_path / RUN_FILE).read_text())
-    assert (recorded["commit"], recorded["modified"]) == ("unknown", True)
+    identity = read_identity("aurora-efficiency", tmp_path)
+
+    assert identity == RunIdentity(config="aurora-efficiency", commit="unknown", modified=True)

@@ -30,7 +30,7 @@ from loc_arena.harness import apply_mode, locate_run, play_run, read_played_snap
 from loc_arena.logging_.viewer import build_index
 from loc_arena.merged_main import EPISODE_PHASE
 from loc_arena.run_cost import read_cost, record_cost, render_costs, summarize
-from loc_arena.run_identity import record_identity
+from loc_arena.run_identity import RUN_FILE, read_identity
 from loc_arena.run_publish import PublishError, SecretFoundError, publish_run, read_label
 from loc_arena.run_watcher import watch_run
 from loc_arena.task import grade_snapshot, read_snapshot_file
@@ -76,10 +76,15 @@ def _cmd_run(args: argparse.Namespace) -> int:
         print(f"played: {run_directory}")
         return 0
     instance, logs = secrets.token_hex(3), Path(args.out)
+    identity = read_identity(args.run, REPOSITORY)  # the engine that plays: read before its images are built
     cost = record_cost(config.settings.cost, f"{PROJECT_PREFIX}{instance}", EPISODE_SERVICE)
-    with relay_while_running(config.settings.gateway), cost as recorder:
-        out = run_in_stack(args.run, mode=args.mode, seed=args.seed, logs=logs, instance_id=instance)
-    record_identity(out, args.run, REPOSITORY)
+    try:
+        with relay_while_running(config.settings.gateway), cost as recorder:
+            out = run_in_stack(args.run, mode=args.mode, seed=args.seed, logs=logs, instance_id=instance)
+    finally:  # a run graded before its stack failed still names its config and commit
+        run_directory = locate_run(config, args.mode, instance, logs)
+        if run_directory.is_dir():
+            (run_directory / RUN_FILE).write_text(identity.model_dump_json(indent=1))
     try:  # the profiler never fails a run that was played and graded
         cost_line = summarize(recorder.write(out, locate_call_log(logs, instance)))
     except (OSError, ValueError) as error:
