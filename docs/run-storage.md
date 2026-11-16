@@ -30,10 +30,9 @@ name. A bundle without `config_name`, or without that record, is refused.
 
 | Left out | Rebuilt exactly from |
 |---|---|
-| each play's `checkout` and `deployed_checkout`, the trees the main task is graded on | the play's `forge_history/<repo>.bundle`: `git archive` of `main`, or of the commit `deployed.json` names |
-| `__pycache__` and `.pytest_cache` | nothing to keep: the grader's own caches |
+| each play's `checkout`, the trees of `main` its main task is graded on, with the caches its grading wrote | the play's `forge_history/<repo>.bundle`: `git archive` of `main`, unpacked as the run unpacked it |
 
-Every trace stays: the sealed and mirror logs, the gateway's call record in both forms, the Inspect log, the
+A publish neither scans nor archives what it leaves out. Every trace stays: the sealed and mirror logs, the gateway's call record in both forms, the Inspect log, the
 transcripts, Phoenix's spans, the services' logs and records, each agent's checkout history and the forge's
 repositories. xz finds what each model call repeats of its conversation, which gzip's 32 KB window cannot.
 
@@ -49,7 +48,7 @@ and their history, and every row of a SQLite file. It refuses, naming each file 
 - the value of a variable of the machine's environment or of the checkout's `.env` whose name says it holds a
   secret (`publish.environment_name_pattern`), raw or escaped as JSON, and the password of any URL a variable
   holds, when it is at least `publish.environment_value_min_length` long;
-- a link, or anything the scan cannot read.
+- anything the scan cannot read. A link's target is read as its line, as the archive keeps the link.
 
 The company's credentials are minted for each run as 32 random URL-safe bytes, and agents' git configs carry
 them in `Authorization` headers. A credential of that form (`publish.in_world_token_pattern`) is part of the
@@ -83,17 +82,23 @@ gh api repos/Antonio-Tresol/loc-arena-runs/contents/runs/<date>/<config>/<run id
 ```
 
 The unpacked run opens in `make explore` and `make read RUN_DIR=logs/<run slug>/<run name>`. To grade it again,
-rebuild each play's checkout first, in the run's directory:
+rebuild each play's checkout first, with the engine's own unpacking, which skips what would land outside it:
 
 ```sh
-for play in episode honest_cal; do
-  for history in "$play"/forge_history/*.bundle; do
-    repo=$(basename "$history" .bundle)
-    git clone -q --bare "$history" "/tmp/$play-$repo.git"
-    mkdir -p "$play/checkout/$repo"
-    git --no-replace-objects -C "/tmp/$play-$repo.git" archive --format=tar refs/heads/main | tar -x -C "$play/checkout/$repo"
-  done
-done
+uv run python - logs/<run slug>/<run name> <<'PY'
+import subprocess, sys, tempfile
+from pathlib import Path
+from loc_arena.merged_main import write_trees
+
+for play in (Path(sys.argv[1]) / "episode", Path(sys.argv[1]) / "honest_cal"):
+    archives = {}
+    for history in sorted((play / "forge_history").glob("*.bundle")):
+        clone = Path(tempfile.mkdtemp()) / history.stem
+        subprocess.run(["git", "clone", "-q", "--bare", history, clone], check=True)
+        archive = ["git", "--no-replace-objects", "-C", clone, "archive", "--format=tar", "refs/heads/main"]
+        archives[history.stem] = subprocess.run(archive, check=True, capture_output=True).stdout
+    write_trees(play / "checkout", archives)
+PY
 ```
 
 The records hold untrusted agents' text, attack attempts in a simulated company among them; read them with the

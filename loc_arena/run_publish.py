@@ -26,7 +26,7 @@ import zipfile
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from re import Pattern
 from urllib.parse import urlsplit
 
@@ -61,17 +61,10 @@ class PublishSettings(SettingsGroup):
         "reader opens them.",
     )
     left_out: tuple[StrictStr, ...] = Field(
-        default=(
-            "episode/checkout",
-            "honest_cal/checkout",
-            "episode/deployed_checkout",
-            "honest_cal/deployed_checkout",
-            "*/__pycache__",
-            "*/.pytest_cache",
-        ),
-        description="Paths in the bundle, as glob patterns, that the archive leaves out: each play's graded "
-        "trees, which git archive makes again from the commits its forge_history keeps, and the caches its "
-        "grading wrote.",
+        default=("episode/checkout", "honest_cal/checkout"),
+        description="Paths in the bundle, as glob patterns, that a publish neither scans nor archives: each "
+        "play's graded trees, with the caches their grading wrote, which git archive makes again from the "
+        "commits the play's forge_history keeps.",
     )
     part_bytes: PositiveInt = Field(
         default=95_000_000,
@@ -103,7 +96,7 @@ class PublishSettings(SettingsGroup):
     )
     environment_name_pattern: Pattern[str] = Field(
         default=re.compile(
-            r"(?i)(?:^|_)(?:key|token|secret|password|passwd|credentials?|auth)$|(?:^|_)(?:secret|password)_",
+            r"(?i)(?:^|_)(?:key|apikey|token|pat|secret|password|passwd|credentials?|auth)$|(?:^|_)(?:secret|password)_",
         ),
         description="A variable of the machine's environment or `.env` whose name matches holds a secret: "
         "its value anywhere in the bundle is refused, as is the password of any URL a variable holds.",
@@ -133,8 +126,8 @@ class Label:
 
     @property
     def directory(self) -> str:
-        """Where it is committed in the storage repository."""
-        return f"runs/{self.date}/{self.config}/{self.run_id}"
+        """Where it is committed: under its config's name, less a machine's own suffix."""
+        return f"runs/{self.date}/{self.config.removesuffix(MACHINE_SUFFIX)}/{self.run_id}"
 
 
 def read_label(bundle: Path, finished_at: float | None) -> Label:
@@ -148,8 +141,7 @@ def read_label(bundle: Path, finished_at: float | None) -> Label:
     for label in (config, run_id):
         if not LABEL.fullmatch(label):
             raise PublishError(f"{label!r} in {bundle / 'scores.json'} is no config name or run id")
-    date = datetime.fromtimestamp(finished_at, UTC).date().isoformat()
-    return Label(date, config.removesuffix(MACHINE_SUFFIX), run_id)
+    return Label(datetime.fromtimestamp(finished_at, UTC).date().isoformat(), config, run_id)
 
 
 def find_secrets(
@@ -161,8 +153,9 @@ def find_secrets(
 
     Every file is read as text; a zip's members, and every object of a git store or a git bundle, are read
     too, as ``file!member``. ``environment`` holds the machine's variables, as name and value, from every
-    source: the values of those with secret names, and the password of each URL, are searched for. A link, or
-    anything the scan cannot read, is refused: the scan would not have read what the publish copies.
+    source: the values of those with secret names, and the password of each URL, are searched for. A link's
+    target is read as its line, as the archive keeps the link. Anything the scan cannot read is refused, and
+    what the publish leaves out is not read.
     """
     secrets = (
         value if settings.environment_name_pattern.search(name) else urlsplit(value).password
@@ -173,11 +166,13 @@ def find_secrets(
     findings: list[str] = []
     for path in sorted(bundle.rglob("*")):
         name = path.relative_to(bundle).as_posix()
-        if path.is_symlink():
-            findings.append(f"{name}: a link")
+        if _is_left_out(name, settings):
             continue
         try:
-            for where, lines in _read_lines(path, name):
+            readings = (
+                [(name, [path.readlink().as_posix()])] if path.is_symlink() else _read_lines(path, name)
+            )
+            for where, lines in readings:
                 findings += [
                     f"{where}:{number}: {what}"
                     for number, line in enumerate(lines, 1)
@@ -186,6 +181,15 @@ def find_secrets(
         except Exception as error:  # noqa: BLE001 - what the scan cannot read is refused, whatever the reason
             findings.append(f"{name}: unreadable ({type(error).__name__}: {error})")
     return findings
+
+
+def _is_left_out(name: str, settings: PublishSettings) -> bool:
+    inside = PurePosixPath(name)
+    return any(
+        fnmatch.fnmatch(str(path), pattern)
+        for path in (inside, *inside.parents)
+        for pattern in settings.left_out
+    )
 
 
 def _read_lines(path: Path, name: str) -> Iterator[tuple[str, Iterable[str]]]:
@@ -266,8 +270,11 @@ def publish_run(bundle: Path, label: Label, settings: PublishSettings) -> Publis
         target = clone / label.directory
         target.mkdir(parents=True)
         for source in (path for pattern in settings.readable_files for path in sorted(bundle.glob(pattern))):
-            copy = shutil.copytree if source.is_dir() else shutil.copy2
-            copy(source, target / source.name)
+            files = sorted(source.rglob("*")) if source.is_dir() and not source.is_symlink() else [source]
+            for file in (file for file in files if file.lstat().st_size <= settings.part_bytes):
+                (target / file.relative_to(bundle)).parent.mkdir(parents=True, exist_ok=True)
+                if not file.is_dir() or file.is_symlink():
+                    shutil.copy2(file, target / file.relative_to(bundle), follow_symlinks=False)
         (target / "bundle.txt").write_text(_write_archive(bundle, target, settings))
         _run(settings, "git", "-C", clone, "add", "--sparse", label.directory)
         _run(settings, "git", "-C", clone, "commit", "-q", "-m", f"Publish run {label.directory}")
@@ -280,8 +287,7 @@ def _write_archive(bundle: Path, target: Path, settings: PublishSettings) -> str
     archive = target / ARCHIVE
 
     def keep(member: tarfile.TarInfo) -> tarfile.TarInfo | None:
-        inside = member.name.partition("/")[2]
-        return None if any(fnmatch.fnmatch(inside, pattern) for pattern in settings.left_out) else member
+        return None if _is_left_out(member.name.partition("/")[2], settings) else member
 
     with lzma.open(archive, "wb", preset=XZ_PRESET) as packed, tarfile.open(fileobj=packed, mode="w") as tar:
         tar.add(bundle, arcname=bundle.name, filter=keep)

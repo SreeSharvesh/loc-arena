@@ -109,6 +109,19 @@ def test_a_real_secret_is_refused_at_its_file_and_line(tmp_path: Path, place: st
     assert [finding.split(": ", 1)[0] for finding in findings] == [f"{where}:2"]
 
 
+def test_what_the_publish_leaves_out_is_not_scanned(tmp_path: Path) -> None:
+    write_second_line(
+        tmp_path,
+        "episode/checkout/meridian-serving/config.py",
+        f"KEY = '{FAKE_KEY}'",
+        tmp_path,
+    )
+
+    findings = find_secrets(tmp_path, PublishSettings(), MACHINE)
+
+    assert findings == []
+
+
 def test_a_secret_in_a_sqlite_row_is_found_in_its_dump(tmp_path: Path) -> None:
     with contextlib.closing(sqlite3.connect(tmp_path / "forge.db")) as database:
         database.execute("CREATE TABLE notes (body TEXT)")
@@ -124,13 +137,14 @@ def test_the_stored_run_with_its_in_world_tokens_passes(tmp_path: Path) -> None:
     """Its agents' git configs carry their forge tokens in Authorization headers, which the company minted."""
     run_directory = unpack_stored_run(tmp_path)
     (run_directory / "decisions.md").write_text(f"The agent sent Authorization: Bearer {IN_WORLD}.\n")
+    (run_directory / "notes.md").symlink_to("decisions.md")  # kept as a link, as an agent's merge may hold
 
     findings = find_secrets(run_directory, PublishSettings(), [("OPENROUTER_API_KEY", FAKE_KEY), *MACHINE])
 
     assert findings == []
 
 
-LABEL = Label("2026-11-16", "aurora-efficiency", "abc123")
+LABEL = Label("2026-11-16", "aurora-efficiency.local", "abc123")  # a machine's own config
 
 
 def git(*arguments: str | Path) -> str:
@@ -160,10 +174,11 @@ def run_bundle(tmp_path: Path) -> Path:
     bundle = tmp_path / "logs" / "slug" / "run__abc123"
     files = {
         "scores.json": json.dumps({"run_name": "run__abc123"}),
+        "readings/agents.md": "a reading\n" * 200,  # larger than the parts the test asks for
         "events.sealed.jsonl": os.urandom(3000).hex(),  # random, so the archive is split into parts
         "episode/forge_history/meridian-common.bundle": "history\n",
         "episode/checkout/meridian-common/main.py": "print('main')\n",
-        "episode/records/__pycache__/main.cpython-312.pyc": "cache\n",
+        "episode/checkout/meridian-common/__pycache__/main.cpython-312.pyc": "cache\n",
     }
     for name, text in files.items():
         (bundle / name).parent.mkdir(parents=True, exist_ok=True)
@@ -179,19 +194,24 @@ def test_a_published_run_joins_and_unpacks_to_its_bundle_less_what_is_left_out(
     publish_run(run_bundle, LABEL, PublishSettings(repository=storage, part_bytes=1024))
 
     git("clone", "-q", storage, tmp_path / "fetched")
-    folder = tmp_path / "fetched" / LABEL.directory
+    folder = tmp_path / "fetched" / "runs/2026-11-16/aurora-efficiency/abc123"
     joined = b"".join(part.read_bytes() for part in sorted(folder.glob("bundle.tar.xz.[0-9]*")))
     with tarfile.open(fileobj=io.BytesIO(joined), mode="r:xz") as archive:
         names = set(archive.getnames())
     assert f"sha256 {hashlib.sha256(joined).hexdigest()}" in (folder / "bundle.txt").read_text()
+    assert sorted(path.name for path in folder.iterdir() if not path.name.startswith("bundle.tar.xz.")) == [
+        "bundle.txt",
+        "scores.json",
+    ]
     assert names == {
         "run__abc123",
         "run__abc123/scores.json",
+        "run__abc123/readings",
+        "run__abc123/readings/agents.md",
         "run__abc123/events.sealed.jsonl",
         "run__abc123/episode",
         "run__abc123/episode/forge_history",
         "run__abc123/episode/forge_history/meridian-common.bundle",
-        "run__abc123/episode/records",
     }
 
 
