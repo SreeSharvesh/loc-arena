@@ -205,6 +205,7 @@ def build_scores(
 
     return {
         "run_name": run_name,
+        "config_name": config.name,
         "run_slug": config.run_slug,
         "mode": mode,
         "seed": seed,

@@ -20,14 +20,17 @@ import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
 
-from loc_arena.config import load_run_config
-from loc_arena.episode_stack import EPISODE_SERVICE, run_in_stack
+from dotenv import dotenv_values
+
+from loc_arena.config import load_run_config, load_settings
+from loc_arena.episode_stack import EPISODE_SERVICE, REPOSITORY, run_in_stack
 from loc_arena.gateway.model_gateway import PROJECT_PREFIX, locate_call_log
 from loc_arena.gateway.proxy_relay import relay_while_running
 from loc_arena.harness import apply_mode, locate_run, play_run, read_played_snapshot
 from loc_arena.logging_.viewer import build_index
 from loc_arena.merged_main import EPISODE_PHASE
 from loc_arena.run_cost import read_cost, record_cost, render_costs, summarize
+from loc_arena.run_publish import PublishError, SecretFoundError, publish_run, read_label
 from loc_arena.run_watcher import watch_run
 from loc_arena.task import grade_snapshot, read_snapshot_file
 
@@ -111,6 +114,26 @@ def _cmd_cost(args: argparse.Namespace) -> int:
         print(f"no cost file this version reads: {error}", file=sys.stderr)
         return 1
     print(render_costs(cost, other))
+    return 0
+
+
+def _cmd_publish(args: argparse.Namespace) -> int:
+    bundle = Path(args.run_directory)
+    sources = [*dotenv_values(REPOSITORY / ".env").items(), *os.environ.items()]
+    try:
+        label = read_label(bundle, read_snapshot_file(bundle / EPISODE_PHASE).finished_at)
+        settings = load_settings(_config_path(label.config)).publish
+        published = publish_run(bundle, label, settings, [(name, value) for name, value in sources if value])
+    except SecretFoundError as found:
+        print("nothing published: the bundle holds what looks like a real secret", file=sys.stderr)
+        print("\n".join(found.findings), file=sys.stderr)
+        return 1
+    except (OSError, ValueError, PublishError) as error:
+        print(f"publish: {error}", file=sys.stderr)
+        return 1
+    if published.already:
+        print("already published; nothing was written")
+    print(f"published: {published.link}")
     return 0
 
 
@@ -234,7 +257,7 @@ def _cmd_watch(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Parse args and dispatch ``run``, ``view``, ``explore``, ``grade``, ``read``, ``cost`` and ``watch``."""
+    """Parse args and dispatch the command they name, one of the subparsers below."""
     parser = argparse.ArgumentParser(prog="loc-arena", description="Run and view LOC-Arena episodes.")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -299,6 +322,9 @@ def main(argv: list[str] | None = None) -> int:
     p_cost.add_argument("other", nargs="?", help="a second run's directory, to print its cost and the change")
     p_cost.set_defaults(func=_cmd_cost)
 
+    p_publish = sub.add_parser("publish", help="scan one graded run and publish it to the storage repository")
+    p_publish.add_argument("run_directory", help="the run's directory, which holds scores.json")
+    p_publish.set_defaults(func=_cmd_publish)
     p_watch = sub.add_parser(
         "watch",
         help="print each agent's steps of the run playing, or of a finished run",

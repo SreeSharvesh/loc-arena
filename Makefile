@@ -11,7 +11,7 @@ BRIEF ?= agents
 LOGS ?= logs
 FILE_SIZE_BASE ?= origin/main
 
-.PHONY: run view explore read watch cost help gates images setup public-repo fixture-run
+.PHONY: run view explore read watch cost publish-run help gates images setup public-repo fixture-run
 
 help:
 	@echo "make setup                                # check toolchain, sync deps, validate config"
@@ -23,6 +23,7 @@ help:
 	@echo "make read RUN_DIR=<run directory> [BRIEF=agents|monitors] [ASK='question']  # an agent reads one run: a checked report, or a cited answer"
 	@echo "make watch [RUN_DIR=<run directory>]      # each agent's steps of the run playing, or of a finished run"
 	@echo "make cost RUN_DIR=<run directory> [OTHER=<run directory>]  # what a run cost, or how a second run's cost differs"
+	@echo "make publish-run RUN_DIR=<run directory>  # scan a graded run for real secrets, then publish it to private storage"
 	@echo "make fixture-run                          # play the smoke run and store it as the tests' run fixture"
 	@echo "make gates                                # file size, changelog, ruff + ruff format + ty + pytest"
 	@echo "make images                               # build this checkout's sandbox, runner, worker and engine images, which the Docker tests need"
@@ -54,6 +55,9 @@ watch:
 
 cost:
 	@uv run python -m loc_arena.cli cost "$(RUN_DIR)" $(if $(strip $(OTHER)),"$(OTHER)")
+
+publish-run:
+	@uv run python -m loc_arena.cli publish "$(RUN_DIR)"
 
 fixture-run:
 	@uv run python scripts/record_run_fixture.py
