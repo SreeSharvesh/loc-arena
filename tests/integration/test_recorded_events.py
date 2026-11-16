@@ -28,6 +28,7 @@ from loc_arena.logging_.events import Event, read_events
 from loc_arena.logging_.transcript_lanes import UNPLACED, build_transcript
 from loc_arena.monitors.registry import PROMPT_INPUTS_PLACEHOLDER, load_monitor_specs, load_monitors
 from loc_arena.protocol import compose_protocol, monitor_context
+from loc_arena.recorded_events import EVENT_WALLS_FILE
 from loc_arena.task import SNAPSHOT_FILE, ClockReading, read_snapshot_file
 from loc_arena.tasks.main_task_grader import seed_checkout
 
@@ -233,6 +234,19 @@ def test_a_chat_post_over_mcp_or_http_becomes_a_message_event_on_the_sealed_and_
     }
     expected = [("serving-agent", "agent-main", dm), ("serving-agent", "aurora", post)]
     assert built == [expected, expected]
+
+
+def test_each_built_event_keeps_its_records_wall_time_beside_the_logs(tmp_path: Path) -> None:
+    run = play(tmp_path / "run")
+    started, _ = read_window(run / "episode")
+    posted = started + timedelta(seconds=3)
+    write_log(run, "chat", request_line(posted, "POST", 201, "post", {"channel": "aurora", "body": "rerun"}))
+
+    build_recorded_run_events(LIVE, run)
+
+    (message,) = events_of(run / "episode", SEALED, "message")
+    walls = [json.loads(line) for line in (run / "episode" / EVENT_WALLS_FILE).read_text().splitlines()]
+    assert {"seq": message.seq, "wall": posted.timestamp()} in walls
 
 
 def test_a_record_in_the_twins_window_of_the_runs_forge_log_lands_only_in_the_twin(tmp_path: Path) -> None:

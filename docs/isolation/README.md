@@ -117,7 +117,9 @@ to `services/<name>.log` in the run directory, and Phoenix's spans, which no mon
 twin whose play window holds its time, in the turn of its agent that covers that time. Each event goes to the sealed
 log and, unless it is sealed-only, the mirror log: a node's `process` facts stay on the sealed log, where the verifier reads them and the monitors cannot. A refused call is a blocked `action`. A record that cannot be placed goes to
 `unattributed_records.jsonl` in the run directory. Grading never builds events, so grading a run again adds
-none.
+none. The episode clock does not move during play, so each built event's seq and its record's wall time go to
+`event_walls.jsonl` in its play's directory. Once graded, `run.json` in the run directory names the run config
+the run played and the engine's commit: two configs can share one run slug.
 
 ## The honest twin
 
