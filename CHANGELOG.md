@@ -19,6 +19,17 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [384] - 2026-11-16: The run reader checks every claim and answers one question
+
+### Added
+
+- The run reader answers one question with `make read ASK='...'`: a short answer and the claims behind it, each citing the run's events or facts ([docs](docs/run-reader.md)).
+
+### Changed
+
+- The run reader checks every claim before a reading keeps it: each cite exists, each quote is an agent's own words verbatim, each number is a computed fact ([docs](docs/run-reader.md#the-checks)).
+- The run reader's default reading is a short overview with emergent behaviour, quoting what agents wrote and describing code and commands only by kind ([docs](docs/run-reader.md#the-briefs)).
+
 ## [383] - 2026-11-16: A reading runs while a play holds the relay
 
 ### Fixed

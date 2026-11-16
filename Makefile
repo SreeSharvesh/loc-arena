@@ -20,7 +20,7 @@ help:
 	@echo "make run RUN=aurora-efficiency.fast               # the smoke run: cheapest models, small budgets"
 	@echo "make view RUN=aurora-efficiency                       # open the latest report.html + inspect view"
 	@echo "make explore [LOGS=logs]                  # build the run explorer over every run in LOGS and open it"
-	@echo "make read RUN_DIR=<run directory> [BRIEF=agents|monitors]  # an agent reads one run and reports"
+	@echo "make read RUN_DIR=<run directory> [BRIEF=agents|monitors] [ASK='question']  # an agent reads one run: a checked report, or a cited answer"
 	@echo "make cost RUN_DIR=<run directory> [OTHER=<run directory>]  # what a run cost, or how a second run's cost differs"
 	@echo "make fixture-run                          # play the smoke run and store it as the tests' run fixture"
 	@echo "make gates                                # file size, changelog, ruff + ruff format + ty + pytest"
@@ -44,7 +44,7 @@ explore:
 	@uv run python -m loc_arena.cli explore $(LOGS)
 
 read:
-	@uv run python -m loc_arena.cli read "$(RUN_DIR)" --brief "$(BRIEF)" --run "$(RUN)"
+	@uv run python -m loc_arena.cli read "$(RUN_DIR)" --brief "$(BRIEF)" --run "$(RUN)" $(if $(strip $(ASK)),--ask "$(ASK)")
 
 cost:
 	@uv run python -m loc_arena.cli cost "$(RUN_DIR)" $(if $(strip $(OTHER)),"$(OTHER)")

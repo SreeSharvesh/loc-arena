@@ -13,10 +13,10 @@ briefs are in ``reader_briefs/``: each says where every file is and how the logs
 from __future__ import annotations
 
 import functools
+import hashlib
 import json
 import os
 import secrets
-import shutil
 import stat
 import subprocess
 import tempfile
@@ -42,6 +42,8 @@ from loc_arena.logging_.events import read_events
 from loc_arena.merged_main import EPISODE_PHASE, TWIN_PHASE
 from loc_arena.monitors.registry import MonitorVerdict
 from loc_arena.own_sessions import PI_ENVIRONMENT, PI_SETTINGS
+from loc_arena.reading_check import check_answer, parse_answer, render_reading
+from loc_arena.run_facts import find_names, gather_evidence, write_evidence
 from loc_arena.settings import LocArenaSettings
 from loc_arena.yaml_documents import dump_document
 
@@ -51,10 +53,12 @@ READER_TOKEN_VARIABLE = "LOC_ARENA_READER_TOKEN"
 READINGS = "readings"  # in the run directory: each brief's report, and the reader's calls beside it
 BRIEFS = Path(__file__).parent / "reader_briefs"
 _DATA, _HOME, _WORK = "/data", "/home/reader", "/work"  # in the reader's container
-_REPORT = "report.md"
+ASK = "ask"  # the brief that answers one question
+_FORMAT = BRIEFS / "_answer.md"  # what every brief shares: what the reader is given and what it writes
+_ANSWER = "answer.json"
 _PROVIDER = "gateway"
 _ROUTE = f"{LOOP_ROUTE_PREFIX}/{READER}"  # the reader's own route at the gateway
-_KICKOFF = "Read the run as your brief says, write the report file, then print it."
+_KICKOFF = "Read the run as your brief says, write /work/answer.json, then print it."
 
 
 def settle_reading(config: RunConfig) -> LocArenaSettings:
@@ -102,14 +106,17 @@ def issue_reader_secrets(config: RunConfig) -> dict[str, str]:
     return {READER_TOKEN_VARIABLE: token, **admitted}
 
 
-def write_reader_home(home: Path, config: RunConfig, brief: str) -> list[str]:
+def write_reader_home(home: Path, config: RunConfig, brief: str, question: str | None = None) -> list[str]:
     """Write the reader's home (pi's provider and settings, and ``brief``); return pi's command.
 
-    Raises ``ValueError`` when no brief has that name.
+    The ``ask`` brief answers ``question``, and only it takes one. Raises ``ValueError`` when no brief has
+    that name, or a question is missing or given to another brief.
     """
-    names = sorted(path.stem for path in BRIEFS.glob("*.md"))
+    names = sorted(path.stem for path in BRIEFS.glob("[!_]*.md"))
     if brief not in names:
         raise ValueError(f"no brief {brief!r}: the briefs are {', '.join(names)}")
+    if (brief == ASK) != bool(question and question.strip()):
+        raise ValueError(f"the {ASK!r} brief, and it alone, answers a question")
     if READER not in config.models:
         raise ValueError(f"the run config's models file has no {READER!r} role")
     settings, role = config.settings, config.models[READER]
@@ -123,11 +130,13 @@ def write_reader_home(home: Path, config: RunConfig, brief: str) -> list[str]:
     }
     (directory / "models.json").write_text(json.dumps({"providers": {_PROVIDER: provider}}))
     (directory / "settings.json").write_text(json.dumps(PI_SETTINGS))
-    shutil.copy(BRIEFS / f"{brief}.md", home / "brief.md")
+    shared = _FORMAT.read_text().replace("CLAIM_LIMIT", str(settings.reader.claim_limit))
+    (home / "brief.md").write_text(f"{shared}\n{(BRIEFS / f'{brief}.md').read_text()}")
+    kickoff = f"Answer this question as your brief says, write /work/answer.json, then print it: {question}"
     return [
         *["pi", "--print", "--model", f"{_PROVIDER}/{role.model}", "--tools", "read,bash,write"],
         *["--no-mcp", "--no-extensions", "--no-context-files", "--no-skills", "--no-session"],
-        *["--append-system-prompt", f"{_HOME}/brief.md", _KICKOFF],
+        *["--append-system-prompt", f"{_HOME}/brief.md", kickoff if question else _KICKOFF],
     ]
 
 
@@ -243,25 +252,39 @@ def read_report(written: Path, limit_bytes: int) -> str:
         os.close(opened)
 
 
-def read_run(run_directory: Path, brief: str, config: RunConfig) -> Path:
-    """Have the reader read ``run_directory`` with ``brief``; the report's path, in the run's readings.
+def name_reading(brief: str, question: str | None) -> str:
+    """A reading's name in the run's readings: its brief's, or ``ask-`` and its question's hash."""
+    return f"{ASK}-{hashlib.sha256(question.encode()).hexdigest()[:8]}" if question else brief
 
-    An earlier reading with the same brief is replaced. Raises ``ValueError`` when the directory holds no
-    graded run, no brief has that name or the models file has no reader role, and ``RuntimeError`` when the
-    gateway does not start, the reader fails or runs past its timeout, its calls cannot be copied out, or its
-    report cannot be kept.
+
+def read_run(run_directory: Path, brief: str, config: RunConfig, question: str | None = None) -> Path:
+    """Have the reader read ``run_directory`` with ``brief``; the checked reading's path in its readings.
+
+    The reader is given the run's facts and its events' words, and writes its claims as JSON; each claim
+    that fails a check is dropped (``reading_check``). ``readings/<name>.unchecked.json`` keeps what it wrote.
+    An earlier reading of the same name is replaced. Raises ``ValueError`` when the directory holds no graded
+    run, no brief has that name, a question is missing or misplaced, or the models file has no reader role,
+    and ``RuntimeError`` when the gateway does not start, the reader fails or runs past its timeout, its calls
+    cannot be copied out, or its answer cannot be kept or is not the JSON its brief asks for.
     """
     run_directory = run_directory.resolve()
     if not (run_directory / "scores.json").is_file():
         raise ValueError(f"{run_directory} holds no scores.json: it is no graded run's directory")
-    facts = summarize_run(run_directory)  # before any model call: a run it cannot count is not read
     settings = settle_reading(config)
-    readings = run_directory / READINGS
-    report, calls = readings / f"{brief}.md", readings / f"{brief}.calls.jsonl"
+    # Before any model call: a run it cannot count is not read.
+    facts, evidence = (
+        summarize_run(run_directory),
+        gather_evidence(run_directory, settings.reader.word_fields),
+    )
+    readings, name = run_directory / READINGS, name_reading(brief, question)
+    report, calls, kept = (
+        readings / f"{name}{suffix}" for suffix in (".md", ".calls.jsonl", ".unchecked.json")
+    )
     with tempfile.TemporaryDirectory(prefix="locarena-reading-") as scratch:
         home, work = Path(scratch, "home"), Path(scratch, "work")
         work.mkdir()
-        command = write_reader_home(home, config, brief)
+        command = write_reader_home(home, config, brief, question)
+        write_evidence(evidence, home)
         compose_file = Path(scratch, "compose.yaml")
         document = render_reader_compose(config, run_directory, home, work, command)
         compose_file.write_text(dump_document(document))
@@ -270,20 +293,28 @@ def read_run(run_directory: Path, brief: str, config: RunConfig) -> Path:
         compose = ["docker", "compose", "-p", project, "-f", str(compose_file)]
         compose += ["--project-directory", str(REPOSITORY)]
         run = functools.partial(subprocess.run, env={**os.environ, **issue_reader_secrets(config)})
-        if any(path.is_symlink() for path in (readings, report, calls, calls.with_suffix(".otlp.jsonl"))):
+        if any(
+            path.is_symlink() for path in (readings, report, kept, calls, calls.with_suffix(".otlp.jsonl"))
+        ):
             raise RuntimeError(f"{readings} holds a link where a reading is written: nothing is written")
         try:
             if not model_gateway.start_gateway(run, compose, settings):
                 raise RuntimeError("the gateway did not start: is the provider key set in .env or the shell?")
             readings.mkdir(exist_ok=True)  # an earlier reading is replaced only once this one can start
-            for stale in (report, calls, calls.with_suffix(".otlp.jsonl")):
+            for stale in (report, kept, calls, calls.with_suffix(".otlp.jsonl")):
                 stale.unlink(missing_ok=True)
             container = f"{project}-{READER}"
             try:
                 reading = [*compose, "run", "--rm", "--no-deps", "--no-TTY", "--name", container, READER]
-                # No input: pi reads its input to the end before it starts, and a shell's stays open.
+                # No input: pi reads its input to the end before it starts, and a shell's stays open. Its
+                # output goes unread: only its answer, once checked, reaches a person.
                 seconds = settings.reader.timeout_seconds
-                failed = run(reading, timeout=seconds, stdin=subprocess.DEVNULL).returncode
+                failed = run(
+                    reading,
+                    timeout=seconds,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                ).returncode
             except subprocess.TimeoutExpired as error:
                 raise RuntimeError("the reader ran past reader.timeout_seconds") from error
             finally:  # the reader is gone before its calls are copied: none is made after the copy
@@ -293,5 +324,11 @@ def read_run(run_directory: Path, brief: str, config: RunConfig) -> Path:
                 raise RuntimeError(f"the reader failed (exit {failed}), or its calls could not be copied out")
         finally:
             run([*compose, "down", "--volumes", "--remove-orphans"])
-        report.write_text(f"{facts}\n{read_report(work / _REPORT, settings.reader.report_limit_bytes)}")
+        written = read_report(work / _ANSWER, settings.reader.report_limit_bytes)
+    kept.write_text(written)
+    answer = parse_answer(written)
+    if question:  # the owner's own words: a claim may name what the question names, a key that is not there
+        evidence = evidence.model_copy(update={"asked": frozenset(find_names(question))})
+    checked = check_answer(answer, evidence, settings.reader)
+    report.write_text(render_reading(checked, None if question else facts))
     return report

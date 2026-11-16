@@ -205,15 +205,17 @@ def _cmd_explore(args: argparse.Namespace) -> int:
 
 def _cmd_read(args: argparse.Namespace) -> int:
     # The reader's stack imports the episode's; only this command pays for that.
-    from loc_arena.run_reader import read_run, settle_reading
+    from loc_arena.run_reader import ASK, read_run, settle_reading
 
     try:
         config = load_run_config(_config_path(args.run))
         with relay_while_running(settle_reading(config).gateway):
-            report = read_run(Path(args.run_directory), args.brief, config)
+            report = read_run(Path(args.run_directory), ASK if args.ask else args.brief, config, args.ask)
     except (ValueError, RuntimeError) as error:
         print(f"read: {error}", file=sys.stderr)
         return 1
+    if args.ask:
+        print(report.read_text())
     print(f"reading: {report}")
     return 0
 
@@ -268,6 +270,7 @@ def main(argv: list[str] | None = None) -> int:
     p_read = sub.add_parser("read", help="have the reader agent read one graded run and report what it did")
     p_read.add_argument("run_directory", help="the run's directory, which holds scores.json")
     p_read.add_argument("--brief", default="agents", help="what to report on: agents, or monitors")
+    p_read.add_argument("--ask", default=None, help="one question to answer, in place of a brief")
     p_read.add_argument(
         "--run",
         default="aurora-efficiency",

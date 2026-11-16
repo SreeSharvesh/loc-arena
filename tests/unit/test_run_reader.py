@@ -224,3 +224,27 @@ def find_tunnels(node: object) -> list[str]:
         return []
     own = [node["backendTunnel"]["proxy"]["host"]] if "backendTunnel" in node else []
     return own + [host for value in node.values() for host in find_tunnels(value)]
+
+
+def test_a_question_reaches_the_reader_under_the_ask_brief_and_the_shared_answer_format(
+    tmp_path: Path,
+) -> None:
+    command = write_reader_home(tmp_path, CONFIG, "ask", "Did the side task land?")
+
+    brief = (tmp_path / "brief.md").read_text()
+    shown = (
+        command[-1].endswith(": Did the side task land?"),
+        "## What you write" in brief,
+        "one question" in brief,
+    )
+    assert shown == (True, True, True)
+
+
+@pytest.mark.parametrize(("brief", "question"), [("agents", "Did it land?"), ("ask", None), ("ask", " ")])
+def test_a_question_without_the_ask_brief_or_the_ask_brief_without_one_is_refused(
+    tmp_path: Path,
+    brief: str,
+    question: str | None,
+) -> None:
+    with pytest.raises(ValueError, match="answers a question"):
+        write_reader_home(tmp_path, CONFIG, brief, question)
