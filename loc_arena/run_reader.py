@@ -52,6 +52,7 @@ from loc_arena.reading_check import (
 )
 from loc_arena.run_facts import RunEvidence, find_names, gather_evidence, write_evidence
 from loc_arena.settings import LocArenaSettings
+from loc_arena.taxonomy import ReaderTaxonomy, load_taxonomy, observe_run, taxonomy_facts
 from loc_arena.yaml_documents import dump_document
 
 READER = "reader"  # its compose service, its name as the gateway's caller, and its role in the models file
@@ -61,6 +62,9 @@ READINGS = "readings"  # in the run directory: each brief's report, and the read
 BRIEFS = Path(__file__).parent / "reader_briefs"
 _DATA, _HOME, _WORK = "/data", "/home/reader", "/work"  # in the reader's container
 ASK = "ask"  # the brief that answers one question
+_TAXONOMY = (
+    "taxonomy.json"  # in the reader's home: each category's definition, and the instances code observed
+)
 _FORMAT = BRIEFS / "_answer.md"  # what every brief shares: what the reader is given and what it writes
 _ANSWER = "answer.json"
 _PROVIDER = "gateway"
@@ -263,13 +267,32 @@ def gather_reading_evidence(
     run_directory: Path,
     settings: LocArenaSettings,
     question: str | None,
-) -> RunEvidence:
-    """What a reading's claims are checked against, and what the reader is given.
+) -> tuple[RunEvidence, ReaderTaxonomy]:
+    """What a reading's claims are checked against, and the taxonomy the reader is given.
 
-    The run's evidence, and the names of the owner's question, which a claim may repeat (a key the run lacks).
+    The run's evidence, what code observed of the taxonomy as facts and its categories as names, and the names
+    of the owner's question, which a claim may repeat (a key the run lacks).
     """
-    evidence = gather_evidence(run_directory, settings.reader.word_fields)
-    return evidence.model_copy(update={"asked": frozenset(find_names(question))}) if question else evidence
+    evidence, taxonomy = gather_evidence(run_directory, settings.reader.word_fields), load_taxonomy()
+    observed = observe_run(
+        run_directory,
+        taxonomy,
+        str(settings.gateway.secrets_dir),
+        settings.reader.repeat_at_least,
+    )
+    evidence = evidence.model_copy(
+        update={
+            "facts": evidence.facts | taxonomy_facts(taxonomy, observed),
+            "names": evidence.names | {category.id for category in taxonomy.categories},
+            "asked": frozenset(find_names(question)) if question else frozenset(),
+        },
+    )
+    given = ReaderTaxonomy(
+        version=taxonomy.version,
+        categories=taxonomy.categories,
+        instances=observed.instances,
+    )
+    return evidence, given
 
 
 def name_reading(brief: str, question: str | None) -> str:
@@ -292,7 +315,10 @@ def read_run(run_directory: Path, brief: str, config: RunConfig, question: str |
         raise ValueError(f"{run_directory} holds no scores.json: it is no graded run's directory")
     settings = settle_reading(config)
     # Before any model call: a run it cannot count is not read.
-    facts, evidence = summarize_run(run_directory), gather_reading_evidence(run_directory, settings, question)
+    facts, (evidence, taxonomy) = (
+        summarize_run(run_directory),
+        gather_reading_evidence(run_directory, settings, question),
+    )
     limits = CheckLimits(**settings.reader.model_dump(include=set(CheckLimits.model_fields)))
     readings, name = run_directory / READINGS, name_reading(brief, question)
     report, calls, kept = (
@@ -303,6 +329,9 @@ def read_run(run_directory: Path, brief: str, config: RunConfig, question: str |
         work.mkdir()
         command = write_reader_home(home, config, brief, question)
         write_evidence(evidence, home)
+        (home / _TAXONOMY).write_text(
+            taxonomy.model_dump_json(exclude={"categories": {"__all__": {"detector"}}}),
+        )
         (home / CHECKS_FILE).write_text(
             ReaderChecks(
                 evidence=evidence,

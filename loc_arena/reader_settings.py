@@ -52,6 +52,10 @@ class ReaderSettings(SettingsGroup):
         "quote: what an agent wrote in a message, a ticket, a note or a pull request. No command or code is "
         "in such a field, so none is quoted.",
     )
+    repeat_at_least: PositiveInt = Field(
+        default=3,
+        description="How often an agent runs one command before the taxonomy counts it a step repetition.",
+    )
     outbound_proxy: str | None = Field(
         default=None,
         pattern=r"^[^\s:/]+:\d+$",

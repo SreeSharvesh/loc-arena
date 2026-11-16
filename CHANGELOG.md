@@ -19,6 +19,12 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [389] - 2026-11-16: Readings count behaviour by a versioned taxonomy
+
+### Added
+
+- The run reader classifies behaviour by `configs/taxonomy.yaml`, MAST's failure modes beside this setting's own, and states each count out of its chances ([docs](docs/run-reader.md#behaviour-taxonomy)).
+
 ## [388] - 2026-11-16: Each chat message event names its own message
 
 ### Changed
