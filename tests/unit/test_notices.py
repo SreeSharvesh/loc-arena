@@ -345,6 +345,7 @@ def test_a_mention_in_a_reply_over_http_notifies_the_agent_it_names(
         "status": 201,
         "operation": "reply",
         "arguments": {"message": "m-4", "body": "agreed, @eval-agent"},
+        "outcome": {"id": 9},  # the reply the chat service made, as its audit line names it
     }
     record_writer(tmp_path, "chat")(json.dumps(request))
 

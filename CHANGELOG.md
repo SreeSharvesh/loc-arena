@@ -19,6 +19,12 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [388] - 2026-11-16: Each chat message event names its own message
+
+### Changed
+
+- The record of a chat message now holds the message's id, so a reply's thread names an earlier message's event ([docs](docs/chat-service.md#records)).
+
 ## [387] - 2026-11-16: The run reader is measured and checks its own draft
 
 ### Added
