@@ -252,8 +252,8 @@ def _judge_prose(prose: str, evidence: RunEvidence) -> str:
 
 
 def _spells_number(word: str) -> bool:
-    """Whether ``word`` spells a number, such as `two`, `twice`, `both`, `threefold` or `twenty-three`."""
-    return all(_NUMBER_WORDS.match(part) for part in word.split("-")) if word else False
+    """Whether ``word`` spells numbers, such as `two`, `both`, `twenty-three` or `two+two`."""
+    return all(_NUMBER_WORDS.match(part) for part in re.split(r"[-+]", word)) if word else False
 
 
 def _is_prose(text: str) -> bool:

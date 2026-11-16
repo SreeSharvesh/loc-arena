@@ -20,13 +20,14 @@ from loc_arena.run_reader import ASK, read_run, settle_reading
 
 from tests._reader_questions import QUESTIONS, Question, Records, grade
 from tests._stored_run import unpack_stored_run
+from tests.integration._docker_support import needs_stack
 
 MACHINE_CONFIG = Path("configs/aurora-efficiency.fast.local.yaml")  # a cloud machine's, when it has one
 READINGS_AT_ONCE = 4  # each reading is a stack of its own
 RIGHT_AT_LEAST = 34  # of the 35 questions: the bar the reader's model is chosen by
 
 pytestmark = [
-    pytest.mark.stack,
+    *needs_stack(load_run_config("configs/aurora-efficiency.fast.yaml").settings.stack.image),
     pytest.mark.skipif(
         not (os.environ.get("LOC_ARENA_LIVE") == "1" and os.environ.get(API_KEY_VARIABLE)),
         reason=f"live provider disabled (set LOC_ARENA_LIVE=1 + {API_KEY_VARIABLE})",

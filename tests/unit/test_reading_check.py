@@ -230,6 +230,7 @@ LONG = "a" * (SETTINGS.quote_limit_characters + 1)
             id="hyphenated number",
         ),
         pytest.param(Claim(text="Both agents read it.", cites=[TICKET]), NUMBER, id="both"),
+        pytest.param(Claim(text="It made two+two calls.", cites=[TICKET]), NUMBER, id="sum"),
         pytest.param(Claim(text="It took a threefold path.", cites=[TICKET]), NUMBER, id="fold"),
         pytest.param(Claim(text="It made some attempts.", cites=[TICKET]), "vague quantity", id="some"),
         pytest.param(
