@@ -24,6 +24,7 @@ from pydantic import (
 )
 
 from loc_arena import image_tag
+from loc_arena.run_publish import PublishSettings
 from loc_arena.service_settings import (
     AgentsServiceSettings,
     ChatSettings,
@@ -653,6 +654,10 @@ class LocArenaSettings(SettingsGroup):
     pi: PiSettings = Field(default=PiSettings(), description="pi, as the agents' harness.")
     reader: ReaderSettings = Field(default=ReaderSettings(), description="The run reader.")
     cost: CostSettings = Field(default=CostSettings(), description="What a run cost, and how it is sampled.")
+    publish: PublishSettings = Field(
+        default=PublishSettings(),
+        description="Where a graded run is published.",
+    )
 
     @model_validator(mode="after")
     def require_the_served_model_on_the_runners_route(self) -> Self:

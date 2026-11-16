@@ -19,6 +19,16 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [385] - 2026-11-16: A graded run can be published to private storage
+
+### Added
+
+- The run can be published to private storage with `make publish-run` once a scan finds no real secret, so its records outlive the machine that played it ([docs](docs/run-storage.md)).
+
+### Changed
+
+- The score file names the run's config as `config_name`, so runs of configs that share a slug are filed apart in storage ([docs](docs/run-storage.md#what-is-stored-where)).
+
 ## [377] - 2026-11-15: The telemetry store holds no second copy of a record
 
 ### Fixed

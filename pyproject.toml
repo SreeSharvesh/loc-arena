@@ -36,6 +36,8 @@ dependencies = [
   # What a run cost: the Docker Engine API's official client, and the machine's memory in use.
   "docker>=7.2.0",
   "psutil>=7.2.2",
+  "python-dotenv>=1.2.4", # a run's publish searches the bundle for the values of the checkout's .env
+  "zipfile-zstd>=0.0.4", # and reads the zstd members of its Inspect log, as inspect_ai does before Python 3.14
   "greptimedb-mcp-server>=0.6.1", # the telemetry store's own MCP server, which agents query through the tools gateway
 ]
 
