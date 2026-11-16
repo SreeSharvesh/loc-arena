@@ -497,6 +497,7 @@ def export_runs(path: Path, config: RunConfig) -> tuple[list[Path], dict[Path, s
     A folder also gets ``replay.summary.json``. A run's own records are never searched for runs: a checkout in
     them may hold any file an agent wrote.
     """
+    path = path.resolve()  # a run is named after its directory, the current one too
     if not path.is_dir():
         raise ValueError(f"{path} is no run's directory and no folder of runs")
     single = (path / "scores.json").is_file()

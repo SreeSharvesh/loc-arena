@@ -385,3 +385,17 @@ def test_a_folder_exports_each_run_and_names_one_that_fails_but_no_file_inside_a
         [folder / "graded" / "replay.json", folder / "replay.summary.json"],
         [folder / "broken", folder / "unwritable"],
     )
+
+
+def test_the_current_directory_exports_the_run_named_after_it(
+    run: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    shutil.copytree(run, tmp_path / "a run")
+    monkeypatch.chdir(tmp_path / "a run")
+    monkeypatch.setattr(replay_export, "read_run", unread)
+
+    (written,), _ = replay_export.export_runs(Path("."), RUN_CONFIG)
+
+    assert json.loads(written.read_text())["run"]["name"] == "a run"
