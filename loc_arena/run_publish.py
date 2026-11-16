@@ -235,6 +235,7 @@ def publish_run(bundle: Path, label: Label, settings: PublishSettings) -> Publis
             return Published(link, already=True)
         if not committed:
             _commit(bundle, label, clone, settings)
+        print(f"files: {label.directory} {'was already committed' if committed else 'committed'}")
         if release is None or release.draft:
             commit = _run(settings, "git", "-C", clone, "rev-parse", "HEAD").strip()
             release = release or _draft(settings, label, commit)
@@ -318,7 +319,9 @@ def _run(settings: PublishSettings, *command: str | Path) -> str:
             check=True,
         )
     except subprocess.CalledProcessError as error:
-        raise PublishError(f"{error.cmd[:3]} failed: {error.stderr.strip()}") from error
+        raise PublishError(f"{' '.join(error.cmd[:5])} failed: {error.stderr.strip()}") from error
     except subprocess.TimeoutExpired as error:
-        raise PublishError(f"{error.cmd[:3]} took longer than {settings.command_seconds}s") from error
+        raise PublishError(
+            f"{' '.join(error.cmd[:5])} took longer than {settings.command_seconds}s",
+        ) from error
     return done.stdout
