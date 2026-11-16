@@ -414,10 +414,7 @@ def test_a_request_that_makes_a_message_names_it_on_its_audit_line(service: Runn
 
     lines = [json.loads(line) for line in service.audit_lines]
 
-    assert [line.get("outcome") for line in lines] == [
-        {"id": 5, "thread": None, "channel": "general"},  # the seed holds four messages
-        {"id": 6, "thread": 5, "channel": "general"},
-    ]
+    assert [line.get("outcome") for line in lines] == [{"id": 5}, {"id": 6}]  # the seed holds four messages
 
 
 def call_tool(store: ChatStore, caller: str | None, tool: str, arguments: dict[str, Any]) -> CallToolResult:

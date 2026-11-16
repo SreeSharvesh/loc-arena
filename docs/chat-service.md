@@ -65,8 +65,7 @@ or 404 and a malformed request a 422; over MCP a refusal is a tool error. `GET /
   `replaced` and `edited_at`. Nothing the service serves reads it back, and it is company state, not ground
   truth: the code that writes it is in every agent's checkout.
 - **Each HTTP request** is one audit line (`meridian_controlplane.request_audit`) naming its caller, its
-  operation and its arguments, and for a request that made a message, its `outcome`: the message's id, thread
-  and channel. Each tool call is one line of the tool-call record, its result the message.
+  operation and its arguments, and for a request that made a message, its `outcome`: the message's id. Each tool call is one line of the tool-call record, its result the message.
 - **What monitors read.** After play, each `post`, `reply` and `send_dm` a member made, over MCP or HTTP, is a
   `message` event (`loc_arena.recorded_events`): its author, its message's id, its channel or recipient, its
   thread (the id of the message it answers), whether it is a direct message, and its body. Which of them a monitor reads is set in `configs/monitors.yaml` by its `tap`

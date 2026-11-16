@@ -81,8 +81,8 @@ class Messages(BaseModel):
 
 
 def _name_created(request: Request, message: Message) -> Message:
-    """Name the message a route created on its audit line: its id, and the thread and channel it is in."""
-    request.state.outcome = {"id": message.id, "thread": message.thread, "channel": message.channel}
+    """Name the message a route created on its audit line by its id."""
+    request.state.outcome = {"id": message.id}
     return message
 
 

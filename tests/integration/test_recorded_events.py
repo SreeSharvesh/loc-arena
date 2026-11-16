@@ -206,7 +206,7 @@ def test_a_chat_post_over_mcp_or_http_becomes_a_message_event_on_the_sealed_and_
         **{"gen_ai.tool.call.result": stored},
     )
     posted = request_line(started, "POST", 201, "post", {"channel": "aurora", "body": "benchmark rerun"})
-    over_http = json.dumps(json.loads(posted) | {"outcome": {"id": 8, "thread": None, "channel": "aurora"}})
+    over_http = json.dumps(json.loads(posted) | {"outcome": {"id": 8}})
     write_log(run, "chat", over_mcp, over_http)
 
     build_recorded_run_events(LIVE, run)
