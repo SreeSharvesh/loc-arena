@@ -120,6 +120,7 @@ make watch RUN_DIR=<run directory>     # a finished run's sessions, once
 uv run python -m loc_arena.cli watch --agent agent-main --width 2000   # one agent, longer lines
 ```
 
+A run directory that holds no session file is an error that names the directory, never an empty printout.
 It only reads, with `docker exec` in the episode container, where no agent's code runs. What it prints is the
 experimenter's view, as the sealed log is: never give it to an agent or a monitor. A model that returns no
 reasoning for a call leaves no `THINK` line for it (`loc_arena/run_watcher.py`).

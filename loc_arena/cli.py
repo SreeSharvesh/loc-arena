@@ -227,6 +227,9 @@ def _cmd_watch(args: argparse.Namespace) -> int:
         watch_run(directory, agent=args.agent, width=args.width, poll_seconds=args.poll_seconds)
     except KeyboardInterrupt:
         pass
+    except FileNotFoundError as error:
+        print(error, file=sys.stderr)
+        return 1
     return 0
 
 

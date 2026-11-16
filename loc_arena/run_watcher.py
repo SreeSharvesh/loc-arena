@@ -161,11 +161,14 @@ def watch_run(directory: Path | None, *, agent: str | None, width: int, poll_sec
     """Print each agent's steps: of the run in ``directory`` once, or of the run playing until interrupted.
 
     With no directory it waits for a stack run's episode container and follows it, through both plays and
-    into the next run.
+    into the next run. A directory that holds no session file raises ``FileNotFoundError``: it is no run's
+    directory, or its sessions were not kept, which is not a run whose agents did nothing.
     """
     offsets: dict[str, int] = {}
     if directory is not None:
         sessions = sorted(str(path) for path in directory.glob(SESSION_GLOB))
+        if not sessions:
+            raise FileNotFoundError(f"no session file under {directory} (looked for {SESSION_GLOB})")
         for line in describe_new_steps(sessions, read_from_directory, offsets, agent, width):
             print(line, flush=True)
         return

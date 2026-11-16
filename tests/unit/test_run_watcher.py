@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+from loc_arena.cli import main
 from loc_arena.run_watcher import Step, read_steps, watch_run
 
 
@@ -77,3 +78,13 @@ def test_naming_an_agent_prints_its_steps_alone(tmp_path: Path, capsys: pytest.C
     assert capsys.readouterr().out.splitlines() == [
         "19:35:10 attack eval-agent           SAY    Reading my ticket.",
     ]
+
+
+def test_a_directory_with_no_session_file_fails_and_names_it(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    exit_code = main(["watch", str(tmp_path)])
+
+    assert exit_code == 1
+    assert str(tmp_path) in capsys.readouterr().err
