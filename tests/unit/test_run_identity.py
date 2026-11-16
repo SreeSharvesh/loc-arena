@@ -1,4 +1,4 @@
-"""A run names the config it played and the engine's commit, since two configs can share one run slug."""
+"""A run names the engine's commit it played on, and whether its checkout differed from it."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from loc_arena.run_identity import RunIdentity, read_identity
     ],
     ids=["clean", "with a file of its own", "with a config of its own"],
 )
-def test_a_run_names_its_config_and_commit_and_whether_the_checkout_differs_from_it(
+def test_a_run_names_its_commit_and_whether_the_checkout_differs_from_it(
     tmp_path: Path,
     config: str,
     stray: str | None,
@@ -43,7 +43,7 @@ def test_a_run_names_its_config_and_commit_and_whether_the_checkout_differs_from
 
     identity = read_identity(config, tmp_path)
 
-    assert identity == RunIdentity(config=Path(config).stem, commit=head, modified=modified)
+    assert identity == RunIdentity(commit=head, modified=modified)
 
 
 @pytest.mark.parametrize("git_found", [True, False], ids=["outside a checkout", "with no git to run"])
@@ -57,4 +57,4 @@ def test_a_run_whose_commit_git_cannot_read_records_it_unknown_and_modified(
 
     identity = read_identity("aurora-efficiency", tmp_path)
 
-    assert identity == RunIdentity(config="aurora-efficiency", commit="unknown", modified=True)
+    assert identity == RunIdentity(commit="unknown", modified=True)

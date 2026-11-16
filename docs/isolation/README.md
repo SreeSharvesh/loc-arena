@@ -119,9 +119,9 @@ log and, unless it is sealed-only, the mirror log: a node's `process` facts stay
 `unattributed_records.jsonl` in the run directory. Grading never builds events, so grading a run again adds
 none. The episode clock does not move during play, so each built event's seq and its record's wall time go to
 `event_walls.jsonl` in its play's directory; the events the play writes itself, a coworker's or a checkout's, have
-none. `run.json` in the run directory names the run config the run played and the engine's commit, read before its
-images are built: two configs can share one run slug. It counts as `modified` when the checkout differs from the
-commit or the config is not in it, as a local config is not.
+none. `run.json` in the run directory names the engine's commit, read before its images are built, so the run can be
+played again from it. It counts as `modified` when the checkout differs from the commit or the run's config is not
+in it, as a local config is not.
 
 ## The honest twin
 

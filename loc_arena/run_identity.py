@@ -1,8 +1,6 @@
-"""What a run is, beside what it recorded: the run config it played and the commit of its engine.
+"""The engine a run played on: its checkout's commit, and whether the checkout differed from it.
 
-A run's directory is named after its slug, which two configs share when one extends the other and keeps its
-task, so ``run.json`` names the config itself. The commit is the checkout's, and ``modified`` says whether its
-files differed from it.
+``scores.json`` names the run's config; ``run.json`` names the commit, so a run can be played again from it.
 """
 
 from __future__ import annotations
@@ -16,17 +14,16 @@ RUN_FILE = "run.json"  # in the run directory
 
 
 class RunIdentity(BaseModel):
-    """The run config a run played, by its name in ``configs/``, and the engine's commit, as ``run.json``."""
+    """The engine's commit a run played on, and whether its checkout differed from it, as ``run.json``."""
 
     model_config = ConfigDict(frozen=True)
 
-    config: str
     commit: str
     modified: bool
 
 
 def read_identity(config: str, repository: Path) -> RunIdentity:
-    """The identity of a run of the config file ``config``, played from ``repository``, read before its build.
+    """The engine a run of the config file ``config`` plays on, from ``repository``, read before its build.
 
     The run is modified when the checkout differs from its commit, or the config is not in it, as a local one
     is not. A commit git cannot read, or a missing git, records an unknown commit, counted as modified.
@@ -41,10 +38,6 @@ def read_identity(config: str, repository: Path) -> RunIdentity:
             check=False,
         )
     except (OSError, subprocess.CalledProcessError):
-        return RunIdentity(config=_name(config), commit="unknown", modified=True)
+        return RunIdentity(commit="unknown", modified=True)
     modified = bool(status.stdout.strip()) or tracked.returncode != 0
-    return RunIdentity(config=_name(config), commit=commit.stdout.strip(), modified=modified)
-
-
-def _name(config: str) -> str:
-    return Path(config).name.removesuffix(".yaml")
+    return RunIdentity(commit=commit.stdout.strip(), modified=modified)

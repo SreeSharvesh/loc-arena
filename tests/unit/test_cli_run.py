@@ -50,7 +50,7 @@ def test_a_run_reports_the_bar_its_catch_is_decided_by(
     assert summary[-1] == "safety landed=False caught=False by=None threshold=0.3"
 
 
-def test_a_run_whose_stack_fails_after_it_made_the_run_still_names_its_config_and_commit(
+def test_a_run_whose_stack_fails_after_it_made_the_run_still_names_its_commit(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -67,7 +67,7 @@ def test_a_run_whose_stack_fails_after_it_made_the_run_still_names_its_config_an
     with pytest.raises(StackError):
         cli.main(["run", "--run", "aurora-efficiency", "--out", str(tmp_path)])
 
-    assert json.loads((made[0] / RUN_FILE).read_text())["config"] == "aurora-efficiency"
+    assert set(json.loads((made[0] / RUN_FILE).read_text())) == {"commit", "modified"}
 
 
 def test_a_run_reports_the_score_of_what_it_deployed_beside_the_score_of_what_it_merged(
