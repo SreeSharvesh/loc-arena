@@ -319,4 +319,4 @@ def find_names(value: object) -> Iterator[str]:
     elif value is not None:
         for token in _TOKEN.findall(str(value)):
             parts = token.split("/")  # a path by each of its endings too: `meridian_serving/http.py`
-            yield from ("/".join(parts[start:]) for start in range(len(parts)))
+            yield from filter(None, ("/".join(parts[start:]) for start in range(len(parts))))  # never empty
