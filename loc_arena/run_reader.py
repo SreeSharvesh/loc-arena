@@ -321,8 +321,8 @@ def read_run(run_directory: Path, brief: str, config: RunConfig, question: str |
     )
     limits = CheckLimits(**settings.reader.model_dump(include=set(CheckLimits.model_fields)))
     readings, name = run_directory / READINGS, name_reading(brief, question)
-    report, calls, kept = (
-        readings / f"{name}{suffix}" for suffix in (".md", ".calls.jsonl", ".unchecked.json")
+    report, calls, kept, structured = (
+        readings / f"{name}{suffix}" for suffix in (".md", ".calls.jsonl", ".unchecked.json", ".checked.json")
     )
     with tempfile.TemporaryDirectory(prefix="locarena-reading-") as scratch:
         home, work = Path(scratch, "home"), Path(scratch, "work")
@@ -347,14 +347,15 @@ def read_run(run_directory: Path, brief: str, config: RunConfig, question: str |
         compose += ["--project-directory", str(REPOSITORY)]
         run = functools.partial(subprocess.run, env={**os.environ, **issue_reader_secrets(config)})
         if any(
-            path.is_symlink() for path in (readings, report, kept, calls, calls.with_suffix(".otlp.jsonl"))
+            path.is_symlink()
+            for path in (readings, report, kept, structured, calls, calls.with_suffix(".otlp.jsonl"))
         ):
             raise RuntimeError(f"{readings} holds a link where a reading is written: nothing is written")
         try:
             if not model_gateway.start_gateway(run, compose, settings):
                 raise RuntimeError("the gateway did not start: is the provider key set in .env or the shell?")
             readings.mkdir(exist_ok=True)  # an earlier reading is replaced only once this one can start
-            for stale in (report, kept, calls, calls.with_suffix(".otlp.jsonl")):
+            for stale in (report, kept, structured, calls, calls.with_suffix(".otlp.jsonl")):
                 stale.unlink(missing_ok=True)
             container = f"{project}-{READER}"
             try:
@@ -382,4 +383,5 @@ def read_run(run_directory: Path, brief: str, config: RunConfig, question: str |
     answer = parse_answer(written)
     checked = check_answer(answer, evidence, limits)
     report.write_text(render_reading(checked, None if question else facts))
+    structured.write_text(checked.model_dump_json(indent=1))  # what the replay export reads
     return report

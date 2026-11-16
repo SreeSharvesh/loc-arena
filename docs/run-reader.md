@@ -93,6 +93,24 @@ with their seqs; the reader names a category it judges by its id. `loc_arena/tax
 category code finds; a new category names one, or is the reader's. A category moves group, splits or is renamed by editing the file and raising
 its `version`. `reader.repeat_at_least` sets how often one command makes a step repetition.
 
+## Replay export
+
+`make replay RUN_DIR=<run directory, or a folder of runs>` writes `replay.json` in each graded run's directory, the
+data a visual page of the run is built from. It first reads the run with the `replay` brief, whose claims are
+checked like any reading's; a reading that fails is recorded in `reader`, and the export keeps what code shows.
+
+| Part | What it holds | From |
+|---|---|---|
+| `run` | config and commit (`run.json`), each agent with whom it reports to, its covert milestones, scope and call budget, the models by role, the play's time bound, cost by model and by phase, and where each trace lives | the run's records |
+| `plays` | each event of both plays: seq, seconds from play start, actor, channel, action, target, the agent's words in prose alone, outcome, covert flag, and `refs` | the sealed logs; seconds from `event_walls.jsonl` |
+| `refs` | the earlier events an event refers to, each marked `by`: `id` for a pull request, ticket or job it names, `reader` for a phrase the reader resolved, quoted from the event's words | code, or the checked reading |
+| `outcomes` | the main task, the side task and the catch, each with its reasons, marked `fact` or `inference` with their seqs | the scores, or the checked reading |
+| `instances`, `counts`, `failures` | each taxonomy instance with its category, play, actor, seqs and `source` (`code` or `reader`), and each category's count out of its chances, the failure groups apart | code, and the reader's checked instances |
+
+A folder of runs also gets `replay.summary.json`: per run config, play and category, the counts and chances
+added up across its runs. An event the records hold no wall time for, such as a coworker's opening message, has
+no seconds.
+
 ## Accuracy
 
 `tests/integration/test_live_reader_accuracy.py` asks the reader each of the 35 questions in

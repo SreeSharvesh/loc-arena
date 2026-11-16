@@ -12,7 +12,6 @@ from __future__ import annotations
 import re
 import sys
 from collections.abc import Sequence
-from dataclasses import dataclass, field
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -125,14 +124,20 @@ class ReaderChecks(BaseModel):
     settings: CheckLimits
 
 
-@dataclass
-class CheckedReading:
-    """What a reading keeps: the answer and each section's claims as rendered text, and why the rest went."""
+class KeptClaim(BaseModel):
+    """A claim that passed every check: its text with its facts filled in, and what it cites."""
+
+    text: str
+    cites: list[str]
+
+
+class CheckedReading(BaseModel):
+    """What a reading keeps: the answer and each section's kept claims, and why the rest went."""
 
     answer: str | None = None
-    sections: list[tuple[str, list[str]]] = field(default_factory=list)
-    unknowns: list[str] = field(default_factory=list)
-    dropped: list[str] = field(default_factory=list)
+    sections: list[tuple[str, list[KeptClaim]]] = Field(default_factory=list)
+    unknowns: list[str] = Field(default_factory=list)
+    dropped: list[str] = Field(default_factory=list)
     claims: int = 0
     kept: int = 0
 
@@ -142,10 +147,10 @@ def check_answer(answer: ReaderAnswer, evidence: RunEvidence, settings: CheckLim
     checked, cited = CheckedReading(), []
     for number, section in enumerate(answer.sections, 1):
         kept = [_keep_claim(claim, checked, cited, evidence, settings) for claim in section.claims]
-        checked.kept += sum(map(bool, kept))
+        checked.kept += sum(claim is not None for claim in kept)
         faulty = _find_fault(section.title, [], evidence, settings)  # a title passes the checks of a claim
         title = f"Section {number}" if faulty else _fill_facts(section.title, evidence)
-        checked.sections.append((title, [claim for claim in kept if claim]))
+        checked.sections.append((title, [claim for claim in kept if claim is not None]))
     if answer.answer is not None:
         reason = _find_fault(answer.answer, cited, evidence, settings)
         reason = reason or ("" if checked.kept else "no kept claim supports it")
@@ -164,17 +169,17 @@ def _keep_claim(
     cited: list[str],
     evidence: RunEvidence,
     settings: CheckLimits,
-) -> str:
-    """``claim`` rendered with its cites when it passes, which join ``cited``; else empty, its drop noted."""
+) -> KeptClaim | None:
+    """``claim`` with its facts filled in when it passes, its cites joining ``cited``; else none, noted."""
     checked.claims += 1
     cites = [cite.strip("{}") for cite in claim.cites]  # a fact cited as it is written in a claim
     reason = "past reader.claim_limit" if checked.claims > settings.claim_limit else ""
     if reason := reason or _find_fault(claim.text, cites, evidence, settings, cited=True):
         checked.dropped.append(f"claim {checked.claims}: {reason}")
-        return ""
+        return None
     cited += cites
     shown = [*cites, *(key for key in _FACT.findall(claim.text) if key not in cites)]
-    return f"{_fill_facts(claim.text, evidence)} ({_render_cites(shown)})"
+    return KeptClaim(text=_fill_facts(claim.text, evidence), cites=shown)
 
 
 def _find_fault(
@@ -256,6 +261,25 @@ def _spells_number(word: str) -> bool:
     return all(_NUMBER_WORDS.match(part) for part in re.split(r"[-+]", word)) if word else False
 
 
+def prose_lines(text: str) -> list[str]:
+    """The lines of an agent's words that are prose alone, without their markdown markers.
+
+    A line holding code, a command, a link or a credential is left out whole: an agent's words are shown only
+    where they are prose.
+    """
+    kept = []
+    for line in text.splitlines():
+        core = re.sub(r"^\s*(?:[#>*•-]+|\d+[.)])\s+", "", line).strip()
+        named = _QUOTED_NAME.sub(
+            lambda span: span.group() if _looks_secret(span.group()[1:-1]) else "name",
+            core,
+        )
+        plain = re.sub(r"(?<!\w)[*_]{1,2}|[*_]{1,2}(?!\w)|[\"“”‘’]", "", named)
+        if core and _is_prose(plain) and not _COMMAND.search(core):
+            kept.append(core)
+    return kept
+
+
 def _is_prose(text: str) -> bool:
     """Whether every word of ``text`` is a word of prose, and none looks like a credential."""
     return all(_WORD.fullmatch(word) and not _looks_secret(word) for word in text.split())
@@ -324,7 +348,9 @@ def render_reading(checked: CheckedReading, facts: str | None) -> str:
         parts.append(f"## Answer\n\n{checked.answer}\n")
     for title, claims in checked.sections:
         if claims:
-            parts.append(f"## {title}\n\n" + "".join(f"- {claim}\n" for claim in claims))
+            parts.append(
+                f"## {title}\n\n" + "".join(f"- {c.text} ({_render_cites(c.cites)})\n" for c in claims),
+            )
     if checked.unknowns:
         unknowns = "".join(f"- {item}\n" for item in checked.unknowns)
         parts.append(f"## What I could not determine\n\n{unknowns}")

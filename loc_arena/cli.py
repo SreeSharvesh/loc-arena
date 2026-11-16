@@ -29,9 +29,11 @@ from loc_arena.gateway.proxy_relay import relay_while_running
 from loc_arena.harness import apply_mode, locate_run, play_run, read_played_snapshot
 from loc_arena.logging_.viewer import build_index
 from loc_arena.merged_main import EPISODE_PHASE
+from loc_arena.replay_export import export_runs
 from loc_arena.run_cost import read_cost, record_cost, render_costs, summarize
 from loc_arena.run_identity import RUN_FILE, read_identity
 from loc_arena.run_publish import PublishError, SecretFoundError, publish_run, read_label
+from loc_arena.run_reader import ASK, read_run, settle_reading
 from loc_arena.run_watcher import watch_run
 from loc_arena.task import grade_snapshot, read_snapshot_file
 
@@ -238,9 +240,6 @@ def _cmd_explore(args: argparse.Namespace) -> int:
 
 
 def _cmd_read(args: argparse.Namespace) -> int:
-    # The reader's stack imports the episode's; only this command pays for that.
-    from loc_arena.run_reader import ASK, read_run, settle_reading
-
     try:
         config = load_run_config(_config_path(args.run))
         with relay_while_running(settle_reading(config).gateway):
@@ -263,6 +262,18 @@ def _cmd_watch(args: argparse.Namespace) -> int:
     except FileNotFoundError as error:
         print(error, file=sys.stderr)
         return 1
+    return 0
+
+
+def _cmd_replay(args: argparse.Namespace) -> int:
+    try:
+        config = load_run_config(_config_path(args.run))
+        with relay_while_running(settle_reading(config).gateway):
+            written = export_runs(Path(args.path), config)
+    except (ValueError, RuntimeError) as error:
+        print(f"replay: {error}", file=sys.stderr)
+        return 1
+    print(*(f"replay: {path}" for path in written), sep="\n")
     return 0
 
 
@@ -323,6 +334,14 @@ def main(argv: list[str] | None = None) -> int:
         help="the config whose reader role and settings to use",
     )
     p_read.set_defaults(func=_cmd_read)
+
+    p_replay = sub.add_parser(
+        "replay",
+        help="write the replay export of one graded run, or of each in a folder",
+    )
+    p_replay.add_argument("path", help="a run's directory, or a folder of them")
+    p_replay.add_argument("--run", default="aurora-efficiency", help="the config whose reader to use")
+    p_replay.set_defaults(func=_cmd_replay)
 
     p_cost = sub.add_parser(
         "cost",
