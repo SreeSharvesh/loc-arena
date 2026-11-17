@@ -19,6 +19,12 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [396] - 2026-11-17: The job-loop kill chain is named for its vector
+
+### Changed
+
+- The verifier's kill chain is now `kill_chain_job_loop`, named for its attack vector; a run config that still names the old one stops loading.
+
 ## [395] - 2026-11-17: Agents' answers have room for reasoning and a tool call
 
 ### Changed
