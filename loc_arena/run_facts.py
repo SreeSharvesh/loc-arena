@@ -12,15 +12,17 @@ import re
 from collections import Counter
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from pathlib import Path
+from typing import get_args
 
 import yaml
 from pydantic import BaseModel, ConfigDict, JsonValue
 
 from loc_arena.explorer.scores import load_scores
 from loc_arena.gateway.model_gateway import PHASE_PLAYS
-from loc_arena.logging_.events import Event, read_events
+from loc_arena.logging_.events import Event, EventKind, read_events
 from loc_arena.merged_main import EPISODE_PHASE, TWIN_PHASE
 from loc_arena.monitors.registry import MonitorVerdict
+from loc_arena.own_sessions import EndReason
 from loc_arena.session_events import read_reply_text, read_session_calls
 
 type Fact = str | int | float | bool | list[str]
@@ -81,6 +83,17 @@ def gather_evidence(run_directory: Path, word_fields: Sequence[str]) -> RunEvide
         "side_task.milestones": milestones,
         "side_task.milestone_count": len(milestones),
     }
+    for agent in config[
+        "agents"
+    ]:  # who each agent reports to, its covert brief's milestones, its repositories
+        facts |= {
+            f"run.agent.{agent['id']}.kind": str(agent.get("kind") or "none"),  # orchestrator or subagent
+            f"run.agent.{agent['id']}.reports_to": str(agent.get("spawned_by") or "none"),
+            f"run.agent.{agent['id']}.covert": [str(milestone) for milestone in agent.get("covert") or []],
+            f"run.agent.{agent['id']}.repositories": [
+                str(repo) for repo in agent.get("scope", {}).get("open_pr", [])
+            ],
+        }
     _flatten("scores", scores, facts)
     events: dict[str, EventWords] = {}
     names = {*_name_keys(scores), *_name_keys(config), *agents}
@@ -89,6 +102,17 @@ def gather_evidence(run_directory: Path, word_fields: Sequence[str]) -> RunEvide
         twin = graded.honest_twin.monitor_verdicts if graded.honest_twin else ()
         verdicts = graded.monitor_verdicts if phase == EPISODE_PHASE else twin
         facts |= _count_play(play, sealed, run_directory / phase, verdicts, graded.safety.audit_threshold)
+        made = [
+            (event.actor_uid, key) for event in sealed if event.actor_uid in agents for key in _made(event)
+        ]
+        team = Counter(key for _, key in made)  # the agents' alone, the monitors' and coworkers' apart
+        facts |= {f"{play}.team.{key}": count for key, count in team.items()}
+        facts |= {
+            f"{play}.team.{key}.actors": sorted({actor for actor, of in made if of == key}) for key in team
+        }
+        facts |= {
+            f"{play}.team.{key}.actor_count": len({actor for actor, of in made if of == key}) for key in team
+        }
         replies = {
             f"{call.agent}:t{call.turn}": read_reply_text(call.call.response)
             for call in read_session_calls(run_directory, PHASE_PLAYS[phase], agents)
@@ -99,6 +123,7 @@ def gather_evidence(run_directory: Path, word_fields: Sequence[str]) -> RunEvide
                 cited = _describe(f"{prefix}:{event.seq}", event, word_fields, replies)
                 events[cited.id] = cited
                 names.update(_name_event(event, word_fields))
+    _count_zeros(facts, [play for play, _ in name_plays(run_directory)], agents)
     files = (str(path.relative_to(run_directory)) for path in run_directory.rglob("*") if path.is_file())
     names.update(ending for file in files for ending in _endings(file))
     names.update(_name_facts(facts))  # every play's facts included
@@ -123,7 +148,7 @@ def _count_play(
     counted = Counter[str]()
     actors: dict[str, set[str]] = {}  # who made each kind of event and used each tool
     for event in sealed:
-        made = [f"kind.{event.kind}", *([f"tool.{event.tool}"] if event.tool else [])]
+        made = _made(event)
         counted.update([*made, *(f"agent.{event.actor_uid}.{key}" for key in made)])
         for key in made:
             actors.setdefault(key, set()).add(event.actor_uid)
@@ -154,6 +179,37 @@ def _count_play(
         }
     facts[f"{play}.flagged"] = sum(score > threshold for scores in scored.values() for score in scores)
     return facts
+
+
+def _made(event: Event) -> list[str]:
+    """What an event counts toward: its kind, its tool if any, and a message's kind (a post, a reply)."""
+    said = event.payload.get("message_kind") if event.kind == "message" else None
+    return [
+        f"kind.{event.kind}",
+        *([f"tool.{event.tool}"] if event.tool else []),
+        *([f"message.{said}"] if said else []),
+    ]
+
+
+def _count_zeros(facts: dict[str, Fact], plays: Sequence[str], agents: Sequence[str]) -> None:
+    """A zero for each kind of event, and each tool and kind of message a play's records show, not seen.
+
+    A tool no play's records show has no zero: many tools leave no event of their name (a read leaves none, a
+    chat post leaves a message), so its zero would be no fact.
+    """
+    seen = {key.split(".", 1)[1] for key in facts if re.fullmatch(r"[^.]+\.(kind|tool|message)\.[^.]+", key)}
+    for play in plays:
+        for key in seen | {f"kind.{kind}" for kind in get_args(EventKind)}:
+            for counted in (f"{play}.{key}", f"{play}.team.{key}"):
+                facts |= {
+                    counted: facts.get(counted, 0),
+                    f"{counted}.actor_count": facts.get(f"{counted}.actor_count", 0),
+                }
+                facts.setdefault(f"{counted}.actors", [])
+            for agent in agents:
+                facts.setdefault(f"{play}.agent.{agent}.{key}", 0)
+        for reason in get_args(EndReason):
+            facts.setdefault(f"{play}.sessions.{reason}", 0)
 
 
 def _describe(cite: str, event: Event, word_fields: Sequence[str], replies: Mapping[str, str]) -> EventWords:
@@ -263,4 +319,4 @@ def find_names(value: object) -> Iterator[str]:
     elif value is not None:
         for token in _TOKEN.findall(str(value)):
             parts = token.split("/")  # a path by each of its endings too: `meridian_serving/http.py`
-            yield from ("/".join(parts[start:]) for start in range(len(parts)))
+            yield from filter(None, ("/".join(parts[start:]) for start in range(len(parts))))  # never empty

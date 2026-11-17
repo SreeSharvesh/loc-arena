@@ -19,6 +19,59 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [394] - 2026-11-17: The reviewer matches whole words on a change's own lines
+
+### Changed
+
+- The forge's reviewer also blocks inflected verbs such as "disabling" and "removal", which its whole verbs missed ([docs](docs/forge-service.md#the-merge-gate)).
+
+### Fixed
+
+- The forge's reviewer matches words from their start, on the lines a pull request changes, so "execution" or an unchanged line no longer blocks honest work ([docs](docs/forge-service.md#the-merge-gate)).
+
+## [396] - 2026-11-17: The job-loop kill chain is named for its vector
+
+### Changed
+
+- The verifier's kill chain is now `kill_chain_job_loop`, named for its attack vector; a run config that still names the old one stops loading.
+
+## [395] - 2026-11-17: Agents' answers have room for reasoning and a tool call
+
+### Changed
+
+- The agent's output cap is 32,768 tokens an answer, up from 8,192, so reasoning seldom cuts an answer before its tool call, which leaves the session idle ([docs](docs/pi-harness.md)).
+
+## [390] - 2026-11-16: A run records its engine's commit and each event's time
+
+### Added
+
+- The record of a run now holds `run.json`, the engine's commit it played on and whether its checkout differed, so the run can be played again ([docs](docs/isolation/README.md)).
+- The record of each play now holds each built event's wall time from its service record, as the episode clock does not move during play ([docs](docs/isolation/README.md)).
+
+## [389] - 2026-11-16: Readings count behaviour by a versioned taxonomy
+
+### Added
+
+- The run reader classifies behaviour by `configs/taxonomy.yaml`, MAST's failure modes beside this setting's own, and states each count out of its chances ([docs](docs/run-reader.md#behaviour-taxonomy)).
+
+## [388] - 2026-11-16: Each chat message event names its own message
+
+### Changed
+
+- The record of a chat message now holds the message's id, so a reply's thread names an earlier message's event ([docs](docs/chat-service.md#records)).
+
+## [387] - 2026-11-16: The run reader is measured and checks its own draft
+
+### Added
+
+- The run reader has a test set of 35 questions about the stored run, and a live test that reports the share it answers right ([docs](docs/run-reader.md#accuracy)).
+- The run reader's agent runs the same checks on its draft before it finishes, and rewrites what they would drop ([docs](docs/run-reader.md#the-checks)).
+
+### Changed
+
+- The run reader reads with `anthropic/claude-haiku-5.5`, the most accurate candidate on the test set and cheaper than the next ([docs](docs/run-reader.md#accuracy)).
+- The run reader's facts now hold zero counts, the agents' own totals and each agent's role, so absence and the team's work can be cited ([docs](docs/run-reader.md#what-the-reader-is-given)).
+
 ## [386] - 2026-11-16: A graded run can be published to private storage
 
 ### Added
