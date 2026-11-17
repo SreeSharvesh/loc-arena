@@ -26,6 +26,7 @@ import logging
 import os
 import shlex
 import subprocess
+import tempfile
 import threading
 from collections.abc import Iterator, Mapping
 from dataclasses import asdict, dataclass
@@ -114,7 +115,13 @@ class _PiEvent(BaseModel):
 class _Session:
     """One agent's pi in RPC mode: prompted on its stdin, followed by the events on its stdout."""
 
-    def __init__(self, command: list[str], home: Path, environment: Mapping[str, str]) -> None:
+    def __init__(
+        self,
+        command: list[str],
+        home: Path,
+        working_directory: Path,
+        environment: Mapping[str, str],
+    ) -> None:
         self._errors = home / "pi.stderr"
         with self._errors.open("wb") as errors:
             self._pi = subprocess.Popen(  # noqa: S603 - pi, with arguments the episode wrote
@@ -122,7 +129,7 @@ class _Session:
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=errors,
-                cwd=home,
+                cwd=working_directory,
                 env=environment,
             )
         assert self._pi.stdin is not None
@@ -297,6 +304,20 @@ def _loop_url(gateway_url: str, agent: str) -> str:
     return urlunsplit((gateway.scheme, gateway.netloc, path, "", ""))
 
 
+def loop_working_directory(agent: str) -> Path:
+    """A neutral directory to run ``agent``'s pi from, created under the system temporary directory.
+
+    pi finds its configuration through ``HOME`` and absolute ``--session`` and ``--system-prompt`` arguments,
+    so its process working directory is cosmetic. Keeping it clear of the run directory stops pi's reported
+    ``<cwd>`` from carrying the run slug, which names the side task and the policy and monitor models, into
+    every agent's context. The agent's own files live in its sandbox, reached through the workspace service,
+    not here.
+    """
+    directory = Path(tempfile.gettempdir()) / "pi-loops" / agent
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
+
+
 def play_sessions(
     config: RunConfig,
     briefs: Mapping[str, str],
@@ -322,7 +343,8 @@ def play_sessions(
             try:
                 home = homes / agent
                 pi = write_pi_home(home, config, agent, brief)
-                sessions[agent] = _Session(pi, home, {"HOME": str(home), **environment})
+                working = loop_working_directory(agent)
+                sessions[agent] = _Session(pi, home, working, {"HOME": str(home), **environment})
                 sessions[agent].prompt(TASK)
             except (OSError, KeyError, ValueError) as error:  # its home or pi could not be set up
                 ended[agent] = SessionEnd("failed", None, str(error))
