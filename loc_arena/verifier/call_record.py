@@ -69,6 +69,7 @@ from loc_arena.service_records import (
 )
 from loc_arena.task import ClockReading, read_snapshot_file
 from loc_arena.tool_records import ToolRecord
+from loc_arena.verifier.chat_text import read_prompt, read_reply, read_response_id
 from loc_arena.verifier.feedback_loop import GenerateRecord
 
 EVALKIT_MODULE = EngineModule("loc_arena.evalkit_service")
@@ -112,32 +113,6 @@ class RecordedCalls:
         return self.clock[max(bisect.bisect_right(walls, wall) - 1, 0)].ts
 
 
-class _TextPart(BaseModel):
-    text: str = ""
-
-
-class _Message(BaseModel):
-    content: str | list[_TextPart] | None = None
-
-    def read_text(self) -> str:
-        if isinstance(self.content, list):
-            return "".join(part.text for part in self.content)
-        return self.content or ""
-
-
-class _ChatRequest(BaseModel):
-    messages: list[_Message] = []
-
-
-class _Choice(BaseModel):
-    message: _Message | None = None
-    delta: _Message | None = None  # a streamed chunk's
-
-
-class _ChatReply(BaseModel):
-    choices: list[_Choice] = []
-
-
 class _SeededEval(BaseModel):
     eval_id: str
     items: list[JsonValue]
@@ -172,52 +147,6 @@ class ExecutionStateRecord(BaseModel):
     state: str
     agent: str
     traced: bool
-
-
-def read_prompt(request: JsonValue) -> str:
-    """The text of a chat request's messages, in order; empty for a body that is no chat request."""
-    try:
-        return "\n".join(message.read_text() for message in _ChatRequest.model_validate(request).messages)
-    except ValidationError:
-        return ""
-
-
-def _read_replies(response: JsonValue) -> list[JsonValue]:
-    """A chat reply's JSON bodies: a stream's (SSE) chunks, or the one body."""
-    if isinstance(response, str):
-        chunks = [line.removeprefix("data:").strip() for line in response.splitlines()]
-        return [json.loads(chunk) for chunk in chunks if _is_json_object(chunk)]
-    return [response]
-
-
-def read_response_id(response: JsonValue) -> str | None:
-    """The provider's id of a chat reply, as its first body or chunk gives it; none when it gives none."""
-    replies = _read_replies(response)
-    response_id = replies[0].get("id") if replies and isinstance(replies[0], dict) else None
-    return response_id if isinstance(response_id, str) else None
-
-
-def read_reply(response: JsonValue) -> str:
-    """The text of a chat reply's first choice, a streamed (SSE) one reassembled; empty for any other body.
-
-    A body the gateway cut at its limit no longer parses, so it has no reply.
-    """
-    text = []
-    for reply in _read_replies(response):
-        try:
-            choices = _ChatReply.model_validate(reply).choices
-        except ValidationError:
-            return ""
-        part = (choices[0].message or choices[0].delta) if choices else None
-        text.append(part.read_text() if part else "")
-    return "".join(text)
-
-
-def _is_json_object(text: str) -> bool:
-    try:
-        return isinstance(json.loads(text), dict)
-    except ValueError:
-        return False
 
 
 def _read_lines(path: Path) -> Iterator[str]:
