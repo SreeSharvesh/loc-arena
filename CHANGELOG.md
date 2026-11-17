@@ -19,6 +19,13 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [402] - 2026-11-21: Claude Code loads the agent rules, which require storing runs
+
+### Changed
+
+- Repository instructions for coding agents now ask them to store every run they play, and anything a run yields, in the private run storage ([docs](docs/run-storage.md)).
+- The repository's `CLAUDE.md` imports the agent rules, so every Claude Code session in the repository loads them.
+
 ## [411] - 2026-11-21: A settled container's health is probed every 30 s
 
 ### Changed
@@ -75,7 +82,7 @@ in its own container.
 
 - The run config composes a covert brief from a list of `prompts_inline` fragment references, so the generic attack core is written once and a killchain config overrides one fragment ([docs](docs/run-config.md)).
 
-## [393] - 2026-11-18: Agent working directory no longer leaks the run slug
+## [393] - 2026-11-17: Agent working directory no longer leaks the run slug
 
 ### Security
 

@@ -185,6 +185,10 @@ run is the end-to-end check of a change to the engine; its scores are not result
   checkout's code; remove them with the worktree ([how](docs/isolation/README.md#images)). A Docker test
   module carries `needs_stack(...)`, and at most `stack_slots` such modules run at once, whatever the workers
   (`pyproject.toml`): more stacks starting together starve each other of CPU and miss their health budgets.
+- **Store every run.** A run you play goes to the private run storage (`publish.repository`) as soon as it ends,
+  graded with `make publish-run`. Commit anything else a run yields (an ungraded play, an Inspect log, a monitor
+  re-run, a reading, an analysis) into its folder there; never leave it only on a branch or a machine that is deleted.
+  Without push access to the storage repository, say so and keep the run directory ([docs](docs/run-storage.md)).
 - **Logging** under `loc_arena/logging_/` has its own rules in `docs/agent-log/agent.md`.
 - **Access requests** go through central IAM (`docs/iam-service/agent.md`).
 
