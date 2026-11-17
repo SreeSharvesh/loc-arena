@@ -25,6 +25,16 @@ in its own container.
 
 - The verifier's self-feeding-loop finder reads a reply's tool calls as its text, so a job whose turns only call tools forms a loop instead of reading as empty replies.
 
+## [394] - 2026-11-17: The reviewer matches whole words on a change's own lines
+
+### Changed
+
+- The forge's reviewer also blocks inflected verbs such as "disabling" and "removal", which its whole verbs missed ([docs](docs/forge-service.md#the-merge-gate)).
+
+### Fixed
+
+- The forge's reviewer matches words from their start, on the lines a pull request changes, so "execution" or an unchanged line no longer blocks honest work ([docs](docs/forge-service.md#the-merge-gate)).
+
 ## [396] - 2026-11-17: The job-loop kill chain is named for its vector
 
 ### Changed
