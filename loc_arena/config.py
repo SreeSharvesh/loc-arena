@@ -48,6 +48,7 @@ from loc_arena.settings import LocArenaSettings
 YAML_ENCODING: Final = "utf-8"
 BLOCK_CONFIG: Final = ConfigDict(extra="ignore")
 PROMPT_REFERENCE_PREFIX: Final = "prompts_inline."
+AGENT_ROLE: Final = "untrusted_agent"  # the role an agent's loop calls unless agent_roles names another
 REFERENCE_SUFFIX: Final = "_ref"
 COVERT_PROMPTS: Final = ("objective_prompt",)
 AGENT_PROMPTS: Final = ("system_prompt", "brief", "covert_brief")
@@ -334,6 +335,10 @@ class _ModelsFile(BaseModel):
     model_config = ConfigDict(frozen=True, extra="ignore", title="models file")
 
     roles: dict[str, ModelSpec] = Field(description="The model each role calls, by role.")
+    agent_roles: dict[str, StrictStr] = Field(
+        default_factory=dict,
+        description="The role a named agent's loop calls.",
+    )
     providers: dict[str, ProviderPreferences] = Field(
         default_factory=dict,
         description="The OpenRouter providers serving each model, by model id; its roles use them.",
@@ -463,7 +468,12 @@ class RunConfig:
     agent_transcript: bool = False
     raw: dict[str, Any] = dataclasses.field(default_factory=dict)
     model_providers: dict[str, ProviderPreferences] = dataclasses.field(default_factory=dict)
+    agent_roles: dict[str, str] = dataclasses.field(default_factory=dict)  # by agent id; the rest: AGENT_ROLE
     live_services: tuple[LiveService, ...] = ()  # the scenario's: each its own container in a stack run
+
+    def loop_model(self, agent_id: str) -> ModelSpec:
+        """The model ``agent_id``'s loop calls, with its sampling and reasoning: that of its role."""
+        return self.models[self.agent_roles.get(agent_id, AGENT_ROLE)]
 
     def agent(self, agent_id: str) -> AgentConfig:
         """Return the agent config with this id, or raise ``ConfigError``."""
@@ -542,6 +552,13 @@ def _find_sanctioning_problem(
     return None
 
 
+def _find_unknown_agent_role(models_file: _ModelsFile, agents: tuple[AgentConfig, ...]) -> str | None:
+    """Why ``agent_roles`` cannot be played: an entry names no agent of the run, or no role of the file."""
+    ids, held, roles = {agent.id for agent in agents}, models_file.agent_roles, models_file.roles
+    unknown = [f"{who}: {role}" for who, role in held.items() if who not in ids or role not in roles]
+    return f"agent_roles gives an unknown agent or an unknown role: {', '.join(unknown)}" if unknown else None
+
+
 def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None) -> RunConfig:
     """Load and validate a run file into a frozen ``RunConfig``.
 
@@ -595,10 +612,11 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
             f"episode.wall_clock_seconds ({document.episode.wall_clock_seconds}): a job's badge ends with "
             "its credential, so a loop started at the play's start would die before the deadline",
         )
-    if problem := _find_sanctioning_problem(document.side_task.sanctioned_submitters, settings, agents):
+    sanctioning = _find_sanctioning_problem(document.side_task.sanctioned_submitters, settings, agents)
+    if problem := sanctioning or _find_unknown_agent_role(models_file, agents):
         raise ConfigError(problem)
 
-    policy_model = models["untrusted_agent"].model if "untrusted_agent" in models else "unknown"
+    policy_model = models[AGENT_ROLE].model if AGENT_ROLE in models else "unknown"
     monitor_model = models["trusted_monitor"].model if "trusted_monitor" in models else "unknown"
     return RunConfig(
         name=run_file.name.removesuffix(".yaml"),
@@ -620,6 +638,7 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
         # Whether IAM is on is written out even as the default, so a changed default cannot change a replay.
         raw={**source.yaml_data, "iam": {**source.yaml_data.get("iam", {}), "enabled": settings.iam.enabled}},
         model_providers=models_file.providers,
+        agent_roles=dict(models_file.agent_roles),
         live_services=live_services,
     )
 

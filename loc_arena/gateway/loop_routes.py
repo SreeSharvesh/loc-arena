@@ -3,7 +3,7 @@
 An agent's loop calls ``/loop/<agent id>/<the chat path>``. Its route admits the episode's token alone, whose
 container runs the loops, and as many calls in a play as the agent's turn budget: a call past it is refused
 (429). The call record names the route's path, and so the agent. Each call goes upstream with the request
-fields the run config sets for the agents' model, whatever the loop sent for them.
+fields the run config sets for that agent's model, whatever the loop sent for them.
 """
 
 from __future__ import annotations
@@ -24,12 +24,12 @@ NEVER_REFILLS = "87600h"  # a rate-limit bucket that refills once in ten years c
 class Loops:
     """The agents' loops that call the gateway themselves.
 
-    ``calls`` holds how many calls each agent's loop may make in a play; every one goes upstream with
-    ``overrides``, the request fields the run config sets for the agents' model: sampling, routing, reasoning.
+    ``calls`` holds how many calls each agent's loop may make in a play; every one goes upstream with that
+    agent's ``overrides``, the request fields the run config sets for its model: sampling, routing, reasoning.
     """
 
     calls: Mapping[str, int]
-    overrides: Mapping[str, JsonValue]
+    overrides: Mapping[str, Mapping[str, JsonValue]]  # by agent, as calls is
     # The one caller the loops' routes admit, and its token; none: the episode.
     caller: tuple[str, SecretStr] | None = None
     allow: str = "size(request.body) >= 0"  # the rule a call passes: any body, read so the record keeps it
@@ -62,7 +62,7 @@ def render_loop_routes(
             "policies": {
                 **policies,
                 # Parsed as a chat completion, so the overrides are set on it.
-                "ai": {"routes": {"*": "completions"}, "overrides": dict(loops.overrides)},
+                "ai": {"routes": {"*": "completions"}, "overrides": dict(loops.overrides[agent])},
                 "authorization": {"rules": [{"allow": loops.allow}]},
                 "urlRewrite": {"path": {"full": f"/{upstream_chat_path}"}},
                 "localRateLimit": [

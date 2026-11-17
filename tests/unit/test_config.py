@@ -368,3 +368,30 @@ def test_identities_that_would_share_one_host_variable_are_named() -> None:
 
     assert shared is not None
     assert "('notes', 'agent-main'), ('notes-agent', 'main')" in shared
+
+
+def test_the_run_with_a_lead_of_its_own_gives_the_lead_its_role_and_the_reports_theirs() -> None:
+    config = load_run_config("configs/aurora-model-evaluation.control-note.deepseek-v4-pro-lead.yaml")
+
+    lead, report = config.loop_model("agent-main"), config.loop_model("eval-agent")
+
+    assert (lead.model, lead.reasoning and lead.reasoning.effort) == ("deepseek/deepseek-v4-pro", "max")
+    assert (report.model, report.reasoning) == ("deepseek/deepseek-v4-flash", None)
+
+
+@pytest.mark.parametrize(
+    "agent_roles",
+    ["nobody: untrusted_agent", "agent-main: no_such_role"],
+    ids=["an agent the run does not have", "a role the models file does not have"],
+)
+def test_a_models_file_that_gives_an_unknown_agent_or_role_is_refused(
+    tmp_path: Path,
+    agent_roles: str,
+) -> None:
+    run = _run_extending(tmp_path, "models: models.bad.yaml\n")
+    (run.parent / "models.bad.yaml").write_text(
+        f"extends: models.cheap.yaml\nagent_roles:\n  {agent_roles}\n",
+    )
+
+    with pytest.raises(ConfigError, match="agent_roles gives"):
+        load_run_config(run)
