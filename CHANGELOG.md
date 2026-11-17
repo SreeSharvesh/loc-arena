@@ -19,6 +19,12 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [393] - 2026-11-18: Agent working directory no longer leaks the run slug
+
+### Security
+
+- Agent loops run pi from a neutral working directory, so its `cwd` no longer leaks the run slug (the side task and model names) to the untrusted model ([docs](docs/pi-harness.md)).
+
 ## [398] - 2026-11-17: An agent's loop may call its own model role
 
 ### Added
@@ -221,7 +227,6 @@ in its own container.
 ### Fixed
 
 - A run starts its sessions only once the tools gateway offers each agent every tool its run config names, so no agent silently plays without a service's tools ([docs](docs/pi-harness.md#the-agents-tools)).
-
 ## [362] - 2026-11-15: Agents are told what the telemetry store holds
 
 ### Changed
