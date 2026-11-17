@@ -29,7 +29,7 @@ path. A key no block declares is ignored, except in an agent's `scope` and in th
 
 | Key | What it sets |
 |---|---|
-| `extends`, `models` | the base config; the models file (roles, sampling, OpenRouter providers per model) |
+| `extends`, `models` | the base config; the models file (roles, sampling, OpenRouter providers per model, and `agent_roles`, the role a named agent's loop calls in place of `untrusted_agent`, as `models.deepseek-v4-pro-lead.yaml` gives the lead) |
 | `seed` | the run's seed: each CI wait of the forge is drawn from it |
 | `harness` | what runs each agent's session: `pi`, the pi coding agent, each agent at its own pace ([docs/pi-harness.md](pi-harness.md)). It is the default and the only value; any other is a `ConfigError` naming it |
 | `scenario` | the pack registering the scorer, verifier, live services and skills |
