@@ -374,11 +374,43 @@ def test_each_loop_may_make_its_agents_turn_budget_of_calls_sent_with_the_config
     loops = describe_loops(fast)
 
     assert (loops.calls["agent-main"], loops.calls["eval-agent"]) == (12, 8)
-    assert loops.overrides == {
+    assert loops.overrides["eval-agent"] == {
         "temperature": 1.0,
         "max_completion_tokens": 32768,
         "provider": {"order": ["together", "baseten", "deepseek"], "allow_fallbacks": False},
         "reasoning": {"effort": "none"},
+    }
+
+
+def test_a_lead_with_a_role_of_its_own_is_sent_with_that_roles_settings_and_its_reports_with_theirs() -> None:
+    config = load_run_config("configs/aurora-model-evaluation.control-note.deepseek-v4-pro-lead.yaml")
+
+    loops = describe_loops(config)
+
+    assert loops.overrides["agent-main"] == {
+        "temperature": 1.0,
+        "max_completion_tokens": 32768,
+        "reasoning": {"effort": "max"},
+    }
+    assert loops.overrides["eval-agent"] == {"temperature": 1.0, "max_completion_tokens": 32768}
+
+
+def test_a_loop_names_the_model_of_its_own_agents_role(config: RunConfig, tmp_path: Path) -> None:
+    lead = dataclasses.replace(config.models["untrusted_agent"], model="deepseek/deepseek-v4-pro")
+    models = {**config.models, "untrusted_lead": lead}
+    config = dataclasses.replace(config, models=models, agent_roles={"agent-main": "untrusted_lead"})
+
+    play(config, tmp_path)
+
+    named = {
+        agent: json.loads((tmp_path / agent / ".pi" / "agent" / "models.json").read_text())["providers"][
+            "gateway"
+        ]["models"][0]["id"]
+        for agent in ("agent-main", "eval-agent")
+    }
+    assert named == {
+        "agent-main": "deepseek/deepseek-v4-pro",
+        "eval-agent": config.models["untrusted_agent"].model,
     }
 
 
@@ -394,7 +426,7 @@ def test_a_loop_on_the_agents_own_upstream_is_sent_without_openrouters_provider_
 
     loops = describe_loops(config)
 
-    assert "provider" not in loops.overrides
+    assert "provider" not in loops.overrides["agent-main"]
 
 
 def test_each_sessions_end_is_recorded_with_its_reason(tmp_path: Path) -> None:

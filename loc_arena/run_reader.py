@@ -104,7 +104,7 @@ def issue_reader_secrets(config: RunConfig) -> dict[str, str]:
     # One model, and no fallback list (OpenRouter's `models`), which OpenRouter could answer from instead.
     allow = f'json(request.body).model == "{role.model}" && !has(json(request.body).models)'
     calls = {READER: settings.reader.model_calls}
-    loops = Loops(calls, overrides, caller=(READER, SecretStr(token)), allow=allow)
+    loops = Loops(calls, {READER: overrides}, caller=(READER, SecretStr(token)), allow=allow)
     # The record tags a reading's calls with the attack play: a gateway's record knows two plays.
     admitted = model_gateway.issue_gateway_secrets(
         settings,

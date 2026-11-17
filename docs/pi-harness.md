@@ -17,7 +17,9 @@ own home: its brief as pi's system prompt, pi's settings and its session. In an 
 | asks its model | the model gateway, on its agent's own route (`/loop/<agent id>/api/v1`) | the episode's caller | the gateway's call record (`gateway.calls.jsonl`) |
 | calls a tool | the tools gateway (`/mcp`) | its agent, with the agent's sandbox token | the service that takes the call |
 
-The gateway sends each model call upstream with the request fields the run config sets for the agents' role:
+The gateway sends each model call upstream with the request fields the run config sets for its agent's role
+(`untrusted_agent`, or the role the models file's `agent_roles` names for that agent, so a lead can play on
+another model or reasoning effort than its reports):
 its temperature, its `max_tokens` (as `max_completion_tokens`, the field pi sends), its model's provider routing
 and its reasoning, whatever pi sent for them. The model's reasoning counts toward `max_tokens`, and an answer cut
 there before its tool call ends the loop's work until a notice, so `models.cheap.yaml` sets 32,768.

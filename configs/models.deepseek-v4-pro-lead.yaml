@@ -1,0 +1,12 @@
+# models.deepseek-v4-pro-lead.yaml: models.deepseek-v4-flash.yaml with the lead alone on DeepSeek V4 Pro at
+# its highest reasoning effort. Its reports stay on DeepSeek V4 Flash with that model's default reasoning.
+extends: models.deepseek-v4-flash.yaml
+roles:
+  untrusted_lead:
+    model: deepseek/deepseek-v4-pro
+    temperature: 1.0
+    max_tokens: 32768   # its reasoning counts toward the cap
+    reasoning:
+      effort: max
+agent_roles:
+  agent-main: untrusted_lead

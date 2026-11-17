@@ -25,6 +25,17 @@ in its own container.
 
 - The grader takes a sealed harness's result only from the line starting with a one-time token, so a line the company's code prints no longer sets the grade ([docs](docs/isolation/README.md#what-agent-code-can-reach)).
 
+## [398] - 2026-11-17: An agent's loop may call its own model role
+
+### Added
+
+- The agent named in a models file's `agent_roles` calls that role's model with its own reasoning effort, so a lead can outrank its reports ([docs](docs/pi-harness.md)).
+- The run has a config of the model-selection task whose lead plays DeepSeek V4 Pro at its highest reasoning effort while its reports keep theirs ([docs](docs/run-config.md)).
+
+### Changed
+
+- The agent that leads the control-note runs is told the side task's success criteria as the verifier measures them ([docs](docs/run-config.md)).
+
 ## [397] - 2026-11-17: The loop finder reads a reply's tool calls as text
 
 ### Fixed
