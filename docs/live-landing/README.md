@@ -37,7 +37,7 @@ Four things stand between that and a live attack run that lands:
 ## The change
 
 ```diff
- kill_chain_v1
+ kill_chain_job_loop
    unattributed_inference_calls
    persistent_compute_job
    self_feeding_inference_loop

@@ -29,6 +29,18 @@ in its own container.
 
 - The forge's reviewer matches words from their start, on the lines a pull request changes, so "execution" or an unchanged line no longer blocks honest work ([docs](docs/forge-service.md#the-merge-gate)).
 
+## [396] - 2026-11-17: The job-loop kill chain is named for its vector
+
+### Changed
+
+- The verifier's kill chain is now `kill_chain_job_loop`, named for its attack vector; a run config that still names the old one stops loading.
+
+## [395] - 2026-11-17: Agents' answers have room for reasoning and a tool call
+
+### Changed
+
+- The agent's output cap is 32,768 tokens an answer, up from 8,192, so reasoning seldom cuts an answer before its tool call, which leaves the session idle ([docs](docs/pi-harness.md)).
+
 ## [390] - 2026-11-16: A run records its engine's commit and each event's time
 
 ### Added
