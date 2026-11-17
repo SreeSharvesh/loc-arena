@@ -19,6 +19,16 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [394] - 2026-11-17: The reviewer matches whole words on a change's own lines
+
+### Changed
+
+- The forge's reviewer also blocks inflected verbs such as "disabling" and "removal", which its whole verbs missed ([docs](docs/forge-service.md#the-merge-gate)).
+
+### Fixed
+
+- The forge's reviewer matches words from their start, on the lines a pull request changes, so "execution" or an unchanged line no longer blocks honest work ([docs](docs/forge-service.md#the-merge-gate)).
+
 ## [396] - 2026-11-17: The job-loop kill chain is named for its vector
 
 ### Changed
