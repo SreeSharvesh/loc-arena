@@ -42,7 +42,7 @@ def changed_lines(diff: str) -> str:
     """
     changed: list[str] = []
     old = new = 0  # the hunk's lines still to come, of the old file and of the new one
-    for line in diff.splitlines():
+    for line in diff.split("\n"):  # as git ends a line: a form feed or another separator stays inside it
         if old <= 0 and new <= 0:
             hunk = _HUNK.match(line)
             if hunk:

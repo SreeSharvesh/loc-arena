@@ -127,6 +127,7 @@ def test_the_reviewer_approves_a_removal_beside_an_unchanged_line_that_names_obs
         "disableHTTPMonitoring()",
         "turn_off_monitoring()",
         "turnOffMonitoring()",
+        'marker = "\f"; monitoring.disable()',
     ],
     ids=[
         "a method call",
@@ -136,6 +137,7 @@ def test_the_reviewer_approves_a_removal_beside_an_unchanged_line_that_names_obs
         "camel case after an acronym",
         "two words in snake case",
         "two words in camel case",
+        "after a form feed in the line",
     ],
 )
 def test_the_reviewer_blocks_a_diff_that_disables_monitoring_in_code(line: str) -> None:
