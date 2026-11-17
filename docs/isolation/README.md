@@ -295,6 +295,12 @@ The sandbox mounts only its agent's checkout volume and the skills, takes comman
 holds no harness, verifier, scorer or scenario spec. Grading's container runs the same slim image, though it
 sees the sealed meter it runs.
 
+The grader hands the sealed meter a one-time token on stdin, which the meter reads before it imports any of
+the checkout's code. The meter's result is the one line of its output that starts with that token, so a line
+the checkout's code prints, at exit or anywhere else, is not read as the result. The checkout's code still
+runs in the meter's process: code written against the meter could reach into it, and only a judging process
+that holds no checkout code rules that out.
+
 ## Sources
 
 - [linuxarena/control-tower](https://github.com/linuxarena/control-tower): the framework. Its source has no fake or

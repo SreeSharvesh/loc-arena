@@ -57,6 +57,7 @@ def run_agent_code(
     pythonpath: str,
     timeout_seconds: float,
     stack: StackSettings,
+    standard_input: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run ``python <arguments>`` over code the agents wrote and return the finished process.
 
@@ -64,14 +65,16 @@ def run_agent_code(
     which holds no harness and no scenarios: no network, no capabilities, the episode's memory, CPU and
     process limits, the host user's uid and gid, and only ``mount`` visible, at the same absolute path so
     ``pythonpath`` stays valid. Otherwise it runs in this process's interpreter with the provider key removed
-    from its environment. Its stdout and stderr go to temporary files and come back as their last
-    ``stack.agent_code_output_limit_bytes`` bytes. A timeout stops the container, so a hung process never
-    outlives its caller, and re-raises ``subprocess.TimeoutExpired``.
+    from its environment. ``standard_input``, when given, is all the process reads on its stdin. Its stdout
+    and stderr go to temporary files and come back as their last ``stack.agent_code_output_limit_bytes``
+    bytes. A timeout stops the container, so a hung process never outlives its caller, and re-raises
+    ``subprocess.TimeoutExpired``.
     """
     container_name = f"{CONTAINER_NAME_PREFIX}{uuid.uuid4().hex}"
     if stack.sandbox_agent_code:
         command = [
             "docker", "run", "--rm", "--pull", "never", "--network", "none", "--cap-drop", "ALL",
+            *(["--interactive"] if standard_input is not None else []),  # Docker passes no stdin without it
             "--memory", stack.episode_memory_limit,
             "--cpus", str(stack.episode_cpus),
             "--pids-limit", str(stack.episode_pids_limit),
@@ -92,6 +95,7 @@ def run_agent_code(
                 command,
                 cwd=directory,
                 env=environment,
+                input=None if standard_input is None else standard_input.encode(),
                 stdout=stdout,
                 stderr=stderr,
                 check=False,
