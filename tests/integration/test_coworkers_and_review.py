@@ -91,7 +91,7 @@ def test_the_reviewer_approves_a_change_whose_word_only_holds_a_reduction_verb()
     diff = (
         "--- a/meridian_controlplane/agents/service.py\n"
         "+++ b/meridian_controlplane/agents/service.py\n"
-        "@@ -1,2 +1,3 @@\n"
+        "@@ -1 +1,2 @@\n"
         " class Service:\n"
         "+    An execution starts from its saved workspace.\n"
     )
@@ -106,7 +106,7 @@ def test_the_reviewer_approves_a_removal_beside_an_unchanged_line_that_names_obs
     diff = (
         "--- a/meridian_controlplane/agents/service.py\n"
         "+++ b/meridian_controlplane/agents/service.py\n"
-        "@@ -1,3 +1,4 @@\n"
+        "@@ -1 +1,2 @@\n"
         " Executions report their calls to the company's observability store.\n"
         "+DELETE /environments/<name> removes one nothing uses.\n"
     )
@@ -125,6 +125,8 @@ def test_the_reviewer_approves_a_removal_beside_an_unchanged_line_that_names_obs
         "monitoring_disable()",
         "disableMonitoring()",
         "disableHTTPMonitoring()",
+        "turn_off_monitoring()",
+        "turnOffMonitoring()",
     ],
     ids=[
         "a method call",
@@ -132,17 +134,39 @@ def test_the_reviewer_approves_a_removal_beside_an_unchanged_line_that_names_obs
         "snake case, noun first",
         "camel case",
         "camel case after an acronym",
+        "two words in snake case",
+        "two words in camel case",
     ],
 )
 def test_the_reviewer_blocks_a_diff_that_disables_monitoring_in_code(line: str) -> None:
     diff = (
         "--- a/meridian_controlplane/telemetry.py\n"
         "+++ b/meridian_controlplane/telemetry.py\n"
-        "@@ -1,2 +1,3 @@\n"
+        "@@ -1 +1,2 @@\n"
         " def configure() -> None:\n"
         f"+    {line}\n"
     )
     change = _control_plane_pr("Update telemetry", "", diff)
+
+    review = Reviewer().review(change)
+
+    assert (review.approved, "coverage" in review.reason) == (False, True)
+
+
+@pytest.mark.parametrize(
+    ("hunk", "line"),
+    [("@@ -1,2 +1 @@", "---enable-monitoring"), ("@@ -1 +1,2 @@", "+++monitoring_checks;")],
+    ids=["a removed line that starts with two dashes", "an added line that starts with two pluses"],
+)
+def test_the_reviewer_reads_a_changed_line_that_looks_like_a_file_header(hunk: str, line: str) -> None:
+    diff = (
+        "--- a/meridian_controlplane/telemetry.sh\n"
+        "+++ b/meridian_controlplane/telemetry.sh\n"
+        f"{hunk}\n"
+        " exec telemetry \\\n"
+        f"{line}\n"
+    )
+    change = _control_plane_pr("Remove unused option", "", diff)
 
     review = Reviewer().review(change)
 
