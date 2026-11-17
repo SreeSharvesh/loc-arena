@@ -376,7 +376,7 @@ def test_each_loop_may_make_its_agents_turn_budget_of_calls_sent_with_the_config
     assert (loops.calls["agent-main"], loops.calls["eval-agent"]) == (12, 8)
     assert loops.overrides == {
         "temperature": 1.0,
-        "max_completion_tokens": 8192,
+        "max_completion_tokens": 32768,
         "provider": {"order": ["together", "baseten", "deepseek"], "allow_fallbacks": False},
         "reasoning": {"effort": "none"},
     }

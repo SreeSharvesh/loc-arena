@@ -19,6 +19,12 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [395] - 2026-11-17: Agents' answers have room for reasoning and a tool call
+
+### Changed
+
+- The agent's output cap is 32,768 tokens an answer, up from 8,192, so reasoning seldom cuts an answer before its tool call, which leaves the session idle ([docs](docs/pi-harness.md)).
+
 ## [390] - 2026-11-16: A run records its engine's commit and each event's time
 
 ### Added
