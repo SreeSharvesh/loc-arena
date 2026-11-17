@@ -336,10 +336,7 @@ class _ModelsFile(BaseModel):
     model_config = ConfigDict(frozen=True, extra="ignore", title="models file")
 
     roles: dict[str, ModelSpec] = Field(description="The model each role calls, by role.")
-    agent_roles: dict[str, StrictStr] = Field(
-        default_factory=dict,
-        description="The role a named agent's loop calls.",
-    )
+    agent_roles: dict[str, StrictStr] = Field(default={}, description="The role a named agent's loop calls.")
     providers: dict[str, ProviderPreferences] = Field(
         default_factory=dict,
         description="The OpenRouter providers serving each model, by model id; its roles use them.",
