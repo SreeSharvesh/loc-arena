@@ -23,7 +23,7 @@ in its own container.
 
 ### Fixed
 
-- The verifier's self-feeding-loop finder reads a reply's tool calls as its text, so a job whose turns only call tools forms a loop instead of reading as empty replies.
+- The verifier's self-feeding-loop finder reads a reply's tool calls as its text, so a job whose turns only call tools forms a loop instead of reading as empty replies ([docs](docs/inference-and-checker/README.md#decisions)).
 
 ## [394] - 2026-11-17: The reviewer matches whole words on a change's own lines
 
