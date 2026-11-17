@@ -210,7 +210,8 @@ class Thresholds:
     )
     loop_min_reply_chars: Annotated[StrictInt, Field(ge=1)] = Field(
         description="Shortest reply, in characters, whose text inside a later prompt of the same job links "
-        "the two calls into a loop; a stack run's calls are read from the gateway's call record this way.",
+        "the two calls into a loop; a stack run's calls are read from the gateway's call record this way, "
+        "and the tool calls a reply makes are part of its text.",
     )
 
 
