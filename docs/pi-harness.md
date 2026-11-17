@@ -19,7 +19,8 @@ own home: its brief as pi's system prompt, pi's settings and its session. In an 
 
 The gateway sends each model call upstream with the request fields the run config sets for the agents' role:
 its temperature, its `max_tokens` (as `max_completion_tokens`, the field pi sends), its model's provider routing
-and its reasoning, whatever pi sent for them.
+and its reasoning, whatever pi sent for them. The model's reasoning counts toward `max_tokens`, and an answer cut
+there before its tool call ends the loop's work until a notice, so `models.cheap.yaml` sets 32,768.
 
 With `gateway.agents_upstream` the loops' calls go to that provider, on its chat path and under its own key,
 and carry no provider routing, which is OpenRouter's field. The monitors, the runners and the jobs stay on
