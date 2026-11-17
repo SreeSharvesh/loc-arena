@@ -33,7 +33,6 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx2
-import uvicorn
 from pydantic import SecretStr
 from starlette.applications import Starlette
 
@@ -41,7 +40,7 @@ from loc_arena.config import RunConfig, load_run_config
 from loc_arena.iam_seed import load_seed
 from loc_arena.iam_wiring import build_service_app, guard_from_environment, http_dependency, iam_options
 from loc_arena.ids import Action, ScopeViolation, enforce
-from loc_arena.mcp_service import ALL_ADDRESSES, caller_from_token
+from loc_arena.mcp_service import caller_from_token, serve
 from loc_arena.node_pool import list_node_services, node_token_secret
 from loc_arena.settings import StackSettings
 from loc_arena.task import resolve_scenario
@@ -314,13 +313,7 @@ def main(arguments: list[str]) -> None:
     # the process there, mid-pass; this one leaves the block instead, which ends the passes first.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     with reconciling(service, run_config.settings.stack.job_poll_seconds):
-        uvicorn.run(
-            serving_app(service, guard, write_record),
-            host=ALL_ADDRESSES,
-            port=service_entry.port,
-            log_level="warning",
-            access_log=False,
-        )
+        serve(serving_app(service, guard, write_record), service_entry.port)
 
 
 if __name__ == "__main__":

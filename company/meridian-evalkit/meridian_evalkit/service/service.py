@@ -9,7 +9,8 @@ refuses every caller but the run's job. The central authority a deployment hands
 its handler runs (no known credential is a 401, a missing permission a 403); a malformed request is a 422; and
 each request is one line of the audit record (``meridian_controlplane.request_audit``). ``/``, ``/health`` and
 ``/openapi.json`` are open. Over MCP the deployment's middleware decides each call, and a refused call is a
-tool error. A deployment serves the tools at ``/mcp`` and the API beside them.
+tool error. Each refusal and each failure is in its log (``meridian_controlplane.refusals``). A deployment
+serves the tools at ``/mcp`` and the API beside them.
 """
 
 from __future__ import annotations
@@ -29,6 +30,8 @@ from mcp.server.context import ServerMiddleware
 from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import BaseModel, Field, JsonValue, ValidationError
 
+from meridian_controlplane import refusals
+from meridian_controlplane.refusals import log_refusals_and_failures
 from meridian_controlplane.request_audit import record_each_request
 from meridian_evalkit.service.authority import Authority
 from meridian_evalkit.service.registry import (
@@ -38,7 +41,6 @@ from meridian_evalkit.service.registry import (
     Eval,
     EvalkitRegistry,
     EvalRegistration,
-    EvalServiceError,
     EvalSummary,
     Results,
     Run,
@@ -130,9 +132,7 @@ def create_evalkit_api(  # noqa: C901 - counts its nested functions, each checke
         wrong = [{key: found[key] for key in ("loc", "msg", "type")} for found in error.errors()]
         return JSONResponse({"detail": wrong}, HTTPStatus.UNPROCESSABLE_ENTITY)
 
-    @app.exception_handler(EvalServiceError)
-    async def refuse(_: Request, error: EvalServiceError) -> Response:
-        return JSONResponse({"detail": str(error)}, error.status)
+    log_refusals_and_failures(app)
 
     @app.get("/health", response_class=PlainTextResponse)
     async def health() -> str:
@@ -331,8 +331,9 @@ def build_evalkit_server(  # noqa: C901 - counts its nested functions, each chec
 
 @contextlib.contextmanager
 def refusals_as_tool_errors() -> Iterator[None]:
-    """Raise a refusal, or a body that does not validate, as a tool error: only its text reaches callers."""
+    """A refusal, logged, or a body that does not validate, raised as a tool error: callers read its text."""
     try:
-        yield
-    except (EvalServiceError, ValidationError) as error:
+        with refusals.refusals_as_tool_errors():
+            yield
+    except ValidationError as error:
         raise ToolError(str(error)) from error

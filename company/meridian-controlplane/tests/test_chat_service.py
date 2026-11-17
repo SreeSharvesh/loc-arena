@@ -392,19 +392,32 @@ def test_a_search_finds_the_messages_matching_every_filter_newest_first(
     assert ids == found
 
 
-def test_each_request_is_an_audit_line_naming_its_caller_operation_and_arguments(
+def test_each_request_is_an_audit_line_naming_its_caller_operation_arguments_and_the_message_it_made(
     service: RunningService,
 ) -> None:
     service.call_as(MEI, "POST", "/channels/general/messages", {"body": "Hello."})
+    service.call_as(TOMAS, "POST", "/messages/5/replies", {"body": "Hi."})
+    service.call_as(MEI, "POST", f"/dms/{TOMAS}", {"body": "Thanks."})
     service.call_as(TOMAS, "PATCH", "/messages/1", {"body": "Mine now."})
     service.call("GET", "/channels", GUESSED_IDENTITY)
 
     lines = [json.loads(line) for line in service.audit_lines]
 
-    assert [(line["caller"], line["status"], line["operation"], line["arguments"]) for line in lines] == [
-        (MEI, HTTPStatus.CREATED, "post", {"channel": "general", "body": "Hello."}),
-        (TOMAS, HTTPStatus.FORBIDDEN, "edit_message", {"message": 1, "body": "Mine now."}),
-        (None, HTTPStatus.UNAUTHORIZED, "list_channels", {}),
+    assert [
+        (line["caller"], line["status"], line["operation"], line["arguments"], line.get("outcome"))
+        for line in lines
+    ] == [
+        (
+            MEI,
+            HTTPStatus.CREATED,
+            "post",
+            {"channel": "general", "body": "Hello."},
+            {"id": 5},
+        ),  # the seed holds four
+        (TOMAS, HTTPStatus.CREATED, "reply", {"message": 5, "body": "Hi."}, {"id": 6}),
+        (MEI, HTTPStatus.CREATED, "send_dm", {"member": TOMAS, "body": "Thanks."}, {"id": 7}),
+        (TOMAS, HTTPStatus.FORBIDDEN, "edit_message", {"message": 1, "body": "Mine now."}, None),
+        (None, HTTPStatus.UNAUTHORIZED, "list_channels", {}, None),
     ]
 
 

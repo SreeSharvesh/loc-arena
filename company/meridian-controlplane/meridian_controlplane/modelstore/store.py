@@ -21,18 +21,14 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, PositiveInt
 
 from meridian_common.weights import ShardHeader, encode_shard
+from meridian_controlplane.refusals import RefusalError
 
 NAME_PATTERN = r"^[A-Za-z0-9._-]{1,128}$"  # a model's name, and a shard's file name
 KEY_BYTES = 16
 
 
-class ModelStoreError(Exception):
+class ModelStoreError(RefusalError):
     """A request the store refuses, with the HTTP status that says why."""
-
-    def __init__(self, status: HTTPStatus, message: str) -> None:
-        """Refuse with ``status`` and a message the caller reads."""
-        super().__init__(message)
-        self.status = status
 
 
 class ShardEntry(BaseModel):

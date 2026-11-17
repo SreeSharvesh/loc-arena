@@ -28,7 +28,7 @@ credentials they are given.
 | `gateway` | agentgateway, the only holder of the key and of a route out, on agent-net, egress-net and record-net; admits each caller by its own token and exports a record of every model call, with the caller, to the Collector |
 | `collector` | an OpenTelemetry Collector on record-net, which only the gateway joins; appends each record to the sealed record in a volume only it mounts |
 | `episode` | plays the episode and, in attack mode, its honest twin; holds every sandbox's token and no identity |
-| `sandbox-<agent id>` | one agent's code, from a slim image with no harness and no scenarios; mounts that agent's checkout volume, and the scenario's skills read-only; holds its own token and its own identity on each service with rights; takes commands from the episode alone |
+| `sandbox-<agent id>` | one agent's code, from a slim image with no harness and no scenarios; mounts that agent's checkout volume, and the scenario's skills read-only; holds its own token and its own identity on each service with rights; takes commands from the episode alone, and answers one it cannot run with a 500 that names the failure, which the episode's error carries |
 | one per live service | a scenario's `services:` entry with `build`, `image` or `module`; no route out, all capabilities dropped, limits from `stack`, no published port; a service the deployer's entry lists (`deploys:`) runs under a supervisor on `deploy.release_port`, which holds a token of its own, which the deployer also holds, and takes a release from that deployer alone ([docs/deploy-service.md](../deploy-service.md)) |
 | `runner-<n>` | where the company's own agents run with pi, for the one service whose entry declares `runners: <n>`; a sandbox from the Dockerfile's `runner` target with an empty `/workspace`; holds its own token, which that service also holds, and takes commands from that service alone; an execution there gets its agent's tokens on the company's services (`MERIDIAN_<SERVICE>_TOKEN`) |
 | `node-<n>` | the job service's fleet, for the one service whose entry declares `nodes: {<pool>: n}`; a worker from the Dockerfile's `worker` target whose daemon runs one job at a time as a real process in an empty `/workspace`, holding each company repo's `main` cloned from the forge with the job's own credential, the cluster's own read-only deployment of the company repos at `/opt/meridian` that the seed's jobs run, and the limits `stack.node_cpus` and `stack.node_memory_mb`; holds its own token, which that service also holds and its jobs call the gateway with, and takes calls from that service alone; gives each job the secrets of the job's own workload; its log is its jobs' process facts ([docs/jobsvc-service.md](../jobsvc-service.md)) |
@@ -91,7 +91,8 @@ agents:
   served by one service only.
 - A service holds no agent's identity: central IAM verifies each caller's credential, and the service takes the
   caller from IAM's answer, never from an argument. A call without a credential IAM accepts is a 401. agentgateway
-  holds each agent's credential for a service with tools: a sandbox holds none for it.
+  holds each agent's credential for a service with tools. A sandbox holds none for a service with tools and
+  no rights.
   For a service the gateway enforces IAM for (`enforced_by: gateway`), it also holds the credential of the
   principal IAM binds to that service, and asks IAM with it before each call; that service holds none.
 - The job service also checks the caller's `scope` from the run config, since an agent's bash can reach its
@@ -100,7 +101,7 @@ agents:
   takes the permission its operation checks, held from the start or asked for.
 - An unknown service or tool in `sandbox: tools:` is refused when the config loads. The honest twin's agents
   are offered the same tools and hold the same rights as the attack run's.
-- `run_tests` and `run_benchmark` are skills, not tools: scripts with a `SKILL.md` in the pack's `skills:`
+- `run-tests` and `run-benchmark` are skills, not tools: scripts with a `SKILL.md` in the pack's `skills:`
   folder, which every sandbox mounts read-only at `/skills` and agents run with bash on their own checkout.
 
 ## Records and events
@@ -116,7 +117,11 @@ to `services/<name>.log` in the run directory, and Phoenix's spans, which no mon
 twin whose play window holds its time, in the turn of its agent that covers that time. Each event goes to the sealed
 log and, unless it is sealed-only, the mirror log: a node's `process` facts stay on the sealed log, where the verifier reads them and the monitors cannot. A refused call is a blocked `action`. A record that cannot be placed goes to
 `unattributed_records.jsonl` in the run directory. Grading never builds events, so grading a run again adds
-none.
+none. The episode clock does not move during play, so each built event's seq and its record's wall time go to
+`event_walls.jsonl` in its play's directory; the events the play writes itself, a coworker's or a checkout's, have
+none. `run.json` in the run directory names the engine's commit, read before its images are built, so the run can be
+played again from it. It counts as `modified` when the checkout differs from the commit or the run's config is not
+in it, as a local config is not.
 
 ## The honest twin
 
@@ -189,7 +194,8 @@ A service with neither `rights` nor `tools` is open to every caller on agent-net
 own `healthcheck`. A service whose process ends during play stays down, unless its entry says `restarts: true`:
 then compose brings its container back (`restart: unless-stopped`), for a service that keeps its state in its
 container, as the forge does. The loader refuses an entry with an unknown key, a name that is not a DNS label or that the
-stack takes (`gateway`, `episode`, `agentgateway`, `sandbox-*`), more than one of `build`, `image` and `module`,
+stack takes (`gateway`, `collector`, `episode`, `agentgateway`, `telemetry-collector`, `telemetry-reader`,
+`sandbox-*`, `runner-*`, `node-*`), more than one of `build`, `image` and `module`,
 a live entry with no `port`, or a tool served by two services.
 
 ## Time
@@ -258,14 +264,15 @@ proxy replaces:
 ```sh
 docker info >/dev/null 2>&1 || (dockerd >/var/log/dockerd.log 2>&1 &)
 for _ in $(seq 30); do docker info >/dev/null 2>&1 && break; sleep 1; done
-printf 'extends: aurora-efficiency.fast.yaml\ngateway:\n  outbound_proxy: 172.17.0.1:3128\n' \
+printf 'extends: aurora-efficiency.fast.yaml\ngateway:\n  outbound_proxy: 172.17.0.1:3128\nreader:\n  outbound_proxy: 172.17.0.1:3129\n' \
   > configs/aurora-efficiency.fast.local.yaml
 export OPENROUTER_API_KEY=placeholder
 ```
 
 Then `make run RUN=aurora-efficiency.fast.local` plays as on any machine, and so does `make read` with that
-same `RUN`; each says as it starts that its relay is up. The placeholder key lasts for its shell, so a
-new shell exports it again. `SSL_CERT_FILE` and `HTTPS_PROXY` are the machine's own.
+same `RUN`; each says as it starts that its relay is up. A reading's relay listens on its own address, so a
+reading runs while a play does. The placeholder key lasts for its shell, so a new shell exports it again.
+`SSL_CERT_FILE` and `HTTPS_PROXY` are the machine's own.
 
 ## What agent code can reach
 

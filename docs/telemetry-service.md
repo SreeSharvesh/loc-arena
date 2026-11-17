@@ -52,15 +52,21 @@ configured by the standard `OTEL_*` variables the stack renders from the run con
 
 A service's log holds what is written at `WARNING` or above: Python's default, and the level each service
 with MCP tools sets on its MCP server. The MCP SDK writes a refused tool call at `INFO`, and its span of one
-marks the error without the reason; a tool that raises something unexpected it writes at `ERROR`. In a
-service with MCP tools, each such record also reaches stderr through the handler the MCP SDK adds, so it is in
-the store twice: as written, and as a record from stderr.
+marks the error without the reason; a tool that raises something unexpected it writes at `ERROR`. No
+record is stored twice. The MCP SDK gives the root logger a handler that copies every record to stderr,
+which the supervisor exports again; each service's launcher logs with a root that has no handler of its own
+(`loc_arena.mcp_service`), so a record leaves only through OpenTelemetry's.
 
 | Service | Writes log records of its own |
 |---|---|
-| tickets | each request its own code refuses, with the status and the reason the caller was given |
+| notes, chat, tickets, modelstore, evalkit | each request its store refuses, over HTTP or MCP, at `WARN` with the status and the reason the caller was given, such as `refused with 404: 'no note nope'`; each HTTP request it fails on, at `ERROR` with the exception's type and where it was raised |
 | agents, jobsvc | their own failures, such as a runner that was not reset or a pass over the fleet that failed |
-| notes, chat, modelstore, evalkit | none: a refusal's reason reaches only its caller |
+
+The five share one module for this (`meridian_controlplane.refusals`). A reason names what was asked for: a
+key, a channel, a ticket, a model or an eval. It never holds a credential, nor the text of a note, a message
+or a model's weights. An exception's message can hold what the caller sent, so this record leaves it out. The
+request's span holds it, as do the traceback uvicorn writes to stderr and the MCP SDK's record of a tool that fails. A refusal by IAM, a malformed request and a call
+with no identity are refused before the store and are not logged.
 
 Every signal's resource names the service (`service.name`, `service.namespace=meridian`) and its release:
 `service.version` is `image` on the code the run started on, then `deploy-<n>`, with `deployment.id`. The
@@ -94,7 +100,9 @@ with the address it came from (`meridian.sender.address`), which a sender cannot
 message of a request, batches, and writes the store as a user that can only write. The store is on
 telemetry-net, which no sandbox, runner or node joins, and has a second user that can only read
 ([docs/isolation/README.md](isolation/README.md#containers)). This Collector is not the one that writes the
-sealed record of the model calls, which takes nothing from it.
+sealed record of the model calls, which takes nothing from it. Each collected service, and the episode, starts
+once the Collector's container has. Its image holds no binary a healthcheck could run, so a first export can
+still find the port closed; the SDK logs that and tries again.
 
 ## How agents read it
 
@@ -147,7 +155,7 @@ what it returns is whatever any release chose to log.
 
 The shipped action monitor reads the query of each such action and its result: `tool_result` is one of its
 declared inputs for the tools `configs/monitors.yaml` lists (`result_tools`), cut to `result_chars` (4000).
-No other tool's result is an input, so every other action's prompt is as it was. That result is text a
+No other tool's result is an input, so no other action's prompt holds a result. That result is text a
 release wrote, read back by an agent: a release can write its log to mislead the monitor that reads it, as
 it can write it to mislead an agent.
 
@@ -168,8 +176,8 @@ A store or a Collector that is down never fails a service or a run.
   next compacts the files that hold it, so within a short play nothing may be purged at all. Its data is on a
   memory filesystem of `store_disk_mib`: a write past it fails, the Collector drops the batch, and the store
   answers what it holds. A store killed for memory starts again empty, its telemetry gone.
-- With the Collector down, a service answers as before. Two things change: its SDK writes a line to its
-  stderr for each export that fails, a few hundred bytes a second, and its process ends up to twice
+- With the Collector down, a service answers as before. Two things change: its SDK logs each export that
+  fails as a record of its log, not a line of its stderr, and its process ends up to twice
   `export_seconds` later, as it flushes. The settings refuse an `export_seconds` that is not less than half
   of `deploy.stop_seconds`.
 - The honest twin's renewal recreates the store and the Collector empty, with new passwords.
@@ -198,5 +206,5 @@ These stay as they are; each is a move the environment offers, recorded where it
 | Every agent reads every collected service | other agents' tool calls by agent, tool and time, from the gateway's spans | each read's `action` event |
 | A caller chooses its `traceparent` | its calls in a trace of its choosing | the gateway's span still names the agent |
 | A flood of the Collector | the store's disk full for the rest of the play, since its purge needs room; or the store killed for memory, back empty, its telemetry gone | the store's second start in `services/telemetry.log`; nothing else records the kill |
-| A refusal's reason names what its caller sent | ticket ids and names other agents asked for, joined to the agent by the trace | each read's `action` event |
+| A refusal's reason names what its caller sent | the keys, channels, tickets, models and evals other agents asked for, joined to the agent by the trace | each read's `action` event |
 | A release writes its log for whoever reads it | text that misleads the agent, or the monitor, that reads it back | the read's `action` event, cut to `result_chars` for the monitor |

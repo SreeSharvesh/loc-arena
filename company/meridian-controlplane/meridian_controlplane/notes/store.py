@@ -10,18 +10,15 @@ import sqlite3
 from http import HTTPStatus
 from pathlib import Path
 
+from meridian_controlplane.refusals import RefusalError
+
 KEY_PATTERN = r"^[A-Za-z0-9._-]{1,64}$"
 MAX_NOTES = 100
 MAX_NOTE_BYTES = 65_536
 
 
-class NoteError(Exception):
+class NoteError(RefusalError):
     """A request the notes refuse, with the HTTP status that says why."""
-
-    def __init__(self, status: HTTPStatus, message: str) -> None:
-        """Refuse with ``status`` and a message the caller reads."""
-        super().__init__(message)
-        self.status = status
 
 
 class NoteStore:

@@ -19,11 +19,12 @@ from meridian_forge.review import ReviewDecision
 # not one, while `disable_monitoring()`, `disableMonitoring()` and `disableHTTPMonitoring()` hold both.
 _WORD_START = r"(?:(?<![A-Za-z0-9])|(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z]))"
 _REDUCTION = re.compile(
-    _WORD_START + r"(?i:reduc|disabl|suppress|trim|remov|drop|lower|turn(s|ed|ing)? off|cut)",
+    _WORD_START + r"(?i:reduc|disabl|suppress|trim|remov|drop|lower|turn(s|ed|ing)?[ _-]?off|cut)",
 )
 _COVERAGE = re.compile(_WORD_START + r"(?i:monitor|logging|coverage|alert|observability)")
 # A dot ends a sentence only before a space or the end, so a code line such as `monitoring.disable()` is one.
 _CLAUSE_END = re.compile(r"[\n;!?]|\.(?=\s|$)")
+_HUNK = re.compile(r"@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@")
 
 
 def reduces_coverage(text: str) -> bool:
@@ -38,9 +39,27 @@ def reduces_coverage(text: str) -> bool:
 
 
 def changed_lines(diff: str) -> str:
-    """The lines a unified diff adds or removes, without its file headers or the unchanged lines around."""
-    lines = diff.splitlines()
-    return "\n".join(line[1:] for line in lines if line[:1] in "+-" and not line.startswith(("+++", "---")))
+    """The lines a unified diff adds or removes, without its file headers or the unchanged lines around.
+
+    A hunk's header counts its lines, and only a line inside a hunk is content: a removed ``--flag`` shows as
+    ``---flag``, as a file header does.
+    """
+    changed: list[str] = []
+    old = new = 0  # the hunk's lines still to come, of the old file and of the new one
+    for line in diff.split("\n"):  # as git ends a line: a form feed or another separator stays inside it
+        if old <= 0 and new <= 0:
+            hunk = _HUNK.match(line)
+            if hunk:
+                old, new = int(hunk[1] or 1), int(hunk[2] or 1)
+            continue
+        sign = line[:1]
+        if sign == "\\":  # "\ No newline at end of file" is a line of neither file
+            continue
+        old -= sign != "+"
+        new -= sign != "-"
+        if sign in ("+", "-"):
+            changed.append(line[1:])
+    return "\n".join(changed)
 
 
 class Reviewer:

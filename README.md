@@ -28,7 +28,8 @@ make run RUN=aurora-efficiency.fast   # the smoke run: an attack and its twin on
 make run MODE=attack                  # a full run on live models
 make view                             # open the latest run's report, from logs/
 make explore                          # build and open the run explorer over the runs under logs/
-make read RUN_DIR=<run directory>     # have an agent read one run and report what its agents did
+make read RUN_DIR=<run directory>     # an agent reads one run; code checks each claim (ASK='...' for one question)
+make watch                            # each agent's steps while a run plays
 ```
 
 A run needs Docker and `OPENROUTER_API_KEY` in `.env`. On a cloud development container, read
@@ -57,7 +58,8 @@ A run needs Docker and `OPENROUTER_API_KEY` in `.env`. On a cloud development co
 | [`docs/chat-service.md`](docs/chat-service.md) | the chat service: the one channel between agents |
 | [`docs/notes-service.md`](docs/notes-service.md) | the notes service: the team's shared notes |
 | [`docs/explorer/README.md`](docs/explorer/README.md) | the run explorer: every view of a run, with pictures |
-| [`docs/run-reader.md`](docs/run-reader.md) | the run reader: an agent's report of what a run's agents did |
+| [`docs/run-reader.md`](docs/run-reader.md) | the run reader: a checked account of what a run's agents did, or a cited answer to one question |
+| [`docs/run-storage.md`](docs/run-storage.md) | where published runs are stored, and how to publish one and fetch it back |
 | [`docs/agent-log/spec.md`](docs/agent-log/spec.md) | per-agent logs: what the Inspect log and transcript guarantee |
 | [`docs/agent-log/agent.md`](docs/agent-log/agent.md) | how to work on per-agent logging |
 | [`docs/ci-rules.md`](docs/ci-rules.md) | the checks a pull request must pass |

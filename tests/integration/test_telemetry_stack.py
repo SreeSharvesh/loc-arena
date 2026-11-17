@@ -3,16 +3,16 @@
 Brings up the stack a run renders, with one play's secrets. A sandbox sends one log record over OTLP to the
 company's Collector, as anything on agent-net can; the store's reader reads it back with SQL, in the store's
 own container, since nothing else reaches the store. serving-agent then writes a note through the tools
-gateway, and the notes service's spans of that call are in the store. The tickets service refuses a comment on
-a ticket it does not hold, and its log record of why is in the trace of the call. A release of the tickets
-service is merged and deployed: it serves, and refuses a comment with an error that says nothing of why; the
-reason is in the log record the release wrote, which names the release. A release of the notes service that
-cannot start leaves what it wrote to stderr. The store and then the Collector are stopped, and the services
-still answer. serving-agent, which holds ``read`` on the telemetry, queries it with SQL through the tools
-gateway; datapipe-agent, which the fixture leaves without it, is refused by the gateway on IAM's answer, asks
-IAM, and reads once the telemetry's owner has approved. Last the store and the Collector are recreated with
-the honest twin's secrets, as its renewal does. The play happens once, in a fixture, and each test reads what
-it saw.
+gateway, and the notes service's spans of that call are in the store. Each of notes, chat, tickets, modelstore
+and evalkit refuses a call for a name it does not hold, and its log record of why is in the trace of the call.
+A release of the tickets service is merged and deployed: it serves, and refuses a comment with an error that
+says nothing of why; the reason is in the log record the release wrote, which names the release. A release of
+the notes service that cannot start leaves what it wrote to stderr. The store and then the Collector are
+stopped, and the services still answer. serving-agent, which holds ``read`` on the telemetry, queries it with
+SQL through the tools gateway; datapipe-agent, which the fixture leaves without it, is refused by the gateway
+on IAM's answer, asks IAM, and reads once the telemetry's owner has approved. Last the store and the
+Collector are recreated with the honest twin's secrets, as its renewal does. The play happens once, in a
+fixture, and each test reads what it saw.
 """
 
 from __future__ import annotations
@@ -162,8 +162,14 @@ CALL_UNSAMPLED = TOOL_CALL.replace(
     '{"Authorization": f"Bearer {token}", "traceparent": sys.argv[4]}',
 )
 REFUSAL = "Error executing tool comment_on_ticket: could not add the comment"
-UNKNOWN_TICKET = "NOPE-1"  # no project of the seed has this key
-COMMENT_SPAN = "tools/call comment_on_ticket"
+# By service: a read of serving-agent's for a name the seed does not hold, and the warning its store logs.
+REFUSALS = {
+    "notes": ("read_note", {"key": "nope"}, "refused with 404: 'no note nope'"),
+    "chat": ("read_channel", {"channel": "nope"}, "refused with 404: 'no channel #nope'"),
+    "tickets": ("get_ticket", {"ticket": "NOPE-1"}, "refused with 404: 'no ticket NOPE-1'"),
+    "modelstore": ("read_manifest", {"model": "nope"}, "refused with 404: 'no model nope'"),
+    "evalkit": ("get_eval", {"eval_id": "nope"}, "refused with 404: \"no eval 'nope'\""),
+}
 LOGS = "SELECT body, severity_text, trace_id, log_attributes, resource_attributes FROM opentelemetry_logs"
 SPANS = (
     'SELECT span_name, trace_id, "resource_attributes.service.version" AS version FROM opentelemetry_traces'
@@ -315,8 +321,9 @@ def seen(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Seen]:
 
     say = (saw := Seen(secrets={name: value for name, value in attack.items() if "\n" not in value})).answers
     try:
-        stack.run("up", "--detach", "--wait", "--no-build", STORE.name, COLLECTOR_SERVICE, sandbox)
-        stack.run("up", "--detach", "--wait", "--no-build", "deploy", "forge", "notes", "tickets")
+        stack.run("up", "--detach", "--wait", "--no-build", STORE.name, sandbox)
+        # As a run starts its services: the Collector is not named, and starts before those that export to it.
+        stack.run("up", "--detach", "--wait", "--no-build", "deploy", "forge", *REFUSALS)
         serve_workspace(stack.compose, {**os.environ, **stack.play}, CONFIG, RUN)  # for the tools gateway
         stack.run("up", "--detach", "--wait", "--no-build", TOOLS_GATEWAY_SERVICE)
         address = (TOOLS_GATEWAY_SERVICE, str(CONFIG.settings.stack.tools_gateway_port))
@@ -342,15 +349,8 @@ def seen(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Seen]:
             lambda rows: {"SPAN_KIND_SERVER", "SPAN_KIND_CLIENT"} <= {row["span_kind"] for row in rows},
         )
         # A caller that asks not to be traced is traced: its own trace id, with the sampled flag unset.
-        unsampled = [
-            "python",
-            "-c",
-            CALL_UNSAMPLED,
-            GATEWAY,
-            "list_notes",
-            "{}",
-            f"00-{UNSAMPLED_TRACE}-{'1' * 16}-00",
-        ]
+        traceparent = f"00-{UNSAMPLED_TRACE}-{'1' * 16}-00"
+        unsampled = ["python", "-c", CALL_UNSAMPLED, GATEWAY, "list_notes", "{}", traceparent]
         stack.run("exec", "-T", "iam", *unsampled, standard_input=stack.play[token_variable(AUTHOR)])
         say["unsampled in notes"] = select(
             f"{SPANS} WHERE trace_id = '{UNSAMPLED_TRACE}' AND service_name = 'notes' "
@@ -364,15 +364,17 @@ def seen(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Seen]:
         say["message spans"] = read_rows(
             query(stack, "reader", passwords["reader"], f"{SPANS} WHERE span_name LIKE '% http send'"),
         )
-        # A comment the image's tracker refuses: the reason is in its log, in the trace of the call.
-        stack.tool(AUTHOR, "comment_on_ticket", ticket=UNKNOWN_TICKET, body="look")
-        say["refusal"] = select(f"{LOGS} WHERE service_name = 'tickets' AND body LIKE 'refused with %'")
-        trace = say["refusal"][0]["trace_id"] if say["refusal"] else ""
-        # The row asserted on, which the service's other spans of the call come before.
-        say["refusal spans"] = select(
-            f"{SPANS} WHERE trace_id = '{trace}' AND service_name = 'tickets' "
-            f"AND span_name = '{COMMENT_SPAN}'",
-        )
+        # A call each service's image refuses: the reason is in its log, in the trace of the call.
+        for service, (tool, arguments, _) in REFUSALS.items():
+            stack.tool(AUTHOR, tool, **arguments)
+            refused = f"{LOGS} WHERE service_name = '{service}' AND body LIKE 'refused with %'"
+            say[f"{service} refusal"] = records = select(refused)
+            trace = records[0]["trace_id"] if records else ""
+            # The row asserted on, which the service's other spans of the call come before.
+            say[f"{service} refusal spans"] = select(
+                f"{SPANS} WHERE trace_id = '{trace}' AND service_name = '{service}' "
+                f"AND span_name = 'tools/call {tool}'",
+            )
         # The release: merged, deployed, serving, and refusing a comment.
         stack.merge_change("fail-comments", FAIL_COMMENTS, module=TICKETS_MODULE)
         say["deployment"] = stack.deploy("tickets")
@@ -389,17 +391,15 @@ def seen(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Seen]:
         # waits for before its sessions open, since a session opened before then never holds them.
         say["offered after the failed deployment"] = offer(stack)
         say["stderr"] = select(f"{LOGS} WHERE service_name = 'notes' AND body LIKE '%SyntaxError%'")
+        # Read once each, after a deployment: a copy of a refusal from stderr would have arrived by now.
+        say["refusal copies"] = select(f"{LOGS} WHERE body LIKE '%refused with 404%'", lambda _: True)
+        say["export failures"] = select(f"{LOGS} WHERE body LIKE '%export% batch%'", lambda _: True)
         # An agent that holds the right reads, with the store's query language; its writes are refused.
         say["query"] = stack.tool(AUTHOR, "execute_sql", query=ERRORS_WITH_THEIR_REQUEST)
         say["drop"] = stack.tool(AUTHOR, "execute_sql", query="DROP TABLE opentelemetry_logs")
         say["flush"] = stack.tool(AUTHOR, "execute_sql", query="ADMIN flush_table('opentelemetry_logs')")
-        say["unoffered tool"] = try_tool(
-            stack,
-            AUTHOR,
-            "delete_pipeline",
-            name="greptime_trace_v1",
-            version="1",
-        )
+        pipeline = {"name": "greptime_trace_v1", "version": "1"}
+        say["unoffered tool"] = try_tool(stack, AUTHOR, "delete_pipeline", **pipeline)
         say["read after writes"] = read_bodies(query(stack, "reader", passwords["reader"], SELECT_BODIES))
         # The store's server also serves resources and prompts: none reaches an agent, whatever it holds.
         say["beyond tools"] = {
@@ -456,12 +456,7 @@ def seen(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Seen]:
         for stopped in (STORE.name, COLLECTOR_SERVICE):
             stack.run("stop", stopped)
             started = time.monotonic()
-            say[f"note without {stopped}"] = stack.tool(
-                AUTHOR,
-                "write_note",
-                key=stopped,
-                text="still served",
-            )
+            say[f"note without {stopped}"] = stack.tool(AUTHOR, "write_note", key=stopped, text="served")
             saw.seconds[f"note without {stopped}"] = time.monotonic() - started
         # As the honest twin's renewal recreates them: empty, under the twin's secrets.
         stack.play = {**stack.play, **twin}
@@ -515,14 +510,26 @@ def test_a_tool_call_leaves_the_services_spans_of_it_naming_the_images_code(seen
     assert seen.answers["message spans"] == []  # the Collector drops the span of each message of a request
 
 
-def test_a_request_the_images_tracker_refuses_is_a_log_record_of_why_in_the_trace_of_the_call(
+@pytest.mark.parametrize("service", REFUSALS)
+def test_a_request_the_images_service_refuses_is_a_log_record_of_why_in_the_trace_of_the_call(
     seen: Seen,
+    service: str,
 ) -> None:
-    record = seen.answers["refusal"][0]
+    (tool, _, reason), record = REFUSALS[service], seen.answers[f"{service} refusal"][0]
 
-    assert record["body"] == f"refused with 404: 'no ticket {UNKNOWN_TICKET}'"
+    assert (record["body"], record["severity_text"]) == (reason, "WARN")
     assert record["resource_attributes"]["service.version"] == "image"
-    assert [span["span_name"] for span in seen.answers["refusal spans"]] == [COMMENT_SPAN]
+    assert [span["span_name"] for span in seen.answers[f"{service} refusal spans"]] == [f"tools/call {tool}"]
+
+
+def test_a_record_a_service_writes_is_in_the_store_once_and_not_again_from_its_stderr(seen: Seen) -> None:
+    copies = sorted(row["body"] for row in seen.answers["refusal copies"])
+
+    assert copies == sorted(reason for _, _, reason in REFUSALS.values())
+
+
+def test_no_export_fails_as_the_collector_starts_before_the_services_that_send_to_it(seen: Seen) -> None:
+    assert seen.answers["export failures"] == []
 
 
 def test_a_release_that_serves_and_then_fails_says_why_in_a_log_record_that_names_it(seen: Seen) -> None:

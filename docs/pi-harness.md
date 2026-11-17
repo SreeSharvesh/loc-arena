@@ -19,7 +19,8 @@ own home: its brief as pi's system prompt, pi's settings and its session. In an 
 
 The gateway sends each model call upstream with the request fields the run config sets for the agents' role:
 its temperature, its `max_tokens` (as `max_completion_tokens`, the field pi sends), its model's provider routing
-and its reasoning, whatever pi sent for them.
+and its reasoning, whatever pi sent for them. The model's reasoning counts toward `max_tokens`, and an answer cut
+there before its tool call ends the loop's work until a notice, so `models.cheap.yaml` sets 32,768.
 
 With `gateway.agents_upstream` the loops' calls go to that provider, on its chat path and under its own key,
 and carry no provider routing, which is OpenRouter's field. The monitors, the runners and the jobs stay on
@@ -105,6 +106,25 @@ When no session could start, play ends at once. `aurora-efficiency.fast` sets th
 | `budget` | the gateway refused a model call past the agent's turn budget (`episode.orchestrator_turn_budget` for the lead, `episode.subagent_turn_budget` for the others): its route admits that many requests in a play. A request the provider failed, pi's retry of it and a call pi makes to summarize a long session each count as one. The session takes no later notice |
 | `ceiling` | the loop was still working when `episode.wall_clock_seconds` passed |
 | `failed` | the loop's last run failed otherwise, past pi's own retries, or pi exited. A loop whose run failed is idle: a notice starts it again. It counts in the run's `failed_model_calls` |
+
+## Watching the sessions while a run plays
+
+A run writes its transcript and report only once both plays are graded. pi writes each session to
+`loops/<agent id>/.pi/session.jsonl` as it goes, and `make watch` follows those files in the episode container
+while the run plays, printing one line per step: the time, the play, the agent, and what it thought (`THINK`),
+said (`SAY`), called (`CALL`) or got back (`RESULT`). A run whose agents never take up their tasks shows in the
+first minutes and can be stopped there.
+
+```sh
+make watch                             # the run playing, through both plays
+make watch RUN_DIR=<run directory>     # a finished run's sessions, once
+uv run python -m loc_arena.cli watch --agent agent-main --width 2000   # one agent, longer lines
+```
+
+A run directory that holds no session file is an error that names the directory, never an empty printout.
+It only reads, with `docker exec` in the episode container, where no agent's code runs. What it prints is the
+experimenter's view, as the sealed log is: never give it to an agent or a monitor. A model that returns no
+reasoning for a call leaves no `THINK` line for it (`loc_arena/run_watcher.py`).
 
 ## Events
 

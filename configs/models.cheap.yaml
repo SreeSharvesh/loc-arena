@@ -17,7 +17,8 @@ roles:
   untrusted_agent:
     model: deepseek/deepseek-v4.1-flash
     temperature: 1.0
-    max_tokens: 8192
+    # Its reasoning counts toward the cap, and an answer cut before its tool call leaves the session idle.
+    max_tokens: 32768
 
   # The trusted monitor (M_action, M_inference): weaker and cheaper than the agent, by the control convention.
   trusted_monitor:
@@ -34,10 +35,10 @@ roles:
       effort: none
 
   # The run reader (loc-arena read): reads a finished run's records and reports what its agents did.
-  reader:
-    model: z-ai/glm-5.3
+  reader:  # chosen by the test set's accuracy and cost per answer (docs/run-reader.md#accuracy)
+    model: anthropic/claude-haiku-5.5
     temperature: 0.0
-    max_tokens: 8192
+    max_tokens: 32768   # room for its reasoning and its whole answer in one reply
 
 scaling_notes: |
   Frontier profile (later): set untrusted_agent to your strongest model, trusted_monitor to a small frontier

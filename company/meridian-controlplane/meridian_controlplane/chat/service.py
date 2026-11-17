@@ -6,21 +6,21 @@ central authority a deployment hands in decides every call before its handler ru
 401, a missing permission a 403); the service itself refuses only an edit of someone else's message, with a
 403; a malformed request is a 422; and each request is one line of the audit record
 (``meridian_controlplane.request_audit``). ``/``, ``/health`` and ``/openapi.json`` are open. Over MCP the
-deployment's middleware decides each call, and a refused call is a tool error. A deployment serves the tools
-at ``/mcp`` and the API beside them.
+deployment's middleware decides each call, and a refused call is a tool error. Each refusal and each failure
+is in its log (``meridian_controlplane.refusals``). A deployment serves the tools at ``/mcp`` and the API
+beside them.
 """
 
 from __future__ import annotations
 
-import contextlib
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from http import HTTPStatus
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, Query, Request, Response
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import PlainTextResponse
 from mcp.server import MCPServer
 from mcp.server.auth.provider import TokenVerifier
 from mcp.server.auth.settings import AuthSettings
@@ -28,7 +28,8 @@ from mcp.server.context import ServerMiddleware
 from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from meridian_controlplane.chat.store import Channel, ChatError, ChatStore, Message
+from meridian_controlplane.chat.store import Channel, ChatStore, Message
+from meridian_controlplane.refusals import log_refusals_and_failures, refusals_as_tool_errors
 from meridian_controlplane.request_audit import record_each_request
 from meridian_controlplane.tickets.authority import Authority
 
@@ -79,6 +80,12 @@ class Messages(BaseModel):
     messages: list[Message]
 
 
+def _name_created(request: Request, message: Message) -> Message:
+    """Name the message a route created on its audit line by its id."""
+    request.state.outcome = {"id": message.id}
+    return message
+
+
 def create_chat_api(  # noqa: C901 - counts its nested functions, each checked on its own
     store: ChatStore,
     write_audit_line: Callable[[str], None],
@@ -118,9 +125,7 @@ def create_chat_api(  # noqa: C901 - counts its nested functions, each checked o
         name_call(request, request.path_params)
         return await request_validation_exception_handler(request, error)
 
-    @app.exception_handler(ChatError)
-    async def refuse(_: Request, error: ChatError) -> Response:
-        return JSONResponse({"detail": str(error)}, error.status)
+    log_refusals_and_failures(app)
 
     @app.get("/health", response_class=PlainTextResponse)
     async def health() -> str:
@@ -148,17 +153,17 @@ def create_chat_api(  # noqa: C901 - counts its nested functions, each checked o
     @app.post("/channels/{channel}/messages", status_code=HTTPStatus.CREATED)
     async def post(request: Request, channel: str, text: MessageText) -> Message:
         caller = identify(request, {"channel": channel, **text.model_dump()})
-        return store.post(caller, channel, text.body)
+        return _name_created(request, store.post(caller, channel, text.body))
 
     @app.post("/messages/{message}/replies", status_code=HTTPStatus.CREATED)
     async def reply(request: Request, message: int, text: MessageText) -> Message:
         caller = identify(request, {"message": message, **text.model_dump()})
-        return store.reply(caller, message, text.body)
+        return _name_created(request, store.reply(caller, message, text.body))
 
     @app.post("/dms/{member}", status_code=HTTPStatus.CREATED)
     async def send_dm(request: Request, member: str, text: MessageText) -> Message:
         caller = identify(request, {"member": member, **text.model_dump()})
-        return store.send_dm(caller, member, text.body)
+        return _name_created(request, store.send_dm(caller, member, text.body))
 
     @app.get("/dms")
     async def read_dms(
@@ -294,12 +299,3 @@ def build_chat_server(  # noqa: C901 - counts its nested functions, each checked
             return store.edit_message(require_caller(), message, body)
 
     return server
-
-
-@contextlib.contextmanager
-def refusals_as_tool_errors() -> Iterator[None]:
-    """Raise the chat's refusal as a tool error: only a tool error's text reaches the caller."""
-    try:
-        yield
-    except ChatError as error:
-        raise ToolError(str(error)) from error

@@ -20,14 +20,19 @@ import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
 
-from loc_arena.config import load_run_config
-from loc_arena.episode_stack import EPISODE_SERVICE, run_in_stack
+from dotenv import dotenv_values
+
+from loc_arena.config import load_run_config, load_settings
+from loc_arena.episode_stack import EPISODE_SERVICE, REPOSITORY, run_in_stack
 from loc_arena.gateway.model_gateway import PROJECT_PREFIX, locate_call_log
 from loc_arena.gateway.proxy_relay import relay_while_running
 from loc_arena.harness import apply_mode, locate_run, play_run, read_played_snapshot
 from loc_arena.logging_.viewer import build_index
 from loc_arena.merged_main import EPISODE_PHASE
 from loc_arena.run_cost import read_cost, record_cost, render_costs, summarize
+from loc_arena.run_identity import RUN_FILE, read_identity
+from loc_arena.run_publish import PublishError, SecretFoundError, publish_run, read_label
+from loc_arena.run_watcher import watch_run
 from loc_arena.task import grade_snapshot, read_snapshot_file
 
 
@@ -71,9 +76,18 @@ def _cmd_run(args: argparse.Namespace) -> int:
         print(f"played: {run_directory}")
         return 0
     instance, logs = secrets.token_hex(3), Path(args.out)
+    identity = read_identity(_config_path(args.run), REPOSITORY)  # the engine that plays, before its build
     cost = record_cost(config.settings.cost, f"{PROJECT_PREFIX}{instance}", EPISODE_SERVICE)
-    with relay_while_running(config.settings.gateway), cost as recorder:
-        out = run_in_stack(args.run, mode=args.mode, seed=args.seed, logs=logs, instance_id=instance)
+    try:
+        with relay_while_running(config.settings.gateway), cost as recorder:
+            out = run_in_stack(args.run, mode=args.mode, seed=args.seed, logs=logs, instance_id=instance)
+    finally:  # a run graded before its stack failed still names its config and commit
+        run_directory = locate_run(config, args.mode, instance, logs)
+        try:  # never fails a run: a run.json that cannot be written is said so
+            if run_directory.is_dir():
+                (run_directory / RUN_FILE).write_text(identity.model_dump_json(indent=1))
+        except OSError as error:
+            print(f"run.json not written: {error}", file=sys.stderr)
     try:  # the profiler never fails a run that was played and graded
         cost_line = summarize(recorder.write(out, locate_call_log(logs, instance)))
     except (OSError, ValueError) as error:
@@ -110,6 +124,26 @@ def _cmd_cost(args: argparse.Namespace) -> int:
         print(f"no cost file this version reads: {error}", file=sys.stderr)
         return 1
     print(render_costs(cost, other))
+    return 0
+
+
+def _cmd_publish(args: argparse.Namespace) -> int:
+    bundle = Path(args.run_directory)
+    sources = [*dotenv_values(REPOSITORY / ".env").items(), *os.environ.items()]
+    try:
+        label = read_label(bundle, read_snapshot_file(bundle / EPISODE_PHASE).finished_at)
+        settings = load_settings(_config_path(label.config)).publish
+        published = publish_run(bundle, label, settings, [(name, value) for name, value in sources if value])
+    except SecretFoundError as found:
+        print("nothing published: the bundle holds what looks like a real secret", file=sys.stderr)
+        print("\n".join(found.findings), file=sys.stderr)
+        return 1
+    except (OSError, ValueError, PublishError) as error:
+        print(f"publish: {error}", file=sys.stderr)
+        return 1
+    if published.already:
+        print("already published; nothing was written")
+    print(f"published: {published.link}")
     return 0
 
 
@@ -205,21 +239,35 @@ def _cmd_explore(args: argparse.Namespace) -> int:
 
 def _cmd_read(args: argparse.Namespace) -> int:
     # The reader's stack imports the episode's; only this command pays for that.
-    from loc_arena.run_reader import read_run
+    from loc_arena.run_reader import ASK, read_run, settle_reading
 
     try:
         config = load_run_config(_config_path(args.run))
-        with relay_while_running(config.settings.gateway):
-            report = read_run(Path(args.run_directory), args.brief, config)
+        with relay_while_running(settle_reading(config).gateway):
+            report = read_run(Path(args.run_directory), ASK if args.ask else args.brief, config, args.ask)
     except (ValueError, RuntimeError) as error:
         print(f"read: {error}", file=sys.stderr)
         return 1
+    if args.ask:
+        print(report.read_text())
     print(f"reading: {report}")
     return 0
 
 
+def _cmd_watch(args: argparse.Namespace) -> int:
+    directory = Path(args.run_directory) if args.run_directory else None
+    try:
+        watch_run(directory, agent=args.agent, width=args.width, poll_seconds=args.poll_seconds)
+    except KeyboardInterrupt:
+        pass
+    except FileNotFoundError as error:
+        print(error, file=sys.stderr)
+        return 1
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
-    """Parse args and dispatch ``run`` / ``view`` / ``explore`` / ``grade`` / ``read`` / ``cost``."""
+    """Parse args and dispatch the command they name, one of the subparsers below."""
     parser = argparse.ArgumentParser(prog="loc-arena", description="Run and view LOC-Arena episodes.")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -268,6 +316,7 @@ def main(argv: list[str] | None = None) -> int:
     p_read = sub.add_parser("read", help="have the reader agent read one graded run and report what it did")
     p_read.add_argument("run_directory", help="the run's directory, which holds scores.json")
     p_read.add_argument("--brief", default="agents", help="what to report on: agents, or monitors")
+    p_read.add_argument("--ask", default=None, help="one question to answer, in place of a brief")
     p_read.add_argument(
         "--run",
         default="aurora-efficiency",
@@ -282,6 +331,28 @@ def main(argv: list[str] | None = None) -> int:
     p_cost.add_argument("run_directory", help="the run's directory, which holds cost.json")
     p_cost.add_argument("other", nargs="?", help="a second run's directory, to print its cost and the change")
     p_cost.set_defaults(func=_cmd_cost)
+
+    p_publish = sub.add_parser("publish", help="scan one graded run and publish it to the storage repository")
+    p_publish.add_argument("run_directory", help="the run's directory, which holds scores.json")
+    p_publish.set_defaults(func=_cmd_publish)
+    p_watch = sub.add_parser(
+        "watch",
+        help="print each agent's steps of the run playing, or of a finished run",
+    )
+    p_watch.add_argument(
+        "run_directory",
+        nargs="?",
+        help="a finished run's directory (default: the run playing)",
+    )
+    p_watch.add_argument("--agent", default=None, help="only this agent's steps, such as the lead's")
+    p_watch.add_argument("--width", type=int, default=400, help="characters kept of each step")
+    p_watch.add_argument(
+        "--poll-seconds",
+        type=float,
+        default=2.0,
+        help="seconds between reads of a run playing",
+    )
+    p_watch.set_defaults(func=_cmd_watch)
 
     args = parser.parse_args(argv)
     result: int = args.func(args)

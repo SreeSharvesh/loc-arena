@@ -46,7 +46,8 @@ Each tool call is one line on the service's stdout (`loc_arena.tool_records`) an
 After play (`loc_arena.recorded_events`), a change becomes an `action` on the note it names and a refused call,
 read or change, a blocked `action`; a read it answered becomes nothing, and so does a request without a known
 credential, which names no caller. A grant or revoke is the service's own action, so IAM's event for it is not
-counted again (`records_actions` in the scenario's `iam:` block).
+counted again (`records_actions` in the scenario's `iam:` block). Each request its store refuses and each it
+fails on is a record of its log, in the trace of the request ([the telemetry](telemetry-service.md#what-reports)).
 
 ## Seed
 

@@ -77,6 +77,9 @@ _LOGGER = logging.getLogger(__name__)
 SERVICE_LOGS = "services"  # a stack run's copy of each live service's log, in the run directory
 RECORDS = "records"  # where the services the episode itself serves record, in each play's directory
 UNATTRIBUTED_FILE = "unattributed_records.jsonl"
+EVENT_WALLS_FILE = (
+    "event_walls.jsonl"  # in each play's directory: the wall time of each event built after play
+)
 COMPANY_ROLE = "company"  # the actor role of a company principal's events: no agent of the run
 _OPENED_PULL_REQUEST = TypeAdapter(OpenedPullRequest)
 _MERGE_RESULT = TypeAdapter(MergeResult)
@@ -130,14 +133,16 @@ def chat_message(
 ) -> RecordedEvent:
     """The ``message`` event of a post, reply or direct message chat took, as the action monitor reads it.
 
-    Its target is the channel or the member; ``stored``, the message chat returned (an MCP call's result),
-    adds the channel and thread a reply's arguments do not name.
+    Its target is the channel or the member. ``stored`` adds the message's id. It is the message chat returned
+    over MCP, which also adds the channel and thread a reply's arguments do not name, or the id an HTTP
+    request's record names.
     """
     stored = stored or {}
     thread = stored.get("thread", arguments.get("message"))
     channel = stored.get("channel", arguments.get("channel"))
     member = arguments.get("member")
     payload = {
+        "message_id": stored.get("id"),
         "message_kind": operation,
         "body": str(arguments.get("body", "")),
         "channel": channel,
@@ -237,7 +242,7 @@ def build_events_from_service_request(record: ServiceRequestRecord) -> list[Reco
     if record.caller is None or (reads and not refused and record.operation not in _HTTP_READ_ACTIONS):
         return []
     if not refused and record.operation in CHAT_POSTS:
-        return [chat_message(record.caller, record.operation, record.arguments)]
+        return [chat_message(record.caller, record.operation, record.arguments, record.outcome)]
     target = record.arguments.get(_TARGET_FROM.get(record.operation, ""))
     target = target if isinstance(target, str) else None
     payload = {
@@ -649,11 +654,12 @@ def _write_events(phase: _Phase, built: list[_Placed], roles: Mapping[str, str])
     sealed = AppendOnlyLog(sealed_path, episode_id)
     mirror = AppendOnlyLog(resolve_inside(phase.directory, phase.snapshot.mirror_path), episode_id)
     recorder = Recorder(episode_id, sealed, mirror)
+    walls = []  # each event's wall time, which the episode clock does not keep: it is stopped during play
     for placed in built:
         ts = phase.read_clock(placed.wall)
         for event in placed.events:
             write = recorder.dual if event.to_mirror else recorder.sealed
-            write(
+            written = write(
                 actor_uid=event.actor_uid,
                 actor_role=event.actor_role or roles[event.actor_uid],
                 kind=event.kind,
@@ -664,3 +670,6 @@ def _write_events(phase: _Phase, built: list[_Placed], roles: Mapping[str, str])
                 result=event.result,
                 ts=ts,
             )
+            walls.append(json.dumps({"seq": written.seq, "wall": placed.wall}))
+    with (phase.directory / EVENT_WALLS_FILE).open("a", encoding="utf-8") as appended:
+        appended.writelines(f"{line}\n" for line in walls)

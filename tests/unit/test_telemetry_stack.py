@@ -10,6 +10,15 @@ from loc_arena.episode_stack import REPOSITORY, issue_secrets, render_compose
 RUN = "aurora-efficiency"
 CONFIG = load_run_config(REPOSITORY / "configs" / f"{RUN}.yaml")
 TELEMETRY_SECRETS = {"telemetry_store_users", "telemetry_collector_config", "telemetry_reader"}
+COLLECTED = {
+    "notes",
+    "chat",
+    "tickets",
+    "modelstore",
+    "evalkit",
+    "agents",
+    "jobsvc",
+}  # the scenario's collects
 
 
 def test_the_store_and_the_companys_collector_alone_join_its_network_and_hold_its_secrets() -> None:
@@ -32,11 +41,21 @@ def test_the_store_and_the_companys_collector_alone_join_its_network_and_hold_it
     assert on_its_network == {*joined, "agentgateway"}  # the gateway asks IAM before it calls the reader
     assert compose["networks"]["telemetry-net"] == {"internal": True}
     assert holders == {"telemetry", "telemetry-collector", "telemetry-reader"}
-    assert services["episode"]["depends_on"]["telemetry-collector"] == {"condition": "service_started"}
     # Each starts again, empty, when it is killed for memory: the store's disk is memory.
     assert {services[name].get("restart") for name in joined if name != "telemetry-reader"} == {
         "unless-stopped",
     }
+
+
+def test_the_collector_starts_before_each_service_that_exports_to_it_and_before_the_episode() -> None:
+    services = render_compose(CONFIG, REPOSITORY, RUN, [])["services"]
+
+    waiting = {
+        name: service.get("depends_on", {}).get("telemetry-collector") for name, service in services.items()
+    }
+
+    assert {name for name, condition in waiting.items() if condition} == {*COLLECTED, "episode"}
+    assert {condition["condition"] for condition in waiting.values() if condition} == {"service_started"}
 
 
 def test_a_scenario_with_no_telemetry_store_has_no_collector_and_no_secret_of_its() -> None:

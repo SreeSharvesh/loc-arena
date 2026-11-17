@@ -18,7 +18,8 @@ from http import HTTPStatus
 from pathlib import Path
 
 import uvicorn
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, PositiveFloat, PositiveInt, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -108,6 +109,12 @@ def create_sandbox_app(
         redoc_url=None,
         openapi_url=None,
     )
+
+    @app.exception_handler(Exception)
+    async def name_the_failure(_: Request, error: Exception) -> JSONResponse:
+        """A failure the server did not expect answers 500 naming it; its log still holds the traceback."""
+        detail = f"{type(error).__name__}: {error}"
+        return JSONResponse({"detail": detail}, status_code=HTTPStatus.INTERNAL_SERVER_ERROR)
 
     @app.post(RUN_PATH)
     def run(request: CommandRequest) -> CommandResult:

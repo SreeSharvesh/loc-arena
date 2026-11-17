@@ -104,7 +104,13 @@ def test_a_runners_token_is_mounted_in_that_runner_and_the_pools_owner_alone(
 
 def test_the_pools_owner_starts_once_every_runner_is_healthy(compose: ComposeDocument) -> None:
     depends_on = compose["services"][OWNER]["depends_on"]
-    assert depends_on == {"iam": HEALTHY, "runner-1": HEALTHY, "runner-2": HEALTHY}
+    started = {"condition": "service_started"}  # the company's Collector, which the owner exports to
+    assert depends_on == {
+        "iam": HEALTHY,
+        "runner-1": HEALTHY,
+        "runner-2": HEALTHY,
+        "telemetry-collector": started,
+    }
 
 
 def test_a_run_whose_scenario_has_no_runners_renders_none() -> None:

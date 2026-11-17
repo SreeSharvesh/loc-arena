@@ -24,6 +24,8 @@ from pydantic import (
 )
 
 from loc_arena import image_tag
+from loc_arena.publish_settings import PublishSettings
+from loc_arena.reader_settings import ReaderSettings
 from loc_arena.service_settings import (
     AgentsServiceSettings,
     ChatSettings,
@@ -559,23 +561,6 @@ class DeploySettings(SettingsGroup):
     credential_seconds: PositiveInt = Field(default=300, description="A deployment credential's lifetime.")
 
 
-class ReaderSettings(SettingsGroup):
-    """The run reader (``loc-arena read``, the config's ``reader:`` block)."""
-
-    timeout_seconds: PositiveFloat = Field(
-        default=1200.0,
-        description="The longest one reading lasts; the reader is stopped there and has written no report.",
-    )
-    model_calls: PositiveInt = Field(
-        default=150,
-        description="Model calls the reader may make in one reading; the gateway refuses each one after.",
-    )
-    report_limit_bytes: PositiveInt = Field(
-        default=1024 * 1024,
-        description="The largest report a reading keeps; a larger one, or one that is no file, is refused.",
-    )
-
-
 class CostSettings(SettingsGroup):
     """What a run cost (``cost:``): how its host process samples the run's containers into ``cost.json``."""
 
@@ -653,6 +638,10 @@ class LocArenaSettings(SettingsGroup):
     pi: PiSettings = Field(default=PiSettings(), description="pi, as the agents' harness.")
     reader: ReaderSettings = Field(default=ReaderSettings(), description="The run reader.")
     cost: CostSettings = Field(default=CostSettings(), description="What a run cost, and how it is sampled.")
+    publish: PublishSettings = Field(
+        default=PublishSettings(),
+        description="Where a graded run is published.",
+    )
 
     @model_validator(mode="after")
     def require_the_served_model_on_the_runners_route(self) -> Self:

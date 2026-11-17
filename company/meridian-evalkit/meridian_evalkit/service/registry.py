@@ -25,6 +25,7 @@ from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field
 
 from meridian_common.jobclient import JobSpec
 from meridian_common.records import Database
+from meridian_controlplane.refusals import RefusalError
 from meridian_evalkit.leaderboard import Leaderboard, LeaderboardEntry
 from meridian_evalkit.metrics import default_registry
 from meridian_evalkit.store import EvalRun, diff_runs
@@ -39,13 +40,8 @@ EVAL_ID_PATTERN = r"^[a-z0-9][a-z0-9-]{1,62}$"
 RUNNER_MODULE = "meridian_evalkit.run"  # the job's command: the runner, which reads its run from the service
 
 
-class EvalServiceError(Exception):
+class EvalServiceError(RefusalError):
     """A request the registry refuses, with the HTTP status that says why."""
-
-    def __init__(self, status: HTTPStatus, message: str) -> None:
-        """Refuse with ``status`` and a message the caller reads."""
-        super().__init__(message)
-        self.status = status
 
 
 class _Body(BaseModel):

@@ -5,23 +5,21 @@ reads to ``read`` and changes to ``write``. The caller is the one its credential
 central authority a deployment hands in decides every call before its handler runs (no known credential is a
 401, a missing permission a 403); a malformed request is a 422; and each request is one line of the audit
 record (``meridian_controlplane.request_audit``). ``/``, ``/health`` and ``/openapi.json`` are open. Over MCP
-the deployment's middleware decides each call, and a refused call is a tool error. Each request the tracker
-refuses is a warning of its log, with the status and the reason. A deployment serves the tools at ``/mcp``
-and the API beside them.
+the deployment's middleware decides each call, and a refused call is a tool error. Each refusal and each
+failure is in its log (``meridian_controlplane.refusals``). A deployment serves the tools at ``/mcp`` and the
+API beside them.
 """
 
 from __future__ import annotations
 
-import contextlib
-import logging
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from http import HTTPStatus
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, Query, Request, Response
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import PlainTextResponse
 from mcp.server import MCPServer
 from mcp.server.auth.provider import TokenVerifier
 from mcp.server.auth.settings import AuthSettings
@@ -29,6 +27,7 @@ from mcp.server.context import ServerMiddleware
 from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, JsonValue
 
+from meridian_controlplane.refusals import log_refusals_and_failures, refusals_as_tool_errors
 from meridian_controlplane.request_audit import record_each_request
 from meridian_controlplane.tickets.authority import Authority
 from meridian_controlplane.tickets.store import (
@@ -37,7 +36,6 @@ from meridian_controlplane.tickets.store import (
     Project,
     Status,
     Ticket,
-    TicketError,
     TicketStore,
     TicketSummary,
 )
@@ -46,7 +44,6 @@ SERVICE = "tickets"
 # The SDK requires an issuer with a token verifier, but publishes it only with a resource server URL, which is
 # left unset: the deployment, not an authorization server, issues the credentials.
 ISSUER = "http://tickets"
-_LOGGER = logging.getLogger(__name__)
 
 API_DESCRIPTION = """Meridian's ticket tracker: projects, their tickets and the discussion on each.
 Send your credential as "Authorization: Bearer <credential>". Reads need read and changes write; a 403 names
@@ -158,10 +155,7 @@ def create_tickets_api(  # noqa: C901 - counts its nested functions, each checke
         name_call(request, request.path_params)
         return await request_validation_exception_handler(request, error)
 
-    @app.exception_handler(TicketError)
-    async def refuse(_: Request, error: TicketError) -> Response:
-        _log_refusal(error)
-        return JSONResponse({"detail": str(error)}, error.status)
+    log_refusals_and_failures(app)
 
     @app.get("/health", response_class=PlainTextResponse)
     async def health() -> str:
@@ -364,18 +358,3 @@ def build_tickets_server(  # noqa: C901 - counts its nested functions, each chec
             return store.comment_on_ticket(require_caller(), ticket, body)
 
     return server
-
-
-@contextlib.contextmanager
-def refusals_as_tool_errors() -> Iterator[None]:
-    """Raise the tracker's refusal as a tool error: only a tool error's text reaches the caller."""
-    try:
-        yield
-    except TicketError as error:
-        _log_refusal(error)
-        raise ToolError(str(error)) from error
-
-
-def _log_refusal(error: TicketError) -> None:
-    """Log a request the tracker refuses: what its caller is told is in the service's own log too."""
-    _LOGGER.warning("refused with %d: %r", error.status, str(error))  # %r: one line, whatever the caller sent

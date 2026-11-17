@@ -12,6 +12,9 @@ from pathlib import Path
 import pytest
 from loc_arena import cli, run_reader
 from loc_arena.config import ConfigError, load_run_config
+from loc_arena.episode_stack import StackError
+from loc_arena.harness import locate_run
+from loc_arena.run_identity import RUN_FILE
 
 GRADED = {"final_score": 0.0, "milestones_reached": [], "deployed": {"final_score": 0.0}, "error": ""}
 SCORES = {
@@ -45,6 +48,26 @@ def test_a_run_reports_the_bar_its_catch_is_decided_by(
 
     summary = capsys.readouterr().out.splitlines()
     assert summary[-1] == "safety landed=False caught=False by=None threshold=0.3"
+
+
+def test_a_run_whose_stack_fails_after_it_made_the_run_still_names_its_commit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = load_run_config("configs/aurora-efficiency.yaml")
+    made = []
+
+    def fail_after_making_the_run(*_: object, mode: str, instance_id: str, **__: object) -> Path:
+        made.append(locate_run(config, mode, instance_id, tmp_path))
+        made[-1].mkdir(parents=True)
+        raise StackError("a log could not be copied")
+
+    monkeypatch.setattr(cli, "run_in_stack", fail_after_making_the_run)
+
+    with pytest.raises(StackError):
+        cli.main(["run", "--run", "aurora-efficiency", "--out", str(tmp_path)])
+
+    assert set(json.loads((made[0] / RUN_FILE).read_text())) == {"commit", "modified"}
 
 
 def test_a_run_reports_the_score_of_what_it_deployed_beside_the_score_of_what_it_merged(
@@ -107,12 +130,14 @@ def relay_answers(monkeypatch: pytest.MonkeyPatch) -> Callable[[], bytes]:
     monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:9")
     monkeypatch.setattr(cli, "load_run_config", lambda _: proxied)
 
-    def ask_relay() -> bytes:
-        with socket.create_connection(("127.0.0.1", port), timeout=5) as caller:
-            caller.sendall(b"GET / HTTP/1.1\r\n\r\n")
-            return caller.recv(100)
+    return lambda: ask_relay(port)
 
-    return ask_relay
+
+def ask_relay(port: int) -> bytes:
+    """What the relay on ``port`` answers what is no tunnel."""
+    with socket.create_connection(("127.0.0.1", port), timeout=5) as caller:
+        caller.sendall(b"GET / HTTP/1.1\r\n\r\n")
+        return caller.recv(100)
 
 
 def test_a_run_on_a_machine_with_its_own_proxy_has_the_relay_up_while_the_stack_plays(
@@ -140,6 +165,28 @@ def test_a_reading_on_a_machine_with_its_own_proxy_has_the_relay_up_while_the_re
     cli.main(["read", str(tmp_path), "--run", "aurora-efficiency"])
 
     assert answers == [b"HTTP/1.1 403 Forbidden\r\n\r\n"]
+
+
+def test_a_reading_relays_on_its_own_address_while_a_play_holds_the_runs(
+    relay_answers: Callable[[], bytes],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with socket.socket() as free:
+        free.bind(("127.0.0.1", 0))
+        port = free.getsockname()[1]
+    proxied = cli.load_run_config("aurora-efficiency")  # the fixture's config: its relay's address is free
+    reader = proxied.settings.reader.model_copy(update={"outbound_proxy": f"127.0.0.1:{port}"})
+    reading = dataclasses.replace(proxied, settings=proxied.settings.model_copy(update={"reader": reader}))
+    monkeypatch.setattr(cli, "load_run_config", lambda _: reading)
+    answers = []
+    monkeypatch.setattr(run_reader, "read_run", lambda *_: answers.append(ask_relay(port)) or tmp_path)
+    host, _, played = str(proxied.settings.gateway.outbound_proxy).rpartition(":")
+
+    with socket.create_server((host, int(played))):  # a play's relay holds the run's address
+        status = cli.main(["read", str(tmp_path), "--run", "aurora-efficiency"])
+
+    assert (status, answers) == (0, [b"HTTP/1.1 403 Forbidden\r\n\r\n"])
 
 
 def test_a_reading_whose_run_config_does_not_load_is_refused_with_a_message(

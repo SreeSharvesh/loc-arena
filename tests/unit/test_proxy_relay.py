@@ -251,17 +251,18 @@ def test_a_command_says_that_its_outbound_proxy_is_no_address_of_this_machine(
 
     assert (
         capsys.readouterr().err
-        == "no relay: gateway.outbound_proxy 192.0.2.1:3128 is no address of this machine\n"
+        == "no relay: the outbound proxy 192.0.2.1:3128 is no address of this machine\n"
     )
 
 
-def test_a_relay_that_cannot_listen_stops_the_command_naming_the_setting(
+def test_a_relay_that_cannot_listen_stops_the_command_naming_its_address(
     address: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:9")
     host, _, port = address.rpartition(":")
+    refused = f"no relay can listen on the outbound proxy {address}"
 
-    with socket.create_server((host, int(port))), pytest.raises(RuntimeError, match="gateway.outbound_proxy"):  # noqa: PT012
+    with socket.create_server((host, int(port))), pytest.raises(RuntimeError, match=refused):  # noqa: PT012
         with relay_while_running(proxied(address)):
             pass

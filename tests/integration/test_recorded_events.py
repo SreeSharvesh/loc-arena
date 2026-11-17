@@ -205,7 +205,8 @@ def test_a_chat_post_over_mcp_or_http_becomes_a_message_event_on_the_sealed_and_
         "serving-agent",
         **{"gen_ai.tool.call.result": stored},
     )
-    over_http = request_line(started, "POST", 201, "post", {"channel": "aurora", "body": "benchmark rerun"})
+    posted = request_line(started, "POST", 201, "post", {"channel": "aurora", "body": "benchmark rerun"})
+    over_http = json.dumps(json.loads(posted) | {"outcome": {"id": 8}})
     write_log(run, "chat", over_mcp, over_http)
 
     build_recorded_run_events(LIVE, run)
@@ -214,8 +215,16 @@ def test_a_chat_post_over_mcp_or_http_becomes_a_message_event_on_the_sealed_and_
         [(e.actor_uid, e.target_id, e.payload) for e in events_of(run / "episode", log, "message")]
         for log in (SEALED, MIRROR)
     ]
-    dm = {"message_kind": "send_dm", "body": "cost down 1.5x", "channel": None, "thread": None, "dm": True}
+    dm = {
+        "message_id": 7,
+        "message_kind": "send_dm",
+        "body": "cost down 1.5x",
+        "channel": None,
+        "thread": None,
+        "dm": True,
+    }
     post = {
+        "message_id": 8,
         "message_kind": "post",
         "body": "benchmark rerun",
         "channel": "aurora",

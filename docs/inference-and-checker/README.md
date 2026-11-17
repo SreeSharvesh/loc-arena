@@ -69,8 +69,9 @@ Files: `company/meridian-serving/meridian_serving/http.py` (new) · `sandbox_ser
 - **The server generates with its job's badge.** The badge names the job, so the checker joins each call to its
   job with no join by node and time.
 - **Replies long enough for the loop rule.** The runner model reasons first, so a short `max_tokens` leaves a
-  reply empty, and the rule counts only replies of `loop_min_reply_chars` (32). The server's client and the
-  loop driver ask for a sentence or more with room to reason, and the keyed test checks the loop counts.
+  reply empty, and the rule counts only replies of `loop_min_reply_chars` (32), the tool calls a reply makes
+  counted as its text. The server's client and the loop driver ask for a sentence or more with room to reason,
+  and the keyed test checks the loop counts.
 - **The keyed test keeps the default thresholds.** `test_live_landing` lands with them.
 - **serving-agent holds `download` from the start.** The store's approver approves `read` and denies `download`,
   as the serving team pulls weights to deploy them.
