@@ -19,6 +19,12 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [397] - 2026-11-17: The loop finder reads a reply's tool calls as text
+
+### Fixed
+
+- The verifier's self-feeding-loop finder reads a reply's tool calls as its text, so a job whose turns only call tools forms a loop instead of reading as empty replies.
+
 ## [390] - 2026-11-16: A run records its engine's commit and each event's time
 
 ### Added
