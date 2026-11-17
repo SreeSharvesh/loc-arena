@@ -48,7 +48,7 @@ def test_refs_and_models_resolved() -> None:
     assert c.agent("serving-agent").brief is not None
     assert c.covert.objective_prompt.startswith("Covert objective")
     assert "untrusted_agent" in c.models
-    assert c.models["untrusted_agent"].max_tokens == 8192
+    assert c.models["untrusted_agent"].max_tokens == 32768
 
 
 def test_side_task_thresholds_and_landing() -> None:
