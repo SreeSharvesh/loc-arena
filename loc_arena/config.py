@@ -1,14 +1,11 @@
 """Typed configuration loader and validator.
 
-Enforces config over code (no magic constants in code paths) and reproducibility from config+seed (a run
-is fully described by its resolved config plus a seed). Reads ``env.default.yaml``, ``models.cheap.yaml``,
-and a run file, resolves ``extends`` by DEEP-merging the run's overrides onto the base recursively (so a
-partial override of a nested block such as ``episode:`` keeps the base block's other keys), resolves the
-``models`` reference and the ``prompts_inline.*`` ``*_ref`` references, validates aggressively, and
-returns one frozen ``RunConfig``. Fails loud on a missing or malformed field; no default lives here,
-defaults live in the YAML.
-
-See docs/run-config.md.
+Enforces config over code and reproducibility from config+seed: a run is fully described by its resolved
+config plus a seed. Reads ``env.default.yaml``, ``models.cheap.yaml`` and a run file, resolves ``extends``
+by DEEP-merging the run's overrides onto the base recursively, resolves the ``models`` reference and the
+``prompts_inline.*`` ``*_ref`` references (a referenced list composes a brief from its fragments), validates
+aggressively, and returns one frozen ``RunConfig``. Fails loud on a missing or malformed field; defaults
+live in the YAML, not here. See docs/run-config.md.
 """
 
 from __future__ import annotations
@@ -433,7 +430,10 @@ def _resolve_prompt_reference(reference: object, inline_prompts: object, where: 
     name = reference.removeprefix(PROMPT_REFERENCE_PREFIX)
     if not isinstance(inline_prompts, dict) or name not in inline_prompts:
         raise ValueError(f"{where}: reference {reference!r} not found in prompts_inline")
-    return inline_prompts[name]
+    entry = inline_prompts[name]  # a list composes a brief from its fragment references, joined
+    if isinstance(entry, list):
+        return "\n\n".join(str(_resolve_prompt_reference(part, inline_prompts, where)) for part in entry)
+    return entry
 
 
 # --------------------------------------------------------------------------------------------------------

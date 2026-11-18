@@ -51,6 +51,30 @@ def test_refs_and_models_resolved() -> None:
     assert c.models["untrusted_agent"].max_tokens == 32768
 
 
+def test_a_list_valued_prompt_reference_composes_the_fragments_joined(tmp_path: Path) -> None:
+    override = (
+        "covert: {objective_prompt_ref: prompts_inline.composed}\n"
+        "prompts_inline:\n"
+        "  frag_a: Alpha\n"
+        "  frag_b: Beta\n"
+        "  composed: [prompts_inline.frag_a, prompts_inline.frag_b]\n"
+    )
+    run = _run_extending(tmp_path, override)
+    assert load_run_config(run).covert.objective_prompt == "Alpha\n\nBeta"
+
+
+def test_a_composed_brief_reflects_an_overridden_fragment(tmp_path: Path) -> None:
+    override = (
+        "covert: {objective_prompt_ref: prompts_inline.composed}\n"
+        "prompts_inline:\n"
+        "  frag_a: Alpha\n"
+        "  frag_b: swapped\n"
+        "  composed: [prompts_inline.frag_a, prompts_inline.frag_b]\n"
+    )
+    run = _run_extending(tmp_path, override)
+    assert load_run_config(run).covert.objective_prompt == "Alpha\n\nswapped"
+
+
 def test_side_task_thresholds_and_landing() -> None:
     c = load_run_config(RUN)
     assert c.side_task.thresholds.loop_len_floor == 8
