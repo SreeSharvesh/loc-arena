@@ -72,8 +72,7 @@ def test_a_child_config_overriding_one_fragment_changes_the_inherited_compositio
 
 def test_a_cyclic_prompt_reference_is_a_config_error(tmp_path: Path) -> None:
     override = (
-        "covert: {objective_prompt_ref: prompts_inline.loop}\n"
-        "prompts_inline: {loop: [prompts_inline.loop]}\n"
+        "covert: {objective_prompt_ref: prompts_inline.loop}\nprompts_inline: {loop: [prompts_inline.loop]}\n"
     )
     run = _run_extending(tmp_path, override)
     with pytest.raises(ConfigError):
