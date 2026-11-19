@@ -26,6 +26,7 @@ import logging
 import os
 import shlex
 import subprocess
+import tempfile
 import threading
 from collections.abc import Iterator, Mapping
 from dataclasses import asdict, dataclass
@@ -37,7 +38,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 from pydantic import BaseModel, Field, JsonValue
 
-from loc_arena.config import RunConfig
+from loc_arena.config import ModelSpec, RunConfig
 from loc_arena.gateway.core import GATEWAY_TOKEN_FILE_VARIABLE, GATEWAY_URL_VARIABLE
 from loc_arena.gateway.loop_routes import LOOP_ROUTE_PREFIX, Loops
 from loc_arena.notices import Notices, add_notice_tools
@@ -58,7 +59,6 @@ SESSION_FILE = (
 )  # in a loop's home: pi's record of the session, written as it goes
 SESSION_ENDS_FILE = "session_ends.json"  # in a play's directory: how each agent's session ended
 NOTICES_FILE = "notices.jsonl"  # in a play's directory: each notice, and whether its agent's session took it
-AGENT_ROLE = "untrusted_agent"  # the role every agent's loop calls
 PROVIDER = "gateway"
 TOOLS_SERVER = "meridian"  # the tools reach the model as mcp__meridian__<tool>
 CHAT_PATH = "/chat/completions"  # pi adds it to its provider's URL itself
@@ -115,7 +115,13 @@ class _PiEvent(BaseModel):
 class _Session:
     """One agent's pi in RPC mode: prompted on its stdin, followed by the events on its stdout."""
 
-    def __init__(self, command: list[str], home: Path, environment: Mapping[str, str]) -> None:
+    def __init__(
+        self,
+        command: list[str],
+        home: Path,
+        working_directory: Path,
+        environment: Mapping[str, str],
+    ) -> None:
         self._errors = home / "pi.stderr"
         with self._errors.open("wb") as errors:
             self._pi = subprocess.Popen(  # noqa: S603 - pi, with arguments the episode wrote
@@ -123,7 +129,7 @@ class _Session:
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=errors,
-                cwd=home,
+                cwd=working_directory,
                 env=environment,
             )
         assert self._pi.stdin is not None
@@ -217,26 +223,29 @@ class _Session:
 def describe_loops(config: RunConfig) -> Loops:
     """The agents' loops for the model gateway.
 
-    An agent's model calls in a play are its turn budget. Each call goes upstream with the agents' role's
-    temperature and output cap, its model's provider routing (none on gateway.agents_upstream) and the role's
-    reasoning.
+    An agent's model calls in a play are its turn budget. Each call goes upstream with its role's temperature
+    and output cap, its model's provider routing (none on gateway.agents_upstream) and the role's reasoning.
     """
-    episode, root, role = config.episode, config.roster[0], config.models[AGENT_ROLE]
-    overrides: dict[str, JsonValue] = {
-        "temperature": role.temperature,
-        "max_completion_tokens": role.max_tokens,
-    }
+    episode, root = config.episode, config.roster[0]
     # Provider routing is OpenRouter's field: a second upstream is one provider, and gets none.
     routed = config.settings.gateway.agents_upstream is None
-    if routed and (providers := config.model_providers.get(role.model)) is not None:
-        overrides["provider"] = providers.model_dump(exclude_none=True)
-    if role.reasoning is not None:
-        overrides["reasoning"] = role.reasoning.model_dump(exclude_none=True)
+
+    def describe_overrides(role: ModelSpec) -> dict[str, JsonValue]:
+        overrides: dict[str, JsonValue] = {
+            "temperature": role.temperature,
+            "max_completion_tokens": role.max_tokens,
+        }
+        if routed and (providers := config.model_providers.get(role.model)) is not None:
+            overrides["provider"] = providers.model_dump(exclude_none=True)
+        if role.reasoning is not None:
+            overrides["reasoning"] = role.reasoning.model_dump(exclude_none=True)
+        return overrides
+
     calls = {
         agent.id: episode.orchestrator_turn_budget if agent.id == root else episode.subagent_turn_budget
         for agent in config.agents
     }
-    return Loops(calls, overrides)
+    return Loops(calls, {agent: describe_overrides(config.loop_model(agent)) for agent in calls})
 
 
 def brief_loop(config: RunConfig, agent: str, brief: str) -> str:
@@ -256,10 +265,10 @@ def write_pi_home(home: Path, config: RunConfig, agent: str, brief: str) -> list
     """Write ``agent``'s loop's home (pi's provider, tools, settings and ``brief``); return pi's command.
 
     The brief reaches pi as its system prompt, in a file: pi reads an argument that names a file as that
-    file's text. pi reads each key from its file at each request. The model is the agents' role's, with that
+    file's text. pi reads each key from its file at each request. The model is the agent's role's, with that
     role's output cap; ``pi.model_settings`` adds pi's other keys for it.
     """
-    settings, role = config.settings, config.models[AGENT_ROLE]
+    settings, role = config.settings, config.loop_model(agent)
     model = role.model
     directory = home / ".pi" / "agent"
     directory.mkdir(parents=True, exist_ok=True)
@@ -295,6 +304,20 @@ def _loop_url(gateway_url: str, agent: str) -> str:
     return urlunsplit((gateway.scheme, gateway.netloc, path, "", ""))
 
 
+def loop_working_directory(agent: str) -> Path:
+    """A neutral directory to run ``agent``'s pi from, created under the system temporary directory.
+
+    pi finds its configuration through ``HOME`` and absolute ``--session`` and ``--system-prompt`` arguments,
+    so its process working directory is cosmetic. Keeping it clear of the run directory stops pi's reported
+    ``<cwd>`` from carrying the run slug, which names the side task and the policy and monitor models, into
+    every agent's context. The agent's own files live in its sandbox, reached through the workspace service,
+    not here.
+    """
+    directory = Path(tempfile.gettempdir()) / "pi-loops" / agent
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
+
+
 def play_sessions(
     config: RunConfig,
     briefs: Mapping[str, str],
@@ -320,7 +343,8 @@ def play_sessions(
             try:
                 home = homes / agent
                 pi = write_pi_home(home, config, agent, brief)
-                sessions[agent] = _Session(pi, home, {"HOME": str(home), **environment})
+                working = loop_working_directory(agent)
+                sessions[agent] = _Session(pi, home, working, {"HOME": str(home), **environment})
                 sessions[agent].prompt(TASK)
             except (OSError, KeyError, ValueError) as error:  # its home or pi could not be set up
                 ended[agent] = SessionEnd("failed", None, str(error))

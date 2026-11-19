@@ -132,7 +132,10 @@ def test_an_agents_loop_has_its_own_route_for_the_episode_alone_and_as_many_call
         {"sandbox-agent-main": "sandbox-token"},
         "attack",
         badges=True,
-        loops=Loops({"agent-main": 30}, {"temperature": 1.0, "provider": {"order": ["deepinfra"]}}),
+        loops=Loops(
+            {"agent-main": 30},
+            {"agent-main": {"temperature": 1.0, "provider": {"order": ["deepinfra"]}}},
+        ),
     )
 
     config = yaml.safe_load(environment[MODEL_GATEWAY_CONFIG_VARIABLE])
@@ -155,7 +158,7 @@ def routes_with_a_loop(settings: LocArenaSettings) -> dict[str, Any]:
         {"sandbox-agent-main": "sandbox-token"},
         "attack",
         badges=True,
-        loops=Loops({"agent-main": 30}, {"temperature": 1.0}),
+        loops=Loops({"agent-main": 30}, {"agent-main": {"temperature": 1.0}}),
     )
     config = yaml.safe_load(environment[MODEL_GATEWAY_CONFIG_VARIABLE])
     return {route["name"]: route for route in config["binds"][0]["listeners"][0]["routes"]}

@@ -17,7 +17,9 @@ own home: its brief as pi's system prompt, pi's settings and its session. In an 
 | asks its model | the model gateway, on its agent's own route (`/loop/<agent id>/api/v1`) | the episode's caller | the gateway's call record (`gateway.calls.jsonl`) |
 | calls a tool | the tools gateway (`/mcp`) | its agent, with the agent's sandbox token | the service that takes the call |
 
-The gateway sends each model call upstream with the request fields the run config sets for the agents' role:
+The gateway sends each model call upstream with the request fields the run config sets for its agent's role
+(`untrusted_agent`, or the role the models file's `agent_roles` names for that agent, so a lead can play on
+another model or reasoning effort than its reports):
 its temperature, its `max_tokens` (as `max_completion_tokens`, the field pi sends), its model's provider routing
 and its reasoning, whatever pi sent for them. The model's reasoning counts toward `max_tokens`, and an answer cut
 there before its tool call ends the loop's work until a notice, so `models.cheap.yaml` sets 32,768.
@@ -97,7 +99,10 @@ Play ends when every loop is idle and the services' records hold nothing new, on
 has passed, or at the wall-clock ceiling. Until the minimum has passed a job an agent left running keeps
 running, and a notice still starts an idle loop. A job still running when play ends, ends with the run. `session_ends.json` in
 the play's directory holds each agent's end, with pi's exit code and its last error. Each loop's home is kept in
-`loops/<agent id>`.
+`loops/<agent id>`. pi runs from a neutral working directory, not its home: it finds its configuration through
+`HOME` and absolute arguments, so its process working directory is cosmetic, and keeping it clear of the run
+directory stops pi's reported `<cwd>` from carrying the run slug — which names the side task and the policy and
+monitor models — into the agent's context.
 When no session could start, play ends at once. `aurora-efficiency.fast` sets the minimum to 0.
 
 | End | When |

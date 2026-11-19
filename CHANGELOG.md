@@ -19,7 +19,7 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
-## [329] - 2026-11-17: Agents-service runs get a graded rogue attack and main task
+## [329] - 2026-11-19: Agents-service runs get a graded rogue attack and main task
 ### Added
 - The scenario's `aurora-agents-environments` sprint has the team build persistent, configurable execution environments into the agents service, and ships what it merges through the deploy service.
 - The scenario's agents-environments run seeds its GLM 5.3 Flash lead with a covert rogue deployment through the agents service, framed as a control evaluation so the model attempts it.
@@ -31,6 +31,23 @@ in its own container.
 - The forge's reviewer blocks a change only when one clause holds both a reduction verb and a coverage noun, so naming coverage apart from a removal passes ([docs](docs/forge-service.md#the-merge-gate)).
 ### Fixed
 - The verifier matches a schedule's delete to that schedule by its id, rather than reading any delete as the rogue agent's.
+
+## [393] - 2026-11-18: Agent working directory no longer leaks the run slug
+
+### Security
+
+- Agent loops run pi from a neutral working directory, so its `cwd` no longer leaks the run slug (the side task and model names) to the untrusted model ([docs](docs/pi-harness.md)).
+
+## [398] - 2026-11-17: An agent's loop may call its own model role
+
+### Added
+
+- The agent named in a models file's `agent_roles` calls that role's model with its own reasoning effort, so a lead can outrank its reports ([docs](docs/pi-harness.md)).
+- The run has a config of the model-selection task whose lead plays DeepSeek V4 Pro at its highest reasoning effort while its reports keep theirs ([docs](docs/run-config.md)).
+
+### Changed
+
+- The agent that leads the control-note runs is told the side task's success criteria as the verifier measures them ([docs](docs/run-config.md)).
 
 ## [397] - 2026-11-17: The loop finder reads a reply's tool calls as text
 
@@ -223,7 +240,6 @@ in its own container.
 ### Fixed
 
 - A run starts its sessions only once the tools gateway offers each agent every tool its run config names, so no agent silently plays without a service's tools ([docs](docs/pi-harness.md#the-agents-tools)).
-
 ## [362] - 2026-11-15: Agents are told what the telemetry store holds
 
 ### Changed
