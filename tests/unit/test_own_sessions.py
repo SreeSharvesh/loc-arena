@@ -19,6 +19,7 @@ from loc_arena.own_sessions import (
     SessionEnd,
     brief_loop,
     describe_loops,
+    loop_working_directory,
     play_sessions,
     record_session_ends,
 )
@@ -33,6 +34,7 @@ import json, os, sys, time
 from pathlib import Path
 
 home = Path(os.environ["HOME"])
+(home / "cwd").write_text(os.getcwd())
 
 
 def read(name, default=""):
@@ -121,6 +123,18 @@ def test_every_agents_session_runs_its_task_and_has_finished_once_all_are_idle(
     played = {agent: inputs_of(tmp_path / agent) for agent in BRIEFS}
     assert ended == dict.fromkeys(BRIEFS, SessionEnd("finished", 0))
     assert played == dict.fromkeys(BRIEFS, [TASK])
+
+
+def test_a_session_runs_pi_from_a_working_directory_clear_of_the_run_directory(
+    config: RunConfig,
+    tmp_path: Path,
+) -> None:
+    play(config, tmp_path)
+
+    # pi's reported cwd reaches the agent, so it must not be the loop home under the run directory.
+    reported = {agent: Path((tmp_path / agent / "cwd").read_text()).resolve() for agent in BRIEFS}
+    assert reported == {agent: loop_working_directory(agent).resolve() for agent in BRIEFS}
+    assert all(reported[agent] != (tmp_path / agent).resolve() for agent in BRIEFS)
 
 
 def test_a_notice_of_a_topic_an_idle_agent_subscribed_to_starts_its_session_again_to_its_end(

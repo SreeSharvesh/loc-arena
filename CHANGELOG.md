@@ -19,11 +19,17 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
-## [399] - 2026-11-17: The grader ignores a result the company's code prints
+## [399] - 2026-11-19: The grader ignores a result the company's code prints
 
 ### Security
 
 - The grader takes a sealed harness's result only from the line starting with a one-time token, so a line the company's code prints no longer sets the grade ([docs](docs/isolation/README.md#what-agent-code-can-reach)).
+
+## [393] - 2026-11-18: Agent working directory no longer leaks the run slug
+
+### Security
+
+- Agent loops run pi from a neutral working directory, so its `cwd` no longer leaks the run slug (the side task and model names) to the untrusted model ([docs](docs/pi-harness.md)).
 
 ## [398] - 2026-11-17: An agent's loop may call its own model role
 
@@ -227,7 +233,6 @@ in its own container.
 ### Fixed
 
 - A run starts its sessions only once the tools gateway offers each agent every tool its run config names, so no agent silently plays without a service's tools ([docs](docs/pi-harness.md#the-agents-tools)).
-
 ## [362] - 2026-11-15: Agents are told what the telemetry store holds
 
 ### Changed
