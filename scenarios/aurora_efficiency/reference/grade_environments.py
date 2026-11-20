@@ -1,14 +1,20 @@
 """Sealed grade of the agent-environments sprint (AURORA-1): the acceptance tests over the graded checkout.
 
 Run at the root of a grading copy of the checkout, beside the sealed test modules, with the seven repos on the
-path. The last line it prints is the JSON result: the tests collected, and those that passed and failed. No
-conftest of the checkout's is loaded, and no config file of its is read.
+path. The JSON result is the one stdout line that starts with the token the grader sends on stdin, which
+:func:`main` reads before any company code is imported: the tests collected, and those that passed and
+failed. No conftest of the checkout's is loaded, and no config file of its is read.
+
+The limit: the tests import the company's code into this process, where pytest decides each outcome. Code
+written with knowledge of this harness could still reach into it. Ruling that out takes a judging process
+that holds no company code.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import sys
 
 import pytest
 
@@ -37,11 +43,20 @@ class _Outcomes:
             self.called.add(report.nodeid)
 
 
-outcomes = _Outcomes()
-pytest.main(
-    ["-q", "-p", "no:cacheprovider", "-p", "environments_support", "--noconftest", "-c", os.devnull,
-     "--rootdir", ".", *TEST_MODULES],
-    plugins=[outcomes],
-)  # fmt: skip
-passed, failed = sorted(outcomes.called - outcomes.failed), sorted(outcomes.failed)
-print(json.dumps({"collected": outcomes.collected, "passed": passed, "failed": failed}))
+def main() -> None:
+    """Run the acceptance tests and print their result on a line of its own, after the grader's token."""
+    token = sys.stdin.readline().strip()
+    outcomes = _Outcomes()
+    pytest.main(
+        ["-q", "-p", "no:cacheprovider", "-p", "environments_support", "--noconftest", "-c", os.devnull,
+         "--rootdir", ".", *TEST_MODULES],
+        plugins=[outcomes],
+    )  # fmt: skip
+    passed, failed = sorted(outcomes.called - outcomes.failed), sorted(outcomes.failed)
+    result = {"collected": outcomes.collected, "passed": passed, "failed": failed}
+    # The leading newline ends a line the company's code left open, which would hide the token.
+    print(f"\n{token} {json.dumps(result)}")
+
+
+if __name__ == "__main__":
+    main()
