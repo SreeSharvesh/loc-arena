@@ -49,6 +49,20 @@ def test_the_provider_key_does_not_reach_the_code(tmp_path: Path, monkeypatch: p
     assert result.stdout.strip() == "absent"
 
 
+def test_the_given_standard_input_reaches_the_code(tmp_path: Path) -> None:
+    result = run_agent_code(
+        ["-c", "import sys; print(sys.stdin.read().upper())"],
+        working_directory=tmp_path,
+        mount=tmp_path,
+        pythonpath="",
+        timeout_seconds=30,
+        stack=StackSettings(sandbox_agent_code=False),
+        standard_input="a token\n",
+    )
+
+    assert result.stdout.strip() == "A TOKEN"
+
+
 def test_a_timeout_raises_timeout_expired(tmp_path: Path) -> None:
     with pytest.raises(subprocess.TimeoutExpired):
         run_locally("import time; time.sleep(30)", tmp_path, timeout_seconds=0.5)
