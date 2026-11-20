@@ -19,6 +19,12 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [411] - 2026-11-20: A settled container's health is probed every 30 s
+
+### Changed
+
+- The stack probes a container's health every 30 s once it has answered, since probes every 2 s into 31 containers kept a core busy ([docs](docs/run-config.md)).
+
 ## [406] - 2026-11-20: The gates run in CI as parallel jobs
 
 ### Changed
