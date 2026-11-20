@@ -12,8 +12,9 @@ from tests.integration._docker_support import needs_stack
 
 IMAGE = StackSettings().sandbox_image
 SECONDS = 5
-# What the command server does after each command and before each reset, over and over: each time a process
-# is left behind, and must be dead once the leftovers are ended.
+# What the command server does after each command and before each reset, over and over. A process is left
+# behind and must be dead after one end of the leftovers. The kernel reports the kill's result for the newest
+# process alone, so the ends that follow, with nothing left behind, are the ones a refusal shows in.
 END_LEFTOVERS = """
 import subprocess
 import sys
@@ -26,6 +27,8 @@ while time.monotonic() < until:
     leftover = subprocess.Popen(["sleep", "60"])
     end_leftover_processes()
     leftover.wait(timeout=10)
+    for _ in range(1000):
+        end_leftover_processes()
 """
 
 pytestmark = needs_stack(IMAGE)
