@@ -13,6 +13,8 @@ from loc_arena.config import RunConfig
 from loc_arena.episode_stack import CONFIGS_DIRECTORY
 from loc_arena.stack_play import EPISODE_SERVICE
 
+from tests.stack_slots import UNMEASURED_SECONDS
+
 DOCKER_CHECK_TIMEOUT_SECONDS = 10
 WORKSPACE_START_SECONDS = 60
 LOG_TAIL_LINES = 200  # of each log a failure's report holds
@@ -163,10 +165,14 @@ def _report_container(
     return report + read_logs(compose, environment, [container.get("Service", "")])
 
 
-def needs_stack(*images: str) -> list[pytest.MarkDecorator]:
-    """A Docker test module's marks: it runs in a stack slot, and skips without Docker or ``images``."""
+def needs_stack(*images: str, seconds: int = UNMEASURED_SECONDS) -> list[pytest.MarkDecorator]:
+    """A Docker test module's marks: it runs in a stack slot, and skips without Docker or ``images``.
+
+    ``seconds`` is about how long the module takes on a CI runner: it evens the shares of ``--stack-shard``.
+    """
     missing = not all(map(image_exists, images))
-    return [pytest.mark.stack, pytest.mark.skipif(missing, reason=f"needs Docker and {', '.join(images)}")]
+    reason = f"needs Docker and {', '.join(images)}"
+    return [pytest.mark.stack(seconds=seconds), pytest.mark.skipif(missing, reason=reason)]
 
 
 def image_exists(image: str) -> bool:

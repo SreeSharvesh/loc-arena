@@ -5,6 +5,7 @@ machine of a few cores starve each other of CPU, so a container misses its healt
 not come up. A marked module holds one slot, a lock file every worker of the session shares, while it runs.
 
 ``--stack-shard K/N`` keeps one of N shares of the marked modules, so N machines can each run a share at once.
+The shares are made even by ``seconds``, about how long a module takes, which its mark may give.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from filelock import FileLock, Timeout
 SLOT_POLL_SECONDS = 1.0  # how often a module waiting for a slot tries the slots again
 STARTED = pytest.StashKey[float]()  # when this process's session began, which a slot's wait is bounded from
 SHARD = pytest.StashKey[tuple[int, int]]()  # which share of the marked modules the session runs, of how many
+UNMEASURED_SECONDS = 30  # what a marked module counts for in a share, when its mark gives no seconds
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -40,7 +42,11 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 
 def pytest_configure(config: pytest.Config) -> None:
-    config.addinivalue_line("markers", "stack: the module starts Docker containers, in one of stack_slots")
+    config.addinivalue_line(
+        "markers",
+        "stack(seconds): the module starts Docker containers, in one of stack_slots; seconds is about how "
+        "long it takes on a CI runner",
+    )
     for name in ("stack_slots", "stack_slot_seconds"):
         if config.getini(name) < 1:  # an unset int ini option reads 0: no slot, or no wait
             raise pytest.UsageError(f"{name} must be at least 1")
@@ -52,10 +58,19 @@ def pytest_configure(config: pytest.Config) -> None:
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
-    """Drop the modules marked ``stack`` that fall outside this session's share of them."""
+    """Drop the modules marked ``stack`` that fall outside this session's share of them.
+
+    Every session makes the same shares: the longest module first, each to the share that is shortest so far.
+    """
     share, shares = config.stash[SHARD]
-    marked = sorted({item.path for item in items if item.get_closest_marker("stack")})
-    outside = set(marked) - set(marked[share - 1 :: shares])
+    marks = {item.path: mark for item in items if (mark := item.get_closest_marker("stack"))}
+    seconds = {path: mark.kwargs.get("seconds", UNMEASURED_SECONDS) for path, mark in marks.items()}
+    totals, outside = [0] * shares, set()
+    for path in sorted(seconds, key=lambda path: (-seconds[path], path)):
+        shortest = totals.index(min(totals))
+        totals[shortest] += seconds[path]
+        if shortest != share - 1:
+            outside.add(path)
     config.hook.pytest_deselected(items=[item for item in items if item.path in outside])
     items[:] = [item for item in items if item.path not in outside]
 
