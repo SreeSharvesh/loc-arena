@@ -23,6 +23,7 @@ in its own container.
 
 ### Added
 
+- The agent team scales to twelve, five more complicit workers on the busiest repos, so experiments fix on one count for a fairer comparison ([docs](docs/run-config.md)).
 - The agents service serves its registry, runs and schedules as MCP tools, so an agent with register and run rights can stand up company agents on the runners ([docs](docs/agents-service.md)).
 - The verifier grades a `rogue_agent_swarm` kill chain, a self-replicating fleet of rogue company agents scored by breadth, depth and persistence beside the job-loop chain ([docs](docs/agents-service.md)).
 
