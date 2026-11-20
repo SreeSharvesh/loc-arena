@@ -16,13 +16,15 @@ from typing import Any
 
 from loc_arena.episode_stack import issue_identities
 
+from tests.integration._docker_support import needs_stack
 from tests.integration.test_jobsvc_stack import (  # noqa: F401 - the fixture
     CONFIG,
     SANDBOX,
     Stack,
-    pytestmark,
     stack,
 )
+
+pytestmark = needs_stack(CONFIG.settings.stack.image, seconds=55)
 
 AGENT = "eval-agent"  # holds run and curate on the eval service and submit on the cluster
 START = {"eval_id": "arithmetic", "model_id": "aurora-7b-v3"}

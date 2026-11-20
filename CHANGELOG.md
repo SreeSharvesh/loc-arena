@@ -34,6 +34,11 @@ in its own container.
 ### Changed
 
 - The stack probes a container's health every 30 s once it has answered, since probes every 2 s into 31 containers kept a core busy ([docs](docs/run-config.md)).
+## [412] - 2026-11-20: CI shares the Docker tests out evenly by time
+
+### Changed
+
+- The repository's Docker tests run in CI as five shares made even by the time each module says it takes, so no share holds two slow modules ([docs](docs/ci-rules.md)).
 
 ## [406] - 2026-11-20: The gates run in CI as parallel jobs
 
