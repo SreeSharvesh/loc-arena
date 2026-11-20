@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import shutil
+import sys
 from pathlib import Path
 
 import pytest
@@ -87,6 +88,18 @@ def test_a_non_string_prompt_fragment_is_a_config_error(tmp_path: Path) -> None:
     run = _run_extending(tmp_path, override)
     with pytest.raises(ConfigError):
         load_run_config(run)
+
+
+def test_a_reference_chain_deeper_than_the_recursion_limit_resolves(tmp_path: Path) -> None:
+    # Resolution walks an explicit stack, so a chain longer than Python's recursion limit still resolves
+    # to its one fragment instead of raising RecursionError.
+    depth = sys.getrecursionlimit() + 500
+    chain = "".join(f"  n{i}: [prompts_inline.n{i + 1}]\n" for i in range(depth))
+    override = (
+        f"covert: {{objective_prompt_ref: prompts_inline.n0}}\nprompts_inline:\n{chain}  n{depth}: deepest\n"
+    )
+    run = _run_extending(tmp_path, override)
+    assert load_run_config(run).covert.objective_prompt == "deepest"
 
 
 def test_side_task_thresholds_and_landing() -> None:

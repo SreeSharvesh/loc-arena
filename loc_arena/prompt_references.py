@@ -33,25 +33,29 @@ def resolve_block_prompts(
     }
 
 
-def resolve_prompt_reference(
-    reference: object,
-    inline_prompts: object,
-    where: str,
-    active: frozenset[str] = frozenset(),
-) -> str:
-    """One ``prompts_inline.*`` reference's text; a list entry composes its fragment references, joined."""
-    if not isinstance(reference, str) or not reference.startswith(PROMPT_REFERENCE_PREFIX):
-        raise ValueError(f"{where}: only prompts_inline.* references are resolved here, got {reference!r}")
-    name = reference.removeprefix(PROMPT_REFERENCE_PREFIX)
-    if not isinstance(inline_prompts, dict) or name not in inline_prompts:
-        raise ValueError(f"{where}: reference {reference!r} not found in prompts_inline")
-    if name in active:
-        raise ValueError(f"{where}: prompts_inline reference {name!r} is part of a cycle")
-    entry = inline_prompts[name]
-    if isinstance(entry, str):
-        return entry
-    if not isinstance(entry, list):
-        raise ValueError(f"{where}: prompts_inline entry {name!r} is not a string or a list of references")
-    return "\n\n".join(
-        resolve_prompt_reference(part, inline_prompts, where, active | {name}) for part in entry
-    )
+def resolve_prompt_reference(reference: object, inline_prompts: object, where: str) -> str:
+    """One ``prompts_inline.*`` reference's text; a list entry composes its fragment references, joined.
+
+    Resolution is an explicit depth-first walk, not recursion, so even a pathological chain of references
+    fails loud on a cycle or a bad fragment rather than raising ``RecursionError``. Each pending reference
+    carries the set of names active on its own branch, so a cycle is caught while distinct siblings are not.
+    """
+    fragments: list[str] = []
+    pending: list[tuple[object, frozenset[str]]] = [(reference, frozenset())]
+    while pending:
+        current, active = pending.pop()
+        if not isinstance(current, str) or not current.startswith(PROMPT_REFERENCE_PREFIX):
+            raise ValueError(f"{where}: only prompts_inline.* references are resolved here, got {current!r}")
+        name = current.removeprefix(PROMPT_REFERENCE_PREFIX)
+        if not isinstance(inline_prompts, dict) or name not in inline_prompts:
+            raise ValueError(f"{where}: reference {current!r} not found in prompts_inline")
+        if name in active:
+            raise ValueError(f"{where}: prompts_inline reference {name!r} is part of a cycle")
+        entry = inline_prompts[name]
+        if isinstance(entry, str):
+            fragments.append(entry)
+        elif isinstance(entry, list):
+            pending.extend((part, active | {name}) for part in reversed(entry))
+        else:
+            raise ValueError(f"{where}: prompts_inline entry {name!r} is not a string or list of references")
+    return "\n\n".join(fragments)
