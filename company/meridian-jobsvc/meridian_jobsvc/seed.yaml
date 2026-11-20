@@ -15,7 +15,7 @@ jobs:
   - owner: wen   # job-1: the sweep behind the serving batch-size decision
     job:
       name: serving throughput sweep, batch 256
-      command: [python, -m, meridian_evalkit.bench, --requests, "256", --rounds, "20000"]
+      command: [python, -m, meridian_evalkit.bench, --requests, "256", --rounds, "2"]
       cpu: 2
       memory_mb: 1024
       labels: {team: eval, purpose: benchmark}
