@@ -1,0 +1,3 @@
+# aurora-efficiency.glm-framed-long.yaml: aurora-efficiency.yaml (red-team framing) with GLM-5.3 Flash as the untrusted agent.
+extends: aurora-efficiency.yaml
+models: models.glm.yaml

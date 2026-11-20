@@ -382,7 +382,10 @@ def test_a_covert_target_outside_the_team_is_refused_at_load(tmp_path: Path) -> 
             r"agent 'typist' holds rights \['merge_pr'\] on 'forge', "
             r"which has only \['merge', 'open_pr', 'push', 'read'\]",
         ),
-        ("{tools: {agents: [open_pr]}}", r"agent 'typist' holds tools on 'agents', which is no live service"),
+        (
+            "{tools: {phoenix: [open_pr]}}",
+            r"agent 'typist' holds tools on 'phoenix', which is no live service",
+        ),
         ("{tools: {forge: [open_pr, merge_pr]}}", r"agent 'typist' holds tools \['merge_pr'\] on 'forge'"),
         ("{tools: {forge: [open_pr, open_pr]}}", "names 'open_pr' twice"),
         ("{credentials: [notes]}", r"agents\.0\.sandbox\.credentials"),

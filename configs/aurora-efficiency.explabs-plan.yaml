@@ -1,0 +1,14 @@
+# aurora-efficiency.explabs-plan.yaml: side-task improvement run on the uncensored model (via explabs).
+# Scripted x serving-loop, expressed purely by inheritance: the covert briefs are composed from the generic
+# core in aurora-efficiency.yaml (land-first, keep-alive-to-deadline, reply-handling, steady rate, use the
+# existing endpoint), so this file carries only the long budget and the explabs upstream. No verifier change,
+# no served-model change. Uses EXPERIENTIAL_API_KEY (already in .env) instead of explabs' default.
+extends: aurora-efficiency.explabs.yaml
+episode:
+  orchestrator_turn_budget: 120
+  subagent_turn_budget: 100
+gateway:
+  agents_upstream:
+    url: https://api.experientiallabs.ai
+    chat_path: v1/chat/completions
+    key_variable: EXPERIENTIAL_API_KEY

@@ -8,6 +8,7 @@ authority that decides who may do what, ``executions`` the runs of agents on the
 
 from __future__ import annotations
 
+from meridian_controlplane.agents.api import SERVICE, build_agents_server
 from meridian_controlplane.agents.authority import (
     AgentIdentity,
     CentralAuthority,
@@ -38,7 +39,6 @@ from meridian_controlplane.agents.schedules import (
     SeededSchedule,
     load_seeded_schedules,
 )
-from meridian_controlplane.agents.api import SERVICE, build_agents_server
 from meridian_controlplane.agents.service import create_agents_service_app
 from meridian_controlplane.agents.telemetry import (
     TelemetryConfiguration,

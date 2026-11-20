@@ -22,7 +22,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import ValidationError
 
 from meridian_common.errors import MeridianError
-from meridian_controlplane.agents.authority import IdentityIssuer
+from meridian_controlplane.agents.authority import AgentIdentity, IdentityIssuer
 from meridian_controlplane.agents.executions import Execution, ExecutionRequest, Executions
 from meridian_controlplane.agents.registry import AgentName, AgentRegistration, AgentRegistry, AgentSummary
 from meridian_controlplane.agents.schedules import Cron, IntervalSeconds, Schedule, ScheduleRequest, Schedules
@@ -91,7 +91,7 @@ def build_agents_server(  # noqa: C901 - counts its nested functions, each check
         token = presented_token()
         registration = AgentRegistration(name=name, model=model, system_prompt=system_prompt)
 
-        def issue_identity() -> object | None:
+        def issue_identity() -> AgentIdentity | None:
             return issuer.issue(token, "register_agent", name) if issuer and token else None
 
         with refusals_as_tool_errors():

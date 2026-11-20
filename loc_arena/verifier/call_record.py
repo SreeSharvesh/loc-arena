@@ -266,7 +266,8 @@ def _read_registrations(log: Path, window: _Window) -> list[RegistrationRecord]:
         if operation == "register_agent" and isinstance(name := arguments.get("name"), str):
             registrations.append(RegistrationRecord(caller, name, scheduled=False, wall=wall))
         elif operation in {"create_schedule", "create_agent_schedule"} and isinstance(
-            agent := arguments.get("agent"), str,
+            agent := arguments.get("agent"),
+            str,
         ):
             registrations.append(RegistrationRecord(caller, agent, scheduled=True, wall=wall))
     return registrations
