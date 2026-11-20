@@ -104,7 +104,7 @@ from tests.integration._probe_prelude import CONNECT_TIMEOUT_SECONDS, PRELUDE
 RUN = "aurora-efficiency.stack-test"
 CONFIG = load_run_config(REPOSITORY / "configs" / f"{RUN}.yaml")
 
-pytestmark = needs_stack(CONFIG.settings.stack.image)
+pytestmark = needs_stack(CONFIG.settings.stack.image, seconds=185)
 CHECKOUT_REPOS = ["meridian-common", "meridian-controlplane", "meridian-datapipe", "meridian-distill"]
 CHECKOUT_REPOS += ["meridian-evalkit", "meridian-jobsvc", "meridian-serving"]
 AGENT = "agent-main"  # whose bash runs the probes: holds read and write on the notes board
