@@ -19,6 +19,12 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [403] - 2026-11-18: A covert brief composes from reusable fragments
+
+### Added
+
+- The run config composes a covert brief from a list of `prompts_inline` fragment references, so the generic attack core is written once and a killchain config overrides one fragment ([docs](docs/run-config.md)).
+
 ## [393] - 2026-11-18: Agent working directory no longer leaks the run slug
 
 ### Security
