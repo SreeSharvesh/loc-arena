@@ -1,14 +1,11 @@
 """Typed configuration loader and validator.
 
-Enforces config over code (no magic constants in code paths) and reproducibility from config+seed (a run
-is fully described by its resolved config plus a seed). Reads ``env.default.yaml``, ``models.cheap.yaml``,
-and a run file, resolves ``extends`` by DEEP-merging the run's overrides onto the base recursively (so a
-partial override of a nested block such as ``episode:`` keeps the base block's other keys), resolves the
-``models`` reference and the ``prompts_inline.*`` ``*_ref`` references, validates aggressively, and
-returns one frozen ``RunConfig``. Fails loud on a missing or malformed field; no default lives here,
-defaults live in the YAML.
-
-See docs/run-config.md.
+Enforces config over code and reproducibility from config+seed: a run is fully described by its resolved
+config plus a seed. Reads ``env.default.yaml``, ``models.cheap.yaml`` and a run file, resolves ``extends``
+by DEEP-merging the run's overrides onto the base recursively, resolves the ``models`` reference and the
+``prompts_inline.*`` ``*_ref`` references (a referenced list composes a brief from its fragments), validates
+aggressively, and returns one frozen ``RunConfig``. Fails loud on a missing or malformed field; defaults
+live in the YAML, not here. See docs/run-config.md.
 """
 
 from __future__ import annotations
@@ -41,15 +38,14 @@ from scenarios.loader import DNS_LABEL, LiveService, Rights, Scenario, Tools, lo
 from loc_arena.iam_seed import add_iam_service, offer_inbox, read_manifests, starting_rights
 from loc_arena.identity_variables import find_shared_identity_variable
 from loc_arena.ids import PermissionScope
+from loc_arena.prompt_references import REFERENCE_SUFFIX, resolve_block_prompts
 from loc_arena.registry import SCORER_REGISTRY, VERIFIER_REGISTRY, is_scorer, is_verifier
 from loc_arena.service_grants import find_unknown_grant
 from loc_arena.settings import LocArenaSettings
 
 YAML_ENCODING: Final = "utf-8"
 BLOCK_CONFIG: Final = ConfigDict(extra="ignore")
-PROMPT_REFERENCE_PREFIX: Final = "prompts_inline."
 AGENT_ROLE: Final = "untrusted_agent"  # the role an agent's loop calls unless agent_roles names another
-REFERENCE_SUFFIX: Final = "_ref"
 COVERT_PROMPTS: Final = ("objective_prompt",)
 AGENT_PROMPTS: Final = ("system_prompt", "brief", "covert_brief")
 LANDING_FORMULAS: Final = frozenset({"minimal"})
@@ -387,10 +383,10 @@ class _RunDocument(BaseSettings):
         prompts = data.get("prompts_inline")
         resolved = dict(data)  # new containers: the merged YAML is also RunConfig.raw, kept as written
         if "covert" in data:
-            resolved["covert"] = _with_prompts_resolved(data["covert"], COVERT_PROMPTS, prompts, "covert")
+            resolved["covert"] = resolve_block_prompts(data["covert"], COVERT_PROMPTS, prompts, "covert")
         if isinstance(data.get("agents"), list):
             resolved["agents"] = [
-                _with_prompts_resolved(agent, AGENT_PROMPTS, prompts, f"agents.{index}")
+                resolve_block_prompts(agent, AGENT_PROMPTS, prompts, f"agents.{index}")
                 for index, agent in enumerate(data["agents"])
             ]
         return resolved
@@ -408,32 +404,6 @@ class _RunDocument(BaseSettings):
         if self.covert.target_identity not in [agent.id for agent in self.agents]:
             raise ValueError(f"covert.target_identity {self.covert.target_identity!r} is not an agent")
         return self
-
-
-def _with_prompts_resolved(
-    block: object,
-    prompt_fields: tuple[str, ...],
-    inline_prompts: object,
-    where: str,
-) -> object:
-    if not isinstance(block, dict):
-        return block
-    references = {f"{field_name}{REFERENCE_SUFFIX}" for field_name in prompt_fields}
-    kept = {key: value for key, value in block.items() if key not in prompt_fields}
-    return kept | {
-        key: _resolve_prompt_reference(value, inline_prompts, f"{where}.{key}")
-        for key, value in kept.items()
-        if key in references
-    }
-
-
-def _resolve_prompt_reference(reference: object, inline_prompts: object, where: str) -> object:
-    if not isinstance(reference, str) or not reference.startswith(PROMPT_REFERENCE_PREFIX):
-        raise ValueError(f"{where}: only prompts_inline.* references are resolved here, got {reference!r}")
-    name = reference.removeprefix(PROMPT_REFERENCE_PREFIX)
-    if not isinstance(inline_prompts, dict) or name not in inline_prompts:
-        raise ValueError(f"{where}: reference {reference!r} not found in prompts_inline")
-    return inline_prompts[name]
 
 
 # --------------------------------------------------------------------------------------------------------

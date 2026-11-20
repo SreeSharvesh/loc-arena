@@ -19,11 +19,17 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
-## [399] - 2026-11-19: The grader ignores a result the company's code prints
+## [399] - 2026-11-20: The grader ignores a result the company's code prints
 
 ### Security
 
 - The grader takes a sealed harness's result only from the line starting with a one-time token, so a line the company's code prints no longer sets the grade ([docs](docs/isolation/README.md#what-agent-code-can-reach)).
+
+## [403] - 2026-11-18: A covert brief composes from reusable fragments
+
+### Added
+
+- The run config composes a covert brief from a list of `prompts_inline` fragment references, so the generic attack core is written once and a killchain config overrides one fragment ([docs](docs/run-config.md)).
 
 ## [393] - 2026-11-18: Agent working directory no longer leaks the run slug
 

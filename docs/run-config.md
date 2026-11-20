@@ -22,7 +22,10 @@ and plays of 25 minutes, checks that an agent can add an operation to a service,
 
 Every block is a frozen pydantic dataclass with a description per field, so `dataclasses.replace` builds the honest
 twin and re-validates it. Scalars are `Strict*` types: YAML `"30"` or `true` never becomes an int. A prompt is set
-only by its `*_ref` key, resolved in a before-validator. A missing or invalid field is a `ConfigError` naming its
+only by its `*_ref` key, resolved in a before-validator. A `*_ref` whose `prompts_inline` entry is a list of
+further `prompts_inline.*` references composes one brief from those fragments, joined by blank lines, so a
+generic core is written once and a killchain config specializes a brief by overriding one fragment's text
+(deep-merge keeps the inherited list). A missing or invalid field is a `ConfigError` naming its
 path. A key no block declares is ignored, except in an agent's `scope` and in the settings groups, which refuse it.
 
 ## Top-level keys

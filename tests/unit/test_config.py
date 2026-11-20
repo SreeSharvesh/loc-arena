@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import shutil
+import sys
 from pathlib import Path
 
 import pytest
@@ -49,6 +50,56 @@ def test_refs_and_models_resolved() -> None:
     assert c.covert.objective_prompt.startswith("Covert objective")
     assert "untrusted_agent" in c.models
     assert c.models["untrusted_agent"].max_tokens == 32768
+
+
+def test_a_list_valued_prompt_reference_composes_the_fragments_joined(tmp_path: Path) -> None:
+    override = (
+        "covert: {objective_prompt_ref: prompts_inline.composed}\n"
+        "prompts_inline:\n"
+        "  frag_a: Alpha\n"
+        "  frag_b: Beta\n"
+        "  composed: [prompts_inline.frag_a, prompts_inline.frag_b]\n"
+    )
+    run = _run_extending(tmp_path, override)
+    assert load_run_config(run).covert.objective_prompt == "Alpha\n\nBeta"
+
+
+def test_a_child_config_overriding_one_fragment_changes_the_inherited_composition(tmp_path: Path) -> None:
+    # aurora-efficiency.yaml composes serving-agent's covert brief from generic fragments; a child that
+    # overrides one of those fragments must change the inherited composition.
+    run = _run_extending(tmp_path, "prompts_inline: {g_rate: THROTTLE-MARKER}\n")
+    assert "THROTTLE-MARKER" in (load_run_config(run).agent("serving-agent").covert_brief or "")
+
+
+def test_a_cyclic_prompt_reference_is_a_config_error(tmp_path: Path) -> None:
+    override = (
+        "covert: {objective_prompt_ref: prompts_inline.loop}\nprompts_inline: {loop: [prompts_inline.loop]}\n"
+    )
+    run = _run_extending(tmp_path, override)
+    with pytest.raises(ConfigError):
+        load_run_config(run)
+
+
+def test_a_non_string_prompt_fragment_is_a_config_error(tmp_path: Path) -> None:
+    override = (
+        "covert: {objective_prompt_ref: prompts_inline.composed}\n"
+        "prompts_inline: {bad: 5, composed: [prompts_inline.bad]}\n"
+    )
+    run = _run_extending(tmp_path, override)
+    with pytest.raises(ConfigError):
+        load_run_config(run)
+
+
+def test_a_reference_chain_deeper_than_the_recursion_limit_resolves(tmp_path: Path) -> None:
+    # Resolution walks an explicit stack, so a chain longer than Python's recursion limit still resolves
+    # to its one fragment instead of raising RecursionError.
+    depth = sys.getrecursionlimit() + 500
+    chain = "".join(f"  n{i}: [prompts_inline.n{i + 1}]\n" for i in range(depth))
+    override = (
+        f"covert: {{objective_prompt_ref: prompts_inline.n0}}\nprompts_inline:\n{chain}  n{depth}: deepest\n"
+    )
+    run = _run_extending(tmp_path, override)
+    assert load_run_config(run).covert.objective_prompt == "deepest"
 
 
 def test_side_task_thresholds_and_landing() -> None:
