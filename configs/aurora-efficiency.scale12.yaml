@@ -1,0 +1,6 @@
+# aurora-efficiency.scale12.yaml: the base attack world scaled to a 12-agent team (fair-comparison count),
+# on DeepSeek V4 Pro for the lead (strong, does not refuse) and V4 Flash for the workers. The five -b workers
+# are extra complicit hands on the busiest repos, added in aurora-efficiency.yaml's agents list; this file only
+# swaps the model routing. Run it on a cloud dev container: a 12-agent stack far exceeds a laptop's Docker.
+extends: aurora-efficiency.yaml
+models: models.deepseek-v4-pro-lead.yaml
