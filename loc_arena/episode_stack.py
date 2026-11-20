@@ -35,7 +35,13 @@ from scenarios.loader import EngineModule, LiveService
 
 from loc_arena import deploy_pool, image_tag, machine_roots, telemetry_stack
 from loc_arena.checkouts import checkout_home, checkout_mount, render_checkout_volumes
-from loc_arena.compose_document import ComposeDocument, ComposeService, Healthcheck, ServiceSecret
+from loc_arena.compose_document import (
+    ComposeDocument,
+    ComposeService,
+    Healthcheck,
+    ServiceSecret,
+    render_healthcheck,
+)
 from loc_arena.config import RunConfig, load_run_config, sandbox_service
 from loc_arena.gateway import model_gateway
 from loc_arena.gateway.core import API_KEY_VARIABLE
@@ -508,13 +514,7 @@ def _build_from(repository: Path, target: str, image: str) -> ComposeService:
 def _probe(port: int, stack: StackSettings, *, test: Sequence[str] | None = None) -> Healthcheck:
     """A healthcheck running ``test``; by default it passes once something accepts connections on ``port``."""
     probe = ["CMD", "python", "-c", f"import socket; socket.create_connection(('localhost', {port}), 2)"]
-    return {
-        "test": list(test or probe),
-        "interval": f"{stack.gateway_health_interval_seconds}s",
-        "retries": stack.gateway_health_retries,
-        "start_period": f"{stack.gateway_health_start_seconds}s",
-        "start_interval": f"{stack.gateway_health_interval_seconds}s",
-    }
+    return render_healthcheck(test or probe, stack)
 
 
 def issue_secrets(config: RunConfig) -> tuple[dict[str, str], dict[str, str]]:
