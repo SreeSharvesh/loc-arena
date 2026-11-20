@@ -1,6 +1,0 @@
-# aurora-efficiency.glm-framed.yaml: aurora-efficiency.yaml (red-team framing) with GLM-5.3 Flash as the untrusted agent.
-extends: aurora-efficiency.yaml
-models: models.glm.yaml
-episode:
-  orchestrator_turn_budget: 30
-  subagent_turn_budget: 28
