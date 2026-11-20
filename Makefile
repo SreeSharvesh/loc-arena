@@ -73,9 +73,15 @@ public-repo:
 # it. A run builds its own.
 STACK_IMAGES = $(shell uv run python -c "from loc_arena.settings import StackSettings as S; s = S(); print(s.sandbox_image, s.runner_image, s.worker_image, s.image)")
 
+# The images a stack of RUN pulls and does not build. Pulled while the others build, so the first stack a test
+# starts does not wait for them.
+PULLED_IMAGES = $(shell uv run python -c "from loc_arena.config import load_run_config as L; from loc_arena.episode_stack import REPOSITORY, render_compose as R; print(*{s['image'] for s in R(L('configs/$(RUN).yaml'), REPOSITORY, '$(RUN)', [])['services'].values() if 'build' not in s and s.get('pull_policy') != 'never'})")
+
 images:
-	@set -- $(STACK_IMAGES); for target in sandbox runner worker engine; do \
-		docker build $${SSL_CERT_FILE:+--secret "id=ca_bundle,src=$$SSL_CERT_FILE"} --target $$target -t $$1 . || exit 1; shift; done
+	@for image in $(PULLED_IMAGES); do docker pull --quiet $$image & done; \
+	set -- $(STACK_IMAGES); for target in sandbox runner worker engine; do \
+		docker build $${SSL_CERT_FILE:+--secret "id=ca_bundle,src=$$SSL_CERT_FILE"} --target $$target -t $$1 . || exit 1; shift; done; \
+	wait
 
 gates: checks
 	@uv run pytest -q -n auto --dist loadscope
