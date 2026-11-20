@@ -86,7 +86,7 @@ checks:
 	@uv run ruff check . && uv run ruff format --check . && uv run ty check
 
 tests:
-	@uv run pytest -q -n auto --dist loadscope -m "not stack"
+	@uv run pytest -q -n auto --dist loadscope -m "not stack" --durations 15
 
 stack-tests:
-	@uv run pytest -q -m stack $(if $(SHARD),--stack-shard $(SHARD))
+	@uv run pytest -q -m stack $(if $(SHARD),--stack-shard $(SHARD)) --durations 15

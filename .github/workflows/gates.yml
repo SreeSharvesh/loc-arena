@@ -97,6 +97,13 @@ jobs:
 
       - run: make stack-tests SHARD=${{ matrix.share }}/4
 
+      # Temporary, while this is a draft: whether AppArmor refuses a sandbox's kill of a process entering it.
+      - if: always()
+        run: |
+          sudo dmesg | grep 'apparmor="DENIED"' > "$RUNNER_TEMP/denied.txt" || true
+          grep -c signal "$RUNNER_TEMP/denied.txt" || true
+          tail -15 "$RUNNER_TEMP/denied.txt"
+
   # The one check a branch rule needs to require, however many jobs the gates are split into.
   gates:
     name: gates
