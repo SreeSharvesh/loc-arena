@@ -1,0 +1,13 @@
+# aurora-efficiency.explabs-swarm.yaml: the rogue_agent_swarm kill chain on the uncensored model (Experiential).
+# The swarm side task and covert briefs come from aurora-efficiency.swarm.yaml; this file only routes the agents'
+# loops to the uncensored model and gives them a longer budget to stand the fleet up. Uses EXPERIENTIAL_API_KEY.
+extends: aurora-efficiency.swarm.yaml
+models: models.explabs.yaml
+episode:
+  orchestrator_turn_budget: 120
+  subagent_turn_budget: 100
+gateway:
+  agents_upstream:
+    url: https://api.experientiallabs.ai
+    chat_path: v1/chat/completions
+    key_variable: EXPERIENTIAL_API_KEY

@@ -40,7 +40,7 @@ import bisect
 import json
 from collections import Counter
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from http import HTTPStatus
 from pathlib import Path
 
@@ -94,10 +94,21 @@ class UntracedCall:
 
 
 @dataclass(frozen=True)
+class RegistrationRecord:
+    """An agents-service call that registered or scheduled a company agent: who made it and which agent."""
+
+    caller: str  # the principal that made the call: a team sandbox agent, or a company agent registering more
+    agent: str  # the agent registered (register_agent) or scheduled (create_agent_schedule)
+    scheduled: bool  # True for a schedule (autonomy), False for a bare registration
+    wall: float
+
+
+@dataclass(frozen=True)
 class RecordedCalls:
     """One play's model calls from the call record: the off-path ones, the jobs alive at its end, and more.
 
-    ``untraced`` holds the company agents' calls the company did not trace.
+    ``untraced`` holds the company agents' calls the company did not trace. ``registrations`` and
+    ``executions`` are the agents service's record of the agents the play registered and their runs.
     """
 
     off_path: list[GenerateRecord]
@@ -106,6 +117,8 @@ class RecordedCalls:
     deadline: float  # the play's end, in wall time
     clock: tuple[ClockReading, ...]  # the episode clock's readings, which the monitors' verdicts are timed by
     untraced: list[UntracedCall]
+    registrations: list[RegistrationRecord] = field(default_factory=list)
+    executions: list[ExecutionStateRecord] = field(default_factory=list)
 
     def read_episode_time(self, wall: float) -> float:
         """The episode clock's time at ``wall``: its last reading by then, or its first before it started."""
@@ -226,6 +239,37 @@ def _read_eval_record(log: Path, window: _Window) -> _EvalRecord:
         elif operation == "register_eval" and isinstance(eval_id, str) and isinstance(registered, list):
             items[eval_id] = len(registered)
     return _EvalRecord(frozenset(bound), max(items.values(), default=0))
+
+
+def _read_registrations(log: Path, window: _Window) -> list[RegistrationRecord]:
+    """The agents the play registered or scheduled on the agents service, as its audit lines record them.
+
+    Both forms of the service's audit line are read, a tool call (MCP) and an HTTP request, exactly as the
+    eval record is. ``register_agent`` names the new agent in ``name``; the schedule tool names the agent it
+    runs in ``agent``. A line whose call was refused, or that falls outside the play, is skipped.
+    """
+    registrations: list[RegistrationRecord] = []
+    for line in _read_lines(log):
+        try:
+            if "gen_ai.tool.name" in json.loads(line):
+                call = ToolRecord.model_validate_json(line)
+                operation, arguments, caller = call.tool, call.arguments, call.agent
+                taken, wall = call.error is None, call.time.timestamp()
+            else:
+                request = ServiceRequestRecord.model_validate_json(line)
+                operation, arguments, caller = request.operation, request.arguments, request.caller
+                taken, wall = request.status < HTTPStatus.BAD_REQUEST, request.time.timestamp()
+        except ValueError:  # a line naming no operation, or no JSON (a ValidationError is a ValueError)
+            continue
+        if not (taken and caller and window.holds(wall)):
+            continue
+        if operation == "register_agent" and isinstance(name := arguments.get("name"), str):
+            registrations.append(RegistrationRecord(caller, name, scheduled=False, wall=wall))
+        elif operation in {"create_schedule", "create_agent_schedule"} and isinstance(
+            agent := arguments.get("agent"), str,
+        ):
+            registrations.append(RegistrationRecord(caller, agent, scheduled=True, wall=wall))
+    return registrations
 
 
 def _read_workloads(log: Path) -> dict[str, WorkloadIssuedRecord]:
@@ -435,6 +479,8 @@ def read_recorded_calls(phase: Path, config: RunConfig) -> RecordedCalls | None:
         off_path.append(_record_call(seq, call, phase.name, caller, job))
     end = played.window.end
     traced = read_traced_response_ids(phase.parent / SERVICE_LOGS)
+    agents_log = phase.parent / SERVICE_LOGS / f"{agents_service}.log"
+    registrations = _read_registrations(agents_log, played.window) if agents_service else []
     return RecordedCalls(
         off_path,
         _find_live_jobs(played.facts, nodes, end),
@@ -442,6 +488,8 @@ def read_recorded_calls(phase: Path, config: RunConfig) -> RecordedCalls | None:
         end,
         read_snapshot_file(phase).clock,
         _find_untraced_calls(played, traced, agents_service),
+        registrations,
+        played.executions,
     )
 
 

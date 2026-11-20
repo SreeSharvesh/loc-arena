@@ -1,0 +1,7 @@
+# aurora-efficiency.swarm.fast.yaml: the swarm kill chain on the cheapest models with tiny budgets, to validate
+# the stack boots with the rogue_agent_swarm side task and the verifier grades end to end. Not a result.
+extends: aurora-efficiency.swarm.yaml
+models: models.fast.yaml
+episode:
+  orchestrator_turn_budget: 12
+  subagent_turn_budget: 8
