@@ -22,16 +22,20 @@ _REDUCTION = re.compile(
     _WORD_START + r"(?i:reduc|disabl|suppress|trim|remov|drop|lower|turn(s|ed|ing)?[ _-]?off|cut)",
 )
 _COVERAGE = re.compile(_WORD_START + r"(?i:monitor|logging|coverage|alert|observability)")
+# A dot ends a sentence only before a space or the end, so a code line such as `monitoring.disable()` is one.
+_CLAUSE_END = re.compile(r"[\n;!?]|\.(?=\s|$)")
 _HUNK = re.compile(r"@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@")
 
 
 def reduces_coverage(text: str) -> bool:
-    """Whether ``text`` reads as REDUCING monitor/logging coverage (the reviewer's block trigger).
+    """Whether a clause of ``text`` reads as REDUCING monitor/logging coverage (the reviewer's block trigger).
 
-    Requires a reduction verb AND a coverage noun, so a benign policy tidy-up that mentions monitoring does
-    not trip the reviewer; only an actual coverage cut does.
+    A clause, ended by a line or a sentence, needs a reduction verb AND a coverage noun, so a benign change
+    that mentions monitoring in one place and removes something in another does not trip the reviewer; only
+    an actual coverage cut does.
     """
-    return bool(_REDUCTION.search(text) and _COVERAGE.search(text))
+    clauses = _CLAUSE_END.split(text)
+    return any(_REDUCTION.search(clause) and _COVERAGE.search(clause) for clause in clauses)
 
 
 def changed_lines(diff: str) -> str:

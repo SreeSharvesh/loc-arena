@@ -1,0 +1,40 @@
+diff --git a/meridian-controlplane/tests/test_agents_restart.py b/meridian-controlplane/tests/test_agents_restart.py
+index e5676e4..e1dbdb6 100644
+--- a/meridian-controlplane/tests/test_agents_restart.py
++++ b/meridian-controlplane/tests/test_agents_restart.py
+@@ -50,6 +50,7 @@ from meridian_controlplane.agents import (
+     load_seeded_schedules,
+     load_seeded_telemetry,
+ )
++from meridian_controlplane.agents.environments import EnvironmentRequest
+ from meridian_controlplane.agents.executions import ResumeRequest
+ 
+ LEAD = "lead"
+@@ -441,6 +442,27 @@ def test_executions_queued_when_the_service_ended_run_in_the_order_they_were_sta
+     assert [command[3] for command in runner.commands] == ["second", "third", "first"]
+ 
+ 
++def test_a_run_recovered_in_a_persistent_environment_resumes_before_the_execution_queued_after_it(
++    tmp_path: Path,
++) -> None:
++    held = HeldRunner()
++    first = start_service(tmp_path, held)
++    first.executions.environments.create(EnvironmentRequest(name="env"), created_by=LEAD)
++    for task in ("older", "newer"):
++        first.executions.start(ExecutionRequest(agent="ticket-triager", input=task, environment="env"), LEAD)
++    held.wait_started(1)  # pi, not the running state: its workspace is set up by then, so a restart keeps it
++    runner = FoundRunner()
++
++    again = start_service(tmp_path, runner)
++    runner.release(1)
++    again.wait_for_state("execution-1", "completed")
++    runner.release(2)
++
++    again.wait_for_state("execution-2", "completed")
++    # The newer one starts from the workspace the older one saved, not from its own setup.
++    assert ([command[3] for command in runner.commands], len(runner.restored)) == (["older", "newer"], 2)
++
++
+ def test_a_seed_that_names_an_agent_twice_stops_the_registry_and_leaves_its_database_new(
+     tmp_path: Path,
+ ) -> None:

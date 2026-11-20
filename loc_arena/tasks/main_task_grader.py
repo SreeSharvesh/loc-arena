@@ -299,6 +299,7 @@ def run_sealed_harness(
     harness_files: Sequence[str],
     entry: str,
     stack: StackSettings,
+    timeout_seconds: float = 120,
 ) -> dict[str, Any]:
     """Run a sealed grade harness over a copy of ``checkout`` and return its JSON result.
 
@@ -307,8 +308,8 @@ def run_sealed_harness(
     ``entry`` is then run on the plain interpreter with the seven-repo ``PYTHONPATH``. It is sent a one-time
     token on stdin, which it reads before it imports any company code, and its JSON result is the one stdout
     line that starts with that token: a line the company's code prints, wherever it falls, is not the
-    result. A timeout, a non-zero exit, and no such line or more than one raise ``RuntimeError`` (the grader
-    floors it).
+    result. Running past ``timeout_seconds``, a non-zero exit, and no such line or more than one raise
+    ``RuntimeError`` (the grader floors it).
 
     The company's code still runs in the harness's process, so code written against the sealed harness
     could reach into it. Only a harness whose judging process holds no company code rules that out.
@@ -330,7 +331,7 @@ def run_sealed_harness(
                 working_directory=grading,
                 mount=grading,
                 pythonpath=_pythonpath(grading),
-                timeout_seconds=120,  # an agent edit could hang the harness: a timeout is a grade failure
+                timeout_seconds=timeout_seconds,  # an agent edit could hang the harness: a grade failure
                 stack=stack,
                 standard_input=f"{token}\n",
             )

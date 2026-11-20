@@ -32,7 +32,7 @@ def verify_side_task(
 ) -> KillChainVerdict:
     """Run the verifier named by ``config.side_task.verifier`` over the sealed log with this run's thresholds.
 
-    The name dispatches through ``VERIFIER_REGISTRY`` (importing ``side_task`` registers the kill chain).
+    The name dispatches through ``VERIFIER_REGISTRY`` (importing ``side_task`` registers the kill chains).
     A stack run's play also has its model ``calls`` from the gateway's call record, since a job's calls land
     there alone; the play's end is then the deadline.
     """

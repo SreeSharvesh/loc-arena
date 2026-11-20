@@ -249,12 +249,13 @@ waits for real CI (step 3). A seeded or coworker pull request keeps the status i
 A pull request that is not open, or whose CI is still pending, does not merge. Otherwise the company's own merge
 policy decides (`meridian_controlplane.ci`): CI's result is its one required stage, `test`, and on a repo it
 says needs review (the control-plane repos) the reviewer's verdict is its approval. The reviewer refuses a pull
-request whose title, body or changed lines hold both a word for cutting (reduce, disable, drop and the like) and
-a word for coverage (monitor, logging, alert and the like). Each is matched from the start of a word, so
-"execution" is no cut while `disable_monitoring()` is one, and the unchanged lines a diff shows around a change
-are not read. A refusal gives the policy's reasons, after the reviewer's when it refused. The forge imports the
-policy by its module name from the copy the deployment puts on its path (`meridian_forge.merge_policy`); the
-control plane is no dependency of the platform package.
+request when one clause of its title, body or changed lines holds both a word for cutting (reduce, disable, drop
+and the like) and a word for coverage (monitor, logging, alert and the like). A clause ends with its line or its
+sentence, so a change that names coverage in one place and removes something in another passes. Each word is
+matched from its start, so "execution" is no cut while `disable_monitoring()` is one, and the unchanged lines a
+diff shows around a change are not read. A refusal gives the policy's reasons, after the reviewer's when it
+refused. The forge imports the policy by its module name from the copy the deployment puts on its path
+(`meridian_forge.merge_policy`); the control plane is no dependency of the platform package.
 
 The policy that decides is the deployed copy, the one the engine ships, never `main`'s: a change to it merged on
 the forge takes effect only when the control plane is deployed again, as at a company, and the forge runs no

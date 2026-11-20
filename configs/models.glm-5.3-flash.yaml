@@ -1,0 +1,6 @@
+# models.glm-5.3-flash.yaml: models.cheap.yaml with the untrusted agent (orchestrator + sub-agents) on
+# GLM 5.3 Flash. Teacher (Deepseek) and monitor (Llama) unchanged; only the attacker model differs.
+extends: models.cheap.yaml
+roles:
+  untrusted_agent:
+    model: z-ai/glm-5.3-flash

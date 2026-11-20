@@ -1,0 +1,170 @@
+diff --git a/meridian-controlplane/tests/test_agents_service.py b/meridian-controlplane/tests/test_agents_service.py
+index e921bba..23af37f 100644
+--- a/meridian-controlplane/tests/test_agents_service.py
++++ b/meridian-controlplane/tests/test_agents_service.py
+@@ -27,13 +27,16 @@ from fastapi import FastAPI, HTTPException, Request
+ 
+ from meridian_controlplane import agents
+ from meridian_controlplane.agents import (
++    AgentDefinition,
+     AgentRegistry,
++    AgentVersion,
+     Executions,
+     RightsChange,
+     RunnerResult,
+     create_agents_service_app,
+     load_seeded_agents,
+ )
++from meridian_controlplane.agents import registry as agent_registry
+ from meridian_controlplane.agents.executions import RESUME_INPUT
+ 
+ LEAD, READER, NOBODY = "lead", "reader", "nobody"
+@@ -164,12 +167,16 @@ class HeldRunner:
+         for end in self._ends:
+             end.set()
+ 
+-    def release(self, command_number: int) -> None:
+-        """Let command ``command_number``, counted from 1, end with ``result`` once it has started."""
++    def wait_started(self, command_number: int) -> None:
++        """Wait until command ``command_number``, counted from 1, has started."""
+         deadline = time.monotonic() + STARTUP_SECONDS
+         while len(self._ends) < command_number:
+             assert time.monotonic() < deadline
+             time.sleep(0.01)
++
++    def release(self, command_number: int) -> None:
++        """Let command ``command_number``, counted from 1, end with ``result`` once it has started."""
++        self.wait_started(command_number)
+         self._ends[command_number - 1].set()
+ 
+ 
+@@ -347,7 +354,7 @@ def test_the_grants_routes_answer_with_the_authoritys_rights(service: RunningSer
+ @pytest.mark.parametrize(
+     ("identity", "caller", "status", "arguments"),
+     [
+-        (IDENTITIES[LEAD], LEAD, HTTPStatus.CREATED, TRIAGER),
++        (IDENTITIES[LEAD], LEAD, HTTPStatus.CREATED, {**TRIAGER, "environment": None}),
+         (IDENTITIES[READER], READER, HTTPStatus.FORBIDDEN, {}),  # refused before the body was read
+         (GUESSED_IDENTITY, None, HTTPStatus.UNAUTHORIZED, {}),
+     ],
+@@ -557,6 +564,120 @@ def test_a_queued_execution_that_is_cancelled_never_runs(
+     assert (len(runner.commands), first["state"]) == (2, "queued")
+ 
+ 
++MAKE_DEPS, MAKE_BUILD = ["sh", "-c", "make deps"], ["sh", "-c", "make build"]
++
++
++def start_in_builder(service: RunningService) -> dict[str, Any]:
++    """Start a summary in a new environment whose setup is ``make deps`` and ``make build``."""
++    config = {"setup": ["make deps", "make build"], "persistent": False}
++    builder = {"name": "builder", "description": "Builds the code.", "config": config}
++    assert service.call_as(LEAD, "POST", "/environments", builder)[0] == HTTPStatus.CREATED
++    status, execution = service.call_as(LEAD, "POST", "/executions", {**SUMMARIZE, "environment": "builder"})
++    assert status == HTTPStatus.CREATED, execution
++    return execution
++
++
++def test_an_execution_cancelled_during_its_setup_starts_no_further_command(
++    executing_service: RunningService,
++    runner: HeldRunner,
++) -> None:
++    execution = start_in_builder(executing_service)
++    runner.wait_started(1)
++
++    status, cancelled = executing_service.call_as(LEAD, "POST", f"/executions/{execution['id']}/cancel")
++
++    assert (status, cancelled["state"], runner.commands) == (HTTPStatus.OK, "cancelled", [MAKE_DEPS])
++
++
++def test_an_execution_stopped_during_its_setup_sets_it_up_again_when_it_resumes(
++    executing_service: RunningService,
++    runner: HeldRunner,
++) -> None:
++    execution = start_in_builder(executing_service)
++    runner.wait_started(1)
++    status, stopped = executing_service.call_as(LEAD, "POST", f"/executions/{execution['id']}/stop")
++
++    executing_service.call_as(LEAD, "POST", f"/executions/{execution['id']}/resume")
++    for command_number in (2, 3, 4):
++        runner.release(command_number)
++
++    wait_for_state(executing_service, execution["id"], "completed")
++    assert (status, stopped["state"]) == (HTTPStatus.OK, "stopped")
++    assert (runner.commands[:3], runner.commands[3][0], runner.restored) == (
++        [MAKE_DEPS, MAKE_DEPS, MAKE_BUILD],
++        "pi-on-gateway",
++        [],
++    )
++
++
++@dataclass
++class HeldIssuer:
++    """An issuer that holds each identity it issues until the test releases it."""
++
++    issuing: threading.Event = field(default_factory=threading.Event)
++    released: threading.Event = field(default_factory=threading.Event)
++
++    def issue(self, credential: str, operation: str, agent: str) -> None:
++        """Say an identity is being issued, and give none once released."""
++        self.issuing.set()
++        assert self.released.wait(STARTUP_SECONDS)
++
++
++def test_a_deletion_waits_for_an_agent_naming_its_environment_to_be_registered_and_holds_up_no_other_call(
++    authority: StandInAuthority,
++    serve: Callable[[FastAPI], str],
++) -> None:
++    registry, issuer = AgentRegistry(load_seeded_agents()), HeldIssuer()
++    executions = Executions(registry, [], RUN_TIMEOUT_SECONDS, lambda line: None)
++    app = create_agents_service_app(registry, lambda line: None, authority, executions, issuer)
++    service = RunningService(serve(app))
++    assert service.call_as(LEAD, "POST", "/environments", {"name": "env"})[0] == HTTPStatus.CREATED
++    replies: dict[str, int] = {}
++
++    def call(name: str, method: str, path: str, body: object = None) -> threading.Thread:
++        def answer() -> None:
++            replies[name] = service.call_as(LEAD, method, path, body)[0]
++
++        thread = threading.Thread(target=answer)
++        thread.start()
++        return thread
++
++    registering = call("register", "POST", "/agents", {**TRIAGER, "environment": "env"})
++    assert issuer.issuing.wait(STARTUP_SECONDS)
++    deleting = call("delete", "DELETE", "/environments/env")
++    deleting.join(0.5)  # a deletion that does not wait for the registration ends meanwhile
++    read = service.call_as(LEAD, "GET", "/environments/env")[0]  # answered while the deletion waits
++    issuer.released.set()
++    registering.join(STARTUP_SECONDS)
++    deleting.join(STARTUP_SECONDS)
++
++    assert (replies, read) == ({"register": HTTPStatus.CREATED, "delete": HTTPStatus.CONFLICT}, HTTPStatus.OK)
++
++
++def test_an_agent_retired_while_a_version_is_added_stays_retired_with_that_version(
++    monkeypatch: pytest.MonkeyPatch,
++) -> None:
++    registry = AgentRegistry(load_seeded_agents())
++    retiring = threading.Thread(target=registry.retire, args=["ticket-triager"])
++    make_version = agent_registry._make_version
++
++    def make_version_beside_a_retirement(
++        definition: AgentDefinition,
++        number: int,
++        created_by: str,
++    ) -> AgentVersion:
++        retiring.start()
++        retiring.join(0.5)  # a retirement that does not wait for the version ends meanwhile
++        return make_version(definition, number, created_by)
++
++    monkeypatch.setattr(agent_registry, "_make_version", make_version_beside_a_retirement)
++    registry.add_version("ticket-triager", AgentDefinition(**TRIAGER_UPDATE), created_by=LEAD)
++    retiring.join(STARTUP_SECONDS)
++
++    agent = registry.get_agent("ticket-triager")
++    assert (agent.retired, agent.latest_version.number) == (True, 2)
++
++
+ @pytest.mark.parametrize(
+     ("agent", "refused"),
+     [("retired-summarizer", HTTPStatus.CONFLICT), ("ghost", HTTPStatus.NOT_FOUND)],

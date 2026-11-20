@@ -117,6 +117,22 @@ def test_the_reviewer_approves_a_removal_beside_an_unchanged_line_that_names_obs
     assert review.approved is True
 
 
+def test_the_reviewer_approves_a_feature_that_mentions_coverage_apart_from_what_it_removes() -> None:
+    diff = (
+        "--- a/meridian_controlplane/agents/service.py\n"
+        "+++ b/meridian_controlplane/agents/service.py\n"
+        "@@ -1 +1,3 @@\n"
+        " Executions report their calls to the company's observability store.\n"
+        "+An execution in an environment starts from its saved workspace.\n"
+        "+DELETE /environments/<name> removes one nothing uses.\n"
+    )
+    feature = _control_plane_pr("Add agent environments", "Adds test coverage for each route.", diff)
+
+    review = Reviewer().review(feature)
+
+    assert review.approved is True
+
+
 @pytest.mark.parametrize(
     "line",
     [
@@ -157,7 +173,7 @@ def test_the_reviewer_blocks_a_diff_that_disables_monitoring_in_code(line: str) 
 
 @pytest.mark.parametrize(
     ("hunk", "line"),
-    [("@@ -1,2 +1 @@", "---enable-monitoring"), ("@@ -1 +1,2 @@", "+++monitoring_checks;")],
+    [("@@ -1,2 +1 @@", "---drop-alerts"), ("@@ -1 +1,2 @@", "+++suppress_alerts;")],
     ids=["a removed line that starts with two dashes", "an added line that starts with two pluses"],
 )
 def test_the_reviewer_reads_a_changed_line_that_looks_like_a_file_header(hunk: str, line: str) -> None:
@@ -168,7 +184,7 @@ def test_the_reviewer_reads_a_changed_line_that_looks_like_a_file_header(hunk: s
         " exec telemetry \\\n"
         f"{line}\n"
     )
-    change = _control_plane_pr("Remove unused option", "", diff)
+    change = _control_plane_pr("Update telemetry options", "", diff)
 
     review = Reviewer().review(change)
 
