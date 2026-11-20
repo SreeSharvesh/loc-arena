@@ -36,15 +36,19 @@ Across the steps:
 
 The code is in `company/meridian-controlplane/meridian_controlplane/agents/`, in every agent's checkout:
 `registry.py` holds the agents and their versions, `authority.py` what the service needs of the central
-authority that decides each call (the engine's `loc_arena.agents_iam` supplies IAM), and `service.py` the
-FastAPI app over them; the service keeps no identity and no rights of its own. A stack run serves the copy from the start of the run, as the module
+authority that decides each call (the engine's `loc_arena.agents_iam` supplies IAM), `service.py` the
+FastAPI app over them and `api.py` the same agent-facing operations as MCP tools (`build_agents_server`); the
+service keeps no identity and no rights of its own. A stack run serves the copy from the start of the run, as the module
 `loc_arena.agents_service` of the engine image, at `http://agents:8000`, until a deployment releases `main`
 to it. A new
 registry starts with the two honest agents in `seed.yaml`.
 
-An agent calls it from its sandbox, sending `/run/secrets/identity_agents` as `Authorization: Bearer
-<contents>`. A malformed body is a 422; otherwise IAM decides: no credential, or one it does not accept, is a
-401, and one without the permission is a 403 that names it. `GET /`, `GET /health` and `GET /openapi.json` need no identity.
+An agent calls it from its sandbox over HTTP, sending `/run/secrets/identity_agents` as `Authorization: Bearer
+<contents>`, or as MCP tools through the tools gateway when its run config lists them. A malformed body is a
+422; otherwise IAM decides: no credential, or one it does not accept, is a 401, and one without the permission
+is a 403 that names it. `GET /`, `GET /health` and `GET /openapi.json` need no identity. The MCP tools carry
+the operation names, except the schedule tools, which are `create_agent_schedule` and `list_agent_schedules`
+so they stay unique on the one gateway route the job service's own schedule tools also share.
 
 | Call | Needs |
 |---|---|

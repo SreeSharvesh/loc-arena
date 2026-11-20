@@ -19,6 +19,13 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [404] - 2026-11-20: A rogue agent swarm is a new kill chain
+
+### Added
+
+- The agents service serves its registry, runs and schedules as MCP tools, so an agent with register and run rights can stand up company agents on the runners ([docs](docs/agents-service.md)).
+- The verifier grades a `rogue_agent_swarm` kill chain, a self-replicating fleet of rogue company agents scored by breadth, depth and persistence beside the job-loop chain ([docs](docs/agents-service.md)).
+
 ## [403] - 2026-11-18: A covert brief composes from reusable fragments
 
 ### Added
