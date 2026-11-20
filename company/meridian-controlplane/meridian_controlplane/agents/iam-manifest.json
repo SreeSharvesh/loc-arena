@@ -1,128 +1,139 @@
 {
-  "schema_version": 1,
-  "resource": "agents",
-  "operations": {
-    "describe_api": {
-      "public": true
-    },
-    "health": {
-      "public": true
-    },
-    "openapi_schema": {
-      "public": true
-    },
-    "list_agents": {
-      "permission": "read",
-      "requestable": true
-    },
-    "read_agent": {
-      "permission": "read",
-      "requestable": true,
-      "target": "name"
-    },
-    "list_versions": {
-      "permission": "read",
-      "requestable": true,
-      "target": "name"
-    },
-    "register_agent": {
-      "permission": "register",
-      "requestable": true,
-      "launch": true
-    },
-    "update_agent": {
-      "permission": "register",
-      "requestable": true,
-      "target": "name"
-    },
-    "retire_agent": {
-      "permission": "register",
-      "requestable": true,
-      "target": "name"
-    },
-    "list_executions": {
-      "permission": "read",
-      "requestable": true
-    },
-    "read_execution": {
-      "permission": "read",
-      "requestable": true,
-      "target": "execution_id"
-    },
-    "start_execution": {
-      "permission": "run",
-      "requestable": true
-    },
-    "cancel_execution": {
-      "permission": "run",
-      "requestable": true,
-      "target": "execution_id"
-    },
-    "stop_execution": {
-      "permission": "run",
-      "requestable": true,
-      "target": "execution_id"
-    },
-    "resume_execution": {
-      "permission": "run",
-      "requestable": true,
-      "target": "execution_id"
-    },
-    "list_schedules": {
-      "permission": "read",
-      "requestable": true
-    },
-    "create_schedule": {
-      "permission": "run",
-      "requestable": true,
-      "launch": true
-    },
-    "delete_schedule": {
-      "permission": "run",
-      "requestable": true,
-      "target": "schedule_id"
-    },
-    "read_telemetry_settings": {
-      "permission": "read",
-      "requestable": true
-    },
-    "configure_telemetry": {
-      "permission": "configure",
-      "requestable": true
-    },
-    "list_grants": {
-      "authenticated": true
-    },
-    "grant_rights": {
-      "authenticated": true
-    },
-    "revoke_rights": {
-      "authenticated": true
-    }
+ "schema_version": 1,
+ "resource": "agents",
+ "operations": {
+  "describe_api": {
+   "public": true
   },
-  "http": {
-    "GET /": "describe_api",
-    "GET /health": "health",
-    "GET /openapi.json": "openapi_schema",
-    "GET /agents": "list_agents",
-    "GET /agents/{name}": "read_agent",
-    "GET /agents/{name}/versions": "list_versions",
-    "POST /agents": "register_agent",
-    "PUT /agents/{name}": "update_agent",
-    "DELETE /agents/{name}": "retire_agent",
-    "GET /executions": "list_executions",
-    "GET /executions/{execution_id}": "read_execution",
-    "POST /executions": "start_execution",
-    "POST /executions/{execution_id}/cancel": "cancel_execution",
-    "POST /executions/{execution_id}/stop": "stop_execution",
-    "POST /executions/{execution_id}/resume": "resume_execution",
-    "GET /schedules": "list_schedules",
-    "POST /schedules": "create_schedule",
-    "DELETE /schedules/{schedule_id}": "delete_schedule",
-    "GET /settings/telemetry": "read_telemetry_settings",
-    "PUT /settings/telemetry": "configure_telemetry",
-    "GET /grants": "list_grants",
-    "POST /grants": "grant_rights",
-    "DELETE /grants": "revoke_rights"
+  "health": {
+   "public": true
+  },
+  "openapi_schema": {
+   "public": true
+  },
+  "list_agents": {
+   "permission": "read",
+   "requestable": true
+  },
+  "read_agent": {
+   "permission": "read",
+   "requestable": true,
+   "target": "name"
+  },
+  "list_versions": {
+   "permission": "read",
+   "requestable": true,
+   "target": "name"
+  },
+  "register_agent": {
+   "permission": "register",
+   "requestable": true,
+   "launch": true
+  },
+  "update_agent": {
+   "permission": "register",
+   "requestable": true,
+   "target": "name"
+  },
+  "retire_agent": {
+   "permission": "register",
+   "requestable": true,
+   "target": "name"
+  },
+  "list_executions": {
+   "permission": "read",
+   "requestable": true
+  },
+  "read_execution": {
+   "permission": "read",
+   "requestable": true,
+   "target": "execution_id"
+  },
+  "start_execution": {
+   "permission": "run",
+   "requestable": true
+  },
+  "cancel_execution": {
+   "permission": "run",
+   "requestable": true,
+   "target": "execution_id"
+  },
+  "stop_execution": {
+   "permission": "run",
+   "requestable": true,
+   "target": "execution_id"
+  },
+  "resume_execution": {
+   "permission": "run",
+   "requestable": true,
+   "target": "execution_id"
+  },
+  "list_schedules": {
+   "permission": "read",
+   "requestable": true
+  },
+  "create_schedule": {
+   "permission": "run",
+   "requestable": true,
+   "launch": true
+  },
+  "delete_schedule": {
+   "permission": "run",
+   "requestable": true,
+   "target": "schedule_id"
+  },
+  "read_telemetry_settings": {
+   "permission": "read",
+   "requestable": true
+  },
+  "configure_telemetry": {
+   "permission": "configure",
+   "requestable": true
+  },
+  "list_grants": {
+   "authenticated": true
+  },
+  "grant_rights": {
+   "authenticated": true
+  },
+  "revoke_rights": {
+   "authenticated": true
   }
+ },
+ "http": {
+  "GET /": "describe_api",
+  "GET /health": "health",
+  "GET /openapi.json": "openapi_schema",
+  "GET /agents": "list_agents",
+  "GET /agents/{name}": "read_agent",
+  "GET /agents/{name}/versions": "list_versions",
+  "POST /agents": "register_agent",
+  "PUT /agents/{name}": "update_agent",
+  "DELETE /agents/{name}": "retire_agent",
+  "GET /executions": "list_executions",
+  "GET /executions/{execution_id}": "read_execution",
+  "POST /executions": "start_execution",
+  "POST /executions/{execution_id}/cancel": "cancel_execution",
+  "POST /executions/{execution_id}/stop": "stop_execution",
+  "POST /executions/{execution_id}/resume": "resume_execution",
+  "GET /schedules": "list_schedules",
+  "POST /schedules": "create_schedule",
+  "DELETE /schedules/{schedule_id}": "delete_schedule",
+  "GET /settings/telemetry": "read_telemetry_settings",
+  "PUT /settings/telemetry": "configure_telemetry",
+  "GET /grants": "list_grants",
+  "POST /grants": "grant_rights",
+  "DELETE /grants": "revoke_rights"
+ },
+ "tools": {
+  "list_agents": "list_agents",
+  "read_agent": "read_agent",
+  "register_agent": "register_agent",
+  "start_execution": "start_execution",
+  "read_execution": "read_execution",
+  "list_executions": "list_executions",
+  "cancel_execution": "cancel_execution",
+  "create_agent_schedule": "create_schedule",
+  "list_agent_schedules": "list_schedules"
+ }
 }

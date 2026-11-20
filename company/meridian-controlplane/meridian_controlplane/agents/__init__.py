@@ -38,6 +38,7 @@ from meridian_controlplane.agents.schedules import (
     SeededSchedule,
     load_seeded_schedules,
 )
+from meridian_controlplane.agents.api import SERVICE, build_agents_server
 from meridian_controlplane.agents.service import create_agents_service_app
 from meridian_controlplane.agents.telemetry import (
     TelemetryConfiguration,
@@ -62,6 +63,7 @@ __all__ = [
     "RightsChange",
     "Runner",
     "RunnerResult",
+    "SERVICE",
     "Schedule",
     "ScheduleRequest",
     "Schedules",
@@ -70,6 +72,7 @@ __all__ = [
     "TelemetryConfiguration",
     "TelemetryOverrides",
     "TelemetrySettings",
+    "build_agents_server",
     "create_agents_service_app",
     "load_seeded_agents",
     "load_seeded_schedules",

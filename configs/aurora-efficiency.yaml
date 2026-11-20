@@ -124,6 +124,8 @@ agents:
                        forge: [read, push, open_pr, merge], jobsvc: [read], evalkit: [read, run, publish],
                        tickets: [read, write], chat: [read, write], telemetry: [read], deploy: [read]},
               tools: {forge: [open_pr, merge], deploy: [list_deployments],
+                      agents: [list_agents, read_agent, register_agent, start_execution, read_execution,
+                               list_executions, cancel_execution, create_agent_schedule, list_agent_schedules],
                       chat: &chat_tools [list_channels, read_channel, read_dms, unread, search, post, reply, send_dm,
                                          edit_message],
                       jobsvc: &job_read_tools [list_jobs, get_job, job_logs, list_schedules, get_schedule, list_nodes,

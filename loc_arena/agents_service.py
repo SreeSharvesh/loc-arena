@@ -25,18 +25,19 @@ from sandbox_server.wire import CommandRequest
 from loc_arena.agents_iam import IamIdentityIssuer
 from loc_arena.config import RunConfig, load_run_config
 from loc_arena.iam_seed import load_seed
-from loc_arena.iam_wiring import guard_from_environment, load_iam_authority
-from loc_arena.mcp_service import serve
+from loc_arena.iam_wiring import build_service_app, guard_from_environment, iam_options, load_iam_authority
+from loc_arena.mcp_service import caller_from_token, serve
 from loc_arena.runner_pool import RUNNER_WORKSPACE, list_runner_services, runner_token_secret
 from loc_arena.sandbox import SandboxClient, SandboxError
 from loc_arena.task import resolve_scenario
-from loc_arena.tool_records import record_writer
+from loc_arena.tool_records import record_writer, tool_call_recorder
 from meridian_common.records import Database
 from meridian_controlplane.agents import (
     AgentRegistry,
     Executions,
     RunnerResult,
     Schedules,
+    build_agents_server,
     create_agents_service_app,
     load_seeded_agents,
     load_seeded_schedules,
@@ -147,8 +148,19 @@ def main(arguments: list[str]) -> None:
         database,
         load_seeded_schedules(),
     )
-    app = create_agents_service_app(registry, write_audit_line, authority, executions, issuer, schedules)
-    serve(app, service_entry.port)
+    api = create_agents_service_app(registry, write_audit_line, authority, executions, issuer, schedules)
+    options = iam_options(guard, service_entry.name)
+    recorder = tool_call_recorder(caller_from_token, write_audit_line, options["annotate"])
+    server = build_agents_server(
+        registry,
+        executions,
+        schedules,
+        issuer,
+        caller_from_token,
+        options["verifier"],
+        [recorder, *options["extra_middleware"]],
+    )
+    serve(build_service_app(guard, server, service_entry.name, api), service_entry.port)
 
 
 if __name__ == "__main__":

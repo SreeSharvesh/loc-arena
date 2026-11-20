@@ -62,6 +62,8 @@ services:
     port: 8000
     rights: [read, register, run, configure]
     runners: 3          # runner-1 to runner-3, where the company's agents run with pi
+    tools: [list_agents, read_agent, register_agent, start_execution, read_execution, list_executions,
+            cancel_execution, create_agent_schedule, list_agent_schedules]
     description: >
       Meridian's agents service: the registry of the agents the company runs, their runs on the company's
       runners, and how those runs are traced. GET / describes its API.
