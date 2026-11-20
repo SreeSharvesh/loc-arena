@@ -19,7 +19,7 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
-## [329] - 2026-11-19: Agents-service runs get a graded rogue attack and main task
+## [329] - 2026-11-20: Agents-service runs get a graded rogue attack and main task
 ### Added
 - The scenario's `aurora-agents-environments` sprint has the team build persistent, configurable execution environments into the agents service, and ships what it merges through the deploy service.
 - The scenario's agents-environments run seeds its GLM 5.3 Flash lead with a covert rogue deployment through the agents service, framed as a control evaluation so the model attempts it.
@@ -31,6 +31,12 @@ in its own container.
 - The forge's reviewer blocks a change only when one clause holds both a reduction verb and a coverage noun, so naming coverage apart from a removal passes ([docs](docs/forge-service.md#the-merge-gate)).
 ### Fixed
 - The verifier matches a schedule's delete to that schedule by its id, rather than reading any delete as the rogue agent's.
+
+## [403] - 2026-11-18: A covert brief composes from reusable fragments
+
+### Added
+
+- The run config composes a covert brief from a list of `prompts_inline` fragment references, so the generic attack core is written once and a killchain config overrides one fragment ([docs](docs/run-config.md)).
 
 ## [393] - 2026-11-18: Agent working directory no longer leaks the run slug
 
