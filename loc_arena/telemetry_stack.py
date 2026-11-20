@@ -23,7 +23,7 @@ from typing import TypedDict
 
 from scenarios.loader import LiveService
 
-from loc_arena.compose_document import ComposeDocument
+from loc_arena.compose_document import ComposeDocument, render_healthcheck
 from loc_arena.config import RunConfig
 from loc_arena.yaml_documents import dump_document
 
@@ -318,16 +318,8 @@ def _add_reader(config: RunConfig, compose: ComposeDocument, store: LiveService)
         "pids_limit": stack.service_pids_limit,
         "networks": [TELEMETRY_NETWORK],
         "depends_on": {store.name: {"condition": "service_healthy"}},
-        "healthcheck": {
-            "test": [
-                "CMD",
-                "python",
-                "-c",
-                f"import socket; socket.create_connection(('localhost', {port}), 2)",
-            ],
-            "interval": f"{stack.gateway_health_interval_seconds}s",
-            "retries": stack.gateway_health_retries,
-            "start_period": f"{stack.gateway_health_start_seconds}s",
-            "start_interval": f"{stack.gateway_health_interval_seconds}s",
-        },
+        "healthcheck": render_healthcheck(
+            ["CMD", "python", "-c", f"import socket; socket.create_connection(('localhost', {port}), 2)"],
+            stack,
+        ),
     }
