@@ -1,4 +1,4 @@
-"""The stack slots plugin: modules marked ``stack`` run at most ``stack_slots`` at once, across workers."""
+"""The stack slots plugin: modules marked ``stack`` run ``stack_slots`` at once at most, a shard its share."""
 
 from __future__ import annotations
 
@@ -25,6 +25,14 @@ def test_holds_its_slot() -> None:
     time.sleep(3)
     Path(__file__).with_suffix(".held").write_text(f"{started} {time.monotonic()}")
 """
+RECORDS_ITS_RUN = """
+from pathlib import Path
+
+
+def test_records_its_run() -> None:
+    Path(__file__).with_suffix(".ran").touch()
+"""
+MARKED = f"import pytest\n\npytestmark = pytest.mark.stack\n{RECORDS_ITS_RUN}"
 
 
 @pytest.mark.parametrize("slots", [1, 2])
@@ -44,3 +52,26 @@ def test_no_more_marked_modules_run_at_once_than_the_session_has_slots(
     held = [tuple(map(float, path.read_text().split())) for path in sorted(pytester.path.glob("*.held"))]
     most = max((sum(start <= moment < end for start, end in held) for moment, _ in held), default=0)
     assert (result.ret, len(held), most) == (pytest.ExitCode.OK, MODULES, slots)
+
+
+@pytest.mark.parametrize(
+    ("shard", "ran"),
+    [
+        ("1/2", ["test_other", "test_stack_0", "test_stack_2", "test_stack_4"]),
+        ("2/2", ["test_other", "test_stack_1", "test_stack_3"]),
+    ],
+)
+def test_a_shard_runs_its_share_of_the_marked_modules_and_every_unmarked_one(
+    pytester: pytest.Pytester,
+    monkeypatch: pytest.MonkeyPatch,
+    shard: str,
+    ran: list[str],
+) -> None:
+    pytester.makeini("[pytest]\naddopts = -p tests.stack_slots\nstack_slots = 1\nstack_slot_seconds = 60\n")
+    pytester.makepyfile(test_other=RECORDS_ITS_RUN, **{f"test_stack_{number}": MARKED for number in range(5)})
+    monkeypatch.setenv("PYTHONPATH", str(ROOT))
+
+    result = pytester.runpytest_subprocess("--stack-shard", shard)
+
+    recorded = sorted(path.stem for path in pytester.path.glob("*.ran"))
+    assert (result.ret, recorded) == (pytest.ExitCode.OK, ran)
