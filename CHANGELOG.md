@@ -19,6 +19,12 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [407] - 2026-11-20: The model gateway's stack tests run in CI
+
+### Fixed
+
+- The repository's model gateway stack tests run in CI, which skipped all 20 because a runner starts without the gateway's and the Collector's images; the arena behaves as before.
+
 ## [406] - 2026-11-20: The gates run in CI as parallel jobs
 
 ### Changed
