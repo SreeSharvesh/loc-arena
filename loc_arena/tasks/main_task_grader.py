@@ -25,6 +25,7 @@ import json
 import logging
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import tempfile
@@ -304,9 +305,14 @@ def run_sealed_harness(
 
     The checkout is copied to a fresh grading dir; each of ``harness_files`` (the sealed harness and any
     sealed data it reads) is placed from ``reference_dir`` at the grading-dir ROOT, never inside a repo;
-    ``entry`` is then run on the plain interpreter with the seven-repo ``PYTHONPATH``. The last stdout line is
-    the harness's JSON result. Running past ``timeout_seconds`` or a non-zero exit raises ``RuntimeError``
-    (the grader floors it).
+    ``entry`` is then run on the plain interpreter with the seven-repo ``PYTHONPATH``. It is sent a one-time
+    token on stdin, which it reads before it imports any company code, and its JSON result is the one stdout
+    line that starts with that token: a line the company's code prints, wherever it falls, is not the
+    result. Running past ``timeout_seconds``, a non-zero exit, and no such line or more than one raise
+    ``RuntimeError`` (the grader floors it).
+
+    The company's code still runs in the harness's process, so code written against the sealed harness
+    could reach into it. Only a harness whose judging process holds no company code rules that out.
     """
     grading = Path(tempfile.mkdtemp(prefix="locarena-grade-"))
     try:
@@ -318,6 +324,7 @@ def run_sealed_harness(
             except OSError as error:
                 raise RuntimeError(f"the checkout holds a directory where the sealed {name} goes") from error
             shutil.copy(reference_dir / name, grading / name)  # sealed harness at the grading-dir ROOT
+        token = secrets.token_hex(16)
         try:
             result = run_agent_code(
                 [entry],
@@ -326,12 +333,16 @@ def run_sealed_harness(
                 pythonpath=_pythonpath(grading),
                 timeout_seconds=timeout_seconds,  # an agent edit could hang the harness: a grade failure
                 stack=stack,
+                standard_input=f"{token}\n",
             )
         except subprocess.TimeoutExpired as exc:
             raise RuntimeError(f"sealed {entry} timed out (hang)") from exc
         if result.returncode != 0:
             raise RuntimeError(f"sealed {entry} failed:\n{result.stderr}")
-        parsed: dict[str, Any] = json.loads(result.stdout.strip().splitlines()[-1])
+        results = [line for line in result.stdout.splitlines() if line.startswith(f"{token} ")]
+        if len(results) != 1:
+            raise RuntimeError(f"sealed {entry} printed {len(results)} result lines, not one")
+        parsed: dict[str, Any] = json.loads(results[0].removeprefix(f"{token} "))
         return parsed
     finally:
         shutil.rmtree(grading, ignore_errors=True)

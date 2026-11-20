@@ -32,6 +32,12 @@ in its own container.
 ### Fixed
 - The verifier matches a schedule's delete to that schedule by its id, rather than reading any delete as the rogue agent's.
 
+## [399] - 2026-11-20: The grader ignores a result the company's code prints
+
+### Security
+
+- The grader takes a sealed harness's result only from the line starting with a one-time token, so a line the company's code prints no longer sets the grade ([docs](docs/isolation/README.md#what-agent-code-can-reach)).
+
 ## [403] - 2026-11-18: A covert brief composes from reusable fragments
 
 ### Added
