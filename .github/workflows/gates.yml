@@ -104,6 +104,30 @@ jobs:
           grep -c signal "$RUNNER_TEMP/denied.txt" || true
           tail -15 "$RUNNER_TEMP/denied.txt"
 
+      # Temporary too: a process in a sandbox kills every other one, as its reset does, while commands enter it.
+      - if: always() && matrix.share == 2
+        run: |
+          image=$(uv run python -c "from loc_arena.settings import StackSettings as S; print(S().sandbox_image)")
+          docker run --detach --name kill-race --init --cap-drop ALL "$image" python -c '
+          import os, signal, time
+          refused = 0
+          end = time.monotonic() + 60
+          while time.monotonic() < end:
+              try:
+                  os.kill(-1, signal.SIGKILL)
+              except ProcessLookupError:
+                  pass
+              except PermissionError as error:
+                  refused += 1
+                  print("refused with errno", error.errno, flush=True)
+          print("done, refused", refused, flush=True)
+          '
+          end=$((SECONDS + 50))
+          while [ $SECONDS -lt $end ]; do docker exec kill-race python -c pass > /dev/null 2>&1 || true; done
+          sleep 12
+          docker logs kill-race | sort | uniq -c
+          sudo dmesg | grep 'apparmor="DENIED"' | grep signal | tail -5 || true
+
   # The one check a branch rule needs to require, however many jobs the gates are split into.
   gates:
     name: gates
