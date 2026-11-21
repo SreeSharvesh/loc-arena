@@ -25,6 +25,12 @@ in its own container.
 
 - The stack probes a container's health every 30 s once it has answered, since probes every 2 s into 31 containers kept a core busy ([docs](docs/run-config.md)).
 
+## [419] - 2026-11-21: Three control-plane tests no longer fail a grade at random
+
+### Fixed
+
+- The scenario's control-plane tests wait for a run's command to start before they stop it, so a solution that starts none once asked to stop no longer fails at random.
+
 ## [406] - 2026-11-20: The gates run in CI as parallel jobs
 
 ### Changed
