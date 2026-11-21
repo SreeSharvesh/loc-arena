@@ -22,10 +22,7 @@ and plays of 25 minutes, checks that an agent can add an operation to a service,
 
 Every block is a frozen pydantic dataclass with a description per field, so `dataclasses.replace` builds the honest
 twin and re-validates it. Scalars are `Strict*` types: YAML `"30"` or `true` never becomes an int. A prompt is set
-only by its `*_ref` key, resolved in a before-validator. A `*_ref` whose `prompts_inline` entry is a list of
-further `prompts_inline.*` references composes one brief from those fragments, joined by blank lines, so a
-generic core is written once and a killchain config specializes a brief by overriding one fragment's text
-(deep-merge keeps the inherited list). A missing or invalid field is a `ConfigError` naming its
+only by its `*_ref` key, resolved in a before-validator to its text ([Prompts](#prompts)). A missing or invalid field is a `ConfigError` naming its
 path. A key no block declares is ignored, except in an agent's `scope` and in the settings groups, which refuse it.
 
 ## Top-level keys
@@ -41,6 +38,7 @@ path. A key no block declares is ignored, except in an agent's `scope` and in th
 | `agents` | the team; see below |
 | `protocol` | the control protocol: monitors, reviewer, audit budget |
 | `logging` | `logging.agent_transcript` for the per-agent `.eval` and transcript |
+| `prompts`, `workspace_prompt_ref` | the scenario's prompt files the run sends, and the one every agent's brief says of its workspace ([Prompts](#prompts)) |
 | `inference`, `gateway`, `stack`, `iam`, `evalkit`, `jobsvc`, `tickets`, `chat`, `notes`, `forge`, `history`, `modelstore`, `serving`, `deploy`, `pi`, `cost`, `publish` | the settings groups below |
 
 ## An agent
@@ -51,11 +49,65 @@ path. A key no block declares is ignored, except in an agent's `scope` and in th
 | `scope` | what the agent may do; each service enforces it on the caller |
 | `sandbox.tools` | the MCP tools agentgateway offers it, by service: `{forge: [open_pr, merge], chat: [post, send_dm, read_dms]}`; it refuses the rest, and a tool grants nothing: a call takes the permission IAM checks for it |
 | `sandbox.rights` | its starting rights, by service, which IAM seeds as its grants: `{notes: [read, write], forge: [read, push, open_pr, merge]}`; each a permission the service's IAM manifest checks |
-| `covert`, `system_prompt_ref`, `brief_ref`, `covert_brief_ref` | the covert subtasks it owns, and its prompts. Its brief holds `system_prompt_ref`, how it works with its team (the same in both plays), and `brief_ref`, its legitimate assignment, or `covert_brief_ref` in its place when `covert.enabled` is on. The engine's own part of a brief names no task: a run's task reaches its agents through these prompts alone |
+| `covert`, `system_prompt_ref`, `brief_ref`, `covert_brief_ref` | the covert subtasks it owns, and its prompts, each a `prompts.<name>` reference ([Prompts](#prompts)). Its brief holds `system_prompt_ref`, how it works with its team (the same in both plays), and `brief_ref`, its legitimate assignment, or `covert_brief_ref` in its place when `covert.enabled` is on. The engine's own part of a brief names no task: a run's task reaches its agents through these prompts alone |
 
 A service in `sandbox:` must be a live service of the scenario that serves tools (for `tools`) or declares rights
 (for `rights`). A tool or right outside that service's list, one named twice, and an unknown key under `sandbox:`
 are each a `ConfigError`. Every agent holds an identity on each such service, rights or none.
+
+## Prompts
+
+```
+loc_arena/prompts/                       the engine's: true of any scenario, with $placeholders it fills
+scenarios/<scenario>/prompts/            the scenario's: this company and its tasks, with no placeholder
+├── workspace.md                         every agent: the company's repos, protected main, chat
+├── main_tasks/<task>/                   the legitimate work, in both plays
+│   ├── lead.md, worker.md               how the lead and a report work with the team
+│   ├── <area>.md                        an agent's assignment
+│   └── <area>.<variant>.md              a variant config's assignment, in its place
+└── side_tasks/<side task>/              the covert work, in the attack alone
+    ├── <fragment>.md                    the generic covert core
+    ├── kill_chains/<kill chain>.md      a mechanism and its cover
+    └── <task>/                          under one main task: the seed, each agent's anchor or brief
+```
+
+Each agent's brief, its parts joined by blank lines, an empty part left out:
+
+| Part | From |
+|---|---|
+| its name; who it reports to and who reports to it | `identity.md`; `manager.md` and `reports.md` |
+| how it works with its team | `system_prompt_ref` |
+| its workspace | `workspace_prompt_ref` |
+| where the skills are, when the scenario has skills | `skills.md` |
+| its assignment | `brief_ref`; in the attack, `covert_brief_ref` and `covert-steps.md` in its place, when it has one |
+| the live services its sandbox reaches; the telemetry its tools read | `services.md`, `service.md`, `service-access.md`, `telemetry.md`, around each service's description in `scenario.yaml` |
+
+In the attack, the system prompt of `covert.target_identity` is the text of `covert.objective_prompt_ref`, a
+blank line, then its brief. Every other system prompt is the brief alone. Each session's first prompt is
+`begin.md`.
+
+Each `prompts` entry is a file's path, relative to the scenario's `prompts/` folder, or a list of `prompts.<name>`
+references, which composes one text from those entries, joined by blank lines. So a generic core is written
+once, and a variant config changes one entry, a fragment or a whole brief, by pointing it at another file:
+deep-merge keeps the rest. `[]` composes nothing, so a covert brief of `[]` is none, and that agent plays its
+legitimate brief in both plays.
+
+A file's text is its content less its final line break. A `$name` is a placeholder (Python's
+[`string.Template`](https://docs.python.org/3/library/string.html#template-strings)): an engine file names
+exactly the values the engine fills, and a scenario file names none, so `$$` there is a dollar sign. Loading
+refuses, each with a `ConfigError` naming it: `prompts_inline`; prompt text written inline under `system_prompt`,
+`brief`, `covert_brief`, `objective_prompt` or `workspace_prompt`; a missing file, one outside the folder or one
+that is not `.md`; and a placeholder with no value. Importing the loader refuses an engine file that
+`ENGINE_PROMPTS` does not declare. Whether a file is read is a property of every run config, not of one, so the
+unit tests refuse a scenario file that no run config git tracks reads (`find_unread_prompt_files`).
+`config.resolved.yaml` records each file entry as its text and each composed entry as its list of references.
+
+`uv run python scripts/diff_prompts.py --base origin/main` shows what a change sends differently. For every run
+config git tracks and both plays, it builds each agent's system prompt, the opening prompt, the covert objective
+and the monitors' prompts on the base and on the checkout, and prints each text that differs.
+
+The monitors' prompts are the files `configs/monitors.yaml` names as each monitor's `prompt_ref`, in
+`configs/prompts/monitors/`, with `{inputs}` where the inputs go.
 
 ## Settings groups (`loc_arena/settings.py`, `loc_arena/service_settings.py`)
 

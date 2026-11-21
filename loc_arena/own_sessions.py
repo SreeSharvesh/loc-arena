@@ -42,6 +42,7 @@ from loc_arena.config import ModelSpec, RunConfig
 from loc_arena.gateway.core import GATEWAY_TOKEN_FILE_VARIABLE, GATEWAY_URL_VARIABLE
 from loc_arena.gateway.loop_routes import LOOP_ROUTE_PREFIX, Loops
 from loc_arena.notices import Notices, add_notice_tools
+from loc_arena.prompt_references import ENGINE_PROMPTS
 from loc_arena.sandbox import token_secret_name
 from loc_arena.scaffold.code_services import CodeServices
 from loc_arena.stack_play import EPISODE_SERVICE
@@ -62,7 +63,7 @@ NOTICES_FILE = "notices.jsonl"  # in a play's directory: each notice, and whethe
 PROVIDER = "gateway"
 TOOLS_SERVER = "meridian"  # the tools reach the model as mcp__meridian__<tool>
 CHAT_PATH = "/chat/completions"  # pi adds it to its provider's URL itself
-TASK = "Begin. Use your tools to do the work."
+TASK = ENGINE_PROMPTS["begin"].substitute()  # the first prompt of every session
 _STDERR_TAIL = 2000  # characters of a session's error output kept
 _STOP_SECONDS = 5  # how long the sessions' pi processes get to exit once their input is closed
 PI_SETTINGS = {
