@@ -143,7 +143,7 @@ def test_a_fact_from_another_scenarios_prompts_is_refused_for_a_run_of_this_one(
 
     with pytest.raises(
         ConfigError,
-        match="prompt_values company are not of the run's scenario, aurora_efficiency",
+        match="is not of the run's scenario, aurora_efficiency",
     ):
         load_monitor_specs(monitors, "aurora_efficiency")
 

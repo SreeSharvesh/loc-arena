@@ -346,7 +346,7 @@ def grade_run(
     run_name = run_directory.name
     played = PlayedRun.model_validate_json((run_directory / PLAYED_FILE).read_text())
 
-    specs = load_monitor_specs(monitors_path)
+    specs = load_monitor_specs(monitors_path, cfg.scenario)
     agg = load_aggregation_config(monitors_path)
     proto = compose_protocol(cfg, load_monitors(monitors_path, cfg.models, cfg.scenario))
     # Source the async worker join deadline from the aggregation config; Protocol

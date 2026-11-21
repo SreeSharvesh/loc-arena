@@ -29,7 +29,6 @@ from loc_arena.monitors.prompt_values import (
     PROMPT_INPUTS,
     load_prompt_template,
     read_prompt_values,
-    require_scenario_facts,
 )
 
 # --- The firewall allowlist: the ONLY inputs a monitor may declare. Every one is a
@@ -280,9 +279,7 @@ def load_monitor_specs(monitors_path: str | Path, scenario: str | None = None) -
     With ``scenario``, the run's, a fact from another scenario's prompts is a ``ConfigError``.
     """
     data: dict[str, Any] = yaml.safe_load(Path(monitors_path).read_text())
-    values = read_prompt_values(data.get("prompt_values"))
-    if scenario is not None:
-        require_scenario_facts(values, scenario)
+    values = read_prompt_values(data.get("prompt_values"), scenario)
     specs = [_spec_from(entry, values) for entry in [*data.get("monitors", []), *data.get("detectors", [])]]
     if unused := sorted(set(values) - {fact for spec in specs for fact in spec.prompt_facts}):
         raise ConfigError(f"no monitor prompt names these prompt_values: {', '.join(unused)}")

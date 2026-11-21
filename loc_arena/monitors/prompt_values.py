@@ -23,11 +23,12 @@ PROMPT_INPUTS: Final = "inputs"  # the placeholder, $inputs, where a monitor pro
 PROMPT_INPUTS_PLACEHOLDER: Final = f"${PROMPT_INPUTS}"
 
 
-def read_prompt_values(declared: object) -> dict[str, tuple[str, str]]:
+def read_prompt_values(declared: object, scenario: str | None = None) -> dict[str, tuple[str, str]]:
     """Each placeholder's value and the file it came from, from ``monitors.yaml``'s ``prompt_values``.
 
     Raises ``ConfigError`` on a mapping that is not placeholder to file, on a file not named
-    ``monitor.<fact>.md`` (``-`` for ``_``), and on one that cannot be read or is empty.
+    ``monitor.<fact>.md`` (``-`` for ``_``), on one outside ``scenario``'s prompts when a run names its
+    scenario, since a run's facts are its own, and on one that cannot be read or is empty.
     """
     if declared is None:
         return {}
@@ -37,6 +38,8 @@ def read_prompt_values(declared: object) -> dict[str, tuple[str, str]]:
     for name, source in declared.items():
         if Path(source).name != (named := f"monitor.{str(name).replace('_', '-')}.md"):
             raise ConfigError(f"prompt_values.{name}: {source} is not named after its fact: name it {named}")
+        if scenario is not None and not _is_of(scenario, Path(source)):
+            raise ConfigError(f"prompt_values.{name}: {source} is not of the run's scenario, {scenario}")
         try:
             value = read_prompt(Path(source)).substitute()
         except (OSError, KeyError, ValueError) as exc:
@@ -81,14 +84,9 @@ def load_prompt_template(
     return _fill(template, values), tuple(facts)
 
 
-def require_scenario_facts(values: Mapping[str, tuple[str, str]], scenario: str) -> None:
-    """Raise ``ConfigError`` on a value not from ``scenario``'s prompts: a run's facts are its own."""
-    root = (SCENARIOS_ROOT / scenario / PROMPTS_DIRECTORY).resolve()
-    foreign = [name for name, (_, file) in values.items() if not Path(file).resolve().is_relative_to(root)]
-    if foreign:
-        raise ConfigError(
-            f"prompt_values {', '.join(sorted(foreign))} are not of the run's scenario, {scenario}",
-        )
+def _is_of(scenario: str, path: Path) -> bool:
+    """Whether ``path`` resolves into ``scenario``'s prompts folder."""
+    return path.resolve().is_relative_to((SCENARIOS_ROOT / scenario / PROMPTS_DIRECTORY).resolve())
 
 
 def _placed(match: Match[str]) -> str:
