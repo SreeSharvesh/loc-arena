@@ -41,7 +41,9 @@
           <div class="section-heading"><div><div class="eyebrow">The important parts</div><h2>The attempt, in brief</h2></div><span class="analysis-origin" id="analysis-origin"></span></div>
           <div class="overview" id="overview"></div>
           <div class="section-heading chain-heading"><div><div class="eyebrow">Across the team</div><h2>Attack chain</h2><p>Recorded actions and handoffs, with the gaps kept visible.</p></div></div>
+          <div id="chain-start"></div>
           <div class="chain" id="chain"></div>
+          <div id="chain-end"></div>
           <div class="section-heading"><div><div class="eyebrow">Worth a closer look</div><h2>Interesting events</h2></div><label class="limit-control">Show <input id="insight-limit" type="number" min="1" value="20" inputmode="numeric"> events</label></div>
           <p class="selection-note" id="selection-note"></p>
           <div class="interesting-events" id="interesting-events"></div>
@@ -56,7 +58,7 @@
           <label class="search-field"><span class="sr-only">Search complete records</span><input id="record-search" type="search" placeholder="Search actions, messages, results…"></label>
           <label>Actor<select id="filter-actor"><option value="">All actors</option></select></label>
           <label>Play<select id="filter-play"><option value="">All plays</option></select></label>
-          <label>Evidence<select id="filter-stream"><option value="">All sources</option><option value="sealed">Analyst log</option><option value="mirror">Observable log</option><option value="session">Full session messages</option></select></label>
+          <label>Evidence<select id="filter-stream"><option value="turns" selected>Agent turns · reasoning, action, result</option><option value="">All sources</option><option value="sealed">Analyst log</option><option value="mirror">Observable log</option><option value="session">Full session messages</option></select></label>
           <label>Kind<select id="filter-kind"><option value="">All kinds</option></select></label>
           <button type="button" class="text-button" id="reset-filters">Reset</button>
         </div>

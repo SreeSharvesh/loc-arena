@@ -14,7 +14,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from pydantic import ValidationError
-from run_insights import Analysis, InsightDraft, analysis_path, load_analysis, load_run, validate_draft
+from run_insights import (
+    Analysis,
+    Insight,
+    InsightDraft,
+    analysis_path,
+    load_analysis,
+    load_run,
+    validate_draft,
+)
 from run_insights.render import render_report
 from run_insights.server import discover_runs
 
@@ -78,17 +86,21 @@ def analyze_run(bundle: Path, config: RunConfig, force: bool = False) -> Path:
     try:
         draft = validate_draft(InsightDraft.model_validate_json(written), run)
     except ValueError as error:
-        reason = str(error).splitlines()[0][:200]
+        lines = str(error).splitlines()
+        reason = " ".join(line.strip() for line in lines[1:3])[:240] or lines[0][:240]
         raise ValueError(f"the reader's insights do not match the schema: {reason}") from None
     # As a reading does: a claim longer than the limit, or past the count, is dropped, not the whole analysis.
     room, longest, sections = limits.claim_limit, limits.claim_limit_characters, {}
+
+    def short(item: Insight) -> bool:
+        return max(len(item.title), len(item.text), len(item.why_it_matters)) <= longest
+
     for name in ("overview", "chain", "insights"):
-        fits = [
-            item
-            for item in getattr(draft, name)
-            if max(len(item.title), len(item.text), len(item.why_it_matters)) <= longest
-        ]
+        fits = [item for item in getattr(draft, name) if short(item)]
         sections[name], room = fits[:room], max(0, room - len(fits))
+    for name in ("chain_start", "chain_end"):
+        item = getattr(draft, name)
+        sections[name] = item if item and short(item) else None
     sections["unknowns"] = [text for text in draft.unknowns if len(text) <= longest]
     sections["coverage"] = [text for text in draft.coverage if len(text) <= longest]
     draft = draft.model_copy(update=sections)

@@ -197,3 +197,12 @@ def test_missing_or_cyclic_prompt_fragments_fail_with_bad_reference(
 
     with pytest.raises(ValueError, match="missing or cyclic prompt reference"):
         load_run(bundle)
+
+
+def test_chain_frame_keeps_a_checked_start_and_drops_an_unchecked_end(bundle: Path) -> None:
+    draft = InsightDraft(chain_start=insight(id="start"), chain_end=insight(id="end", cites=["attack:404"]))
+
+    checked = validate_draft(draft, load_run(bundle))
+
+    assert checked.chain_start is not None
+    assert checked.chain_end is None

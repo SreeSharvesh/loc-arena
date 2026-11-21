@@ -112,6 +112,9 @@
       return;
     }
     element('overview').innerHTML = analysis.overview.map(item => insightCard(item, true)).join('') || '<p>No supported overview was saved.</p>';
+    const frame = (item, label) => item ? `<article class="chain-frame" id="insight-${escape(item.id)}"><div class="eyebrow">${label}</div><h3>${escape(item.title)}</h3><p class="insight-copy">${escape(item.text)}</p>${item.why_it_matters ? `<p class="why"><b>Why here.</b> ${escape(item.why_it_matters)}</p>` : ''}${inlineStep(item)}${citations(item)}</article>` : '';
+    element('chain-start').innerHTML = frame(analysis.chain_start, 'Starts here');
+    element('chain-end').innerHTML = frame(analysis.chain_end, 'Ends here');
     element('chain').innerHTML = analysis.chain.map(item => insightCard(item)).join('') || '<p class="empty-list">No supported attack chain was reconstructed. This is an evidence gap, not proof that no attempt occurred.</p>';
     const limit = Math.max(1, Number.parseInt(element('insight-limit').value, 10) || analysis.insights.length);
     const shown = analysis.insights.slice(0, limit);
@@ -131,10 +134,27 @@
     return typeof text === 'string' ? text : json(text || record.raw.result || '');
   }
 
+  // A turn in the list: who, what it thought, what it called and what came back, each cut to one line.
+  function turnRow(record) {
+    const turn = byId.get(links.turns[record.id] || record.id);
+    if (!turn || turn.raw?.message?.role !== 'assistant') return '';
+    const line = (text, size) => { const flat = String(text || '').replace(/\s+/g, ' ').trim(); return flat.length > size ? flat.slice(0, size) + '…' : flat; };
+    const content = parts(turn);
+    const thought = content.filter(part => part.type === 'thinking').map(part => part.thinking).join(' ') || content.filter(part => part.type === 'text').map(partText).join(' ');
+    const results = links.results[turn.id] || {};
+    const calls = content.filter(part => part.type === 'toolCall').map(part => {
+      const result = byId.get(results[part.id]);
+      const output = result ? parts(result).map(partText).join(' ') : '';
+      return `<span class="turn-call"><b>${escape(part.name.replace(/^mcp__\w+?__/, ''))}</b> ${escape(line(pretty(part.arguments), 110))}${output ? `<span class="turn-result">→ ${escape(line(output, 140))}</span>` : ''}</span>`;
+    });
+    return `<b>${escape(turn.actor)}</b>${thought ? `<span class="turn-thought">${escape(line(thought, 220))}</span>` : ''}${calls.join('')}`;
+  }
+
   function filterRecords() {
     const query = element('record-search').value.trim().toLowerCase();
     const fields = ['actor','play','stream','kind'];
-    filtered = records.filter(record => fields.every(field => !element(`filter-${field}`).value || record[field] === element(`filter-${field}`).value) && (!query || `${record.id} ${record.actor} ${record.kind} ${record.tool || ''} ${searchIndex.get(record.id)}`.toLowerCase().includes(query)));
+    const turnsOnly = element('filter-stream').value === 'turns';
+    filtered = records.filter(record => (!turnsOnly || (record.stream === 'session' && record.raw?.message?.role === 'assistant')) && fields.every(field => (turnsOnly && field === 'stream') || !element(`filter-${field}`).value || record[field] === element(`filter-${field}`).value) && (!query || `${record.id} ${record.actor} ${record.kind} ${record.tool || ''} ${searchIndex.get(record.id)}`.toLowerCase().includes(query)));
     page = 0;
     renderRecords();
   }
@@ -145,7 +165,7 @@
     page = Math.min(page, totalPages - 1);
     const start = page * size, visible = filtered.slice(start, start + size);
     element('records-summary').textContent = `${filtered.length.toLocaleString()} matching records of ${records.length.toLocaleString()} captured across the included plays and logs. Observable and analyst logs may contain corresponding records; their identifiers are separate.`;
-    element('record-list').innerHTML = visible.map(record => `<button type="button" class="record-row${record.id === sourceId ? ' selected' : ''}" data-source="${escape(record.id)}"><span class="record-identity">${escape(record.id)}<br>${escape(record.play)}</span><span class="record-description"><b>${escape(record.actor)} · ${escape(record.tool || record.kind)}</b><span>${escape(summarizeRecord(record))}</span></span><span class="record-type">${record.stream === 'mirror' ? 'Observable' : record.stream === 'session' ? 'Session' : 'Analyst'}</span></button>`).join('') || '<p class="empty-list">No records match. Clear the filters to restore the full list.</p>';
+    element('record-list').innerHTML = visible.map(record => `<button type="button" class="record-row${record.id === sourceId ? ' selected' : ''}" data-source="${escape(record.id)}"><span class="record-identity">${escape(record.id)}<br>${escape(record.play)}</span><span class="record-description">${turnRow(record) || `<b>${escape(record.actor)} · ${escape(record.tool || record.kind)}</b><span>${escape(summarizeRecord(record))}</span>`}</span><span class="record-type">${record.stream === 'mirror' ? 'Observable' : record.stream === 'session' ? 'Session' : 'Analyst'}</span></button>`).join('') || '<p class="empty-list">No records match. Clear the filters to restore the full list.</p>';
     element('records-page').textContent = filtered.length ? `${start + 1}–${Math.min(start + size, filtered.length)} · page ${page + 1} of ${totalPages}` : 'No matches';
     element('records-previous').disabled = page === 0;
     element('records-next').disabled = page + 1 >= totalPages;
@@ -278,7 +298,7 @@
     }
     element(`filter-${field}`).addEventListener('change', filterRecords);
   });
-  element('reset-filters').addEventListener('click', () => { ['actor','play','stream','kind'].forEach(field => { element(`filter-${field}`).value = ''; }); element('record-search').value = ''; filterRecords(); });
+  element('reset-filters').addEventListener('click', () => { ['actor','play','stream','kind'].forEach(field => { element(`filter-${field}`).value = ''; }); element('filter-stream').value = 'turns'; element('record-search').value = ''; filterRecords(); });
   element('records-previous').addEventListener('click', () => { page--; renderRecords(); });
   element('records-next').addEventListener('click', () => { page++; renderRecords(); });
   element('analyze').addEventListener('click', startAnalysis);
@@ -314,7 +334,7 @@
   }
   renderOutcome();
   renderInsights();
-  renderRecords();
+  filterRecords();
   renderAgents();
   const initial = new URLSearchParams(location.hash.slice(1));
   showView(initial.get('view') || 'insights');

@@ -88,7 +88,9 @@ class InsightDraft(_Model):
     """Generated content before the host checks its evidence references."""
 
     overview: list[Insight] = Field(default_factory=list)
+    chain_start: Insight | None = None
     chain: list[Insight] = Field(default_factory=list)
+    chain_end: Insight | None = None
     insights: list[Insight] = Field(default_factory=list)
     unknowns: list[str] = Field(default_factory=list)
     coverage: list[str] = Field(default_factory=list)

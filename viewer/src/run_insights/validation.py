@@ -61,6 +61,14 @@ def validate_draft(draft: InsightDraft, run: RunData) -> InsightDraft:
             items[index] = item.model_copy(update={"related": related})
             earlier |= {item.id} if name == "chain" else set()
     unknowns = list(draft.unknowns)
+    # The chain's start and end frame it: each keeps only checked citations, and links nothing.
+    frame: dict[str, Insight | None] = {}
+    for name in ("chain_start", "chain_end"):
+        item = getattr(draft, name)
+        cites = [citation for citation in item.cites if _checks(citation, run, evidence)] if item else []
+        dropped_citations += len(item.cites) - len(cites) if item else 0
+        dropped_items += bool(item and not cites)
+        frame[name] = item.model_copy(update={"cites": cites, "related": []}) if cites else None
     note = f"Dropped {dropped_items} items and {dropped_citations} citations: evidence did not check."
     unknowns += [note] if dropped_citations or dropped_items else []
-    return draft.model_copy(update={**sections, "unknowns": unknowns})
+    return draft.model_copy(update={**sections, **frame, "unknowns": unknowns})

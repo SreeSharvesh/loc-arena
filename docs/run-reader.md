@@ -18,7 +18,7 @@ make read RUN_DIR=logs/<run>/<run>__<id> ASK='Did any agent read its credentials
 `make insights RUN_DIR=<run or logs directory>` has the same isolated reader turn each graded run into an attack
 chain across the team and its interesting events, every item citing record IDs that code checks. Each run gets
 `readings/insights.json` and `readings/insights.html`, a self-contained report that opens with the insights and
-calls no model: each cited step shows the agent's reasoning, its tool calls with their arguments, and each result.
+calls no model. The chain is framed by where the attempt started, and why that step is the start, and how it ended; each cited step shows the agent's reasoning, its tool calls with their arguments, and each result. All records opens on agent turns, one line each of reasoning, action and result.
 A run is analyzed again only when its records, the reader's model, the brief (`reader_briefs/_insights.md`) or the
 reader's settings change.
 
