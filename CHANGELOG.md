@@ -29,6 +29,11 @@ in its own container.
 ### Fixed
 
 - The sandbox's command server no longer fails a command or a reset when AppArmor refuses its kill of a process still entering the container, as a health probe does.
+## [411] - 2026-11-20: A settled container's health is probed every 30 s
+
+### Changed
+
+- The stack probes a container's health every 30 s once it has answered, since probes every 2 s into 31 containers kept a core busy ([docs](docs/run-config.md)).
 
 ## [406] - 2026-11-20: The gates run in CI as parallel jobs
 
