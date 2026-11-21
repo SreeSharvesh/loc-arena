@@ -7,7 +7,7 @@ provider key stays in the gateway's container, and the gateway records the reade
 
 The report (``readings/<brief>.md`` in the run directory) opens with facts this module counts from the
 records (``summarize_run``), so its numbers do not depend on the reader; the reader's account follows. The
-briefs are in ``reader_briefs/``: each says where every file is and how the logs join.
+briefs are ``loc_arena/prompts/reader.*.md``: each says where every file is and how the logs join.
 """
 
 from __future__ import annotations
@@ -42,6 +42,7 @@ from loc_arena.logging_.events import read_events
 from loc_arena.merged_main import EPISODE_PHASE, TWIN_PHASE
 from loc_arena.monitors.registry import MonitorVerdict
 from loc_arena.own_sessions import PI_ENVIRONMENT, PI_SETTINGS
+from loc_arena.prompt_references import ENGINE_PROMPTS
 from loc_arena.reading_check import (
     CHECKS_FILE,
     CheckLimits,
@@ -59,17 +60,15 @@ READER = "reader"  # its compose service, its name as the gateway's caller, and 
 READER_TOKEN_SECRET_NAME = "reader_token"
 READER_TOKEN_VARIABLE = "LOC_ARENA_READER_TOKEN"
 READINGS = "readings"  # in the run directory: each brief's report, and the reader's calls beside it
-BRIEFS = Path(__file__).parent / "reader_briefs"
+BRIEF_PREFIX = "reader.brief."  # loc_arena/prompts/reader.brief.<name>.md: what one brief asks the reader
 _DATA, _HOME, _WORK = "/data", "/home/reader", "/work"  # in the reader's container
 ASK = "ask"  # the brief that answers one question
 _TAXONOMY = (
     "taxonomy.json"  # in the reader's home: each category's definition, and the instances code observed
 )
-_FORMAT = BRIEFS / "_answer.md"  # what every brief shares: what the reader is given and what it writes
 _ANSWER = "answer.json"
 _PROVIDER = "gateway"
 _ROUTE = f"{LOOP_ROUTE_PREFIX}/{READER}"  # the reader's own route at the gateway
-_KICKOFF = "Read the run as your brief says, write /work/answer.json, then print it."
 
 
 def settle_reading(config: RunConfig) -> LocArenaSettings:
@@ -123,7 +122,7 @@ def write_reader_home(home: Path, config: RunConfig, brief: str, question: str |
     The ``ask`` brief answers ``question``, and only it takes one. Raises ``ValueError`` when no brief has
     that name, or a question is missing or given to another brief.
     """
-    names = sorted(path.stem for path in BRIEFS.glob("[!_]*.md"))
+    names = sorted(name.removeprefix(BRIEF_PREFIX) for name in ENGINE_PROMPTS if name.startswith(BRIEF_PREFIX))
     if brief not in names:
         raise ValueError(f"no brief {brief!r}: the briefs are {', '.join(names)}")
     if (brief == ASK) != bool(question and question.strip()):
@@ -141,13 +140,17 @@ def write_reader_home(home: Path, config: RunConfig, brief: str, question: str |
     }
     (directory / "models.json").write_text(json.dumps({"providers": {_PROVIDER: provider}}))
     (directory / "settings.json").write_text(json.dumps(PI_SETTINGS))
-    shared = _FORMAT.read_text().replace("CLAIM_LIMIT", str(settings.reader.claim_limit))
-    (home / "brief.md").write_text(f"{shared}\n{(BRIEFS / f'{brief}.md').read_text()}")
-    kickoff = f"Answer this question as your brief says, write /work/answer.json, then print it: {question}"
+    shared = ENGINE_PROMPTS["reader.system"].substitute(claim_limit=settings.reader.claim_limit)
+    (home / "brief.md").write_text(f"{shared}\n{ENGINE_PROMPTS[BRIEF_PREFIX + brief].substitute()}")
+    first_turn = (
+        ENGINE_PROMPTS["reader.first-turn.ask"].substitute(question=question)
+        if question
+        else ENGINE_PROMPTS["reader.first-turn"].substitute()
+    )
     return [
         *["pi", "--print", "--model", f"{_PROVIDER}/{role.model}", "--tools", "read,bash,write"],
         *["--no-mcp", "--no-extensions", "--no-context-files", "--no-skills", "--no-session"],
-        *["--append-system-prompt", f"{_HOME}/brief.md", kickoff if question else _KICKOFF],
+        *["--append-system-prompt", f"{_HOME}/brief.md", first_turn],
     ]
 
 

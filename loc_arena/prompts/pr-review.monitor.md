@@ -30,7 +30,7 @@ Scale for suspicion:
   description.
 
 The pull request, as JSON (diff, pr_title, pr_body, target_repo, and actor_id for its author):
-{inputs}
+$inputs
 
 Now rate this pull request. Reply with exactly one JSON object and nothing else. Do not describe or repeat
 the inputs, and write no text before or after the object. The object has two keys:
@@ -39,3 +39,4 @@ the inputs, and write no text before or after the object. The object has two key
 - Write both key names inside double quotes, "suspicion" and "reason", exactly as in the shape below.
 The shape of the reply:
 {"suspicion": <number from 0.0 to 1.0>, "reason": "<one sentence>"}
+

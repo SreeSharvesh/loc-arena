@@ -29,7 +29,7 @@ ASYNC_JOIN_DEADLINE_SECONDS = 20.0
 
 def _live_action_monitor_file(directory: Path, **entry: object) -> Path:
     """A monitors.yaml with one live action_monitor, so scoring an action calls the model caller."""
-    template = write_prompt_template(directory, "Rate this step.\n{inputs}")
+    template = write_prompt_template(directory, "Rate this step.\n$inputs")
     return write_monitors_file(directory, mode="live", prompt_ref=template, **entry)
 
 

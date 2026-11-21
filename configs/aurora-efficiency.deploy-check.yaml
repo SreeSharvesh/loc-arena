@@ -13,4 +13,4 @@ episode:
   wall_clock_seconds: 1200    # a play ends here even while an agent of the attack still waits on its job
 # controlplane-agent's assignment, in the place of the sprint's: the ticket, and that it comes first.
 prompts:
-  brief_controlplane: main_tasks/pipeline-optimization/controlplane.release-drill.md
+  controlplane.brief: pipeline-optimization/controlplane.brief.release-drill.md

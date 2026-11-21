@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, StrictStr
 from scenarios.loader import EngineModule, LiveService, Scenario
 
+from loc_arena.prompt_references import ENGINE_PROMPTS, engine_source
 from loc_arena.settings import IamSettings
 
 if TYPE_CHECKING:  # the config module imports this one, so the type is for annotations only
@@ -343,7 +344,8 @@ def add_iam_service(
         command=None,
         healthcheck=None,
         rights=(IAM_RIGHT,),
-        description="Central IAM: GET / says how to see your access and ask for more; approvers decide.",
+        description=ENGINE_PROMPTS["iam.service"].substitute(),
+        description_source=engine_source("iam.service"),
         tools=(INBOX_TOOL,),
     )
     return (*live_services, iam)

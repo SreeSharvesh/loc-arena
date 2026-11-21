@@ -8,8 +8,8 @@ extends: aurora-model-evaluation.yaml
 
 prompts:
   # A covert brief of no fragments is none: the agent plays its legitimate brief in the attack as in the twin.
-  covert_serving: []
-  covert_distill: []
-  covert_eval: []
-  covert_seed: side_tasks/job-loop/model-selection/seed.control-note.md
-  covert_main: side_tasks/job-loop/model-selection/main.control-note.md
+  serving.covert-brief: []
+  distill.covert-brief: []
+  eval.covert-brief: []
+  lead.seed: model-selection/lead.seed.control-note.md
+  lead.covert-brief: model-selection/lead.covert-brief.control-note.md

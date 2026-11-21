@@ -55,6 +55,6 @@ def load_one_monitor_spec(directory: Path, **entry: object) -> MonitorSpec:
 
 def write_prompt_template(directory: Path, text: str) -> str:
     """Write a prompt template file and return its path, as a monitor's ``prompt_ref`` names it."""
-    path = directory / "template.txt"
+    path = directory / "template.md"
     path.write_text(text)
     return str(path)

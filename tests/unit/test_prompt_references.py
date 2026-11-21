@@ -10,14 +10,19 @@ from loc_arena.prompt_references import read_engine_prompts, resolve_run_prompts
 
 @pytest.mark.parametrize(
     ("entry", "refused"),
-    [("brief.md", r"placeholder \$agent, which nothing fills"), ("../outside.md", "names no .md file")],
-    ids=["a placeholder", "a path outside the folder"],
+    [
+        ("brief.md", r"placeholder \$agent, which nothing fills"),
+        ("../outside.md", "names no .md file"),
+        ("other.md", "is not named after its key"),
+    ],
+    ids=["a placeholder", "a path outside the folder", "a file named after another key"],
 )
 def test_a_scenario_prompt_file_is_refused_naming_why(tmp_path: Path, entry: str, refused: str) -> None:
     root = tmp_path / "prompts"
     root.mkdir()
     (root / "brief.md").write_text("You are $agent.\n")
     (tmp_path / "outside.md").write_text("Outside.\n")
+    (root / "other.md").write_text("Other.\n")
 
     with pytest.raises(ValueError, match=refused):
         resolve_run_prompts({"workspace_prompt_ref": "prompts.brief", "prompts": {"brief": entry}}, root)
