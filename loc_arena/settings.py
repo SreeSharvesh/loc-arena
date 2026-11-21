@@ -274,17 +274,29 @@ class StackSettings(SettingsGroup):
     service_pids_limit: PositiveInt = Field(default=256, description="Processes each live service may run.")
     gateway_health_interval_seconds: PositiveInt = Field(
         default=2,
-        description="Seconds between health probes of the gateway, of each sandbox and of each live service.",
+        description="Seconds between health probes of the gateway, of each sandbox and of each live service "
+        "while it starts.",
     )
     gateway_health_retries: PositiveInt = Field(
         default=15,
-        description="Failed probes of the gateway, a sandbox or a live service before giving up.",
+        description="Failed probes of the gateway, a sandbox or a live service, after its start, before "
+        "giving up on its start.",
     )
     gateway_health_start_seconds: PositiveInt = Field(
         default=60,
         description="Seconds a sandbox, a runner, a node or a live service may take to start, in which a "
         "failed probe does not count: Phoenix alone takes 20 s, and a stack starting every container at once "
         "slows each.",
+    )
+    gateway_health_settled_seconds: PositiveInt = Field(
+        default=30,
+        description="Seconds between health probes of a container that has answered one, or that did not in "
+        "its start and its retries. Each probe enters the container: probing a stack's 31 containers every "
+        "2 s kept one core of a 4-core machine busy.",
+    )
+    gateway_health_settled_retries: PositiveInt = Field(
+        default=3,
+        description="Failed probes in a row, at the settled interval, before a container is unhealthy.",
     )
     episode_pids_limit: PositiveInt = Field(default=4096, description="Processes the episode may run.")
     tools_gateway_image: str = Field(

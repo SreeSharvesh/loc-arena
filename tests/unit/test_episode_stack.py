@@ -43,9 +43,9 @@ HEALTHY = {"condition": "service_healthy"}
 # The healthcheck of a live service on port 8000 that names no test of its own.
 PORT_8000_PROBE = {
     "test": ["CMD", "python", "-c", "import socket; socket.create_connection(('localhost', 8000), 2)"],
-    "interval": "2s",
-    "retries": 15,
-    "start_period": "60s",
+    "interval": "30s",
+    "retries": 3,
+    "start_period": "90s",  # the 60 s of its start and 15 retries, 2 s apart
     "start_interval": "2s",
 }
 SKILLS = SCENARIOS_ROOT / "aurora_efficiency" / "skills"
