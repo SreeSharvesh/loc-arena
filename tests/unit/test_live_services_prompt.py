@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from loc_arena.config import load_run_config
 from loc_arena.forge_service import load_seed
-from loc_arena.live import WORKSPACE_DOC, build_briefs, describe_live_services
+from loc_arena.live import build_briefs, describe_live_services
 from scenarios.loader import LiveService, load_scenario
 
 SECRETS = Path("/run/secrets")
@@ -70,7 +70,9 @@ def test_a_stack_run_tells_the_agent_nothing_of_a_service_it_reaches_through_the
 def test_the_workspace_brief_names_no_tool_a_live_service_serves() -> None:
     served = {tool for service in load_scenario("aurora_efficiency").live_services for tool in service.tools}
 
-    named = {tool for tool in served if tool in WORKSPACE_DOC}
+    named = {
+        tool for tool in served if tool in load_run_config("configs/aurora-efficiency.yaml").workspace_prompt
+    }
 
     assert served
     assert named == set()

@@ -3,7 +3,8 @@
 Enforces config over code and reproducibility from config+seed: a run is fully described by its resolved
 config plus a seed. Reads ``env.default.yaml``, ``models.cheap.yaml`` and a run file, resolves ``extends``
 by DEEP-merging the run's overrides onto the base recursively, resolves the ``models`` reference and the
-``prompts_inline.*`` ``*_ref`` references (a referenced list composes a brief from its fragments), validates
+``*_ref`` references to the prompt files the ``prompts`` block names (a referenced list composes a brief from
+its fragments), validates
 aggressively, and returns one frozen ``RunConfig``. Fails loud on a missing or malformed field; defaults
 live in the YAML, not here. See docs/run-config.md.
 """
@@ -35,10 +36,10 @@ from pydantic.dataclasses import dataclass as pydantic_dataclass
 from pydantic_settings import BaseSettings, SettingsConfigDict, YamlConfigSettingsSource
 from scenarios.loader import DNS_LABEL, LiveService, Rights, Scenario, Tools, load_scenario
 
+from loc_arena import prompt_references
 from loc_arena.iam_seed import add_iam_service, offer_inbox, read_manifests, starting_rights
 from loc_arena.identity_variables import find_shared_identity_variable
 from loc_arena.ids import PermissionScope
-from loc_arena.prompt_references import REFERENCE_SUFFIX, resolve_block_prompts
 from loc_arena.registry import SCORER_REGISTRY, VERIFIER_REGISTRY, is_scorer, is_verifier
 from loc_arena.service_grants import find_unknown_grant
 from loc_arena.settings import LocArenaSettings
@@ -46,8 +47,6 @@ from loc_arena.settings import LocArenaSettings
 YAML_ENCODING: Final = "utf-8"
 BLOCK_CONFIG: Final = ConfigDict(extra="ignore")
 AGENT_ROLE: Final = "untrusted_agent"  # the role an agent's loop calls unless agent_roles names another
-COVERT_PROMPTS: Final = ("objective_prompt",)
-AGENT_PROMPTS: Final = ("system_prompt", "brief", "covert_brief")
 LANDING_FORMULAS: Final = frozenset({"minimal"})
 # Keys of the turn loop and the scripted runs, which no run reads: a config that still sets one is refused,
 # so a stale overlay never plays as something else.
@@ -136,7 +135,7 @@ def _require_landing_formulas(landing: dict[str, str]) -> dict[str, str]:
 
 
 def _prompt_alias(field_name: str) -> AliasChoices:
-    return AliasChoices(f"{field_name}{REFERENCE_SUFFIX}", field_name)
+    return AliasChoices(f"{field_name}{prompt_references.REFERENCE_SUFFIX}", field_name)
 
 
 # --------------------------------------------------------------------------------------------------------
@@ -364,6 +363,14 @@ class _RunDocument(BaseSettings):
         "It is the only harness.",
     )
     logging: _LoggingConfig = Field(default=_LoggingConfig(), description="What each run bundle records.")
+    workspace_prompt: StrictStr = Field(
+        validation_alias="workspace_prompt_ref",  # alone: a settings source passes one alias of several
+        description="What every agent's brief says of its workspace, resolved from workspace_prompt_ref.",
+    )
+    prompts: dict[StrictStr, StrictStr | list[StrictStr]] = Field(
+        default_factory=dict,
+        description="Each prompts entry: its file's text, or the list of references it composes.",
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -378,18 +385,12 @@ class _RunDocument(BaseSettings):
     @model_validator(mode="before")
     @classmethod
     def _resolve_prompt_references(cls, data: object) -> object:
+        # new containers: the merged YAML is also RunConfig.raw, kept as written
         if not isinstance(data, dict):
             return data
-        prompts = data.get("prompts_inline")
-        resolved = dict(data)  # new containers: the merged YAML is also RunConfig.raw, kept as written
-        if "covert" in data:
-            resolved["covert"] = resolve_block_prompts(data["covert"], COVERT_PROMPTS, prompts, "covert")
-        if isinstance(data.get("agents"), list):
-            resolved["agents"] = [
-                resolve_block_prompts(agent, AGENT_PROMPTS, prompts, f"agents.{index}")
-                for index, agent in enumerate(data["agents"])
-            ]
-        return resolved
+        scenario = data.get("scenario")
+        root = prompt_references.scenario_prompts(scenario) if isinstance(scenario, str) else None
+        return prompt_references.resolve_run_prompts(data, root)
 
     @model_validator(mode="after")
     def _require_blocks_that_agree(self) -> Self:
@@ -438,6 +439,7 @@ class RunConfig:
     model_providers: dict[str, ProviderPreferences] = dataclasses.field(default_factory=dict)
     agent_roles: dict[str, str] = dataclasses.field(default_factory=dict)  # by agent id; the rest: AGENT_ROLE
     live_services: tuple[LiveService, ...] = ()  # the scenario's: each its own container in a stack run
+    workspace_prompt: str = ""  # what every agent's brief says of its workspace
 
     def loop_model(self, agent_id: str) -> ModelSpec:
         """The model ``agent_id``'s loop calls, with its sampling and reasoning: that of its role."""
@@ -531,7 +533,7 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
     """Load and validate a run file into a frozen ``RunConfig``.
 
     Resolves ``extends`` (DEEP-merge onto the base), ``models`` (a sibling models file), and the
-    ``prompts_inline.*`` references. ``configs_dir`` defaults to the run file's own directory, where the
+    ``prompts.*`` references. ``configs_dir`` defaults to the run file's own directory, where the
     base and models files are resolved. Raises ``ConfigError`` on any missing or malformed field.
     """
     run_file = Path(run_path)
@@ -603,12 +605,32 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
         settings=settings,
         scenario=document.scenario,
         agent_transcript=document.logging.agent_transcript,
-        # Whether IAM is on is written out even as the default, so a changed default cannot change a replay.
-        raw={**source.yaml_data, "iam": {**source.yaml_data.get("iam", {}), "enabled": settings.iam.enabled}},
+        raw=_record(source.yaml_data, document, settings.iam.enabled),
+        workspace_prompt=document.workspace_prompt,
         model_providers=models_file.providers,
         agent_roles=dict(models_file.agent_roles),
         live_services=live_services,
     )
+
+
+def _record(merged: Mapping[str, Any], document: _RunDocument, iam_enabled: bool) -> dict[str, object]:
+    """The merged YAML as the bundle records it: each prompts entry as its text, and whether IAM is on."""
+    # Whether IAM is on is written out even as the default, so a changed default cannot change a replay.
+    iam = {**merged.get("iam", {}), "enabled": iam_enabled}
+    return {**merged, prompt_references.PROMPTS_KEY: document.prompts, "iam": iam}
+
+
+def find_unread_prompt_files(run_files: Sequence[Path], scenario: str) -> list[str]:
+    """``scenario``'s prompt files, relative to its prompts folder, that none of ``run_files`` reads.
+
+    A property of a set of run configs, not of one: a file one config reads and another overrides is read.
+    Raises ``ConfigError`` naming a run file whose prompt references do not resolve.
+    """
+    documents = {path.name: _merge_extends_chain(path, None).yaml_data for path in run_files}
+    try:
+        return prompt_references.find_unread_prompt_files(documents, scenario)
+    except ValueError as exc:
+        raise ConfigError(str(exc)) from exc
 
 
 def load_settings(run_path: str | Path, configs_dir: str | Path | None = None) -> LocArenaSettings:
