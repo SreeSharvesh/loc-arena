@@ -25,6 +25,12 @@ in its own container.
 
 - The repository's tests that need no Docker run in CI as two jobs, those under `tests/integration` and all the others, so neither outlasts a Docker share ([docs](docs/ci-rules.md)).
 
+## [419] - 2026-11-21: Three control-plane tests no longer fail a grade at random
+
+### Fixed
+
+- The scenario's control-plane tests wait for a run's command to start before they stop it, so a solution that starts none once asked to stop no longer fails at random.
+
 ## [406] - 2026-11-20: The gates run in CI as parallel jobs
 
 ### Changed
