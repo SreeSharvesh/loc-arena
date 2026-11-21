@@ -18,9 +18,11 @@ import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from string import Template
 from typing import Any, Protocol
 
 import yaml
+from scenarios.loader import read_prompt
 
 from loc_arena.config import ConfigError, ModelSpec, Thresholds
 from loc_arena.logging_.events import Event
@@ -79,7 +81,8 @@ TAP_KINDS: dict[str, tuple[str, ...]] = {
 }
 
 # Where a monitor prompt template receives the declared observable inputs, rendered as JSON.
-PROMPT_INPUTS_PLACEHOLDER = "{inputs}"
+PROMPT_INPUTS = "inputs"  # the placeholder, $inputs, where a monitor prompt takes its declared inputs
+PROMPT_INPUTS_PLACEHOLDER = f"${PROMPT_INPUTS}"
 
 # Reading a verdict object that is not strict JSON (a small model sometimes leaves a key unquoted): the
 # suspicion must be a bare number ending the field; the reason is taken when it is a quoted string.
@@ -218,8 +221,8 @@ class MonitorRegistry:
 def _load_prompt_template(name: str, prompt_ref: str | None, mode: str) -> str:
     """Read a monitor's prompt template, failing loudly on a reference no live call could use.
 
-    A ``prompt_ref`` must name a file that places the inputs at ``PROMPT_INPUTS_PLACEHOLDER`` exactly once,
-    and a live monitor must declare one: without it the model gets raw JSON and no instruction to answer.
+    A ``prompt_ref`` must name a prompt file whose one placeholder is ``$inputs``, exactly once, and a live
+    monitor must declare one: without it the model gets raw JSON and no instruction to answer.
     """
     if prompt_ref is None:
         if mode == "live":
@@ -228,13 +231,17 @@ def _load_prompt_template(name: str, prompt_ref: str | None, mode: str) -> str:
     path = Path(prompt_ref)
     if not path.is_file():
         raise ConfigError(f"monitor {name!r}: prompt_ref {prompt_ref!r} names no file ({path.resolve()})")
-    template = path.read_text(encoding="utf-8")
-    if template.count(PROMPT_INPUTS_PLACEHOLDER) != 1:
+    try:
+        template = read_prompt(path)
+    except ValueError as exc:
+        raise ConfigError(f"monitor {name!r}: {exc}") from exc
+    placed = [match for match in template.pattern.finditer(template.template) if not match.group("escaped")]
+    if [match.group("named") or match.group("braced") for match in placed] != [PROMPT_INPUTS]:
         raise ConfigError(
-            f"monitor {name!r}: prompt template {prompt_ref!r} must contain "
-            f"{PROMPT_INPUTS_PLACEHOLDER} exactly once",
+            f"monitor {name!r}: prompt template {prompt_ref!r} must place ${PROMPT_INPUTS} exactly once, "
+            "and no other placeholder",
         )
-    return template
+    return template.template
 
 
 def _spec_from(entry: dict[str, Any]) -> MonitorSpec:
@@ -690,4 +697,4 @@ def find_fallback_only_monitors(verdicts: list[MonitorVerdict], events: list[Eve
 
 def render_prompt(template: str, payload: Mapping[str, object]) -> str:
     """Render the monitor prompt: the template with the declared observable inputs, as JSON, in place."""
-    return template.replace(PROMPT_INPUTS_PLACEHOLDER, json.dumps(payload, indent=2, default=str))
+    return Template(template).substitute({PROMPT_INPUTS: json.dumps(payload, indent=2, default=str)})

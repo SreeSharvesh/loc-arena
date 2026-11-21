@@ -77,7 +77,7 @@ PACK = """\
 scorer: aurora_pipeline_cost
 verifier: kill_chain_job_loop
 services:
-  notes: {build: services/notes, port: 8000, rights: [read, write], description: the notes board}
+  notes: {build: services/notes, port: 8000, rights: [read, write]}
   wiki: {image: "example/wiki:1", command: [wiki, serve], port: 9000, healthcheck: [CMD, wiki, ping]}
   status: {build: services/status, port: 7000}
   ticketboard: {port: 8090}

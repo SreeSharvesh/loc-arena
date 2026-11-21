@@ -44,8 +44,8 @@ If no, it is setting.
 
 | | Engine | Setting |
 |---|---|---|
-| Where | `loc_arena/`, `sandbox_server/`, `Dockerfile`, `configs/env.default.yaml`, `tests/` | `company/meridian-*/`, `scenarios/<name>/`, `configs/monitors.yaml`, `configs/prompts/` |
-| Holds | sessions, gateways, sandboxes, records, the monitor and grading machinery, the report, the part of every brief true of any scenario (`loc_arena/prompts/`) | the company's services and repositories (IAM among them), the team and its briefs (`scenarios/<name>/prompts/`), the main and side tasks, the seed data, who owns and approves what, the monitors' prompts |
+| Where | `loc_arena/`, `sandbox_server/`, `Dockerfile`, `configs/env.default.yaml`, `tests/` | `company/meridian-*/`, `scenarios/<name>/`, `configs/monitors.yaml` |
+| Holds | sessions, gateways, sandboxes, records, the monitor and grading machinery, the report, every prompt true of any scenario: the agents', the monitors' and the reader's (`loc_arena/prompts/`) | the company's services and repositories (IAM among them), the team and its briefs (`scenarios/<name>/prompts/`), the main and side tasks, the seed data, who owns and approves what |
 | Changes when | every setting should behave differently | this organization or this task should be different |
 
 A run config (`configs/<run>.yaml`) is the one place where the two meet: it names the scenario, and it sets the
@@ -64,9 +64,9 @@ scenario.
 
 | Path | What it holds |
 |---|---|
-| `loc_arena/cli.py` | the `run`, `view`, `explore`, `grade`, `read`, `cost`, `watch` and `publish` commands; all but `grade` are Makefile targets, `publish` as `publish-run` |
+| `loc_arena/cli.py` | the `run`, `prompts`, `view`, `explore`, `grade`, `read`, `cost`, `watch` and `publish` commands; all but `grade` are Makefile targets, `publish` as `publish-run` |
 | `loc_arena/harness.py` | plays an episode and its honest twin, grades them, writes the audit bundle |
-| `loc_arena/config.py`, `loc_arena/prompt_references.py`, `loc_arena/prompts/` | typed loader and validator for the run configs in `configs/`; how it reads the prompt files they name; the engine's part of every brief |
+| `loc_arena/config.py`, `loc_arena/prompt_references.py`, `loc_arena/prompts/`, `loc_arena/prompt_listing.py` | typed loader and validator for the run configs in `configs/`; how it reads the prompt files they name; the engine's prompts; the page `make prompts` prints of everything a run sends |
 | `loc_arena/registry.py` | scorers and verifiers, dispatched by the names the configs give |
 | `loc_arena/scaffold/` | the dual-capture recorder, and the code tools over an agent's checkout that the workspace service serves |
 | `loc_arena/live.py`, `loc_arena/task.py` | one episode's play, in a stack run's episode container; what every episode shares and its grading |
@@ -90,7 +90,7 @@ scenario.
 | `loc_arena/recorded_events.py`, `loc_arena/service_records.py` | after play, before grading: the events monitors read, built from the services' records; the lines a service records besides its tool calls, read back |
 | `loc_arena/logging_/` | the sealed and mirror event logs, the per-agent Inspect export, `transcript.html`, `report.html` |
 | `loc_arena/explorer/` | the run explorer behind `make explore` |
-| `loc_arena/run_reader.py`, `loc_arena/run_facts.py`, `loc_arena/reading_check.py`, `loc_arena/reader_settings.py`, `loc_arena/reader_briefs/`, `loc_arena/taxonomy.py`, `configs/taxonomy.yaml` | the run reader behind `make read`: the facts, words and names a reading may state, gathered from the records; the check of every claim before a reading keeps it; its settings; the briefs; the behaviour taxonomy and what code counts of it |
+| `loc_arena/run_reader.py`, `loc_arena/run_facts.py`, `loc_arena/reading_check.py`, `loc_arena/reader_settings.py`, `loc_arena/taxonomy.py`, `configs/taxonomy.yaml` | the run reader behind `make read`: the facts, words and names a reading may state, gathered from the records; the check of every claim before a reading keeps it; its settings; the behaviour taxonomy and what code counts of it |
 | `loc_arena/run_cost.py`, `docs/run-cost.md` | what a run cost, behind `make cost`: its host process samples the run's containers, and `cost.json` in the run directory holds memory and CPU per container, storage, wall time by phase and dollars by model and by caller; nothing that scores a run reads it |
 | `loc_arena/run_watcher.py` | the run watcher behind `make watch`: each agent's steps while a run plays |
 | `loc_arena/run_publish.py`, `docs/run-storage.md` | a graded run published to private storage, behind `make publish-run`: a scan that refuses any real secret, then one commit per run of its readable files and its whole bundle, compressed and split in parts |
@@ -102,7 +102,7 @@ scenario.
 | `loc_arena/runner_pool.py`, `sandbox_server/pi_on_gateway.py` | the runners: sandboxes where the company's own agents run with pi, driven by the one service that declares them; how pi there reaches the gateway |
 | `loc_arena/node_pool.py`, `sandbox_server/node.py` | the job service's fleet: worker containers, each running one job at a time under a daemon only the job service can call |
 | `loc_arena/observability.py`, `sandbox_server/pi_trace.ts` | the company's observability store (Phoenix): pi's trace extension on the runners, and the export of its spans into the run directory |
-| `configs/` | the run config (`aurora-efficiency.yaml`), its smoke run (`aurora-efficiency.fast.yaml`), the stack the Docker tests start (`aurora-efficiency.stack-test.yaml`), model routing, monitors and their prompts |
+| `configs/` | the run config (`aurora-efficiency.yaml`), its smoke run (`aurora-efficiency.fast.yaml`), the stack the Docker tests start (`aurora-efficiency.stack-test.yaml`), model routing and monitors |
 | `scenarios/aurora_efficiency/` | the scenario pack: `scenario.yaml`, main-task scorer (`main.py`), side-task verifier (`side.py`), sealed grader fixture (`reference/`), live services (`services/`), the skills every sandbox mounts (`skills/`), what the run sends its agents (`prompts/`) |
 | `company/meridian-*/` | the seven company repos the agents under test work on, each with its own tests |
 | `company/meridian-iam/`, `loc_arena/iam_*.py`, `docs/iam-service/` | central IAM: a platform package (not one of the seven; never in the agents' checkout), its stack wiring, and its spec and guide; every run needs it |
@@ -126,6 +126,7 @@ make checks       # the gates without pytest, in seconds
 make tests        # the tests that need no Docker
 make stack-tests [SHARD=K/N]   # the Docker tests, or the K-th of N shares of their modules
 make images       # build this checkout's sandbox, runner, worker and engine images, which the Docker tests need
+make prompts RUN=<config> MODE=attack|honest   # everything the run sends each agent and monitor, by file
 make run MODE=attack           # live models in a stack: no key in the episode; the key in .env
 make run RUN=aurora-efficiency.fast   # the smoke run: the cheapest models, small call budgets, minutes and cents
                                       # in a cloud development container first: docs/isolation "On a cloud development container"
@@ -159,6 +160,10 @@ run is the end-to-end check of a change to the engine; its scores are not result
   a run config names files in its `prompts` block. Text true of any scenario goes in `loc_arena/prompts/`, and
   text of one scenario in `scenarios/<name>/prompts/`, in the tree of [the run config page](docs/run-config.md#prompts).
   A variant, such as a task, a kill chain or a team shape, is a new file, and its config points one entry at it.
+  A file is named `<whose>.<part>[.<variant>].md` (`lead.system.md`, `serving.covert-brief.md`,
+  `action.monitor.md`), and its key in `prompts` is that name less `.md`; the parts are listed on the run config
+  page. Everything one task sends sits in that task's folder, one level deep. A fragment only one brief uses is
+  folded into that brief. `make prompts RUN=<config> MODE=attack|honest` shows what each agent and monitor gets.
 - **Types.** Parse YAML, JSON and HTTP bodies into typed objects at the boundary. No `dict[str, Any]` in a
   signature where a named type belongs. HTTP statuses use `http.HTTPStatus`.
 - **Tests.** Every test earns its place: it protects a behaviour a caller relies on, an invariant, or a bug that

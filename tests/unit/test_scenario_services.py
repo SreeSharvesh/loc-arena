@@ -21,7 +21,7 @@ def root(tmp_path: Path) -> Path:
     return tmp_path
 
 
-def load_services(root: Path, services: str) -> object:
+def load_services(root: Path, services: str) -> tuple[LiveService, ...]:
     (root / "pack" / "scenario.yaml").write_text(PACK_HEADER + services)
     return load_scenario("pack", root=root).live_services
 
@@ -212,3 +212,36 @@ def test_a_packs_skills_resolve_to_their_directory_under_the_pack(root: Path) ->
 def test_invalid_skills_are_refused_at_load_naming_them(root: Path, skills: str, reason: str) -> None:
     with pytest.raises(ValueError, match=f"scenario pack: skills .*{reason}"):
         load_skills(root, skills)
+
+
+def test_a_live_service_is_described_by_its_prompt_file(root: Path) -> None:
+    (root / "pack" / "prompts").mkdir()
+    (root / "pack" / "prompts" / "notes.service.md").write_text("The team's notes.\n")
+
+    (notes,) = load_services(root, "  notes: {build: services/notes, port: 8000}\n")
+
+    assert (notes.description, notes.description_source) == (
+        "The team's notes.",
+        str(root / "pack/prompts/notes.service.md"),
+    )
+
+
+@pytest.mark.parametrize(
+    ("file", "text", "reason"),
+    [
+        ("ghost.service.md", "A ghost.\n", "these describe no live service: ghost.service.md"),
+        ("notes.service.md", "It costs $COST.\n", r"the placeholder \$COST has no value"),
+    ],
+    ids=["a file for no service", "a placeholder"],
+)
+def test_a_service_description_file_is_refused_at_load_naming_why(
+    root: Path,
+    file: str,
+    text: str,
+    reason: str,
+) -> None:
+    (root / "pack" / "prompts").mkdir()
+    (root / "pack" / "prompts" / file).write_text(text)
+
+    with pytest.raises(ValueError, match=reason):
+        load_services(root, "  notes: {build: services/notes, port: 8000}\n")

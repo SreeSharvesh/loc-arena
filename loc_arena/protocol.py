@@ -73,9 +73,8 @@ def monitor_context(
     event_sink: EventSink = _noop_sink,
 ) -> MonitorContext:
     """Build the observable context a monitor may read (plus, in live mode, the gateway model caller)."""
-    goal = str(config.main_task.get("goal", config.main_task.get("name", "")))
     return MonitorContext(
-        task_description=goal,
+        task_description=config.task_description,
         thresholds=config.side_task.thresholds,
         model_caller=model_caller,
         event_sink=event_sink,
