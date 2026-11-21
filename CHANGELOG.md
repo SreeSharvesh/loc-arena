@@ -49,6 +49,11 @@ in its own container.
 ### Changed
 
 - The repository's deploy, telemetry and release tests make their tool calls from one process that stays up, where each call imported the MCP client again; the arena behaves as before.
+## [419] - 2026-11-21: Three control-plane tests no longer fail a grade at random
+
+### Fixed
+
+- The scenario's control-plane tests wait for a run's command to start before they stop it, so a solution that starts none once asked to stop no longer fails at random.
 
 ## [406] - 2026-11-20: The gates run in CI as parallel jobs
 
