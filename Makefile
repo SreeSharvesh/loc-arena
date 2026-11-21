@@ -11,7 +11,7 @@ BRIEF ?= agents
 LOGS ?= logs
 FILE_SIZE_BASE ?= origin/main
 
-.PHONY: run view explore read watch cost publish-run help gates images setup public-repo fixture-run
+.PHONY: run view explore read watch cost publish-run help gates checks tests stack-tests images setup public-repo fixture-run
 
 help:
 	@echo "make setup                                # check toolchain, sync deps, validate config"
@@ -26,6 +26,9 @@ help:
 	@echo "make publish-run RUN_DIR=<run directory>  # scan a graded run for real secrets, then publish it to private storage"
 	@echo "make fixture-run                          # play the smoke run and store it as the tests' run fixture"
 	@echo "make gates                                # file size, changelog, ruff + ruff format + ty + pytest"
+	@echo "make checks                               # the gates without pytest: seconds"
+	@echo "make tests                                # the tests that need no Docker"
+	@echo "make stack-tests [SHARD=K/N]              # the Docker tests, or the K-th of N shares of their modules"
 	@echo "make images                               # build this checkout's sandbox, runner, worker and engine images, which the Docker tests need"
 	@echo "  (a run needs Docker Engine 28 or later)"
 
@@ -74,7 +77,16 @@ images:
 	@set -- $(STACK_IMAGES); for target in sandbox runner worker engine; do \
 		docker build $${SSL_CERT_FILE:+--secret "id=ca_bundle,src=$$SSL_CERT_FILE"} --target $$target -t $$1 . || exit 1; shift; done
 
-gates:
+gates: checks
+	@uv run pytest -q -n auto --dist loadscope
+
+checks:
 	@python3 scripts/check_file_size.py --base "$(FILE_SIZE_BASE)"
 	@python3 scripts/check_changelog.py $(if $(CHANGELOG_PULL_REQUEST),--pull-request $(CHANGELOG_PULL_REQUEST))
-	@uv run ruff check . && uv run ruff format --check . && uv run ty check && uv run pytest -q -n auto --dist loadscope
+	@uv run ruff check . && uv run ruff format --check . && uv run ty check
+
+tests:
+	@uv run pytest -q -n auto --dist loadscope -m "not stack" --durations 15
+
+stack-tests:
+	@uv run pytest -q -m stack $(if $(SHARD),--stack-shard $(SHARD)) --durations 15

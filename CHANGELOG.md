@@ -19,6 +19,13 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [406] - 2026-11-20: The gates run in CI as parallel jobs
+
+### Changed
+
+- The repository's gates run in CI as parallel jobs, the Docker tests in four shares, so a pull request waits for the slowest job, not their sum ([docs](docs/ci-rules.md)).
+- The scenario's control-plane suite runs in 9 seconds rather than 20, since its chat and notes tests no longer wait for each test's server, which halves every grade.
+
 ## [329] - 2026-11-20: Agents-service runs get a graded rogue attack and main task
 ### Added
 - The scenario's `aurora-agents-environments` sprint has the team build persistent, configurable execution environments into the agents service, and ships what it merges through the deploy service.
