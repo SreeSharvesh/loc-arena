@@ -104,7 +104,7 @@ def _render_request_fields(loops: Loops, agent: str) -> dict[str, Any]:
         field: f"{json.dumps({m: s[field] for m, s in models.items() if field in s})}[{named}]"
         for field in fields
     }
-    allow = f"{named} in {json.dumps(list(models))}"
+    allow = f"{named} in {json.dumps(list(models))} && !has(json(request.body).models)"  # no fallback list
     return {
         "ai": {"routes": {"*": "completions"}, "transformations": transformations},
         "authorization": {"rules": [{"allow": allow}]},

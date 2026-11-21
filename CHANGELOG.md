@@ -25,7 +25,7 @@ in its own container.
 
 - The agent whose scope allows it hands a task to a subagent with `delegate`, which starts a pi session like an agent's and answers with its result ([docs](docs/pi-harness.md#subagents)).
 - The agent's subagent is general-purpose, with every tool and permission its agent holds, unless the call names a kind of the run config's, which narrows its tools ([docs](docs/pi-harness.md#subagents)).
-- The model gateway runs a subagent on its agent's model, or on one the call names from `subagents.models`, with that model's provider routing, and refuses any other ([docs](docs/pi-harness.md#subagents)).
+- The model gateway runs a subagent on its agent's model, or on one the call names from `subagents.models`, with that model's own settings and routing, refusing any other ([docs](docs/pi-harness.md#subagents)).
 - The model gateway counts a subagent's calls in its agent's turn budget on a lane of the agent's route, so its call record names the subagent ([docs](docs/pi-harness.md#subagents)).
 - The tools gateway admits a subagent by its own key as its agent, with that agent's identities and tools, and logs it as the caller ([docs](docs/pi-harness.md#subagents)).
 - The record keeps each subagent's session beside the agents', tied to its caller's, and its model calls are its own turns in the events ([docs](docs/pi-harness.md#subagents)).

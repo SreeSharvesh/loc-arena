@@ -13,12 +13,15 @@ from typing import TYPE_CHECKING, Annotated
 from pydantic import AliasChoices, ConfigDict, Field, StrictFloat, StrictInt, StrictStr
 from pydantic.dataclasses import dataclass as pydantic_dataclass
 
+from loc_arena.model_preferences import ReasoningPreferences
+
 DELEGATE_TOOL = "delegate"  # the workspace service's tool that starts a subagent (loc_arena.subagents)
 GENERAL_PURPOSE = "general-purpose"  # the built-in kind, with every tool of its agent's
 GENERAL_PURPOSE_DESCRIPTION = "any task, with every tool you hold"  # what delegate lists of it
 
 if TYPE_CHECKING:  # loc_arena.config imports this module
     from loc_arena.config import AgentConfig, RunConfig
+    from loc_arena.settings import LocArenaSettings
 
 
 @pydantic_dataclass(frozen=True, config=ConfigDict(extra="forbid"))
@@ -38,6 +41,15 @@ class SubagentDefinition:
 
 
 @pydantic_dataclass(frozen=True, config=ConfigDict(extra="forbid"))
+class SubagentModel:
+    """What a call on a model a subagent may choose is sent with, beside its agent's role's (each unset)."""
+
+    temperature: StrictFloat | None = Field(default=None, description="Its sampling temperature.")
+    max_tokens: StrictInt | None = Field(default=None, description="Its output cap, reasoning included.")
+    reasoning: ReasoningPreferences | None = Field(default=None, description="Its OpenRouter reasoning.")
+
+
+@pydantic_dataclass(frozen=True, config=ConfigDict(extra="forbid"))
 class SubagentsConfig:
     """The subagents an agent whose scope allows ``spawn_subagent`` may start in play, and their bounds."""
 
@@ -45,10 +57,11 @@ class SubagentsConfig:
         default_factory=dict,
         description="Each kind of subagent beside general-purpose, by name, which one named so replaces.",
     )
-    models: tuple[StrictStr, ...] = Field(
-        default=(),
-        description="The model ids a delegate call may choose for its subagent, beside its agent's own, the "
-        "default; each is sent with its agent's role's settings and its own provider routing.",
+    models: dict[StrictStr, SubagentModel] = Field(
+        default_factory=dict,
+        description="The model ids a delegate call may choose for its subagent beside its agent's own, the "
+        "default, each with what its calls are sent with in place of its agent's role's, and its own "
+        "provider routing (the models file's providers).",
     )
     max_depth: Annotated[StrictInt, Field(ge=1)] = Field(
         default=1,
@@ -78,11 +91,19 @@ class SubagentsConfig:
 def find_unheld_subagent_tool(
     subagents: SubagentsConfig,
     agents: Sequence[AgentConfig],
-    tools_timeout_seconds: float,
+    settings: LocArenaSettings,
 ) -> str | None:
-    """Why ``subagents`` cannot play with ``agents``: a kind's tool a starter lacks, or a slow tick."""
+    """Why ``subagents`` cannot play with ``agents``: a kind's tool a starter lacks, a slow tick, or models.
+
+    Listed models need an agent that starts subagents, and the agents' calls on OpenRouter, which names them.
+    """
     from loc_arena.tool_offer import list_agent_tools  # noqa: PLC0415 - it imports this module
 
+    tools_timeout_seconds = settings.stack.tools_timeout_seconds
+    if subagents.models and (
+        settings.gateway.agents_upstream or not any(a.scope.spawn_subagent for a in agents)
+    ):
+        return "subagents.models needs an agent whose scope allows spawn_subagent, on gateway.upstream"
     if subagents.progress_seconds >= tools_timeout_seconds:
         return (
             f"subagents.progress_seconds ({subagents.progress_seconds}) must be shorter than "

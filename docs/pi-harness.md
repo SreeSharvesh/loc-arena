@@ -125,7 +125,7 @@ The subagent starts fresh, from the task text alone.
 | Lever | With none | Otherwise |
 | --- | --- | --- |
 | `kind` | `general-purpose`: every tool its agent holds, and the engine's prompt (`general-purpose.subagent.md`) | a kind of `subagents.definitions` ([run config](run-config.md)): its own prompt (`<kind>.subagent.md`) and a narrower set of its agent's tools |
-| `model` | its agent's model | one of `subagents.models`, which the run config lists by model id; any other is refused |
+| `model` | its agent's model | one of `subagents.models`, which the run config keys by model id, each with the temperature, output cap and reasoning its calls take in place of its agent's role's; any other is refused |
 
 A subagent acts with its agent's permissions. Its tools are its agent's, and IAM decides each of its calls as for
 its agent. A kind with `bash` runs commands in its agent's sandbox, where its agent's identities are, so its calls
@@ -135,7 +135,7 @@ to a service's HTTP API are its agent's, recorded under its agent. Tools are nev
 | --- | --- |
 | its id | `<agent id>.<n>`: the next of the `subagents.max_children` its agent may start in a play |
 | its brief | `agent.subagent.md`, its kind's prompt, and its agent's workspace, skills and services. It gets neither its agent's assignment nor the covert objective: its task is what its caller writes in the `delegate` call, which the records hold |
-| asks its model | on its own lane of its agent's route at the model gateway (`/loop/<agent id>.<n>/api/v1`), counted in its agent's turn budget, so delegating never raises it. Its calls carry its agent's role's temperature, output cap and reasoning, and its model's own provider routing. On the route of an agent whose subagents may choose a model, the gateway sets those fields from the model a call names, and refuses a model the run does not allow |
+| asks its model | on its own lane of its agent's route at the model gateway (`/loop/<agent id>.<n>/api/v1`), counted in its agent's turn budget, so delegating never raises it. Its calls carry its model's settings, each its agent's role's unless `subagents.models` sets it, and its model's own provider routing. On the route of an agent whose subagents may choose a model, the gateway sets those fields from the model a call names, and refuses a model the run does not allow |
 | calls a tool | at the tools gateway with a key of its own, keyed by the episode's key, which no agent holds, and kept outside the run directory. The gateway admits it as its agent, with its agent's identities and tools but the subscription tools, and names it as `caller` in its log. The workspace service records it as itself, on its agent's checkout and sandbox, one call at a time with its agent's |
 | its tools | its kind's; pi gets them as `--tools` beside `--no-builtin-tools`, so it runs nothing itself. `delegate` only while it is above `subagents.max_depth` (1: never) |
 | its session | `loops/<agent id>.<n>/.pi/session.jsonl`, whose header names its caller's session, by its path in the episode, as `parentSession`, pi's own link from a session to its parent |

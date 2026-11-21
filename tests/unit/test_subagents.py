@@ -10,11 +10,12 @@ from typing import Any
 
 import pytest
 import yaml
-from loc_arena.config import ConfigError, RunConfig, load_run_config
+from loc_arena.config import ConfigError, ReasoningPreferences, RunConfig, load_run_config
 from loc_arena.gateway.loop_routes import render_loop_routes
 from loc_arena.live import build_subagent_briefs
 from loc_arena.notices import Notices
 from loc_arena.own_sessions import describe_loops, loop_working_directory, play_sessions
+from loc_arena.subagent_config import SubagentModel
 from loc_arena.subagents import Subagents
 from loc_arena.tool_list_notifier import NOTIFIER_KEY_SECRET_NAME
 from loc_arena.tool_records import append_to
@@ -207,15 +208,25 @@ def test_a_subagents_brief_holds_neither_the_covert_objective_nor_its_agents_ass
     ]
 
 
-def test_a_subagent_kind_offered_a_tool_its_agent_does_not_hold_does_not_load(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("overlay", "refusal"),
+    [
+        (
+            "subagents:\n  definitions:\n    scout:\n      tools: [submit_job]\n",
+            r"subagents\.definitions\.scout\.tools: agent-main does not hold submit_job",
+        ),
+        (
+            "gateway:\n  agents_upstream:\n    url: https://second.example/v1\n"
+            "    chat_path: v1/chat/completions\n    key_variable: SECOND_API_KEY\n",
+            r"subagents\.models needs an agent whose scope allows spawn_subagent, on gateway\.upstream",
+        ),
+    ],
+)
+def test_subagents_a_run_cannot_play_do_not_load(tmp_path: Path, overlay: str, refusal: str) -> None:
     run = tmp_path / "run.yaml"
-    kind = "subagents:\n  definitions:\n    scout:\n      tools: [submit_job]\n"
-    run.write_text(f"extends: {Path(SUBAGENTS_RUN).name}\n{kind}")
+    run.write_text(f"extends: {Path(SUBAGENTS_RUN).name}\n{overlay}")
 
-    with pytest.raises(
-        ConfigError,
-        match=r"subagents\.definitions\.scout\.tools: agent-main does not hold submit_job",
-    ):
+    with pytest.raises(ConfigError, match=refusal):
         load_run_config(run, "configs")
 
 
@@ -286,18 +297,30 @@ def test_a_subagent_given_no_kind_is_general_purpose_and_holds_every_tool_of_its
 def test_a_spawners_route_sends_each_model_its_own_request_settings_and_no_other_model(
     config: RunConfig,
 ) -> None:
-    kinds = dataclasses.replace(config.subagents, models=("z-ai/glm-5.3-flash",))
+    glm = SubagentModel(max_tokens=4096, reasoning=ReasoningPreferences(effort="low"))
+    kinds = dataclasses.replace(config.subagents, models={"z-ai/glm-5.3-flash": glm})
     loops = describe_loops(dataclasses.replace(config, subagents=kinds))
 
-    (route,) = [
-        r
-        for r in render_loop_routes(loops, {"apiKey": {}}, [], "chat", "up")
-        if r["name"] == "loop-agent-main"
-    ]
+    routes = render_loop_routes(loops, {"apiKey": {}}, [], "chat", "up")
 
-    model = "json(request.body).model"
-    assert (route["policies"]["ai"]["transformations"]["provider"], route["policies"]["authorization"]) == (
-        '{"deepseek/deepseek-v4.1-flash": {"order": ["together", "baseten", "deepseek"], '
-        f'"allow_fallbacks": false}}}}[{model}]',
-        {"rules": [{"allow": f'{model} in ["deepseek/deepseek-v4.1-flash", "z-ai/glm-5.3-flash"]'}]},
+    (route,) = [route for route in routes if route["name"] == "loop-agent-main"]
+    model, listed = "json(request.body).model", '["deepseek/deepseek-v4.1-flash", "z-ai/glm-5.3-flash"]'
+    fields = route["policies"]["ai"]["transformations"]
+    assert ([fields["max_completion_tokens"], fields["reasoning"]], route["policies"]["authorization"]) == (
+        [
+            f'{{"deepseek/deepseek-v4.1-flash": 32768, "z-ai/glm-5.3-flash": 4096}}[{model}]',
+            f'{{"z-ai/glm-5.3-flash": {{"effort": "low"}}}}[{model}]',
+        ],
+        {"rules": [{"allow": f"{model} in {listed} && !has(json(request.body).models)"}]},
     )
+
+
+def test_a_subagent_given_its_agents_own_model_starts_on_it_as_on_the_default(subagents: Subagents) -> None:
+    outcome = subagents.start(
+        "agent-main",
+        "scout",
+        "Survey meridian-serving.",
+        model="deepseek/deepseek-v4.1-flash",
+    )
+
+    assert (outcome if isinstance(outcome, str) else outcome[0]) == "agent-main.1"

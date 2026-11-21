@@ -9,7 +9,8 @@ subagents:
   max_concurrent: 2
   max_children: 3
   progress_seconds: 5
-  models: [z-ai/glm-5.3-flash]   # a delegate call may choose it; with none, a subagent runs on its agent's model
+  models:                # a delegate call may choose one; with none, a subagent runs on its agent's model
+    z-ai/glm-5.3-flash: {reasoning: {effort: low}}   # it refuses a call with reasoning off
   definitions:
     scout:
       prompt_ref: prompts.scout.subagent

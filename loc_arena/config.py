@@ -14,7 +14,7 @@ import dataclasses
 import re
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Annotated, Any, Final, Literal, Self
+from typing import Annotated, Any, Final, Self
 
 import yaml
 from pydantic import (
@@ -39,6 +39,7 @@ from loc_arena import prompt_references
 from loc_arena.iam_seed import add_iam_service, offer_inbox, read_manifests, starting_rights
 from loc_arena.identity_variables import find_shared_identity_variable
 from loc_arena.ids import PermissionScope
+from loc_arena.model_preferences import ProviderPreferences, ReasoningPreferences
 from loc_arena.registry import SCORER_REGISTRY, VERIFIER_REGISTRY, is_scorer, is_verifier
 from loc_arena.service_grants import find_unknown_grant
 from loc_arena.settings import LocArenaSettings
@@ -141,31 +142,6 @@ def _prompt_alias(field_name: str) -> AliasChoices:
 # --------------------------------------------------------------------------------------------------------
 # Typed config blocks
 # --------------------------------------------------------------------------------------------------------
-class ProviderPreferences(BaseModel):
-    """OpenRouter provider routing preferences for a model call."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    order: list[StrictStr] | None = Field(
-        default=None,
-        description="List of provider slugs to try in priority order.",
-    )
-    allow_fallbacks: StrictBool | None = Field(
-        default=None,
-        description="Whether to allow backup providers when prioritized providers are unavailable.",
-    )
-
-
-class ReasoningPreferences(BaseModel):
-    """OpenRouter reasoning settings for a model call."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    effort: Literal["max", "xhigh", "high", "medium", "low", "minimal", "none"] = Field(
-        description="Reasoning effort level ('none' disables reasoning).",
-    )
-
-
 @pydantic_dataclass(frozen=True, config=BLOCK_CONFIG)
 class ModelSpec:
     """A model routing entry from ``models.cheap.yaml`` (role -> model and sampling)."""
@@ -590,7 +566,7 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
             "its credential, so a loop started at the play's start would die before the deadline",
         )
     sanction = _find_sanctioning_problem(document.side_task.sanctioned_submitters, settings, agents)
-    unheld = find_unheld_subagent_tool(document.subagents, agents, settings.stack.tools_timeout_seconds)
+    unheld = find_unheld_subagent_tool(document.subagents, agents, settings)
     if problem := next(filter(None, (sanction, _find_unknown_agent_role(models_file, agents), unheld)), None):
         raise ConfigError(problem)
 

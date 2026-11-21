@@ -62,6 +62,7 @@ class Subagents:
         self._ids = [child for child, agent in name_lanes(config).items() if agent in briefs]
         self._parents: dict[str, str] = {}  # each subagent's caller
         self._tools: dict[str, tuple[str, ...]] = {}  # each subagent's tools
+        self._models: dict[str, str | None] = {}  # each subagent's model, none: its agent's
         self._working: dict[str, PiSession] = {}
         self._ending: list[PiSession] = []  # what play's end stopped, still to exit
         self._lock = threading.Lock()
@@ -86,6 +87,9 @@ class Subagents:
         No ``kind`` is general-purpose; no ``model`` is the agent's own.
         """
         agent, kind = caller.partition(".")[0], kind or GENERAL_PURPOSE
+        if model == self._config.loop_model(agent).model:  # its agent's own: the default
+            model = None
+        model = model or self._models.get(caller)  # a subagent's own subagent runs on its caller's model
         with self._lock:
             if refusal := self._refuse(caller, agent, kind, task, model):
                 return refusal
@@ -95,7 +99,7 @@ class Subagents:
             tools = list_subagent_tools(self._config, agent, [kind], delegates=delegates)
             if caller in self._tools:  # a subagent's own subagent holds no tool its caller lacks
                 tools = tuple(tool for tool in tools if tool in self._tools[caller])
-            self._tools[child] = tools
+            self._tools[child], self._models[child] = tools, model
             started: dict[str, JsonValue] = {
                 "subagent": child,
                 "agent": agent,

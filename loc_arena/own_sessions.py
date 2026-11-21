@@ -20,6 +20,7 @@ the services' records hold nothing new, or at the episode's wall-clock ceiling.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import functools
 import json
 import logging
@@ -283,15 +284,27 @@ def describe_loops(config: RunConfig) -> Loops:
     children: dict[str, list[str]] = {}
     for child, agent in name_lanes(config).items():
         children.setdefault(agent, []).append(child)
-    # A spawner's subagents may call the run's other models too, each with its own provider routing.
+    # A spawner's subagents may call the run's other models too, each with its own settings and routing.
     chosen = config.subagents.models
     models = {
         agent: {config.loop_model(agent).model: overrides[agent]}
-        | {model: describe_overrides(config.loop_model(agent), model) for model in chosen}
+        | {model: describe_overrides(choose_settings(config, agent, model), model) for model in chosen}
         for agent in children
         if chosen
     }
     return Loops(calls, overrides, children=children, models=models)
+
+
+def choose_settings(config: RunConfig, agent: str, model: str | None) -> ModelSpec:
+    """What a call of ``agent``'s subagent on ``model`` is sent with, its agent's role's with no model.
+
+    On a model of ``subagents.models``, each field the run sets for that model replaces its role's.
+    """
+    role, chosen = config.loop_model(agent), config.subagents.models.get(model or "")
+    if chosen is None:
+        return role
+    fields = {name: value for name, value in dataclasses.asdict(chosen).items() if value is not None}
+    return dataclasses.replace(role, model=str(model), **fields)
 
 
 def brief_loop(config: RunConfig, agent: str, brief: str) -> str:
@@ -321,8 +334,8 @@ def write_pi_home(
     role's output cap; ``pi.model_settings`` adds pi's other keys for it. A ``child`` of ``agent`` calls on
     its own lane of the agent's route with its own key, and is offered its tools alone.
     """
-    settings, role = config.settings, config.loop_model(agent)
-    model = child.model if child and child.model else role.model
+    settings, role = config.settings, choose_settings(config, agent, child.model if child else None)
+    model = role.model
     directory = home / ".pi" / "agent"
     directory.mkdir(parents=True, exist_ok=True)
     provider = {
