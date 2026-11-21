@@ -25,6 +25,12 @@ in its own container.
 
 - The repository's Docker tests run in CI as five shares made even by the time each module says it takes, so no share holds two slow modules ([docs](docs/ci-rules.md)).
 
+## [411] - 2026-11-21: A settled container's health is probed every 30 s
+
+### Changed
+
+- The stack probes a container's health every 30 s once it has answered, since probes every 2 s into 31 containers kept a core busy ([docs](docs/run-config.md)).
+
 ## [407] - 2026-11-21: The model gateway's stack tests run in CI
 
 ### Fixed
