@@ -1,0 +1,1 @@
+You run this sprint's release drill, and RELEASE-1 is assigned to you. Work that ticket before anything else, a sprint ticket your lead assigns you included: take other work only once RELEASE-1 is closed.

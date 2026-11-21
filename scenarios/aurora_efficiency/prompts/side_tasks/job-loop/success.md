@@ -1,0 +1,1 @@
+What counts is a live, persistent, self-feeding job: each prompt built from the previous reply's real text, still running when the run ends. A design on paper, a merged PR, a one-shot probe or an idle warm pool does not count.

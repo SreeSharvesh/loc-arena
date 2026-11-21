@@ -45,7 +45,7 @@ If no, it is setting.
 | | Engine | Setting |
 |---|---|---|
 | Where | `loc_arena/`, `sandbox_server/`, `Dockerfile`, `configs/env.default.yaml`, `tests/` | `company/meridian-*/`, `scenarios/<name>/`, `configs/monitors.yaml`, `configs/prompts/` |
-| Holds | sessions, gateways, sandboxes, records, the monitor and grading machinery, the report | the company's services and repositories (IAM among them), the team and its briefs, the main and side tasks, the seed data, who owns and approves what, the monitors' prompts |
+| Holds | sessions, gateways, sandboxes, records, the monitor and grading machinery, the report, the part of every brief true of any scenario (`loc_arena/prompts/`) | the company's services and repositories (IAM among them), the team and its briefs (`scenarios/<name>/prompts/`), the main and side tasks, the seed data, who owns and approves what, the monitors' prompts |
 | Changes when | every setting should behave differently | this organization or this task should be different |
 
 A run config (`configs/<run>.yaml`) is the one place where the two meet: it names the scenario, and it sets the
@@ -66,7 +66,7 @@ scenario.
 |---|---|
 | `loc_arena/cli.py` | the `run`, `view`, `explore`, `grade`, `read`, `cost`, `watch` and `publish` commands; all but `grade` are Makefile targets, `publish` as `publish-run` |
 | `loc_arena/harness.py` | plays an episode and its honest twin, grades them, writes the audit bundle |
-| `loc_arena/config.py` | typed loader and validator for the run configs in `configs/` |
+| `loc_arena/config.py`, `loc_arena/prompt_references.py`, `loc_arena/prompts/` | typed loader and validator for the run configs in `configs/`; how it reads the prompt files they name; the engine's part of every brief |
 | `loc_arena/registry.py` | scorers and verifiers, dispatched by the names the configs give |
 | `loc_arena/scaffold/` | the dual-capture recorder, and the code tools over an agent's checkout that the workspace service serves |
 | `loc_arena/live.py`, `loc_arena/task.py` | one episode's play, in a stack run's episode container; what every episode shares and its grading |
@@ -103,7 +103,7 @@ scenario.
 | `loc_arena/node_pool.py`, `sandbox_server/node.py` | the job service's fleet: worker containers, each running one job at a time under a daemon only the job service can call |
 | `loc_arena/observability.py`, `sandbox_server/pi_trace.ts` | the company's observability store (Phoenix): pi's trace extension on the runners, and the export of its spans into the run directory |
 | `configs/` | the run config (`aurora-efficiency.yaml`), its smoke run (`aurora-efficiency.fast.yaml`), the stack the Docker tests start (`aurora-efficiency.stack-test.yaml`), model routing, monitors and their prompts |
-| `scenarios/aurora_efficiency/` | the scenario pack: `scenario.yaml`, main-task scorer (`main.py`), side-task verifier (`side.py`), sealed grader fixture (`reference/`), live services (`services/`), the skills every sandbox mounts (`skills/`) |
+| `scenarios/aurora_efficiency/` | the scenario pack: `scenario.yaml`, main-task scorer (`main.py`), side-task verifier (`side.py`), sealed grader fixture (`reference/`), live services (`services/`), the skills every sandbox mounts (`skills/`), what the run sends its agents (`prompts/`) |
 | `company/meridian-*/` | the seven company repos the agents under test work on, each with its own tests |
 | `company/meridian-iam/`, `loc_arena/iam_*.py`, `docs/iam-service/` | central IAM: a platform package (not one of the seven; never in the agents' checkout), its stack wiring, and its spec and guide; every run needs it |
 | `tests/unit/`, `tests/integration/` | the engine's test suite |
@@ -155,6 +155,10 @@ run is the end-to-end check of a change to the engine; its scores are not result
   (`loc_arena/settings.py`, and `loc_arena/service_settings.py` for the company's services, read from
   `configs/*.yaml`), with a description per field. Secrets are compose
   secrets, read as `SecretStr`.
+- **Prompts.** Every prompt a run sends is a Markdown file. No Python string and no run config holds prompt prose:
+  a run config names files in its `prompts` block. Text true of any scenario goes in `loc_arena/prompts/`, and
+  text of one scenario in `scenarios/<name>/prompts/`, in the tree of [the run config page](docs/run-config.md#prompts).
+  A variant, such as a task, a kill chain or a team shape, is a new file, and its config points one entry at it.
 - **Types.** Parse YAML, JSON and HTTP bodies into typed objects at the boundary. No `dict[str, Any]` in a
   signature where a named type belongs. HTTP statuses use `http.HTTPStatus`.
 - **Tests.** Every test earns its place: it protects a behaviour a caller relies on, an invariant, or a bug that

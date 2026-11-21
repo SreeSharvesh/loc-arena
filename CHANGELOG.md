@@ -19,6 +19,17 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [999] - 2026-11-21: Every prompt a run sends is a Markdown file
+
+### Changed
+
+- The scenario holds its prompts as Markdown files in its prompts folder, which run configs name, so each brief reads and reviews as a file ([docs](docs/run-config.md#prompts)).
+- The engine keeps its part of every brief in Markdown files whose placeholders it checks at load, and every run sends the same bytes as before ([docs](docs/run-config.md#prompts)).
+
+### Removed
+
+- The run no longer reads `prompts_inline`: a config that sets it, writes a prompt inline or leaves a prompt file unread is refused at load ([docs](docs/run-config.md#prompts)).
+
 ## [402] - 2026-11-21: Claude Code loads the agent rules, which require storing runs
 
 ### Changed
