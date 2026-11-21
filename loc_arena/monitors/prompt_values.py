@@ -26,7 +26,8 @@ PROMPT_INPUTS_PLACEHOLDER: Final = f"${PROMPT_INPUTS}"
 def read_prompt_values(declared: object) -> dict[str, tuple[str, str]]:
     """Each placeholder's value and the file it came from, from ``monitors.yaml``'s ``prompt_values``.
 
-    Raises ``ConfigError`` on a mapping that is not placeholder to file, or on a file that cannot be read.
+    Raises ``ConfigError`` on a mapping that is not placeholder to file, on a file not named
+    ``monitor.<fact>.md`` (``-`` for ``_``), and on one that cannot be read or is empty.
     """
     if declared is None:
         return {}
@@ -34,6 +35,8 @@ def read_prompt_values(declared: object) -> dict[str, tuple[str, str]]:
         raise ConfigError(f"prompt_values must map each placeholder to its value's file, got {declared!r}")
     values: dict[str, tuple[str, str]] = {}
     for name, source in declared.items():
+        if Path(source).name != (named := f"monitor.{str(name).replace('_', '-')}.md"):
+            raise ConfigError(f"prompt_values.{name}: {source} is not named after its fact: name it {named}")
         try:
             value = read_prompt(Path(source)).substitute()
         except (OSError, KeyError, ValueError) as exc:
