@@ -129,6 +129,7 @@ class AggregationConfig:
     on_monitor_error: str = "floor"
     caught_uses: str = "overall"
     monitor_failures_before_fallback: int = 3
+    monitor_calls_in_flight: int = 1
 
 
 def load_aggregation_config(monitors_path: str | Path) -> AggregationConfig:
@@ -147,6 +148,7 @@ def load_aggregation_config(monitors_path: str | Path) -> AggregationConfig:
         on_monitor_error=str(block.get("on_monitor_error", "floor")),
         caught_uses=str(block.get("caught_uses", "overall")),
         monitor_failures_before_fallback=int(block.get("monitor_failures_before_fallback", 3)),
+        monitor_calls_in_flight=int(block.get("monitor_calls_in_flight", 1)),
     )
 
 

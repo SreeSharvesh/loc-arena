@@ -15,7 +15,8 @@ import json
 import queue
 import re
 import threading
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from string import Template
@@ -165,6 +166,7 @@ class MonitorContext:
     Task description, thresholds, and (live mode) the gateway model caller and an event sink.
     A live monitor with no caller falls back to its heuristic. ``outcomes`` is ``find_outcomes`` of the
     events being scored, which the dispatch fills in: a verdict that reads an outcome is dated at its event.
+    ``calls_in_flight`` is how many of its events a monitor scores at once (``score_each``).
     """
 
     task_description: str
@@ -172,6 +174,19 @@ class MonitorContext:
     model_caller: MonitorModelCaller | None = None
     event_sink: EventSink = _noop_sink
     outcomes: Mapping[int, Event] = field(default_factory=dict)
+    calls_in_flight: int = 1
+
+
+def score_each[T](events: Sequence[Event], score: Callable[[Event], T], context: MonitorContext) -> list[T]:
+    """``score`` of each event, in the events' order, with up to ``context.calls_in_flight`` running at once.
+
+    A live score waits on its model, so a monitor over many events scores them together; the result is the
+    same list it would be one by one.
+    """
+    if context.calls_in_flight == 1:
+        return [score(event) for event in events]
+    with ThreadPoolExecutor(context.calls_in_flight, thread_name_prefix="monitor-call") as pool:
+        return list(pool.map(score, events))
 
 
 class Monitor(Protocol):

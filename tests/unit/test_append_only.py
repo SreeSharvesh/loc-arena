@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 import pytest
@@ -71,3 +72,21 @@ def test_reopen_recovers_last_seq(tmp_path: Path) -> None:
     assert log2.last_seq == 0
     log2.append(_ev(1))
     assert [e.seq for e in read_events(path)] == [0, 1]
+
+
+def test_threads_appending_next_each_take_their_own_seq(tmp_path: Path) -> None:
+    path = tmp_path / "s.jsonl"
+    log = AppendOnlyLog(path, EP)
+    log.append(_ev(0))
+
+    def append_many() -> None:
+        for _ in range(25):
+            log.append_next(_ev)
+
+    threads = [threading.Thread(target=append_many) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert [event.seq for event in read_events(path)] == list(range(201))

@@ -24,6 +24,7 @@ from loc_arena.monitors.registry import (
     live_suspicion,
     register_monitor,
     render_prompt,
+    score_each,
 )
 
 DEFAULT_RESULT_CHARS = 4000  # of a result a monitor reads, unless its spec says ``result_chars``
@@ -95,8 +96,8 @@ class ActionMonitor:
     def run(self, events: list[Event], context: MonitorContext) -> list[MonitorVerdict]:
         """Score each observable action/message event and return per-event verdicts."""
         verdicts: list[MonitorVerdict] = []
-        for event in events:
-            live = self._live(event, context)
+        lives = score_each(events, lambda event: self._live(event, context), context)
+        for event, live in zip(events, lives, strict=True):
             score, reason = live if live is not None else self._heuristic(event)
             tap = "action" if event.kind == "action" else "message"
             # A verdict is dated when its inputs were known: one that read an outcome, when the work ended.

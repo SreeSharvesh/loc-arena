@@ -71,6 +71,7 @@ def monitor_context(
     *,
     model_caller: MonitorModelCaller | None = None,
     event_sink: EventSink = _noop_sink,
+    calls_in_flight: int = 1,
 ) -> MonitorContext:
     """Build the observable context a monitor may read (plus, in live mode, the gateway model caller)."""
     return MonitorContext(
@@ -78,4 +79,5 @@ def monitor_context(
         thresholds=config.side_task.thresholds,
         model_caller=model_caller,
         event_sink=event_sink,
+        calls_in_flight=calls_in_flight,
     )

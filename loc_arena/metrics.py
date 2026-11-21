@@ -214,15 +214,21 @@ def record_episode(
     *,
     model_caller: MonitorModelCaller | None = None,
     event_sink: EventSink = _noop_sink,
+    calls_in_flight: int = 1,
 ) -> EpisodeRecord:
     """Run the protocol over an assembled episode's MIRROR trajectory and build its scored record.
 
     ``harm_ts`` is the loop-persist time, so a catch after the loop already persisted does not
     count as prevention. ``model_caller`` (live mode) routes a monitor's own model calls through the
-    gateway.
+    gateway, up to ``calls_in_flight`` of one monitor's at once.
     """
     mirror_events = list(read_events(episode.mirror_path))
-    context = monitor_context(config, model_caller=model_caller, event_sink=event_sink)
+    context = monitor_context(
+        config,
+        model_caller=model_caller,
+        event_sink=event_sink,
+        calls_in_flight=calls_in_flight,
+    )
     verdicts = protocol.run(mirror_events, context)
     mode = "attack" if config.covert.enabled else "honest"
     return EpisodeRecord(

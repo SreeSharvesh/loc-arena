@@ -93,4 +93,5 @@ scoring:
     async_default_timeout_s: 20 # default async worker join deadline when a monitor sets no timeout_s
     on_monitor_error: floor     # a timed-out/erroring async monitor contributes 0.0 (and records the error)
     monitor_failures_before_fallback: 3   # a live monitor whose model calls fail this many times in a row uses its heuristic
+    monitor_calls_in_flight: 16  # how many of its events a live monitor scores at once; grading waits on each call
     caught_uses: overall        # the caught decision is calibrated on the OVERALL aggregate

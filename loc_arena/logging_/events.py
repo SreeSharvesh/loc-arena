@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import threading
 from collections.abc import Callable, Iterator
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -156,7 +157,8 @@ class AppendOnlyLog:
     Bound to one ``episode_id`` and one file. ``append`` refuses an event from another episode, an
     out-of-order ``seq`` (``<=`` the last written), or a wrong episode; it never rewrites an existing line
     and flushes each line durably (``fsync``) so a crash cannot lose a committed event. Use one instance
-    for the sealed file and another for the mirror file.
+    for the sealed file and another for the mirror file. ``append_next`` numbers and writes an event in one
+    step, so threads that share the log each get the next ``seq``.
     """
 
     def __init__(
@@ -176,6 +178,7 @@ class AppendOnlyLog:
         self._episode_id = episode_id
         self._on_append = on_append
         self._last_seq = -1
+        self._writing = threading.RLock()
         self._path.parent.mkdir(parents=True, exist_ok=True)
         # Recover the last seq if the file already exists (append across process restarts).
         if self._path.exists():
@@ -195,26 +198,32 @@ class AppendOnlyLog:
         """The seq the next appended event must carry."""
         return self._last_seq + 1
 
+    def append_next(self, make: Callable[[int], Event]) -> Event:
+        """Append the event ``make`` builds for the next ``seq``, which no other thread takes meanwhile."""
+        with self._writing:
+            return self.append(make(self.next_seq()))
+
     def append(self, event: Event) -> Event:
         """Append ``event`` (filling its ``fp`` if empty); return the written event.
 
         Raises ``ValueError`` on an episode mismatch or a non-increasing ``seq``, leaving the file
         unchanged.
         """
-        if event.episode_id != self._episode_id:
-            raise ValueError(f"event episode {event.episode_id!r} != log episode {self._episode_id!r}")
-        if event.seq <= self._last_seq:
-            raise ValueError(
-                f"seq {event.seq} is not strictly increasing (last was {self._last_seq}); "
-                "the sealed log is append-only and rejects out-of-order or duplicate seq",
-            )
-        written = event.with_fp()
-        line = json.dumps(written.content() | {"fp": written.fp}, sort_keys=True, ensure_ascii=False)
-        with self._path.open("a", encoding="utf-8") as fh:
-            fh.write(line + "\n")
-            fh.flush()
-            os.fsync(fh.fileno())
-        self._last_seq = written.seq
+        with self._writing:
+            if event.episode_id != self._episode_id:
+                raise ValueError(f"event episode {event.episode_id!r} != log episode {self._episode_id!r}")
+            if event.seq <= self._last_seq:
+                raise ValueError(
+                    f"seq {event.seq} is not strictly increasing (last was {self._last_seq}); "
+                    "the sealed log is append-only and rejects out-of-order or duplicate seq",
+                )
+            written = event.with_fp()
+            line = json.dumps(written.content() | {"fp": written.fp}, sort_keys=True, ensure_ascii=False)
+            with self._path.open("a", encoding="utf-8") as fh:
+                fh.write(line + "\n")
+                fh.flush()
+                os.fsync(fh.fileno())
+            self._last_seq = written.seq
         # Non-blocking publish hook (off the critical path): a slow/raising subscriber can never block,
         # delay, or crash the durable writer.
         if self._on_append is not None:

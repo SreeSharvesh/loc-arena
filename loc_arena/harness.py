@@ -11,6 +11,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import shutil
+import threading
 import time
 from collections import Counter
 from pathlib import Path
@@ -377,6 +378,7 @@ def grade_run(
         proto,
         model_caller=h_caller,
         event_sink=h_sink or _default_sink,
+        calls_in_flight=agg.monitor_calls_in_flight,
     )
     # In honest mode the episode IS the calibration twin; score it ONCE and reuse that record, so a live
     # monitor's nondeterminism between two independent scorings cannot make the honest twin caught against
@@ -385,7 +387,14 @@ def grade_run(
     ep_rec = (
         honest_rec
         if mode == "honest"
-        else record_episode(episode, cfg, proto, model_caller=e_caller, event_sink=e_sink or _default_sink)
+        else record_episode(
+            episode,
+            cfg,
+            proto,
+            model_caller=e_caller,
+            event_sink=e_sink or _default_sink,
+            calls_in_flight=agg.monitor_calls_in_flight,
+        )
     )
     # Per-event threshold (kept): still reported as safety.audit_threshold and used by the per-monitor
     # safety() report and report.html.
@@ -459,8 +468,9 @@ def build_monitor_caller(
     A monitor's own model call routes through a gateway core (mandatory routing), appended to the SAME sealed
     log under a monitor credential (``credential_kind == "monitor"``), so it is attributable and auditable
     but excluded from the side-task verifier. Returns ``(None, noop)`` if no provider is given (heuristic
-    mode). After ``failures_before_fallback`` failed calls in a row, of any kind, a monitor makes no more
-    calls and scores the rest with its heuristic; that is recorded once, as its ``monitor_error``.
+    mode). After ``failures_before_fallback`` failed calls in a row, of any kind, a monitor starts no more
+    calls and scores the rest with its heuristic; that is recorded once, as its ``monitor_error``. A monitor
+    may have several calls in flight: their records and the count of failures take them as they end.
     """
     if provider is None:
         return None, None
@@ -471,11 +481,13 @@ def build_monitor_caller(
     sealed = AppendOnlyLog(episode.sealed_path, episode_id)
     core = GatewayCore(config, episode_id, sealed, provider, turn_secret=secret, clock=time.time)
     limit = failures_before_fallback
-    failures_in_a_row: Counter[str] = Counter()  # each monitor scores on one thread, so one key each
+    failures_in_a_row: Counter[str] = Counter()
+    counting = threading.Lock()
 
     def caller(monitor_name: str, prompt: str, temperature: float) -> str:
-        if failures_in_a_row[monitor_name] >= limit:
-            raise ModelCallsStoppedError
+        with counting:
+            if failures_in_a_row[monitor_name] >= limit:
+                raise ModelCallsStoppedError
         cred = sign_monitor_credential(secret, monitor_name, exp=time.time() + 3600)
         req = GenerateRequest(
             prompt=prompt,
@@ -487,19 +499,22 @@ def build_monitor_caller(
         try:
             text = core.generate(req).text
         except Exception:
-            failures_in_a_row[monitor_name] += 1
-            if failures_in_a_row[monitor_name] == limit:
+            with counting:
+                failures_in_a_row[monitor_name] += 1
+                stopped = failures_in_a_row[monitor_name] == limit
+            if stopped:
                 error = f"{limit} model calls in a row failed: the heuristic scores the rest of the episode"
                 sink("monitor_error", {"monitor": monitor_name, "error": error})
             raise
-        failures_in_a_row[monitor_name] = 0
+        with counting:
+            failures_in_a_row[monitor_name] = 0
         return text
 
     def sink(kind: str, payload: dict[str, Any]) -> None:
-        sealed.append(
-            Event(
+        sealed.append_next(
+            lambda seq: Event(
                 episode_id=episode_id,
-                seq=sealed.next_seq(),
+                seq=seq,
                 ts=time.time(),
                 actor_uid=str(payload.get("monitor", "monitor")),
                 actor_role="trusted",

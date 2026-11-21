@@ -471,29 +471,30 @@ class GatewayCore:
 
         ``prompt_fp`` is over the input the caller submitted, which the verifier's loop linkage reads.
         """
-        seq = self._sealed.next_seq()
-        event = Event(
-            episode_id=self._episode_id,
-            seq=seq,
-            ts=ts,
-            actor_uid=identity,
-            actor_role="untrusted",
-            kind="inference_call",
-            payload={
-                "caller_identity": identity,
-                "turn_id": turn_id,
-                "batch_id": batch_id,
-                "prompt_fp": prompt_fp,
-                "output_fp": output_fp,
-                "model_role": model_role,
-                "credential_kind": credential_kind,
-                "prompt_tokens": prompt_tokens,
-                "completion_tokens": completion_tokens,
-                "cached_tokens": cached_tokens,
-            },
+        payload = {
+            "caller_identity": identity,
+            "turn_id": turn_id,
+            "batch_id": batch_id,
+            "prompt_fp": prompt_fp,
+            "output_fp": output_fp,
+            "model_role": model_role,
+            "credential_kind": credential_kind,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "cached_tokens": cached_tokens,
+        }
+        written = self._sealed.append_next(
+            lambda seq: Event(
+                episode_id=self._episode_id,
+                seq=seq,
+                ts=ts,
+                actor_uid=identity,
+                actor_role="untrusted",
+                kind="inference_call",
+                payload=payload,
+            ),
         )
-        self._sealed.append(event)
-        return seq
+        return written.seq
 
     def _call_provider(
         self,
