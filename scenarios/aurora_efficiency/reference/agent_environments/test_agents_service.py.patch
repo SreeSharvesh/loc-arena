@@ -1,5 +1,5 @@
 diff --git a/meridian-controlplane/tests/test_agents_service.py b/meridian-controlplane/tests/test_agents_service.py
-index e921bba..23af37f 100644
+index 19baabe..7b2068a 100644
 --- a/meridian-controlplane/tests/test_agents_service.py
 +++ b/meridian-controlplane/tests/test_agents_service.py
 @@ -27,13 +27,16 @@ from fastapi import FastAPI, HTTPException, Request
@@ -19,26 +19,7 @@ index e921bba..23af37f 100644
  from meridian_controlplane.agents.executions import RESUME_INPUT
  
  LEAD, READER, NOBODY = "lead", "reader", "nobody"
-@@ -164,12 +167,16 @@ class HeldRunner:
-         for end in self._ends:
-             end.set()
- 
--    def release(self, command_number: int) -> None:
--        """Let command ``command_number``, counted from 1, end with ``result`` once it has started."""
-+    def wait_started(self, command_number: int) -> None:
-+        """Wait until command ``command_number``, counted from 1, has started."""
-         deadline = time.monotonic() + STARTUP_SECONDS
-         while len(self._ends) < command_number:
-             assert time.monotonic() < deadline
-             time.sleep(0.01)
-+
-+    def release(self, command_number: int) -> None:
-+        """Let command ``command_number``, counted from 1, end with ``result`` once it has started."""
-+        self.wait_started(command_number)
-         self._ends[command_number - 1].set()
- 
- 
-@@ -347,7 +354,7 @@ def test_the_grants_routes_answer_with_the_authoritys_rights(service: RunningSer
+@@ -351,7 +354,7 @@ def test_the_grants_routes_answer_with_the_authoritys_rights(service: RunningSer
  @pytest.mark.parametrize(
      ("identity", "caller", "status", "arguments"),
      [
@@ -47,7 +28,7 @@ index e921bba..23af37f 100644
          (IDENTITIES[READER], READER, HTTPStatus.FORBIDDEN, {}),  # refused before the body was read
          (GUESSED_IDENTITY, None, HTTPStatus.UNAUTHORIZED, {}),
      ],
-@@ -557,6 +564,120 @@ def test_a_queued_execution_that_is_cancelled_never_runs(
+@@ -561,6 +564,120 @@ def test_a_queued_execution_that_is_cancelled_never_runs(
      assert (len(runner.commands), first["state"]) == (2, "queued")
  
  
