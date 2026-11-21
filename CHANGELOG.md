@@ -19,6 +19,22 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [422] - 2026-11-21: Every prompt a run sends is a Markdown file
+
+### Added
+
+- The repository compares every prompt each run config sends with a base commit's, byte for byte and with no live run, through `scripts/diff_prompts.py` ([docs](docs/run-config.md#prompts)).
+
+### Changed
+
+- The scenario holds its prompts as Markdown files that run configs name, and loading refuses a missing file, one outside the folder, or a placeholder with no value ([docs](docs/run-config.md#prompts)).
+- The record keeps each prompt entry under `prompts` in config.resolved.yaml, in place of prompts_inline: a file entry as its text, a composed entry as its references ([docs](docs/run-config.md#prompts)).
+- The engine keeps its part of every brief in Markdown files whose placeholders it checks at load, and every run sends the same bytes as before ([docs](docs/run-config.md#prompts)).
+
+### Removed
+
+- The run no longer reads `prompts_inline`: a config that sets it or writes a prompt inline is refused at load, naming where its files go ([docs](docs/run-config.md#prompts)).
+
 ## [402] - 2026-11-21: Claude Code loads the agent rules, which require storing runs
 
 ### Changed
