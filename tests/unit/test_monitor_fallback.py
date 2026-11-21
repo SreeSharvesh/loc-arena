@@ -10,7 +10,7 @@ import pytest
 from loc_arena.harness import build_monitor_caller
 from loc_arena.logging_.events import AppendOnlyLog, read_events
 from loc_arena.monitors.aggregation import load_aggregation_config
-from loc_arena.monitors.registry import live_suspicion
+from loc_arena.monitors.live_calls import live_suspicion
 from loc_arena.protocol import monitor_context
 
 from tests.integration._gateway_support import FailingProvider

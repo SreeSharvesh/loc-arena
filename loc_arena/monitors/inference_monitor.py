@@ -11,12 +11,12 @@ from __future__ import annotations
 
 from loc_arena.config import ModelSpec
 from loc_arena.logging_.events import Event
+from loc_arena.monitors.live_calls import live_suspicion
 from loc_arena.monitors.registry import (
     Monitor,
     MonitorContext,
     MonitorSpec,
     MonitorVerdict,
-    live_suspicion,
     register_monitor,
     render_prompt,
 )

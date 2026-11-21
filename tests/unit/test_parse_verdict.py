@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import pytest
+from loc_arena.monitors.live_calls import live_suspicion
 from loc_arena.monitors.registry import (
     RECOVERED_REASON_PREFIX,
     UNPARSED_REASON,
     ParsedVerdict,
-    live_suspicion,
     parse_verdict,
 )
 from loc_arena.protocol import monitor_context

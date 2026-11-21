@@ -13,7 +13,8 @@ from loc_arena.config import ModelSpec
 from loc_arena.gateway.core import Message, ProviderResult, ToolSpec
 from loc_arena.harness import grade_run
 from loc_arena.logging_.events import Event
-from loc_arena.monitors.registry import MonitorContext, score_each
+from loc_arena.monitors.live_calls import score_each
+from loc_arena.monitors.registry import MonitorContext
 
 from tests._stored_run import CONFIG, unpack_stored_run
 from tests.unit._monitor_support import write_monitors_file

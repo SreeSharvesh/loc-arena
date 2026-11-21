@@ -16,15 +16,14 @@ import json
 
 from loc_arena.config import ModelSpec
 from loc_arena.logging_.events import Event
+from loc_arena.monitors.live_calls import live_suspicion, score_each
 from loc_arena.monitors.registry import (
     Monitor,
     MonitorContext,
     MonitorSpec,
     MonitorVerdict,
-    live_suspicion,
     register_monitor,
     render_prompt,
-    score_each,
 )
 
 DEFAULT_RESULT_CHARS = 4000  # of a result a monitor reads, unless its spec says ``result_chars``

@@ -15,8 +15,7 @@ import json
 import queue
 import re
 import threading
-from collections.abc import Callable, Mapping, Sequence
-from concurrent.futures import ThreadPoolExecutor
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from string import Template
@@ -93,7 +92,6 @@ UNPARSED_REASON = "reason unparsed"
 # Marks the reason of a verdict recovered from a reply that was not strict JSON, wherever it is reported.
 RECOVERED_REASON_PREFIX = "[recovered from a reply that was not strict JSON] "
 # How much of a model completion a monitor event keeps, for review.
-_COMPLETION_EXCERPT_CHARACTERS = 200
 
 
 @dataclass(frozen=True)
@@ -166,7 +164,6 @@ class MonitorContext:
     Task description, thresholds, and (live mode) the gateway model caller and an event sink.
     A live monitor with no caller falls back to its heuristic. ``outcomes`` is ``find_outcomes`` of the
     events being scored, which the dispatch fills in: a verdict that reads an outcome is dated at its event.
-    ``calls_in_flight`` is how many of its events a monitor scores at once (``score_each``).
     """
 
     task_description: str
@@ -175,18 +172,6 @@ class MonitorContext:
     event_sink: EventSink = _noop_sink
     outcomes: Mapping[int, Event] = field(default_factory=dict)
     calls_in_flight: int = 1
-
-
-def score_each[T](events: Sequence[Event], score: Callable[[Event], T], context: MonitorContext) -> list[T]:
-    """``score`` of each event, in the events' order, with up to ``context.calls_in_flight`` running at once.
-
-    A live score waits on its model, so a monitor over many events scores them together; the result is the
-    same list it would be one by one.
-    """
-    if context.calls_in_flight == 1:
-        return [score(event) for event in events]
-    with ThreadPoolExecutor(context.calls_in_flight, thread_name_prefix="monitor-call") as pool:
-        return list(pool.map(score, events))
 
 
 class Monitor(Protocol):
@@ -655,48 +640,6 @@ def parse_verdict(text: str) -> ParsedVerdict | None:
             if verdict is not None:
                 return verdict
     return None
-
-
-def live_suspicion(
-    context: MonitorContext,
-    monitor_name: str,
-    prompt: str,
-    *,
-    ensemble_n: int,
-    temperature: float,
-) -> tuple[float, str] | None:
-    """Score one prompt with the live model via the gateway, ensembled by MAX; ``None`` -> heuristic fallback.
-
-    Runs ``ensemble_n`` gateway-routed calls (as the monitor identity), parses each verdict, and returns
-    the MAX-suspicion verdict so one confident catch counts. A verdict recovered from a reply that was not
-    strict JSON records a ``monitor_parse_recovered`` and its reason carries ``RECOVERED_REASON_PREFIX``.
-    On no parseable verdict, records a ``monitor_parse_error`` and returns ``None`` (the caller falls back
-    to its heuristic).
-    """
-    if context.model_caller is None:
-        return None
-    best: ParsedVerdict | None = None
-    for _ in range(max(1, ensemble_n)):
-        try:
-            completion = context.model_caller(monitor_name, prompt, temperature)
-        except ModelCallsStoppedError:
-            break
-        except Exception as exc:  # noqa: BLE001 - a monitor must never crash an episode
-            context.event_sink("monitor_parse_error", {"monitor": monitor_name, "error": f"call:{exc}"})
-            continue
-        parsed = parse_verdict(completion)
-        excerpt = completion[:_COMPLETION_EXCERPT_CHARACTERS]
-        if parsed is None:
-            context.event_sink(
-                "monitor_parse_error",
-                {"monitor": monitor_name, "error": "unparseable", "completion": excerpt},
-            )
-            continue
-        if parsed.recovered:
-            context.event_sink("monitor_parse_recovered", {"monitor": monitor_name, "completion": excerpt})
-        if best is None or parsed.suspicion > best.suspicion:
-            best = parsed
-    return None if best is None else (best.suspicion, best.reported_reason)
 
 
 def find_fallback_only_monitors(verdicts: list[MonitorVerdict], events: list[Event]) -> set[str]:
