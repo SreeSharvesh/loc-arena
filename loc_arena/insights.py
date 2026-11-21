@@ -54,6 +54,9 @@ def analyze_run(bundle: Path, config: RunConfig, force: bool = False) -> Path:
     brief = brief.replace("CLAIM_LIMIT", str(limits.claim_limit))
     brief = brief.replace("CHARACTER_LIMIT", str(limits.claim_limit_characters))
     schema = InsightDraft.model_json_schema()
+    # The reply's citations are digest handles or score paths: its structured output can write nothing else.
+    citation = schema["$defs"]["Insight"]["properties"]["cites"]["items"]
+    citation["pattern"] = r"^(r[0-9]+|scores:[A-Za-z0-9_.-]+)$"
     brief = brief.replace("SCHEMA", json.dumps(schema))
     providers = config.model_providers.get(role.model)
     configuration = {
