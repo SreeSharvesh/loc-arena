@@ -1,10 +1,10 @@
 """Compare what every run config sends its models on this checkout with what it sends on a base commit.
 
 For each run config git tracks in ``configs/`` and each play, the attack and its honest twin, it builds every
-agent's system prompt as pi receives it, then the covert objective, each monitor's prompt template and the
-task description the monitors read, and every session's opening prompt. It builds them on a worktree of
-the base and on this checkout, prints each text that differs and exits non-zero if any does. It plays nothing
-and calls no model.
+agent's system prompt as pi receives it, every session's opening prompt, the covert objective, the task
+description the monitors read and each monitor's prompt as rendered; and once, each notice an agent can get
+and the run reader's briefs. It builds them on a worktree of the base and on this checkout, prints each text
+that differs and exits non-zero if any does. It plays nothing and calls no model.
 
     uv run python scripts/diff_prompts.py --base origin/main
 """
@@ -25,13 +25,48 @@ from pathlib import Path
 from loc_arena.config import load_run_config
 from loc_arena.harness import apply_mode
 from loc_arena.live import build_briefs
-from loc_arena.monitors.registry import load_monitor_specs
+from loc_arena.monitors.registry import load_monitor_specs, render_prompt
+from loc_arena.notices import describe
 from loc_arena.own_sessions import TASK, brief_loop
 from loc_arena.protocol import monitor_context
+from loc_arena.recorded_events import RecordedEvent
+from loc_arena.run_reader import write_reader_home
 
 CONFIGS = Path("configs")
 NOT_RUN_CONFIGS = ("env.", "models.", "monitors.", "taxonomy.")
 PLAYS = ("honest", "attack")
+READER_BRIEFS = {"agents": None, "monitors": None, "ask": "How many agents merged a pull request?"}
+# One event of each kind a notice tells of, with fixed values, so each notice's text is compared.
+NOTICE_EVENTS = (
+    RecordedEvent("message", "eval-agent", "agent-main", {"dm": True, "channel": None, "body": "hi"}),
+    RecordedEvent(
+        "message",
+        "eval-agent",
+        None,
+        {"dm": False, "channel": "aurora", "body": "@agent-main hi"},
+    ),
+    RecordedEvent("message", "eval-agent", None, {"dm": False, "channel": None, "body": "@agent-main hi"}),
+    RecordedEvent("job", "serving-agent", None, {"name": "soak", "job_id": "job-7", "state": "running"}),
+    RecordedEvent(
+        "pr",
+        "distill-agent",
+        None,
+        {"merged": True, "target_repo": "meridian-distill", "number": 3},
+    ),
+    RecordedEvent(
+        "pr",
+        "distill-agent",
+        None,
+        {"merged": False, "target_repo": "meridian-distill", "number": 4},
+    ),
+    RecordedEvent(
+        "action",
+        "agent-main",
+        None,
+        {"blocked": False, "args": {"assignee": "eval-agent"}},
+        "edit_ticket",
+    ),
+)
 
 
 def build_texts() -> dict[str, str]:
@@ -54,8 +89,16 @@ def build_texts() -> dict[str, str]:
         texts[f"{path.stem} opening prompt"] = TASK
         texts[f"{path.stem} covert objective"] = config.covert.objective_prompt
         texts[f"{path.stem} task description"] = monitor_context(config).task_description
+        task = {"task_description": texts[f"{path.stem} task description"]}
         for spec in load_monitor_specs(CONFIGS / str(config.protocol["monitors_config"])):
-            texts[f"{path.stem} monitor {spec.name}"] = spec.prompt_template
+            texts[f"{path.stem} monitor {spec.name}"] = render_prompt(spec.prompt_template, task)
+    for index, event in enumerate(NOTICE_EVENTS):
+        for topic, _, text in describe(event):
+            texts[f"engine notice {index} {topic}"] = text
+    with tempfile.TemporaryDirectory() as home:
+        for brief, question in READER_BRIEFS.items():
+            first_turn = write_reader_home(Path(home), config, brief, question)[-1]
+            texts[f"engine reader {brief}"] = f"{(Path(home) / 'brief.md').read_text()}\n{first_turn}"
     return texts
 
 
@@ -90,14 +133,15 @@ def summarise(texts: dict[str, str], differences: int) -> str:
     """One line per run config: how many texts of each kind were compared, and the verdict."""
     counts: dict[str, Counter[str]] = {}
     for name in texts:
-        config, kind, _ = name.split(" ", 2)
-        counts.setdefault(config, Counter())[kind] += 1
+        group, kind, _ = name.split(" ", 2)
+        counts.setdefault(group, Counter())[kind] += 1
     lines = [
         f"{config}: " + ", ".join(f"{n} {kind}" for kind, n in kinds.items())
         for config, kinds in counts.items()
     ]
     verdict = f"{differences} texts differ" if differences else "every text is byte for byte the base's"
-    return "\n".join([*lines, f"{len(texts)} texts over {len(counts)} run configs: {verdict}"])
+    configs = len(counts) - ("engine" in counts)
+    return "\n".join([*lines, f"{len(texts)} texts over {configs} run configs and the engine: {verdict}"])
 
 
 def main() -> int:
