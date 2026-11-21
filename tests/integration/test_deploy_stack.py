@@ -62,9 +62,9 @@ from tests.integration._deploy_scripts import (
     LEAVE_A_DETACHED_HELPER,
     PUSH_CHANGE,
     PUSH_CRAFTED,
-    TOOL_CALL,
 )
 from tests.integration._docker_support import needs_stack, serve_workspace
+from tests.integration._mcp_probe import ToolCaller
 from tests.integration._records_support import MIRROR, record_phase_around
 
 RUN = "aurora-efficiency.stack-test"
@@ -133,6 +133,11 @@ class Stack:
     play: dict[str, str]
     started: float
 
+    @functools.cached_property
+    def caller(self) -> ToolCaller:
+        """The process in IAM's container that makes this stack's tool calls."""
+        return ToolCaller([*self.compose, "exec", "-T", "iam"], {**os.environ, **self.play})
+
     def run(self, *arguments: str, standard_input: str | None = None) -> str:
         done = subprocess.run(
             [*self.compose, *arguments],
@@ -146,10 +151,7 @@ class Stack:
         return done.stdout
 
     def call(self, url: str, token: str, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        script = ["python", "-c", TOOL_CALL, url, tool, json.dumps(arguments)]
-        return json.loads(
-            self.run("exec", "-T", "iam", *script, standard_input=token).strip().splitlines()[-1],
-        )
+        return self.caller.call(url, token, tool, arguments)
 
     def tool(self, agent: str, tool: str, **arguments: Any) -> dict[str, Any]:  # noqa: ANN401 - a tool's arguments
         """``agent``'s call of ``tool`` through the tools gateway, with its sandbox token."""
