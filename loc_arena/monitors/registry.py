@@ -22,10 +22,14 @@ from string import Template
 from typing import Any, Protocol
 
 import yaml
-from scenarios.loader import read_prompt
 
 from loc_arena.config import ConfigError, ModelSpec, Thresholds
 from loc_arena.logging_.events import Event
+from loc_arena.monitors.prompt_values import (
+    PROMPT_INPUTS,
+    load_prompt_template,
+    read_prompt_values,
+)
 
 # --- The firewall allowlist: the ONLY inputs a monitor may declare. Every one is a
 # mirror/observable field or the fixed deploy-time baseline; none is a sealed recompute or workload label.
@@ -81,8 +85,6 @@ TAP_KINDS: dict[str, tuple[str, ...]] = {
 }
 
 # Where a monitor prompt template receives the declared observable inputs, rendered as JSON.
-PROMPT_INPUTS = "inputs"  # the placeholder, $inputs, where a monitor prompt takes its declared inputs
-PROMPT_INPUTS_PLACEHOLDER = f"${PROMPT_INPUTS}"
 
 # Reading a verdict object that is not strict JSON (a small model sometimes leaves a key unquoted): the
 # suspicion must be a bare number ending the field; the reason is taken when it is a quoted string.
@@ -123,7 +125,8 @@ class MonitorSpec:
     ensemble_n: int = 1
     temperature: float = 0.0
     extra: dict[str, Any] = field(default_factory=dict)
-    prompt_template: str = ""  # the text of ``prompt_ref``; empty when the monitor declares none
+    prompt_template: str = ""  # the text of ``prompt_ref``, its facts filled; empty when it declares none
+    prompt_sources: tuple[str, ...] = ()  # ``prompt_ref`` and the files of the facts it names
 
 
 @dataclass(frozen=True)
@@ -218,33 +221,7 @@ class MonitorRegistry:
         return [m for m in self.monitors if tap in m.taps]
 
 
-def _load_prompt_template(name: str, prompt_ref: str | None, mode: str) -> str:
-    """Read a monitor's prompt template, failing loudly on a reference no live call could use.
-
-    A ``prompt_ref`` must name a prompt file whose one placeholder is ``$inputs``, exactly once, and a live
-    monitor must declare one: without it the model gets raw JSON and no instruction to answer.
-    """
-    if prompt_ref is None:
-        if mode == "live":
-            raise ConfigError(f"monitor {name!r}: mode 'live' needs a prompt_ref (its prompt template)")
-        return ""
-    path = Path(prompt_ref)
-    if not path.is_file():
-        raise ConfigError(f"monitor {name!r}: prompt_ref {prompt_ref!r} names no file ({path.resolve()})")
-    try:
-        template = read_prompt(path)
-    except ValueError as exc:
-        raise ConfigError(f"monitor {name!r}: {exc}") from exc
-    placed = [match for match in template.pattern.finditer(template.template) if not match.group("escaped")]
-    if [match.group("named") or match.group("braced") for match in placed] != [PROMPT_INPUTS]:
-        raise ConfigError(
-            f"monitor {name!r}: prompt template {prompt_ref!r} must place ${PROMPT_INPUTS} exactly once, "
-            "and no other placeholder",
-        )
-    return template.template
-
-
-def _spec_from(entry: dict[str, Any]) -> MonitorSpec:
+def _spec_from(entry: dict[str, Any], values: Mapping[str, tuple[str, str]]) -> MonitorSpec:
     taps = entry.get("tap", [])
     taps_tuple = tuple(taps) if isinstance(taps, list) else (str(taps),)
     known = {
@@ -271,6 +248,7 @@ def _spec_from(entry: dict[str, Any]) -> MonitorSpec:
     name = str(entry["name"])
     prompt_ref = str(entry["prompt_ref"]) if entry.get("prompt_ref") is not None else None
     mode = str(entry.get("mode", "heuristic"))
+    template, sources = load_prompt_template(name, prompt_ref, mode, values)
     return MonitorSpec(
         name=name,
         taps=taps_tuple,
@@ -288,18 +266,19 @@ def _spec_from(entry: dict[str, Any]) -> MonitorSpec:
         ensemble_n=int(entry.get("ensemble_n", 1)),
         temperature=float(entry.get("temperature", 0.0)),
         extra={k: v for k, v in entry.items() if k not in known},
-        prompt_template=_load_prompt_template(name, prompt_ref, mode),
+        prompt_template=template,
+        prompt_sources=sources,
     )
 
 
 def load_monitor_specs(monitors_path: str | Path) -> list[MonitorSpec]:
     """Load every monitor and detector declaration from ``monitors.yaml`` (enabled or not)."""
     data: dict[str, Any] = yaml.safe_load(Path(monitors_path).read_text())
-    specs: list[MonitorSpec] = []
-    for entry in data.get("monitors", []):
-        specs.append(_spec_from(entry))
-    for entry in data.get("detectors", []):
-        specs.append(_spec_from(entry))
+    values = read_prompt_values(data.get("prompt_values"))
+    specs = [_spec_from(entry, values) for entry in [*data.get("monitors", []), *data.get("detectors", [])]]
+    used = {source for spec in specs for source in spec.prompt_sources}
+    if unused := sorted(name for name, (_, source) in values.items() if source not in used):
+        raise ConfigError(f"no monitor prompt names these prompt_values: {', '.join(unused)}")
     return specs
 
 

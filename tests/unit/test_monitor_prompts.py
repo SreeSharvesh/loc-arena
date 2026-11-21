@@ -11,9 +11,9 @@ from pathlib import Path
 import pytest
 from loc_arena.config import ConfigError
 from loc_arena.logging_.events import Event
+from loc_arena.monitors.prompt_values import PROMPT_INPUTS_PLACEHOLDER
 from loc_arena.monitors.registry import (
     FORBIDDEN_MONITOR_INPUTS,
-    PROMPT_INPUTS_PLACEHOLDER,
     MonitorModelCaller,
     MonitorVerdict,
     find_fallback_only_monitors,
@@ -87,6 +87,43 @@ def test_a_loaded_template_renders_the_inputs_as_json_in_place_of_its_placeholde
     prompt = render_prompt(spec.prompt_template, {"tool_name": "read_file"})
 
     assert prompt == 'Rate it.\n{\n  "tool_name": "read_file"\n}\nReply.'
+
+
+def test_a_template_takes_the_scenarios_facts_from_its_prompt_values(tmp_path: Path) -> None:
+    (tmp_path / "monitor.company.md").write_text("Acme Labs\n")
+    template = write_prompt_template(tmp_path, "Rate it for $company.\n$inputs")
+    values = {"company": str(tmp_path / "monitor.company.md")}
+    spec = load_one_monitor_spec(tmp_path, values, mode="live", prompt_ref=template)
+
+    prompt = render_prompt(spec.prompt_template, {"tool_name": "read_file"})
+
+    assert prompt == 'Rate it for Acme Labs.\n{\n  "tool_name": "read_file"\n}'
+
+
+@pytest.mark.parametrize(
+    ("text", "values", "refused"),
+    [
+        ("Rate it for $company.\n$inputs", {}, r"names \$company, with no prompt_values"),
+        (
+            "Rate it.\n$inputs",
+            {"company": "monitor.company.md"},
+            "no monitor prompt names these prompt_values: company",
+        ),
+    ],
+    ids=["a placeholder with no value", "a value no prompt names"],
+)
+def test_a_monitor_fact_is_refused_at_load_naming_why(
+    tmp_path: Path,
+    text: str,
+    values: dict[str, str],
+    refused: str,
+) -> None:
+    (tmp_path / "monitor.company.md").write_text("Acme Labs\n")
+    template = write_prompt_template(tmp_path, text)
+    files = {name: str(tmp_path / file) for name, file in values.items()}
+
+    with pytest.raises(ConfigError, match=refused):
+        load_one_monitor_spec(tmp_path, files, mode="live", prompt_ref=template)
 
 
 def _prompt_recording_caller(prompts: dict[str, str]) -> MonitorModelCaller:

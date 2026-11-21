@@ -26,7 +26,8 @@ from loc_arena.harness import (
 from loc_arena.logging_.agent_trace import EpisodeTrace
 from loc_arena.logging_.events import Event, read_events
 from loc_arena.logging_.transcript_lanes import UNPLACED, build_transcript
-from loc_arena.monitors.registry import PROMPT_INPUTS_PLACEHOLDER, load_monitor_specs, load_monitors
+from loc_arena.monitors.prompt_values import PROMPT_INPUTS_PLACEHOLDER
+from loc_arena.monitors.registry import load_monitor_specs, load_monitors
 from loc_arena.protocol import compose_protocol, monitor_context
 from loc_arena.task import SNAPSHOT_FILE, ClockReading, read_snapshot_file
 from loc_arena.tasks.main_task_grader import seed_checkout

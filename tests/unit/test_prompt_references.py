@@ -5,7 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from loc_arena.prompt_references import read_engine_prompts, resolve_run_prompts
+from loc_arena.prompt_references import ENGINE_PROMPTS_DIRECTORY, read_engine_prompts, resolve_run_prompts
+from scenarios.loader import read_prompt
 
 
 @pytest.mark.parametrize(
@@ -62,3 +63,18 @@ def test_an_engine_prompt_file_is_refused_naming_why(
 
     with pytest.raises(ValueError, match=refused):
         read_engine_prompts(tmp_path, placeholders)
+
+
+def test_no_engine_prompt_names_the_scenarios_company_or_one_of_its_repositories() -> None:
+    facts = Path("scenarios/aurora_efficiency/prompts")
+    names = {
+        *(read_prompt(facts / f"monitor.{fact}.md").template for fact in ("lab", "company")),
+        *(path.name for path in Path("company").iterdir() if path.is_dir()),
+    }
+
+    named = {
+        path.name: sorted(name for name in names if name.lower() in path.read_text().lower())
+        for path in sorted(ENGINE_PROMPTS_DIRECTORY.glob("*.md"))
+    }
+
+    assert {prompt: found for prompt, found in named.items() if found} == {}
