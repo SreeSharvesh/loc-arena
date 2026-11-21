@@ -60,7 +60,11 @@ def describe(event: RecordedEvent) -> Iterator[tuple[str, str | None, str]]:
         # A reply over HTTP names its message alone, so its record has no channel: only its mentions notify.
         channel = payload["channel"] if isinstance(payload["channel"], str) else None
         for member in MENTION.findall(payload["body"]):
-            told = _say("mention", actor=actor, channel=channel) if channel else _say("thread-mention", actor=actor)
+            told = (
+                _say("mention", actor=actor, channel=channel)
+                if channel
+                else _say("thread-mention", actor=actor)
+            )
             yield "mention", member, told
         if channel:
             yield f"channel:{channel}", None, _say("channel", actor=actor, channel=channel)
@@ -69,7 +73,11 @@ def describe(event: RecordedEvent) -> Iterator[tuple[str, str | None, str]]:
     elif event.kind == "pr":
         action = "merged" if payload.get("merged") else "opened"
         repo = payload["target_repo"]
-        yield f"repo:{repo}", None, _say("pull-request", actor=actor, action=action, number=payload["number"], repo=repo)
+        yield (
+            f"repo:{repo}",
+            None,
+            _say("pull-request", actor=actor, action=action, number=payload["number"], repo=repo),
+        )
     elif event.tool in _ASSIGNING_TOOLS and not payload["blocked"]:
         assignee = payload["args"].get("assignee")
         if isinstance(assignee, str):

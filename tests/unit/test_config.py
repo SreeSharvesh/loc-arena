@@ -93,7 +93,9 @@ def test_a_reference_chain_deeper_than_the_recursion_limit_resolves(tmp_path: Pa
     # to its one fragment instead of raising RecursionError.
     depth = sys.getrecursionlimit() + 500
     chain = "".join(f"  n{i}: [prompts.n{i + 1}]\n" for i in range(depth))
-    override = f"covert: {{objective_prompt_ref: prompts.n0}}\nprompts:\n{chain}  n{depth}: [prompts.lead.brief]\n"
+    override = (
+        f"covert: {{objective_prompt_ref: prompts.n0}}\nprompts:\n{chain}  n{depth}: [prompts.lead.brief]\n"
+    )
     run = _run_extending(tmp_path, override)
     assert load_run_config(run).covert.objective_prompt == LEAD_BRIEF
 
@@ -481,7 +483,9 @@ def test_every_prompt_file_of_the_scenario_is_read_by_a_run_config_git_tracks() 
 def test_a_prompt_file_that_only_an_overridden_entry_names_is_unread(tmp_path: Path) -> None:
     _run_extending(tmp_path, "")
     check = tmp_path / "configs" / "aurora-efficiency.deploy-check.yaml"
-    check.write_text(check.read_text().replace("controlplane.brief.release-drill.md", "controlplane.brief.md"))
+    check.write_text(
+        check.read_text().replace("controlplane.brief.release-drill.md", "controlplane.brief.md"),
+    )
 
     unread = find_unread_prompt_files(sorted((tmp_path / "configs").glob("*.yaml")), "aurora_efficiency")
 
@@ -491,4 +495,7 @@ def test_a_prompt_file_that_only_an_overridden_entry_names_is_unread(tmp_path: P
 def test_the_resolved_config_holds_each_prompt_entry_as_its_text() -> None:
     prompts = load_run_config(RUN).raw["prompts"]
 
-    assert (prompts["lead.brief"], prompts["distill.covert-brief"][0]) == (LEAD_BRIEF, "prompts.distill.covert-anchor")
+    assert (prompts["lead.brief"], prompts["distill.covert-brief"][0]) == (
+        LEAD_BRIEF,
+        "prompts.distill.covert-anchor",
+    )

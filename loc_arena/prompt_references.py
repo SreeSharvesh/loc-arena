@@ -1,17 +1,18 @@
 """Read a run's prompts from their Markdown files, and resolve a run config's references to them.
 
-Every prompt is a Markdown file named ``<whose>.<part>[.<variant>].md``. The engine's own, true of any scenario,
-are in ``loc_arena/prompts/``; a scenario's are in ``scenarios/<name>/prompts/``. A run config's ``prompts``
-block names each scenario file it sends, under a key equal to the file's name less ``.md``: an entry is a
-file's path, relative to that folder, or a list of further ``prompts.*`` references, which composes one text
-from those fragments, joined by blank lines. A variant config points one entry at ``<key>.<variant>.md``, and
-deep-merge keeps the rest. A prompt is set only by its ``*_ref`` key. See docs/run-config.md#prompts.
+Every prompt is a Markdown file named ``<whose>.<part>[.<variant>].md``. The engine's own, true of any
+scenario, are in ``loc_arena/prompts/``; a scenario's are in ``scenarios/<name>/prompts/``. A run config's
+``prompts`` block names each scenario file it sends, under a key equal to the file's name less ``.md``: an
+entry is a file's path, relative to that folder, or a list of further ``prompts.*`` references, which composes
+one text from those fragments, joined by blank lines. A variant config points one entry at
+``<key>.<variant>.md``, and deep-merge keeps the rest. A prompt is set only by its ``*_ref`` key. See
+docs/run-config.md#prompts.
 
 A file's text is its content less its final line break. A ``$name`` in it is a placeholder
 (``string.Template``): an engine file names exactly the values the engine fills, and a scenario file takes
-none, so ``$$`` there is a dollar sign. A missing file, a path outside the folder, a file not named after its
-key, a placeholder with no value, inline text, a reference to a missing entry, a non-string fragment or a cycle
-fails loud with a ``ValueError`` naming where, which the config loader turns into a ``ConfigError``.
+none, so ``$$`` there is a dollar sign. A missing file, a path outside the folder, a file not named after
+its key, a placeholder with no value, inline text, a reference to a missing entry, a non-string fragment or a
+cycle fails loud with a ``ValueError`` naming where, which the config loader turns into a ``ConfigError``.
 """
 
 from __future__ import annotations
@@ -39,10 +40,13 @@ REMOVED_PROMPTS_KEY: Final = "prompts_inline"
 
 @dataclass(frozen=True)
 class Section:
-    """One part of a prompt as it is sent: its text, and the files it came from, relative to the repository."""
+    """A part of a prompt as sent: its text, and the files it came from, from the repository's root."""
 
     sources: tuple[str, ...]
     text: str
+
+
+Sections = tuple[Section, ...]
 
 
 def read_engine_prompts(directory: Path, placeholders: Mapping[str, frozenset[str]]) -> dict[str, Template]:
@@ -76,27 +80,20 @@ def scenario_prompts(scenario: str) -> Path:
 def resolve_run_prompts(data: dict[str, object], root: Path | None) -> dict[str, object]:
     """``data`` with each ``*_ref`` key resolved to its text, and its ``prompts`` block to each entry's text.
 
-    ``root`` is the folder of the run scenario's prompt files, which ``prompts`` entries name. The result also
-    holds, under ``prompt_sections``, each resolved prompt's sections, by ``<block>.<field>``, where an agent's
-    block is its id.
+    ``root`` is the folder of the run scenario's prompt files, which ``prompts`` entries name. The result
+    also holds, under ``prompt_sections``, each resolved prompt's sections, by ``<block>.<field>``, where an
+    agent's block is its id.
     """
-    if REMOVED_PROMPTS_KEY in data:
-        raise ValueError(f"{REMOVED_PROMPTS_KEY} is gone: name each prompt's file under {PROMPTS_KEY}")
-    if isinstance(main_task := data.get("main_task"), dict) and "goal" in main_task:
-        raise ValueError("main_task.goal is gone: name the monitors' task description's file in task_description_ref")
+    _reject_removed_keys(data)
     block = data.get(PROMPTS_KEY, {})
     if not isinstance(block, dict):
         raise ValueError(f"{PROMPTS_KEY} must map each name to a file or a list of references, got {block!r}")
     files = {
-        name: _read_scenario_prompt(name, entry, root) for name, entry in block.items() if isinstance(entry, str)
+        name: _read_scenario_prompt(name, entry, root)
+        for name, entry in block.items()
+        if isinstance(entry, str)
     }
-    sections: dict[str, list[Section]] = {}
-    resolved: dict[str, dict[str, str]] = {}
-    for where, (owner, references) in _references(data).items():
-        for key, reference in references.items():
-            parts = [files[name] for name in _walk(reference, block, f"{where}.{key}")]
-            sections[f"{owner}.{key.removesuffix(REFERENCE_SUFFIX)}"] = parts
-            resolved.setdefault(where, {})[key] = "\n\n".join(part.text for part in parts)
+    resolved, sections = _resolve_references(data, block, files)
     texts = {name: files[name].text if name in files else entry for name, entry in block.items()}
     run = data | resolved.get("run", {}) | {PROMPTS_KEY: texts, SECTIONS_KEY: sections}
     if isinstance(covert := data.get("covert"), dict):
@@ -107,6 +104,32 @@ def resolve_run_prompts(data: dict[str, object], root: Path | None) -> dict[str,
             for index, agent in enumerate(agents)
         ]
     return run
+
+
+def _reject_removed_keys(data: Mapping[str, object]) -> None:
+    """Raise ``ValueError`` on a key that held prompt text before the text moved to files."""
+    if REMOVED_PROMPTS_KEY in data:
+        raise ValueError(f"{REMOVED_PROMPTS_KEY} is gone: name each prompt's file under {PROMPTS_KEY}")
+    if isinstance(main_task := data.get("main_task"), dict) and "goal" in main_task:
+        raise ValueError(
+            "main_task.goal is gone: name the monitors' task description's file in task_description_ref",
+        )
+
+
+def _resolve_references(
+    data: Mapping[str, object],
+    block: Mapping[str, object],
+    files: Mapping[str, Section],
+) -> tuple[dict[str, dict[str, str]], dict[str, list[Section]]]:
+    """Each ``*_ref`` key's text, by where its block is; and its sections, by ``<owner>.<field>``."""
+    sections: dict[str, list[Section]] = {}
+    resolved: dict[str, dict[str, str]] = {}
+    for where, (owner, references) in _references(data).items():
+        for key, reference in references.items():
+            parts = [files[name] for name in _walk(reference, block, f"{where}.{key}")]
+            sections[f"{owner}.{key.removesuffix(REFERENCE_SUFFIX)}"] = parts
+            resolved.setdefault(where, {})[key] = "\n\n".join(part.text for part in parts)
+    return resolved, sections
 
 
 def find_unread_prompt_files(documents: Mapping[str, Mapping[str, object]], scenario: str) -> list[str]:
@@ -148,7 +171,12 @@ def _references(data: Mapping[str, object]) -> dict[str, tuple[str, dict[str, ob
     ]
     if isinstance(agents, list):
         blocks += [
-            (f"agents.{index}", str(agent.get("id", index)) if isinstance(agent, Mapping) else "", agent, AGENT_PROMPTS)
+            (
+                f"agents.{index}",
+                str(agent.get("id", index)) if isinstance(agent, Mapping) else "",
+                agent,
+                AGENT_PROMPTS,
+            )
             for index, agent in enumerate(agents)
         ]
     found: dict[str, tuple[str, dict[str, object]]] = {}
@@ -195,7 +223,7 @@ def _walk(reference: object, prompts: object, where: str) -> list[str]:
 
 
 def _read_scenario_prompt(name: str, relative: str, root: Path | None) -> Section:
-    """Entry ``name``'s file, at ``relative``: named ``<name>.md`` or ``<name>.<variant>.md``, with no placeholder."""
+    """Entry ``name``'s file at ``relative``, named ``<name>[.<variant>].md``, which takes no placeholder."""
     where = f"{PROMPTS_KEY}.{name}"
     if root is None:
         raise ValueError(f"{where}: a prompt file needs the run's scenario, and this run names none")
@@ -203,11 +231,15 @@ def _read_scenario_prompt(name: str, relative: str, root: Path | None) -> Sectio
     if not path.is_relative_to(root.resolve()) or path.suffix != PROMPT_SUFFIX or not path.is_file():
         raise ValueError(f"{where}: {relative!r} names no {PROMPT_SUFFIX} file in {root}")
     if not f"{path.stem}.".startswith(f"{name}."):
-        raise ValueError(f"{where}: {relative} is not named after its key: name it {name}.md or {name}.<variant>.md")
+        raise ValueError(
+            f"{where}: {relative} is not named after its key: name it {name}.md or {name}.<variant>.md",
+        )
     try:
         text = read_prompt(path).substitute()
     except KeyError as missing:
-        raise ValueError(f"{where}: {relative} has the placeholder ${missing.args[0]}, which nothing fills") from None
+        raise ValueError(
+            f"{where}: {relative} has the placeholder ${missing.args[0]}, which nothing fills",
+        ) from None
     return Section((str(path.relative_to(REPOSITORY.resolve())),), text)
 
 
@@ -218,7 +250,9 @@ ENGINE_PROMPTS: Final = read_engine_prompts(
         "agent.identity": frozenset({"agent"}),
         "agent.manager": frozenset({"manager"}),
         "agent.reports": frozenset({"reports"}),
-        "agent.skills": frozenset({"directory"}),  # where the skills are (https://agentskills.io/specification)
+        "agent.skills": frozenset(
+            {"directory"},
+        ),  # where the skills are (https://agentskills.io/specification)
         "agent.services": frozenset({"services"}),  # the sandbox image has no curl
         "agent.service": frozenset({"host", "port", "description"}),
         "agent.service-access": frozenset({"identity", "rights"}),

@@ -122,7 +122,9 @@ def write_reader_home(home: Path, config: RunConfig, brief: str, question: str |
     The ``ask`` brief answers ``question``, and only it takes one. Raises ``ValueError`` when no brief has
     that name, or a question is missing or given to another brief.
     """
-    names = sorted(name.removeprefix(BRIEF_PREFIX) for name in ENGINE_PROMPTS if name.startswith(BRIEF_PREFIX))
+    names = sorted(
+        name.removeprefix(BRIEF_PREFIX) for name in ENGINE_PROMPTS if name.startswith(BRIEF_PREFIX)
+    )
     if brief not in names:
         raise ValueError(f"no brief {brief!r}: the briefs are {', '.join(names)}")
     if (brief == ASK) != bool(question and question.strip()):

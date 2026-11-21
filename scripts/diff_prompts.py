@@ -22,7 +22,7 @@ from collections import Counter
 from pathlib import Path
 
 # Imported from the tree being compared: its process runs this file with that tree first on its path.
-from loc_arena.config import load_run_config
+from loc_arena.config import RunConfig, load_run_config
 from loc_arena.harness import apply_mode
 from loc_arena.live import build_briefs
 from loc_arena.monitors.registry import load_monitor_specs, render_prompt
@@ -92,6 +92,12 @@ def build_texts() -> dict[str, str]:
         task = {"task_description": texts[f"{path.stem} task description"]}
         for spec in load_monitor_specs(CONFIGS / str(config.protocol["monitors_config"])):
             texts[f"{path.stem} monitor {spec.name}"] = render_prompt(spec.prompt_template, task)
+    return texts | build_engine_texts(config)
+
+
+def build_engine_texts(config: RunConfig) -> dict[str, str]:
+    """Each notice of ``NOTICE_EVENTS`` and each run reader brief with its first turn, under ``config``."""
+    texts: dict[str, str] = {}
     for index, event in enumerate(NOTICE_EVENTS):
         for topic, _, text in describe(event):
             texts[f"engine notice {index} {topic}"] = text

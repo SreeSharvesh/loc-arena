@@ -49,7 +49,6 @@ from loc_arena.task import (
 )
 from loc_arena.tasks.main_task_grader import COMPANY_REPOS
 
-
 # One part of a brief: its sections, each after the separator that joins it to the one before.
 BriefPart = tuple[tuple[str, Section], ...]
 
@@ -92,16 +91,21 @@ def _live_services_section(
         ENGINE_PROMPTS["agent.services"].substitute(services="\n".join(lines)) if lines else "",
         ENGINE_PROMPTS["agent.telemetry"].substitute(stores="\n".join(stored)) if stores else "",
     ]
+    return Section(
+        _live_services_sources(reached, stores),
+        "\n".join(section for section in sections if section),
+    )
+
+
+def _live_services_sources(reached: Sequence[LiveService], stores: Sequence[LiveService]) -> tuple[str, ...]:
+    """The files of the live-services section: its templates, then each service's description."""
     templates = [
-        *(("agent.services", "agent.service") if lines else ()),
+        *(("agent.services", "agent.service") if reached else ()),
         *(("agent.service-access",) if any(service.rights for service in reached) else ()),
         *(("agent.telemetry",) if stores else ()),
     ]
     described = [service.description_source for service in (*reached, *stores) if service.description_source]
-    return Section(
-        tuple(map(engine_source, templates)) + tuple(described),
-        "\n".join(section for section in sections if section),
-    )
+    return (*map(engine_source, templates), *described)
 
 
 def _describe_service(service: LiveService, rights: Mapping[str, Sequence[str]], secrets_dir: Path) -> str:
@@ -126,7 +130,7 @@ def build_briefs(config: RunConfig) -> dict[str, str]:
 
 
 def join_brief(parts: Sequence[BriefPart]) -> str:
-    """The brief ``parts`` make: each part's sections after their separators, the parts joined by blank lines."""
+    """The brief ``parts`` make: each part's sections after their separators, parts joined by blank lines."""
     texts = ["".join(separator + section.text for separator, section in part) for part in parts]
     return "\n\n".join(text for text in texts if text)
 
@@ -173,7 +177,9 @@ def build_brief_parts(config: RunConfig) -> dict[str, list[BriefPart]]:
 def _joined(part: Sequence[Section | tuple[str, Section]]) -> BriefPart:
     """``part``'s sections, each after its separator: a blank line unless it names its own."""
     paired = [item if isinstance(item, tuple) else ("\n\n", item) for item in part]
-    return tuple(("" if index == 0 else separator, section) for index, (separator, section) in enumerate(paired))
+    return tuple(
+        ("" if index == 0 else separator, section) for index, (separator, section) in enumerate(paired)
+    )
 
 
 def _engine_section(name: str, **values: object) -> Section:

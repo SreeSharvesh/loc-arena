@@ -370,7 +370,7 @@ class _RunDocument(BaseSettings):
         validation_alias="task_description_ref",
         description="The main task as the monitors are told it, resolved from task_description_ref.",
     )
-    prompt_sections: dict[StrictStr, tuple[prompt_references.Section, ...]] = Field(
+    prompt_sections: dict[StrictStr, prompt_references.Sections] = Field(
         default_factory=dict,
         description="Each resolved prompt's sections, each with its files, by <block>.<field>.",
     )
@@ -448,7 +448,7 @@ class RunConfig:
     live_services: tuple[LiveService, ...] = ()  # the scenario's: each its own container in a stack run
     workspace_prompt: str = ""  # what every agent's brief says of its workspace
     task_description: str = ""  # the main task as the monitors are told it
-    prompt_sections: Mapping[str, tuple[prompt_references.Section, ...]] = dataclasses.field(default_factory=dict)
+    prompt_sections: Mapping[str, prompt_references.Sections] = dataclasses.field(default_factory=dict)
 
     def loop_model(self, agent_id: str) -> ModelSpec:
         """The model ``agent_id``'s loop calls, with its sampling and reasoning: that of its role."""
@@ -625,8 +625,7 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
 
 
 def _record(merged: Mapping[str, Any], document: _RunDocument, iam_enabled: bool) -> dict[str, object]:
-    """The merged YAML as the bundle records it: each prompts entry's text, and whether IAM is on, even as the
-    default, so a changed default cannot change a replay."""
+    """The merged YAML as recorded: each prompts entry's text, and whether IAM is on, even by default."""
     iam = {**merged.get("iam", {}), "enabled": iam_enabled}
     return {**merged, prompt_references.PROMPTS_KEY: document.prompts, "iam": iam}
 
@@ -634,7 +633,8 @@ def _record(merged: Mapping[str, Any], document: _RunDocument, iam_enabled: bool
 def find_unread_prompt_files(run_files: Sequence[Path], scenario: str) -> list[str]:
     """``scenario``'s prompt files that none of ``run_files`` reads: a property of every config, not one.
 
-    Raises ``ConfigError`` naming a run file whose prompt references do not resolve."""
+    Raises ``ConfigError`` naming a run file whose prompt references do not resolve.
+    """
     documents = {path.name: _merge_extends_chain(path, None).yaml_data for path in run_files}
     try:
         return prompt_references.find_unread_prompt_files(documents, scenario)

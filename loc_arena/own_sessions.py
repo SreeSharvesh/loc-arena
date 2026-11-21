@@ -354,7 +354,9 @@ def play_sessions(
             idle = not any(session.is_working() for session in sessions.values())
             new = notices.read()
             for notice in new:
-                sent = notice.agent in sessions and sessions[notice.agent].prompt(ENGINE_PROMPTS["agent.notice"].substitute(text=notice.text))
+                sent = notice.agent in sessions and sessions[notice.agent].prompt(
+                    ENGINE_PROMPTS["agent.notice"].substitute(text=notice.text),
+                )
                 record(json.dumps({"time": datetime.now(UTC).isoformat(), **asdict(notice), "sent": sent}))
             if idle and not new and (monotonic() >= floor or not sessions):
                 break
