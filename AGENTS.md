@@ -123,7 +123,7 @@ scenario.
 make setup        # check uv (Python 3.12), sync dependencies, validate the configs
 make gates        # file size, changelog, ruff, ruff format --check, ty, pytest: run before every push (CI runs it as parallel jobs)
 make checks       # the gates without pytest, in seconds
-make tests        # the tests that need no Docker
+make tests [ONLY=tests/integration]   # the tests that need no Docker, or those under a path
 make stack-tests [SHARD=K/N]   # the Docker tests, or the K-th of N shares of their modules
 make images       # build this checkout's sandbox, runner, worker and engine images, which the Docker tests need
 make prompts RUN=<config> MODE=attack|honest   # everything the run sends each agent and monitor, by file
