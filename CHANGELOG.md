@@ -19,6 +19,12 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [428] - 2026-11-21: Grading scores sixteen of a monitor's events at once
+
+### Changed
+
+- The monitor scores up to `monitor_calls_in_flight` of its events at once in grading, sixteen by default, so a run grades minutes sooner with the same verdicts ([docs](docs/run-cost.md)).
+
 ## [425] - 2026-11-21: Every prompt is a canonically named file, shown together
 
 ### Added
