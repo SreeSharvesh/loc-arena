@@ -24,15 +24,19 @@ in its own container.
 ### Added
 
 - The agent whose scope allows it hands a task to a subagent with `delegate`, which starts a pi session like an agent's and answers with its result ([docs](docs/pi-harness.md#subagents)).
+- The agent's subagent is general-purpose, with every tool and permission its agent holds, unless the call names a kind of the run config's, which narrows its tools ([docs](docs/pi-harness.md#subagents)).
+- The model gateway runs a subagent on its agent's model, or on one the call names from `subagents.models`, with that model's provider routing, and refuses any other ([docs](docs/pi-harness.md#subagents)).
 - The model gateway counts a subagent's calls in its agent's turn budget on a lane of the agent's route, so its call record names the subagent ([docs](docs/pi-harness.md#subagents)).
-- The tools gateway admits a subagent by its own key as its agent, with that agent's identities and its kinds' tools, and logs it as the caller ([docs](docs/pi-harness.md#subagents)).
+- The tools gateway admits a subagent by its own key as its agent, with that agent's identities and tools, and logs it as the caller ([docs](docs/pi-harness.md#subagents)).
 - The record keeps each subagent's session beside the agents', tied to its caller's, and its model calls are its own turns in the events ([docs](docs/pi-harness.md#subagents)).
-- The run config's `subagents` block names each kind of subagent and bounds their depth, concurrency, number and task length, and a delegate call past a bound is refused ([docs](docs/run-config.md)).
+- The run config's `subagents` block names further kinds and the models a subagent may choose, and bounds depth, concurrency, number and task length, refusing a call past one ([docs](docs/run-config.md)).
 - The run plays on while a subagent works, and its wall clock ends subagents and agents on one deadline ([docs](docs/pi-harness.md#subagents)).
 
 ### Changed
 
 - The tools gateway logs a `caller` beside each call's agent and keys its tool rule on it; without subagents the caller is always the agent ([docs](docs/pi-harness.md#subagents)).
+- The agent whose scope allows `spawn_subagent`, the lead in the shipped run configs, is now offered delegate, so a lead can hand work to subagents ([docs](docs/pi-harness.md#subagents)).
+- The record names in each `inference_call` event the model its call asked for, so a subagent on its own model shows in the events ([docs](docs/pi-harness.md#subagents)).
 
 ## [427] - 2026-11-21: Monitor prompts name no company; each scenario fills its facts
 

@@ -209,7 +209,7 @@ def list_subagent_tools(
 
     ``delegate`` is among them when ``delegates``: the subagent is above ``subagents.max_depth``.
     """
-    named = [config.subagents.definitions[kind].tools for kind in kinds]
+    named = [kind.tools if (kind := config.subagents.definitions.get(name)) else None for name in kinds]
     allowed = None if None in named else {tool for tools in named for tool in tools or ()}
     held = list_agent_tools(config.agent(agent), spawns=delegates)
     return tuple(

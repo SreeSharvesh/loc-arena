@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="960" height="560" viewBox="0 0 960 560" role="img" aria-label="UML sequence diagram of a delegate call. The parent's pi calls delegate with a kind and a task at the tools gateway, which passes it to the workspace service in the episode as the parent. The workspace service starts the child as it starts an agent: a pi in RPC mode with its own home and its kind's tools. Until the child settles, it asks its model on its own lane of the parent's route at the model gateway, counted in the parent's budget, and calls tools at the tools gateway with its own key, admitted as the parent and named as the caller, while the workspace service reports progress to the parent. The child answers, its session ends, and the parent gets the answer as the tool's result.">
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="560" viewBox="0 0 960 560" role="img" aria-label="UML sequence diagram of a delegate call. The parent's pi calls delegate with a task, and optionally a kind and a model, at the tools gateway, which passes it to the workspace service in the episode as the parent. The workspace service starts the child as it starts an agent: a pi in RPC mode with its own home and its kind's tools. Until the child settles, it asks its model on its own lane of the parent's route at the model gateway, on its own model or the parent's, counted in the parent's budget, and calls tools at the tools gateway with its own key, admitted as the parent and named as the caller, while the workspace service reports progress to the parent. The child answers, its session ends, and the parent gets the answer as the tool's result.">
 <style>
   svg { --ink:#1f2328; --muted:#59636e; --rule:#8c959f; --panel:#f6f8fa; --accent:#2f4bd6; --accent-bg:#e9edfd; }
   @media (prefers-color-scheme: dark) {
@@ -29,7 +29,7 @@
 <g class="node"><rect class="box" x="816" y="24" width="128" height="48" rx="6"/><text class="t" x="880" y="42" text-anchor="middle" dominant-baseline="central">model gateway</text><text class="s" x="880" y="59" text-anchor="middle" dominant-baseline="central">call record</text></g>
 <path class="life" d="M80,72 V536"/><path class="life" d="M280,72 V536"/><path class="life" d="M480,72 V536"/><path class="life" d="M680,72 V536"/><path class="life" d="M880,72 V536"/>
 
-<text class="m" x="180" y="108" text-anchor="middle">delegate(kind, task)</text>
+<text class="m" x="180" y="108" text-anchor="middle">delegate(task, kind, model)</text>
 <path class="bold" d="M80,116 H280" marker-end="url(#sd-hi)"/>
 <text class="s" x="380" y="156" text-anchor="middle">as the parent</text>
 <path class="bold" d="M280,164 H480" marker-end="url(#sd-hi)"/>

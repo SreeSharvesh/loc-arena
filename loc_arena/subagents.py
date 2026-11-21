@@ -43,7 +43,7 @@ from loc_arena.own_sessions import (
     loop_working_directory,
     write_pi_home,
 )
-from loc_arena.subagent_config import DELEGATE_TOOL, name_lanes
+from loc_arena.subagent_config import DELEGATE_TOOL, GENERAL_PURPOSE, describe_kinds, name_lanes
 from loc_arena.tool_list_notifier import NOTIFIER_KEY_SECRET_NAME
 from loc_arena.tool_offer import list_subagent_tools
 from loc_arena.tool_records import append_to, record_ended
@@ -74,11 +74,20 @@ class Subagents:
         key = (self._config.settings.gateway.secrets_dir / NOTIFIER_KEY_SECRET_NAME).read_text().strip()
         return {child: subagent_token(key, child) for child in self._ids}
 
-    def start(self, caller: str, kind: str, task: str) -> tuple[str, PiSession] | str:
-        """Start a ``kind`` subagent of ``caller`` on ``task``: its id and session, or why it did not."""
-        agent = caller.partition(".")[0]
+    def start(
+        self,
+        caller: str,
+        kind: str | None,
+        task: str,
+        model: str | None = None,
+    ) -> tuple[str, PiSession] | str:
+        """Start a ``kind`` subagent of ``caller`` on ``task`` and ``model``: its id and session, or why not.
+
+        No ``kind`` is general-purpose; no ``model`` is the agent's own.
+        """
+        agent, kind = caller.partition(".")[0], kind or GENERAL_PURPOSE
         with self._lock:
-            if refusal := self._refuse(caller, agent, kind, task):
+            if refusal := self._refuse(caller, agent, kind, task, model):
                 return refusal
             child = next(child for child in self._free(agent))
             self._parents[child] = caller
@@ -92,10 +101,11 @@ class Subagents:
                 "agent": agent,
                 "parent": caller,
                 "kind": kind,
+                "model": model or self._config.loop_model(agent).model,
             }
             self._write(started | {"task": task, "tools": list(tools)})
             try:
-                session = self._launch(Child(child, self.list_tokens()[child], tools), caller, kind)
+                session = self._launch(Child(child, self.list_tokens()[child], tools, model), caller, kind)
             except (OSError, KeyError, ValueError) as error:  # its home or its pi could not be set up
                 self._write(
                     {"subagent": child, "end": {"reason": "failed", "stderr": str(error)}, "answer": ""},
@@ -147,22 +157,29 @@ class Subagents:
     def _free(self, agent: str) -> list[str]:
         return [child for child in self._ids if child.startswith(f"{agent}.") and child not in self._parents]
 
-    def _refuse(self, caller: str, agent: str, kind: str, task: str) -> str | None:
-        """Why ``caller`` may not start a ``kind`` subagent now, if it may not."""
-        bounds = self._config.subagents
-        if self._ended:
-            return "play has ended"
-        if agent not in self._briefs or self._depth(caller) >= bounds.max_depth:
-            return f"{caller} may not start subagents"
-        if len(task) > bounds.max_task_characters:
-            return f"a task holds at most {bounds.max_task_characters} characters"
-        if kind not in self._briefs[agent]:
-            return f"no subagent kind {kind!r}: {', '.join(self._briefs[agent])}"
-        if sum(child.partition(".")[0] == agent for child in self._working) >= bounds.max_concurrent:
-            return f"{bounds.max_concurrent} subagents of {agent}'s already work: wait for one to answer"
-        if not self._free(agent):
-            return f"{agent} has started its {bounds.max_children} subagents of this play"
-        return None
+    def _refuse(self, caller: str, agent: str, kind: str, task: str, model: str | None) -> str | None:
+        """Why ``caller`` may not start a ``kind`` subagent on ``model`` now, the first bound it passes."""
+        bounds, kinds = self._config.subagents, self._briefs.get(agent, {})
+        working = sum(child.partition(".")[0] == agent for child in self._working)
+        refusals = (
+            (self._ended, "play has ended"),
+            (not kinds or self._depth(caller) >= bounds.max_depth, f"{caller} may not start subagents"),
+            (
+                len(task) > bounds.max_task_characters,
+                f"a task holds at most {bounds.max_task_characters} characters",
+            ),
+            (
+                model is not None and model not in bounds.models,
+                f"model {model!r} is not one this run allows: {', '.join(bounds.models) or 'none'}",
+            ),
+            (kind not in kinds, f"no subagent kind {kind!r}: {', '.join(kinds)}"),
+            (
+                working >= bounds.max_concurrent,
+                f"{bounds.max_concurrent} subagents of {agent}'s already work: wait for one to answer",
+            ),
+            (not self._free(agent), f"{agent} has started its {bounds.max_children} subagents of this play"),
+        )
+        return next((message for refused, message in refusals if refused), None)
 
     def _launch(self, child: Child, caller: str, kind: str) -> PiSession:
         """``child``'s pi, its home written, its session headed by its caller's as its parent."""
@@ -206,21 +223,24 @@ def add_delegate_tool(server: MCPServer, subagents: Subagents, config: RunConfig
     However it ends, its subagent's session ends with it and is recorded.
     """
     bounds, poll = config.subagents, config.settings.pi.notice_poll_seconds
-    kinds = "; ".join(f"{name}: {kind.description}" for name, kind in bounds.definitions.items())
+    kinds = "; ".join(f"{name}: {description}" for name, description in describe_kinds(config).items())
+    models = ", ".join(bounds.models) or "none"
 
     @server.tool(
         name=DELEGATE_TOOL,
         description=f"Hand one self-contained task to a new subagent, which works on your checkout with your "
-        f"access and answers when done; you wait for its answer. Kinds: {kinds}. At most "
-        f"{bounds.max_concurrent} at once and {bounds.max_children} in all.",
+        f"access and answers when done; you wait for its answer. Kinds: {kinds}; none is {GENERAL_PURPOSE}. "
+        f"Models beside your own, the default: {models}. At most {bounds.max_concurrent} at once and "
+        f"{bounds.max_children} in all.",
     )
     async def delegate(
-        kind: Annotated[str, Field(description="the subagent's kind")],
         task: Annotated[str, Field(description="everything it needs to know to do the task")],
         context: Context,
+        kind: Annotated[str | None, Field(description="the subagent's kind; none: general-purpose")] = None,
+        model: Annotated[str | None, Field(description="the subagent's model; none: your own")] = None,
     ) -> dict[str, JsonValue]:
         caller = caller_from_token()
-        started = subagents.start(caller, kind, task) if caller else "no identity"
+        started = subagents.start(caller, kind, task, model) if caller else "no identity"
         if isinstance(started, str):
             return {"error": started}
         child, session = started

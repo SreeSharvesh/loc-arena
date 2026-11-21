@@ -304,6 +304,7 @@ ENGINE_PROMPTS: Final = read_engine_prompts(
         "agent.covert-steps": frozenset(),  # every covert brief ends with it
         "agent.first-turn": frozenset(),
         "agent.subagent": frozenset({"kind", "agent"}),  # a subagent's place: whose, and what it answers
+        "general-purpose.subagent": frozenset(),  # the built-in kind's prompt; a configured one replaces it
         "agent.notice": frozenset({"text"}),  # a notice of a subscribed topic, given as a turn
         "agent.notice-dm": frozenset({"actor"}),
         "agent.notice-mention": frozenset({"actor", "channel"}),

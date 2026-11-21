@@ -114,39 +114,42 @@ When no session could start, play ends at once. `aurora-efficiency.fast` sets th
 
 ## Subagents
 
-<img alt="UML sequence diagram of a delegate call. The parent's pi calls delegate at the tools gateway, which passes it to the workspace service as the parent. The workspace service starts the child like an agent, with its kind's tools. Until it settles, the child asks its model on its own lane of the parent's route, counted in the parent's budget, and calls tools with its own key, named as the caller, while the parent gets progress every 5 seconds. The child answers and ends, and the parent gets the answer." src="figures/subagent-delegate.svg" width="100%">
+<img alt="UML sequence diagram of a delegate call. The parent's pi calls delegate with a task, and optionally a kind and a model, at the tools gateway, which passes it to the workspace service as the parent. The workspace service starts the child like an agent, with its kind's tools. Until it settles, the child asks its model, its own or the parent's, on its own lane of the parent's route, counted in the parent's budget, and calls tools with its own key, named as the caller, while the parent gets progress every 5 seconds. The child answers and ends, and the parent gets the answer." src="figures/subagent-delegate.svg" width="100%">
 
-An agent whose `scope.spawn_subagent` is on hands a task to a subagent with the workspace service's `delegate`
-tool, when the run config defines a kind of subagent (`subagents.definitions`, [run config](run-config.md)).
-The episode starts the subagent as it starts an agent: one pi process in RPC mode, with a home of its own beside
-the agents' (`loops/<agent id>.<n>`), and waits for its answer, which is the tool's result. While it waits, the
-call reports progress every `subagents.progress_seconds`, which keeps pi's MCP timeout from ending it.
+An agent whose `scope.spawn_subagent` is on hands a task to a subagent with the workspace service's tool
+`delegate(task, kind, model)`. The episode starts the subagent as it starts an agent: one pi process in RPC mode,
+with a home of its own beside the agents' (`loops/<agent id>.<n>`). The call waits for the subagent's last message,
+which is its result, and reports progress every `subagents.progress_seconds` so pi's MCP timeout does not end it.
+The subagent starts fresh, from the task text alone.
+
+| Lever | With none | Otherwise |
+| --- | --- | --- |
+| `kind` | `general-purpose`: every tool its agent holds, and the engine's prompt (`general-purpose.subagent.md`) | a kind of `subagents.definitions` ([run config](run-config.md)): its own prompt (`<kind>.subagent.md`) and a narrower set of its agent's tools |
+| `model` | its agent's model | one of `subagents.models`, which the run config lists by model id; any other is refused |
+
+A subagent acts with its agent's permissions. Its tools are its agent's, and IAM decides each of its calls as for
+its agent. A kind with `bash` runs commands in its agent's sandbox, where its agent's identities are, so its calls
+to a service's HTTP API are its agent's, recorded under its agent. Tools are never passed at call time.
 
 | A subagent | How |
 | --- | --- |
-| its id | `<agent id>.<n>`: the next of the `subagents.max_children` its agent may start in a play, its descendants included |
-| its brief | `agent.subagent.md`, its kind's `<kind>.subagent.md`, and its agent's workspace, skills and services. It gets neither its agent's assignment nor the covert objective: its task is what its caller writes in the `delegate` call, which the records hold |
-| asks its model | on its own lane of its agent's route at the model gateway (`/loop/<agent id>.<n>/api/v1`), with its agent's model and request settings; its calls count in its agent's turn budget, so delegating never raises it |
-| calls a tool | at the tools gateway with a key of its own, keyed by the episode's key, which no agent holds, and kept outside the run directory. The gateway admits it as its agent, with its agent's identities, so IAM decides each call as for its agent, and names it as `caller` in its log. The workspace service records it as itself, on its agent's checkout and sandbox, one call at a time with its agent's |
-| its tools | its kind's `tools`, or all of its agent's but the subscription tools; `delegate` only while it is above `subagents.max_depth`. pi gets them as `--tools` beside `--no-builtin-tools`, so it runs nothing itself, and the gateway allows each lane its kinds' tools alone |
+| its id | `<agent id>.<n>`: the next of the `subagents.max_children` its agent may start in a play |
+| its brief | `agent.subagent.md`, its kind's prompt, and its agent's workspace, skills and services. It gets neither its agent's assignment nor the covert objective: its task is what its caller writes in the `delegate` call, which the records hold |
+| asks its model | on its own lane of its agent's route at the model gateway (`/loop/<agent id>.<n>/api/v1`), counted in its agent's turn budget, so delegating never raises it. Its calls carry its agent's role's temperature, output cap and reasoning, and its model's own provider routing. On the route of an agent whose subagents may choose a model, the gateway sets those fields from the model a call names, and refuses a model the run does not allow |
+| calls a tool | at the tools gateway with a key of its own, keyed by the episode's key, which no agent holds, and kept outside the run directory. The gateway admits it as its agent, with its agent's identities and tools but the subscription tools, and names it as `caller` in its log. The workspace service records it as itself, on its agent's checkout and sandbox, one call at a time with its agent's |
+| its tools | its kind's; pi gets them as `--tools` beside `--no-builtin-tools`, so it runs nothing itself. `delegate` only while it is above `subagents.max_depth` (1: never) |
 | its session | `loops/<agent id>.<n>/.pi/session.jsonl`, whose header names its caller's session, by its path in the episode, as `parentSession`, pi's own link from a session to its parent |
-| its record | `subagents.jsonl` in the play's directory: its start, with its caller, kind, task and tools, and its end, with its answer |
+| its record | `subagents.jsonl` in the play's directory: its start, with its caller, kind, model, task and tools, and its end, with its answer. Its `inference_call` events name the model each call asked for |
 
-A `delegate` call that would pass `max_depth`, `max_concurrent`, `max_children` or `max_task_characters`, or names no
-kind, starts nothing and answers why; a subagent whose pi cannot start is recorded as `failed`. A call that ends early,
-cut by pi or by the end of play, ends its subagent too and is recorded with its answer so far. A subagent's own
-subagent holds no tool its caller lacks. Play waits while a subagent works, as it waits for an agent's session, and the
-wall clock ends both, on one deadline.
-After play, a subagent's model calls are its own turns, and its workspace calls are placed in them, on every lane
-the run config renders, started or not; its calls of the
-company's tools are recorded under its agent's identity, which the services saw, and placed in its agent's turn
-that holds the `delegate` call.
-
-Lanes are rendered before play and bound to no kind, so the gateway allows each lane the tools of all its agent's
-kinds; pi's `--tools` holds a subagent to its own kind's. A kind with `bash` runs commands in its agent's sandbox,
-which holds the agent's token and identities: such a subagent holds its agent's whole access, and what it does that
-way is recorded under its agent. A `delegate` called from inside `bash` waits for the agent's own turn, which that
-command holds, so its subagent's workspace calls wait until the command's timeout.
+A `delegate` call that would pass `max_depth`, `max_concurrent`, `max_children` or `max_task_characters`, names no
+kind of the run's, or a model it does not allow, starts nothing and answers why; a subagent whose pi cannot start is
+recorded as `failed`. A call that ends early, cut by pi or by the end of play, ends its subagent too and is recorded
+with its answer so far. Play waits while a subagent works, as it waits for an agent's session, and the wall clock
+ends both, on one deadline. After play, a subagent's model calls are its own turns, and its workspace calls are
+placed in them, on every lane the run config renders, started or not; its calls of the company's tools are recorded
+under its agent's identity, which the services saw, and placed in its agent's turn that holds the `delegate` call.
+A `delegate` called from inside `bash` waits for the agent's own turn, which that command holds, so its subagent's
+workspace calls wait until the command's timeout.
 
 ## Watching the sessions while a run plays
 

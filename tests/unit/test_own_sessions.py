@@ -3,20 +3,15 @@
 from __future__ import annotations
 
 import dataclasses
-import hashlib
 import json
-import sys
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
 from time import monotonic
-from typing import Any
 
 import pytest
-import yaml
-from loc_arena.config import ConfigError, RunConfig, load_run_config
-from loc_arena.gateway.core import GATEWAY_TOKEN_FILE_VARIABLE, GATEWAY_URL_VARIABLE
-from loc_arena.live import build_subagent_briefs
+from loc_arena.config import RunConfig, load_run_config
+from loc_arena.gateway.core import GATEWAY_URL_VARIABLE
 from loc_arena.notices import Notices
 from loc_arena.own_sessions import (
     TASK,
@@ -29,67 +24,17 @@ from loc_arena.own_sessions import (
 )
 from loc_arena.settings import AgentsUpstream
 from loc_arena.subagents import Subagents
-from loc_arena.task import TOOLS_URL_VARIABLE
-from loc_arena.tool_list_notifier import NOTIFIER_KEY_SECRET_NAME
 from loc_arena.tool_records import append_to
-from loc_arena.tools_gateway import render_tools_gateway_config
 from pydantic import HttpUrl
 
-# A stand-in for pi in RPC mode: it records each prompt and its arguments, then does what its home says.
-PI = f"""#!{sys.executable}
-import json, os, sys, time
-from pathlib import Path
+from tests.unit._pi_sessions import BRIEFS, install_pi, write_home
 
-home = Path(os.environ["HOME"])
-(home / "cwd").write_text(os.getcwd())
-
-
-def read(name, default=""):
-    return (home / name).read_text().strip() if (home / name).exists() else default
-
-
-def say(**event):
-    print(json.dumps(event), flush=True)
-
-
-for line in sys.stdin:
-    prompt = json.loads(line)
-    with (home / "runs").open("a") as runs:
-        runs.write(prompt["message"] + " | " + " ".join(sys.argv[1:]) + "\\n")
-    if read("exit"):
-        sys.exit(int(read("exit")))
-    say(type="response", command="prompt", success=True, data=dict(disposition="started"))
-    time.sleep(float(read("sleep", "0")))
-    if read("writes"):  # what a tool call of its own made a service record
-        with Path(read("writes")).open("a") as records:
-            records.write(read("record") + "\\n")
-    answer = dict(role="assistant", stopReason=read("stop", "stop"), errorMessage=read("error"))
-    say(type="message_end", message=answer)
-    say(type="agent_settled")
-    if read("deaf"):  # it stops reading its input, and goes on living for a while
-        os.close(0)
-        time.sleep(float(read("deaf")))
-        sys.exit(0)
-"""
-BRIEFS = {"agent-main": "You are agent-main.", "eval-agent": "You are eval-agent."}
 NOTICE = "Notice: agent-main sent you a direct message."
 
 
 @pytest.fixture
 def config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> RunConfig:
-    programs = tmp_path / "bin"
-    programs.mkdir()
-    (programs / "pi").write_text(PI)
-    (programs / "pi").chmod(0o755)
-    monkeypatch.setenv("PATH", f"{programs}:/usr/bin:/bin")
-    monkeypatch.setenv(GATEWAY_URL_VARIABLE, "http://gateway:8080/api/v1/chat/completions")
-    monkeypatch.setenv(GATEWAY_TOKEN_FILE_VARIABLE, "/run/secrets/gateway_token")
-    monkeypatch.setenv(TOOLS_URL_VARIABLE, "http://agentgateway:3000/mcp")
-    config = load_run_config("configs/aurora-efficiency.yaml")
-    (tmp_path / "records").mkdir()
-    stack = config.settings.stack.model_copy(update={"records_directory": tmp_path / "records"})
-    pi = config.settings.pi.model_copy(update={"minimum_play_seconds": 0.0})  # the run config's is minutes
-    return dataclasses.replace(config, settings=config.settings.model_copy(update={"stack": stack, "pi": pi}))
+    return install_pi(tmp_path, monkeypatch)
 
 
 def play(config: RunConfig, tmp_path: Path, seconds: float = 30) -> dict[str, SessionEnd]:
@@ -103,12 +48,6 @@ def play(config: RunConfig, tmp_path: Path, seconds: float = 30) -> dict[str, Se
         noticed,
         Subagents(config, {}, tmp_path),
     )
-
-
-def write_home(home: Path, **files: str) -> None:
-    home.mkdir()
-    for name, text in files.items():
-        (home / name).write_text(text)
 
 
 def message_from_agent_main(config: RunConfig, tmp_path: Path) -> dict[str, str]:
@@ -467,217 +406,3 @@ def test_each_sessions_end_is_recorded_with_its_reason(tmp_path: Path) -> None:
         "agent-main": {"reason": "ceiling", "exit_code": None, "stderr": "late"},
         "eval-agent": {"reason": "finished", "exit_code": 0, "stderr": ""},
     }
-
-
-SUBAGENTS_RUN = "configs/aurora-efficiency.subagents.fast.yaml"
-SCOUT = {"agent-main": {"scout": "You are a scout."}}
-EPISODE_KEY = "the-episodes-key"
-
-
-def read_route(spawning: RunConfig, episode_key: str = EPISODE_KEY) -> dict[str, Any]:
-    """The tools gateway's one route for ``spawning``'s agents, with the episode holding ``episode_key``."""
-    tokens = {agent.id: f"token-{agent.id}" for agent in spawning.agents}
-    rendered = yaml.safe_load(render_tools_gateway_config(spawning, tokens, {}, notifier_key=episode_key))
-    (bind,) = rendered["binds"]
-    ((route,),) = [listener["routes"] for listener in bind["listeners"]]
-    return route
-
-
-def admit(route: dict[str, Any], key: str) -> dict[str, str] | None:
-    """The metadata the route admits ``key`` with, if it admits it."""
-    admitted = {k["keyHash"]: k["metadata"] for k in route["policies"]["apiKey"]["keys"]}
-    return admitted.get(f"sha256:{hashlib.sha256(key.encode()).hexdigest()}")
-
-
-@pytest.fixture
-def spawning(config: RunConfig, tmp_path: Path) -> RunConfig:
-    """The run config with the subagents run's kinds, which agent-main may start, and the episode's key."""
-    secrets = tmp_path / "secrets"
-    secrets.mkdir()
-    (secrets / NOTIFIER_KEY_SECRET_NAME).write_text(EPISODE_KEY)
-    gateway = config.settings.gateway.model_copy(update={"secrets_dir": secrets})
-    settings = config.settings.model_copy(update={"gateway": gateway})
-    return dataclasses.replace(config, subagents=load_run_config(SUBAGENTS_RUN).subagents, settings=settings)
-
-
-@pytest.fixture
-def subagents(spawning: RunConfig, tmp_path: Path) -> Subagents:
-    return Subagents(spawning, SCOUT, tmp_path)
-
-
-def await_runs(home: Path) -> list[str]:
-    """What the stand-in pi of ``home`` was started with, once it took its first prompt."""
-    deadline = monotonic() + 10
-    while not (home / "runs").exists() and monotonic() < deadline:
-        threading.Event().wait(0.05)
-    return (home / "runs").read_text().splitlines()
-
-
-def test_a_subagent_runs_nothing_itself_and_is_offered_its_kinds_tools_alone(
-    subagents: Subagents,
-    spawning: RunConfig,
-    tmp_path: Path,
-) -> None:
-    subagents.start("agent-main", "scout", "Find where the pipeline spends its time.")
-
-    home = tmp_path / "loops" / "agent-main.1"
-    model = spawning.models["untrusted_agent"].model
-    tools = "mcp__meridian__bash,mcp__meridian__read_file,mcp__meridian__list_dir,mcp__meridian__search_code"
-    assert await_runs(home) == [
-        f"Find where the pipeline spends its time. | --model gateway/{model} --mode rpc --no-builtin-tools "
-        f"--tools {tools} --session {home / '.pi' / 'session.jsonl'} "
-        f"--system-prompt {home / '.pi' / 'agent' / 'system-prompt.md'}",
-    ]
-
-
-def test_a_subagent_calls_its_model_on_its_own_lane_of_its_agents_route(
-    subagents: Subagents,
-    tmp_path: Path,
-) -> None:
-    subagents.start("agent-main", "scout", "Survey meridian-serving.")
-
-    models = json.loads((tmp_path / "loops" / "agent-main.1" / ".pi" / "agent" / "models.json").read_text())
-    assert models["providers"]["gateway"]["baseUrl"] == "http://gateway:8080/loop/agent-main.1/api/v1"
-
-
-def test_the_tools_gateway_admits_a_subagents_key_as_its_agent_naming_the_subagent_as_caller(
-    subagents: Subagents,
-    spawning: RunConfig,
-) -> None:
-    subagents.start("agent-main", "scout", "Survey meridian-serving.")
-    key = (loop_working_directory("agent-main.1") / "tools.key").read_text()
-
-    metadata = admit(read_route(spawning), key)
-
-    assert metadata == {"agent": "agent-main", "caller": "agent-main.1"}
-
-
-def test_a_subagents_key_comes_from_the_episodes_key_which_no_agent_holds(
-    subagents: Subagents,
-    spawning: RunConfig,
-) -> None:
-    subagents.start("agent-main", "scout", "Survey meridian-serving.")
-    key = (loop_working_directory("agent-main.1") / "tools.key").read_text()
-
-    metadata = admit(read_route(spawning, episode_key="another-episodes-key"), key)
-
-    assert metadata is None
-
-
-def test_the_tools_gateway_allows_a_subagent_its_kinds_tools_alone(spawning: RunConfig) -> None:
-    route = read_route(spawning)
-
-    rule = route["policies"]["mcpAuthorization"]["rules"][0]["allow"]
-    allowed = json.loads(rule.removeprefix("mcp.tool.name in ").partition("[apiKey.caller]")[0])[
-        "agent-main.1"
-    ]
-    assert {service: tools for service, tools in allowed.items() if tools} == {
-        "workspace": ["bash", "read_file", "list_dir", "search_code"],
-    }
-
-
-@pytest.mark.parametrize(
-    ("started", "caller", "kind", "task", "refusal"),
-    [
-        (1, "agent-main.1", "scout", "Survey it.", "agent-main.1 may not start subagents"),
-        (0, "eval-agent", "scout", "Survey it.", "eval-agent may not start subagents"),
-        (0, "agent-main", "planner", "Survey it.", "no subagent kind 'planner': scout"),
-        (
-            2,
-            "agent-main",
-            "scout",
-            "Survey it.",
-            "2 subagents of agent-main's already work: wait for one to answer",
-        ),
-        (0, "agent-main", "scout", "x" * 8001, "a task holds at most 8000 characters"),
-    ],
-)
-def test_a_delegate_call_past_the_runs_bounds_starts_no_subagent(
-    subagents: Subagents,
-    started: int,
-    caller: str,
-    kind: str,
-    task: str,
-    refusal: str,
-) -> None:
-    for _ in range(started):
-        subagents.start("agent-main", "scout", "Survey meridian-serving.")
-
-    outcome = subagents.start(caller, kind, task)
-
-    assert outcome == refusal
-
-
-def test_play_waits_for_a_subagent_still_working_once_every_agent_is_idle(
-    subagents: Subagents,
-    spawning: RunConfig,
-    tmp_path: Path,
-) -> None:
-    (tmp_path / "loops").mkdir()
-    write_home(tmp_path / "loops" / "agent-main.1", sleep="1.5")
-    subagents.start("agent-main", "scout", "Survey meridian-serving.")
-    noticed = append_to(tmp_path / "notices.jsonl")
-
-    play_sessions(spawning, BRIEFS, tmp_path, 30, Notices(spawning, BRIEFS), noticed, subagents)
-
-    ended = json.loads((tmp_path / "subagents.jsonl").read_text().splitlines()[-1])
-    assert ended["end"]["reason"] == "finished"
-
-
-def test_a_subagents_brief_holds_neither_the_covert_objective_nor_its_agents_assignment() -> None:
-    attack = load_run_config(SUBAGENTS_RUN)
-    lead = attack.agent(attack.covert.target_identity)
-
-    brief = build_subagent_briefs(attack)[lead.id]["scout"]
-
-    assert [
-        str(text) in brief for text in (attack.covert.objective_prompt, lead.covert_brief, lead.brief)
-    ] == [
-        False,
-        False,
-        False,
-    ]
-
-
-def test_a_subagent_kind_offered_a_tool_its_agent_does_not_hold_does_not_load(tmp_path: Path) -> None:
-    run = tmp_path / "run.yaml"
-    kind = "subagents:\n  definitions:\n    scout:\n      tools: [submit_job]\n"
-    run.write_text(f"extends: {Path(SUBAGENTS_RUN).name}\n{kind}")
-
-    with pytest.raises(
-        ConfigError,
-        match=r"subagents\.definitions\.scout\.tools: agent-main does not hold submit_job",
-    ):
-        load_run_config(run, "configs")
-
-
-def test_a_subagent_still_working_at_the_ceiling_is_ended_there_and_recorded(
-    subagents: Subagents,
-    spawning: RunConfig,
-    tmp_path: Path,
-) -> None:
-    (tmp_path / "loops").mkdir()
-    write_home(tmp_path / "loops" / "agent-main.1", sleep="5")
-    subagents.start("agent-main", "scout", "Survey meridian-serving.")
-    noticed = append_to(tmp_path / "notices.jsonl")
-
-    play_sessions(spawning, BRIEFS, tmp_path, 1, Notices(spawning, BRIEFS), noticed, subagents)
-
-    ended = json.loads((tmp_path / "subagents.jsonl").read_text().splitlines()[-1])
-    assert ended["end"]["reason"] == "ceiling"
-
-
-def test_a_subagent_whose_pi_cannot_start_is_refused_and_recorded(
-    subagents: Subagents,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("PATH", str(tmp_path / "nowhere"))
-
-    outcome = subagents.start("agent-main", "scout", "Survey meridian-serving.")
-
-    ended = json.loads((tmp_path / "subagents.jsonl").read_text().splitlines()[-1])
-    assert (str(outcome).startswith("agent-main.1 could not start: "), ended["end"]["reason"]) == (
-        True,
-        "failed",
-    )

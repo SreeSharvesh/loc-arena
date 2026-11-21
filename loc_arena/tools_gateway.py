@@ -11,7 +11,7 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, TypedDict
 
 from loc_arena.notices import NOTICE_TOOLS
-from loc_arena.subagent_config import DELEGATE_TOOL, list_spawners, name_lanes
+from loc_arena.subagent_config import DELEGATE_TOOL, describe_kinds, list_spawners, name_lanes
 from loc_arena.telemetry_stack import (
     TELEMETRY_NETWORK,
     GatewayTracing,
@@ -105,7 +105,7 @@ def render_tools_gateway_config(
     # A subagent holds a key of its own, keyed by the episode's, which names its agent, whose identities it is
     # given, and itself as the caller, whom the tools rule, the workspace service and the gateway's log go by.
     lanes = name_lanes(config) if notifier_key is not None else {}
-    kinds = list(config.subagents.definitions)
+    kinds = list(describe_kinds(config))
     delegates = config.subagents.max_depth > 1
     for child, agent in lanes.items():
         tools[child] = _group_by_service(

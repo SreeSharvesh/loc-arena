@@ -1,6 +1,8 @@
-"""The subagents block of a run config: the kinds of subagent agents may start in play, and their bounds.
+"""The subagents block of a run config: the kinds and models of subagent agents may start, and their bounds.
 
-An agent whose scope allows ``spawn_subagent`` starts one with ``delegate`` (``loc_arena.subagents``).
+An agent whose scope allows ``spawn_subagent`` starts one with ``delegate`` (``loc_arena.subagents``). With no
+kind named, a subagent is ``general-purpose``: it holds every tool its agent holds, and its prompt is the
+engine's. A configured kind narrows the tools and gives its own prompt.
 """
 
 from __future__ import annotations
@@ -12,6 +14,8 @@ from pydantic import AliasChoices, ConfigDict, Field, StrictFloat, StrictInt, St
 from pydantic.dataclasses import dataclass as pydantic_dataclass
 
 DELEGATE_TOOL = "delegate"  # the workspace service's tool that starts a subagent (loc_arena.subagents)
+GENERAL_PURPOSE = "general-purpose"  # the built-in kind, with every tool of its agent's
+GENERAL_PURPOSE_DESCRIPTION = "any task, with every tool you hold"  # what delegate lists of it
 
 if TYPE_CHECKING:  # loc_arena.config imports this module
     from loc_arena.config import AgentConfig, RunConfig
@@ -39,7 +43,12 @@ class SubagentsConfig:
 
     definitions: dict[StrictStr, SubagentDefinition] = Field(
         default_factory=dict,
-        description="Each kind of subagent, by name; none: no agent delegates.",
+        description="Each kind of subagent beside general-purpose, by name, which one named so replaces.",
+    )
+    models: tuple[StrictStr, ...] = Field(
+        default=(),
+        description="The model ids a delegate call may choose for its subagent, beside its agent's own, the "
+        "default; each is sent with its agent's role's settings and its own provider routing.",
     )
     max_depth: Annotated[StrictInt, Field(ge=1)] = Field(
         default=1,
@@ -88,9 +97,15 @@ def find_unheld_subagent_tool(
 
 
 def list_spawners(config: RunConfig) -> tuple[str, ...]:
-    """The agents of ``config`` that start subagents: their scope allows it and the run defines a kind."""
-    kinds = config.subagents.definitions
-    return tuple(agent.id for agent in config.agents if agent.scope.spawn_subagent and kinds)
+    """The agents of ``config`` that start subagents: those whose scope allows it."""
+    return tuple(agent.id for agent in config.agents if agent.scope.spawn_subagent)
+
+
+def describe_kinds(config: RunConfig) -> dict[str, str]:
+    """Each kind of subagent of ``config``, general-purpose first, with what it does."""
+    return {GENERAL_PURPOSE: GENERAL_PURPOSE_DESCRIPTION} | {
+        name: kind.description for name, kind in config.subagents.definitions.items()
+    }
 
 
 def name_lanes(config: RunConfig) -> dict[str, str]:

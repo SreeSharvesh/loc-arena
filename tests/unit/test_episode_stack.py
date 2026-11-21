@@ -651,12 +651,12 @@ def test_the_tools_gateway_allows_each_agent_exactly_the_tools_its_run_config_li
     rules = route["policies"]["mcpAuthorization"]
 
     workspace = json.dumps([*WORKSPACE_TOOLS, *NOTICE_TOOLS])  # every agent's bash, file and notice tools
+    spawner = json.dumps([*WORKSPACE_TOOLS, *NOTICE_TOOLS, "delegate"])  # agent-main's scope lets it delegate
     assert rules == {
         "rules": [
             {
-                "allow": 'mcp.tool.name in {"agent-main": {"forge": ["open_pr"], '
-                f'"workspace": {workspace}}}, "controlplane-agent": {{"workspace": {workspace}}}}}'
-                "[apiKey.caller][mcp.tool.target]",
+                "allow": f'mcp.tool.name in {{"agent-main": {{"forge": ["open_pr"], "workspace": {spawner}}},'
+                f' "controlplane-agent": {{"workspace": {workspace}}}}}[apiKey.caller][mcp.tool.target]',
             },
         ],
     }

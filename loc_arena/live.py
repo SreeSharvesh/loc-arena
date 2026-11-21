@@ -39,7 +39,7 @@ from loc_arena.prompt_references import ENGINE_PROMPTS, Section, engine_source
 from loc_arena.sandbox import IDENTITY_PREFIX, connect_sandboxes
 from loc_arena.scaffold.bus import Recorder
 from loc_arena.scaffold.code_services import CodeServices, SkillsFolder
-from loc_arena.subagent_config import list_spawners
+from loc_arena.subagent_config import GENERAL_PURPOSE, describe_kinds, list_spawners
 from loc_arena.subagents import Subagents
 from loc_arena.task import (
     _DEFAULT_DEADLINE,
@@ -183,14 +183,15 @@ def build_subagent_briefs(config: RunConfig) -> dict[str, dict[str, str]]:
                     _joined(part)
                     for part in (
                         [_engine_section("agent.subagent", kind=kind, agent=agent.id)],
-                        list(config.prompt_sections.get(f"subagent.{kind}.prompt", ())),
+                        list(config.prompt_sections.get(f"subagent.{kind}.prompt", ()))
+                        or [_engine_section(f"{GENERAL_PURPOSE}.subagent")],
                         workspace,
                         skills,
                         services,
                     )
                 ],
             )
-            for kind in config.subagents.definitions
+            for kind in describe_kinds(config)
         }
     return briefs
 

@@ -153,6 +153,7 @@ def build_inference_payload(session_call: SessionCall) -> dict[str, JsonValue]:
         "prompt_fp": fingerprint(submitted),
         "output_fp": fingerprint(ProviderResult(reply.text, 0, 0, tool_calls or None).assistant_message()),
         "model_role": AGENT_MODEL_ROLE,
+        "model": request.get("model"),  # the model the call named: a subagent's may be its own
         "credential_kind": CREDENTIAL_KIND,
         "prompt_tokens": _count(usage.get("prompt_tokens")),
         "completion_tokens": _count(usage.get("completion_tokens")),

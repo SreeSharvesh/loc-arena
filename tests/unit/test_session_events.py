@@ -117,6 +117,7 @@ def test_a_turns_event_fingerprints_what_followed_the_brief_and_the_reply_with_i
         "prompt_fp": fingerprint([TASK]),
         "output_fp": fingerprint(ProviderResult("", 0, 0, [BASH]).assistant_message()),
         "model_role": "untrusted_agent",
+        "model": "m",
         "credential_kind": "turn_token",
         "prompt_tokens": 7,
         "completion_tokens": 3,
@@ -166,3 +167,15 @@ def test_a_subagents_calls_on_its_lane_of_its_agents_route_are_its_own_turns(tmp
         ("agent-main.1", 1),
         ("agent-main.1", 2),
     ]
+
+
+def test_an_inference_event_names_the_model_its_call_asked_for(tmp_path: Path) -> None:
+    write_calls(
+        tmp_path,
+        {"request": {"model": "z-ai/glm-5.3-flash", "messages": [SYSTEM, TASK], "tools": []}},
+    )
+    (call,) = read_session_calls(tmp_path, "attack", AGENTS)
+
+    payload = build_inference_payload(call)
+
+    assert payload["model"] == "z-ai/glm-5.3-flash"

@@ -246,11 +246,12 @@ class PiSession:
 
 @dataclass(frozen=True)
 class Child:
-    """A subagent: its id, its key at the tools gateway, and the tools it is offered."""
+    """A subagent: its id, its key at the tools gateway, its tools, and its model when not its agent's."""
 
     id: str
     token: str
     tools: tuple[str, ...]
+    model: str | None = None
 
 
 def describe_loops(config: RunConfig) -> Loops:
@@ -263,12 +264,12 @@ def describe_loops(config: RunConfig) -> Loops:
     # Provider routing is OpenRouter's field: a second upstream is one provider, and gets none.
     routed = config.settings.gateway.agents_upstream is None
 
-    def describe_overrides(role: ModelSpec) -> dict[str, JsonValue]:
+    def describe_overrides(role: ModelSpec, model: str | None = None) -> dict[str, JsonValue]:
         overrides: dict[str, JsonValue] = {
             "temperature": role.temperature,
             "max_completion_tokens": role.max_tokens,
         }
-        if routed and (providers := config.model_providers.get(role.model)) is not None:
+        if routed and (providers := config.model_providers.get(model or role.model)) is not None:
             overrides["provider"] = providers.model_dump(exclude_none=True)
         if role.reasoning is not None:
             overrides["reasoning"] = role.reasoning.model_dump(exclude_none=True)
@@ -282,7 +283,15 @@ def describe_loops(config: RunConfig) -> Loops:
     children: dict[str, list[str]] = {}
     for child, agent in name_lanes(config).items():
         children.setdefault(agent, []).append(child)
-    return Loops(calls, overrides, children=children)
+    # A spawner's subagents may call the run's other models too, each with its own provider routing.
+    chosen = config.subagents.models
+    models = {
+        agent: {config.loop_model(agent).model: overrides[agent]}
+        | {model: describe_overrides(config.loop_model(agent), model) for model in chosen}
+        for agent in children
+        if chosen
+    }
+    return Loops(calls, overrides, children=children, models=models)
 
 
 def brief_loop(config: RunConfig, agent: str, brief: str) -> str:
@@ -313,7 +322,7 @@ def write_pi_home(
     its own lane of the agent's route with its own key, and is offered its tools alone.
     """
     settings, role = config.settings, config.loop_model(agent)
-    model = role.model
+    model = child.model if child and child.model else role.model
     directory = home / ".pi" / "agent"
     directory.mkdir(parents=True, exist_ok=True)
     provider = {
