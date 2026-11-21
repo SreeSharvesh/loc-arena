@@ -27,7 +27,7 @@ help:
 	@echo "make fixture-run                          # play the smoke run and store it as the tests' run fixture"
 	@echo "make gates                                # file size, changelog, ruff + ruff format + ty + pytest"
 	@echo "make checks                               # the gates without pytest: seconds"
-	@echo "make tests                                # the tests that need no Docker"
+	@echo "make tests [ONLY='tests/integration']     # the tests that need no Docker, or those under a path"
 	@echo "make stack-tests [SHARD=K/N]              # the Docker tests, or the K-th of N shares of their modules"
 	@echo "make images                               # build this checkout's sandbox, runner, worker and engine images, which the Docker tests need"
 	@echo "  (a run needs Docker Engine 28 or later)"
@@ -86,7 +86,7 @@ checks:
 	@uv run ruff check . && uv run ruff format --check . && uv run ty check
 
 tests:
-	@uv run pytest -q -n auto --dist loadscope -m "not stack" --durations 15
+	@uv run pytest -q -n auto --dist loadscope -m "not stack" --durations 15 $(ONLY)
 
 stack-tests:
 	@uv run pytest -q -m stack $(if $(SHARD),--stack-shard $(SHARD)) --durations 15

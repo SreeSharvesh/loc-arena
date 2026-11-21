@@ -39,6 +39,11 @@ in its own container.
 ### Changed
 
 - The repository's Docker tests run in CI as five shares made even by the time each module says it takes, so no share holds two slow modules ([docs](docs/ci-rules.md)).
+## [416] - 2026-11-21: CI runs the tests that need no Docker on two runners
+
+### Changed
+
+- The repository's tests that need no Docker run in CI as two jobs, those under `tests/integration` and all the others, so neither outlasts a Docker share ([docs](docs/ci-rules.md)).
 
 ## [406] - 2026-11-20: The gates run in CI as parallel jobs
 
