@@ -100,7 +100,7 @@ refuses, each with a `ConfigError` naming it: `prompts_inline`; prompt text writ
 that is not `.md`; and a placeholder with no value. Importing the loader refuses an engine file that
 `ENGINE_PROMPTS` does not declare. Whether a file is read is a property of every run config, not of one, so the
 unit tests refuse a scenario file that no run config git tracks reads (`find_unread_prompt_files`).
-`config.resolved.yaml` holds each entry's text.
+`config.resolved.yaml` records each file entry as its text and each composed entry as its list of references.
 
 `uv run python scripts/diff_prompts.py --base origin/main` shows what a change sends differently. For every run
 config git tracks and both plays, it builds each agent's system prompt, the opening prompt, the covert objective

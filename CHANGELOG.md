@@ -27,7 +27,8 @@ in its own container.
 
 ### Changed
 
-- The scenario holds its prompts as Markdown files in its prompts folder, which run configs name, so each brief reads and reviews as a file ([docs](docs/run-config.md#prompts)).
+- The scenario holds its prompts as Markdown files that run configs name, and loading refuses a missing file, one outside the folder, or a placeholder with no value ([docs](docs/run-config.md#prompts)).
+- The record keeps each prompt entry under `prompts` in config.resolved.yaml, in place of prompts_inline: a file entry as its text, a composed entry as its references ([docs](docs/run-config.md#prompts)).
 - The engine keeps its part of every brief in Markdown files whose placeholders it checks at load, and every run sends the same bytes as before ([docs](docs/run-config.md#prompts)).
 
 ### Removed
