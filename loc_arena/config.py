@@ -364,7 +364,7 @@ class _RunDocument(BaseSettings):
     )
     logging: _LoggingConfig = Field(default=_LoggingConfig(), description="What each run bundle records.")
     workspace_prompt: StrictStr = Field(
-        validation_alias=_prompt_alias("workspace_prompt"),
+        validation_alias="workspace_prompt_ref",  # alone: a settings source passes one alias of several
         description="What every agent's brief says of its workspace, resolved from workspace_prompt_ref.",
     )
     prompts: dict[StrictStr, StrictStr | list[StrictStr]] = Field(

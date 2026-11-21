@@ -261,10 +261,22 @@ def test_a_missing_extends_base_is_a_config_error(tmp_path: Path) -> None:
         load_run_config(run)
 
 
-def test_a_prompt_written_inline_instead_of_referenced_is_refused_naming_it(tmp_path: Path) -> None:
-    run = _run_extending(tmp_path, INLINE_PROMPT_AGENT)
+@pytest.mark.parametrize(
+    ("override", "named"),
+    [
+        (INLINE_PROMPT_AGENT, "agents.0: system_prompt"),
+        ("workspace_prompt: inline text\n", "run: workspace_prompt"),
+    ],
+    ids=["an agent's", "the run's"],
+)
+def test_a_prompt_written_inline_instead_of_referenced_is_refused_naming_it(
+    tmp_path: Path,
+    override: str,
+    named: str,
+) -> None:
+    run = _run_extending(tmp_path, override)
 
-    with pytest.raises(ConfigError, match="system_prompt written inline"):
+    with pytest.raises(ConfigError, match=f"{named} written inline"):
         load_run_config(run)
 
 
