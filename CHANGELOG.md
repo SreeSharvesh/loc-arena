@@ -44,6 +44,11 @@ in its own container.
 ### Changed
 
 - The repository's tests that need no Docker run in CI as two jobs, those under `tests/integration` and all the others, so neither outlasts a Docker share ([docs](docs/ci-rules.md)).
+## [417] - 2026-11-21: The Docker tests make their tool calls from one process
+
+### Changed
+
+- The repository's deploy, telemetry and release tests make their tool calls from one process that stays up, where each call imported the MCP client again; the arena behaves as before.
 
 ## [406] - 2026-11-20: The gates run in CI as parallel jobs
 
