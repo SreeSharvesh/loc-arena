@@ -95,7 +95,7 @@ cat bundle.tar.xz.part-* > bundle.tar.xz   # only when bundle.txt lists parts
 sha256sum bundle.tar.xz                    # the digest bundle.txt gives
 mkdir -p <loc-arena>/logs/<run slug>
 tar -xJf bundle.tar.xz -C <loc-arena>/logs/<run slug>
-cp -r --update=none extras/. <loc-arena>/logs/<run slug>/<run name>/   # only when extras/ exists
+cp -rn extras/. <loc-arena>/logs/<run slug>/<run name>/   # only when extras/ exists
 ```
 
 One file also comes as a raw download, up to 100 MB:
