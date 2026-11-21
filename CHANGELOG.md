@@ -19,6 +19,12 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [419] - 2026-11-21: Three control-plane tests no longer fail a grade at random
+
+### Fixed
+
+- The scenario's control-plane tests wait for a run's command to start before they stop it, so a solution that starts none once asked to stop no longer fails at random.
+
 ## [406] - 2026-11-20: The gates run in CI as parallel jobs
 
 ### Changed
