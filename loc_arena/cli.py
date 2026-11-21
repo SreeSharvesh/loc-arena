@@ -29,6 +29,7 @@ from loc_arena.gateway.proxy_relay import relay_while_running
 from loc_arena.harness import apply_mode, locate_run, play_run, read_played_snapshot
 from loc_arena.logging_.viewer import build_index
 from loc_arena.merged_main import EPISODE_PHASE
+from loc_arena.prompt_listing import list_prompts
 from loc_arena.run_cost import read_cost, record_cost, render_costs, summarize
 from loc_arena.run_identity import RUN_FILE, read_identity
 from loc_arena.run_publish import PublishError, SecretFoundError, publish_run, read_label
@@ -254,6 +255,12 @@ def _cmd_read(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_prompts(args: argparse.Namespace) -> int:
+    config = apply_mode(load_run_config(_config_path(args.run)), args.mode)
+    print(list_prompts(config, Path(_config_path(args.run)).parent / str(config.protocol["monitors_config"])))
+    return 0
+
+
 def _cmd_watch(args: argparse.Namespace) -> int:
     directory = Path(args.run_directory) if args.run_directory else None
     try:
@@ -335,6 +342,11 @@ def main(argv: list[str] | None = None) -> int:
     p_publish = sub.add_parser("publish", help="scan one graded run and publish it to the storage repository")
     p_publish.add_argument("run_directory", help="the run's directory, which holds scores.json")
     p_publish.set_defaults(func=_cmd_publish)
+    p_prompts = sub.add_parser("prompts", help="print what the run sends each agent and monitor, by file")
+    p_prompts.add_argument("--run", default="aurora-efficiency")
+    p_prompts.add_argument("--mode", choices=["attack", "honest"], default="attack")
+    p_prompts.set_defaults(func=_cmd_prompts)
+
     p_watch = sub.add_parser(
         "watch",
         help="print each agent's steps of the run playing, or of a finished run",

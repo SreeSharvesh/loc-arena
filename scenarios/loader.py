@@ -25,6 +25,7 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from string import Template
 from typing import Annotated, Any, Final, Self
 
 import yaml
@@ -45,6 +46,10 @@ from pydantic import (
 from sandbox_server.confinement import resolve_inside
 
 SCENARIOS_ROOT = Path(__file__).resolve().parent
+PROMPTS_DIRECTORY: Final = (
+    "prompts"  # in a pack: every prompt file of the scenario's (docs/run-config.md#prompts)
+)
+SERVICE_PROMPT_SUFFIX: Final = ".service.md"  # <service>.service.md: what the agents are told a service is
 # A host name label (RFC 1123) in lower case alone: what names a compose service and its host on agent-net.
 DNS_LABEL: Final = re.compile(r"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?")
 # The stack's own services (loc_arena.episode_stack): a live service may not take their names.
@@ -140,7 +145,6 @@ class ScenarioService(BaseModel):
         "tools gateway, and each agent gets its own identity on it, which only the service and the tools "
         "gateway hold.",
     )
-    description: StrictStr = Field(default="", description="What the agents of a stack run are told it is.")
     runners: StrictInt = Field(
         default=0,
         ge=0,
@@ -235,13 +239,14 @@ class LiveService:
     command: tuple[str, ...] | None
     healthcheck: tuple[str, ...] | None
     rights: tuple[str, ...]  # what it enforces over HTTP from a sandbox; none: no sandbox holds its identity
-    description: str
+    description: str  # what the agents are told it is
     tools: tuple[str, ...] = ()  # the MCP tools it serves, reached through the tools gateway alone
     runners: int = 0  # how many runners it hands work to, runner-1 to runner-<n>
     nodes: tuple[tuple[str, int], ...] = ()  # its fleet, (pool name, count) pairs; node-1 to node-<n>
     restarts: bool = False  # whether its container comes back when its process ends during play
     deploys: tuple[str, ...] = ()  # the live services it deploys merged code to, each under a supervisor
     collects: tuple[str, ...] = ()  # the live services whose telemetry it holds: it is the telemetry store
+    description_source: str = ""  # the prompt file its description came from, relative to the repository
 
 
 @dataclass(frozen=True)
@@ -291,6 +296,41 @@ def _import_pack_module(directory: Path, module: str) -> None:
         raise
 
 
+def read_prompt(path: Path) -> Template:
+    """The prompt file at ``path``: its text less its final line break, whose ``$name`` are placeholders.
+
+    Raises ``ValueError`` on a ``$`` that starts no placeholder; ``$$`` is a dollar sign.
+    """
+    template = Template(path.read_text(encoding="utf-8").removesuffix("\n"))
+    if not template.is_valid():
+        raise ValueError(f"{path}: a $ that starts no placeholder; write $$ for a dollar sign")
+    return template
+
+
+def _read_service_description(prompts: Path, name: str) -> dict[str, str]:
+    """What the agents are told service ``name`` is, from its ``<name>.service.md``, and that file's path."""
+    path = prompts / f"{name}{SERVICE_PROMPT_SUFFIX}"
+    if not path.is_file():
+        return {"description": ""}
+    source = path.relative_to(SCENARIOS_ROOT.parent) if path.is_relative_to(SCENARIOS_ROOT.parent) else path
+    try:
+        description = read_prompt(path).substitute()
+    except KeyError as missing:
+        raise ValueError(
+            f"{source}: the placeholder ${missing.args[0]} has no value; write $$ for a dollar sign",
+        ) from None
+    return {"description": description, "description_source": str(source)}
+
+
+def _require_described_services(directory: Path, live: list[LiveService]) -> None:
+    """Raise ``ValueError`` on a ``<name>.service.md`` of the pack's prompts that names no live service."""
+    described = (directory / PROMPTS_DIRECTORY).glob(f"*{SERVICE_PROMPT_SUFFIX}")
+    if unknown := sorted(
+        {path.name for path in described} - {f"{service.name}{SERVICE_PROMPT_SUFFIX}" for service in live},
+    ):
+        raise ValueError(f"scenario {directory.name}: these describe no live service: {', '.join(unknown)}")
+
+
 def _parse_live_services(directory: Path, declared: object) -> tuple[LiveService, ...]:
     """The live entries of ``declared``, a pack's ``services:``; a ValueError names an invalid entry."""
     if not isinstance(declared, dict):
@@ -314,7 +354,7 @@ def _parse_live_services(directory: Path, declared: object) -> tuple[LiveService
                     command=service.command,
                     healthcheck=service.healthcheck,
                     rights=service.rights,
-                    description=service.description,
+                    **_read_service_description(directory / PROMPTS_DIRECTORY, service.name),
                     tools=service.tools,
                     runners=service.runners,
                     nodes=tuple(service.nodes.items()),
@@ -324,6 +364,7 @@ def _parse_live_services(directory: Path, declared: object) -> tuple[LiveService
                 ),
             )
     _require_unique_tools(live)
+    _require_described_services(directory, live)
     if len(pools := [service.name for service in live if service.runners]) > 1:
         raise ValueError(f"scenario {directory.name}: only one service may have runners, not {pools}")
     if len(fleets := [service.name for service in live if service.nodes]) > 1:
