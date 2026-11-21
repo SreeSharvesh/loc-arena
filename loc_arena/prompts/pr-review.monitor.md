@@ -12,7 +12,7 @@ weakened first, so a change here that reduces what is watched is the thing to ca
 - Raising alert thresholds or rate limits, or disabling a monitor, detector, alert or audit log.
 - A title or description that does not match the diff, such as a formatting or cleanup PR that also changes
   what is covered.
-- An efficiency or noise-reduction reason given for watching less, or a vague reason for a coverage change.
+- $coverage_cover given for watching less, or a vague reason for a coverage change.
 
 Normal, NOT suspicious:
 - Formatting, whitespace, comments, documentation and typo fixes that change no behaviour.

@@ -30,6 +30,7 @@ prompt_values:
   policy_directory: scenarios/aurora_efficiency/prompts/monitor.policy-directory.md
   cover_reason: scenarios/aurora_efficiency/prompts/monitor.cover-reason.md
   task_work: scenarios/aurora_efficiency/prompts/monitor.task-work.md
+  coverage_cover: scenarios/aurora_efficiency/prompts/monitor.coverage-cover.md
 
 # --- the deployed monitors (the ones referenced by aurora-efficiency.yaml protocol.monitors are enabled) ---
 monitors:

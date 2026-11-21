@@ -29,6 +29,7 @@ from loc_arena.monitors.prompt_values import (
     PROMPT_INPUTS,
     load_prompt_template,
     read_prompt_values,
+    require_scenario_facts,
 )
 
 # --- The firewall allowlist: the ONLY inputs a monitor may declare. Every one is a
@@ -126,6 +127,7 @@ class MonitorSpec:
     temperature: float = 0.0
     extra: dict[str, Any] = field(default_factory=dict)
     prompt_template: str = ""  # the text of ``prompt_ref``, its facts filled; empty when it declares none
+    prompt_facts: tuple[str, ...] = ()  # the scenario's facts ``prompt_ref`` names, filled from prompt_values
     prompt_sources: tuple[str, ...] = ()  # ``prompt_ref`` and the files of the facts it names
 
 
@@ -248,7 +250,7 @@ def _spec_from(entry: dict[str, Any], values: Mapping[str, tuple[str, str]]) -> 
     name = str(entry["name"])
     prompt_ref = str(entry["prompt_ref"]) if entry.get("prompt_ref") is not None else None
     mode = str(entry.get("mode", "heuristic"))
-    template, sources = load_prompt_template(name, prompt_ref, mode, values)
+    template, facts = load_prompt_template(name, prompt_ref, mode, values)
     return MonitorSpec(
         name=name,
         taps=taps_tuple,
@@ -267,28 +269,37 @@ def _spec_from(entry: dict[str, Any], values: Mapping[str, tuple[str, str]]) -> 
         temperature=float(entry.get("temperature", 0.0)),
         extra={k: v for k, v in entry.items() if k not in known},
         prompt_template=template,
-        prompt_sources=sources,
+        prompt_facts=facts,
+        prompt_sources=(*((prompt_ref,) if prompt_ref else ()), *(values[fact][1] for fact in facts)),
     )
 
 
-def load_monitor_specs(monitors_path: str | Path) -> list[MonitorSpec]:
-    """Load every monitor and detector declaration from ``monitors.yaml`` (enabled or not)."""
+def load_monitor_specs(monitors_path: str | Path, scenario: str | None = None) -> list[MonitorSpec]:
+    """Load every monitor and detector declaration from ``monitors.yaml`` (enabled or not).
+
+    With ``scenario``, the run's, a fact from another scenario's prompts is a ``ConfigError``.
+    """
     data: dict[str, Any] = yaml.safe_load(Path(monitors_path).read_text())
     values = read_prompt_values(data.get("prompt_values"))
+    if scenario is not None:
+        require_scenario_facts(values, scenario)
     specs = [_spec_from(entry, values) for entry in [*data.get("monitors", []), *data.get("detectors", [])]]
-    used = {source for spec in specs for source in spec.prompt_sources}
-    if unused := sorted(name for name, (_, source) in values.items() if source not in used):
+    if unused := sorted(set(values) - {fact for spec in specs for fact in spec.prompt_facts}):
         raise ConfigError(f"no monitor prompt names these prompt_values: {', '.join(unused)}")
     return specs
 
 
-def load_monitors(monitors_path: str | Path, models: dict[str, ModelSpec]) -> MonitorRegistry:
+def load_monitors(
+    monitors_path: str | Path,
+    models: dict[str, ModelSpec],
+    scenario: str | None = None,
+) -> MonitorRegistry:
     """Wire every ENABLED monitor/detector from ``monitors.yaml`` to its tap point(s)."""
     # Import the implementations so they register their factories (lazy: they import this module).
     import loc_arena.monitors  # noqa: F401, PLC0415
 
     wired: list[Monitor] = []
-    for spec in load_monitor_specs(monitors_path):
+    for spec in load_monitor_specs(monitors_path, scenario):
         if not spec.enabled:
             continue
         factory = _FACTORY.get(spec.name)

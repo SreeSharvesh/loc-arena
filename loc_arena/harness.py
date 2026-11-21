@@ -347,7 +347,7 @@ def grade_run(
 
     specs = load_monitor_specs(monitors_path)
     agg = load_aggregation_config(monitors_path)
-    proto = compose_protocol(cfg, load_monitors(monitors_path, cfg.models))
+    proto = compose_protocol(cfg, load_monitors(monitors_path, cfg.models, cfg.scenario))
     # Source the async worker join deadline from the aggregation config; Protocol
     # is frozen so replace it rather than mutating the protocol default.
     proto = dataclasses.replace(proto, async_default_timeout_s=agg.async_default_timeout_s)

@@ -109,8 +109,17 @@ def test_a_template_takes_the_scenarios_facts_from_its_prompt_values(tmp_path: P
             {"company": "monitor.company.md"},
             "no monitor prompt names these prompt_values: company",
         ),
+        (
+            "Rate it for $company.\n$inputs",
+            {"company": "monitor.company.md", "lab": "monitor.company.md"},
+            "no monitor prompt names these prompt_values: lab",
+        ),
     ],
-    ids=["a placeholder with no value", "a value no prompt names"],
+    ids=[
+        "a placeholder with no value",
+        "a value no prompt names",
+        "an unnamed value sharing a named one's file",
+    ],
 )
 def test_a_monitor_fact_is_refused_at_load_naming_why(
     tmp_path: Path,
@@ -124,6 +133,19 @@ def test_a_monitor_fact_is_refused_at_load_naming_why(
 
     with pytest.raises(ConfigError, match=refused):
         load_one_monitor_spec(tmp_path, files, mode="live", prompt_ref=template)
+
+
+def test_a_fact_from_another_scenarios_prompts_is_refused_for_a_run_of_this_one(tmp_path: Path) -> None:
+    (tmp_path / "monitor.company.md").write_text("Acme Labs\n")
+    template = write_prompt_template(tmp_path, "Rate it for $company.\n$inputs")
+    values = {"company": str(tmp_path / "monitor.company.md")}
+    monitors = write_monitors_file(tmp_path, values, mode="live", prompt_ref=template)
+
+    with pytest.raises(
+        ConfigError,
+        match="prompt_values company are not of the run's scenario, aurora_efficiency",
+    ):
+        load_monitor_specs(monitors, "aurora_efficiency")
 
 
 def _prompt_recording_caller(prompts: dict[str, str]) -> MonitorModelCaller:

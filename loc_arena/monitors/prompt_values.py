@@ -15,7 +15,7 @@ from re import Match
 from string import Template
 from typing import Final
 
-from scenarios.loader import read_prompt
+from scenarios.loader import PROMPTS_DIRECTORY, SCENARIOS_ROOT, read_prompt
 
 from loc_arena.config import ConfigError
 
@@ -47,7 +47,7 @@ def load_prompt_template(
     mode: str,
     values: Mapping[str, tuple[str, str]],
 ) -> tuple[str, tuple[str, ...]]:
-    """Monitor ``name``'s prompt template, its facts filled from ``values``; and the files it was made of.
+    """Monitor ``name``'s prompt template, its facts filled from ``values``; and the facts it names.
 
     A ``prompt_ref`` must name a prompt file that places ``$inputs`` exactly once, and a live monitor must
     declare one: without it the model gets raw JSON and no instruction to answer. Every other placeholder must
@@ -72,7 +72,17 @@ def load_prompt_template(
         raise ConfigError(
             f"monitor {name!r}: {prompt_ref} names ${', $'.join(missing)}, with no prompt_values",
         )
-    return _fill(template, values), (prompt_ref, *(values[fact][1] for fact in facts))
+    return _fill(template, values), tuple(facts)
+
+
+def require_scenario_facts(values: Mapping[str, tuple[str, str]], scenario: str) -> None:
+    """Raise ``ConfigError`` on a value not from ``scenario``'s prompts: a run's facts are its own."""
+    root = (SCENARIOS_ROOT / scenario / PROMPTS_DIRECTORY).resolve()
+    foreign = [name for name, (_, file) in values.items() if not Path(file).resolve().is_relative_to(root)]
+    if foreign:
+        raise ConfigError(
+            f"prompt_values {', '.join(sorted(foreign))} are not of the run's scenario, {scenario}",
+        )
 
 
 def _placed(match: Match[str]) -> str:

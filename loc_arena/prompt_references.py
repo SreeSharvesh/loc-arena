@@ -173,7 +173,10 @@ def _monitor_value_files(run_file: Path, document: Mapping[str, object]) -> set[
     monitors = protocol.get("monitors_config") if isinstance(protocol, Mapping) else None
     if not isinstance(monitors, str) or not (path := run_file.parent / monitors).is_file():
         return set()
-    values = yaml.safe_load(path.read_text(encoding="utf-8")).get("prompt_values") or {}
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    values = data.get("prompt_values") if isinstance(data, dict) else None
+    if not isinstance(values, dict):
+        return set()
     return {(REPOSITORY / str(source)).resolve() for source in values.values()}
 
 
@@ -303,7 +306,7 @@ ENGINE_PROMPTS: Final = read_engine_prompts(
         ),
         "inference.monitor": frozenset({"inputs", "company", "lab"}),
         "pr-review.monitor": frozenset(
-            {"inputs", "company", "lab", "control_repository", "policy_directory"},
+            {"inputs", "company", "lab", "control_repository", "policy_directory", "coverage_cover"},
         ),
         "reader.system": frozenset({"claim_limit"}),
         "reader.brief.agents": frozenset(),

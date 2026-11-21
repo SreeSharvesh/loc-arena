@@ -107,7 +107,8 @@ file, `monitor`, a monitor's or service's name, `agent` for every agent, or `rea
 A monitor prompt names nothing of one company or one task. Each such fact is a placeholder, and
 `configs/monitors.yaml` maps it to the scenario file of its value: `prompt_values: {company:
 scenarios/aurora_efficiency/prompts/monitor.company.md}`. The loader fills each fact once, leaves `$inputs` for
-each event's inputs, and refuses a placeholder with no value and a value no monitor prompt names.
+each event's inputs, and refuses a placeholder with no value, a value no monitor prompt names, and, in a run, a
+value file outside that run's scenario.
 
 A fragment only one brief uses is folded into that brief's own file. A fragment stays separate when two or more
 briefs share it, or when it is the kill chain, which variants replace.
