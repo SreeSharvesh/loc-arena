@@ -6,7 +6,7 @@ Every pull request runs the gates as parallel jobs, so it waits for the slowest 
 |---|---|---|
 | `file size (700 lines)` | the file-size rule below | `python3 scripts/check_file_size.py --base origin/main` |
 | `changelog, ruff, ty` | the file-size and changelog checks, Ruff, its formatter and ty | `make checks` |
-| `tests without Docker` | every test not marked `stack` | `make tests` |
+| `tests without Docker (integration)`, `(the rest)` | every test not marked `stack`: those under `tests/integration`, and all the others | `make tests` |
 | `Docker tests (K of 5)` | one of five shares of the test modules marked `stack`, after `make images` | `make stack-tests SHARD=K/5` |
 | `gates` | nothing of its own: it passes only when every job above passed | `make gates` runs them all |
 
