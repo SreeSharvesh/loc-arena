@@ -14,7 +14,7 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
 
 import anyio
@@ -196,3 +196,24 @@ def _list_tools(url: str, token: str, seconds: float) -> tuple[set[str], str]:
         while isinstance(error, ExceptionGroup) and error.exceptions:  # the MCP client's task groups wrap it
             error = error.exceptions[0]
         return set(), f"{type(error).__name__}: {error}"
+
+
+def list_subagent_tools(
+    config: RunConfig,
+    agent: str,
+    kinds: Sequence[str],
+    *,
+    delegates: bool,
+) -> tuple[str, ...]:
+    """The tools of a subagent of ``agent`` of any of ``kinds``: theirs, or the agent's, never subscriptions.
+
+    ``delegate`` is among them when ``delegates``: the subagent is above ``subagents.max_depth``.
+    """
+    named = [config.subagents.definitions[kind].tools for kind in kinds]
+    allowed = None if None in named else {tool for tools in named for tool in tools or ()}
+    held = list_agent_tools(config.agent(agent), spawns=delegates)
+    return tuple(
+        tool
+        for tool in held
+        if tool not in NOTICE_TOOLS and (allowed is None or tool in {*allowed, DELEGATE_TOOL})
+    )

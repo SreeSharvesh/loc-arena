@@ -43,8 +43,9 @@ from loc_arena.own_sessions import (
     loop_working_directory,
     write_pi_home,
 )
-from loc_arena.subagent_config import DELEGATE_TOOL, list_subagent_tools, name_lanes
+from loc_arena.subagent_config import DELEGATE_TOOL, name_lanes
 from loc_arena.tool_list_notifier import NOTIFIER_KEY_SECRET_NAME
+from loc_arena.tool_offer import list_subagent_tools
 from loc_arena.tool_records import append_to, record_ended
 from loc_arena.workspace_service import subagent_token
 

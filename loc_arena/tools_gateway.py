@@ -11,7 +11,7 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, TypedDict
 
 from loc_arena.notices import NOTICE_TOOLS
-from loc_arena.subagent_config import DELEGATE_TOOL, list_spawners, list_subagent_tools, name_lanes
+from loc_arena.subagent_config import DELEGATE_TOOL, list_spawners, name_lanes
 from loc_arena.telemetry_stack import (
     TELEMETRY_NETWORK,
     GatewayTracing,
@@ -28,6 +28,7 @@ from loc_arena.tool_authorization import (
     TOOLS_GATEWAY_SERVICE as TOOLS_GATEWAY_SERVICE,  # its compose service, by the name every module uses
 )
 from loc_arena.tool_list_notifier import TOOL_LIST_NOTIFIER
+from loc_arena.tool_offer import list_subagent_tools
 from loc_arena.workspace_service import WORKSPACE_SERVICE, WORKSPACE_TOOLS, subagent_token, workspace_key
 from loc_arena.yaml_documents import dump_document
 
