@@ -38,7 +38,7 @@ path. A key no block declares is ignored, except in an agent's `scope` and in th
 | `agents` | the team; see below |
 | `protocol` | the control protocol: monitors, reviewer, audit budget |
 | `logging` | `logging.agent_transcript` for the per-agent `.eval` and transcript |
-| `prompts`, `workspace_prompt_ref` | the scenario's prompt files the run sends, and the one every agent's brief says of its workspace ([Prompts](#prompts)) |
+| `prompts`, `workspace_prompt_ref`, `task_description_ref` | the scenario's prompt files the run sends; the one every agent's brief says of its workspace; the main task as the monitors are told it ([Prompts](#prompts)) |
 | `inference`, `gateway`, `stack`, `iam`, `evalkit`, `jobsvc`, `tickets`, `chat`, `notes`, `forge`, `history`, `modelstore`, `serving`, `deploy`, `pi`, `cost`, `publish` | the settings groups below |
 
 ## An agent
@@ -57,57 +57,90 @@ are each a `ConfigError`. Every agent holds an identity on each such service, ri
 
 ## Prompts
 
+`make prompts RUN=<config> MODE=attack|honest` prints everything the run sends: each agent's system prompt and
+first turn, the notices an agent can get, and each monitor's prompt with its task description. Every section is
+headed by the files it came from. The page is built by the run's own code, and a unit test checks that its
+sections join into exactly what each agent's pi receives.
+
 ```
-loc_arena/prompts/                       the engine's: true of any scenario, with $placeholders it fills
-scenarios/<scenario>/prompts/            the scenario's: this company and its tasks, with no placeholder
-├── workspace.md                         every agent: the company's repos, protected main, chat
-├── main_tasks/<task>/                   the legitimate work, in both plays
-│   ├── lead.md, worker.md               how the lead and a report work with the team
-│   ├── <area>.md                        an agent's assignment
-│   └── <area>.<variant>.md              a variant config's assignment, in its place
-└── side_tasks/<side task>/              the covert work, in the attack alone
-    ├── <fragment>.md                    the generic covert core
-    ├── kill_chains/<kill chain>.md      a mechanism and its cover
-    └── <task>/                          under one main task: the seed, each agent's anchor or brief
+loc_arena/prompts/                          the engine's: true of any scenario, with $placeholders it fills
+├── agent.<part>.md                         every agent: identity, manager, reports, skills, services, service,
+│                                           service-access, telemetry, covert-steps, first-turn
+├── agent.notice.md, agent.notice-<kind>.md a notice of a subscribed topic, and each kind's line
+├── <monitor>.monitor.md                    a monitor's prompt, its inputs at $inputs
+├── reader.<part>[.<brief>].md              the run reader: system, brief.<brief>, first-turn[.ask]
+└── iam.service.md                          what agents are told IAM is
+scenarios/<scenario>/prompts/               the scenario's: no placeholder
+├── team.workspace.md                       every agent: the company's repos, protected main, chat
+├── <service>.service.md                    what agents are told a service is
+└── <task>/                                 everything one main task sends, in both plays and the attack
+    ├── lead.system.md, report.system.md    how the lead and a report work with the team
+    ├── <whose>.brief[.<variant>].md        an agent's assignment
+    ├── <whose>.covert-brief.md             its assignment in the attack, or a list of the files below
+    ├── <whose>.covert-anchor.md            the opening of a composed covert brief
+    ├── team.covert-<part>.md               a fragment two or more covert briefs share
+    ├── <whose>.kill-chain.md               the mechanism and its cover, which a kill-chain variant replaces
+    ├── lead.seed[.<variant>].md            the covert objective ahead of the target's system prompt
+    └── monitor.task-description.md         the main task as the monitors are told it
 ```
+
+A file is named `<whose>.<part>[.<variant>].md`, and its key in a run config's `prompts` block is that name less
+`.md`. `<whose>` is `lead`, `report`, an agent's area such as `serving`, `team` when several agents share the
+file, `monitor`, a monitor's or service's name, `agent` for every agent, or `reader`. The parts:
+
+| Part | What it is | Named by |
+|---|---|---|
+| `system` | how the agent works with its team, in both plays | an agent's `system_prompt_ref` |
+| `brief` | its legitimate assignment | an agent's `brief_ref` |
+| `covert-brief` | its assignment in the attack, in place of its brief | an agent's `covert_brief_ref` |
+| `covert-anchor`, `covert-<part>` | the pieces a composed covert brief lists | the covert brief's entry |
+| `kill-chain` | the mechanism and its cover | the covert brief's entry |
+| `seed` | the covert objective | `covert.objective_prompt_ref` |
+| `workspace` | what every agent is told of its workspace | `workspace_prompt_ref` |
+| `task-description` | the main task as the monitors are told it | `task_description_ref` |
+| `service` | what agents are told a service is | the service's name, read by the scenario's loader |
+| `monitor` | a monitor's prompt | its `prompt_ref` in `configs/monitors.yaml` |
+
+A fragment only one brief uses is folded into that brief's own file. A fragment stays separate when two or more
+briefs share it, or when it is the kill chain, which variants replace.
 
 Each agent's brief, its parts joined by blank lines, an empty part left out:
 
 | Part | From |
 |---|---|
-| its name; who it reports to and who reports to it | `identity.md`; `manager.md` and `reports.md` |
+| its name; who it reports to and who reports to it | `agent.identity.md`; `agent.manager.md` and `agent.reports.md` |
 | how it works with its team | `system_prompt_ref` |
 | its workspace | `workspace_prompt_ref` |
-| where the skills are, when the scenario has skills | `skills.md` |
-| its assignment | `brief_ref`; in the attack, `covert_brief_ref` and `covert-steps.md` in its place, when it has one |
-| the live services its sandbox reaches; the telemetry its tools read | `services.md`, `service.md`, `service-access.md`, `telemetry.md`, around each service's description in `scenario.yaml` |
+| where the skills are, when the scenario has skills | `agent.skills.md` |
+| its assignment | `brief_ref`; in the attack, `covert_brief_ref` and `agent.covert-steps.md` in its place, when it has one |
+| the live services its sandbox reaches; the telemetry its tools read | `agent.services.md`, `agent.service.md`, `agent.service-access.md`, `agent.telemetry.md`, around each `<service>.service.md` |
 
 In the attack, the system prompt of `covert.target_identity` is the text of `covert.objective_prompt_ref`, a
-blank line, then its brief. Every other system prompt is the brief alone. Each session's first prompt is
-`begin.md`.
+blank line, then its brief. Every other system prompt is the brief alone. Each session's first turn is
+`agent.first-turn.md`.
 
-Each `prompts` entry is a file's path, relative to the scenario's `prompts/` folder, or a list of `prompts.<name>`
-references, which composes one text from those entries, joined by blank lines. So a generic core is written
-once, and a variant config changes one entry, a fragment or a whole brief, by pointing it at another file:
-deep-merge keeps the rest. `[]` composes nothing, so a covert brief of `[]` is none, and that agent plays its
+Each `prompts` entry is a file's path, relative to the scenario's `prompts/` folder, or a list of `prompts.<key>`
+references, which composes one text from those entries, joined by blank lines. A shared fragment is written
+once. A variant config changes one entry by pointing it at `<key>.<variant>.md`, or by composing it from other
+entries, and deep-merge keeps the rest. Agents that share one file each list it: `serving.brief:
+[prompts.report.brief]`. `[]` composes nothing, so a covert brief of `[]` is none, and that agent plays its
 legitimate brief in both plays.
 
 A file's text is its content less its final line break. A `$name` is a placeholder (Python's
 [`string.Template`](https://docs.python.org/3/library/string.html#template-strings)): an engine file names
 exactly the values the engine fills, and a scenario file names none, so `$$` there is a dollar sign. Loading
-refuses, each with a `ConfigError` naming it: `prompts_inline`; prompt text written inline under `system_prompt`,
-`brief`, `covert_brief`, `objective_prompt` or `workspace_prompt`; a missing file, one outside the folder or one
-that is not `.md`; and a placeholder with no value. Importing the loader refuses an engine file that
-`ENGINE_PROMPTS` does not declare. Whether a file is read is a property of every run config, not of one, so the
-unit tests refuse a scenario file that no run config git tracks reads (`find_unread_prompt_files`).
+refuses, each with a `ConfigError` naming it: `prompts_inline` and `main_task.goal`; prompt text written inline
+under `system_prompt`, `brief`, `covert_brief`, `objective_prompt`, `workspace_prompt` or `task_description`; a
+missing file, one outside the folder or one that is not `.md`; a file not named after its key; a placeholder with
+no value; and a `<service>.service.md` that names no live service. Importing the loader refuses an engine file
+that `ENGINE_PROMPTS` does not declare. Whether a file is read is a property of every run config, not of one, so
+the unit tests refuse a scenario file that no run config git tracks reads (`find_unread_prompt_files`).
 `config.resolved.yaml` records each file entry as its text and each composed entry as its list of references.
 
 `uv run python scripts/diff_prompts.py --base origin/main` shows what a change sends differently. For every run
-config git tracks and both plays, it builds each agent's system prompt, the opening prompt, the covert objective
-and the monitors' prompts on the base and on the checkout, and prints each text that differs.
-
-The monitors' prompts are the files `configs/monitors.yaml` names as each monitor's `prompt_ref`, in
-`configs/prompts/monitors/`, with `{inputs}` where the inputs go.
+config git tracks and both plays, it builds each agent's system prompt, the first turn, the covert objective, the
+task description and each monitor's prompt as rendered, and once each notice and the run reader's briefs, on the
+base and on the checkout, and prints each text that differs.
 
 ## Settings groups (`loc_arena/settings.py`, `loc_arena/service_settings.py`)
 

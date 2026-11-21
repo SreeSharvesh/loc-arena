@@ -19,6 +19,22 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [999] - 2026-11-21: Every prompt is a canonically named file, shown together
+
+### Added
+
+- The run prints everything it sends each agent and monitor, each section headed by its file, through `make prompts`, so one page shows what a model receives ([docs](docs/run-config.md#prompts)).
+
+### Changed
+
+- The monitor reads its prompt and its task description from Markdown files, with its inputs at `$inputs`, and every run sends the same bytes as before ([docs](docs/run-config.md#prompts)).
+- The scenario keeps each service's description and everything one task sends in Markdown files named after whose part they are, which run configs name by the same key ([docs](docs/run-config.md#prompts)).
+- The agent's notices, first turn and brief come from the engine's Markdown files, and the run reader's briefs move beside them ([docs](docs/run-config.md#prompts)).
+
+### Removed
+
+- The run no longer reads `main_task.goal` or the old prompt keys: a config that sets one is refused at load, or its file is not found ([docs](docs/run-config.md#prompts)).
+
 ## [412] - 2026-11-21: CI shares the Docker tests out evenly by time
 
 ### Changed
