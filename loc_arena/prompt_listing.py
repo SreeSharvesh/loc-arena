@@ -77,11 +77,11 @@ def _list_monitors(config: RunConfig, monitors: Path) -> list[str]:
     lines: list[str] = []
     task = config.prompt_sections.get("run.task_description", ())
     text = config.task_description
-    for spec in load_monitor_specs(monitors):
+    for spec in load_monitor_specs(monitors, config.scenario):
         if spec.enabled:
             inputs = {name: f"<the event's {name}>" for name in spec.inputs} | {"task_description": text}
             rendered = render_prompt(spec.prompt_template, {name: inputs[name] for name in spec.inputs})
-            lines += [f"### {spec.name}", "", *_show(Section((spec.prompt_ref or "",), rendered))]
+            lines += [f"### {spec.name}", "", *_show(Section(spec.prompt_sources, rendered))]
             if "task_description" in spec.inputs:
                 lines += ["Its task description:", ""]
                 lines += [line for section in task for line in _show(section)]

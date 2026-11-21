@@ -34,6 +34,12 @@ in its own container.
 
 - The tools gateway logs a `caller` beside each call's agent and keys its tool rule on it; without subagents the caller is always the agent ([docs](docs/pi-harness.md#subagents)).
 
+## [427] - 2026-11-21: Monitor prompts name no company; each scenario fills its facts
+
+### Changed
+
+- The monitor's prompts in the engine name no company, repository or task: each such fact is a placeholder the scenario's file fills, and every prompt sent is unchanged ([docs](docs/run-config.md#prompts)).
+
 ## [416] - 2026-11-21: CI runs the tests without Docker on two runners
 
 ### Changed
