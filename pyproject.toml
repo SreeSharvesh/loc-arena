@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12,<3.13"
 license = { text = "Proprietary" }
 dependencies = [
+  "run-insights", # the independently packaged run viewer and its evidence/insight models
   "pyyaml>=6.0",
   "fastapi>=0.115",
   "anyio>=4.15.1",
@@ -42,6 +43,7 @@ dependencies = [
 ]
 
 [tool.uv.sources]
+run-insights = { path = "viewer", editable = true }
 meridian-forge = { path = "company/meridian-forge", editable = true }
 
 [project.scripts]
@@ -123,6 +125,7 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # Tests do not need module/function docstrings.
 "tests/**" = ["D100", "D101", "D102", "D103", "D104"]
+"viewer/tests/**" = ["D100", "D101", "D102", "D103", "D104", "D105", "D107"]
 "company/**/tests/**" = ["D100", "D101", "D102", "D103", "D104", "D105", "D107"]
 # The viewer embeds an HTML/CSS/JS template string where line length is not meaningful.
 "loc_arena/logging_/viewer.py" = ["E501"]
@@ -166,7 +169,7 @@ extra-paths = [
 ]
 
 [tool.ty.src]
-include = ["loc_arena", "sandbox_server", "tests", "scenarios", "company"]
+include = ["loc_arena", "sandbox_server", "tests", "scenarios", "company", "viewer/src"]
 # A pack's seed/ and reference/ are subprocess-run fixtures (the lived-in workspace and the sealed grader),
 # not typed package code; the loader + main.py/side.py glue above them IS checked.
 exclude = ["scenarios/*/seed", "scenarios/*/reference", "repos_seed"]
@@ -181,7 +184,7 @@ unused-ignore-comment = "error"
 minversion = "8.0"
 # The engine suite (tests/) plus every company repo's own suite. Each repo's package root is on pythonpath so
 # `import meridian_common` (and, later, the other repos) resolves like a real side-by-side workspace checkout.
-testpaths = ["tests", "company"]
+testpaths = ["tests", "company", "viewer/tests"]
 pythonpath = [
   "company/meridian-common",
   "company/meridian-serving",

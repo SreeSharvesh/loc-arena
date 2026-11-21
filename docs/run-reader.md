@@ -13,6 +13,29 @@ make read RUN_DIR=logs/<run>/<run>__<id> ASK='Did any agent read its credentials
 
 `loc_arena/run_reader.py` · `loc_arena/run_facts.py` · `loc_arena/reading_check.py` · `loc_arena/reader_briefs/`
 
+## Insights
+
+`make insights RUN_DIR=<run or logs directory>` turns each graded run into an attack chain across the team and
+its interesting events, every item citing records that code checks. The reader's container makes one model call
+on its gateway route, no agent: the call holds the run's digest (`run_insights/digest.py`), the attack play's
+sessions in order (each turn's reasoning, calls and results) and the services' own records, with reasoning
+clipped at 800 characters and calls and results at 300. The honest twin, the mirror log and the per-call model
+records are left out. Each digest line has a short handle (`[r12]`) that a citation names and code maps back to
+its record, since a model shortens long IDs. A run of 230k to 580k tokens costs $0.12 to $0.30 on the reader's
+model and takes under a minute.
+
+Each run gets `readings/insights.json` and `readings/insights.html`, a self-contained report that opens with the
+insights and calls no model. The chain is framed by where the attempt started, and why that step is the start,
+and how it ended; each cited step shows the agent's reasoning, its tool calls with their arguments, and each
+result. All records opens on agent turns, one line each of reasoning, action and result.
+A run is analyzed again only when its records, the reader's model, the brief (`reader_briefs/_insights.md`) or the
+reader's settings change.
+
+The report's page is the `run-insights` package (`viewer/`), which imports nothing of the engine, so it can be
+published alone. `python -m loc_arena.insights_server <logs directory>` serves every bundle at
+`http://127.0.0.1:8844` and can analyze one again from its page; a failed analysis shows the worker's last line
+and keeps its output in `readings/insights.log`.
+
 ## What the reader is given
 
 | File in its home | What |

@@ -11,7 +11,7 @@ BRIEF ?= agents
 LOGS ?= logs
 FILE_SIZE_BASE ?= origin/main
 
-.PHONY: run view explore read watch cost publish-run help gates checks tests stack-tests images setup public-repo fixture-run
+.PHONY: run view explore read insights watch cost publish-run help gates checks tests stack-tests images setup public-repo fixture-run
 
 help:
 	@echo "make setup                                # check toolchain, sync deps, validate config"
@@ -21,6 +21,7 @@ help:
 	@echo "make view RUN=aurora-efficiency                       # open the latest report.html + inspect view"
 	@echo "make explore [LOGS=logs]                  # build the run explorer over every run in LOGS and open it"
 	@echo "make read RUN_DIR=<run directory> [BRIEF=agents|monitors] [ASK='question']  # an agent reads one run: a checked report, or a cited answer"
+	@echo "make insights RUN_DIR=<run or logs directory>  # each run's attack chain and interesting events, cited, in readings/insights.html"
 	@echo "make watch [RUN_DIR=<run directory>]      # each agent's steps of the run playing, or of a finished run"
 	@echo "make cost RUN_DIR=<run directory> [OTHER=<run directory>]  # what a run cost, or how a second run's cost differs"
 	@echo "make publish-run RUN_DIR=<run directory>  # scan a graded run for real secrets, then publish it to private storage"
@@ -52,6 +53,9 @@ unexport ASK  # exporting a command-line variable expands it, and with it any ma
 read: export READER_QUESTION := $(value ASK)
 read:  # the question reaches the command as written: neither make nor the shell expands it
 	@uv run python -m loc_arena.cli read "$(RUN_DIR)" --brief "$(BRIEF)" --run "$(RUN)" $(if $(strip $(value ASK)),--ask "$$READER_QUESTION")
+
+insights:  # every graded bundle under RUN_DIR gets readings/insights.json and a ready-to-open insights.html
+	@uv run python -m loc_arena.insights "$(RUN_DIR)" --config configs/$(RUN).yaml
 
 watch:
 	@uv run python -m loc_arena.cli watch $(RUN_DIR)

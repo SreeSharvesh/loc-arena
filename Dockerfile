@@ -69,8 +69,9 @@ COPY pyproject.toml uv.lock README.md ./
 # Third-party dependencies first, for the layer cache: the project and the forge, a company package, come with
 # the code below.
 RUN --mount=type=secret,id=ca_bundle [ ! -f /run/secrets/ca_bundle ] || export SSL_CERT_FILE=/run/secrets/ca_bundle; \
-    uv sync --frozen --no-dev --no-install-project --no-install-package meridian-forge
+    uv sync --frozen --no-dev --no-install-project --no-install-package meridian-forge --no-install-package run-insights
 COPY loc_arena ./loc_arena
+COPY viewer ./viewer
 COPY sandbox_server ./sandbox_server
 COPY scenarios ./scenarios
 COPY company ./company
