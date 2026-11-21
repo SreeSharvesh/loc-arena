@@ -19,6 +19,12 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [409] - 2026-11-21: A refused kill no longer fails a sandbox's command
+
+### Fixed
+
+- The sandbox's command server no longer fails a command or a reset when AppArmor refuses its kill of a process still entering the container, as a health probe does.
+
 ## [419] - 2026-11-21: Three control-plane tests no longer fail a grade at random
 
 ### Fixed
