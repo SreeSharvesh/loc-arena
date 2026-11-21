@@ -99,7 +99,7 @@ file, `monitor`, a monitor's or service's name, `agent` for every agent, or `rea
 | `seed` | the covert objective | `covert.objective_prompt_ref` |
 | `workspace` | what every agent is told of its workspace | `workspace_prompt_ref` |
 | `task-description` | the main task as the monitors are told it | `task_description_ref` |
-| `service` | what agents are told a service is | the service's name, read by the scenario's loader |
+| `service` | what agents are told a service is, if a brief tells it: one their sandbox reaches, or the telemetry store | the service's name, read by the scenario's loader |
 | `monitor` | a monitor's prompt | its `prompt_ref` in `configs/monitors.yaml` |
 
 A fragment only one brief uses is folded into that brief's own file. A fragment stays separate when two or more

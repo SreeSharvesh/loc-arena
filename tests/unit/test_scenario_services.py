@@ -21,7 +21,7 @@ def root(tmp_path: Path) -> Path:
     return tmp_path
 
 
-def load_services(root: Path, services: str) -> object:
+def load_services(root: Path, services: str) -> tuple[LiveService, ...]:
     (root / "pack" / "scenario.yaml").write_text(PACK_HEADER + services)
     return load_scenario("pack", root=root).live_services
 

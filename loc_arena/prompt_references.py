@@ -23,7 +23,13 @@ from string import Template
 from typing import Final
 
 from pydantic.dataclasses import dataclass
-from scenarios.loader import PROMPTS_DIRECTORY, SCENARIOS_ROOT, SERVICE_PROMPT_SUFFIX, read_prompt
+from scenarios.loader import (
+    PROMPTS_DIRECTORY,
+    SCENARIOS_ROOT,
+    SERVICE_PROMPT_SUFFIX,
+    load_scenario,
+    read_prompt,
+)
 
 REPOSITORY: Final = SCENARIOS_ROOT.parent
 ENGINE_PROMPTS_DIRECTORY: Final = Path(__file__).parent / PROMPTS_DIRECTORY
@@ -155,8 +161,16 @@ def find_unread_prompt_files(documents: Mapping[str, Mapping[str, object]], scen
     return [
         str(path.relative_to(root))
         for path in sorted(root.rglob(f"*{PROMPT_SUFFIX}"))
-        if path not in read and not (path.parent == root and path.name.endswith(SERVICE_PROMPT_SUFFIX))
+        if path not in read and path not in _told_service_descriptions(scenario)
     ]
+
+
+def _told_service_descriptions(scenario: str) -> set[Path]:
+    """``scenario``'s ``<service>.service.md`` files a brief can tell: a reached service's, a store's."""
+    services = load_scenario(scenario).live_services
+    told = [service for service in services if (not service.tools or service.rights) or service.collects]
+    root = scenario_prompts(scenario)
+    return {(root / f"{service.name}{SERVICE_PROMPT_SUFFIX}").resolve() for service in told}
 
 
 def _references(data: Mapping[str, object]) -> dict[str, tuple[str, dict[str, object]]]:

@@ -41,7 +41,7 @@ from pydantic import BaseModel, Field, JsonValue
 from loc_arena.config import ModelSpec, RunConfig
 from loc_arena.gateway.core import GATEWAY_TOKEN_FILE_VARIABLE, GATEWAY_URL_VARIABLE
 from loc_arena.gateway.loop_routes import LOOP_ROUTE_PREFIX, Loops
-from loc_arena.notices import Notices, add_notice_tools
+from loc_arena.notices import Notices, add_notice_tools, turn_of
 from loc_arena.prompt_references import ENGINE_PROMPTS
 from loc_arena.sandbox import token_secret_name
 from loc_arena.scaffold.code_services import CodeServices
@@ -355,7 +355,7 @@ def play_sessions(
             new = notices.read()
             for notice in new:
                 sent = notice.agent in sessions and sessions[notice.agent].prompt(
-                    ENGINE_PROMPTS["agent.notice"].substitute(text=notice.text),
+                    turn_of(notice.text),
                 )
                 record(json.dumps({"time": datetime.now(UTC).isoformat(), **asdict(notice), "sent": sent}))
             if idle and not new and (monotonic() >= floor or not sessions):

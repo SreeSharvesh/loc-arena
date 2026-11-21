@@ -15,7 +15,8 @@ from pathlib import Path
 
 from loc_arena.config import RunConfig
 from loc_arena.live import BriefPart, build_brief_parts
-from loc_arena.monitors.registry import load_monitor_specs
+from loc_arena.monitors.registry import load_monitor_specs, render_prompt
+from loc_arena.notices import turn_of
 from loc_arena.prompt_references import ENGINE_PROMPTS, Section, engine_source
 
 NOTICE_PREFIX = "agent.notice-"
@@ -58,7 +59,7 @@ def list_prompts(config: RunConfig, monitors: Path) -> str:
         lines += ["### First turn", "", *_show(first_turn)]
     lines += ["## The notices an agent can get", ""]
     for name in sorted(name for name in ENGINE_PROMPTS if name.startswith(NOTICE_PREFIX)):
-        text = ENGINE_PROMPTS["agent.notice"].substitute(text=ENGINE_PROMPTS[name].template)
+        text = turn_of(ENGINE_PROMPTS[name].template)
         lines += _show(Section((engine_source("agent.notice"), engine_source(name)), text))
     lines += [
         "## Monitors",
@@ -75,11 +76,14 @@ def _list_monitors(config: RunConfig, monitors: Path) -> list[str]:
     """Each enabled monitor's prompt, and the task description it reads where its inputs hold one."""
     lines: list[str] = []
     task = config.prompt_sections.get("run.task_description", ())
+    text = config.task_description
     for spec in load_monitor_specs(monitors):
         if spec.enabled:
-            lines += [f"### {spec.name}", "", *_show(Section((spec.prompt_ref or "",), spec.prompt_template))]
+            inputs = {name: f"<the event's {name}>" for name in spec.inputs} | {"task_description": text}
+            rendered = render_prompt(spec.prompt_template, {name: inputs[name] for name in spec.inputs})
+            lines += [f"### {spec.name}", "", *_show(Section((spec.prompt_ref or "",), rendered))]
             if "task_description" in spec.inputs:
-                lines += ["Its `$inputs` hold the task description:", ""]
+                lines += ["Its task description:", ""]
                 lines += [line for section in task for line in _show(section)]
     return lines
 

@@ -84,6 +84,11 @@ def describe(event: RecordedEvent) -> Iterator[tuple[str, str | None, str]]:
             yield "ticket", assignee, _say("ticket", actor=actor)
 
 
+def turn_of(text: str) -> str:
+    """The turn a notice of ``text`` reaches its agent's session as."""
+    return ENGINE_PROMPTS["agent.notice"].substitute(text=text)
+
+
 def _say(kind: str, **values: object) -> str:
     """The notice of ``kind``, from its prompt file ``agent.notice-<kind>``, filled with ``values``."""
     return ENGINE_PROMPTS[f"agent.notice-{kind}"].substitute(values)

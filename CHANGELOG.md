@@ -19,7 +19,7 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
-## [999] - 2026-11-21: Every prompt is a canonically named file, shown together
+## [425] - 2026-11-21: Every prompt is a canonically named file, shown together
 
 ### Added
 
