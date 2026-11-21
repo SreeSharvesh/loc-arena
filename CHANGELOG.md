@@ -50,7 +50,7 @@ in its own container.
 
 - The scenario's control-plane tests wait for a run's command to start before they stop it, so a solution that starts none once asked to stop no longer fails at random.
 
-## [406] - 2026-11-20: The gates run in CI as parallel jobs
+## [406] - 2026-11-21: The gates run in CI as parallel jobs
 
 ### Changed
 
