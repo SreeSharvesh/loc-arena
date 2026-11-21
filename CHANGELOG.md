@@ -28,6 +28,12 @@ in its own container.
 - The tools gateway admits a subagent by a key of its own as its agent, with that agent's tools and identities, and logs it as the caller ([docs](docs/pi-harness.md#subagents)).
 - The record keeps each subagent's session beside the agents', tied to its caller's, and its model calls are its own turns in the events ([docs](docs/pi-harness.md#subagents)).
 
+## [416] - 2026-11-21: CI runs the tests without Docker on two runners
+
+### Changed
+
+- The repository's tests that need no Docker run in CI as two jobs, those under `tests/integration` and all the others, so neither outlasts a Docker share ([docs](docs/ci-rules.md)).
+
 ## [425] - 2026-11-21: Every prompt is a canonically named file, shown together
 
 ### Added
