@@ -25,6 +25,12 @@ in its own container.
 
 - The repository's Docker tests run in CI as five shares made even by the time each module says it takes, so no share holds two slow modules ([docs](docs/ci-rules.md)).
 
+## [407] - 2026-11-21: The model gateway's stack tests run in CI
+
+### Fixed
+
+- The repository's model gateway stack tests run in CI, which skipped all 20 because a runner starts without the gateway's and the Collector's images; the arena behaves as before.
+
 ## [409] - 2026-11-21: A refused kill no longer fails a sandbox's command
 
 ### Fixed
