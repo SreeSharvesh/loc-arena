@@ -25,6 +25,12 @@ in its own container.
 
 - The repository's Docker tests run in CI as five shares made even by the time each module says it takes, so no share holds two slow modules ([docs](docs/ci-rules.md)).
 
+## [417] - 2026-11-21: The Docker tests make their tool calls from one process
+
+### Changed
+
+- The repository's deploy, telemetry and release tests make their tool calls from one process that stays up, where each call imported the MCP client again; the arena behaves as before.
+
 ## [422] - 2026-11-21: Every prompt a run sends is a Markdown file
 
 ### Added
