@@ -132,14 +132,21 @@ call reports progress every `subagents.progress_seconds`, which keeps pi's MCP t
 | its session | `loops/<agent id>.<n>/.pi/session.jsonl`, whose header names its caller's session, by its path in the episode, as `parentSession`, pi's own link from a session to its parent |
 | its record | `subagents.jsonl` in the play's directory: its start, with its caller, kind, task and tools, and its end, with its answer |
 
-A `delegate` call that would pass `max_depth`, `max_concurrent` or `max_children`, or names no kind, starts nothing
-and answers why; a subagent whose pi cannot start is recorded as `failed`. A call that ends early, cut by pi or by the
-end of play, ends its subagent too. Play waits while a subagent works, as it waits for an agent's session, and the
+A `delegate` call that would pass `max_depth`, `max_concurrent`, `max_children` or `max_task_characters`, or names no
+kind, starts nothing and answers why; a subagent whose pi cannot start is recorded as `failed`. A call that ends early,
+cut by pi or by the end of play, ends its subagent too and is recorded with its answer so far. A subagent's own
+subagent holds no tool its caller lacks. Play waits while a subagent works, as it waits for an agent's session, and the
 wall clock ends both, on one deadline.
 After play, a subagent's model calls are its own turns, and its workspace calls are placed in them, on every lane
 the run config renders, started or not; its calls of the
 company's tools are recorded under its agent's identity, which the services saw, and placed in its agent's turn
 that holds the `delegate` call.
+
+Lanes are rendered before play and bound to no kind, so the gateway allows each lane the tools of all its agent's
+kinds; pi's `--tools` holds a subagent to its own kind's. A kind with `bash` runs commands in its agent's sandbox,
+which holds the agent's token and identities: such a subagent holds its agent's whole access, and what it does that
+way is recorded under its agent. A `delegate` called from inside `bash` waits for the agent's own turn, which that
+command holds, so its subagent's workspace calls wait until the command's timeout.
 
 ## Watching the sessions while a run plays
 

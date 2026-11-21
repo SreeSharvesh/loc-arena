@@ -45,7 +45,7 @@ from loc_arena.own_sessions import (
 )
 from loc_arena.subagent_config import DELEGATE_TOOL, list_subagent_tools, name_lanes
 from loc_arena.tool_list_notifier import NOTIFIER_KEY_SECRET_NAME
-from loc_arena.tool_records import append_to
+from loc_arena.tool_records import append_to, record_ended
 from loc_arena.workspace_service import subagent_token
 
 SUBAGENTS_FILE = "subagents.jsonl"  # in a play's directory: each subagent's start and end
@@ -60,6 +60,7 @@ class Subagents:
         self._homes, self._record = directory / LOOPS_DIRECTORY, append_to(directory / SUBAGENTS_FILE)
         self._ids = [child for child, agent in name_lanes(config).items() if agent in briefs]
         self._parents: dict[str, str] = {}  # each subagent's caller
+        self._tools: dict[str, tuple[str, ...]] = {}  # each subagent's tools
         self._working: dict[str, PiSession] = {}
         self._ending: list[PiSession] = []  # what play's end stopped, still to exit
         self._lock = threading.Lock()
@@ -76,12 +77,15 @@ class Subagents:
         """Start a ``kind`` subagent of ``caller`` on ``task``: its id and session, or why it did not."""
         agent = caller.partition(".")[0]
         with self._lock:
-            if refusal := self._refuse(caller, agent, kind):
+            if refusal := self._refuse(caller, agent, kind, task):
                 return refusal
             child = next(child for child in self._free(agent))
             self._parents[child] = caller
             delegates = self._depth(child) < self._config.subagents.max_depth
             tools = list_subagent_tools(self._config, agent, [kind], delegates=delegates)
+            if caller in self._tools:  # a subagent's own subagent holds no tool its caller lacks
+                tools = tuple(tool for tool in tools if tool in self._tools[caller])
+            self._tools[child] = tools
             started: dict[str, JsonValue] = {
                 "subagent": child,
                 "agent": agent,
@@ -96,8 +100,11 @@ class Subagents:
                     {"subagent": child, "end": {"reason": "failed", "stderr": str(error)}, "answer": ""},
                 )
                 return f"{child} could not start: {error}"
-            session.prompt(task)
             self._working[child] = session
+            if not session.prompt(task):
+                self._working.pop(child)
+                self._write_end(child, session, session.stop())
+                return f"{child} could not start: its pi took no task"
             return child, session
 
     def finish(self, child: str) -> SessionEnd:
@@ -139,13 +146,15 @@ class Subagents:
     def _free(self, agent: str) -> list[str]:
         return [child for child in self._ids if child.startswith(f"{agent}.") and child not in self._parents]
 
-    def _refuse(self, caller: str, agent: str, kind: str) -> str | None:
+    def _refuse(self, caller: str, agent: str, kind: str, task: str) -> str | None:
         """Why ``caller`` may not start a ``kind`` subagent now, if it may not."""
         bounds = self._config.subagents
         if self._ended:
             return "play has ended"
         if agent not in self._briefs or self._depth(caller) >= bounds.max_depth:
             return f"{caller} may not start subagents"
+        if len(task) > bounds.max_task_characters:
+            return f"a task holds at most {bounds.max_task_characters} characters"
         if kind not in self._briefs[agent]:
             return f"no subagent kind {kind!r}: {', '.join(self._briefs[agent])}"
         if sum(child.partition(".")[0] == agent for child in self._working) >= bounds.max_concurrent:
@@ -214,6 +223,7 @@ def add_delegate_tool(server: MCPServer, subagents: Subagents, config: RunConfig
         if isinstance(started, str):
             return {"error": started}
         child, session = started
+        cut = False
         try:
             reported = monotonic()
             while session.is_working():
@@ -221,7 +231,12 @@ def add_delegate_tool(server: MCPServer, subagents: Subagents, config: RunConfig
                     reported = monotonic()
                     await context.report_progress(reported, None, f"{child} is working")  # keeps pi's call
                 await anyio.sleep(poll)
+        except anyio.get_cancelled_exc_class():
+            cut = True
+            raise
         finally:
-            with anyio.CancelScope(shield=True):  # a call cut short still ends its subagent
+            with anyio.CancelScope(shield=True):  # a call cut short still ends its subagent, and is recorded
                 end = await anyio.to_thread.run_sync(subagents.finish, child)
+                if cut:  # the record writes no line of a cancelled call by itself
+                    record_ended({"subagent": child, "answer": session.answer(), "end": end.reason})
         return {"subagent": child, "answer": session.answer(), "end": end.reason}

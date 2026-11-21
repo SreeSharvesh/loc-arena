@@ -54,6 +54,11 @@ class SubagentsConfig:
         description="The children of one agent in a play, its descendants included: each has a lane at "
         "both gateways, rendered before play. A delegate call past it is refused.",
     )
+    max_task_characters: Annotated[StrictInt, Field(ge=1)] = Field(
+        default=8000,
+        description="The longest task a delegate call hands a subagent, which reaches its pi as one line "
+        "that must fit the pipe's buffer whole.",
+    )
     progress_seconds: Annotated[StrictFloat, Field(gt=0)] = Field(
         default=5.0,
         description="How often a delegate call tells its caller its child still works, which keeps pi's MCP "

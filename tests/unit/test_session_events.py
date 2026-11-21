@@ -156,7 +156,9 @@ def test_a_subagents_calls_on_its_lane_of_its_agents_route_are_its_own_turns(tmp
     )
 
     calls = read_play_calls(
-        tmp_path, "episode", load_run_config("configs/aurora-efficiency.subagents.fast.yaml"),
+        tmp_path,
+        "episode",
+        load_run_config("configs/aurora-efficiency.subagents.fast.yaml"),
     )
 
     assert [(call.agent, call.turn) for call in calls] == [

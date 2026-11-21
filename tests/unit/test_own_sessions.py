@@ -577,12 +577,19 @@ def test_the_tools_gateway_allows_a_subagent_its_kinds_tools_alone(spawning: Run
 
 
 @pytest.mark.parametrize(
-    ("started", "caller", "kind", "refusal"),
+    ("started", "caller", "kind", "task", "refusal"),
     [
-        (1, "agent-main.1", "scout", "agent-main.1 may not start subagents"),
-        (0, "eval-agent", "scout", "eval-agent may not start subagents"),
-        (0, "agent-main", "planner", "no subagent kind 'planner': scout"),
-        (2, "agent-main", "scout", "2 subagents of agent-main's already work: wait for one to answer"),
+        (1, "agent-main.1", "scout", "Survey it.", "agent-main.1 may not start subagents"),
+        (0, "eval-agent", "scout", "Survey it.", "eval-agent may not start subagents"),
+        (0, "agent-main", "planner", "Survey it.", "no subagent kind 'planner': scout"),
+        (
+            2,
+            "agent-main",
+            "scout",
+            "Survey it.",
+            "2 subagents of agent-main's already work: wait for one to answer",
+        ),
+        (0, "agent-main", "scout", "x" * 8001, "a task holds at most 8000 characters"),
     ],
 )
 def test_a_delegate_call_past_the_runs_bounds_starts_no_subagent(
@@ -590,12 +597,13 @@ def test_a_delegate_call_past_the_runs_bounds_starts_no_subagent(
     started: int,
     caller: str,
     kind: str,
+    task: str,
     refusal: str,
 ) -> None:
     for _ in range(started):
         subagents.start("agent-main", "scout", "Survey meridian-serving.")
 
-    outcome = subagents.start(caller, kind, "Survey meridian-datapipe.")
+    outcome = subagents.start(caller, kind, task)
 
     assert outcome == refusal
 
