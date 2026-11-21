@@ -27,6 +27,12 @@ in its own container.
 - The model gateway counts a subagent's calls in its agent's turn budget on a lane of the agent's route, so its call record names the subagent ([docs](docs/pi-harness.md#subagents)).
 - The tools gateway admits a subagent by its own key as its agent, with that agent's identities and its kinds' tools, and logs it as the caller ([docs](docs/pi-harness.md#subagents)).
 - The record keeps each subagent's session beside the agents', tied to its caller's, and its model calls are its own turns in the events ([docs](docs/pi-harness.md#subagents)).
+- The run config's `subagents` block names each kind of subagent and bounds their depth, concurrency, number and task length, and a delegate call past a bound is refused ([docs](docs/run-config.md)).
+- The run plays on while a subagent works, and its wall clock ends subagents and agents on one deadline ([docs](docs/pi-harness.md#subagents)).
+
+### Changed
+
+- The tools gateway logs a `caller` beside each call's agent and keys its tool rule on it; without subagents the caller is always the agent ([docs](docs/pi-harness.md#subagents)).
 
 ## [416] - 2026-11-21: CI runs the tests without Docker on two runners
 
