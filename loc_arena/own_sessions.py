@@ -46,7 +46,7 @@ from loc_arena.prompt_references import ENGINE_PROMPTS
 from loc_arena.sandbox import token_secret_name
 from loc_arena.scaffold.code_services import CodeServices
 from loc_arena.stack_play import EPISODE_SERVICE
-from loc_arena.subagent_config import list_spawners
+from loc_arena.subagent_config import name_lanes
 from loc_arena.task import TOOLS_URL_VARIABLE
 from loc_arena.tool_list_notifier import NOTIFIER_KEY_SECRET_NAME, TOOL_LIST_NOTIFIER, ToolListNotifier
 from loc_arena.tool_offer import await_offered_tools, notify_once_offered
@@ -55,7 +55,6 @@ from loc_arena.workspace_service import (
     WORKSPACE_SERVICE,
     Turns,
     build_workspace_server,
-    name_children,
     serve_workspace,
 )
 
@@ -70,7 +69,7 @@ SESSION_FILE = (
 )  # in a loop's home: pi's record of the session, written as it goes
 SESSION_ENDS_FILE = "session_ends.json"  # in a play's directory: how each agent's session ended
 NOTICES_FILE = "notices.jsonl"  # in a play's directory: each notice, and whether its agent's session took it
-CHILD_KEY_FILE = "tools.key"  # in a subagent's home: its key at the tools gateway
+CHILD_KEY_FILE = "tools.key"  # in a subagent's working directory, outside the run's: its key
 PROVIDER = "gateway"
 TOOLS_SERVER = "meridian"  # the tools reach the model as mcp__meridian__<tool>
 CHAT_PATH = "/chat/completions"  # pi adds it to its provider's URL itself
@@ -280,7 +279,9 @@ def describe_loops(config: RunConfig) -> Loops:
         for agent in config.agents
     }
     overrides = {agent: describe_overrides(config.loop_model(agent)) for agent in calls}
-    children = {agent: name_children(agent, config.subagents.max_children) for agent in list_spawners(config)}
+    children: dict[str, list[str]] = {}
+    for child, agent in name_lanes(config).items():
+        children.setdefault(agent, []).append(child)
     return Loops(calls, overrides, children=children)
 
 
@@ -324,8 +325,8 @@ def write_pi_home(
     (directory / "models.json").write_text(json.dumps({"providers": {PROVIDER: provider}}))
     (directory / "settings.json").write_text(json.dumps(PI_SETTINGS))
     key_path = settings.gateway.secrets_dir / token_secret_name(agent)
-    if child is not None:  # in the child's home, which only the episode reads
-        key_path = home / CHILD_KEY_FILE
+    if child is not None:  # beside its pi, never in the run directory, which is published
+        key_path = loop_working_directory(child.id) / CHILD_KEY_FILE
         key_path.write_text(child.token)
     key_file = shlex.quote(str(key_path))
     server = {
@@ -416,6 +417,7 @@ def play_sessions(
         for agent, end in stopped.items():
             exit_code = sessions[agent].wait(deadline - monotonic())
             ended[agent] = SessionEnd(end.reason, None if end.reason == "ceiling" else exit_code, end.stderr)
+        subagents.wait(deadline - monotonic())
     return {agent: ended[agent] for agent in briefs}
 
 
@@ -446,7 +448,7 @@ def serve_play_tools(
     again, the notifier tells every session to list its tools again.
     """
     secrets_dir, stack = config.settings.gateway.secrets_dir, config.settings.stack
-    workspace = build_workspace_server(code, tokens, records, turns, subagents.children())
+    workspace = build_workspace_server(code, tokens, records, turns, subagents.list_tokens())
     subagents.serve(workspace)
     notifier = ToolListNotifier((secrets_dir / NOTIFIER_KEY_SECRET_NAME).read_text().strip(), EPISODE_SERVICE)
     notify = functools.partial(notifier.notify, stack.tools_offer_seconds)

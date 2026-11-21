@@ -17,7 +17,7 @@ A loop runs nothing itself, so each request may offer its model only tools reach
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from http import HTTPStatus
 from pathlib import Path
@@ -37,13 +37,13 @@ from loc_arena.gateway.model_gateway import (
 )
 from loc_arena.logging_.agent_trace import EpisodeTrace, TurnRecord, TurnRef
 from loc_arena.logging_.events import fingerprint
+from loc_arena.subagent_config import name_lanes
 
 AGENT_MODEL_ROLE = "untrusted_agent"  # the role every agent's loop calls
 UNTRUSTED_ROLE = "untrusted"  # the actor role of an agent's inference_call event
 CREDENTIAL_KIND = "turn_token"  # the sealed record's tag for a sanctioned turn: its agent's route admitted it
 MCP_TOOL_PREFIX = "mcp__"
 MCP_RESOURCE_TOOLS = frozenset({"list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"})
-SUBAGENTS_FILE = "subagents.jsonl"  # in a play's directory: each subagent's start and end (own_sessions)
 SUBAGENT_ROLE = "subagent"  # the actor role of a subagent's events
 
 
@@ -76,20 +76,8 @@ class SessionCall:
 
 def read_play_calls(run_directory: Path, phase: str, config: RunConfig) -> list[SessionCall]:
     """The session calls of the play in the directory ``phase``: its agents' and its subagents'."""
-    lanes = [agent.id for agent in config.agents] + list(read_subagents(run_directory / phase))
+    lanes = [agent.id for agent in config.agents] + list(name_lanes(config))
     return read_session_calls(run_directory, PHASE_PLAYS[phase], lanes)
-
-
-def list_subagents(run_directory: Path, plays: Iterable[str]) -> list[str]:
-    """Each subagent the plays of ``run_directory`` named ``plays`` started."""
-    return [child for play in plays for child in read_subagents(run_directory / play)]
-
-
-def read_subagents(play_directory: Path) -> dict[str, str]:
-    """Each subagent the play in ``play_directory`` started, by id, with the agent whose route it calls."""
-    path = play_directory / SUBAGENTS_FILE
-    lines = [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
-    return {line["subagent"]: line["agent"] for line in lines if "agent" in line}
 
 
 def read_session_calls(run_directory: Path, play: Play, agents: Sequence[str]) -> list[SessionCall]:

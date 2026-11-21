@@ -656,7 +656,7 @@ def test_the_tools_gateway_allows_each_agent_exactly_the_tools_its_run_config_li
             {
                 "allow": 'mcp.tool.name in {"agent-main": {"forge": ["open_pr"], '
                 f'"workspace": {workspace}}}, "controlplane-agent": {{"workspace": {workspace}}}}}'
-                "[apiKey.agent][mcp.tool.target]",
+                "[apiKey.caller][mcp.tool.target]",
             },
         ],
     }

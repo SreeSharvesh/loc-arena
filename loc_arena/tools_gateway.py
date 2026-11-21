@@ -11,7 +11,7 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, TypedDict
 
 from loc_arena.notices import NOTICE_TOOLS
-from loc_arena.subagent_config import list_spawners
+from loc_arena.subagent_config import DELEGATE_TOOL, list_spawners, list_subagent_tools, name_lanes
 from loc_arena.telemetry_stack import (
     TELEMETRY_NETWORK,
     GatewayTracing,
@@ -28,14 +28,7 @@ from loc_arena.tool_authorization import (
     TOOLS_GATEWAY_SERVICE as TOOLS_GATEWAY_SERVICE,  # its compose service, by the name every module uses
 )
 from loc_arena.tool_list_notifier import TOOL_LIST_NOTIFIER
-from loc_arena.workspace_service import (
-    DELEGATE_TOOL,
-    WORKSPACE_SERVICE,
-    WORKSPACE_TOOLS,
-    name_children,
-    subagent_token,
-    workspace_key,
-)
+from loc_arena.workspace_service import WORKSPACE_SERVICE, WORKSPACE_TOOLS, subagent_token, workspace_key
 from loc_arena.yaml_documents import dump_document
 
 if TYPE_CHECKING:  # loc_arena.episode_stack imports this module
@@ -96,7 +89,7 @@ def render_tools_gateway_config(
     nothing on agent-net can read this config back.
     """
     spawners = list_spawners(config)
-    tools = {
+    tools: dict[str, dict[str, Sequence[str]]] = {
         # An agent's session runs nothing itself: its bash, file and subscription tools are a target.
         agent.id: {
             **agent.sandbox.tools,
@@ -108,14 +101,17 @@ def render_tools_gateway_config(
         }
         for agent in config.agents
     }
-    # A subagent holds a key of its own, which names its agent, whose tools and identities it is given, and
-    # itself as the caller, whom the workspace service and the gateway's log name.
-    children = {
-        child: agent for agent in spawners for child in name_children(agent, config.subagents.max_children)
-    }
-    callers = {agent: tokens[agent] for agent in tokens} | {
-        child: subagent_token(tokens[agent], child) for child, agent in children.items()
-    }
+    # A subagent holds a key of its own, keyed by the episode's, which names its agent, whose identities it is
+    # given, and itself as the caller, whom the tools rule, the workspace service and the gateway's log go by.
+    lanes = name_lanes(config) if notifier_key is not None else {}
+    kinds = list(config.subagents.definitions)
+    delegates = config.subagents.max_depth > 1
+    for child, agent in lanes.items():
+        tools[child] = _group_by_service(
+            config,
+            list_subagent_tools(config, agent, kinds, delegates=delegates),
+        )
+    callers = dict(tokens) | {child: subagent_token(str(notifier_key), child) for child in lanes}
     targets = _render_targets(config, tokens, identities, inbox_keys or {}, notifier_key, callers)
     policies = {
         "apiKey": {
@@ -124,14 +120,14 @@ def render_tools_gateway_config(
             "keys": [
                 {
                     "keyHash": f"sha256:{hashlib.sha256(token.encode()).hexdigest()}",
-                    "metadata": {"agent": children.get(caller, caller), "caller": caller},
+                    "metadata": {"agent": lanes.get(caller, caller), "caller": caller},
                 }
                 for caller, token in callers.items()
             ],
         },
         # An agent with no tools on the target has no entry for it, so the rule fails to evaluate and denies.
         "mcpAuthorization": {
-            "rules": [{"allow": f"mcp.tool.name in {json.dumps(tools)}[apiKey.agent][mcp.tool.target]"}],
+            "rules": [{"allow": f"mcp.tool.name in {json.dumps(tools)}[apiKey.caller][mcp.tool.target]"}],
         },
         **render_authorization_policies(config, identities, credentials or {}),
     }
@@ -156,6 +152,14 @@ def render_tools_gateway_config(
         ],
     }
     return dump_document(document)
+
+
+def _group_by_service(config: RunConfig, offered: Sequence[str]) -> dict[str, Sequence[str]]:
+    """``offered``, each tool under the service that serves it: the workspace's, or a live service's."""
+    served = {service.name: service.tools for service in config.live_services} | {
+        WORKSPACE_SERVICE: (*WORKSPACE_TOOLS, *NOTICE_TOOLS, DELEGATE_TOOL),
+    }
+    return {name: [tool for tool in tools if tool in offered] for name, tools in served.items()}
 
 
 class Target(TypedDict, total=False):

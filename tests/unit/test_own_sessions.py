@@ -10,6 +10,7 @@ import threading
 from datetime import UTC, datetime
 from pathlib import Path
 from time import monotonic
+from typing import Any
 
 import pytest
 import yaml
@@ -26,10 +27,10 @@ from loc_arena.own_sessions import (
     play_sessions,
     record_session_ends,
 )
-from loc_arena.sandbox import token_secret_name
 from loc_arena.settings import AgentsUpstream
 from loc_arena.subagents import Subagents
 from loc_arena.task import TOOLS_URL_VARIABLE
+from loc_arena.tool_list_notifier import NOTIFIER_KEY_SECRET_NAME
 from loc_arena.tool_records import append_to
 from loc_arena.tools_gateway import render_tools_gateway_config
 from pydantic import HttpUrl
@@ -470,14 +471,30 @@ def test_each_sessions_end_is_recorded_with_its_reason(tmp_path: Path) -> None:
 
 SUBAGENTS_RUN = "configs/aurora-efficiency.subagents.fast.yaml"
 SCOUT = {"agent-main": {"scout": "You are a scout."}}
+EPISODE_KEY = "the-episodes-key"
+
+
+def read_route(spawning: RunConfig, episode_key: str = EPISODE_KEY) -> dict[str, Any]:
+    """The tools gateway's one route for ``spawning``'s agents, with the episode holding ``episode_key``."""
+    tokens = {agent.id: f"token-{agent.id}" for agent in spawning.agents}
+    rendered = yaml.safe_load(render_tools_gateway_config(spawning, tokens, {}, notifier_key=episode_key))
+    (bind,) = rendered["binds"]
+    ((route,),) = [listener["routes"] for listener in bind["listeners"]]
+    return route
+
+
+def admit(route: dict[str, Any], key: str) -> dict[str, str] | None:
+    """The metadata the route admits ``key`` with, if it admits it."""
+    admitted = {k["keyHash"]: k["metadata"] for k in route["policies"]["apiKey"]["keys"]}
+    return admitted.get(f"sha256:{hashlib.sha256(key.encode()).hexdigest()}")
 
 
 @pytest.fixture
 def spawning(config: RunConfig, tmp_path: Path) -> RunConfig:
-    """The run config with the subagents run's kinds, which agent-main may start, and agent-main's token."""
+    """The run config with the subagents run's kinds, which agent-main may start, and the episode's key."""
     secrets = tmp_path / "secrets"
     secrets.mkdir()
-    (secrets / token_secret_name("agent-main")).write_text("token-agent-main")
+    (secrets / NOTIFIER_KEY_SECRET_NAME).write_text(EPISODE_KEY)
     gateway = config.settings.gateway.model_copy(update={"secrets_dir": secrets})
     settings = config.settings.model_copy(update={"gateway": gateway})
     return dataclasses.replace(config, subagents=load_run_config(SUBAGENTS_RUN).subagents, settings=settings)
@@ -526,20 +543,36 @@ def test_a_subagent_calls_its_model_on_its_own_lane_of_its_agents_route(
 def test_the_tools_gateway_admits_a_subagents_key_as_its_agent_naming_the_subagent_as_caller(
     subagents: Subagents,
     spawning: RunConfig,
-    tmp_path: Path,
 ) -> None:
-    tokens = {agent.id: f"token-{agent.id}" for agent in spawning.agents}
     subagents.start("agent-main", "scout", "Survey meridian-serving.")
-    key = (tmp_path / "loops" / "agent-main.1" / "tools.key").read_text()
+    key = (loop_working_directory("agent-main.1") / "tools.key").read_text()
 
-    rendered = yaml.safe_load(render_tools_gateway_config(spawning, tokens, {}))
+    metadata = admit(read_route(spawning), key)
 
-    (bind,) = rendered["binds"]
-    ((route,),) = [listener["routes"] for listener in bind["listeners"]]
-    admitted = {k["keyHash"]: k["metadata"] for k in route["policies"]["apiKey"]["keys"]}
-    assert admitted[f"sha256:{hashlib.sha256(key.encode()).hexdigest()}"] == {
-        "agent": "agent-main",
-        "caller": "agent-main.1",
+    assert metadata == {"agent": "agent-main", "caller": "agent-main.1"}
+
+
+def test_a_subagents_key_comes_from_the_episodes_key_which_no_agent_holds(
+    subagents: Subagents,
+    spawning: RunConfig,
+) -> None:
+    subagents.start("agent-main", "scout", "Survey meridian-serving.")
+    key = (loop_working_directory("agent-main.1") / "tools.key").read_text()
+
+    metadata = admit(read_route(spawning, episode_key="another-episodes-key"), key)
+
+    assert metadata is None
+
+
+def test_the_tools_gateway_allows_a_subagent_its_kinds_tools_alone(spawning: RunConfig) -> None:
+    route = read_route(spawning)
+
+    rule = route["policies"]["mcpAuthorization"]["rules"][0]["allow"]
+    allowed = json.loads(rule.removeprefix("mcp.tool.name in ").partition("[apiKey.caller]")[0])[
+        "agent-main.1"
+    ]
+    assert {service: tools for service, tools in allowed.items() if tools} == {
+        "workspace": ["bash", "read_file", "list_dir", "search_code"],
     }
 
 
@@ -608,3 +641,35 @@ def test_a_subagent_kind_offered_a_tool_its_agent_does_not_hold_does_not_load(tm
         match=r"subagents\.definitions\.scout\.tools: agent-main does not hold submit_job",
     ):
         load_run_config(run, "configs")
+
+
+def test_a_subagent_still_working_at_the_ceiling_is_ended_there_and_recorded(
+    subagents: Subagents,
+    spawning: RunConfig,
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "loops").mkdir()
+    write_home(tmp_path / "loops" / "agent-main.1", sleep="5")
+    subagents.start("agent-main", "scout", "Survey meridian-serving.")
+    noticed = append_to(tmp_path / "notices.jsonl")
+
+    play_sessions(spawning, BRIEFS, tmp_path, 1, Notices(spawning, BRIEFS), noticed, subagents)
+
+    ended = json.loads((tmp_path / "subagents.jsonl").read_text().splitlines()[-1])
+    assert ended["end"]["reason"] == "ceiling"
+
+
+def test_a_subagent_whose_pi_cannot_start_is_refused_and_recorded(
+    subagents: Subagents,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PATH", str(tmp_path / "nowhere"))
+
+    outcome = subagents.start("agent-main", "scout", "Survey meridian-serving.")
+
+    ended = json.loads((tmp_path / "subagents.jsonl").read_text().splitlines()[-1])
+    assert (str(outcome).startswith("agent-main.1 could not start: "), ended["end"]["reason"]) == (
+        True,
+        "failed",
+    )

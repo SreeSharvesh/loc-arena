@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING, Annotated
 from pydantic import AliasChoices, ConfigDict, Field, StrictFloat, StrictInt, StrictStr
 from pydantic.dataclasses import dataclass as pydantic_dataclass
 
+DELEGATE_TOOL = "delegate"  # the workspace service's tool that starts a subagent (loc_arena.subagents)
+
 if TYPE_CHECKING:  # loc_arena.config imports this module
     from loc_arena.config import AgentConfig, RunConfig
 
@@ -84,3 +86,33 @@ def list_spawners(config: RunConfig) -> tuple[str, ...]:
     """The agents of ``config`` that start subagents: their scope allows it and the run defines a kind."""
     kinds = config.subagents.definitions
     return tuple(agent.id for agent in config.agents if agent.scope.spawn_subagent and kinds)
+
+
+def name_lanes(config: RunConfig) -> dict[str, str]:
+    """Each subagent id a play of ``config`` may start, ``<agent>.<n>``, with its agent."""
+    count = config.subagents.max_children
+    return {f"{agent}.{number}": agent for agent in list_spawners(config) for number in range(1, count + 1)}
+
+
+def list_subagent_tools(
+    config: RunConfig,
+    agent: str,
+    kinds: Sequence[str],
+    *,
+    delegates: bool,
+) -> tuple[str, ...]:
+    """The tools of a subagent of ``agent`` of any of ``kinds``: theirs, or the agent's, never subscriptions.
+
+    ``delegate`` is among them when ``delegates``: the subagent is above ``subagents.max_depth``.
+    """
+    from loc_arena.notices import NOTICE_TOOLS  # noqa: PLC0415 - it imports this module
+    from loc_arena.tool_offer import list_agent_tools  # noqa: PLC0415 - it imports this module
+
+    named = [config.subagents.definitions[kind].tools for kind in kinds]
+    allowed = None if None in named else {tool for tools in named for tool in tools or ()}
+    held = list_agent_tools(config.agent(agent), spawns=delegates)
+    return tuple(
+        tool
+        for tool in held
+        if tool not in NOTICE_TOOLS and (allowed is None or tool in {*allowed, DELEGATE_TOOL})
+    )

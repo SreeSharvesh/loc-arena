@@ -17,7 +17,7 @@ import contextlib
 import hashlib
 import hmac
 import threading
-from collections.abc import AsyncIterator, Iterable, Iterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Iterable, Iterator, Mapping
 from typing import Annotated, cast
 
 import uvicorn
@@ -30,11 +30,11 @@ from starlette.routing import Mount
 
 from loc_arena.mcp_service import ALL_ADDRESSES, build_app, caller_from_token
 from loc_arena.scaffold.code_services import CodeServices
+from loc_arena.subagent_config import DELEGATE_TOOL as DELEGATE_TOOL  # served beside them to a spawner
 from loc_arena.tool_records import Write, tool_call_recorder
 
 WORKSPACE_SERVICE = "workspace"  # its target at the tools gateway, and the name its records are kept under
 WORKSPACE_TOOLS = ("bash", "read_file", "write_file", "edit_file", "list_dir", "search_code")
-DELEGATE_TOOL = "delegate"  # served beside them to an agent that starts subagents (loc_arena.own_sessions)
 _STOP_SECONDS = 5
 _PATH = Annotated[str, Field(description="path relative to the checkout")]
 
@@ -44,14 +44,9 @@ def workspace_key(sandbox_token: str) -> str:
     return hashlib.sha256(f"{WORKSPACE_SERVICE}:{sandbox_token}".encode()).hexdigest()
 
 
-def subagent_token(sandbox_token: str, child: str) -> str:
-    """The token of ``child``, a subagent of the agent holding ``sandbox_token``, at the tools gateway."""
-    return hashlib.sha256(f"subagent:{child}:{sandbox_token}".encode()).hexdigest()
-
-
-def name_children(agent: str, count: int) -> tuple[str, ...]:
-    """The ids of the ``count`` subagents ``agent`` and its descendants may start in a play, in order."""
-    return tuple(f"{agent}.{number}" for number in range(1, count + 1))
+def subagent_token(episode_key: str, child: str) -> str:
+    """The subagent ``child``'s token at the tools gateway, keyed by ``episode_key``, which no agent holds."""
+    return hmac.new(episode_key.encode(), f"subagent:{child}".encode(), hashlib.sha256).hexdigest()
 
 
 class KeyVerifier(TokenVerifier):
@@ -96,16 +91,15 @@ def build_workspace_server(
     sandbox_tokens: Mapping[str, str],
     write: Write,
     turns: Turns,
-    children: Mapping[str, Sequence[str]] | None = None,
+    child_tokens: Mapping[str, str] | None = None,
 ) -> MCPServer:
     """The MCP server of ``code``'s tools for the holders of ``sandbox_tokens``; ``write`` records calls.
 
-    Each of an agent's ``children`` is known by its own key and recorded as itself, and works on its agent's
-    checkout and sandbox, in its agent's turn of ``turns``, as every call does.
+    A subagent ``<agent>.<n>`` of ``child_tokens`` is known by its own key and recorded as itself, and works
+    on its agent's checkout and sandbox, in its agent's turn of ``turns``, as every call does.
     """
-    roots = {child: agent for agent, named in (children or {}).items() for child in named}
     agents = {workspace_key(token): agent for agent, token in sandbox_tokens.items()} | {
-        workspace_key(subagent_token(sandbox_tokens[agent], child)): child for child, agent in roots.items()
+        workspace_key(token): child for child, token in (child_tokens or {}).items()
     }
     server = MCPServer(
         WORKSPACE_SERVICE,
@@ -119,7 +113,7 @@ def build_workspace_server(
         caller = caller_from_token()
         if caller is None:
             return {"error": "no identity: the workspace serves only authenticated callers", "tool": tool}
-        agent = roots.get(caller, caller)
+        agent = caller.partition(".")[0]  # a subagent's agent
         with turns.take(agent) as playing:
             if not playing:
                 return {"error": "play has ended", "tool": tool}
