@@ -187,10 +187,10 @@ run is the end-to-end check of a change to the engine; its scores are not result
   (`pyproject.toml`): more stacks starting together starve each other of CPU and miss their health budgets.
 - **Store every run.** A run you play goes to the private run storage (`publish.repository`) as soon as it ends,
   graded with `make publish-run`, which scans it for secrets. Scan anything else a run yields (an ungraded play,
-  an Inspect log, a monitor re-run, a reading, an analysis) for credentials, then commit it into its run's folder
-  there, or into `spikes/<date>-<name>/` when it spans runs; never leave it only on a branch or a machine that is
-  deleted. Without push access to the storage repository, say so and keep the run directory
-  ([docs](docs/run-storage.md)).
+  an Inspect log, a monitor re-run, a reading, an analysis) with that same scan (`find_secrets` in
+  `loc_arena/run_publish.py`), then commit it into its run's folder there once the publish has filed it, or into
+  `spikes/<date>-<name>/` when no filed run holds it; never leave it only on a branch or a machine that is deleted.
+  Without push access to the storage repository, say so and keep the run directory ([docs](docs/run-storage.md)).
 - **Logging** under `loc_arena/logging_/` has its own rules in `docs/agent-log/agent.md`.
 - **Access requests** go through central IAM (`docs/iam-service/agent.md`).
 

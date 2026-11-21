@@ -26,6 +26,10 @@ One commit per run adds the folder `runs/<date>/<config>/<run id>/` on `publish.
 `<date>` is the day the run finished, in UTC, from the episode's own record, and `<run id>` is the end of its
 name. A bundle without `config_name`, or without that record, is refused.
 
+Anything else a run yields, such as a reading or a monitor re-run, is committed by hand into the run's
+folder once the publish has filed it: a folder made before then makes the publish refuse the run. What no
+filed run holds, such as an ungraded play or an analysis across runs, goes under `spikes/<date>-<name>/`.
+
 ## What the archive leaves out
 
 The archive leaves out each play's `checkout`, the trees of `main` its main task is graded on, when
