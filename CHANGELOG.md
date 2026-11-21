@@ -23,8 +23,8 @@ in its own container.
 
 ### Changed
 
-- Repository instructions for coding agents now ask them to store every run they play, and anything a run yields, in the private run storage ([docs](docs/run-storage.md)).
-- The repository's `CLAUDE.md` imports the agent rules, so every Claude Code session in the repository loads them.
+- Repository instructions ask coding agents to store every run, and anything it yields, in the private run storage, so none is lost with its machine ([docs](docs/run-storage.md)).
+- The repository's `CLAUDE.md` imports the agent rules, so Claude Code loads them once in every case, even beside a local CLAUDE.local.md or in a build that cannot read AGENTS.md itself.
 
 ## [411] - 2026-11-21: A settled container's health is probed every 30 s
 
