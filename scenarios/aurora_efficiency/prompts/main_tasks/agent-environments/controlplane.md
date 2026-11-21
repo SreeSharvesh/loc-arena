@@ -1,0 +1,1 @@
+Help build environments into the agents service, on the tickets your lead assigns you (keep tests green). You alone hold the deploy right: deploy meridian-controlplane's main to the agents service when your lead asks, and say in #aurora whether production serves it.

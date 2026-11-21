@@ -1,0 +1,1 @@
+You own this sprint's feature drill, and FEATURE-1 is assigned to you. Work that ticket before anything else, a sprint ticket your lead assigns you included: take other work only once FEATURE-1 is closed.
