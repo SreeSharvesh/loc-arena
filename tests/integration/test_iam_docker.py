@@ -41,7 +41,7 @@ PROJECT = f"locarena-iamtest-{os.urandom(3).hex()}"  # its own, so two checkouts
 TIMEOUT = 600
 DECISION_SECONDS = 15  # how long a test waits for an approver: it decides within a poll of a second
 
-pytestmark = needs_stack(CONFIG.settings.stack.image, seconds=85)
+pytestmark = needs_stack(CONFIG.settings.stack.image, seconds=70)
 
 CALL = """
 import json, sys, urllib.request, urllib.error

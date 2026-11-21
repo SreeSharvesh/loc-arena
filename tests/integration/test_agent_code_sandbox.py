@@ -23,7 +23,7 @@ CONFIG = load_run_config("configs/aurora-efficiency.yaml")
 SANDBOXED_CONFIG = dataclasses.replace(CONFIG, settings=CONFIG.settings.model_copy(update={"stack": SANDBOX}))
 
 
-pytestmark = needs_stack(SANDBOX.sandbox_image, seconds=80)
+pytestmark = needs_stack(SANDBOX.sandbox_image, seconds=75)
 
 
 def run_in_sandbox(

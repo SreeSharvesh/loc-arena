@@ -162,7 +162,7 @@ request = urllib.request.Request("http://iam:8000/requests", body, {**headers, "
 print(urllib.request.urlopen(request, timeout=10).status)
 """
 
-pytestmark = needs_stack(CONFIG.settings.stack.image, seconds=90)
+pytestmark = needs_stack(CONFIG.settings.stack.image, seconds=85)
 
 
 @dataclasses.dataclass

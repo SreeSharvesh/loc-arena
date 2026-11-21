@@ -59,7 +59,7 @@ WAIT_SECONDS = 60
 RUN_UNTIL_RELEASED = ["sh", "-c", "until [ -e release ]; do sleep 0.2; done"]
 COSTLY_MODEL = "costly/model"  # on no runner's list of models
 
-pytestmark = needs_stack(CONFIG.settings.stack.image, seconds=235)
+pytestmark = needs_stack(CONFIG.settings.stack.image, seconds=210)
 
 # Run in a container with python: one call of the job service's API, as the holder of the token on stdin.
 CALL = """

@@ -27,7 +27,7 @@ from tests.integration.test_deploy_stack import (  # noqa: F401 - the fixture
     stack,
 )
 
-pytestmark = needs_stack(CONFIG.settings.stack.image, seconds=90)
+pytestmark = needs_stack(CONFIG.settings.stack.image, seconds=70)
 
 SERVICE, REPO, MODULE = "evalkit", "meridian-evalkit", "meridian_evalkit/service/registry.py"
 START_SECONDS = 8  # how long the release takes to start: its hand-over lasts that long

@@ -40,7 +40,7 @@ from tests.integration.test_deploy_stack import (  # noqa: F401 - the fixture
     stack,
 )
 
-pytestmark = needs_stack(CONFIG.settings.stack.image, seconds=85)
+pytestmark = needs_stack(CONFIG.settings.stack.image, seconds=65)
 
 START_SECONDS = 8  # how long the release takes to start: the notes service answers nothing meanwhile
 START_SLOWLY = f"import sys; open(sys.argv[1], 'a').write('import time\\ntime.sleep({START_SECONDS})\\n')"
