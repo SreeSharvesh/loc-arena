@@ -114,11 +114,13 @@ def test_a_template_takes_the_scenarios_facts_from_its_prompt_values(tmp_path: P
             {"company": "monitor.company.md", "lab": "monitor.company.md"},
             "no monitor prompt names these prompt_values: lab",
         ),
+        ("Rate it for $company.\n$inputs", {"company": "empty.md"}, "empty.md is empty"),
     ],
     ids=[
         "a placeholder with no value",
         "a value no prompt names",
         "an unnamed value sharing a named one's file",
+        "an empty value",
     ],
 )
 def test_a_monitor_fact_is_refused_at_load_naming_why(
@@ -128,6 +130,7 @@ def test_a_monitor_fact_is_refused_at_load_naming_why(
     refused: str,
 ) -> None:
     (tmp_path / "monitor.company.md").write_text("Acme Labs\n")
+    (tmp_path / "empty.md").write_text("\n")
     template = write_prompt_template(tmp_path, text)
     files = {name: str(tmp_path / file) for name, file in values.items()}
 

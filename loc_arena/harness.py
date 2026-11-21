@@ -14,7 +14,7 @@ import shutil
 import time
 from collections import Counter
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -60,6 +60,7 @@ from loc_arena.verifier.call_record import find_redeployed_services, read_record
 
 if TYPE_CHECKING:
     from loc_arena.logging_.inspect_export import EpisodeExport
+MONITORS_FILE: Final = "configs/monitors.yaml"  # the monitors a run is graded with
 
 
 def _default_sink(kind: str, payload: dict[str, Any]) -> None:
@@ -325,7 +326,7 @@ def grade_run(
     *,
     mode: str,
     seed: int | None = None,
-    monitors_path: str = "configs/monitors.yaml",
+    monitors_path: str = MONITORS_FILE,
     write_report: bool = True,
     monitor_provider: Any = None,
 ) -> Path:

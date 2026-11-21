@@ -26,9 +26,10 @@ from loc_arena.config import load_run_config, load_settings
 from loc_arena.episode_stack import EPISODE_SERVICE, REPOSITORY, run_in_stack
 from loc_arena.gateway.model_gateway import PROJECT_PREFIX, locate_call_log
 from loc_arena.gateway.proxy_relay import relay_while_running
-from loc_arena.harness import apply_mode, locate_run, play_run, read_played_snapshot
+from loc_arena.harness import MONITORS_FILE, apply_mode, locate_run, play_run, read_played_snapshot
 from loc_arena.logging_.viewer import build_index
 from loc_arena.merged_main import EPISODE_PHASE
+from loc_arena.monitors.registry import load_monitor_specs
 from loc_arena.prompt_listing import list_prompts
 from loc_arena.run_cost import read_cost, record_cost, render_costs, summarize
 from loc_arena.run_identity import RUN_FILE, read_identity
@@ -77,6 +78,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         print(f"played: {run_directory}")
         return 0
     instance, logs = secrets.token_hex(3), Path(args.out)
+    load_monitor_specs(MONITORS_FILE, config.scenario)  # another scenario's facts fail before play
     identity = read_identity(_config_path(args.run), REPOSITORY)  # the engine that plays, before its build
     cost = record_cost(config.settings.cost, f"{PROJECT_PREFIX}{instance}", EPISODE_SERVICE)
     try:

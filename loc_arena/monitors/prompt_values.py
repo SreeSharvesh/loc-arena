@@ -35,9 +35,12 @@ def read_prompt_values(declared: object) -> dict[str, tuple[str, str]]:
     values: dict[str, tuple[str, str]] = {}
     for name, source in declared.items():
         try:
-            values[str(name)] = (read_prompt(Path(source)).substitute(), source)
+            value = read_prompt(Path(source)).substitute()
         except (OSError, KeyError, ValueError) as exc:
             raise ConfigError(f"prompt_values.{name}: {source} is no prompt file of a value: {exc}") from exc
+        if not value.strip():
+            raise ConfigError(f"prompt_values.{name}: {source} is empty")
+        values[str(name)] = (value, source)
     return values
 
 
