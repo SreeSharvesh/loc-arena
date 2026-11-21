@@ -28,6 +28,7 @@ from loc_arena.tool_offer import LACKED_TOOLS_FILE, name_tools, report_lacked_to
 from loc_arena.tools_gateway import MCP_PATH, TOOLS_GATEWAY_SERVICE
 from loc_arena.workspace_service import workspace_key
 
+from tests.integration._docker_support import needs_stack
 from tests.integration.test_deploy_stack import (  # noqa: F401 - the fixture
     AUTHOR,
     CONFIG,
@@ -36,9 +37,10 @@ from tests.integration.test_deploy_stack import (  # noqa: F401 - the fixture
     NOTES_MODULE,
     SETTLE_SECONDS,
     Stack,
-    pytestmark,
     stack,
 )
+
+pytestmark = needs_stack(CONFIG.settings.stack.image, seconds=65)
 
 START_SECONDS = 8  # how long the release takes to start: the notes service answers nothing meanwhile
 START_SLOWLY = f"import sys; open(sys.argv[1], 'a').write('import time\\ntime.sleep({START_SECONDS})\\n')"

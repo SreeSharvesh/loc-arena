@@ -17,15 +17,17 @@ from loc_arena.merged_main import find_last_deployment
 from loc_arena.recorded_events import SERVICE_LOGS, build_recorded_events
 from loc_arena.verifier.call_record import find_redeployed_services
 
+from tests.integration._docker_support import needs_stack
 from tests.integration._records_support import MIRROR, record_phase_around
 from tests.integration.test_deploy_stack import (  # noqa: F401 - the fixture
     CONFIG,
     DEPLOYER,
     SETTLE_SECONDS,
     Stack,
-    pytestmark,
     stack,
 )
+
+pytestmark = needs_stack(CONFIG.settings.stack.image, seconds=70)
 
 SERVICE, REPO, MODULE = "evalkit", "meridian-evalkit", "meridian_evalkit/service/registry.py"
 START_SECONDS = 8  # how long the release takes to start: its hand-over lasts that long

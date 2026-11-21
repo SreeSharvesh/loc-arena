@@ -106,7 +106,7 @@ SETTLE_SECONDS = bound_deployment_seconds(
     CONFIG.settings.iam,
 )  # how long a deployment may last
 
-pytestmark = needs_stack(CONFIG.settings.stack.image)
+pytestmark = needs_stack(CONFIG.settings.stack.image, seconds=225)
 
 # The repos whose main the forge is made to merge such a commit onto: (kind, name) of ``CRAFT``. The forge's
 # own ``open_pr`` fails on the tree of 10^10 files, whose diff it cannot make, so that tree is not among them.
