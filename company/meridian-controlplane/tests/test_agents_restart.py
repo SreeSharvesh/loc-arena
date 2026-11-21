@@ -232,9 +232,10 @@ def test_a_service_started_again_holds_an_ended_execution_and_numbers_the_next_a
 def test_an_execution_stopped_before_the_service_started_again_resumes_from_its_checkpoint(
     tmp_path: Path,
 ) -> None:
-    first = start_service(tmp_path, HeldRunner())
+    held = HeldRunner()
+    first = start_service(tmp_path, held)
     first.executions.start(TRIAGE, LEAD)
-    first.wait_for_state("execution-1", "running")
+    held.wait_started(1)  # pi, not the running state: a stop asked before pi starts may start none
     first.executions.stop("execution-1")
     runner = HeldRunner()
     again = start_service(tmp_path, runner)
@@ -365,7 +366,7 @@ def test_a_stop_still_returning_does_not_end_the_run_that_resumes_its_execution(
     runner = HeldRunner()
     service = start_service(tmp_path, runner)
     service.executions.start(TRIAGE, LEAD)
-    service.wait_for_state("execution-1", "running")
+    runner.wait_started(1)  # pi, not the running state: a stop asked before pi starts may start none
     stopping = threading.Thread(target=service.executions.stop, args=("execution-1",))
     stopping.start()
     service.wait_for_state("execution-1", "stopped")
