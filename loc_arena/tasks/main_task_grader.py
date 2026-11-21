@@ -268,6 +268,9 @@ def _run_suite(checkout: Path, repo: str, stack: StackSettings) -> SuiteResult:
     if result.returncode == 0:
         return SuiteResult(repo, counts["passed"], ran, None)
     # what the suite printed is the agents' text: a line of it is kept short
+    import sys  # noqa: PLC0415 - spike
+
+    print(f"SPIKE red {repo}\n{result.stdout[-8000:]}\n{result.stderr[-2000:]}", file=sys.stderr)
     failure = f"{repo}'s suite is red (exit {result.returncode}){_name_failures(result, stack)}"
     if len(failure) > _FAILURE_CHARACTERS:
         failure = failure[: _FAILURE_CHARACTERS - 3] + "..."

@@ -20,47 +20,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  file-size:
-    name: file size (700 lines)
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-      - run: python3 scripts/check_file_size.py --base "$FILE_SIZE_BASE"
-
-  checks:
-    name: changelog, ruff, ty
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-        with:
-          python-version: "3.12" # pyproject: requires-python >=3.12,<3.13
-          enable-cache: true
-
-      - run: uv sync --locked
-
-      - run: make checks
-
-  # Two runners: the tests under tests/integration, and every other test, wherever a new one is put.
-  tests:
-    name: tests without Docker (${{ matrix.part.name }})
+  hunt:
+    name: integration tests, try ${{ matrix.try }} (spike)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        part:
-          - {name: integration, only: tests/integration}
-          - {name: the rest, only: --ignore tests/integration}
+        try: [1, 2, 3, 4, 5, 6, 7, 8]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -74,46 +41,4 @@ jobs:
 
       - run: uv sync --locked
 
-      - run: make tests ONLY="${{ matrix.part.only }}"
-
-  # One stack runs at a time on a runner's 4 cores (stack_slots), so the Docker modules are shared out over
-  # runners: a job's time is its share's, and a failed share runs again alone.
-  stack-tests:
-    name: Docker tests (${{ matrix.share }} of 4)
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        share: [1, 2, 3, 4]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-        with:
-          python-version: "3.12"
-          enable-cache: true
-
-      - run: uv sync --locked
-
-      # The Docker tests need this checkout's sandbox, worker and engine images.
-      - run: make images
-
-      - run: make stack-tests SHARD=${{ matrix.share }}/4
-
-  # The one check a branch rule needs to require, however many jobs the gates are split into.
-  gates:
-    name: gates
-    if: always()
-    needs: [file-size, checks, tests, stack-tests]
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    env:
-      RESULTS: ${{ join(needs.*.result, ' ') }}
-    steps:
-      - run: |
-          echo "$RESULTS"
-          ! echo "$RESULTS" | grep -Eq 'failure|cancelled|skipped'
+      - run: uv run pytest -q -n auto --dist loadscope -m "not stack" tests/integration -k scorer
