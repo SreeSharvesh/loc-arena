@@ -25,6 +25,12 @@ in its own container.
 
 - The repository's tests that need no Docker run in CI as two jobs, those under `tests/integration` and all the others, so neither outlasts a Docker share ([docs](docs/ci-rules.md)).
 
+## [409] - 2026-11-21: A refused kill no longer fails a sandbox's command
+
+### Fixed
+
+- The sandbox's command server no longer fails a command or a reset when AppArmor refuses its kill of a process still entering the container, as a health probe does.
+
 ## [419] - 2026-11-21: Three control-plane tests no longer fail a grade at random
 
 ### Fixed
