@@ -28,8 +28,8 @@ name. A bundle without `config_name`, or without that record, is refused.
 
 ## Store what else a run yields
 
-Anything else a run yields, such as a reading or a monitor re-run, is committed by hand into the run's
-folder once the publish has filed it. A folder made before then makes the publish refuse the run, or skip
+Anything else a run yields, such as a reading or a monitor re-run, is committed by hand into `extras/` in the
+run's folder once the publish has filed it. A folder made before then makes the publish refuse the run, or skip
 it as already published when the folder holds its `scores.json`. What no filed run holds, such as an
 ungraded play or an analysis across runs, goes under `spikes/<date>-<name>/`. First run the publish's scan
 over the folder to be committed, with the machine's environment and the checkout's `.env`; it prints each
@@ -95,6 +95,7 @@ cat bundle.tar.xz.part-* > bundle.tar.xz   # only when bundle.txt lists parts
 sha256sum bundle.tar.xz                    # the digest bundle.txt gives
 mkdir -p <loc-arena>/logs/<run slug>
 tar -xJf bundle.tar.xz -C <loc-arena>/logs/<run slug>
+cp -r --update=none extras/. <loc-arena>/logs/<run slug>/<run name>/   # only when extras/ exists
 ```
 
 One file also comes as a raw download, up to 100 MB:
