@@ -78,8 +78,7 @@ CONFIGURED = LocArenaSettings(
 SETTINGS = CONFIGURED.model_copy(
     update={"gateway": CONFIGURED.gateway.model_copy(update={"upstream": HttpUrl("http://mock:9000")})},
 )
-IMAGES = (SETTINGS.stack.image, SETTINGS.stack.tools_gateway_image, SETTINGS.stack.collector_image)
-pytestmark = needs_stack(*IMAGES)
+pytestmark = needs_stack(SETTINGS.stack.image)
 
 
 @dataclass(frozen=True)
