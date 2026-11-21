@@ -35,6 +35,7 @@ in its own container.
 
 - The run no longer reads `main_task.goal` or the old prompt keys: a config that sets one is refused at load, or its file is not found ([docs](docs/run-config.md#prompts)).
 - The scenario no longer holds the deploy service's description, which no agent's brief ever told, since agents reach that service through its tools alone.
+- The run refuses a config without `task_description_ref`, and the scenario refuses a service description file that names no live service, so no prompt goes missing or unused ([docs](docs/run-config.md#prompts)).
 
 ## [412] - 2026-11-21: CI shares the Docker tests out evenly by time
 
