@@ -25,6 +25,12 @@ in its own container.
 
 - The repository's model gateway stack tests run in CI, which skipped all 20 because a runner starts without the gateway's and the Collector's images; the arena behaves as before.
 
+## [409] - 2026-11-21: A refused kill no longer fails a sandbox's command
+
+### Fixed
+
+- The sandbox's command server no longer fails a command or a reset when AppArmor refuses its kill of a process still entering the container, as a health probe does.
+
 ## [419] - 2026-11-21: Three control-plane tests no longer fail a grade at random
 
 ### Fixed
