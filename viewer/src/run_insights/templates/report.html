@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Run insights</title>
+  <style>__report.css__</style>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to run</a>
+  <div class="app" id="app">
+    <aside class="sidebar">
+      <a class="brand" id="home-link" href="#insights"><span class="brand-mark" aria-hidden="true">r</span>Run insights</a>
+      <p class="sidebar-caption">One run. The connected story.</p>
+      <nav aria-label="Run views" class="view-nav">
+        <button type="button" data-view="insights" class="nav-button active" aria-current="page"><span aria-hidden="true">✧</span>Insights<span class="nav-count" id="insight-count"></span></button>
+        <button type="button" data-view="records" class="nav-button"><span aria-hidden="true">≡</span>All records<span class="nav-count" id="record-count"></span></button>
+        <button type="button" data-view="agents" class="nav-button"><span aria-hidden="true">◫</span>Participants<span class="nav-count" id="agent-count"></span></button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="eyebrow">About this report</div>
+        <p>Insights are interpretations linked to captured evidence. The recorded scores remain the source of the outcome.</p>
+        <button class="text-button" type="button" id="theme-toggle">Switch theme</button>
+        <a class="text-button" id="export-report" hidden>Export offline report</a>
+      </div>
+    </aside>
+
+    <main id="main">
+      <header class="run-header">
+        <div class="run-heading"><div class="eyebrow">Research workspace</div><h1 id="run-title">Run</h1><p id="run-name" class="run-name"></p></div>
+        <div class="header-actions"><span class="local-badge">Local report</span><button class="button primary" type="button" id="analyze" hidden>Analyze run</button></div>
+      </header>
+      <div class="outcome-strip" id="outcome"></div>
+      <div id="warnings" class="warnings" aria-live="polite"></div>
+      <div id="analysis-job" class="job-banner" hidden aria-live="polite"><span class="job-spinner" aria-hidden="true"></span><div><strong id="job-title">Analyzing this run</strong><p id="job-detail">Reading evidence and connecting the attempt across agents.</p></div><button class="button" type="button" id="cancel-job">Cancel</button></div>
+
+      <section id="view-insights" class="run-view">
+        <div id="analysis-empty" class="empty-state" hidden><span class="empty-symbol" aria-hidden="true">✧</span><h2>The evidence is ready. Insights come next.</h2><p id="empty-copy"></p><button class="button" type="button" id="browse-records">Browse captured records</button></div>
+        <div id="analysis-content" hidden>
+          <div class="section-heading"><div><div class="eyebrow">The important parts</div><h2>The attempt, in brief</h2></div><span class="analysis-origin" id="analysis-origin"></span></div>
+          <div class="overview" id="overview"></div>
+          <div class="section-heading chain-heading"><div><div class="eyebrow">Across the team</div><h2>Attack chain</h2><p>Recorded actions and handoffs, with the gaps kept visible.</p></div></div>
+          <div class="chain" id="chain"></div>
+          <div class="section-heading"><div><div class="eyebrow">Worth a closer look</div><h2>Interesting events</h2></div><label class="limit-control">Show <input id="insight-limit" type="number" min="1" value="20" inputmode="numeric"> events</label></div>
+          <p class="selection-note" id="selection-note"></p>
+          <div class="interesting-events" id="interesting-events"></div>
+          <div class="research-limits" id="research-limits"></div>
+          <footer class="analysis-footer" id="analysis-footer"></footer>
+        </div>
+      </section>
+
+      <section id="view-records" class="run-view" hidden>
+        <div class="section-heading"><div><div class="eyebrow">Complete source</div><h2>All captured records</h2><p>Filtering changes what is listed. Opening a record shows its complete captured content.</p></div></div>
+        <div class="record-filters">
+          <label class="search-field"><span class="sr-only">Search complete records</span><input id="record-search" type="search" placeholder="Search actions, messages, results…"></label>
+          <label>Actor<select id="filter-actor"><option value="">All actors</option></select></label>
+          <label>Play<select id="filter-play"><option value="">All plays</option></select></label>
+          <label>Evidence<select id="filter-stream"><option value="">All sources</option><option value="sealed">Analyst log</option><option value="mirror">Observable log</option><option value="session">Full session messages</option></select></label>
+          <label>Kind<select id="filter-kind"><option value="">All kinds</option></select></label>
+          <button type="button" class="text-button" id="reset-filters">Reset</button>
+        </div>
+        <div class="records-summary" id="records-summary" aria-live="polite"></div>
+        <div class="record-list" id="record-list"></div>
+        <div class="pagination"><button class="button" type="button" id="records-previous">Previous</button><span id="records-page"></span><button class="button" type="button" id="records-next">Next</button><label class="limit-control">Rows <input id="record-page-size" type="number" min="1" value="60" inputmode="numeric"></label></div>
+      </section>
+
+      <section id="view-agents" class="run-view" hidden>
+        <div class="section-heading"><div><div class="eyebrow">Who was involved</div><h2>Participants and initial context</h2><p>Configured instructions are analyst context. They do not prove that an agent acted on them.</p></div></div>
+        <div id="agents"></div>
+      </section>
+    </main>
+
+    <aside class="evidence-panel" id="evidence-panel" role="dialog" aria-modal="false" aria-label="Source evidence" hidden>
+      <div class="evidence-top"><div><div class="eyebrow">Source evidence</div><h2 id="evidence-title"></h2></div><button class="icon-button" id="close-evidence" type="button" aria-label="Close source evidence">×</button></div>
+      <div class="evidence-navigation"><button type="button" class="button" id="evidence-previous">Previous record</button><span id="evidence-position"></span><button type="button" class="button" id="evidence-next">Next record</button></div>
+      <div class="evidence-body" id="evidence-body" tabindex="-1"></div>
+    </aside>
+  </div>
+  <script type="application/json" id="report-data">__DATA__</script>
+  <script>__report.js__</script>
+</body>
+</html>

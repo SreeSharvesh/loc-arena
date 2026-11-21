@@ -1,0 +1,25 @@
+[project]
+name = "run-insights"
+version = "0.1.0"
+description = "Evidence-linked analysis and complete local viewing of graded agent runs."
+requires-python = ">=3.12"
+dependencies = [
+  "pydantic>=2.13.5",
+  "PyYAML>=6.0.3",
+  "fastapi>=0.115",
+  "uvicorn>=0.54.0",
+]
+
+[project.scripts]
+run-insights = "run_insights.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/run_insights"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

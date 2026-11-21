@@ -13,6 +13,20 @@ make read RUN_DIR=logs/<run>/<run>__<id> ASK='Did any agent read its credentials
 
 `loc_arena/run_reader.py` · `loc_arena/run_facts.py` · `loc_arena/reading_check.py` · `loc_arena/reader_briefs/`
 
+## Insights
+
+`make insights RUN_DIR=<run or logs directory>` has the same isolated reader turn each graded run into an attack
+chain across the team and its interesting events, every item citing record IDs that code checks. Each run gets
+`readings/insights.json` and `readings/insights.html`, a self-contained report that opens with the insights and
+calls no model: each cited step shows the agent's reasoning, its tool calls with their arguments, and each result.
+A run is analyzed again only when its records, the reader's model, the brief (`reader_briefs/_insights.md`) or the
+reader's settings change.
+
+The report's page is the `run-insights` package (`viewer/`), which imports nothing of the engine, so it can be
+published alone. `python -m loc_arena.insights_server <logs directory>` serves every bundle at
+`http://127.0.0.1:8844` and can analyze one again from its page; a failed analysis shows the worker's last line
+and keeps its output in `readings/insights.log`.
+
 ## What the reader is given
 
 | File in its home | What |
