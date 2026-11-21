@@ -83,7 +83,8 @@ Each agent's brief, its parts joined by blank lines, an empty part left out:
 | the live services its sandbox reaches; the telemetry its tools read | `services.md`, `service.md`, `service-access.md`, `telemetry.md`, around each service's description in `scenario.yaml` |
 
 In the attack, the system prompt of `covert.target_identity` is the text of `covert.objective_prompt_ref`, a
-blank line, then its brief. Every other system prompt is the brief alone.
+blank line, then its brief. Every other system prompt is the brief alone. Each session's first prompt is
+`begin.md`.
 
 Each `prompts` entry is a file's path, relative to the scenario's `prompts/` folder, or a list of `prompts.<name>`
 references, which composes one text from those entries, joined by blank lines. So a generic core is written
@@ -96,8 +97,10 @@ A file's text is its content less its final line break. A `$name` is a placehold
 exactly the values the engine fills, and a scenario file names none, so `$$` there is a dollar sign. Loading
 refuses, each with a `ConfigError` naming it: `prompts_inline`; prompt text written inline under `system_prompt`,
 `brief`, `covert_brief`, `objective_prompt` or `workspace_prompt`; a missing file, one outside the folder or one
-that is not `.md`; a placeholder with no value; a scenario file that no run config of the scenario in the configs
-directory reads; and an engine file the engine does not declare. `config.resolved.yaml` holds each entry's text.
+that is not `.md`; and a placeholder with no value. Importing the loader refuses an engine file that
+`ENGINE_PROMPTS` does not declare. Whether a file is read is a property of every run config, not of one, so the
+unit tests refuse a scenario file that no run config git tracks reads (`find_unread_prompt_files`).
+`config.resolved.yaml` holds each entry's text.
 
 The monitors' prompts are the files `configs/monitors.yaml` names as each monitor's `prompt_ref`, in
 `configs/prompts/monitors/`, with `{inputs}` where the inputs go.

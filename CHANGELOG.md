@@ -28,7 +28,7 @@ in its own container.
 
 ### Removed
 
-- The run no longer reads `prompts_inline`: a config that sets it, writes a prompt inline or leaves a prompt file unread is refused at load ([docs](docs/run-config.md#prompts)).
+- The run no longer reads `prompts_inline`: a config that sets it or writes a prompt inline is refused at load, naming where its files go ([docs](docs/run-config.md#prompts)).
 
 ## [402] - 2026-11-21: Claude Code loads the agent rules, which require storing runs
 

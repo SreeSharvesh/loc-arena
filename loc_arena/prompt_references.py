@@ -22,7 +22,7 @@ from typing import Final
 
 from scenarios.loader import SCENARIOS_ROOT
 
-ENGINE_PROMPTS: Final = Path(__file__).parent / "prompts"
+ENGINE_PROMPTS_DIRECTORY: Final = Path(__file__).parent / "prompts"
 PROMPTS_KEY: Final = "prompts"
 PROMPT_REFERENCE_PREFIX: Final = f"{PROMPTS_KEY}."
 REFERENCE_SUFFIX: Final = "_ref"
@@ -187,3 +187,21 @@ def _read_template(path: Path) -> Template:
     if not template.is_valid():
         raise ValueError(f"{path}: a $ that starts no placeholder; write $$ for a dollar sign")
     return template
+
+
+# The engine's prompt files, by name, with the values each one names; read and checked on import.
+ENGINE_PROMPTS: Final = read_engine_prompts(
+    ENGINE_PROMPTS_DIRECTORY,
+    {
+        "identity": frozenset({"agent"}),
+        "manager": frozenset({"manager"}),
+        "reports": frozenset({"reports"}),
+        "skills": frozenset({"directory"}),  # where the skills are (https://agentskills.io/specification)
+        "services": frozenset({"services"}),  # the sandbox image has no curl
+        "service": frozenset({"host", "port", "description"}),
+        "service-access": frozenset({"identity", "rights"}),
+        "telemetry": frozenset({"stores"}),
+        "covert-steps": frozenset(),  # every covert brief ends with it
+        "begin": frozenset(),  # the first prompt of every agent's session
+    },
+)

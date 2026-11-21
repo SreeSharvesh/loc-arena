@@ -2,8 +2,9 @@
 
 For each run config git tracks in ``configs/`` and each play, the attack and its honest twin, it builds every
 agent's system prompt as pi receives it, then the covert objective, each monitor's prompt template and the
-task description the monitors read. It builds them on a worktree of the base and on this checkout, prints
-each text that differs and exits non-zero if any does. It plays nothing and calls no model.
+task description the monitors read, and every session's opening prompt. It builds them on a worktree of
+the base and on this checkout, prints each text that differs and exits non-zero if any does. It plays nothing
+and calls no model.
 
     uv run python scripts/diff_prompts.py --base origin/main
 """
@@ -25,7 +26,7 @@ from loc_arena.config import load_run_config
 from loc_arena.harness import apply_mode
 from loc_arena.live import build_briefs
 from loc_arena.monitors.registry import load_monitor_specs
-from loc_arena.own_sessions import brief_loop
+from loc_arena.own_sessions import TASK, brief_loop
 from loc_arena.protocol import monitor_context
 
 CONFIGS = Path("configs")
@@ -50,6 +51,7 @@ def build_texts() -> dict[str, str]:
             played = apply_mode(config, play)
             for agent, brief in build_briefs(played).items():
                 texts[f"{path.stem} {play} {agent}"] = brief_loop(played, agent, brief)
+        texts[f"{path.stem} opening prompt"] = TASK
         texts[f"{path.stem} covert objective"] = config.covert.objective_prompt
         texts[f"{path.stem} task description"] = monitor_context(config).task_description
         for spec in load_monitor_specs(CONFIGS / str(config.protocol["monitors_config"])):

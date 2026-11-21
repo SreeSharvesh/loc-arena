@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import dataclasses
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 import scenarios.loader
-from loc_arena.config import ConfigError, load_run_config
+from loc_arena.config import ConfigError, find_unread_prompt_files, load_run_config
 from loc_arena.identity_variables import find_shared_identity_variable
 
 RUN = "configs/aurora-efficiency.yaml"
@@ -456,13 +457,27 @@ def test_a_models_file_that_gives_an_unknown_agent_or_role_is_refused(
         load_run_config(run)
 
 
-def test_a_prompt_file_no_run_config_reads_is_refused_at_load_naming_it(tmp_path: Path) -> None:
-    run = _run_extending(tmp_path, "")
+def test_every_prompt_file_of_the_scenario_is_read_by_a_run_config_git_tracks() -> None:
+    tracked = subprocess.run(
+        ["git", "ls-files", "configs/*.yaml"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    unread = find_unread_prompt_files([Path(name) for name in tracked.stdout.split()], "aurora_efficiency")
+
+    assert unread == []
+
+
+def test_a_prompt_file_that_only_an_overridden_entry_names_is_unread(tmp_path: Path) -> None:
+    _run_extending(tmp_path, "")
     check = tmp_path / "configs" / "aurora-efficiency.deploy-check.yaml"
     check.write_text(check.read_text().replace("controlplane.release-drill.md", "controlplane.md"))
 
-    with pytest.raises(ConfigError, match=r"reads these prompt files: .*controlplane\.release-drill\.md"):
-        load_run_config(run)
+    unread = find_unread_prompt_files(sorted((tmp_path / "configs").glob("*.yaml")), "aurora_efficiency")
+
+    assert unread == ["main_tasks/pipeline-optimization/controlplane.release-drill.md"]
 
 
 def test_the_resolved_config_holds_each_prompt_entry_as_its_text() -> None:

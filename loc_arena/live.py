@@ -35,7 +35,7 @@ from loc_arena.npcs.coworker import (
 )
 from loc_arena.npcs.reviewer import Reviewer
 from loc_arena.own_sessions import play_own_sessions
-from loc_arena.prompt_references import ENGINE_PROMPTS, read_engine_prompts
+from loc_arena.prompt_references import ENGINE_PROMPTS
 from loc_arena.sandbox import IDENTITY_PREFIX, connect_sandboxes
 from loc_arena.scaffold.bus import Recorder
 from loc_arena.scaffold.code_services import CodeServices, SkillsFolder
@@ -48,22 +48,6 @@ from loc_arena.task import (
     resolve_scenario,
 )
 from loc_arena.tasks.main_task_grader import COMPANY_REPOS
-
-# The engine's part of every brief (loc_arena/prompts/), by file, with the values each one names.
-_PROMPTS = read_engine_prompts(
-    ENGINE_PROMPTS,
-    {
-        "identity": frozenset({"agent"}),
-        "manager": frozenset({"manager"}),
-        "reports": frozenset({"reports"}),
-        "skills": frozenset({"directory"}),  # where the skills are (https://agentskills.io/specification)
-        "services": frozenset({"services"}),  # the sandbox image has no curl
-        "service": frozenset({"host", "port", "description"}),
-        "service-access": frozenset({"identity", "rights"}),
-        "telemetry": frozenset({"stores"}),
-        "covert-steps": frozenset(),  # every covert brief ends with it
-    },
-)
 
 
 def describe_live_services(
@@ -90,22 +74,22 @@ def describe_live_services(
     ]
     lines = [_describe_service(service, rights, secrets_dir) for service in reached]
     sections = [
-        _PROMPTS["services"].substitute(services="\n".join(lines)) if lines else "",
-        _PROMPTS["telemetry"].substitute(stores="\n".join(stores)) if stores else "",
+        ENGINE_PROMPTS["services"].substitute(services="\n".join(lines)) if lines else "",
+        ENGINE_PROMPTS["telemetry"].substitute(stores="\n".join(stores)) if stores else "",
     ]
     return "\n".join(section for section in sections if section)
 
 
 def _describe_service(service: LiveService, rights: Mapping[str, Sequence[str]], secrets_dir: Path) -> str:
     """``service``'s line: its address, its description and, with rights, the agent's identity and rights."""
-    line = _PROMPTS["service"].substitute(
+    line = ENGINE_PROMPTS["service"].substitute(
         host=service.name,
         port=service.port,
         description=service.description.strip(),
     )
     if not service.rights:
         return line
-    access = _PROMPTS["service-access"].substitute(
+    access = ENGINE_PROMPTS["service-access"].substitute(
         identity=secrets_dir / f"{IDENTITY_PREFIX}{service.name}",
         rights=", ".join(rights.get(service.name, ())) or "none",
     )
@@ -120,12 +104,14 @@ def build_briefs(config: RunConfig) -> dict[str, str]:
     """
     skills_dir = resolve_scenario(config).skills_dir
     skills_doc = (
-        _PROMPTS["skills"].substitute(directory=config.settings.stack.skills_directory) if skills_dir else ""
+        ENGINE_PROMPTS["skills"].substitute(directory=config.settings.stack.skills_directory)
+        if skills_dir
+        else ""
     )
     briefs: dict[str, str] = {}
     for agent_cfg in config.agents:
         covert_brief = (
-            f"{agent_cfg.covert_brief} {_PROMPTS['covert-steps'].substitute()}"
+            f"{agent_cfg.covert_brief} {ENGINE_PROMPTS['covert-steps'].substitute()}"
             if config.covert.enabled and agent_cfg.covert_brief
             else None
         )
@@ -136,7 +122,7 @@ def build_briefs(config: RunConfig) -> dict[str, str]:
             [service for service, tools in agent_cfg.sandbox.tools.items() if tools],
         )
         parts = [
-            _PROMPTS["identity"].substitute(agent=agent_cfg.id),
+            ENGINE_PROMPTS["identity"].substitute(agent=agent_cfg.id),
             _describe_team_place(config, agent_cfg),
             agent_cfg.system_prompt,  # how it works with its team: the same in both plays
             config.workspace_prompt,
@@ -248,7 +234,7 @@ def play_model_episode(
 
 def _describe_team_place(config: RunConfig, agent: AgentConfig) -> str:
     """Who the agent reports to and who reports to it, from the run config's team."""
-    lines = [_PROMPTS["manager"].substitute(manager=agent.spawned_by)] if agent.spawned_by else []
+    lines = [ENGINE_PROMPTS["manager"].substitute(manager=agent.spawned_by)] if agent.spawned_by else []
     if reports := [other.id for other in config.agents if other.spawned_by == agent.id]:
-        lines.append(_PROMPTS["reports"].substitute(reports=", ".join(reports)))
+        lines.append(ENGINE_PROMPTS["reports"].substitute(reports=", ".join(reports)))
     return " ".join(lines)

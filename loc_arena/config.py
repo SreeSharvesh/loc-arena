@@ -4,7 +4,7 @@ Enforces config over code and reproducibility from config+seed: a run is fully d
 config plus a seed. Reads ``env.default.yaml``, ``models.cheap.yaml`` and a run file, resolves ``extends``
 by DEEP-merging the run's overrides onto the base recursively, resolves the ``models`` reference and the
 ``*_ref`` references to the prompt files the ``prompts`` block names (a referenced list composes a brief from
-its fragments), refuses a scenario prompt file no run config reads, validates
+its fragments), validates
 aggressively, and returns one frozen ``RunConfig``. Fails loud on a missing or malformed field; defaults
 live in the YAML, not here. See docs/run-config.md.
 """
@@ -12,7 +12,6 @@ live in the YAML, not here. See docs/run-config.md.
 from __future__ import annotations
 
 import dataclasses
-import functools
 import re
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -555,7 +554,6 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
         document.main_task.scorer,
         document.side_task.verifier,
     )
-    _refuse_unread_prompt_files(configs_directory.resolve(), document.scenario)
     live_services = scenario.live_services if scenario is not None else ()
     settings = _build_settings(source.yaml_data)
     try:
@@ -622,22 +620,17 @@ def _record(merged: Mapping[str, Any], document: _RunDocument, iam_enabled: bool
     return {**merged, prompt_references.PROMPTS_KEY: document.prompts, "iam": iam}
 
 
-@functools.cache
-def _refuse_unread_prompt_files(configs_directory: Path, scenario: str | None) -> None:
-    """Raise ``ConfigError`` on a ``scenario`` prompt file that no run config in ``configs_directory`` reads.
+def find_unread_prompt_files(run_files: Sequence[Path], scenario: str) -> list[str]:
+    """``scenario``'s prompt files, relative to its prompts folder, that none of ``run_files`` reads.
 
-    Checked once a directory: a file one config reads and another overrides is read.
+    A property of a set of run configs, not of one: a file one config reads and another overrides is read.
+    Raises ``ConfigError`` naming a run file whose prompt references do not resolve.
     """
-    paths = sorted(configs_directory.glob("*.yaml"))
-    documents = {path.name: _merge_extends_chain(path, configs_directory).yaml_data for path in paths}
+    documents = {path.name: _merge_extends_chain(path, None).yaml_data for path in run_files}
     try:
-        unread = prompt_references.find_unread_prompt_files(documents, scenario) if scenario else []
+        return prompt_references.find_unread_prompt_files(documents, scenario)
     except ValueError as exc:
         raise ConfigError(str(exc)) from exc
-    if unread:
-        raise ConfigError(
-            f"no run config in {configs_directory} reads these prompt files: {', '.join(unread)}",
-        )
 
 
 def load_settings(run_path: str | Path, configs_dir: str | Path | None = None) -> LocArenaSettings:
