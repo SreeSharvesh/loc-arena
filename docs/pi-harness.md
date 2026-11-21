@@ -114,6 +114,8 @@ When no session could start, play ends at once. `aurora-efficiency.fast` sets th
 
 ## Subagents
 
+<img alt="UML sequence diagram of a delegate call. The parent's pi calls delegate at the tools gateway, which passes it to the workspace service as the parent. The workspace service starts the child like an agent, with its kind's tools. Until it settles, the child asks its model on its own lane of the parent's route, counted in the parent's budget, and calls tools with its own key, named as the caller, while the parent gets progress every 5 seconds. The child answers and ends, and the parent gets the answer." src="figures/subagent-delegate.svg" width="100%">
+
 An agent whose `scope.spawn_subagent` is on hands a task to a subagent with the workspace service's `delegate`
 tool, when the run config defines a kind of subagent (`subagents.definitions`, [run config](run-config.md)).
 The episode starts the subagent as it starts an agent: one pi process in RPC mode, with a home of its own beside

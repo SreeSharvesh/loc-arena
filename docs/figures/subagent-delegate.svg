@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="560" viewBox="0 0 960 560" role="img" aria-label="UML sequence diagram of a delegate call. The parent's pi calls delegate with a kind and a task at the tools gateway, which passes it to the workspace service in the episode as the parent. The workspace service starts the child as it starts an agent: a pi in RPC mode with its own home and its kind's tools. Until the child settles, it asks its model on its own lane of the parent's route at the model gateway, counted in the parent's budget, and calls tools at the tools gateway with its own key, admitted as the parent and named as the caller, while the workspace service reports progress to the parent. The child answers, its session ends, and the parent gets the answer as the tool's result.">
+<style>
+  svg { --ink:#1f2328; --muted:#59636e; --rule:#8c959f; --panel:#f6f8fa; --accent:#2f4bd6; --accent-bg:#e9edfd; }
+  @media (prefers-color-scheme: dark) {
+    svg { --ink:#e6edf3; --muted:#9198a1; --rule:#6e7681; --panel:#161b22; --accent:#8098ff; --accent-bg:#1b2340; }
+  }
+  text { font-family:-apple-system,"Segoe UI",system-ui,sans-serif; }
+  .box { fill:var(--panel); stroke:var(--rule); stroke-width:1; }
+  .focus { fill:var(--accent-bg); stroke:var(--accent); stroke-width:1.5; }
+  .frame { fill:none; stroke:var(--rule); stroke-width:1; }
+  .tag { fill:var(--panel); stroke:var(--rule); stroke-width:1; }
+  .t { fill:var(--ink); font-size:13px; font-weight:600; }
+  .s { fill:var(--muted); font-size:11px; }
+  .m { fill:var(--muted); font-size:11px; font-family:ui-monospace,"SF Mono",Menlo,monospace; }
+  .bold { stroke:var(--ink); stroke-width:2.5; fill:none; }
+  .thin { stroke:var(--rule); stroke-width:1.25; fill:none; }
+  .dash { stroke:var(--rule); stroke-width:1.25; fill:none; stroke-dasharray:4 3; }
+  .life { stroke:var(--rule); stroke-width:1; fill:none; stroke-dasharray:3 4; }
+  .head-ink { fill:var(--ink); } .head-rule { fill:var(--rule); }
+</style>
+<defs>
+  <marker id="sd-hi" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-ink" d="M0,0 L10,5 L0,10 z"/></marker>
+  <marker id="sd-hr" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path class="head-rule" d="M0,0 L10,5 L0,10 z"/></marker>
+</defs>
+<g class="node"><rect class="box" x="16" y="24" width="128" height="48" rx="6"/><text class="t" x="80" y="42" text-anchor="middle" dominant-baseline="central">parent's pi</text><text class="m" x="80" y="59" text-anchor="middle" dominant-baseline="central">agent-main</text></g>
+<g class="node"><rect class="box" x="216" y="24" width="128" height="48" rx="6"/><text class="t" x="280" y="42" text-anchor="middle" dominant-baseline="central">tools gateway</text><text class="m" x="280" y="59" text-anchor="middle" dominant-baseline="central">agentgateway</text></g>
+<g class="node"><rect class="box" x="416" y="24" width="128" height="48" rx="6"/><text class="t" x="480" y="42" text-anchor="middle" dominant-baseline="central">workspace</text><text class="s" x="480" y="59" text-anchor="middle" dominant-baseline="central">in the episode</text></g>
+<g class="node"><rect class="focus" x="616" y="24" width="128" height="48" rx="6"/><text class="t" x="680" y="42" text-anchor="middle" dominant-baseline="central">child's pi</text><text class="m" x="680" y="59" text-anchor="middle" dominant-baseline="central">agent-main.1</text></g>
+<g class="node"><rect class="box" x="816" y="24" width="128" height="48" rx="6"/><text class="t" x="880" y="42" text-anchor="middle" dominant-baseline="central">model gateway</text><text class="s" x="880" y="59" text-anchor="middle" dominant-baseline="central">call record</text></g>
+<path class="life" d="M80,72 V536"/><path class="life" d="M280,72 V536"/><path class="life" d="M480,72 V536"/><path class="life" d="M680,72 V536"/><path class="life" d="M880,72 V536"/>
+
+<text class="m" x="180" y="108" text-anchor="middle">delegate(kind, task)</text>
+<path class="bold" d="M80,116 H280" marker-end="url(#sd-hi)"/>
+<text class="s" x="380" y="156" text-anchor="middle">as the parent</text>
+<path class="bold" d="M280,164 H480" marker-end="url(#sd-hi)"/>
+<text class="s" x="580" y="196" text-anchor="middle">start like an agent:</text>
+<text class="m" x="580" y="210" text-anchor="middle">--tools of its kind</text>
+<path class="bold" d="M480,218 H680" marker-end="url(#sd-hi)"/>
+
+<g class="node"><rect class="frame" x="96" y="244" width="832" height="164"/><rect class="tag" x="96" y="244" width="140" height="22"/><text class="s" x="106" y="255" dominant-baseline="central">loop until it settles</text></g>
+<text class="m" x="780" y="292" text-anchor="middle">/loop/agent-main.1/…</text>
+<path class="bold" d="M680,300 H880" marker-end="url(#sd-hi)"/>
+<text class="s" x="780" y="318" text-anchor="middle">the parent's budget</text>
+<text class="s" x="580" y="346" text-anchor="middle">own key, caller: child</text>
+<path class="bold" d="M680,354 H280" marker-end="url(#sd-hi)"/>
+<text class="s" x="180" y="388" text-anchor="middle">progress, every 5 s</text>
+<path class="dash" d="M480,396 H80" marker-end="url(#sd-hr)"/>
+
+<text class="s" x="580" y="436" text-anchor="middle">its answer, then it ends</text>
+<path class="dash" d="M680,444 H480" marker-end="url(#sd-hr)"/>
+<text class="m" x="180" y="484" text-anchor="middle">{subagent, answer, end}</text>
+<path class="dash" d="M480,492 H80" marker-end="url(#sd-hr)"/>
+</svg>
