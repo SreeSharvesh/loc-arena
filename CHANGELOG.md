@@ -25,6 +25,12 @@ in its own container.
 
 - The repository's tests that need no Docker run in CI as two jobs, those under `tests/integration` and all the others, so neither outlasts a Docker share ([docs](docs/ci-rules.md)).
 
+## [407] - 2026-11-21: The model gateway's stack tests run in CI
+
+### Fixed
+
+- The repository's model gateway stack tests run in CI, which skipped all 20 because a runner starts without the gateway's and the Collector's images; the arena behaves as before.
+
 ## [409] - 2026-11-21: A refused kill no longer fails a sandbox's command
 
 ### Fixed
