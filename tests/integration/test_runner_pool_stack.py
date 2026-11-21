@@ -37,7 +37,7 @@ COSTLY_MODEL = "costly/model"  # on no runner's list of models
 
 
 CONFIG = load_run_config(REPOSITORY / "configs" / f"{RUN}.yaml")  # its agents service has three runners
-pytestmark = needs_stack(CONFIG.settings.stack.image)
+pytestmark = needs_stack(CONFIG.settings.stack.image, seconds=60)
 # Run in a container with python: calls a runner's command server as the caller holding ``token``.
 CALL_RUNNER = """
 import json, sys, urllib.error, urllib.request

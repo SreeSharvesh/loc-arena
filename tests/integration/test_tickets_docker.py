@@ -46,7 +46,7 @@ SPRINT_TICKET = "AURORA-2"  # serving-agent's in the seed
 FILED_TICKET = "SERVING-48"  # the one after the seed's SERVING-47
 COMMENT = "Batching by sequence length; SERVING-31 first."
 
-pytestmark = needs_stack(CONFIG.settings.stack.image)
+pytestmark = needs_stack(CONFIG.settings.stack.image, seconds=110)
 
 # Each script takes its credential on stdin, never in a command line. Each call over MCP gives its
 # structured result, or ``{"error": ...}``.

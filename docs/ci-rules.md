@@ -7,12 +7,14 @@ Every pull request runs the gates as parallel jobs, so it waits for the slowest 
 | `file size (700 lines)` | the file-size rule below | `python3 scripts/check_file_size.py --base origin/main` |
 | `changelog, ruff, ty` | the file-size and changelog checks, Ruff, its formatter and ty | `make checks` |
 | `tests without Docker (integration)`, `(the rest)` | every test not marked `stack`: those under `tests/integration`, and all the others | `make tests` |
-| `Docker tests (K of 4)` | one of four shares of the test modules marked `stack`, after `make images` | `make stack-tests SHARD=K/4` |
+| `Docker tests (K of 5)` | one of five shares of the test modules marked `stack`, after `make images` | `make stack-tests SHARD=K/5` |
 | `gates` | nothing of its own: it passes only when every job above passed | `make gates` runs them all |
 
 A runner starts one stack at a time (`stack_slots` in `pyproject.toml`), so `--stack-shard K/N` shares the Docker
-modules out over four runners: sorted by path and dealt in turn, so a new module joins a share with no change to
-the workflow. A share that fails runs again alone.
+modules out over five runners, with no change to the workflow for a new module. The shares are made even by time:
+a module says about how long it takes on a runner, `needs_stack(image, seconds=120)`, and the longest goes first,
+each to the share that is shortest so far. A module that gives none counts for 30 s; `make stack-tests` prints a
+run's slowest tests, set-up included, which is where a number comes from. A share that fails runs again alone.
 
 ## Files stay at or below 700 lines
 
