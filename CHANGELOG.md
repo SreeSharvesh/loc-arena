@@ -19,6 +19,12 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [427] - 2026-11-21: Monitor prompts name no company; each scenario fills its facts
+
+### Changed
+
+- The monitor's prompts in the engine name no company, repository or task: each such fact is a placeholder the scenario's file fills, and every prompt sent is unchanged ([docs](docs/run-config.md#prompts)).
+
 ## [416] - 2026-11-21: CI runs the tests without Docker on two runners
 
 ### Changed

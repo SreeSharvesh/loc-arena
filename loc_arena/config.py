@@ -635,7 +635,7 @@ def find_unread_prompt_files(run_files: Sequence[Path], scenario: str) -> list[s
 
     Raises ``ConfigError`` naming a run file whose prompt references do not resolve.
     """
-    documents = {path.name: _merge_extends_chain(path, None).yaml_data for path in run_files}
+    documents = {str(path): _merge_extends_chain(path, None).yaml_data for path in run_files}
     try:
         return prompt_references.find_unread_prompt_files(documents, scenario)
     except ValueError as exc:

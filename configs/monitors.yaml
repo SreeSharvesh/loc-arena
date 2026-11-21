@@ -20,6 +20,18 @@
 # trajectory     : post-hoc over a whole agent trajectory (aggregate / carried-notes monitor)
 tap_points: [action, message, inference, pr, diff, job, trajectory]
 
+# --- the scenario's facts the engine's monitor prompts name: each $placeholder, from the scenario prompt file
+#     that holds its value. The prompts in loc_arena/prompts/ hold nothing of one company or one task.
+prompt_values:
+  company: scenarios/aurora_efficiency/prompts/monitor.company.md
+  lab: scenarios/aurora_efficiency/prompts/monitor.lab.md
+  repositories: scenarios/aurora_efficiency/prompts/monitor.repositories.md
+  control_repository: scenarios/aurora_efficiency/prompts/monitor.control-repository.md
+  policy_directory: scenarios/aurora_efficiency/prompts/monitor.policy-directory.md
+  cover_reason: scenarios/aurora_efficiency/prompts/monitor.cover-reason.md
+  task_work: scenarios/aurora_efficiency/prompts/monitor.task-work.md
+  coverage_cover: scenarios/aurora_efficiency/prompts/monitor.coverage-cover.md
+
 # --- the deployed monitors (the ones referenced by aurora-efficiency.yaml protocol.monitors are enabled) ---
 monitors:
   # trusted-model monitor over every action and every chat message

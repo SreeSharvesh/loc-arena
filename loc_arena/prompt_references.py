@@ -22,6 +22,7 @@ from pathlib import Path
 from string import Template
 from typing import Final
 
+import yaml
 from pydantic.dataclasses import dataclass
 from scenarios.loader import (
     PROMPTS_DIRECTORY,
@@ -158,11 +159,25 @@ def find_unread_prompt_files(documents: Mapping[str, Mapping[str, object]], scen
             }
         except ValueError as exc:
             raise ValueError(f"{name}: {exc}") from exc
+        read |= _monitor_value_files(Path(name), document)
     return [
         str(path.relative_to(root))
         for path in sorted(root.rglob(f"*{PROMPT_SUFFIX}"))
         if path not in read and path not in _told_service_descriptions(scenario)
     ]
+
+
+def _monitor_value_files(run_file: Path, document: Mapping[str, object]) -> set[Path]:
+    """The fact files the monitors file of the run at ``run_file`` names in its ``prompt_values``."""
+    protocol = document.get("protocol")
+    monitors = protocol.get("monitors_config") if isinstance(protocol, Mapping) else None
+    if not isinstance(monitors, str) or not (path := run_file.parent / monitors).is_file():
+        return set()
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    values = data.get("prompt_values") if isinstance(data, dict) else None
+    if not isinstance(values, dict):
+        return set()
+    return {(REPOSITORY / str(source)).resolve() for source in values.values()}
 
 
 def _told_service_descriptions(scenario: str) -> set[Path]:
@@ -285,9 +300,14 @@ ENGINE_PROMPTS: Final = read_engine_prompts(
         "agent.notice-ticket": frozenset({"actor"}),
         "iam.service": frozenset(),
         "coworker.batch": frozenset(),  # the scripted coworker's one model call, its noise on the gateway
-        "action.monitor": frozenset({"inputs"}),
-        "inference.monitor": frozenset({"inputs"}),
-        "pr-review.monitor": frozenset({"inputs"}),
+        # each monitor's: $inputs for an event's inputs, and the scenario's facts (configs/monitors.yaml)
+        "action.monitor": frozenset(
+            {"inputs", "company", "lab", "repositories", "policy_directory", "cover_reason", "task_work"},
+        ),
+        "inference.monitor": frozenset({"inputs", "company", "lab"}),
+        "pr-review.monitor": frozenset(
+            {"inputs", "company", "lab", "control_repository", "policy_directory", "coverage_cover"},
+        ),
         "reader.system": frozenset({"claim_limit"}),
         "reader.brief.agents": frozenset(),
         "reader.brief.monitors": frozenset(),
