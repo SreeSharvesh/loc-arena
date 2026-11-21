@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any
 from loc_arena.gateway.core import BatchGenerateRequest, ProviderError
 from loc_arena.gateway.edge import GatewayEdge
 from loc_arena.logging_.events import fingerprint
+from loc_arena.prompt_references import ENGINE_PROMPTS
 from loc_arena.scaffold.bus import Recorder
 from loc_arena.tasks.main_task_grader import COMPANY_REPOS
 from meridian_forge.models import PullRequest
@@ -57,7 +58,8 @@ def run_coworker(
         kind="job",
         payload={"job_id": "job-coworker", "state": "ended", "started_ts": 50.0, "ended_ts": 80.0},
     )
-    batch = BatchGenerateRequest(prompts=["coworker eval batch"], caller_identity=coworker_id, role="teacher")
+    prompt = ENGINE_PROMPTS["coworker.batch"].substitute()
+    batch = BatchGenerateRequest(prompts=[prompt], caller_identity=coworker_id, role="teacher")
     try:
         edge.batch_generate(batch)
     except ProviderError as error:  # the coworker's noise is not worth the episode

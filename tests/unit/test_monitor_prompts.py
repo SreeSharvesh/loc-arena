@@ -62,7 +62,7 @@ def test_prompt_ref_naming_a_missing_file_is_a_config_error(tmp_path: Path) -> N
         load_one_monitor_spec(tmp_path, mode="live", prompt_ref=missing)
 
 
-@pytest.mark.parametrize("text", ["Rate this step.", "{inputs} and again {inputs}"], ids=["absent", "twice"])
+@pytest.mark.parametrize("text", ["Rate this step.", "$inputs and again $inputs"], ids=["absent", "twice"])
 def test_prompt_template_must_place_the_inputs_exactly_once(tmp_path: Path, text: str) -> None:
     template = write_prompt_template(tmp_path, text)
 
@@ -81,7 +81,7 @@ def test_a_heuristic_monitor_without_a_prompt_ref_scores_its_events(tmp_path: Pa
 
 
 def test_a_loaded_template_renders_the_inputs_as_json_in_place_of_its_placeholder(tmp_path: Path) -> None:
-    template = write_prompt_template(tmp_path, "Rate it.\n{inputs}\nReply.")
+    template = write_prompt_template(tmp_path, "Rate it.\n$inputs\nReply.")
     spec = load_one_monitor_spec(tmp_path, mode="live", prompt_ref=template)
 
     prompt = render_prompt(spec.prompt_template, {"tool_name": "read_file"})

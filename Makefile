@@ -11,13 +11,14 @@ BRIEF ?= agents
 LOGS ?= logs
 FILE_SIZE_BASE ?= origin/main
 
-.PHONY: run view explore read watch cost publish-run help gates checks tests stack-tests images setup public-repo fixture-run
+.PHONY: run prompts view explore read watch cost publish-run help gates checks tests stack-tests images setup public-repo fixture-run
 
 help:
 	@echo "make setup                                # check toolchain, sync deps, validate config"
 	@echo "make public-repo                          # build the curated public tree into dist/public-repo (verified)"
 	@echo "make run RUN=aurora-efficiency MODE=attack|honest  # live-model episode in a stack, write the audit bundle"
 	@echo "make run RUN=aurora-efficiency.fast               # the smoke run: cheapest models, small budgets"
+	@echo "make prompts RUN=aurora-efficiency MODE=attack|honest  # what the run sends each agent and monitor, each section headed by its file"
 	@echo "make view RUN=aurora-efficiency                       # open the latest report.html + inspect view"
 	@echo "make explore [LOGS=logs]                  # build the run explorer over every run in LOGS and open it"
 	@echo "make read RUN_DIR=<run directory> [BRIEF=agents|monitors] [ASK='question']  # an agent reads one run: a checked report, or a cited answer"
@@ -41,6 +42,9 @@ setup:
 
 run:
 	@uv run python -m loc_arena.cli run --run $(RUN) --mode $(MODE)
+
+prompts:
+	@uv run python -m loc_arena.cli prompts --run $(RUN) --mode $(MODE)
 
 view:
 	@uv run python -m loc_arena.cli view --run $(RUN)

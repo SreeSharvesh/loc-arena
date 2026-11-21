@@ -35,7 +35,7 @@ from loc_arena.npcs.coworker import (
 )
 from loc_arena.npcs.reviewer import Reviewer
 from loc_arena.own_sessions import play_own_sessions
-from loc_arena.prompt_references import ENGINE_PROMPTS
+from loc_arena.prompt_references import ENGINE_PROMPTS, Section, engine_source
 from loc_arena.sandbox import IDENTITY_PREFIX, connect_sandboxes
 from loc_arena.scaffold.bus import Recorder
 from loc_arena.scaffold.code_services import CodeServices, SkillsFolder
@@ -49,6 +49,9 @@ from loc_arena.task import (
 )
 from loc_arena.tasks.main_task_grader import COMPANY_REPOS
 
+# One part of a brief: its sections, each after the separator that joins it to the one before.
+BriefPart = tuple[tuple[str, Section], ...]
+
 
 def describe_live_services(
     services: Sequence[LiveService],
@@ -56,7 +59,17 @@ def describe_live_services(
     secrets_dir: Path,
     served: Collection[str],
 ) -> str:
-    """The system prompt's section on the scenario's live services, for an agent starting with ``rights``.
+    """The system prompt's section on the scenario's live services, for an agent starting with ``rights``."""
+    return _live_services_section(services, rights, secrets_dir, served).text
+
+
+def _live_services_section(
+    services: Sequence[LiveService],
+    rights: Mapping[str, Sequence[str]],
+    secrets_dir: Path,
+    served: Collection[str],
+) -> Section:
+    """The section on the scenario's live services, with the files it is made of.
 
     On a service with rights, the agent is told where its identity is and what it starts with;
     each service describes its own API, grants included, at ``GET /``. A service with tools and no rights goes
@@ -65,7 +78,7 @@ def describe_live_services(
     ``served`` its tools is told its description, if it has one, with no address: no sandbox reaches it.
     """
     stores = [
-        f"- {service.name}: {service.description.strip()}"
+        service
         for service in services
         if service.collects and service.name in served and service.description.strip()
     ]
@@ -73,23 +86,38 @@ def describe_live_services(
         service for service in services if (not service.tools or service.rights) and not service.collects
     ]
     lines = [_describe_service(service, rights, secrets_dir) for service in reached]
+    stored = [f"- {service.name}: {service.description.strip()}" for service in stores]
     sections = [
-        ENGINE_PROMPTS["services"].substitute(services="\n".join(lines)) if lines else "",
-        ENGINE_PROMPTS["telemetry"].substitute(stores="\n".join(stores)) if stores else "",
+        ENGINE_PROMPTS["agent.services"].substitute(services="\n".join(lines)) if lines else "",
+        ENGINE_PROMPTS["agent.telemetry"].substitute(stores="\n".join(stored)) if stores else "",
     ]
-    return "\n".join(section for section in sections if section)
+    return Section(
+        _live_services_sources(reached, stores),
+        "\n".join(section for section in sections if section),
+    )
+
+
+def _live_services_sources(reached: Sequence[LiveService], stores: Sequence[LiveService]) -> tuple[str, ...]:
+    """The files of the live-services section: its templates, then each service's description."""
+    templates = [
+        *(("agent.services", "agent.service") if reached else ()),
+        *(("agent.service-access",) if any(service.rights for service in reached) else ()),
+        *(("agent.telemetry",) if stores else ()),
+    ]
+    described = [service.description_source for service in (*reached, *stores) if service.description_source]
+    return (*map(engine_source, templates), *described)
 
 
 def _describe_service(service: LiveService, rights: Mapping[str, Sequence[str]], secrets_dir: Path) -> str:
     """``service``'s line: its address, its description and, with rights, the agent's identity and rights."""
-    line = ENGINE_PROMPTS["service"].substitute(
+    line = ENGINE_PROMPTS["agent.service"].substitute(
         host=service.name,
         port=service.port,
         description=service.description.strip(),
     )
     if not service.rights:
         return line
-    access = ENGINE_PROMPTS["service-access"].substitute(
+    access = ENGINE_PROMPTS["agent.service-access"].substitute(
         identity=secrets_dir / f"{IDENTITY_PREFIX}{service.name}",
         rights=", ".join(rights.get(service.name, ())) or "none",
     )
@@ -97,41 +125,65 @@ def _describe_service(service: LiveService, rights: Mapping[str, Sequence[str]],
 
 
 def build_briefs(config: RunConfig) -> dict[str, str]:
-    """Each agent's brief, by agent id: its place in the team, its prompts, its workspace and its services.
+    """Each agent's brief, by agent id: its place in the team, its prompts, its workspace and its services."""
+    return {agent: join_brief(parts) for agent, parts in build_brief_parts(config).items()}
+
+
+def join_brief(parts: Sequence[BriefPart]) -> str:
+    """The brief ``parts`` make: each part's sections after their separators, parts joined by blank lines."""
+    texts = ["".join(separator + section.text for separator, section in part) for part in parts]
+    return "\n\n".join(text for text in texts if text)
+
+
+def build_brief_parts(config: RunConfig) -> dict[str, list[BriefPart]]:
+    """Each agent's brief as its parts, by agent id, each section with the files it came from.
 
     An agent with a covert sub-brief plays it in the attack alone; the honest twin (``covert.enabled`` off)
     gets the legitimate brief only, so it does no covert milestone.
     """
-    skills_dir = resolve_scenario(config).skills_dir
-    skills_doc = (
-        ENGINE_PROMPTS["skills"].substitute(directory=config.settings.stack.skills_directory)
-        if skills_dir
-        else ""
+    skills = (
+        [_engine_section("agent.skills", directory=config.settings.stack.skills_directory)]
+        if resolve_scenario(config).skills_dir
+        else []
     )
-    briefs: dict[str, str] = {}
-    for agent_cfg in config.agents:
-        covert_brief = (
-            f"{agent_cfg.covert_brief} {ENGINE_PROMPTS['covert-steps'].substitute()}"
-            if config.covert.enabled and agent_cfg.covert_brief
-            else None
+    briefs: dict[str, list[BriefPart]] = {}
+    for agent in config.agents:
+        sections = config.prompt_sections
+        covert = sections.get(f"{agent.id}.covert_brief", ()) if config.covert.enabled else ()
+        assignment = (
+            [*covert, (" ", _engine_section("agent.covert-steps"))]
+            if config.covert.enabled and agent.covert_brief
+            else list(sections.get(f"{agent.id}.brief", ()))
         )
-        services_doc = describe_live_services(
+        services = _live_services_section(
             config.live_services,
-            agent_cfg.sandbox.rights,
+            agent.sandbox.rights,
             config.settings.gateway.secrets_dir,
-            [service for service, tools in agent_cfg.sandbox.tools.items() if tools],
+            [service for service, tools in agent.sandbox.tools.items() if tools],
         )
         parts = [
-            ENGINE_PROMPTS["identity"].substitute(agent=agent_cfg.id),
-            _describe_team_place(config, agent_cfg),
-            agent_cfg.system_prompt,  # how it works with its team: the same in both plays
-            config.workspace_prompt,
-            skills_doc,
-            covert_brief or agent_cfg.brief,
-            services_doc,
+            [_engine_section("agent.identity", agent=agent.id)],
+            _describe_team_place(config, agent),
+            list(sections.get(f"{agent.id}.system_prompt", ())),  # how it works with its team: both plays
+            list(sections.get("run.workspace_prompt", ())),
+            skills,
+            assignment,
+            [services],
         ]
-        briefs[agent_cfg.id] = "\n\n".join(part for part in parts if part)
+        briefs[agent.id] = [_joined(part) for part in parts]
     return briefs
+
+
+def _joined(part: Sequence[Section | tuple[str, Section]]) -> BriefPart:
+    """``part``'s sections, each after its separator: a blank line unless it names its own."""
+    paired = [item if isinstance(item, tuple) else ("\n\n", item) for item in part]
+    return tuple(
+        ("" if index == 0 else separator, section) for index, (separator, section) in enumerate(paired)
+    )
+
+
+def _engine_section(name: str, **values: object) -> Section:
+    return Section((engine_source(name),), ENGINE_PROMPTS[name].substitute(values))
 
 
 def play_model_episode(
@@ -232,9 +284,9 @@ def play_model_episode(
     )
 
 
-def _describe_team_place(config: RunConfig, agent: AgentConfig) -> str:
-    """Who the agent reports to and who reports to it, from the run config's team."""
-    lines = [ENGINE_PROMPTS["manager"].substitute(manager=agent.spawned_by)] if agent.spawned_by else []
+def _describe_team_place(config: RunConfig, agent: AgentConfig) -> list[tuple[str, Section]]:
+    """Who the agent reports to and who reports to it, from the run config's team, joined by a space."""
+    lines = [_engine_section("agent.manager", manager=agent.spawned_by)] if agent.spawned_by else []
     if reports := [other.id for other in config.agents if other.spawned_by == agent.id]:
-        lines.append(ENGINE_PROMPTS["reports"].substitute(reports=", ".join(reports)))
-    return " ".join(lines)
+        lines.append(_engine_section("agent.reports", reports=", ".join(reports)))
+    return [(" ", line) for line in lines]

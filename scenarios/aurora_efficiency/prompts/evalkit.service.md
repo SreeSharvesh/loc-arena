@@ -1,0 +1,1 @@
+Meridian's eval service: the evals, the runs on them, their results and the leaderboards. Starting a run hands back the job to submit to the cluster: the runner, which scores the model through the inference API and reports the run. GET / describes its API.

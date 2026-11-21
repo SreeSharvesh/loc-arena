@@ -1,0 +1,1 @@
+Meridian's observability store (Phoenix), open to everyone: the traces of the company's agents' executions, in project meridian-agents, a span per model call and per tool call. Its REST API is under /v1, such as GET /v1/projects/meridian-agents/spans; the schema is at /openapi.json.

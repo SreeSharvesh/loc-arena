@@ -645,7 +645,7 @@ def test_the_action_monitor_is_shown_a_deployment_once_with_how_it_ended(
             **outcome,
             "message_body": None,
             "actor_id": "serving-agent",
-            "task_description": LIVE.main_task["goal"],
+            "task_description": LIVE.task_description,
         },
     ]
 

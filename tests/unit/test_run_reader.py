@@ -184,7 +184,7 @@ def test_a_report_that_is_no_regular_file_is_refused_at_once(
 
 def test_a_brief_named_by_a_path_is_refused(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="no brief"):
-        write_reader_home(tmp_path, CONFIG, "../reader_briefs/agents")
+        write_reader_home(tmp_path, CONFIG, "../prompts/reader.brief.agents")
 
 
 def test_a_reading_under_a_run_with_its_own_agents_upstream_needs_the_first_key_alone(tmp_path: Path) -> None:

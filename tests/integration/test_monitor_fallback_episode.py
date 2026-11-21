@@ -23,7 +23,7 @@ def test_a_monitor_that_stopped_calling_its_model_in_the_honest_twin_alone_is_er
         tmp_path,
         tap=["action", "message"],
         mode="live",
-        prompt_ref="configs/prompts/monitors/action_monitor.txt",
+        prompt_ref="loc_arena/prompts/action.monitor.md",
     )
     entries = yaml.safe_load(monitors.read_text())
     monitors.write_text(
