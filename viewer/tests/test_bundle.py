@@ -18,6 +18,7 @@ from run_insights import (
     load_run,
     validate_draft,
 )
+from run_insights.digest import digest_run
 
 LONG_TEXT = "Every byte of this tool result remains available. " * 30
 
@@ -206,3 +207,17 @@ def test_chain_frame_keeps_a_checked_start_and_drops_an_unchecked_end(bundle: Pa
 
     assert checked.chain_start is not None
     assert checked.chain_end is None
+
+
+def test_digest_handle_cited_with_its_brackets_resolves_to_the_record_it_names(bundle: Path) -> None:
+    """A one-call reader cites the digest's short handles; the check keeps the record each one names."""
+    run = load_run(bundle)
+    text, handles = digest_run(run)
+    line = next(line for line in text.splitlines() if "Every byte" in line)
+    handle = line[1 : line.index("]")]
+    result = next(r for r in run.records if r.stream == "session" and "Every byte" in json.dumps(r.raw))
+
+    checked = validate_draft(InsightDraft(insights=[insight(cites=[f"[{handle}]"])]), run, handles)
+
+    assert "more characters]" in line
+    assert checked.insights[0].cites == [result.id]

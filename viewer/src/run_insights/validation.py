@@ -32,21 +32,27 @@ def _checks(citation: str, run: RunData, evidence: set[str]) -> bool:
     return True
 
 
-def validate_draft(draft: InsightDraft, run: RunData) -> InsightDraft:
+def validate_draft(draft: InsightDraft, run: RunData, handles: dict[str, str] | None = None) -> InsightDraft:
     """Keep only what the bundle supports, as the run reader keeps only the claims that pass.
 
     A citation naming no record or scalar score is dropped, and so is an item left with none or a repeated
-    identifier; a link to an unknown item, or a chain link to a later step, is removed. Unknowns count what
+    identifier; a link to an unknown item, or a chain link to a later step, is removed. A citation of one of
+    ``handles``, a digest's short names, is first replaced by the record ID it names. Unknowns count what
     was dropped, so a reader knows the analysis is incomplete.
     """
     evidence = {record.id for record in run.records}
     seen: set[str] = set()
     dropped_citations = dropped_items = 0
     sections: dict[str, list[Insight]] = {}
+
+    def checked(item: Insight) -> list[str]:  # a handle may come quoted with the digest's brackets
+        cites = [(handles or {}).get(cite.strip("[] "), cite.strip("[] ")) for cite in item.cites]
+        return [cite for cite in cites if _checks(cite, run, evidence)]
+
     for name in ("overview", "chain", "insights"):
         sections[name] = []
         for item in getattr(draft, name):
-            cites = [citation for citation in item.cites if _checks(citation, run, evidence)]
+            cites = checked(item)
             dropped_citations += len(item.cites) - len(cites)
             if not cites or item.id in seen:
                 dropped_items += 1
@@ -65,7 +71,7 @@ def validate_draft(draft: InsightDraft, run: RunData) -> InsightDraft:
     frame: dict[str, Insight | None] = {}
     for name in ("chain_start", "chain_end"):
         item = getattr(draft, name)
-        cites = [citation for citation in item.cites if _checks(citation, run, evidence)] if item else []
+        cites = checked(item) if item else []
         dropped_citations += len(item.cites) - len(cites) if item else 0
         dropped_items += bool(item and not cites)
         frame[name] = item.model_copy(update={"cites": cites, "related": []}) if cites else None

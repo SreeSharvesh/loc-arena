@@ -120,6 +120,32 @@ def write_reader_home(home: Path, config: RunConfig, brief: str, question: str |
     ]
 
 
+def write_one_call(home: Path, config: RunConfig, system: str, user: str, schema: JsonValue) -> list[str]:
+    """Write one chat request to the reader's model; return the command that sends it and keeps the answer.
+
+    The reader then runs no agent: it makes that one call on its own route, asking for a reply in
+    ``schema``'s structure, and writes the reply's JSON.
+    """
+    home.mkdir(parents=True, exist_ok=True)
+    (home / "call.py").write_text((Path(__file__).parent / "insights_call.py").read_text())
+    messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+    structure = {"type": "json_schema", "json_schema": {"name": "answer", "strict": True, "schema": schema}}
+    request = {"model": config.models[READER].model, "messages": messages, "response_format": structure}
+    (home / "request.json").write_text(json.dumps(request))
+    gateway, seconds = config.settings.gateway, config.settings.reader.timeout_seconds
+    url = f"http://{model_gateway.MODEL_GATEWAY_SERVICE}:{gateway.port}/{_ROUTE}/api/v1/chat/completions"
+    token = gateway.secrets_dir / READER_TOKEN_SECRET_NAME
+    return [
+        "python",
+        f"{_HOME}/call.py",
+        url,
+        str(token),
+        f"{_HOME}/request.json",
+        f"{_WORK}/{_ANSWER}",
+        str(seconds),
+    ]
+
+
 def render_reader_compose(
     config: RunConfig,
     run_directory: Path,

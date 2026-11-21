@@ -1,4 +1,4 @@
-"""Structured run insights, produced by the same isolated reader as ``loc-arena read``."""
+"""Structured run insights: one model call over a run's digest, in the reader's sandbox."""
 
 from __future__ import annotations
 
@@ -23,6 +23,7 @@ from run_insights import (
     load_run,
     validate_draft,
 )
+from run_insights.digest import digest_run
 from run_insights.render import render_report
 from run_insights.server import discover_runs
 
@@ -33,7 +34,7 @@ from loc_arena.reader_execution import (
     READER,
     run_reader_process,
     settle_reading,
-    write_reader_home,
+    write_one_call,
 )
 from loc_arena.run_cost import read_dollars
 
@@ -53,6 +54,7 @@ def analyze_run(bundle: Path, config: RunConfig, force: bool = False) -> Path:
     brief = brief.replace("CLAIM_LIMIT", str(limits.claim_limit))
     brief = brief.replace("CHARACTER_LIMIT", str(limits.claim_limit_characters))
     schema = InsightDraft.model_json_schema()
+    brief = brief.replace("SCHEMA", json.dumps(schema))
     providers = config.model_providers.get(role.model)
     configuration = {
         "brief": brief,
@@ -78,13 +80,11 @@ def analyze_run(bundle: Path, config: RunConfig, force: bool = False) -> Path:
     with tempfile.TemporaryDirectory(prefix="locarena-insights-") as scratch:
         home, work = Path(scratch, "home"), Path(scratch, "work")
         work.mkdir()
-        command = write_reader_home(home, config, "agents")
-        (home / "brief.md").write_text(brief)
-        (home / "evidence.json").write_text(run.model_dump_json())
-        (home / "schema.json").write_text(json.dumps(schema))
+        digest, handles = digest_run(run)
+        command = write_one_call(home, config, brief, digest, schema)
         written = run_reader_process(config, bundle, home, work, command, calls)
     try:
-        draft = validate_draft(InsightDraft.model_validate_json(written), run)
+        draft = validate_draft(InsightDraft.model_validate_json(written), run, handles)
     except ValueError as error:
         lines = str(error).splitlines()
         reason = " ".join(line.strip() for line in lines[1:3])[:240] or lines[0][:240]

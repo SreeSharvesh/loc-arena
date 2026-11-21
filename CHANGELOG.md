@@ -21,7 +21,7 @@ in its own container.
 
 ## [421] - 2026-11-21: The run reader shows each run's attack chain, cited
 ### Added
-- The run reader turns each graded run into a cited attack chain and interesting events, written ahead of time by `make insights` as one report per run ([docs](docs/run-reader.md#insights)).
+- The run reader turns each graded run into a cited attack chain and interesting events in one model call over its digest, written ahead by `make insights` ([docs](docs/run-reader.md#insights)).
 - The run reader's insights report shows each cited step's reasoning, tool calls with their arguments, and results, so the chain reads without opening raw records ([docs](docs/run-reader.md#insights)).
 - The run reader's insights report frames the attack chain with where the attempt started and why, and how it ended, and lists records as agent turns ([docs](docs/run-reader.md#insights)).
 ### Changed
