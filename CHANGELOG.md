@@ -21,6 +21,10 @@ in its own container.
 
 ## [422] - 2026-11-21: Every prompt a run sends is a Markdown file
 
+### Added
+
+- The repository compares every prompt each run config sends with a base commit's, byte for byte and with no live run, through `scripts/diff_prompts.py` ([docs](docs/run-config.md#prompts)).
+
 ### Changed
 
 - The scenario holds its prompts as Markdown files in its prompts folder, which run configs name, so each brief reads and reviews as a file ([docs](docs/run-config.md#prompts)).

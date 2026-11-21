@@ -102,6 +102,10 @@ that is not `.md`; and a placeholder with no value. Importing the loader refuses
 unit tests refuse a scenario file that no run config git tracks reads (`find_unread_prompt_files`).
 `config.resolved.yaml` holds each entry's text.
 
+`uv run python scripts/diff_prompts.py --base origin/main` shows what a change sends differently. For every run
+config git tracks and both plays, it builds each agent's system prompt, the opening prompt, the covert objective
+and the monitors' prompts on the base and on the checkout, and prints each text that differs.
+
 The monitors' prompts are the files `configs/monitors.yaml` names as each monitor's `prompt_ref`, in
 `configs/prompts/monitors/`, with `{inputs}` where the inputs go.
 
