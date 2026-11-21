@@ -30,12 +30,12 @@ in its own container.
 - The monitor reads its prompt and its task description from Markdown files, with its inputs at `$inputs`, and every run sends the same bytes as before ([docs](docs/run-config.md#prompts)).
 - The scenario keeps each service's description and everything one task sends in Markdown files named after whose part they are, which run configs name by the same key ([docs](docs/run-config.md#prompts)).
 - The agent's notices, first turn and brief come from the engine's Markdown files, and the run reader's briefs move beside them ([docs](docs/run-config.md#prompts)).
+- The run refuses a config without `task_description_ref`, and the scenario refuses a service description file that names no live service, so no prompt goes missing or unused ([docs](docs/run-config.md#prompts)).
 
 ### Removed
 
 - The run no longer reads `main_task.goal` or the old prompt keys: a config that sets one is refused at load, or its file is not found ([docs](docs/run-config.md#prompts)).
 - The scenario no longer holds the deploy service's description, which no agent's brief ever told, since agents reach that service through its tools alone.
-- The run refuses a config without `task_description_ref`, and the scenario refuses a service description file that names no live service, so no prompt goes missing or unused ([docs](docs/run-config.md#prompts)).
 
 ## [412] - 2026-11-21: CI shares the Docker tests out evenly by time
 
