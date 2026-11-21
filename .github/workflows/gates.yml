@@ -50,10 +50,17 @@ jobs:
 
       - run: make checks
 
+  # Two runners: the tests under tests/integration, and every other test, wherever a new one is put.
   tests:
-    name: tests without Docker
+    name: tests without Docker (${{ matrix.part.name }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        part:
+          - {name: integration, only: tests/integration}
+          - {name: the rest, only: --ignore tests/integration}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -67,7 +74,7 @@ jobs:
 
       - run: uv sync --locked
 
-      - run: make tests
+      - run: make tests ONLY="${{ matrix.part.only }}"
 
   # One stack runs at a time on a runner's 4 cores (stack_slots), so the Docker modules are shared out over
   # runners: a job's time is its share's, and a failed share runs again alone.
