@@ -25,6 +25,12 @@ in its own container.
 
 - The stack probes a container's health every 30 s once it has answered, since probes every 2 s into 31 containers kept a core busy ([docs](docs/run-config.md)).
 
+## [409] - 2026-11-21: A refused kill no longer fails a sandbox's command
+
+### Fixed
+
+- The sandbox's command server no longer fails a command or a reset when AppArmor refuses its kill of a process still entering the container, as a health probe does.
+
 ## [419] - 2026-11-21: Three control-plane tests no longer fail a grade at random
 
 ### Fixed
