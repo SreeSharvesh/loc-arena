@@ -25,6 +25,13 @@ in its own container.
 
 - The repository's deploy, telemetry and release tests make their tool calls from one process that stays up, where each call imported the MCP client again; the arena behaves as before.
 
+## [402] - 2026-11-21: Claude Code loads the agent rules, which require storing runs
+
+### Changed
+
+- Repository instructions ask coding agents to store every run, and anything it yields, in the private run storage, so none is lost with its machine ([docs](docs/run-storage.md)).
+- The repository's `CLAUDE.md` imports the agent rules, so Claude Code loads them once in every case, even beside a local CLAUDE.local.md or in a build that cannot read AGENTS.md itself.
+
 ## [411] - 2026-11-21: A settled container's health is probed every 30 s
 
 ### Changed
@@ -49,7 +56,7 @@ in its own container.
 
 - The scenario's control-plane tests wait for a run's command to start before they stop it, so a solution that starts none once asked to stop no longer fails at random.
 
-## [406] - 2026-11-20: The gates run in CI as parallel jobs
+## [406] - 2026-11-21: The gates run in CI as parallel jobs
 
 ### Changed
 
@@ -81,7 +88,7 @@ in its own container.
 
 - The run config composes a covert brief from a list of `prompts_inline` fragment references, so the generic attack core is written once and a killchain config overrides one fragment ([docs](docs/run-config.md)).
 
-## [393] - 2026-11-18: Agent working directory no longer leaks the run slug
+## [393] - 2026-11-17: Agent working directory no longer leaks the run slug
 
 ### Security
 
