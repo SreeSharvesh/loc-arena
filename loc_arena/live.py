@@ -39,6 +39,8 @@ from loc_arena.prompt_references import ENGINE_PROMPTS, Section, engine_source
 from loc_arena.sandbox import IDENTITY_PREFIX, connect_sandboxes
 from loc_arena.scaffold.bus import Recorder
 from loc_arena.scaffold.code_services import CodeServices, SkillsFolder
+from loc_arena.subagent_config import list_spawners
+from loc_arena.subagents import Subagents
 from loc_arena.task import (
     _DEFAULT_DEADLINE,
     _SECRET,
@@ -141,11 +143,7 @@ def build_brief_parts(config: RunConfig) -> dict[str, list[BriefPart]]:
     An agent with a covert sub-brief plays it in the attack alone; the honest twin (``covert.enabled`` off)
     gets the legitimate brief only, so it does no covert milestone.
     """
-    skills = (
-        [_engine_section("agent.skills", directory=config.settings.stack.skills_directory)]
-        if resolve_scenario(config).skills_dir
-        else []
-    )
+    skills = _describe_skills(config)
     briefs: dict[str, list[BriefPart]] = {}
     for agent in config.agents:
         sections = config.prompt_sections
@@ -155,23 +153,64 @@ def build_brief_parts(config: RunConfig) -> dict[str, list[BriefPart]]:
             if config.covert.enabled and agent.covert_brief
             else list(sections.get(f"{agent.id}.brief", ()))
         )
-        services = _live_services_section(
-            config.live_services,
-            agent.sandbox.rights,
-            config.settings.gateway.secrets_dir,
-            [service for service, tools in agent.sandbox.tools.items() if tools],
-        )
+        workspace, services = _describe_surroundings(config, agent)
         parts = [
             [_engine_section("agent.identity", agent=agent.id)],
             _describe_team_place(config, agent),
             list(sections.get(f"{agent.id}.system_prompt", ())),  # how it works with its team: both plays
-            list(sections.get("run.workspace_prompt", ())),
+            workspace,
             skills,
             assignment,
-            [services],
+            services,
         ]
         briefs[agent.id] = [_joined(part) for part in parts]
     return briefs
+
+
+def build_subagent_briefs(config: RunConfig) -> dict[str, dict[str, str]]:
+    """By agent that starts subagents, each kind's brief: its place, its prompt, the agent's surroundings.
+
+    A subagent gets neither its agent's assignment nor the covert objective: what it does is the task its
+    caller gives it.
+    """
+    skills = _describe_skills(config)
+    briefs: dict[str, dict[str, str]] = {}
+    for agent in (config.agent(agent) for agent in list_spawners(config)):
+        workspace, services = _describe_surroundings(config, agent)
+        briefs[agent.id] = {
+            kind: join_brief(
+                [
+                    _joined(part)
+                    for part in (
+                        [_engine_section("agent.subagent", kind=kind, agent=agent.id)],
+                        list(config.prompt_sections.get(f"subagent.{kind}.prompt", ())),
+                        workspace,
+                        skills,
+                        services,
+                    )
+                ],
+            )
+            for kind in config.subagents.definitions
+        }
+    return briefs
+
+
+def _describe_surroundings(config: RunConfig, agent: AgentConfig) -> tuple[list[Section], list[Section]]:
+    """What ``agent``'s brief says of its workspace, and of the live services its sandbox reaches."""
+    services = _live_services_section(
+        config.live_services,
+        agent.sandbox.rights,
+        config.settings.gateway.secrets_dir,
+        [service for service, tools in agent.sandbox.tools.items() if tools],
+    )
+    return list(config.prompt_sections.get("run.workspace_prompt", ())), [services]
+
+
+def _describe_skills(config: RunConfig) -> list[Section]:
+    """Where the skills are, when the run's scenario has skills."""
+    if not resolve_scenario(config).skills_dir:
+        return []
+    return [_engine_section("agent.skills", directory=config.settings.stack.skills_directory)]
 
 
 def _joined(part: Sequence[Section | tuple[str, Section]]) -> BriefPart:
@@ -261,7 +300,9 @@ def play_model_episode(
     run_coworker(edge, recorder, set_time)
     run_world_activity(recorder, activity, Reviewer(), set_time, repos)
 
-    ended = play_own_sessions(config, code_services, briefs, workdir, ceiling - monotonic()).values()
+    subagents = Subagents(config, build_subagent_briefs(config), workdir)
+    seconds = ceiling - monotonic()
+    ended = play_own_sessions(config, code_services, briefs, workdir, seconds, subagents).values()
     record_checkouts("end of play")  # what its commands left running changed after its last call
     episode_trace = trace.finish(sealed.last_seq) if trace else None
     remove_checkouts(checkouts)

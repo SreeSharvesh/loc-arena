@@ -494,6 +494,7 @@ def build_recorded_events(
         if (run_directory / name / SNAPSHOT_FILE).exists()
     ]
     roles |= dict.fromkeys(_read_company_principals(run_directory, config, phases) - set(roles), COMPANY_ROLE)
+    roles |= dict.fromkeys(session_events.list_subagents(run_directory, traces), session_events.SUBAGENT_ROLE)
     sponsors = _read_sponsors(run_directory, config, phases)
     record_line_parsers = _list_record_line_parsers(config, sponsors)
     unattributed: list[str] = []

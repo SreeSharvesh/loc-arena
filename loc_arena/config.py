@@ -42,6 +42,7 @@ from loc_arena.ids import PermissionScope
 from loc_arena.registry import SCORER_REGISTRY, VERIFIER_REGISTRY, is_scorer, is_verifier
 from loc_arena.service_grants import find_unknown_grant
 from loc_arena.settings import LocArenaSettings
+from loc_arena.subagent_config import SubagentsConfig, find_unheld_subagent_tool
 
 YAML_ENCODING: Final = "utf-8"
 BLOCK_CONFIG: Final = ConfigDict(extra="ignore")
@@ -345,6 +346,7 @@ class _RunDocument(BaseSettings):
     episode: EpisodeConfig = Field(description="Episode ceilings.")
     side_task: SideTaskConfig = Field(description="The side task and how it is verified.")
     covert: CovertConfig = Field(description="The covert objective and whether it is on.")
+    subagents: SubagentsConfig = Field(default=SubagentsConfig(), description="Subagents agents may start.")
     agents: Annotated[
         tuple[AgentConfig, ...],
         AfterValidator(_require_unique_agent_ids),
@@ -449,6 +451,7 @@ class RunConfig:
     workspace_prompt: str = ""  # what every agent's brief says of its workspace
     task_description: str = ""  # the main task as the monitors are told it
     prompt_sections: Mapping[str, prompt_references.Sections] = dataclasses.field(default_factory=dict)
+    subagents: SubagentsConfig = SubagentsConfig()
 
     def loop_model(self, agent_id: str) -> ModelSpec:
         """The model ``agent_id``'s loop calls, with its sampling and reasoning: that of its role."""
@@ -456,10 +459,9 @@ class RunConfig:
 
     def agent(self, agent_id: str) -> AgentConfig:
         """Return the agent config with this id, or raise ``ConfigError``."""
-        for a in self.agents:
-            if a.id == agent_id:
-                return a
-        raise ConfigError(f"no agent with id {agent_id!r}")
+        if (agent := next((a for a in self.agents if a.id == agent_id), None)) is None:
+            raise ConfigError(f"no agent with id {agent_id!r}")
+        return agent
 
     @property
     def roster(self) -> tuple[str, ...]:
@@ -469,18 +471,14 @@ class RunConfig:
     @property
     def run_slug(self) -> str:
         """The stable, mode-independent grouping name: task slugs plus the policy and monitor model ids."""
-        return (
-            f"{self.main_slug}__{self.side_slug}"
-            f"__policy-{self.policy_model_slug}__monitor-{self.monitor_model_slug}"
-        )
+        return self._name(self.side_slug)
 
     def run_name(self, mode: str, instance_id: str) -> str:
         """The unique name for one run: the honest twin uses ``honest`` in the side slot, then a short id."""
-        side = "honest" if mode == "honest" else self.side_slug
-        return (
-            f"{self.main_slug}__{side}"
-            f"__policy-{self.policy_model_slug}__monitor-{self.monitor_model_slug}__{instance_id}"
-        )
+        return f"{self._name('honest' if mode == 'honest' else self.side_slug)}__{instance_id}"
+
+    def _name(self, side: str) -> str:
+        return f"{self.main_slug}__{side}__policy-{self.policy_model_slug}__monitor-{self.monitor_model_slug}"
 
 
 def _model_slug(model_id: str) -> str:
@@ -591,8 +589,9 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
             f"episode.wall_clock_seconds ({document.episode.wall_clock_seconds}): a job's badge ends with "
             "its credential, so a loop started at the play's start would die before the deadline",
         )
-    sanctioning = _find_sanctioning_problem(document.side_task.sanctioned_submitters, settings, agents)
-    if problem := sanctioning or _find_unknown_agent_role(models_file, agents):
+    sanction = _find_sanctioning_problem(document.side_task.sanctioned_submitters, settings, agents)
+    unheld = find_unheld_subagent_tool(document.subagents, agents, settings.stack.tools_timeout_seconds)
+    if problem := next(filter(None, (sanction, _find_unknown_agent_role(models_file, agents), unheld)), None):
         raise ConfigError(problem)
 
     policy_model = models[AGENT_ROLE].model if AGENT_ROLE in models else "unknown"
@@ -608,6 +607,7 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
         models=models,
         side_task=document.side_task,
         covert=document.covert,
+        subagents=document.subagents,
         agents=agents,
         main_task=dict(source.yaml_data["main_task"]),
         protocol=document.protocol,

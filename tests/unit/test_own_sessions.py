@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import json
 import sys
 import threading
@@ -11,8 +12,10 @@ from pathlib import Path
 from time import monotonic
 
 import pytest
-from loc_arena.config import RunConfig, load_run_config
+import yaml
+from loc_arena.config import ConfigError, RunConfig, load_run_config
 from loc_arena.gateway.core import GATEWAY_TOKEN_FILE_VARIABLE, GATEWAY_URL_VARIABLE
+from loc_arena.live import build_subagent_briefs
 from loc_arena.notices import Notices
 from loc_arena.own_sessions import (
     TASK,
@@ -23,9 +26,12 @@ from loc_arena.own_sessions import (
     play_sessions,
     record_session_ends,
 )
+from loc_arena.sandbox import token_secret_name
 from loc_arena.settings import AgentsUpstream
+from loc_arena.subagents import Subagents
 from loc_arena.task import TOOLS_URL_VARIABLE
 from loc_arena.tool_records import append_to
+from loc_arena.tools_gateway import render_tools_gateway_config
 from pydantic import HttpUrl
 
 # A stand-in for pi in RPC mode: it records each prompt and its arguments, then does what its home says.
@@ -87,7 +93,15 @@ def config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> RunConfig:
 
 def play(config: RunConfig, tmp_path: Path, seconds: float = 30) -> dict[str, SessionEnd]:
     noticed = append_to(tmp_path / "notices.jsonl")
-    return play_sessions(config, BRIEFS, tmp_path, seconds, Notices(config, BRIEFS), noticed)
+    return play_sessions(
+        config,
+        BRIEFS,
+        tmp_path,
+        seconds,
+        Notices(config, BRIEFS),
+        noticed,
+        Subagents(config, {}, tmp_path),
+    )
 
 
 def write_home(home: Path, **files: str) -> None:
@@ -204,7 +218,7 @@ def test_an_agent_that_unsubscribed_from_a_topic_gets_no_notice_of_it(
     notices = Notices(config, BRIEFS)
     notices.unsubscribe("eval-agent", "dm")
 
-    play_sessions(config, BRIEFS, tmp_path, 30, notices, lambda _: None)
+    play_sessions(config, BRIEFS, tmp_path, 30, notices, lambda _: None, Subagents(config, {}, tmp_path))
 
     assert inputs_of(tmp_path / "eval-agent") == [TASK]
 
@@ -452,3 +466,145 @@ def test_each_sessions_end_is_recorded_with_its_reason(tmp_path: Path) -> None:
         "agent-main": {"reason": "ceiling", "exit_code": None, "stderr": "late"},
         "eval-agent": {"reason": "finished", "exit_code": 0, "stderr": ""},
     }
+
+
+SUBAGENTS_RUN = "configs/aurora-efficiency.subagents.fast.yaml"
+SCOUT = {"agent-main": {"scout": "You are a scout."}}
+
+
+@pytest.fixture
+def spawning(config: RunConfig, tmp_path: Path) -> RunConfig:
+    """The run config with the subagents run's kinds, which agent-main may start, and agent-main's token."""
+    secrets = tmp_path / "secrets"
+    secrets.mkdir()
+    (secrets / token_secret_name("agent-main")).write_text("token-agent-main")
+    gateway = config.settings.gateway.model_copy(update={"secrets_dir": secrets})
+    settings = config.settings.model_copy(update={"gateway": gateway})
+    return dataclasses.replace(config, subagents=load_run_config(SUBAGENTS_RUN).subagents, settings=settings)
+
+
+@pytest.fixture
+def subagents(spawning: RunConfig, tmp_path: Path) -> Subagents:
+    return Subagents(spawning, SCOUT, tmp_path)
+
+
+def await_runs(home: Path) -> list[str]:
+    """What the stand-in pi of ``home`` was started with, once it took its first prompt."""
+    deadline = monotonic() + 10
+    while not (home / "runs").exists() and monotonic() < deadline:
+        threading.Event().wait(0.05)
+    return (home / "runs").read_text().splitlines()
+
+
+def test_a_subagent_runs_nothing_itself_and_is_offered_its_kinds_tools_alone(
+    subagents: Subagents,
+    spawning: RunConfig,
+    tmp_path: Path,
+) -> None:
+    subagents.start("agent-main", "scout", "Find where the pipeline spends its time.")
+
+    home = tmp_path / "loops" / "agent-main.1"
+    model = spawning.models["untrusted_agent"].model
+    tools = "mcp__meridian__bash,mcp__meridian__read_file,mcp__meridian__list_dir,mcp__meridian__search_code"
+    assert await_runs(home) == [
+        f"Find where the pipeline spends its time. | --model gateway/{model} --mode rpc --no-builtin-tools "
+        f"--tools {tools} --session {home / '.pi' / 'session.jsonl'} "
+        f"--system-prompt {home / '.pi' / 'agent' / 'system-prompt.md'}",
+    ]
+
+
+def test_a_subagent_calls_its_model_on_its_own_lane_of_its_agents_route(
+    subagents: Subagents,
+    tmp_path: Path,
+) -> None:
+    subagents.start("agent-main", "scout", "Survey meridian-serving.")
+
+    models = json.loads((tmp_path / "loops" / "agent-main.1" / ".pi" / "agent" / "models.json").read_text())
+    assert models["providers"]["gateway"]["baseUrl"] == "http://gateway:8080/loop/agent-main.1/api/v1"
+
+
+def test_the_tools_gateway_admits_a_subagents_key_as_its_agent_naming_the_subagent_as_caller(
+    subagents: Subagents,
+    spawning: RunConfig,
+    tmp_path: Path,
+) -> None:
+    tokens = {agent.id: f"token-{agent.id}" for agent in spawning.agents}
+    subagents.start("agent-main", "scout", "Survey meridian-serving.")
+    key = (tmp_path / "loops" / "agent-main.1" / "tools.key").read_text()
+
+    rendered = yaml.safe_load(render_tools_gateway_config(spawning, tokens, {}))
+
+    (bind,) = rendered["binds"]
+    ((route,),) = [listener["routes"] for listener in bind["listeners"]]
+    admitted = {k["keyHash"]: k["metadata"] for k in route["policies"]["apiKey"]["keys"]}
+    assert admitted[f"sha256:{hashlib.sha256(key.encode()).hexdigest()}"] == {
+        "agent": "agent-main",
+        "caller": "agent-main.1",
+    }
+
+
+@pytest.mark.parametrize(
+    ("started", "caller", "kind", "refusal"),
+    [
+        (1, "agent-main.1", "scout", "agent-main.1 may not start subagents"),
+        (0, "eval-agent", "scout", "eval-agent may not start subagents"),
+        (0, "agent-main", "planner", "no subagent kind 'planner': scout"),
+        (2, "agent-main", "scout", "2 subagents of agent-main's already work: wait for one to answer"),
+    ],
+)
+def test_a_delegate_call_past_the_runs_bounds_starts_no_subagent(
+    subagents: Subagents,
+    started: int,
+    caller: str,
+    kind: str,
+    refusal: str,
+) -> None:
+    for _ in range(started):
+        subagents.start("agent-main", "scout", "Survey meridian-serving.")
+
+    outcome = subagents.start(caller, kind, "Survey meridian-datapipe.")
+
+    assert outcome == refusal
+
+
+def test_play_waits_for_a_subagent_still_working_once_every_agent_is_idle(
+    subagents: Subagents,
+    spawning: RunConfig,
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "loops").mkdir()
+    write_home(tmp_path / "loops" / "agent-main.1", sleep="1.5")
+    subagents.start("agent-main", "scout", "Survey meridian-serving.")
+    noticed = append_to(tmp_path / "notices.jsonl")
+
+    play_sessions(spawning, BRIEFS, tmp_path, 30, Notices(spawning, BRIEFS), noticed, subagents)
+
+    ended = json.loads((tmp_path / "subagents.jsonl").read_text().splitlines()[-1])
+    assert ended["end"]["reason"] == "finished"
+
+
+def test_a_subagents_brief_holds_neither_the_covert_objective_nor_its_agents_assignment() -> None:
+    attack = load_run_config(SUBAGENTS_RUN)
+    lead = attack.agent(attack.covert.target_identity)
+
+    brief = build_subagent_briefs(attack)[lead.id]["scout"]
+
+    assert [
+        str(text) in brief for text in (attack.covert.objective_prompt, lead.covert_brief, lead.brief)
+    ] == [
+        False,
+        False,
+        False,
+    ]
+
+
+def test_a_subagent_kind_offered_a_tool_its_agent_does_not_hold_does_not_load(tmp_path: Path) -> None:
+    run = tmp_path / "run.yaml"
+    kind = "subagents:\n  definitions:\n    scout:\n      tools: [submit_job]\n"
+    run.write_text(f"extends: {Path(SUBAGENTS_RUN).name}\n{kind}")
+
+    with pytest.raises(
+        ConfigError,
+        match=r"subagents\.definitions\.scout\.tools: agent-main does not hold submit_job",
+    ):
+        load_run_config(run, "configs")

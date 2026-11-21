@@ -11,6 +11,7 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, TypedDict
 
 from loc_arena.notices import NOTICE_TOOLS
+from loc_arena.subagent_config import list_spawners
 from loc_arena.telemetry_stack import (
     TELEMETRY_NETWORK,
     GatewayTracing,
@@ -27,7 +28,14 @@ from loc_arena.tool_authorization import (
     TOOLS_GATEWAY_SERVICE as TOOLS_GATEWAY_SERVICE,  # its compose service, by the name every module uses
 )
 from loc_arena.tool_list_notifier import TOOL_LIST_NOTIFIER
-from loc_arena.workspace_service import WORKSPACE_SERVICE, WORKSPACE_TOOLS, workspace_key
+from loc_arena.workspace_service import (
+    DELEGATE_TOOL,
+    WORKSPACE_SERVICE,
+    WORKSPACE_TOOLS,
+    name_children,
+    subagent_token,
+    workspace_key,
+)
 from loc_arena.yaml_documents import dump_document
 
 if TYPE_CHECKING:  # loc_arena.episode_stack imports this module
@@ -87,22 +95,38 @@ def render_tools_gateway_config(
     prefixed with their service's. It listens on IPv4 alone; admin, stats and readiness listeners are off, so
     nothing on agent-net can read this config back.
     """
+    spawners = list_spawners(config)
     tools = {
         # An agent's session runs nothing itself: its bash, file and subscription tools are a target.
-        agent.id: {**agent.sandbox.tools, WORKSPACE_SERVICE: [*WORKSPACE_TOOLS, *NOTICE_TOOLS]}
+        agent.id: {
+            **agent.sandbox.tools,
+            WORKSPACE_SERVICE: [
+                *WORKSPACE_TOOLS,
+                *NOTICE_TOOLS,
+                *([DELEGATE_TOOL] if agent.id in spawners else []),
+            ],
+        }
         for agent in config.agents
     }
-    targets = _render_targets(config, tokens, identities, inbox_keys or {}, notifier_key)
+    # A subagent holds a key of its own, which names its agent, whose tools and identities it is given, and
+    # itself as the caller, whom the workspace service and the gateway's log name.
+    children = {
+        child: agent for agent in spawners for child in name_children(agent, config.subagents.max_children)
+    }
+    callers = {agent: tokens[agent] for agent in tokens} | {
+        child: subagent_token(tokens[agent], child) for child, agent in children.items()
+    }
+    targets = _render_targets(config, tokens, identities, inbox_keys or {}, notifier_key, callers)
     policies = {
         "apiKey": {
             "mode": "strict",
             "location": {"header": {"name": "authorization", "prefix": "Bearer "}},
             "keys": [
                 {
-                    "keyHash": f"sha256:{hashlib.sha256(tokens[agent.id].encode()).hexdigest()}",
-                    "metadata": {"agent": agent.id},
+                    "keyHash": f"sha256:{hashlib.sha256(token.encode()).hexdigest()}",
+                    "metadata": {"agent": children.get(caller, caller), "caller": caller},
                 }
-                for agent in config.agents
+                for caller, token in callers.items()
             ],
         },
         # An agent with no tools on the target has no entry for it, so the rule fails to evaluate and denies.
@@ -155,12 +179,14 @@ def _render_targets(
     identities: Mapping[Identity, str],
     inbox_keys: Mapping[str, str],
     notifier_key: str | None,
+    caller_tokens: Mapping[str, str],
 ) -> list[Target]:
     """Each service with tools as a target of the route, then the episode's: the workspace, and the notifier.
 
     A target is sent the calling agent's own credential on it: its identity on a service, its inbox key on
-    IAM, its workspace key. A ready image is sent none: it runs no IAM integration to know a caller by, and
-    the gateway enforces IAM's decisions for it. The telemetry store's tools are its own MCP server's.
+    IAM; the workspace is sent the caller's workspace key, from ``caller_tokens``, a subagent's its own.
+    A ready image is sent none: it runs no IAM integration to know a caller by, and the gateway enforces
+    IAM's decisions for it. The telemetry store's tools are its own MCP server's.
     """
     from loc_arena.stack_play import EPISODE_SERVICE  # noqa: PLC0415 - stack_play imports this module
 
@@ -182,8 +208,8 @@ def _render_targets(
         url = locate_reader(config, service) or f"http://{service.name}:{service.port}{MCP_PATH}"
         targets.append(_render_target(service.name, url, callers))
     workspace = f"http://{EPISODE_SERVICE}:{config.settings.stack.workspace_port}{MCP_PATH}"
-    keys = {agent: workspace_key(token) for agent, token in tokens.items()}
-    targets.append(_render_target(WORKSPACE_SERVICE, workspace, keys))
+    keys = {caller: workspace_key(token) for caller, token in caller_tokens.items()}
+    targets.append(_render_target(WORKSPACE_SERVICE, workspace, keys, by="caller"))
     if notifier_key is not None:  # the same key for every agent's session, and no agent holds it
         notifier = workspace.removesuffix(MCP_PATH) + f"/{TOOL_LIST_NOTIFIER}{MCP_PATH}"
         targets.append(_render_target(TOOL_LIST_NOTIFIER, notifier, dict.fromkeys(tokens, notifier_key)))
@@ -199,6 +225,7 @@ def _render_frontend_policies(config: RunConfig) -> FrontendPolicies:
     """
     added = {
         "agent": "apiKey.agent",
+        "caller": "apiKey.caller",  # the agent, or its subagent that made the call
         "tool_args": "mcp.tool.arguments",
         "tool_result": "mcp.tool.result",
         "tool_error": "mcp.tool.error",
@@ -211,11 +238,11 @@ def _render_frontend_policies(config: RunConfig) -> FrontendPolicies:
     return policies
 
 
-def _render_target(name: str, url: str, callers: Mapping[str, str] | None) -> Target:
-    """The target ``name`` at ``url``, sent the calling agent's own credential from ``callers``, if any."""
+def _render_target(name: str, url: str, callers: Mapping[str, str] | None, by: str = "agent") -> Target:
+    """The target ``name`` at ``url``, sent the credential ``callers`` holds for the key's ``by``, if any."""
     if callers is None:
         return {"name": name, "mcp": {"host": url}}
-    authorization = f'"Bearer " + {json.dumps(dict(callers))}[apiKey.agent]'
+    authorization = f'"Bearer " + {json.dumps(dict(callers))}[apiKey.{by}]'
     return {
         "name": name,
         "mcp": {"host": url},

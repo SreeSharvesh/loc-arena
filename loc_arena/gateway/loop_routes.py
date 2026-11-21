@@ -1,16 +1,18 @@
 """The model gateway's routes for the agents' loops (``harness: pi``): one per agent, for its model calls.
 
-An agent's loop calls ``/loop/<agent id>/<the chat path>``. Its route admits the episode's token alone, whose
-container runs the loops, and as many calls in a play as the agent's turn budget: a call past it is refused
-(429). The call record names the route's path, and so the agent. Each call goes upstream with the request
-fields the run config sets for that agent's model, whatever the loop sent for them.
+An agent's loop calls ``/loop/<agent id>/<the chat path>``, and each subagent it starts
+``/loop/<subagent id>/<the chat path>`` on the same route. The route admits the episode's token alone, whose
+container runs the loops, and as many calls in a play as the agent's turn budget, its subagents' among them:
+a call past it is refused (429). The call record names the path, and so the agent or the subagent. Each
+call goes upstream with the request fields the run config sets for that agent's model, whatever the loop
+sent for them.
 """
 
 from __future__ import annotations
 
 import hashlib
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from pydantic import JsonValue, SecretStr
@@ -33,6 +35,7 @@ class Loops:
     # The one caller the loops' routes admit, and its token; none: the episode.
     caller: tuple[str, SecretStr] | None = None
     allow: str = "size(request.body) >= 0"  # the rule a call passes: any body, read so the record keeps it
+    children: Mapping[str, Sequence[str]] = field(default_factory=dict)  # by agent: its subagents' paths
 
 
 def render_loop_routes(
@@ -58,7 +61,10 @@ def render_loop_routes(
     return [
         {
             "name": f"{LOOP_ROUTE_PREFIX}-{agent}",
-            "matches": [{"path": {"exact": f"/{LOOP_ROUTE_PREFIX}/{agent}/{chat_path}"}}],
+            "matches": [
+                {"path": {"exact": f"/{LOOP_ROUTE_PREFIX}/{lane}/{chat_path}"}}
+                for lane in (agent, *loops.children.get(agent, ()))
+            ],
             "policies": {
                 **policies,
                 # Parsed as a chat completion, so the overrides are set on it.

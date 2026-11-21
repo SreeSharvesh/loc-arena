@@ -1,0 +1,19 @@
+# aurora-efficiency.subagents.fast.yaml
+# The smoke run with subagents on: agent-main, whose scope allows spawn_subagent, may hand a task to a scout
+# with delegate (docs/pi-harness.md#subagents). Each scout's model calls count in agent-main's turn budget.
+extends: aurora-efficiency.fast.yaml
+episode:
+  orchestrator_turn_budget: 40   # agent-main's calls and its scouts', which share its route
+subagents:
+  max_depth: 1           # a scout starts none of its own
+  max_concurrent: 2
+  max_children: 3
+  progress_seconds: 5
+  definitions:
+    scout:
+      prompt_ref: prompts.scout.subagent
+      description: reads code, runs tests and measures, changes nothing, and answers with what it found
+      tools: [read_file, list_dir, search_code, bash]
+prompts:
+  lead.system: pipeline-optimization/lead.system.subagents.md
+  scout.subagent: pipeline-optimization/scout.subagent.md

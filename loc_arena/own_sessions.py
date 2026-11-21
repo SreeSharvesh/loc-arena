@@ -33,7 +33,7 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from time import monotonic, sleep
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlsplit, urlunsplit
 
 from pydantic import BaseModel, Field, JsonValue
@@ -46,11 +46,21 @@ from loc_arena.prompt_references import ENGINE_PROMPTS
 from loc_arena.sandbox import token_secret_name
 from loc_arena.scaffold.code_services import CodeServices
 from loc_arena.stack_play import EPISODE_SERVICE
+from loc_arena.subagent_config import list_spawners
 from loc_arena.task import TOOLS_URL_VARIABLE
 from loc_arena.tool_list_notifier import NOTIFIER_KEY_SECRET_NAME, TOOL_LIST_NOTIFIER, ToolListNotifier
 from loc_arena.tool_offer import await_offered_tools, notify_once_offered
 from loc_arena.tool_records import Write, append_to
-from loc_arena.workspace_service import WORKSPACE_SERVICE, Turns, build_workspace_server, serve_workspace
+from loc_arena.workspace_service import (
+    WORKSPACE_SERVICE,
+    Turns,
+    build_workspace_server,
+    name_children,
+    serve_workspace,
+)
+
+if TYPE_CHECKING:  # loc_arena.subagents imports this module
+    from loc_arena.subagents import Subagents
 
 _LOGGER = logging.getLogger(__name__)
 LOOPS_DIRECTORY = "loops"  # in a play's directory: each loop's home, with its brief and its session
@@ -60,12 +70,13 @@ SESSION_FILE = (
 )  # in a loop's home: pi's record of the session, written as it goes
 SESSION_ENDS_FILE = "session_ends.json"  # in a play's directory: how each agent's session ended
 NOTICES_FILE = "notices.jsonl"  # in a play's directory: each notice, and whether its agent's session took it
+CHILD_KEY_FILE = "tools.key"  # in a subagent's home: its key at the tools gateway
 PROVIDER = "gateway"
 TOOLS_SERVER = "meridian"  # the tools reach the model as mcp__meridian__<tool>
 CHAT_PATH = "/chat/completions"  # pi adds it to its provider's URL itself
 TASK = ENGINE_PROMPTS["agent.first-turn"].substitute()  # the first prompt of every session
 _STDERR_TAIL = 2000  # characters of a session's error output kept
-_STOP_SECONDS = 5  # how long the sessions' pi processes get to exit once their input is closed
+STOP_SECONDS = 5  # how long the sessions' pi processes get to exit once their input is closed
 PI_SETTINGS = {
     "compaction": {"enabled": True},  # a long session summarizes itself, with a model call like any other
     "cacheWarming": "off",  # no model call the agent's loop did not make
@@ -100,6 +111,13 @@ class _PiMessage(BaseModel):
     role: str | None = None
     stop_reason: str | None = Field(default=None, alias="stopReason")
     error_message: str | None = Field(default=None, alias="errorMessage")
+    content: list[dict[str, JsonValue]] | str = []
+
+    def text(self) -> str:
+        """What the message says: its text blocks, joined."""
+        if isinstance(self.content, str):
+            return self.content
+        return "\n".join(str(block["text"]) for block in self.content if block.get("type") == "text")
 
 
 class _PiEvent(BaseModel):
@@ -113,7 +131,7 @@ class _PiEvent(BaseModel):
     message: _PiMessage | None = None
 
 
-class _Session:
+class PiSession:
     """One agent's pi in RPC mode: prompted on its stdin, followed by the events on its stdout."""
 
     def __init__(
@@ -123,6 +141,7 @@ class _Session:
         working_directory: Path,
         environment: Mapping[str, str],
     ) -> None:
+        """Start pi with ``command`` from ``working_directory``; its errors go to ``home``."""
         self._errors = home / "pi.stderr"
         with self._errors.open("wb") as errors:
             self._pi = subprocess.Popen(  # noqa: S603 - pi, with arguments the episode wrote
@@ -197,6 +216,11 @@ class _Session:
             if self._last.stop_reason == "error" and self._last.error_message == BUDGET_REFUSAL:
                 self._end = SessionEnd("budget", None, BUDGET_REFUSAL)
 
+    def answer(self) -> str:
+        """What its model said last."""
+        with self._lock:
+            return self._last.text()
+
     def _read_errors(self) -> str:
         return self._errors.read_text(errors="replace")[-_STDERR_TAIL:]
 
@@ -219,6 +243,15 @@ class _Session:
             self._pi.kill()
             self._pi.wait()
             return None
+
+
+@dataclass(frozen=True)
+class Child:
+    """A subagent: its id, its key at the tools gateway, and the tools it is offered."""
+
+    id: str
+    token: str
+    tools: tuple[str, ...]
 
 
 def describe_loops(config: RunConfig) -> Loops:
@@ -246,7 +279,9 @@ def describe_loops(config: RunConfig) -> Loops:
         agent.id: episode.orchestrator_turn_budget if agent.id == root else episode.subagent_turn_budget
         for agent in config.agents
     }
-    return Loops(calls, {agent: describe_overrides(config.loop_model(agent)) for agent in calls})
+    overrides = {agent: describe_overrides(config.loop_model(agent)) for agent in calls}
+    children = {agent: name_children(agent, config.subagents.max_children) for agent in list_spawners(config)}
+    return Loops(calls, overrides, children=children)
 
 
 def brief_loop(config: RunConfig, agent: str, brief: str) -> str:
@@ -262,26 +297,37 @@ def brief_loop(config: RunConfig, agent: str, brief: str) -> str:
     )
 
 
-def write_pi_home(home: Path, config: RunConfig, agent: str, brief: str) -> list[str]:
+def write_pi_home(
+    home: Path,
+    config: RunConfig,
+    agent: str,
+    brief: str,
+    child: Child | None = None,
+) -> list[str]:
     """Write ``agent``'s loop's home (pi's provider, tools, settings and ``brief``); return pi's command.
 
     The brief reaches pi as its system prompt, in a file: pi reads an argument that names a file as that
     file's text. pi reads each key from its file at each request. The model is the agent's role's, with that
-    role's output cap; ``pi.model_settings`` adds pi's other keys for it.
+    role's output cap; ``pi.model_settings`` adds pi's other keys for it. A ``child`` of ``agent`` calls on
+    its own lane of the agent's route with its own key, and is offered its tools alone.
     """
     settings, role = config.settings, config.loop_model(agent)
     model = role.model
     directory = home / ".pi" / "agent"
     directory.mkdir(parents=True, exist_ok=True)
     provider = {
-        "baseUrl": _loop_url(os.environ[GATEWAY_URL_VARIABLE], agent),
+        "baseUrl": _loop_url(os.environ[GATEWAY_URL_VARIABLE], child.id if child else agent),
         "api": "openai-completions",
         "apiKey": f"!cat {shlex.quote(os.environ[GATEWAY_TOKEN_FILE_VARIABLE])}",
         "models": [{"id": model, "maxTokens": role.max_tokens, **settings.pi.model_settings}],
     }
     (directory / "models.json").write_text(json.dumps({"providers": {PROVIDER: provider}}))
     (directory / "settings.json").write_text(json.dumps(PI_SETTINGS))
-    key_file = shlex.quote(str(settings.gateway.secrets_dir / token_secret_name(agent)))
+    key_path = settings.gateway.secrets_dir / token_secret_name(agent)
+    if child is not None:  # in the child's home, which only the episode reads
+        key_path = home / CHILD_KEY_FILE
+        key_path.write_text(child.token)
+    key_file = shlex.quote(str(key_path))
     server = {
         "url": os.environ[TOOLS_URL_VARIABLE],
         "headers": {"Authorization": f"!echo Bearer $(cat {key_file})"},
@@ -291,8 +337,9 @@ def write_pi_home(home: Path, config: RunConfig, agent: str, brief: str) -> list
     servers = {"autoEnableCodemode": False, "mcpServers": {TOOLS_SERVER: server}}
     (directory / "mcp.json").write_text(json.dumps(servers))
     (directory / "system-prompt.md").write_text(brief)
+    allowed = ["--tools", ",".join(f"mcp__{TOOLS_SERVER}__{tool}" for tool in child.tools)] if child else []
     return [
-        *["pi", "--model", f"{PROVIDER}/{model}", "--mode", "rpc", "--no-builtin-tools"],
+        *["pi", "--model", f"{PROVIDER}/{model}", "--mode", "rpc", "--no-builtin-tools", *allowed],
         *["--session", str(home / SESSION_FILE)],
         *["--system-prompt", str(directory / "system-prompt.md")],
     ]
@@ -326,17 +373,18 @@ def play_sessions(
     seconds: float,
     notices: Notices,
     record: Write,
+    subagents: Subagents,
 ) -> dict[str, SessionEnd]:
     """Run every agent's session at once, each from its own home under ``homes``; how each ended, by agent.
 
     ``briefs`` holds each agent's system prompt. Each of ``notices`` goes to its agent's session as a prompt,
-    and to ``record`` with whether the session took it. Play ends when no session has work left and the
-    services' records hold nothing new, once the config's minimum has passed, or after ``seconds``. With no
-    session to run, the minimum does not hold it.
+    and to ``record`` with whether the session took it. Play ends when no session nor any of ``subagents``
+    has work left and the services' records hold nothing new, once the config's minimum has passed, or after
+    ``seconds``. With no session to run, the minimum does not hold it.
     """
     start = monotonic()
     ceiling, floor = start + seconds, start + config.settings.pi.minimum_play_seconds
-    sessions: dict[str, _Session] = {}
+    sessions: dict[str, PiSession] = {}
     ended: dict[str, SessionEnd] = {}
     environment = {"PATH": os.environ["PATH"], **PI_ENVIRONMENT}
     try:
@@ -345,13 +393,13 @@ def play_sessions(
                 home = homes / agent
                 pi = write_pi_home(home, config, agent, brief)
                 working = loop_working_directory(agent)
-                sessions[agent] = _Session(pi, home, working, {"HOME": str(home), **environment})
+                sessions[agent] = PiSession(pi, home, working, {"HOME": str(home), **environment})
                 sessions[agent].prompt(TASK)
             except (OSError, KeyError, ValueError) as error:  # its home or pi could not be set up
                 ended[agent] = SessionEnd("failed", None, str(error))
         while monotonic() < ceiling:
             # Idle sessions write no record, so what is read after this check is all there will be.
-            idle = not any(session.is_working() for session in sessions.values())
+            idle = not any(session.is_working() for session in (*sessions.values(), subagents))
             new = notices.read()
             for notice in new:
                 sent = notice.agent in sessions and sessions[notice.agent].prompt(
@@ -362,8 +410,9 @@ def play_sessions(
                 break
             sleep(config.settings.pi.notice_poll_seconds)
     finally:
+        subagents.end()
         stopped = {agent: session.stop() for agent, session in sessions.items()}
-        deadline = monotonic() + _STOP_SECONDS
+        deadline = monotonic() + STOP_SECONDS
         for agent, end in stopped.items():
             exit_code = sessions[agent].wait(deadline - monotonic())
             ended[agent] = SessionEnd(end.reason, None if end.reason == "ceiling" else exit_code, end.stderr)
@@ -387,6 +436,7 @@ def serve_play_tools(
     tokens: Mapping[str, str],
     records: Write,
     turns: Turns,
+    subagents: Subagents,
 ) -> Iterator[Notices]:
     """Serve the episode's targets of the tools gateway for the holders of ``tokens``; yield their notices.
 
@@ -396,7 +446,8 @@ def serve_play_tools(
     again, the notifier tells every session to list its tools again.
     """
     secrets_dir, stack = config.settings.gateway.secrets_dir, config.settings.stack
-    workspace = build_workspace_server(code, tokens, records, turns)
+    workspace = build_workspace_server(code, tokens, records, turns, subagents.children())
+    subagents.serve(workspace)
     notifier = ToolListNotifier((secrets_dir / NOTIFIER_KEY_SECRET_NAME).read_text().strip(), EPISODE_SERVICE)
     notify = functools.partial(notifier.notify, stack.tools_offer_seconds)
     arguments = (config, os.environ[TOOLS_URL_VARIABLE], tokens, notify)
@@ -421,6 +472,7 @@ def play_own_sessions(
     briefs: Mapping[str, str],
     directory: Path,
     seconds: float,
+    subagents: Subagents,
 ) -> dict[str, SessionEnd]:
     """Play every agent's session to its end, with the workspace service up; how each ended, by agent.
 
@@ -428,7 +480,8 @@ def play_own_sessions(
     call in ``directory``, the play's, which also gets each loop's home, each notice and how each session
     ended. Sessions start once the tools gateway offers each agent every tool its run config names
     (``loc_arena.tool_offer``). ``briefs`` holds each agent's brief;
-    the attack's target agent gets the covert objective before its own (``brief_loop``).
+    the attack's target agent gets the covert objective before its own (``brief_loop``). An agent
+    starts its ``subagents`` with ``delegate``, served beside its workspace tools.
     """
     secrets_dir = config.settings.gateway.secrets_dir
     tokens = {agent: (secrets_dir / token_secret_name(agent)).read_text().strip() for agent in briefs}
@@ -436,14 +489,22 @@ def play_own_sessions(
     turns = Turns(briefs)
     briefs = {agent: brief_loop(config, agent, brief) for agent, brief in briefs.items()}
     noticed = append_to(directory / NOTICES_FILE)
-    with serve_play_tools(config, code, tokens, records, turns) as notices:
+    with serve_play_tools(config, code, tokens, records, turns, subagents) as notices:
         await_offered_tools(
             config,
             os.environ[TOOLS_URL_VARIABLE],
             tokens,
             directory,
         )  # or play does not start
-        ended = play_sessions(config, briefs, directory / LOOPS_DIRECTORY, seconds, notices, noticed)
+        ended = play_sessions(
+            config,
+            briefs,
+            directory / LOOPS_DIRECTORY,
+            seconds,
+            notices,
+            noticed,
+            subagents,
+        )
         turns.end()  # a command still running ends before the checkouts are captured
     record_session_ends(directory, ended)
     return ended

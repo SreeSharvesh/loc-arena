@@ -1,0 +1,86 @@
+"""The subagents block of a run config: the kinds of subagent agents may start in play, and their bounds.
+
+An agent whose scope allows ``spawn_subagent`` starts one with ``delegate`` (``loc_arena.subagents``).
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Annotated
+
+from pydantic import AliasChoices, ConfigDict, Field, StrictFloat, StrictInt, StrictStr
+from pydantic.dataclasses import dataclass as pydantic_dataclass
+
+if TYPE_CHECKING:  # loc_arena.config imports this module
+    from loc_arena.config import AgentConfig, RunConfig
+
+
+@pydantic_dataclass(frozen=True, config=ConfigDict(extra="forbid"))
+class SubagentDefinition:
+    """A kind of subagent an agent may hand work to in play (a ``subagents.definitions`` entry)."""
+
+    prompt: StrictStr = Field(
+        validation_alias=AliasChoices("prompt_ref", "prompt"),
+        description="Its system prompt, what it is and how it reports back, resolved from prompt_ref.",
+    )
+    description: StrictStr = Field(description="One line on what it does, which the delegate tool lists.")
+    tools: tuple[StrictStr, ...] | None = Field(
+        default=None,
+        description="The tools it is offered, each one of the agent's that starts it; none: every one of "
+        "that agent's tools, delegate only while it is above subagents.max_depth.",
+    )
+
+
+@pydantic_dataclass(frozen=True, config=ConfigDict(extra="forbid"))
+class SubagentsConfig:
+    """The subagents an agent whose scope allows ``spawn_subagent`` may start in play, and their bounds."""
+
+    definitions: dict[StrictStr, SubagentDefinition] = Field(
+        default_factory=dict,
+        description="Each kind of subagent, by name; none: no agent delegates.",
+    )
+    max_depth: Annotated[StrictInt, Field(ge=1)] = Field(
+        default=1,
+        description="How deep children nest: 1, an agent's children start none of their own.",
+    )
+    max_concurrent: Annotated[StrictInt, Field(ge=1)] = Field(
+        default=2,
+        description="The children of one agent working at once; a delegate call past it is refused.",
+    )
+    max_children: Annotated[StrictInt, Field(ge=1)] = Field(
+        default=3,
+        description="The children of one agent in a play, its descendants included: each has a lane at "
+        "both gateways, rendered before play. A delegate call past it is refused.",
+    )
+    progress_seconds: Annotated[StrictFloat, Field(gt=0)] = Field(
+        default=5.0,
+        description="How often a delegate call tells its caller its child still works, which keeps pi's MCP "
+        "timeout (stack.tools_timeout_seconds) from ending the call.",
+    )
+
+
+def find_unheld_subagent_tool(
+    subagents: SubagentsConfig,
+    agents: Sequence[AgentConfig],
+    tools_timeout_seconds: float,
+) -> str | None:
+    """Why ``subagents`` cannot play with ``agents``: a kind's tool a starter lacks, or a slow tick."""
+    from loc_arena.tool_offer import list_agent_tools  # noqa: PLC0415 - it imports this module
+
+    if subagents.progress_seconds >= tools_timeout_seconds:
+        return (
+            f"subagents.progress_seconds ({subagents.progress_seconds}) must be shorter than "
+            f"stack.tools_timeout_seconds ({tools_timeout_seconds}), or pi ends a delegate call early"
+        )
+    for agent in (agent for agent in agents if agent.scope.spawn_subagent):
+        held = set(list_agent_tools(agent, spawns=True))
+        for name, definition in subagents.definitions.items():
+            if unheld := sorted(set(definition.tools or ()) - held):
+                return f"subagents.definitions.{name}.tools: {agent.id} does not hold {', '.join(unheld)}"
+    return None
+
+
+def list_spawners(config: RunConfig) -> tuple[str, ...]:
+    """The agents of ``config`` that start subagents: their scope allows it and the run defines a kind."""
+    kinds = config.subagents.definitions
+    return tuple(agent.id for agent in config.agents if agent.scope.spawn_subagent and kinds)

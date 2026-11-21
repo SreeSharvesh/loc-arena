@@ -24,11 +24,12 @@ from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError
 
-from loc_arena.config import RunConfig
+from loc_arena.config import AgentConfig, RunConfig
 from loc_arena.notices import NOTICE_TOOLS
 from loc_arena.recorded_events import SERVICE_LOGS
+from loc_arena.subagent_config import list_spawners
 from loc_arena.tool_authorization import TOOLS_GATEWAY_SERVICE
-from loc_arena.workspace_service import WORKSPACE_TOOLS
+from loc_arena.workspace_service import DELEGATE_TOOL, WORKSPACE_TOOLS
 
 OFFERED_TOOLS_FILE = "tools_offered.json"  # in the play's directory: each agent's offered and missing tools
 LACKED_TOOLS_FILE = "tools_lacked.jsonl"  # in the run directory: each tool a session's listing lacked
@@ -41,15 +42,15 @@ class MissingToolsError(RuntimeError):
 
 
 def name_tools(config: RunConfig) -> dict[str, set[str]]:
-    """Each agent's tools its run config names, beside the workspace service's and its subscriptions'."""
-    return {
-        agent.id: {
-            *WORKSPACE_TOOLS,
-            *NOTICE_TOOLS,
-            *(tool for tools in agent.sandbox.tools.values() for tool in tools),
-        }
-        for agent in config.agents
-    }
+    """Each agent's tools its config names, the workspace service's, and ``delegate`` for a spawner."""
+    spawners = list_spawners(config)
+    return {agent.id: set(list_agent_tools(agent, spawns=agent.id in spawners)) for agent in config.agents}
+
+
+def list_agent_tools(agent: AgentConfig, *, spawns: bool) -> tuple[str, ...]:
+    """The tools ``agent`` is offered: its services' its config names, the workspace's, and ``delegate``."""
+    named = (tool for tools in agent.sandbox.tools.values() for tool in tools)
+    return (*WORKSPACE_TOOLS, *NOTICE_TOOLS, *((DELEGATE_TOOL,) if spawns else ()), *named)
 
 
 def await_offered_tools(config: RunConfig, url: str, tokens: Mapping[str, str], directory: Path) -> None:

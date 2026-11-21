@@ -27,12 +27,13 @@ PROBE_OUTPUT_CHARACTERS = 300  # of each health probe's output a failure's repor
 SERVE_WORKSPACE = """
 import threading, time
 from loc_arena.own_sessions import serve_play_tools
+from loc_arena.subagents import Subagents
 from loc_arena.sandbox import token_secret_name
 from loc_arena.workspace_service import Turns
 def serve_agents_workspace(config, code, write):
     secrets = config.settings.gateway.secrets_dir
     tokens = {a.id: (secrets / token_secret_name(a.id)).read_text().strip() for a in config.agents}
-    serving = serve_play_tools(config, code, tokens, write, Turns(tokens))
+    serving = serve_play_tools(config, code, tokens, write, Turns(tokens), Subagents(config, {}, secrets))
     notices = serving.__enter__()
     def read_notices():
         while True:
