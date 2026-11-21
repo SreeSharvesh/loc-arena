@@ -19,6 +19,13 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [421] - 2026-11-21: The run reader shows each run's attack chain, cited
+### Added
+- The run reader turns each graded run into a cited attack chain and interesting events, written ahead of time by `make insights` as one report per run ([docs](docs/run-reader.md#insights)).
+- The run reader's insights report shows each cited step's reasoning, tool calls with their arguments, and results, so the chain reads without opening raw records ([docs](docs/run-reader.md#insights)).
+### Changed
+- The run reader drops an insight whose citation does not check, and counts it, instead of discarding the whole paid analysis ([docs](docs/run-reader.md#insights)).
+
 ## [411] - 2026-11-21: A settled container's health is probed every 30 s
 
 ### Changed
