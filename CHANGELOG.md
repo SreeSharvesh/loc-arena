@@ -19,6 +19,12 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [417] - 2026-11-21: The Docker tests make their tool calls from one process
+
+### Changed
+
+- The repository's deploy, telemetry and release tests make their tool calls from one process that stays up, where each call imported the MCP client again; the arena behaves as before.
+
 ## [406] - 2026-11-20: The gates run in CI as parallel jobs
 
 ### Changed
