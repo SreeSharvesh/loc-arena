@@ -7,7 +7,7 @@ engine's. A configured kind narrows the tools and gives its own prompt.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Annotated
 
 from pydantic import AliasChoices, ConfigDict, Field, StrictFloat, StrictInt, StrictStr
@@ -92,10 +92,12 @@ def find_unheld_subagent_tool(
     subagents: SubagentsConfig,
     agents: Sequence[AgentConfig],
     settings: LocArenaSettings,
+    own_models: Mapping[str, str],
 ) -> str | None:
     """Why ``subagents`` cannot play with ``agents``: a kind's tool a starter lacks, a slow tick, or models.
 
     Listed models need an agent that starts subagents, and the agents' calls on OpenRouter, which names them.
+    A spawner's own model, by agent in ``own_models``, is not listed: its calls keep their role's settings.
     """
     from loc_arena.tool_offer import list_agent_tools  # noqa: PLC0415 - it imports this module
 
@@ -104,6 +106,15 @@ def find_unheld_subagent_tool(
         settings.gateway.agents_upstream or not any(a.scope.spawn_subagent for a in agents)
     ):
         return "subagents.models needs an agent whose scope allows spawn_subagent, on gateway.upstream"
+    spawners = {agent.id for agent in agents if agent.scope.spawn_subagent}
+    if clash := next(
+        (a for a, model in own_models.items() if a in spawners and model in subagents.models),
+        None,
+    ):
+        return (
+            f"subagents.models lists {own_models[clash]}, which {clash} runs on: its calls keep their role's "
+            "settings, and a subagent on it needs no entry"
+        )
     if subagents.progress_seconds >= tools_timeout_seconds:
         return (
             f"subagents.progress_seconds ({subagents.progress_seconds}) must be shorter than "

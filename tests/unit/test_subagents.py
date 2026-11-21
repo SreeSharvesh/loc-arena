@@ -220,6 +220,10 @@ def test_a_subagents_brief_holds_neither_the_covert_objective_nor_its_agents_ass
             "    chat_path: v1/chat/completions\n    key_variable: SECOND_API_KEY\n",
             r"subagents\.models needs an agent whose scope allows spawn_subagent, on gateway\.upstream",
         ),
+        (
+            "subagents:\n  models:\n    deepseek/deepseek-v4.1-flash: {max_tokens: 1024}\n",
+            r"subagents\.models lists deepseek/deepseek-v4\.1-flash, which agent-main runs on",
+        ),
     ],
 )
 def test_subagents_a_run_cannot_play_do_not_load(tmp_path: Path, overlay: str, refusal: str) -> None:

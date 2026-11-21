@@ -87,9 +87,10 @@ class Subagents:
         No ``kind`` is general-purpose; no ``model`` is the agent's own.
         """
         agent, kind = caller.partition(".")[0], kind or GENERAL_PURPOSE
+        if model is None:  # a subagent's own subagent runs on its caller's model
+            model = self._models.get(caller)
         if model == self._config.loop_model(agent).model:  # its agent's own: the default
             model = None
-        model = model or self._models.get(caller)  # a subagent's own subagent runs on its caller's model
         with self._lock:
             if refusal := self._refuse(caller, agent, kind, task, model):
                 return refusal

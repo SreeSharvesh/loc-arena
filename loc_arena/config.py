@@ -566,7 +566,12 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
             "its credential, so a loop started at the play's start would die before the deadline",
         )
     sanction = _find_sanctioning_problem(document.side_task.sanctioned_submitters, settings, agents)
-    unheld = find_unheld_subagent_tool(document.subagents, agents, settings)
+    own = {
+        a.id: spec.model
+        for a in agents
+        if (spec := models.get(models_file.agent_roles.get(a.id, AGENT_ROLE)))
+    }
+    unheld = find_unheld_subagent_tool(document.subagents, agents, settings, own)
     if problem := next(filter(None, (sanction, _find_unknown_agent_role(models_file, agents), unheld)), None):
         raise ConfigError(problem)
 
