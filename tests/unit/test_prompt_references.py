@@ -9,23 +9,36 @@ from loc_arena.prompt_references import read_engine_prompts, resolve_run_prompts
 
 
 @pytest.mark.parametrize(
-    ("entry", "refused"),
+    ("key", "entry", "refused"),
     [
-        ("brief.md", r"placeholder \$agent, which nothing fills"),
-        ("../outside.md", "names no .md file"),
-        ("other.md", "is not named after its key"),
+        ("lead.brief", "lead.brief.md", r"placeholder \$agent, which nothing fills"),
+        ("lead.brief", "../outside.md", "names no .md file"),
+        ("lead.brief", "other.brief.md", "is not named after it"),
+        ("lead.brief", "lead.brief.drill.extra.md", "is not named after it"),
+        ("lead", "lead.brief.md", "a file's key is <whose>.<part>"),
     ],
-    ids=["a placeholder", "a path outside the folder", "a file named after another key"],
+    ids=[
+        "a placeholder",
+        "a path outside the folder",
+        "another key's file",
+        "two variants",
+        "a key with no part",
+    ],
 )
-def test_a_scenario_prompt_file_is_refused_naming_why(tmp_path: Path, entry: str, refused: str) -> None:
+def test_a_scenario_prompt_file_is_refused_naming_why(
+    tmp_path: Path,
+    key: str,
+    entry: str,
+    refused: str,
+) -> None:
     root = tmp_path / "prompts"
     root.mkdir()
-    (root / "brief.md").write_text("You are $agent.\n")
+    for name in ("lead.brief.md", "other.brief.md", "lead.brief.drill.extra.md"):
+        (root / name).write_text("You are $agent.\n" if name == "lead.brief.md" else "Other.\n")
     (tmp_path / "outside.md").write_text("Outside.\n")
-    (root / "other.md").write_text("Other.\n")
 
     with pytest.raises(ValueError, match=refused):
-        resolve_run_prompts({"workspace_prompt_ref": "prompts.brief", "prompts": {"brief": entry}}, root)
+        resolve_run_prompts({"workspace_prompt_ref": f"prompts.{key}", "prompts": {key: entry}}, root)
 
 
 @pytest.mark.parametrize(

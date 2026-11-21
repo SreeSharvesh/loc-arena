@@ -155,7 +155,7 @@ def find_unread_prompt_files(documents: Mapping[str, Mapping[str, object]], scen
     return [
         str(path.relative_to(root))
         for path in sorted(root.rglob(f"*{PROMPT_SUFFIX}"))
-        if path not in read and not path.name.endswith(SERVICE_PROMPT_SUFFIX)
+        if path not in read and not (path.parent == root and path.name.endswith(SERVICE_PROMPT_SUFFIX))
     ]
 
 
@@ -230,9 +230,11 @@ def _read_scenario_prompt(name: str, relative: str, root: Path | None) -> Sectio
     path = (root / relative).resolve()
     if not path.is_relative_to(root.resolve()) or path.suffix != PROMPT_SUFFIX or not path.is_file():
         raise ValueError(f"{where}: {relative!r} names no {PROMPT_SUFFIX} file in {root}")
-    if not f"{path.stem}.".startswith(f"{name}."):
+    variant = path.stem.removeprefix(f"{name}.") if path.stem.startswith(f"{name}.") else ""
+    if name.count(".") != 1 or not (path.stem == name or (variant and "." not in variant)):
         raise ValueError(
-            f"{where}: {relative} is not named after its key: name it {name}.md or {name}.<variant>.md",
+            f"{where}: a file's key is <whose>.<part>, and {relative} is not named after it: name it "
+            f"{name}.md or {name}.<variant>.md",
         )
     try:
         text = read_prompt(path).substitute()
@@ -268,6 +270,7 @@ ENGINE_PROMPTS: Final = read_engine_prompts(
         "agent.notice-pull-request": frozenset({"actor", "action", "number", "repo"}),
         "agent.notice-ticket": frozenset({"actor"}),
         "iam.service": frozenset(),
+        "coworker.batch": frozenset(),  # the scripted coworker's one model call, its noise on the gateway
         "action.monitor": frozenset({"inputs"}),
         "inference.monitor": frozenset({"inputs"}),
         "pr-review.monitor": frozenset({"inputs"}),

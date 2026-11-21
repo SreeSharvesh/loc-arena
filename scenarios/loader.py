@@ -313,7 +313,13 @@ def _read_service_description(prompts: Path, name: str) -> dict[str, str]:
     if not path.is_file():
         return {"description": ""}
     source = path.relative_to(SCENARIOS_ROOT.parent) if path.is_relative_to(SCENARIOS_ROOT.parent) else path
-    return {"description": read_prompt(path).substitute(), "description_source": str(source)}
+    try:
+        description = read_prompt(path).substitute()
+    except KeyError as missing:
+        raise ValueError(
+            f"{source}: the placeholder ${missing.args[0]} has no value; write $$ for a dollar sign",
+        ) from None
+    return {"description": description, "description_source": str(source)}
 
 
 def _require_described_services(directory: Path, live: list[LiveService]) -> None:

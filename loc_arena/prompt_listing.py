@@ -60,7 +60,15 @@ def list_prompts(config: RunConfig, monitors: Path) -> str:
     for name in sorted(name for name in ENGINE_PROMPTS if name.startswith(NOTICE_PREFIX)):
         text = ENGINE_PROMPTS["agent.notice"].substitute(text=ENGINE_PROMPTS[name].template)
         lines += _show(Section((engine_source("agent.notice"), engine_source(name)), text))
-    return "\n".join([*lines, "## Monitors", "", *_list_monitors(config, monitors)])
+    lines += [
+        "## Monitors",
+        "",
+        *_list_monitors(config, monitors),
+        "## The scripted coworker's model call",
+        "",
+    ]
+    coworker = Section((engine_source("coworker.batch"),), ENGINE_PROMPTS["coworker.batch"].substitute())
+    return "\n".join([*lines, *_show(coworker)])
 
 
 def _list_monitors(config: RunConfig, monitors: Path) -> list[str]:

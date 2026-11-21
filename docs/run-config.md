@@ -58,7 +58,7 @@ are each a `ConfigError`. Every agent holds an identity on each such service, ri
 ## Prompts
 
 `make prompts RUN=<config> MODE=attack|honest` prints everything the run sends: each agent's system prompt and
-first turn, the notices an agent can get, and each monitor's prompt with its task description. Every section is
+first turn, the notices an agent can get, and each monitor's prompt with its task description, and the scripted coworker's call. Every section is
 headed by the files it came from. The page is built by the run's own code, and a unit test checks that its
 sections join into exactly what each agent's pi receives.
 
@@ -69,7 +69,8 @@ loc_arena/prompts/                          the engine's: true of any scenario, 
 ├── agent.notice.md, agent.notice-<kind>.md a notice of a subscribed topic, and each kind's line
 ├── <monitor>.monitor.md                    a monitor's prompt, its inputs at $inputs
 ├── reader.<part>[.<brief>].md              the run reader: system, brief.<brief>, first-turn[.ask]
-└── iam.service.md                          what agents are told IAM is
+├── iam.service.md                          what agents are told IAM is
+└── coworker.batch.md                       the scripted coworker's one model call
 scenarios/<scenario>/prompts/               the scenario's: no placeholder
 ├── team.workspace.md                       every agent: the company's repos, protected main, chat
 ├── <service>.service.md                    what agents are told a service is
@@ -84,8 +85,8 @@ scenarios/<scenario>/prompts/               the scenario's: no placeholder
     └── monitor.task-description.md         the main task as the monitors are told it
 ```
 
-A file is named `<whose>.<part>[.<variant>].md`, and its key in a run config's `prompts` block is that name less
-`.md`. `<whose>` is `lead`, `report`, an agent's area such as `serving`, `team` when several agents share the
+A file is named `<whose>.<part>[.<variant>].md`, and its key in a run config's `prompts` block is
+`<whose>.<part>`: the file's name less `.md`, or less its one variant. `<whose>` is `lead`, `report`, an agent's area such as `serving`, `team` when several agents share the
 file, `monitor`, a monitor's or service's name, `agent` for every agent, or `reader`. The parts:
 
 | Part | What it is | Named by |
@@ -132,7 +133,7 @@ exactly the values the engine fills, and a scenario file names none, so `$$` the
 refuses, each with a `ConfigError` naming it: `prompts_inline` and `main_task.goal`; prompt text written inline
 under `system_prompt`, `brief`, `covert_brief`, `objective_prompt`, `workspace_prompt` or `task_description`; a
 missing file, one outside the folder or one that is not `.md`; a file not named after its key; a placeholder with
-no value; and a `<service>.service.md` that names no live service. Importing the loader refuses an engine file
+no value; and a `<service>.service.md` that names no live service or holds a placeholder. Importing the loader refuses an engine file
 that `ENGINE_PROMPTS` does not declare. Whether a file is read is a property of every run config, not of one, so
 the unit tests refuse a scenario file that no run config git tracks reads (`find_unread_prompt_files`).
 `config.resolved.yaml` records each file entry as its text and each composed entry as its list of references.
