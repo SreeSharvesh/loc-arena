@@ -719,8 +719,7 @@ def test_tools_gateway_logs_json_naming_caller_outcome_listing(tools_gateway_con
         {
             "accessLog": {
                 "add": {
-                    "agent": "apiKey.agent",
-                    "caller": "apiKey.caller",
+                    **{"agent": "apiKey.agent", "caller": "apiKey.caller"},
                     "tool_args": "mcp.tool.arguments",
                     "tool_result": "mcp.tool.result",
                     "tool_error": "mcp.tool.error",
