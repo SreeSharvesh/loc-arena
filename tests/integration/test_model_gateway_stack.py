@@ -349,34 +349,6 @@ def test_a_call_the_upstream_never_answers_is_recorded_with_its_request(stack: S
     assert (reply.status_code >= 500, record.status, record.complete) == (True, reply.status_code, False)
 
 
-def test_the_record_survives_a_restart_of_the_collector(stack: Stack) -> None:
-    call(stack, "a-call-before-the-restart")
-    recorded(stack, "a-call-before-the-restart")
-
-    stack.run([*stack.compose, "restart", "collector"], capture_output=True)
-
-    assert recorded(stack, "a-call-before-the-restart").status == 200
-
-
-def test_a_call_in_flight_when_its_callers_stop_is_in_the_copied_record(stack: Stack) -> None:
-    body = {"model": "a-stream-in-flight-slow", "messages": [], "stream": True}
-    headers = {"authorization": f"Bearer {SANDBOX_TOKEN}"}
-    with httpx2.stream("POST", stack.url + CHAT, json=body, headers=headers, timeout=60) as reply:
-        next(reply.iter_bytes())
-        copied = copy_call_log(
-            stack.run,
-            stack.compose,
-            SETTINGS,
-            stack.directory / "in-flight.calls.jsonl",
-            ["mock"],
-        )
-    stack.run([*stack.compose, "start", "mock"], capture_output=True)
-
-    lines = (stack.directory / "in-flight.calls.jsonl").read_text(encoding="utf-8").splitlines()
-    found = [GatewayCall.model_validate_json(line) for line in lines if "a-stream-in-flight-slow" in line]
-    assert (copied, [call.complete for call in found]) == (True, [False])
-
-
 LOOP_FIELDS = {
     "temperature": 0.2,
     "provider": {"order": ["elsewhere"]},
@@ -406,3 +378,32 @@ def test_a_spawners_route_refuses_a_model_the_run_does_not_allow(stack: Stack) -
     reply = call(stack, "m-other", token=stack.episode_token, path=f"/loop/agent-main.1{CHAT}", **LOOP_FIELDS)
 
     assert reply.status_code == HTTPStatus.FORBIDDEN
+
+
+# The tests below restart part of the stack, so they run last.
+def test_the_record_survives_a_restart_of_the_collector(stack: Stack) -> None:
+    call(stack, "a-call-before-the-restart")
+    recorded(stack, "a-call-before-the-restart")
+
+    stack.run([*stack.compose, "restart", "collector"], capture_output=True)
+
+    assert recorded(stack, "a-call-before-the-restart").status == 200
+
+
+def test_a_call_in_flight_when_its_callers_stop_is_in_the_copied_record(stack: Stack) -> None:
+    body = {"model": "a-stream-in-flight-slow", "messages": [], "stream": True}
+    headers = {"authorization": f"Bearer {SANDBOX_TOKEN}"}
+    with httpx2.stream("POST", stack.url + CHAT, json=body, headers=headers, timeout=60) as reply:
+        next(reply.iter_bytes())
+        copied = copy_call_log(
+            stack.run,
+            stack.compose,
+            SETTINGS,
+            stack.directory / "in-flight.calls.jsonl",
+            ["mock"],
+        )
+    stack.run([*stack.compose, "start", "mock"], capture_output=True)
+
+    lines = (stack.directory / "in-flight.calls.jsonl").read_text(encoding="utf-8").splitlines()
+    found = [GatewayCall.model_validate_json(line) for line in lines if "a-stream-in-flight-slow" in line]
+    assert (copied, [call.complete for call in found]) == (True, [False])
