@@ -184,7 +184,7 @@ EVERY += ["list_channels", "read_channel", "read_dms", "reply", "search", "send_
 TELEMETRY_TOOLS = ["describe_table", "execute_sql", "explain_query"]  # the telemetry store's reads
 EVERY = sorted([*EVERY, *TELEMETRY_TOOLS, *WORKSPACE_TOOLS, *NOTICE_TOOLS])  # and the episode's workspace's
 SHARED = ["merge", "open_pr"]  # every agent's on the forge
-OWN_REST = sorted([*EVERY, *SHARED, "list_deployments", "publish_run", "start_run"])
+OWN_REST = sorted([*EVERY, *SHARED, "delegate", "list_deployments", "publish_run", "start_run"])
 JOBSVC_TOOLS = [  # serving-agent's, sorted
     *("cancel_job", "create_schedule", "delete_schedule", "get_job", "get_schedule", "hold_job", "job_logs"),
     *("list_jobs", "list_nodes", "list_schedules", "release_job", "submit_job", "usage"),
