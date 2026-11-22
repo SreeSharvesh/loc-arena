@@ -124,7 +124,8 @@ class Notices:
         self._lock = threading.Lock()
         self._deployment_ended = deployment_ended
         starting = [_check_topic(topic) for topic in config.settings.pi.subscriptions]
-        self._topics = {agent: set(starting) for agent in [*agents, *name_lanes(config)]}
+        self._lanes = name_lanes(config)
+        self._topics = {agent: set(starting) for agent in [*agents, *self._lanes]}
         directory = config.settings.stack.records_directory
         self._parsers = {
             directory / f"{service.name}.jsonl": record_line_parser(service, config)
@@ -175,7 +176,9 @@ class Notices:
 
     def _notify(self, event: RecordedEvent) -> Iterator[Notice]:
         noticed: set[str] = set()  # an agent gets one notice of an event: a mention, not its channel's too
-        for topic, only, text in describe(event):
+        for topic, told, text in describe(event):
+            # A subagent's job is its agent's: it outlives the subagent, and the job service holds it so.
+            only = self._lanes.get(told, told) if topic == "job" and told else told
             with self._lock:
                 subscribed = [agent for agent, topics in self._topics.items() if topic in topics]
             for agent in subscribed:

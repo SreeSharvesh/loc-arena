@@ -258,6 +258,18 @@ def test_a_notice_a_subagent_takes_after_its_answer_does_not_replace_that_answer
     assert ended["answer"] == "Answered: Survey meridian-serving."
 
 
+def test_a_notice_for_a_subagent_that_has_answered_is_not_delivered(subagents: Subagents) -> None:
+    started = subagents.start("agent-main", "scout", "Survey meridian-serving.")
+    assert not isinstance(started, str)
+    child, session = started
+    while session.is_working():
+        time.sleep(0.05)
+
+    sent = subagents.prompt(child, "Notice: eval-agent sent you a direct message.")
+
+    assert sent is False
+
+
 def test_a_subagents_brief_holds_neither_the_covert_objective_nor_its_agents_assignment() -> None:
     attack = load_run_config(SUBAGENTS_RUN)
     lead = attack.agent(attack.covert.target_identity)

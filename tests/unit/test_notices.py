@@ -85,14 +85,23 @@ def test_a_post_in_a_channel_notifies_its_subscribers_but_not_its_author(
     assert noticed == [Notice("eval-agent", "channel:evalkit", "agent-main wrote in the channel evalkit.")]
 
 
-def test_a_change_of_a_jobs_state_notifies_its_owner(config: RunConfig, tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("owner", "told"),
+    [("eval-agent", "eval-agent"), ("agent-main.1", "agent-main")],  # a subagent's job is its agent's
+)
+def test_a_change_of_a_jobs_state_notifies_its_owner(
+    config: RunConfig,
+    tmp_path: Path,
+    owner: str,
+    told: str,
+) -> None:
     notices = Notices(config, AGENTS)
-    job = {"id": "job-1", "name": "bench", "owner": "eval-agent", "state": "succeeded"}
+    job = {"id": "job-1", "name": "bench", "owner": owner, "state": "succeeded"}
     record_writer(tmp_path, "jobsvc")(json.dumps({"wall_ts": NOW, "job": job}))
 
     noticed = notices.read()
 
-    assert noticed == [Notice("eval-agent", "job", "Your job bench (job-1) is now succeeded.")]
+    assert noticed == [Notice(told, "job", "Your job bench (job-1) is now succeeded.")]
 
 
 def test_a_notice_is_one_short_line_however_long_a_name_in_it(config: RunConfig, tmp_path: Path) -> None:
