@@ -111,7 +111,24 @@ def test_the_tools_gateway_admits_a_subagents_key_as_its_agent_naming_the_subage
 
     metadata = admit(read_route(spawning), key)
 
-    assert metadata == {"agent": "agent-main", "caller": "agent-main.1"}
+    assert metadata == {"agent": "agent-main", "caller": "agent-main.1", "tools": "agent-main.1/scout"}
+
+
+def test_the_tools_gateway_allows_a_subagent_exactly_the_tools_of_the_kind_it_was_started_as(
+    subagents: Subagents,
+    spawning: RunConfig,
+) -> None:
+    subagents.start("agent-main", "scout", "Survey meridian-serving.")
+    route = read_route(spawning)
+    held = admit(route, (loop_working_directory("agent-main.1") / "tools.key").read_text())
+    assert held is not None
+
+    rule = route["policies"]["mcpAuthorization"]["rules"][0]["allow"]
+    allowed = json.loads(rule.removeprefix("mcp.tool.name in ").partition("[apiKey.tools]")[0])[held["tools"]]
+
+    assert {service: tools for service, tools in allowed.items() if tools} == {
+        "workspace": ["bash", "read_file", "list_dir", "search_code"],
+    }
 
 
 def test_the_tools_gateway_calls_a_service_with_a_subagents_own_identity_on_it(spawning: RunConfig) -> None:
@@ -147,14 +164,15 @@ def test_the_tools_gateway_allows_a_subagent_its_agents_tools_but_its_inbox_and_
     route = read_route(spawning)
 
     rule = route["policies"]["mcpAuthorization"]["rules"][0]["allow"]
-    allowed = json.loads(rule.removeprefix("mcp.tool.name in ").partition("[apiKey.caller]")[0])
+    allowed = json.loads(rule.removeprefix("mcp.tool.name in ").partition("[apiKey.tools]")[0])
     held = {"access_inbox", "delegate"}
     agents = {
         service: kept
         for service, tools in allowed["agent-main"].items()
         if (kept := [tool for tool in tools if tool not in held])
     }
-    assert {service: tools for service, tools in allowed["agent-main.1"].items() if tools} == agents
+    general = allowed["agent-main.1/general-purpose"]
+    assert {service: tools for service, tools in general.items() if tools} == agents
 
 
 @pytest.mark.parametrize(
@@ -171,6 +189,14 @@ def test_the_tools_gateway_allows_a_subagent_its_agents_tools_but_its_inbox_and_
             "2 subagents of agent-main's already work: wait for one to answer",
         ),
         (0, "agent-main", "scout", "x" * 8001, "a task holds at most 8000 characters"),
+        pytest.param(  # each is 12 characters on the line pi reads
+            0,
+            "agent-main",
+            "scout",
+            "\U0001f600" * 1000,
+            "a task holds at most 8000 characters",
+            id="escaped",
+        ),
         (
             0,
             "agent-main",
@@ -256,6 +282,21 @@ def test_a_notice_a_subagent_takes_after_its_answer_does_not_replace_that_answer
 
     ended = json.loads((tmp_path / "subagents.jsonl").read_text().splitlines()[-1])
     assert ended["answer"] == "Answered: Survey meridian-serving."
+
+
+def test_a_subagent_that_answered_before_play_ended_it_ends_finished_for_its_call(
+    subagents: Subagents,
+) -> None:
+    started = subagents.start("agent-main", "scout", "Survey meridian-serving.")
+    assert not isinstance(started, str)
+    child, session = started
+    while session.is_working():
+        time.sleep(0.05)
+    subagents.end()
+
+    end = subagents.finish(child)
+
+    assert end.reason == "finished"
 
 
 def test_a_notice_for_a_subagent_that_has_answered_is_not_delivered(subagents: Subagents) -> None:

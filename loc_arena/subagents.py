@@ -65,6 +65,7 @@ class Subagents:
         self._models: dict[str, str | None] = {}  # each subagent's model, none: its agent's
         self._working: dict[str, PiSession] = {}
         self._ending: list[PiSession] = []  # what play's end stopped, still to exit
+        self._ends: dict[str, SessionEnd] = {}  # how play's end found each it stopped
         self._lock = threading.Lock()
         self._ended = False
 
@@ -110,7 +111,15 @@ class Subagents:
             }
             self._write(started | {"task": task, "tools": list(tools)})
             try:
-                session = self._launch(Child(child, self.list_tokens()[child], tools, model), caller, kind)
+                episode_key = (
+                    (self._config.settings.gateway.secrets_dir / NOTIFIER_KEY_SECRET_NAME).read_text().strip()
+                )
+                token = subagent_token(
+                    episode_key,
+                    child,
+                    kind,
+                )  # the gateway allows it its kind's tools alone
+                session = self._launch(Child(child, token, tools, model), caller, kind)
             except (OSError, KeyError, ValueError) as error:  # its home or its pi could not be set up
                 self._write(
                     {"subagent": child, "end": {"reason": "failed", "stderr": str(error)}, "answer": ""},
@@ -127,8 +136,8 @@ class Subagents:
         """End ``child``'s session once it answered, or its call ended, and record how it ended."""
         with self._lock:
             session = self._working.pop(child, None)
-        if session is None:  # ended with play
-            return SessionEnd("ceiling")
+        if session is None:  # ended with play, as play's end recorded it
+            return self._ends.get(child, SessionEnd("ceiling"))
         end = session.stop()
         session.wait(STOP_SECONDS)
         self._write_end(child, session, end)
@@ -154,7 +163,8 @@ class Subagents:
             self._ended = True
             ending, self._working = self._working, {}
         for child, session in ending.items():
-            self._write_end(child, session, session.stop())
+            self._ends[child] = session.stop()
+            self._write_end(child, session, self._ends[child])
         self._ending = list(ending.values())
 
     def wait(self, seconds: float) -> None:
@@ -179,7 +189,8 @@ class Subagents:
             (self._ended, "play has ended"),
             (not kinds or self._depth(caller) >= bounds.max_depth, f"{caller} may not start subagents"),
             (
-                len(task) > bounds.max_task_characters,
+                len(json.dumps(task)) - 2
+                > bounds.max_task_characters,  # as pi reads it, escaped, its quotes less
                 f"a task holds at most {bounds.max_task_characters} characters",
             ),
             (
@@ -254,7 +265,12 @@ def add_delegate_tool(server: MCPServer, subagents: Subagents, config: RunConfig
         model: Annotated[str | None, Field(description="the subagent's model; none: your own")] = None,
     ) -> dict[str, JsonValue]:
         caller = caller_from_token()
-        started = subagents.start(caller, kind, task, model) if caller else "no identity"
+        # In a worker thread: starting pi and writing its task never holds up the server's other calls.
+        started = (
+            await anyio.to_thread.run_sync(subagents.start, caller, kind, task, model)
+            if caller
+            else "no identity"
+        )
         if isinstance(started, str):
             return {"error": started}
         child, session = started

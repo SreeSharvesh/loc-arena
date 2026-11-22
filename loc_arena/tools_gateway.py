@@ -102,16 +102,21 @@ def render_tools_gateway_config(
         }
         for agent in config.agents
     }
-    # A subagent holds a key of its own, keyed by the episode's, which names its agent, whose identities it is
-    # given, and itself as the caller, whom the tools rule, the workspace service and the gateway's log go by.
+    # A subagent holds a key of its own for the kind it was started as, keyed by the episode's, which names its
+    # agent, itself as the caller the workspace service and the gateway's log go by, and its kind's tools,
+    # which the tools rule allows it exactly.
     lanes = name_lanes(config) if notifier_key is not None else {}
-    kinds = list(describe_kinds(config))
     delegates = config.subagents.max_depth > 1
+    admitted = {agent: {"agent": agent, "caller": agent, "tools": agent} for agent in tokens}
+    keys = dict(tokens)
     for child, agent in lanes.items():
-        tools[child] = _group_by_service(
-            config,
-            list_subagent_tools(config, agent, kinds, delegates=delegates),
-        )
+        for kind in describe_kinds(config):
+            held = f"{child}/{kind}"
+            tools[held] = _group_by_service(
+                config, list_subagent_tools(config, agent, [kind], delegates=delegates)
+            )
+            admitted[held] = {"agent": agent, "caller": child, "tools": held}
+            keys[held] = subagent_token(str(notifier_key), child, kind)
     callers = dict(tokens) | {child: subagent_token(str(notifier_key), child) for child in lanes}
     targets = _render_targets(config, tokens, identities, inbox_keys or {}, notifier_key, callers)
     policies = {
@@ -121,14 +126,14 @@ def render_tools_gateway_config(
             "keys": [
                 {
                     "keyHash": f"sha256:{hashlib.sha256(token.encode()).hexdigest()}",
-                    "metadata": {"agent": lanes.get(caller, caller), "caller": caller},
+                    "metadata": admitted[held],
                 }
-                for caller, token in callers.items()
+                for held, token in keys.items()
             ],
         },
         # An agent with no tools on the target has no entry for it, so the rule fails to evaluate and denies.
         "mcpAuthorization": {
-            "rules": [{"allow": f"mcp.tool.name in {json.dumps(tools)}[apiKey.caller][mcp.tool.target]"}],
+            "rules": [{"allow": f"mcp.tool.name in {json.dumps(tools)}[apiKey.tools][mcp.tool.target]"}],
         },
         **render_authorization_policies(config, identities, credentials or {}),
     }

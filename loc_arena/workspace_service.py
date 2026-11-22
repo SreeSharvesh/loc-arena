@@ -44,9 +44,13 @@ def workspace_key(sandbox_token: str) -> str:
     return hashlib.sha256(f"{WORKSPACE_SERVICE}:{sandbox_token}".encode()).hexdigest()
 
 
-def subagent_token(episode_key: str, child: str) -> str:
-    """The subagent ``child``'s token at the tools gateway, keyed by ``episode_key``, which no agent holds."""
-    return hmac.new(episode_key.encode(), f"subagent:{child}".encode(), hashlib.sha256).hexdigest()
+def subagent_token(episode_key: str, child: str, kind: str | None = None) -> str:
+    """The subagent ``child``'s key, keyed by ``episode_key``, which no agent holds.
+
+    With ``kind``, its key at the tools gateway as that kind; without, its key at the workspace service.
+    """
+    held = f"subagent:{child}" + (f":{kind}" if kind else "")
+    return hmac.new(episode_key.encode(), held.encode(), hashlib.sha256).hexdigest()
 
 
 class KeyVerifier(TokenVerifier):
