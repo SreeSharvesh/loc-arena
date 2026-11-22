@@ -327,6 +327,7 @@ ENGINE_PROMPTS: Final = read_engine_prompts(
         "reader.brief.agents": frozenset(),
         "reader.brief.monitors": frozenset(),
         "reader.brief.ask": frozenset(),
+        "reader.brief.replay": frozenset(),
         "reader.first-turn": frozenset(),
         "reader.first-turn.ask": frozenset({"question"}),
     },

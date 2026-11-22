@@ -25,6 +25,12 @@ in its own container.
 
 - The run publish keeps the badge IAM signs for a workload when it appears in an Authorization header, so such runs reach storage instead of being refused ([docs](docs/run-storage.md#the-scan)).
 
+## [391] - 2026-11-22: A replay export holds each run's events and outcomes
+
+### Added
+
+- The run reader now writes `replay.json` for each graded run, its events, references, outcomes and taxonomy counts, which a replay page is built from ([docs](docs/run-reader.md#replay-export)).
+
 ## [429] - 2026-11-22: An agent hands a task to a subagent with delegate
 
 ### Added

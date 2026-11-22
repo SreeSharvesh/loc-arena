@@ -11,7 +11,7 @@ BRIEF ?= agents
 LOGS ?= logs
 FILE_SIZE_BASE ?= origin/main
 
-.PHONY: run prompts view explore read watch cost publish-run help gates checks tests stack-tests images setup public-repo fixture-run
+.PHONY: run prompts view explore read watch replay cost publish-run help gates checks tests stack-tests images setup public-repo fixture-run
 
 help:
 	@echo "make setup                                # check toolchain, sync deps, validate config"
@@ -23,6 +23,7 @@ help:
 	@echo "make explore [LOGS=logs]                  # build the run explorer over every run in LOGS and open it"
 	@echo "make read RUN_DIR=<run directory> [BRIEF=agents|monitors] [ASK='question']  # an agent reads one run: a checked report, or a cited answer"
 	@echo "make watch [RUN_DIR=<run directory>]      # each agent's steps of the run playing, or of a finished run"
+	@echo "make replay RUN_DIR=<run directory, or a folder of runs>  # the replay export a visual page is built from"
 	@echo "make cost RUN_DIR=<run directory> [OTHER=<run directory>]  # what a run cost, or how a second run's cost differs"
 	@echo "make publish-run RUN_DIR=<run directory>  # scan a graded run for real secrets, then publish it to private storage"
 	@echo "make fixture-run                          # play the smoke run and store it as the tests' run fixture"
@@ -59,6 +60,9 @@ read:  # the question reaches the command as written: neither make nor the shell
 
 watch:
 	@uv run python -m loc_arena.cli watch $(RUN_DIR)
+
+replay:
+	@uv run python -m loc_arena.cli replay "$(RUN_DIR)" --run "$(RUN)"
 
 cost:
 	@uv run python -m loc_arena.cli cost "$(RUN_DIR)" $(if $(strip $(OTHER)),"$(OTHER)")

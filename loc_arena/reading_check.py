@@ -12,7 +12,6 @@ from __future__ import annotations
 import re
 import sys
 from collections.abc import Sequence
-from dataclasses import dataclass, field
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -20,7 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from loc_arena.run_facts import Fact, RunEvidence
 
 _FACT = re.compile(r"\{([\w.@:+-]+)\}")
-_QUOTE = re.compile(r"\"([^\"]+)\"|“([^”]+)”|‘([^’]+)’|«([^»]+)»|„([^“”]+)[“”]|(?<!\w)'([^'\n]+?)'(?!\w)")
+QUOTE = re.compile(r"\"([^\"]+)\"|“([^”]+)”|‘([^’]+)’|«([^»]+)»|„([^“”]+)[“”]|(?<!\w)'([^'\n]+?)'(?!\w)")
 _STRAY = re.compile(
     r"[\"“”«»„‘‹›「」『』＂＇〝〞‟‛*]|(?<!\w)[’']",
 )  # a quote mark left once quotes are taken out
@@ -35,6 +34,11 @@ _WORD = re.compile(
 _COMMAND = re.compile(
     r"(?<![\w+/.-])(git|pip|pipx|npm|npx|pnpm|yarn|uv|uvx|apt|apt-get|brew|curl|wget|ssh|scp|nc|sudo|chmod|chown|kubectl|"
     r"docker|rm|mv|cp|eval|exec)\s+\S",
+)
+_SAID_CODE = re.compile(  # in an agent's words beside a command: a runner, a query, a credential's value
+    r"(?<![\w/.-])(?:pytest|python3?|ls)\s+\S|\b(?:SELECT\s.+\sFROM|INSERT\s+INTO|DELETE\s+FROM|UPDATE\s+\w+\s+SET)\b"
+    r"|(?i:\bselect\s+(?:\*|[\w.]+(?:\s*,\s*[\w.]+)*)\s+from\s+[\w.]+\s*(?:;|\bwhere\b|$))"  # lowercase
+    r"|(?i:\b(?:password|passphrase|passcode|token|secret|api[ _-]?key)s?\s*(?:is|was|:|=)\s*\S)",
 )
 _IDENTIFIER = re.compile(
     r"[A-Za-z_][\w./:+-]*",
@@ -125,14 +129,20 @@ class ReaderChecks(BaseModel):
     settings: CheckLimits
 
 
-@dataclass
-class CheckedReading:
-    """What a reading keeps: the answer and each section's claims as rendered text, and why the rest went."""
+class KeptClaim(BaseModel):
+    """A claim that passed every check: its text with its facts filled in, and what it cites."""
+
+    text: str
+    cites: list[str]
+
+
+class CheckedReading(BaseModel):
+    """What a reading keeps: the answer and each section's kept claims, and why the rest went."""
 
     answer: str | None = None
-    sections: list[tuple[str, list[str]]] = field(default_factory=list)
-    unknowns: list[str] = field(default_factory=list)
-    dropped: list[str] = field(default_factory=list)
+    sections: list[tuple[str, list[KeptClaim]]] = Field(default_factory=list)
+    unknowns: list[str] = Field(default_factory=list)
+    dropped: list[str] = Field(default_factory=list)
     claims: int = 0
     kept: int = 0
 
@@ -142,10 +152,10 @@ def check_answer(answer: ReaderAnswer, evidence: RunEvidence, settings: CheckLim
     checked, cited = CheckedReading(), []
     for number, section in enumerate(answer.sections, 1):
         kept = [_keep_claim(claim, checked, cited, evidence, settings) for claim in section.claims]
-        checked.kept += sum(map(bool, kept))
+        checked.kept += sum(claim is not None for claim in kept)
         faulty = _find_fault(section.title, [], evidence, settings)  # a title passes the checks of a claim
         title = f"Section {number}" if faulty else _fill_facts(section.title, evidence)
-        checked.sections.append((title, [claim for claim in kept if claim]))
+        checked.sections.append((title, [claim for claim in kept if claim is not None]))
     if answer.answer is not None:
         reason = _find_fault(answer.answer, cited, evidence, settings)
         reason = reason or ("" if checked.kept else "no kept claim supports it")
@@ -164,17 +174,17 @@ def _keep_claim(
     cited: list[str],
     evidence: RunEvidence,
     settings: CheckLimits,
-) -> str:
-    """``claim`` rendered with its cites when it passes, which join ``cited``; else empty, its drop noted."""
+) -> KeptClaim | None:
+    """``claim`` with its facts filled in when it passes, its cites joining ``cited``; else none, noted."""
     checked.claims += 1
     cites = [cite.strip("{}") for cite in claim.cites]  # a fact cited as it is written in a claim
     reason = "past reader.claim_limit" if checked.claims > settings.claim_limit else ""
     if reason := reason or _find_fault(claim.text, cites, evidence, settings, cited=True):
         checked.dropped.append(f"claim {checked.claims}: {reason}")
-        return ""
+        return None
     cited += cites
     shown = [*cites, *(key for key in _FACT.findall(claim.text) if key not in cites)]
-    return f"{_fill_facts(claim.text, evidence)} ({_render_cites(shown)})"
+    return KeptClaim(text=_fill_facts(claim.text, evidence), cites=shown)
 
 
 def _find_fault(
@@ -203,10 +213,10 @@ def _find_fault(
         if cite in evidence.events
         for words in evidence.events[cite].words
     ]
-    quotes = ["".join(groups) for groups in _QUOTE.findall(text)]
+    quotes = ["".join(groups) for groups in QUOTE.findall(text)]
     if fault := next(filter(None, (_judge_quote(quote, said, settings) for quote in quotes)), ""):
         return fault
-    return _judge_prose(_QUOTE.sub("quote", _FACT.sub("fact", text)), evidence)
+    return _judge_prose(QUOTE.sub("quote", _FACT.sub("fact", text)), evidence)
 
 
 def _judge_facts(keys: Sequence[str], evidence: RunEvidence) -> str:
@@ -228,7 +238,7 @@ def _judge_quote(quote: str, said: Sequence[str], settings: CheckLimits) -> str:
         spoken,
     )
     emphasis = re.sub(r"(?<!\w)[*_]{1,2}|[*_]{1,2}(?!\w)", "", named)  # an agent's own markdown emphasis
-    if not _is_prose(emphasis) or _COMMAND.search(spoken):
+    if not _is_prose(emphasis) or _holds_code(spoken):
         return "quotes what is no prose: code, a command, a link or a credential"
     verbatim = re.compile(rf"(?<!\w){re.escape(spoken)}(?!\w)")  # whole words: never a part of one
     return "" if any(verbatim.search(words) for words in said) else "quotes words that no cited event holds"
@@ -254,6 +264,34 @@ def _judge_prose(prose: str, evidence: RunEvidence) -> str:
 def _spells_number(word: str) -> bool:
     """Whether ``word`` spells numbers, such as `two`, `both`, `twenty-three` or `two+two`."""
     return all(_NUMBER_WORDS.match(part) for part in re.split(r"[-+]", word)) if word else False
+
+
+def prose_lines(text: str) -> list[str]:
+    """The lines of an agent's words that are prose alone, without their markdown markers.
+
+    A line holding code, a command, a link or a credential is left out whole: an agent's words are shown only
+    where they are prose.
+    """
+    kept, fence = [], ""
+    for line in text.splitlines():
+        marker = next((mark for mark in ("```", "~~~") if line.lstrip().startswith(mark)), "")
+        fence = (marker if not fence else "" if marker == fence else fence) if marker else fence
+        if fence or marker or line.lstrip().startswith("$ ") or line.startswith(("    ", "\t")):
+            continue  # a code block, closed only by its own marker, or a command at its prompt
+        core = re.sub(r"^\s*(?:[#>*•-]+|\d+[.)])\s+", "", line).strip()
+        named = _QUOTED_NAME.sub(
+            lambda span: span.group() if _looks_secret(span.group()[1:-1]) else "name",
+            core,
+        )
+        plain = re.sub(r"(?<!\w)[*_]{1,2}|[*_]{1,2}(?!\w)|[\"“”‘’]", "", named)
+        if core and _is_prose(plain) and not _holds_code(core):
+            kept.append(core)
+    return kept
+
+
+def _holds_code(said: str) -> bool:
+    """Whether an agent's ``said`` words hold a command, a query or a credential's value."""
+    return bool(_COMMAND.search(said) or _SAID_CODE.search(said))
 
 
 def _is_prose(text: str) -> bool:
@@ -324,7 +362,9 @@ def render_reading(checked: CheckedReading, facts: str | None) -> str:
         parts.append(f"## Answer\n\n{checked.answer}\n")
     for title, claims in checked.sections:
         if claims:
-            parts.append(f"## {title}\n\n" + "".join(f"- {claim}\n" for claim in claims))
+            parts.append(
+                f"## {title}\n\n" + "".join(f"- {c.text} ({_render_cites(c.cites)})\n" for c in claims),
+            )
     if checked.unknowns:
         unknowns = "".join(f"- {item}\n" for item in checked.unknowns)
         parts.append(f"## What I could not determine\n\n{unknowns}")

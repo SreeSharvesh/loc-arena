@@ -31,9 +31,11 @@ from loc_arena.logging_.viewer import build_index
 from loc_arena.merged_main import EPISODE_PHASE
 from loc_arena.monitors.registry import load_monitor_specs
 from loc_arena.prompt_listing import list_prompts
+from loc_arena.replay_export import export_runs
 from loc_arena.run_cost import read_cost, record_cost, render_costs, summarize
 from loc_arena.run_identity import RUN_FILE, read_identity
 from loc_arena.run_publish import PublishError, SecretFoundError, publish_run, read_label
+from loc_arena.run_reader import ASK, read_run, settle_reading
 from loc_arena.run_watcher import watch_run
 from loc_arena.task import grade_snapshot, read_snapshot_file
 
@@ -241,9 +243,6 @@ def _cmd_explore(args: argparse.Namespace) -> int:
 
 
 def _cmd_read(args: argparse.Namespace) -> int:
-    # The reader's stack imports the episode's; only this command pays for that.
-    from loc_arena.run_reader import ASK, read_run, settle_reading
-
     try:
         config = load_run_config(_config_path(args.run))
         with relay_while_running(settle_reading(config).gateway):
@@ -275,8 +274,31 @@ def _cmd_watch(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_replay(args: argparse.Namespace) -> int:
+    if not args.path:  # an empty RUN_DIR names no run: the current directory is named as "."
+        print("replay: name a run's directory, or a folder of runs", file=sys.stderr)
+        return 1
+    try:
+        config = load_run_config(_config_path(args.run))
+        with relay_while_running(settle_reading(config).gateway):
+            written, failed = export_runs(Path(args.path), config)
+    except (ValueError, RuntimeError) as error:
+        print(f"replay: {error}", file=sys.stderr)
+        return 1
+    print(*(f"replay: {path}" for path in written), sep="\n")
+    print(*(f"replay: {run} not exported: {why}" for run, why in failed.items()), sep="\n", file=sys.stderr)
+    return 1 if failed else 0
+
+
 def main(argv: list[str] | None = None) -> int:
-    """Parse args and dispatch the command they name, one of the subparsers below."""
+    """Parse args and dispatch the command they name, one of the parser's subcommands."""
+    args = build_parser().parse_args(argv)
+    result: int = args.func(args)
+    return result
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """The command line: each subcommand with its arguments and the function that runs it."""
     parser = argparse.ArgumentParser(prog="loc-arena", description="Run and view LOC-Arena episodes.")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -322,6 +344,12 @@ def main(argv: list[str] | None = None) -> int:
     p_grade.add_argument("--run", default="aurora-efficiency")
     p_grade.set_defaults(func=_cmd_grade)
 
+    _add_readers(sub)
+    return parser
+
+
+def _add_readers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """The commands that read a played run: its reading, replay export, cost, publication and steps."""
     p_read = sub.add_parser("read", help="have the reader agent read one graded run and report what it did")
     p_read.add_argument("run_directory", help="the run's directory, which holds scores.json")
     p_read.add_argument("--brief", default="agents", help="what to report on: agents, or monitors")
@@ -332,6 +360,14 @@ def main(argv: list[str] | None = None) -> int:
         help="the config whose reader role and settings to use",
     )
     p_read.set_defaults(func=_cmd_read)
+
+    p_replay = sub.add_parser(
+        "replay",
+        help="write the replay export of one graded run, or of each in a folder",
+    )
+    p_replay.add_argument("path", help="a run's directory, or a folder of them")
+    p_replay.add_argument("--run", default="aurora-efficiency", help="the config whose reader to use")
+    p_replay.set_defaults(func=_cmd_replay)
 
     p_cost = sub.add_parser(
         "cost",
@@ -367,10 +403,6 @@ def main(argv: list[str] | None = None) -> int:
         help="seconds between reads of a run playing",
     )
     p_watch.set_defaults(func=_cmd_watch)
-
-    args = parser.parse_args(argv)
-    result: int = args.func(args)
-    return result
 
 
 if __name__ == "__main__":
