@@ -25,7 +25,9 @@ from pydantic import Field, JsonValue
 
 from loc_arena.config import RunConfig
 from loc_arena.mcp_service import caller_from_token
+from loc_arena.prompt_references import ENGINE_PROMPTS
 from loc_arena.recorded_events import RecordedEvent, record_line_parser
+from loc_arena.subagent_config import name_lanes
 
 OWN_TOPICS = ("dm", "mention", "job", "ticket")  # topics about the subscriber alone
 NAMED_TOPICS = ("channel", "repo")  # topics of one channel or repo: ``channel:<name>``
@@ -54,25 +56,43 @@ def describe(event: RecordedEvent) -> Iterator[tuple[str, str | None, str]]:
     """Each topic ``event`` is of, the one agent it is for (none: every subscriber), and its notice's text."""
     actor, payload = event.actor_uid, event.payload
     if event.kind == "message" and payload["dm"]:
-        yield "dm", event.target_id, f"{actor} sent you a direct message."
+        yield "dm", event.target_id, _say("dm", actor=actor)
     elif event.kind == "message":
         # A reply over HTTP names its message alone, so its record has no channel: only its mentions notify.
         channel = payload["channel"] if isinstance(payload["channel"], str) else None
-        where = f"the channel {channel}" if channel else "a thread"
         for member in MENTION.findall(payload["body"]):
-            yield "mention", member, f"{actor} mentioned you in {where}."
+            told = (
+                _say("mention", actor=actor, channel=channel)
+                if channel
+                else _say("thread-mention", actor=actor)
+            )
+            yield "mention", member, told
         if channel:
-            yield f"channel:{channel}", None, f"{actor} wrote in the channel {channel}."
+            yield f"channel:{channel}", None, _say("channel", actor=actor, channel=channel)
     elif event.kind == "job":
-        yield "job", actor, f"Your job {payload['name']} ({payload['job_id']}) is now {payload['state']}."
+        yield "job", actor, _say("job", name=payload["name"], job=payload["job_id"], state=payload["state"])
     elif event.kind == "pr":
-        done = "merged" if payload.get("merged") else "opened"
+        action = "merged" if payload.get("merged") else "opened"
         repo = payload["target_repo"]
-        yield f"repo:{repo}", None, f"{actor} {done} pull request {payload['number']} in {repo}."
+        yield (
+            f"repo:{repo}",
+            None,
+            _say("pull-request", actor=actor, action=action, number=payload["number"], repo=repo),
+        )
     elif event.tool in _ASSIGNING_TOOLS and not payload["blocked"]:
         assignee = payload["args"].get("assignee")
         if isinstance(assignee, str):
-            yield "ticket", assignee, f"{actor} assigned a ticket to you."
+            yield "ticket", assignee, _say("ticket", actor=actor)
+
+
+def turn_of(text: str) -> str:
+    """The turn a notice of ``text`` reaches its agent's session as."""
+    return ENGINE_PROMPTS["agent.notice"].substitute(text=text)
+
+
+def _say(kind: str, **values: object) -> str:
+    """The notice of ``kind``, from its prompt file ``agent.notice-<kind>``, filled with ``values``."""
+    return ENGINE_PROMPTS[f"agent.notice-{kind}"].substitute(values)
 
 
 def _check_topic(topic: str) -> str:
@@ -93,7 +113,9 @@ class Notices:
         agents: Iterable[str],
         deployment_ended: Callable[[], None] = lambda: None,
     ) -> None:
-        """Each of ``agents`` starts subscribed to ``pi.subscriptions``; records so far make no notice.
+        """Each of ``agents``, and each subagent a play may start, starts subscribed to ``pi.subscriptions``.
+
+        Records so far make no notice.
 
         A read that finds a deployment ended calls ``deployment_ended``: its service has started again.
 
@@ -102,7 +124,8 @@ class Notices:
         self._lock = threading.Lock()
         self._deployment_ended = deployment_ended
         starting = [_check_topic(topic) for topic in config.settings.pi.subscriptions]
-        self._topics = {agent: set(starting) for agent in agents}
+        self._lanes = name_lanes(config)
+        self._topics = {agent: set(starting) for agent in [*agents, *self._lanes]}
         directory = config.settings.stack.records_directory
         self._parsers = {
             directory / f"{service.name}.jsonl": record_line_parser(service, config)
@@ -153,7 +176,9 @@ class Notices:
 
     def _notify(self, event: RecordedEvent) -> Iterator[Notice]:
         noticed: set[str] = set()  # an agent gets one notice of an event: a mention, not its channel's too
-        for topic, only, text in describe(event):
+        for topic, told, text in describe(event):
+            # A subagent's job is its agent's: it outlives the subagent, and the job service holds it so.
+            only = self._lanes.get(told, told) if topic == "job" and told else told
             with self._lock:
                 subscribed = [agent for agent, topics in self._topics.items() if topic in topics]
             for agent in subscribed:

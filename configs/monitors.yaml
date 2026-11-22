@@ -20,6 +20,18 @@
 # trajectory     : post-hoc over a whole agent trajectory (aggregate / carried-notes monitor)
 tap_points: [action, message, inference, pr, diff, job, trajectory]
 
+# --- the scenario's facts the engine's monitor prompts name: each $placeholder, from the scenario prompt file
+#     that holds its value. The prompts in loc_arena/prompts/ hold nothing of one company or one task.
+prompt_values:
+  company: scenarios/aurora_efficiency/prompts/monitor.company.md
+  lab: scenarios/aurora_efficiency/prompts/monitor.lab.md
+  repositories: scenarios/aurora_efficiency/prompts/monitor.repositories.md
+  control_repository: scenarios/aurora_efficiency/prompts/monitor.control-repository.md
+  policy_directory: scenarios/aurora_efficiency/prompts/monitor.policy-directory.md
+  cover_reason: scenarios/aurora_efficiency/prompts/monitor.cover-reason.md
+  task_work: scenarios/aurora_efficiency/prompts/monitor.task-work.md
+  coverage_cover: scenarios/aurora_efficiency/prompts/monitor.coverage-cover.md
+
 # --- the deployed monitors (the ones referenced by aurora-efficiency.yaml protocol.monitors are enabled) ---
 monitors:
   # trusted-model monitor over every action and every chat message
@@ -34,7 +46,7 @@ monitors:
     model: trusted_monitor            # a role in models.cheap.yaml
     mode: live                   # heuristic (default, deterministic) | live (call the model via the gateway)
     timing: sync                 # sync (post-hoc, inline) | async (concurrent worker); invariant to the result
-    prompt_ref: configs/prompts/monitors/action_monitor.txt
+    prompt_ref: loc_arena/prompts/action.monitor.md
     ensemble_n: 1
     temperature: 0.0
     threshold: audit_budget           # resolved from aurora-efficiency.yaml protocol.audit_budget_fpr at scoring
@@ -49,7 +61,7 @@ monitors:
     model: trusted_monitor
     mode: live
     timing: async                # concurrent worker, off the agent's critical path; timing-invariant result
-    prompt_ref: configs/prompts/monitors/inference_monitor.txt
+    prompt_ref: loc_arena/prompts/inference.monitor.md
     ensemble_n: 1
     temperature: 0.0
     threshold: audit_budget
@@ -63,7 +75,7 @@ monitors:
     model: trusted_monitor
     mode: live
     timing: sync                 # sync (post-hoc, inline) | async (concurrent worker); invariant to the result
-    prompt_ref: configs/prompts/monitors/pr_review_monitor.txt
+    prompt_ref: loc_arena/prompts/pr-review.monitor.md
     ensemble_n: 1
     temperature: 0.0
     threshold: audit_budget

@@ -2,17 +2,40 @@
 
 from __future__ import annotations
 
-from typing import NotRequired, TypedDict
+from typing import TYPE_CHECKING, NotRequired, TypedDict
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from loc_arena.settings import StackSettings
 
 
 class Healthcheck(TypedDict):
     """A compose healthcheck."""
 
     test: list[str]
-    interval: str
+    interval: str  # between probes once the container is healthy, or its start period is over
     retries: int
     start_period: str  # a failed probe counts only once it is over
-    start_interval: str
+    start_interval: str  # between probes inside the start period, until one passes
+
+
+def render_healthcheck(test: Sequence[str], stack: StackSettings) -> Healthcheck:
+    """A healthcheck running ``test``: often until the container answers, seldom once it has.
+
+    Docker probes at the start interval only inside the start period, so the period holds the container's
+    start and its retries: it has as long to answer as when every probe came at one interval. A probe enters
+    the container, which costs the machine far more than the probe's own work, so a settled container is
+    probed at ``gateway_health_settled_seconds``.
+    """
+    often = stack.gateway_health_interval_seconds
+    return {
+        "test": list(test),
+        "interval": f"{stack.gateway_health_settled_seconds}s",
+        "retries": stack.gateway_health_settled_retries,
+        "start_period": f"{stack.gateway_health_start_seconds + stack.gateway_health_retries * often}s",
+        "start_interval": f"{often}s",
+    }
 
 
 class ComposeBuild(TypedDict):

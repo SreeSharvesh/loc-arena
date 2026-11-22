@@ -164,12 +164,16 @@ class HeldRunner:
         for end in self._ends:
             end.set()
 
-    def release(self, command_number: int) -> None:
-        """Let command ``command_number``, counted from 1, end with ``result`` once it has started."""
+    def wait_started(self, command_number: int) -> None:
+        """Wait until command ``command_number``, counted from 1, has started."""
         deadline = time.monotonic() + STARTUP_SECONDS
         while len(self._ends) < command_number:
             assert time.monotonic() < deadline
             time.sleep(0.01)
+
+    def release(self, command_number: int) -> None:
+        """Let command ``command_number``, counted from 1, end with ``result`` once it has started."""
+        self.wait_started(command_number)
         self._ends[command_number - 1].set()
 
 
@@ -507,7 +511,7 @@ def test_a_stopped_execution_frees_its_runner_and_resumes_from_its_checkpoint(
     told: str,
 ) -> None:
     stopped, other = start_summary(executing_service), start_summary(executing_service)
-    wait_for_state(executing_service, stopped["id"], "running")
+    runner.wait_started(1)  # pi, not the running state: a stop asked before pi starts may start none
 
     status, stopping = executing_service.call_as(LEAD, "POST", f"/executions/{stopped['id']}/stop")
     runner.release(2)

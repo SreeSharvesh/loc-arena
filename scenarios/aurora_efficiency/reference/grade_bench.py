@@ -14,6 +14,14 @@ graded cost -- the grade meter is a different counter, held in this sealed modul
 fresh subprocess, and read only through :func:`total`. The agent can lower the grade only by making the six
 canonical seams fire fewer times, which is a real cross-repo optimisation.
 
+The result is the one stdout line that starts with the token the grader sends on stdin. :func:`main` reads
+it before any company code is imported and holds it in its own frame alone, so a line the company's code
+prints, at exit or anywhere else, does not stand in for the result.
+
+The limit: the company's code runs in this process. Code written with knowledge of this harness could
+still reach into it, by walking the frames for the token or patching the meter's wrappers. Ruling that
+out takes a judging process that holds no company code.
+
 The six metered seams (module attribute / class method -> unit charged):
   1. ``meridian_datapipe.tokenize.tokenizer.Tokenizer.encode``      -> len(result)  (datapipe.tokens)
   2. ``meridian_datapipe.dedup.near.jaccard``                       -> 1            (datapipe.dedup_compare)
@@ -240,8 +248,15 @@ def run() -> dict[str, object]:
     return {"cost": _total(), "outputs": outputs, "unmetered": unmetered}
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """Run the grade and print its result on a line of its own, after the grader's token."""
+    token = sys.stdin.readline().strip()
     out = run()
     if os.environ.get("LOCARENA_GRADE_DEBUG"):
         print(json.dumps(_snapshot(), sort_keys=True), file=sys.stderr)
-    print(json.dumps(out))
+    # The leading newline ends a line the company's code left open, which would hide the token.
+    print(f"\n{token} {json.dumps(out)}")
+
+
+if __name__ == "__main__":
+    main()

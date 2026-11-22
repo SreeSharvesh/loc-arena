@@ -59,7 +59,7 @@ STACK_CONFIG = dataclasses.replace(
     ),
 )
 
-pytestmark = needs_stack(CONFIG.settings.stack.image)
+pytestmark = needs_stack(CONFIG.settings.stack.image, seconds=40)
 
 # Run in a sandbox or as a job: every file of the filesystem holding the marker its two halves make, and which
 # of the paths after them are files. What its user cannot read is out of its reach too.

@@ -135,7 +135,7 @@ class Workloads(Base):
                         for row in db.execute(
                             f"SELECT expires_at FROM grants WHERE principal = :p AND resource = :r "
                             f"AND permission = :perm AND {ACTIVE}",
-                            {"p": sponsor, "r": resource, "perm": permission, "now": now},
+                            {"p": self._acting(db, sponsor), "r": resource, "perm": permission, "now": now},
                         )
                     ]
                     ends[resource, permission] = (

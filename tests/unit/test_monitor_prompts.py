@@ -11,9 +11,9 @@ from pathlib import Path
 import pytest
 from loc_arena.config import ConfigError
 from loc_arena.logging_.events import Event
+from loc_arena.monitors.prompt_values import PROMPT_INPUTS_PLACEHOLDER
 from loc_arena.monitors.registry import (
     FORBIDDEN_MONITOR_INPUTS,
-    PROMPT_INPUTS_PLACEHOLDER,
     MonitorModelCaller,
     MonitorVerdict,
     find_fallback_only_monitors,
@@ -62,7 +62,7 @@ def test_prompt_ref_naming_a_missing_file_is_a_config_error(tmp_path: Path) -> N
         load_one_monitor_spec(tmp_path, mode="live", prompt_ref=missing)
 
 
-@pytest.mark.parametrize("text", ["Rate this step.", "{inputs} and again {inputs}"], ids=["absent", "twice"])
+@pytest.mark.parametrize("text", ["Rate this step.", "$inputs and again $inputs"], ids=["absent", "twice"])
 def test_prompt_template_must_place_the_inputs_exactly_once(tmp_path: Path, text: str) -> None:
     template = write_prompt_template(tmp_path, text)
 
@@ -81,12 +81,71 @@ def test_a_heuristic_monitor_without_a_prompt_ref_scores_its_events(tmp_path: Pa
 
 
 def test_a_loaded_template_renders_the_inputs_as_json_in_place_of_its_placeholder(tmp_path: Path) -> None:
-    template = write_prompt_template(tmp_path, "Rate it.\n{inputs}\nReply.")
+    template = write_prompt_template(tmp_path, "Rate it.\n$inputs\nReply.")
     spec = load_one_monitor_spec(tmp_path, mode="live", prompt_ref=template)
 
     prompt = render_prompt(spec.prompt_template, {"tool_name": "read_file"})
 
     assert prompt == 'Rate it.\n{\n  "tool_name": "read_file"\n}\nReply.'
+
+
+def test_a_template_takes_the_scenarios_facts_from_its_prompt_values(tmp_path: Path) -> None:
+    (tmp_path / "monitor.company.md").write_text("Acme Labs\n")
+    template = write_prompt_template(tmp_path, "Rate it for $company.\n$inputs")
+    values = {"company": str(tmp_path / "monitor.company.md")}
+    spec = load_one_monitor_spec(tmp_path, values, mode="live", prompt_ref=template)
+
+    prompt = render_prompt(spec.prompt_template, {"tool_name": "read_file"})
+
+    assert prompt == 'Rate it for Acme Labs.\n{\n  "tool_name": "read_file"\n}'
+
+
+@pytest.mark.parametrize(
+    ("text", "values", "refused"),
+    [
+        ("Rate it for $company.\n$inputs", {}, r"names \$company, with no prompt_values"),
+        (
+            "Rate it.\n$inputs",
+            {"company": "monitor.company.md"},
+            "no monitor prompt names these prompt_values: company",
+        ),
+        ("Rate it at $lab.\n$inputs", {"lab": "monitor.lab.md"}, "monitor.lab.md is empty"),
+        ("Rate it for $company.\n$inputs", {"company": "other.md"}, "other.md is not named after its fact"),
+    ],
+    ids=[
+        "a placeholder with no value",
+        "a value no prompt names",
+        "an empty value",
+        "a file not named after its fact",
+    ],
+)
+def test_a_monitor_fact_is_refused_at_load_naming_why(
+    tmp_path: Path,
+    text: str,
+    values: dict[str, str],
+    refused: str,
+) -> None:
+    (tmp_path / "monitor.company.md").write_text("Acme Labs\n")
+    (tmp_path / "monitor.lab.md").write_text("\n")
+    (tmp_path / "other.md").write_text("Acme Labs\n")
+    template = write_prompt_template(tmp_path, text)
+    files = {name: str(tmp_path / file) for name, file in values.items()}
+
+    with pytest.raises(ConfigError, match=refused):
+        load_one_monitor_spec(tmp_path, files, mode="live", prompt_ref=template)
+
+
+def test_a_fact_from_another_scenarios_prompts_is_refused_for_a_run_of_this_one(tmp_path: Path) -> None:
+    (tmp_path / "monitor.company.md").write_text("Acme Labs\n")
+    template = write_prompt_template(tmp_path, "Rate it for $company.\n$inputs")
+    values = {"company": str(tmp_path / "monitor.company.md")}
+    monitors = write_monitors_file(tmp_path, values, mode="live", prompt_ref=template)
+
+    with pytest.raises(
+        ConfigError,
+        match="is not of the run's scenario, aurora_efficiency",
+    ):
+        load_monitor_specs(monitors, "aurora_efficiency")
 
 
 def _prompt_recording_caller(prompts: dict[str, str]) -> MonitorModelCaller:

@@ -13,6 +13,8 @@ from loc_arena.config import RunConfig
 from loc_arena.episode_stack import CONFIGS_DIRECTORY
 from loc_arena.stack_play import EPISODE_SERVICE
 
+from tests.stack_slots import UNMEASURED_SECONDS
+
 DOCKER_CHECK_TIMEOUT_SECONDS = 10
 WORKSPACE_START_SECONDS = 60
 LOG_TAIL_LINES = 200  # of each log a failure's report holds
@@ -24,13 +26,16 @@ PROBE_OUTPUT_CHARACTERS = 300  # of each health probe's output a failure's repor
 # route beside the live services', so it answers no call without them.
 SERVE_WORKSPACE = """
 import threading, time
+from loc_arena.live import build_subagent_briefs
 from loc_arena.own_sessions import serve_play_tools
+from loc_arena.subagents import Subagents
 from loc_arena.sandbox import token_secret_name
 from loc_arena.workspace_service import Turns
 def serve_agents_workspace(config, code, write):
     secrets = config.settings.gateway.secrets_dir
     tokens = {a.id: (secrets / token_secret_name(a.id)).read_text().strip() for a in config.agents}
-    serving = serve_play_tools(config, code, tokens, write, Turns(tokens))
+    subagents = Subagents(config, build_subagent_briefs(config), secrets)  # as play serves delegate
+    serving = serve_play_tools(config, code, tokens, write, Turns(tokens), subagents)
     notices = serving.__enter__()
     def read_notices():
         while True:
@@ -163,10 +168,14 @@ def _report_container(
     return report + read_logs(compose, environment, [container.get("Service", "")])
 
 
-def needs_stack(*images: str) -> list[pytest.MarkDecorator]:
-    """A Docker test module's marks: it runs in a stack slot, and skips without Docker or ``images``."""
+def needs_stack(*images: str, seconds: int = UNMEASURED_SECONDS) -> list[pytest.MarkDecorator]:
+    """A Docker test module's marks: it runs in a stack slot, and skips without Docker or ``images``.
+
+    ``seconds`` is about how long the module takes on a CI runner: it evens the shares of ``--stack-shard``.
+    """
     missing = not all(map(image_exists, images))
-    return [pytest.mark.stack, pytest.mark.skipif(missing, reason=f"needs Docker and {', '.join(images)}")]
+    reason = f"needs Docker and {', '.join(images)}"
+    return [pytest.mark.stack(seconds=seconds), pytest.mark.skipif(missing, reason=reason)]
 
 
 def image_exists(image: str) -> bool:

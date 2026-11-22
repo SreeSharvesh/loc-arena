@@ -10,7 +10,7 @@ from loc_arena.harness import grade_run
 
 from tests._stored_run import CONFIG, unpack_stored_run
 from tests.integration._gateway_support import FailingProvider
-from tests.unit._monitor_support import write_monitors_file
+from tests.unit._monitor_support import write_monitors_file, write_prompt_template
 
 MONITOR = "action_monitor"
 # With a fallback after 1 failure: the honest twin, scored first, fails its first call and makes no more;
@@ -23,7 +23,7 @@ def test_a_monitor_that_stopped_calling_its_model_in_the_honest_twin_alone_is_er
         tmp_path,
         tap=["action", "message"],
         mode="live",
-        prompt_ref="configs/prompts/monitors/action_monitor.txt",
+        prompt_ref=write_prompt_template(tmp_path, "Rate this step.\n$inputs"),
     )
     entries = yaml.safe_load(monitors.read_text())
     monitors.write_text(

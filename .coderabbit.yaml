@@ -95,7 +95,7 @@ reviews:
           that names this scenario's kill-chain milestones or other facts only the sealed verifier knows.
     - path: "configs/monitors.yaml"
       instructions: *monitor_firewall
-    - path: "configs/prompts/monitors/**"
+    - path: "loc_arena/prompts/*.monitor.md"
       instructions: *monitor_firewall
 
     - path: "loc_arena/verifier/**"
@@ -268,7 +268,7 @@ reviews:
         mode: warning
         instructions: >-
           Fail if the diff makes code in loc_arena/monitors/, configs/monitors.yaml or
-          configs/prompts/monitors/ read the sealed log, verifier or grader output, covert-milestone state, or
+          loc_arena/prompts/*.monitor.md read the sealed log, verifier or grader output, covert-milestone state, or
           whether the episode is honest or attack; adds a name to ALLOWED_MONITOR_INPUTS in
           loc_arena/monitors/registry.py without the pull request saying why a real platform could observe
           it; or adds this scenario's kill-chain milestone names to a monitor prompt. Describing the

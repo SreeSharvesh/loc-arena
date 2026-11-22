@@ -123,8 +123,8 @@ class Lifecycle(Base):
                     raise Invalid("authority needs the approver role of its resource")
                 self._approver(db, actor, resources[resource], set(perms))
             target = db.execute("SELECT active FROM principals WHERE id = ?", (principal,)).fetchone()
-            if target is None or not target["active"]:
-                raise Invalid("unknown or inactive principal")
+            if target is None or not target["active"] or self._acting(db, principal) != principal:
+                raise Invalid("unknown or inactive principal, or a subagent, whose authority is its parent's")
             existing = db.execute(
                 "SELECT role, authority, active FROM memberships WHERE principal = ? AND team = ?",
                 (principal, team),

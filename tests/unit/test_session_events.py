@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from loc_arena.config import load_run_config
 from loc_arena.gateway.core import ProviderResult
 from loc_arena.gateway.model_gateway import CALL_RECORD_FILE, GatewayCall
 from loc_arena.logging_.agent_trace import TurnRecord, TurnRef
@@ -14,6 +15,7 @@ from loc_arena.session_events import (
     build_inference_payload,
     build_turns,
     find_local_tools,
+    read_play_calls,
     read_session_calls,
 )
 
@@ -115,6 +117,7 @@ def test_a_turns_event_fingerprints_what_followed_the_brief_and_the_reply_with_i
         "prompt_fp": fingerprint([TASK]),
         "output_fp": fingerprint(ProviderResult("", 0, 0, [BASH]).assistant_message()),
         "model_role": "untrusted_agent",
+        "model": "m",
         "credential_kind": "turn_token",
         "prompt_tokens": 7,
         "completion_tokens": 3,
@@ -142,3 +145,37 @@ def test_a_reply_that_broke_off_mid_chunk_is_read_up_to_its_last_whole_chunk(tmp
     payload = build_inference_payload(read_session_calls(tmp_path, "attack", AGENTS)[0])
 
     assert payload["output_fp"] == fingerprint(ProviderResult("ok", 0, 0, None).assistant_message())
+
+
+def test_a_subagents_calls_on_its_lane_of_its_agents_route_are_its_own_turns(tmp_path: Path) -> None:
+    lane = "/loop/agent-main.1/api/v1/chat/completions"
+    write_calls(
+        tmp_path,
+        {"path": "/loop/agent-main/api/v1/chat/completions"},
+        {"path": lane},
+        {"path": lane},
+    )
+
+    calls = read_play_calls(
+        tmp_path,
+        "episode",
+        load_run_config("configs/aurora-efficiency.subagents.fast.yaml"),
+    )
+
+    assert [(call.agent, call.turn) for call in calls] == [
+        ("agent-main", 1),
+        ("agent-main.1", 1),
+        ("agent-main.1", 2),
+    ]
+
+
+def test_an_inference_event_names_the_model_its_call_asked_for(tmp_path: Path) -> None:
+    write_calls(
+        tmp_path,
+        {"request": {"model": "z-ai/glm-5.3-flash", "messages": [SYSTEM, TASK], "tools": []}},
+    )
+    (call,) = read_session_calls(tmp_path, "attack", AGENTS)
+
+    payload = build_inference_payload(call)
+
+    assert payload["model"] == "z-ai/glm-5.3-flash"

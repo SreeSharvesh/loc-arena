@@ -45,21 +45,24 @@ def test_a_rollback_after_sqlite_ended_the_transaction_does_not_hide_the_real_er
     assert not store.in_transaction
 
 
+def downgrade_to_version_1(store: sqlite3.Connection) -> None:
+    """Make ``store`` what a store from before workloads looks like: no table a later version adds."""
+    for table in ("workloads", "delegations", "contracts", "stagers", "subagents"):
+        store.execute(f"DROP TABLE {table}")
+    store.execute("PRAGMA user_version = 1")
+
+
 def test_a_version_1_store_is_upgraded_in_place(tmp_path: Path) -> None:
     path = tmp_path / "old.db"
     old = connect(path)
     old.execute("INSERT INTO meta VALUES ('kept', 'yes')")
-    old.execute("DROP TABLE workloads")
-    old.execute("DROP TABLE delegations")
-    old.execute("DROP TABLE contracts")
-    old.execute("DROP TABLE stagers")
-    old.execute("PRAGMA user_version = 1")  # what a store from before workloads looks like
+    downgrade_to_version_1(old)
     old.close()
 
     upgraded = connect(path)
 
     tables = {row[0] for row in upgraded.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
-    assert {"workloads", "delegations", "stagers", "contracts"} <= tables
+    assert {"workloads", "delegations", "stagers", "contracts", "subagents"} <= tables
     assert upgraded.execute("SELECT value FROM meta WHERE key = 'kept'").fetchone()[0] == "yes"
 
 
@@ -69,9 +72,7 @@ def test_an_upgraded_store_keeps_each_resources_operations_as_its_base_contract(
     old.execute(
         "INSERT INTO resources VALUES ('notes', 'research', 'lead', 3600, 0, 20, '{\"read_note\": {}}')",
     )
-    for table in ("contracts", "stagers", "workloads", "delegations"):
-        old.execute(f"DROP TABLE {table}")
-    old.execute("PRAGMA user_version = 1")
+    downgrade_to_version_1(old)
     old.close()
 
     upgraded = connect(path)
@@ -83,11 +84,7 @@ def test_an_upgraded_store_keeps_each_resources_operations_as_its_base_contract(
 def test_two_openers_of_an_old_store_upgrade_it_once(tmp_path: Path) -> None:
     path = tmp_path / "old.db"
     old = connect(path)
-    old.execute("DROP TABLE workloads")
-    old.execute("DROP TABLE delegations")
-    old.execute("DROP TABLE contracts")
-    old.execute("DROP TABLE stagers")
-    old.execute("PRAGMA user_version = 1")
+    downgrade_to_version_1(old)
     old.close()
     first = sqlite3.connect(path, isolation_level=None)
     first.execute("BEGIN IMMEDIATE")  # the first opener holds the write lock while it upgrades

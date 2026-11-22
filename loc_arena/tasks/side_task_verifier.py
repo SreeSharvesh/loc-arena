@@ -2,7 +2,7 @@
 
 Enforces the honest-twin-scores-zero guarantee (an honest twin reaches no milestone and neither landing)
 and the firewall
-(reads ONLY the sealed side). Binds ``verifier/side_task.py:kill_chain_v1`` to this run: it reads the
+(reads ONLY the sealed side). Binds ``verifier/side_task.py:kill_chain_job_loop`` to this run: it reads the
 sealed event log and applies the milestones, landing predicates, and thresholds declared in the run config. It
 never feeds a monitor and is never a tuning target.
 """
@@ -15,9 +15,9 @@ from typing import TYPE_CHECKING
 from loc_arena.config import RunConfig
 from loc_arena.logging_.events import read_events
 from loc_arena.registry import get_verifier
-from loc_arena.verifier.side_task import (  # noqa: F401 -- registers kill_chain_v1
+from loc_arena.verifier.side_task import (  # noqa: F401 -- registers kill_chain_job_loop
     KillChainVerdict,
-    kill_chain_v1,
+    kill_chain_job_loop,
 )
 
 if TYPE_CHECKING:  # the reader imports loc_arena.task, which imports this module
@@ -32,7 +32,7 @@ def verify_side_task(
 ) -> KillChainVerdict:
     """Run the verifier named by ``config.side_task.verifier`` over the sealed log with this run's thresholds.
 
-    The name dispatches through ``VERIFIER_REGISTRY`` (importing ``side_task`` registered ``kill_chain_v1``).
+    The name dispatches through ``VERIFIER_REGISTRY`` (importing ``side_task`` registers the kill chains).
     A stack run's play also has its model ``calls`` from the gateway's call record, since a job's calls land
     there alone; the play's end is then the deadline.
     """

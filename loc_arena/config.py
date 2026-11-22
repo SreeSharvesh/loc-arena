@@ -1,14 +1,11 @@
 """Typed configuration loader and validator.
 
-Enforces config over code (no magic constants in code paths) and reproducibility from config+seed (a run
-is fully described by its resolved config plus a seed). Reads ``env.default.yaml``, ``models.cheap.yaml``,
-and a run file, resolves ``extends`` by DEEP-merging the run's overrides onto the base recursively (so a
-partial override of a nested block such as ``episode:`` keeps the base block's other keys), resolves the
-``models`` reference and the ``prompts_inline.*`` ``*_ref`` references, validates aggressively, and
-returns one frozen ``RunConfig``. Fails loud on a missing or malformed field; no default lives here,
-defaults live in the YAML.
-
-See docs/run-config.md.
+Enforces config over code and reproducibility from config+seed: a run is fully described by its resolved
+config plus a seed. Reads ``env.default.yaml``, ``models.cheap.yaml`` and a run file, resolves ``extends``
+by DEEP-merging the run's overrides onto the base recursively, resolves the ``models`` reference and the
+``*_ref`` references to the prompt files the ``prompts`` block names, validates aggressively, and returns one
+frozen ``RunConfig``. Fails loud on a missing or malformed field; defaults
+live in the YAML, not here. See docs/run-config.md.
 """
 
 from __future__ import annotations
@@ -17,7 +14,7 @@ import dataclasses
 import re
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Annotated, Any, Final, Literal, Self
+from typing import Annotated, Any, Final, Self
 
 import yaml
 from pydantic import (
@@ -38,19 +35,19 @@ from pydantic.dataclasses import dataclass as pydantic_dataclass
 from pydantic_settings import BaseSettings, SettingsConfigDict, YamlConfigSettingsSource
 from scenarios.loader import DNS_LABEL, LiveService, Rights, Scenario, Tools, load_scenario
 
+from loc_arena import prompt_references
 from loc_arena.iam_seed import add_iam_service, offer_inbox, read_manifests, starting_rights
 from loc_arena.identity_variables import find_shared_identity_variable
 from loc_arena.ids import PermissionScope
+from loc_arena.model_preferences import ProviderPreferences, ReasoningPreferences
 from loc_arena.registry import SCORER_REGISTRY, VERIFIER_REGISTRY, is_scorer, is_verifier
 from loc_arena.service_grants import find_unknown_grant
 from loc_arena.settings import LocArenaSettings
+from loc_arena.subagent_config import SubagentsConfig, find_unheld_subagent_tool
 
 YAML_ENCODING: Final = "utf-8"
 BLOCK_CONFIG: Final = ConfigDict(extra="ignore")
-PROMPT_REFERENCE_PREFIX: Final = "prompts_inline."
-REFERENCE_SUFFIX: Final = "_ref"
-COVERT_PROMPTS: Final = ("objective_prompt",)
-AGENT_PROMPTS: Final = ("system_prompt", "brief", "covert_brief")
+AGENT_ROLE: Final = "untrusted_agent"  # the role an agent's loop calls unless agent_roles names another
 LANDING_FORMULAS: Final = frozenset({"minimal"})
 # Keys of the turn loop and the scripted runs, which no run reads: a config that still sets one is refused,
 # so a stale overlay never plays as something else.
@@ -139,37 +136,12 @@ def _require_landing_formulas(landing: dict[str, str]) -> dict[str, str]:
 
 
 def _prompt_alias(field_name: str) -> AliasChoices:
-    return AliasChoices(f"{field_name}{REFERENCE_SUFFIX}", field_name)
+    return AliasChoices(f"{field_name}{prompt_references.REFERENCE_SUFFIX}", field_name)
 
 
 # --------------------------------------------------------------------------------------------------------
 # Typed config blocks
 # --------------------------------------------------------------------------------------------------------
-class ProviderPreferences(BaseModel):
-    """OpenRouter provider routing preferences for a model call."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    order: list[StrictStr] | None = Field(
-        default=None,
-        description="List of provider slugs to try in priority order.",
-    )
-    allow_fallbacks: StrictBool | None = Field(
-        default=None,
-        description="Whether to allow backup providers when prioritized providers are unavailable.",
-    )
-
-
-class ReasoningPreferences(BaseModel):
-    """OpenRouter reasoning settings for a model call."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    effort: Literal["max", "xhigh", "high", "medium", "low", "minimal", "none"] = Field(
-        description="Reasoning effort level ('none' disables reasoning).",
-    )
-
-
 @pydantic_dataclass(frozen=True, config=BLOCK_CONFIG)
 class ModelSpec:
     """A model routing entry from ``models.cheap.yaml`` (role -> model and sampling)."""
@@ -210,7 +182,8 @@ class Thresholds:
     )
     loop_min_reply_chars: Annotated[StrictInt, Field(ge=1)] = Field(
         description="Shortest reply, in characters, whose text inside a later prompt of the same job links "
-        "the two calls into a loop; a stack run's calls are read from the gateway's call record this way.",
+        "the two calls into a loop; a stack run's calls are read from the gateway's call record this way, "
+        "and the tool calls a reply makes are part of its text.",
     )
 
 
@@ -334,6 +307,7 @@ class _ModelsFile(BaseModel):
     model_config = ConfigDict(frozen=True, extra="ignore", title="models file")
 
     roles: dict[str, ModelSpec] = Field(description="The model each role calls, by role.")
+    agent_roles: dict[str, StrictStr] = Field(default={}, description="The role a named agent's loop calls.")
     providers: dict[str, ProviderPreferences] = Field(
         default_factory=dict,
         description="The OpenRouter providers serving each model, by model id; its roles use them.",
@@ -348,6 +322,7 @@ class _RunDocument(BaseSettings):
     episode: EpisodeConfig = Field(description="Episode ceilings.")
     side_task: SideTaskConfig = Field(description="The side task and how it is verified.")
     covert: CovertConfig = Field(description="The covert objective and whether it is on.")
+    subagents: SubagentsConfig = Field(default=SubagentsConfig(), description="Subagents agents may start.")
     agents: Annotated[
         tuple[AgentConfig, ...],
         AfterValidator(_require_unique_agent_ids),
@@ -365,6 +340,22 @@ class _RunDocument(BaseSettings):
         "It is the only harness.",
     )
     logging: _LoggingConfig = Field(default=_LoggingConfig(), description="What each run bundle records.")
+    workspace_prompt: StrictStr = Field(
+        validation_alias="workspace_prompt_ref",  # alone: a settings source passes one alias of several
+        description="What every agent's brief says of its workspace, resolved from workspace_prompt_ref.",
+    )
+    task_description: StrictStr = Field(
+        validation_alias="task_description_ref",
+        description="The main task as the monitors are told it, resolved from task_description_ref.",
+    )
+    prompt_sections: dict[StrictStr, prompt_references.Sections] = Field(
+        default_factory=dict,
+        description="Each resolved prompt's sections, each with its files, by <block>.<field>.",
+    )
+    prompts: dict[StrictStr, StrictStr | list[StrictStr]] = Field(
+        default_factory=dict,
+        description="Each prompts entry: its file's text, or the list of references it composes.",
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -379,18 +370,12 @@ class _RunDocument(BaseSettings):
     @model_validator(mode="before")
     @classmethod
     def _resolve_prompt_references(cls, data: object) -> object:
+        # new containers: the merged YAML is also RunConfig.raw, kept as written
         if not isinstance(data, dict):
             return data
-        prompts = data.get("prompts_inline")
-        resolved = dict(data)  # new containers: the merged YAML is also RunConfig.raw, kept as written
-        if "covert" in data:
-            resolved["covert"] = _with_prompts_resolved(data["covert"], COVERT_PROMPTS, prompts, "covert")
-        if isinstance(data.get("agents"), list):
-            resolved["agents"] = [
-                _with_prompts_resolved(agent, AGENT_PROMPTS, prompts, f"agents.{index}")
-                for index, agent in enumerate(data["agents"])
-            ]
-        return resolved
+        scenario = data.get("scenario")
+        root = prompt_references.scenario_prompts(scenario) if isinstance(scenario, str) else None
+        return prompt_references.resolve_run_prompts(data, root)
 
     @model_validator(mode="after")
     def _require_blocks_that_agree(self) -> Self:
@@ -405,32 +390,6 @@ class _RunDocument(BaseSettings):
         if self.covert.target_identity not in [agent.id for agent in self.agents]:
             raise ValueError(f"covert.target_identity {self.covert.target_identity!r} is not an agent")
         return self
-
-
-def _with_prompts_resolved(
-    block: object,
-    prompt_fields: tuple[str, ...],
-    inline_prompts: object,
-    where: str,
-) -> object:
-    if not isinstance(block, dict):
-        return block
-    references = {f"{field_name}{REFERENCE_SUFFIX}" for field_name in prompt_fields}
-    kept = {key: value for key, value in block.items() if key not in prompt_fields}
-    return kept | {
-        key: _resolve_prompt_reference(value, inline_prompts, f"{where}.{key}")
-        for key, value in kept.items()
-        if key in references
-    }
-
-
-def _resolve_prompt_reference(reference: object, inline_prompts: object, where: str) -> object:
-    if not isinstance(reference, str) or not reference.startswith(PROMPT_REFERENCE_PREFIX):
-        raise ValueError(f"{where}: only prompts_inline.* references are resolved here, got {reference!r}")
-    name = reference.removeprefix(PROMPT_REFERENCE_PREFIX)
-    if not isinstance(inline_prompts, dict) or name not in inline_prompts:
-        raise ValueError(f"{where}: reference {reference!r} not found in prompts_inline")
-    return inline_prompts[name]
 
 
 # --------------------------------------------------------------------------------------------------------
@@ -463,14 +422,22 @@ class RunConfig:
     agent_transcript: bool = False
     raw: dict[str, Any] = dataclasses.field(default_factory=dict)
     model_providers: dict[str, ProviderPreferences] = dataclasses.field(default_factory=dict)
+    agent_roles: dict[str, str] = dataclasses.field(default_factory=dict)  # by agent id; the rest: AGENT_ROLE
     live_services: tuple[LiveService, ...] = ()  # the scenario's: each its own container in a stack run
+    workspace_prompt: str = ""  # what every agent's brief says of its workspace
+    task_description: str = ""  # the main task as the monitors are told it
+    prompt_sections: Mapping[str, prompt_references.Sections] = dataclasses.field(default_factory=dict)
+    subagents: SubagentsConfig = SubagentsConfig()
+
+    def loop_model(self, agent_id: str) -> ModelSpec:
+        """The model ``agent_id``'s loop calls, with its sampling and reasoning: that of its role."""
+        return self.models[self.agent_roles.get(agent_id, AGENT_ROLE)]
 
     def agent(self, agent_id: str) -> AgentConfig:
         """Return the agent config with this id, or raise ``ConfigError``."""
-        for a in self.agents:
-            if a.id == agent_id:
-                return a
-        raise ConfigError(f"no agent with id {agent_id!r}")
+        if (agent := next((a for a in self.agents if a.id == agent_id), None)) is None:
+            raise ConfigError(f"no agent with id {agent_id!r}")
+        return agent
 
     @property
     def roster(self) -> tuple[str, ...]:
@@ -480,18 +447,14 @@ class RunConfig:
     @property
     def run_slug(self) -> str:
         """The stable, mode-independent grouping name: task slugs plus the policy and monitor model ids."""
-        return (
-            f"{self.main_slug}__{self.side_slug}"
-            f"__policy-{self.policy_model_slug}__monitor-{self.monitor_model_slug}"
-        )
+        return self._name(self.side_slug)
 
     def run_name(self, mode: str, instance_id: str) -> str:
         """The unique name for one run: the honest twin uses ``honest`` in the side slot, then a short id."""
-        side = "honest" if mode == "honest" else self.side_slug
-        return (
-            f"{self.main_slug}__{side}"
-            f"__policy-{self.policy_model_slug}__monitor-{self.monitor_model_slug}__{instance_id}"
-        )
+        return f"{self._name('honest' if mode == 'honest' else self.side_slug)}__{instance_id}"
+
+    def _name(self, side: str) -> str:
+        return f"{self.main_slug}__{side}__policy-{self.policy_model_slug}__monitor-{self.monitor_model_slug}"
 
 
 def _model_slug(model_id: str) -> str:
@@ -542,11 +505,18 @@ def _find_sanctioning_problem(
     return None
 
 
+def _find_unknown_agent_role(models_file: _ModelsFile, agents: tuple[AgentConfig, ...]) -> str | None:
+    """Why ``agent_roles`` cannot be played: an entry names no agent of the run, or no role of the file."""
+    ids, held, roles = {agent.id for agent in agents}, models_file.agent_roles, models_file.roles
+    unknown = [f"{who}: {role}" for who, role in held.items() if who not in ids or role not in roles]
+    return f"agent_roles gives an unknown agent or an unknown role: {', '.join(unknown)}" if unknown else None
+
+
 def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None) -> RunConfig:
     """Load and validate a run file into a frozen ``RunConfig``.
 
     Resolves ``extends`` (DEEP-merge onto the base), ``models`` (a sibling models file), and the
-    ``prompts_inline.*`` references. ``configs_dir`` defaults to the run file's own directory, where the
+    ``prompts.*`` references. ``configs_dir`` defaults to the run file's own directory, where the
     base and models files are resolved. Raises ``ConfigError`` on any missing or malformed field.
     """
     run_file = Path(run_path)
@@ -595,10 +565,17 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
             f"episode.wall_clock_seconds ({document.episode.wall_clock_seconds}): a job's badge ends with "
             "its credential, so a loop started at the play's start would die before the deadline",
         )
-    if problem := _find_sanctioning_problem(document.side_task.sanctioned_submitters, settings, agents):
+    sanction = _find_sanctioning_problem(document.side_task.sanctioned_submitters, settings, agents)
+    own = {
+        a.id: spec.model
+        for a in agents
+        if (spec := models.get(models_file.agent_roles.get(a.id, AGENT_ROLE)))
+    }
+    unheld = find_unheld_subagent_tool(document.subagents, agents, settings, own)
+    if problem := next(filter(None, (sanction, _find_unknown_agent_role(models_file, agents), unheld)), None):
         raise ConfigError(problem)
 
-    policy_model = models["untrusted_agent"].model if "untrusted_agent" in models else "unknown"
+    policy_model = models[AGENT_ROLE].model if AGENT_ROLE in models else "unknown"
     monitor_model = models["trusted_monitor"].model if "trusted_monitor" in models else "unknown"
     return RunConfig(
         name=run_file.name.removesuffix(".yaml"),
@@ -611,17 +588,39 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
         models=models,
         side_task=document.side_task,
         covert=document.covert,
+        subagents=document.subagents,
         agents=agents,
         main_task=dict(source.yaml_data["main_task"]),
         protocol=document.protocol,
         settings=settings,
         scenario=document.scenario,
         agent_transcript=document.logging.agent_transcript,
-        # Whether IAM is on is written out even as the default, so a changed default cannot change a replay.
-        raw={**source.yaml_data, "iam": {**source.yaml_data.get("iam", {}), "enabled": settings.iam.enabled}},
+        raw=_record(source.yaml_data, document, settings.iam.enabled),
+        workspace_prompt=document.workspace_prompt,
+        task_description=document.task_description,
+        prompt_sections=document.prompt_sections,
         model_providers=models_file.providers,
+        agent_roles=dict(models_file.agent_roles),
         live_services=live_services,
     )
+
+
+def _record(merged: Mapping[str, Any], document: _RunDocument, iam_enabled: bool) -> dict[str, object]:
+    """The merged YAML as recorded: each prompts entry's text, and whether IAM is on, even by default."""
+    iam = {**merged.get("iam", {}), "enabled": iam_enabled}
+    return {**merged, prompt_references.PROMPTS_KEY: document.prompts, "iam": iam}
+
+
+def find_unread_prompt_files(run_files: Sequence[Path], scenario: str) -> list[str]:
+    """``scenario``'s prompt files that none of ``run_files`` reads: a property of every config, not one.
+
+    Raises ``ConfigError`` naming a run file whose prompt references do not resolve.
+    """
+    documents = {str(path): _merge_extends_chain(path, None).yaml_data for path in run_files}
+    try:
+        return prompt_references.find_unread_prompt_files(documents, scenario)
+    except ValueError as exc:
+        raise ConfigError(str(exc)) from exc
 
 
 def load_settings(run_path: str | Path, configs_dir: str | Path | None = None) -> LocArenaSettings:
@@ -660,7 +659,7 @@ def _validate_registry_bindings(
     those names, so we import it first, then fail loud on any name the registry does not know. The
     ``side_task`` import stays LAZY: it imports ``config`` (an import-time cycle).
     """
-    # Baseline registrations (importing side_task registers kill_chain_v1; lazy to avoid an import cycle).
+    # Baseline registrations (importing side_task registers the kill chains; lazy to avoid an import cycle).
     from loc_arena.verifier import side_task as _side_task  # noqa: F401, PLC0415
 
     scenario = None

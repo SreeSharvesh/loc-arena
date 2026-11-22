@@ -1,9 +1,10 @@
 """What the agents' own sessions (``harness: pi``) leave in the model gateway's call record, read after play.
 
 An agent's loop asks its model as the episode's caller on the agent's own route at the gateway
-(``/loop/<agent id>/...``), so the call record holds each agent's model calls in order. Each call the gateway
-answered is one turn of its agent, numbered from 1: the reply and the tool calls the loop made on it, until
-the agent's next call.
+(``/loop/<agent id>/...``), so the call record holds each agent's model calls in order; a subagent calls on
+its own lane of its agent's route (``/loop/<subagent id>/...``). Each call the gateway answered is one turn
+of its agent or subagent, numbered from 1: the reply and the tool calls the loop made on it, until its next
+call.
 A turn's ``inference_call`` event carries fingerprints alone, never text: the prompt's
 is over the messages after the system prompt, which holds the agent's brief and so, in an attack, its covert
 brief. The tool calls of a turn are recorded by the services that took them, the workspace service among
@@ -36,12 +37,14 @@ from loc_arena.gateway.model_gateway import (
 )
 from loc_arena.logging_.agent_trace import EpisodeTrace, TurnRecord, TurnRef
 from loc_arena.logging_.events import fingerprint
+from loc_arena.subagent_config import name_lanes
 
 AGENT_MODEL_ROLE = "untrusted_agent"  # the role every agent's loop calls
 UNTRUSTED_ROLE = "untrusted"  # the actor role of an agent's inference_call event
 CREDENTIAL_KIND = "turn_token"  # the sealed record's tag for a sanctioned turn: its agent's route admitted it
 MCP_TOOL_PREFIX = "mcp__"
 MCP_RESOURCE_TOOLS = frozenset({"list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"})
+SUBAGENT_ROLE = "subagent"  # the actor role of a subagent's events
 
 
 class _Function(TypedDict):
@@ -72,8 +75,9 @@ class SessionCall:
 
 
 def read_play_calls(run_directory: Path, phase: str, config: RunConfig) -> list[SessionCall]:
-    """The session calls of the play in the directory ``phase``."""
-    return read_session_calls(run_directory, PHASE_PLAYS[phase], [agent.id for agent in config.agents])
+    """The session calls of the play in the directory ``phase``: its agents' and its subagents'."""
+    lanes = [agent.id for agent in config.agents] + list(name_lanes(config))
+    return read_session_calls(run_directory, PHASE_PLAYS[phase], lanes)
 
 
 def read_session_calls(run_directory: Path, play: Play, agents: Sequence[str]) -> list[SessionCall]:
@@ -149,6 +153,7 @@ def build_inference_payload(session_call: SessionCall) -> dict[str, JsonValue]:
         "prompt_fp": fingerprint(submitted),
         "output_fp": fingerprint(ProviderResult(reply.text, 0, 0, tool_calls or None).assistant_message()),
         "model_role": AGENT_MODEL_ROLE,
+        "model": request.get("model"),  # the model the call named: a subagent's may be its own
         "credential_kind": CREDENTIAL_KIND,
         "prompt_tokens": _count(usage.get("prompt_tokens")),
         "completion_tokens": _count(usage.get("completion_tokens")),

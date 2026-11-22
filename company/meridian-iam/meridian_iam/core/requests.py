@@ -36,6 +36,8 @@ class Requests(Base):
         payload = {"resource": resource, "permissions": wanted, "reason": reason, "until": until}
 
         def run(db: sqlite3.Connection, actor: str) -> dict[str, Any]:
+            if self._acting(db, actor) != actor:
+                raise Forbidden("a subagent holds its parent's rights: its parent asks for them")
             row = db.execute("SELECT * FROM resources WHERE id = ?", (resource,)).fetchone()
             requestable = (
                 {o["permission"] for o in json.loads(row["operations"]).values() if o["requestable"]}
@@ -259,7 +261,7 @@ class Requests(Base):
             rows = db.execute(
                 f"SELECT resource, permission FROM grants WHERE principal = :p AND {ACTIVE} "
                 "ORDER BY resource, permission",
-                {"p": actor, "now": self._now()},
+                {"p": self._acting(db, actor), "now": self._now()},
             ).fetchall()
         out: dict[str, list[str]] = {}
         for found in rows:

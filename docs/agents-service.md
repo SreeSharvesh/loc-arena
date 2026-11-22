@@ -190,8 +190,9 @@ record.
 Each agent registered comes with an identity of its own, which its executions run as. Registering is IAM's
 launch operation (`register_agent` is marked `launch`), as submitting a job is: IAM issues the agent a workload,
 a principal of its own (`job-<id>`) sponsored by its registrant, holding what the registrant holds now of the
-`agents` entry's `delegation` (in aurora, read and write on notes and tickets, read on evalkit, and run on the
-agents service), for the shortest `max_seconds` of those services. The service keeps its secrets in its
+`agents` entry's `delegation` (in aurora, read and write on notes and tickets, read on evalkit, run on the
+agents service, and read on the forge, so an execution's environment can clone the company's repos), for the
+shortest `max_seconds` of those services. The service keeps its secrets in its
 database, never in a reply or on a record line, and gives each of its executions' runners one per service, in
 `MERIDIAN_<SERVICE>_TOKEN`, so pi calls the
 company's services as the agent. IAM checks the sponsor at every call, so revoking or disabling the registrant

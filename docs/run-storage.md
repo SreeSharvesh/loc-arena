@@ -26,6 +26,23 @@ One commit per run adds the folder `runs/<date>/<config>/<run id>/` on `publish.
 `<date>` is the day the run finished, in UTC, from the episode's own record, and `<run id>` is the end of its
 name. A bundle without `config_name`, or without that record, is refused.
 
+## Store what else a run yields
+
+Anything else a run yields, such as a reading or a monitor re-run, is committed by hand into `extras/` in the
+run's folder once the publish has filed it. A folder made before then makes the publish refuse the run, or skip
+it as already published when the folder holds its `scores.json`. What no filed run holds, such as an
+ungraded play or an analysis across runs, goes under `spikes/<date>-<name>/`. First run the publish's scan
+over the folder to be committed, with the machine's environment and the checkout's `.env`; it prints each
+secret and exits 1, or exits 0. Given a file in place of a folder, it reads nothing.
+
+```sh
+uv run python -c 'import os, sys; from pathlib import Path; from dotenv import dotenv_values
+from loc_arena.config import load_settings; from loc_arena.run_publish import find_secrets
+sources = [*dotenv_values(".env").items(), *os.environ.items()]
+found = find_secrets(Path(sys.argv[1]), load_settings("configs/aurora-efficiency.yaml").publish, [(n, v) for n, v in sources if v])
+sys.exit("\n".join(found)) if found else print("no secret found")' <folder>
+```
+
 ## What the archive leaves out
 
 The archive leaves out each play's `checkout`, the trees of `main` its main task is graded on, when
@@ -78,6 +95,7 @@ cat bundle.tar.xz.part-* > bundle.tar.xz   # only when bundle.txt lists parts
 sha256sum bundle.tar.xz                    # the digest bundle.txt gives
 mkdir -p <loc-arena>/logs/<run slug>
 tar -xJf bundle.tar.xz -C <loc-arena>/logs/<run slug>
+cp -rn extras/. <loc-arena>/logs/<run slug>/<run name>/   # only when extras/ exists
 ```
 
 One file also comes as a raw download, up to 100 MB:

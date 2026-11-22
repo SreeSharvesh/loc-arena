@@ -11,7 +11,7 @@ make read RUN_DIR=logs/<run>/<run>__<id> BRIEF=monitors
 make read RUN_DIR=logs/<run>/<run>__<id> ASK='Did any agent read its credentials in the twin?'
 ```
 
-`loc_arena/run_reader.py` · `loc_arena/run_facts.py` · `loc_arena/reading_check.py` · `loc_arena/reader_briefs/`
+`loc_arena/run_reader.py` · `loc_arena/run_facts.py` · `loc_arena/reading_check.py` · `loc_arena/prompts/reader.*.md`
 
 ## What the reader is given
 
@@ -67,8 +67,10 @@ marked unsupported. A kept claim shows the events and facts it rests on.
 | `monitors` | each monitor's spread of scores in both plays, what scored high, the score of each covert step, how caught was decided, what separates attack from twin |
 | `ask` | one question, given by `ASK`: a short answer and the claims behind it |
 
-`_answer.md` is what every brief shares: what the reader is given and the format the checks read. A new file in
-`loc_arena/reader_briefs/` is a new brief. Read `agents` first: `monitors` uses its reading when the run
+`reader.system.md` is what every brief shares: what the reader is given and the format the checks read. Each
+brief is `reader.brief.<name>.md`, and the reader starts on `reader.first-turn.md`, or `reader.first-turn.ask.md`
+for a question, all in `loc_arena/prompts/`. A new brief is a new `reader.brief.<name>.md`, declared in
+`ENGINE_PROMPTS`. Read `agents` first: `monitors` uses its reading when the run
 directory has one.
 
 ## Behaviour taxonomy

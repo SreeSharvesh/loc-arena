@@ -43,9 +43,9 @@ HEALTHY = {"condition": "service_healthy"}
 # The healthcheck of a live service on port 8000 that names no test of its own.
 PORT_8000_PROBE = {
     "test": ["CMD", "python", "-c", "import socket; socket.create_connection(('localhost', 8000), 2)"],
-    "interval": "2s",
-    "retries": 15,
-    "start_period": "60s",
+    "interval": "30s",
+    "retries": 3,
+    "start_period": "90s",  # the 60 s of its start and 15 retries, 2 s apart
     "start_interval": "2s",
 }
 SKILLS = SCENARIOS_ROOT / "aurora_efficiency" / "skills"
@@ -75,9 +75,9 @@ TOOLS_CONFIG = dataclasses.replace(SCRIPTED_CONFIG, agents=WITH_TOOLS_AND_WITHOU
 STARTED = {"condition": "service_started"}
 PACK = """\
 scorer: aurora_pipeline_cost
-verifier: kill_chain_v1
+verifier: kill_chain_job_loop
 services:
-  notes: {build: services/notes, port: 8000, rights: [read, write], description: the notes board}
+  notes: {build: services/notes, port: 8000, rights: [read, write]}
   wiki: {image: "example/wiki:1", command: [wiki, serve], port: 9000, healthcheck: [CMD, wiki, ping]}
   status: {build: services/status, port: 7000}
   ticketboard: {port: 8090}
@@ -524,7 +524,7 @@ def test_identities_that_would_share_one_host_variable_are_refused_naming_both(
         live_services=(notes, dataclasses.replace(notes, name="notes-agent")),
     )
 
-    with pytest.raises(StackError, match=r"\('notes', 'agent-main'\), \('notes-agent', 'main'\)"):
+    with pytest.raises(StackError, match=r"\('notes', 'agent-main'\), .*\('notes-agent', 'main'\)"):
         render_compose(config, REPOSITORY, "a-run", [])
 
 
@@ -633,11 +633,11 @@ def test_the_tools_gateway_admits_each_agent_by_the_hash_of_its_sandbox_token_al
         "keys": [
             {
                 "keyHash": "sha256:9f0c4d86f324bac15104948c5eefb53b3b762d8a4a80246aa4fea61439c3edb3",
-                "metadata": {"agent": "agent-main"},
+                "metadata": dict.fromkeys(("agent", "caller", "tools"), "agent-main"),
             },
             {
                 "keyHash": "sha256:739ef9718a71048ba90d9df45131c61651b0c0e3d49ab0d522ee30eeb2d20996",
-                "metadata": {"agent": "controlplane-agent"},
+                "metadata": dict.fromkeys(("agent", "caller", "tools"), "controlplane-agent"),
             },
         ],
     }
@@ -651,12 +651,12 @@ def test_the_tools_gateway_allows_each_agent_exactly_the_tools_its_run_config_li
     rules = route["policies"]["mcpAuthorization"]
 
     workspace = json.dumps([*WORKSPACE_TOOLS, *NOTICE_TOOLS])  # every agent's bash, file and notice tools
+    spawner = json.dumps([*WORKSPACE_TOOLS, *NOTICE_TOOLS, "delegate"])  # agent-main's scope lets it delegate
     assert rules == {
         "rules": [
             {
-                "allow": 'mcp.tool.name in {"agent-main": {"forge": ["open_pr"], '
-                f'"workspace": {workspace}}}, "controlplane-agent": {{"workspace": {workspace}}}}}'
-                "[apiKey.agent][mcp.tool.target]",
+                "allow": f'mcp.tool.name in {{"agent-main": {{"forge": ["open_pr"], "workspace": {spawner}}},'
+                f' "controlplane-agent": {{"workspace": {workspace}}}}}[apiKey.tools][mcp.tool.target]',
             },
         ],
     }
@@ -679,7 +679,7 @@ def test_the_tools_gateway_forwards_each_call_with_the_callers_identity_on_the_s
                     "request": {
                         "set": {
                             "authorization": '"Bearer " + {"agent-main": "id-main", '
-                            '"controlplane-agent": "id-control"}[apiKey.agent]',
+                            '"controlplane-agent": "id-control"}[apiKey.caller]',
                         },
                     },
                 },
@@ -719,7 +719,7 @@ def test_tools_gateway_logs_json_naming_caller_outcome_listing(tools_gateway_con
         {
             "accessLog": {
                 "add": {
-                    "agent": "apiKey.agent",
+                    **{"agent": "apiKey.agent", "caller": "apiKey.caller"},
                     "tool_args": "mcp.tool.arguments",
                     "tool_result": "mcp.tool.result",
                     "tool_error": "mcp.tool.error",

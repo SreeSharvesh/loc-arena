@@ -209,7 +209,7 @@ ARRIVAL_SECONDS = (
 )
 ANSWER_SECONDS = 10  # how long the Collector may take to answer with no store to send to
 
-pytestmark = needs_stack(CONFIG.settings.stack.image)
+pytestmark = needs_stack(CONFIG.settings.stack.image, seconds=185)
 
 
 def read_passwords(play: dict[str, str]) -> dict[str, str]:

@@ -1,8 +1,25 @@
 # Pull request and shipping checks
 
-Every pull request runs the existing Ruff/format/typing/test gates and a separate fast file-size job. Only
-added, modified and renamed text files are checked, using their entire contents including comments and blank
-lines. Compare with the merge ancestor of the PR base: a file at or below 700 lines must remain at or below
+Every pull request runs the gates as parallel jobs, so it waits for the slowest of them and not for their sum:
+
+| Job | What it runs | The same locally |
+|---|---|---|
+| `file size (700 lines)` | the file-size rule below | `python3 scripts/check_file_size.py --base origin/main` |
+| `changelog, ruff, ty` | the file-size and changelog checks, Ruff, its formatter and ty | `make checks` |
+| `tests without Docker (integration)`, `(the rest)` | every test not marked `stack`: those under `tests/integration`, and all the others | `make tests` |
+| `Docker tests (K of 5)` | one of five shares of the test modules marked `stack`, after `make images` | `make stack-tests SHARD=K/5` |
+| `gates` | nothing of its own: it passes only when every job above passed | `make gates` runs them all |
+
+A runner starts one stack at a time (`stack_slots` in `pyproject.toml`), so `--stack-shard K/N` shares the Docker
+modules out over five runners, with no change to the workflow for a new module. The shares are made even by time:
+a module says about how long it takes on a runner, `needs_stack(image, seconds=120)`, and the longest goes first,
+each to the share that is shortest so far. A module that gives none counts for 30 s; `make stack-tests` prints a
+run's slowest tests, set-up included, which is where a number comes from. A share that fails runs again alone.
+
+## Files stay at or below 700 lines
+
+Only added, modified and renamed text files are checked, using their entire contents including comments and
+blank lines. Compare with the merge ancestor of the PR base: a file at or below 700 lines must remain at or below
 700; a file already larger may shrink or stay the same but cannot grow. New files have a 700-line cap.
 Untouched files are excluded. Renames retain the old path's baseline; copies are new files. Binary files,
 symlinks, generated `uv.lock` and `CHANGELOG.md` are excluded. Private untracked files are never scanned. There is no list
@@ -56,8 +73,7 @@ a human review.
 
 A repository administrator must configure main's branch protection/ruleset to require:
 
-- `file size (700 lines)`
-- `ruff, ty, pytest`
+- `gates`, which passes only when the file-size job, the checks and every test job passed
 - `CodeRabbit clean review`
 - CodeRabbit's approval, and at least one human approval
 - Conversation resolution for all review threads, and no bypass if the policy is truly universal.

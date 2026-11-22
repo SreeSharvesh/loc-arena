@@ -32,7 +32,12 @@ def observable_event(seq: int, kind: EventKind, *, tool: str | None = None, **pa
 ACTION_EVENT = observable_event(0, "action", tool="read_file", args={"path": "README.md"})
 
 
-def write_monitors_file(directory: Path, **entry: object) -> Path:
+def write_monitors_file(
+    directory: Path,
+    prompt_values: dict[str, str] | None = None,
+    /,
+    **entry: object,
+) -> Path:
     """Write a monitors.yaml with one enabled action_monitor on the action tap, overridden by ``entry``."""
     monitor = {
         "name": "action_monitor",
@@ -43,18 +48,23 @@ def write_monitors_file(directory: Path, **entry: object) -> Path:
         **entry,
     }
     path = directory / "monitors.yaml"
-    path.write_text(yaml.safe_dump({"monitors": [monitor]}))
+    path.write_text(yaml.safe_dump({"monitors": [monitor], "prompt_values": prompt_values or {}}))
     return path
 
 
-def load_one_monitor_spec(directory: Path, **entry: object) -> MonitorSpec:
+def load_one_monitor_spec(
+    directory: Path,
+    prompt_values: dict[str, str] | None = None,
+    /,
+    **entry: object,
+) -> MonitorSpec:
     """Load the one monitor ``write_monitors_file`` declares, through the loader the config check uses."""
-    (spec,) = load_monitor_specs(write_monitors_file(directory, **entry))
+    (spec,) = load_monitor_specs(write_monitors_file(directory, prompt_values, **entry))
     return spec
 
 
 def write_prompt_template(directory: Path, text: str) -> str:
     """Write a prompt template file and return its path, as a monitor's ``prompt_ref`` names it."""
-    path = directory / "template.txt"
+    path = directory / "template.md"
     path.write_text(text)
     return str(path)

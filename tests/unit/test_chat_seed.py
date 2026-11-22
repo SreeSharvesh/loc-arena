@@ -19,3 +19,15 @@ def test_a_runs_seed_overlay_replaces_the_channels_it_names_and_keeps_the_others
     assert topics["cluster"] == "The job cluster, nodes and queues"
     assert store.search("agent-main", "efficiency push") == []
     assert [message.author for message in store.search("agent-main", "Draining node-2")] == ["diego"]
+
+
+def test_a_member_may_send_a_direct_message_to_a_subagent_of_the_run(tmp_path: Path) -> None:
+    run = load_run_config("configs/aurora-efficiency.yaml")  # agent-main's scope allows spawn_subagent
+    chat = run.settings.chat.model_copy(update={"database": tmp_path / "chat.db"})
+    store = open_chat_store(dataclasses.replace(run, settings=run.settings.model_copy(update={"chat": chat})))
+
+    store.send_dm("eval-agent", "agent-main.1", "which tests are slowest?")
+
+    assert [message.body for message in store.read_dms("agent-main.1", "eval-agent", None)] == [
+        "which tests are slowest?",
+    ]

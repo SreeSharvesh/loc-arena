@@ -18,12 +18,18 @@ import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from string import Template
 from typing import Any, Protocol
 
 import yaml
 
 from loc_arena.config import ConfigError, ModelSpec, Thresholds
 from loc_arena.logging_.events import Event
+from loc_arena.monitors.prompt_values import (
+    PROMPT_INPUTS,
+    load_prompt_template,
+    read_prompt_values,
+)
 
 # --- The firewall allowlist: the ONLY inputs a monitor may declare. Every one is a
 # mirror/observable field or the fixed deploy-time baseline; none is a sealed recompute or workload label.
@@ -79,7 +85,6 @@ TAP_KINDS: dict[str, tuple[str, ...]] = {
 }
 
 # Where a monitor prompt template receives the declared observable inputs, rendered as JSON.
-PROMPT_INPUTS_PLACEHOLDER = "{inputs}"
 
 # Reading a verdict object that is not strict JSON (a small model sometimes leaves a key unquoted): the
 # suspicion must be a bare number ending the field; the reason is taken when it is a quoted string.
@@ -120,7 +125,9 @@ class MonitorSpec:
     ensemble_n: int = 1
     temperature: float = 0.0
     extra: dict[str, Any] = field(default_factory=dict)
-    prompt_template: str = ""  # the text of ``prompt_ref``; empty when the monitor declares none
+    prompt_template: str = ""  # the text of ``prompt_ref``, its facts filled; empty when it declares none
+    prompt_facts: tuple[str, ...] = ()  # the scenario's facts ``prompt_ref`` names, filled from prompt_values
+    prompt_sources: tuple[str, ...] = ()  # ``prompt_ref`` and the files of the facts it names
 
 
 @dataclass(frozen=True)
@@ -215,29 +222,7 @@ class MonitorRegistry:
         return [m for m in self.monitors if tap in m.taps]
 
 
-def _load_prompt_template(name: str, prompt_ref: str | None, mode: str) -> str:
-    """Read a monitor's prompt template, failing loudly on a reference no live call could use.
-
-    A ``prompt_ref`` must name a file that places the inputs at ``PROMPT_INPUTS_PLACEHOLDER`` exactly once,
-    and a live monitor must declare one: without it the model gets raw JSON and no instruction to answer.
-    """
-    if prompt_ref is None:
-        if mode == "live":
-            raise ConfigError(f"monitor {name!r}: mode 'live' needs a prompt_ref (its prompt template)")
-        return ""
-    path = Path(prompt_ref)
-    if not path.is_file():
-        raise ConfigError(f"monitor {name!r}: prompt_ref {prompt_ref!r} names no file ({path.resolve()})")
-    template = path.read_text(encoding="utf-8")
-    if template.count(PROMPT_INPUTS_PLACEHOLDER) != 1:
-        raise ConfigError(
-            f"monitor {name!r}: prompt template {prompt_ref!r} must contain "
-            f"{PROMPT_INPUTS_PLACEHOLDER} exactly once",
-        )
-    return template
-
-
-def _spec_from(entry: dict[str, Any]) -> MonitorSpec:
+def _spec_from(entry: dict[str, Any], values: Mapping[str, tuple[str, str]]) -> MonitorSpec:
     taps = entry.get("tap", [])
     taps_tuple = tuple(taps) if isinstance(taps, list) else (str(taps),)
     known = {
@@ -264,6 +249,7 @@ def _spec_from(entry: dict[str, Any]) -> MonitorSpec:
     name = str(entry["name"])
     prompt_ref = str(entry["prompt_ref"]) if entry.get("prompt_ref") is not None else None
     mode = str(entry.get("mode", "heuristic"))
+    template, facts = load_prompt_template(name, prompt_ref, mode, values)
     return MonitorSpec(
         name=name,
         taps=taps_tuple,
@@ -281,28 +267,36 @@ def _spec_from(entry: dict[str, Any]) -> MonitorSpec:
         ensemble_n=int(entry.get("ensemble_n", 1)),
         temperature=float(entry.get("temperature", 0.0)),
         extra={k: v for k, v in entry.items() if k not in known},
-        prompt_template=_load_prompt_template(name, prompt_ref, mode),
+        prompt_template=template,
+        prompt_facts=facts,
+        prompt_sources=(*((prompt_ref,) if prompt_ref else ()), *(values[fact][1] for fact in facts)),
     )
 
 
-def load_monitor_specs(monitors_path: str | Path) -> list[MonitorSpec]:
-    """Load every monitor and detector declaration from ``monitors.yaml`` (enabled or not)."""
+def load_monitor_specs(monitors_path: str | Path, scenario: str | None = None) -> list[MonitorSpec]:
+    """Load every monitor and detector declaration from ``monitors.yaml`` (enabled or not).
+
+    With ``scenario``, the run's, a fact from another scenario's prompts is a ``ConfigError``.
+    """
     data: dict[str, Any] = yaml.safe_load(Path(monitors_path).read_text())
-    specs: list[MonitorSpec] = []
-    for entry in data.get("monitors", []):
-        specs.append(_spec_from(entry))
-    for entry in data.get("detectors", []):
-        specs.append(_spec_from(entry))
+    values = read_prompt_values(data.get("prompt_values"), scenario)
+    specs = [_spec_from(entry, values) for entry in [*data.get("monitors", []), *data.get("detectors", [])]]
+    if unused := sorted(set(values) - {fact for spec in specs for fact in spec.prompt_facts}):
+        raise ConfigError(f"no monitor prompt names these prompt_values: {', '.join(unused)}")
     return specs
 
 
-def load_monitors(monitors_path: str | Path, models: dict[str, ModelSpec]) -> MonitorRegistry:
+def load_monitors(
+    monitors_path: str | Path,
+    models: dict[str, ModelSpec],
+    scenario: str | None = None,
+) -> MonitorRegistry:
     """Wire every ENABLED monitor/detector from ``monitors.yaml`` to its tap point(s)."""
     # Import the implementations so they register their factories (lazy: they import this module).
     import loc_arena.monitors  # noqa: F401, PLC0415
 
     wired: list[Monitor] = []
-    for spec in load_monitor_specs(monitors_path):
+    for spec in load_monitor_specs(monitors_path, scenario):
         if not spec.enabled:
             continue
         factory = _FACTORY.get(spec.name)
@@ -690,4 +684,4 @@ def find_fallback_only_monitors(verdicts: list[MonitorVerdict], events: list[Eve
 
 def render_prompt(template: str, payload: Mapping[str, object]) -> str:
     """Render the monitor prompt: the template with the declared observable inputs, as JSON, in place."""
-    return template.replace(PROMPT_INPUTS_PLACEHOLDER, json.dumps(payload, indent=2, default=str))
+    return Template(template).substitute({PROMPT_INPUTS: json.dumps(payload, indent=2, default=str)})

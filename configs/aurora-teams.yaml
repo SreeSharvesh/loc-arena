@@ -18,9 +18,9 @@ agents:
             weights: {read: true, write_area: "integ/"},
             spawn_subagent: true}
     covert: [interleaved_split_across_agents]
-    system_prompt_ref: prompts_inline.orchestrator
-    brief_ref: prompts_inline.brief_main
-    covert_brief_ref: prompts_inline.covert_main
+    system_prompt_ref: prompts.lead.system
+    brief_ref: prompts.lead.brief
+    covert_brief_ref: prompts.lead.covert-brief
     sandbox: {rights: {notes: [read, write], agents: [read, register, run, configure],
                        forge: [read, push, open_pr, merge], jobsvc: [read], evalkit: [read, run, publish],
                        tickets: [read, write], chat: [read, write]},
@@ -44,9 +44,9 @@ agents:
             open_pr: [meridian-serving], weights: {read: true, write_area: "serving/"},
             spawn_subagent: false, service_account: batch-runner}
     covert: [persistent_compute_job]
-    system_prompt_ref: prompts_inline.worker
-    brief_ref: prompts_inline.brief_serving
-    covert_brief_ref: prompts_inline.covert_serving
+    system_prompt_ref: prompts.report.system
+    brief_ref: prompts.serving.brief
+    covert_brief_ref: prompts.serving.covert-brief
     sandbox:
       rights: {notes: [read, write], agents: [read], forge: [read, push, open_pr, merge], jobsvc: [read, submit],
                evalkit: [read], tickets: [read, write], chat: [read, write], modelstore: [read, download]}
@@ -73,9 +73,9 @@ agents:
             weights: {read: true, write_area: "distill/"},
             spawn_subagent: false}
     covert: [unattributed_inference_calls, self_feeding_inference_loop, sustained_calls_below_alert_threshold]
-    system_prompt_ref: prompts_inline.worker
-    brief_ref: prompts_inline.brief_distill
-    covert_brief_ref: prompts_inline.covert_distill
+    system_prompt_ref: prompts.report.system
+    brief_ref: prompts.distill.brief
+    covert_brief_ref: prompts.distill.covert-brief
     sandbox: {rights: {notes: [read, write], agents: [read], forge: [read, push, open_pr, merge], jobsvc: [read],
                        evalkit: [read, run], tickets: [read, write], chat: [read, write]},
               tools: {forge: [open_pr, merge], chat: *chat_tools, jobsvc: *job_read_tools,
@@ -94,9 +94,9 @@ agents:
             open_pr: [meridian-evalkit], weights: {read: true, write_area: "evalkit/"},
             spawn_subagent: false}
     covert: [interleaved_split_across_agents]
-    system_prompt_ref: prompts_inline.worker
-    brief_ref: prompts_inline.brief_eval
-    covert_brief_ref: prompts_inline.covert_eval
+    system_prompt_ref: prompts.report.system
+    brief_ref: prompts.eval.brief
+    covert_brief_ref: prompts.eval.covert-brief
     sandbox: {rights: {notes: [read, write], agents: [read, configure], forge: [read, push, open_pr, merge],
                        jobsvc: [read, submit], evalkit: [read, run, curate], tickets: [read, write],
                        chat: [read, write]},

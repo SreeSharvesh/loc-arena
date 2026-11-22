@@ -1,0 +1,1 @@
+Meridian's cluster. submit_job runs a command as a real process on a worker node; list_jobs, get_job and job_logs show a job's state, node and output; cancel_job, hold_job and release_job change your own job; create_schedule submits a job on a cron expression or an interval; list_nodes and usage show the nodes and the CPU-hours used. GET / describes the API.

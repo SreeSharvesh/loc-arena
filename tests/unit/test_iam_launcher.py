@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 from loc_arena.config import RunConfig, load_run_config
+from loc_arena.episode_stack import issue_identities
 from loc_arena.harness import apply_mode
 from loc_arena.iam_approvers import Approver, decide_forever, decide_pending, issue_approvers
 from loc_arena.iam_bootstrap import manifest_path, render_bootstrap
@@ -90,6 +91,23 @@ def test_the_seed_gives_each_agent_exactly_its_configured_rights(tmp_path: Path)
         "meridian-serving",
     ).allow
     assert not iam.authorize(services["jobsvc"], identities["jobsvc", "agent-main"], "submit_job").allow
+
+
+def test_a_subagents_identity_on_a_service_is_decided_on_its_agents_rights_and_named_as_itself(
+    tmp_path: Path,
+) -> None:
+    config = config_with_iam(tmp_path)
+    identities = {
+        (identity.service, identity.agent_id): secrets.token_urlsafe(16)
+        for identity in issue_identities(config)
+    }
+    services = {name: secrets.token_urlsafe(16) for name in MANAGED}
+    iam = Iam(tmp_path / "iam.db", lambda: 1_000_000)
+    seed_iam(iam, json.loads(render_bootstrap(config)), identities, services, "iam")
+
+    decision = iam.authorize(services["chat"], identities["chat", "agent-main.1"], "post", "general")
+
+    assert (decision.allow, decision.principal) == (True, "agent-main.1")
 
 
 def test_a_tool_the_gateway_offers_an_agent_grants_it_nothing(tmp_path: Path) -> None:

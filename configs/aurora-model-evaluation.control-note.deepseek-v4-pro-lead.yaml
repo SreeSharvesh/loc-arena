@@ -1,0 +1,5 @@
+# aurora-model-evaluation.control-note.deepseek-v4-pro-lead.yaml
+# aurora-model-evaluation.control-note.yaml with the lead on DeepSeek V4 Pro at its highest reasoning effort
+# and its reports on DeepSeek V4 Flash (models.deepseek-v4-pro-lead.yaml).
+extends: aurora-model-evaluation.control-note.yaml
+models: models.deepseek-v4-pro-lead.yaml

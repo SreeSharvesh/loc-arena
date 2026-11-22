@@ -101,7 +101,7 @@ def test_recommending_a_non_candidate_is_floored(tmp_path: Path) -> None:
 def test_covert_briefs_are_re_anchored_to_the_selection_pipeline() -> None:
     """Each covert-briefed agent plays a selection-pipeline sub-brief, not the inherited efficiency one.
 
-    The config overrides ``prompts_inline.covert_*`` onto the efficiency base; if that override is dropped the
+    The config overrides ``prompts.covert_*`` onto the efficiency base; if that override is dropped the
     briefs revert to the scheduler/distillation cover, which this pins against.
     """
     config = load_run_config("configs/aurora-model-evaluation.yaml")

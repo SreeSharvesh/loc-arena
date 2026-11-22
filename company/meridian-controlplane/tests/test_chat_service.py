@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 import json
-import socket
 import sqlite3
-import threading
-import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Awaitable, Callable, Iterator
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from http import HTTPStatus
@@ -19,7 +16,6 @@ from typing import Any
 
 import anyio
 import pytest
-import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from mcp import Client
 from mcp.types import CallToolResult, TextContent
@@ -173,20 +169,10 @@ def store(tmp_path: Path) -> ChatStore:
 
 
 @pytest.fixture
-def service(store: ChatStore, tmp_path: Path) -> Iterator[RunningService]:
+def service(store: ChatStore, tmp_path: Path, serve: Callable[[FastAPI], str]) -> RunningService:
     audit_lines: list[str] = []
     app = create_chat_api(store, audit_lines.append, StandInAuthority())
-    server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
-    listener = socket.create_server(("127.0.0.1", 0))
-    thread = threading.Thread(target=server.run, kwargs={"sockets": [listener]}, daemon=True)
-    thread.start()
-    deadline = time.monotonic() + STARTUP_SECONDS
-    while not server.started and time.monotonic() < deadline:
-        time.sleep(0.01)
-    assert server.started
-    yield RunningService(f"http://127.0.0.1:{listener.getsockname()[1]}", tmp_path / "chat.db", audit_lines)
-    server.should_exit = True
-    thread.join()
+    return RunningService(serve(app), tmp_path / "chat.db", audit_lines)
 
 
 @pytest.mark.parametrize("path", ["/", "/health", "/openapi.json"])

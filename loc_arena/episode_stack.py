@@ -35,7 +35,13 @@ from scenarios.loader import EngineModule, LiveService
 
 from loc_arena import deploy_pool, image_tag, machine_roots, telemetry_stack
 from loc_arena.checkouts import checkout_home, checkout_mount, render_checkout_volumes
-from loc_arena.compose_document import ComposeDocument, ComposeService, Healthcheck, ServiceSecret
+from loc_arena.compose_document import (
+    ComposeDocument,
+    ComposeService,
+    Healthcheck,
+    ServiceSecret,
+    render_healthcheck,
+)
 from loc_arena.config import RunConfig, load_run_config, sandbox_service
 from loc_arena.gateway import model_gateway
 from loc_arena.gateway.core import API_KEY_VARIABLE
@@ -76,13 +82,8 @@ from loc_arena.runner_pool import (
 )
 from loc_arena.sandbox import IDENTITY_PREFIX, TOKEN_FILE, build_server_settings, token_secret_name
 from loc_arena.settings import StackSettings
-from loc_arena.stack_play import (
-    EPISODE_SERVICE,
-    StackError,
-    copy_out,
-    list_service_log_copies,
-    play_phases,
-)
+from loc_arena.stack_play import EPISODE_SERVICE, StackError, copy_out, list_service_log_copies, play_phases
+from loc_arena.subagent_config import name_lanes
 from loc_arena.task import SANDBOX_URL_VARIABLE, TOOLS_URL_VARIABLE, resolve_scenario
 from loc_arena.tasks.main_task_grader import COMPANY_REPOS
 from loc_arena.tool_authorization import list_enforced_services
@@ -123,17 +124,19 @@ SANDBOX_TARGET = "sandbox"  # the Dockerfile's stage of the sandboxes: no harnes
 
 
 def issue_identities(config: RunConfig) -> tuple[Identity, ...]:
-    """Every agent's identity on each live service with rights or tools, agents with none there included.
+    """Each agent's identity on each live service with rights or tools, each subagent's on each with tools.
 
-    Refuses names that would make two identities share one host variable, as the config load does.
+    A subagent holds none on IAM, and only the tools gateway holds its. Refuses two sharing a host variable.
     """
-    if shared := find_shared_identity_variable((agent.id for agent in config.agents), config.live_services):
+    agents, lanes = [agent.id for agent in config.agents], list(name_lanes(config))
+    if shared := find_shared_identity_variable([*agents, *lanes], config.live_services):
         raise StackError(shared)
+    by_tools = [*agents, *lanes]
     return tuple(
-        Identity(service.name, agent.id)
+        Identity(service.name, holder)
         for service in config.live_services
         if holds_identities(service)
-        for agent in config.agents
+        for holder in (by_tools if service.tools and service.name != config.settings.iam.service else agents)
     )
 
 
@@ -508,13 +511,7 @@ def _build_from(repository: Path, target: str, image: str) -> ComposeService:
 def _probe(port: int, stack: StackSettings, *, test: Sequence[str] | None = None) -> Healthcheck:
     """A healthcheck running ``test``; by default it passes once something accepts connections on ``port``."""
     probe = ["CMD", "python", "-c", f"import socket; socket.create_connection(('localhost', {port}), 2)"]
-    return {
-        "test": list(test or probe),
-        "interval": f"{stack.gateway_health_interval_seconds}s",
-        "retries": stack.gateway_health_retries,
-        "start_period": f"{stack.gateway_health_start_seconds}s",
-        "start_interval": f"{stack.gateway_health_interval_seconds}s",
-    }
+    return render_healthcheck(test or probe, stack)
 
 
 def issue_secrets(config: RunConfig) -> tuple[dict[str, str], dict[str, str]]:

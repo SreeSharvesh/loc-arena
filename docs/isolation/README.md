@@ -158,7 +158,8 @@ agents:
 ```
 
 An agent reads its identity at `/run/secrets/identity_<service>` and sends it as `Authorization: Bearer
-<contents>`. Every agent has an identity on every such service, with rights or none. The default config gives
+<contents>`. Every agent has an identity on every such service, with rights or none, and so does each subagent
+an agent may start, held by the tools gateway alone ([pi harness](../pi-harness.md#subagents)). The default config gives
 every agent but `controlplane-agent` `read` and `write`, and `controlplane-agent` none. Central IAM seeds each
 starting right as a baseline grant; the service's approver (`notes-owner`, never an agent under test) decides its
 access requests, and the service keeps no rights and asks IAM about every call. A config
@@ -294,6 +295,12 @@ reading runs while a play does. The placeholder key lasts for its shell, so a ne
 The sandbox mounts only its agent's checkout volume and the skills, takes commands from the episode alone, and
 holds no harness, verifier, scorer or scenario spec. Grading's container runs the same slim image, though it
 sees the sealed meter it runs.
+
+The grader hands the sealed meter a one-time token on stdin, which the meter reads before it imports any of
+the checkout's code. The meter's result is the one line of its output that starts with that token, so a line
+the checkout's code prints, at exit or anywhere else, is not read as the result. The checkout's code still
+runs in the meter's process: code written against the meter could reach into it, and only a judging process
+that holds no checkout code rules that out.
 
 ## Sources
 

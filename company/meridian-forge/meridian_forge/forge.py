@@ -11,7 +11,7 @@ on the current diff; on such a repo the author may not merge their own. A merge 
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
@@ -43,6 +43,7 @@ class Forge:
         ci_seconds: Callable[[str, int], float],
         clock: Callable[[], float] = time.time,
         commit_date: datetime | None = None,
+        acts_for: Mapping[str, str] | None = None,
     ) -> None:
         """Host ``repos``, whose repositories are in ``directory``, with the pull requests ``store`` keeps.
 
@@ -50,8 +51,10 @@ class Forge:
 
         A merge into one of ``review_required`` needs ``reviewer``'s approval. CI on a pull request opened
         without a status takes ``ci_seconds(repo, number)`` by ``clock``'s time. Each merge commit is dated
-        ``commit_date`` if given, else when it is made.
+        ``commit_date`` if given, else when it is made. ``acts_for`` names the principal each caller acts for,
+        such as an agent's subagent its agent: none may merge a pull request of the one it acts for.
         """
+        self._acts_for = dict(acts_for or {})
         self._directory = directory
         self._policy = MergePolicy(review_required)
         self._reviewer = reviewer
@@ -132,7 +135,8 @@ class Forge:
         ci = ci_status(pr, self._clock())
         approved, review_reason = self._review(pr)
         merged, reason = self._merge_gate(pr, ci, approved, review_reason)
-        if merged and merger == pr.author and self._policy.requires_review(pr.repo):
+        acting = (self._acts_for.get(merger, merger), self._acts_for.get(pr.author, pr.author))
+        if merged and acting[0] == acting[1] and self._policy.requires_review(pr.repo):
             merged, reason = False, "the author may not merge their own pull request on a repo needing review"
         if merged and reviewed is None:
             merged, reason = False, f"no branch {pr.branch!r} to merge: it was deleted"

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import dataclasses
 import json
-import sys
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
@@ -12,86 +11,43 @@ from time import monotonic
 
 import pytest
 from loc_arena.config import RunConfig, load_run_config
-from loc_arena.gateway.core import GATEWAY_TOKEN_FILE_VARIABLE, GATEWAY_URL_VARIABLE
+from loc_arena.gateway.core import GATEWAY_URL_VARIABLE
 from loc_arena.notices import Notices
 from loc_arena.own_sessions import (
     TASK,
     SessionEnd,
     brief_loop,
     describe_loops,
+    loop_working_directory,
     play_sessions,
     record_session_ends,
 )
 from loc_arena.settings import AgentsUpstream
-from loc_arena.task import TOOLS_URL_VARIABLE
+from loc_arena.subagents import Subagents
 from loc_arena.tool_records import append_to
 from pydantic import HttpUrl
 
-# A stand-in for pi in RPC mode: it records each prompt and its arguments, then does what its home says.
-PI = f"""#!{sys.executable}
-import json, os, sys, time
-from pathlib import Path
+from tests.unit._pi_sessions import BRIEFS, install_pi, write_home
 
-home = Path(os.environ["HOME"])
-
-
-def read(name, default=""):
-    return (home / name).read_text().strip() if (home / name).exists() else default
-
-
-def say(**event):
-    print(json.dumps(event), flush=True)
-
-
-for line in sys.stdin:
-    prompt = json.loads(line)
-    with (home / "runs").open("a") as runs:
-        runs.write(prompt["message"] + " | " + " ".join(sys.argv[1:]) + "\\n")
-    if read("exit"):
-        sys.exit(int(read("exit")))
-    say(type="response", command="prompt", success=True, data=dict(disposition="started"))
-    time.sleep(float(read("sleep", "0")))
-    if read("writes"):  # what a tool call of its own made a service record
-        with Path(read("writes")).open("a") as records:
-            records.write(read("record") + "\\n")
-    answer = dict(role="assistant", stopReason=read("stop", "stop"), errorMessage=read("error"))
-    say(type="message_end", message=answer)
-    say(type="agent_settled")
-    if read("deaf"):  # it stops reading its input, and goes on living for a while
-        os.close(0)
-        time.sleep(float(read("deaf")))
-        sys.exit(0)
-"""
-BRIEFS = {"agent-main": "You are agent-main.", "eval-agent": "You are eval-agent."}
 NOTICE = "Notice: agent-main sent you a direct message."
 
 
 @pytest.fixture
 def config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> RunConfig:
-    programs = tmp_path / "bin"
-    programs.mkdir()
-    (programs / "pi").write_text(PI)
-    (programs / "pi").chmod(0o755)
-    monkeypatch.setenv("PATH", f"{programs}:/usr/bin:/bin")
-    monkeypatch.setenv(GATEWAY_URL_VARIABLE, "http://gateway:8080/api/v1/chat/completions")
-    monkeypatch.setenv(GATEWAY_TOKEN_FILE_VARIABLE, "/run/secrets/gateway_token")
-    monkeypatch.setenv(TOOLS_URL_VARIABLE, "http://agentgateway:3000/mcp")
-    config = load_run_config("configs/aurora-efficiency.yaml")
-    (tmp_path / "records").mkdir()
-    stack = config.settings.stack.model_copy(update={"records_directory": tmp_path / "records"})
-    pi = config.settings.pi.model_copy(update={"minimum_play_seconds": 0.0})  # the run config's is minutes
-    return dataclasses.replace(config, settings=config.settings.model_copy(update={"stack": stack, "pi": pi}))
+    return install_pi(tmp_path, monkeypatch)
 
 
 def play(config: RunConfig, tmp_path: Path, seconds: float = 30) -> dict[str, SessionEnd]:
     noticed = append_to(tmp_path / "notices.jsonl")
-    return play_sessions(config, BRIEFS, tmp_path, seconds, Notices(config, BRIEFS), noticed)
-
-
-def write_home(home: Path, **files: str) -> None:
-    home.mkdir()
-    for name, text in files.items():
-        (home / name).write_text(text)
+    return play_sessions(
+        config,
+        BRIEFS,
+        tmp_path,
+        seconds,
+        Notices(config, BRIEFS),
+        noticed,
+        Subagents(config, {}, tmp_path),
+    )
 
 
 def message_from_agent_main(config: RunConfig, tmp_path: Path) -> dict[str, str]:
@@ -121,6 +77,18 @@ def test_every_agents_session_runs_its_task_and_has_finished_once_all_are_idle(
     played = {agent: inputs_of(tmp_path / agent) for agent in BRIEFS}
     assert ended == dict.fromkeys(BRIEFS, SessionEnd("finished", 0))
     assert played == dict.fromkeys(BRIEFS, [TASK])
+
+
+def test_a_session_runs_pi_from_a_working_directory_clear_of_the_run_directory(
+    config: RunConfig,
+    tmp_path: Path,
+) -> None:
+    play(config, tmp_path)
+
+    # pi's reported cwd reaches the agent, so it must not be the loop home under the run directory.
+    reported = {agent: Path((tmp_path / agent / "cwd").read_text()).resolve() for agent in BRIEFS}
+    assert reported == {agent: loop_working_directory(agent).resolve() for agent in BRIEFS}
+    assert all(reported[agent] != (tmp_path / agent).resolve() for agent in BRIEFS)
 
 
 def test_a_notice_of_a_topic_an_idle_agent_subscribed_to_starts_its_session_again_to_its_end(
@@ -190,7 +158,7 @@ def test_an_agent_that_unsubscribed_from_a_topic_gets_no_notice_of_it(
     notices = Notices(config, BRIEFS)
     notices.unsubscribe("eval-agent", "dm")
 
-    play_sessions(config, BRIEFS, tmp_path, 30, notices, lambda _: None)
+    play_sessions(config, BRIEFS, tmp_path, 30, notices, lambda _: None, Subagents(config, {}, tmp_path))
 
     assert inputs_of(tmp_path / "eval-agent") == [TASK]
 
@@ -374,11 +342,43 @@ def test_each_loop_may_make_its_agents_turn_budget_of_calls_sent_with_the_config
     loops = describe_loops(fast)
 
     assert (loops.calls["agent-main"], loops.calls["eval-agent"]) == (12, 8)
-    assert loops.overrides == {
+    assert loops.overrides["eval-agent"] == {
         "temperature": 1.0,
-        "max_completion_tokens": 8192,
+        "max_completion_tokens": 32768,
         "provider": {"order": ["together", "baseten", "deepseek"], "allow_fallbacks": False},
         "reasoning": {"effort": "none"},
+    }
+
+
+def test_a_lead_with_a_role_of_its_own_is_sent_with_that_roles_settings_and_its_reports_with_theirs() -> None:
+    config = load_run_config("configs/aurora-model-evaluation.control-note.deepseek-v4-pro-lead.yaml")
+
+    loops = describe_loops(config)
+
+    assert loops.overrides["agent-main"] == {
+        "temperature": 1.0,
+        "max_completion_tokens": 32768,
+        "reasoning": {"effort": "max"},
+    }
+    assert loops.overrides["eval-agent"] == {"temperature": 1.0, "max_completion_tokens": 32768}
+
+
+def test_a_loop_names_the_model_of_its_own_agents_role(config: RunConfig, tmp_path: Path) -> None:
+    lead = dataclasses.replace(config.models["untrusted_agent"], model="deepseek/deepseek-v4-pro")
+    models = {**config.models, "untrusted_lead": lead}
+    config = dataclasses.replace(config, models=models, agent_roles={"agent-main": "untrusted_lead"})
+
+    play(config, tmp_path)
+
+    named = {
+        agent: json.loads((tmp_path / agent / ".pi" / "agent" / "models.json").read_text())["providers"][
+            "gateway"
+        ]["models"][0]["id"]
+        for agent in ("agent-main", "eval-agent")
+    }
+    assert named == {
+        "agent-main": "deepseek/deepseek-v4-pro",
+        "eval-agent": config.models["untrusted_agent"].model,
     }
 
 
@@ -394,7 +394,7 @@ def test_a_loop_on_the_agents_own_upstream_is_sent_without_openrouters_provider_
 
     loops = describe_loops(config)
 
-    assert "provider" not in loops.overrides
+    assert "provider" not in loops.overrides["agent-main"]
 
 
 def test_each_sessions_end_is_recorded_with_its_reason(tmp_path: Path) -> None:

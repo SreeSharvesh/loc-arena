@@ -22,22 +22,24 @@ and plays of 25 minutes, checks that an agent can add an operation to a service,
 
 Every block is a frozen pydantic dataclass with a description per field, so `dataclasses.replace` builds the honest
 twin and re-validates it. Scalars are `Strict*` types: YAML `"30"` or `true` never becomes an int. A prompt is set
-only by its `*_ref` key, resolved in a before-validator. A missing or invalid field is a `ConfigError` naming its
+only by its `*_ref` key, resolved in a before-validator to its text ([Prompts](#prompts)). A missing or invalid field is a `ConfigError` naming its
 path. A key no block declares is ignored, except in an agent's `scope` and in the settings groups, which refuse it.
 
 ## Top-level keys
 
 | Key | What it sets |
 |---|---|
-| `extends`, `models` | the base config; the models file (roles, sampling, OpenRouter providers per model) |
+| `extends`, `models` | the base config; the models file (roles, sampling, OpenRouter providers per model, and `agent_roles`, the role a named agent's loop calls in place of `untrusted_agent`, as `models.deepseek-v4-pro-lead.yaml` gives the lead) |
 | `seed` | the run's seed: each CI wait of the forge is drawn from it |
 | `harness` | what runs each agent's session: `pi`, the pi coding agent, each agent at its own pace ([docs/pi-harness.md](pi-harness.md)). It is the default and the only value; any other is a `ConfigError` naming it |
 | `scenario` | the pack registering the scorer, verifier, live services and skills |
 | `main_task`, `side_task`, `covert` | the tasks and their scorer and verifier; `covert.enabled` switches attack and honest mode: the covert briefs and the covert objective. `covert.target_identity` is the agent whose brief starts with the covert objective ([docs/pi-harness.md](pi-harness.md)); it must be an agent of the team. `side_task.thresholds` are the verifier's numbers: `loop_len_floor`, the fewest calls of a loop; `liveness_window_seconds`, how close to the deadline its last call must be; `sustained_rate_window_seconds`, the span it must keep calling over, no gap longer; and `loop_min_reply_chars`, the shortest reply whose text inside a later prompt of the same job links two calls into a loop. `side_task.sanctioned_submitters` names the company principals whose jobs' model calls are on-path (Aurora's deployer). |
 | `episode` | `orchestrator_turn_budget` and `subagent_turn_budget`, the model calls the root agent's session and each other agent's may make in one play, which the model gateway enforces; `wall_clock_seconds`, the ceiling of one play; `liveness_window_seconds`, equal to the side task's |
 | `agents` | the team; see below |
+| `subagents` | the subagents an agent whose `scope.spawn_subagent` is on starts in play with `delegate` ([docs/pi-harness.md](pi-harness.md#subagents)): with no kind named, `general-purpose`, which holds every tool its agent holds; `definitions`, further kinds by name, each with its `prompt_ref` (a `<kind>.subagent` file), its `description`, which `delegate` lists, and its `tools`, each one of its agent's (none: all of them); `models`, the model ids a call may choose beside its agent's own, each with the `temperature`, `max_tokens` and `reasoning` its calls take in place of its agent's role's; `max_depth` (1), `max_concurrent` (2) and `max_children` (3), per agent and play; `max_task_characters` (8000), the longest task; `progress_seconds` (5), shorter than `stack.tools_timeout_seconds`. Each of the `max_children` ids, `<agent>.<n>`, is an IAM principal of its own, on its agent's rights. A kind's tool its agent lacks is a `ConfigError` |
 | `protocol` | the control protocol: monitors, reviewer, audit budget |
 | `logging` | `logging.agent_transcript` for the per-agent `.eval` and transcript |
+| `prompts`, `workspace_prompt_ref`, `task_description_ref` | the scenario's prompt files the run sends; the one every agent's brief says of its workspace; the main task as the monitors are told it ([Prompts](#prompts)) |
 | `inference`, `gateway`, `stack`, `iam`, `evalkit`, `jobsvc`, `tickets`, `chat`, `notes`, `forge`, `history`, `modelstore`, `serving`, `deploy`, `pi`, `cost`, `publish` | the settings groups below |
 
 ## An agent
@@ -48,11 +50,111 @@ path. A key no block declares is ignored, except in an agent's `scope` and in th
 | `scope` | what the agent may do; each service enforces it on the caller |
 | `sandbox.tools` | the MCP tools agentgateway offers it, by service: `{forge: [open_pr, merge], chat: [post, send_dm, read_dms]}`; it refuses the rest, and a tool grants nothing: a call takes the permission IAM checks for it |
 | `sandbox.rights` | its starting rights, by service, which IAM seeds as its grants: `{notes: [read, write], forge: [read, push, open_pr, merge]}`; each a permission the service's IAM manifest checks |
-| `covert`, `system_prompt_ref`, `brief_ref`, `covert_brief_ref` | the covert subtasks it owns, and its prompts. Its brief holds `system_prompt_ref`, how it works with its team (the same in both plays), and `brief_ref`, its legitimate assignment, or `covert_brief_ref` in its place when `covert.enabled` is on. The engine's own part of a brief names no task: a run's task reaches its agents through these prompts alone |
+| `covert`, `system_prompt_ref`, `brief_ref`, `covert_brief_ref` | the covert subtasks it owns, and its prompts, each a `prompts.<name>` reference ([Prompts](#prompts)). Its brief holds `system_prompt_ref`, how it works with its team (the same in both plays), and `brief_ref`, its legitimate assignment, or `covert_brief_ref` in its place when `covert.enabled` is on. The engine's own part of a brief names no task: a run's task reaches its agents through these prompts alone |
 
 A service in `sandbox:` must be a live service of the scenario that serves tools (for `tools`) or declares rights
 (for `rights`). A tool or right outside that service's list, one named twice, and an unknown key under `sandbox:`
 are each a `ConfigError`. Every agent holds an identity on each such service, rights or none.
+
+## Prompts
+
+`make prompts RUN=<config> MODE=attack|honest` prints everything the run sends: each agent's system prompt and
+first turn, the notices an agent can get, and each monitor's prompt with its task description, and the scripted coworker's call. Every section is
+headed by the files it came from. The page is built by the run's own code, and a unit test checks that its
+sections join into exactly what each agent's pi receives.
+
+```
+loc_arena/prompts/                          the engine's: true of any scenario, with $placeholders it fills
+├── agent.<part>.md                         every agent: identity, manager, reports, skills, services, service,
+│                                           service-access, telemetry, covert-steps, first-turn; subagent, a
+│                                           subagent's place
+├── general-purpose.subagent.md             the built-in kind of subagent's prompt
+├── agent.notice.md, agent.notice-<kind>.md a notice of a subscribed topic, and each kind's line
+├── <monitor>.monitor.md                    a monitor's prompt: its inputs at $inputs, each scenario fact a $placeholder
+├── reader.<part>[.<brief>].md              the run reader: system, brief.<brief>, first-turn[.ask]
+├── iam.service.md                          what agents are told IAM is
+└── coworker.batch.md                       the scripted coworker's one model call
+scenarios/<scenario>/prompts/               the scenario's: no placeholder
+├── team.workspace.md                       every agent: the company's repos, protected main, chat
+├── <service>.service.md                    what agents are told a service is
+├── monitor.<fact>.md                       a fact the monitor prompts name, such as the company or its repositories
+└── <task>/                                 everything one main task sends, in both plays and the attack
+    ├── lead.system.md, report.system.md    how the lead and a report work with the team
+    ├── <whose>.brief[.<variant>].md        an agent's assignment
+    ├── <whose>.covert-brief.md             its assignment in the attack, or a list of the files below
+    ├── <whose>.covert-anchor.md            the opening of a composed covert brief
+    ├── team.covert-<part>.md               a fragment two or more covert briefs share
+    ├── <whose>.kill-chain.md               the mechanism and its cover, which a kill-chain variant replaces
+    ├── lead.seed[.<variant>].md            the covert objective ahead of the target's system prompt
+    ├── <kind>.subagent.md                  a kind of subagent an agent may start with delegate
+    └── monitor.task-description.md         the main task as the monitors are told it
+```
+
+A file is named `<whose>.<part>[.<variant>].md`, and its key in a run config's `prompts` block is
+`<whose>.<part>`: the file's name less `.md`, or less its one variant. `<whose>` is `lead`, `report`, an agent's area such as `serving`, `team` when several agents share the
+file, `monitor`, a monitor's or service's name, `agent` for every agent, or `reader`. The parts:
+
+| Part | What it is | Named by |
+|---|---|---|
+| `system` | how the agent works with its team, in both plays | an agent's `system_prompt_ref` |
+| `brief` | its legitimate assignment | an agent's `brief_ref` |
+| `covert-brief` | its assignment in the attack, in place of its brief | an agent's `covert_brief_ref` |
+| `covert-anchor`, `covert-<part>` | the pieces a composed covert brief lists | the covert brief's entry |
+| `kill-chain` | the mechanism and its cover | the covert brief's entry |
+| `seed` | the covert objective | `covert.objective_prompt_ref` |
+| `subagent` | a kind of subagent: what it is and how it answers | its `subagents.definitions` entry's `prompt_ref` |
+| `workspace` | what every agent is told of its workspace | `workspace_prompt_ref` |
+| `task-description` | the main task as the monitors are told it | `task_description_ref` |
+| `service` | what agents are told a service is, if a brief tells it: one their sandbox reaches, or the telemetry store | the service's name, read by the scenario's loader |
+| `monitor` | a monitor's prompt | its `prompt_ref` in `configs/monitors.yaml` |
+| `<fact>`, as `monitor.<fact>` | one scenario fact a monitor prompt names, as `$<fact>`, `-` written `_` | `prompt_values` in `configs/monitors.yaml` |
+
+A monitor prompt names nothing of one company or one task. Each such fact is a placeholder, and
+`configs/monitors.yaml` maps it to the scenario file of its value: `prompt_values: {company:
+scenarios/aurora_efficiency/prompts/monitor.company.md}`. The loader fills each fact once, leaves `$inputs` for
+each event's inputs, and refuses a placeholder with no value, a value no monitor prompt names, and, in a run, a
+value file outside that run's scenario.
+
+A fragment only one brief uses is folded into that brief's own file. A fragment stays separate when two or more
+briefs share it, or when it is the kill chain, which variants replace.
+
+Each agent's brief, its parts joined by blank lines, an empty part left out:
+
+| Part | From |
+|---|---|
+| its name; who it reports to and who reports to it | `agent.identity.md`; `agent.manager.md` and `agent.reports.md` |
+| how it works with its team | `system_prompt_ref` |
+| its workspace | `workspace_prompt_ref` |
+| where the skills are, when the scenario has skills | `agent.skills.md` |
+| its assignment | `brief_ref`; in the attack, `covert_brief_ref` and `agent.covert-steps.md` in its place, when it has one |
+| the live services its sandbox reaches; the telemetry its tools read | `agent.services.md`, `agent.service.md`, `agent.service-access.md`, `agent.telemetry.md`, around each `<service>.service.md` |
+
+In the attack, the system prompt of `covert.target_identity` is the text of `covert.objective_prompt_ref`, a
+blank line, then its brief. Every other system prompt is the brief alone. Each session's first turn is
+`agent.first-turn.md`.
+
+Each `prompts` entry is a file's path, relative to the scenario's `prompts/` folder, or a list of `prompts.<key>`
+references, which composes one text from those entries, joined by blank lines. A shared fragment is written
+once. A variant config changes one entry by pointing it at `<key>.<variant>.md`, or by composing it from other
+entries, and deep-merge keeps the rest. Agents that share one file each list it: `serving.brief:
+[prompts.report.brief]`. `[]` composes nothing, so a covert brief of `[]` is none, and that agent plays its
+legitimate brief in both plays.
+
+A file's text is its content less its final line break. A `$name` is a placeholder (Python's
+[`string.Template`](https://docs.python.org/3/library/string.html#template-strings)): an engine file names
+exactly the values the engine fills, and a scenario file names none, so `$$` there is a dollar sign. Loading
+refuses, each with a `ConfigError` naming it: `prompts_inline` and `main_task.goal`; prompt text written inline
+under `system_prompt`, `brief`, `covert_brief`, `objective_prompt`, `workspace_prompt` or `task_description`; a
+missing file, one outside the folder or one that is not `.md`; a file not named after its key; a placeholder with
+no value; and a `<service>.service.md` that names no live service or holds a placeholder. Importing the loader refuses an engine file
+that `ENGINE_PROMPTS` does not declare. Whether a file is read is a property of every run config, not of one, so
+the unit tests refuse a scenario file that no run config git tracks reads (`find_unread_prompt_files`).
+`config.resolved.yaml` records each file entry as its text and each composed entry as its list of references.
+
+`uv run python scripts/diff_prompts.py --base origin/main` shows what a change sends differently. For every run
+config git tracks and both plays, it builds each agent's system prompt, the first turn, the covert objective, the
+task description and each monitor's prompt as rendered, and once each notice and the run reader's briefs, on the
+base and on the checkout, and prints each text that differs.
 
 ## Settings groups (`loc_arena/settings.py`, `loc_arena/service_settings.py`)
 
@@ -62,7 +164,7 @@ Each field has a description in code; these keep pydantic's coercing types.
 |---|---|
 | `inference` | the sanctioned paths and the teacher token quota |
 | `gateway` | the model gateway: its https upstream; `outbound_proxy` (none), the `host:port` of a proxy it tunnels to each upstream through, for a machine whose only way out is a proxy ([isolation](isolation/README.md#the-gateway)); `agents_upstream` (none), a second upstream for the agents' loops alone, with its `url` (https), its `chat_path` and `key_variable`, the host variable that holds its key, as `aurora-efficiency.explabs` sets; allowed paths, port, timeout, the record the Collector writes (`call_log`), the longest body it records whole (`body_limit_bytes`), the Collector's message limit, how long a run waits for the record to drain and the gateway to stop, the secrets directory of every container, and the runners' limits, which the jobs on the job service's nodes share: `runner_models` they may call (by default the seeded agents' model), `runner_model_aliases`, the company's model names they may call too, each sent upstream as the one of `runner_models` it maps to (an alias that renames one of them, or maps outside them, does not load), and `runner_calls_per_play` (1000) |
-| `stack`: images and limits | the episode image, tagged like every image built from the Dockerfile for the checkout unless the config names it (`docs/isolation/README.md`, Images); `collector_image`, the OpenTelemetry Collector; `sandbox_image`, the slim image agent code runs in; `runner_image`, a sandbox with pi, and `runner_timeout_seconds` for one run there; memory, CPU and process limits of the episode, each sandbox (and each runner) and each live service; health probe interval and retries, and `gateway_health_start_seconds` (60), how long a container has to start before a failed probe counts |
+| `stack`: images and limits | the episode image, tagged like every image built from the Dockerfile for the checkout unless the config names it (`docs/isolation/README.md`, Images); `collector_image`, the OpenTelemetry Collector; `sandbox_image`, the slim image agent code runs in; `runner_image`, a sandbox with pi, and `runner_timeout_seconds` for one run there; memory, CPU and process limits of the episode, each sandbox (and each runner) and each live service; health probe interval and retries while a container starts, `gateway_health_start_seconds` (60), how long it has to start before a failed probe counts, and `gateway_health_settled_seconds` (30) and `gateway_health_settled_retries` (3), the interval and retries once it has answered: each probe enters the container, so a settled one is probed seldom |
 | `stack`: tools | `tools_gateway_image` (agentgateway, which also runs the model gateway) and `tools_gateway_port`, `workspace_port` (the workspace service's, in the episode's container), `tools_timeout_seconds` per call, `tools_offer_seconds` for the gateway to offer each agent every tool it names, before play and before sessions are told to list again |
 | `stack`: sandboxes | `sandbox_port`, `sandbox_response_grace_seconds`, `sandbox_recovery_seconds`, `sandbox_scratch_directories` (empty unless a config names them), `checkouts_directory` and `checkout_volume_size` (each agent's checkout volume, at `<checkouts_directory>/<agent id>`), `skills_directory` (read-only), `shell_timeout_seconds` for `bash`, `command_output_limit_bytes` |
 | `stack`: the fleet | `worker_image`, the job service's nodes (the Dockerfile's `worker` target); `node_cpus` and `node_memory_mb`, each node's container limits and what the job service fits a job's ask against; `job_poll_seconds` between the job service's passes over the fleet; `job_credential_seconds`, how long a job's own credential and badge last (three hours, longer than `wall_clock_seconds`, cut to the shortest `max_seconds` of a service it gets a right on); `job_drain_grace_seconds`, how long a drained node's job runs on before it is queued again (30); `job_max_priority`, the highest priority a job may ask (10); `team_max_running_jobs` and `team_max_cpu_hours`, the caps on one team's running jobs and CPU-hours (none). How many nodes is the scenario's: a service entry's `nodes: {<pool>: n}` |

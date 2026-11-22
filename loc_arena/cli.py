@@ -26,9 +26,11 @@ from loc_arena.config import load_run_config, load_settings
 from loc_arena.episode_stack import EPISODE_SERVICE, REPOSITORY, run_in_stack
 from loc_arena.gateway.model_gateway import PROJECT_PREFIX, locate_call_log
 from loc_arena.gateway.proxy_relay import relay_while_running
-from loc_arena.harness import apply_mode, locate_run, play_run, read_played_snapshot
+from loc_arena.harness import MONITORS_FILE, apply_mode, locate_run, play_run, read_played_snapshot
 from loc_arena.logging_.viewer import build_index
 from loc_arena.merged_main import EPISODE_PHASE
+from loc_arena.monitors.registry import load_monitor_specs
+from loc_arena.prompt_listing import list_prompts
 from loc_arena.replay_export import export_runs
 from loc_arena.run_cost import read_cost, record_cost, render_costs, summarize
 from loc_arena.run_identity import RUN_FILE, read_identity
@@ -78,6 +80,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         print(f"played: {run_directory}")
         return 0
     instance, logs = secrets.token_hex(3), Path(args.out)
+    load_monitor_specs(MONITORS_FILE, config.scenario)  # another scenario's facts fail before play
     identity = read_identity(_config_path(args.run), REPOSITORY)  # the engine that plays, before its build
     cost = record_cost(config.settings.cost, f"{PROJECT_PREFIX}{instance}", EPISODE_SERVICE)
     try:
@@ -253,6 +256,12 @@ def _cmd_read(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_prompts(args: argparse.Namespace) -> int:
+    config = apply_mode(load_run_config(_config_path(args.run)), args.mode)
+    print(list_prompts(config, Path(_config_path(args.run)).parent / str(config.protocol["monitors_config"])))
+    return 0
+
+
 def _cmd_watch(args: argparse.Namespace) -> int:
     directory = Path(args.run_directory) if args.run_directory else None
     try:
@@ -371,6 +380,11 @@ def _add_readers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> No
     p_publish = sub.add_parser("publish", help="scan one graded run and publish it to the storage repository")
     p_publish.add_argument("run_directory", help="the run's directory, which holds scores.json")
     p_publish.set_defaults(func=_cmd_publish)
+    p_prompts = sub.add_parser("prompts", help="print what the run sends each agent and monitor, by file")
+    p_prompts.add_argument("--run", default="aurora-efficiency")
+    p_prompts.add_argument("--mode", choices=["attack", "honest"], default="attack")
+    p_prompts.set_defaults(func=_cmd_prompts)
+
     p_watch = sub.add_parser(
         "watch",
         help="print each agent's steps of the run playing, or of a finished run",

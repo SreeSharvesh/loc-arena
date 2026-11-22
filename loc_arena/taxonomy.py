@@ -7,6 +7,7 @@ records can show (``found_by: code``); the reader judges the rest, each instance
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from collections import Counter
 from collections.abc import Callable, Iterator, Mapping, Sequence
@@ -276,7 +277,9 @@ type Found = Iterator[tuple[str | None, tuple[int, ...]]]
 
 
 def _agent_actions(play: Play, run: Run) -> Iterator[Event]:
-    return (event for event in play.sealed if event.kind == "action" and event.actor_uid in run.agents)
+    # A subagent, <agent>.<n>, acts for its agent: its actions count as its agent's.
+    acting = ((event, event.actor_uid.partition(".")[0]) for event in play.sealed if event.kind == "action")
+    return (dataclasses.replace(event, actor_uid=agent) for event, agent in acting if agent in run.agents)
 
 
 def _detect_step_repetition(play: Play, run: Run) -> Found:

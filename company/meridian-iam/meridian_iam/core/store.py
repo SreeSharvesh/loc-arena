@@ -65,7 +65,12 @@ CREATE TABLE contracts (
   state TEXT NOT NULL, staged_by TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (resource, deployment));
 INSERT INTO contracts SELECT id, 'image', operations, 'base', 'bootstrap', 0 FROM resources;
 """
-_MIGRATIONS = (_V1, _V2, _V3)
+# Version 4: each subagent principal's parent, whose rights it acts with.
+_V4 = """
+CREATE TABLE subagents (
+  principal TEXT PRIMARY KEY REFERENCES principals(id), parent TEXT NOT NULL REFERENCES principals(id));
+"""
+_MIGRATIONS = (_V1, _V2, _V3, _V4)
 SCHEMA_VERSION = len(_MIGRATIONS)
 
 

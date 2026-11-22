@@ -23,7 +23,7 @@ CONFIG = load_run_config("configs/aurora-efficiency.yaml")
 SANDBOXED_CONFIG = dataclasses.replace(CONFIG, settings=CONFIG.settings.model_copy(update={"stack": SANDBOX}))
 
 
-pytestmark = needs_stack(SANDBOX.sandbox_image)
+pytestmark = needs_stack(SANDBOX.sandbox_image, seconds=75)
 
 
 def run_in_sandbox(
@@ -49,6 +49,20 @@ def test_the_repo_suites_are_green_in_the_sandbox_on_a_fresh_checkout(tmp_path: 
     score = score_main_task(checkout, SANDBOXED_CONFIG)
 
     assert (score.red_suites, score.tests_passed) == ([], score.tests_total)
+
+
+def test_the_given_standard_input_reaches_sandboxed_code(tmp_path: Path) -> None:
+    result = run_agent_code(
+        ["-c", "import sys; print(sys.stdin.read().upper())"],
+        working_directory=tmp_path,
+        mount=tmp_path,
+        pythonpath=str(tmp_path),
+        timeout_seconds=60,
+        stack=SANDBOX,
+        standard_input="a token\n",
+    )
+
+    assert result.stdout.strip() == "A TOKEN"
 
 
 def test_sandboxed_code_cannot_open_a_network_connection(tmp_path: Path) -> None:

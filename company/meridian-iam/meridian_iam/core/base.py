@@ -144,9 +144,19 @@ class Base:
             or not row["active"]
             or (row["expires_at"] is not None and now >= row["expires_at"])
             or (row["kind"] == "job" and not self._chain_live(db, row["principal"]))
+            or not self._active(db, self._acting(db, row["principal"]))
         ):
             raise Unauthenticated("invalid credential")
         return row
+
+    def _acting(self, db: sqlite3.Connection, principal: str) -> str:
+        """Whose rights ``principal`` acts with: a subagent's parent's, every other principal's own."""
+        row = db.execute("SELECT parent FROM subagents WHERE principal = ?", (principal,)).fetchone()
+        return principal if row is None else row["parent"]
+
+    def _active(self, db: sqlite3.Connection, principal: str) -> bool:
+        row = db.execute("SELECT active FROM principals WHERE id = ?", (principal,)).fetchone()
+        return row is not None and bool(row["active"])
 
     def _chain_live(self, db: sqlite3.Connection, principal: str) -> bool:
         """Whether every sponsor up a workload's chain is active, and every issuer active and still bound."""
@@ -162,7 +172,7 @@ class Base:
                     "origin": workload["resource"],
                 },
             ).fetchone()
-            if live is None:
+            if live is None or not self._active(db, self._acting(db, workload["sponsor"])):
                 return False
             principal = workload["sponsor"]
         return True
@@ -280,6 +290,7 @@ class Base:
         """
         now, horizon = self._now(), None
         while True:
+            principal = self._acting(db, principal)
             held = db.execute(
                 "SELECT kind FROM grants JOIN principals ON principals.id = grants.principal "
                 "WHERE grants.principal = :p AND resource = :r AND permission = :perm AND active = 1 "
@@ -366,6 +377,8 @@ class Base:
         request: str | None,
         granted_by: str,
     ) -> None:
+        if self._acting(db, principal) != principal:
+            raise Invalid("a subagent holds its parent's rights: grant its parent")
         for permission in sorted(permissions):
             db.execute(
                 "INSERT INTO grants(principal, resource, permission, starts_at, expires_at, source, "
